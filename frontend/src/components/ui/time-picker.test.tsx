@@ -18,7 +18,7 @@ describe('TimePicker', () => {
     expect(group.getAttribute('aria-label')).toBe('Run at');
   });
 
-  it('uses the 38px field SelectTrigger at a 68px scale width', () => {
+  it('uses the 38px field SelectTrigger wide enough for two 16px digits on phones (76px)', () => {
     const triggers = Array.from(
       render().querySelectorAll('[data-slot="select-trigger"]'),
     );
@@ -28,7 +28,7 @@ describe('TimePicker', () => {
       const classes = trigger.getAttribute('class')!.split(' ');
       expect(classes).toContain('h-9.5');
       expect(classes).not.toContain('h-9');
-      expect(classes).toContain('w-17');
+      expect(classes).toContain('w-19');
       expect(classes).not.toContain('w-[4.25rem]');
     }
   });

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   goToLevel: vi.fn(),
   deleteAgent: vi.fn(),
+  submitResult: undefined as void | Promise<unknown>,
 }));
 
 vi.mock('react-redux', () => ({
@@ -32,12 +33,26 @@ vi.mock('../modals/ConfirmationModal', () => ({
   default: ({
     modalState,
     handleSubmit,
+    error,
   }: {
     modalState: string;
-    handleSubmit: () => void;
+    handleSubmit: () => void | Promise<unknown>;
+    error?: string;
   }) =>
     modalState === 'ACTIVE' ? (
-      <button type="button" data-testid="confirm" onClick={handleSubmit} />
+      <>
+        <button
+          type="button"
+          data-testid="confirm"
+          onClick={() => {
+            const result = handleSubmit();
+            // Mark it handled; the tests assert on it afterwards.
+            if (result) result.catch(() => undefined);
+            mocks.submitResult = result;
+          }}
+        />
+        <p data-testid="confirm-error">{error}</p>
+      </>
     ) : null,
 }));
 
@@ -261,19 +276,16 @@ describe('AgentCard menu', () => {
   it('opens the chat when a viewer clicks a published card', async () => {
     await render(agentWith('viewer', VIEWER_ACTIONS), 'team');
     await act(async () =>
-      container.querySelector<HTMLElement>('[role="button"]')!.click(),
+      container
+        .querySelector<HTMLElement>('[data-slot="card"] > button')!
+        .click(),
     );
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'preference/setSelectedAgent' }),
     );
   });
 
-  it('reports a refused delete in a toast', async () => {
-    mocks.deleteAgent.mockResolvedValue({
-      ok: false,
-      json: () => Promise.resolve({ message: 'Only the owner can delete' }),
-    });
-    await render(agentWith('owner', OWNER_ACTIONS), 'user');
+  const confirmDelete = async () => {
     const items = await openMenu();
     await act(async () =>
       items
@@ -283,9 +295,106 @@ describe('AgentCard menu', () => {
     await act(async () =>
       container.querySelector<HTMLElement>('[data-testid="confirm"]')!.click(),
     );
-    expect(mocks.dispatch).toHaveBeenCalledWith({
-      type: 'actionToast/showActionToast',
-      payload: { variant: 'destructive', message: 'Only the owner can delete' },
+  };
+
+  it('keeps a refused delete in the dialog with the server message', async () => {
+    mocks.deleteAgent.mockResolvedValue({
+      ok: false,
+      json: () => Promise.resolve({ message: 'Only the owner can delete' }),
+    });
+    await render(agentWith('owner', OWNER_ACTIONS), 'user');
+    await confirmDelete();
+    await expect(mocks.submitResult).rejects.toThrow();
+    await act(async () => undefined);
+    expect(
+      container.querySelector('[data-testid="confirm-error"]')!.textContent,
+    ).toBe('Only the owner can delete');
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'actionToast/showActionToast' }),
+    );
+  });
+
+  it('returns the delete promise and drops the card on success', async () => {
+    mocks.deleteAgent.mockResolvedValue({ ok: true });
+    const updateAgents = vi.fn();
+    const agent = agentWith('owner', OWNER_ACTIONS);
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <AgentCard
+            agent={agent}
+            agents={[agent]}
+            section="user"
+            updateAgents={updateAgents}
+          />
+        </MemoryRouter>,
+      );
+    });
+    await confirmDelete();
+    expect(mocks.submitResult).toBeInstanceOf(Promise);
+    await expect(mocks.submitResult).resolves.toBeUndefined();
+    expect(updateAgents).toHaveBeenCalledWith([]);
+  });
+
+  // DESIGN "A clickable card that holds a link": a stretched button opens
+  // the agent; the menu and badge are siblings above it, never inside it.
+  describe('open target', () => {
+    const card = () =>
+      container.querySelector<HTMLElement>('[data-slot="card"]')!;
+    const target = () =>
+      card().querySelector<HTMLButtonElement>(':scope > button');
+    const menu = () =>
+      container.querySelector<HTMLButtonElement>(
+        'button[aria-label="agents.card.actions"]',
+      )!;
+
+    it('opens a published agent through a stretched button', async () => {
+      await render(agentWith('owner', OWNER_ACTIONS), 'user');
+      expect(container.querySelector('[role="button"]')).toBeNull();
+      expect(card().dataset.interactive).toBe('within');
+      const button = target()!;
+      expect(button.type).toBe('button');
+      expect(button.className).toContain('after:absolute');
+      // Named by the title alone; the description stays readable text.
+      expect(button.textContent).toBe('Deal Desk');
+      await act(async () => button.click());
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'preference/setSelectedAgent' }),
+      );
+    });
+
+    it('keeps the menu a sibling of the target, not a direct card child', async () => {
+      await render(agentWith('owner', OWNER_ACTIONS), 'user');
+      expect(target()!.contains(menu())).toBe(false);
+      expect(menu().parentElement).not.toBe(card());
+      expect(menu().parentElement!.className).toContain('z-10');
+    });
+
+    it('reaches the target before the menu and hides the avatar from AT', async () => {
+      await render(agentWith('owner', OWNER_ACTIONS), 'user');
+      const buttons = Array.from(card().querySelectorAll('button'));
+      expect(buttons.indexOf(target()!)).toBeLessThan(buttons.indexOf(menu()));
+      expect(card().querySelector('img')?.getAttribute('alt')).toBe('');
+    });
+
+    it('has no target on a draft', async () => {
+      await render(
+        { ...agentWith('owner', OWNER_ACTIONS), status: 'draft' },
+        'user',
+      );
+      expect(target()).toBeNull();
+      expect(card().dataset.interactive).toBeUndefined();
+      expect(
+        container.querySelector('[data-slot="card-title"]')?.textContent,
+      ).toBe('Deal Desk');
+    });
+
+    it('opens a Discovered agent through the target', async () => {
+      await render(
+        { ...agentWith('viewer', VIEWER_ACTIONS), shared_token: 'tok' },
+        'shared',
+      );
+      expect(target()).not.toBeNull();
     });
   });
 });

@@ -32,6 +32,8 @@ export async function getDocsWithPagination(
   try {
     const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}&search=${searchTerm}`;
     const response = await userService.getDocsWithPagination(query, token);
+    if (!response.ok)
+      throw new Error(`Failed to load sources (${response.status})`);
     const data = await response.json();
     const docs: Doc[] = [];
     Array.isArray(data.paginated) &&

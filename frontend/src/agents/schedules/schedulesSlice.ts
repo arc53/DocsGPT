@@ -77,7 +77,9 @@ export const deleteSchedule = createAsyncThunk<
   string,
   { id: string; token: string | null }
 >('schedules/delete', async ({ id, token }) => {
-  await schedulesService.remove(id, token);
+  const result = await schedulesService.remove(id, token);
+  // A refused delete answers `success: false`; reject so the row stays.
+  if (result?.success === false) throw new Error('Failed to delete schedule');
   return id;
 });
 

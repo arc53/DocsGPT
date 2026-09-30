@@ -464,7 +464,8 @@
         "syncFrequency": "Die Synchronisierungshäufigkeit konnte nicht geändert werden.",
         "reingest": "Die Neuaufnahme konnte nicht gestartet werden."
       },
-      "viaConnection": "über {{name}}"
+      "viaConnection": "über {{name}}",
+      "loadError": "Dein Wissen konnte nicht geladen werden."
     },
     "analytics": {
       "label": "Analytik",
@@ -670,7 +671,8 @@
           "retrievedChunks": "Abgerufene Abschnitte",
           "allAttributes": "Alle Attribute"
         }
-      }
+      },
+      "loadError": "Die Protokolle konnten nicht geladen werden."
     },
     "teams": {
       "label": "Teams",
@@ -980,7 +982,8 @@
       "pageRange_other": "{{from}}–{{to}} von {{formatted}} Teams",
       "searchMembers": "Mitglieder suchen…",
       "membersRange_one": "{{from}}–{{to}} von {{formatted}} Mitglied",
-      "membersRange_other": "{{from}}–{{to}} von {{formatted}} Mitgliedern"
+      "membersRange_other": "{{from}}–{{to}} von {{formatted}} Mitgliedern",
+      "membersLoadError": "Die Mitglieder konnten nicht geladen werden."
     },
     "tools": {
       "label": "Werkzeuge",
@@ -1125,7 +1128,8 @@
       "defaultBadge": "Standard",
       "noToolsYet": "Noch keine Werkzeuge",
       "connectService": "Dienst verbinden",
-      "filledBy": "Ausgefüllt von"
+      "filledBy": "Ausgefüllt von",
+      "loadError": "Deine Werkzeuge konnten nicht geladen werden."
     },
     "devices": {
       "label": "Geräte",
@@ -1142,7 +1146,6 @@
       "offline": "Offline",
       "lastSeen": "Zuletzt gesehen: {{time}}",
       "lastSeenLabel": "Zuletzt gesehen",
-      "seenAgo": "vor {{time}} gesehen",
       "nameLabel": "Gerätename",
       "descriptionLabel": "Beschreibung (für den Agenten sichtbar)",
       "descriptionPlaceholder": "Wofür ist dieser Rechner?",
@@ -1182,7 +1185,8 @@
       "auditDurationValue": "{{value}} ms",
       "fallbackName": "Gerät",
       "auditShow": "Letzte Befehle anzeigen",
-      "auditHide": "Letzte Befehle ausblenden"
+      "auditHide": "Letzte Befehle ausblenden",
+      "seen": "zuletzt gesehen {{time}}"
     },
     "customModels": {
       "label": "Eigene Modelle",
@@ -1256,7 +1260,8 @@
         "testFailed": "Verbindungstest fehlgeschlagen"
       },
       "pageRange_one": "{{from}}–{{to}} von {{formatted}} Modell",
-      "pageRange_other": "{{from}}–{{to}} von {{formatted}} Modellen"
+      "pageRange_other": "{{from}}–{{to}} von {{formatted}} Modellen",
+      "loadError": "Deine Modelle konnten nicht geladen werden."
     },
     "accessTokens": {
       "label": "Zugriffstoken",
@@ -2598,7 +2603,8 @@
         "paused_one": "{{count}} pausiert",
         "paused_other": "{{count}} pausiert",
         "overdue": "Überfällig"
-      }
+      },
+      "deleteFailed": "Dieser Zeitplan konnte nicht gelöscht werden."
     },
     "shared": {
       "notFound": "Kein Agent gefunden. Bitte stelle sicher, dass der Agent geteilt ist.",
@@ -2606,7 +2612,8 @@
       "sharedBy": "von {{name}}",
       "sharedOn": "Geteilt am {{date}}",
       "connectedTools": "Verbundene Tools",
-      "toolIconTitle": "Symbol für {{name}}"
+      "toolIconTitle": "Symbol für {{name}}",
+      "loadError": "Dieser Agent konnte nicht geladen werden."
     },
     "preview": {
       "testMessage": "Teste deinen Agenten hier. Veröffentlichte Agenten können in Konversationen verwendet werden.",
@@ -3007,12 +3014,14 @@
     "close": "Schließen",
     "viewOnlyNotice": "Du kannst dies ansehen, aber deine Rolle kann es nicht ändern.",
     "credentialsLockedNotice": "Nur der Eigentümer kann die Zugangsdaten dieses Tools ändern.",
-    "savedSecretHint": "Gespeichert. Leer lassen, um es zu behalten."
+    "savedSecretHint": "Gespeichert. Leer lassen, um es zu behalten.",
+    "actionFailed": "Etwas ist schiefgelaufen. Bitte versuche es erneut."
   },
   "sidePanel": {
     "close": "Schließen",
     "expand": "Erweitern",
     "collapse": "Verkleinern",
     "back": "Zurück"
-  }
+  },
+  "close": "Schließen"
 }

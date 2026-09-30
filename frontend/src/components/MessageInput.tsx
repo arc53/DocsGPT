@@ -1885,7 +1885,6 @@ export default function MessageInput({
               recordingState === 'recording' ||
               recordingState === 'transcribing'
             }
-            tabIndex={1}
             placeholder={t('inputPlaceholder')}
             className="text-foreground placeholder:text-muted-foreground w-full resize-none overflow-x-hidden overflow-y-auto rounded-t-3xl bg-transparent px-2 text-base leading-tight whitespace-pre-wrap opacity-100 focus:outline-hidden sm:px-3"
             onKeyDown={handleKeyDown}

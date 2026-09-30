@@ -44,7 +44,18 @@ type ListRowProps = Omit<React.ComponentProps<'li'>, 'title'> & {
   asChild?: boolean;
 };
 
-/** An identity row: leading art, a truncating title and meta, a trailing control. */
+/** The full text of a plain-text title or meta, for `title=` on its truncating line. */
+function plainText(node: React.ReactNode): string | undefined {
+  return typeof node === 'string' || typeof node === 'number'
+    ? String(node)
+    : undefined;
+}
+
+/**
+ * An identity row: leading art, a truncating title and meta, a trailing control.
+ * A string `title` / `description` shows its full value on hover; for a node,
+ * put the `title` on the node itself.
+ */
 function ListRow({
   leading,
   title,
@@ -75,9 +86,17 @@ function ListRow({
     <>
       {leading}
       <div className="min-w-0 flex-1">
-        <p className="text-foreground truncate text-sm font-medium">{title}</p>
+        <p
+          className="text-foreground truncate text-sm font-medium"
+          title={plainText(title)}
+        >
+          {title}
+        </p>
         {description ? (
-          <p className="text-muted-foreground truncate text-xs">
+          <p
+            className="text-muted-foreground truncate text-xs"
+            title={plainText(description)}
+          >
             {description}
           </p>
         ) : null}

@@ -226,7 +226,10 @@ export default function WorkflowRunArtifacts({
           >
             <FileBox className="text-muted-foreground shrink-0" />
             <div className="min-w-0 flex-1">
-              <div className="text-foreground truncate text-sm font-medium">
+              <div
+                className="text-foreground truncate text-sm font-medium"
+                title={artifact.title || undefined}
+              >
                 {artifact.title ||
                   t('agents.workflow.artifacts.untitled', {
                     id: artifact.id.slice(0, 8),

@@ -26,7 +26,7 @@ type ControlProps = {
 /**
  * Fills a field's id, disabled and aria wiring from the FormField around it.
  * Props the caller passed win; outside a FormField the props come back as-is.
- * Input, Textarea, SelectTrigger and Checkbox call it, so any of them works
+ * Input, Textarea, SelectTrigger, Checkbox and Switch call it, so any of them works
  * as a FormField child, even nested (a SelectTrigger inside a Select).
  */
 /**
@@ -201,6 +201,38 @@ function FormField({
 }
 
 /**
+ * Wires the fields inside it the way FormField does, for a layout that draws
+ * its own label (SettingRow): id, aria-describedby, and nothing marked
+ * invalid, required or disabled.
+ */
+function FormFieldControlProvider({
+  id,
+  describedBy,
+  children,
+}: {
+  id: string;
+  describedBy?: string;
+  children: React.ReactNode;
+}) {
+  const control = React.useMemo<FormFieldControl>(
+    () => ({
+      id,
+      describedBy,
+      invalid: false,
+      required: false,
+      disabled: false,
+      floating: false,
+    }),
+    [id, describedBy],
+  );
+  return (
+    <FormFieldContext.Provider value={control}>
+      {children}
+    </FormFieldContext.Provider>
+  );
+}
+
+/**
  * Stops a FormField's wiring from reaching fields rendered inside this
  * subtree (a popover's search box), which would otherwise share its id.
  */
@@ -215,6 +247,7 @@ function FormFieldBoundary({ children }: { children: React.ReactNode }) {
 export {
   FormField,
   FormFieldBoundary,
+  FormFieldControlProvider,
   useFormFieldControl,
   useFormFieldFloating,
 };

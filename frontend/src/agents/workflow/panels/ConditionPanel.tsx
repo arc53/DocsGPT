@@ -79,24 +79,21 @@ export default function ConditionPanel({
       <p className="text-muted-foreground text-sm">
         {t('agents.workflow.builder.conditionIntro')}
       </p>
-      {/* The track is a plain wrapper: ToggleGroup takes layout only. */}
-      <div className="bg-muted rounded-full p-1">
-        <ToggleGroup
-          type="single"
-          size="xs"
-          value={mode}
-          onValueChange={(next) => next && updateConfig({ mode: next })}
-          aria-label={t('agents.workflow.builder.conditionMode')}
-          className="flex-nowrap"
-        >
-          <ToggleGroupItem value="simple" className="flex-1">
-            {t('agents.workflow.builder.modeSimple')}
-          </ToggleGroupItem>
-          <ToggleGroupItem value="advanced" className="flex-1">
-            {t('agents.workflow.builder.modeAdvanced')}
-          </ToggleGroupItem>
-        </ToggleGroup>
-      </div>
+      <ToggleGroup
+        type="single"
+        size="xs"
+        fill
+        value={mode}
+        onValueChange={(next) => next && updateConfig({ mode: next })}
+        aria-label={t('agents.workflow.builder.conditionMode')}
+      >
+        <ToggleGroupItem value="simple">
+          {t('agents.workflow.builder.modeSimple')}
+        </ToggleGroupItem>
+        <ToggleGroupItem value="advanced">
+          {t('agents.workflow.builder.modeAdvanced')}
+        </ToggleGroupItem>
+      </ToggleGroup>
 
       {cases.map((c, idx) => {
         const parsed = parseSimpleCel(c.expression);

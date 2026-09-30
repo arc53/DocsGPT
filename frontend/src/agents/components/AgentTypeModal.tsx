@@ -35,7 +35,6 @@ export default function AgentTypeModal({
       onOpenChange={(o) => !o && onClose()}
       title={t('agents.typeModal.title')}
       description={t('agents.typeModal.description')}
-      size="md"
     >
       <div className="flex flex-col gap-4">
         <OptionCard

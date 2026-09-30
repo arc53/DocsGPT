@@ -162,6 +162,23 @@ describe('ShareToTeamModal', () => {
     expect(access?.getAttribute('data-size')).toBe('field');
   });
 
+  // Inside the Modal the add row's popover must be modal, or it can't
+  // scroll or close on an outside click (multi-select.tsx `modal`).
+  it('opens the add row picker as a modal popover', async () => {
+    await render();
+    const picker = body().querySelector<HTMLButtonElement>(
+      'button[data-variant="combobox"]',
+    );
+    expect(picker).not.toBeNull();
+    act(() => picker!.click());
+    expect(
+      body().querySelector('[data-slot="popover-content"]'),
+    ).not.toBeNull();
+    expect(
+      body().querySelector('[role="dialog"]')?.getAttribute('aria-hidden'),
+    ).toBe('true');
+  });
+
   describe('access settings', () => {
     it('shows a collapsed Access settings toggle to the owner', async () => {
       await render();
@@ -173,9 +190,15 @@ describe('ShareToTeamModal', () => {
       expect(toggle?.getAttribute('data-variant')).toBe('link');
       expect(toggle?.className).toContain('focus-visible:ring-3');
       expect(toggle?.className).not.toContain('focus-visible:ring-0');
-      expect(body().querySelectorAll('[role="switch"]')).toHaveLength(0);
+      // Folded: the switches wait in a closed, inert Collapsible.
+      const settings = document.getElementById(
+        toggle!.getAttribute('aria-controls')!,
+      )!;
+      expect(settings.dataset.state).toBe('closed');
+      expect(settings.hasAttribute('inert')).toBe(true);
       act(() => toggle!.click());
-      expect(body().querySelectorAll('[role="switch"]')).toHaveLength(4);
+      expect(settings.dataset.state).toBe('open');
+      expect(settings.querySelectorAll('[role="switch"]')).toHaveLength(4);
       expect(text()).toContain(
         'settings.teams.accessSettings.agent.editors_can_share.label',
       );

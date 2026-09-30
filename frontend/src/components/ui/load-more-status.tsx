@@ -54,7 +54,7 @@ function LoadMoreStatus({
       ) : error ? (
         <>
           {t('pagination.olderFailed')}
-          <Button variant="outline" size="xs" onClick={onRetry}>
+          <Button variant="outline" size="xs" shape="pill" onClick={onRetry}>
             {t('retry')}
           </Button>
         </>

@@ -155,39 +155,29 @@ export default function Prompts({
     }
   };
 
+  // Returned to ConfirmationModal: it stays pending while this runs, closes
+  // on success and keeps a failure in the dialog.
   const confirmDeletePrompt = () => {
-    if (promptToDelete) {
-      userService
-        .deletePrompt({ id: promptToDelete.id }, token)
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error('Failed to delete prompt');
+    if (!promptToDelete) return;
+    return userService
+      .deletePrompt({ id: promptToDelete.id }, token)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Failed to delete prompt');
+        }
+        setPrompts(prompts.filter((prompt) => prompt.id !== promptToDelete.id));
+        // Only change selection if we're deleting the currently selected prompt
+        if (
+          prompts.length > 0 &&
+          selectedPrompt &&
+          selectedPrompt.id === promptToDelete.id
+        ) {
+          const firstPrompt = prompts.find((p) => p.id !== promptToDelete.id);
+          if (firstPrompt) {
+            onSelectPrompt(firstPrompt.name, firstPrompt.id, firstPrompt.type);
           }
-          setPrompts(
-            prompts.filter((prompt) => prompt.id !== promptToDelete.id),
-          );
-          // Only change selection if we're deleting the currently selected prompt
-          if (
-            prompts.length > 0 &&
-            selectedPrompt &&
-            selectedPrompt.id === promptToDelete.id
-          ) {
-            const firstPrompt = prompts.find((p) => p.id !== promptToDelete.id);
-            if (firstPrompt) {
-              onSelectPrompt(
-                firstPrompt.name,
-                firstPrompt.id,
-                firstPrompt.type,
-              );
-            }
-          }
-        })
-        .catch((error) => {
-          console.error(error);
-          showError(t('settings.general.promptActions.deleteFailed'));
-        });
-      setPromptToDelete(null);
-    }
+        }
+      });
   };
 
   const handleFetchPromptContent = async (id: string) => {
@@ -254,7 +244,7 @@ export default function Prompts({
     setModalType('ADD');
   };
 
-  const handleSaveChanges = (id: string, type: string) => {
+  const handleSaveChanges = (id: string, type: string) =>
     userService
       .updatePrompt(
         {
@@ -303,7 +293,6 @@ export default function Prompts({
       .catch((error) => {
         console.error(error);
       });
-  };
 
   const picker = (
     <Popover open={open} onOpenChange={setOpen}>
@@ -324,7 +313,7 @@ export default function Prompts({
             titleAs === 'row' && 'sm:w-56',
           )}
         >
-          <span className="truncate">
+          <span className="truncate" title={selectedPrompt?.name}>
             {selectedPrompt?.name || t('settings.general.promptActions.select')}
           </span>
           <span className="text-muted-foreground">
@@ -359,7 +348,9 @@ export default function Prompts({
                   onSelect={() => handleSelectPrompt(prompt)}
                   className="flex items-center justify-between"
                 >
-                  <span className="truncate">{prompt.name}</span>
+                  <span className="truncate" title={prompt.name}>
+                    {prompt.name}
+                  </span>
                   <div className="flex shrink-0 items-center gap-1">
                     <IconButton
                       variant="ghost-on-accent"
@@ -552,6 +543,7 @@ export default function Prompts({
           setModalState={() => setPromptToDelete(null)}
           submitLabel={t('modals.deleteConv.delete')}
           handleSubmit={confirmDeletePrompt}
+          error={t('settings.general.promptActions.deleteFailed')}
           handleCancel={() => setPromptToDelete(null)}
           variant="destructive"
         />

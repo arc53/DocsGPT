@@ -55,7 +55,7 @@ import {
   updateUploadTask,
 } from '../upload/uploadSlice';
 import { can } from '../utils/accessUtils';
-import { formatDate } from '../utils/dateTimeUtils';
+import { EMPTY_VALUE, formatDate } from '../utils/dateTimeUtils';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
 import ConnectorIcon from '../connectors/ConnectorIcon';
@@ -126,6 +126,8 @@ export default function Sources({
   const [modalState, setModalState] = useState<ActiveState>('INACTIVE');
   const [isOnboarding, setIsOnboarding] = useState<boolean>(false);
   const [loading, setLoading] = useLoaderState(false);
+  // The last page load failed: an error with Retry, not "no sources".
+  const [loadFailed, setLoadFailed] = useState(false);
   const [sortField, setSortField] = useState<'date' | 'tokens'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   // Pagination: the page lives in the URL, the size on this device.
@@ -222,12 +224,13 @@ export default function Sources({
         token,
       )
         .then((data) => {
-          dispatch(setPaginatedDocuments(data ? data.docs : []));
-          setTotalDocuments(data ? data.totalDocuments : 0);
+          setLoadFailed(data === null);
+          if (data === null) return;
+          dispatch(setPaginatedDocuments(data.docs));
+          setTotalDocuments(data.totalDocuments);
           // The server clamps a page past the end (the last card on the
           // last page was deleted); follow it.
-          if (data && data.currentPage !== page)
-            setCurrentPage(data.currentPage);
+          if (data.currentPage !== page) setCurrentPage(data.currentPage);
         })
         .catch((error) => console.error(error))
         .finally(() => {
@@ -369,18 +372,28 @@ export default function Sources({
   } | null>(null);
   const [deleteModalState, setDeleteModalState] =
     useState<ActiveState>('INACTIVE');
+  const [deleteError, setDeleteError] = useState<string>();
 
   const handleDeleteConfirmation = (index: number, document: Doc) => {
     setDocumentToDelete({ index, document });
     setDeleteModalState('ACTIVE');
   };
 
-  const handleConfirmedDelete = () => {
-    if (documentToDelete) {
-      handleDeleteDocument(documentToDelete.index, documentToDelete.document);
-      setDeleteModalState('INACTIVE');
-      setDocumentToDelete(null);
+  // Returned to ConfirmationModal: it stays pending while the delete runs
+  // and keeps a failure (its message) in the dialog.
+  const handleConfirmedDelete = async () => {
+    if (!documentToDelete) return;
+    setDeleteError(undefined);
+    try {
+      await handleDeleteDocument(
+        documentToDelete.index,
+        documentToDelete.document,
+      );
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : undefined);
+      throw error;
     }
+    setDocumentToDelete(null);
   };
 
   const getActionOptions = (index: number, document: Doc): MenuOption[] => {
@@ -688,6 +701,13 @@ export default function Sources({
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               <SkeletonLoader component="sourceCards" count={rowsPerPage} />
             </div>
+          ) : loadFailed ? (
+            <EmptyState
+              tone="destructive"
+              illustration="none"
+              title={t('settings.sources.loadError')}
+              onRetry={() => refreshDocs(undefined, currentPage, rowsPerPage)}
+            />
           ) : !currentDocuments?.length ? (
             searchTerm ? (
               <EmptyState
@@ -852,13 +872,15 @@ export default function Sources({
                         )}
                         <span className="flex items-center gap-2">
                           <CalendarIcon className="size-3.5" />
-                          {document.date ? formatDate(document.date) : ''}
+                          {document.date
+                            ? formatDate(document.date)
+                            : EMPTY_VALUE}
                         </span>
                         <span className="flex items-center gap-2">
                           <HardDrive className="size-3.5" />
                           {document.tokens
                             ? formatTokens(+document.tokens)
-                            : ''}
+                            : EMPTY_VALUE}
                         </span>
                       </CardFooter>
                     </div>
@@ -919,6 +941,7 @@ export default function Sources({
           modalState={deleteModalState}
           setModalState={setDeleteModalState}
           handleSubmit={handleConfirmedDelete}
+          error={deleteError}
           handleCancel={() => {
             setDeleteModalState('INACTIVE');
             setDocumentToDelete(null);

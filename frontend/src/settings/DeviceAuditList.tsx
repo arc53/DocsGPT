@@ -4,7 +4,7 @@ import devicesService, { AuditEntry } from '../api/services/devicesService';
 import { Button } from '../components/ui/button';
 import { LoadMoreStatus } from '../components/ui/load-more-status';
 import { useLoadMore } from '../hooks/useLoadMore';
-import { formatDateTime } from '../utils/dateTimeUtils';
+import { EMPTY_VALUE, formatTimestamp } from '../utils/dateTimeUtils';
 
 /** Commands per request; older ones load as the list's end scrolls into view. */
 const AUDIT_PAGE_SIZE = 50;
@@ -87,17 +87,18 @@ export default function DeviceAuditList({
                   {t('settings.devices.auditDecision')}: {entry.decision}
                 </span>
                 <span>
-                  {t('settings.devices.auditExit')}: {entry.exit_code ?? '-'}
+                  {t('settings.devices.auditExit')}:{' '}
+                  {entry.exit_code ?? EMPTY_VALUE}
                 </span>
                 <span>
                   {t('settings.devices.auditDuration')}:{' '}
-                  {t('settings.devices.auditDurationValue', {
-                    value: entry.duration_ms ?? '-',
-                  })}
+                  {entry.duration_ms == null
+                    ? EMPTY_VALUE
+                    : t('settings.devices.auditDurationValue', {
+                        value: entry.duration_ms,
+                      })}
                 </span>
-                <span>
-                  {entry.created_at ? formatDateTime(entry.created_at) : '-'}
-                </span>
+                <span>{formatTimestamp(entry.created_at)}</span>
               </div>
             </li>
           ))}

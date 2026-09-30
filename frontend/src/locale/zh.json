@@ -463,7 +463,8 @@
         "syncFrequency": "无法更改同步频率。",
         "reingest": "无法开始重新导入。"
       },
-      "viaConnection": "通过 {{name}}"
+      "viaConnection": "通过 {{name}}",
+      "loadError": "无法加载你的知识库。"
     },
     "analytics": {
       "label": "分析",
@@ -669,7 +670,8 @@
           "retrievedChunks": "检索到的片段",
           "allAttributes": "全部属性"
         }
-      }
+      },
+      "loadError": "无法加载日志。"
     },
     "teams": {
       "label": "团队",
@@ -979,7 +981,8 @@
       "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个团队",
       "searchMembers": "搜索成员…",
       "membersRange_one": "第 {{from}}–{{to}} 名，共 {{formatted}} 名成员",
-      "membersRange_other": "第 {{from}}–{{to}} 名，共 {{formatted}} 名成员"
+      "membersRange_other": "第 {{from}}–{{to}} 名，共 {{formatted}} 名成员",
+      "membersLoadError": "无法加载成员。"
     },
     "tools": {
       "label": "工具",
@@ -1124,7 +1127,8 @@
       "defaultBadge": "默认",
       "noToolsYet": "还没有工具",
       "connectService": "连接服务",
-      "filledBy": "填写方式"
+      "filledBy": "填写方式",
+      "loadError": "无法加载你的工具。"
     },
     "devices": {
       "label": "设备",
@@ -1141,7 +1145,6 @@
       "offline": "离线",
       "lastSeen": "上次在线：{{time}}",
       "lastSeenLabel": "上次在线",
-      "seenAgo": "{{time}}前在线",
       "nameLabel": "设备名称",
       "descriptionLabel": "描述（对代理可见）",
       "descriptionPlaceholder": "这台机器是做什么用的？",
@@ -1181,7 +1184,8 @@
       "auditDurationValue": "{{value}} 毫秒",
       "fallbackName": "设备",
       "auditShow": "显示最近的命令",
-      "auditHide": "隐藏最近的命令"
+      "auditHide": "隐藏最近的命令",
+      "seen": "{{time}}在线"
     },
     "customModels": {
       "label": "自定义模型",
@@ -1255,7 +1259,8 @@
         "testFailed": "连接测试失败"
       },
       "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个模型",
-      "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个模型"
+      "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个模型",
+      "loadError": "无法加载你的模型。"
     },
     "accessTokens": {
       "label": "访问令牌",
@@ -2586,7 +2591,8 @@
         "paused_one": "{{count}} 个已暂停",
         "paused_other": "{{count}} 个已暂停",
         "overdue": "已逾期"
-      }
+      },
+      "deleteFailed": "无法删除此计划。"
     },
     "shared": {
       "notFound": "未找到代理。请确保代理已共享。",
@@ -2594,7 +2600,8 @@
       "sharedBy": "来自 {{name}}",
       "sharedOn": "分享于 {{date}}",
       "connectedTools": "已连接的工具",
-      "toolIconTitle": "{{name}} 图标"
+      "toolIconTitle": "{{name}} 图标",
+      "loadError": "无法加载此智能体。"
     },
     "preview": {
       "testMessage": "在此测试您的代理。已发布的代理可以在对话中使用。",
@@ -2995,12 +3002,14 @@
     "close": "关闭",
     "viewOnlyNotice": "你可以查看此内容，但你的角色无法更改它。",
     "credentialsLockedNotice": "只有所有者可以更改此工具的凭据。",
-    "savedSecretHint": "已保存。留空即可保留。"
+    "savedSecretHint": "已保存。留空即可保留。",
+    "actionFailed": "出了点问题，请重试。"
   },
   "sidePanel": {
     "close": "关闭",
     "expand": "展开",
     "collapse": "收起",
     "back": "返回"
-  }
+  },
+  "close": "关闭"
 }

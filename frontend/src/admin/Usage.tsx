@@ -115,7 +115,7 @@ export default function Usage() {
           value={groupBy}
           onValueChange={(value) => setGroupBy(value as GroupBy)}
         >
-          <SelectTrigger className="w-40">
+          <SelectTrigger shape="pill" className="w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

@@ -1,18 +1,18 @@
 import {
-  ChevronRight,
   CircleAlert,
   CircleCheck,
   Info,
   Lock,
   TriangleAlert,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import { baseURL } from '../api/client';
 import userService from '../api/services/userService';
 import { Alert, AlertDescription } from '../components/ui/alert';
+import { Collapsible, CollapsibleTrigger } from '../components/ui/collapsible';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -30,7 +30,6 @@ import { ActiveState } from '../models/misc';
 import { selectRecentEvents } from '../notifications/notificationsSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import { Modal, ModalActions } from '../components/ui/modal';
-import { cn } from '@/lib/utils';
 import { formatCount } from '../utils/dateTimeUtils';
 
 /**
@@ -135,6 +134,7 @@ export default function MCPServerModal({
   const [oauthCompleted, setOAuthCompleted] = useState(false);
   const [saveActive, setSaveActive] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const advancedId = useId();
   // A timeout error opens the section so the message is never hidden.
   const advancedOpen = showAdvanced || !!errors.timeout;
 
@@ -755,66 +755,60 @@ export default function MCPServerModal({
 
         {renderAuthFields()}
 
-        {/* Scopes and timeout rarely need changing: behind Advanced. */}
-        <Button
-          type="button"
-          variant="link"
-          size="sm"
-          onClick={() => setShowAdvanced((open) => !open)}
-          aria-expanded={advancedOpen}
-          className="-ml-3 w-fit justify-start"
-        >
-          <ChevronRight
-            aria-hidden
-            className={cn(
-              'size-3 transition-transform duration-200',
-              advancedOpen && 'rotate-90',
-            )}
-          />
-          <span>{t('settings.tools.mcp.advanced')}</span>
-        </Button>
-        {advancedOpen && (
-          <>
-            {formData.auth_type === 'oauth' && (
+        {/* Scopes and timeout rarely need changing: behind Advanced. The
+            20px gap sits inside the body, so it folds away with it. */}
+        <div>
+          <CollapsibleTrigger
+            open={advancedOpen}
+            onOpenChange={() => setShowAdvanced((open) => !open)}
+            controls={advancedId}
+            chevron="sm"
+          >
+            <span>{t('settings.tools.mcp.advanced')}</span>
+          </CollapsibleTrigger>
+          <Collapsible open={advancedOpen} id={advancedId}>
+            <div className="flex flex-col gap-5 pt-5">
+              {formData.auth_type === 'oauth' && (
+                <FormField
+                  label={t('settings.tools.mcp.placeholders.oauthScopes')}
+                >
+                  <Input
+                    type="text"
+                    value={formData.oauth_scopes}
+                    onChange={(e) =>
+                      handleInputChange('oauth_scopes', e.target.value)
+                    }
+                    placeholder="read, write"
+                    disabled={oauthOwnerOnly}
+                  />
+                </FormField>
+              )}
               <FormField
-                label={t('settings.tools.mcp.placeholders.oauthScopes')}
+                label={t('settings.tools.mcp.timeout')}
+                error={errors.timeout}
               >
                 <Input
-                  type="text"
-                  value={formData.oauth_scopes}
-                  onChange={(e) =>
-                    handleInputChange('oauth_scopes', e.target.value)
-                  }
-                  placeholder="read, write"
-                  disabled={oauthOwnerOnly}
+                  type="number"
+                  value={formData.timeout}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === '') {
+                      handleInputChange('timeout', '');
+                    } else {
+                      const numValue = parseInt(value);
+                      if (!isNaN(numValue) && numValue >= 1) {
+                        handleInputChange('timeout', numValue);
+                      }
+                    }
+                  }}
+                  placeholder="30"
+                  min={1}
+                  max={300}
                 />
               </FormField>
-            )}
-            <FormField
-              label={t('settings.tools.mcp.timeout')}
-              error={errors.timeout}
-            >
-              <Input
-                type="number"
-                value={formData.timeout}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  if (value === '') {
-                    handleInputChange('timeout', '');
-                  } else {
-                    const numValue = parseInt(value);
-                    if (!isNaN(numValue) && numValue >= 1) {
-                      handleInputChange('timeout', numValue);
-                    }
-                  }
-                }}
-                placeholder="30"
-                min={1}
-                max={300}
-              />
-            </FormField>
-          </>
-        )}
+            </div>
+          </Collapsible>
+        </div>
 
         {testResult && (
           <Alert

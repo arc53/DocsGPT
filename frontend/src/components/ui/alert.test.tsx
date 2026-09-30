@@ -1,8 +1,13 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
 
 import { Alert, AlertDescription, AlertTitle } from './alert';
+import { TooltipProvider } from './tooltip';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -130,5 +135,47 @@ describe('Alert surface', () => {
     const el = container.firstElementChild as HTMLElement;
     expect(el.dataset.variant).toBe('neutral');
     expect(el.className).toContain('bg-background');
+  });
+});
+
+describe('Alert onClose', () => {
+  const closeButton = () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="close"]');
+
+  it('draws no close button unless onClose is passed', async () => {
+    await render(
+      <Alert variant="destructive">
+        <AlertTitle>Unable to save</AlertTitle>
+      </Alert>,
+    );
+    expect(closeButton()).toBeNull();
+    expect(container.firstElementChild!.className.split(' ')).not.toContain(
+      'pr-10',
+    );
+  });
+
+  it('puts a ghost X in the top-right corner and pads the text clear of it', async () => {
+    const onClose = vi.fn();
+    await render(
+      <TooltipProvider>
+        <Alert variant="destructive" onClose={onClose}>
+          <AlertTitle>Unable to save</AlertTitle>
+          <AlertDescription>Two nodes have no model.</AlertDescription>
+        </Alert>
+      </TooltipProvider>,
+    );
+    const alert = container.querySelector<HTMLElement>('[data-slot="alert"]')!;
+    expect(alert.className.split(' ')).toContain('pr-10');
+    const button = closeButton()!;
+    expect(button).not.toBeNull();
+    expect(alert.contains(button)).toBe(true);
+    expect(button.dataset.variant).toBe('ghost');
+    expect(button.dataset.size).toBe('icon-xs');
+    const corner = button.closest('[data-slot="alert-close"]')!;
+    expect(corner.className.split(' ')).toEqual(
+      expect.arrayContaining(['absolute', 'top-2.5', 'right-2.5']),
+    );
+    await act(async () => button.click());
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

@@ -163,7 +163,9 @@ export default function SearchConversationsModal({
         >
           {withSnippet ? (
             <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="truncate">{titleNode}</span>
+              <span className="truncate" title={conversation.name}>
+                {titleNode}
+              </span>
               {showSnippet && (
                 <span className="text-muted-foreground line-clamp-2 text-xs">
                   <HighlightedText
@@ -174,7 +176,9 @@ export default function SearchConversationsModal({
               )}
             </div>
           ) : (
-            <span className="truncate">{titleNode}</span>
+            <span className="truncate" title={conversation.name}>
+              {titleNode}
+            </span>
           )}
         </CommandItem>
       );

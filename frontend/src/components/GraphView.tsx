@@ -462,27 +462,25 @@ const GraphView: React.FC<GraphViewProps> = ({
       <div className="flex flex-wrap items-center gap-3">
         <GraphEntitySearch docId={docId} fold={fold} onPick={onSelect} />
         {/* One phrase at one size: "Show top [50 | 100 | 250] by
-            connections"; the muted track holds only the group. */}
+            connections"; the group's track holds only the numbers. */}
         <div className="flex flex-wrap items-center gap-2">
           <span id={showTopId} className="text-muted-foreground text-sm">
             {t('settings.sources.graphrag.view.showTop')}
           </span>
-          <div className="bg-muted shrink-0 rounded-full p-1">
-            <ToggleGroup
-              type="single"
-              size="xs"
-              className="flex-nowrap"
-              value={String(limit)}
-              onValueChange={(value) => value && onLimitChange(Number(value))}
-              aria-labelledby={showTopId}
-            >
-              {GRAPH_LIMITS.map((option) => (
-                <ToggleGroupItem key={option} value={String(option)}>
-                  {option}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </div>
+          <ToggleGroup
+            className="shrink-0"
+            type="single"
+            size="xs"
+            value={String(limit)}
+            onValueChange={(value) => value && onLimitChange(Number(value))}
+            aria-labelledby={showTopId}
+          >
+            {GRAPH_LIMITS.map((option) => (
+              <ToggleGroupItem key={option} value={String(option)}>
+                {option}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
           <span className="text-muted-foreground text-sm">
             {t('settings.sources.graphrag.view.byConnections')}
           </span>
@@ -490,38 +488,36 @@ const GraphView: React.FC<GraphViewProps> = ({
       </div>
       {legendKeys.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2">
-          <div className="bg-muted rounded-full p-1">
-            <ToggleGroup
-              type="multiple"
-              size="xs"
-              value={legendValue}
-              onValueChange={(values) =>
-                setHidden(
-                  new Set(legendKeys.filter((key) => !values.includes(key))),
-                )
-              }
-              aria-label={t('settings.sources.graphrag.view.typeFilter')}
-            >
-              {fold.groups.map((group) => (
-                <ToggleGroupItem key={group.key} value={group.key}>
-                  <GraphSeriesDot series={group.series} />
-                  {group.label}
-                  <span className="text-muted-foreground tabular-nums">
-                    {formatCount(group.count)}
-                  </span>
-                </ToggleGroupItem>
-              ))}
-              {fold.other.count > 0 ? (
-                <ToggleGroupItem value={OTHER_GROUP_KEY}>
-                  <GraphSeriesDot series={null} />
-                  {t('settings.analytics.otherSeries')}
-                  <span className="text-muted-foreground tabular-nums">
-                    {formatCount(fold.other.count)}
-                  </span>
-                </ToggleGroupItem>
-              ) : null}
-            </ToggleGroup>
-          </div>
+          <ToggleGroup
+            type="multiple"
+            size="xs"
+            value={legendValue}
+            onValueChange={(values) =>
+              setHidden(
+                new Set(legendKeys.filter((key) => !values.includes(key))),
+              )
+            }
+            aria-label={t('settings.sources.graphrag.view.typeFilter')}
+          >
+            {fold.groups.map((group) => (
+              <ToggleGroupItem key={group.key} value={group.key}>
+                <GraphSeriesDot series={group.series} />
+                {group.label}
+                <span className="text-muted-foreground tabular-nums">
+                  {formatCount(group.count)}
+                </span>
+              </ToggleGroupItem>
+            ))}
+            {fold.other.count > 0 ? (
+              <ToggleGroupItem value={OTHER_GROUP_KEY}>
+                <GraphSeriesDot series={null} />
+                {t('settings.analytics.otherSeries')}
+                <span className="text-muted-foreground tabular-nums">
+                  {formatCount(fold.other.count)}
+                </span>
+              </ToggleGroupItem>
+            ) : null}
+          </ToggleGroup>
           {otherLabels.length > 0 ? (
             <span className="text-muted-foreground text-xs">
               {t('settings.sources.graphrag.view.otherTypes', {

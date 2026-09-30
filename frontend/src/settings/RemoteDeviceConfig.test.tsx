@@ -6,7 +6,10 @@ vi.mock('react-redux', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, opts?: { time?: string }) =>
+      opts?.time ? `${key}(${opts.time})` : key,
+  }),
 }));
 
 vi.mock('../components/ToolIcon', () => ({ default: () => null }));
@@ -76,6 +79,23 @@ describe('RemoteDeviceConfig', () => {
       el.textContent?.includes('settings.devices.online'),
     );
     expect(pill?.dataset.variant).toBe('success');
+  });
+
+  it('says when an offline device was last seen with the shared relative time', async () => {
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60_000).toISOString();
+    await render(device({ last_seen_at: fiveMinutesAgo }));
+    const pill = badges().find((el) =>
+      el.textContent?.includes('settings.devices.offline'),
+    )!;
+    expect(pill.textContent).toContain('settings.devices.seen(5 minutes ago)');
+  });
+
+  it('shows the em dash for a device never seen', async () => {
+    await render(device({}));
+    const lastSeen = Array.from(container.querySelectorAll('dt')).find(
+      (el) => el.textContent === 'settings.devices.lastSeenLabel',
+    )!;
+    expect(lastSeen.nextElementSibling?.textContent).toBe('—');
   });
 
   it('shows an offline device as a neutral badge', async () => {

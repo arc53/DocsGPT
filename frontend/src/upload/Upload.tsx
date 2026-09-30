@@ -9,6 +9,7 @@ import { useDispatch, useSelector, useStore } from 'react-redux';
 import type { RootState } from '../store';
 import userService from '../api/services/userService';
 import { Alert, AlertDescription } from '../components/ui/alert';
+import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { FormField as UiFormField } from '../components/ui/form-field';
@@ -211,12 +212,14 @@ function Upload({
                     <ListRow
                       key={`${file.name}-${file.size}-${file.lastModified}`}
                       leading={
-                        <span
+                        <Avatar
                           aria-hidden="true"
-                          className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
+                          size="sm"
+                          shape="square"
+                          variant="icon"
                         >
                           <FileText className="size-4" />
-                        </span>
+                        </Avatar>
                       }
                       title={<span title={file.name}>{file.name}</span>}
                       description={formatBytes(file.size)}

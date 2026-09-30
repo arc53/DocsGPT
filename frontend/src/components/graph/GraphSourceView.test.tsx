@@ -323,15 +323,17 @@ describe('GraphSourceView', () => {
     );
     // "Person" and "PERSON" fold into one group.
     expect(items).toEqual(['Person2', 'Company1']);
-    // xs groups sit in a muted track (DESIGN.md ToggleGroup).
-    expect(legend.parentElement!.className).toContain('bg-muted');
+    // The group draws its own muted track (DESIGN.md ToggleGroup).
+    expect(legend.className).toContain('bg-muted');
+    expect(legend.parentElement!.className).not.toContain('bg-muted');
   });
 
   it('reads "Show top [50 | 100 | 250] by connections" at one size, the track holding only the group', async () => {
     await render();
     const limits = buttonByText('100')!.closest('[role="radiogroup"]')!;
-    const track = limits.parentElement!;
+    const track = limits;
     expect(track.className).toContain('bg-muted');
+    expect(track.parentElement!.className).not.toContain('bg-muted');
     expect(track.textContent).not.toContain(
       'settings.sources.graphrag.view.showTop',
     );

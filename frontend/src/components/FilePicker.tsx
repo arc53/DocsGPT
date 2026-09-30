@@ -24,6 +24,7 @@ import type { AppDispatch } from '../store';
 import { formatCount, formatDateOnly } from '../utils/dateTimeUtils';
 import { formatBytes } from '../utils/stringUtils';
 import SearchInput from './SearchInput';
+import { Avatar } from './ui/avatar';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -389,13 +390,13 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                         ).includes(file.id)}
                         onCheckedChange={() => toggle(file)}
                       />
-                      <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md">
+                      <Avatar size="sm" shape="square" variant="icon">
                         {folder ? (
                           <Folder className="size-4" aria-hidden />
                         ) : (
                           <File className="size-4" aria-hidden />
                         )}
-                      </span>
+                      </Avatar>
                     </>
                   }
                   title={file.name}

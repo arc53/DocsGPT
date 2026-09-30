@@ -9,6 +9,16 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+const view = vi.hoisted(() => ({
+  unwrap: vi.fn(() => Promise.resolve()),
+  dispatch: vi.fn(),
+  confirm: null as null | {
+    modalState: string;
+    handleSubmit: () => void | Promise<unknown>;
+  },
+}));
+view.dispatch.mockImplementation(() => ({ unwrap: view.unwrap }));
+
 const schedules = [
   {
     id: 's1',
@@ -41,7 +51,7 @@ vi.mock('react-redux', () => ({
       preference: { token: 't' },
       schedules: { byAgent: { a1: schedules }, runsBySchedule: {} },
     }),
-  useDispatch: () => vi.fn(() => ({ unwrap: () => Promise.resolve() })),
+  useDispatch: () => view.dispatch,
 }));
 vi.mock('../../api/services/userService', () => ({
   default: {
@@ -70,13 +80,33 @@ vi.mock('../../api/services/schedulesService', () => ({
   },
 }));
 vi.mock('./ScheduleRow', () => ({
-  default: ({ schedule }: { schedule: { id: string } }) => (
-    <div data-testid={`row-${schedule.id}`} />
+  default: ({
+    schedule,
+    onDelete,
+  }: {
+    schedule: { id: string };
+    onDelete: (schedule: unknown) => void;
+  }) => (
+    <div data-testid={`row-${schedule.id}`}>
+      <button
+        type="button"
+        data-testid={`delete-${schedule.id}`}
+        onClick={() => onDelete(schedule)}
+      />
+    </div>
   ),
 }));
 vi.mock('./ScheduleFormModal', () => ({ default: () => null }));
 vi.mock('./RunDetailDrawer', () => ({ default: () => null }));
-vi.mock('../../modals/ConfirmationModal', () => ({ default: () => null }));
+vi.mock('../../modals/ConfirmationModal', () => ({
+  default: (props: {
+    modalState: string;
+    handleSubmit: () => void | Promise<unknown>;
+  }) => {
+    view.confirm = props;
+    return null;
+  },
+}));
 vi.mock('../../navigation/SectionPageHeader', () => ({
   CurrentSectionHeader: () => <h1>Schedules</h1>,
 }));
@@ -111,6 +141,31 @@ describe('SchedulesView', () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+  });
+
+  // ConfirmationModal stays pending on the returned promise and keeps a
+  // failure in the dialog.
+  const confirmDelete = async () => {
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="delete-s1"]')!
+        .click(),
+    );
+    expect(view.confirm!.modalState).toBe('ACTIVE');
+    const result = view.confirm!.handleSubmit();
+    if (result) result.catch(() => undefined);
+    expect(result).toBeInstanceOf(Promise);
+    return result as Promise<unknown>;
+  };
+
+  it('returns the delete promise to the confirm', async () => {
+    view.unwrap.mockResolvedValueOnce(undefined);
+    await expect(confirmDelete()).resolves.toBeUndefined();
+  });
+
+  it('rejects a failed delete so the confirm keeps it open', async () => {
+    view.unwrap.mockRejectedValueOnce(new Error('nope'));
+    await expect(confirmDelete()).rejects.toThrow();
   });
 
   it('puts New schedule in the agent toolbar, with no second heading', async () => {

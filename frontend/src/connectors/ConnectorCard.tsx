@@ -116,10 +116,14 @@ export function connectorMeta(
         })}
       </span>
     );
-  if (accounts.length === 1)
+  if (accounts.length === 1) {
+    const line = accountLine(t, accounts[0]);
     return (
-      <span className="min-w-0 truncate">{accountLine(t, accounts[0])}</span>
+      <span className="min-w-0 truncate" title={line}>
+        {line}
+      </span>
     );
+  }
   return null;
 }
 

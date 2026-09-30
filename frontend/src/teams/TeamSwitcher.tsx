@@ -32,7 +32,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
+import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
+import { focusRing } from '../lib/utils';
 
 type TeamSwitcherProps = {
   // Called after a navigation/selection so callers (e.g. the mobile nav) can
@@ -91,9 +93,11 @@ export default function TeamSwitcher({
   const triggerIcon = currentTeam ? (
     // A solid square reads heavier than the dino, so keep the team avatar a
     // touch smaller (with a little margin to align with the wordmark).
-    <span className="bg-muted text-foreground mx-1 flex size-7 shrink-0 items-center justify-center rounded-md text-sm font-semibold">
-      {teamInitial}
-    </span>
+    <Avatar size="xs" shape="square" variant="icon" className="mx-1">
+      <span className="text-foreground text-sm font-semibold">
+        {teamInitial}
+      </span>
+    </Avatar>
   ) : (
     <img
       className="h-8 w-auto shrink-0"
@@ -112,7 +116,10 @@ export default function TeamSwitcher({
   const expandedBrand = currentTeam ? (
     <>
       {triggerIcon}
-      <span className="text-foreground min-w-0 flex-1 truncate text-xl font-semibold">
+      <span
+        className="text-foreground min-w-0 flex-1 truncate text-xl font-semibold"
+        title={currentTeam.name}
+      >
         {currentTeam.name}
       </span>
     </>
@@ -151,7 +158,7 @@ export default function TeamSwitcher({
           <button
             type="button"
             aria-label={t('teams.switcher.ariaLabel')}
-            className="hover:bg-sidebar-accent flex items-center justify-center rounded-full p-1 transition-colors"
+            className={`${focusRing} hover:bg-sidebar-accent flex items-center justify-center rounded-full p-1 transition-colors outline-none`}
           >
             {triggerIcon}
           </button>
@@ -172,15 +179,18 @@ export default function TeamSwitcher({
       <DropdownMenuContent align="start" className="w-62">
         <DropdownMenuLabel>
           <div className="flex items-center gap-2">
-            <span className="bg-muted flex size-7 shrink-0 items-center justify-center rounded-md">
+            <Avatar size="xs" shape="square" variant="icon">
               {currentTeam ? (
-                <Users className="size-4" />
+                <Users className="text-foreground size-4" />
               ) : (
-                <User className="size-4" />
+                <User className="text-foreground size-4" />
               )}
-            </span>
+            </Avatar>
             <span className="min-w-0 flex-1">
-              <span className="text-foreground block truncate text-sm font-semibold">
+              <span
+                className="text-foreground block truncate text-sm font-semibold"
+                title={currentTeam?.name}
+              >
                 {currentName}
               </span>
               <span className="text-muted-foreground block truncate text-xs font-normal">

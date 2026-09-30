@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => {
     Promise.resolve({ ok, json: () => Promise.resolve(body) });
   return {
     jsonResponse,
+    submitResult: undefined as void | Promise<unknown>,
     dispatch: vi.fn(),
     getAgent: vi.fn(() => jsonResponse({})),
     createAgent: vi.fn(() => jsonResponse({ message: 'Name is taken' }, false)),
@@ -160,14 +161,28 @@ vi.mock('../modals/ConfirmationModal', () => ({
   default: ({
     modalState,
     handleSubmit,
+    error,
   }: {
     modalState: string;
-    handleSubmit: () => void;
+    handleSubmit: () => void | Promise<unknown>;
+    error?: string;
   }) =>
     modalState === 'ACTIVE' ? (
-      <button type="button" data-testid="confirm-delete" onClick={handleSubmit}>
-        confirm
-      </button>
+      <>
+        <button
+          type="button"
+          data-testid="confirm-delete"
+          onClick={() => {
+            const result = handleSubmit();
+            // Mark it handled; the tests assert on it afterwards.
+            if (result) result.catch(() => undefined);
+            mocks.submitResult = result;
+          }}
+        >
+          confirm
+        </button>
+        <p data-testid="confirm-error">{error}</p>
+      </>
     ) : null,
 }));
 vi.mock('../preferences/PromptsModal', () => ({ default: () => null }));
@@ -757,6 +772,17 @@ describe('NewAgent form', () => {
     );
   });
 
+  it('gives each picker trigger the combobox role', async () => {
+    await render();
+    const triggers = Array.from(
+      container.querySelectorAll('[data-testid="picker"] > button'),
+    );
+    expect(triggers).toHaveLength(3);
+    triggers.forEach((trigger) =>
+      expect(trigger.getAttribute('role')).toBe('combobox'),
+    );
+  });
+
   it('puts Sources beside Tools in a two-up field grid', async () => {
     await render();
     const [sources, tools] = Array.from(
@@ -1249,7 +1275,7 @@ describe('NewAgent gating by role', () => {
     expect(await menuLabels()).toEqual([]);
   });
 
-  it('reports a failed delete in a toast instead of throwing', async () => {
+  it('keeps a failed delete in the dialog with the server message', async () => {
     mocks.deleteAgent.mockImplementation(() =>
       jsonResponse({ message: 'Only the owner can delete' }, false),
     );
@@ -1262,9 +1288,13 @@ describe('NewAgent gating by role', () => {
         .querySelector<HTMLButtonElement>('[data-testid="confirm-delete"]')!
         .click(),
     );
-    expect(mocks.dispatch).toHaveBeenCalledWith({
-      type: 'actionToast/showActionToast',
-      payload: { variant: 'destructive', message: 'Only the owner can delete' },
-    });
+    await expect(mocks.submitResult).rejects.toThrow();
+    await act(async () => undefined);
+    expect(
+      container.querySelector('[data-testid="confirm-error"]')!.textContent,
+    ).toBe('Only the owner can delete');
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'actionToast/showActionToast' }),
+    );
   });
 });

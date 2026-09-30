@@ -35,9 +35,11 @@ describe('Collapsible', () => {
       ]),
     );
     const inner = root.firstElementChild as HTMLElement;
+    // Open from the start: nothing moves, so nothing is clipped.
     expect(inner.className.split(' ')).toEqual(
-      expect.arrayContaining(['min-h-0', 'overflow-hidden']),
+      expect.arrayContaining(['min-h-0', 'min-w-0']),
     );
+    expect(inner.className).not.toContain('overflow-hidden');
     expect(inner.textContent).toBe('Body');
   });
 
@@ -54,6 +56,9 @@ describe('Collapsible', () => {
     expect(classes).toContain('grid-rows-[0fr]');
     expect(classes).toContain('opacity-0');
     expect(classes).not.toContain('grid-rows-[1fr]');
+    expect((root.firstElementChild as HTMLElement).className).toContain(
+      'overflow-hidden',
+    );
     expect(root.textContent).toBe('Body');
   });
 

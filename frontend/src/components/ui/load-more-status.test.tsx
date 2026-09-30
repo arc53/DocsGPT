@@ -58,6 +58,8 @@ describe('LoadMoreStatus', () => {
     expect(strip().textContent).toContain('pagination.olderFailed');
     const retry = strip().querySelector('button')!;
     expect(retry.textContent).toBe('retry');
+    // DESIGN.md: Retry is always a pill.
+    expect(retry.dataset.shape).toBe('pill');
     await act(async () => retry.click());
     expect(onRetry).toHaveBeenCalled();
   });

@@ -51,7 +51,14 @@ vi.mock('../api/services/modelService', () => ({
 }));
 vi.mock('../preferences/preferenceApi', () => ({
   getDocs: vi.fn(async () => []),
-  getDocsWithPagination: vi.fn(async () => null),
+  // null is a failed load; a page resolves with the docs.
+  getDocsWithPagination: vi.fn(async () => ({
+    docs: [],
+    totalDocuments: 1,
+    totalPages: 1,
+    currentPage: 1,
+    nextCursor: '',
+  })),
 }));
 
 vi.mock('../components/Chunks', () => ({ default: view('chunks') }));
@@ -171,6 +178,36 @@ describe('Sources access', () => {
     dispatch.mock.calls
       .map(([action]) => action)
       .filter((action) => action?.type === 'actionToast/showActionToast');
+
+  // The real ConfirmationModal: pending on the delete's promise, and a
+  // rejection keeps the dialog open with its message.
+  it('keeps a failed delete in the confirm dialog with its message', async () => {
+    const handleDeleteDocument = vi.fn(() =>
+      Promise.reject(new Error('settings.sources.errors.forbidden')),
+    );
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <Sources
+            paginatedDocuments={[
+              doc({ access: 'owner', allowed_actions: [...OWNER, 'use'] }),
+            ]}
+            handleDeleteDocument={handleDeleteDocument}
+          />
+        </MemoryRouter>,
+      );
+    });
+    await menuItems();
+    await clickItem('convTile.delete');
+    const submit = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ).find((b) => b.textContent === 'convTile.delete')!;
+    await act(async () => submit.click());
+    expect(handleDeleteDocument).toHaveBeenCalled();
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog!.textContent).toContain('settings.sources.errors.forbidden');
+  });
 
   it('owner: Edit config, Test retrieval, Convert, Share and Delete', async () => {
     await render(
@@ -603,6 +640,30 @@ describe('Sources paging', () => {
 
   const stubWidth = (desktop: boolean) =>
     vi.stubGlobal('matchMedia', () => ({ matches: desktop }));
+
+  it('shows a failed load as an error with Retry, not "no sources"', async () => {
+    fetchPage.mockResolvedValue(null);
+    await render();
+    const state = container.querySelector<HTMLElement>(
+      '[data-slot="empty-state"][data-tone="destructive"]',
+    )!;
+    expect(state).not.toBeNull();
+    expect(state.textContent).toContain('settings.sources.loadError');
+    expect(
+      container.querySelector('[data-testid="menu-button-src-1"]'),
+    ).toBeNull();
+    fetchPage.mockResolvedValue(response(1));
+    const retry = Array.from(state.querySelectorAll('button')).find(
+      (b) => b.textContent === 'retry',
+    )!;
+    await act(async () => retry.click());
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+    expect(
+      container.querySelector(
+        '[data-slot="empty-state"][data-tone="destructive"]',
+      ),
+    ).toBeNull();
+  });
 
   it('asks for 24 per page on desktop', async () => {
     stubWidth(true);

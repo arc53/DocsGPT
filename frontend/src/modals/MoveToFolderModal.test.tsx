@@ -6,11 +6,12 @@ vi.mock('../hooks', () => ({
 }));
 
 const getAgentFolders = vi.fn();
+const moveAgentToFolder = vi.fn();
 vi.mock('../api/services/userService', () => ({
   default: {
     getAgentFolders: (...args: unknown[]) => getAgentFolders(...args),
     createAgentFolder: vi.fn(),
-    moveAgentToFolder: vi.fn(),
+    moveAgentToFolder: (...args: unknown[]) => moveAgentToFolder(...args),
   },
 }));
 
@@ -268,5 +269,23 @@ describe('MoveToFolderModal', () => {
   it('leaves the breadcrumb widths to the primitives', async () => {
     await render();
     expect(trail()?.hasAttribute('class')).toBe(false);
+  });
+
+  it('shows pending on Move while the request runs', async () => {
+    let finish!: (value: unknown) => void;
+    moveAgentToFolder
+      .mockReset()
+      .mockImplementation(() => new Promise((resolve) => (finish = resolve)));
+    await render();
+    const move = () =>
+      Array.from(document.body.querySelectorAll('button')).find(
+        (b) => b.textContent === 'agents.folders.move',
+      )!;
+    await act(async () => move().click());
+    expect(move().getAttribute('aria-busy')).toBe('true');
+    await act(async () => move().click());
+    expect(moveAgentToFolder).toHaveBeenCalledTimes(1);
+    await act(async () => finish({ ok: false }));
+    expect(move().getAttribute('aria-busy')).toBeNull();
   });
 });

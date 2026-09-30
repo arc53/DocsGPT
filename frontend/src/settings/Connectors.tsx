@@ -9,12 +9,8 @@ import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../components/ui/dropdown-menu';
+import { focusRing } from '../lib/utils';
+import { ActionMenu } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import ConnectionDrawer from '../connectors/ConnectionDrawer';
@@ -203,25 +199,20 @@ export default function Connectors() {
           />
         }
         action={
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+          <ActionMenu
+            trigger={
               <Button type="button" size="field" shape="pill">
                 {t('settings.connectors.addCustom')}
                 <ChevronDown />
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {custom.map((connector) => (
-                <DropdownMenuItem
-                  key={connector.key}
-                  onSelect={() => launch(connector)}
-                >
-                  <ConnectorIcon icon={connector.icon} className="size-4" />
-                  {connectorName(t, connector)}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+            }
+            menuWidth="sm"
+            options={custom.map((connector) => ({
+              label: connectorName(t, connector),
+              icon: <ConnectorIcon icon={connector.icon} className="size-4" />,
+              onClick: () => launch(connector),
+            }))}
+          />
         }
         divider
       >
@@ -230,22 +221,19 @@ export default function Connectors() {
         capability === 'tools' ? (
           <div className="mb-6 flex flex-wrap items-center gap-3">
             {filters.length > 1 ? (
-              <div className="bg-muted w-fit rounded-full p-1">
-                <ToggleGroup
-                  type="single"
-                  size="xs"
-                  value={filter}
-                  onValueChange={(value) => value && setFilter(value as Filter)}
-                  aria-label={t('settings.connectors.filterLabel')}
-                >
-                  {filters.map((key) => (
-                    <ToggleGroupItem key={key} value={key}>
-                      {t(`settings.connectors.filters.${key}`)}{' '}
-                      {formatCount(counts[key])}
-                    </ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
-              </div>
+              <ToggleGroup
+                type="single"
+                value={filter}
+                onValueChange={(value) => value && setFilter(value as Filter)}
+                aria-label={t('settings.connectors.filterLabel')}
+              >
+                {filters.map((key) => (
+                  <ToggleGroupItem key={key} value={key}>
+                    {t(`settings.connectors.filters.${key}`)}{' '}
+                    {formatCount(counts[key])}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
             ) : null}
             {capability === 'sync' || capability === 'tools' ? (
               <Badge>
@@ -253,7 +241,7 @@ export default function Connectors() {
                 <button
                   type="button"
                   aria-label={t('settings.connectors.capabilityFilter.clear')}
-                  className="hover:text-primary/70 flex size-3 cursor-pointer items-center justify-center"
+                  className={`${focusRing} hover:text-primary/70 flex size-3 cursor-pointer items-center justify-center rounded-full outline-none`}
                   onClick={clearCapability}
                 >
                   <X className="size-3" aria-hidden="true" />

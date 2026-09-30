@@ -183,7 +183,11 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
       message={t('settings.sources.syncConfirmation', { sourceName })}
       modalState={syncConfirmationModal}
       setModalState={setSyncConfirmationModal}
-      handleSubmit={handleSync}
+      // The sync runs for minutes with its own progress, so the dialog
+      // closes at once rather than waiting on it.
+      handleSubmit={() => {
+        void handleSync();
+      }}
       submitLabel={t('settings.sources.sync')}
       cancelLabel={t('cancel')}
     />

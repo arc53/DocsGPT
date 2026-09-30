@@ -70,6 +70,8 @@ export default function Tools() {
     UserToolType | APIToolType | null
   >(null);
   const [loading, setLoading] = useLoaderState(false);
+  // The first load failed: an error with Retry, not the empty state.
+  const [loadFailed, setLoadFailed] = React.useState(false);
   const [deleteModalState, setDeleteModalState] =
     React.useState<ActiveState>('INACTIVE');
   const [toolToDelete, setToolToDelete] = React.useState<UserToolType | null>(
@@ -117,14 +119,10 @@ export default function Tools() {
     setDeleteModalState('ACTIVE');
   };
 
-  const confirmDeleteTool = () => {
+  // Returned to ConfirmationModal: it stays pending while the delete runs,
+  // closes on success and keeps a failure in the dialog.
+  const confirmDeleteTool = async () => {
     if (!toolToDelete) return;
-    const afterDelete = () => {
-      getUserTools();
-      fetchMcpStatuses();
-      setDeleteModalState('INACTIVE');
-      setToolToDelete(null);
-    };
     // Remote-device tools front a paired device + live session token. Revoke
     // the device server-side (marks revoked, closes any session, invalidates
     // the token, and drops the user_tools row) instead of deleting only the
@@ -134,27 +132,20 @@ export default function Tools() {
         ? toolToDelete.config?.device_id
         : undefined;
     if (deviceId) {
-      devicesService
-        .revoke(deviceId, token)
-        .then(afterDelete)
-        .catch((error) => console.error('Failed to revoke device:', error));
-      return;
-    }
-    userService
-      .deleteTool({ id: toolToDelete.id }, token)
-      .then((response: Response) => {
-        if (response.ok) return afterDelete();
-        setDeleteModalState('INACTIVE');
-        dispatch(
-          showActionToast({
-            variant: 'destructive',
-            message: t('settings.tools.deleteFailed'),
-          }),
-        );
-      })
-      .catch((error: unknown) =>
-        console.error('Failed to delete tool:', error),
+      const result = await devicesService.revoke(deviceId, token);
+      if (result?.success === false) {
+        throw new Error('Failed to revoke device');
+      }
+    } else {
+      const response: Response = await userService.deleteTool(
+        { id: toolToDelete.id },
+        token,
       );
+      if (!response.ok) throw new Error('Failed to delete tool');
+    }
+    getUserTools();
+    fetchMcpStatuses();
+    setToolToDelete(null);
   };
 
   const handleReconnect = (tool: UserToolType) => {
@@ -284,6 +275,7 @@ export default function Tools() {
     userService
       .getUserTools(token)
       .then((res) => {
+        if (!res.ok) throw new Error(`Failed to load tools (${res.status})`);
         return res.json();
       })
       .then((data) => {
@@ -296,10 +288,12 @@ export default function Tools() {
           (tool: UserToolType) => tool.default || !tool.builtin,
         );
         setUserTools(filtered);
+        setLoadFailed(false);
         setLoading(false);
       })
       .catch((error) => {
         console.error('Error fetching tools:', error);
+        setLoadFailed(true);
         setLoading(false);
       });
   };
@@ -627,6 +621,13 @@ export default function Tools() {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 <SkeletonLoader component="toolCards" count={6} />
               </div>
+            ) : loadFailed ? (
+              <EmptyState
+                tone="destructive"
+                illustration="none"
+                title={t('settings.tools.loadError')}
+                onRetry={getUserTools}
+              />
             ) : userTools.length === 0 ? (
               <EmptyState
                 title={t('settings.tools.noToolsYet')}
@@ -699,6 +700,7 @@ export default function Tools() {
             modalState={deleteModalState}
             setModalState={setDeleteModalState}
             handleSubmit={confirmDeleteTool}
+            error={t('settings.tools.deleteFailed')}
             submitLabel={t('settings.tools.delete')}
             variant="destructive"
           />

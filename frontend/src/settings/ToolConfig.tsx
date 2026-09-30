@@ -723,7 +723,10 @@ export default function ToolConfig({
                                       {actionTitle(action.name)}
                                     </span>
                                     {action.description && (
-                                      <span className="text-muted-foreground hidden truncate text-sm md:block md:max-w-xs lg:max-w-md">
+                                      <span
+                                        className="text-muted-foreground hidden truncate text-sm md:block md:max-w-xs lg:max-w-md"
+                                        title={action.description}
+                                      >
                                         {action.description}
                                       </span>
                                     )}
@@ -979,6 +982,8 @@ export default function ToolConfig({
             modalState="ACTIVE"
             setModalState={(state) => setShowUnsavedModal(state === 'ACTIVE')}
             submitLabel={t('settings.tools.saveAndLeave')}
+            // Pending while the save runs; a failed save rejects, so the
+            // error stays in this dialog and the page stays put.
             handleSubmit={async () => {
               if (!validateConfig()) {
                 setShowUnsavedModal(false);
@@ -990,15 +995,13 @@ export default function ToolConfig({
 
               try {
                 await persistTool(configToSave);
-                setShowUnsavedModal(false);
-                handleGoBack();
-              } catch {
-                setSaveError(t('settings.tools.saveFailed'));
-                setShowUnsavedModal(false);
               } finally {
                 setSaving(false);
               }
+              setShowUnsavedModal(false);
+              handleGoBack();
             }}
+            error={t('settings.tools.saveFailed')}
             cancelLabel={t('settings.tools.leaveWithoutSaving')}
             handleCancel={() => {
               setShowUnsavedModal(false);
@@ -1192,7 +1195,10 @@ function APIToolConfig({
                             {actionTitle(action.name)}
                           </span>
                           {action.description && (
-                            <span className="text-muted-foreground hidden truncate text-sm md:block md:max-w-xs lg:max-w-md">
+                            <span
+                              className="text-muted-foreground hidden truncate text-sm md:block md:max-w-xs lg:max-w-md"
+                              title={action.description}
+                            >
                               {action.description}
                             </span>
                           )}

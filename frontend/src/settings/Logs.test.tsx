@@ -1,4 +1,4 @@
-import { act } from 'react';
+import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
 vi.mock('react-redux', () => ({
@@ -7,6 +7,12 @@ vi.mock('react-redux', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
+}));
+
+// The loader's 250ms hide delay would outlast the test.
+vi.mock('../hooks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../hooks')>()),
+  useLoaderState: (initial: boolean) => useState(initial),
 }));
 
 vi.mock('../hooks/useLoadMore', () => ({ useScrollSentinel: () => vi.fn() }));
@@ -70,5 +76,53 @@ describe('Logs rows', () => {
     expect(body.textContent).toContain('Three carriers.');
     await act(async () => toggle.click());
     expect(body.dataset.state).toBe('closed');
+  });
+});
+
+describe('Logs load failure', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    getLogs.mockReset();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it('shows a failed first page as an error with Retry, not "no logs"', async () => {
+    getLogs.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+    });
+    await act(async () => root.render(<Logs />));
+    const state = container.querySelector<HTMLElement>(
+      '[data-slot="empty-state"][data-tone="destructive"]',
+    )!;
+    expect(state).not.toBeNull();
+    expect(state.textContent).toContain('settings.logs.loadError');
+    expect(container.textContent).not.toContain('settings.logs.noLogs');
+
+    getLogs.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ logs: [log], has_more: false }),
+    });
+    const retry = Array.from(state.querySelectorAll('button')).find(
+      (b) => b.textContent === 'retry',
+    )!;
+    await act(async () => retry.click());
+    expect(getLogs).toHaveBeenCalledTimes(2);
+    expect(
+      container.querySelector(
+        '[data-slot="empty-state"][data-tone="destructive"]',
+      ),
+    ).toBeNull();
+    expect(container.textContent).toContain('[stream_answer]');
   });
 });

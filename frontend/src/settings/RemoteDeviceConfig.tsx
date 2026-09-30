@@ -1,9 +1,7 @@
-import { ChevronRight, ShieldAlert } from 'lucide-react';
+import { ShieldAlert } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-
-import { cn } from '@/lib/utils';
 
 import devicesService, {
   ApprovalMode,
@@ -17,7 +15,7 @@ import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
-import { Collapsible } from '../components/ui/collapsible';
+import { Collapsible, CollapsibleTrigger } from '../components/ui/collapsible';
 import {
   DescriptionItem,
   DescriptionList,
@@ -36,7 +34,11 @@ import {
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
-import { formatDateTime } from '../utils/dateTimeUtils';
+import {
+  EMPTY_VALUE,
+  formatRelative,
+  formatTimestamp,
+} from '../utils/dateTimeUtils';
 import { UserToolType } from './types';
 
 /** ms-since-last-seen threshold for the online pill. */
@@ -47,26 +49,6 @@ function isOnline(device: Device | null): boolean {
   const t = Date.parse(device.last_seen_at);
   if (Number.isNaN(t)) return false;
   return Date.now() - t < ONLINE_WINDOW_MS;
-}
-
-function formatTimestamp(value: string | null | undefined): string {
-  return value ? formatDateTime(value) : '-';
-}
-
-/** Compact relative span (e.g. "12s", "5m", "3h", "2d") since `value`. */
-function formatRelative(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const t = Date.parse(value);
-  if (Number.isNaN(t)) return null;
-  const diff = Math.max(0, Date.now() - t);
-  const s = Math.floor(diff / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.floor(h / 24);
-  return `${d}d`;
 }
 
 interface Props {
@@ -166,7 +148,7 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
   const pillText =
     (online ? t('settings.devices.online') : t('settings.devices.offline')) +
     (lastSeenAgo
-      ? ` · ${t('settings.devices.seenAgo', { time: lastSeenAgo })}`
+      ? ` · ${t('settings.devices.seen', { time: lastSeenAgo })}`
       : '');
 
   if (loading && !device) {
@@ -312,8 +294,11 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
           </DescriptionItem>
           <DescriptionItem label={t('settings.devices.deviceIdLabel')}>
             <div className="flex flex-wrap items-center gap-2">
-              <code className="text-foreground bg-muted max-w-full truncate rounded-md px-2 py-0.5 font-mono text-xs">
-                {deviceId || '-'}
+              <code
+                className="text-foreground bg-muted max-w-full truncate rounded-md px-2 py-0.5 font-mono text-xs"
+                title={deviceId || undefined}
+              >
+                {deviceId || EMPTY_VALUE}
               </code>
               {deviceId && <CopyButton textToCopy={deviceId} />}
             </div>
@@ -336,29 +321,18 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
           size="xs"
           title={t('settings.devices.auditTitle')}
         />
-        <Button
-          type="button"
-          variant="link"
-          size="sm"
-          aria-expanded={auditOpen}
-          aria-controls={auditId}
-          className="-ml-3 w-fit justify-start"
-          onClick={() => {
-            setAuditOpen(!auditOpen);
+        <CollapsibleTrigger
+          open={auditOpen}
+          onOpenChange={(open) => {
+            setAuditOpen(open);
             setAuditLoaded(true);
           }}
+          controls={auditId}
         >
-          <ChevronRight
-            aria-hidden
-            className={cn(
-              'transition-transform duration-200',
-              auditOpen && 'rotate-90',
-            )}
-          />
           {auditOpen
             ? t('settings.devices.auditHide')
             : t('settings.devices.auditShow')}
-        </Button>
+        </CollapsibleTrigger>
         <Collapsible open={auditOpen} id={auditId}>
           {/* Fetched on first open, then kept so closing can animate. */}
           {auditLoaded && <DeviceAuditList deviceId={deviceId} token={token} />}

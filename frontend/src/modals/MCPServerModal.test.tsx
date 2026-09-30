@@ -245,12 +245,19 @@ describe('MCPServerModal', () => {
     const toggle = advancedToggle();
     expect(toggle).toBeDefined();
     expect(toggle!.getAttribute('aria-expanded')).toBe('false');
-    expect(timeoutInput()).toBeNull();
+    // Folded: the fields wait in a closed, inert Collapsible.
+    const body = document.getElementById(
+      toggle!.getAttribute('aria-controls')!,
+    )!;
+    expect(body.dataset.state).toBe('closed');
+    expect(body.hasAttribute('inert')).toBe(true);
+    expect(body.contains(timeoutInput())).toBe(true);
     const chevron = toggle!.querySelector('svg');
     expect(chevron?.getAttribute('class')).not.toContain('rotate-90');
 
     await act(async () => toggle!.click());
     expect(toggle!.getAttribute('aria-expanded')).toBe('true');
+    expect(body.dataset.state).toBe('open');
     expect(chevron?.getAttribute('class')).toContain('rotate-90');
     const input = timeoutInput()!;
     // The toggle comes first, then the fields it opened.

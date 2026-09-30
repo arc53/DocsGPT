@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-import { CircleAlert } from 'lucide-react';
+import { ChevronDown, CircleAlert } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import {
   oneLight,
@@ -16,12 +16,7 @@ import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
 import { IconButton } from './ui/icon-button';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from './ui/dropdown-menu';
+import { ActionMenu } from './ui/dropdown-menu';
 import { MermaidRendererProps } from './types';
 
 const MermaidRenderer: React.FC<MermaidRendererProps> = ({
@@ -278,23 +273,19 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
           />
 
           {showDiagramOptions && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <ActionMenu
+              trigger={
                 <Button type="button" variant="ghost-muted" size="xs">
-                  {t('mermaid.download')} <span className="ml-1">▼</span>
+                  {t('mermaid.download')}
+                  <ChevronDown aria-hidden="true" />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                {downloadOptions.map((option) => (
-                  <DropdownMenuItem
-                    key={option.label}
-                    onSelect={() => option.action()}
-                  >
-                    {option.label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              }
+              menuWidth="fixed"
+              options={downloadOptions.map((option) => ({
+                label: option.label,
+                onClick: () => option.action(),
+              }))}
+            />
           )}
 
           {showDiagramOptions && (

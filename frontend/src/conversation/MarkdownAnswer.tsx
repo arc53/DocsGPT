@@ -38,7 +38,7 @@ import {
   type SandboxArtifact,
   sandboxUrlTransform,
 } from './sandboxLinks';
-import { cn } from '@/lib/utils';
+import { cn, focusRing } from '@/lib/utils';
 
 // A formula KaTeX cannot typeset (a half-streamed one, most often) shows its
 // source in the muted text colour rather than KaTeX's red.
@@ -222,7 +222,12 @@ export default function MarkdownAnswer({
           );
         }
         return (
-          <a href={href} target="_blank" rel="noopener noreferrer">
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(focusRing, 'rounded-sm outline-none')}
+          >
             {children}
           </a>
         );

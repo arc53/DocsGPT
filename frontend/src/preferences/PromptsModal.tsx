@@ -490,8 +490,9 @@ export default function PromptsModal({
     type: string;
     content?: string;
   };
-  handleAddPrompt?: () => void;
-  handleEditPrompt?: (id: string, type: string) => void;
+  /** Return the request's promise to show pending on Save while it runs. */
+  handleAddPrompt?: () => void | Promise<unknown>;
+  handleEditPrompt?: (id: string, type: string) => void | Promise<unknown>;
   onDuplicate?: () => void;
   duplicateSourceName?: string | null;
   /** Open an EDIT prompt as a view: the caller may not edit it. */
@@ -526,6 +527,18 @@ export default function PromptsModal({
   // edit); a shared one the role can't change gets the shared notice.
   const showViewOnlyNotice = isReadOnly && !isBuiltIn;
   const closeModal = () => setModalState('INACTIVE');
+
+  // Save shows pending while the caller's request runs; a second click
+  // meanwhile is ignored.
+  const [saving, setSaving] = React.useState(false);
+  const save = (submit: () => void | Promise<unknown>) => {
+    if (saving) return;
+    const result = submit();
+    if (!result || typeof result.then !== 'function') return;
+    setSaving(true);
+    const done = () => setSaving(false);
+    result.then(done, done);
+  };
 
   let view;
   let title: string;
@@ -592,7 +605,8 @@ export default function PromptsModal({
         cancelLabel={t('modals.prompts.cancel')}
         onCancel={closeModal}
         submitLabel={t('modals.prompts.save')}
-        onSubmit={handleAddPrompt}
+        onSubmit={() => handleAddPrompt && save(handleAddPrompt)}
+        pending={saving}
         disabled={disableSave}
       />
     );
@@ -604,8 +618,12 @@ export default function PromptsModal({
         onCancel={closeModal}
         submitLabel={t('modals.prompts.save')}
         onSubmit={() =>
-          handleEditPrompt?.(currentPromptEdit.id, currentPromptEdit.type)
+          handleEditPrompt &&
+          save(() =>
+            handleEditPrompt(currentPromptEdit.id, currentPromptEdit.type),
+          )
         }
+        pending={saving}
         disabled={disableSave || !editPromptName}
         submitProps={{
           title:

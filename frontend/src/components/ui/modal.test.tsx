@@ -6,6 +6,9 @@ const media = { isMobile: false, isDesktop: true };
 vi.mock('../../hooks', () => ({
   useMediaQuery: () => media,
 }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => `t:${key}` }),
+}));
 
 import { Button } from './button';
 import { Modal, ModalActions } from './modal';
@@ -37,6 +40,20 @@ const settle = () =>
 
 const content = () =>
   document.querySelector<HTMLElement>('[data-slot="modal-content"]')!;
+
+describe('Modal close button', () => {
+  it('names the corner X through the shared close key', async () => {
+    await render(
+      <Modal open onOpenChange={() => undefined} title="Rename">
+        Body
+      </Modal>,
+    );
+    const close = document.querySelector<HTMLButtonElement>(
+      '[data-slot="modal-content"] button[aria-label]:not([data-slot=modal-footer] *)',
+    )!;
+    expect(close.getAttribute('aria-label')).toBe('t:close');
+  });
+});
 
 describe('Modal header', () => {
   it('draws the title at 20px with the description 8px under it', async () => {

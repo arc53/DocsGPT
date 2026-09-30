@@ -7,17 +7,13 @@ import {
 } from '@/components/ui/description-list';
 import { SectionHeader } from '@/components/ui/section-header';
 import { PanelBody, PanelHeader, SidePanel } from '@/components/ui/side-panel';
-import { formatDateTime } from '../../utils/dateTimeUtils';
+import { formatTimestamp } from '../../utils/dateTimeUtils';
 import type { ScheduleRun } from '../types/schedule';
 import ScheduleStatusBadge from './StatusBadge';
 
 export type RunDetailDrawerProps = {
   run: ScheduleRun | null;
   onClose: () => void;
-};
-
-const formatTimestamp = (value?: string | null): string => {
-  return value ? formatDateTime(value) : '—';
 };
 
 /** Side sheet with a single run's output / error (terminal-state only). */

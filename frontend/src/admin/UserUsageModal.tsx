@@ -211,7 +211,7 @@ export default function UserUsageModal({
             />
           </div>
 
-          <Card variant="outline" padding="default" className="h-66">
+          <Card variant="outline" className="h-66">
             <div className="flex items-center justify-between">
               <SectionHeader as="h3" size="xs" title="Daily tokens" />
               <div id="admin-user-usage-legend" className="flex" />

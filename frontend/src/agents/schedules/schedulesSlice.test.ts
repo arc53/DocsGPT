@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+const service = vi.hoisted(() => ({ remove: vi.fn() }));
+vi.mock('../../api/services/schedulesService', () => ({ default: service }));
 
 import {
   sseEventReceived,
@@ -7,6 +10,7 @@ import {
 import type { Schedule, ScheduleRun } from '../types/schedule';
 import reducer, {
   applyEvent,
+  deleteSchedule,
   loadRunsForSchedule,
   RUNS_PAGE_SIZE,
   selectRunsEnd,
@@ -313,5 +317,29 @@ describe('loadRunsForSchedule paging', () => {
     expect(new Set(ids).size).toBe(ids.length);
     // Shorter than a page: there are no older runs.
     expect(selectRunsEnd(wrap(state), 'sched-1')).toBe(true);
+  });
+});
+
+// A refused delete rejects, so the row stays and the confirm shows the error.
+describe('deleteSchedule', () => {
+  const run = (result: unknown) => {
+    service.remove.mockResolvedValue(result);
+    const dispatch = vi.fn();
+    return deleteSchedule({ id: 'sched-1', token: null })(
+      dispatch,
+      () => ({}),
+      undefined,
+    );
+  };
+
+  it('fulfils with the id when the server deletes it', async () => {
+    const action = await run({ success: true });
+    expect(action.type).toBe(deleteSchedule.fulfilled.type);
+    expect(action.payload).toBe('sched-1');
+  });
+
+  it('rejects when the server refuses the delete', async () => {
+    const action = await run({ success: false, error: 'Not allowed' });
+    expect(action.type).toBe(deleteSchedule.rejected.type);
   });
 });

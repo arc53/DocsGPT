@@ -62,7 +62,10 @@ function PolicyCells({ policy }: { policy: QuotaPolicy }) {
       <TableCell className="tabular-nums">
         {describeBudget(policy.cost_limit_usd, policy.cost_unlimited, 'cost')}
       </TableCell>
-      <TableCell className="text-muted-foreground max-w-56 truncate">
+      <TableCell
+        className="text-muted-foreground max-w-56 truncate"
+        title={policy.note || undefined}
+      >
         {policy.note || '—'}
       </TableCell>
       <TableCell className="text-muted-foreground whitespace-nowrap">

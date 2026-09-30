@@ -202,7 +202,12 @@ describe('GuardrailsSection', () => {
     const panel = q('guardrails-section')!;
     expect(panel.className.split(' ')).toContain('gap-5');
     expect(panel.className.split(' ')).not.toContain('gap-3');
-    const body = panel.children[1] as HTMLElement;
+    // Header and Collapsible share one wrapper; the body carries the
+    // panel's gap-5 as padding, so it folds away with it.
+    const toggle = q('guardrails-toggle')!;
+    const body = document.getElementById(toggle.getAttribute('aria-controls')!)!
+      .firstElementChild!.firstElementChild as HTMLElement;
+    expect(body.className.split(' ')).toContain('pt-5');
     expect(body.className.split(' ')).toEqual(
       expect.arrayContaining(['flex', 'flex-col', 'gap-5']),
     );
@@ -301,6 +306,21 @@ describe('GuardrailsSection', () => {
     );
   });
 
+  it('marks each stage chip pressed while it is on', async () => {
+    await render();
+    const chips = Array.from(
+      container.querySelectorAll<HTMLElement>(
+        '[data-testid^="guardrail-stage-"]',
+      ),
+    );
+    expect(chips.length).toBeGreaterThan(0);
+    for (const chip of chips) {
+      expect(chip.getAttribute('aria-pressed')).toBe(
+        String(chip.dataset.variant === 'secondary'),
+      );
+    }
+  });
+
   it('renders remove actions as ghost-destructive xs buttons', async () => {
     await render();
     const remove = q('guardrail-remove-pii-input');
@@ -384,6 +404,10 @@ describe('GuardrailsSection', () => {
     });
     expect(q('guardrail-pii-EMAIL')?.dataset.variant).toBe('secondary');
     expect(q('guardrail-pii-PHONE')?.dataset.variant).toBe('ghost-muted');
+    expect(q('guardrail-pii-EMAIL')?.getAttribute('aria-pressed')).toBe('true');
+    expect(q('guardrail-pii-PHONE')?.getAttribute('aria-pressed')).toBe(
+      'false',
+    );
   });
 
   it('shows a failed catalog load as a destructive empty state with Retry', async () => {

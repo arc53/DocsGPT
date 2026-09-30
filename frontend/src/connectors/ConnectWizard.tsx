@@ -1,4 +1,4 @@
-import { ChevronRight, CircleAlert, CircleCheck } from 'lucide-react';
+import { CircleAlert, CircleCheck } from 'lucide-react';
 import { nanoid } from '@reduxjs/toolkit';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -6,7 +6,6 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
 import { envVar } from '@/env';
-import { cn } from '@/lib/utils';
 import { baseURL } from '../api/client';
 import connectorsService from '../api/services/connectorsService';
 import userService from '../api/services/userService';
@@ -14,8 +13,9 @@ import { useConnectorAuth } from '../components/ConnectorAuth';
 import { FilePicker } from '../components/FilePicker';
 import GoogleDrivePicker from '../components/GoogleDrivePicker';
 import { Alert, AlertDescription } from '../components/ui/alert';
+import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
-import { Collapsible } from '../components/ui/collapsible';
+import { Collapsible, CollapsibleTrigger } from '../components/ui/collapsible';
 import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
 import { Modal, ModalActions } from '../components/ui/modal';
@@ -634,6 +634,7 @@ export default function ConnectWizard({
       {mode !== 'reconnect' && methods.length > 1 && (
         <ToggleGroup
           type="single"
+          fill
           value={method}
           onValueChange={(value) =>
             value && setChosenMethod(value as ConnectorAuthKind)
@@ -879,27 +880,16 @@ export default function ConnectWizard({
       )}
       {toolCount > 0 && activeConnectionId && (
         <div className="flex flex-col gap-3">
-          <Button
-            type="button"
-            variant="link"
-            size="sm"
-            aria-expanded={toolsOpen}
-            aria-controls={toolsId}
-            className="-ml-3 w-fit justify-start"
-            onClick={() => setToolsOpen(!toolsOpen)}
+          <CollapsibleTrigger
+            open={toolsOpen}
+            onOpenChange={setToolsOpen}
+            controls={toolsId}
           >
-            <ChevronRight
-              aria-hidden
-              className={cn(
-                'transition-transform duration-200',
-                toolsOpen && 'rotate-90',
-              )}
-            />
             {t('settings.connectors.wizard.toolsHeading', {
               count: toolCount,
               formatted: formatCount(toolCount),
             })}
-          </Button>
+          </CollapsibleTrigger>
           <Collapsible open={toolsOpen} id={toolsId}>
             <div className="flex flex-col gap-3">
               {tools.map((tool) => (
@@ -1026,9 +1016,9 @@ export default function ConnectWizard({
       title={title}
       description={description}
       leading={
-        <span className="bg-muted flex size-12 shrink-0 items-center justify-center rounded-xl">
+        <Avatar size="xl" shape="square" variant="icon">
           <ConnectorIcon icon={connector.icon} className="size-7" />
-        </span>
+        </Avatar>
       }
       size="lg"
       footer={footer}

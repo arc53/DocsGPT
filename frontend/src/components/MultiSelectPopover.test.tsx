@@ -110,6 +110,20 @@ describe('MultiSelectPopover', () => {
     expect(rows[0].querySelector('svg')).toBeNull();
   });
 
+  it("leaves aria-selected to cmdk's highlight, not the chosen state", () => {
+    render();
+    const rows = document.querySelectorAll('[data-slot="command-item"]');
+    // cmdk highlights the first row; the chosen row is data-checked only.
+    expect(rows[0].getAttribute('aria-selected')).toBe('true');
+    expect(rows[1].getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('lets Radix announce the open state on the trigger', () => {
+    render();
+    const trigger = container.querySelector('button');
+    expect(trigger?.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('runs the stock search strip edge to edge over an unframed list', () => {
     act(() => {
       root.render(

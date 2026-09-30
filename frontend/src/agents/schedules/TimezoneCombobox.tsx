@@ -30,17 +30,20 @@ export type TimezoneComboboxProps = {
 
 /**
  * Case-insensitive substring match against the tz string with separators
- * normalized to spaces — so typing "warsaw", "Warsaw", or "europe war" all
- * match ``Europe/Warsaw``.
+ * normalized to spaces on both sides — so typing "warsaw", "Warsaw",
+ * "europe war" or "Europe/W" all match ``Europe/Warsaw``.
  */
 export function matchesTimezone(option: string, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  const haystack = option.toLowerCase().replace(/[/_]/g, ' ');
+  const normalise = (text: string) => text.replace(/[/_]/g, ' ');
+  const haystack = normalise(option.toLowerCase());
+  // Split on typed spaces only; a separator inside a token ("asia/d",
+  // "los_ang") is normalised like the zone name, so it stays one phrase.
   return q
     .split(/\s+/)
     .filter(Boolean)
-    .every((token) => haystack.includes(token));
+    .every((token) => haystack.includes(normalise(token)));
 }
 
 // Process-lifetime cache. Offsets are DST-dependent so they're correct for
@@ -121,7 +124,9 @@ export default function TimezoneCombobox({
   const selectedOffset = value ? getTimezoneOffsetLabel(value) : '';
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    // `modal`: it opens inside the schedule Modal, where a non-modal popover
+    // can't scroll or close on an outside click (see multi-select.tsx).
+    <Popover open={open} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <Button
           type="button"

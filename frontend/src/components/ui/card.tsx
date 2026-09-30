@@ -45,7 +45,7 @@ const cardVariants = cva(
       interactive: {
         false: '',
         // Whole card is a target: picker tiles, navigable list items.
-        true: `${focusRing} hover:border-primary/40 hover:bg-accent focus-visible:border-ring cursor-pointer text-left outline-none data-[selected=true]:border-primary data-[selected=true]:bg-primary/5`,
+        true: `${focusRing} hover:border-primary/40 hover:bg-accent focus-visible:border-ring cursor-pointer text-left outline-none`,
         // DESIGN "A clickable card that holds a link": a stretched child
         // <button> is the target; the card draws its hover and focus ring.
         within:
@@ -65,8 +65,6 @@ type CardProps = React.ComponentProps<'div'> &
   VariantProps<typeof cardVariants> & {
     /** Render the card as its child, e.g. a `<button>` or `<Link>`. */
     asChild?: boolean;
-    /** Highlights an interactive card as the current choice. */
-    selected?: boolean;
   };
 
 function Card({
@@ -75,7 +73,6 @@ function Card({
   tone = 'default',
   padding = 'default',
   interactive = false,
-  selected,
   asChild = false,
   ...props
 }: CardProps) {
@@ -89,7 +86,6 @@ function Card({
       data-interactive={
         interactive === 'within' ? 'within' : interactive || undefined
       }
-      data-selected={selected || undefined}
       className={cn(
         cardVariants({ variant, tone, padding, interactive }),
         className,
@@ -113,16 +109,41 @@ function CardHeader({ className, ...props }: React.ComponentProps<'div'>) {
   );
 }
 
+/**
+ * `title=` for a CardTitle that truncates or clamps plain text (a name), so
+ * the cut value shows in full on hover. A caller's own `title` wins; a node
+ * child is left to the caller. CardDescription takes none: a tile's clamped
+ * description is prose the tile opens in full.
+ */
+function truncatedTitle(
+  className: string | undefined,
+  title: string | undefined,
+  children: React.ReactNode,
+): string | undefined {
+  if (title !== undefined) return title;
+  if (!className || !/(^|\s)(truncate|line-clamp-\d+)(\s|$)/.test(className))
+    return undefined;
+  return typeof children === 'string' || typeof children === 'number'
+    ? String(children)
+    : undefined;
+}
+
 type CardTitleProps = React.ComponentProps<'div'> & {
   /** The heading level in the page outline; a plain `div` by default. */
   as?: 'div' | 'h2' | 'h3' | 'h4';
 };
 
-function CardTitle({ className, as: Comp = 'div', ...props }: CardTitleProps) {
+function CardTitle({
+  className,
+  as: Comp = 'div',
+  title,
+  ...props
+}: CardTitleProps) {
   return (
     <Comp
       data-slot="card-title"
       className={cn('text-foreground leading-snug font-semibold', className)}
+      title={truncatedTitle(className, title, props.children)}
       {...props}
     />
   );

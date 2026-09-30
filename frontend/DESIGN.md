@@ -7,6 +7,10 @@ messages point here. Everything in this file is either a
 token in `src/index.css` or a variant in a `ui/` component, so an agent or a
 contributor can always find the concrete thing to use.
 
+Per-area specs (page chrome, the agent pages, app chrome, the chat, source views, the workflow
+builder, connectors) live in [PATTERNS.md](PATTERNS.md): this file is the system, that one is how
+each area applies it.
+
 ## Rules in one paragraph
 
 Pages compose `ui/` components and choose their look through props
@@ -49,6 +53,12 @@ through `@theme inline`, so `bg-`, `text-`, `border-`, `ring-`, `fill-` and
 | `chart-1` to `chart-5`                  | data series only, never UI chrome (see below)                                     |                                                                     |
 | `answer-surface`                        | every panel under an answer: source cards, View more, the wiki path chip, the code-block header, the attachment chip, ToolCallPanel |                    |
 
+The shadcn twins are aliases in `src/index.css`, not values of their own:
+`card-foreground`, `popover-foreground` and `accent-foreground` are
+`var(--foreground)`, `popover` is `var(--card)` and `input` is
+`var(--border)` (re-declared under `.dark` so they resolve to the dark
+values). Change the base token; the twin follows.
+
 Status colours are tuned to stay vivid rather than turning brown or olive,
 so their contrast is low. Against white in light mode, `destructive` and
 `success` are about 3.8:1, `warning` is 2.9:1 and `info` is 5.2:1. On the
@@ -85,7 +95,7 @@ Toast). `neutral` is the grey pill or box.
 
 One tint scale, by purpose:
 
-- Wash `/5`: a whole surface that is selected or receiving a drop (Card
+- Wash `/5`: a whole surface that is selected or receiving a drop (OptionCard
   `selected`, Dropzone drag-active and drag-reject). The border carries the
   state; the wash only warms the surface. Never on a chip or a text fill.
 - Brand soft fill: `bg-secondary text-secondary-foreground` (Badge `default`,
@@ -118,7 +128,8 @@ Patterns:
   lighter purple (#b89cf8) in dark. So a pressed toggle (CopyButton's copied
   state, text-to-speech while speaking) shows on card, background and muted
   alike, and never reads as the neutral ghost hover. Use it as
-  `variant={active ? 'secondary' : 'ghost-muted'}`. That is for one thing
+  `variant={active ? 'secondary' : 'ghost-muted'}` with `aria-pressed={active}`
+  (a Button or a chip alike). That is for one thing
   switched on or off. Picking one value of several (a 7d / 30d / 90d range,
   a schedule's frequency, a filter row) is a `ToggleGroup`, whose on item has
   the `outline` look with no hue.
@@ -198,6 +209,15 @@ Patterns:
   agent card's Edit, in a long locale) is two elements: an `IconButton`
   with `sm:hidden` and the labelled `Button` with `hidden sm:inline-flex`.
   Never hide a Button's label span, which leaves an icon-only Button.
+- A Button that holds a user-supplied name (a chat, agent or source) in a
+  flex row: Button's base is `shrink-0 whitespace-nowrap`, so `min-w-0` alone
+  does nothing. Pass `min-w-0 shrink` (or `flex-1` when it should fill the row) and put the name in the
+  `truncate` span; its icons stay `shrink-0`. `w-full` doesn't count: a
+  `w-full shrink-0` Button takes the whole row and pushes its neighbour out,
+  under the next control (an `outline` Button's fill is translucent in dark, so
+  it shows through there and hides in light). `variant="combobox"` already
+  carries `min-w-0 shrink`, like the fields it sits among. The phone top bar's
+  title is the worked example (PATTERNS.md › App chrome).
 - Roles for dangerous and dismissive actions: a delete on a page (a "Danger
   zone" card's Delete agent or Revoke, Delete all) is `destructive-outline`;
   the submit of a confirm dialog is `destructive` (`ModalActions destructive`,
@@ -205,17 +225,15 @@ Patterns:
   shape of the button beside it, in a modal footer, a form header or an inline
   editor. A Cancel inside a line of text (the composer's queued send) is
   `link text`.
-- The composer controls under the chat field (Attach, Voice, Tools,
-  Sources) are `outline sm pill`. Their icons are `size-3.5 sm:size-4`
-  with no margin; the size's `gap-1.5` spaces them, and the label span keeps
-  `text-xs sm:text-sm` so the row still fits on a phone.
+- The composer controls under the chat field: see PATTERNS.md › Chat composer.
 - Popover comboboxes (`role="combobox"` + `Command`) use `variant="combobox"`,
   which matches `SelectTrigger`: card fill, normal weight, and muted text
   while `data-placeholder` is set (`data-placeholder={value ? undefined : ''}`).
   Pass only layout (`w-full justify-between`) and keep the chevron as the
-  last child.
+  last child. Any Button that opens a popover picker sets `role="combobox"`;
+  Radix's `PopoverTrigger` sets `aria-expanded`, so don't set it by hand.
 - A button or picker that sits in a row of fields is `size="field"`: 38px.
-  `Input` and `SelectTrigger` are 38px too (Input `default` / `field`,
+  `Input` and `SelectTrigger` are 38px too (Input `default`,
   SelectTrigger's default `field`), so a form column has one height; a
   combobox Button in a form passes `size="field"`. Page actions beside a
   page's search field (Add Source, Add Tool, Test retrieval, Sync) are
@@ -232,26 +250,8 @@ Patterns:
   the admin Activity toolbar, whose CSV / NDJSON exports are `outline field
 pill`), and a field that takes a pill header button's place (AgentsList's
   new-folder field). Modal footers (`ModalActions`) stay `lg pill`.
-- One variant and size per role on the agent pages (Overview, Logs,
-  Schedules, the workflow builder's toolbar): the page's primary action is
-  `default field pill` (Publish, Save, New schedule), a secondary action
-  `outline field pill` (Save draft, Preview with `Play` first), Cancel `ghost
-field pill`, and page-level actions go in the `ActionMenu` (`size="toolbar"`)
-  at the end of the title row, through `SectionShell titleAction`: Access
-  details and Share with team on Overview (each only when the role allows
-  it, see Access and roles), and Preview until the agent is
-  published (before that the preview only says "Publish to preview"). So the
-  row never holds more than three buttons and fits a phone, where the main
-  one stretches across it (`flex-1 sm:flex-none`; `PageToolbar`'s action slot
-  spans the stacked row below `sm`). The workflow builder's toolbar has no
-  title row and keeps its ⋯ at the row's end, holding Edit details, Access
-  details, Share with team and Delete (see Workflow builder). The
-  agent's Delete is in Overview's danger zone; only the workflow builder's
-  toolbar has it in the ⋯ menu, as a `destructive` item. The row itself is
-  `agents/components/AgentPageToolbar` (see Page chrome). A row's common
-  action is `outline sm pill` (a schedule's Run now or Resume) with its other
-  actions in the row's `ActionMenu`; a delete there is a `destructive` item
-  that opens the confirm modal.
+- Buttons on the agent pages (Overview, Logs, Schedules, the workflow builder's
+  toolbar): see PATTERNS.md › Agent pages.
 - Rows in the navigation sidebar (`hover:bg-sidebar-accent … pl-3 gap-2.5
 rounded-3xl`) are `variant="sidebar-item"`: left-aligned, full-radius, normal
   weight, `bg-sidebar-accent` on hover and while `aria-current="page"`. Use it
@@ -263,11 +263,8 @@ rounded-3xl`) are `variant="sidebar-item"`: left-aligned, full-radius, normal
   `group-hover:bg-sidebar-accent`. The section sidebar's "Back to app" row is
   the same variant.
 - Inline disclosure toggles ("Advanced settings", "Show advanced options",
-  a device's audit log, the connect wizard's tool count) are `variant="link"
-size="sm"` with only `-ml-3 w-fit justify-start`, `aria-expanded` and
-  `aria-controls`; a chevron, when the toggle has one, is a lucide
-  `ChevronRight` (so it takes the link colour) as the first child. The body
-  is `<Collapsible open id>` (`ui/collapsible`, see Disclosure).
+  a device's audit log, the connect wizard's tool count): use
+  `CollapsibleTrigger` (see Disclosure).
 - Tabs are `ui/tabs`, and the underline is their only look (no `variant`
   prop): muted text on a transparent 2px bottom border, square corners, no
   hover fill; the active tab gets `foreground` text and a `primary`
@@ -278,7 +275,7 @@ size="sm"` with only `-ml-3 w-fit justify-start`, `aria-expanded` and
   `agents/schedules/SchedulesView.tsx`, the graph source view, the source
   edit drawer). Each trigger is 36px with `px-4`, so the first label sits
   16px in from the content edge and the underline runs past the label on
-  both sides. That inset is deliberate (decided 2026-09-28): the tab row reads
+  both sides. That inset is deliberate: the tab row reads
   as its own strip, with a wider target per tab, so don't pull it flush with
   `-ml-4` or strip the padding. Tabs that navigate are `NavTab` (`asChild`
   around a router `<Link>`, or a `<span>` for the page on screen, `current`
@@ -292,21 +289,8 @@ size="sm"` with only `-ml-3 w-fit justify-start`, `aria-expanded` and
   (the graph source view's laid-out canvas and zoom): that `TabsContent`
   takes `forceMount` plus `data-[state=inactive]:hidden`.
 - A section panel's disclosure header (NewAgent's Advanced and Guardrails
-  panels) is `variant="section-toggle" size="sm"` with `-ml-3 w-fit
-justify-start` and `aria-expanded`: a lucide `ChevronRight` first
-  (`rotate-90` while open) in primary, then the foreground title, with a
-  primary underline on hover. Both call sites wrap the Button in an `<h2>`
-  (a button flattens heading children, so the heading goes outside) and put
-  the title in a `text-lg font-semibold` span. The button draws no focus ring; the panel does,
-  so keyboard focus outlines the whole panel. The panel is a `Card` (a place,
-  `subtle lg`), and every Card carries that ring
-  (`has-[[data-variant=section-toggle]:focus-visible]:ring-3 … ring-inset`,
-  inset because a scrolling column clips an outset ring), so pages pass
-  nothing for it. Status badges go beside the button, not inside it, or the
-  hover underline runs under them. Because the ring comes from the Card,
-  `section-toggle` only goes inside a Card: a collapsible group in a Modal
-  or drawer (Share's Access settings) is the inline `link sm` disclosure
-  toggle above.
+  panels, `variant="section-toggle"`): use `CollapsibleTrigger
+  look="section"` (see Disclosure).
 - Drop `text-white` on default and destructive buttons; the foreground token
   already provides it. Drop `disabled:cursor-not-allowed` on buttons; the
   base disables pointer events. Fields are the other way round (see Focus,
@@ -332,8 +316,7 @@ justify-start` and `aria-expanded`: a lucide `ChevronRight` first
 | `variant`     | `outline` (border + card surface, the default), `filled` (muted fill, no border), `subtle` (border on the page background); which one is decided by role, below |
 | `tone`        | `default`, `destructive` (the status soft fill and border, `border-destructive/50 bg-destructive/10`, over any variant)                                         |
 | `padding`     | `none`, `sm` (p-3, row boxes and code blocks), `default` (p-4), `lg` (p-6, tiles, panels and stat tiles)                                                        |
-| `interactive` | `true`: whole card is the target: hover, focus ring and `selected` highlight; pair with `asChild` around a `<button>` or `<Link>`. `within`: a stretched child `<button>` is the target and the card draws its hover and focus ring (see A clickable card that holds a link) |
-| `selected`    | an `interactive` card that is the current choice: `border-primary` and the `/5` wash                                                                            |
+| `interactive` | `true`: whole card is the target: hover and focus ring; pair with `asChild` around a `<button>` or `<Link>`. `within`: a stretched child `<button>` is the target and the card draws its hover and focus ring (see A clickable card that holds a link) |
 
 Parts: `CardHeader` (title left, `CardAction` top-right), `CardTitle`,
 `CardDescription`, `CardContent`, `CardFooter` (meta row, sticks to the
@@ -353,7 +336,7 @@ marks structure.
 | -------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | Thing (a tile)       | `filled`, on a page or in a modal                                                 | agents, folders, sources, tools, custom models, teams, chunks, the shared agent card |
 | Place (a panel)      | `subtle` on the page or a right drawer, `outline` on a card (modal, bottom sheet) | the agent form's sections, chart panels, stat tiles, log tables, schedule rows       |
-| Choice (picker tile) | `outline interactive`, or `OptionCard`                                            | the Add tool tiles; selection is drawn by the border, so the border stays            |
+| Choice (picker tile) | `outline interactive`, or `OptionCard`                                            | the Add tool tiles; a chosen tile is an `OptionCard` `selected`, drawn by the border |
 | Well                 | `filled padding="sm"`                                                             | code, a token to copy, run output, inside a panel (see Code blocks below)            |
 
 - Layers go page → panel (border) → well (fill), or page → tile (fill).
@@ -382,22 +365,14 @@ Recipes by role:
   choices: `outline interactive lg` with `asChild` around a `<button>`.
 - Chart panels are `subtle lg` with fixed heights passed as layout; a chart
   panel inside a modal is `outline` (the modal is already `bg-card`).
-- Form sections (the agent form's Basics, Knowledge and behaviour, Model,
-  Advanced, Guardrails) are `subtle lg` with `gap-5`; Basics, Knowledge and
-  behaviour and Model are titled by a `SectionHeader`, Advanced and
-  Guardrails by a `section-toggle` (see Button). A disclosure panel's body
-  under its toggle is one `flex flex-col gap-5` wrapper, its rows carrying
-  no `mt-*`, so every section has 20px under its title. The destructive
-  danger-zone Card follows them.
+- Form sections (the agent form's panels): see PATTERNS.md › Agent pages.
 - Row boxes inside a form or panel (a guardrail check, the schedule's
   timezone box) are `padding="sm"`, in the panel
   variant of the surface they sit on (`subtle` in a page panel, `outline` in
   a modal). A list of named items in one (the custom MCP modal's discovered
   tools) is a `SectionHeader size="xs"` over `Card padding="none"
   overflow-hidden` holding `ListRows`.
-- A schedule is `agents/schedules/ScheduleRow`: `subtle`, `padding="none"`,
-  with its run log flush under it; a chevron `IconButton ghost-muted
-icon-xs` toggles the runs.
+- A schedule row: see PATTERNS.md › Agent pages.
 - A danger zone (Delete agent, Revoke a device) and a failing stat are
   `tone="destructive"`; the title beside it is `SectionHeader
 tone="destructive"`. Muted text fails AA on the red fill, so the tone turns
@@ -431,12 +406,14 @@ around the `<pre>`, inside the Card's padding, never on the Card: on the Card
 the scrollbar runs into its rounded corners. Never `break-all` (enforced).
 This recipe is for app output. A fenced code block in a markdown answer is
 source code: it keeps its lines (`white-space: pre`, indentation intact) and
-scrolls sideways inside its own bordered frame (see Chat answer column).
+scrolls sideways inside its own bordered frame (see PATTERNS.md › Chat answer column).
 
 Tile text: the name is `CardTitle` (14px semibold from Card's `text-sm`; pass
 `as="h2"` on a page that goes from its title straight to a tile grid, but
-never a heading inside a clickable tile, whose children a button flattens), the
-description `CardDescription size="xs"` (12px muted, `leading-relaxed`), and
+never a heading inside a clickable tile, whose children a button flattens; it
+sets its own `title` from a string child when its className truncates or
+clamps, see Typography roles › Truncation), the
+description `CardDescription size="xs"` (12px muted, `leading-relaxed`, no `title`), and
 meta lines (a date, a token count, a model id or host) go in `CardFooter` at
 regular weight. `font-medium` is for list rows (`ListRow`), not tiles.
 
@@ -460,7 +437,7 @@ header: the row centres the title on the buttons and wraps them under it on
 a phone (`flex-wrap items-center gap-x-4 gap-y-2`). Panel and chart titles
 are `size="xs"` with `as="h3"`; a title row that also holds a legend or a
 "Resets" line keeps its wrapper and swaps only the heading. Disclosure
-headers (`Button variant="section-toggle"`) and the Agents breadcrumb are not
+headers (`CollapsibleTrigger look="section"`) and the Agents breadcrumb are not
 SectionHeaders.
 
 ### OptionCard (`ui/option-card.tsx`)
@@ -502,8 +479,8 @@ stat chips `tabular-nums`, as approved exceptions. HTTP method pills take their 
 variant="combobox" size="field"` trigger (`shape` passes through: `pill` in a
 page toolbar) that grows past 38px when the chips wrap, with SelectTrigger's turning chevron; each row in its list shows a
 `Checkbox size="sm"`. An option's `description` is a muted `text-xs` line
-under its label in the list only ("Added by Lena"); the chips show the label. Inside a Modal pass `modal`, or its popover can't
-scroll and doesn't close on an outside click.
+under its label in the list only ("Added by Lena"); the chips show the label. Inside a Modal
+or Sheet pass `modal` (see Modal, not Dialog).
 
 In a picker list, mark the item that is currently chosen with
 `CommandItem checked` (a `secondary` brand tint through `data-checked`), not
@@ -528,17 +505,16 @@ notice (connections to sign in again) goes above it.
 
 | Prop      | Values                                                                               |
 | --------- | ------------------------------------------------------------------------------------ |
-| `size`    | `sm` (h-8), `default` (h-9.5, 38px), `lg` (h-12), `field` (h-9.5, the form-row name) |
+| `size`    | `sm` (h-8), `default` (h-9.5, 38px, the form-row height)                             |
 | `shape`   | `default`, `pill`                                                                    |
 | `variant` | `default`, `bare` (no border, padding, radius, shadow or ring), `filled` (card fill) |
 
 Text alignment classes (`text-right`) and `font-mono` (code fields) are
 allowed on Input and Textarea. `<Input label>` is the shorthand for a
 one-field `FormField`: the same floating label on the border and the same
-`labelSurface` (see FormField). The chat and hero
-fields (`rounded-3xl px-5 py-3`) are `size="lg" shape="pill"`. A
-default-size pill (38px, the form-row height) pads `px-5` like the large
-one, so its text lines up with the Select pills. Compact table
+`labelSurface` (see FormField). A
+default-size pill (38px, the form-row height) pads `px-5`, so its text
+lines up with the Select pills. Compact table
 filters (`h-auto px-2 py-1 text-sm`) are `size="sm"`. An inset icon (a
 search glass) is `leftIcon`, with or without a `label`; it pads the field
 `pl-10`, so never hand-place an icon over an Input. A field inside a host
@@ -581,8 +557,8 @@ search palette and the source navigator; its `variant` is `default` or
 `palette` (the search palette's spacing, see Modal, not Dialog).
 `CommandInput`'s `variant` is `default`, the `h-9` row with a bottom border
 at the top of a popover or palette list, or `field`, the 38px pill of a
-list that sits on the page (a source view's navigator filter, see Page
-chrome and Source views); nothing else hand-frames it. `CommandList` caps
+list that sits on the page (a source view's navigator filter, see PATTERNS.md ›
+Page chrome and Source views); nothing else hand-frames it. `CommandList` caps
 itself at `max-h-75` and scrolls; a list that already scrolls inside its
 host (a Modal's phone sheet body) passes `max-h-none` so there is
 one scroller. `CommandItem` rows are `cursor-default` like Select and menu
@@ -615,7 +591,7 @@ placeholder is an example: hidden while the label rests, shown on focus.
 Stack floating fields with `gap-5` so each label clears the field above.
 
 `Input`, `Textarea`, `SelectTrigger` (even nested in `Select`), `MultiSelect`,
-`Dropzone` and `Checkbox` read their `id`, `aria-invalid`, `aria-describedby`,
+`Dropzone`, `Checkbox` and `Switch` read their `id`, `aria-invalid`, `aria-describedby`,
 `aria-required` and `disabled` from it, so don't set those by hand; an id
 the field already has wins. Any other control: pass `id` to FormField and
 the same id to the control. One FormField holds one control: a second field
@@ -648,14 +624,18 @@ label-less table cell carries it as the placeholder
 A setting with a control on the right (a Switch, a short Input) is
 `<SettingRow label description htmlFor alignStart stack as after>{control}</SettingRow>`,
 grouped in `<SettingRows>`, which splits rows with `divide-border/50` and pads
-each 12px (none at the group's ends). The title is a `Label` for the control
-(`htmlFor` = the control's id), so every switch has a name and clicking the
-title toggles it; `as="h2" | "h3"` keeps a heading tag, and the control then
-needs its own `aria-label`. `alignStart` top-aligns the control for wrapping
+each 12px (none at the group's ends). It wires its control like FormField:
+the title is a `Label` for the control's id (`htmlFor`, or a generated one),
+and the control's `aria-describedby` is the description, so every switch has
+a name and a description and clicking the title toggles it. A `Switch`,
+`Input`, `SelectTrigger` or `Checkbox` takes the id from the row and needs
+none of its own; any other control takes `htmlFor`. `as="h2" | "h3"` keeps a
+heading tag, and the control then needs its own `aria-label`. `alignStart` top-aligns the control for wrapping
 descriptions. `stack` puts a control too wide for a phone row (a 224px
 picker) under the title below `sm` at full width; give the picker
 `w-full sm:w-56`. `after` holds a field that belongs to the row, 8px under it
-(the agent form's limit Inputs). Settings → General is the page-level example:
+(the agent form's limit Inputs); it isn't wired, so it names itself
+(`aria-label`, or a FormField of its own). Settings → General is the page-level example:
 `PageToolbar` intro and rule, then `SectionHeader`ed groups of SettingRows in a
 `max-w-3xl` column. Inline "switch + label" pairs (a filter
 toggle) are not SettingRows.
@@ -708,25 +688,45 @@ Tooltips open after 400ms. One `TooltipProvider` is mounted in `main.tsx`,
 so moving along a row of icon buttons opens each at once after the first
 (Radix's skip-delay); a `Tooltip` outside it (tests, a portal root) adds its
 own provider. For a hint on something that is not an icon button, compose
-`Tooltip` + `TooltipTrigger asChild` + `TooltipContent`. `title=` stays only
-on truncating text (`span`, `p`, `div`), where it shows the full name.
+`Tooltip` + `TooltipTrigger asChild` + `TooltipContent`; an icon-only link
+(the collapsed rail's) is `TooltipTrigger asChild` around it, never `title`.
+`title=` is not a tooltip: it only carries a cut-off value in full (see
+Typography roles › Truncation).
 
 ### ToggleGroup (`ui/toggle-group.tsx`)
 
 The segmented control for picking one value of several (`type="single"`) or
 several of several (`type="multiple"`).
-Items are pills: the on item is the `outline` look (`bg-background`, border,
-`shadow-xs`), the others `ghost-muted`. `size` is `sm` (32px, the default) or
-`xs` (28px, inside a muted track: a wrapper `<div className="bg-muted
-rounded-full p-1">` around the group, whose own className takes layout only). A single group is a `radiogroup` with one Tab
+It has one look: the group draws its own muted pill track (`bg-muted
+rounded-full`), and its items are pills, the on item the `outline` look
+(`bg-background`, border, `shadow-xs`), the others `ghost-muted`. Never
+hand-build a track: no `bg-muted rounded-full p-1` wrapper around a group,
+and its className takes layout only (`shrink-0`, `self-start`, a margin).
+
+- **Width.** Pass `fill` when the group is the only control on its row, a
+  form field (a schedule's frequency and weekday, the connect wizard's
+  sign-in method, keep/delete in Remove, a workflow panel's mode): the track
+  is `w-full flex-nowrap` and each item `flex-1 min-w-0 px-1`, so the row
+  ends where the field under it ends. Everywhere else (toolbars, header
+  actions, beside other controls) leave it off and the track hugs its items
+  (`w-fit max-w-full`). A pill track never wraps: one that outgrows its row
+  (a long kind filter on a phone) scrolls sideways (`overflow-x-auto
+  no-scrollbar`; the track's padding keeps the focus ring unclipped).
+- **Size is density.** `sm` (the default: 32px items in a 38px track) is
+  level with `field` controls: forms and page toolbars. `xs` (28px items in
+  a 36px track) is for dense panels: the graph toolbar, workflow panels,
+  permission and parameter rows.
+
+A single group is a `radiogroup` with one Tab
 stop and arrow keys; it sends `""` when the on item is clicked again, so
 ignore that in `onValueChange` (`(v) => v && setRange(v)`). Route links in a
 row (the Agents filter pills) are not a ToggleGroup: they are `Button asChild
 variant={active ? 'outline' : 'ghost-muted'} size="sm" shape="pill"` around
 each `Link`, with `aria-current="page"` on the current one.
 
-Filtering a list by kind (a team's shared resources, Share's People) is this
-`xs` group in its muted track, each item `{label} {formatCount(n)}`, beside a
+Filtering a list by kind (a team's shared resources, Share's People) is a
+ToggleGroup that hugs (`sm` on a page, beside a 38px `SearchInput`; `xs` in
+Share's dense list step), each item `{label} {formatCount(n)}`, beside a
 `SearchInput` (`w-full sm:w-56`); no match is `EmptyState size="xs"
 illustration="none"`.
 
@@ -775,7 +775,8 @@ inside a control (a busy Button, a picker's `sm` ring) stay `Spinner`.
 Nothing to show is `EmptyState`: `size` `default | sm | xs` (128 / 96 / 64px
 art, page / panel / popover), `illustration` `no-files | none` (a "no
 results" line is `size="xs" illustration="none"`), `title`, `description`
-(plain `muted-foreground`), `action`. A page or panel whose fetch failed is
+(plain `muted-foreground`), `action`. A page or panel whose fetch failed (see
+Where a message lives › Load errors) is
 `EmptyState tone="destructive" illustration="none" onRetry`: a red
 `CircleAlert`, a red title, `role="alert"`, and `onRetry` draws the Retry
 (`t('retry')`, an `outline sm pill` Button at every size, after `action` when
@@ -786,17 +787,23 @@ its Retry follows the locale too. Never a bare `text-destructive` paragraph.
 ### Progress (`ui/progress.tsx`)
 
 `value` 0 to 100, `variant`: `default`, `success`, `warning`,
-`destructive`, `info`; `size`: `sm`, `default`, `lg`. Replaces the
+`destructive`, `info`; `size`: `sm`, `default`. Replaces the
 width-percent divs in quota, indexing and guardrail views.
 
 ### Avatar (`ui/avatar.tsx`)
 
 `size`: `none` (image decides, the default), `xs` (28px), `sm` (32px),
-`default` (36px), `lg` (40px): Button's names at Button's heights;
-`shape`: `none`, `circle`, `square`; `variant`: `default`, `primary` (brand
-initials on `secondary`), `muted` (a grey `bg-muted-foreground/15` box with
-`foreground` initials). Initials boxes pass the letters as
+`default` (36px), `lg` (40px): Button's names at Button's heights; `xl`
+(48px, `rounded-xl` when square) for a connector logo leading a drawer or
+wizard header. `shape`: `none`, `circle`, `square`; `variant`: `default`,
+`primary` (brand initials on `secondary`), `muted` (a grey
+`bg-muted-foreground/15` box with `foreground` initials), `icon` (the icon
+tile: `bg-muted` with muted text). Initials boxes pass the letters as
 children.
+
+The icon tile leading a row is `<Avatar size="sm" shape="square"
+variant="icon"><Icon className="size-4" /></Avatar>` (32px; `xs`, 28px, in
+the team switcher). Never a hand-built `bg-muted … size-8 rounded-md` span.
 
 ### Dropzone (`ui/dropzone.tsx`)
 
@@ -827,11 +834,10 @@ overlay, whose prompt is a Title (see Typography roles).
 
 ### Toast (`ui/toast.tsx`)
 
-Feedback on anything the user did outside a modal (uploads, runs,
-approvals, team events, a page action's result) is a toast in the
-bottom-right stack; a result inside an open modal is an `Alert` there (see
-"Where a message lives"), since the toast stack paints under the modal's
-overlay. The app has one
+Feedback the screen itself can't show (uploads, runs, approvals, team
+events, a page action's failure) is a toast in the bottom-right stack; a
+result inside an open modal is an `Alert` there, since the toast stack
+paints under the modal's overlay (see "Where a message lives"). The app has one
 `ToastViewport`, mounted in `App.tsx`; it is the live region
 (`role="status"`, `aria-live="polite"`) and the fixed stack, so `Toast`
 cards carry no role and no toast renders its own rail or positioning. Top
@@ -851,7 +857,7 @@ close as `Button variant="ghost-muted" size="icon-sm"`), then
 `ToastContent` (add `scrollable` for long lists) with `ToastItem label meta`
 rows (optional `icon` before the label), a `ToastStatus status` circle per
 row (`pending`, `success`, `warning`, `destructive`, `info`),
-`ToastMessage variant` for an explanation and `ToastFooter` for action
+`ToastMessage variant` (`default`, or `destructive` for a failure) for an explanation and `ToastFooter` for action
 buttons. `ToastTitle` truncates to one line; `wrap` lets a long title (a
 localised string, a team name) wrap instead. `ToastMessage size` is `xs`
 (default, the note under a row) or `sm` (`text-sm leading-4.5`, the whole
@@ -862,16 +868,24 @@ no width or colour to them.
 
 ### A clickable card that holds a link
 
-A card that opens something and also holds a link (a source card under an
-answer, with its URL) is a plain `relative` container: a `<button
-type="button">` inside it covers the card with `after:absolute after:inset-0`
-(the card's radius on `after:`), and the link is a sibling after it with
-`relative z-10`, so both are real controls, one tab stop each, and neither
-sits inside the other. The container draws the focus ring for the button
-(`has-[>button:focus-visible]:ring-3 …ring-ring/50`); a `Card` does it with
-`interactive="within"` (Knowledge's source cards, whose ⋯ and Reconnect are
-the `relative z-10` siblings). Never put a link inside a `role="button"` or a
-`<button>`.
+A card that opens something and also holds a link or other controls (a
+source card under an answer, with its URL; a tile with a ⋯) is a plain
+`relative` container:
+
+- The target is a `<button type="button">` that is a **direct child** of the
+  card and covers it with `after:absolute after:inset-0` (the card's radius
+  on `after:`). The container draws its focus ring
+  (`has-[>button:focus-visible]:ring-3 …ring-ring/50`); a `Card` does it with
+  `interactive="within"` (Knowledge's source cards, the agent tiles).
+- It comes first in DOM order, so Tab reaches the item before its menu.
+- It is named by the title alone: the title is its content (or its
+  `aria-label`), and the description stays outside it. A decorative avatar
+  beside the title is `alt=""`.
+- Every other control, the `ActionMenu` included, sits in a `relative z-10`
+  (or `absolute … z-10`) element, so all are real controls, one tab stop each,
+  and none sits inside another.
+
+Never put a link inside a `role="button"` or a `<button>`.
 
 ### Where a message lives: FormField, Alert or Toast
 
@@ -879,10 +893,20 @@ the `relative z-10` siblings). Never put a link inside a `role="button"` or a
   floating label red).
 - A result the user must read before closing the modal (a failed share, a
   failed import, a Test connection result) is an `Alert` in the modal body.
-- A fire-and-forget result, or any result on a page rather than in a modal,
+- **Success** shows in the screen itself: the new row, the saved value, the
+  closed modal or drawer, "Unsaved changes" going away. It doesn't also
+  toast. A success toast is only for a result the screen can't show:
+  background work that started, a copy from a menu, a save from a surface
+  that has closed or navigated away.
+- A failure on a page rather than in a modal, or a fire-and-forget result,
   is a toast (`showActionToast`).
-- A page or panel that failed to load its own content is
-  `EmptyState tone="destructive"` in place of that content, with `Retry`.
+- **Load errors.** Every fetch that fills a page or panel has three states:
+  loading, error and data. Its `catch` sets an error that renders
+  `EmptyState tone="destructive" illustration="none" onRetry` in place of the
+  content, never the empty message; resetting a list to `[]` in a `catch` is
+  a bug. A 404 on a single item is "not found"; any other failure is the
+  error. A failed later page of a feed is the `LoadMoreStatus` error strip
+  (see Pagination › Feeds).
 - A notice the user must read before acting (an expiring token, a policy that
   forces a setting, models without a price) is an `Alert`; one that is only
   informative and should not be announced passes `role="note"`.
@@ -896,7 +920,7 @@ variant="destructive"` above the form, not text in or beside the button.
   `bg-card rounded-xl shadow-md` wrapper that stays until closed; a toast
   would truncate each error to one line and dismiss itself. The workflow's
   stopped-resources warning is the same recipe (`FloatingResourceNotice`): it
-  floats only while something is stopped, its X sits inside the Alert, a long
+  floats only while something is stopped, its X sits inside the Alert (`Alert onClose`), a long
   list scrolls in an inner `scrollbar-overlay max-h-* overflow-y-auto` div,
   and it steps aside while the publish errors show; once closed a chip
   reopens it.
@@ -953,20 +977,14 @@ no classes: the Alert sizes it to 16px and colours it with the text), then
 centred on the text block, beside a single line, a wrapped paragraph or a
 title with its description. Every variant is
 `role="alert"` except `success`, which is `role="status"` so a confirmation
-is announced politely; pass `role` only to override that. Replaces the hand-rolled
+is announced politely; pass `role` only to override that. `onClose` adds a
+ghost `icon-xs` X in the top-right corner (named `close`) and pads the text
+`pr-10` clear of it: the floating canvas notices (publish errors, stopped
+resources); never hand-place a close button in an Alert. Replaces the hand-rolled
 `rounded-lg border bg-amber-50 text-amber-800` boxes.
 
-A failed chat answer is an `Alert variant="destructive"` on the answer's
-`mr-5 ml-6` column: `CircleAlert`, the fixed title `conversation.failedTitle`,
-and the backend's error (often a raw provider exception) as `font-mono text-xs`
-detail in `AlertDescription`. Its action row is Retry (`RotateCcw`) and Copy,
-both `ghost-muted icon-sm pill` like every other answer action.
-
-The rows in an answer's step column (Sources, Reasoning, each tool step) are
-one recipe: `Button variant="ghost" size="sm"` at `ml-3.5 w-fit`, which puts a
-16px muted icon on the `ml-6` text column, then muted 14px text and a chevron.
-Sources adds its count and a right chevron, and opens the answer's sources in
-the chat's side panel (see Side panels).
+A failed chat answer and the rows in an answer's step column are chat recipes:
+see PATTERNS.md › Chat answer column.
 
 ### Breadcrumb (`ui/breadcrumb.tsx`)
 
@@ -984,7 +1002,7 @@ and the cap. A parent with no handler is a plain `<span>` with `max-w-[16ch]
 truncate` and a `title` (PathHeader's; it isn't a BreadcrumbLink, so it sets
 the cap by hand), never a disabled button, and the current crumb is never a
 disabled button either. The header of every source view is
-`components/tree/PathHeader` (see Source views); don't hand-roll a
+`components/tree/PathHeader` (see PATTERNS.md › Source views); don't hand-roll a
 `/`-separated path.
 
 ### ListRow and DescriptionList (`ui/list-row.tsx`, `ui/description-list.tsx`)
@@ -993,18 +1011,21 @@ An identity row (avatar or icon square, a truncating title, one muted meta
 line, a trailing control) is `ListRow` inside `ListRows` (`divide-y
 divide-border`, no box of its own; wrap it in `Card padding="none"` or a
 bordered list for one). Rows are `px-4 py-3`, the title `text-sm
-font-medium`. `interactive` (with `asChild` around a `<Link>` or `<button>`)
-hovers to `bg-accent` and draws an inset focus ring. `selected` marks the
-row whose detail is open in a drawer beside the list (a team's shared
-resources), exactly as a selected TableRow (see Table), and the chosen row in a
-single-pick list (a repository in the connect wizard). A row you select that
+font-medium`. A string `title` or `description` sets its own `title=` for the cut-off
+value; for a node, put `title` on the node. `interactive` (with `asChild`
+around a `<Link>` or `<button>`) hovers to `bg-accent` and draws an inset
+focus ring. `selected` marks the row whose detail is open in a drawer beside
+the list (a team's shared resources) and the chosen row in a single-pick list
+(a repository in the connect wizard): the `bg-secondary` fill of a selected
+TableRow (see Table), kept on hover, with `aria-current`, but the row's text
+keeps its own colours (a foreground title, a muted meta line). A row you select that
 also holds a ⋯ (a connection's accounts) can't be one `<button>`: it is
 `ListRow interactive selected asChild` around a `relative` box whose title is
 a stretched `<button data-account-select>` (`after:absolute after:inset-0`),
 the box drawing that button's inset focus ring
 (`has-[[data-account-select]:focus-visible]:ring-3 …ring-ring/50 ring-inset`),
 and the ⋯ in a `relative z-10` trailing group. An icon square in
-`leading` is a plain `bg-muted text-muted-foreground size-8 rounded-md` span.
+`leading` is the Avatar icon tile (see Avatar).
 In a narrow side panel (the graph node panel's relationships) rows are
 `size="sm"`: `px-2 py-1.5`, `gap-2.5`, `rounded-md` and top-aligned so a small
 leading mark (a `GraphTypeDot` with `mt-1.5`) sits on the title line. They go
@@ -1050,7 +1071,7 @@ resources) pages client-side at `SHORT_LIST_PAGE_SIZE` (48, no size select,
 `useClientPage`), a safety net that never splits a normal list; a fixed
 catalog (connectors) and a table of a few rows (access tokens) have no pager;
 a sectioned gallery caps each section at two full rows (`useGridColumns`)
-and links "Show all N" beside the title to the section's own page, which
+and links "Show all N" (a `link inline` Button) beside the title to the section's own page, which
 shows everything at 48 per page. Sources opens at 24 per page on desktop and
 12 below it.
 
@@ -1063,12 +1084,12 @@ gets its own cap: an inner `scrollbar-overlay max-h-[45svh] overflow-y-auto`
 div inside the frame (the run log's schedule card, the guardrail table's
 frame, a device's audit list), never on the Card. Under it, outside the
 scroller, `LoadMoreStatus` (`divider` under a flush table) says "Loading
-older…", "Nothing older" or offers Retry (`loadingLabel` / `doneLabel` for a
+older…", "Nothing older" or offers Retry (an `outline xs` pill; `loadingLabel` / `doneLabel` for a
 list that isn't newest-first: "Loading more…"); it keeps one row's height and so
 keeps the scrollbar clear of the rounded corner. A feed shorter than one page
 draws no strip. The end is a page shorter than requested, so no count is
-needed. A first load shows `LoadingState`, and a failed first load a
-destructive state with Retry, never the empty message.
+needed. A first load shows `LoadingState`, and a failed one follows Where a
+message lives › Load errors.
 
 Counts and numbers in the UI format on the app language: `formatCount` (`utils/dateTimeUtils`, `Intl` on `intlLocale()`), never
 `toLocaleString()` or a raw `{{count}}`; plural keys get the number as `count`
@@ -1084,207 +1105,15 @@ language has no short form). Counts in tables, pagers and inline text use
 `formatCount`. Lists of names join with
 `Intl.ListFormat`, never a hard-coded `', '`.
 
-### Page chrome: SectionShell, PageToolbar, SearchInput
-
-Every section page (settings, admin, agents, teams) is wrapped in
-`navigation/SectionShell` (`width` `default` 6xl, `wide` 7xl for admin,
-`narrow` 5xl; `title` replaces the section title; `titleAction` puts a page-level
-control, such as a toolbar `ActionMenu`, at the title row's end;
-`header={false}` drops the title for the phone section index, which draws
-its own);
-it draws the title and
-starts the content 32px below it, so pages carry no root `mt-*`. The block
-under the title is `components/PageToolbar`: `intro`, then the page `search`
-(left, `max-w-md`) and the page `action` (right, `Button size="field"
-shape="pill"`, text only: no `Plus`, a dropdown keeps its `ChevronDown`), then `children` (notices that belong to the action, such as
-a limit warning), then `divider` (a `Separator`). With no `search` the intro
-moves into the row's left slot (`max-w-2xl`) beside the action. A page search
-is `components/SearchInput`: the 38px pill (one size everywhere) with a
-search icon and a floating `label` on `labelSurface="background"` (its
-default); a placeholder-only search is named by its placeholder. A source
-view's navigator filter is a `CommandInput variant="field"` (the same 38px
-pill, text 40px in, the ring on the frame), because its rows are
-`CommandItem`s (see Source views and Command). `CommandInput`'s `default` variant is the
-`h-9` row with a bottom border at the top of a popover or palette list; the
-wrapper carries `data-variant` for styling from the parent. Nothing else
-hand-frames a `CommandInput`.
-
-An agent's tabs (Overview, Logs, Schedules) share one header,
-`agents/components/AgentPageToolbar` on top of `PageToolbar`, under
-`SectionShell`'s title (the tab's name, or "New agent" through SectionShell's
-`title` prop). Its props: `name` (the agent, first in a muted byline),
-`status` (a Badge beside the name, Overview's Published / Draft), `meta` (the
-tab's context after a middle dot, "Last used" on Logs and Schedules),
-`actions` (the tab's buttons on the right, at most three; the page's ⋯ goes
-in the title row, not here), `intro` (a line that replaces
-the byline: the new-agent form) and `children` (notices between the row and
-the rule, such as the failed-save `Alert`). With a status badge the meta
-takes its own line on a phone. The row keeps the 38px field height when a
-tab has no actions, so the rule lands in the same place on every tab.
-`AgentPageHeader` remains only in the workflow builder's fixed toolbar. All
-three tabs are `SectionShell` pages at the default width; the agent preview
-is a drawer (see Modal, not Dialog). Overview groups its fields into three
-`subtle lg` panels (Basics, Knowledge and behaviour, Model) with the two-up
-field grid, then Advanced, Guardrails and the danger zone. Schedules shows a
-`StatCard` row, Recurring / One-time as `ui/tabs`, and
-each schedule as a `ScheduleRow` (see Card surfaces).
-
-### App chrome: the phone top bar and New Chat
-
-Below `lg` the top of every page is `navigation/MobileTopBar` (56px, `h-14`):
-the sidebar toggle (`PanelLeft`), a title, then New Chat and the account
-avatar (`ProfileButton size="xs"`). It is on `bg-background` like the page,
-with no border and no shadow; a `from-background to-transparent` gradient under
-it lets the content fade out as it scrolls. At `lg` and up, `ActionButtons`
-holds Share and the avatar in the top-right corner instead, and it renders
-nothing on a phone.
-
-The title is for chats only: the open conversation's name, or the agent's
-name on a new agent chat, with the agent's `Avatar` in front. A plain new chat
-has no title. So do section pages (settings, admin, an agent's pages), because
-`SectionShell` already draws their title. When the chat has actions, the title
-is a `ghost sm` Button that opens a `DropdownMenu` with Edit agent (a role
-that may open its edit page), Share, Rename and Delete. Rename edits the name in place, as the
-sidebar row does. A title with no actions (a shared agent's new chat) is
-plain text.
-
-A long title truncates to one line and never runs under New Chat or the
-avatar: the title slot is `flex min-w-0 flex-1`, the agent's `Avatar` and the
-chevron keep their size, and only the name gives way (a `truncate` span with
-`title=` holding the full name). This is the rule for any Button that holds a
-user-supplied name (a chat, agent or source) in a flex row: Button's base is
-`shrink-0 whitespace-nowrap`, so `min-w-0` alone does nothing. Pass `min-w-0
-shrink` (or `flex-1` when it should fill the row) and put the name in the
-`truncate` span; its icons stay `shrink-0`. `w-full` doesn't count: a
-`w-full shrink-0` Button takes the whole row and pushes its neighbour out,
-under the next control (an `outline` Button's fill is translucent in dark, so
-it shows through there and hides in light). `variant="combobox"` already
-carries `min-w-0 shrink`, like the fields it sits among.
-
-New Chat is `SquarePen` everywhere: the phone bar, the sidebar's New Chat row
-and the collapsed rail. `Plus` means "add an item to this list", not "start
-a chat".
-
-### Source views (`components/tree/`, `WikiViewer`, `components/graph/`, `GraphView`)
-
-Every source view (a file or connector tree, a one-document chunk list, a
-wiki, a knowledge graph) is one shell:
-
-- **Header**: `PathHeader`, 16px (`gap-4`) above the content in every
-  source view, crumbs and no back button: Sources (leaves the source view),
-  the source, its folders, the open file and the open chunk ("Chunk 12"),
-  each opening its level, the last one current. A wiki's open page is not a
-  crumb: its crumbs stop at the source, and the page is marked in the
-  navigator and named by its path in the reader's meta. Up one level is
-  a crumb, as on the Tools and Teams detail pages (`DetailBreadcrumb`); the
-  phone's `SectionBackLink` above the title is the only arrow, and it leaves
-  the section. Crumbs never take `text-primary`; parents are muted like any
-  crumb, and the Breadcrumb primitive keeps the row on one line. A tree embedded in another source view (a graph
-  source's Files tab) draws no Sources crumb and reports its crumbs to the
-  host (`onCrumbsChange`), whose header shows them while that tab is open. The
-  file table has no `..` row. `badge` is the source kind as a `neutral` Badge with a 12px lucide
-  icon (Living wiki, Knowledge graph, a connector's provider; plain uploads
-  have none); `byline` is one muted `text-sm` line of counts ("33 files ·
-  11,420 tokens", "12 pages · 8,111 tokens · …", "371 entities · 1,172
-  relationships"), where a kind that needs explaining adds one sentence. No
-  explainer box. Actions on the right: Test retrieval (`outline field pill`)
-  and the kind's one primary action (Add file, Sync).
-- **Navigator**: `SourceNavigator`, a `w-64` column shown only when there is
-  more than one thing to open (files, wiki pages). A filter `CommandInput
-variant="field"` over a `CommandList` of `CommandItem`s, so the arrow keys
-  walk from the field into the list; the open item is `checked`. Files are a
-  tree (folders expand, a folder opens its table on the right and expands,
-  24px of indent per level to depth 4 and 12px per level below it, every row
-  with its path as `title`); wiki pages are grouped under their top folder as
-  `CommandGroup` headings, labelled by title or by file name in sentence case
-  (`wikiPageLabel`). Typing flattens the list to matching leaves with their
-  full parent path as a muted second line. The column caps its list at
-  `max-h-[70svh]`. Below `lg` it is a `combobox field pill`
-  that opens the same list in a bottom sheet, uncapped (the sheet body
-  scrolls). A source with one file opens
-  straight on its chunk list, and a wiki with one page on its reader at full
-  width: no navigator, no table.
-- **Reader**: `ReaderPanel`, the content you read (a wiki page, an open
-  chunk): a `subtle` Card with `padding="none"`, its meta (muted 12px lines)
-  left and its actions right in a `min-h-14 px-6` header row, a `Separator`,
-  then the body at `px-6 py-5`. The body is always rendered markdown,
-  `components/SourceMarkdown` (the chat answer's headings and tables, lists
-  outside the text); raw text is never the reading view. Actions: an open
-  chunk's previous / next (`IconButton ghost-muted icon-sm pill`, and the
-  arrow keys), then Edit (`outline sm pill`, `Pencil` first) and an
-  `ActionMenu size="toolbar"` (Copy text; a chunk's also has Delete, a
-  destructive item). A wiki page has Edit and the same menu
-  with Copy text, and no previous / next; the navigator walks them. Edit,
-  Delete and Add chunk show only to a role that may edit (see Access and
-  roles).
-- **Read in the page, edit in a drawer**: Edit and Add chunk open
-  `SourceEditSheet`, a modal `SidePanel size="wide"` (a working surface): title
-  and a mono description (path, version, tokens), then any `fields` edited
-  with the content (a chunk's Title, a `FormField` + `Input` with
-  `labelSurface="background"` and the hint "The name answers cite this
-  chunk by."; Add prefills it with the title the file's chunks already use,
-  else the file's name), Write · Preview
-  (`ui/tabs`; Preview renders the draft with
-  `SourceMarkdown`), one filling `font-mono` Textarea, then Cancel (`ghost lg
-pill`) and Save (`default lg pill`, off until the draft or a field changes, and while the draft is blank). The drawer
-  edits a copy: closing with changes asks "Discard your unsaved changes?". A
-  save result stays in the drawer as an Alert above the field (a wiki
-  conflict `warning`, forbidden and failures `destructive`); success closes
-  it and the page re-renders behind. Never edit in place in the reader.
-- **Chunk grid**: `SearchInput` ("Search chunks"), then Add chunk at the end.
-  The count is in the header's byline; only a chunk list inside a file tree,
-  whose byline is the tree's totals, repeats it as muted meta beside the
-  search; tiles show `chunkPreviewText` (heading markers and dot
-  leaders removed, display only) and `#n · tokens` in `CardFooter`.
-- **Graph**: under the header, `ui/tabs` Graph · Entities
-  · Files (Files is the embedded file tree; a source with no folder structure
-  shows its embedded chunk list there instead, as the plain view does). A tab's own action goes in the
-  header's action row after Test retrieval, only while that tab is open (the
-  Files tab's Add file or Sync, portalled through `TreeBrowser`'s
-  `actionsTarget`), as on the agent pages; the embedded tree draws no row of
-  its own. The Graph tab's toolbar holds the
-  entity search (a Popover + Command over the server's `/graph/nodes?q=`),
-  the phrase "Show top [50 | 100 | 250] by connections" (muted `text-sm`
-  words, the `ToggleGroup xs` alone in its muted track) and the legend, which
-  is the type filter (`ToggleGroup type="multiple" xs` in its own muted track,
-  a colour dot per item). The surface is one `subtle` Card, `padding="none"`, at `h-[70svh]`;
-  the canvas controls (`graph/GraphCanvasControls`) are the workflow
-  builder's `CanvasControls` strip without React Flow or Undo / Redo; change
-  the two together. Type colours come from `graph/GraphTypeDot`
-  (`GraphTypeDot`, `GraphTypeBadge`, `GraphSeriesDot`), never a hand-picked
-  hue; the node panel is a docked `SidePanel expandable="graph-node"` inside
-  the Card (which is `relative`), open only while a node is selected (see Side
-  panels): the entity's name, its type Badge as the description, "Show in
-  graph" under the title on the Entities tab. The Entities tab is
-  the same frame: toolbar (`SearchInput` with a `label`, the type Select),
-  then the `h-[70svh]` Card holding the `Table` (no `TableContainer`, it
-  scrolls inside) and the same dock, the open entity's row `selected`, and the
-  pager under the frame. The canvas labels only the ten biggest hubs, the
-  hovered node and the selection with its neighbours, and dims everything
-  unconnected to the selection to 15%. The panel lists the node's
-  relationships, one row per neighbour with its normalised edge labels
-  (`groupRelationships`), each a button that selects that neighbour, then its
-  source chunks as `filled sm interactive` tiles. A tile opens the chunk as
-  the panel's second level (`graph/GraphChunkReader`): a Back arrow, the chunk
-  rendered with the entity's name marked in the brand tint (`bg-secondary`),
-  and Open in Files and Edit (the modal `SourceEditSheet`) in its footer,
-  which is omitted when neither applies. Cancel or Discard in the edit drawer
-  returns to the chunk; Back, Open in Files and a saved edit return to the
-  entity. The relationship list is capped server-side: its heading
-  counts the true total (`relationships_total`) and, when the list is partial,
-  a muted `text-xs` line says how many are shown.
-
-### Chat answer column
-
-The answer column never scrolls sideways. Its boxes, from AnswerFlow down to
-MarkdownAnswer, are stretched full width (`w-full min-w-0`, or the flex
-default), never `items-start` / `self-start` with `max-w-full`: a
-shrink-to-fit box sizes to its longest code line, and `max-w-full` caps it at
-100% before its margins are added, so it still spills past a phone screen.
-Wide markdown blocks scroll inside their own frame, not the page: fenced code
-scrolls sideways in its bordered box with the language and copy row fixed
-above it, and tables do the same (`overflow-x-auto` on their bordered
-wrapper).
+Dates and missing values go through the same file. Absolute dates are
+`formatDate`, `formatDateOnly` or `formatDateTime`, en-GB (DD/MM/YYYY,
+24-hour) in every language by decision; "a date or nothing" is
+`formatTimestamp`, never a local wrapper. "Last …" and "next run" are
+`formatRelative` (in the app language; `dateAfterDays` switches to the date
+past a cut-off, `future` words a coming time as "in …"), never a hand-rolled
+"5m / 3h". A missing value (a date, a count, an id) is `EMPTY_VALUE` (`—`),
+never `-` or blank. A formatted date passed into `t()` is interpolated user
+text (see Rules in one paragraph).
 
 ### Grids
 
@@ -1301,192 +1130,48 @@ grid inside a Modal keeps its own column counts, because breakpoints follow
 the window, not the dialog.
 Skeleton mirrors follow the grid they stand in for.
 
-### Workflow builder (`agents/workflow/`)
-
-The toolbar is `AgentPageHeader` on `bg-background` with a `border-b`. Its
-current crumb is the agent's `Avatar` (circle, 20px image, the robot when
-there is none), the name (`truncate`, `max-w-[32ch]`, the current crumb's cap) and a muted
-`ChevronDown` in a `ghost sm` Button, the phone top bar's title recipe; it
-opens the workflow details. The status Badge follows (`success` Published,
-`neutral` Draft until the first save), then the tabs. On the right: "Unsaved
-changes" as muted `text-sm` meta while there are any, Preview, Save, and the
-⋯ (`ActionMenu size="toolbar"`): Edit details first (the same drawer, for
-anyone who doesn't try the name), then Access details, Share with team and
-Delete once the workflow is saved, each only when the role allows it.
-
-The workflow details are a modal `SidePanel size="default"`
-(`components/WorkflowDetailsSheet.tsx`, see Side panels) with the classic
-Basics phone layout: a
-`subtle lg` Basics panel with `FileUpload size="tile" tileSize="fixed"` beside
-the Name pill and Description across the row, then an Advanced panel with the
-prompt-override `SettingRow`. Its `PanelFooter` is a `ghost lg pill` Cancel
-and a `default lg pill` Save. The panel edits a copy: Cancel,
-the X, Escape and the scrim drop the edits; Save is disabled until something
-changes, then saves the workflow and closes, or stays open with a destructive
-`Alert` listing the errors.
-
-The canvas is `bg-muted`; the node palette to its left is a `bg-background`
-rail with `border-r` (`NodePalette.tsx`), and each palette pill is a
-`<button>` that is also `draggable`: drag it onto the canvas, or click (or
-press Enter) to add the node beside the selected one, or in the middle of the
-view. Each pill's icon is a `size-8 rounded-md` tinted square, like the
-settings panel's header (the pill is round, its icon is not; the canvas
-nodes keep their `size-10` circles). Pills hover to `bg-accent` only, with
-the focus ring, and a muted `text-xs` line under the groups says so.
-
-- **One tone per node type**: `nodeTones.ts` (`NODE_TONES`, `nodeToneClass`)
-  is read by the palette, every canvas node and the settings panel's header.
-  Agent is the brand soft fill (`bg-secondary text-secondary-foreground`),
-  Start and End `success`, Note and If / Else `warning`, Set State and Code
-  `info`, each `bg-<tone>/10 text-<tone>`. End is never `destructive`.
-- **Selected node**: `border-primary ring-3 ring-ring/50`, the focus-ring
-  look, with no scale (the Note node: `border-warning ring-3
-ring-warning/50`). Node meta is translated and muted (the agent type · the
-  model's display name, from `WorkflowModelsContext`); an output variable is
-  an `ArrowRight` then the name in `font-mono`.
-- **Canvas controls**: one `bg-card border rounded-full p-1` strip at the
-  bottom left (`CanvasControls.tsx`, no shadow): Undo, Redo, a vertical
-  `Separator`, Zoom out, the zoom level, Zoom in and Fit view, each
-  `ghost-muted icon-sm pill` with a top tooltip. React Flow's own
-  `<Controls />` and attribution are not shown.
-- **Node settings** are a docked `SidePanel expandable="workflow-node"` at
-  the canvas's right edge (`panels/NodePanel.tsx`), under the builder header
-  (see Side panels). The header's `leading` is the type's `size-8 rounded-md`
-  icon square; the description is the type's name, then the id in `font-mono
-text-xs` with a `CopyButton`; `actions` is an `ActionMenu size="toolbar"`
-  (Duplicate, Delete node; none on Start). Start and End have no Title field:
-  their body is one muted `text-sm` line saying what the node does. Its fields pass
-  `labelSurface="background"` and its row boxes (a condition case, a state
-  assignment) are `Card variant="subtle" padding="sm"`. The agent node's
-  fields are grouped by `SectionHeader size="xs" as="h3"` (Model, Prompt,
-  Knowledge, Output) with an Advanced settings `link sm` disclosure that
-  opens on its own when one of its settings is set. The column is narrow, so
-  every field stacks at full width (`flex flex-col gap-5`), Agent type and
-  Model included; no two-up grids. A row box's title is `SectionHeader
-size="xs" as="h4"`. In an If / Else case's Simple mode, the operator Select
-  and Value each carry a floating label (Operator, Value).
-
-### Connectors (`connectors/`, `conversation/ToolCallCard`)
-
-One tile, `connectors/ConnectorTile`, draws a service everywhere: the
-Connectors catalog, the Tools page and Add a tool's picker. A header row (a
-24px icon, the `CardTitle` truncating, a ⋮ `ActionMenu` in `CardAction` only
-on a tile that isn't itself a button), a `CardDescription size="xs"
-line-clamp-2`, a badge row that hides when empty (the state first: `success`
-Connected, `warning` Reconnect, `neutral` Needs admin setup / Disabled by
-admin; then the capability badges, `neutral`), and `CardFooter` meta (the
-account line, the Tools switch). No fixed heights. An available service has
-no badge and no footer: the whole tile is its Connect, and an action drawn in
-the footer would read like the account line there. A custom entry has no
-state. On a page the tile is `filled lg`; in a modal it is
-`outline interactive lg`. A connected tool's header shows its service's icon.
-
-The Connectors page filters by state, not by category: All, Connected (a
-working account) and Disconnected (an account that needs signing in again or
-was disconnected), DESIGN's filter-by-kind `xs` track with counts, kept in the
-address (`?filter=`). A state with nothing in it isn't offered; with only All
-left there is no row. A narrowed list (`?capability=sync|tools`) is a `default`
-Badge beside the track whose X button clears it. Search finds a service by
-name.
-
-One broken connection has one word everywhere: **Reconnect**
-(`settings.connectors.status.reconnect`), the `warning` Badge for the state
-and the label of the action. "Needs sign-in" is one rule,
-`connectionNeedsSignIn` (`reconnect_needed` or `error`); a `disconnected`
-account is the user's own choice and isn't flagged.
-
-The Tools page groups its grid like the composer's picker
-(`settings/toolGroups.ts`): `SectionHeader size="sm"` for Built-in, one group
-per connected service with its icon, then Custom; a group may continue onto
-the next page under a repeated header. Add a tool lists "From a service", then
-a Custom section (MCP server, OpenAPI / REST) whose tiles launch in place, and
-its footer is Cancel only. Add knowledge is one view: the upload and web
-tiles, then "From a service" (see OptionCard) and "Browse all connectors"
-(`settings.connectors.browseAll`, 12px `ArrowRight`) under the tiles.
-
-The connection drawer (`ConnectionDrawer`, a `default` SidePanel) keeps the
-capability badges in `PanelHeader` children. Its accounts are one `Card subtle
-padding="none" overflow-hidden` of ListRows (name, account line, status Badge,
-⋯); with several, the row whose tools show below is `selected` (see ListRow).
-A part (Jira & Confluence inside Confluence) is a sibling section with the
-parent's header row and Connect size. It shows `LoadingState` until the
-connections list and this connector's details have loaded, never "No account"
-with a Connect meanwhile. The account ⋯ is Rename, Disconnect, then Remove
-after a separator (`separatorBefore`); both confirmations name the account,
-say what the account actually has, show `pending` on the submit and keep a
-failure as an inline destructive Alert. Disconnect's submit is primary; only
-Remove is destructive. "In my chats" stays as in Switch.
-
-Per-action permissions are `connectors/PermissionGroup` everywhere (the
-drawer's ToolPermissions, an agent's API write allowlist, the Tools page
-editor): a `SectionHeader size="xs"` "{group} · {n}" whose `actions` hold one
-`ToggleGroup xs` in a muted track, Allow / Ask first / Off / **Customize**
-(Allow / Off / Customize where nobody can approve: the API, the widget, a
-public link). Customize is pressed while the rows disagree and is the fold:
-rows (`PermissionRow`: the action title, a muted `line-clamp-2` description,
-a `PermissionSelect` `Select sm w-32`) show only under it. There is no
-"Customize each of N" or "Show all" link. Who fills a parameter is always
-"Let AI decide / Always use"; "Parameters" is `ActionParametersToggle` (the
-`link sm` disclosure, named "Parameters for {action}").
-
-The connect wizard (`ConnectWizard`) is a `size="lg"` Modal on every step,
-with the connector's icon tile in `leading` and a `description` (the
-service's description, then "Signed in as …"). Every step title names the
-service ("Choose what to sync from GitHub") and doesn't change with a switch.
-The setup step's footer is one submit named by what it does ("Add to
-Knowledge" while Sync is on, else "Finish setup"; Cancel + "Add to Knowledge"
-when syncing more), never Skip. Every path ends on the done step, whose
-summary is a `success` Alert. With several accounts and none chosen, the
-first setup field is an account Select. The pickers (repositories, Linear,
-SharePoint / Confluence / Drive files) are one recipe: a search on
-`labelSurface="card"`, then an `outline padding="none" overflow-hidden` Card
-of ListRows (a Checkbox and the icon square in `leading` for a multi-pick, a
-muted meta line "Updated 12/09/2026 · 2.29 MB", a trailing `ghost-muted
-icon-sm` chevron to open a folder), a muted `text-xs` "N selected" line under
-it, no scroll cap (the modal body scrolls) and `useLoadMore` +
-`LoadMoreStatus loadingLabel` for more pages. An expired sign-in in a picker
-offers Reconnect.
-
-Credential forms put every hint under its field (FormField `hint`); required
-fields carry the star, so no field says "Optional". A catalog hint may wrap one
-phrase in `<link>…</link>` with the field's `hint_url`: it renders as a `link
-text` Button, so it takes the hint's size and weight, with a trailing 12px
-`ExternalLink`.
-
-A paused tool call in chat, an approval or a Connect card, is
-`conversation/ToolCallCard`: a `bg-muted rounded-2xl border` frame, a header
-row (a 20px logo, "Service · Action" truncating, an optional muted meta, a
-state Badge: `info` Needs approval, `neutral` Not connected, `warning`
-Reconnect, `success` Connected), an optional body and a wrapping row of `xs`
-pill actions. The arguments stay behind the Details chevron. The card sits in
-a `w-full min-w-0` wrapper with its margins on an inner div, because the
-answer bubble is a wrapping flex column and would let a one-line preview widen
-the card past the column.
-
 ### Disclosure (`ui/collapsible.tsx`)
 
 A body that opens and closes in place is `<Collapsible open id>`: a grid that
 goes from `0fr` to `1fr` rows and fades over 300ms (`motion-reduce` turns the
 transition off), its content clipped in one track and kept mounted while
-closed but `inert`, so its fields leave the tab order. The trigger is the caller's, with `aria-expanded` and `aria-controls`
-set to the Collapsible's `id`. There is no Accordion.
+closed but `inert`, so its fields leave the tab order. The body clips only
+while closed or moving, so focus rings inside it show once it is open. There
+is no Accordion.
 
-- Inline: the `link sm` toggle (see Button) over the Collapsible
-  (RetrievalOptions' Advanced, a device's audit log, the connect wizard's
-  tools).
-- Framed rows (ToolConfig's actions, Logs' rows): the header is a real
-  `<button type="button">` holding the chevron and the title, with any control
-  (a `PermissionSelect`) as its sibling, never inside it, and never a
-  `div role="button"` with hand-written key handlers.
-- The three hand-rolled grid-rows wrappers (RetrievalOptions,
-  WorkflowPreview's step rows, UploadToast's rows) moved onto it; don't
-  hand-roll another.
+The trigger is `CollapsibleTrigger` (same file): `open`, `onOpenChange` and
+`controls` (the Collapsible's `id`). It sets `aria-expanded` and
+`aria-controls` and draws a lucide `ChevronRight` first that turns while
+open; pass layout only. Never hand-roll the Button.
+
+- `look="inline"` (the default) is the `link sm` toggle for a group in a
+  form, modal or drawer (RetrievalOptions' Advanced, a device's audit log,
+  the connect wizard's tools, Share's Access settings). `chevron="sm"` draws
+  a 12px chevron.
+- `look="section"` is a section panel's header (NewAgent's Advanced,
+  Guardrails): `variant="section-toggle"`, an 18px semibold title, a
+  primary underline on hover. It only goes inside a Card: the toggle draws no
+  focus ring, and every Card draws one round itself instead
+  (`has-[[data-variant=section-toggle]:focus-visible]:ring-3 … ring-inset`).
+  The caller wraps it in the `<h2>` (a button flattens heading children), and
+  status badges go beside it, not inside, or the underline runs under them.
+- Layout: a closed Collapsible is still a flex item, so a parent's `gap-*`
+  would leave space under a closed toggle. Wrap the trigger and the
+  Collapsible in a plain `<div>` and give the body the gap as top padding
+  (`pt-3`, `pt-5` in a `gap-5` panel).
+- Framed rows (ToolConfig's actions, Logs' rows) keep their own header: a
+  real `<button type="button" aria-expanded aria-controls>` holding the
+  chevron and the title, with any control (a `PermissionSelect`) as its
+  sibling, never inside it, and never a `div role="button"` with hand-written
+  key handlers.
+- WorkflowPreview's step rows and UploadToast's rows use the Collapsible
+  too; don't hand-roll a grid-rows wrapper.
 
 ### Modal, not Dialog
 
 `ui/dialog.tsx` is the Radix primitive and is private to `ui/`; ESLint
 rejects imports of it elsewhere. App code uses `Modal` (sizes `sm` to
-`full`) or `CommandDialog`.
+`xl`) or `CommandDialog`.
 
 On phones (below `lg`) a Modal is a bottom sheet by default (see Side panels
 for the shape). `mobileVariant="dialog"` keeps the centred dialog, and only
@@ -1500,8 +1185,8 @@ it, Move to folder's new-folder field, may).
 
 The width comes from `size` only: `sm` 384, `md` 512 (the default), `lg` 672
 (a form or a one-column list: Move to folder), `xl` 896 (a grid of
-tiles or a wide editor: Add tool, Test retrieval, the prompt editor), `full`.
-Never add a width or height class. The dialog caps itself at `85dvh` and
+tiles or a wide editor: Add tool, Test retrieval, the prompt editor). Don't
+pass the default `size="md"`. Never add a width or height class. The dialog caps itself at `85dvh` and
 its body is the one scroller, so the header and footer stay put; don't cap
 the body with `contentClassName`. `contentClassName="overflow-visible"`
 (`cn` drops the body's `overflow-y-auto` for it) is only for a body whose popover must escape it (the
@@ -1539,6 +1224,20 @@ onSubmit pending disabled destructive />}`: a ghost Cancel and a primary
 the submit's `loading` spinner. A left-hand extra (Test connection) is
 `footerStart`, and `submitProps` / `cancelProps` carry `type="submit"`,
 `form` or a test id. A lone button is a `size="lg" shape="pill"` Button.
+
+**Async submits.** A submit whose handler awaits the server passes `pending`
+while it runs and closes only when it resolves; a failure stays in the dialog
+as a destructive `Alert`. A yes/no confirm is `ConfirmationModal`: return the
+request's promise from `handleSubmit` and it shows `pending`, closes on
+success and shows `error` (default `common.actionFailed`, "Something went
+wrong. Please try again.") on a rejection; `message` is the title,
+`description` the muted line under it and `children` the body. A sync
+handler closes it at once, which is right only for work that reports its own
+progress (a sync fires and closes).
+
+A Popover, date picker or combobox opened inside a Modal or Sheet takes
+`modal` (Radix's, or `MultiSelect`'s), or its list can't scroll and doesn't
+close on an outside click.
 
 A search palette is `CommandDialog` on desktop. Pass cmdk options to its
 inner `Command` through `commandProps` (`shouldFilter={false}` when results
@@ -1582,9 +1281,10 @@ it?
 
 Two widths, by `size`, never a `w-*` or `max-w-*` class (enforced):
 `default` 480px for every panel, and `wide` (600 / 700 / 800px) only for a
-working surface: a trace, an agent preview, the source editor. A docked
-panel can be
-`expandable="<surface>"`: Expand in its header steps compact (its `size`),
+working surface: a trace, an agent preview, the source editor. `size` is
+modal-only (the types refuse it on a docked panel, which is always 480px
+compact). A docked panel can be
+`expandable="<surface>"` (the types refuse it on a modal one): Expand in its header steps compact,
 half of the host (never narrower than compact) and full (covering the host,
 the page keeping its scroll underneath), then back, and the last width is
 remembered per surface (the artifact, a workflow node, a graph entity). A
@@ -1615,7 +1315,7 @@ previewed in one shared panel, `agents/components/AgentPreviewSheet`, for
 workflow and classic agents alike: `size="wide"`, the agent's name as the
 one-line description, an `info` Running badge in `actions` while it answers,
 then the preview, which owns its scroller. The workflow preview's Execution
-details and Artifacts rows are the answer's step-row recipe (see Alert), each
+details and Artifacts rows are the answer's step-row recipe (see PATTERNS.md › Chat answer column), each
 step a `subtle sm` panel with its output in a `filled sm` well. Never
 hand-build a right panel (an `<aside border-l>` column or a `SheetContent
 side="right"`); compose SidePanel.
@@ -1627,11 +1327,10 @@ sheet), `max-h-sheet` (the visible viewport less the top safe-area inset and a
 padding that clears the iPhone home indicator. Never cap a sheet with `vh` (see
 Viewport heights): a `90vh` sheet slides under Safari's URL bar and covers its
 scrim. `SheetContent side="bottom"` gives the
-shape with `pb-safe-0` (the bare inset); pass `handle` for the grab bar, which
-also hides the X (the overlay dismisses it; the handle is only a cue and doesn't
-drag; pass `showCloseButton` to keep an X).
-Modal's phone sheet shares the shape and the `SheetHandle` (and,
-like a handled sheet, has no X), with `pb-safe` (the inset, at least 1rem)
+shape with `pb-safe-0` (the bare inset) and draws no X (the scrim dismisses
+it); pass `handle` for the grab bar, which is only a cue and doesn't drag.
+Modal's phone sheet shares the shape and the `SheetHandle` (and has no X
+either), with `pb-safe` (the inset, at least 1rem)
 under its footer. `pb-safe`, `pb-safe-0`
 and `max-h-sheet` are the `index.css` utilities for the safe-area insets; never
 spell `env()` in a class.
@@ -1645,10 +1344,11 @@ mount `BottomTintReset` (`ui/bar-tint-reset.ts`), which shows a 6px
 unmounts, and Safari samples the page colour again. `useDarkTheme` calls
 `resetBottomTint()` and `resetTopTint()` (a 16px strip on the top edge) when the
 theme changes. Anything else fixed to the bottom edge that can go away (a
-drawer, a bottom banner) calls `resetBottomTint()` when it is removed. The sizes
-and the one-frame life were measured on an iPhone (6px at the bottom, 16px at
-the top), and a strip behind the content, transparent or at `opacity-0` isn't
-sampled, so don't shrink or hide the strip.
+drawer, a bottom banner) calls `resetBottomTint()` when it is removed. Keep the
+strip at 6px (bottom) and 16px (top) for one frame, in front of the content and
+opaque: a strip behind the content, transparent or at `opacity-0` isn't
+sampled, so don't shrink or hide the strip (the measurements are in
+`ui/bar-tint-reset.ts`).
 
 Content read alongside the chat (notes, todos, files, `components/ArtifactPanel`)
 and an answer's full source list (`conversation/SourcesPanel`) share the chat's
@@ -1659,7 +1359,8 @@ docked side panel (see Side panels). Don't add another pattern.
 The three-dots menu on a card, tile or row. Pass `options: MenuOption[]`
 (`label`, `onClick`, optional lucide `icon`, `variant: 'destructive'`,
 `disabled`, `separatorBefore` for a rule above a row, which sets a
-destructive Remove apart from the reversible items) and a `triggerLabel`. It renders a `ghost-on-accent` `icon-xs`
+destructive Remove apart from the reversible items; `icon` also takes an
+element, such as a `ConnectorIcon`) and a `triggerLabel`. It renders a `ghost-on-accent` `icon-xs`
 trigger with `EllipsisVertical`, and stops clicks and keys on the trigger and
 the menu from reaching the host, so it can sit inside a clickable card.
 In a page header or toolbar on a plain surface (the agent Overview's title
@@ -1668,9 +1369,16 @@ row, through `SectionShell titleAction`; the workflow builder's toolbar), pass
 others there, hovering to `accent`, with its tooltip below. The default
 `row` trigger's darker hover is only for hosts that turn `accent` themselves.
 `align` (default `end`) places the menu, `disabled` greys the trigger, and
-`triggerTestId` puts a `data-testid` on it. `className` takes layout only (position, margin) and lands on the trigger;
-the menu is at least 144px wide and grows with its labels. `open`/`onOpenChange` make it controlled. Don't hand-build
-this menu from `DropdownMenu`, and don't declare a local option type.
+`triggerTestId` puts a `data-testid` on it. `className` takes layout only (position, margin) and lands on the trigger.
+`menuWidth` sets the panel: `default` (at least 144px, growing with its
+labels), `sm` (128px), `lg` (192px) or `fixed` (160px). `open`/`onOpenChange` make it controlled.
+
+A menu behind a labelled button ("Actions" as an `outline` pill with a
+`ChevronDown`, "Download", a title button) passes that Button as `trigger`
+instead of `triggerLabel`; its clicks propagate as usual and it has no
+tooltip. Don't hand-build this menu from `DropdownMenu`, and don't declare a
+local option type. A raw `DropdownMenu` is only for custom content (Help, the
+team switcher).
 
 ### Table, Label, dialog text
 
@@ -1680,20 +1388,19 @@ default (`px-2 py-1 lg:px-3 text-sm font-normal text-foreground`, 28px, on
 `TableHead`'s sticky `bg-muted` strip). A `TableRow` hovers (`bg-accent`,
 pointer) only when it has an `onClick`; a read-only row does not. `selected`
 marks the row whose detail is open beside the table (the graph's Entities):
-`bg-secondary`, the brand tint of an open navigator item, kept on hover, with
-`aria-current`. Use
-A number column (sizes, tokens, counts) is `align="right"` with
-`tabular-nums` on its cells, header included in the alignment, whatever the
-column order (the file table, the graph's Entities). Use
-`TableContainer` for the bordered, scrolling frame; a table that already sits
+`bg-secondary text-secondary-foreground`, the brand tint of an open navigator
+item, kept on hover, with `aria-current`. A number column (sizes, tokens,
+counts) is `align="right"` with `tabular-nums` on its cells, header included
+in the alignment, whatever the column order (the file table, the graph's
+Entities). Use `TableContainer` for the bordered, scrolling frame; a table that already sits
 in a frame renders `Table` alone. `Table` keeps a 600px minimum so wide
 tables scroll sideways; a narrow one inside a panel passes
 `minWidth="min-w-0"`. A fixed icon column is `width="40px" align="center"`.
 `TableCell` and `TableHeader` accept typography and alignment classes and
-`text-muted-foreground`. `Label`, `DialogTitle`, `DialogDescription`,
-`SheetTitle` and `SheetDescription` accept typography plus
+`text-muted-foreground`. `Label`, `DialogTitle`, `DialogDescription` and
+`SheetTitle` accept typography plus
 `text-foreground` and `text-muted-foreground`. `DialogContent`,
-`PopoverContent`, `SheetContent`, `SheetHeader`, `SheetFooter`,
+`PopoverContent`, `SheetContent`,
 `DropdownMenuContent`, `DropdownMenuSubContent`, `SelectContent`,
 `TooltipContent` and `Modal` accept `p-0` for edge-to-edge content; Modal
 merges it after its own `p-8`, so no `!` is needed. A modal that needs a
@@ -1776,6 +1483,14 @@ leading-tight font-semibold`. `DialogTitle` and `SheetTitle` default to it;
   the token instead of widening the table. Both break at spaces first and
   split a token only when it would overflow. Never `break-all`: it splits
   ordinary words mid-word ("notif / ications"); the lint rejects it.
+- **Truncation**: text the user or the server supplied (a name, title, path,
+  URL, email, id or file name) that truncates or clamps carries its full
+  value as `title`. Fixed UI labels don't, nor do clamps that expand in place
+  or excerpts that open in full (a tile's description). The primitives do it
+  for plain text: ListRow for a string title or description, CardTitle for a
+  string child whose className truncates or clamps, BreadcrumbPage for a
+  plain-text crumb; for a node, put `title` on the node. `title` is never a
+  tooltip (see Tooltip).
 
 ### Rhythm
 
@@ -1830,10 +1545,13 @@ shows.
 - **Focus ring**: `focus-visible:ring-3 focus-visible:ring-ring/50` plus
   `focus-visible:border-ring` on fields. Never `focus:` (mouse users see it)
   and never `ring-2` or `ring-[3px]` (a `focus:` or `focus-within:` ring
-  with `ring-2` is enforced); the `ui/` components already carry it,
-  so plain elements should become components rather than copy the classes.
-  Inside `ui/`, spell it with the `focusRing` constant from `lib/utils.ts`
-  (with `invalidState` and `fieldFrame` for fields) rather than retyping it.
+  with `ring-2` is enforced); the `ui/` components already carry it. So
+  every interactive element in app code is a `ui/` component or `asChild`
+  under one. A raw `<button>`, `<a>` or `<Link>` is only a stretched target
+  (see A clickable card that holds a link), or it carries `focusRing` plus
+  `outline-none`. Spell the ring with the `focusRing` constant from
+  `lib/utils.ts` (with `invalidState` and `fieldFrame` for fields) rather
+  than retyping it.
 - **Focus return**: Modal, Sheet and DialogContent give focus back on close
   only to the element that had it when they opened (`ui/use-focus-return.ts`).
   A tap on iOS, and a click in Safari, doesn't focus the trigger, so Radix's
@@ -1847,15 +1565,17 @@ shows.
   A dialog panel is a `tabIndex=-1` focus target that Radix can focus, so it
   carries `outline-none`: Safari draws its own blue `outline: auto` there and
   ignores our `outline-color`. Any new focusable container needs the same.
-- **Close buttons**: every Modal, bottom Sheet and DialogContent uses its
-  built-in close (a phone sheet with a handle has none), a `ghost-muted`
-  `size="icon-sm"` Button (32px, accent square on hover) at `top-2 right-2`;
-  a side panel's is the same Button in `PanelHeader`'s title row. Never
-  hand-place another X.
+- **Close buttons**: every Modal and DialogContent uses its built-in close
+  (a phone sheet has none; the scrim closes it), a `ghost-muted`
+  `size="icon-sm"` Button (32px, accent square on hover) at `top-2 right-2`,
+  labelled `t('close')`; a side panel's is the same Button in `PanelHeader`'s
+  title row. Never hand-place another X.
 - **Disabled**: buttons (Button, Tabs) use
   `disabled:pointer-events-none disabled:opacity-50`, so the pointer passes
-  through. Fields (Input, SelectTrigger, Switch, Textarea, CommandInput,
-  Label) use `disabled:cursor-not-allowed disabled:opacity-50` and never
+  through, and so do targets that act like one: the Dropzone and the Command,
+  menu and Select items (`data-[disabled]:pointer-events-none`). Fields
+  (Input, SelectTrigger, Switch, Checkbox, Textarea, CommandInput, Label) use
+  `disabled:cursor-not-allowed disabled:opacity-50` and never
   `pointer-events-none`, which would hide the cursor.
 - **Elevation**: cards have no shadow; fields and outline buttons
   `shadow-xs`; popovers, menus and select lists `shadow-md`; sheets
@@ -1871,10 +1591,13 @@ shadow-lg` in both themes: the knob is white on any track, and a white knob
   picker's menu (both Approved exceptions). Don't add new ones: a floating panel is a `Popover`,
   `DropdownMenu` or `Modal`, which carry their own shadow and stacking; never
   an `absolute` div with a shadow and a hand-picked `z-*`.
-- **Stacking**: `z-10` sticky headers and table heads inside a page;
-  `z-20` in-page floating chrome (banners, scroll-to-bottom, drag
-  handles); `z-50` overlays, modals, sheets, toasts and the one-frame
-  bar-tint strips; `z-200` every portalled floating list (popover, menu,
+- **Stacking**: `z-10` sticky headers and table heads inside a page, a real
+  control lifted over a stretched target (see A clickable card that holds a
+  link) and a corner control pinned inside a card; `z-20` in-page floating
+  chrome (banners, scroll-to-bottom, drag handles); `z-50` overlays, modals,
+  sheets, toasts, the one-frame bar-tint strips and full-screen takeovers
+  (the workflow builder's shell, the composer's drop overlay),
+  where DOM order decides between them; `z-200` every portalled floating list (popover, menu,
   select, tooltip), so it opens above a Modal without an override. Do not
   invent values in between: a `z-*` outside 0, 10, 20, 50, 200 and `auto` is
   rejected (enforced). The app
@@ -1916,8 +1639,6 @@ list stays reviewable.
 | `settings/traces/TraceChips.tsx`                                  | `shadcn/no-restyle`             | Trace stat chips (durations, counts) use tabular figures so they don't jitter between rows (`tabular-nums` on Badge). One disable.                                                                                                                                                                                                                                                                                                                                                              |
 | `conversation/ConversationBubble.tsx`                             | `shadcn/no-restyle`             | A source card's URL row is a `link inline` around an `<a>`: foreground at rest, primary on hover, regular weight, truncating (`text-current font-normal hover:text-primary underline-offset-2 max-w-full justify-start`). One disable.                                                                                                                                                                                                                                                          |
 | `admin/Overview.tsx`                                              | `shadcn/no-restyle`             | "View in Audit" under the denied-sign-ins tile keeps the tile's destructive tone at hint size (`text-destructive text-xs font-normal`). One disable.                                                                                                                                                                                                                                                                                                                                            |
-| `agents/workflow/WorkflowBuilder.tsx`                             | `shadcn/no-restyle`             | The publish-error Alert floats over the canvas with its close button in the top-right corner, so it pads `pr-10` to keep a long title clear of the button. One disable.                                                                                                                                                                                                                                                                                                                         |
-| `agents/components/ResourceStatusNotice.tsx` | `shadcn/no-restyle` | The stopped-resources warning floats over the workflow canvas (when `onClose` is set) with its close button in the top-right corner, the publish-error recipe, so it pads `pr-10`. One disable. |
 
 Note that a multi-line reason has to be a `/* ... */` block comment;
 consecutive `//` lines only disable the next comment line, not the code.
@@ -1931,10 +1652,16 @@ class can be a hook for code rather than a style.
 ## Live style guide
 
 `npm run dev`, then open `/design`. The page (`src/design/DesignSystem.tsx`)
-renders every `ui/` component with the variants above, shows the resolved
-value of each colour token and has a theme toggle. It is registered only
-when Vite runs in development mode, so it never ships. When you add a
-variant or token, add it there too.
+is a shell: the nav and the list of sections. Each section lives in
+`src/design/sections/<Name>Section.tsx`, built from `Section` and `Example`
+in `src/design/shared.tsx`; app recipes (the toast stack, the connect modal,
+populated side panels) are in `src/design/sections/recipes/`. It renders every
+`ui/` component with the variants above, shows the resolved value of each
+colour token and has a theme toggle. It is registered only when Vite runs in
+development mode, so it never ships. The Button, Badge and Avatar matrices are
+built from the exported cva keys (`buttonVariantNames`, `buttonSizeNames`,
+`badgeVariantNames`, `avatarSizeNames`), so a new variant shows up there by
+itself; any other new variant or token goes into its section file.
 
 ## Cleanup playbook
 
@@ -1955,7 +1682,7 @@ keep every step green.
    Delete the `dark:` twin of every class you tokenise.
 3. **Do not restyle `ui/` components from a page.** If a treatment is used
    in more than one place and no variant fits, add the variant in the
-   component file, add it to `src/design/DesignSystem.tsx`, and document it
+   component file, add it to its section in `src/design/sections/`, and document it
    here. A one-off gets `// eslint-disable-next-line shadcn/<rule> -- reason`.
 4. **Keep behaviour identical.** Same DOM order, same handlers, same
    translations (`t(...)` keys stay). Only classes and component choice
@@ -1973,11 +1700,9 @@ Known traps:
 - Port 5173 may be held by another checkout; check the Vite banner shows
   this repo's path before trusting what you see.
 - `components/SkeletonLoader.tsx`: the chunk, source, tool, add-tool and
-  agent layouts are Card mirrors with `Skeleton` bars, and the `chatbot`,
-  table, logs, default, analysis, connected-state and files layouts use
-  `Skeleton`; none pulses its own surface. `renderFilesSection` (and the
-  GoogleDrivePicker box it mirrors) is still a raw `border rounded-lg` box;
-  move both onto `Card` when you touch them.
+  agent layouts are Card mirrors with `Skeleton` bars, and the file table,
+  logs, default and analysis layouts use `Skeleton`; none pulses its own
+  surface.
 
 ## Working with the lint
 

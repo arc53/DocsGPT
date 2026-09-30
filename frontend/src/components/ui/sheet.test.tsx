@@ -2,6 +2,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import * as sheetModule from './sheet';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from './sheet';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -58,7 +59,6 @@ describe('SheetContent side="bottom"', () => {
         <SheetContent
           side="bottom"
           handle
-          showCloseButton={false}
           title="Tools"
           aria-describedby={undefined}
         >
@@ -154,21 +154,14 @@ describe('SheetOverlay', () => {
     expect(classes).not.toContain('bg-black/50');
   });
 
-  it('hides the X on a handled bottom sheet by default', async () => {
+  it('draws no X of its own: the caller brings its close (PanelHeader, the scrim)', async () => {
     await render(
       <Sheet open>
-        <SheetContent
-          side="bottom"
-          handle
-          title="Tools"
-          aria-describedby={undefined}
-        />
+        <SheetContent side="right" title="Trace" aria-describedby={undefined} />
       </Sheet>,
     );
     expect(
-      document.querySelector(
-        '[data-slot="sheet-content"] [aria-label="Close"]',
-      ),
+      document.querySelector('[data-slot="sheet-content"] button'),
     ).toBeNull();
   });
 
@@ -288,5 +281,30 @@ describe('SheetContent bottom-bar reset', () => {
     await renderSheet(false, 'right');
     await wait(20);
     expect(strip()).toBeNull();
+  });
+});
+
+describe('ui/sheet surface', () => {
+  it('keeps only the parts app code uses', () => {
+    expect(Object.keys(sheetModule).sort()).toEqual([
+      'Sheet',
+      'SheetContent',
+      'SheetHandle',
+      'SheetTitle',
+      'SheetTrigger',
+      'sheetBottomShape',
+    ]);
+  });
+
+  it('offers only the right and bottom sides, with no built-in close', () => {
+    const props = { title: 'Tools', 'aria-describedby': undefined };
+    // @ts-expect-error left drawers were never used
+    void (<SheetContent side="left" {...props} />);
+    // @ts-expect-error top sheets were never used
+    void (<SheetContent side="top" {...props} />);
+    // @ts-expect-error the built-in X is gone, and its label with it
+    void (<SheetContent closeLabel="Close" {...props} />);
+    // @ts-expect-error the built-in X is gone
+    void (<SheetContent showCloseButton {...props} />);
   });
 });

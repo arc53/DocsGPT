@@ -11,7 +11,13 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-import { PanelBody, PanelFooter, PanelHeader, SidePanel } from './side-panel';
+import {
+  PanelBody,
+  PanelFooter,
+  PanelHeader,
+  SidePanel,
+  type SidePanelProps,
+} from './side-panel';
 import { TooltipProvider } from './tooltip';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -50,14 +56,14 @@ const click = async (el: HTMLElement | null) => {
 };
 
 const panel = (
-  props: Partial<React.ComponentProps<typeof SidePanel>> = {},
+  props: Partial<SidePanelProps> = {},
   header: Partial<React.ComponentProps<typeof PanelHeader>> = {},
 ) => (
   <SidePanel
     open
     onOpenChange={() => undefined}
     aria-describedby={undefined}
-    {...props}
+    {...(props as object)}
   >
     <PanelHeader title="renewal-note.md" {...header} />
     <PanelBody>Body</PanelBody>
@@ -93,8 +99,13 @@ describe('SidePanel variant="modal"', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it('never offers Expand', async () => {
-    await render(panel({ expandable: 'artifact' }));
+  it('never offers Expand, and its types refuse expandable', async () => {
+    await render(
+      // @ts-expect-error expandable is docked-only
+      <SidePanel open onOpenChange={() => undefined} expandable="artifact">
+        <PanelHeader title="renewal-note.md" />
+      </SidePanel>,
+    );
     expect(button('sidePanel.expand')).toBeNull();
   });
 });
@@ -130,9 +141,21 @@ describe('SidePanel variant="docked"', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it('takes its starting width from size', async () => {
-    await render(panel({ variant: 'docked', size: 'wide' }));
-    expect(aside()!.className.split(' ')).toContain('w-[800px]');
+  it('is always 480px compact: wide is a modal-only size', async () => {
+    await render(
+      <SidePanel
+        variant="docked"
+        open
+        onOpenChange={() => undefined}
+        // @ts-expect-error a docked panel has no size
+        size="wide"
+      >
+        <PanelHeader title="renewal-note.md" />
+      </SidePanel>,
+    );
+    const classes = aside()!.className.split(' ');
+    expect(classes).toContain('w-120');
+    expect(classes).not.toContain('w-[800px]');
   });
 
   it('slides in from the right', async () => {

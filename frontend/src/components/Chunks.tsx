@@ -441,20 +441,17 @@ const Chunks: React.FC<ChunksProps> = ({
     }
   };
 
+  // Returned to ConfirmationModal through handleConfirmedDelete: it stays
+  // pending while this runs and keeps a failure in the dialog.
   const handleDeleteChunk = async (chunk: ChunkType) => {
-    try {
-      const response = await userService.deleteChunk(
-        documentId,
-        chunk.doc_id,
-        token,
-      );
-      if (!response.ok) throw new Error('Failed to delete chunk');
-      // A page change fetches by itself; otherwise refresh this page.
-      if (!closeChunk(Math.max(0, totalChunks - 1))) fetchChunks();
-    } catch (e) {
-      console.error(e);
-      showError(t('settings.sources.chunkErrors.delete'));
-    }
+    const response = await userService.deleteChunk(
+      documentId,
+      chunk.doc_id,
+      token,
+    );
+    if (!response.ok) throw new Error('Failed to delete chunk');
+    // A page change fetches by itself; otherwise refresh this page.
+    if (!closeChunk(Math.max(0, totalChunks - 1))) fetchChunks();
   };
 
   const confirmDeleteChunk = (chunk: ChunkType) => {
@@ -462,12 +459,10 @@ const Chunks: React.FC<ChunksProps> = ({
     setDeleteModalState('ACTIVE');
   };
 
-  const handleConfirmedDelete = () => {
-    if (chunkToDelete) {
-      handleDeleteChunk(chunkToDelete);
-      setDeleteModalState('INACTIVE');
-      setChunkToDelete(null);
-    }
+  const handleConfirmedDelete = async () => {
+    if (!chunkToDelete) return;
+    await handleDeleteChunk(chunkToDelete);
+    setChunkToDelete(null);
   };
 
   const handleCancelDelete = () => {
@@ -825,6 +820,7 @@ const Chunks: React.FC<ChunksProps> = ({
         modalState={deleteModalState}
         setModalState={setDeleteModalState}
         handleSubmit={handleConfirmedDelete}
+        error={t('settings.sources.chunkErrors.delete')}
         handleCancel={handleCancelDelete}
         submitLabel={t('modals.chunk.delete')}
         variant="destructive"

@@ -303,9 +303,14 @@ describe('Connectors page', () => {
     );
     // Three pills fit a phone: no Select stands in for them.
     expect(container.querySelector('[role="combobox"]')).toBeNull();
-    // DESIGN's filter-by-kind recipe: the xs group in a muted track.
+    // Page-toolbar filter: a sm group that hugs, drawing its own track.
     const group = container.querySelector('[data-slot="toggle-group"]')!;
-    expect(group.parentElement!.className).toContain('bg-muted');
+    expect(group.className).toContain('bg-muted');
+    expect(group.className).toContain('w-fit');
+    expect(group.parentElement!.className).not.toContain('bg-muted');
+    expect(
+      group.querySelector('[data-slot="toggle-group-item"]')!.className,
+    ).toContain('h-8');
   });
 
   it('filters to services with a working account', async () => {

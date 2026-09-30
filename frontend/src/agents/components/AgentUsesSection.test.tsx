@@ -135,9 +135,15 @@ describe('AgentUsesSection', () => {
   it('starts collapsed and lists what the agent uses when opened', async () => {
     await render(agentWith([item({ name: 'Docs', type: 'source', id: 's1' })]));
     expect(toggle()?.getAttribute('aria-expanded')).toBe('false');
-    expect(rowOf('Docs')).toBeUndefined();
+    // Folded: the rows wait in a closed, inert Collapsible.
+    const body = document.getElementById(
+      toggle()!.getAttribute('aria-controls')!,
+    )!;
+    expect(body.dataset.state).toBe('closed');
+    expect(body.hasAttribute('inert')).toBe(true);
     await open();
     expect(toggle()?.getAttribute('aria-expanded')).toBe('true');
+    expect(body.dataset.state).toBe('open');
     // What runs as the owner reads as its type.
     expect(rowOf('Docs')?.textContent).toContain(`${T}.source`);
   });

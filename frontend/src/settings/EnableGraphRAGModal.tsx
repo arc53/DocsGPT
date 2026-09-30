@@ -12,6 +12,7 @@ import { Progress } from '../components/ui/progress';
 import { ActiveState, Doc } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch, RootState } from '../store';
+import { formatCount } from '../utils/dateTimeUtils';
 
 import { clearGraphBuild, selectGraphBuilds } from './graphBuildSlice';
 import {
@@ -244,7 +245,6 @@ export default function EnableGraphRAGModal({
           : undefined
       }
       footer={footer}
-      size="md"
       mobileVariant="dialog"
       isPerformingTask={phase === 'building'}
     >
@@ -257,8 +257,8 @@ export default function EnableGraphRAGModal({
             </ul>
             <div className="bg-muted text-muted-foreground rounded-xl p-3 text-sm">
               {t('settings.sources.graphrag.enable.estimate', {
-                lo: estimate.lo.toLocaleString(),
-                hi: estimate.hi.toLocaleString(),
+                lo: formatCount(estimate.lo),
+                hi: formatCount(estimate.hi),
               })}
             </div>
           </>

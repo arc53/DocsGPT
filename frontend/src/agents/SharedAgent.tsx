@@ -33,6 +33,8 @@ export default function SharedAgent() {
 
   const [sharedAgent, setSharedAgent] = useState<Agent>();
   const [isLoading, setIsLoading] = useState(true);
+  // A 404 is "not found"; any other failure is an error with Retry.
+  const [loadFailed, setLoadFailed] = useState(false);
   const [input, setInput] = useState('');
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
 
@@ -41,12 +43,18 @@ export default function SharedAgent() {
   const getSharedAgent = async () => {
     try {
       setIsLoading(true);
+      setLoadFailed(false);
       const response = await userService.getSharedAgent(agentId ?? '', token);
+      if (response.status === 404) {
+        setSharedAgent(undefined);
+        return;
+      }
       if (!response.ok) throw new Error('Failed to fetch Shared Agent');
       const agent: Agent = await response.json();
       setSharedAgent(agent);
     } catch (error) {
       console.error('Error: ', error);
+      setLoadFailed(true);
     } finally {
       setIsLoading(false);
     }
@@ -126,6 +134,16 @@ export default function SharedAgent() {
   }, [sharedAgent, dispatch]);
 
   if (isLoading) return <LoadingState fill="parent" />;
+  if (loadFailed)
+    return (
+      <EmptyState
+        className="h-full"
+        tone="destructive"
+        illustration="none"
+        title={t('agents.shared.loadError')}
+        onRetry={getSharedAgent}
+      />
+    );
   if (!sharedAgent)
     return (
       <EmptyState className="h-full" title={t('agents.shared.notFound')} />

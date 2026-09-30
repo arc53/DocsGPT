@@ -449,7 +449,7 @@ describe('ResourceStatusNotice', () => {
     });
     const [alert] = alerts();
     const close = alert.querySelector<HTMLButtonElement>(
-      '[aria-label="agents.close"]',
+      '[aria-label="close"]',
     );
     expect(close).not.toBeNull();
     const list = alert.querySelector('ul')!;
@@ -461,6 +461,6 @@ describe('ResourceStatusNotice', () => {
 
   it('has no close button in the form', async () => {
     await render(baseAgent, [stoppedItem({})]);
-    expect(container.querySelector('[aria-label="agents.close"]')).toBeNull();
+    expect(container.querySelector('[aria-label="close"]')).toBeNull();
   });
 });

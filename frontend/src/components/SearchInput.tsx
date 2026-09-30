@@ -27,7 +27,7 @@ export default function SearchInput({
       leftIcon={<Search className="text-muted-foreground size-4" aria-hidden />}
       {...props}
       // One size: every search is the 38px field.
-      size="field"
+      size="default"
     />
   );
 }

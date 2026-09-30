@@ -171,7 +171,6 @@ export default function ConvertToWikiModal({
           : undefined
       }
       footer={footer}
-      size="md"
       mobileVariant="dialog"
       isPerformingTask={phase === 'converting'}
     >

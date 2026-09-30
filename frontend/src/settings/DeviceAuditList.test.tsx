@@ -80,4 +80,16 @@ describe('DeviceAuditList', () => {
     for (let i = 0; i < 4; i += 1) await act(async () => Promise.resolve());
     expect(container.querySelectorAll('li')).toHaveLength(1);
   });
+
+  it('shows the em dash for a missing exit code, duration and time', async () => {
+    listAudit.mockResolvedValue({
+      entries: [
+        { ...entry(1), exit_code: null, duration_ms: null, created_at: null },
+      ],
+    });
+    await render();
+    const text = container.querySelector('li')!.textContent!;
+    expect(text).toContain('settings.devices.auditExit: —');
+    expect(text).not.toContain('-');
+  });
 });

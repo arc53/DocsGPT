@@ -46,4 +46,23 @@ describe('RetrievalOptions disclosure', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(body!.getAttribute('data-state')).toBe('open');
   });
+
+  it('leaves no gap under the closed toggle: the body carries the space', () => {
+    act(() => {
+      root.render(
+        <RetrievalOptions
+          value={DEFAULT_RETRIEVAL_OPTIONS}
+          onChange={vi.fn()}
+        />,
+      );
+    });
+    const wrapper = container.firstElementChild as HTMLElement;
+    expect(wrapper.className.split(' ')).not.toContain('gap-4');
+    const collapsible = container.querySelector(
+      '[data-slot="collapsible"]',
+    ) as HTMLElement;
+    const inner = collapsible.firstElementChild!
+      .firstElementChild as HTMLElement;
+    expect(inner.className.split(' ')).toContain('pt-4');
+  });
 });

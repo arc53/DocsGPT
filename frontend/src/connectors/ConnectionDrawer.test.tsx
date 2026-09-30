@@ -650,6 +650,12 @@ describe('ConnectionDrawer', () => {
           'settings.connectors.remove.deleteTools',
         ],
       ]);
+      // Each keep/delete choice is alone under its label: it fills the row.
+      for (const group of dialog().querySelectorAll(
+        '[data-slot="toggle-group"]',
+      )) {
+        expect(group.classList.contains('w-full')).toBe(true);
+      }
     });
 
     it("names a part's account by its own service when it has no name", async () => {

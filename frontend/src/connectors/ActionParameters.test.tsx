@@ -34,6 +34,7 @@ describe('ActionParametersToggle', () => {
         action="Send message"
         open={open}
         onToggle={() => setOpen(!open)}
+        controls="params-list"
       />
     );
   }
@@ -56,6 +57,8 @@ describe('ActionParametersToggle', () => {
     const chevron = () => toggle().querySelector('svg')!;
     expect(toggle().firstElementChild).toBe(chevron());
     expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    expect(toggle().getAttribute('aria-controls')).toBe('params-list');
+    expect(chevron().getAttribute('aria-hidden')).toBe('true');
     expect(chevron().getAttribute('class')).not.toContain('rotate-90');
     await act(async () => toggle().click());
     expect(toggle().getAttribute('aria-expanded')).toBe('true');

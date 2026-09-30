@@ -1,18 +1,13 @@
-import {
-  ChevronRight,
-  Database,
-  ScrollText,
-  TriangleAlert,
-  Wrench,
-} from 'lucide-react';
-import { useState } from 'react';
+import { Database, ScrollText, TriangleAlert, Wrench } from 'lucide-react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
 import { ListRow, ListRows } from '@/components/ui/list-row';
-import { cn } from '@/lib/utils';
 
 import ConnectorIcon from '../../connectors/ConnectorIcon';
 import { connectorIconKey } from '../../connectors/i18n';
@@ -80,6 +75,7 @@ export default function AgentUsesSection({
   // Like Access settings: open once by itself when something stopped, then
   // follow the reader's clicks.
   const [open, setOpen] = useState<boolean | null>(null);
+  const bodyId = useId();
 
   if (!loaded || !can(loaded.agent, 'edit') || loaded.items.length === 0)
     return null;
@@ -147,7 +143,7 @@ export default function AgentUsesSection({
     const Icon = TYPE_ICONS[item.type] ?? Wrench;
     const connectorKey = item.connection?.connector_key;
     return (
-      <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md">
+      <Avatar size="sm" shape="square" variant="icon">
         {connectorKey ? (
           <ConnectorIcon
             icon={connectorIconKey(connectorKey)}
@@ -156,7 +152,7 @@ export default function AgentUsesSection({
         ) : (
           <Icon className="size-4" aria-hidden="true" />
         )}
-      </span>
+      </Avatar>
     );
   };
 
@@ -183,27 +179,18 @@ export default function AgentUsesSection({
   );
 
   return (
-    <section className="flex flex-col gap-3">
-      {/* The same inline disclosure as Access settings. */}
-      <Button
-        type="button"
-        variant="link"
-        size="sm"
-        aria-expanded={expanded}
-        className="-ml-3 w-fit justify-start"
-        onClick={() => setOpen(!expanded)}
+    <section className="flex flex-col">
+      {/* The same inline disclosure as Access settings; the 12px gap sits
+          inside the body, so it folds away with it. */}
+      <CollapsibleTrigger
+        open={expanded}
+        onOpenChange={setOpen}
+        controls={bodyId}
       >
-        <ChevronRight
-          aria-hidden="true"
-          className={cn(
-            'transition-transform duration-200',
-            expanded && 'rotate-90',
-          )}
-        />
         {t(`${K}.title`)}
-      </Button>
-      {expanded && (
-        <>
+      </CollapsibleTrigger>
+      <Collapsible open={expanded} id={bodyId}>
+        <div className="flex flex-col gap-3 pt-3">
           <p className="text-muted-foreground text-xs">{t(`${K}.intro`)}</p>
           <ListRows>
             {items.map((item) => {
@@ -246,8 +233,8 @@ export default function AgentUsesSection({
               )}
             </Alert>
           )}
-        </>
-      )}
+        </div>
+      </Collapsible>
     </section>
   );
 }

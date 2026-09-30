@@ -48,7 +48,10 @@ function SourceTile({
 
   const body = (
     <>
-      <span className="text-foreground line-clamp-3 text-sm font-semibold wrap-break-word">
+      <span
+        className="text-foreground line-clamp-3 text-sm font-semibold wrap-break-word"
+        title={source.title}
+      >
         {`${position}. ${source.title}`}
         {external ? (
           <ExternalLink
@@ -63,7 +66,7 @@ function SourceTile({
             icon={connectorIconKey(source.connector_key)}
             className="size-3.5 shrink-0"
           />
-          <span className="truncate">
+          <span className="truncate" title={source.connector_name}>
             {t('conversation.sources.fromConnector', {
               name: source.connector_name,
               interpolation: { escapeValue: false },

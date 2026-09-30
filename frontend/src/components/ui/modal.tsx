@@ -1,6 +1,7 @@
 import { XIcon } from 'lucide-react';
 import { Dialog as DialogPrimitive, VisuallyHidden } from 'radix-ui';
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { BottomTintReset } from '@/components/ui/bar-tint-reset';
 import { Button } from '@/components/ui/button';
@@ -17,7 +18,7 @@ import { useFocusReturn } from '@/components/ui/use-focus-return';
 import { useMediaQuery } from '@/hooks';
 import { cn } from '@/lib/utils';
 
-type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full';
+type ModalSize = 'sm' | 'md' | 'lg' | 'xl';
 type ModalMobileVariant = 'dialog' | 'sheet';
 
 const SIZE_CLASSES: Record<ModalSize, string> = {
@@ -25,7 +26,6 @@ const SIZE_CLASSES: Record<ModalSize, string> = {
   md: 'sm:max-w-lg',
   lg: 'sm:max-w-2xl',
   xl: 'sm:max-w-4xl',
-  full: 'sm:max-w-[calc(100vw-2rem)]',
 };
 
 export type ModalProps = {
@@ -70,6 +70,7 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
   },
   ref,
 ) {
+  const { t } = useTranslation();
   const { isMobile } = useMediaQuery();
   const isMobileSheet = mobileVariant === 'sheet' && isMobile;
   const shouldShowCloseButton = showCloseButton && !isPerformingTask;
@@ -191,7 +192,7 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
               <Button
                 variant="ghost-muted"
                 size="icon-sm"
-                aria-label="Close"
+                aria-label={t('close')}
                 className="absolute top-2 right-2"
               >
                 <XIcon />

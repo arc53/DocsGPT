@@ -88,7 +88,7 @@ export default function TeamPicker({
           data-placeholder={value ? undefined : ''}
           className="w-52 justify-between"
         >
-          <span className="truncate">
+          <span className="truncate" title={value?.name}>
             {value ? value.name : 'Choose a team'}
           </span>
           <ChevronsUpDown className="shrink-0 opacity-50" />
@@ -124,7 +124,9 @@ export default function TeamPicker({
                     setQuery('');
                   }}
                 >
-                  <span className="truncate">{team.name}</span>
+                  <span className="truncate" title={team.name}>
+                    {team.name}
+                  </span>
                 </CommandItem>
               ))}
             </CommandGroup>

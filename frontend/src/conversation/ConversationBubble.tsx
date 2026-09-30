@@ -194,7 +194,10 @@ const ConversationBubble = forwardRef<
                       className="text-primary-foreground size-3.75"
                     />
                   </div>
-                  <span className="max-w-37.5 truncate font-normal">
+                  <span
+                    className="max-w-37.5 truncate font-normal"
+                    title={file.fileName}
+                  >
                     {file.fileName}
                   </span>
                 </div>

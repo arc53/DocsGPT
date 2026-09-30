@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import connectorsService from '../api/services/connectorsService';
 import { useConnectorAuth } from '../components/ConnectorAuth';
 import SearchInput from '../components/SearchInput';
+import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { EmptyState } from '../components/ui/empty-state';
@@ -177,13 +178,13 @@ export default function RepoPicker({
                     selected={picked}
                     asChild
                     leading={
-                      <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md">
+                      <Avatar size="sm" shape="square" variant="icon">
                         {repo.private ? (
                           <Lock className="size-4" aria-hidden />
                         ) : (
                           <BookMarked className="size-4" aria-hidden />
                         )}
-                      </span>
+                      </Avatar>
                     }
                     title={repo.full_name}
                     description={

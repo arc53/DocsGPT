@@ -248,7 +248,8 @@ function DropdownMenuSubContent({
 type MenuOption = {
   label: string;
   onClick: (event: Event) => void;
-  icon?: LucideIcon;
+  /** A lucide icon, or an element for anything else (a ConnectorIcon). */
+  icon?: LucideIcon | React.ReactElement;
   variant?: 'default' | 'destructive';
   disabled?: boolean;
   /** A rule above this row, to set a destructive action apart. */
@@ -258,25 +259,63 @@ type MenuOption = {
 const stopPropagation = (event: React.SyntheticEvent) =>
   event.stopPropagation();
 
+type ActionMenuProps = {
+  options: MenuOption[];
+  align?: 'start' | 'center' | 'end';
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /**
+   * The menu panel's width: `default` at least 144px, `sm` at least 128px
+   * (the plain DropdownMenuContent), `lg` at least 192px, `fixed` 160px.
+   */
+  menuWidth?: 'default' | 'sm' | 'lg' | 'fixed';
+} & (
+  | {
+      trigger?: undefined;
+      triggerLabel: string;
+      disabled?: boolean;
+      className?: string;
+      triggerTestId?: string;
+      size?: 'row' | 'toolbar';
+    }
+  | {
+      /**
+       * A labelled trigger of the caller's (a "Download" or "Actions"
+       * Button, a title button) in place of the three dots. It is not on a
+       * clickable card, so no tooltip and its clicks propagate as usual.
+       */
+      trigger: React.ReactElement;
+      triggerLabel?: undefined;
+      disabled?: undefined;
+      className?: undefined;
+      triggerTestId?: undefined;
+      size?: undefined;
+    }
+);
+
 /**
- * The three-dots menu on a card, tile or row: an EllipsisVertical icon
- * trigger and one item per option, icon first.
+ * The menu of actions for a card, tile, row or labelled button: an
+ * EllipsisVertical icon trigger (or the caller's `trigger`) and one item per
+ * option, icon first.
  *
- * Clicks and keys on the trigger and the menu stop propagating, because the
- * menu usually sits inside a clickable card and a portal still bubbles
- * through the React tree. The trigger is `ghost-on-accent`: most hosts turn
- * bg-accent while the pointer is on them. In a page header or toolbar
- * (`size="toolbar"`) it is a 36px `ghost-muted` icon button like the others
- * there, with its tooltip below.
+ * With the three dots, clicks and keys on the trigger and the menu stop
+ * propagating, because the menu usually sits inside a clickable card and a
+ * portal still bubbles through the React tree. The trigger is
+ * `ghost-on-accent`: most hosts turn bg-accent while the pointer is on them.
+ * In a page header or toolbar (`size="toolbar"`) it is a 36px `ghost-muted`
+ * icon button like the others there, with its tooltip below.
  *
  * @param options The menu rows.
+ * @param trigger A labelled trigger element instead of the three dots.
  * @param size `row` (a card, tile or row; the default) or `toolbar`.
- * @param triggerLabel The trigger's accessible name.
- * @param className Layout classes for the trigger (position, margin).
- * @param triggerTestId A `data-testid` for the trigger.
+ * @param triggerLabel The three-dots trigger's accessible name.
+ * @param className Layout classes for the three-dots trigger.
+ * @param triggerTestId A `data-testid` for the three-dots trigger.
+ * @param menuWidth The menu panel's width.
  */
 function ActionMenu({
   options,
+  trigger,
   triggerLabel,
   align = 'end',
   open,
@@ -285,46 +324,49 @@ function ActionMenu({
   className,
   triggerTestId,
   size = 'row',
-}: {
-  options: MenuOption[];
-  triggerLabel: string;
-  align?: 'start' | 'center' | 'end';
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
-  disabled?: boolean;
-  className?: string;
-  triggerTestId?: string;
-  size?: 'row' | 'toolbar';
-}) {
+  menuWidth = 'default',
+}: ActionMenuProps) {
   const toolbar = size === 'toolbar';
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
-      <Tooltip>
-        {/* Menu trigger outermost, so the button keeps its data-slot. */}
-        <DropdownMenuTrigger asChild>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant={toolbar ? 'ghost-muted' : 'ghost-on-accent'}
-              size={toolbar ? 'icon' : 'icon-xs'}
-              aria-label={triggerLabel}
-              disabled={disabled}
-              data-testid={triggerTestId}
-              className={className}
-              onClick={stopPropagation}
-              onKeyDown={stopPropagation}
-            >
-              <EllipsisVertical aria-hidden="true" />
-            </Button>
-          </TooltipTrigger>
-        </DropdownMenuTrigger>
-        <TooltipContent side={toolbar ? 'bottom' : undefined}>
-          {triggerLabel}
-        </TooltipContent>
-      </Tooltip>
+      {trigger ? (
+        <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+      ) : (
+        <Tooltip>
+          {/* Menu trigger outermost, so the button keeps its data-slot. */}
+          <DropdownMenuTrigger asChild>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant={toolbar ? 'ghost-muted' : 'ghost-on-accent'}
+                size={toolbar ? 'icon' : 'icon-xs'}
+                aria-label={triggerLabel}
+                disabled={disabled}
+                data-testid={triggerTestId}
+                className={className}
+                onClick={stopPropagation}
+                onKeyDown={stopPropagation}
+              >
+                <EllipsisVertical aria-hidden="true" />
+              </Button>
+            </TooltipTrigger>
+          </DropdownMenuTrigger>
+          <TooltipContent side={toolbar ? 'bottom' : undefined}>
+            {triggerLabel}
+          </TooltipContent>
+        </Tooltip>
+      )}
       <DropdownMenuContent
         align={align}
-        className="min-w-36"
+        className={
+          menuWidth === 'sm'
+            ? 'min-w-32'
+            : menuWidth === 'lg'
+              ? 'min-w-48'
+              : menuWidth === 'fixed'
+                ? 'w-40'
+                : 'min-w-36'
+        }
         onClick={stopPropagation}
         onKeyDown={stopPropagation}
       >
@@ -336,7 +378,9 @@ function ActionMenu({
               disabled={option.disabled}
               onSelect={(event) => option.onClick(event)}
             >
-              {option.icon && <option.icon aria-hidden="true" />}
+              {React.isValidElement(option.icon)
+                ? option.icon
+                : option.icon && <option.icon aria-hidden="true" />}
               <span>{option.label}</span>
             </DropdownMenuItem>
           </React.Fragment>

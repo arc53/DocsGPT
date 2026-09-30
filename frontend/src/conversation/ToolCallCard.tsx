@@ -48,7 +48,12 @@ export default function ToolCallCard({
             {icon}
           </span>
         )}
-        <span className="min-w-0 truncate text-sm font-medium">{title}</span>
+        <span
+          className="min-w-0 truncate text-sm font-medium"
+          title={typeof title === 'string' ? title : undefined}
+        >
+          {title}
+        </span>
         <span className="min-w-0 flex-1">{meta}</span>
         {state && <span className="flex shrink-0">{state}</span>}
       </div>

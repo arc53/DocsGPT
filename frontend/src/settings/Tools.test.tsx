@@ -61,7 +61,23 @@ vi.mock('./ToolConfig', () => ({
 }));
 vi.mock('./RemoteDeviceConfig', () => ({ default: () => null }));
 vi.mock('../modals/AddToolModal', () => ({ default: () => null }));
-vi.mock('../modals/ConfirmationModal', () => ({ default: () => null }));
+const confirm = vi.hoisted(() => ({
+  props: null as null | {
+    modalState: string;
+    handleSubmit: () => void | Promise<unknown>;
+    error?: string;
+  },
+}));
+vi.mock('../modals/ConfirmationModal', () => ({
+  default: (props: {
+    modalState: string;
+    handleSubmit: () => void | Promise<unknown>;
+    error?: string;
+  }) => {
+    confirm.props = props;
+    return null;
+  },
+}));
 const mcpModalProps = vi.fn();
 vi.mock('../modals/MCPServerModal', () => ({
   default: (props: unknown) => {
@@ -85,6 +101,7 @@ vi.mock('../connectors/SignInAgainNotice', () => ({
 
 const getUserTools = vi.fn();
 const updateToolStatus = vi.fn();
+const deleteTool = vi.fn();
 const mcpStatuses = vi.hoisted(() => ({ value: {} as Record<string, string> }));
 vi.mock('../api/services/userService', () => ({
   default: {
@@ -95,6 +112,7 @@ vi.mock('../api/services/userService', () => ({
           Promise.resolve({ success: true, statuses: mcpStatuses.value }),
       }),
     updateToolStatus: (...args: unknown[]) => updateToolStatus(...args),
+    deleteTool: (...args: unknown[]) => deleteTool(...args),
   },
 }));
 
@@ -260,6 +278,47 @@ describe('Tools', () => {
       'settings.tools.shareWithTeam',
       'settings.tools.delete',
     ]);
+  });
+
+  // ConfirmationModal stays pending on the returned promise and keeps a
+  // failure in the dialog.
+  const confirmDelete = async () => {
+    await act(async () => {
+      Array.from(
+        card('own').querySelectorAll<HTMLButtonElement>(
+          '[data-testid="menu"] button',
+        ),
+      )
+        .find((b) => b.textContent === 'settings.tools.delete')!
+        .click();
+    });
+    expect(confirm.props!.modalState).toBe('ACTIVE');
+    let result: void | Promise<unknown>;
+    await act(async () => {
+      result = confirm.props!.handleSubmit();
+      if (result) result.catch(() => undefined);
+    });
+    expect(result!).toBeInstanceOf(Promise);
+    return result!;
+  };
+
+  it('keeps a refused delete in the dialog, not a toast', async () => {
+    deleteTool.mockResolvedValue({ ok: false, status: 403 });
+    await render([ownTool]);
+    await expect(confirmDelete()).rejects.toThrow();
+    expect(confirm.props!.error).toBe('settings.tools.deleteFailed');
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'actionToast/showActionToast' }),
+    );
+  });
+
+  it('returns the delete promise and reloads the tools on success', async () => {
+    deleteTool.mockResolvedValue({ ok: true });
+    await render([ownTool]);
+    const calls = getUserTools.mock.calls.length;
+    await expect(confirmDelete()).resolves.toBeUndefined();
+    expect(deleteTool).toHaveBeenCalledWith({ id: 'own' }, 'token');
+    expect(getUserTools.mock.calls.length).toBeGreaterThan(calls);
   });
 
   it('shows Edit and Reconnect to an editor', async () => {
@@ -863,5 +922,29 @@ describe('Tools page connections', () => {
       menuItem('Linear (shared)', 'settings.tools.reconnect'),
     ).toBeUndefined();
     expect(menuItem('Linear (shared)', 'settings.tools.edit')).toBeDefined();
+  });
+
+  it('shows a failed load as an error with Retry, not "no tools yet"', async () => {
+    getUserTools.mockImplementation(() =>
+      jsonResponse({ success: false }, false, 500),
+    );
+    await renderTools(root);
+    const state = container.querySelector<HTMLElement>(
+      '[data-slot="empty-state"][data-tone="destructive"]',
+    )!;
+    expect(state).not.toBeNull();
+    expect(state.textContent).toContain('settings.tools.loadError');
+    expect(container.textContent).not.toContain('settings.tools.noToolsYet');
+    getUserTools.mockImplementation(() => jsonResponse({ tools: [ownTool] }));
+    const retry = Array.from(state.querySelectorAll('button')).find(
+      (b) => b.textContent === 'retry',
+    )!;
+    await act(async () => retry.click());
+    expect(
+      container.querySelector(
+        '[data-slot="empty-state"][data-tone="destructive"]',
+      ),
+    ).toBeNull();
+    expect(card('own')).toBeDefined();
   });
 });

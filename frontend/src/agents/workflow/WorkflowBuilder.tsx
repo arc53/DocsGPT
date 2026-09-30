@@ -1,14 +1,6 @@
 import 'reactflow/dist/style.css';
 
-import {
-  CircleAlert,
-  Link,
-  Pencil,
-  Play,
-  Trash2,
-  Users,
-  X,
-} from 'lucide-react';
+import { CircleAlert, Link, Pencil, Play, Trash2, Users } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -32,7 +24,6 @@ import ReactFlow, {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { IconButton } from '@/components/ui/icon-button';
 
 import modelService from '../../api/services/modelService';
 import userService from '../../api/services/userService';
@@ -1965,11 +1956,7 @@ function WorkflowBuilderInner() {
         {publishErrors.length > 0 && !showDetails && (
           <div className="pointer-events-none absolute top-20 right-0 left-0 z-20 flex justify-center px-4">
             <div className="bg-card pointer-events-auto w-full max-w-md rounded-xl shadow-md">
-              <Alert
-                variant="destructive"
-                // eslint-disable-next-line shadcn/no-restyle -- the close button sits in the top-right corner, so a long title wraps clear of it
-                className="pr-10"
-              >
+              <Alert variant="destructive" onClose={() => setPublishErrors([])}>
                 <CircleAlert className="size-4" />
                 <AlertTitle>
                   {errorContext === 'preview'
@@ -1985,15 +1972,6 @@ function WorkflowBuilderInner() {
                     ))}
                   </ul>
                 </AlertDescription>
-                <div className="absolute top-2.5 right-2.5">
-                  <IconButton
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => setPublishErrors([])}
-                    label={t('agents.close')}
-                    icon={X}
-                  />
-                </div>
               </Alert>
             </div>
           </div>

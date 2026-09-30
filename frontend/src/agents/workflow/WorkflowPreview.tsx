@@ -237,7 +237,10 @@ export function ExecutionDetails({
                     NODE_COLORS[step.nodeType] || NODE_COLORS.state,
                   )}
                 />
-                <span className="text-foreground min-w-0 truncate font-medium">
+                <span
+                  className="text-foreground min-w-0 truncate font-medium"
+                  title={displayName}
+                >
                   {displayName}
                 </span>
                 <div className="ml-auto shrink-0">
@@ -434,11 +437,17 @@ export function WorkflowMiniMap({
                 <NodeIcon className="size-3.5" />
               </div>
               <div className="min-w-0 flex-1 text-left">
-                <div className="text-foreground truncate font-medium">
+                <div
+                  className="text-foreground truncate font-medium"
+                  title={getNodeDisplayName(node)}
+                >
                   {getNodeDisplayName(node)}
                 </div>
                 {getNodeSubtitle(node) && (
-                  <div className="text-muted-foreground truncate text-xs">
+                  <div
+                    className="text-muted-foreground truncate text-xs"
+                    title={getNodeSubtitle(node) ?? undefined}
+                  >
                     {getNodeSubtitle(node)}
                   </div>
                 )}

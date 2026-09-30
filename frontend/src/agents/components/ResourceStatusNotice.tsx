@@ -1,11 +1,9 @@
 import type { TFunction } from 'i18next';
-import { TriangleAlert, X } from 'lucide-react';
+import { TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { IconButton } from '@/components/ui/icon-button';
-import { cn } from '@/lib/utils';
 
 import { isOwner } from '../../utils/accessUtils';
 import { isReader, personLabel } from '../../utils/personLabel';
@@ -256,11 +254,7 @@ export default function ResourceStatusNotice({
   );
 
   return (
-    <Alert
-      variant="warning"
-      // eslint-disable-next-line shadcn/no-restyle -- floating over the workflow canvas, the close button sits in the top-right corner, so the title pads clear of it (as the publish errors do)
-      className={cn('sm:col-span-2', onClose && 'pr-10')}
-    >
+    <Alert variant="warning" className="sm:col-span-2" onClose={onClose}>
       <TriangleAlert />
       <AlertTitle>{t('agents.form.resourceStates.title')}</AlertTitle>
       <AlertDescription>
@@ -272,17 +266,6 @@ export default function ResourceStatusNotice({
           list
         )}
       </AlertDescription>
-      {onClose && (
-        <div className="absolute top-2.5 right-2.5">
-          <IconButton
-            variant="ghost"
-            size="icon-xs"
-            onClick={onClose}
-            label={t('agents.close')}
-            icon={X}
-          />
-        </div>
-      )}
     </Alert>
   );
 }

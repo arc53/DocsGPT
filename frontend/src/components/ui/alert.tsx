@@ -1,6 +1,9 @@
 import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
+import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
+import { IconButton } from '@/components/ui/icon-button';
 import { cn } from '@/lib/utils';
 
 const alertVariants = cva(
@@ -27,20 +30,45 @@ const alertVariants = cva(
   },
 );
 
+type AlertProps = React.ComponentProps<'div'> &
+  VariantProps<typeof alertVariants> & {
+    /**
+     * Adds a ghost X in the top-right corner (a notice floating over a
+     * canvas) and pads the text clear of it. Needs a TooltipProvider above.
+     */
+    onClose?: () => void;
+  };
+
 function Alert({
   className,
   variant = 'default',
+  onClose,
+  children,
   ...props
-}: React.ComponentProps<'div'> & VariantProps<typeof alertVariants>) {
+}: AlertProps) {
+  const { t } = useTranslation();
   return (
     <div
       data-slot="alert"
       data-variant={variant}
       // A success notice confirms rather than interrupts, so it is polite.
       role={variant === 'success' ? 'status' : 'alert'}
-      className={cn(alertVariants({ variant }), className)}
+      className={cn(alertVariants({ variant }), onClose && 'pr-10', className)}
       {...props}
-    />
+    >
+      {children}
+      {onClose ? (
+        <div data-slot="alert-close" className="absolute top-2.5 right-2.5">
+          <IconButton
+            variant="ghost"
+            size="icon-xs"
+            onClick={onClose}
+            label={t('close')}
+            icon={X}
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -68,3 +96,4 @@ function AlertDescription({
 }
 
 export { Alert, AlertTitle, AlertDescription };
+export type { AlertProps };

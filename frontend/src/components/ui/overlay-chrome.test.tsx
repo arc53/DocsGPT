@@ -1,6 +1,10 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
 
 import { Dialog, DialogContent, DialogTitle } from './dialog';
 import {
@@ -12,7 +16,6 @@ import {
   DropdownMenuTrigger,
 } from './dropdown-menu';
 import { Modal } from './modal';
-import { Sheet, SheetContent } from './sheet';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -35,8 +38,10 @@ const render = async (element: React.ReactElement) => {
 };
 
 const closeButton = () =>
-  document.querySelector<HTMLButtonElement>('button[aria-label="Close"]');
+  document.querySelector<HTMLButtonElement>('button[aria-label="close"]');
 
+// SheetContent draws no X of its own (sheet.test.tsx); a SidePanel's close
+// lives in its PanelHeader (side-panel.test.tsx).
 describe('close buttons on overlays', () => {
   const cases: [string, () => React.ReactElement][] = [
     [
@@ -55,14 +60,6 @@ describe('close buttons on overlays', () => {
             <DialogTitle>Search</DialogTitle>
           </DialogContent>
         </Dialog>
-      ),
-    ],
-    [
-      'SheetContent',
-      () => (
-        <Sheet open>
-          <SheetContent title="Trace" aria-describedby={undefined} />
-        </Sheet>
       ),
     ],
   ];

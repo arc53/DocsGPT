@@ -41,7 +41,7 @@ import {
 import ConversationTile from './conversation/ConversationTile';
 import { useMediaQuery } from './hooks';
 import useTokenAuth from './hooks/useTokenAuth';
-import { cn, overlayScrim } from './lib/utils';
+import { cn, focusRing, overlayScrim } from './lib/utils';
 import ConfirmationModal from './modals/ConfirmationModal';
 import JWTModal from './modals/JWTModal';
 import SearchConversationsModal from './modals/SearchConversationsModal';
@@ -287,27 +287,27 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     if (queries.length === 0) resetConversation();
   }, [conversations?.data, dispatch]);
 
+  // Both return the request to ConfirmationModal: pending while it runs,
+  // a failure stays in the dialog.
   const handleDeleteAllConversations = () => {
     setIsDeletingConversation(true);
-    conversationService
-      .deleteAll(token)
-      .then(() => {
-        fetchConversations();
-      })
-      .catch((error) => console.error(error));
+    return conversationService.deleteAll(token).then((response: Response) => {
+      if (!response.ok) throw new Error('Failed to delete conversations');
+      fetchConversations();
+    });
   };
 
   const handleDeleteConversation = (id: string) => {
     setIsDeletingConversation(true);
-    conversationService
+    return conversationService
       .delete(id, {}, token)
-      .then(() => {
+      .then((response: Response) => {
+        if (!response.ok) throw new Error('Failed to delete conversation');
         // Out of the list at once, wherever it is, then refresh the top.
         dispatch(removeConversation(id));
         fetchConversations();
         resetConversation();
-      })
-      .catch((error) => console.error(error));
+      });
   };
 
   const handleAgentClick = (agent: Agent) => {
@@ -575,7 +575,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               }}
               className={({ isActive }) =>
                 cn(
-                  'group border-border hover:border-border sticky mx-4 mt-4 flex cursor-pointer items-center gap-2.5 rounded-3xl border p-3 hover:bg-transparent',
+                  focusRing,
+                  'group border-border hover:border-border sticky mx-4 mt-4 flex cursor-pointer items-center gap-2.5 rounded-3xl border p-3 outline-none hover:bg-transparent',
                   isActive && 'bg-transparent',
                 )
               }
@@ -644,7 +645,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                                     imgClassName="size-6 object-contain"
                                   />
                                 </div>
-                                <span className="truncate">{agent.name}</span>
+                                <span className="truncate" title={agent.name}>
+                                  {agent.name}
+                                </span>
                               </Link>
                             </Button>
                             <div
@@ -872,7 +875,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 <NavLink
                   target="_blank"
                   to={'https://discord.gg/vN7YFfdMpj'}
-                  className={'hover:bg-sidebar-accent rounded-full'}
+                  className={`${focusRing} hover:bg-sidebar-accent rounded-full outline-none`}
                 >
                   <img
                     src={Discord}
@@ -885,7 +888,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 <NavLink
                   target="_blank"
                   to={'https://x.com/docsgptai'}
-                  className={'hover:bg-sidebar-accent rounded-full'}
+                  className={`${focusRing} hover:bg-sidebar-accent rounded-full outline-none`}
                 >
                   <img
                     src={Twitter}
@@ -898,7 +901,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 <NavLink
                   target="_blank"
                   to={'https://github.com/arc53/docsgpt'}
-                  className={'hover:bg-sidebar-accent rounded-full'}
+                  className={`${focusRing} hover:bg-sidebar-accent rounded-full outline-none`}
                 >
                   <img
                     src={Github}

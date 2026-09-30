@@ -4,20 +4,23 @@ import { cva, type VariantProps } from 'class-variance-authority';
 
 import { cn } from '@/lib/utils';
 
+// Hoisted so the /design gallery can list the keys cva uses.
+const badgeVariantOptions = {
+  variant: {
+    default: 'bg-secondary text-secondary-foreground',
+    neutral: 'bg-muted-foreground/15 text-muted-foreground',
+    success: 'bg-success/10 text-success',
+    warning: 'bg-warning/10 text-warning',
+    destructive: 'bg-destructive/10 text-destructive',
+    info: 'bg-info/10 text-info',
+    outline: 'border-border text-foreground',
+  },
+};
+
 const badgeVariants = cva(
   'inline-flex w-fit shrink-0 items-center justify-center gap-1 rounded-full border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap [&>svg]:pointer-events-none [&>svg]:size-3',
   {
-    variants: {
-      variant: {
-        default: 'bg-secondary text-secondary-foreground',
-        neutral: 'bg-muted-foreground/15 text-muted-foreground',
-        success: 'bg-success/10 text-success',
-        warning: 'bg-warning/10 text-warning',
-        destructive: 'bg-destructive/10 text-destructive',
-        info: 'bg-info/10 text-info',
-        outline: 'border-border text-foreground',
-      },
-    },
+    variants: badgeVariantOptions,
     defaultVariants: {
       variant: 'default',
     },
@@ -47,4 +50,9 @@ function Badge({
   );
 }
 
-export { Badge, badgeVariants };
+/** Every `variant` key, in declaration order. */
+const badgeVariantNames = Object.keys(
+  badgeVariantOptions.variant,
+) as (keyof typeof badgeVariantOptions.variant)[];
+
+export { Badge, badgeVariantNames, badgeVariants };

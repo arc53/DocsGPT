@@ -1,5 +1,6 @@
 import { XIcon } from 'lucide-react';
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
 import { useFocusReturn } from '@/components/ui/use-focus-return';
@@ -56,6 +57,7 @@ function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
 }) {
+  const { t } = useTranslation();
   const focusReturn = useFocusReturn(onOpenAutoFocus, onCloseAutoFocus);
   return (
     <DialogPortal data-slot="dialog-portal">
@@ -75,7 +77,7 @@ function DialogContent({
             <Button
               variant="ghost-muted"
               size="icon-sm"
-              aria-label="Close"
+              aria-label={t('close')}
               className="absolute top-2 right-2"
             >
               <XIcon />

@@ -67,4 +67,44 @@ describe('ScheduleFormModal pickers', () => {
       expect(trigger.getAttribute('data-size')).toBe('field');
     }
   });
+
+  it('draws frequency and weekday as sm groups that fill their rows', () => {
+    pickFrequency('weekly');
+    const groups = Array.from(
+      document.body.querySelectorAll('[data-slot="toggle-group"]'),
+    );
+    // Frequency, then the weekday picker.
+    expect(groups).toHaveLength(2);
+    for (const group of groups) {
+      expect(group.className).toContain('bg-muted');
+      expect(group.classList.contains('w-full')).toBe(true);
+      expect(group.parentElement!.className).not.toContain('bg-muted');
+      const items = Array.from(
+        group.querySelectorAll('[data-slot="toggle-group-item"]'),
+      );
+      for (const item of items) {
+        expect(item.className).toContain('flex-1');
+        expect(item.className).toContain('h-8');
+      }
+    }
+  });
+
+  // A non-modal popover inside a Modal can't scroll or close on an outside
+  // click (multi-select.tsx `modal`); a modal one hides the dialog behind it.
+  it.each([
+    ['the date picker', 'agents.schedules.modal.pickDate'],
+    ['the timezone combobox', 'agents.schedules.modal.timezone'],
+  ])('opens %s as a modal popover', (_name, label) => {
+    pickFrequency('once');
+    const trigger = document.body.querySelector<HTMLButtonElement>(
+      `[data-variant="combobox"][aria-label="${label}"]`,
+    );
+    expect(trigger).not.toBeNull();
+    act(() => trigger!.click());
+    expect(
+      document.body.querySelector('[data-slot="popover-content"]'),
+    ).not.toBeNull();
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog?.getAttribute('aria-hidden')).toBe('true');
+  });
 });

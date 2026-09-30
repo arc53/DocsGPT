@@ -222,7 +222,10 @@ export default function ImportSpecModal({
                 title={parsedResult.metadata.title}
               />
               {parsedResult.metadata.description && (
-                <p className="text-muted-foreground mt-1 line-clamp-2 text-sm">
+                <p
+                  className="text-muted-foreground mt-1 line-clamp-2 text-sm"
+                  title={parsedResult.metadata.description}
+                >
                   {parsedResult.metadata.description}
                 </p>
               )}
@@ -284,15 +287,24 @@ export default function ImportSpecModal({
                       <Badge variant={getMethodBadgeVariant(action.method)}>
                         {action.method.toUpperCase()}
                       </Badge>
-                      <span className="text-foreground truncate font-medium">
+                      <span
+                        className="text-foreground truncate font-medium"
+                        title={action.name}
+                      >
                         {action.name}
                       </span>
                     </div>
-                    <p className="text-muted-foreground mt-1 truncate text-sm">
+                    <p
+                      className="text-muted-foreground mt-1 truncate text-sm"
+                      title={action.url}
+                    >
                       {action.url}
                     </p>
                     {action.description && (
-                      <p className="text-muted-foreground/70 mt-1 line-clamp-1 text-xs">
+                      <p
+                        className="text-muted-foreground/70 mt-1 line-clamp-1 text-xs"
+                        title={action.description}
+                      >
                         {action.description}
                       </p>
                     )}

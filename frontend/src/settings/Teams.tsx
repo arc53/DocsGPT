@@ -209,6 +209,7 @@ export default function Teams() {
   const [membersTotal, setMembersTotal] = useState(0);
   const [membersAll, setMembersAll] = useState(0);
   const [membersReload, setMembersReload] = useState(0);
+  const [membersError, setMembersError] = useState(false);
   const [grants, setGrants] = useState<Grant[]>([]);
   // Tools aren't kept in Redux; lazily fetch the user's tool instances (keyed
   // by id) only when a team actually has a tool grant, so shared-tool rows can
@@ -225,6 +226,9 @@ export default function Teams() {
   const [newMemberRole, setNewMemberRole] = useState<TeamRole>('team_member');
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [addMemberError, setAddMemberError] = useState<string | null>(null);
+  // The create, edit and add-member modals' request is in flight (one opens
+  // at a time): the submit shows pending and a second submit is ignored.
+  const [modalPending, setModalPending] = useState(false);
 
   const [deleteTeamModalState, setDeleteTeamModalState] =
     useState<ActiveState>('INACTIVE');
@@ -342,12 +346,14 @@ export default function Teams() {
           setMembersPage(Math.ceil(total / MEMBERS_PAGE_SIZE));
           return;
         }
+        setMembersError(false);
         setMembers(rows);
         setMembersTotal(total);
         if (!debouncedMemberQuery) setMembersAll(total);
       })
       .catch(() => {
-        if (!cancelled) setMembers([]);
+        // A failed load is an error with Retry, not "no members".
+        if (!cancelled) setMembersError(true);
       });
     return () => {
       cancelled = true;
@@ -370,6 +376,7 @@ export default function Teams() {
       // Clear the previous team's data so the detail view doesn't flash
       // stale members/grants while this team's fetch is in flight.
       setMembers([]);
+      setMembersError(false);
       setMembersPage(1);
       setMemberQuery('');
       setMembersTotal(0);
@@ -434,8 +441,9 @@ export default function Teams() {
   };
 
   const handleCreate = async () => {
-    if (!newTeamName.trim()) return;
+    if (!newTeamName.trim() || modalPending) return;
     setCreateError(null);
+    setModalPending(true);
     try {
       const created = await dispatch(
         createTeam({ name: newTeamName.trim(), token }),
@@ -446,6 +454,8 @@ export default function Teams() {
     } catch {
       // Keep the modal open and surface the error so the user can retry.
       setCreateError(t('settings.teams.createTeamError'));
+    } finally {
+      setModalPending(false);
     }
   };
 
@@ -475,9 +485,10 @@ export default function Teams() {
   };
 
   const handleEditSave = async () => {
-    if (!selected || !editName.trim()) return;
+    if (!selected || !editName.trim() || modalPending) return;
     const name = editName.trim();
     const description = editDescription.trim();
+    setModalPending(true);
     try {
       const res = await teamsService.update(
         selected.id,
@@ -494,6 +505,8 @@ export default function Teams() {
       setEditOpen(false);
     } catch (error) {
       setEditError(errorMessage(error, t('settings.teams.updateFailed')));
+    } finally {
+      setModalPending(false);
     }
   };
 
@@ -547,8 +560,9 @@ export default function Teams() {
   };
 
   const handleAddMember = async () => {
-    if (!selected || !newMemberEmail.trim()) return;
+    if (!selected || !newMemberEmail.trim() || modalPending) return;
     setAddMemberError(null);
+    setModalPending(true);
     try {
       const res = await teamsService.addMember(
         selected.id,
@@ -571,6 +585,8 @@ export default function Teams() {
       setAddMemberError(
         errorMessage(error, t('settings.teams.addMemberError')),
       );
+    } finally {
+      setModalPending(false);
     }
   };
 
@@ -964,11 +980,17 @@ export default function Teams() {
                 </Avatar>
               </span>
               <div className="min-w-0">
-                <h3 className="text-foreground truncate text-xl leading-tight font-semibold">
+                <h3
+                  className="text-foreground truncate text-xl leading-tight font-semibold"
+                  title={selected.name}
+                >
                   {selected.name}
                 </h3>
                 {selected.description && (
-                  <p className="text-muted-foreground mt-1 line-clamp-2 text-sm">
+                  <p
+                    className="text-muted-foreground mt-1 line-clamp-2 text-sm"
+                    title={selected.description}
+                  >
                     {selected.description}
                   </p>
                 )}
@@ -1037,7 +1059,15 @@ export default function Teams() {
                 )
               }
             />
-            {members.length === 0 ? (
+            {membersError ? (
+              <EmptyState
+                tone="destructive"
+                size="sm"
+                illustration="none"
+                title={t('settings.teams.membersLoadError')}
+                onRetry={() => setMembersReload((n) => n + 1)}
+              />
+            ) : members.length === 0 ? (
               <EmptyState
                 size="sm"
                 title={
@@ -1126,26 +1156,23 @@ export default function Teams() {
             ) : (
               <>
                 <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                  <div className="bg-muted max-w-full rounded-full p-1">
-                    <ToggleGroup
-                      type="single"
-                      size="xs"
-                      value={resourceFilter}
-                      onValueChange={(value) =>
-                        value && setResourceFilter(value as ResourceFilter)
-                      }
-                      aria-label={t('settings.teams.sharedList.filterLabel')}
-                    >
-                      {(['all', ...FILTER_TYPES] as ResourceFilter[]).map(
-                        (value) => (
-                          <ToggleGroupItem key={value} value={value}>
-                            {t(`settings.teams.sharedList.filter.${value}`)}{' '}
-                            {formatCount(resourceCounts[value])}
-                          </ToggleGroupItem>
-                        ),
-                      )}
-                    </ToggleGroup>
-                  </div>
+                  <ToggleGroup
+                    type="single"
+                    value={resourceFilter}
+                    onValueChange={(value) =>
+                      value && setResourceFilter(value as ResourceFilter)
+                    }
+                    aria-label={t('settings.teams.sharedList.filterLabel')}
+                  >
+                    {(['all', ...FILTER_TYPES] as ResourceFilter[]).map(
+                      (value) => (
+                        <ToggleGroupItem key={value} value={value}>
+                          {t(`settings.teams.sharedList.filter.${value}`)}{' '}
+                          {formatCount(resourceCounts[value])}
+                        </ToggleGroupItem>
+                      ),
+                    )}
+                  </ToggleGroup>
                   <SearchInput
                     className="w-full sm:w-56"
                     placeholder={t('settings.teams.sharedList.search')}
@@ -1171,12 +1198,14 @@ export default function Teams() {
                             selected={isOpen}
                             asChild
                             leading={
-                              <span
+                              <Avatar
                                 aria-hidden="true"
-                                className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
+                                size="sm"
+                                shape="square"
+                                variant="icon"
                               >
                                 {resourceTypeIcon(r.type)}
-                              </span>
+                              </Avatar>
                             }
                             title={
                               <span title={resourceName(r)}>
@@ -1243,12 +1272,14 @@ export default function Teams() {
                 owner: ownerLabel(openResource),
               })}
               leading={
-                <span
+                <Avatar
                   aria-hidden="true"
-                  className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
+                  size="sm"
+                  shape="square"
+                  variant="icon"
                 >
                   {resourceTypeIcon(openResource.type)}
-                </span>
+                </Avatar>
               }
             >
               <div className="flex flex-wrap gap-2">
@@ -1472,6 +1503,7 @@ export default function Teams() {
             onCancel={closeCreateModal}
             submitLabel={t('settings.teams.create')}
             onSubmit={handleCreate}
+            pending={modalPending}
             disabled={!newTeamName.trim()}
           />
         }
@@ -1503,6 +1535,7 @@ export default function Teams() {
             onCancel={closeEditModal}
             submitLabel={t('settings.teams.save')}
             onSubmit={handleEditSave}
+            pending={modalPending}
             disabled={!editName.trim()}
           />
         }
@@ -1547,6 +1580,7 @@ export default function Teams() {
             onCancel={closeAddMemberModal}
             submitLabel={t('settings.teams.add')}
             onSubmit={handleAddMember}
+            pending={modalPending}
             disabled={!newMemberEmail.trim()}
           />
         }

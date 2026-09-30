@@ -29,11 +29,32 @@ vi.mock('../preferences/PromptsModal', () => ({
     return null;
   },
 }));
+const confirm = vi.hoisted(() => ({
+  result: undefined as void | Promise<unknown>,
+}));
 vi.mock('../modals/ConfirmationModal', () => ({
-  default: ({ handleSubmit }: { handleSubmit: () => void }) => (
-    <button type="button" data-testid="confirm" onClick={handleSubmit}>
-      confirm
-    </button>
+  default: ({
+    handleSubmit,
+    error,
+  }: {
+    handleSubmit: () => void | Promise<unknown>;
+    error?: string;
+  }) => (
+    <>
+      <button
+        type="button"
+        data-testid="confirm"
+        onClick={() => {
+          const result = handleSubmit();
+          // Mark it handled; the tests assert on it afterwards.
+          if (result) result.catch(() => undefined);
+          confirm.result = result;
+        }}
+      >
+        confirm
+      </button>
+      <p data-testid="confirm-error">{error}</p>
+    </>
   ),
 }));
 
@@ -367,7 +388,7 @@ describe('Prompts', () => {
       expect(lastModalProps().onDuplicate).toBeUndefined();
     });
 
-    it('keeps the row and shows an error when the delete fails', async () => {
+    it('keeps the row and the error in the dialog when the delete fails', async () => {
       deletePrompt.mockReturnValue(json({ success: false }, false, 403));
       const setPrompts = vi.fn();
       renderPrompts({ prompts: all, selectedPrompt: own, setPrompts });
@@ -384,13 +405,15 @@ describe('Prompts', () => {
           document.body.querySelector('[data-testid="confirm"]') as HTMLElement
         ).click();
       });
+      await expect(confirm.result).rejects.toThrow();
       expect(setPrompts).not.toHaveBeenCalled();
-      expect(dispatch).toHaveBeenCalledWith(
+      expect(
+        document.body.querySelector('[data-testid="confirm-error"]')!
+          .textContent,
+      ).toBe('settings.general.promptActions.deleteFailed');
+      expect(dispatch).not.toHaveBeenCalledWith(
         expect.objectContaining({
-          payload: {
-            variant: 'destructive',
-            message: 'settings.general.promptActions.deleteFailed',
-          },
+          payload: expect.objectContaining({ variant: 'destructive' }),
         }),
       );
     });
@@ -412,6 +435,7 @@ describe('Prompts', () => {
           document.body.querySelector('[data-testid="confirm"]') as HTMLElement
         ).click();
       });
+      await expect(confirm.result).resolves.toBeUndefined();
       expect(setPrompts).toHaveBeenCalledWith(
         all.filter((p) => p.id !== 'own'),
       );

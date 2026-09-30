@@ -1,4 +1,5 @@
 import { envVar } from '@/env';
+import { focusRing } from '@/lib/utils';
 import { CircleAlert, ExternalLink } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -18,6 +19,8 @@ import { isOwner } from '../utils/accessUtils';
 import ConfirmationModal from './ConfirmationModal';
 
 const baseURL = envVar('VITE_BASE_URL');
+// The public and webhook URLs are raw links in running text.
+const linkFocus = `${focusRing} rounded-sm outline-none`;
 
 /** The backend's `message` on a refused call, else null. */
 const errorMessage = async (response: Response): Promise<string | null> => {
@@ -146,7 +149,6 @@ export default function AgentDetailsModal({
         open={modalState === 'ACTIVE'}
         onOpenChange={(o) => !o && setModalState('INACTIVE')}
         title={t('modals.agentDetails.title')}
-        size="md"
       >
         <div>
           {error && (
@@ -171,6 +173,7 @@ export default function AgentDetailsModal({
                       href={`${baseURL}/shared/agent/${sharedToken}`}
                       target="_blank"
                       rel="noreferrer"
+                      className={linkFocus}
                     >
                       {`${baseURL}/shared/agent/${sharedToken}`}
                     </a>
@@ -290,7 +293,12 @@ export default function AgentDetailsModal({
               {webhookUrl ? (
                 <div className="flex flex-col gap-2">
                   <p className="text-foreground text-sm leading-normal font-medium wrap-anywhere">
-                    <a href={webhookUrl} target="_blank" rel="noreferrer">
+                    <a
+                      href={webhookUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={linkFocus}
+                    >
                       {webhookUrl}
                     </a>
                     <CopyButton

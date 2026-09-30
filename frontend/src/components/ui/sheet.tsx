@@ -1,10 +1,8 @@
 import * as React from 'react';
 import { Dialog as SheetPrimitive } from 'radix-ui';
-import { XIcon } from 'lucide-react';
 import { cva } from 'class-variance-authority';
 
 import { BottomTintReset } from '@/components/ui/bar-tint-reset';
-import { Button } from '@/components/ui/button';
 import { cn, overlayScrim } from '@/lib/utils';
 import { useFocusReturn } from '@/components/ui/use-focus-return';
 
@@ -16,12 +14,6 @@ function SheetTrigger({
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Trigger>) {
   return <SheetPrimitive.Trigger data-slot="sheet-trigger" {...props} />;
-}
-
-function SheetClose({
-  ...props
-}: React.ComponentProps<typeof SheetPrimitive.Close>) {
-  return <SheetPrimitive.Close data-slot="sheet-close" {...props} />;
 }
 
 function SheetPortal({
@@ -77,10 +69,8 @@ const sheetContentVariants = cva(
       side: {
         right:
           'data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-0 right-0 h-full border-l',
-        left: 'data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left inset-y-0 left-0 h-full w-3/4 border-r sm:max-w-sm',
-        top: 'data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-0 top-0 h-auto border-b',
-        // A bottom sheet stacks its handle and parts flush; SheetHeader and
-        // SheetFooter bring their own padding.
+        // A bottom sheet stacks its handle and parts flush; its content
+        // brings its own padding.
         bottom: `${sheetBottomShape} pb-safe-0 gap-0`,
       },
       // A right drawer's width by role (DESIGN.md "Side panels"): default
@@ -110,21 +100,19 @@ function SheetContent({
   side = 'right',
   size = 'default',
   handle = false,
-  // A bottom sheet with a grab handle closes by its scrim, not an X (the
-  // handle is only a cue; it doesn't drag).
-  showCloseButton = !handle,
-  closeLabel = 'Close',
   title,
   onOpenAutoFocus,
   onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
-  side?: 'top' | 'right' | 'bottom' | 'left';
+  /**
+   * `right`: SidePanel's drawer. `bottom`: a phone sheet. It draws no X: a
+   * SidePanel's PanelHeader brings the close, and a bottom sheet closes by
+   * its scrim (the handle is only a cue; it doesn't drag).
+   */
+  side?: 'right' | 'bottom';
   /** Width of a right drawer: default (480px) or wide (800px). */
   size?: 'default' | 'wide';
-  showCloseButton?: boolean;
-  /** Accessible name for the built-in X; pass a translated one. */
-  closeLabel?: string;
   /** Draw the grab bar first (bottom sheets). */
   handle?: boolean;
   // Accessible name for the dialog. Radix warns when a Dialog has no Title;
@@ -147,40 +135,8 @@ function SheetContent({
         {side === 'bottom' && <BottomTintReset />}
         {handle && <SheetHandle />}
         {children}
-        {showCloseButton && (
-          <SheetPrimitive.Close asChild>
-            <Button
-              variant="ghost-muted"
-              size="icon-sm"
-              aria-label={closeLabel}
-              className="absolute top-2 right-2"
-            >
-              <XIcon />
-            </Button>
-          </SheetPrimitive.Close>
-        )}
       </SheetPrimitive.Content>
     </SheetPortal>
-  );
-}
-
-function SheetHeader({ className, ...props }: React.ComponentProps<'div'>) {
-  return (
-    <div
-      data-slot="sheet-header"
-      className={cn('flex flex-col gap-1.5 p-4', className)}
-      {...props}
-    />
-  );
-}
-
-function SheetFooter({ className, ...props }: React.ComponentProps<'div'>) {
-  return (
-    <div
-      data-slot="sheet-footer"
-      className={cn('mt-auto flex flex-col gap-2 p-4', className)}
-      {...props}
-    />
   );
 }
 
@@ -200,28 +156,11 @@ function SheetTitle({
   );
 }
 
-function SheetDescription({
-  className,
-  ...props
-}: React.ComponentProps<typeof SheetPrimitive.Description>) {
-  return (
-    <SheetPrimitive.Description
-      data-slot="sheet-description"
-      className={cn('text-muted-foreground text-sm', className)}
-      {...props}
-    />
-  );
-}
-
 export {
   sheetBottomShape,
   Sheet,
   SheetTrigger,
-  SheetClose,
   SheetContent,
   SheetHandle,
-  SheetHeader,
-  SheetFooter,
   SheetTitle,
-  SheetDescription,
 };

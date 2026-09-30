@@ -464,7 +464,8 @@
         "syncFrequency": "No se pudo cambiar la frecuencia de sincronización.",
         "reingest": "No se pudo iniciar la reingesta."
       },
-      "viaConnection": "mediante {{name}}"
+      "viaConnection": "mediante {{name}}",
+      "loadError": "No se pudo cargar tu conocimiento."
     },
     "analytics": {
       "label": "Analítica",
@@ -670,7 +671,8 @@
           "retrievedChunks": "Fragmentos recuperados",
           "allAttributes": "Todos los atributos"
         }
-      }
+      },
+      "loadError": "No se pudieron cargar los registros."
     },
     "teams": {
       "label": "Equipos",
@@ -980,7 +982,8 @@
       "pageRange_other": "{{from}}–{{to}} de {{formatted}} equipos",
       "searchMembers": "Buscar miembros…",
       "membersRange_one": "{{from}}–{{to}} de {{formatted}} miembro",
-      "membersRange_other": "{{from}}–{{to}} de {{formatted}} miembros"
+      "membersRange_other": "{{from}}–{{to}} de {{formatted}} miembros",
+      "membersLoadError": "No se pudieron cargar los miembros."
     },
     "tools": {
       "label": "Herramientas",
@@ -1125,7 +1128,8 @@
       "defaultBadge": "Predeterminada",
       "noToolsYet": "Aún no hay herramientas",
       "connectService": "Conectar un servicio",
-      "filledBy": "Completado por"
+      "filledBy": "Completado por",
+      "loadError": "No se pudieron cargar tus herramientas."
     },
     "devices": {
       "label": "Dispositivos",
@@ -1142,7 +1146,6 @@
       "offline": "Desconectado",
       "lastSeen": "Visto por última vez: {{time}}",
       "lastSeenLabel": "Visto por última vez",
-      "seenAgo": "visto hace {{time}}",
       "nameLabel": "Nombre del dispositivo",
       "descriptionLabel": "Descripción (visible para el agente)",
       "descriptionPlaceholder": "¿Para qué es esta máquina?",
@@ -1182,7 +1185,8 @@
       "auditDurationValue": "{{value}} ms",
       "fallbackName": "dispositivo",
       "auditShow": "Mostrar comandos recientes",
-      "auditHide": "Ocultar comandos recientes"
+      "auditHide": "Ocultar comandos recientes",
+      "seen": "visto {{time}}"
     },
     "customModels": {
       "label": "Modelos personalizados",
@@ -1256,7 +1260,8 @@
         "testFailed": "La prueba de conexión falló"
       },
       "pageRange_one": "{{from}}–{{to}} de {{formatted}} modelo",
-      "pageRange_other": "{{from}}–{{to}} de {{formatted}} modelos"
+      "pageRange_other": "{{from}}–{{to}} de {{formatted}} modelos",
+      "loadError": "No se pudieron cargar tus modelos."
     },
     "accessTokens": {
       "label": "Tokens de acceso",
@@ -2598,7 +2603,8 @@
         "paused_one": "{{count}} en pausa",
         "paused_other": "{{count}} en pausa",
         "overdue": "Atrasada"
-      }
+      },
+      "deleteFailed": "No se pudo eliminar esta programación."
     },
     "shared": {
       "notFound": "No se encontró el agente. Asegúrate de que el agente esté compartido.",
@@ -2606,7 +2612,8 @@
       "sharedBy": "por {{name}}",
       "sharedOn": "Compartido el {{date}}",
       "connectedTools": "Herramientas conectadas",
-      "toolIconTitle": "Icono de {{name}}"
+      "toolIconTitle": "Icono de {{name}}",
+      "loadError": "No se pudo cargar este agente."
     },
     "preview": {
       "testMessage": "Prueba tu agente aquí. Los agentes publicados se pueden usar en conversaciones.",
@@ -3007,12 +3014,14 @@
     "close": "Cerrar",
     "viewOnlyNotice": "Puedes ver esto, pero tu rol no puede cambiarlo.",
     "credentialsLockedNotice": "Solo el propietario puede cambiar las credenciales de esta herramienta.",
-    "savedSecretHint": "Guardado. Déjalo vacío para conservarlo."
+    "savedSecretHint": "Guardado. Déjalo vacío para conservarlo.",
+    "actionFailed": "Algo salió mal. Inténtalo de nuevo."
   },
   "sidePanel": {
     "close": "Cerrar",
     "expand": "Ampliar",
     "collapse": "Reducir",
     "back": "Atrás"
-  }
+  },
+  "close": "Cerrar"
 }

@@ -173,6 +173,13 @@ describe('MessageInput send with a failed attachment', () => {
     });
   };
 
+  it('keeps the composer in the natural tab order', async () => {
+    await render();
+    // A positive tabIndex jumps the page's tab order; the composer is the
+    // default 0 and is reached where it sits.
+    expect(textarea().hasAttribute('tabindex')).toBe(false);
+  });
+
   it('sends the question and drops the failed file', async () => {
     store.dispatch(addAttachment(att()));
     store.dispatch(

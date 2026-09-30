@@ -212,7 +212,6 @@ export default function ScheduleFormModal({
           ? t('agents.schedules.modal.save')
           : t('agents.schedules.modal.create')
       }
-      size="md"
       footer={
         <Button
           type="button"
@@ -328,23 +327,19 @@ function FrequencyTabs({
   ariaLabel,
 }: FrequencyTabsProps) {
   return (
-    // The muted track is a plain wrapper: ToggleGroup takes layout only.
-    <div className="bg-muted w-full rounded-full p-1">
-      <ToggleGroup
-        type="single"
-        size="xs"
-        value={frequency}
-        onValueChange={(f) => f && onChange(f as ScheduleFrequency)}
-        aria-label={ariaLabel}
-        className="flex-nowrap"
-      >
-        {FREQUENCIES.map((f) => (
-          <ToggleGroupItem key={f} value={f} className="flex-1">
-            {labels[f]}
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
-    </div>
+    <ToggleGroup
+      type="single"
+      fill
+      value={frequency}
+      onValueChange={(f) => f && onChange(f as ScheduleFrequency)}
+      aria-label={ariaLabel}
+    >
+      {FREQUENCIES.map((f) => (
+        <ToggleGroupItem key={f} value={f}>
+          {labels[f]}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
   );
 }
 
@@ -400,6 +395,7 @@ function OnPicker({ values, onChange, tDay, tMonth, labels }: OnPickerProps) {
           {/* A weekly schedule runs on one day: a radio group. */}
           <ToggleGroup
             type="single"
+            fill
             value={String(values.dayOfWeek)}
             onValueChange={(day) => day && set({ dayOfWeek: Number(day) })}
             aria-label={labels.days}
@@ -482,7 +478,8 @@ function DatePicker({ value, onChange, placeholder }: DatePickerProps) {
   const [open, setOpen] = useState<boolean>(false);
   const selected = dateStringToDate(value);
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    // `modal`: it opens inside the schedule Modal (see multi-select.tsx).
+    <Popover open={open} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <Button
           type="button"

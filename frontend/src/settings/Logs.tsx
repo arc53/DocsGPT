@@ -16,6 +16,7 @@ import {
   DescriptionList,
 } from '../components/ui/description-list';
 import { EmptyState } from '../components/ui/empty-state';
+import { LoadMoreStatus } from '../components/ui/load-more-status';
 import {
   Select,
   SelectContent,
@@ -43,6 +44,8 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingLogs, setLoadingLogs] = useLoaderState(true);
+  // The last page failed: an error with Retry instead of "no logs".
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const [levelFilter, setLevelFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -76,6 +79,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
       return;
     }
     resetPendingRef.current = true;
+    setLoadFailed(false);
     setLogsByPage({});
     setPage(1);
     setHasMore(true);
@@ -87,6 +91,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     const issuedKey = filterKey;
     const issuedPage = page;
     setLoadingLogs(true);
+    setLoadFailed(false);
     try {
       const response = await userService.getLogs(
         {
@@ -110,6 +115,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
       setHasMore(data.has_more);
     } catch (error) {
       console.error(error);
+      if (issuedKey === filterKeyRef.current) setLoadFailed(true);
     } finally {
       if (issuedKey === filterKeyRef.current) setLoadingLogs(false);
     }
@@ -189,6 +195,8 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
           setPage={setPage}
           loading={loadingLogs}
           hasMore={hasMore}
+          failed={loadFailed}
+          onRetry={fetchLogs}
           tableHeader={tableHeader}
           onViewTrace={setOpenTrace}
         />
@@ -207,6 +215,9 @@ type LogsTableProps = {
   setPage: React.Dispatch<React.SetStateAction<number>>;
   loading: boolean;
   hasMore: boolean;
+  /** The last page failed to load; `onRetry` asks for it again. */
+  failed: boolean;
+  onRetry: () => void;
   tableHeader?: string;
   onViewTrace: (ref: TraceRef) => void;
 };
@@ -215,6 +226,8 @@ function LogsTable({
   setPage,
   loading,
   hasMore,
+  failed,
+  onRetry,
   tableHeader,
   onViewTrace,
 }: LogsTableProps) {
@@ -232,7 +245,7 @@ function LogsTable({
   // Loads the next page as the end of the list nears the screen.
   const sentinelRef = useScrollSentinel(
     () => setPage((prev) => prev + 1),
-    !loading && hasMore,
+    !loading && hasMore && !failed,
     logs.length,
   );
 
@@ -244,7 +257,17 @@ function LogsTable({
         </p>
       </div>
       <div className="relative flex h-[51svh] grow flex-col items-start gap-2 overflow-y-auto overscroll-contain bg-transparent p-4">
-        {!loading && logs.length === 0 && (
+        {!loading && failed && logs.length === 0 && (
+          <EmptyState
+            tone="destructive"
+            size="xs"
+            illustration="none"
+            title={t('settings.logs.loadError')}
+            onRetry={onRetry}
+            className="w-full"
+          />
+        )}
+        {!loading && !failed && logs.length === 0 && (
           <EmptyState
             size="xs"
             illustration="none"
@@ -263,6 +286,15 @@ function LogsTable({
         ))}
         <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
         {loading && <SkeletonLoader component="logs" />}
+        {!loading && failed && logs.length > 0 && (
+          <LoadMoreStatus
+            loading={false}
+            error
+            done={false}
+            onRetry={onRetry}
+            className="w-full"
+          />
+        )}
       </div>
     </div>
   );

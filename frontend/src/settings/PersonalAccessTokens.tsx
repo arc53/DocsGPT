@@ -36,6 +36,7 @@ import RegenerateAccessTokenModal from '../modals/RegenerateAccessTokenModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import {
+  EMPTY_VALUE,
   formatDateOnly,
   formatDateTime,
   formatRelative,
@@ -370,7 +371,7 @@ export default function PersonalAccessTokens() {
                       <TableCell className="text-muted-foreground whitespace-nowrap">
                         {item.created_at
                           ? formatDateOnly(item.created_at)
-                          : '-'}
+                          : EMPTY_VALUE}
                       </TableCell>
                       <TableCell className="text-muted-foreground whitespace-nowrap">
                         {renderLastUsed(item)}
@@ -418,7 +419,9 @@ export default function PersonalAccessTokens() {
                     <DescriptionItem
                       label={t('settings.accessTokens.createdAt')}
                     >
-                      {item.created_at ? formatDateOnly(item.created_at) : '-'}
+                      {item.created_at
+                        ? formatDateOnly(item.created_at)
+                        : EMPTY_VALUE}
                     </DescriptionItem>
                     <DescriptionItem
                       label={t('settings.accessTokens.lastUsed')}

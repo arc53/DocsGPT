@@ -498,7 +498,8 @@
         "syncFrequency": "Не удалось изменить частоту синхронизации.",
         "reingest": "Не удалось запустить повторную загрузку."
       },
-      "viaConnection": "через {{name}}"
+      "viaConnection": "через {{name}}",
+      "loadError": "Не удалось загрузить базу знаний."
     },
     "analytics": {
       "label": "Аналитика",
@@ -718,7 +719,8 @@
           "retrievedChunks": "Найденные фрагменты",
           "allAttributes": "Все атрибуты"
         }
-      }
+      },
+      "loadError": "Не удалось загрузить журналы."
     },
     "teams": {
       "label": "Команды",
@@ -1042,7 +1044,8 @@
       "membersRange_one": "{{from}}–{{to}} из {{formatted}} участника",
       "membersRange_few": "{{from}}–{{to}} из {{formatted}} участников",
       "membersRange_many": "{{from}}–{{to}} из {{formatted}} участников",
-      "membersRange_other": "{{from}}–{{to}} из {{formatted}} участника"
+      "membersRange_other": "{{from}}–{{to}} из {{formatted}} участника",
+      "membersLoadError": "Не удалось загрузить участников."
     },
     "tools": {
       "label": "Инструменты",
@@ -1191,7 +1194,8 @@
       "defaultBadge": "По умолчанию",
       "noToolsYet": "Инструментов пока нет",
       "connectService": "Подключить сервис",
-      "filledBy": "Кто заполняет"
+      "filledBy": "Кто заполняет",
+      "loadError": "Не удалось загрузить инструменты."
     },
     "devices": {
       "label": "Устройства",
@@ -1208,7 +1212,6 @@
       "offline": "Не в сети",
       "lastSeen": "Последняя активность: {{time}}",
       "lastSeenLabel": "Последняя активность",
-      "seenAgo": "в сети {{time}} назад",
       "nameLabel": "Название устройства",
       "descriptionLabel": "Описание (видно агенту)",
       "descriptionPlaceholder": "Для чего эта машина?",
@@ -1248,7 +1251,8 @@
       "auditDurationValue": "{{value}} мс",
       "fallbackName": "устройство",
       "auditShow": "Показать последние команды",
-      "auditHide": "Скрыть последние команды"
+      "auditHide": "Скрыть последние команды",
+      "seen": "в сети {{time}}"
     },
     "customModels": {
       "label": "Свои модели",
@@ -1324,7 +1328,8 @@
       "pageRange_one": "{{from}}–{{to}} из {{formatted}} модели",
       "pageRange_few": "{{from}}–{{to}} из {{formatted}} моделей",
       "pageRange_many": "{{from}}–{{to}} из {{formatted}} моделей",
-      "pageRange_other": "{{from}}–{{to}} из {{formatted}} модели"
+      "pageRange_other": "{{from}}–{{to}} из {{formatted}} модели",
+      "loadError": "Не удалось загрузить модели."
     },
     "accessTokens": {
       "label": "Токены доступа",
@@ -2726,7 +2731,8 @@
         "paused_many": "{{count}} приостановлено",
         "paused_other": "{{count}} приостановлено",
         "overdue": "Просрочено"
-      }
+      },
+      "deleteFailed": "Не удалось удалить это расписание."
     },
     "shared": {
       "notFound": "Агент не найден. Убедитесь, что агент является общим.",
@@ -2734,7 +2740,8 @@
       "sharedBy": "от {{name}}",
       "sharedOn": "Опубликовано {{date}}",
       "connectedTools": "Подключённые инструменты",
-      "toolIconTitle": "Значок {{name}}"
+      "toolIconTitle": "Значок {{name}}",
+      "loadError": "Не удалось загрузить этого агента."
     },
     "preview": {
       "testMessage": "Протестируйте своего агента здесь. Опубликованные агенты можно использовать в разговорах.",
@@ -3149,12 +3156,14 @@
     "close": "Закрыть",
     "viewOnlyNotice": "Вы можете это просматривать, но ваша роль не позволяет это изменить.",
     "credentialsLockedNotice": "Только владелец может изменить учётные данные этого инструмента.",
-    "savedSecretHint": "Сохранено. Оставьте поле пустым, чтобы сохранить значение."
+    "savedSecretHint": "Сохранено. Оставьте поле пустым, чтобы сохранить значение.",
+    "actionFailed": "Что-то пошло не так. Попробуйте ещё раз."
   },
   "sidePanel": {
     "close": "Закрыть",
     "expand": "Развернуть",
     "collapse": "Свернуть",
     "back": "Назад"
-  }
+  },
+  "close": "Закрыть"
 }

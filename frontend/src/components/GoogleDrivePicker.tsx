@@ -23,6 +23,7 @@ import { formatCount } from '../utils/dateTimeUtils';
 import { formatBytes } from '../utils/stringUtils';
 import ConnectorAuth from './ConnectorAuth';
 import { Alert, AlertDescription } from './ui/alert';
+import { Avatar } from './ui/avatar';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { IconButton } from './ui/icon-button';
@@ -230,13 +231,13 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
     <ListRow
       key={item.id}
       leading={
-        <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md">
+        <Avatar size="sm" shape="square" variant="icon">
           {folder ? (
             <Folder className="size-4" aria-hidden />
           ) : (
             <File className="size-4" aria-hidden />
           )}
-        </span>
+        </Avatar>
       }
       title={item.name}
       description={

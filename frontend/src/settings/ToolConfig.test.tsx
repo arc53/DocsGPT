@@ -13,8 +13,28 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('../hooks', () => ({ useDarkTheme: () => [false, () => {}] }));
-vi.mock('../navigation/DetailBreadcrumb', () => ({ default: () => null }));
-vi.mock('../modals/ConfirmationModal', () => ({ default: () => null }));
+vi.mock('../navigation/DetailBreadcrumb', () => ({
+  default: ({ onParentClick }: { onParentClick: () => void }) => (
+    <button type="button" onClick={onParentClick}>
+      back
+    </button>
+  ),
+}));
+const confirm = vi.hoisted(() => ({
+  props: null as null | {
+    handleSubmit: () => void | Promise<unknown>;
+    error?: string;
+  },
+}));
+vi.mock('../modals/ConfirmationModal', () => ({
+  default: (props: {
+    handleSubmit: () => void | Promise<unknown>;
+    error?: string;
+  }) => {
+    confirm.props = props;
+    return null;
+  },
+}));
 vi.mock('../modals/AddActionModal', () => ({ default: () => null }));
 vi.mock('../modals/ImportSpecModal', () => ({ default: () => null }));
 
@@ -185,6 +205,44 @@ describe('ToolConfig', () => {
     const alert = container.querySelector<HTMLElement>('[role="alert"]');
     expect(alert?.textContent).toBe('settings.tools.saveFailed');
     expect(alert?.className).toContain('text-destructive');
+  });
+
+  // ConfirmationModal stays pending on the returned promise; a failed save
+  // and leave rejects so the error stays in the dialog.
+  it('keeps a failed save-and-leave in the unsaved-changes dialog', async () => {
+    updateTool.mockRejectedValue(new Error('nope'));
+    const handleGoBack = vi.fn();
+    await act(async () => {
+      root.render(
+        <ToolConfig
+          tool={{ ...userTool, customName: '' }}
+          setTool={() => {}}
+          handleGoBack={handleGoBack}
+        />,
+      );
+    });
+    const name = container.querySelector<HTMLInputElement>(
+      'input[placeholder="settings.tools.customNamePlaceholder"]',
+    );
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set;
+      setter?.call(name, 'Renamed');
+      name?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    confirm.props = null;
+    await act(async () => buttonByText('back')?.click());
+    expect(confirm.props).not.toBeNull();
+    expect(confirm.props!.error).toBe('settings.tools.saveFailed');
+    let result: void | Promise<unknown>;
+    await act(async () => {
+      result = confirm.props!.handleSubmit();
+      if (result) result.catch(() => undefined);
+    });
+    await expect(result!).rejects.toThrow();
+    expect(handleGoBack).not.toHaveBeenCalled();
   });
 
   it('shows a save the server refused as failed', async () => {

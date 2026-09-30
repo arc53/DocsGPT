@@ -98,7 +98,6 @@ export default function RegenerateAccessTokenModal({
           })}
         </span>
       }
-      size="md"
       isPerformingTask={submitting}
       footer={
         <ModalActions

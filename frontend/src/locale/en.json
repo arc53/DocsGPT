@@ -469,7 +469,8 @@
         "syncFrequency": "Couldn't change the sync frequency.",
         "reingest": "Couldn't start the reingest."
       },
-      "viaConnection": "via {{name}}"
+      "viaConnection": "via {{name}}",
+      "loadError": "Could not load your knowledge."
     },
     "analytics": {
       "label": "Analytics",
@@ -676,7 +677,8 @@
           "retrievedChunks": "Retrieved chunks",
           "allAttributes": "All attributes"
         }
-      }
+      },
+      "loadError": "Could not load the logs."
     },
     "teams": {
       "label": "Teams",
@@ -986,7 +988,8 @@
       "pageRange_other": "{{from}}–{{to}} of {{formatted}} teams",
       "searchMembers": "Search members…",
       "membersRange_one": "{{from}}–{{to}} of {{formatted}} member",
-      "membersRange_other": "{{from}}–{{to}} of {{formatted}} members"
+      "membersRange_other": "{{from}}–{{to}} of {{formatted}} members",
+      "membersLoadError": "Could not load the members."
     },
     "tools": {
       "label": "Tools",
@@ -1131,7 +1134,8 @@
       "defaultBadge": "Default",
       "noToolsYet": "No tools yet",
       "connectService": "Connect a service",
-      "filledBy": "Filled in by"
+      "filledBy": "Filled in by",
+      "loadError": "Could not load your tools."
     },
     "devices": {
       "label": "Devices",
@@ -1148,7 +1152,6 @@
       "offline": "Offline",
       "lastSeen": "Last seen: {{time}}",
       "lastSeenLabel": "Last seen",
-      "seenAgo": "seen {{time}} ago",
       "nameLabel": "Device name",
       "descriptionLabel": "Description (visible to the agent)",
       "descriptionPlaceholder": "What is this machine for?",
@@ -1188,7 +1191,8 @@
       "auditDurationValue": "{{value}} ms",
       "fallbackName": "device",
       "auditShow": "Show recent commands",
-      "auditHide": "Hide recent commands"
+      "auditHide": "Hide recent commands",
+      "seen": "seen {{time}}"
     },
     "customModels": {
       "label": "Custom Models",
@@ -1262,7 +1266,8 @@
         "testFailed": "Connection test failed"
       },
       "pageRange_one": "{{from}}–{{to}} of {{formatted}} model",
-      "pageRange_other": "{{from}}–{{to}} of {{formatted}} models"
+      "pageRange_other": "{{from}}–{{to}} of {{formatted}} models",
+      "loadError": "Could not load your models."
     },
     "accessTokens": {
       "label": "Access Tokens",
@@ -2616,7 +2621,8 @@
         "paused_one": "{{count}} paused",
         "paused_other": "{{count}} paused",
         "overdue": "Overdue"
-      }
+      },
+      "deleteFailed": "Couldn't delete this schedule."
     },
     "shared": {
       "notFound": "No agent found. Please ensure the agent is shared.",
@@ -2624,7 +2630,8 @@
       "sharedBy": "by {{name}}",
       "sharedOn": "Shared on {{date}}",
       "connectedTools": "Connected Tools",
-      "toolIconTitle": "{{name}} icon"
+      "toolIconTitle": "{{name}} icon",
+      "loadError": "Could not load this agent."
     },
     "preview": {
       "testMessage": "Test your agent here. Published agents can be used in conversations.",
@@ -3056,12 +3063,14 @@
     "close": "Close",
     "viewOnlyNotice": "You can view this, but your role can't change it.",
     "credentialsLockedNotice": "Only the owner can change this tool's credentials.",
-    "savedSecretHint": "Saved. Leave empty to keep it."
+    "savedSecretHint": "Saved. Leave empty to keep it.",
+    "actionFailed": "Something went wrong. Please try again."
   },
   "sidePanel": {
     "close": "Close",
     "expand": "Expand",
     "collapse": "Collapse",
     "back": "Back"
-  }
+  },
+  "close": "Close"
 }

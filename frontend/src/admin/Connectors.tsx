@@ -516,7 +516,9 @@ export default function Connectors() {
                         icon={connector.icon}
                         className="size-5 shrink-0"
                       />
-                      <span className="truncate">{connector.name}</span>
+                      <span className="truncate" title={connector.name}>
+                        {connector.name}
+                      </span>
                       {connector.publisher !== 'built_in' && (
                         <Badge variant="neutral">
                           {connector.publisher === 'preset'

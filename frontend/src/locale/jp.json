@@ -463,7 +463,8 @@
         "syncFrequency": "同期頻度を変更できませんでした。",
         "reingest": "再取り込みを開始できませんでした。"
       },
-      "viaConnection": "{{name}} 経由"
+      "viaConnection": "{{name}} 経由",
+      "loadError": "ナレッジを読み込めませんでした。"
     },
     "analytics": {
       "label": "分析",
@@ -669,7 +670,8 @@
           "retrievedChunks": "取得したチャンク",
           "allAttributes": "すべての属性"
         }
-      }
+      },
+      "loadError": "ログを読み込めませんでした。"
     },
     "teams": {
       "label": "チーム",
@@ -979,7 +981,8 @@
       "pageRange_other": "チーム {{formatted}}件中 {{from}}–{{to}}件",
       "searchMembers": "メンバーを検索…",
       "membersRange_one": "メンバー {{formatted}}人中 {{from}}–{{to}}人",
-      "membersRange_other": "メンバー {{formatted}}人中 {{from}}–{{to}}人"
+      "membersRange_other": "メンバー {{formatted}}人中 {{from}}–{{to}}人",
+      "membersLoadError": "メンバーを読み込めませんでした。"
     },
     "tools": {
       "label": "ツール",
@@ -1124,7 +1127,8 @@
       "defaultBadge": "デフォルト",
       "noToolsYet": "ツールはまだありません",
       "connectService": "サービスを接続",
-      "filledBy": "入力元"
+      "filledBy": "入力元",
+      "loadError": "ツールを読み込めませんでした。"
     },
     "devices": {
       "label": "デバイス",
@@ -1141,7 +1145,6 @@
       "offline": "オフライン",
       "lastSeen": "最終接続: {{time}}",
       "lastSeenLabel": "最終接続",
-      "seenAgo": "{{time}}前に確認",
       "nameLabel": "デバイス名",
       "descriptionLabel": "説明（エージェントに表示されます）",
       "descriptionPlaceholder": "このマシンの用途は？",
@@ -1181,7 +1184,8 @@
       "auditDurationValue": "{{value}} ミリ秒",
       "fallbackName": "デバイス",
       "auditShow": "最近のコマンドを表示",
-      "auditHide": "最近のコマンドを非表示"
+      "auditHide": "最近のコマンドを非表示",
+      "seen": "{{time}}に確認"
     },
     "customModels": {
       "label": "カスタムモデル",
@@ -1255,7 +1259,8 @@
         "testFailed": "接続テストに失敗しました"
       },
       "pageRange_one": "モデル {{formatted}}件中 {{from}}–{{to}}件",
-      "pageRange_other": "モデル {{formatted}}件中 {{from}}–{{to}}件"
+      "pageRange_other": "モデル {{formatted}}件中 {{from}}–{{to}}件",
+      "loadError": "モデルを読み込めませんでした。"
     },
     "accessTokens": {
       "label": "アクセストークン",
@@ -2587,7 +2592,8 @@
         "paused_one": "{{count}}件一時停止中",
         "paused_other": "{{count}}件一時停止中",
         "overdue": "期限超過"
-      }
+      },
+      "deleteFailed": "このスケジュールを削除できませんでした。"
     },
     "shared": {
       "notFound": "エージェントが見つかりません。エージェントが共有されていることを確認してください。",
@@ -2595,7 +2601,8 @@
       "sharedBy": "共有者: {{name}}",
       "sharedOn": "共有日: {{date}}",
       "connectedTools": "接続済みツール",
-      "toolIconTitle": "{{name}} のアイコン"
+      "toolIconTitle": "{{name}} のアイコン",
+      "loadError": "このエージェントを読み込めませんでした。"
     },
     "preview": {
       "testMessage": "ここでエージェントをテストできます。公開されたエージェントは会話で使用できます。",
@@ -2996,12 +3003,14 @@
     "close": "閉じる",
     "viewOnlyNotice": "表示はできますが、あなたのロールでは変更できません。",
     "credentialsLockedNotice": "このツールの認証情報を変更できるのはオーナーだけです。",
-    "savedSecretHint": "保存済みです。空のままにすると保持されます。"
+    "savedSecretHint": "保存済みです。空のままにすると保持されます。",
+    "actionFailed": "問題が発生しました。もう一度お試しください。"
   },
   "sidePanel": {
     "close": "閉じる",
     "expand": "拡大",
     "collapse": "縮小",
     "back": "戻る"
-  }
+  },
+  "close": "閉じる"
 }

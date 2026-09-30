@@ -16,6 +16,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import connectorsService from '../api/services/connectorsService';
 import userService from '../api/services/userService';
 import { Alert, AlertDescription } from '../components/ui/alert';
+import { Avatar } from '../components/ui/avatar';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
@@ -34,6 +35,7 @@ import { Switch } from '../components/ui/switch';
 import { PanelBody, PanelHeader, SidePanel } from '../components/ui/side-panel';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import { showActionToast } from '../notifications/actionToastSlice';
+import ConfirmationModal from '../modals/ConfirmationModal';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
 import { formatCount, formatDateTime } from '../utils/dateTimeUtils';
@@ -174,21 +176,12 @@ function DisconnectConnectionModal({
 }) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
-  const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
 
-  const disconnect = () => {
-    setPending(true);
-    setFailed(false);
-    connectorsService
-      .disconnect(detail.id, token)
-      .then((data) => {
-        if (!data?.success) throw new Error('disconnect failed');
-        onDisconnected();
-      })
-      .catch(() => setFailed(true))
-      .finally(() => setPending(false));
-  };
+  const disconnect = () =>
+    connectorsService.disconnect(detail.id, token).then((data) => {
+      if (!data?.success) throw new Error('disconnect failed');
+      onDisconnected();
+    });
 
   // Say only what this account has: a sync-only one has no tools to stop.
   const sources = detail.sources.length;
@@ -202,11 +195,10 @@ function DisconnectConnectionModal({
           : 'bodyNone';
 
   return (
-    <Modal
-      mobileVariant="dialog"
-      open
-      onOpenChange={(open) => !open && onClose()}
-      title={t('settings.connectors.disconnect.title', {
+    <ConfirmationModal
+      modalState="ACTIVE"
+      setModalState={(state) => state === 'INACTIVE' && onClose()}
+      message={t('settings.connectors.disconnect.title', {
         name,
         interpolation: { escapeValue: false },
       })}
@@ -214,25 +206,10 @@ function DisconnectConnectionModal({
         count: sources,
         formatted: formatCount(sources),
       })}
-      footer={
-        <ModalActions
-          cancelLabel={t('cancel')}
-          onCancel={onClose}
-          submitLabel={t('settings.connectors.detail.disconnect')}
-          onSubmit={disconnect}
-          pending={pending}
-        />
-      }
-    >
-      {failed ? (
-        <Alert variant="destructive">
-          <CircleAlert />
-          <AlertDescription>
-            {t('settings.connectors.disconnect.failed')}
-          </AlertDescription>
-        </Alert>
-      ) : null}
-    </Modal>
+      submitLabel={t('settings.connectors.detail.disconnect')}
+      handleSubmit={disconnect}
+      error={t('settings.connectors.disconnect.failed')}
+    />
   );
 }
 
@@ -252,52 +229,30 @@ function RemoveConnectionModal({
   const token = useSelector(selectToken);
   const [sources, setSources] = useState<'keep' | 'delete'>('keep');
   const [tools, setTools] = useState<'keep' | 'delete'>('delete');
-  const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
 
-  const remove = () => {
-    setPending(true);
-    setFailed(false);
+  const remove = () =>
     connectorsService
       .remove(detail.id, { sources, tools }, token)
       .then((data) => {
         if (!data?.success) throw new Error('remove failed');
         onRemoved();
-      })
-      .catch(() => setFailed(true))
-      .finally(() => setPending(false));
-  };
+      });
 
   return (
-    <Modal
-      mobileVariant="dialog"
-      open
-      onOpenChange={(open) => !open && onClose()}
-      title={t('settings.connectors.remove.title', {
+    <ConfirmationModal
+      modalState="ACTIVE"
+      setModalState={(state) => state === 'INACTIVE' && onClose()}
+      message={t('settings.connectors.remove.title', {
         name,
         interpolation: { escapeValue: false },
       })}
       description={t('settings.connectors.remove.description')}
-      footer={
-        <ModalActions
-          cancelLabel={t('cancel')}
-          onCancel={onClose}
-          submitLabel={t('settings.connectors.detail.remove')}
-          onSubmit={remove}
-          pending={pending}
-          destructive
-        />
-      }
+      submitLabel={t('settings.connectors.detail.remove')}
+      handleSubmit={remove}
+      error={t('settings.connectors.remove.failed')}
+      variant="destructive"
     >
       <div className="flex flex-col gap-6">
-        {failed && (
-          <Alert variant="destructive">
-            <CircleAlert />
-            <AlertDescription>
-              {t('settings.connectors.remove.failed')}
-            </AlertDescription>
-          </Alert>
-        )}
         {detail.sources.length > 0 && (
           <FormField
             float={false}
@@ -308,6 +263,7 @@ function RemoveConnectionModal({
           >
             <ToggleGroup
               type="single"
+              fill
               value={sources}
               onValueChange={(value) =>
                 value && setSources(value as 'keep' | 'delete')
@@ -332,6 +288,7 @@ function RemoveConnectionModal({
           >
             <ToggleGroup
               type="single"
+              fill
               value={tools}
               onValueChange={(value) =>
                 value && setTools(value as 'keep' | 'delete')
@@ -347,7 +304,7 @@ function RemoveConnectionModal({
           </FormField>
         )}
       </div>
-    </Modal>
+    </ConfirmationModal>
   );
 }
 
@@ -1268,9 +1225,9 @@ export default function ConnectionDrawer({
           title={name}
           description={connectorDescription(t, connector)}
           leading={
-            <span className="bg-muted flex size-12 shrink-0 items-center justify-center rounded-xl">
+            <Avatar size="xl" shape="square" variant="icon">
               <ConnectorIcon icon={connector.icon} className="size-7" />
-            </span>
+            </Avatar>
           }
         >
           {capabilities.length > 0 && (

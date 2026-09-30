@@ -21,7 +21,7 @@ import {
   formatTokens,
 } from '../../settings/traces/traceUtils';
 import type { AppDispatch, RootState } from '../../store';
-import { formatDateTime } from '../../utils/dateTimeUtils';
+import { formatTimestamp } from '../../utils/dateTimeUtils';
 import type { ScheduleRun } from '../types/schedule';
 import ScheduleStatusBadge from './StatusBadge';
 import {
@@ -34,10 +34,6 @@ import {
 export type RunLogProps = {
   scheduleId: string;
   onSelect?: (run: ScheduleRun) => void;
-};
-
-const formatTimestamp = (value?: string | null): string => {
-  return value ? formatDateTime(value) : '—';
 };
 
 /** How long a run took, or a dash while it hasn't started or finished. */

@@ -463,7 +463,8 @@
         "syncFrequency": "無法變更同步頻率。",
         "reingest": "無法開始重新匯入。"
       },
-      "viaConnection": "透過 {{name}}"
+      "viaConnection": "透過 {{name}}",
+      "loadError": "無法載入你的知識庫。"
     },
     "analytics": {
       "label": "分析",
@@ -669,7 +670,8 @@
           "retrievedChunks": "檢索到的片段",
           "allAttributes": "所有屬性"
         }
-      }
+      },
+      "loadError": "無法載入日誌。"
     },
     "teams": {
       "label": "團隊",
@@ -979,7 +981,8 @@
       "pageRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個團隊",
       "searchMembers": "搜尋成員…",
       "membersRange_one": "第 {{from}}–{{to}} 位，共 {{formatted}} 位成員",
-      "membersRange_other": "第 {{from}}–{{to}} 位，共 {{formatted}} 位成員"
+      "membersRange_other": "第 {{from}}–{{to}} 位，共 {{formatted}} 位成員",
+      "membersLoadError": "無法載入成員。"
     },
     "tools": {
       "label": "工具",
@@ -1124,7 +1127,8 @@
       "defaultBadge": "預設",
       "noToolsYet": "還沒有工具",
       "connectService": "連接服務",
-      "filledBy": "填寫方式"
+      "filledBy": "填寫方式",
+      "loadError": "無法載入你的工具。"
     },
     "devices": {
       "label": "裝置",
@@ -1141,7 +1145,6 @@
       "offline": "離線",
       "lastSeen": "上次上線：{{time}}",
       "lastSeenLabel": "上次上線",
-      "seenAgo": "{{time}}前上線",
       "nameLabel": "裝置名稱",
       "descriptionLabel": "描述（代理可見）",
       "descriptionPlaceholder": "這台機器的用途是什麼？",
@@ -1181,7 +1184,8 @@
       "auditDurationValue": "{{value}} 毫秒",
       "fallbackName": "裝置",
       "auditShow": "顯示最近的指令",
-      "auditHide": "隱藏最近的指令"
+      "auditHide": "隱藏最近的指令",
+      "seen": "{{time}}上線"
     },
     "customModels": {
       "label": "自訂模型",
@@ -1255,7 +1259,8 @@
         "testFailed": "連線測試失敗"
       },
       "pageRange_one": "第 {{from}}–{{to}} 個，共 {{formatted}} 個模型",
-      "pageRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個模型"
+      "pageRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個模型",
+      "loadError": "無法載入你的模型。"
     },
     "accessTokens": {
       "label": "存取權杖",
@@ -2587,7 +2592,8 @@
         "paused_one": "{{count}} 個已暫停",
         "paused_other": "{{count}} 個已暫停",
         "overdue": "已逾期"
-      }
+      },
+      "deleteFailed": "無法刪除此排程。"
     },
     "shared": {
       "notFound": "未找到代理。請確保代理已共享。",
@@ -2595,7 +2601,8 @@
       "sharedBy": "來自 {{name}}",
       "sharedOn": "分享於 {{date}}",
       "connectedTools": "已連接的工具",
-      "toolIconTitle": "{{name}} 圖示"
+      "toolIconTitle": "{{name}} 圖示",
+      "loadError": "無法載入此代理。"
     },
     "preview": {
       "testMessage": "在此測試您的代理。已發佈的代理可以在對話中使用。",
@@ -2996,12 +3003,14 @@
     "close": "關閉",
     "viewOnlyNotice": "你可以檢視此內容，但你的角色無法變更它。",
     "credentialsLockedNotice": "只有擁有者可以變更此工具的憑證。",
-    "savedSecretHint": "已儲存。留空即可保留。"
+    "savedSecretHint": "已儲存。留空即可保留。",
+    "actionFailed": "發生錯誤，請再試一次。"
   },
   "sidePanel": {
     "close": "關閉",
     "expand": "展開",
     "collapse": "收合",
     "back": "返回"
-  }
+  },
+  "close": "關閉"
 }

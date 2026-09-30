@@ -1,10 +1,9 @@
-import { ChevronRight } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import { Button } from '../components/ui/button';
+import { Collapsible, CollapsibleTrigger } from '../components/ui/collapsible';
 import { Card } from '../components/ui/card';
 import { SectionHeader } from '../components/ui/section-header';
 import { actionTitle } from '../connectors/i18n';
@@ -14,7 +13,6 @@ import PermissionGroup, {
   PermissionSelect,
 } from '../connectors/PermissionGroup';
 import type { ActionPermission } from '../connectors/types';
-import { cn } from '../lib/utils';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import { formatCount, intlLocale } from '../utils/dateTimeUtils';
@@ -151,6 +149,7 @@ export default function ApiWriteAllowlist({
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
   const [open, setOpen] = useState(defaultOpen);
+  const bodyId = useId();
   // One save at a time: overlapping saves can land out of order, and a
   // failed one would put back a list that drops the later choice.
   const [saving, setSaving] = useState(false);
@@ -276,42 +275,35 @@ export default function ApiWriteAllowlist({
         title={t(`${K}.title`)}
         description={<span data-testid="api-writes-summary">{summary}</span>}
       />
-      {/* A collapsible group in a modal: the inline disclosure toggle. */}
-      <Button
-        type="button"
-        variant="link"
-        size="sm"
-        aria-expanded={open}
-        className="-ml-3 w-fit justify-start"
-        onClick={() => setOpen(!open)}
-      >
-        <ChevronRight
-          aria-hidden="true"
-          className={cn(
-            'transition-transform duration-200',
-            open && 'rotate-90',
-          )}
-        />
-        {t(`${K}.choose`)}
-      </Button>
-      {open && (
-        <>
-          <p className="text-muted-foreground text-xs">
-            {t(`${K}.description`)}
-          </p>
-          <Card variant="outline" padding="sm" className="gap-4">
-            {tools.map((tool) => (
-              <ToolAllowlist
-                key={tool.id}
-                tool={tool}
-                allowed={allowedSet}
-                onChange={change}
-                disabled={saving}
-              />
-            ))}
-          </Card>
-        </>
-      )}
+      {/* A collapsible group in a modal: the inline disclosure toggle. The
+          section's gap-3 sits inside the body, so it folds away with it. */}
+      <div>
+        <CollapsibleTrigger
+          open={open}
+          onOpenChange={setOpen}
+          controls={bodyId}
+        >
+          {t(`${K}.choose`)}
+        </CollapsibleTrigger>
+        <Collapsible open={open} id={bodyId}>
+          <div className="flex flex-col gap-3 pt-3">
+            <p className="text-muted-foreground text-xs">
+              {t(`${K}.description`)}
+            </p>
+            <Card variant="outline" padding="sm" className="gap-4">
+              {tools.map((tool) => (
+                <ToolAllowlist
+                  key={tool.id}
+                  tool={tool}
+                  allowed={allowedSet}
+                  onChange={change}
+                  disabled={saving}
+                />
+              ))}
+            </Card>
+          </div>
+        </Collapsible>
+      </div>
     </section>
   );
 }

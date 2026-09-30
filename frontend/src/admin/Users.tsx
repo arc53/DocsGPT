@@ -14,14 +14,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import adminService from '../api/services/adminService';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import {
-  ActionMenu,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  type MenuOption,
-} from '../components/ui/dropdown-menu';
+import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { Modal } from '../components/ui/modal';
 import {
   Table,
@@ -89,9 +82,10 @@ export default function Users() {
   const [confirm, setConfirm] = useState<{
     message: string;
     submitLabel: string;
-    run: () => void;
+    run: () => Promise<void>;
   } | null>(null);
   const [confirmState, setConfirmState] = useState<ActiveState>('INACTIVE');
+  const [confirmError, setConfirmError] = useState<string>();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -133,34 +127,62 @@ export default function Users() {
       }),
     );
 
+  // Runs an action and throws its failure message; `run` toasts it, a
+  // confirm keeps it in the dialog.
+  const attempt = async (
+    fn: () => Promise<Response>,
+    userId: string,
+    successMsg: string,
+  ) => {
+    setBusy(userId);
+    try {
+      let res: Response;
+      try {
+        res = await fn();
+      } catch {
+        throw new Error(`Action failed for ${userId}`);
+      }
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.success === false) {
+        throw new Error(json.message || `Action failed for ${userId}`);
+      }
+      setFeedback({ ok: true, message: successMsg });
+      await load();
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const run =
     (fn: () => Promise<Response>, userId: string, successMsg: string) =>
     async () => {
-      setBusy(userId);
       try {
-        const res = await fn();
-        const json = await res.json().catch(() => ({}));
-        if (res.ok && json.success !== false) {
-          setFeedback({ ok: true, message: successMsg });
-          await load();
-        } else {
-          setFeedback({
-            ok: false,
-            message: json.message || `Action failed for ${userId}`,
-          });
-        }
-      } catch {
-        setFeedback({ ok: false, message: `Action failed for ${userId}` });
-      } finally {
-        setBusy(null);
+        await attempt(fn, userId, successMsg);
+      } catch (error) {
+        setFeedback({ ok: false, message: (error as Error).message });
+      }
+    };
+
+  // A confirmed action returns its promise to ConfirmationModal, which stays
+  // pending while it runs and shows a failure in the dialog.
+  const confirmed =
+    (fn: () => Promise<Response>, userId: string, successMsg: string) =>
+    async () => {
+      setConfirmError(undefined);
+      try {
+        await attempt(fn, userId, successMsg);
+      } catch (error) {
+        setConfirmError((error as Error).message);
+        throw error;
       }
     };
 
   const askConfirm = (
     message: string,
     submitLabel: string,
-    action: () => void,
+    action: () => Promise<void>,
   ) => {
+    setConfirmError(undefined);
     setConfirm({ message, submitLabel, run: action });
     setConfirmState('ACTIVE');
   };
@@ -194,7 +216,7 @@ export default function Users() {
           askConfirm(
             `Revoke admin from ${userId}?`,
             'Revoke',
-            run(
+            confirmed(
               () => adminService.revokeAdmin(userId, token),
               userId,
               `Removed admin from ${userId}`,
@@ -223,7 +245,7 @@ export default function Users() {
           askConfirm(
             `Deactivate ${userId}? This revokes their live sessions.`,
             'Deactivate',
-            run(
+            confirmed(
               () => adminService.setUserActive(userId, false, token),
               userId,
               `${userId} deactivated`,
@@ -404,10 +426,8 @@ export default function Users() {
           setModalState={setConfirmState}
           submitLabel={confirm.submitLabel}
           variant="destructive"
-          handleSubmit={() => {
-            confirm.run();
-            setConfirm(null);
-          }}
+          handleSubmit={confirm.run}
+          error={confirmError}
         />
       ) : null}
 
@@ -426,35 +446,30 @@ export default function Users() {
         size="lg"
         footer={
           detail ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <ActionMenu
+              trigger={
                 <Button type="button" variant="outline" size="lg" shape="pill">
                   Actions
                   <ChevronDown />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {buildActions(
-                  detail.user.user_id,
-                  (detail.roles ?? []).includes('admin'),
-                  detail.user?.active ?? true,
-                ).map((act) => (
-                  <DropdownMenuItem
-                    key={act.key}
-                    variant={act.destructive ? 'destructive' : 'default'}
-                    onSelect={() => {
-                      // Close the detail dialog before any confirm dialog opens
-                      // (avoids stacked modals); the list + toast reflect the result.
-                      setDetail(null);
-                      act.perform();
-                    }}
-                  >
-                    <act.icon aria-hidden="true" />
-                    <span>{act.label}</span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              }
+              menuWidth="sm"
+              options={buildActions(
+                detail.user.user_id,
+                (detail.roles ?? []).includes('admin'),
+                detail.user?.active ?? true,
+              ).map((act): MenuOption => ({
+                label: act.label,
+                icon: act.icon,
+                variant: act.destructive ? 'destructive' : 'default',
+                onClick: () => {
+                  // Close the detail dialog before any confirm dialog opens
+                  // (avoids stacked modals); the list + toast reflect the result.
+                  setDetail(null);
+                  act.perform();
+                },
+              }))}
+            />
           ) : undefined
         }
       >

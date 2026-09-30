@@ -6,30 +6,56 @@ import { cn } from '@/lib/utils';
 
 type ToggleSize = 'xs' | 'sm';
 
-const ToggleGroupSizeContext = React.createContext<ToggleSize>('sm');
+const ToggleGroupContext = React.createContext<{
+  size: ToggleSize;
+  fill: boolean;
+}>({ size: 'sm', fill: false });
+
+/** The track's padding per size: sm 32px items in a 38px track, xs 28px in 36px. */
+const trackPadding: Record<ToggleSize, string> = {
+  sm: 'p-0.75',
+  xs: 'p-1',
+};
 
 /**
- * The segmented "one of N" (or "any of N") control: pill items, the on item
- * drawn as `outline` (bg-background, border, shadow-xs) and the rest as
- * `ghost-muted`. Radix makes a `type="single"` group a radiogroup with one
- * Tab stop and arrow keys. A single group sends "" when the on item is
- * clicked again; ignore it in `onValueChange` to keep one value selected.
+ * The segmented "one of N" (or "any of N") control: pill items in a muted
+ * pill track, the on item drawn as `outline` (bg-background, border,
+ * shadow-xs) and the rest as `ghost-muted`. `size="sm"` (38px) sits level
+ * with `field` controls in forms and page toolbars; `xs` (36px) is for dense
+ * panels. The track hugs its items (scrolling sideways, never wrapping, when
+ * they outgrow the row) unless `fill` is set, which spans the row with even
+ * items: use it when the group is the only control on its row.
+ * Radix makes a `type="single"` group a radiogroup with one Tab stop and
+ * arrow keys. A single group sends "" when the on item is clicked again;
+ * ignore it in `onValueChange` to keep one value selected.
+ *
+ * Args:
+ *   size: Item and track height, `sm` (default) or `xs`.
+ *   fill: Span the row (`w-full`) and share it evenly between the items.
  */
 function ToggleGroup({
   className,
   size = 'sm',
+  fill = false,
   ...props
 }: React.ComponentProps<typeof ToggleGroupPrimitive.Root> & {
   size?: ToggleSize;
+  fill?: boolean;
 }) {
+  const context = React.useMemo(() => ({ size, fill }), [size, fill]);
   return (
-    <ToggleGroupSizeContext.Provider value={size}>
+    <ToggleGroupContext.Provider value={context}>
       <ToggleGroupPrimitive.Root
         data-slot="toggle-group"
-        className={cn('flex flex-wrap items-center gap-1', className)}
+        className={cn(
+          'bg-muted flex flex-nowrap items-center gap-1 rounded-full',
+          trackPadding[size],
+          fill ? 'w-full' : 'no-scrollbar w-fit max-w-full overflow-x-auto',
+          className,
+        )}
         {...props}
       />
-    </ToggleGroupSizeContext.Provider>
+    </ToggleGroupContext.Provider>
   );
 }
 
@@ -37,13 +63,14 @@ function ToggleGroupItem({
   className,
   ...props
 }: React.ComponentProps<typeof ToggleGroupPrimitive.Item>) {
-  const size = React.useContext(ToggleGroupSizeContext);
+  const { size, fill } = React.useContext(ToggleGroupContext);
   return (
     <ToggleGroupPrimitive.Item
       data-slot="toggle-group-item"
       className={cn(
         buttonVariants({ variant: 'ghost-muted', size, shape: 'pill' }),
         'data-[state=on]:border-border data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:dark:border-input data-[state=on]:dark:bg-input/30 data-[state=on]:dark:hover:bg-input/50 border border-transparent data-[state=on]:shadow-xs',
+        fill && 'min-w-0 flex-1 px-1',
         className,
       )}
       {...props}

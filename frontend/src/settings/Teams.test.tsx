@@ -20,9 +20,12 @@ const mockState = {
   },
 };
 
+// What a dispatched thunk's unwrap() resolves to (createTeam in tests).
+const mockUnwrap = vi.fn(() => Promise.resolve());
+
 vi.mock('react-redux', () => ({
   useSelector: (selector: (s: unknown) => unknown) => selector(mockState),
-  useDispatch: () => () => ({ unwrap: () => Promise.resolve() }),
+  useDispatch: () => () => ({ unwrap: () => mockUnwrap() }),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -75,6 +78,7 @@ const listGrants = vi.fn();
 const unshare = vi.fn();
 const share = vi.fn();
 const getResourceSettings = vi.fn();
+const addMember = vi.fn();
 
 vi.mock('../api/services/teamsService', () => ({
   default: {
@@ -83,6 +87,7 @@ vi.mock('../api/services/teamsService', () => ({
     unshare: (...a: unknown[]) => unshare(...a),
     share: (...a: unknown[]) => share(...a),
     getResourceSettings: (...a: unknown[]) => getResourceSettings(...a),
+    addMember: (...a: unknown[]) => addMember(...a),
   },
 }));
 
@@ -160,6 +165,8 @@ describe('Teams page', () => {
   beforeEach(() => {
     setTeam();
     listMembers.mockReset().mockResolvedValue({ members: [] });
+    addMember.mockReset().mockResolvedValue({ success: true });
+    mockUnwrap.mockReset().mockImplementation(() => Promise.resolve());
     listGrants
       .mockReset()
       .mockResolvedValue({ grants: [], team_role: 'team_admin' });
@@ -641,5 +648,110 @@ describe('Teams page', () => {
     } finally {
       window.matchMedia = original;
     }
+  });
+
+  const typeInto = (input: HTMLInputElement, value: string) => {
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )!.set!;
+    act(() => {
+      setter.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  };
+
+  const dialogButton = (label: string) =>
+    Array.from(
+      body().querySelectorAll<HTMLButtonElement>(
+        '[data-slot="modal-content"] button',
+      ),
+    ).find((b) => b.textContent === label)!;
+
+  it('shows a failed members load as an error with Retry, not "no members"', async () => {
+    listMembers.mockRejectedValueOnce(new Error('down'));
+    await render();
+    const state = body().querySelector<HTMLElement>(
+      '[data-slot="empty-state"][data-tone="destructive"]',
+    )!;
+    expect(state).not.toBeNull();
+    expect(state.textContent).toContain('settings.teams.membersLoadError');
+    expect(body().textContent).not.toContain('settings.teams.noMembers');
+    listMembers.mockResolvedValue({ members: [] });
+    const retry = Array.from(state.querySelectorAll('button')).find(
+      (b) => b.textContent === 'retry',
+    )!;
+    const calls = listMembers.mock.calls.length;
+    act(() => retry.click());
+    await flush();
+    expect(listMembers.mock.calls.length).toBe(calls + 1);
+    expect(
+      body().querySelector(
+        '[data-slot="empty-state"][data-tone="destructive"]',
+      ),
+    ).toBeNull();
+    expect(body().textContent).toContain('settings.teams.noMembers');
+  });
+
+  it('shows pending on Create team while the request runs', async () => {
+    let finish!: (team: unknown) => void;
+    mockUnwrap.mockImplementation(
+      () => new Promise<void>((resolve) => (finish = resolve as never)),
+    );
+    await render();
+    const action = Array.from(
+      body().querySelectorAll('[data-slot="page-toolbar"] button'),
+    ).find((b) => b.textContent === 'settings.teams.newTeam')!;
+    act(() => (action as HTMLButtonElement).click());
+    await flush();
+    typeInto(
+      body().querySelector<HTMLInputElement>(
+        '[data-slot="modal-content"] input',
+      )!,
+      'Sales',
+    );
+    act(() => dialogButton('settings.teams.create').click());
+    await flush();
+    const submit = dialogButton('settings.teams.create');
+    expect(submit.getAttribute('aria-busy')).toBe('true');
+    expect(submit.disabled).toBe(true);
+    await act(async () => finish({ id: 't2', name: 'Sales' }));
+    await flush();
+  });
+
+  it('shows pending on Add member while the request runs', async () => {
+    let finish!: (value: unknown) => void;
+    addMember.mockImplementation(
+      () => new Promise((resolve) => (finish = resolve)),
+    );
+    await render();
+    const open = Array.from(body().querySelectorAll('button')).find(
+      (b) => b.textContent === 'settings.teams.addMember',
+    )!;
+    act(() => open.click());
+    await flush();
+    typeInto(
+      body().querySelector<HTMLInputElement>(
+        '[data-slot="modal-content"] input[type="email"]',
+      )!,
+      'a@x.io',
+    );
+    act(() => dialogButton('settings.teams.add').click());
+    await flush();
+    expect(dialogButton('settings.teams.add').getAttribute('aria-busy')).toBe(
+      'true',
+    );
+    // Enter while pending doesn't send a second request.
+    const input = body().querySelector<HTMLInputElement>(
+      '[data-slot="modal-content"] input[type="email"]',
+    )!;
+    act(() => {
+      input.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+    expect(addMember).toHaveBeenCalledTimes(1);
+    await act(async () => finish({ success: true }));
+    await flush();
   });
 });

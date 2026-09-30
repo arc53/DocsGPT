@@ -1,12 +1,18 @@
 import * as React from 'react';
 
+import { useFormFieldControl } from '@/components/ui/form-field';
 import { cn, focusRing } from '@/lib/utils';
 import { Switch as SwitchPrimitive } from 'radix-ui';
 
+/**
+ * An on/off switch. Inside a FormField or SettingRow it takes the field's
+ * id and aria wiring from context, like Input and Checkbox.
+ */
 function Switch({
   className,
-  ...props
+  ...switchProps
 }: React.ComponentProps<typeof SwitchPrimitive.Root>) {
+  const props = useFormFieldControl(switchProps);
   return (
     <SwitchPrimitive.Root
       data-slot="switch"

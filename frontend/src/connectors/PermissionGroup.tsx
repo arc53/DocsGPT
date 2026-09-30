@@ -160,37 +160,35 @@ export default function PermissionGroup({
         size="xs"
         title={title}
         actions={
-          <div className="bg-muted rounded-full p-1">
-            <ToggleGroup
-              type="single"
-              size="xs"
-              value={value}
-              disabled={disabled}
-              aria-label={groupLabel}
-              onValueChange={(next) => {
-                if (next === CUSTOMIZE) setCustomizing(true);
-                // Clicking Customize again folds actions that agree.
-                else if (!next) {
-                  if (!mixed) setCustomizing(false);
-                } else {
-                  setCustomizing(false);
-                  // Folding actions that already agree on it saves nothing.
-                  if (mixed || next !== values[0])
-                    onChoose(next as ActionPermission);
-                }
-              }}
-            >
-              {[...options, CUSTOMIZE].map((permission) => (
-                <ToggleGroupItem
-                  key={permission}
-                  value={permission}
-                  data-permission={permission}
-                >
-                  {t(`settings.connectors.permission.${permission}`)}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </div>
+          <ToggleGroup
+            type="single"
+            size="xs"
+            value={value}
+            disabled={disabled}
+            aria-label={groupLabel}
+            onValueChange={(next) => {
+              if (next === CUSTOMIZE) setCustomizing(true);
+              // Clicking Customize again folds actions that agree.
+              else if (!next) {
+                if (!mixed) setCustomizing(false);
+              } else {
+                setCustomizing(false);
+                // Folding actions that already agree on it saves nothing.
+                if (mixed || next !== values[0])
+                  onChoose(next as ActionPermission);
+              }
+            }}
+          >
+            {[...options, CUSTOMIZE].map((permission) => (
+              <ToggleGroupItem
+                key={permission}
+                value={permission}
+                data-permission={permission}
+              >
+                {t(`settings.connectors.permission.${permission}`)}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
         }
       />
       {children(open)}

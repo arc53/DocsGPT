@@ -332,8 +332,9 @@ describe('WikiViewer', () => {
     expect(editor()?.value).toBe('My edit');
   });
 
-  // DESIGN.md: the navigator shows only when there is more than one thing to
-  // open; a one-page wiki reads full width, like a one-file source.
+  // PATTERNS.md › Source views: the navigator shows only when there is more
+  // than one thing to open; a one-page wiki reads full width, like a
+  // one-file source.
   it('hides the navigator for a one-page wiki and opens that page', async () => {
     service.getWikiPages.mockResolvedValue(
       ok({ pages: [{ path: 'index.md', title: null, token_count: 5 }] }),

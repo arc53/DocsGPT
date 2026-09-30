@@ -88,7 +88,7 @@ export default function WorkflowDetailsSheet({
     draft.allowPromptOverride !== details.allowPromptOverride;
 
   return (
-    <SidePanel open={open} onOpenChange={onOpenChange} size="default">
+    <SidePanel open={open} onOpenChange={onOpenChange}>
       <PanelHeader
         title={t('agents.workflow.builder.detailsTitle')}
         description={t('agents.workflow.builder.detailsDescription')}

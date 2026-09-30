@@ -46,6 +46,8 @@ export default function CustomModels() {
   const [models, setModels] = React.useState<CustomModel[]>([]);
   const [searchTerm, setSearchTerm] = React.useState('');
   const [loading, setLoading] = useLoaderState(false);
+  // The load failed: an error with Retry, not "no models yet".
+  const [loadFailed, setLoadFailed] = React.useState(false);
   const [modalState, setModalState] = React.useState<ActiveState>('INACTIVE');
   const [editingModel, setEditingModel] = React.useState<CustomModel | null>(
     null,
@@ -63,9 +65,10 @@ export default function CustomModels() {
     try {
       const data = await customModelsService.listCustomModels(token);
       setModels(data);
+      setLoadFailed(false);
     } catch (err) {
       console.error('Failed to load custom models:', err);
-      setModels([]);
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -193,6 +196,13 @@ export default function CustomModels() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             <SkeletonLoader component="toolCards" count={3} />
           </div>
+        ) : loadFailed ? (
+          <EmptyState
+            tone="destructive"
+            illustration="none"
+            title={t('settings.customModels.loadError')}
+            onRetry={() => fetchModelsRef.current()}
+          />
         ) : filteredModels.length === 0 ? (
           renderEmptyState()
         ) : (

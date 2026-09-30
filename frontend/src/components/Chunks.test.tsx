@@ -550,6 +550,40 @@ describe('Chunks', () => {
     expect(lastGridCall[1]).toBe(1);
   });
 
+  // The real ConfirmationModal: pending on the delete's promise, and a
+  // failure stays in the dialog instead of a toast.
+  it('keeps a failed delete in the confirm dialog', async () => {
+    const controllerRef: React.ComponentProps<typeof Chunks>['controllerRef'] =
+      { current: null };
+    serveThirteen();
+    service.deleteChunk.mockImplementation(async () => ({ ok: false }));
+    await render({ embedded: true, controllerRef });
+    const tiles = container.querySelectorAll<HTMLButtonElement>(
+      'button[data-slot="card"]',
+    );
+    await act(async () => tiles[0].click());
+    const trigger = buttonByLabel('settings.sources.menuAlt')!;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      trigger.click();
+    });
+    const del = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((el) => el.textContent === 'modals.chunk.delete')!;
+    await act(async () => del.click());
+    await act(async () => buttonByText('modals.chunk.delete')!.click());
+
+    expect(service.deleteChunk).toHaveBeenCalled();
+    const dialog = document.querySelector(
+      '[role="alertdialog"], [role="dialog"]',
+    );
+    expect(dialog?.textContent).toContain(
+      'settings.sources.chunkErrors.delete',
+    );
+  });
+
   it('drops a grid response that a newer fetch overtook', async () => {
     const controllerRef: React.ComponentProps<typeof Chunks>['controllerRef'] =
       { current: null };

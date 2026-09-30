@@ -1,13 +1,12 @@
 import {
   ArrowLeft,
   ArrowRight,
-  ChevronRight,
   CircleAlert,
   Trash2,
   UserRound,
   UsersRound,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -26,6 +25,7 @@ import { Alert, AlertDescription } from '../components/ui/alert';
 import { Checkbox } from '../components/ui/checkbox';
 import { Label } from '../components/ui/label';
 import { Avatar } from '../components/ui/avatar';
+import { Collapsible, CollapsibleTrigger } from '../components/ui/collapsible';
 import { Button } from '../components/ui/button';
 import { EmptyState } from '../components/ui/empty-state';
 import {
@@ -55,7 +55,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
-import { cn } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import { can } from '../utils/accessUtils';
@@ -196,6 +195,7 @@ export default function ShareToTeamModal({
   // Access settings is collapsed by default and opens itself once when a
   // switch is off its default; after that it follows the user's clicks.
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsId = useId();
   const [savingSettings, setSavingSettings] = useState<Set<string>>(new Set());
 
   // 'all' is the "People with access" step with search and filters.
@@ -771,24 +771,22 @@ export default function ShareToTeamModal({
         value={accessQuery}
         onChange={(e) => setAccessQuery(e.target.value)}
       />
-      <div className="bg-muted w-fit max-w-full rounded-full p-1">
-        <ToggleGroup
-          type="single"
-          size="xs"
-          value={accessFilter}
-          onValueChange={(value) =>
-            value && setAccessFilter(value as AccessFilter)
-          }
-          aria-label={t('settings.teams.share.filterLabel')}
-        >
-          {filterOptions.map((option) => (
-            <ToggleGroupItem key={option.value} value={option.value}>
-              {t(`settings.teams.share.filter.${option.value}`)}{' '}
-              {formatCount(option.count)}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      </div>
+      <ToggleGroup
+        type="single"
+        size="xs"
+        value={accessFilter}
+        onValueChange={(value) =>
+          value && setAccessFilter(value as AccessFilter)
+        }
+        aria-label={t('settings.teams.share.filterLabel')}
+      >
+        {filterOptions.map((option) => (
+          <ToggleGroupItem key={option.value} value={option.value}>
+            {t(`settings.teams.share.filter.${option.value}`)}{' '}
+            {formatCount(option.count)}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
       <ListRows>
         {accessFilter === 'all' && !accessQuery.trim() && youRow}
         {filteredShares.map(renderShareRow)}
@@ -804,28 +802,19 @@ export default function ShareToTeamModal({
   );
 
   const accessSettings = canManageSettings && (
-    <section className="flex flex-col gap-3">
+    <section className="flex flex-col">
       {/* An inline disclosure: no Card around it draws section-toggle's
-          ring, so the link button shows its own focus. */}
-      <Button
-        type="button"
-        variant="link"
-        size="sm"
-        aria-expanded={settingsOpen}
-        className="-ml-3 w-fit justify-start"
-        onClick={() => setSettingsOpen((open) => !open)}
+          ring, so the link button shows its own focus. The 12px gap sits
+          inside the body, so it folds away with it. */}
+      <CollapsibleTrigger
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        controls={settingsId}
       >
-        <ChevronRight
-          aria-hidden="true"
-          className={cn(
-            'transition-transform duration-200',
-            settingsOpen && 'rotate-90',
-          )}
-        />
         {t('settings.teams.accessSettings.title')}
-      </Button>
-      {settingsOpen && (
-        <SettingRows>
+      </CollapsibleTrigger>
+      <Collapsible open={settingsOpen} id={settingsId}>
+        <SettingRows className="mt-3">
           {settings.map((setting) => {
             const copy = settingCopy(
               t,
@@ -851,7 +840,7 @@ export default function ShareToTeamModal({
             );
           })}
         </SettingRows>
-      )}
+      </Collapsible>
     </section>
   );
 
@@ -877,38 +866,37 @@ export default function ShareToTeamModal({
               />
               {/* A compact one-of-two; the line under it says what the
                   choice means. */}
-              <div className="bg-muted self-start rounded-full p-1">
-                <ToggleGroup
-                  type="single"
-                  size="xs"
-                  value={credentialMode}
-                  aria-label={t('settings.connectors.share.heading')}
-                  onValueChange={(value) =>
-                    value && changeCredentialMode(value as 'owner' | 'member')
-                  }
-                >
-                  {(['owner', 'member'] as const).map((mode) => (
-                    <ToggleGroupItem
-                      key={mode}
-                      value={mode}
-                      disabled={
-                        !!credentials.readOnly ||
-                        (!!credentials.forcedMode &&
-                          credentials.forcedMode !== mode)
-                      }
-                    >
-                      {mode === 'owner' ? <UserRound /> : <UsersRound />}
-                      {/* "Your account" to the owner; an editor sees the
-                          owner's, like the agent's "What this agent uses". */}
-                      {t(
-                        mode === 'owner' && credentials.readOnly
-                          ? 'settings.connectors.sharing.ownerShortShared'
-                          : `settings.connectors.sharing.${mode}Short`,
-                      )}
-                    </ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
-              </div>
+              <ToggleGroup
+                className="self-start"
+                type="single"
+                size="xs"
+                value={credentialMode}
+                aria-label={t('settings.connectors.share.heading')}
+                onValueChange={(value) =>
+                  value && changeCredentialMode(value as 'owner' | 'member')
+                }
+              >
+                {(['owner', 'member'] as const).map((mode) => (
+                  <ToggleGroupItem
+                    key={mode}
+                    value={mode}
+                    disabled={
+                      !!credentials.readOnly ||
+                      (!!credentials.forcedMode &&
+                        credentials.forcedMode !== mode)
+                    }
+                  >
+                    {mode === 'owner' ? <UserRound /> : <UsersRound />}
+                    {/* "Your account" to the owner; an editor sees the
+                        owner's, like the agent's "What this agent uses". */}
+                    {t(
+                      mode === 'owner' && credentials.readOnly
+                        ? 'settings.connectors.sharing.ownerShortShared'
+                        : `settings.connectors.sharing.${mode}Short`,
+                    )}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
               {credentials.forcedMode ? (
                 <p className="text-muted-foreground text-xs">
                   {t('settings.connectors.share.forced')}
@@ -978,7 +966,9 @@ export default function ShareToTeamModal({
           <div>
             {/* Add row: type-ahead combobox + access level select. */}
             <div className="flex items-center gap-2">
-              <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+              {/* `modal`: a non-modal popover can't scroll or close on an
+                  outside click inside the Modal (multi-select.tsx). */}
+              <Popover open={pickerOpen} onOpenChange={setPickerOpen} modal>
                 <PopoverTrigger asChild>
                   <Button
                     type="button"
@@ -1031,7 +1021,10 @@ export default function ShareToTeamModal({
                               >
                                 {initialOf(suggestion.teamName)}
                               </Avatar>
-                              <span className="min-w-0 flex-1 truncate">
+                              <span
+                                className="min-w-0 flex-1 truncate"
+                                title={suggestion.teamName}
+                              >
                                 {suggestion.teamName}
                               </span>
                             </CommandItem>
@@ -1057,7 +1050,10 @@ export default function ShareToTeamModal({
                                 >
                                   {initialOf(suggestion.label)}
                                 </Avatar>
-                                <span className="min-w-0 flex-1 truncate">
+                                <span
+                                  className="min-w-0 flex-1 truncate"
+                                  title={`${suggestion.label} · ${suggestion.teamName}`}
+                                >
                                   {suggestion.label}
                                   <span className="text-muted-foreground">
                                     {' · '}
@@ -1170,7 +1166,6 @@ export default function ShareToTeamModal({
         step === 'all' ? t('settings.teams.share.peopleWithAccess') : title
       }
       hideTitle={step === 'all'}
-      size="md"
       footer={
         <Button size="lg" shape="pill" disabled={inFlight} onClick={onClose}>
           {t('settings.teams.share.done')}

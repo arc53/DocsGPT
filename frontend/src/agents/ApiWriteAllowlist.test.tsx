@@ -253,9 +253,16 @@ describe('ApiWriteAllowlist', () => {
     await render(agent());
     expect(disclosure().getAttribute('aria-expanded')).toBe('false');
     expect(summary()).toBe(`${K}.summaryNone`);
-    expect(groups()).toHaveLength(0);
+    // Folded: the groups wait in a closed, inert Collapsible.
+    const body = document.getElementById(
+      disclosure().getAttribute('aria-controls')!,
+    )!;
+    expect(body.dataset.state).toBe('closed');
+    expect(body.hasAttribute('inert')).toBe(true);
     await expand();
     expect(disclosure().getAttribute('aria-expanded')).toBe('true');
+    expect(body.dataset.state).toBe('open');
+    expect(groups().length).toBeGreaterThan(0);
     expect(choice('tg', 'off').getAttribute('data-state')).toBe('on');
   });
 

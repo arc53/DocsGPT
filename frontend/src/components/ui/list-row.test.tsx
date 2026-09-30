@@ -56,4 +56,31 @@ describe('ListRow', () => {
     expect(html).not.toContain('hover:bg-accent');
     expect(html).toContain('aria-current="true"');
   });
+
+  it('titles a string title and description with their full value', () => {
+    const html = renderToStaticMarkup(
+      <ListRow title="lena@example.com" description="Added by SCIM sync" />,
+    );
+    expect(html).toContain(
+      '<p class="text-foreground truncate text-sm font-medium" title="lena@example.com">',
+    );
+    expect(html).toContain(
+      '<p class="text-muted-foreground truncate text-xs" title="Added by SCIM sync">',
+    );
+  });
+
+  it('leaves a node title to the caller', () => {
+    const html = renderToStaticMarkup(
+      <ListRow
+        title={<span title="Carrier Rates MCP">Carrier Rates MCP</span>}
+        description={<span>2 tools</span>}
+      />,
+    );
+    expect(html).toContain(
+      '<p class="text-foreground truncate text-sm font-medium"><span title="Carrier Rates MCP">',
+    );
+    expect(html).toContain(
+      '<p class="text-muted-foreground truncate text-xs"><span>',
+    );
+  });
 });

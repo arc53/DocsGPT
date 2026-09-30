@@ -158,9 +158,11 @@ export default function SchedulesView() {
     setDeleteConfirmation('ACTIVE');
   };
 
-  const confirmDelete = () => {
+  // Returned to ConfirmationModal: it stays pending while the delete runs,
+  // closes on success and keeps a failure in the dialog.
+  const confirmDelete = async () => {
     if (!scheduleToDelete) return;
-    dispatch(deleteSchedule({ id: scheduleToDelete.id, token }));
+    await dispatch(deleteSchedule({ id: scheduleToDelete.id, token })).unwrap();
     setScheduleToDelete(null);
   };
 
@@ -364,6 +366,7 @@ export default function SchedulesView() {
               setModalState={setDeleteConfirmation}
               submitLabel={t('agents.schedules.delete')}
               handleSubmit={confirmDelete}
+              error={t('agents.schedules.deleteFailed')}
               handleCancel={() => setScheduleToDelete(null)}
               variant="destructive"
             />

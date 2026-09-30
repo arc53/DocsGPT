@@ -28,7 +28,8 @@ interface ConversationTileProps {
   conversation: ConversationProps;
   selectConversation: (arg1: string) => void;
   onConversationClick: () => void; //Callback to handle click on conversation tile regardless of selected or not
-  onDeleteConversation: (arg1: string) => void;
+  /** Return the request's promise: the confirm stays pending on it. */
+  onDeleteConversation: (arg1: string) => void | Promise<unknown>;
   onSave: ({ name, id }: ConversationProps) => void;
 }
 
@@ -205,7 +206,9 @@ export default function ConversationTile({
                 if (!isCurrent) selectConversation(conversation.id);
               }}
             >
-              <span className="truncate">{conversationName}</span>
+              <span className="truncate" title={conversationName}>
+                {conversationName}
+              </span>
             </Link>
           </Button>
         )}
@@ -255,6 +258,7 @@ export default function ConversationTile({
         setModalState={setDeleteModalState}
         handleSubmit={() => onDeleteConversation(conversation.id)}
         submitLabel={t('convTile.delete')}
+        variant="destructive"
       />
       {isShareModalOpen && (
         <ShareConversationModal

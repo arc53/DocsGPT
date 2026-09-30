@@ -1,8 +1,9 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import connectorsService from '../api/services/connectorsService';
+import { Collapsible } from '../components/ui/collapsible';
 import { Badge } from '../components/ui/badge';
 import { Card } from '../components/ui/card';
 import { showActionToast } from '../notifications/actionToastSlice';
@@ -40,6 +41,7 @@ function ActionRow({
 }) {
   const { t } = useTranslation();
   const [showParameters, setShowParameters] = useState(false);
+  const parametersId = useId();
   const parameters = action.parameters ?? [];
   const fixedCount = parameters.filter((parameter) => parameter.fixed).length;
   const title = actionTitle(action.name);
@@ -67,12 +69,22 @@ function ActionRow({
         />
       }
       after={
-        showParameters && (
-          <ActionParameters
-            parameters={parameters}
-            readOnly={readOnly}
-            onSave={onParameters}
-          />
+        parameters.length > 0 && (
+          // The row's gap-3 would open a gap under a closed list, so the
+          // list pulls it back and carries it inside, where it folds away.
+          <Collapsible
+            open={showParameters}
+            id={parametersId}
+            className="-mt-3"
+          >
+            <div className="pt-3">
+              <ActionParameters
+                parameters={parameters}
+                readOnly={readOnly}
+                onSave={onParameters}
+              />
+            </div>
+          </Collapsible>
         )
       }
     >
@@ -81,6 +93,7 @@ function ActionRow({
           action={title}
           open={showParameters}
           onToggle={() => setShowParameters(!showParameters)}
+          controls={parametersId}
         />
       )}
     </PermissionRow>

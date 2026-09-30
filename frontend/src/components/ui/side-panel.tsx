@@ -20,18 +20,12 @@ const NEXT_WIDTH: Record<SidePanelWidth, SidePanelWidth> = {
   full: 'compact',
 };
 
-// The compact width of a docked panel, the same 480 / 800px roles as a modal
-// SheetContent `size`.
-const DOCKED_SIZE: Record<SidePanelSize, string> = {
-  default: 'w-120',
-  wide: 'w-[800px]',
-};
+// The compact width of a docked panel: the 480px default role (wide is a
+// modal-only size).
+const DOCKED_SIZE = 'w-120';
 
 // Half of the host, never narrower than the compact size on a small screen.
-const DOCKED_HALF: Record<SidePanelSize, string> = {
-  default: 'w-1/2 min-w-120',
-  wide: 'w-1/2 min-w-[800px]',
-};
+const DOCKED_HALF = 'w-1/2 min-w-120';
 
 // Slides in like the modal Sheet; it closes at once (an exit slide would
 // snap back for a frame before the panel unmounts).
@@ -82,26 +76,9 @@ function useSidePanel() {
   return context;
 }
 
-type SidePanelProps = {
+type SidePanelBaseProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /**
-   * `modal`: over the blurred scrim, for a form, one record, editing or a
-   * preview. `docked`: beside the page, which stays live, for what you read
-   * or tweak alongside it (an artifact, sources, a node's settings).
-   */
-  variant?: 'modal' | 'docked';
-  /**
-   * The width by role: default (480px) for every panel, wide (800px) only for
-   * a working surface (a trace, an agent preview, the source editor).
-   */
-  size?: SidePanelSize;
-  /**
-   * Docked only: a key naming the surface ("artifact"). Adds the header's
-   * Expand button, which steps size, half and full, and remembers the last
-   * width per surface.
-   */
-  expandable?: string;
   /** Layout only. */
   className?: string;
   children: React.ReactNode;
@@ -109,6 +86,37 @@ type SidePanelProps = {
   React.ComponentProps<typeof SheetContent>,
   'onOpenAutoFocus' | 'aria-describedby'
 >;
+
+/**
+ * `modal`: over the blurred scrim, for a form, one record, editing or a
+ * preview. `docked`: beside the page, which stays live, for what you read or
+ * tweak alongside it (an artifact, sources, a node's settings). The union
+ * keeps `size` on modal panels and `expandable` on docked ones.
+ */
+type SidePanelProps = SidePanelBaseProps &
+  (
+    | {
+        variant?: 'modal';
+        /**
+         * The width by role: default (480px) for every panel, wide (800px)
+         * only for a working surface (a trace, an agent preview, the source
+         * editor).
+         */
+        size?: SidePanelSize;
+        expandable?: never;
+      }
+    | {
+        variant: 'docked';
+        /** Always 480px compact; Expand widens it. */
+        size?: never;
+        /**
+         * A key naming the surface ("artifact"). Adds the header's Expand
+         * button, which steps compact, half and full, and remembers the last
+         * width per surface.
+         */
+        expandable?: string;
+      }
+  );
 
 /**
  * The one right-side panel (DESIGN.md "Side panels"). Compose a PanelHeader,
@@ -165,7 +173,6 @@ function SidePanel({
         <SheetContent
           side="right"
           size={size}
-          showCloseButton={false}
           className={cn('gap-0 p-0', variant === 'modal' && className)}
           // A docked panel's phone sheet opens on the panel, not with a ring
           // on its first control (DESIGN.md "Focus").
@@ -201,8 +208,8 @@ function SidePanel({
           current === 'full'
             ? DOCKED_FULL
             : current === 'half'
-              ? DOCKED_HALF[size]
-              : DOCKED_SIZE[size],
+              ? DOCKED_HALF
+              : DOCKED_SIZE,
           className,
         )}
       >

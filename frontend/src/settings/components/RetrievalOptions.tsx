@@ -1,11 +1,12 @@
-import { ChevronRight } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/utils';
 
-import { Button } from '../../components/ui/button';
-import { Collapsible } from '../../components/ui/collapsible';
+import {
+  Collapsible,
+  CollapsibleTrigger,
+} from '../../components/ui/collapsible';
 import { Input } from '../../components/ui/input';
 import {
   Select,
@@ -859,27 +860,19 @@ export default function RetrievalOptions({
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <Button
-        type="button"
-        variant="link"
-        size="sm"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={expanded}
-        aria-controls={bodyId}
-        className="-ml-3 w-fit justify-start"
+    // No gap here: a closed Collapsible is still a flex item, so the body
+    // carries the space as top padding (DESIGN.md › Disclosure).
+    <div className="flex flex-col">
+      <CollapsibleTrigger
+        open={expanded}
+        onOpenChange={() => setOpen((o) => !o)}
+        controls={bodyId}
+        chevron="sm"
       >
-        <ChevronRight
-          aria-hidden
-          className={cn(
-            'size-3 transition-transform duration-200',
-            expanded && 'rotate-90',
-          )}
-        />
         <span>{title ?? tr('title')}</span>
-      </Button>
+      </CollapsibleTrigger>
       <Collapsible open={expanded} id={bodyId}>
-        {body}
+        <div className="pt-4">{body}</div>
       </Collapsible>
     </div>
   );

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import { Avatar } from '@/components/ui/avatar';
 import { Card } from '@/components/ui/card';
 import { ListRow, ListRows } from '@/components/ui/list-row';
 import { Modal, ModalActions } from '@/components/ui/modal';
@@ -23,7 +24,6 @@ type SponsorConfirmModalProps = {
   /** Retry the save with these `confirm_sponsor` keys. */
   onConfirm: (keys: string[]) => void;
   onCancel: () => void;
-  pending?: boolean;
 };
 
 const TYPE_ICONS: Record<SponsorResource['type'], typeof Wrench> = {
@@ -31,14 +31,6 @@ const TYPE_ICONS: Record<SponsorResource['type'], typeof Wrench> = {
   source: Database,
   prompt: ScrollText,
 };
-
-function IconSquare({ icon: Icon }: { icon: typeof Wrench }) {
-  return (
-    <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md">
-      <Icon className="size-4" />
-    </span>
-  );
-}
 
 /**
  * Asks an editor before a save makes tools, sources or prompts the agent's
@@ -51,7 +43,6 @@ export default function SponsorConfirmModal({
   confirmation,
   onConfirm,
   onCancel,
-  pending = false,
 }: SponsorConfirmModalProps) {
   const { t, i18n } = useTranslation();
   if (!confirmation) return null;
@@ -109,7 +100,6 @@ export default function SponsorConfirmModal({
       onOpenChange={(open) => {
         if (!open) onCancel();
       }}
-      isPerformingTask={pending}
       title={t('agents.form.sponsorConfirm.title')}
       description={t(
         takeOver
@@ -127,21 +117,29 @@ export default function SponsorConfirmModal({
               : 'agents.form.sponsorConfirm.confirm',
           )}
           onSubmit={() => onConfirm(resources.map((item) => item.key))}
-          pending={pending}
         />
       }
     >
       <div className="flex flex-col gap-6">
         <Card variant="outline" padding="none" className="overflow-hidden">
           <ListRows>
-            {resources.map((item) => (
-              <ListRow
-                key={item.key}
-                leading={<IconSquare icon={TYPE_ICONS[item.type] ?? Wrench} />}
-                title={item.name || t('agents.form.sponsors.unknownItem')}
-                description={t(`agents.form.sponsorConfirm.types.${item.type}`)}
-              />
-            ))}
+            {resources.map((item) => {
+              const Icon = TYPE_ICONS[item.type] ?? Wrench;
+              return (
+                <ListRow
+                  key={item.key}
+                  leading={
+                    <Avatar size="sm" shape="square" variant="icon">
+                      <Icon className="size-4" />
+                    </Avatar>
+                  }
+                  title={item.name || t('agents.form.sponsors.unknownItem')}
+                  description={t(
+                    `agents.form.sponsorConfirm.types.${item.type}`,
+                  )}
+                />
+              );
+            })}
           </ListRows>
         </Card>
         <section className="flex flex-col gap-3">

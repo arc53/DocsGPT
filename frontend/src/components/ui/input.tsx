@@ -14,10 +14,6 @@ const inputVariants = cva(
       size: {
         default: 'h-9.5 px-3 py-1.5 text-base md:text-sm',
         sm: 'h-8 px-2 py-1 text-sm',
-        lg: 'h-12 px-5 py-3 text-base md:text-sm',
-        // The form-row height (38px) by name, shared with Button field and
-        // SelectTrigger field; the same classes as default.
-        field: 'h-9.5 px-3 py-1.5 text-base md:text-sm',
       },
       shape: {
         default: 'rounded-md',
@@ -37,11 +33,11 @@ const inputVariants = cva(
     },
     compoundVariants: [
       // A default-size pill would start its text 12px from a 21px round end;
-      // pad it like the lg pill and SelectTrigger's pills (text 21px in).
+      // pad it like SelectTrigger's pills (text 21px in).
       // Not on `bare`, which has no padding of its own.
       {
         shape: 'pill',
-        size: ['default', 'field'],
+        size: 'default',
         variant: ['default', 'filled'],
         class: 'px-5',
       },
@@ -64,9 +60,6 @@ const LABEL_RESTING_CLASSES: Record<
   default:
     'peer-placeholder-shown:top-2 peer-placeholder-shown:text-base md:peer-placeholder-shown:text-sm md:peer-focus:text-xs',
   sm: 'peer-placeholder-shown:top-1.5 peer-placeholder-shown:text-sm',
-  lg: 'peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-base md:peer-placeholder-shown:text-sm md:peer-focus:text-xs',
-  field:
-    'peer-placeholder-shown:top-2 peer-placeholder-shown:text-base md:peer-placeholder-shown:text-sm md:peer-focus:text-xs',
 };
 
 // The floating label sits on the field's border, so its background has to

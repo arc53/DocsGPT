@@ -62,12 +62,18 @@ export default function ProfileButton({
           {renderAvatar('lg')}
           <span className="flex min-w-0 flex-col">
             {userName && (
-              <p className="text-foreground truncate text-sm font-medium">
+              <p
+                className="text-foreground truncate text-sm font-medium"
+                title={userName}
+              >
                 {userName}
               </p>
             )}
             {userEmail && (
-              <p className="text-muted-foreground truncate text-xs">
+              <p
+                className="text-muted-foreground truncate text-xs"
+                title={userEmail}
+              >
                 {userEmail}
               </p>
             )}
