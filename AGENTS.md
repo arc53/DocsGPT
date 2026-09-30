@@ -98,7 +98,8 @@ celery -A docsgpt.app.celery worker -l INFO -B
 **Beat must run somewhere.** It fires scheduled agent runs, source syncs,
 reconciliation, retention cleanups and the version check; without it they
 silently never happen. Extra beat instances are safe (RedBeat holds a lock in
-Redis). Windows can't embed beat, so run `docsgpt beat` next to the worker there.
+Redis). Celery rejects `-B` on Windows: drop it there and run
+`celery -A docsgpt.app.celery beat -l INFO` (or `docsgpt beat`) next to the worker.
 
 **The worker is required for retrieval, not optional.** `EMBEDDINGS_DELEGATE_TO_WORKER`
 defaults on, so the API embeds each query by dispatching to the worker rather than

@@ -178,9 +178,9 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
 
     <Callout type="warning">
       Chat retrieval needs a running worker. The API sends each query embedding to it
-      (`EMBEDDINGS_DELEGATE_TO_WORKER`, on by default). Without a worker, every search waits
-      `EMBEDDINGS_DELEGATE_TIMEOUT` (60 seconds) and then answers with no retrieved context, without an
-      error. To run the API alone, set `EMBEDDINGS_DELEGATE_TO_WORKER=false` to load the model in the API
+      (`EMBEDDINGS_DELEGATE_TO_WORKER`, on by default). Without a worker, the first search waits up to
+      `EMBEDDINGS_DELEGATE_TIMEOUT` (60 seconds), searches in the next 30 seconds fail at once, and every
+      answer comes back with no retrieved context, without an error. To run the API alone, set `EMBEDDINGS_DELEGATE_TO_WORKER=false` to load the model in the API
       process, or point `EMBEDDINGS_BASE_URL` at an embeddings service.
     </Callout>
 
@@ -195,6 +195,9 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     ```bash
     celery -A docsgpt.app.celery worker -l INFO -B
     ```
+
+    Celery rejects `-B` on Windows. There, drop it and run the scheduler in a separate terminal with
+    `celery -A docsgpt.app.celery beat -l INFO` (or `docsgpt beat`).
 
     **macOS note:** due to a threading issue with the default prefork pool, use the solo pool on macOS.
     `docsgpt worker` picks it automatically on macOS and Windows. With raw Celery, pass it yourself:
@@ -216,8 +219,8 @@ For easier debugging, you can launch the API and the Celery worker directly from
 
 The API configuration runs the same ASGI app as production, so the [ASGI-only features](#asgi-only-features)
 work under the debugger. It deliberately runs without `--reload`: the reloader restarts the server in a child
-process, which your breakpoints would not be attached to. The worker configuration embeds the beat scheduler
-(`-B`) and uses the solo pool.
+process, which your breakpoints would not be attached to. The worker configuration uses the solo pool and
+embeds the beat scheduler (`-B`), except on Windows, where it leaves `-B` out; start `docsgpt beat` there.
 
 ## 3. Start the Frontend
 
@@ -303,7 +306,7 @@ other's units. `docsgpt status --dir ~/.docsgpt/review` reports on that one alon
 
 Run `docsgpt doctor` first. It checks PostgreSQL, Redis, the model provider and the API port.
 
-- **Searches take about a minute and answers ignore your documents.** No worker is consuming the `embeddings`
+- **Searches hang for up to a minute or fail at once, and answers ignore your documents.** No worker is consuming the `embeddings`
   queue. Start one as in step 6. A worker started with an explicit `-Q` must list `embeddings`.
 - **Scheduled agent runs and source syncs never fire.** No beat scheduler is running. Start the worker with
   `docsgpt worker` or add `-B` to the `celery` command. On Windows, also run `docsgpt beat`.

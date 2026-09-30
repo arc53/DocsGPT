@@ -14,6 +14,7 @@
   },
   {
     // The solo pool keeps tasks in the debugged process, so breakpoints hit. -B embeds the beat scheduler.
+    // Celery rejects -B on Windows: remove it there and run `docsgpt beat` separately.
     "label": "Celery worker (solo pool)",
     "adapter": "Debugpy",
     "request": "launch",
