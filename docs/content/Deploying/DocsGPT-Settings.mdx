@@ -310,13 +310,13 @@ Set `ENCRYPTION_SECRET_KEY` before anyone connects a service, and never just rep
 To change `ENCRYPTION_SECRET_KEY` on an install that already stores credentials (including one that ran on the public default, `default-docsgpt-encryption-key`):
 
 1. Move the current value to `ENCRYPTION_SECRET_KEY_PREVIOUS` and put the new one in `ENCRYPTION_SECRET_KEY`, on the API and the worker.
-2. Restart them, then run `docsgpt connectors reencrypt` with the same settings. It rewrites every connection and marks the ones neither key opens **Reconnect needed**. In Docker, run it in the backend container of your Compose file:
+2. Restart them, then run `docsgpt connectors reencrypt` with the same settings. It rewrites every connection, every secret saved on a tool (API Tool secrets, MCP credentials kept on the tool) and every custom-model API key with the new key. Connections neither key opens are marked **Reconnect needed**; tool and custom-model secrets neither key opens are left unchanged and counted. Running it again changes nothing. In Docker, run it in the backend container of your Compose file:
    - `docsgpt up`: `docker compose -f ~/.docsgpt/server/docker-compose.yaml exec backend python -m docsgpt connectors reencrypt` (or the stack directory you chose)
    - standalone file: `docker compose -f docker-compose-standalone.yaml exec backend python -m docsgpt connectors reencrypt`
    - checkout: `docker compose --env-file .env -f deployment/docker-compose-hub.yaml exec backend python -m docsgpt connectors reencrypt` (or `deployment/docker-compose.yaml`)
-3. Remove `ENCRYPTION_SECRET_KEY_PREVIOUS` once nothing needs it.
+3. Remove `ENCRYPTION_SECRET_KEY_PREVIOUS` once the command reports nothing unreadable (it says so on its last line).
 
-`reencrypt` rewrites connections only. Secrets saved on a tool itself (API Tool secrets, MCP credentials kept on the tool) and custom-model API keys are read with either key, and are sealed with the new one when their owner saves them again. Until then they need `ENCRYPTION_SECRET_KEY_PREVIOUS`: removing it makes them unreadable. See [Connectors: Encryption key](/Guides/Connectors#encryption-key).
+While the previous key is set, DocsGPT reads every stored credential with either key, so the install keeps working between steps 1 and 2. See [Connectors: Encryption key](/Guides/Connectors#encryption-key).
 
 ## Authentication Settings
 

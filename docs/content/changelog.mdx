@@ -60,7 +60,10 @@ use has to set `DOCSGPT_BIND=0.0.0.0`** to keep working: see
   gets no new key; `docsgpt up` says how to rotate onto one. `docsgpt up --native` adds one on its
   first run and keeps the default readable through `ENCRYPTION_SECRET_KEY_PREVIOUS`.
 - `ENCRYPTION_SECRET_KEY_PREVIOUS` now also opens secrets saved on tools and custom models, not only
-  connections, so a key rotation no longer makes them unreadable.
+  connections, and `docsgpt connectors reencrypt` rewrites those secrets too, so the previous key can
+  be removed after one run. Secrets neither key opens are left unchanged and counted.
+- Testing or saving an MCP server on a blocked address now says why (`Invalid server URL: <reason>`)
+  instead of a generic configuration error.
 - Rerunning `setup.sh` or `setup.ps1` keeps the existing `INTERNAL_KEY`, `JWT_SECRET_KEY` and
   `ENCRYPTION_SECRET_KEY`, and a fresh install always gets a `JWT_SECRET_KEY`. Their authentication
   menu now offers OIDC.

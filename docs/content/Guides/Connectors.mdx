@@ -93,9 +93,9 @@ To rotate the key, move the old value to `ENCRYPTION_SECRET_KEY_PREVIOUS`, set t
 docsgpt connectors reencrypt
 ```
 
-The command prints how many connections it rewrote. Connections it cannot decrypt with either key are marked **Reconnect needed** for their owners.
+The command prints how many connections and saved secrets it rewrote. Connections it cannot decrypt with either key are marked **Reconnect needed** for their owners.
 
-`reencrypt` rewrites connections only. Secrets saved on a tool itself, and API keys of custom models, are read with either key and are sealed with the new one when their owner saves them again; keep `ENCRYPTION_SECRET_KEY_PREVIOUS` until then. A Docker install runs the command inside the backend container, naming its Compose file, for example `docker compose -f docker-compose-standalone.yaml exec backend python -m docsgpt connectors reencrypt`; see [Secrets to set before going live](/Deploying/DocsGPT-Settings#secrets-to-set-before-going-live) for the other install types.
+It also rewrites the secrets saved on tools and the API keys of custom models; those neither key opens are left unchanged and counted. Remove `ENCRYPTION_SECRET_KEY_PREVIOUS` once the command reports nothing unreadable. A Docker install runs the command inside the backend container, naming its Compose file, for example `docker compose -f docker-compose-standalone.yaml exec backend python -m docsgpt connectors reencrypt`; see [Secrets to set before going live](/Deploying/DocsGPT-Settings#secrets-to-set-before-going-live) for the other install types.
 
 ### Outbound network access
 

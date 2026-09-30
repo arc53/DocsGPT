@@ -52,7 +52,7 @@ Never set `LOCAL_MODE_ADMIN=true` on an install that anyone else can reach: it m
 `docsgpt up` and the setup scripts generate `INTERNAL_KEY`, `JWT_SECRET_KEY` and `ENCRYPTION_SECRET_KEY` on a fresh install and keep them when run again; `docsgpt up` also generates `POSTGRES_PASSWORD`. For a hand-written `.env`, and for rotating `ENCRYPTION_SECRET_KEY` on an install that already stores credentials, see [Secrets to set before going live](/Deploying/DocsGPT-Settings#secrets-to-set-before-going-live).
 
 <Callout type="warning" emoji="⚠️">
-Do not generate a new `ENCRYPTION_SECRET_KEY` over an existing one, or add one to an install that ran on the default, without keeping the old value in `ENCRYPTION_SECRET_KEY_PREVIOUS`: the credentials already stored would become unreadable. Rotate with `ENCRYPTION_SECRET_KEY_PREVIOUS` and `docsgpt connectors reencrypt` instead.
+Do not generate a new `ENCRYPTION_SECRET_KEY` over an existing one, or add one to an install that ran on the default, without keeping the old value in `ENCRYPTION_SECRET_KEY_PREVIOUS`: the credentials already stored would become unreadable. Rotate with `ENCRYPTION_SECRET_KEY_PREVIOUS` and `docsgpt connectors reencrypt` instead; once the command reports nothing unreadable, the previous key can go.
 </Callout>
 
 ## Use HTTPS beyond a trusted network
@@ -69,7 +69,7 @@ URLs that users supply are checked before DocsGPT fetches them, so that nobody c
   - URL, crawler and sitemap sources,
   - custom models that users add in **Settings → Custom Models** (their base URL).
 - **Checked, not pinned.** The host's address is checked once, and the client then connects on its own:
-  - [MCP servers](/Guides/Integrations/mcp-tool-integration) and custom MCP connectors (`Invalid server URL: ...` when you save one, `Invalid MCP server URL: ...` when a tool connects),
+  - [MCP servers](/Guides/Integrations/mcp-tool-integration) and custom MCP connectors (`Invalid server URL: <reason>` when you test or save one, `Invalid MCP server URL: <reason>` when a saved tool connects),
   - S3 sources with a custom endpoint,
   - API Tool URLs in an imported agent (unsafe ones are dropped with a warning; the imported tool is pinned when it runs).
 
