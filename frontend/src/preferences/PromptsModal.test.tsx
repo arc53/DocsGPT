@@ -74,6 +74,21 @@ describe('PromptsModal', () => {
     expect(textarea?.dataset.size).toBe('lg');
   });
 
+  it('scrolls the editor body so a short window never pushes it under the footer', async () => {
+    await render();
+    const textarea = document.body.querySelector<HTMLTextAreaElement>(
+      '#new-prompt-content',
+    );
+    // The Modal body is the textarea's nearest ancestor that sits beside the
+    // footer; it must stay the dialog's scroller (the variable menus portal
+    // their lists, so nothing in it has to escape).
+    const footer = document.body.querySelector('[data-slot="modal-footer"]');
+    const body = footer?.previousElementSibling as HTMLElement | null;
+    expect(body?.contains(textarea)).toBe(true);
+    expect(body?.className).toContain('overflow-y-auto');
+    expect(body?.className).not.toContain('overflow-visible');
+  });
+
   it('scrolls the highlight layer through custom properties, not a transform', async () => {
     await render();
     const layer = document.body.querySelector<HTMLElement>(

@@ -221,11 +221,13 @@ function PromptTextarea({
           {highlightedValue}
         </div>
       </div>
+      {/* Capped to the window height so the variable menus below it stay in
+          view on a short laptop screen; the modal body scrolls past that. */}
       <Textarea
         id={id}
         size="lg"
         resize="none"
-        className="relative z-10 h-48 md:h-64 lg:h-80"
+        className="relative z-10 h-48 max-h-[35dvh] md:h-64 lg:h-80"
         value={value}
         onChange={onChange}
         onScroll={handleScroll}
@@ -654,7 +656,6 @@ export default function PromptsModal({
       footer={footer}
       size="xl"
       mobileVariant="sheet"
-      contentClassName="!overflow-visible"
     >
       {view}
     </Modal>
