@@ -12,6 +12,23 @@ A connector is a service DocsGPT can connect to: Google Drive, SharePoint, Confl
 
 Connections are the single place credentials live. A synced source and an agent tool both point at a connection, so you sign in once, reconnect once when a token expires, and disconnect in one place.
 
+<video
+  autoPlay
+  muted
+  loop
+  playsInline
+  controls
+  width={1440}
+  height={900}
+  poster="/connect-your-data-poster.png"
+  aria-label="Screen recording: connecting GitHub from Add knowledge and syncing a repository into Knowledge in DocsGPT"
+  style={{ width: '100%', height: 'auto', borderRadius: '0.5rem' }}
+>
+  <source src="/connect-your-data.mp4" type="video/mp4" />
+</video>
+
+*The recording opens **Settings > Knowledge**, clicks **Add knowledge**, then **Connect your data**, and picks **GitHub**. It pastes a personal access token, which stays masked, and clicks **Connect**. Under **Choose what to set up** it turns off **Let agents use GitHub**, leaves **Sync into Knowledge** on, searches for and picks a demo repository, names it "Espresso One docs", sets **Sync** to **Daily** and clicks **Continue**. On **Connectors**, the GitHub page lists "Espresso One docs" under **Knowledge from this connection** as synced daily. On **Knowledge**, the new source's menu shows **Sync: Daily** checked.*
+
 ## Using connectors
 
 Open **Settings > Connectors**. Filters narrow the list by category, and **Connected** shows what you already use.
