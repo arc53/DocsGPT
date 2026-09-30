@@ -13,7 +13,7 @@ import { Callout } from 'nextra/components'
 
 To upgrade:
 
-1. **Back up.** `docsgpt backup` for an installer or `docsgpt up` Docker install; otherwise dump Postgres (`pg_dump`) and copy your uploads and indexes.
+1. **Back up.** `docsgpt backup` for an installer or `docsgpt up` Docker install whose `docsgpt` has that command (releases after 0.21.0; on 0.21.0 [back up by hand](#back-up-and-restore-by-hand-0210)). Otherwise dump Postgres (`pg_dump`) and copy your uploads and indexes.
 2. **Read the [upgrade notes](#upgrade-notes)** for every release after the one you run, and the [changelog](/changelog).
 3. **Follow the steps for your install**, below.
 
@@ -30,7 +30,7 @@ Release notes: [changelog](/changelog). Tags: [GitHub releases](https://github.c
 ## Installer or `docsgpt up`
 
 ```bash
-docsgpt backup
+docsgpt backup                     # releases after 0.21.0; see below for 0.21.0
 docsgpt upgrade                    # the latest release; --version <version> for another
 docsgpt status
 ```
@@ -38,6 +38,41 @@ docsgpt status
 For a `uv tool` install, which is what the installer sets up, `docsgpt upgrade` installs the new package and runs its `docsgpt up`, which moves the stack to that release's images and keeps `.env` and the data. Running the install command again does the same; `DOCSGPT_VERSION=<version>` picks a release. With pipx or pip, `docsgpt upgrade` prints the command to run instead (`pipx install --force docsgpt` or `pip install -U docsgpt`); run it, then `docsgpt up`.
 
 A `docsgpt up --native` install has nothing for `docsgpt backup` to archive: dump its Postgres with `pg_dump` and copy `indexes/`, `inputs/` and `vectors/` from the data home first.
+
+### Back up and restore by hand (0.21.0)
+
+`docsgpt backup` and `docsgpt restore` are new after 0.21.0 (`docsgpt --help` shows whether yours has them). On 0.21.0, take the same backup by hand from the stack directory. It holds a dump of the database and a tar of each data volume (`docsgpt_indexes`, `docsgpt_inputs`, `docsgpt_vectors`). Keep a copy of `.env` too: it holds the install's secrets.
+
+```bash
+cd ~/.docsgpt/server
+IMAGE=arc53/docsgpt:0.21.0          # the image the stack runs
+mkdir -p backups/before-upgrade
+docker compose stop backend worker  # so the dump and the files match
+docker compose exec -T postgres pg_dump --clean --if-exists -U docsgpt -d docsgpt > backups/before-upgrade/docsgpt.sql
+for v in indexes inputs vectors; do
+  docker run --rm -v docsgpt_$v:/data:ro "$IMAGE" tar cf - -C /data . > backups/before-upgrade/$v.tar
+done
+docker compose start backend worker
+```
+
+To restore it, with the stack on the version the backup came from. Load the dump into an empty database: loaded over a database a newer release migrated, the newer tables' foreign keys stop it.
+
+```bash
+cd ~/.docsgpt/server
+IMAGE=arc53/docsgpt:0.21.0
+docker compose down
+for v in indexes inputs vectors; do
+  docker run --rm -i -u 0 -v docsgpt_$v:/data "$IMAGE" \
+    sh -c 'find /data -mindepth 1 -delete && tar xf - -C /data' < backups/before-upgrade/$v.tar
+done
+docker compose up -d --wait postgres
+docker compose exec -T postgres psql -U docsgpt -d postgres \
+  -c 'ALTER DATABASE docsgpt RENAME TO docsgpt_before_restore' -c 'CREATE DATABASE docsgpt OWNER docsgpt'
+docker compose exec -T postgres psql --set ON_ERROR_STOP=on -U docsgpt -d docsgpt < backups/before-upgrade/docsgpt.sql
+docker compose up -d
+```
+
+Once DocsGPT works, drop the set-aside copy: `docker compose exec postgres psql -U docsgpt -d postgres -c 'DROP DATABASE docsgpt_before_restore'`. If the load fails, drop the new `docsgpt` database and rename `docsgpt_before_restore` back before starting DocsGPT. `docsgpt restore` does all of this itself.
 
 ## pip install
 
@@ -108,7 +143,7 @@ The image has no `docsgpt` console script, so containers run `python -m docsgpt`
 
 ## Rollback
 
-If the newer release ran no migrations, set the image tag (or package version) back and start it again. If it did, the older release may not work against the upgraded schema, and the realistic way back is the backup you took before upgrading: go back to the older version, then restore it (`docsgpt upgrade --version <old>` then `docsgpt restore <archive>` for a `docsgpt up` Docker install).
+If the newer release ran no migrations, set the image tag (or package version) back and start it again. If it did, the older release may not work against the upgraded schema, and the realistic way back is the backup you took before upgrading. Go back to the older version first, then restore it with that version, so the older images start on the restored database. For a `docsgpt up` Docker install, `docsgpt upgrade --version <old>` moves back; it may report that DocsGPT does not answer, because the older release can't start on the newer schema. Then run `docsgpt restore <archive>`, or on 0.21.0, which has no `restore`, [restore by hand](#back-up-and-restore-by-hand-0210).
 
 Alembic can also undo migrations, but many downgrades drop the data the newer release added. Run the downgrade from the **newer** image, the one that knows the newer revisions, with the API and the worker stopped: with `AUTO_MIGRATE` on, a running or restarted container migrates straight back up. From the stack directory (from a checkout, add `--env-file .env -f deployment/docker-compose-hub.yaml` after `docker compose`):
 
@@ -382,7 +417,7 @@ The `docsgpt` command covers the routine tasks; the [CLI reference](/Deploying/c
 Run a script from the repository root of a checkout of the release you run. Directly on the host, `POSTGRES_URI` in the checkout's `.env` (or the environment) must point at the deployment's database. Against a Docker stack, copy the `scripts` folder into the backend container and run it there with the app on the path. For the checkout Compose files:
 
 ```bash
-docker compose --env-file .env -f deployment/docker-compose-hub.yaml cp scripts backend:/tmp/scripts
+docker compose --env-file .env -f deployment/docker-compose-hub.yaml cp scripts/. backend:/tmp/scripts/
 docker compose --env-file .env -f deployment/docker-compose-hub.yaml exec -e PYTHONPATH=/app backend \
   python /tmp/scripts/db/migrate_model_ids.py
 ```
@@ -390,7 +425,7 @@ docker compose --env-file .env -f deployment/docker-compose-hub.yaml exec -e PYT
 For a `docsgpt up` stack, still from the checkout (the stack directory has no `scripts/`):
 
 ```bash
-docker compose -f ~/.docsgpt/server/docker-compose.yaml cp scripts backend:/tmp/scripts
+docker compose -f ~/.docsgpt/server/docker-compose.yaml cp scripts/. backend:/tmp/scripts/
 docker compose -f ~/.docsgpt/server/docker-compose.yaml exec -e PYTHONPATH=/app backend \
   python /tmp/scripts/db/migrate_model_ids.py
 ```

@@ -73,7 +73,7 @@ On a Docker install, run it inside the backend container as above: the host's `d
 `grant-admin` is new after 0.21.0; the 0.21.0 image has neither it nor `python -m docsgpt`. On 0.21.0, use `OIDC_ADMIN_GROUPS`, or copy the old script from a checkout of that release (`git checkout 0.21.0`) into the backend container and run it there. From the repository root of that checkout:
 
 ```bash
-docker compose --env-file .env -f deployment/docker-compose-hub.yaml cp scripts backend:/tmp/scripts
+docker compose --env-file .env -f deployment/docker-compose-hub.yaml cp scripts/. backend:/tmp/scripts/
 docker compose --env-file .env -f deployment/docker-compose-hub.yaml exec -e PYTHONPATH=/app backend \
   python /tmp/scripts/grant_admin.py <user_id>
 ```

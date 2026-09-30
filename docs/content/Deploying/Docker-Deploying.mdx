@@ -91,7 +91,8 @@ The [docsgpt CLI reference](/Deploying/cli) lists every command, including
 ### Backups
 
 `docsgpt backup` writes one archive holding a dump of the database and a tar of
-each data volume (`indexes`, `inputs`, `vectors`):
+each data volume (`indexes`, `inputs`, `vectors`). It is new after 0.21.0; on
+0.21.0, [back up by hand](/upgrading#back-up-and-restore-by-hand-0210).
 
 ```bash
 docsgpt backup                      # into <stack>/backups
@@ -116,7 +117,9 @@ docsgpt restore ~/.docsgpt/server/backups/docsgpt-20260916-120000.tar.gz
 ```
 
 It asks first, then stops the stack, puts the volumes and the database back, and
-starts DocsGPT again. `--yes` skips the question for scripts. A backup taken
+starts DocsGPT again. The backup loads into an empty database, so tables a newer
+release added go too; the current database is kept as `docsgpt_before_restore`
+until the load succeeds, and put back if it fails. `--yes` skips the question for scripts. A backup taken
 with a newer DocsGPT is refused, since its data may not fit this version's
 schema; upgrade first, or pass `--force` if you know the two match.
 

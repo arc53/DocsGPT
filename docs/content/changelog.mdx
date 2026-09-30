@@ -123,7 +123,9 @@ the same way they do on a Docker one, and never touch the database or Redis. See
 `docsgpt restore <archive>` puts them back. The settings file is left out unless
 `--with-settings` asks for it, since it holds the install's secrets, and a backup from a newer
 DocsGPT is refused unless you pass `--force`. The archive is written readable only by its owner,
-and the backend and the worker pause while it is made so the dump and the volume tars match. See
+and the backend and the worker pause while it is made so the dump and the volume tars match. A
+restore loads the dump into an empty database, keeping the current one aside until it succeeds, so an
+older backup also restores over a database a newer release migrated. See
 [Backups](/Deploying/Docker-Deploying#backups).
 
 ### The checkout stack answers on this machine only
