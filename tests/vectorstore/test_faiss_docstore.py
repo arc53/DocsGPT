@@ -11,6 +11,7 @@ Two properties matter here and neither can regress quietly:
 import io
 import pickle
 import pickletools
+from pathlib import Path
 
 import pytest
 
@@ -29,6 +30,7 @@ DOCUMENTS = {
     "id-2": {"page_content": "Postgres is a database.", "metadata": {"source": "db.txt"}},
 }
 MAPPING = {0: "id-1", 1: "id-2"}
+LEGACY_INDEX_PKL = Path(__file__).parent / "fixtures" / "legacy_langchain_index.pkl"
 
 
 def _emitted_symbols(data: bytes):
@@ -171,10 +173,10 @@ class TestJsonSidecar:
 
 @pytest.mark.unit
 class TestRealLegacyFixture:
-    """The index.pkl checked into the repo was written by langchain in 2025."""
+    """A legacy index.pkl written by langchain in 2025, kept as a test fixture."""
 
     def test_reads_committed_legacy_index(self):
-        with open("docsgpt/index.pkl", "rb") as f:
+        with open(LEGACY_INDEX_PKL, "rb") as f:
             documents, mapping = load_pickle_sidecar(f.read())
         assert len(documents) == 3
         assert len(mapping) == 3
@@ -182,7 +184,7 @@ class TestRealLegacyFixture:
         assert all(d["metadata"].get("title") for d in documents.values())
 
     def test_legacy_survives_conversion_to_json(self):
-        with open("docsgpt/index.pkl", "rb") as f:
+        with open(LEGACY_INDEX_PKL, "rb") as f:
             documents, mapping = load_pickle_sidecar(f.read())
         restored, restored_mapping = load_json_sidecar(
             dump_json_sidecar(documents, mapping)
