@@ -182,10 +182,10 @@ class Dispatcher(BaseRetriever):
     def _is_override(retrieval: RetrievalConfig) -> bool:
         """True if the source opted into any read-path retrieval override.
 
-        Compares the read-path knobs ClassicRAG acts on (chunks /
-        score_threshold / rephrase_query) plus an opted-in prescreen config; a
-        source left at defaults takes the global path so all-classic retrieval
-        stays byte-identical with zero extra LLM calls.
+        Compares the read-path knobs the retrievers act on (chunks /
+        score_threshold / rephrase_query / rrf_k) plus an opted-in prescreen
+        config; a source left at defaults takes the global path so all-classic
+        retrieval stays byte-identical with zero extra LLM calls.
 
         A graph source's ``graph`` options count too: they are read from the
         per-source config this records, so a source that changes only those
@@ -198,6 +198,7 @@ class Dispatcher(BaseRetriever):
             retrieval.chunks != _DEFAULT_RETRIEVAL.chunks
             or retrieval.score_threshold != _DEFAULT_RETRIEVAL.score_threshold
             or retrieval.rephrase_query != _DEFAULT_RETRIEVAL.rephrase_query
+            or retrieval.rrf_k != _DEFAULT_RETRIEVAL.rrf_k
             or retrieval.prescreen is not None
             or (
                 (retrieval.retriever or "").lower() == "graphrag"
