@@ -55,6 +55,53 @@ describe('schedulesService create and update errors', () => {
     ).rejects.toThrow('max schedules per user reached');
   });
 
+  it('rejects a proxy error page without surfacing the JSON parse error', async () => {
+    const json = vi.fn(async () => {
+      throw new SyntaxError(
+        'Unexpected token \'<\', "<html>" is not valid JSON',
+      );
+    });
+    vi.spyOn(apiClient, 'put').mockResolvedValue({
+      ok: false,
+      status: 502,
+      json,
+    } as unknown as Response);
+
+    const error = await schedulesService
+      .update('s1', { instruction: 'x' }, 't')
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(error).toBeInstanceOf(Error);
+    // No message: the form then shows only its own "couldn't save" text.
+    expect((error as Error).message).toBe('');
+  });
+
+  it('rejects an error response whose JSON has no message with an empty message', async () => {
+    vi.spyOn(apiClient, 'post').mockResolvedValue(
+      response({ success: false }, 500),
+    );
+
+    await expect(
+      schedulesService.create('a1', { instruction: 'x' }, 't'),
+    ).rejects.toThrow(/^$/);
+  });
+
+  it('rejects a success status whose body is not JSON', async () => {
+    vi.spyOn(apiClient, 'post').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError("Unexpected token '<'");
+      },
+    } as unknown as Response);
+
+    await expect(
+      schedulesService.create('a1', { instruction: 'x' }, 't'),
+    ).rejects.not.toThrow(/Unexpected token/);
+  });
+
   it('returns the saved schedule on success', async () => {
     vi.spyOn(apiClient, 'put').mockResolvedValue(
       response({ success: true, schedule: { id: 's1' } }),

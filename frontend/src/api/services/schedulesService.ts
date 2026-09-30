@@ -16,16 +16,29 @@ const json = async (response: Response | unknown) => {
   return r.json();
 };
 
+const jsonOrUndefined = async (response: Response | unknown) => {
+  try {
+    return (await json(response)) as { message?: string } | undefined;
+  } catch {
+    // A proxy's HTML error page (a 502, say) is not JSON.
+    return undefined;
+  }
+};
+
 /**
  * The body of a create or update, or an Error carrying the server's
  * `message` when it refused the change (a bad run time, a finished task).
+ * Without one (an error page, a body that is not JSON) the Error has no
+ * message, so the form shows only its own "couldn't save" text.
  */
 const savedOrThrow = async (response: Response | unknown) => {
   const r = response as Response;
-  const body = (await json(r)) as { message?: string } | undefined;
   if (r && r.ok === false) {
-    throw new Error(body?.message || `Schedule save failed: ${r.status}`);
+    const body = await jsonOrUndefined(r);
+    throw new Error(body?.message || '');
   }
+  const body = await jsonOrUndefined(r);
+  if (body === undefined) throw new Error('');
   return body;
 };
 
