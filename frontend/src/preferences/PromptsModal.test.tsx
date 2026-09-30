@@ -89,6 +89,22 @@ describe('PromptsModal', () => {
     expect(body?.className).not.toContain('overflow-visible');
   });
 
+  it('sizes the variable menus to their labels, full width on a phone', async () => {
+    await render();
+    const triggers = [
+      ...document.body.querySelectorAll<HTMLElement>(
+        '[data-slot="select-trigger"]',
+      ),
+    ];
+    expect(triggers).toHaveLength(2);
+    for (const trigger of triggers) {
+      // No fixed pixel width: it cut "System Variables" short on a phone.
+      expect(trigger.className).not.toMatch(/w-\[/);
+      expect(trigger.className).toContain('w-full');
+      expect(trigger.className).toContain('sm:w-fit');
+    }
+  });
+
   it('scrolls the highlight layer through custom properties, not a transform', async () => {
     await render();
     const layer = document.body.querySelector<HTMLElement>(
