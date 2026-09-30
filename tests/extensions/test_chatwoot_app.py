@@ -128,6 +128,12 @@ class TestWebhook:
         headers = _signed_headers(body, timestamp=int(time.time()) - 3600)
         assert self._post(bridge, _event(), headers=headers).status_code == 401
 
+    def test_non_ascii_signature_is_rejected(self, bridge: ModuleType) -> None:
+        body = json.dumps(_event()).encode()
+        headers = _signed_headers(body)
+        headers["X-Chatwoot-Signature"] = "sha256=\u00e9\u00e9"
+        assert self._post(bridge, _event(), headers=headers).status_code == 401
+
     def test_relays_answer_to_chatwoot(self, bridge: ModuleType) -> None:
         answer = _response(200, {"answer": "Use pip."})
         created = _response(200, {"id": 99, "content": "Use pip."})

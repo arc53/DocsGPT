@@ -146,7 +146,11 @@ def is_valid_chatwoot_signature(
     if provided.startswith("sha256="):
         provided = provided.split("=", maxsplit=1)[1]
 
-    return hmac.compare_digest(provided, expected)
+    try:
+        return hmac.compare_digest(provided.encode("ascii"), expected.encode("ascii"))
+    except UnicodeEncodeError:
+        # A hex digest is ASCII; anything else cannot match.
+        return False
 
 
 app = Flask(__name__)
