@@ -422,11 +422,11 @@ function Configure-Auth {
 
     switch ($auth_choice) {
         "1" {
-            Remove-EnvKeys @("AUTH_TYPE", "JWT_SECRET_KEY")
+            Remove-EnvKeys @("AUTH_TYPE")
             Write-ColorText "Authentication disabled (default)." -ForegroundColor "Green"
         }
         "2" {
-            Remove-EnvKeys @("AUTH_TYPE", "JWT_SECRET_KEY")
+            Remove-EnvKeys @("AUTH_TYPE")
             "AUTH_TYPE=simple_jwt" | Add-Content -Path $ENV_FILE -Encoding utf8
             Write-JwtSecretKey
             Write-ColorText "Authentication set to Simple JWT." -ForegroundColor "Green"
@@ -434,7 +434,7 @@ function Configure-Auth {
             Write-ColorText "  docker compose -f `"$COMPOSE_FILE`" logs backend | Select-String `"Simple JWT`"" -ForegroundColor "White"
         }
         "3" {
-            Remove-EnvKeys @("AUTH_TYPE", "JWT_SECRET_KEY")
+            Remove-EnvKeys @("AUTH_TYPE")
             "AUTH_TYPE=session_jwt" | Add-Content -Path $ENV_FILE -Encoding utf8
             Write-JwtSecretKey
             Write-ColorText "Authentication set to Session JWT." -ForegroundColor "Green"
@@ -457,14 +457,14 @@ function New-HexSecret {
     return ($bytes | ForEach-Object { $_.ToString("x2") }) -join ""
 }
 
-# Ask for a JWT signing key, or generate one, and write it to .env
+# Ask for a JWT signing key; empty keeps the one already in .env (generated, or carried over)
 function Write-JwtSecretKey {
-    $jwt_key = Read-Host "Enter JWT secret key (leave empty to auto-generate)"
-    if ([string]::IsNullOrEmpty($jwt_key)) {
-        $jwt_key = New-HexSecret
-        Write-ColorText "Auto-generated JWT secret key." -ForegroundColor "Yellow"
+    $jwt_key = Read-Host "Enter JWT secret key (leave empty to keep the one in .env)"
+    if (-not [string]::IsNullOrEmpty($jwt_key)) {
+        Remove-EnvKeys @("JWT_SECRET_KEY")
+        "JWT_SECRET_KEY=$jwt_key" | Add-Content -Path $ENV_FILE -Encoding utf8
     }
-    "JWT_SECRET_KEY=$jwt_key" | Add-Content -Path $ENV_FILE -Encoding utf8
+    Ensure-JwtSecretKey
 }
 
 # Drop settings from .env so choosing again does not leave the earlier value behind
@@ -582,14 +582,24 @@ function Configure-TTS {
 
 # Generate INTERNAL_KEY for worker-to-backend auth if not already present
 function Ensure-InternalKey {
+    # A rerun carries over the one in the .env it overwrites, so the worker keeps working.
     $content = if (Test-Path $ENV_FILE) { Get-Content $ENV_FILE -Raw } else { "" }
     if ($content -notmatch "(?m)^INTERNAL_KEY=") {
-        $bytes = New-Object byte[] 32
-        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-        $rng.GetBytes($bytes)
-        $rng.Dispose()
-        $internal_key = ($bytes | ForEach-Object { $_.ToString("x2") }) -join ""
+        $internal_key = $script:PREVIOUS_INTERNAL_KEY
+        if ([string]::IsNullOrEmpty($internal_key)) { $internal_key = New-HexSecret }
         "INTERNAL_KEY=$internal_key" | Add-Content -Path $ENV_FILE -Encoding utf8
+    }
+}
+
+# Generate JWT_SECRET_KEY, shared by the backend and worker containers, if not already present.
+# A rerun carries over the one in the .env it overwrites: a new key would sign everyone out and,
+# under session_jwt, leave their data behind.
+function Ensure-JwtSecretKey {
+    $content = if (Test-Path $ENV_FILE) { Get-Content $ENV_FILE -Raw } else { "" }
+    if ($content -notmatch "(?m)^JWT_SECRET_KEY=") {
+        $jwt_key = $script:PREVIOUS_JWT_SECRET_KEY
+        if ([string]::IsNullOrEmpty($jwt_key)) { $jwt_key = New-HexSecret }
+        "JWT_SECRET_KEY=$jwt_key" | Add-Content -Path $ENV_FILE -Encoding utf8
     }
 }
 
@@ -643,6 +653,7 @@ function Configure-NetworkAccess {
 # Main advanced settings menu
 function Prompt-AdvancedSettings {
     Ensure-InternalKey
+    Ensure-JwtSecretKey
     Ensure-EncryptionKey
     Configure-NetworkAccess
     Write-Host ""
@@ -1135,15 +1146,25 @@ function Connect-CloudAPIProvider {
 Animate-Dino
 
 # Check if .env file exists and is not empty
+# The value of KEY in the existing .env, or "" when it has none
+function Get-PreviousEnvValue {
+    param([string]$Key)
+    $line = Get-Content $ENV_FILE | Where-Object { $_.StartsWith("$Key=") } | Select-Object -Last 1
+    if ($line) { return $line.Substring($Key.Length + 1) }
+    return ""
+}
+
 $script:PREVIOUS_ENCRYPTION_KEY = ""
+$script:PREVIOUS_JWT_SECRET_KEY = ""
+$script:PREVIOUS_INTERNAL_KEY = ""
 $script:HAD_ENV_FILE = $false
 if ((Test-Path $ENV_FILE) -and ((Get-Item $ENV_FILE).Length -gt 0)) {
     $script:HAD_ENV_FILE = $true
-    # Carried into the new .env: the credentials this install stored are sealed with it.
-    $previousKeyLine = Get-Content $ENV_FILE | Where-Object { $_.StartsWith("ENCRYPTION_SECRET_KEY=") } | Select-Object -Last 1
-    if ($previousKeyLine) {
-        $script:PREVIOUS_ENCRYPTION_KEY = $previousKeyLine.Substring("ENCRYPTION_SECRET_KEY=".Length)
-    }
+    # Carried into the new .env: stored credentials are sealed with the encryption key, tokens
+    # are signed with the JWT key, and a running worker holds the internal key.
+    $script:PREVIOUS_ENCRYPTION_KEY = Get-PreviousEnvValue "ENCRYPTION_SECRET_KEY"
+    $script:PREVIOUS_JWT_SECRET_KEY = Get-PreviousEnvValue "JWT_SECRET_KEY"
+    $script:PREVIOUS_INTERNAL_KEY = Get-PreviousEnvValue "INTERNAL_KEY"
     Write-Host ""
     Write-ColorText "Warning: An existing .env file was found with the following settings:" -ForegroundColor "Yellow" -Bold
     $envLines = Get-Content $ENV_FILE
@@ -1152,6 +1173,7 @@ if ((Test-Path $ENV_FILE) -and ((Get-Item $ENV_FILE).Length -gt 0)) {
         Write-Host "  ... and $($envLines.Count - 3) more lines"
     }
     Write-Host ""
+    Write-ColorText "Its INTERNAL_KEY, JWT_SECRET_KEY and ENCRYPTION_SECRET_KEY are kept." -ForegroundColor "White"
     $confirm_overwrite = Read-Host "Running setup will overwrite this file. Continue? (y/N)"
     if ($confirm_overwrite -ne "y" -and $confirm_overwrite -ne "Y") {
         Write-ColorText "Setup cancelled. Your .env file was not modified." -ForegroundColor "Green"

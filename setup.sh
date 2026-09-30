@@ -292,11 +292,11 @@ configure_auth() {
 
     case "$auth_choice" in
         1)
-            remove_env_keys AUTH_TYPE JWT_SECRET_KEY
+            remove_env_keys AUTH_TYPE
             echo -e "${GREEN}Authentication disabled (default).${NC}"
             ;;
         2)
-            remove_env_keys AUTH_TYPE JWT_SECRET_KEY
+            remove_env_keys AUTH_TYPE
             echo "AUTH_TYPE=simple_jwt" >> "$ENV_FILE"
             write_jwt_secret_key
             echo -e "${GREEN}Authentication set to Simple JWT.${NC}"
@@ -304,7 +304,7 @@ configure_auth() {
             echo -e "${DEFAULT_FG}  docker compose -f \"${COMPOSE_FILE}\" logs backend | grep \"Simple JWT\"${NC}"
             ;;
         3)
-            remove_env_keys AUTH_TYPE JWT_SECRET_KEY
+            remove_env_keys AUTH_TYPE
             echo "AUTH_TYPE=session_jwt" >> "$ENV_FILE"
             write_jwt_secret_key
             echo -e "${GREEN}Authentication set to Session JWT.${NC}"
@@ -314,17 +314,15 @@ configure_auth() {
     esac
 }
 
-# Ask for a JWT signing key, or generate one, and write it to .env
+# Ask for a JWT signing key; empty keeps the one already in .env (generated, or carried over)
 write_jwt_secret_key() {
-    local jwt_key generated_key
-    read -p "$(echo -e "${DEFAULT_FG}Enter JWT secret key (leave empty to auto-generate): ${NC}")" jwt_key
+    local jwt_key
+    read -p "$(echo -e "${DEFAULT_FG}Enter JWT secret key (leave empty to keep the one in .env): ${NC}")" jwt_key
     if [ -n "$jwt_key" ]; then
+        remove_env_keys JWT_SECRET_KEY
         echo "JWT_SECRET_KEY=$jwt_key" >> "$ENV_FILE"
-    else
-        generated_key=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')
-        echo "JWT_SECRET_KEY=$generated_key" >> "$ENV_FILE"
-        echo -e "${YELLOW}Auto-generated JWT secret key.${NC}"
     fi
+    ensure_jwt_secret_key
 }
 
 # Drop settings from .env so choosing again does not leave the earlier value behind
@@ -429,11 +427,27 @@ configure_tts() {
 }
 
 # Generate INTERNAL_KEY for worker-to-backend auth if not already present
+# (a rerun carries over the one in the .env it overwrites, so the worker keeps working)
 ensure_internal_key() {
     if ! grep -q "^INTERNAL_KEY=" "$ENV_FILE" 2>/dev/null; then
-        local internal_key
-        internal_key=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')
+        local internal_key="$PREVIOUS_INTERNAL_KEY"
+        if [ -z "$internal_key" ]; then
+            internal_key=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')
+        fi
         echo "INTERNAL_KEY=$internal_key" >> "$ENV_FILE"
+    fi
+}
+
+# Generate JWT_SECRET_KEY, shared by the backend and worker containers, if not already present.
+# A rerun carries over the one in the .env it overwrites: a new key would sign everyone out and,
+# under session_jwt, leave their data behind.
+ensure_jwt_secret_key() {
+    if ! grep -q "^JWT_SECRET_KEY=" "$ENV_FILE" 2>/dev/null; then
+        local jwt_key="$PREVIOUS_JWT_SECRET_KEY"
+        if [ -z "$jwt_key" ]; then
+            jwt_key=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')
+        fi
+        echo "JWT_SECRET_KEY=$jwt_key" >> "$ENV_FILE"
     fi
 }
 
@@ -487,6 +501,7 @@ configure_network_access() {
 # Main advanced settings menu
 prompt_advanced_settings() {
     ensure_internal_key
+    ensure_jwt_secret_key
     ensure_encryption_key
     configure_network_access
     echo
@@ -833,11 +848,16 @@ animate_dino
 
 # Check if .env file exists and is not empty
 PREVIOUS_ENCRYPTION_KEY=""
+PREVIOUS_JWT_SECRET_KEY=""
+PREVIOUS_INTERNAL_KEY=""
 HAD_ENV_FILE=0
 if [ -f "$ENV_FILE" ] && [ -s "$ENV_FILE" ]; then
     HAD_ENV_FILE=1
-    # Carried into the new .env: the credentials this install stored are sealed with it.
+    # Carried into the new .env: stored credentials are sealed with the encryption key, tokens
+    # are signed with the JWT key, and a running worker holds the internal key.
     PREVIOUS_ENCRYPTION_KEY=$(grep "^ENCRYPTION_SECRET_KEY=" "$ENV_FILE" | tail -n 1 | cut -d= -f2-)
+    PREVIOUS_JWT_SECRET_KEY=$(grep "^JWT_SECRET_KEY=" "$ENV_FILE" | tail -n 1 | cut -d= -f2-)
+    PREVIOUS_INTERNAL_KEY=$(grep "^INTERNAL_KEY=" "$ENV_FILE" | tail -n 1 | cut -d= -f2-)
     echo -e "\n${YELLOW}${BOLD}Warning:${NC}${YELLOW} An existing .env file was found with the following settings:${NC}"
     head -3 "$ENV_FILE" | while IFS= read -r line; do echo -e "${DEFAULT_FG}  $line${NC}"; done
     total_lines=$(wc -l < "$ENV_FILE")
@@ -845,6 +865,7 @@ if [ -f "$ENV_FILE" ] && [ -s "$ENV_FILE" ]; then
         echo -e "${DEFAULT_FG}  ... and $((total_lines - 3)) more lines${NC}"
     fi
     echo
+    echo -e "${DEFAULT_FG}Its INTERNAL_KEY, JWT_SECRET_KEY and ENCRYPTION_SECRET_KEY are kept.${NC}"
     read -p "$(echo -e "${YELLOW}Running setup will overwrite this file. Continue? (y/N): ${NC}")" confirm_overwrite
     if [[ ! "$confirm_overwrite" =~ ^[yY]$ ]]; then
         echo -e "${GREEN}Setup cancelled. Your .env file was not modified.${NC}"
