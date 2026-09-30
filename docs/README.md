@@ -35,7 +35,7 @@ current.
   `content/Deploying/Docker-Deploying.mdx` is served at `/Deploying/Docker-Deploying`.
 - `content/**/_meta.js`: the sidebar order and titles of each folder. Add an entry when you
   add a page so it lands where you want it.
-- `app/layout.jsx`: the navbar, the banner, the footer and the page head.
+- `app/layout.jsx`: the navbar, the footer and the page head.
   `app/[[...mdxPath]]/page.jsx` renders every page.
 - `theme.config.jsx`: the Nextra theme options that `app/layout.jsx` passes on (edit links,
   sidebar, table of contents).

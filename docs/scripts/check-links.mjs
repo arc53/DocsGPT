@@ -67,15 +67,29 @@ function safeDecode(value) {
 }
 
 /**
- * Reads the redirect sources from next.config.js without loading Next.js.
+ * Reads the redirects from next.config.js without loading Next.js.
  *
- * @returns {Set<string>} Redirected paths.
+ * Redirects are listed as `['/old', '/new']` pairs; `source:`/`destination:`
+ * objects are read too, in case one is written out in full.
+ *
+ * @returns {Map<string, string>} Redirected path to its destination.
  */
-function redirectSources() {
+function readRedirects() {
   const file = join(DOCS_ROOT, 'next.config.js');
-  if (!existsSync(file)) return new Set();
+  if (!existsSync(file)) return new Map();
   const text = readFileSync(file, 'utf8');
-  return new Set([...text.matchAll(/source:\s*['"]([^'"]+)['"]/g)].map((m) => m[1].replace(/\/$/, '') || '/'));
+  const normalize = (path) => path.replace(/\/$/, '') || '/';
+  const redirects = new Map();
+  const patterns = [
+    /\[\s*['"](\/[^'"]*)['"]\s*,\s*['"](\/[^'"]*)['"]\s*\]/g,
+    /source:\s*['"](\/[^'"]*)['"]\s*,\s*destination:\s*['"](\/[^'"]*)['"]/g,
+  ];
+  for (const pattern of patterns) {
+    for (const [, source, destination] of text.matchAll(pattern)) {
+      redirects.set(normalize(source), destination);
+    }
+  }
+  return redirects;
 }
 
 /**
@@ -117,7 +131,7 @@ function main() {
     const html = readFileSync(file, 'utf8');
     pages.set(normalized, { html, ids: extractIds(html) });
   }
-  const redirects = redirectSources();
+  const redirects = readRedirects();
 
   const problems = new Map();
   const report = (page, link, reason) => {
@@ -142,7 +156,8 @@ function main() {
       const target = pages.get(path);
       if (!target) {
         if (existsSync(join(PUBLIC_DIR, path)) && statSync(join(PUBLIC_DIR, path)).isFile()) continue;
-        report(route, raw, redirects.has(path) ? 'redirected: link the destination' : 'no such page or file');
+        const destination = redirects.get(path);
+        report(route, raw, destination ? `redirected: link the destination, ${destination}` : 'no such page or file');
         continue;
       }
       const fragment = safeDecode(url.hash.replace(/^#/, ''));
