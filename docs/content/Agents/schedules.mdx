@@ -33,6 +33,8 @@ The tab lists **Recurring** schedules and **One-time tasks** separately, with ea
 - A paused recurring schedule has a **Resume** button and a menu with **Edit**, **Run now** and **Delete**.
 - A pending one-time task has a menu with **Edit** and **Cancel task**.
 
+**Edit** changes the instructions, time, timezone and tool approvals. Editing a one-time task's date or time moves it to the new time, which must be in the future. A schedule can't switch between one-time and recurring: the other kind's frequencies are disabled while you edit, so create a new schedule instead. If the change is refused, the dialog stays open and says why.
+
 Deleting a schedule also deletes its run history, and deleting the agent deletes all its schedules.
 
 The builder covers daily, weekly, monthly and yearly times. For another cadence, such as every hour, set a custom cron expression through the [API](#rest-api). The tab shows it as `Custom: <expression>`.
@@ -90,7 +92,8 @@ A task set from chat pre-approves only the tools whose actions never need approv
 
 ## Who owns a schedule and whose quota it uses
 
-- A run always executes as the agent's owner, with the owner's sources, tools and model, and counts against the owner's [usage quota](/Deploying/Usage-Quotas).
+- A run always executes as the agent's owner, with the owner's sources, tools and model, and is checked against the owner's [usage quota](/Deploying/Usage-Quotas).
+- Its tokens and trace are recorded under the schedule's user: the agent's owner for a schedule from the Schedules tab, and the person who set it for a task set from chat. So a teammate's chat task on your agent is checked against your quota but shows up in their [Analytics and Logs](/Using/analytics-and-logs).
 - A schedule created in the Schedules tab belongs to the agent's owner, whoever creates it. Owners and team editors of the agent can manage it.
 - A task someone sets from chat on a shared agent stays theirs. It stops running when they lose access to the agent.
 - A task set through the agent's API key, or by someone who reaches the agent only through its public link, keeps that caller's limits: it writes to the owner's connected accounts and saved credentials only for actions allowed under [Letting API callers make changes](/Agents/api#letting-api-callers-make-changes).
@@ -110,14 +113,14 @@ Schedules have their own endpoints. Call them with a session token or a [persona
 | `GET /api/schedules/<id>/runs?limit=50&offset=0` | The run log |
 | `GET /api/schedules/<id>/runs/<run_id>` | One run's output and error |
 
-Fields for `POST` (and `PUT`, except `trigger_type` and `run_at`):
+Fields for `POST`. `PUT` takes the same fields except `trigger_type`, which can't change; send only the fields to change.
 
 | Field | Description |
 | --- | --- |
 | `instruction` | Required. What the agent does on each run. |
 | `trigger_type` | `recurring` (default) or `once`. |
 | `cron` | Five-field cron expression. Required for `recurring`. |
-| `run_at` | ISO 8601 time. Required for `once`. A time without an offset is read in `timezone`. |
+| `run_at` | ISO 8601 time. Required for `once`. A time without an offset is read in `timezone`. On `PUT` it moves a pending or paused one-time task, with the same checks as a create; a recurring schedule answers `400`, and a finished or already started task `409`. |
 | `timezone` | IANA name such as `America/New_York`. Default `UTC`. |
 | `name` | Display name. |
 | `end_at` | ISO 8601 time after which a recurring schedule stops and shows **Completed**. |
