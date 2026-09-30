@@ -70,7 +70,7 @@ GET /api/messages/<message_id>/events
 This replays the message's events past your last-seen sequence number and tails the rest live. It is backed by the Postgres `message_events` journal (retained for `MESSAGE_EVENTS_RETENTION_DAYS`, default 14).
 
 <Callout type="warning" emoji="⚠️">
-Both channels are native-async routes served by the ASGI entrypoint. Under a plain `flask run` dev server they return `404`; run the backend via the ASGI app (`uvicorn docsgpt.asgi:asgi_app`) or the production gunicorn uvicorn worker to use them. See the [Development Environment](/Deploying/Development-Environment) guide.
+Both channels need the API served through the ASGI app (`docsgpt.asgi:asgi_app`), as `docsgpt api`, `docsgpt dev` and the Docker images do. Under `flask run`, `GET /api/events` and `GET /api/messages/<message_id>/events` return 404. See [ASGI-only features](/Deploying/Development-Environment#asgi-only-features).
 </Callout>
 
 ## Settings

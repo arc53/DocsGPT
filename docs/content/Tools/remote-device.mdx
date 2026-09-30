@@ -22,6 +22,13 @@ The machine connects outward to DocsGPT, so it works behind NAT or a firewall wi
 
 - `docsgpt-cli` installed on the machine you want to control. See the [installation instructions](https://github.com/arc53/DocsGPT-cli#installation): download a binary from the [releases page](https://github.com/arc53/DocsGPT-cli/releases), use Homebrew (`brew tap arc53/docsgpt-cli && brew install docsgpt-cli`), or build from source.
 - Outbound internet access from that machine to your DocsGPT instance.
+- On the DocsGPT server:
+  - Redis reachable at `CACHE_REDIS_URL`. Pairing and the command broker use it, and every pairing request
+    returns `503 redis_unavailable` without it.
+  - The API served through the ASGI app (`docsgpt.asgi:asgi_app`), as `docsgpt api`, `docsgpt dev` and the
+    Docker images do. Under `flask run`, the device command stream `GET /api/devices/sessions/<id>/events`
+    returns 404, so a device pairs but never receives commands. See
+    [ASGI-only features](/Deploying/Development-Environment#asgi-only-features).
 
 <Callout type="info">
   The `host` commands require a docsgpt-cli build with remote-device support. If `docsgpt-cli host` is not recognized, update to the latest release or build from source.

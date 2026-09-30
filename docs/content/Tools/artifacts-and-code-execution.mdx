@@ -36,6 +36,12 @@ In a normal chat, a produced artifact appears as a chip under the assistant's re
 - download the file,
 - ask for changes, which create a new version.
 
+<Callout type="info">
+  Downloads need the API served through the ASGI app (`docsgpt.asgi:asgi_app`), as `docsgpt api`, `docsgpt dev`
+  and the Docker images do. Under `flask run`, `GET /api/artifacts/<id>/download` returns 404. See
+  [ASGI-only features](/Deploying/Development-Environment#asgi-only-features).
+</Callout>
+
 ### The Artifact tool
 
 The Artifact tool keeps a structured spec as the source of truth and renders the file from it. Editing means changing the spec and re-rendering, which keeps a clean and diffable version history. It exposes three actions:

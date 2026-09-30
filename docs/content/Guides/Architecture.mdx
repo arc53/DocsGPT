@@ -76,7 +76,7 @@ The storage boxes describe responsibilities, not a required number of servers. F
 DocsGPT also acts as an **MCP client**: agents can call external MCP servers through the [MCP tool integration](/Guides/Integrations/mcp-tool-integration). This is a separate direction from exposing DocsGPT search at `/mcp`.
 
 <Callout type="info">
-Use the ASGI entry point for the complete application. A plain `flask run` server omits `/mcp` and the native asynchronous routes: notifications, chat reconnect, the remote-device command stream, and artifact downloads. See [Development Environment](/Deploying/Development-Environment).
+Use the ASGI entry point for the complete application. A plain `flask run` server omits `/mcp` and the native asynchronous routes: notifications, chat reconnect, the remote-device command stream, and artifact downloads. See [ASGI-only features](/Deploying/Development-Environment#asgi-only-features).
 </Callout>
 
 ### Agents and retrieval

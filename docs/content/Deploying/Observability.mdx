@@ -68,9 +68,13 @@ For local dev, prepend `dotenv run --` so the `OTEL_*` vars from `.env`
 reach `opentelemetry-instrument` before it boots the SDK:
 
 ```bash
-dotenv run -- opentelemetry-instrument flask --app docsgpt/app.py run --port=7091
-dotenv run -- opentelemetry-instrument celery -A docsgpt.app.celery worker -l INFO --pool=solo
+dotenv run -- opentelemetry-instrument uvicorn docsgpt.asgi:asgi_app --port 7091
+dotenv run -- opentelemetry-instrument celery -A docsgpt.app.celery worker -l INFO -B --pool=solo
 ```
+
+Trace the ASGI app rather than `flask run`, which serves only the Flask app: the
+[ASGI-only routes](/Deploying/Development-Environment#asgi-only-features) return 404 there and
+their spans never appear. `-B` keeps the beat scheduler running, as in production.
 
 
 <Callout type="info" emoji="ℹ️">
