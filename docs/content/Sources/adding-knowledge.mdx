@@ -49,7 +49,7 @@ Go to **Settings > Knowledge** and click **Add knowledge**. From a chat, you can
 
 Every source needs a **Name**. It is how the source appears on the Knowledge page and in the knowledge pickers. For an upload, the name starts as the first file's name.
 
-**Advanced settings** holds the chunking and retrieval options for this source. The defaults suit most content; see [Per-source configuration](/Sources/Per-source-configuration) for what each option does.
+**Advanced settings** (not shown for a wiki) holds the chunking and retrieval options for this source. The defaults suit most content; see [Per-source configuration](/Sources/Per-source-configuration) for what each option does.
 
 Click **Add to Knowledge** (**Create** for a wiki). The dialog closes, and a panel in the corner shows the upload, parsing and embedding progress. The source appears on the Knowledge page when indexing finishes. If indexing fails, the source's menu offers **Reingest**.
 </Steps>
@@ -63,7 +63,7 @@ The upload dialog accepts these types:
 - **Documents:** `.pdf`, `.docx`, `.doc`, `.docm`, `.odt`, `.rtf`, `.txt`, `.md`, `.rst`, `.html`, `.xhtml`, `.epub`, `.json`
 - **Spreadsheets:** `.xlsx`, `.xls`, `.xlsm`, `.xlsb`, `.ods`, `.csv`
 - **Presentations:** `.pptx`, `.ppt`, `.pptm`, `.pps`, `.ppsx`, `.ppsm`, `.pot`, `.odp`
-- **Images:** `.png`, `.jpg`, `.jpeg`. Text in them is read with OCR.
+- **Images:** `.png`, `.jpg`, `.jpeg`. Their text is read with OCR when OCR is enabled (`OCR_ENABLED`, off by default) or sent to a remote parser with `PARSE_IMAGE_REMOTE`. With both off, an image adds no text. See [Document parsing and OCR](/Guides/ocr).
 - **Audio:** `.wav`, `.mp3`, `.m4a`, `.ogg`, `.webm`. Audio is transcribed with speech-to-text, and the transcript is indexed.
 - **Archives:** `.zip`
 
@@ -71,14 +71,14 @@ The upload dialog accepts these types:
 The upload dialog takes files **up to 25 MB each**. It lists larger files, and files of other types, as not added. Uploads through the API are capped by the server instead: `UPLOAD_MAX_FILE_BYTES` (100 MB per file by default), `UPLOAD_MAX_REQUEST_BYTES` (256 MB per request) and, for audio, `STT_MAX_FILE_SIZE_MB` (50 MB).
 </Callout>
 
-**Zip archives** are extracted on the server, and every supported file inside is indexed, including archives nested up to three levels deep. Files of other types are skipped. This is also how to upload `.mdx` files, which the dialog doesn't list. The server rejects an archive that expands past `UPLOAD_MAX_ARCHIVE_BYTES` (250 MB), holds more than `UPLOAD_MAX_ARCHIVE_FILES` (10,000) files, or nests deeper than `UPLOAD_MAX_ARCHIVE_DEPTH` (3). Office and e-book files (`.docx`, `.xlsx`, `.pptx`, `.odt`, `.epub` and similar) are zip containers internally, but DocsGPT parses them as documents and does not unpack them.
+**Zip archives** are extracted on the server, and every supported file inside is indexed, including archives nested up to three levels deep. Files of other types are skipped. This is also how to upload `.mdx` files, which the dialog doesn't list. The server rejects an upload whose archives expand past `UPLOAD_MAX_ARCHIVE_BYTES` (250 MB), hold more than `UPLOAD_MAX_ARCHIVE_FILES` (10,000) files, or nest deeper than `UPLOAD_MAX_ARCHIVE_DEPTH` (3). The size and file-count limits apply to all the archives in one upload combined. Office and e-book files (`.docx`, `.xlsx`, `.pptx`, `.odt`, `.epub` and similar) are zip containers internally, but DocsGPT parses them as documents and does not unpack them.
 
-Scanned PDFs and images need OCR. See [Document parsing and OCR](/Guides/ocr) for the parser engines and OCR settings. All size and parsing settings are listed in the [settings reference](/Deploying/Settings-Reference).
+Scanned PDFs and images need OCR, which is off by default (`OCR_ENABLED`). See [Document parsing and OCR](/Guides/ocr) for the parser engines and OCR settings. All size and parsing settings are listed in the [settings reference](/Deploying/Settings-Reference).
 
 ## Add a web page or a website
 
 - **Link** reads the one page at the URL.
-- **Crawler** starts at the URL and follows links on the same host until it has read 10 pages.
+- **Crawler** starts at the URL and follows links on the same host until it has tried 10 pages. Pages that fail to load count toward the 10.
 
 Both fetch pages from the DocsGPT server, not from your browser. Pages behind a sign-in can't be read, and URLs that resolve to private or internal addresses are refused.
 
@@ -108,7 +108,7 @@ To build a knowledge graph over a source, see [GraphRAG](/Sources/GraphRAG).
 
 ## Use knowledge in chats and agents
 
-- **In a chat without an agent**, click **Knowledge** in the composer and select one or more sources. Answers draw on the chunks retrieved from them and cite them. The menu's footer links to the Knowledge page and to **Upload new**.
+- **In a chat without an agent**, click **Knowledge** in the composer and select one or more sources. Answers draw on the chunks retrieved from them and cite them. The menu's footer has **Go to Knowledge**, **Connect more** (the connectors that sync into Knowledge) and **Upload new**.
 - **In an agent**, pick sources in the agent builder's **Knowledge** field (**Select knowledge**). Knowledge is optional: without it, the agent answers from the model and its tools. When you chat with an agent, the composer hides the Knowledge button because the agent uses its own. See [Agents](/Agents/basics).
 
 **Attach** in the composer is different. It adds a file to the current conversation only. To reuse a file across chats and agents, add it to Knowledge instead.

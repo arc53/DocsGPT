@@ -13,7 +13,7 @@ The extension must be reachable from Chatwoot, and it must be able to reach both
 
 ### Step 1: Prepare DocsGPT and get an agent API key
 
-- **Launch DocsGPT**: Follow the [Quickstart](/quickstart) to start DocsGPT, and [add your documentation](/Guides/How-to-train-on-other-documentation) as knowledge.
+- **Launch DocsGPT**: Follow the [Quickstart](/quickstart) to start DocsGPT, and [add your documentation](/Sources/adding-knowledge) as knowledge.
 - **Create an agent**: Create an agent that uses that knowledge, publish it, and copy its API key from the agent's **Access Details**. See [Getting API key](/Extensions/api-key-guide). The extension sends this key as `api_key` to `/api/answer`, so it must be an agent key, not an OpenAI or other LLM provider key.
 
 ### Step 2: Get an access token from Chatwoot
