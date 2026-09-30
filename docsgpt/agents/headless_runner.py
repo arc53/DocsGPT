@@ -15,9 +15,14 @@ from docsgpt.api.answer.services.prompt_renderer import (
     resolve_prompt_skeleton,
 )
 from docsgpt.api.answer.services.stream_processor import (
+    agent_prompt_id,
     authorized_agent_sources,
     authorized_prompt_id,
     get_prompt,
+    internal_search_config,
+    per_source_list,
+    plan_source_use,
+    source_for_docs,
 )
 from docsgpt.core.settings import settings
 from docsgpt.guardrails.config import AgentConfig
@@ -188,14 +193,18 @@ def _run_agent_headless(
     agent_id = _resolve_agent_id(agent_config)
     agent_type = agent_config.get("agent_type", "classic")
     json_schema = agent_config.get("json_schema")
+    # Agentic and research agents render the agentic preset, as in a chat.
+    prompt_id = agent_prompt_id(prompt_id, agent_type)
     raw_prompt, persona = resolve_prompt_skeleton(
         get_prompt(prompt_id), prompt_id, agent_type
     )
     prompt = raw_prompt
 
     candidate_model = model_id_override or agent_config.get("default_model_id") or ""
+    model_user_id: Optional[str] = None
     if candidate_model and validate_model_id(candidate_model, user_id=owner):
         model_id = candidate_model
+        model_user_id = owner
     else:
         model_id = get_default_model_id()
         if candidate_model:
@@ -211,31 +220,38 @@ def _run_agent_headless(
     system_api_key = get_api_key_for_provider(provider or settings.LLM_PROVIDER)
     doc_token_limit = calculate_doc_token_budget(model_id=model_id, user_id=owner)
 
-    retriever_kwargs: Dict[str, Any] = dict(
-        source=source,
-        chat_history=chat_history or [],
-        prompt=prompt,
-        chunks=chunks,
-        doc_token_limit=doc_token_limit,
-        model_id=model_id,
-        user_api_key=user_api_key,
-        agent_id=agent_id,
-        decoded_token=decoded_token,
-    )
-    # Routed per source like a chat's pre-fetch, so each source keeps its own
-    # retriever and retrieval settings.
-    retriever = build_dispatcher(
-        lambda: RetrieverCreator.create_retriever(retriever_kind, **retriever_kwargs),
-        sources=per_source,
-        **retriever_kwargs,
-    )
+    # Sources are used as in a chat turn of this agent type: agentic and
+    # research agents search on demand through internal_search, classic
+    # agents pre-fetch, and ``agentic_tool`` sources are searched either way.
+    use = plan_source_use(agent_type, per_source_list(per_source, "agentic_tool"))
     retrieved_docs: List[Dict[str, Any]] = []
-    try:
-        docs = retriever.search(query)
-        if docs:
-            retrieved_docs = docs
-    except Exception as exc:
-        logger.warning("Headless retrieve failed: %s", exc)
+    prefetch_sources = per_source_list(per_source, use.exposure)
+    # A pre-fetch scoped to an exposure with no source in it searches nothing.
+    if use.prefetch and (use.exposure is None or prefetch_sources):
+        retriever_kwargs: Dict[str, Any] = dict(
+            source=source if use.exposure is None else source_for_docs([e["id"] for e in prefetch_sources]),
+            chat_history=chat_history or [],
+            prompt=prompt,
+            chunks=chunks,
+            doc_token_limit=doc_token_limit,
+            model_id=model_id,
+            user_api_key=user_api_key,
+            agent_id=agent_id,
+            decoded_token=decoded_token,
+        )
+        # Routed per source like a chat's pre-fetch, so each source keeps its
+        # own retriever and retrieval settings.
+        retriever = build_dispatcher(
+            lambda: RetrieverCreator.create_retriever(retriever_kind, **retriever_kwargs),
+            sources=prefetch_sources,
+            **retriever_kwargs,
+        )
+        try:
+            docs = retriever.search(query)
+            if docs:
+                retrieved_docs = docs
+        except Exception as exc:
+            logger.warning("Headless retrieve failed: %s", exc)
 
     tool_executor = ToolExecutor(
         user_api_key=user_api_key,
@@ -291,6 +307,26 @@ def _run_agent_headless(
     }
     if agent_type == "workflow":
         agent_kwargs.update(_workflow_kwargs(agent_config, owner))
+    else:
+        retriever_config = internal_search_config(
+            agent_type,
+            use.agentic_sources,
+            per_source,
+            source,
+            retriever_name=retriever_kind,
+            chunks=chunks,
+            doc_token_limit=doc_token_limit,
+            model_id=model_id,
+            model_user_id=model_user_id,
+            source_owner_id=owner,
+            user_api_key=user_api_key,
+            agent_id=agent_id,
+            llm_name=provider or settings.LLM_PROVIDER,
+            api_key=system_api_key,
+            decoded_token=decoded_token,
+        )
+        if retriever_config is not None:
+            agent_kwargs["retriever_config"] = retriever_config
     agent = AgentCreator.create_agent(agent_type, **agent_kwargs)
     if conversation_id:
         agent.conversation_id = str(conversation_id)

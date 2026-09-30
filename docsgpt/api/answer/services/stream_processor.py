@@ -4,7 +4,7 @@ import json
 import logging
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, TypeVar
+from typing import Any, Callable, Dict, List, NamedTuple, Optional, Set, Tuple, TypeVar
 
 from flask import after_this_request
 
@@ -229,6 +229,117 @@ def authorized_agent_sources(conn: Any, agent: dict) -> Tuple[Optional[dict], Li
     return primary, rows
 
 
+#: Agent types whose model searches sources on demand instead of reading a
+#: pre-fetched document block.
+SEARCHING_AGENT_TYPES = ("agentic", "research")
+
+
+def agent_prompt_id(prompt_id: Any, agent_type: Optional[str]) -> Any:
+    """The prompt a run of ``agent_type`` renders for ``prompt_id``.
+
+    Agentic and research agents get the agentic variant of a preset (search
+    tool guidance instead of a pre-fetched document block); custom prompt
+    ids pass through. A missing id is the default preset.
+    """
+    prompt_id = prompt_id or "default"
+    if agent_type in SEARCHING_AGENT_TYPES and prompt_id in ("default", "creative", "strict"):
+        return f"agentic_{prompt_id}"
+    return prompt_id
+
+
+def source_exposure(retrieval: Any) -> str:
+    """A source's exposure, defaulting to ``prefetch`` (D11)."""
+    value = getattr(retrieval, "exposure", None)
+    if value is None and isinstance(retrieval, dict):
+        value = retrieval.get("exposure")
+    return value or "prefetch"
+
+
+def per_source_list(all_sources: Optional[List[Dict[str, Any]]], exposure: Optional[str] = None) -> list:
+    """Each usable source as ``{"id", "retrieval"}``, optionally one exposure only.
+
+    Args:
+        all_sources: Source entries carrying ``id`` and ``retrieval``.
+        exposure: ``prefetch`` or ``agentic_tool`` to keep only matching
+            sources; None keeps them all.
+    """
+    entries = []
+    for entry in all_sources or []:
+        sid = entry.get("id")
+        if not sid or sid == "default":
+            continue
+        retrieval = entry.get("retrieval")
+        if exposure is not None and source_exposure(retrieval) != exposure:
+            continue
+        entries.append({"id": str(sid), "retrieval": retrieval})
+    return entries
+
+
+def source_for_docs(doc_ids: list) -> Dict[str, Any]:
+    """A retriever ``source`` dict scoped to ``doc_ids``."""
+    return {"active_docs": doc_ids} if doc_ids else {}
+
+
+class SourceUse(NamedTuple):
+    """How one run uses its agent's sources.
+
+    Attributes:
+        prefetch: Whether documents are pre-fetched into the prompt.
+        exposure: The exposure pre-fetch is scoped to; None means every source.
+        agentic_sources: The sources the ``internal_search`` tool is scoped
+            to; None gives an agentic or research agent every source and a
+            classic agent no search tool.
+    """
+
+    prefetch: bool
+    exposure: Optional[str]
+    agentic_sources: Optional[list]
+
+
+def plan_source_use(agent_type: Optional[str], agentic_sources: list) -> SourceUse:
+    """Decide pre-fetch and the search tool's scope from the ``agentic_tool`` sources (D11).
+
+    With no source opted into ``agentic_tool``, agentic and research agents
+    pre-fetch nothing and search every source on demand, while classic
+    agents pre-fetch every source and get no search tool. Otherwise both
+    pre-fetch the ``prefetch`` subset and search the ``agentic_tool`` subset.
+    """
+    if agentic_sources:
+        return SourceUse(True, "prefetch", agentic_sources)
+    if agent_type in SEARCHING_AGENT_TYPES:
+        return SourceUse(False, None, None)
+    return SourceUse(True, None, None)
+
+
+def internal_search_config(
+    agent_type: Optional[str],
+    agentic_sources: Optional[list],
+    all_sources: Optional[List[Dict[str, Any]]],
+    source: Dict[str, Any],
+    **settings_: Any,
+) -> Optional[Dict[str, Any]]:
+    """The ``retriever_config`` that gives a run its ``internal_search`` tool, or None.
+
+    Args:
+        agent_type: The agent's type.
+        agentic_sources: ``SourceUse.agentic_sources``.
+        all_sources: Every source entry of the run.
+        source: The run's retriever ``source`` dict, used when the tool
+            covers every source.
+        **settings_: Retriever, model and identity fields passed through to
+            the tool (``retriever_name``, ``chunks``, ``agent_id``, ...).
+    """
+    if agent_type not in SEARCHING_AGENT_TYPES and not agentic_sources:
+        return None
+    if agentic_sources is not None:
+        tool_sources = agentic_sources
+        tool_source = source_for_docs([entry["id"] for entry in tool_sources])
+    else:
+        tool_sources = per_source_list(all_sources)
+        tool_source = source
+    return {"source": tool_source, "sources": tool_sources, **settings_}
+
+
 def _wiki_write_owner(conn: Any, source_id: str, caller: str) -> Optional[str]:
     """The owner id to write a wiki source as, when ``caller`` may edit it."""
     from docsgpt.api.user.resource_access import resolve
@@ -418,54 +529,19 @@ class StreamProcessor:
 
         agent_type = self.agent_config.get("agent_type", "classic")
 
-        # Agentic/research agents (D11): partition sources by exposure. With no
-        # source opting into ``agentic_tool`` the agent behaves exactly as today
-        # (no pre-fetch; the LLM searches all sources on demand). When at least
-        # one source is ``agentic_tool``, pre-fetch the ``prefetch`` subset into
-        # the prompt and expose only the ``agentic_tool`` subset via the search
-        # tool — one agent mixing both modes.
-        if agent_type in ("agentic", "research"):
-            _, agentic_sources = self._exposure_partition()
-            if agentic_sources:
-                docs_together, docs_list = self.pre_fetch_docs(
-                    question, exposure="prefetch"
-                )
-                tools_data = self.pre_fetch_tools()
-                return self.create_agent(
-                    docs_together=docs_together,
-                    docs=docs_list,
-                    tools_data=tools_data,
-                    agentic_sources=agentic_sources,
-                )
-            tools_data = self.pre_fetch_tools()
-            return self.create_agent(tools_data=tools_data)
-
-        # Classic agents (D11): partition sources by exposure. Pre-fetch the
-        # ``prefetch`` subset into the prompt and expose the ``agentic_tool``
-        # subset via the internal_search tool. ``agentic_sources`` is empty when
-        # no source opts into ``agentic_tool`` (the default) or when no
-        # per-source detail is known (single-source / no-config requests). In
-        # that case fall back to the unscoped pre-fetch and add no search tool —
-        # behavior is byte-identical to today's classic.
+        # Sources by exposure (D11), decided the same way for a headless run:
+        # see ``plan_source_use``.
         _, agentic_sources = self._exposure_partition()
-        if agentic_sources:
-            docs_together, docs_list = self.pre_fetch_docs(
-                question, exposure="prefetch"
-            )
-            tools_data = self.pre_fetch_tools()
-            return self.create_agent(
-                docs_together=docs_together,
-                docs=docs_list,
-                tools_data=tools_data,
-                agentic_sources=agentic_sources,
-            )
-
-        docs_together, docs_list = self.pre_fetch_docs(question)
+        use = plan_source_use(agent_type, agentic_sources)
+        docs_together, docs_list = None, None
+        if use.prefetch:
+            docs_together, docs_list = self.pre_fetch_docs(question, exposure=use.exposure)
         tools_data = self.pre_fetch_tools()
         return self.create_agent(
             docs_together=docs_together,
             docs=docs_list,
             tools_data=tools_data,
+            agentic_sources=use.agentic_sources,
         )
 
     @_traced_setup
@@ -1251,24 +1327,12 @@ class StreamProcessor:
                 sources whose resolved ``retrieval.exposure`` matches; a missing
                 config defaults to ``prefetch``. When None, include all sources.
         """
-        per_source = []
-        for entry in self.all_sources or []:
-            sid = entry.get("id")
-            if not sid or sid == "default":
-                continue
-            retrieval = entry.get("retrieval")
-            if exposure is not None and self._exposure_of(retrieval) != exposure:
-                continue
-            per_source.append({"id": str(sid), "retrieval": retrieval})
-        return per_source
+        return per_source_list(self.all_sources, exposure)
 
     @staticmethod
     def _exposure_of(retrieval) -> str:
         """Resolve a source's exposure, defaulting to ``prefetch`` (D11)."""
-        value = getattr(retrieval, "exposure", None)
-        if value is None and isinstance(retrieval, dict):
-            value = retrieval.get("exposure")
-        return value or "prefetch"
+        return source_exposure(retrieval)
 
     def _build_wiki_config(self) -> Optional[Dict[str, Any]]:
         """Resolve the WikiTool config for the first writable wiki source.
@@ -1333,9 +1397,7 @@ class StreamProcessor:
 
     def _source_for_docs(self, doc_ids: list) -> Dict[str, Any]:
         """Build a ClassicRAG-style source dict scoped to ``doc_ids``."""
-        if not doc_ids:
-            return {}
-        return {"active_docs": doc_ids}
+        return source_for_docs(doc_ids)
 
     def _exposure_partition(self) -> tuple[list, list]:
         """Split the per-source list into (prefetch, agentic_tool) subsets.
@@ -1684,16 +1746,9 @@ class StreamProcessor:
         if not isinstance(self.agent_config, dict):
             return None
         # PG ``agents.prompt_id`` is NULL for agents that never chose a
-        # prompt — treat missing/empty as the default preset so the
-        # agentic swap below still applies.
-        prompt_id = self.agent_config.get("prompt_id") or "default"
-        # Agentic/research agents use the agentic preset variants (search
-        # tool guidance instead of a pre-fetched document block); custom
-        # prompt ids pass through unchanged.
-        if self.agent_config.get("agent_type") in ("agentic", "research") and (
-            prompt_id in ("default", "creative", "strict")
-        ):
-            prompt_id = f"agentic_{prompt_id}"
+        # prompt; ``agent_prompt_id`` reads that as the default preset, with
+        # the agentic swap applied.
+        prompt_id = agent_prompt_id(self.agent_config.get("prompt_id"), self.agent_config.get("agent_type"))
         try:
             content = get_prompt(prompt_id, self.prompts_collection)
             self._prompt_content, self._persona = resolve_prompt_skeleton(
@@ -2107,50 +2162,31 @@ class StreamProcessor:
 
         # Type-specific kwargs
         # D11: agentic/research always carry a retriever_config; classic carries
-        # one only when an ``agentic_tool`` subset is supplied. A default classic
-        # agent (``agentic_sources is None``) gets NO retriever_config, so
-        # ClassicAgent adds no internal_search tool and stays today's behavior.
-        if agent_type in ("agentic", "research") or agentic_sources:
-            # When an ``agentic_tool`` subset is supplied, scope the search tool
-            # to it; otherwise (agentic/research only) the tool exposes every
-            # source (today's behavior). ``tool_sources`` drives both the source
-            # dict and the per-source dispatch list the InternalSearchTool uses.
-            tool_sources = (
-                agentic_sources
-                if agentic_sources is not None
-                else self._build_per_source_list()
-            )
-            if agentic_sources is not None:
-                agentic_source = self._source_for_docs(
-                    [e["id"] for e in tool_sources]
-                )
-            else:
-                agentic_source = self.source
-            agent_kwargs["retriever_config"] = {
-                "source": agentic_source,
-                "retriever_name": self.retriever_config.get(
-                    "retriever_name", "classic"
-                ),
-                "chunks": self.retriever_config.get("chunks", 6),
-                "doc_token_limit": self.retriever_config.get(
-                    "doc_token_limit", 50000
-                ),
-                # Per-source list so on-demand agentic search dispatches each
-                # source to its configured retriever, matching pre-fetch.
-                "sources": tool_sources,
-                "model_id": self.model_id,
-                "model_user_id": self.model_user_id,
-                # Agent owner — internal_search resolves the agent's sources as
-                # their owner so a team member running a shared agent can read
-                # nested-source structure (the sources aren't theirs).
-                "source_owner_id": self.agent_config.get("user_id"),
-                "user_api_key": self.agent_config["user_api_key"],
-                "agent_id": self.agent_id,
-                "llm_name": provider or settings.LLM_PROVIDER,
-                "api_key": system_api_key,
-                "decoded_token": self.decoded_token,
-                "request_id": self.request_id or self.data.get("request_id"),
-            }
+        # one only when an ``agentic_tool`` subset is supplied, so a default
+        # classic agent adds no internal_search tool.
+        retriever_config = internal_search_config(
+            agent_type,
+            agentic_sources,
+            self.all_sources,
+            self.source,
+            retriever_name=self.retriever_config.get("retriever_name", "classic"),
+            chunks=self.retriever_config.get("chunks", 6),
+            doc_token_limit=self.retriever_config.get("doc_token_limit", 50000),
+            model_id=self.model_id,
+            model_user_id=self.model_user_id,
+            # Agent owner — internal_search resolves the agent's sources as
+            # their owner so a team member running a shared agent can read
+            # nested-source structure (the sources aren't theirs).
+            source_owner_id=self.agent_config.get("user_id"),
+            user_api_key=self.agent_config["user_api_key"],
+            agent_id=self.agent_id,
+            llm_name=provider or settings.LLM_PROVIDER,
+            api_key=system_api_key,
+            decoded_token=self.decoded_token,
+            request_id=self.request_id or self.data.get("request_id"),
+        )
+        if retriever_config is not None:
+            agent_kwargs["retriever_config"] = retriever_config
 
         elif agent_type == "workflow":
             workflow_config = self.agent_config.get("workflow")
