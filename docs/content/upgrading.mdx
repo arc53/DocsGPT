@@ -38,7 +38,7 @@ The standalone Compose file (`docker-compose-standalone.yaml`) no longer runs a 
 
 ## Checkout Compose files: bound to this machine
 
-The checkout Compose files (`deployment/docker-compose.yaml`, `docker-compose-hub.yaml`, `-azure`, `-local` and `-dev`, which `setup.sh` and `setup.ps1` run) now publish Postgres and Redis on `127.0.0.1` only, and the API (7091) and UI (5173) on `DOCSGPT_BIND`, `127.0.0.1` by default. A local install needs no change.
+The checkout Compose files (`deployment/docker-compose.yaml`, `docker-compose-hub.yaml` and `-dev`; `setup.sh` and `setup.ps1` run the hub file) now publish Postgres and Redis on `127.0.0.1` only, and the API (7091) and UI (5173) on `DOCSGPT_BIND`, `127.0.0.1` by default. A local install needs no change.
 
 <Callout type="warning">
   **If other machines open your DocsGPT** (a VPS, a LAN server), add `DOCSGPT_BIND=0.0.0.0` to `.env` in the repository root and start the stack with that file, or it answers only on the server itself:
