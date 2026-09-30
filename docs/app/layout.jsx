@@ -1,5 +1,5 @@
 import { Analytics } from '@vercel/analytics/react';
-import { Banner, Head } from 'nextra/components';
+import { Head } from 'nextra/components';
 import { getPageMap } from 'nextra/page-map';
 import { Footer, Layout, Navbar } from 'nextra-theme-docs';
 import 'nextra-theme-docs/style.css';
@@ -17,7 +17,7 @@ export const metadata = {
     template: '%s - DocsGPT Documentation',
   },
   description:
-    'Use DocsGPT to chat with your data. DocsGPT is a GPT-powered chatbot that can answer questions about your data.',
+    'DocsGPT is an open-source platform for building AI agents and assistants with document retrieval, tools, and multi-model support.',
 };
 
 const navbar = (
@@ -34,7 +34,7 @@ const navbar = (
       </div>
     }
     projectLink={github}
-    chatLink="https://discord.com/invite/n5BX8dh8rU"
+    chatLink="https://discord.gg/vN7YFfdMpj"
   />
 );
 
@@ -78,13 +78,6 @@ export default async function RootLayout({ children }) {
       </Head>
       <body>
         <Layout
-          banner={
-            <Banner storageKey="docs-launch">
-              <div className="flex justify-center items-center gap-2">
-                Welcome to the new DocsGPT docs!
-              </div>
-            </Banner>
-          }
           navbar={navbar}
           footer={footer}
           pageMap={await getPageMap()}
