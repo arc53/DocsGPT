@@ -13,6 +13,8 @@ from docsgpt.core import paths
 COMPOSE_FILE = "docker-compose.yaml"
 RECORD_FILE = "install.json"
 DEFAULT_PORT = 7091
+# What the app uses when API_URL is unset (docsgpt/core/settings/workers.py).
+DEFAULT_API_URL = f"http://localhost:{DEFAULT_PORT}"
 EXPOSURES = ("local", "network", "domain")
 
 PROVIDERS = {
@@ -108,6 +110,7 @@ def plan(
     provider: Optional[Mapping[str, Optional[str]]] = None,
     docling: Optional[bool] = None,
     secret: Optional[Callable[[], str]] = None,
+    lan_ip: Optional[str] = None,
 ) -> dict[str, Optional[str]]:
     """The ``.env`` changes for an ``up``: only keys that change, ``None`` for a key to remove.
 
@@ -116,6 +119,10 @@ def plan(
     for a database that does not exist yet: Postgres reads the password when the
     volume is created, and credentials an existing database already holds are
     sealed with the key it ran with.
+
+    Given ``lan_ip``, ``API_URL`` follows the address DocsGPT is opened at (see
+    :func:`public_api_url`); the worker keeps its own in-stack value from the
+    Compose file.
     """
     secret = secret or (lambda: secrets.token_hex(32))
     wanted: dict[str, Optional[str]] = {"DOCSGPT_IMAGE_TAG": image_tag}
@@ -154,6 +161,11 @@ def plan(
         provider = provider_settings("docsgpt")
     if provider:
         wanted.update(provider)
+    if lan_ip is not None:
+        after = {key: value for key, value in {**existing, **wanted}.items() if value is not None}
+        api_url = public_api_url(existing, after, lan_ip)
+        if api_url != "":
+            wanted["API_URL"] = api_url
 
     return {
         key: value
@@ -176,6 +188,30 @@ def url(env: Mapping[str, str], lan_ip: str) -> str:
         host = lan_ip if bind in _ALL_INTERFACES else bind
         return f"http://{host}:{_port(env)}"
     return f"http://localhost:{_port(env)}"
+
+
+def public_api_url(existing: Mapping[str, str], after: Mapping[str, str], lan_ip: str) -> Optional[str]:
+    """The ``API_URL`` for the settings in ``after``: a URL, ``None`` to remove it, ``""`` to leave it.
+
+    The API builds agent image, webhook, device pairing and MCP OAuth callback
+    URLs from ``API_URL``, and without it they point at ``http://localhost:7091``.
+    It is set to the address :func:`url` prints, and dropped when that is the
+    default anyway. A value the operator wrote (anything other than what this
+    function would have written for the previous settings) is never touched.
+
+    Args:
+        existing: The settings before this ``up``.
+        after: The settings this ``up`` writes.
+        lan_ip: This machine's network address.
+
+    Returns:
+        The new value, ``None`` to remove the key, or ``""`` to leave it as it is.
+    """
+    current = existing.get("API_URL")
+    if current and current != url(existing, lan_ip):
+        return ""
+    wanted = url(after, lan_ip)
+    return None if wanted == DEFAULT_API_URL else wanted
 
 
 def health_url(env: Mapping[str, str]) -> str:

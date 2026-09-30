@@ -125,6 +125,7 @@ class TestUpFirstInstall:
         assert env["DOCSGPT_BIND"] == "0.0.0.0"
         assert env["AUTH_TYPE"] == "simple_jwt"
         assert env["LLM_PROVIDER"] == "anthropic"
+        assert env["API_URL"] == "http://192.168.1.10:7091", "the address the installer prints"
         assert env["API_KEY"] == "sk-ant"
         out = capsys.readouterr().out
         assert "http://192.168.1.10:7091" in out
@@ -137,6 +138,7 @@ class TestUpFirstInstall:
         assert env["COMPOSE_PROFILES"] == "https"
         assert env["DOCSGPT_DOMAIN"] == "docs.example.com"
         assert env["LLM_PROVIDER"] == "openai"
+        assert env["API_URL"] == "https://docs.example.com"
 
     def test_a_missing_api_key_is_an_error_without_a_terminal(self, tmp_path, monkeypatch):
         monkeypatch.delenv("DOCSGPT_API_KEY", raising=False)

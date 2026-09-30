@@ -410,9 +410,13 @@ def _native_up(args, context: Context, directory: Path) -> int:
 
     updates: dict[str, Optional[str]] = {
         "POSTGRES_URI": postgres,
-        "API_URL": f"http://127.0.0.1:{port}",
         "DOCSGPT_PORT": str(port),
     }
+    # The units bind 127.0.0.1. An API_URL the operator pointed elsewhere (a reverse proxy's public
+    # address) stays; one this command wrote follows the port.
+    written = f"http://127.0.0.1:{existing.get('DOCSGPT_PORT') or stack.DEFAULT_PORT}"
+    if existing.get("API_URL") in (None, "", written):
+        updates["API_URL"] = f"http://127.0.0.1:{port}"
     if redis or "CELERY_BROKER_URL" not in existing:
         updates.update(_redis_urls(redis or "redis://localhost:6379"))
     for key in ("INTERNAL_KEY", "JWT_SECRET_KEY"):
@@ -527,6 +531,7 @@ def up(args, context: Optional[Context] = None) -> int:
             port=args.port,
             provider=provider,
             docling=args.docling,
+            lan_ip=context.lan_ip(),
         )
     except ValueError as exc:
         raise DeployError(str(exc)) from exc

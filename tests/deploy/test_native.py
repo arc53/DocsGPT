@@ -143,6 +143,14 @@ class TestNativeUp:
         assert env["API_URL"] == "http://127.0.0.1:7099"
         assert services.units[_names(tmp_path)[0]].arguments[-1] == "7099"
 
+    def test_an_api_url_the_operator_set_is_kept(self, tmp_path):
+        """Behind a reverse proxy the operator points API_URL at the public address; `up` must not undo it."""
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/docsgpt"]
+        assert _run(argv, _native_context()) == 0
+        envfile.update(tmp_path / ".env", {"API_URL": "https://docs.example.com"})
+        assert _run(["up", "--dir", str(tmp_path), "--yes", "--port", "7099"], _native_context()) == 0
+        assert envfile.read(tmp_path / ".env")["API_URL"] == "https://docs.example.com"
+
     def test_a_configured_install_gets_no_new_encryption_key(self, tmp_path):
         """Credentials it already stored are sealed with the key it ran with, so a new one would lock them out."""
         argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/docsgpt"]

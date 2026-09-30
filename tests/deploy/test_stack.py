@@ -4,6 +4,7 @@ from itertools import count
 from pathlib import Path
 
 import pytest
+import yaml
 
 from docsgpt.core import paths
 from docsgpt.deploy import stack
@@ -125,6 +126,62 @@ class TestExposure:
     )
     def test_the_mode_is_read_back_from_the_env(self, env, mode):
         assert stack.exposure(env) == mode
+
+
+class TestPublicApiUrl:
+    """API_URL: the address the API builds agent image, webhook, pairing and MCP OAuth URLs from."""
+
+    def test_network_points_it_at_the_machine_address(self):
+        updates = _first_install(expose="network", lan_ip="10.0.0.5")
+        assert updates["API_URL"] == "http://10.0.0.5:7091"
+
+    def test_domain_points_it_at_https(self):
+        updates = _first_install(domain="docs.example.com", lan_ip="10.0.0.5")
+        assert updates["API_URL"] == "https://docs.example.com"
+
+    def test_local_on_the_default_port_needs_none(self):
+        assert "API_URL" not in _first_install(lan_ip="10.0.0.5")
+
+    def test_local_on_another_port_follows_it(self):
+        assert _first_install(port=8080, lan_ip="10.0.0.5")["API_URL"] == "http://localhost:8080"
+
+    @pytest.mark.parametrize("expose, domain", [("network", None), ("domain", "docs.example.com"), ("local", None)])
+    def test_an_operator_value_is_never_replaced(self, expose, domain):
+        existing = {"API_URL": "https://proxy.example.com", "INTERNAL_KEY": "k", "JWT_SECRET_KEY": "j"}
+        updates = stack.plan(
+            existing, image_tag="x", fresh_database=False, expose=expose, domain=domain, lan_ip="10.0.0.5"
+        )
+        assert "API_URL" not in updates
+
+    def test_a_value_it_wrote_follows_a_move_to_a_domain(self):
+        existing = {"DOCSGPT_BIND": "0.0.0.0", "API_URL": "http://10.0.0.5:7091"}
+        updates = stack.plan(
+            existing, image_tag="x", fresh_database=False, domain="docs.example.com", lan_ip="10.0.0.5"
+        )
+        assert updates["API_URL"] == "https://docs.example.com"
+
+    def test_a_value_it_wrote_is_removed_when_going_back_to_local(self):
+        existing = {
+            "COMPOSE_PROFILES": "https",
+            "DOCSGPT_DOMAIN": "docs.example.com",
+            "API_URL": "https://docs.example.com",
+        }
+        updates = stack.plan(existing, image_tag="x", fresh_database=False, expose="local", lan_ip="10.0.0.5")
+        assert updates["API_URL"] is None
+
+    def test_a_rerun_leaves_it_alone(self):
+        existing = {"DOCSGPT_BIND": "0.0.0.0", "API_URL": "http://10.0.0.5:7091"}
+        assert "API_URL" not in stack.plan(existing, image_tag="x", fresh_database=False, lan_ip="10.0.0.5")
+
+    def test_an_existing_network_install_without_it_gets_it(self):
+        updates = stack.plan({"DOCSGPT_BIND": "0.0.0.0"}, image_tag="x", fresh_database=False, lan_ip="10.0.0.5")
+        assert updates["API_URL"] == "http://10.0.0.5:7091"
+
+    def test_the_worker_keeps_its_in_stack_url(self):
+        """Compose's `environment:` wins over env_file, so the worker still reaches the backend directly."""
+        compose = yaml.safe_load(stack.compose_source().read_text())
+        assert "API_URL=http://backend:7091" in compose["services"]["worker"]["environment"]
+        assert not any(item.startswith("API_URL=") for item in compose["services"]["backend"]["environment"])
 
 
 class TestProviders:
