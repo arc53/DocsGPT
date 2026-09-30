@@ -192,9 +192,13 @@ class TestUpFirstInstall:
         docker = FakeDocker(volumes={"docsgpt_postgres_data"})
         assert _run(["up", "--yes", "--dir", str(tmp_path)], _context(docker)) == 0
         assert "ENCRYPTION_SECRET_KEY" not in envfile.read(tmp_path / ".env")
-        err = capsys.readouterr().err
+        err = " ".join(capsys.readouterr().err.split())
         assert "ENCRYPTION_SECRET_KEY" in err
         assert "docsgpt connectors reencrypt" in err
+        # Run from anywhere: the command names the stack's Compose file.
+        assert f"docker compose -f {tmp_path / 'docker-compose.yaml'} exec backend" in err
+        # Only connections are refused; tool secrets are still stored, under the public key.
+        assert "public default" in err
 
     def test_an_unhealthy_start_points_at_the_logs(self, tmp_path, capsys):
         assert _run(["up", "--yes", "--dir", str(tmp_path)], _context(healthy=False)) == 1

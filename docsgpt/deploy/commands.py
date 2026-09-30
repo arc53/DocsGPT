@@ -548,13 +548,15 @@ def up(args, context: Optional[Context] = None) -> int:
     if env.get("AUTH_TYPE") and not env.get("ENCRYPTION_SECRET_KEY"):
         # Only a fresh database gets a generated key (stack.plan); this one may hold credentials
         # sealed with the public default, so the operator has to rotate onto a key of their own.
+        compose_file = directory / stack.COMPOSE_FILE
         print(
-            "ENCRYPTION_SECRET_KEY is not set, so DocsGPT refuses to store connector, MCP and tool "
-            "credentials. To set it on this existing database, put the new key in ENCRYPTION_SECRET_KEY "
-            "and `default-docsgpt-encryption-key` in ENCRYPTION_SECRET_KEY_PREVIOUS, restart, run "
-            "`docker compose exec backend python -m docsgpt connectors reencrypt` in the stack directory, "
-            "then remove the previous key. Tool, MCP and custom-model keys stored under the old key have to be "
-            "entered again: https://docs.docsgpt.cloud/Deploying/Security#secrets",
+            "ENCRYPTION_SECRET_KEY is not set: DocsGPT refuses to create connections on the Connectors page, "
+            "and tools, MCP servers and custom models store their secrets under the public default key. "
+            "To set it on this existing database, put a new key in ENCRYPTION_SECRET_KEY and "
+            "`default-docsgpt-encryption-key` in ENCRYPTION_SECRET_KEY_PREVIOUS, run `docsgpt up`, then "
+            f"`docker compose -f {compose_file} exec backend python -m docsgpt connectors reencrypt`. Keep the "
+            "previous key while tools or custom models saved before still use it: "
+            "https://docs.docsgpt.cloud/Deploying/Security#secrets",
             file=sys.stderr,
         )
     up_args = ["up", "-d", "--remove-orphans", *recreate]
