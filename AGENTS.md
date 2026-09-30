@@ -17,8 +17,10 @@ For feature work, do **not** assume the environment needs to be recreated.
 > MongoDB is **not** required for the default install. It is only needed if
 > the user opts into the Mongo vector-store backend (`VECTOR_STORE=mongodb`)
 > or is running the one-shot `scripts/db/backfill.py` to migrate existing
-> user data from the legacy Mongo-based install. In those cases, `pymongo`
-> is available as an optional extra, not a core dependency.
+> user data from the legacy Mongo-based install. `pymongo` is not a
+> dependency or an extra: install it separately with
+> `uv pip install 'pymongo>=4.6'` (a later `uv sync` removes it again).
+> The vector store needs Atlas `$vectorSearch`, not a plain `mongo` container.
 
 ## Normal local development commands
 
@@ -27,19 +29,30 @@ Use these commands once the dev prerequisites above are satisfied.
 ### Backend
 
 ```bash
+uv sync                    # deps from uv.lock + the dev group (test tools, ruff) + docsgpt itself, editable
 source .venv/bin/activate  # macOS/Linux
-uv pip install -r docsgpt/requirements.txt  # or: pip install -r docsgpt/requirements.txt
-# Optional extras (not installed by default; each file = core + the extra):
-# uv pip install -r docsgpt/requirements-docling.txt   # docling parser engine (OCR backend, structured output)
-# uv pip install -r docsgpt/requirements-milvus.txt    # VECTOR_STORE=milvus
-# With uv alone: `uv sync --extra docling` (pyproject.toml + uv.lock are the source of truth).
+# pip instead: pip install -r docsgpt/requirements.txt -r tests/requirements.txt && pip install -e .
+# Optional extras (not installed by default); name every extra you want, `uv sync` removes the others:
+# uv sync --extra docling   # docling parser engine (OCR backend, structured output)
+# uv sync --extra milvus    # VECTOR_STORE=milvus
+# pip: pip install -r docsgpt/requirements-docling.txt (or requirements-milvus.txt); each file = core + the extra.
 # `uv pip install -r docsgpt/requirements-docling.txt` needs UV_INDEX_STRATEGY=unsafe-best-match
 # (the file adds the PyTorch CPU index; prefer `uv sync --extra docling`).
 ```
 
+Python 3.12 (`requires-python >=3.12`; CI runs 3.12). A dev `.env` starts from
+`cp .env-template .env` and needs at least `POSTGRES_URI` and `INTERNAL_KEY`
+(see `docs/content/Deploying/Development-Environment.mdx`).
+
 The backend is also an installable package (`pyproject.toml`, hatchling).
-`uv sync` installs it editable and puts a `docsgpt` command on PATH:
-`docsgpt api --reload`, `docsgpt worker`, `docsgpt migrate`,
+`uv sync` (or `pip install -e .`) installs it editable and puts a `docsgpt` command on PATH;
+`python -m docsgpt <command>` works without that step. The quickest dev loop is
+`docsgpt dev`: it runs the API and the worker (with beat) from the checkout, both
+reloading on save, in one terminal; `--ui` adds the Vite dev server and
+`--mock-llm` runs `scripts/mock_llm.py` so no provider key is needed.
+`docsgpt doctor` checks PostgreSQL (reachable, schema current), Redis, the model
+provider and the API port; run it first when something does not start.
+Other commands: `docsgpt api --reload`, `docsgpt worker`, `docsgpt beat`, `docsgpt migrate`,
 `docsgpt grant-admin`, `docsgpt prefetch-models`, `docsgpt verify-offline`. Runtime data (`.env`,
 `inputs/`, `indexes/`) lives in the checkout by default; `DOCSGPT_HOME` moves
 that data home, and `DOCSGPT_ENV_FILE` selects only the `.env` file (see
@@ -151,6 +164,13 @@ npm install
 ruff check .
 python -m pytest
 ```
+
+The suite needs the test dependencies (`uv sync` installs the `dev` group; pip users
+install `tests/requirements.txt`, and pytest-cov is mandatory because `pytest.ini`
+passes `--cov`). DB-backed tests start a throwaway cluster through
+`pytest-postgresql`, so the PostgreSQL server binaries (`pg_ctl`, `initdb`) must be
+on `PATH` or reachable through `pg_config`; a running Postgres is not required.
+See CONTRIBUTING.md "Running the tests".
 
 On **macOS**, run the suite with `KMP_DUPLICATE_LIB_OK=TRUE`:
 
