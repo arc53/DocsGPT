@@ -155,12 +155,21 @@ export default function Conversation() {
   // The mount key the auto-open below last saw; a new one is a chat
   // whose history must not open anything.
   const autoOpenMountKey = useRef<number | null>(null);
-  const prevConversationId = useRef<string | null>(conversationId);
 
   const [companion, setCompanion] = useState<ChatCompanion | null>(null);
   // Keeps the last content on screen while the phone sheet slides out.
   const [shownCompanion, setShownCompanion] = useState(companion);
   if (companion && companion !== shownCompanion) setShownCompanion(companion);
+
+  // The first prompt sent while the chat had no id. The id the server then
+  // assigns belongs to that chat; a chat opened from the sidebar while the
+  // URL is still /c/new starts with another prompt.
+  const [unsavedFirstPrompt, setUnsavedFirstPrompt] = useState<string | null>(
+    null,
+  );
+  const firstPrompt = queries[0]?.prompt ?? null;
+  if (conversationId === null && unsavedFirstPrompt !== firstPrompt)
+    setUnsavedFirstPrompt(firstPrompt);
 
   const [conversationMountKey, setConversationMountKey] = useState(0);
   const [prevMountConversationId, setPrevMountConversationId] = useState<
@@ -170,7 +179,9 @@ export default function Conversation() {
     const isServerAssignedId =
       prevMountConversationId === null &&
       conversationId !== null &&
-      isNewChatRoute;
+      isNewChatRoute &&
+      unsavedFirstPrompt !== null &&
+      unsavedFirstPrompt === firstPrompt;
     setPrevMountConversationId(conversationId);
     if (!isServerAssignedId) {
       // Switching chats keeps this component mounted (a route change
@@ -178,22 +189,9 @@ export default function Conversation() {
       setConversationMountKey((k) => k + 1);
       setQueuedQuestion(null);
       setLastQueryReturnedErr(false);
+      setCompanion(null);
     }
   }
-
-  useEffect(() => {
-    const prevId = prevConversationId.current;
-    // Don't reset when the backend assigns the conversation id mid-stream (null -> id)
-    const isServerAssignedId =
-      prevId === null && conversationId !== null && status === 'loading';
-
-    if (!isServerAssignedId && prevId !== conversationId) {
-      setCompanion(null);
-      lastAutoOpenedArtifactId.current = null;
-    }
-
-    prevConversationId.current = conversationId;
-  }, [conversationId, status]);
 
   const handleFetchAnswer = useCallback(
     ({
@@ -343,13 +341,6 @@ export default function Conversation() {
   }, [queries]);
 
   useEffect(() => {
-    // Avoid auto-opening an artifact from a chat's existing history, on
-    // first mount or when another chat loads.
-    if (autoOpenMountKey.current !== conversationMountKey) {
-      autoOpenMountKey.current = conversationMountKey;
-      return;
-    }
-
     const isNotesOrTodoTool = (toolName?: string) => {
       const t = (toolName ?? '').toLowerCase();
       return t === 'notes' || t === 'todo_list' || t === 'todo';
@@ -368,9 +359,20 @@ export default function Conversation() {
       return null;
     };
 
-    const latest = findLatestCompletedArtifactCall(queries);
+    const found = findLatestCompletedArtifactCall(queries);
+    const latest =
+      found?.artifact_id && isNotesOrTodoTool(found.tool_name) ? found : null;
+
+    // A chat's existing history (first mount, or another chat loaded)
+    // opens nothing. Its latest artifact counts as seen, so the next send
+    // does not open it either; only a new one does.
+    if (autoOpenMountKey.current !== conversationMountKey) {
+      autoOpenMountKey.current = conversationMountKey;
+      lastAutoOpenedArtifactId.current = latest?.artifact_id ?? null;
+      return;
+    }
+
     if (!latest?.artifact_id) return;
-    if (!isNotesOrTodoTool(latest.tool_name)) return;
     if (latest.artifact_id === lastAutoOpenedArtifactId.current) return;
 
     lastAutoOpenedArtifactId.current = latest.artifact_id;
