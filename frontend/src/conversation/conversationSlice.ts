@@ -16,7 +16,7 @@ import { setConversations } from '../preferences/preferenceSlice';
 import type { RootState } from '../store';
 import {
   clearAttachments,
-  selectCompletedAttachments,
+  selectSendableAttachmentIds,
 } from '../upload/uploadSlice';
 import { newIdempotencyKey } from '../utils/idempotency';
 import { appendThoughtText, recordToolCall } from './answerSegments';
@@ -187,9 +187,7 @@ export const fetchAnswer = createAsyncThunk<
   if (arg.attachmentIds !== undefined) {
     attachmentIds = arg.attachmentIds;
   } else {
-    attachmentIds = selectCompletedAttachments(state)
-      .filter((a) => a.id)
-      .map((a) => a.id) as string[];
+    attachmentIds = selectSendableAttachmentIds(state);
     if (attachmentIds.length > 0) {
       dispatch(clearAttachments());
     }

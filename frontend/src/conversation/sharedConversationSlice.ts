@@ -9,7 +9,7 @@ import {
   handleFetchSharedAnswerStreaming,
 } from './conversationHandlers';
 import {
-  selectCompletedAttachments,
+  selectSendableAttachmentIds,
   clearAttachments,
 } from '../upload/uploadSlice';
 
@@ -34,9 +34,7 @@ export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
   async ({ question }, { dispatch, getState, signal }) => {
     const state = getState() as RootState;
 
-    const attachmentIds = selectCompletedAttachments(state)
-      .filter((a) => a.id)
-      .map((a) => a.id) as string[];
+    const attachmentIds = selectSendableAttachmentIds(state);
 
     if (attachmentIds.length > 0) {
       dispatch(clearAttachments());

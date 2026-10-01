@@ -2027,6 +2027,7 @@
       "attach": "Adjuntar",
       "remove": "Eliminar adjunto",
       "uploadFailed": "Error al subir. No se pudo leer el archivo o se perdió la conexión.",
+      "tooLarge": "Demasiado grande para adjuntar (límite {{size}} MB)",
       "attached": "Adjunto",
       "failed": "Error",
       "attachment": "Adjunto"

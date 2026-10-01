@@ -7,7 +7,6 @@ import {
   hasAttachmentParser,
   looksLikeText,
   parseUploadErrorMessage,
-  parseUploadErrorsByIndex,
   partitionAttachmentFiles,
 } from './fileUpload';
 
@@ -201,40 +200,5 @@ describe('parseUploadErrorMessage', () => {
     expect(parseUploadErrorMessage('<html>502</html>')).toBeUndefined();
     expect(parseUploadErrorMessage('{"ok":1}')).toBeUndefined();
     expect(parseUploadErrorMessage('')).toBeUndefined();
-  });
-});
-
-describe('parseUploadErrorsByIndex', () => {
-  it('keys each reason by its upload_index', () => {
-    const byIndex = parseUploadErrorsByIndex(
-      JSON.stringify({
-        success: false,
-        message: 'Unsupported file type: .mp4',
-        errors: [
-          {
-            upload_index: 0,
-            filename: 'clip.mp4',
-            error: 'Unsupported file type: .mp4',
-          },
-          {
-            upload_index: 1,
-            filename: 'a.zip',
-            error: 'Unsupported file type: .zip',
-          },
-        ],
-      }),
-    );
-    // Without this, both chips would repeat the first file's reason.
-    expect(byIndex.get(0)).toBe('Unsupported file type: .mp4');
-    expect(byIndex.get(1)).toBe('Unsupported file type: .zip');
-  });
-
-  it('is empty for bodies with no usable errors array', () => {
-    expect(parseUploadErrorsByIndex('<html>502</html>').size).toBe(0);
-    expect(parseUploadErrorsByIndex('{"message":"nope"}').size).toBe(0);
-    expect(parseUploadErrorsByIndex('').size).toBe(0);
-    expect(
-      parseUploadErrorsByIndex('{"errors":[{"error":"no index"}]}').size,
-    ).toBe(0);
   });
 });

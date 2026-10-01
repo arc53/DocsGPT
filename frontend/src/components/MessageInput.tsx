@@ -62,14 +62,17 @@ import {
   ToolsTrigger,
 } from './message-input';
 import { useArmedSend } from './message-input/armedSend';
-import { guardUploadStall } from './message-input/uploadStallGuard';
+import {
+  ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_UPLOAD_CONCURRENCY,
+  createTaskQueue,
+  uploadAttachmentFile,
+} from './message-input/attachmentUpload';
 import { cannotReadAttachment } from './message-input/attachmentReadability';
 import { handleAbort } from '../conversation/conversationSlice';
 import {
   AUDIO_FILE_ACCEPT_ATTR,
   getFileExtension,
-  parseUploadErrorMessage,
-  parseUploadErrorsByIndex,
   partitionAttachmentFiles,
 } from '../constants/fileUpload';
 import { UserToolType } from '../settings/types';
@@ -543,16 +546,44 @@ export default function MessageInput({
     [dispatch, store],
   );
 
+  const uploadQueueRef = useRef<ReturnType<typeof createTaskQueue> | null>(
+    null,
+  );
+  const getUploadQueue = useCallback(() => {
+    uploadQueueRef.current ??= createTaskQueue(ATTACHMENT_UPLOAD_CONCURRENCY);
+    return uploadQueueRef.current;
+  }, []);
+
   const uploadFiles = useCallback(
     async (incomingFiles: File[]) => {
       if (!incomingFiles || incomingFiles.length === 0) return;
+
+      // The size limit applies the same way to picked, dropped and pasted
+      // files, and a refused file shows as a failed chip that says why.
+      const withinLimit = incomingFiles.filter((file) => {
+        if (file.size <= ATTACHMENT_MAX_BYTES) return true;
+        dispatch(
+          addAttachment({
+            id: generateId(),
+            fileName: file.name,
+            progress: 0,
+            status: 'failed' as const,
+            taskId: '',
+            errorMessage: t('conversation.attachments.tooLarge', {
+              size: Math.round(ATTACHMENT_MAX_BYTES / (1024 * 1024)),
+            }),
+          }),
+        );
+        return false;
+      });
+      if (withinLimit.length === 0) return;
 
       // Run the server's own rule here, not just the input's `accept`:
       // mobile pickers ignore `accept`, and a file the server will refuse
       // should say so before it costs an upload. Surface the refusal as a
       // failed chip so the user sees why instead of a silent drop.
       const { supported, unsupported } =
-        await partitionAttachmentFiles(incomingFiles);
+        await partitionAttachmentFiles(withinLimit);
       unsupported.forEach((file) => {
         dispatch(
           addAttachment({
@@ -570,435 +601,68 @@ export default function MessageInput({
       if (supported.length === 0) return;
       const files = supported;
 
-      const apiHost = envVar('VITE_API_HOST');
+      const url = `${envVar('VITE_API_HOST')}${endpoints.USER.STORE_ATTACHMENT}`;
       const uploadFailedMessage = t('conversation.attachments.uploadFailed');
 
-      if (files.length > 1) {
-        const formData = new FormData();
-        const indexToUiId: Record<number, string> = {};
-
-        files.forEach((file, i) => {
-          formData.append('file', file);
-          const uiId = generateId();
-          indexToUiId[i] = uiId;
-          dispatch(
-            addAttachment({
-              id: uiId,
-              fileName: file.name,
-              progress: 0,
-              status: 'uploading' as const,
-              taskId: '',
-            }),
-          );
-        });
-
-        const xhr = new XMLHttpRequest();
-
-        xhr.upload.addEventListener('progress', (event) => {
-          if (event.lengthComputable) {
-            const progress = Math.round((event.loaded / event.total) * 100);
-            Object.values(indexToUiId).forEach((uiId) =>
-              dispatch(
-                updateAttachment({
-                  id: uiId,
-                  updates: { progress },
-                }),
-              ),
-            );
-          }
-        });
-
-        xhr.onload = () => {
-          const status = xhr.status;
-          if (status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-
-              if (Array.isArray(response?.tasks)) {
-                const tasks = response.tasks as Array<{
-                  task_id?: string;
-                  filename?: string;
-                  attachment_id?: string;
-                  path?: string;
-                  upload_index?: number;
-                }>;
-                const errors = Array.isArray(response?.errors)
-                  ? (response.errors as Array<{
-                      filename?: string;
-                      error?: string;
-                      upload_index?: number;
-                    }>)
-                  : [];
-                const hasIndexedResults =
-                  tasks.some((task) => typeof task.upload_index === 'number') ||
-                  errors.some(
-                    (errorItem) => typeof errorItem.upload_index === 'number',
-                  );
-
-                if (hasIndexedResults) {
-                  const tasksByIndex = new Map<
-                    number,
-                    (typeof tasks)[number]
-                  >();
-                  const failedIndices = new Set<number>();
-
-                  tasks.forEach((task, taskOrderIndex) => {
-                    const uploadIndex =
-                      typeof task.upload_index === 'number'
-                        ? task.upload_index
-                        : taskOrderIndex;
-                    tasksByIndex.set(uploadIndex, task);
-                  });
-
-                  const errorsByIndex = new Map<number, string | undefined>();
-                  errors.forEach((errorItem) => {
-                    if (typeof errorItem.upload_index === 'number') {
-                      failedIndices.add(errorItem.upload_index);
-                      errorsByIndex.set(
-                        errorItem.upload_index,
-                        errorItem.error,
-                      );
-                    }
-                  });
-
-                  files.forEach((_, index) => {
-                    const uiId = indexToUiId[index];
-                    if (!uiId) return;
-
-                    const task = tasksByIndex.get(index);
-                    if (task?.task_id) {
-                      dispatch(
-                        updateAttachment({
-                          id: uiId,
-                          updates: {
-                            taskId: task.task_id,
-                            // Stash the server's attachment id so SSE
-                            // ``attachment.*`` events can match this
-                            // row by ``scope.id`` and drive the
-                            // per-attachment push-fresh poll gate.
-                            attachmentId: task.attachment_id,
-                            status: 'processing',
-                            progress: 10,
-                          },
-                        }),
-                      );
-                      if (task.attachment_id) {
-                        trackAttachment(uiId, task.attachment_id);
-                      }
-                      return;
-                    }
-
-                    if (failedIndices.has(index)) {
-                      dispatch(
-                        updateAttachment({
-                          id: uiId,
-                          updates: {
-                            status: 'failed',
-                            errorMessage: errorsByIndex.get(index),
-                          },
-                        }),
-                      );
-                      return;
-                    }
-
-                    dispatch(
-                      updateAttachment({
-                        id: uiId,
-                        updates: { status: 'failed' },
-                      }),
-                    );
-                  });
-                } else {
-                  tasks.forEach((t, idx) => {
-                    const uiId = indexToUiId[idx];
-                    if (!uiId) return;
-                    if (t?.task_id) {
-                      dispatch(
-                        updateAttachment({
-                          id: uiId,
-                          updates: {
-                            taskId: t.task_id,
-                            attachmentId: t.attachment_id,
-                            status: 'processing',
-                            progress: 10,
-                          },
-                        }),
-                      );
-                      if (t.attachment_id) {
-                        trackAttachment(uiId, t.attachment_id);
-                      }
-                    } else {
-                      dispatch(
-                        updateAttachment({
-                          id: uiId,
-                          updates: { status: 'failed' },
-                        }),
-                      );
-                    }
-                  });
-
-                  if (tasks.length < files.length) {
-                    for (let i = tasks.length; i < files.length; i++) {
-                      const uiId = indexToUiId[i];
-                      if (uiId) {
-                        dispatch(
-                          updateAttachment({
-                            id: uiId,
-                            updates: { status: 'failed' },
-                          }),
-                        );
-                      }
-                    }
-                  }
-                }
-              } else if (response?.task_id) {
-                if (files.length === 1) {
-                  const uiId = indexToUiId[0];
-                  if (uiId) {
-                    dispatch(
-                      updateAttachment({
-                        id: uiId,
-                        updates: {
-                          taskId: response.task_id,
-                          attachmentId: response.attachment_id,
-                          status: 'processing',
-                          progress: 10,
-                        },
-                      }),
-                    );
-                    if (response.attachment_id) {
-                      trackAttachment(uiId, response.attachment_id);
-                    }
-                  }
-                } else {
-                  console.warn(
-                    'Server returned a single task_id for multiple files. Update backend to return tasks[].',
-                  );
-                  const firstUi = indexToUiId[0];
-                  if (firstUi) {
-                    dispatch(
-                      updateAttachment({
-                        id: firstUi,
-                        updates: {
-                          taskId: response.task_id,
-                          status: 'processing',
-                          progress: 10,
-                        },
-                      }),
-                    );
-                  }
-                  for (let i = 1; i < files.length; i++) {
-                    const uiId = indexToUiId[i];
-                    if (uiId) {
-                      dispatch(
-                        updateAttachment({
-                          id: uiId,
-                          updates: { status: 'failed' },
-                        }),
-                      );
-                    }
-                  }
-                }
-              } else {
-                console.error('Unexpected upload response shape', response);
-                Object.values(indexToUiId).forEach((id) =>
-                  dispatch(
-                    updateAttachment({
-                      id,
-                      updates: { status: 'failed' },
-                    }),
-                  ),
-                );
-              }
-            } catch (err) {
-              console.error(
-                'Failed to parse upload response',
-                err,
-                xhr.responseText,
-              );
-              Object.values(indexToUiId).forEach((id) =>
-                dispatch(
-                  updateAttachment({
-                    id,
-                    updates: { status: 'failed' },
-                  }),
-                ),
-              );
-            }
-          } else {
-            console.error('Upload failed', status, xhr.responseText);
-            // Each file gets its own reason where the server sent one; the
-            // top-level message is the fallback, not the answer for all of
-            // them — a batch can fail two files for two different reasons.
-            const fallbackMessage = parseUploadErrorMessage(xhr.responseText);
-            const errorsByIndex = parseUploadErrorsByIndex(xhr.responseText);
-            Object.entries(indexToUiId).forEach(([index, id]) =>
-              dispatch(
-                updateAttachment({
-                  id,
-                  updates: {
-                    status: 'failed',
-                    errorMessage:
-                      errorsByIndex.get(Number(index)) ?? fallbackMessage,
-                  },
-                }),
-              ),
-            );
-          }
-        };
-
-        // No response at all (status 0): a file the browser couldn't read,
-        // a dropped connection, or a stall the guard aborted.
-        xhr.onerror =
-          xhr.onabort =
-          xhr.ontimeout =
-            () => {
-              console.error('Upload network error');
-              Object.values(indexToUiId).forEach((id) =>
-                dispatch(
-                  updateAttachment({
-                    id,
-                    updates: {
-                      status: 'failed',
-                      errorMessage: uploadFailedMessage,
-                    },
-                  }),
-                ),
-              );
-            };
-
-        xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
-        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-        guardUploadStall(xhr);
-        xhr.send(formData);
-        return;
-      }
-
-      // Single-file path: upload each file individually (original repo behavior)
+      // One request per file, a few at a time: each file gets its own
+      // progress, its own error and its own response, so a slow or refused
+      // file never holds back or fails the rest of the set.
       files.forEach((file) => {
-        const formData = new FormData();
-        formData.append('file', file);
-        const xhr = new XMLHttpRequest();
-        const uniqueId = generateId();
+        const uiId = generateId();
+        dispatch(
+          addAttachment({
+            id: uiId,
+            fileName: file.name,
+            progress: 0,
+            status: 'uploading' as const,
+            taskId: '',
+          }),
+        );
 
-        const newAttachment = {
-          id: uniqueId,
-          fileName: file.name,
-          progress: 0,
-          status: 'uploading' as const,
-          taskId: '',
-        };
-
-        dispatch(addAttachment(newAttachment));
-
-        xhr.upload.addEventListener('progress', (event) => {
-          if (event.lengthComputable) {
-            const progress = Math.round((event.loaded / event.total) * 100);
+        getUploadQueue().push(async () => {
+          // Removed from the composer while it waited for a slot.
+          if (!store.getState().upload.attachments.some((a) => a.id === uiId))
+            return;
+          const outcome = await uploadAttachmentFile(file, {
+            url,
+            token,
+            onProgress: (progress) =>
+              dispatch(updateAttachment({ id: uiId, updates: { progress } })),
+          });
+          if (outcome.kind === 'stored') {
             dispatch(
               updateAttachment({
-                id: uniqueId,
-                updates: { progress },
-              }),
-            );
-          }
-        });
-
-        xhr.onload = () => {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              if (response.task_id) {
-                dispatch(
-                  updateAttachment({
-                    id: uniqueId,
-                    updates: {
-                      taskId: response.task_id,
-                      attachmentId: response.attachment_id,
-                      status: 'processing',
-                      progress: 10,
-                    },
-                  }),
-                );
-                if (response.attachment_id) {
-                  trackAttachment(uniqueId, response.attachment_id);
-                }
-              } else {
-                // If backend returned tasks[] for single-file, handle gracefully:
-                if (
-                  Array.isArray(response?.tasks) &&
-                  response.tasks[0]?.task_id
-                ) {
-                  dispatch(
-                    updateAttachment({
-                      id: uniqueId,
-                      updates: {
-                        taskId: response.tasks[0].task_id,
-                        attachmentId: response.tasks[0].attachment_id,
-                        status: 'processing',
-                        progress: 10,
-                      },
-                    }),
-                  );
-                  if (response.tasks[0].attachment_id) {
-                    trackAttachment(uniqueId, response.tasks[0].attachment_id);
-                  }
-                } else {
-                  dispatch(
-                    updateAttachment({
-                      id: uniqueId,
-                      updates: { status: 'failed' },
-                    }),
-                  );
-                }
-              }
-            } catch (err) {
-              console.error(
-                'Failed to parse upload response',
-                err,
-                xhr.responseText,
-              );
-              dispatch(
-                updateAttachment({
-                  id: uniqueId,
-                  updates: { status: 'failed' },
-                }),
-              );
-            }
-          } else {
-            dispatch(
-              updateAttachment({
-                id: uniqueId,
+                id: uiId,
                 updates: {
-                  status: 'failed',
-                  errorMessage: parseUploadErrorMessage(xhr.responseText),
+                  taskId: outcome.taskId,
+                  // ``attachment.*`` events match the row by this id.
+                  attachmentId: outcome.attachmentId,
+                  status: 'processing',
+                  progress: 10,
                 },
               }),
             );
+            if (outcome.attachmentId) {
+              trackAttachment(uiId, outcome.attachmentId);
+            }
+            return;
           }
-        };
-
-        xhr.onerror =
-          xhr.onabort =
-          xhr.ontimeout =
-            () => {
-              dispatch(
-                updateAttachment({
-                  id: uniqueId,
-                  updates: {
-                    status: 'failed',
-                    errorMessage: uploadFailedMessage,
-                  },
-                }),
-              );
-            };
-
-        xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
-        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-        guardUploadStall(xhr);
-        xhr.send(formData);
+          dispatch(
+            updateAttachment({
+              id: uiId,
+              updates: {
+                status: 'failed',
+                errorMessage:
+                  outcome.kind === 'network'
+                    ? uploadFailedMessage
+                    : outcome.message,
+              },
+            }),
+          );
+        });
       });
     },
-    [dispatch, t, token, trackAttachment],
+    [dispatch, getUploadQueue, store, t, token, trackAttachment],
   );
 
   const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1034,11 +698,11 @@ export default function MessageInput({
     onDragLeave: () => {
       setHandleDragActive(false);
     },
-    maxSize: 25000000,
-    // No `accept`: react-dropzone would drop a rejected file on the floor
-    // with no feedback, and its mime matching disagrees with the server for
-    // text files that have no parser (.py, .log). uploadFiles applies the
-    // server's rule and reports what it refuses.
+    // No `accept` and no `maxSize`: react-dropzone would drop a rejected
+    // file on the floor with no feedback, and its mime matching disagrees
+    // with the server for text files that have no parser (.py, .log).
+    // uploadFiles applies the type and size rules to every path (picker,
+    // drop, paste) and reports what it refuses.
   });
 
   const handleInput = useCallback(() => {
