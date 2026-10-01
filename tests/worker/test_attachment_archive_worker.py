@@ -228,7 +228,20 @@ class TestZipAttachment:
             _run(info)
 
         assert events[-1][0] == "attachment.failed"
+        assert events[-1][1]["code"] == "too_large"
+        assert "ratio" not in events[-1][1]["error"]
         assert _parent(info)["metadata"]["extraction"]["status"] == "failed"
+
+    def test_an_unreadable_zip_fails_with_its_code(self, storage_dir, events):
+        from docsgpt.worker import AttachmentRejectedError
+
+        info = _upload(storage_dir, b"PK\x03\x04 not really a zip")
+
+        with pytest.raises(AttachmentRejectedError):
+            _run(info)
+
+        assert events[-1][0] == "attachment.failed"
+        assert events[-1][1]["code"] == "archive_unreadable"
 
 
 def _member_names(queue):

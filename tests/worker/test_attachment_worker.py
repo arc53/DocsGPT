@@ -389,6 +389,7 @@ class TestAttachmentTypeGuard:
 
         failed = [payload for name, payload in events if name == "attachment.failed"]
         assert failed and failed[0]["error"] == "Unsupported file type: .mp4"
+        assert failed[0]["code"] == "unsupported_type"
 
     def test_suffix_the_loaded_extractor_cannot_parse_is_refused(
         self, pg_conn, patch_worker_db, task_self, monkeypatch, tmp_path
@@ -436,6 +437,7 @@ class TestAttachmentTypeGuard:
 
         failed = [payload for name, payload in events if name == "attachment.failed"]
         assert failed and failed[0]["error"] == "Unsupported file type: .vtt"
+        assert failed[0]["code"] == "unsupported_type"
 
     def test_scanned_pdf_completes_without_text_for_models_that_read_it_natively(
         self, pg_conn, patch_worker_db, task_self, monkeypatch

@@ -313,9 +313,13 @@ def _emit_attachment_poison_event(task_name, bound):
         return
     from docsgpt.events.publisher import publish_user_event
     from docsgpt.parser.file.constants import is_attachment_archive
-    from docsgpt.worker import record_archive_task_failure, record_attachment_failure
+    from docsgpt.worker import (
+        ATTACHMENT_FAILURE_MESSAGES,
+        record_archive_task_failure,
+        record_attachment_failure,
+    )
 
-    error = "Attachment processing stopped after repeated failures."
+    error = ATTACHMENT_FAILURE_MESSAGES["repeated_failures"]
     if is_attachment_archive(file_info.get("filename")):
         # Keeps the zip's member bookkeeping, which a plain failure row
         # would overwrite.
@@ -328,6 +332,7 @@ def _emit_attachment_poison_event(task_name, bound):
         {
             "attachment_id": str(attachment_id),
             "filename": file_info.get("filename") or "",
+            "code": "repeated_failures",
             "error": error,
         },
         scope={"kind": "attachment", "id": str(attachment_id)},

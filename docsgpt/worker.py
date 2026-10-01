@@ -5,10 +5,12 @@ import json
 import logging
 import mimetypes
 import os
+import re
 import shutil
 import string
 import tempfile
 import threading
+import traceback
 from typing import Any, Dict, List, Optional, Tuple
 
 import uuid
@@ -26,7 +28,7 @@ from docsgpt.parser.embedding_pipeline import (
     assert_index_complete,
     embed_and_store_documents,
 )
-from docsgpt.parser.file.base_parser import NoTextLayerError
+from docsgpt.parser.file.base_parser import DocumentParseError, NoTextLayerError
 from docsgpt.parser.file.bulk import SimpleDirectoryReader, get_default_file_extractor
 from docsgpt.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS, is_attachment_archive
 from docsgpt.parser.file.image_parser import (
@@ -1639,7 +1641,86 @@ class AttachmentRejectedError(Exception):
 
     Raised before parsing and marked non-retryable on the Celery task so a
     poison upload fails once instead of retrying identically.
+
+    Attributes:
+        code: The ``attachment.failed`` code it maps to (a key of
+            ``ATTACHMENT_FAILURE_MESSAGES``), or None for a generic rejection.
     """
+
+    def __init__(self, message: str, code: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+# What the browser is told when an attachment fails: a stable code (the UI
+# may localize by it) and a short English message. The exception's own text
+# (paths, parser internals, sometimes the file's bytes) stays in the logs.
+ATTACHMENT_FAILURE_MESSAGES = {
+    "unsupported_type": "This file type is not supported.",
+    "too_large": "This file is too large to process.",
+    "archive_unreadable": "This zip file is damaged, encrypted or not a valid zip.",
+    "no_text": "No text could be read from this file. It may be a scanned document.",
+    "timeout": "Reading this file took too long.",
+    "storage": "The uploaded file could not be read from storage.",
+    "parse_failed": "This file could not be read. It may be damaged.",
+    "rejected": "This file cannot be processed.",
+    "processing_failed": "This file could not be processed.",
+    "repeated_failures": "Processing stopped after repeated failures.",
+}
+# Longest exception text a failure log line keeps; base64 runs are dropped.
+_FAILURE_LOG_CHARS = 500
+_FAILURE_TRACEBACK_CHARS = 4000
+_BASE64_RUN = re.compile(r"[A-Za-z0-9+/=_-]{120,}")
+
+
+def _is_storage_error(error: BaseException) -> bool:
+    """Whether ``error`` came from reading the stored upload."""
+    module = type(error).__module__ or ""
+    return isinstance(error, FileNotFoundError) or module.startswith(("botocore", "boto3", "s3transfer"))
+
+
+def attachment_failure(error: BaseException, filename: Optional[str]) -> Dict[str, str]:
+    """The ``code`` and user-safe ``error`` of a failed attachment's event.
+
+    Args:
+        error: Why it failed.
+        filename: The upload's filename (named in the unsupported-type
+            message, as the upload route names it).
+
+    Returns:
+        ``{"code": ..., "error": ...}``; the message never carries the
+        exception's text.
+    """
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    from docsgpt.upload_limits import UnsupportedUploadTypeError, unsupported_upload_message
+
+    if isinstance(error, AttachmentRejectedError):
+        code = error.code if error.code in ATTACHMENT_FAILURE_MESSAGES else "rejected"
+    elif isinstance(error, UnsupportedUploadTypeError):
+        code = "unsupported_type"
+    elif isinstance(error, NoTextLayerError):
+        code = "no_text"
+    elif isinstance(error, (SoftTimeLimitExceeded, TimeoutError)):
+        code = "timeout"
+    elif isinstance(error, DocumentParseError):
+        code = "parse_failed"
+    elif _is_storage_error(error):
+        code = "storage"
+    else:
+        code = "processing_failed"
+    if code == "unsupported_type":
+        return {"code": code, "error": unsupported_upload_message(filename)}
+    return {"code": code, "error": ATTACHMENT_FAILURE_MESSAGES[code]}
+
+
+def _failure_log_text(error: BaseException) -> str:
+    """An exception for a log line: its text on one line, bounded, without
+    base64 payloads, then the traceback's frames (which hold no message)."""
+    text = " ".join(str(error).split())
+    text = _BASE64_RUN.sub("[long token omitted]", text)
+    frames = "".join(traceback.format_tb(error.__traceback__))[-_FAILURE_TRACEBACK_CHARS:]
+    return f"{type(error).__name__}: {text[:_FAILURE_LOG_CHARS]}\n{frames}".rstrip()
 
 
 def _reject_unparseable_attachment(
@@ -1663,7 +1744,7 @@ def _reject_unparseable_attachment(
     try:
         enforce_parseable_attachment(local_path, filename, parser_extensions)
     except UnsupportedUploadTypeError as exc:
-        raise AttachmentRejectedError(str(exc)) from exc
+        raise AttachmentRejectedError(str(exc), code="unsupported_type") from exc
 
 
 def _reject_attachment_zip_bomb(local_path: str) -> None:
@@ -1683,7 +1764,7 @@ def _reject_attachment_zip_bomb(local_path: str) -> None:
 
     reason = reject_zip_bomb_path(local_path)
     if reason is not None:
-        raise AttachmentRejectedError(reason)
+        raise AttachmentRejectedError(reason, code="too_large")
 
 
 def _readable_without_text(filename: str) -> bool:
@@ -2224,9 +2305,8 @@ def _single_attachment_worker(self, file_info, user, *, emit_events: bool = True
         }
     except Exception as e:
         logging.error(
-            f"Error processing file {filename}: {e}",
+            f"Error processing file {filename}: {_failure_log_text(e)}",
             extra={"user": user},
-            exc_info=True,
         )
         record_attachment_failure(user, file_info, e, parser=parser_name)
         publish(
@@ -2235,7 +2315,7 @@ def _single_attachment_worker(self, file_info, user, *, emit_events: bool = True
             {
                 "attachment_id": str(attachment_id),
                 "filename": filename,
-                "error": str(e)[:1024],
+                **attachment_failure(e, filename),
             },
             scope={"kind": "attachment", "id": str(attachment_id)},
         )
@@ -2977,7 +3057,8 @@ def _archive_attachment_worker(self, file_info, user):
         try:
             expansion = storage.process_file(relative_path, _expand)
         except ArchiveRejectedError as exc:
-            raise AttachmentRejectedError(str(exc)) from exc
+            code = "too_large" if exc.reason == "zip_bomb" else "archive_unreadable"
+            raise AttachmentRejectedError(str(exc), code=code) from exc
 
         content_hash = fingerprint.get("content_hash")
         base_metadata = {**metadata, **({"content_hash": content_hash} if content_hash else {})}
@@ -3030,12 +3111,12 @@ def _archive_attachment_worker(self, file_info, user):
             "members": len(planned),
         }
     except Exception as e:
-        logging.error(f"Error unpacking archive {filename}: {e}", extra={"user": user}, exc_info=True)
+        logging.error(f"Error unpacking archive {filename}: {_failure_log_text(e)}", extra={"user": user})
         _record_archive_failure(user, file_info, parent_id, e)
         publish_user_event(
             user,
             "attachment.failed",
-            {"attachment_id": str(attachment_id), "filename": filename, "error": str(e)[:1024]},
+            {"attachment_id": str(attachment_id), "filename": filename, **attachment_failure(e, filename)},
             scope=scope,
         )
         raise
