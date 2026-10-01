@@ -94,10 +94,27 @@ class TestComputeBudget:
 
     def test_free_space_caps_the_budget(self):
         budget = compute_attachment_budget(
-            window=100_000, share=0.9, system_tokens=10_000, query_tokens=5_000
+            window=100_000, share=0.9, system_tokens=10_000, query_tokens=5_000, compression_threshold=None
         )
         # 10% of the window is kept for the answer.
         assert budget == 100_000 - 10_000 - 10_000 - 5_000
+
+    def test_the_turn_stays_under_the_compression_threshold(self):
+        from docsgpt.agents.attachment_budget import COMPRESSION_MARGIN_SHARE
+
+        budget = compute_attachment_budget(
+            window=100_000, share=0.9, system_tokens=10_000, history_tokens=20_000, compression_threshold=0.8
+        )
+        # A margin below the threshold is left for the first tool round.
+        assert budget == int(100_000 * (0.8 - COMPRESSION_MARGIN_SHARE)) - 10_000 - 20_000
+
+    def test_the_compression_threshold_defaults_to_the_setting(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "COMPRESSION_THRESHOLD_PERCENTAGE", 0.6)
+        assert compute_attachment_budget(window=100_000, share=0.9) == compute_attachment_budget(
+            window=100_000, share=0.9, compression_threshold=0.6
+        )
 
     def test_post_compression_history_is_budgeted_against(self):
         without = compute_attachment_budget(window=100_000, share=0.9)

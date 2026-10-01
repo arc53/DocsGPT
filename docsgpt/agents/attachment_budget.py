@@ -57,6 +57,11 @@ SPREADSHEET_PREVIEW_TOKENS = 1000
 DOCS_RESERVE_SHARE = 0.15
 # Share of the window kept free for the answer.
 OUTPUT_RESERVE_SHARE = 0.1
+# Share of the window kept below the compression threshold, so a turn that
+# fills its attachment budget still has room for its first tool round before
+# the tool loop compresses.
+COMPRESSION_MARGIN_SHARE = 0.05
+_SETTING = object()
 
 SPREADSHEET_EXTENSIONS = frozenset({".csv", ".tsv", ".xlsx", ".xlsm", ".xls", ".ods"})
 SPREADSHEET_MIME_TYPES = frozenset(
@@ -217,13 +222,17 @@ def compute_attachment_budget(
     history_tokens: int = 0,
     query_tokens: int = 0,
     docs_tokens: int = 0,
+    compression_threshold: Any = _SETTING,
 ) -> int:
     """Tokens this turn's attachments may take.
 
     The smaller of ``share`` of the window and the free space left after the
     system prompt (compressed summary included), the post-compression
     history, a bounded reserve for retrieved documents, the answer's reserve
-    and the query.
+    and the query. Free space ends below the compression threshold (less
+    ``COMPRESSION_MARGIN_SHARE``) when that comes first: the tool loop
+    compresses once the context crosses it, and a turn that filled its
+    budget would otherwise compress before its first tool call.
 
     Args:
         window: The model's context window.
@@ -232,16 +241,24 @@ def compute_attachment_budget(
         history_tokens: The history replayed this turn, after compression.
         query_tokens: The user's message.
         docs_tokens: Retrieved documents for this turn.
+        compression_threshold: Fraction of the window at which the tool
+            loop compresses; ``COMPRESSION_THRESHOLD_PERCENTAGE`` when not
+            given, None for no threshold.
 
     Returns:
         The budget in tokens, never negative.
     """
+    if compression_threshold is _SETTING:
+        from docsgpt.core.settings import settings
+
+        compression_threshold = settings.COMPRESSION_THRESHOLD_PERCENTAGE
     window = max(int(window or 0), 0)
-    output_reserve = int(window * OUTPUT_RESERVE_SHARE)
+    usable = window - int(window * OUTPUT_RESERVE_SHARE)
+    if compression_threshold:
+        usable = min(usable, int(window * (float(compression_threshold) - COMPRESSION_MARGIN_SHARE)))
     docs_reserve = min(max(int(docs_tokens), 0), int(window * DOCS_RESERVE_SHARE))
     free = (
-        window
-        - output_reserve
+        usable
         - max(int(system_tokens), 0)
         - max(int(history_tokens), 0)
         - max(int(query_tokens), 0)
