@@ -170,6 +170,50 @@ def test_no_match_returns_none(monkeypatch):
 
 
 @pytest.mark.unit
+def test_match_by_conversation_ref(monkeypatch):
+    """F# refs follow the planner: earlier turns first, upload order, duplicates collapsed."""
+    _patch_bridge(monkeypatch)
+    earlier = _attachment(filename="old.csv")
+    first = _attachment(filename="a.xlsx")
+    second = _attachment(filename="b.xlsx")
+    _FakeAttachmentsRepo.rows = {a["id"]: a for a in (earlier, first, second)}
+    conversation = [earlier, first, second]
+    assert match_attachment(conversation, "F1", USER)["id"] == earlier["id"]
+    assert match_attachment(conversation, "f3", USER)["id"] == second["id"]
+    assert match_attachment(conversation, " F2 ", USER)["id"] == first["id"]
+    assert match_attachment(conversation, "F4", USER) is None
+
+
+@pytest.mark.unit
+def test_ref_of_a_resent_copy_resolves_to_the_first_upload(monkeypatch):
+    _patch_bridge(monkeypatch)
+    old = {**_attachment(filename="sheet.xlsx"), "content_hash": "h"}
+    again = {**_attachment(filename="sheet (1).xlsx"), "content_hash": "h"}
+    other = _attachment(filename="other.csv")
+    _FakeAttachmentsRepo.rows = {a["id"]: a for a in (old, again, other)}
+    assert match_attachment([old, again, other], "F2", USER)["id"] == other["id"]
+    assert match_attachment([old, again, other], "F1", USER)["id"] == old["id"]
+
+
+@pytest.mark.unit
+def test_ref_match_rechecks_the_owner(monkeypatch):
+    _patch_bridge(monkeypatch)
+    foreign = _attachment(filename="x.csv", user_id="someone-else")
+    _FakeAttachmentsRepo.rows = {foreign["id"]: foreign}
+    assert match_attachment([foreign], "F1", USER) is None
+
+
+@pytest.mark.unit
+def test_filename_match_prefers_the_latest_upload(monkeypatch):
+    """An earlier turn's file of the same name loses to the one attached since."""
+    _patch_bridge(monkeypatch)
+    old = _attachment(filename="report.xlsx")
+    new = _attachment(filename="report.xlsx")
+    _FakeAttachmentsRepo.rows = {a["id"]: a for a in (old, new)}
+    assert match_attachment([old, new], "report.xlsx", USER)["id"] == new["id"]
+
+
+@pytest.mark.unit
 def test_match_rejects_when_owner_check_fails(monkeypatch):
     """An attachment dict present in the request but NOT owned by user is rejected at the owner re-check."""
     _patch_bridge(monkeypatch)
@@ -481,3 +525,57 @@ def test_read_document_workflow_scope_does_not_bridge(monkeypatch):
     out = tool.execute_action("read_document", input="wf.pdf", persist=False)
     assert out["status"] == "error" and "not found in this conversation/run" in out["error"]
     assert calls == []
+
+
+# ---------------------------------------------------------------------------
+# Size caps: a file the sandbox cannot take is refused before any copy
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_bridge_refuses_a_file_over_the_caller_cap_before_reading(monkeypatch):
+    storage, calls = _patch_bridge(monkeypatch)
+    att = {**_attachment(filename="big.csv"), "size": 5_000}
+    with pytest.raises(AttachmentBridgeError, match="big.csv"):
+        bridge_attachment(att, user_id=USER, conversation_id=CONV, max_bytes=1_000)
+    assert storage.requested == []
+    assert calls == []
+
+
+@pytest.mark.unit
+def test_bridge_bounds_the_read_when_the_size_is_unknown(monkeypatch):
+    storage, calls = _patch_bridge(monkeypatch, storage=_FakeStorage(b"x" * 50))
+    att = _attachment(filename="mystery.csv")
+    with pytest.raises(AttachmentBridgeError):
+        bridge_attachment(att, user_id=USER, conversation_id=CONV, max_bytes=10)
+    assert calls == []
+
+
+@pytest.mark.unit
+def test_an_existing_bridge_is_not_reused_past_the_cap(monkeypatch):
+    """A copy bridged earlier for a tool with a larger cap still fails fast here."""
+    _patch_bridge(monkeypatch)
+    att = {**_attachment(filename="big.csv"), "size": 5_000}
+    _FakeArtifactsRepo.bridged = {att["id"]: "art-existing"}
+    with pytest.raises(AttachmentBridgeError):
+        bridge_attachment(att, user_id=USER, conversation_id=CONV, max_bytes=1_000)
+
+
+@pytest.mark.unit
+def test_code_executor_refuses_an_oversize_attachment_with_a_clear_message(monkeypatch):
+    from docsgpt.agents.tools.code_executor import CodeExecutorTool
+    from docsgpt.core import settings as settings_module
+    import docsgpt.agents.tools.code_executor as ce_mod
+
+    storage, calls = _patch_bridge(monkeypatch)
+    monkeypatch.setattr(settings_module.settings, "SANDBOX_MAX_INPUT_BYTES", 1024 * 1024)
+    big = {**_attachment(filename="ledger.xlsx"), "size": 3 * 1024 * 1024}
+    _FakeAttachmentsRepo.rows = {big["id"]: big}
+    monkeypatch.setattr(ce_mod, "match_attachment", bridge_mod.match_attachment)
+    tool = CodeExecutorTool({"conversation_id": CONV, "attachments": [big]}, user_id=USER)
+
+    out = tool._bridge_chat_attachment("F1")
+
+    assert isinstance(out, dict)
+    assert "ledger.xlsx" in out["error"]
+    assert "sandbox" in out["error"]
+    assert "3.0 MB" in out["error"] and "1.0 MB" in out["error"]
+    assert storage.requested == [] and calls == []

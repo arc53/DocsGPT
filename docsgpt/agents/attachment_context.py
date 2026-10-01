@@ -236,12 +236,14 @@ def _status(planned: PlannedFile) -> str:
     return status.value
 
 
-def _manifest_line(planned: PlannedFile) -> str:
+def _manifest_line(planned: PlannedFile, *, sandbox: bool = False) -> str:
     fields = [f"{planned.ref} {sanitize_filename(planned.filename)}", planned.mime_type]
     size = _size(planned)
     if size and planned.status != FileStatus.UNREADABLE:
         fields.append(size)
     fields.append(_status(planned))
+    if sandbox and not planned.sandbox_eligible:
+        fields.append("too large for the sandbox")
     return "- " + " | ".join(fields)
 
 
@@ -273,12 +275,23 @@ def _instructions(plan: AttachmentPlan) -> List[str]:
             "Files marked earlier were attached on an earlier turn; their content is not available "
             "in this turn. If you need one, ask the user to attach it again."
         )
-    sandbox = plan.with_status(FileStatus.SANDBOX)
-    if sandbox and caps.sandbox_action:
-        lines.append(
-            f"Files marked sandbox are not in your context beyond a short preview: load them with "
-            f'{caps.sandbox_action} by passing the filename in "inputs" ({_names(sandbox)}).'
-        )
+    if caps.sandbox and caps.sandbox_action and plan.files:
+        eligible = [f for f in plan.files if f.sandbox_eligible]
+        sandbox = plan.with_status(FileStatus.SANDBOX)
+        if eligible:
+            line = (
+                f'A file can be loaded into {caps.sandbox_action} by passing its ref in "inputs" '
+                f'(for example "{eligible[0].ref}")'
+            )
+            if len(eligible) < len(plan.files):
+                line += "; files marked too large for the sandbox cannot be"
+            line += "."
+            if sandbox:
+                line += (
+                    " Files marked sandbox are only previewed here; load them that way to work with all "
+                    f"of their content ({', '.join(f.ref for f in sandbox)})."
+                )
+            lines.append(line)
     left_out = [f for f in plan.with_status(FileStatus.NOT_INCLUDED) if f.current]
     if left_out:
         lines.append(
@@ -301,7 +314,7 @@ def render_manifest(plan: AttachmentPlan) -> str:
     """
     if not plan.files or not needs_manifest(plan):
         return ""
-    listing = "\n".join(_manifest_line(f) for f in plan.files)
+    listing = "\n".join(_manifest_line(f, sandbox=plan.capabilities.sandbox) for f in plan.files)
     return "<attached_files>\n" + listing + "\n</attached_files>\n" + "\n".join(_instructions(plan))
 
 

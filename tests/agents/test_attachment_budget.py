@@ -4,6 +4,7 @@ import pytest
 
 from docsgpt.agents.attachment_budget import (
     MIN_PARTIAL_TOKENS,
+    assign_refs,
     SPREADSHEET_PREVIEW_TOKENS,
     AttachmentPlan,
     FileStatus,
@@ -327,6 +328,46 @@ class TestSandbox:
         sheet = att("rows.csv", 5_000, mime="text/csv", size=10**12)
         plan = plan_attachments([sheet], caps(sandbox=True), budget=200_000)
         assert plan.files[0].status == FileStatus.INLINE
+
+    def test_files_over_the_sandbox_cap_are_marked_not_eligible(self):
+        small = att("small.pdf", 500_000, mime="application/pdf", size=1_000)
+        big = att("big.pdf", 500_000, mime="application/pdf", size=10_000)
+        unknown = att("unknown.txt", 100)
+        plan = plan_attachments(
+            [small, big, unknown], caps(sandbox=True), budget=10_000, sandbox_max_input_bytes=5_000
+        )
+        assert [f.sandbox_eligible for f in plan.files] == [True, False, True]
+
+    def test_nothing_is_sandbox_eligible_without_a_sandbox(self):
+        plan = plan_attachments([att("a.csv", 100, size=10)], caps(), budget=10_000)
+        assert plan.files[0].sandbox_eligible is False
+
+    def test_earlier_files_are_marked_too(self):
+        old = att("old.csv", 100, size=10_000)
+        plan = plan_attachments(
+            [], caps(sandbox=True), budget=10_000, earlier=[old], sandbox_max_input_bytes=5_000
+        )
+        assert plan.files[0].status == FileStatus.EARLIER
+        assert plan.files[0].sandbox_eligible is False
+
+
+class TestAssignRefs:
+    def test_matches_the_plan(self):
+        earlier = [att("old.txt", 10, content_hash="h0"), att("dup.txt", 10, content_hash="h1")]
+        current = [att("new.txt", 10), att("dup again.txt", 10, content_hash="h1")]
+        plan = plan_attachments(current, caps(), budget=50_000, earlier=earlier)
+        refs = assign_refs(current, earlier)
+        assert [(f.ref, f.attachment_ids) for f in refs] == [
+            (f.ref, f.attachment_ids) for f in plan.files
+        ]
+        assert [f.current for f in refs] == [False, False, True]
+
+    def test_a_flat_list_in_upload_order_gets_the_same_refs(self):
+        earlier = [att("a.txt", 10), att("b.txt", 10, content_hash="h")]
+        current = [att("b copy.txt", 10, content_hash="h"), att("c.txt", 10)]
+        split = assign_refs(current, earlier)
+        flat = assign_refs(earlier + current)
+        assert [(f.ref, f.attachment_ids) for f in flat] == [(f.ref, f.attachment_ids) for f in split]
 
 
 class TestTotals:

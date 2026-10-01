@@ -182,3 +182,25 @@ class TestTypedOverflow:
         agent = _agent()
         with pytest.raises(ContextOverflowError):
             agent._build_messages("word " * WINDOW, "q")
+
+
+class TestSandboxToolsSeeTheConversationFiles:
+    def test_executor_gets_earlier_files_then_this_turns_in_upload_order(self):
+        old = text_att("old.csv", 10, att_id="old")
+        new = text_att("new.csv", 10, att_id="new")
+        agent = _agent(attachments=[new], earlier_attachments=[old])
+        agent.tool_executor = Mock()
+
+        agent._execute_tool_action({}, Mock())
+
+        # Refs F1, F2 resolve against this order, exactly as the manifest numbers them.
+        assert [a["id"] for a in agent.tool_executor.attachments] == ["old", "new"]
+
+    def test_without_earlier_files_only_this_turns_are_passed(self):
+        new = text_att("new.csv", 10, att_id="new")
+        agent = _agent(attachments=[new])
+        agent.tool_executor = Mock()
+
+        agent._execute_tool_action({}, Mock())
+
+        assert [a["id"] for a in agent.tool_executor.attachments] == ["new"]

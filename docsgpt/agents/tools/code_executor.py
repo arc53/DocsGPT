@@ -11,6 +11,7 @@ from docsgpt.agents.tools.attachment_bridge import (
     AttachmentBridgeError,
     bridge_attachment,
     match_attachment,
+    too_large_message,
 )
 from docsgpt.agents.tools.base import Tool
 from docsgpt.core.settings import settings
@@ -140,9 +141,9 @@ class CodeExecutorTool(Tool):
                             "items": {"type": "string"},
                             "description": "Files to materialize into the workspace; each accepts the short "
                             "ref like `A1` returned by a previous artifact action, a full artifact id, or "
-                            "the name/id of a file the user attached to this conversation. Each is staged "
-                            "at `inputs/<filename>` before the code runs — read it from that path (the "
-                            "result's `inputs_loaded` echoes the exact staged paths).",
+                            "a file the user attached to this conversation by its ref like `F3` (or its "
+                            "name). Each is staged at `inputs/<filename>` before the code runs — read it "
+                            "from that path (the result's `inputs_loaded` echoes the exact staged paths).",
                         },
                         "outputs": {
                             "type": "array",
@@ -359,16 +360,29 @@ class CodeExecutorTool(Tool):
         return {"loaded": loaded}
 
     def _bridge_chat_attachment(self, raw: str) -> Any:
-        """Bridge a referenced chat attachment to a conversation artifact id; None on miss, error dict on failure."""
+        """Bridge a referenced chat attachment to a conversation artifact id; None on miss, error dict on failure.
+
+        A file over ``SANDBOX_MAX_INPUT_BYTES`` is refused here, before it is copied into an artifact
+        that staging would then reject anyway.
+        """
         if not self.conversation_id or not self.user_id:
             return None
         attachment = match_attachment(self.config.get("attachments"), raw, self.user_id)
         if attachment is None:
             return None
+        max_bytes = int(settings.SANDBOX_MAX_INPUT_BYTES or 0)
+        size = attachment.get("size")
+        if max_bytes and isinstance(size, (int, float)) and size > max_bytes:
+            return {
+                "error": f"{raw}: {too_large_message(attachment, max_bytes)} for files loaded into the "
+                "sandbox, so it was not loaded. Work from the file's text instead."
+            }
         try:
-            return bridge_attachment(attachment, user_id=self.user_id, conversation_id=self.conversation_id)
+            return bridge_attachment(
+                attachment, user_id=self.user_id, conversation_id=self.conversation_id, max_bytes=max_bytes
+            )
         except AttachmentBridgeError as exc:
-            return {"error": f"failed to attach {raw}: {exc}"}
+            return {"error": f"failed to load {raw} into the sandbox: {exc}"}
 
     # Cap the per-run capture work so a workspace full of pre-existing files
     # can't turn one exec into an unbounded read+persist sweep.

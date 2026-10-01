@@ -869,10 +869,13 @@ class BaseAgent(ABC):
         )
 
     def _execute_tool_action(self, tools_dict, call):
-        # Mirror the request's attachments onto the executor so sandbox tools
-        # can lazily bridge a referenced chat attachment to a conversation
-        # artifact; only the caller's own (user-scoped) attachments are passed.
-        self.tool_executor.attachments = self.attachments
+        # Mirror the conversation's attachments onto the executor so sandbox
+        # tools can lazily bridge a referenced chat attachment (by ref F#, id
+        # or name) to a conversation artifact. Earlier turns' files come first,
+        # matching the manifest's refs; only the caller's own (user-scoped)
+        # attachments are passed and the bridge re-checks the owner.
+        earlier = [a for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)]
+        self.tool_executor.attachments = earlier + list(self.attachments or [])
         return self.tool_executor.execute(
             tools_dict, call, self.llm.__class__.__name__
         )

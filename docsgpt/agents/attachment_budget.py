@@ -102,6 +102,8 @@ class PlannedFile:
             the preview of a sandbox file).
         native_parts: Native parts the file is sent as.
         reason: Why the file was left out, when it was.
+        sandbox_eligible: The code sandbox is in the turn and can take the
+            file (its size is within ``SANDBOX_MAX_INPUT_BYTES`` or unknown).
     """
 
     ref: str
@@ -119,6 +121,7 @@ class PlannedFile:
     shown_tokens: int = 0
     native_parts: int = 0
     reason: Optional[str] = None
+    sandbox_eligible: bool = False
 
     @property
     def in_context(self) -> bool:
@@ -240,6 +243,65 @@ def compute_attachment_budget(
     return max(min(int(window * share), free), 0)
 
 
+class _RefRegistry:
+    """Hands out conversation refs in upload order, collapsing re-sent copies."""
+
+    def __init__(self) -> None:
+        self.files: List[PlannedFile] = []
+        self._by_key: Dict[Tuple[Any, ...], PlannedFile] = {}
+
+    def register(self, row: Dict[str, Any], is_current: bool) -> Tuple[PlannedFile, bool]:
+        """Give ``row`` its ref.
+
+        Args:
+            row: An attachment row.
+            is_current: The row was attached on this turn.
+
+        Returns:
+            The planned file the row belongs to, and whether it is new (a
+            copy of an earlier row is added to that row's ids instead).
+        """
+        key = _dedupe_key(row)
+        attachment_id = _attachment_id(row)
+        existing = self._by_key.get(key)
+        if existing is not None:
+            if attachment_id not in existing.attachment_ids:
+                existing.attachment_ids = existing.attachment_ids + (attachment_id,)
+            return existing, False
+        planned = _new_planned(row, f"F{len(self.files) + 1}", attachment_id, is_current)
+        self._by_key[key] = planned
+        self.files.append(planned)
+        return planned, True
+
+
+def assign_refs(
+    current: Sequence[Dict[str, Any]],
+    earlier: Optional[Sequence[Dict[str, Any]]] = None,
+) -> List[PlannedFile]:
+    """The conversation's files under the refs the planner gives them.
+
+    The single source of ``F#`` refs outside a plan (tools resolving a ref
+    the model passes): the same assignment ``plan_attachments`` makes, with
+    no budgeting. Earlier rows come first, so a flat list in upload order
+    gets the same refs as the split one.
+
+    Args:
+        current: This turn's rows, in upload order.
+        earlier: Earlier turns' rows, in upload order.
+
+    Returns:
+        One entry per ref, in ref order; ``status`` is not planned.
+    """
+    registry = _RefRegistry()
+    for row in earlier or ():
+        if isinstance(row, dict):
+            registry.register(row, False)
+    for row in current or ():
+        if isinstance(row, dict):
+            registry.register(row, True)
+    return registry.files
+
+
 def plan_attachments(
     current: Sequence[Dict[str, Any]],
     capabilities: TurnCapabilities,
@@ -270,26 +332,17 @@ def plan_attachments(
 
         sandbox_max_input_bytes = int(settings.SANDBOX_MAX_INPUT_BYTES)
 
-    files: List[PlannedFile] = []
-    by_key: Dict[Tuple[Any, ...], PlannedFile] = {}
+    registry = _RefRegistry()
+    files = registry.files
 
     def register(row: Dict[str, Any], is_current: bool) -> Optional[PlannedFile]:
-        key = _dedupe_key(row)
-        attachment_id = _attachment_id(row)
-        existing = by_key.get(key)
-        if existing is not None:
-            if attachment_id not in existing.attachment_ids:
-                existing.attachment_ids = existing.attachment_ids + (attachment_id,)
-            return existing if is_current else None
-        planned = _new_planned(row, f"F{len(files) + 1}", attachment_id, is_current)
-        by_key[key] = planned
-        files.append(planned)
-        return planned
+        planned, _ = registry.register(row, is_current)
+        return planned if is_current else None
 
     for row in earlier or ():
         if isinstance(row, dict):
-            planned = register(row, False)
-            if planned is not None:
+            planned, is_new = registry.register(row, False)
+            if is_new:
                 planned.status = FileStatus.EARLIER
 
     reachable = capabilities.attachments_tool
@@ -379,6 +432,10 @@ def plan_attachments(
             planned.reason = None
             remaining -= planned.inline_tokens
         break
+
+    if capabilities.sandbox:
+        for planned in files:
+            planned.sandbox_eligible = _fits_sandbox(planned.attachment, sandbox_max_input_bytes)
 
     return AttachmentPlan(files=files, capabilities=capabilities, budget=max(int(budget), 0))
 

@@ -130,6 +130,31 @@ class TestInstructions:
         assert 'run_code' in manifest and '"inputs"' in manifest
         assert "data.csv" in manifest
 
+    def test_sandbox_files_are_loaded_by_ref(self):
+        sheet = att("data.csv", 20_000, mime="text/csv")
+        plan = plan_attachments([att("notes.txt", 100), sheet], caps(sandbox=True), budget=50_000)
+        manifest = render_manifest(plan)
+        assert 'by passing its ref in "inputs"' in manifest
+        assert "(F2)" in manifest
+
+    def test_files_over_the_sandbox_cap_are_marked(self):
+        big = {**att("ledger.csv", 200_000, mime="text/csv"), "size": 50 * 1024 * 1024}
+        small = {**att("small.csv", 20_000, mime="text/csv"), "size": 1024}
+        plan = plan_attachments(
+            [big, small], caps(sandbox=True), budget=50_000, sandbox_max_input_bytes=25 * 1024 * 1024
+        )
+        manifest = render_manifest(plan)
+        big_line = next(line for line in manifest.splitlines() if "ledger.csv" in line)
+        small_line = next(line for line in manifest.splitlines() if "small.csv" in line)
+        assert "too large for the sandbox" in big_line
+        assert "too large" not in small_line
+
+    def test_no_sandbox_no_sandbox_marks(self):
+        big = {**att("ledger.csv", 200_000, mime="text/csv"), "size": 50 * 1024 * 1024}
+        plan = plan_attachments([big], caps(), budget=50_000, sandbox_max_input_bytes=1024)
+        manifest = render_manifest(plan)
+        assert "sandbox" not in manifest
+
 
 class TestBlockOrder:
     def test_manifest_comes_first_then_the_fenced_files(self):
