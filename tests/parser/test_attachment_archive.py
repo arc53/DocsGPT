@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import os
+import random
 import zipfile
 
 import pytest
@@ -154,3 +155,48 @@ class TestLimits:
         assert ArchiveLimits.from_settings() == ArchiveLimits(
             max_members=7, max_total_bytes=8, max_depth=1, max_ratio=9
         )
+
+
+def _corrupt_member(data: bytes, name: str) -> bytes:
+    """``data`` with the start of ``name``'s compressed stream overwritten."""
+    archive = zipfile.ZipFile(io.BytesIO(data))
+    info = archive.getinfo(name)
+    offset = info.header_offset + 30 + len(info.filename.encode()) + len(info.extra)
+    damaged = bytearray(data)
+    for i in range(offset, offset + 10):
+        damaged[i] = 0xFF
+    return bytes(damaged)
+
+
+class TestDamagedMembers:
+    @pytest.mark.parametrize(
+        "compression", [zipfile.ZIP_DEFLATED, zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA], ids=["deflate", "bzip2", "lzma"]
+    )
+    def test_a_damaged_member_is_skipped_and_the_rest_unpacked(self, tmp_path, compression):
+        data = _zip_bytes([("good.txt", b"hello world " * 200), ("bad.txt", b"abcdefgh" * 500)], compression=compression)
+        path = tmp_path / "damaged.zip"
+        path.write_bytes(_corrupt_member(data, "bad.txt"))
+        dest = tmp_path / "out"
+        dest.mkdir()
+        result = expand_archive(str(path), str(dest), LIMITS)
+        assert [m.archive_path for m in result.members] == ["good.txt"]
+        assert [(s.archive_path, s.reason) for s in result.skipped] == [("bad.txt", "corrupt")]
+        assert len(os.listdir(dest)) == 1
+
+    def test_a_member_in_an_unsupported_compression_method_is_skipped(self, tmp_path):
+        data = bytearray(_zip_bytes([("odd.txt", b"o"), ("plain.txt", b"p")], compression=zipfile.ZIP_STORED))
+        # Compression method 9 (Deflate64) on the first member's local and central headers.
+        data[data.find(b"PK\x03\x04") + 8] = 9
+        data[data.find(b"PK\x01\x02") + 10] = 9
+        path = tmp_path / "method.zip"
+        path.write_bytes(bytes(data))
+        result = expand_archive(str(path), str(tmp_path), LIMITS)
+        assert [m.archive_path for m in result.members] == ["plain.txt"]
+        assert [(s.archive_path, s.reason) for s in result.skipped] == [("odd.txt", "corrupt")]
+
+    def test_a_damaged_member_inside_a_nested_zip_is_skipped(self, tmp_path):
+        noise = random.Random(1).randbytes(4000)  # incompressible, so the ratio check passes
+        inner = _corrupt_member(_zip_bytes([("bad.txt", noise), ("ok.txt", b"ok")]), "bad.txt")
+        result = _expand(tmp_path, [("a.txt", b"a"), ("inner.zip", inner)], compression=zipfile.ZIP_STORED)
+        assert [m.archive_path for m in result.members] == ["a.txt", "inner.zip/ok.txt"]
+        assert [(s.archive_path, s.reason) for s in result.skipped] == [("inner.zip/bad.txt", "corrupt")]

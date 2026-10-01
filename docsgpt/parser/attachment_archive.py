@@ -21,10 +21,12 @@ what was left out.
 
 from __future__ import annotations
 
+import lzma
 import os
 import stat
 import uuid
 import zipfile
+import zlib
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from typing import List, Optional
@@ -49,6 +51,20 @@ _COPY_CHUNK_BYTES = 64 * 1024
 # Archive tool metadata, not user files.
 _JUNK_DIRS = frozenset({"__MACOSX"})
 _JUNK_NAMES = frozenset({".DS_Store", "Thumbs.db", "desktop.ini"})
+# What reading one damaged member can raise: a bad CRC or header
+# (BadZipFile), a broken deflate / LZMA / bzip2 stream (zlib.error,
+# LZMAError, OSError), a truncated one (EOFError), an unsupported compression
+# method (NotImplementedError, a RuntimeError). Each is that member's problem
+# only: it is skipped as damaged and the rest of the archive still unpacks.
+_MEMBER_READ_ERRORS = (
+    zipfile.BadZipFile,
+    zlib.error,
+    lzma.LZMAError,
+    OSError,
+    EOFError,
+    RuntimeError,
+    ValueError,
+)
 
 
 class ArchiveRejectedError(ValueError):
@@ -157,7 +173,7 @@ def expand_archive(path: str, dest_dir: str, limits: ArchiveLimits) -> ArchiveEx
     expansion = ArchiveExpansion()
     try:
         _expand_into(path, "", 1, os.path.realpath(dest_dir), limits, expansion)
-    except (zipfile.BadZipFile, zipfile.LargeZipFile, OSError) as exc:
+    except (zipfile.LargeZipFile, *_MEMBER_READ_ERRORS) as exc:
         raise ArchiveRejectedError(f"The zip file could not be read: {exc}") from exc
     return expansion
 
@@ -262,7 +278,7 @@ def _expand_into(
             target = os.path.join(dest_dir, f"{uuid.uuid4().hex}_{safe_filename(filename)}")
             try:
                 complete = _extract_member(archive, info, target)
-            except (zipfile.BadZipFile, OSError, RuntimeError, ValueError, EOFError):
+            except _MEMBER_READ_ERRORS:
                 complete = False
             if not complete:
                 if os.path.exists(target):
@@ -273,7 +289,7 @@ def _expand_into(
             if is_nested:
                 try:
                     _expand_into(target, archive_path + "/", depth + 1, dest_dir, limits, expansion)
-                except zipfile.BadZipFile:
+                except (zipfile.LargeZipFile, *_MEMBER_READ_ERRORS):
                     expansion.skip(archive_path, "nested_archive_invalid")
                 finally:
                     os.unlink(target)
