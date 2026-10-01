@@ -37,6 +37,14 @@ class FakeStorage:
         self.files[path] = file_data.read()
         return {"storage_type": "fake"}
 
+    def file_exists(self, path):
+        return path in self.files
+
+    def get_file_size(self, path):
+        if path not in self.files:
+            raise FileNotFoundError(path)
+        return len(self.files[path])
+
     def remove_directory(self, directory):
         self.removed.append(directory)
         for key in [k for k in self.files if k.startswith(directory + "/")]:
@@ -63,12 +71,13 @@ def _patched(conn, storage, task_id="task-1"):
         yield apply_async
 
 
-def _attachment(conn, user, filename, *, content=b"hello", metadata=None, legacy=None):
+def _attachment(conn, user, filename, *, content=b"hello", metadata=None, legacy=None, size=-1):
     path = f"inputs/{user}/attachments/{uuid.uuid4()}/{filename}"
     row = AttachmentsRepository(conn).create(
         user,
         filename,
         path,
+        size=len(content) if size == -1 else size,
         content="text",
         token_count=10,
         metadata=metadata or {},
@@ -114,7 +123,7 @@ class TestSourceFromAttachments:
         response = _post(app, body)
         assert response.status_code == 400
 
-    def test_copies_originals_and_queues_one_ingest(self, app, pg_conn):
+    def test_queues_one_ingest_that_copies_the_originals(self, app, pg_conn):
         user = "alice"
         a, a_path, a_bytes = _attachment(pg_conn, user, "report.pdf", content=b"%PDF")
         b, b_path, b_bytes = _attachment(pg_conn, user, "data.csv", content=b"x,y")
@@ -138,8 +147,12 @@ class TestSourceFromAttachments:
         assert task_user == user
         assert kwargs["kwargs"]["source_id"] == source_id
         base_path = kwargs["kwargs"]["file_path"]
-        assert storage.files[f"{base_path}/report.pdf"] == b"%PDF"
-        assert storage.files[f"{base_path}/data.csv"] == b"x,y"
+        # The worker copies the originals, not the request.
+        assert sorted(storage.files) == sorted([a_path, b_path])
+        assert kwargs["kwargs"]["copy_files"] == [
+            {"from": a_path, "to": f"{base_path}/report.pdf"},
+            {"from": b_path, "to": f"{base_path}/data.csv"},
+        ]
         assert kwargs["kwargs"]["file_name_map"] == {
             "report.pdf": "report.pdf",
             "data.csv": "data.csv",
@@ -207,11 +220,12 @@ class TestSourceFromAttachments:
         assert response.status_code == 200, response.json
         assert response.json["name"] == "bundle.zip"
         base_path = apply_async.call_args.kwargs["kwargs"]["file_path"]
-        copied = {k: v for k, v in storage.files.items() if k.startswith(base_path + "/")}
+        copies = apply_async.call_args.kwargs["kwargs"]["copy_files"]
         # Same member name twice: both kept, the second renamed.
-        assert sorted(copied.values()) == [b"one", b"two"]
-        assert len(copied) == 2
-        assert not any(k.endswith(".zip") for k in copied)
+        assert copies == [
+            {"from": m1_path, "to": f"{base_path}/a.txt"},
+            {"from": m2_path, "to": f"{base_path}/a-2.txt"},
+        ]
 
     def test_records_the_source_on_each_attachment(self, app, pg_conn):
         a, a_path, a_bytes = _attachment(pg_conn, "alice", "report.pdf", metadata={"pages": 3})
@@ -231,7 +245,30 @@ class TestSourceFromAttachments:
         assert response.status_code == 500
         assert response.json["success"] is False
         apply_async.assert_not_called()
-        assert storage.removed
+
+    def test_a_set_over_the_upload_request_limit_is_refused(self, app, pg_conn, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "UPLOAD_MAX_REQUEST_BYTES", 6)
+        a, a_path, a_bytes = _attachment(pg_conn, "alice", "a.pdf", content=b"1234")
+        b, b_path, b_bytes = _attachment(pg_conn, "alice", "b.pdf", content=b"5678")
+        storage = FakeStorage({a_path: a_bytes, b_path: b_bytes})
+        with _patched(pg_conn, storage) as apply_async:
+            response = _post(app, {"attachment_ids": [str(a["id"]), str(b["id"])]}, "alice")
+        assert response.status_code == 413
+        assert "6-byte" in response.json["message"]
+        apply_async.assert_not_called()
+
+    def test_a_row_without_a_recorded_size_is_measured_in_storage(self, app, pg_conn, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "UPLOAD_MAX_REQUEST_BYTES", 6)
+        a, a_path, _ = _attachment(pg_conn, "alice", "a.pdf", content=b"1234567", size=None)
+        storage = FakeStorage({a_path: b"1234567"})
+        with _patched(pg_conn, storage) as apply_async:
+            response = _post(app, {"attachment_ids": [str(a["id"])]}, "alice")
+        assert response.status_code == 413
+        apply_async.assert_not_called()
 
 
 class TestIdempotencyKey:

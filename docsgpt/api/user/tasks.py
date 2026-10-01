@@ -153,6 +153,7 @@ def ingest(
     config=None,
     idempotency_key=None,
     source_id=None,
+    copy_files=None,
 ):
     resp = ingest_worker(
         self,
@@ -166,6 +167,8 @@ def ingest(
         config=config,
         idempotency_key=idempotency_key,
         source_id=source_id,
+        # Only when given, so the worker's call shape is unchanged otherwise.
+        **({"copy_files": copy_files} if copy_files else {}),
     )
     return resp
 

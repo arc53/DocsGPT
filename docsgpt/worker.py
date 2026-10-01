@@ -594,6 +594,7 @@ def ingest_worker(
     config=None,
     idempotency_key=None,
     source_id=None,
+    copy_files=None,
 ):
     """
     Ingest and process documents.
@@ -618,6 +619,10 @@ def ingest_worker(
             envelopes carry the same id the frontend already has — required
             for non-idempotent uploads where the route can't predict
             ``_derive_source_id(idempotency_key)``.
+        copy_files (list[dict]|None): Stored files to copy into the source
+            first, ``{"from": storage path, "to": storage path}`` each (a
+            Knowledge source made from chat attachments). The copy runs here
+            rather than in the request; a retry copies again, harmlessly.
 
     Returns:
         dict: Information about the completed ingestion task, including input parameters and a "limited" flag.
@@ -666,6 +671,13 @@ def ingest_worker(
     # ``failed`` event rather than leaving the toast wedged on
     # 'training' until the polling fallback rescues it 30s later.
     try:
+        for copy in copy_files or []:
+            original = storage.get_file(copy["from"])
+            try:
+                storage.save_file(original, copy["to"])
+            finally:
+                original.close()
+
         with tempfile.TemporaryDirectory() as temp_dir:
             os.makedirs(temp_dir, exist_ok=True)
 

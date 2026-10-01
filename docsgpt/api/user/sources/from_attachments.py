@@ -30,7 +30,9 @@ from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.attachments import AttachmentsRepository, is_archive_row
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_ids import derive_source_id
+from docsgpt.storage.base import BaseStorage
 from docsgpt.storage.storage_creator import StorageCreator
+from docsgpt.upload_limits import upload_request_limit_message
 from docsgpt.utils import safe_filename
 
 
@@ -94,6 +96,32 @@ def link_attachments_to_source(conn: Connection, ids: list[str], user_id: str, s
     return result.rowcount
 
 
+def _stored_bytes(storage: BaseStorage, rows: list[dict]) -> Optional[int]:
+    """Total size of the rows' stored originals, or None when one is missing.
+
+    Args:
+        storage: The storage holding the originals.
+        rows: Attachment rows with an ``upload_path``.
+
+    Returns:
+        The recorded ``size`` of each row, or its size in storage when none
+        was recorded, summed; None when an original is gone or storage
+        cannot be asked.
+    """
+    total = 0
+    for row in rows:
+        size = row.get("size")
+        try:
+            if size is None:
+                size = storage.get_file_size(row["upload_path"])
+            elif not storage.file_exists(row["upload_path"]):
+                return None
+        except Exception:
+            return None
+        total += int(size)
+    return total
+
+
 def _error(status: int, message: str):
     return make_response(jsonify({"success": False, "message": message}), status)
 
@@ -138,7 +166,8 @@ class SourceFromAttachments(Resource):
         description=(
             "Creates a Knowledge source from chat attachments the caller already "
             "uploaded. The stored originals are copied into a new source and "
-            "ingested like an upload (a zip contributes its files). Returns the "
+            "ingested like an upload (a zip contributes its files); the files "
+            "together may not exceed the upload request limit (413). Returns the "
             "source id and the ingest task id; progress arrives as "
             "``source.ingest.*`` events for that source id. Honors an optional "
             "``Idempotency-Key`` header: a repeat request with the same key "
@@ -173,6 +202,15 @@ class SourceFromAttachments(Resource):
         if not files:
             return _error(400, "These attachments have no stored files to add")
 
+        # The same ceiling as uploading these files in one request; the
+        # ingest task copies them, so the request itself never reads them.
+        storage = StorageCreator.get_storage()
+        total = _stored_bytes(storage, files)
+        if total is None:
+            return _error(500, "An attached file is no longer stored")
+        if total > int(settings.UPLOAD_MAX_REQUEST_BYTES):
+            return _error(413, f"{upload_request_limit_message()}; add fewer files at a time")
+
         # Claimed only once the request is known to be valid, so a refused
         # request leaves the key free. A repeat gets the first one's ids.
         scoped_key = _scoped_idempotency_key(idempotency_key, user)
@@ -189,17 +227,13 @@ class SourceFromAttachments(Resource):
         dir_name = f"{safe_filename(job_name)}-{source_uuid.hex[:8]}"
         base_path = f"{settings.UPLOAD_FOLDER}/{safe_filename(user)}/{dir_name}"
         file_name_map: dict[str, str] = {}
+        copy_files: list[dict[str, str]] = []
+        for row in files:
+            stored_name = _unique_name(safe_filename(row["filename"]), set(file_name_map))
+            file_name_map[stored_name] = row["filename"]
+            copy_files.append({"from": row["upload_path"], "to": f"{base_path}/{stored_name}"})
 
-        storage = StorageCreator.get_storage()
         try:
-            for row in files:
-                stored_name = _unique_name(safe_filename(row["filename"]), set(file_name_map))
-                file_name_map[stored_name] = row["filename"]
-                original = storage.get_file(row["upload_path"])
-                try:
-                    storage.save_file(original, f"{base_path}/{stored_name}")
-                finally:
-                    original.close()
             ingest_kwargs: dict = {
                 "args": (
                     settings.UPLOAD_FOLDER,
@@ -215,6 +249,7 @@ class SourceFromAttachments(Resource):
                     # Scoped, so the worker's dedup row is the one claimed here.
                     "idempotency_key": scoped_key,
                     "source_id": str(source_uuid),
+                    "copy_files": copy_files,
                 },
             }
             if predetermined_task_id is not None:
@@ -226,11 +261,7 @@ class SourceFromAttachments(Resource):
             )
             if scoped_key:
                 _release_claim(scoped_key)
-            try:
-                storage.remove_directory(base_path)
-            except Exception:
-                current_app.logger.warning("Could not clean up %s", base_path, exc_info=True)
-            return _error(500, "Could not copy the attached files")
+            return _error(500, "Could not queue the new source")
 
         task_id = predetermined_task_id or task.id
         _audit_source_created(
