@@ -155,3 +155,31 @@ class TestUpdateMetadataIfContentNull:
     def test_missing_row_returns_false(self, pg_conn):
         repo = _repo(pg_conn)
         assert repo.update_metadata_if_content_null("nope", "u", {"x": 1}) is False
+
+
+class TestListForPlanning:
+    """Rows for files attached on earlier turns: metadata only, in the order asked."""
+
+    def test_returns_rows_in_the_requested_order_without_content(self, pg_conn):
+        repo = _repo(pg_conn)
+        first = repo.create("u", "a.pdf", "/a", content="AAA", token_count=3, metadata={"content_hash": "h1"})
+        second = repo.create("u", "b.pdf", "/b", content="BBB", token_count=3)
+
+        rows = repo.list_for_planning([second["id"], first["id"]], "u")
+
+        assert [r["id"] for r in rows] == [second["id"], first["id"]]
+        assert all("content" not in r for r in rows)
+        assert rows[1]["metadata"]["content_hash"] == "h1"
+        assert rows[0]["token_count"] == 3
+
+    def test_other_users_rows_and_unknown_ids_are_skipped(self, pg_conn):
+        repo = _repo(pg_conn)
+        mine = repo.create("u", "a.pdf", "/a")
+        theirs = repo.create("someone-else", "b.pdf", "/b")
+
+        rows = repo.list_for_planning([theirs["id"], "not-a-uuid", mine["id"]], "u")
+
+        assert [r["id"] for r in rows] == [mine["id"]]
+
+    def test_empty(self, pg_conn):
+        assert _repo(pg_conn).list_for_planning([], "u") == []

@@ -1123,7 +1123,8 @@ class TestPerformMidExecutionCompressionAdditional:
         )
 
         assert success is True
-        assert msgs == rebuilt
+        # The current turn's message is carried over after the summary, verbatim.
+        assert msgs == rebuilt + [{"role": "user", "content": "hi"}]
         assert agent.compressed_summary == "compressed text"
         # The DB path already wrote the point and the summary row; the
         # route must not persist them again.
@@ -1409,7 +1410,8 @@ class TestPerformInMemoryCompressionAdditional:
         )
 
         assert success is True
-        assert result_msgs == rebuilt
+        # The current turn's message is carried over after the summary, verbatim.
+        assert result_msgs == rebuilt + [messages[2]]
         assert agent.compressed_summary == "compressed summary"
         assert agent.compression_saved is False
         assert agent.context_limit_reached is False
@@ -2007,7 +2009,8 @@ class TestInMemoryCompressionNoQueries:
             agent, [{"role": "user", "content": "Q1"}]
         )
         assert success is True
-        assert msgs == rebuilt
+        # The current turn's message is carried over after the summary, verbatim.
+        assert msgs == rebuilt + [{"role": "user", "content": "Q1"}]
         assert agent.compression_saved is False
 
 
@@ -2084,7 +2087,8 @@ class TestInMemoryCompressionLogging:
             agent, [{"role": "user", "content": "Q1"}]
         )
         assert success is True
-        assert msgs == rebuilt
+        # The current turn's message is carried over after the summary, verbatim.
+        assert msgs == rebuilt + [{"role": "user", "content": "Q1"}]
 
 
 # ---------------------------------------------------------------------------
@@ -2232,7 +2236,8 @@ class TestPerformMidExecutionCompressionSuccess:
                 agent, messages
             )
         assert success is True
-        assert result_msgs == rebuilt
+        # The current turn's message is carried over after the summary, verbatim.
+        assert result_msgs == rebuilt + [messages[0]]
         # The DB path already wrote the point and the summary row; the
         # route must not persist them again.
         assert agent.compression_saved is True
@@ -2298,7 +2303,8 @@ class TestPerformInMemoryCompressionSuccess:
                 agent, messages
             )
         assert success is True
-        assert result_msgs == rebuilt
+        # The current turn's message is carried over after the summary, verbatim.
+        assert result_msgs == rebuilt + [messages[0]]
         assert agent.compressed_summary == "compressed_summary"
 
 

@@ -21,10 +21,19 @@ from docsgpt.api.answer.services.prompt_renderer import (
     prompt_embeds_documents,
     resolve_prompt_skeleton,
 )
+from docsgpt.agents.attachment_budget import (
+    compute_attachment_budget,
+    manifest_estimate,
+    plan_attachments,
+)
+from docsgpt.agents.context_overflow import ContextOverflowError
+from docsgpt.agents.turn_capabilities import build_turn_capabilities
 from docsgpt.core.model_utils import (
     get_api_key_for_provider,
     get_default_model_id,
+    get_model_capabilities,
     get_provider_from_model_id,
+    get_token_limit,
     validate_model_id,
 )
 from docsgpt.agents.tools.wiki import apply_resume_caller_rules, outside_edits_allowed
@@ -68,6 +77,33 @@ def is_external_api_caller(data: Dict[str, Any], decoded_token: Optional[Dict], 
         return False
     caller = (decoded_token or {}).get("sub")
     return not caller or caller != owner
+
+
+def multimodal_reaches_model(model_id: Optional[str], user_id: Optional[str]) -> bool:
+    """Whether a request's multimodal content array is sent to the model as is.
+
+    ``create_agent`` forwards it only to OpenAI-family providers; others get
+    the text question, which message building can shorten.
+
+    Args:
+        model_id: The turn's model.
+        user_id: The BYOM resolution scope.
+
+    Returns:
+        True when the array reaches the provider unshortened.
+    """
+    try:
+        from docsgpt.llm.openai import OpenAILLM
+        from docsgpt.llm.providers import PROVIDERS_BY_NAME
+
+        provider = (
+            get_provider_from_model_id(model_id, user_id=user_id) if model_id else None
+        ) or settings.LLM_PROVIDER
+        plugin = PROVIDERS_BY_NAME.get(str(provider).lower())
+        llm_class = getattr(plugin, "llm_class", None)
+        return isinstance(llm_class, type) and issubclass(llm_class, OpenAILLM)
+    except Exception:
+        return False
 
 
 def _clamp_chunks(value: int) -> int:
@@ -486,6 +522,8 @@ class StreamProcessor:
         self.source = {}
         self.all_sources = []
         self.attachments = []
+        # Rows of files attached on earlier turns (no text), in upload order.
+        self.earlier_attachments: List[Dict[str, Any]] = []
         self.history = []
         self.retrieved_docs = []
         self.agent_config = {}
@@ -532,8 +570,10 @@ class StreamProcessor:
         self._validate_and_set_model()
         self._configure_source()
         self._configure_retriever()
-        self._load_conversation_history()
+        # Attachments first: the history load sizes the turn (fit check,
+        # compression threshold) with them.
         self._process_attachments()
+        self._load_conversation_history()
 
     def handoff_trace(self) -> Optional[tracing.Trace]:
         """Hand the setup trace to a streaming ``complete_stream``.
@@ -665,6 +705,11 @@ class StreamProcessor:
             if not conversation:
                 raise ValueError("Conversation not found or unauthorized")
 
+            self.earlier_attachments = self._load_earlier_attachments(conversation)
+            # Decide fit before compressing: a turn that cannot fit even with
+            # no history fails here, without a compression call.
+            self._ensure_turn_fits()
+
             # Check if compression is enabled and needed
             if settings.ENABLE_CONVERSATION_COMPRESSION:
                 self._handle_compression(conversation)
@@ -698,6 +743,7 @@ class StreamProcessor:
                     if not is_compression_summary_row(query)
                 ]
         else:
+            self._ensure_turn_fits()
             # model_user_id keeps history trim aligned with the BYOM's
             # actual context window instead of the default 128k.
             self.history = limit_chat_history(
@@ -717,6 +763,10 @@ class StreamProcessor:
                 model_user_id=self.model_user_id,
                 model_id=self.model_id,
                 decoded_token=self.decoded_token,
+                # The turn's own size, its planned attachments included, so
+                # an attach-heavy turn compresses the history rather than
+                # overflowing next to it.
+                current_query_tokens=self._turn_token_estimate(),
             )
 
             if not result.success:
@@ -791,6 +841,163 @@ class StreamProcessor:
                 }
                 for query in conversation.get("queries", [])
             ]
+
+    def _load_earlier_attachments(self, conversation: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Rows of the files attached on the conversation's earlier turns.
+
+        Args:
+            conversation: The conversation, with its ``queries``.
+
+        Returns:
+            The caller's attachment rows (without their text), in upload
+            order; an id seen twice is listed once.
+        """
+        ids: List[str] = []
+        for query in conversation.get("queries") or []:
+            if not isinstance(query, dict) or is_compression_summary_row(query):
+                continue
+            for attachment_id in query.get("attachments") or []:
+                if attachment_id:
+                    ids.append(str(attachment_id))
+        if not ids:
+            return []
+        try:
+            return self._fetch_attachment_rows(list(dict.fromkeys(ids)))
+        except Exception as e:
+            logger.error(f"Error loading earlier attachments: {e}", exc_info=True)
+            return []
+
+    def _fetch_attachment_rows(self, ids: List[str]) -> List[Dict[str, Any]]:
+        """The caller's attachment rows for ``ids``, metadata only."""
+        with db_readonly() as conn:
+            return AttachmentsRepository(conn).list_for_planning(ids, self.initial_user_id)
+
+    def _window(self) -> int:
+        """The turn's model window."""
+        try:
+            return int(
+                get_token_limit(
+                    getattr(self, "model_id", None), user_id=getattr(self, "model_user_id", None)
+                )
+            )
+        except Exception:
+            return int(settings.DEFAULT_LLM_TOKEN_LIMIT)
+
+    def _multimodal_tokens(self) -> int:
+        """Tokens of a multimodal content array that reaches the model unshortened."""
+        content = (getattr(self, "data", None) or {}).get("multimodal_content")
+        if not isinstance(content, list) or not content:
+            return 0
+        if not multimodal_reaches_model(
+            getattr(self, "model_id", None), getattr(self, "model_user_id", None)
+        ):
+            return 0
+        return TokenCounter.count_message_tokens([{"content": content}])
+
+    def _question_tokens(self) -> int:
+        """Tokens of the turn's own message."""
+        from docsgpt.utils import num_tokens_from_string
+
+        multimodal = self._multimodal_tokens()
+        if multimodal:
+            return multimodal
+        question = (getattr(self, "data", None) or {}).get("question")
+        return num_tokens_from_string(question) if isinstance(question, str) else 0
+
+    def _system_prompt_tokens(self) -> int:
+        """Estimated tokens of the system prompt, before rendering."""
+        from docsgpt.utils import num_tokens_from_string
+
+        try:
+            override = (getattr(self, "data", None) or {}).get("system_prompt_override")
+            agent_config = getattr(self, "agent_config", None) or {}
+            if agent_config.get("allow_system_prompt_override") and isinstance(override, str):
+                return num_tokens_from_string(override)
+            prompt = self._get_prompt_content()
+            return num_tokens_from_string(prompt) if isinstance(prompt, str) else 0
+        except Exception:
+            return 0
+
+    def _preliminary_attachment_reserve(self) -> int:
+        """Tokens the turn's attachments are expected to take, before the agent plans.
+
+        Uses the planner the agent runs, with what is known before the tools
+        are resolved: the model's registry capabilities and the share of the
+        window attachments may take. The agent re-plans against the real
+        free space once the history is settled.
+
+        Returns:
+            The planned content plus manifest, in tokens.
+        """
+        current = getattr(self, "attachments", None) or []
+        earlier = getattr(self, "earlier_attachments", None) or []
+        if not current and not earlier:
+            return 0
+        try:
+            window = self._window()
+            caps = get_model_capabilities(
+                getattr(self, "model_id", None), user_id=getattr(self, "model_user_id", None)
+            ) or {}
+            capabilities = build_turn_capabilities(
+                supported_attachment_types=caps.get("supported_attachment_types") or [],
+                tool_calling=bool(caps.get("supports_tools")),
+                server_tools={},
+                window=window,
+                is_v1=getattr(self, "trace_source", None) == "v1",
+                sandbox_available=False,
+            )
+            plan = plan_attachments(
+                current,
+                capabilities,
+                budget=compute_attachment_budget(
+                    window=window, share=float(settings.ATTACHMENT_BUDGET_SHARE)
+                ),
+                earlier=earlier,
+                max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
+            )
+            return plan.reserved_tokens
+        except Exception as e:
+            logger.warning(f"Could not estimate the turn's attachments: {e}")
+            return 0
+
+    def _turn_token_estimate(self) -> int:
+        """The turn's own size for the compression threshold: question plus attachments."""
+        try:
+            return self._question_tokens() + self._preliminary_attachment_reserve()
+        except Exception as e:
+            logger.warning(f"Could not size the turn for compression: {e}")
+            return 500
+
+    def _ensure_turn_fits(self) -> None:
+        """Refuse a turn that cannot fit the window even with no history.
+
+        Counts only what message building cannot shorten: the system prompt,
+        a multimodal content array sent as is, and the attachment manifest. A
+        plain question is middle-truncated later and files that do not fit
+        are left out, so neither can make a turn impossible.
+
+        Raises:
+            ContextOverflowError: Before any compression or provider call.
+        """
+        window = self._window()
+        file_count = len(getattr(self, "attachments", None) or []) + len(
+            getattr(self, "earlier_attachments", None) or []
+        )
+        needed = (
+            self._system_prompt_tokens()
+            + self._multimodal_tokens()
+            + manifest_estimate(file_count)
+        )
+        if needed >= window:
+            raise ContextOverflowError(
+                f"This message needs about {needed:,} tokens, more than the "
+                f"model's context window ({window:,} tokens), even without any "
+                f"conversation history. Shorten the message or send fewer or "
+                f"smaller files.",
+                needed_tokens=needed,
+                available_tokens=window,
+                stage="pre_compression",
+            )
 
     def _process_attachments(self):
         """Process any attachments in the request"""
@@ -1984,7 +2191,7 @@ class StreamProcessor:
             "llm": llm,
             "llm_handler": llm_handler,
             "tool_executor": tool_executor,
-            "is_v1": self.trace_source == "v1",
+            "is_v1": getattr(self, "trace_source", None) == "v1",
         }
 
         # Restore the search-tool config on resume. Classic agents carry one
@@ -2179,7 +2386,11 @@ class StreamProcessor:
             "tool_executor": tool_executor,
             "agent_config": self.agent_config.get("config") or {},
             "request_id": self.request_id or self.data.get("request_id"),
-            "is_v1": self.trace_source == "v1",
+            "is_v1": getattr(self, "trace_source", None) == "v1",
+            # Chat turns budget their files against the window; earlier
+            # turns' files are listed, never inlined again.
+            "attachment_planning": True,
+            "earlier_attachments": self.earlier_attachments,
         }
 
         # Wiki tool injection + authz: only for agent types that build a

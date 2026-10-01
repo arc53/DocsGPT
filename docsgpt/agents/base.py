@@ -6,6 +6,12 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List, Optional
 
+from docsgpt.agents.attachment_budget import (
+    AttachmentPlan,
+    compute_attachment_budget,
+    plan_attachments,
+)
+from docsgpt.agents.context_overflow import ContextOverflowError
 from docsgpt.agents.turn_capabilities import TurnCapabilities, build_turn_capabilities
 from docsgpt.agents.tool_executor import (
     ToolExecutor,
@@ -95,6 +101,12 @@ class BaseAgent(ABC):
     request_id = None
     is_v1 = False
     turn_capabilities: Optional[TurnCapabilities] = None
+    attachment_planning = False
+    attachment_plan: Optional[AttachmentPlan] = None
+    earlier_attachments: List[Dict] = []
+    _current_turn_message: Optional[Dict] = None
+    _attachments_merged = False
+    _attachment_token_correction = 0
 
     def __init__(
         self,
@@ -130,6 +142,8 @@ class BaseAgent(ABC):
         agent_config: Optional[Dict] = None,
         request_id: Optional[str] = None,
         is_v1: bool = False,
+        attachment_planning: bool = False,
+        earlier_attachments: Optional[List[Dict]] = None,
     ):
         self.endpoint = endpoint
         self.llm_name = llm_name
@@ -234,6 +248,19 @@ class BaseAgent(ABC):
         self.is_v1 = bool(is_v1)
         # Set by ``_prepare_tools`` once the turn's final tool list is known.
         self.turn_capabilities = None
+        # Chat turns budget their attachments (``attachment_budget``): what
+        # fits is inlined into the turn's message, the rest is listed. Off for
+        # callers that size attachments themselves (workflow nodes).
+        self.attachment_planning = bool(attachment_planning)
+        # Files attached on earlier turns of the conversation, in upload
+        # order: listed in the plan, never inlined again.
+        self.earlier_attachments = list(earlier_attachments or [])
+        self.attachment_plan = None
+        # The user message ``_build_messages`` built for this turn; the
+        # handler merges the plan into it and compression keeps it whole.
+        self._current_turn_message = None
+        self._attachments_merged = False
+        self._attachment_token_correction = 0
         self.guardrails_config = resolve_guardrails_config(agent_config)
         self._guardrail_engine = None
         self._guardrail_engine_built = False
@@ -774,10 +801,43 @@ class BaseAgent(ABC):
     # ---- Context / token management ----
 
     def _calculate_current_context_tokens(self, messages: List[Dict]) -> int:
+        """Tokens ``messages`` will take, attachments included at their planned size.
+
+        Before the handler merges the plan into the turn's message, the
+        planned content is not in ``messages`` yet, so its reserved size is
+        added. After the merge, the token counter sees a flat estimate per
+        native part (an image, a whole PDF), so the plan's real size for
+        those parts replaces it. Neither applies once the turn's message is
+        no longer in the list (a compression rebuilt it without).
+        """
         from docsgpt.api.answer.services.compression.token_counter import (
             TokenCounter,
         )
-        return TokenCounter.count_message_tokens(messages)
+
+        tokens = TokenCounter.count_message_tokens(messages)
+        plan = getattr(self, "attachment_plan", None)
+        carrier = getattr(self, "_current_turn_message", None)
+        if not isinstance(plan, AttachmentPlan) or carrier is None:
+            return tokens
+        if not any(message is carrier for message in messages):
+            return tokens
+        if not getattr(self, "_attachments_merged", False):
+            return tokens + plan.reserved_tokens
+        return tokens + max(int(getattr(self, "_attachment_token_correction", 0) or 0), 0)
+
+    def note_attachments_merged(self, carrier: Dict, native_estimate: int) -> None:
+        """Record that the handler merged the plan into the turn's message.
+
+        Args:
+            carrier: The message the plan was merged into.
+            native_estimate: What the token counter charges for the native
+                parts the merge added (a flat per-part estimate).
+        """
+        plan = self.attachment_plan
+        self._current_turn_message = carrier
+        self._attachments_merged = True
+        native = plan.native_tokens if isinstance(plan, AttachmentPlan) else 0
+        self._attachment_token_correction = max(native - int(native_estimate or 0), 0)
 
     def _check_context_limit(self, messages: List[Dict]) -> bool:
         from docsgpt.core.model_utils import get_token_limit
@@ -893,11 +953,14 @@ class BaseAgent(ABC):
             if current_tokens < context_limit:
                 return messages
 
-        raise ValueError(
+        raise ContextOverflowError(
             f"Conversation context ({current_tokens:,} tokens) exceeds the "
             f"model's context window ({context_limit:,} tokens) even after "
             f"shrinking tool results. Start a new conversation or remove "
-            f"large attachments."
+            f"large attachments.",
+            needed_tokens=current_tokens,
+            available_tokens=context_limit,
+            stage="dispatch",
         )
 
     # ---- Message building ----
@@ -1149,11 +1212,14 @@ class BaseAgent(ABC):
         # ``_truncate_text_middle`` return "" — dispatching a full-price
         # request with no question in it. Fail loudly instead.
         if max_query_tokens <= 0:
-            raise ValueError(
+            raise ContextOverflowError(
                 f"The system prompt ({system_tokens:,} tokens) leaves no room "
                 f"for your question within the model's context window "
                 f"({context_limit:,} tokens). Start a new conversation or "
-                f"remove large attachments or sources."
+                f"remove large attachments or sources.",
+                needed_tokens=system_tokens + safety_buffer,
+                available_tokens=context_limit,
+                stage="build",
             )
 
         # Cap the question first. Shedding runs against the *final* question,
@@ -1173,10 +1239,23 @@ class BaseAgent(ABC):
         # document block would corrupt its XML, and retriever order is
         # relevance-descending so the tail is the least useful.
         document_block = self._build_document_block()
+
+        # Plan the turn's files against what is left once the system prompt
+        # (compressed summary included), the post-compression history, the
+        # documents' reserve and the question are counted; then hold their
+        # space so documents and history shrink around them.
+        self.attachment_plan = self._plan_attachments(
+            context_limit=context_limit,
+            system_tokens=system_tokens,
+            query_tokens=self._query_tokens(query),
+            docs_tokens=num_tokens_from_string(document_block) if document_block else 0,
+        )
+        reserved = self.attachment_plan.reserved_tokens if self.attachment_plan else 0
+
         while (
             document_block
             and num_tokens_from_string(self._compose_user_turn(document_block, query))
-            > max_query_tokens
+            > max_query_tokens - reserved
         ):
             self.retrieved_docs = self.retrieved_docs[:-1]
             document_block = self._build_document_block()
@@ -1184,7 +1263,7 @@ class BaseAgent(ABC):
         user_content = self._compose_user_turn(document_block, query)
         user_tokens = num_tokens_from_string(user_content)
 
-        available_for_history = max(available_after_system - user_tokens, 0)
+        available_for_history = max(available_after_system - user_tokens - reserved, 0)
 
         working_history = self._truncate_history_to_fit(
             self.chat_history,
@@ -1300,8 +1379,85 @@ class BaseAgent(ABC):
             )
         else:
             final_content = user_content
-        messages.append({"role": "user", "content": final_content})
+        turn_message = {"role": "user", "content": final_content}
+        messages.append(turn_message)
+        self._current_turn_message = turn_message
+        self._attachments_merged = False
+        self._attachment_token_correction = 0
         return messages
+
+    def _query_tokens(self, query: str) -> int:
+        """Tokens of the turn's own message: the multimodal array when one is sent."""
+        from docsgpt.api.answer.services.compression.token_counter import (
+            TokenCounter,
+        )
+        from docsgpt.utils import num_tokens_from_string
+
+        multimodal = getattr(self, "multimodal_content", None)
+        if multimodal:
+            return TokenCounter.count_message_tokens([{"content": multimodal}])
+        return num_tokens_from_string(query or "")
+
+    def _history_tokens(self) -> int:
+        """Tokens of the history replayed this turn (after compression)."""
+        from docsgpt.api.answer.services.compression.token_counter import (
+            TokenCounter,
+        )
+
+        return TokenCounter.count_query_tokens(
+            [h for h in (self.chat_history or []) if isinstance(h, dict)]
+        )
+
+    def _plan_attachments(
+        self,
+        *,
+        context_limit: int,
+        system_tokens: int,
+        query_tokens: int,
+        docs_tokens: int,
+    ) -> Optional[AttachmentPlan]:
+        """Plan this turn's attachments, once its other parts are sized.
+
+        Args:
+            context_limit: The model's window.
+            system_tokens: The system prompt, compressed summary included.
+            query_tokens: The turn's own message.
+            docs_tokens: The retrieved documents block.
+
+        Returns:
+            The plan, or None when planning is off or there are no files.
+        """
+        if not getattr(self, "attachment_planning", False):
+            return None
+        current = [a for a in (self.attachments or []) if isinstance(a, dict)]
+        earlier = [a for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)]
+        if not current and not earlier:
+            return None
+        if self.turn_capabilities is None:
+            self.turn_capabilities = self._compute_turn_capabilities({})
+        budget = compute_attachment_budget(
+            window=context_limit,
+            share=float(settings.ATTACHMENT_BUDGET_SHARE),
+            system_tokens=system_tokens,
+            history_tokens=self._history_tokens(),
+            query_tokens=query_tokens,
+            docs_tokens=docs_tokens,
+        )
+        plan = plan_attachments(
+            current,
+            self.turn_capabilities,
+            budget=budget,
+            earlier=earlier,
+            max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
+        )
+        logger.info(
+            "Attachment plan: %d file(s), budget %d, inline %d tokens (%s)",
+            len(plan.files),
+            plan.budget,
+            plan.inline_tokens,
+            ", ".join(f"{f.ref}={f.status.value}" for f in plan.files),
+        )
+        return plan
 
     def _truncate_history_to_fit(
         self,

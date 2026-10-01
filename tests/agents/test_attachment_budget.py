@@ -342,3 +342,15 @@ class TestSettings:
 
         assert settings.ATTACHMENT_BUDGET_SHARE == 0.5
         assert settings.ATTACHMENT_MAX_NATIVE_PARTS == 40
+
+
+class TestEarlierRowsWithoutText:
+    def test_reattached_copy_brings_the_text(self):
+        # Earlier-turn rows are loaded without their content; a re-sent copy
+        # inlined under the first ref must use the copy that has it.
+        old = att("contract.pdf", 5_000, content_hash="h")
+        old.pop("content")
+        again = att("contract.pdf", 5_000, content_hash="h", content="the text")
+        plan = plan_attachments([again], caps(), budget=50_000, earlier=[old])
+        assert plan.files[0].status == FileStatus.INLINE
+        assert plan.files[0].attachment is again

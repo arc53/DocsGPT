@@ -306,7 +306,10 @@ def plan_attachments(
             # reach it, the re-send is how the user gets it in front of the model.
             if reachable:
                 continue
-            planned.current = True
+            # Earlier rows are loaded without their text; plan this copy.
+            refreshed = _new_planned(row, planned.ref, planned.attachment_ids[0], True)
+            refreshed.attachment_ids = planned.attachment_ids
+            planned.__dict__.update(refreshed.__dict__)
         walk.append(planned)
 
     remaining = max(int(budget), 0) - manifest_estimate(len(files))

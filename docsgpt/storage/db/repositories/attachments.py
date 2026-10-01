@@ -179,6 +179,37 @@ class AttachmentsRepository:
         row = result.fetchone()
         return _attachment_to_dict(row) if row is not None else None
 
+    def list_for_planning(self, ids: list[str], user_id: str) -> list[dict]:
+        """Fetch a user's attachments by PG id, without their text.
+
+        The chat attachment planner lists files from earlier turns but never
+        inlines them, so their (up to 100k-token) ``content`` is left out.
+
+        Args:
+            ids: PG ``attachments.id`` values, in the order wanted.
+            user_id: The owner; other users' rows are skipped.
+
+        Returns:
+            The rows found, in the order of ``ids``; unknown or non-UUID ids
+            are skipped.
+        """
+        wanted = [str(i) for i in ids if i is not None and looks_like_uuid(str(i))]
+        if not wanted:
+            return []
+        result = self._conn.execute(
+            text(
+                "SELECT id, user_id, filename, upload_path, mime_type, size, token_count, "
+                "metadata, created_at, legacy_mongo_id "
+                "FROM attachments WHERE id::text = ANY(:ids) AND user_id = :user_id"
+            ),
+            {"ids": wanted, "user_id": user_id},
+        )
+        by_id = {}
+        for row in result.fetchall():
+            out = _attachment_to_dict(row)
+            by_id[str(out["id"])] = out
+        return [by_id[i] for i in dict.fromkeys(wanted) if i in by_id]
+
     def list_for_user(self, user_id: str) -> list[dict]:
         result = self._conn.execute(
             text("SELECT * FROM attachments WHERE user_id = :user_id ORDER BY created_at DESC"),

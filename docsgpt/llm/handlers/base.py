@@ -98,6 +98,17 @@ class LLMResponse:
         return bool(self.tool_calls) and self.finish_reason == "tool_calls"
 
 
+# Stands in for the current turn's message in what a mid-execution compression
+# summarizes: the message (and the files inlined into it) is carried over
+# verbatim instead, so the summary never replaces the documents the turn is
+# working from.
+CURRENT_TURN_STUB = (
+    "[The current request and its attached files are kept verbatim after this "
+    "summary and are not part of it.]"
+)
+_CONTINUATION_PROMPT = "Please continue with the remaining tasks based on the context above."
+
+
 def _is_restated_payload(existing: str, incoming: str) -> bool:
     """True when ``incoming`` restates an already-complete ``existing`` payload.
 
@@ -233,6 +244,9 @@ class LLMHandler(ABC):
         Returns:
             Prepared messages list
         """
+        plan = self._attachment_plan_of(agent)
+        if plan is not None:
+            return self._prepare_planned_messages(agent, messages, plan)
         if not attachments:
             return messages
         logger.info(f"Preparing messages with {len(attachments)} attachments")
@@ -293,6 +307,110 @@ class LLMHandler(ABC):
                 messages, unsupported_attachments
             )
         return messages
+
+    @staticmethod
+    def _attachment_plan_of(agent) -> Optional[Any]:
+        """The agent's attachment plan, when it made one this turn."""
+        from docsgpt.agents.attachment_budget import AttachmentPlan
+
+        plan = getattr(agent, "attachment_plan", None)
+        return plan if isinstance(plan, AttachmentPlan) else None
+
+    @staticmethod
+    def _turn_message(agent, messages: List[Dict]) -> Optional[Dict]:
+        """The message this turn's attachments belong to.
+
+        The one ``_build_messages`` built, when it is in ``messages``; else
+        the last user message.
+        """
+        carrier = getattr(agent, "_current_turn_message", None)
+        if isinstance(carrier, dict) and any(m is carrier for m in messages):
+            return carrier
+        for message in reversed(messages):
+            if message.get("role") == "user":
+                return message
+        return None
+
+    def _prepare_planned_messages(self, agent, messages: List[Dict], plan) -> List[Dict]:
+        """Merge an attachment plan into the turn's message.
+
+        Native parts go through the provider (images, PDFs, or page images on
+        a vision model without PDF support); the plan's text — inlined files
+        fenced as untrusted data, partial markers and notes — is placed before
+        the user's own words. The turn's message dict is edited in place: the
+        provider stream for the first call was created before this runs and
+        holds that same dict.
+
+        Args:
+            agent: The agent that made the plan.
+            messages: The turn's messages.
+            plan: The agent's ``AttachmentPlan``.
+
+        Returns:
+            The prepared messages.
+        """
+        from docsgpt.agents.attachment_budget import FileStatus
+        from docsgpt.agents.attachment_context import render_attachment_block
+
+        if getattr(agent, "_attachments_merged", False):
+            return messages
+        carrier = self._turn_message(agent, messages)
+        if carrier is None:
+            return messages
+
+        natives = []
+        for planned in plan.files:
+            if not (planned.native and planned.status == FileStatus.INLINE):
+                continue
+            attachment = planned.attachment
+            if attachment.get("mime_type") == "application/pdf" and plan.capabilities.synthetic_pdf:
+                try:
+                    natives.extend(self._convert_pdf_to_images(attachment))
+                except Exception as e:
+                    logger.error(f"Failed to convert PDF {planned.ref} to images, sending its text: {e}")
+                    # Its extracted text, when there is any, stands in.
+                    planned.native = False
+                    planned.native_parts = 0
+                    planned.shown_tokens = planned.text_tokens if attachment.get("content") else 0
+                    if not planned.shown_tokens:
+                        planned.inline_tokens = 0
+                        planned.status = FileStatus.UNREADABLE
+                        planned.reason = "conversion_failed"
+                continue
+            natives.append(attachment)
+
+        before = self._native_part_estimate(carrier)
+        prepared = messages
+        if natives:
+            logger.info(f"Sending {len(natives)} planned attachment(s) natively")
+            prepared = agent.llm.prepare_messages_with_attachments(messages, natives)
+            carrier = self._turn_message(agent, prepared) or carrier
+
+        block = render_attachment_block(plan)
+        if block:
+            content = carrier.get("content")
+            if isinstance(content, list):
+                carrier["content"] = [{"type": "text", "text": block}, *content]
+            else:
+                text = content if isinstance(content, str) else ""
+                carrier["content"] = f"{block}\n\n{text}" if text else block
+
+        native_estimate = self._native_part_estimate(carrier) - before
+        note = getattr(agent, "note_attachments_merged", None)
+        if callable(note):
+            note(carrier, native_estimate=native_estimate)
+        return prepared
+
+    @staticmethod
+    def _native_part_estimate(message: Dict) -> int:
+        """What the token counter charges for a message's non-text parts."""
+        from docsgpt.api.answer.services.compression.token_counter import TokenCounter
+
+        content = message.get("content")
+        if not isinstance(content, list):
+            return 0
+        parts = [p for p in content if isinstance(p, dict) and p.get("type") != "text"]
+        return TokenCounter.count_message_tokens([{"content": parts}]) if parts else 0
 
     def _convert_pdf_to_images(self, attachment: Dict) -> List[Dict]:
         """
@@ -419,15 +537,23 @@ class LLMHandler(ABC):
             system_msg["content"] += f"\n\n{combined_text}"
         return prepared_messages
 
-    def _prune_messages_minimal(self, messages: List[Dict]) -> Optional[List[Dict]]:
+    def _prune_messages_minimal(
+        self, messages: List[Dict], keep: Optional[Dict] = None
+    ) -> Optional[List[Dict]]:
         """
         Build a minimal context: system prompt + latest user message only.
         Drops all tool/function messages to shrink context aggressively.
+
+        ``keep`` is the current turn's message; when it is in ``messages`` it
+        is the one kept, so the turn's question and files survive.
         """
         system_message = next((m for m in messages if m.get("role") == "system"), None)
         if not system_message:
             logger.warning("Cannot prune messages minimally: missing system message.")
             return None
+        if keep is not None and any(m is keep for m in messages):
+            logger.info("Pruning context to system + the current turn's message to proceed.")
+            return [system_message, keep]
         last_non_system = None
         for m in reversed(messages):
             if m.get("role") == "user":
@@ -509,7 +635,11 @@ class LLMHandler(ABC):
             content = message.get("content")
 
             if role == "user":
-                current_prompt = self._extract_text_from_content(content)
+                from docsgpt.agents.attachment_context import strip_attachment_blocks
+
+                current_prompt = strip_attachment_blocks(
+                    self._extract_text_from_content(content)
+                )
 
             elif role in {"assistant", "model"}:
                 # Standard format: tool_calls array on assistant message
@@ -598,6 +728,83 @@ class LLMHandler(ABC):
                 "compression_points": [],
             },
         }
+
+    @staticmethod
+    def _current_turn_index(agent, messages: List[Dict]) -> Optional[int]:
+        """Position of the current turn's user message in ``messages``.
+
+        The message ``_build_messages`` built, when it is still there. A
+        resumed turn's messages were serialized, so the object is gone: the
+        turn then starts at the last user message that follows the system
+        prompt or a finished answer. Messages the loop adds later (a tool
+        result, the wrap-up instruction) follow tool messages instead.
+        """
+        carrier = getattr(agent, "_current_turn_message", None)
+        if isinstance(carrier, dict):
+            for index, message in enumerate(messages):
+                if message is carrier:
+                    return index
+        for index in range(len(messages) - 1, -1, -1):
+            message = messages[index]
+            if message.get("role") != "user":
+                continue
+            previous = messages[index - 1] if index > 0 else None
+            if previous is None or previous.get("role") == "system":
+                return index
+            if (
+                previous.get("role") in ("assistant", "model")
+                and not previous.get("tool_calls")
+                and isinstance(previous.get("content"), str)
+            ):
+                return index
+        return None
+
+    def _split_current_turn(
+        self, agent, messages: List[Dict]
+    ) -> tuple[List[Dict], Optional[Dict]]:
+        """Separate the current turn's message from what may be summarized.
+
+        Returns:
+            ``(summarizable, turn)``: ``messages`` with the turn's message
+            replaced by :data:`CURRENT_TURN_STUB` (its tool rounds stay, so
+            the work done so far is summarized), and the turn's message, or
+            None when it cannot be found.
+        """
+        index = self._current_turn_index(agent, messages)
+        if index is None:
+            return messages, None
+        turn = messages[index]
+        stub = {"role": "user", "content": CURRENT_TURN_STUB}
+        return [*messages[:index], stub, *messages[index + 1:]], turn
+
+    @staticmethod
+    def _nothing_to_summarize(conversation: Optional[Dict]) -> bool:
+        """The synthetic conversation holds only the stubbed current turn."""
+        queries = (conversation or {}).get("queries") or []
+        if not queries:
+            return False
+        return all(
+            q.get("prompt") == CURRENT_TURN_STUB
+            and not q.get("tool_calls")
+            and not q.get("response")
+            for q in queries
+        )
+
+    @staticmethod
+    def _restore_current_turn(
+        rebuilt: Optional[List[Dict]], turn: Optional[Dict]
+    ) -> Optional[List[Dict]]:
+        """Put the current turn's message back after the summary, verbatim."""
+        if rebuilt is None or turn is None:
+            return rebuilt
+        rebuilt = [m for m in rebuilt if m is not turn]
+        if rebuilt and rebuilt[-1].get("role") == "user" and rebuilt[-1].get("content") in (
+            _CONTINUATION_PROMPT,
+            CURRENT_TURN_STUB,
+        ):
+            rebuilt = rebuilt[:-1]
+        rebuilt.append(turn)
+        return rebuilt
 
     def _rebuild_messages_after_compression(
         self,
@@ -699,6 +906,9 @@ class LLMHandler(ABC):
                 ConversationService,
             )
 
+            # Only earlier history and this turn's tool work are summarized;
+            # the turn's own message and files are carried over verbatim.
+            summarizable, turn = self._split_current_turn(agent, messages)
             conversation_service = ConversationService()
             orchestrator = CompressionOrchestrator(conversation_service)
 
@@ -718,7 +928,13 @@ class LLMHandler(ABC):
                 saved_count = len(conversation.get("queries") or [])
                 if saved_count:
                     persist_query_index = saved_count - 1
-                conversation_from_msgs = self._build_conversation_from_messages(messages)
+                conversation_from_msgs = self._build_conversation_from_messages(summarizable)
+                if self._nothing_to_summarize(conversation_from_msgs):
+                    logger.info(
+                        "Mid-execution compression skipped: nothing but the current "
+                        "turn, which is never summarized"
+                    )
+                    return False, None
                 if conversation_from_msgs:
                     conversation = self._carry_current_summary(
                         conversation_from_msgs, agent
@@ -746,7 +962,7 @@ class LLMHandler(ABC):
             if not result.success:
                 logger.warning(f"Mid-execution compression failed: {result.error}")
                 # Try minimal pruning as fallback
-                pruned = self._prune_messages_minimal(messages)
+                pruned = self._prune_messages_minimal(messages, keep=turn)
                 if pruned:
                     agent.context_limit_reached = False
                     agent.current_token_count = 0
@@ -770,7 +986,7 @@ class LLMHandler(ABC):
                         "Compression did not reduce token count (or produced an "
                         "empty summary); falling back to minimal pruning"
                     )
-                    pruned = self._prune_messages_minimal(messages)
+                    pruned = self._prune_messages_minimal(messages, keep=turn)
                     if pruned:
                         agent.context_limit_reached = False
                         agent.current_token_count = 0
@@ -810,6 +1026,7 @@ class LLMHandler(ABC):
                 include_current_execution=False,
                 include_tool_calls=False,
             )
+            rebuilt_messages = self._restore_current_turn(rebuilt_messages, turn)
 
             if rebuilt_messages is None:
                 return False, None
@@ -841,10 +1058,17 @@ class LLMHandler(ABC):
             from docsgpt.core.settings import settings
             from docsgpt.llm.llm_creator import LLMCreator
 
-            conversation = self._build_conversation_from_messages(messages)
+            summarizable, turn = self._split_current_turn(agent, messages)
+            conversation = self._build_conversation_from_messages(summarizable)
             if not conversation:
                 logger.warning(
                     "Cannot perform in-memory compression: no user/assistant turns found"
+                )
+                return False, None
+            if self._nothing_to_summarize(conversation):
+                logger.info(
+                    "In-memory compression skipped: nothing but the current turn, "
+                    "which is never summarized"
                 )
                 return False, None
             # The summary already in play must survive this compression too.
@@ -918,7 +1142,7 @@ class LLMHandler(ABC):
                 logger.warning(
                     "In-memory compression did not reduce token count; falling back to minimal pruning"
                 )
-                pruned = self._prune_messages_minimal(messages)
+                pruned = self._prune_messages_minimal(messages, keep=turn)
                 if pruned:
                     agent.context_limit_reached = False
                     agent.current_token_count = 0
@@ -954,6 +1178,7 @@ class LLMHandler(ABC):
                 include_current_execution=False,
                 include_tool_calls=False,
             )
+            rebuilt_messages = self._restore_current_turn(rebuilt_messages, turn)
             if rebuilt_messages is None:
                 return False, None
 
