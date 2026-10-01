@@ -37,7 +37,16 @@ from docsgpt.agents.turn_capabilities import TurnCapabilities
 IMAGE_PART_TOKENS = 1500
 # Extra context a native PDF part costs per page on top of its text: providers
 # send each page as an image too. A conservative average across providers.
+# Holds for born-digital PDFs: on gpt-6.1-sol a 30-page PDF sent natively cost
+# 29,413 prompt tokens against 29,215 for its text, so text plus this margin
+# over-reserves a little rather than under.
 NATIVE_PDF_PAGE_TOKENS = 500
+# Context one page of a PDF with no text layer (a scan) takes when the PDF is
+# sent natively: the provider reads it from the page image alone. Measured on
+# gpt-6.1-sol: a 4-page image-only scan cost 12,312 prompt tokens (~3.1k a
+# page), and 14 scans of 31 pages together added ~81k (~2.6k a page). Priced
+# at NATIVE_PDF_PAGE_TOKENS these scans planned at 500 a page, 5-6x too low.
+NATIVE_SCAN_PAGE_TOKENS = 3000
 # Context one PDF page rendered as an image takes (150 dpi, a page of
 # roughly 1240x1754 px). Measured, not the per-image guess above: an
 # end-to-end run of a 200k-window vision model planned ~100k tokens of page
@@ -609,8 +618,19 @@ def _native_cost(planned: PlannedFile, capabilities: TurnCapabilities) -> int:
         if capabilities.synthetic_pdf:
             return _native_parts(planned, capabilities) * PAGE_IMAGE_TOKENS
         pages = planned.page_count or 1
+        if _pages_are_images(planned):
+            return pages * NATIVE_SCAN_PAGE_TOKENS
         return planned.original_tokens + pages * NATIVE_PDF_PAGE_TOKENS
     return max(planned.original_tokens, IMAGE_PART_TOKENS)
+
+
+def _pages_are_images(planned: PlannedFile) -> bool:
+    """A PDF with no text layer: the provider reads every page as an image.
+
+    The worker marks it ``no_text``; a row whose text layer came out empty
+    (no extracted tokens at all) is read the same way.
+    """
+    return _extraction(planned.attachment).get("status") == "no_text" or planned.original_tokens == 0
 
 
 def _is_spreadsheet(planned: PlannedFile) -> bool:

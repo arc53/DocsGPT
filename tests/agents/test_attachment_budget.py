@@ -504,3 +504,52 @@ class TestPageImageCost:
         entry = plan.files[0]
         assert entry.native is True
         assert entry.inline_tokens == 10 * PAGE_IMAGE_TOKENS + PER_FILE_OVERHEAD_TOKENS
+
+
+class TestNativeScanCost:
+    """A PDF with no text layer goes natively as page images and is priced so."""
+
+    def test_a_scan_is_priced_per_page_image(self):
+        from docsgpt.agents.attachment_budget import NATIVE_SCAN_PAGE_TOKENS, PER_FILE_OVERHEAD_TOKENS
+
+        # Measured on gpt-6.1-sol: a 4-page image-only scan sent natively cost
+        # 12,312 prompt tokens; the old estimate was 4 x 500.
+        scan = att("scan.pdf", 0, mime="application/pdf", status="no_text", content="", pages=4)
+        plan = plan_attachments([scan], caps(native_pdf=True), budget=200_000)
+
+        entry = plan.files[0]
+        assert entry.native is True
+        assert entry.inline_tokens == 4 * NATIVE_SCAN_PAGE_TOKENS + PER_FILE_OVERHEAD_TOKENS
+        assert entry.inline_tokens >= 12_000
+
+    def test_a_pdf_whose_text_layer_came_out_empty_is_priced_as_a_scan(self):
+        from docsgpt.agents.attachment_budget import NATIVE_SCAN_PAGE_TOKENS, PER_FILE_OVERHEAD_TOKENS
+
+        pdf = att("blank-layer.pdf", 0, mime="application/pdf", content="", pages=3)
+        plan = plan_attachments([pdf], caps(native_pdf=True), budget=200_000)
+
+        assert plan.files[0].native is True
+        assert plan.files[0].inline_tokens == 3 * NATIVE_SCAN_PAGE_TOKENS + PER_FILE_OVERHEAD_TOKENS
+
+    def test_a_born_digital_pdf_keeps_the_text_based_estimate(self):
+        from docsgpt.agents.attachment_budget import NATIVE_PDF_PAGE_TOKENS, PER_FILE_OVERHEAD_TOKENS
+
+        # Measured: native 29,413 vs text 29,215 tokens for the same 30 pages.
+        pdf = att("act.pdf", 29_215, mime="application/pdf", pages=30)
+        plan = plan_attachments([pdf], caps(native_pdf=True), budget=200_000)
+
+        entry = plan.files[0]
+        assert entry.native is True
+        assert entry.inline_tokens == 29_215 + 30 * NATIVE_PDF_PAGE_TOKENS + PER_FILE_OVERHEAD_TOKENS
+
+    def test_scans_that_do_not_fit_the_budget_are_left_for_the_tool(self):
+        # 14 scans of 31 pages took ~81k tokens natively; planned at 500 a page
+        # they all looked like ~16k and were inlined into a 40k budget.
+        scans = [
+            att(f"scan-{i}.pdf", 0, mime="application/pdf", status="no_text", content="", pages=3 if i % 2 else 2)
+            for i in range(14)
+        ]
+        plan = plan_attachments(scans, caps(native_pdf=True, attachments_tool=True), budget=40_000)
+
+        assert plan.inline_tokens <= 40_000
+        assert FileStatus.TOOL in statuses(plan)
