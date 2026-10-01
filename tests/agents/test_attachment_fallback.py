@@ -371,3 +371,71 @@ class TestReplannedFilePartsReachTheFallback:
         assert request is not None
         parts = request["messages"][-1]["content"]
         assert any(p.get("type") == "file" and p["file"]["file_id"] == "file-id-a.pdf" for p in parts)
+
+
+class TestNativeReadsOnFallback:
+    """Images an attachments_read queued are formatted by the model that is sent them."""
+
+    PAGE = {"attachment": {"data": "aGk=", "mime_type": "image/png", "page": 2}, "label": "F1 scan.pdf page 2"}
+
+    @staticmethod
+    def _anthropic_style(messages, attachments=None):
+        carrier = messages[-1]
+        for attachment in attachments or []:
+            carrier["content"].append(
+                {"type": "image", "source": {"type": "base64", "media_type": attachment["mime_type"], "data": "x"}}
+            )
+        return messages
+
+    def _turn_with_read(self):
+        from types import SimpleNamespace
+
+        primary = _LLM("m", types=["image/png"])
+        primary.prepare_messages_with_attachments = self._anthropic_style
+        agent, messages = _merged_turn([text_att("a.txt", 100)], primary=primary)
+        executor = SimpleNamespace(pending_native_parts=[dict(self.PAGE)])
+        messages = [*messages, {"role": "assistant", "content": "", "tool_calls": []}]
+        messages = agent.llm_handler.append_native_reads(agent, messages, executor=executor)
+        assert messages[-1]["content"][-1]["type"] == "image"
+        return agent, messages
+
+    def _request(self, agent, messages, fallback):
+        from tests.llm.test_fallback import FakeLLM
+
+        primary = FakeLLM(fail_at=0, model_id="m")
+        kwargs = {"model": "m", "messages": messages, "_attachment_dispatch": AttachmentDispatch(agent)}
+        return primary._fallback_request(fallback, kwargs, RuntimeError("primary down"))
+
+    def test_a_vision_fallback_gets_the_images_in_its_own_format(self):
+        from tests.llm.test_fallback import FakeLLM
+
+        class _OpenAIStyle(FakeLLM):
+            def get_supported_attachment_types(self):
+                return ["image/png"]
+
+            def prepare_messages_with_attachments(self, messages, attachments=None):
+                carrier = messages[-1]
+                for attachment in attachments or []:
+                    carrier["content"].append({"type": "image_url", "image_url": {"url": "data:image/png;base64,x"}})
+                return messages
+
+        agent, messages = self._turn_with_read()
+        request = self._request(agent, messages, _OpenAIStyle(model_id="fb-big"))
+
+        note = request["messages"][-1]
+        types_ = [p.get("type") for p in note["content"]]
+        assert "image" not in types_
+        assert types_.count("image_url") == 1
+        assert "F1 scan.pdf page 2" in note["content"][0]["text"]
+
+    def test_a_fallback_without_vision_is_told_the_images_cannot_be_shown(self):
+        from tests.llm.test_fallback import FakeLLM
+
+        agent, messages = self._turn_with_read()
+        request = self._request(agent, messages, FakeLLM(model_id="fb-big"))
+
+        note = request["messages"][-1]
+        text = note["content"] if isinstance(note["content"], str) else _turn_text([note])
+        assert "F1 scan.pdf page 2" in text
+        assert "image" not in str([p.get("type") for p in note["content"]] if isinstance(note["content"], list) else "")
+        assert "do not guess" in text.lower()

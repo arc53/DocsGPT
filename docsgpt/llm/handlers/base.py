@@ -136,6 +136,59 @@ def _is_restated_payload(existing: str, incoming: str) -> bool:
     return True
 
 
+def render_native_reads(
+    llm, messages: List[Dict], labels: List[str], attachments: List[Dict], *, check_vision: bool = False
+) -> tuple:
+    """Append the follow-up user message that shows ``llm`` the requested images.
+
+    Args:
+        llm: The model the images are sent to; its provider formats them.
+        messages: The messages to append to.
+        labels: One label per image, in order.
+        attachments: The images (a stored path or rendered ``data``).
+        check_vision: Check that ``llm`` reads the images (a fallback; the
+            tool only queued them because the primary does).
+
+    Returns:
+        The messages with the follow-up message, and that message. A model
+        that reads none of the images, or a provider that fails to format
+        them, gets a note saying they cannot be shown instead.
+    """
+    from docsgpt.agents.tools.attachments import native_reads_note
+
+    listed = "; ".join(labels)
+    supported: List[str] = []
+    if check_vision:
+        try:
+            supported = [str(t) for t in llm.get_supported_attachment_types() or []]
+        except Exception:
+            supported = []
+    if check_vision and attachments and not any(str(a.get("mime_type") or "") in supported for a in attachments):
+        note = {
+            "role": "user",
+            "content": (
+                f"[The images requested with attachments_read ({listed}) cannot be shown: the responding "
+                "model does not read images. Tell the user they could not be viewed; do not guess what they show.]"
+            ),
+        }
+        return [*messages, note], note
+    note = {"role": "user", "content": [{"type": "text", "text": native_reads_note(labels)}]}
+    try:
+        prepared = llm.prepare_messages_with_attachments([*messages, note], [dict(a) for a in attachments])
+    except Exception as e:
+        logger.error("Could not attach requested images: %s", bounded_error_text(e))
+        note = {
+            "role": "user",
+            "content": (
+                f"[The images requested with attachments_read ({listed}) could not be "
+                "attached. Tell the user they could not be viewed; do not guess what they show.]"
+            ),
+        }
+        return [*messages, note], note
+    built = next((m for m in reversed(prepared) if isinstance(m, dict) and m.get("role") == "user"), note)
+    return prepared, built
+
+
 class LLMHandler(ABC):
     """Abstract base class for LLM handlers."""
 
@@ -1672,25 +1725,18 @@ class LLMHandler(ABC):
             kept = getattr(executor, "paused_native_parts", None)
             executor.paused_native_parts = [*(kept if isinstance(kept, list) else []), *parts]
             return messages
-        from docsgpt.agents.tools.attachments import native_reads_note
 
         labels = [str(p.get("label") or "image") for p in parts]
         attachments = [p.get("attachment") for p in parts if isinstance(p.get("attachment"), dict)]
-        note = {"role": "user", "content": [{"type": "text", "text": native_reads_note(labels)}]}
-        try:
-            return agent.llm.prepare_messages_with_attachments([*messages, note], attachments)
-        except Exception as e:
-            logger.error(f"Could not attach requested images: {e}", exc_info=True)
-            return [
-                *messages,
-                {
-                    "role": "user",
-                    "content": (
-                        f"[The images requested with attachments_read ({'; '.join(labels)}) could not be "
-                        "attached. Tell the user they could not be viewed; do not guess what they show.]"
-                    ),
-                },
-            ]
+        prepared, note = render_native_reads(agent.llm, messages, labels, attachments)
+        # The images as the tool queued them, not as this provider formats
+        # them: a fallback model renders the same note in its own format.
+        registry = getattr(agent, "_native_read_messages", None)
+        if not isinstance(registry, list):
+            registry = []
+            agent._native_read_messages = registry
+        registry.append({"message": note, "labels": labels, "attachments": attachments})
+        return prepared
 
     @staticmethod
     def _paused_native_reads(agent) -> List[Dict]:

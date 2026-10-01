@@ -75,6 +75,10 @@ class FixedUsage:
         """A fallback's fallback is never re-planned."""
         return None
 
+    def native_reads_for(self, fallback: Any, messages: List[Dict[str, Any]]) -> tuple:
+        """A fallback's fallback keeps the messages it was given."""
+        return messages, []
+
 
 class AttachmentDispatch:
     """The agent's attachments, as one LLM call sees them."""
@@ -136,6 +140,44 @@ class AttachmentDispatch:
         return tokens
 
     # ---- fallback ----
+
+    def native_reads_for(self, fallback: Any, messages: List[Dict[str, Any]]) -> tuple:
+        """The turn's requested images, formatted for ``fallback``.
+
+        The follow-up messages that show the images ``attachments_read``
+        queued were built by the primary's provider (image parts, image
+        blocks or inline bytes). Each is rebuilt from the images it carries
+        with the fallback's own provider, or as a note when it reads no
+        images. ``messages`` is not changed.
+
+        Args:
+            fallback: The fallback LLM.
+            messages: The primary call's messages.
+
+        Returns:
+            The messages for the fallback, and the messages rebuilt for it.
+        """
+        from docsgpt.llm.handlers.base import render_native_reads
+
+        registry = getattr(self._agent, "_native_read_messages", None)
+        if not isinstance(registry, list) or not registry:
+            return messages, []
+        rebuilt: List[Dict[str, Any]] = []
+        result = list(messages or [])
+        for entry in registry:
+            index = next((i for i, m in enumerate(result) if m is entry.get("message")), None)
+            if index is None:
+                continue
+            _, note = render_native_reads(
+                fallback,
+                [],
+                list(entry.get("labels") or []),
+                list(entry.get("attachments") or []),
+                check_vision=True,
+            )
+            result[index] = note
+            rebuilt.append(note)
+        return (result, rebuilt) if rebuilt else (messages, [])
 
     def for_fallback(self, fallback: Any, messages: List[Dict[str, Any]]) -> Optional[FallbackAttachments]:
         """The turn's files re-planned for ``fallback``.

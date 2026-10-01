@@ -428,6 +428,13 @@ class BaseLLM(ABC):
         if messages:
             dispatch = kwargs.get("_attachment_dispatch")
             replanned = None
+            rebuilt_reads: list = []
+            native_reads_for = getattr(dispatch, "native_reads_for", None)
+            if callable(native_reads_for):
+                try:
+                    messages, rebuilt_reads = native_reads_for(fallback, messages)
+                except Exception:
+                    logger.warning("Could not rebuild the requested images for the fallback", exc_info=True)
             if dispatch is not None:
                 try:
                     replanned = dispatch.for_fallback(fallback, messages)
@@ -442,7 +449,7 @@ class BaseLLM(ABC):
                 messages,
                 kwargs.get("_usage_attachments") or kwargs.get("attachments"),
                 dropped=dropped,
-                keep=[getattr(replanned, "built", None)],
+                keep=[getattr(replanned, "built", None), *rebuilt_reads],
             )
             if dropped:
                 logger.warning(
