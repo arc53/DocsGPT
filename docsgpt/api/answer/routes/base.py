@@ -24,7 +24,7 @@ from docsgpt.core.model_utils import (
 )
 
 from docsgpt.core.settings import settings
-from docsgpt.error import sanitize_api_error
+from docsgpt.error import bounded_error_text, sanitize_api_error, user_facing_error
 from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.quotas.http import quota_exceeded_response
 from docsgpt.quotas.service import QuotaService
@@ -1624,6 +1624,10 @@ class BaseAnswerResource:
             return
         except Exception as e:
             logger.error(f"Error in stream: {str(e)}", exc_info=True)
+            # What the user is told and what the failed row keeps: curated
+            # text with a code, never the exception (a provider error can echo
+            # the request, base64 file parts included).
+            public_error = user_facing_error(e)
             trace = tracing.current_trace()
             if trace is not None:
                 trace.outcome = tracing.STATUS_ERROR
@@ -1662,6 +1666,8 @@ class BaseAnswerResource:
                 # ``update_message_by_id`` lets that second answer through,
                 # exactly as it already does for the reconciler's own marker.
                 failure_metadata = dict(query_metadata or {})
+                failure_metadata["error"] = public_error.message
+                failure_metadata["error_code"] = public_error.code
                 if claim_released:
                     failure_metadata["resume_retryable"] = True
                 try:
@@ -1695,12 +1701,13 @@ class BaseAnswerResource:
                 attachment_ids=attachment_ids,
                 request_id=request_id,
                 message_id=reserved_message_id,
-                error=f"{type(e).__name__}: {e}",
+                error=bounded_error_text(e),
             )
             yield _emit(
                 {
                     "type": "error",
-                    "error": "Please try again later. We apologize for any inconvenience.",
+                    "error": public_error.message,
+                    "code": public_error.code,
                 }
             )
             # Drain the terminal ``error`` event we just yielded so a
@@ -1868,6 +1875,7 @@ class BaseAnswerResource:
                         "tool_calls": None,
                         "thought": None,
                         "error": event["error"],
+                        "error_code": event.get("code"),
                     }
                 elif event["type"] == "end":
                     stream_ended = True

@@ -16,6 +16,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from docsgpt.error import GENERIC_ERROR_MESSAGE
+
 
 @pytest.mark.unit
 class TestPrepareToolCallsForLogging:
@@ -978,8 +980,11 @@ class TestCompleteStreamWalAcceptance:
             assert len(msgs) == 1
             assert msgs[0]["prompt"] == "why does the WAL matter?"
             assert msgs[0]["status"] == "failed"
-            assert "RuntimeError" in msgs[0]["metadata"]["error"]
-            assert "LLM upstream failed" in msgs[0]["metadata"]["error"]
+            # The row keeps the curated text the user saw, never the raw
+            # exception (provider errors can echo the request payload).
+            assert msgs[0]["metadata"]["error"] == GENERIC_ERROR_MESSAGE
+            assert msgs[0]["metadata"]["error_code"] == "server_error"
+            assert "LLM upstream failed" not in msgs[0]["metadata"]["error"]
 
     def test_workflow_node_error_persists_as_failed_not_blank_complete(
         self, pg_conn, flask_app,
