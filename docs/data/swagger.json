@@ -4555,7 +4555,9 @@
         "tags": [
           "sources"
         ],
-        "x-pat-denied": true
+        "x-pat-scopes": [
+          "sources:write"
+        ]
       }
     },
     "/api/sources/paginated": {

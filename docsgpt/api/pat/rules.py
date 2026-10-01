@@ -234,6 +234,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/task_status", "GET"): _rule(any_of=("sources:read", "sources:write", "chat:run"), open=True),
     ("/api/upload", "POST"): _rule("sources:write"),
     ("/api/remote", "POST"): _rule("sources:write"),
+    # The route itself checks every attachment id against the caller.
+    ("/api/sources/from_attachments", "POST"): _rule("sources:write"),
     ("/api/sources/wiki", "POST"): _rule("sources:write"),
     ("/api/delete_old", "GET"): _rule("sources:write", (QUERY, "source_id")),
     ("/api/manage_sync", "POST"): _rule("sources:write", (JSON, "source_id")),
