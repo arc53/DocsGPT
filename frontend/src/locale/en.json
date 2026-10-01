@@ -2041,7 +2041,13 @@
       "unreadableByModel": "{{model}} can't read {{name}} — switch to a model that supports images or PDFs",
       "attached": "Attachment",
       "failed": "Failed",
-      "attachment": "Attachment"
+      "attachment": "Attachment",
+      "knowledgeHint": "These files are larger than the model can read at once. It will read the rest as needed.",
+      "knowledgeHintNoTools": "These files are larger than the model can read at once. Some will be left out.",
+      "addToKnowledge": "Add to Knowledge",
+      "knowledgeFailed": "Couldn't add these files to Knowledge. Try again.",
+      "knowledgeName_one": "{{name}} and {{count}} more",
+      "knowledgeName_other": "{{name}} and {{count}} more"
     },
     "retry": "Retry",
     "failedTitle": "Couldn't generate a response",

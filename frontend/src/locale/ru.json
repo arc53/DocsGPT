@@ -2122,7 +2122,15 @@
       "tooLarge": "Слишком большой файл для вложения (лимит {{size}} МБ)",
       "attached": "Вложение",
       "failed": "Ошибка",
-      "attachment": "Вложение"
+      "attachment": "Вложение",
+      "knowledgeHint": "Эти файлы больше, чем модель может прочитать за раз. Остальное она прочитает по мере необходимости.",
+      "knowledgeHintNoTools": "Эти файлы больше, чем модель может прочитать за раз. Часть из них не будет учтена.",
+      "addToKnowledge": "Добавить в знания",
+      "knowledgeFailed": "Не удалось добавить эти файлы в знания. Попробуйте ещё раз.",
+      "knowledgeName_one": "{{name}} и ещё {{count}}",
+      "knowledgeName_few": "{{name}} и ещё {{count}}",
+      "knowledgeName_many": "{{name}} и ещё {{count}}",
+      "knowledgeName_other": "{{name}} и ещё {{count}}"
     },
     "retry": "Повторить",
     "failedTitle": "Не удалось сгенерировать ответ",

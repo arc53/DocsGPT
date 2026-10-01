@@ -2030,7 +2030,13 @@
       "tooLarge": "Demasiado grande para adjuntar (límite {{size}} MB)",
       "attached": "Adjunto",
       "failed": "Error",
-      "attachment": "Adjunto"
+      "attachment": "Adjunto",
+      "knowledgeHint": "Estos archivos superan lo que el modelo puede leer de una vez. Leerá el resto cuando lo necesite.",
+      "knowledgeHintNoTools": "Estos archivos superan lo que el modelo puede leer de una vez. Algunos quedarán fuera.",
+      "addToKnowledge": "Añadir al conocimiento",
+      "knowledgeFailed": "No se pudieron añadir estos archivos al conocimiento. Inténtalo de nuevo.",
+      "knowledgeName_one": "{{name}} y {{count}} más",
+      "knowledgeName_other": "{{name}} y {{count}} más"
     },
     "retry": "Reintentar",
     "failedTitle": "No se pudo generar una respuesta",

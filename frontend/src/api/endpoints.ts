@@ -62,6 +62,7 @@ const endpoints = {
     MANAGE_SYNC: '/api/manage_sync',
     SYNC_SOURCE: '/api/sync_source',
     REINGEST_SOURCE: '/api/sources/reingest',
+    SOURCE_FROM_ATTACHMENTS: '/api/sources/from_attachments',
     SOURCE_CONFIG: (id: string) => `/api/sources/${id}/config`,
     SOURCE_SEARCH: (id: string) => `/api/sources/${id}/search`,
     CREATE_WIKI: '/api/sources/wiki',

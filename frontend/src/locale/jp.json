@@ -2017,7 +2017,12 @@
       "tooLarge": "添付するには大きすぎます(上限 {{size}} MB)",
       "attached": "添付ファイル",
       "failed": "失敗",
-      "attachment": "添付ファイル"
+      "attachment": "添付ファイル",
+      "knowledgeHint": "これらのファイルはモデルが一度に読める量を超えています。残りは必要に応じて読み込みます。",
+      "knowledgeHintNoTools": "これらのファイルはモデルが一度に読める量を超えています。一部は含まれません。",
+      "addToKnowledge": "ナレッジに追加",
+      "knowledgeFailed": "ファイルをナレッジに追加できませんでした。もう一度お試しください。",
+      "knowledgeName_other": "{{name}} ほか{{count}}件"
     },
     "retry": "再試行",
     "failedTitle": "応答を生成できませんでした",

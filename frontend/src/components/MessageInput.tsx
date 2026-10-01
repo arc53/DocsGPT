@@ -22,12 +22,15 @@ import {
   addAttachment,
   removeAttachment,
   selectAttachments,
+  toSendableAttachments,
   updateAttachment,
   reorderAttachments,
 } from '../upload/uploadSlice';
+import { useAddToKnowledge } from '../upload/useAddToKnowledge';
 
 import { ActiveState, Doc } from '../models/misc';
 import {
+  selectAttachmentBudgetShare,
   selectSelectedDocs,
   selectSelectedModel,
   selectSourceDocs,
@@ -56,6 +59,7 @@ import SignInAgainNotice, {
 import {
   AttachFileButton,
   AttachmentChipList,
+  KnowledgeHint,
   MicButton,
   type RecordingState,
   SourcesTrigger,
@@ -69,6 +73,7 @@ import {
   uploadAttachmentFile,
 } from './message-input/attachmentUpload';
 import { cannotReadAttachment } from './message-input/attachmentReadability';
+import { exceedsAttachmentBudget } from './message-input/attachmentBudget';
 import { handleAbort } from '../conversation/conversationSlice';
 import {
   AUDIO_FILE_ACCEPT_ATTR,
@@ -383,6 +388,19 @@ export default function MessageInput({
       ),
     [attachments, selectedModel],
   );
+  const attachmentBudgetShare = useSelector(selectAttachmentBudgetShare);
+  // No cap on how many files attach: past the model's attachment budget the
+  // files still send, and Knowledge is offered as the better home for them.
+  const overAttachmentBudget = useMemo(
+    () =>
+      exceedsAttachmentBudget(
+        attachments,
+        selectedModel?.context_window,
+        attachmentBudgetShare ?? undefined,
+      ),
+    [attachments, selectedModel, attachmentBudgetShare],
+  );
+  const knowledge = useAddToKnowledge();
 
   const dispatch = useDispatch();
   const store = useStore<RootState>();
@@ -1438,6 +1456,16 @@ export default function MessageInput({
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
 
+  const handleAddToKnowledge = async () => {
+    const completed = attachments.filter((a) => a.status === 'completed');
+    const accepted = await knowledge.addToKnowledge(
+      toSendableAttachments(completed),
+    );
+    // The files now belong to the Knowledge source; the upload toast shows
+    // its progress and the source is selected for the chat once it is ready.
+    if (accepted) completed.forEach((a) => dispatch(removeAttachment(a.id)));
+  };
+
   const findIndexById = (id: string) =>
     attachments.findIndex((a) => a.id === id);
 
@@ -1500,6 +1528,17 @@ export default function MessageInput({
           unreadableIds={unreadableAttachmentIds}
           modelName={selectedModel?.display_name}
         />
+
+        {showSourceButton && overAttachmentBudget && (
+          <KnowledgeHint
+            readsRest={selectedModel?.supports_tools !== false}
+            pending={knowledge.pending}
+            error={knowledge.error}
+            onAdd={() => {
+              void handleAddToKnowledge();
+            }}
+          />
+        )}
 
         {sendArmed && sendReadiness.state === 'waiting' && (
           <div

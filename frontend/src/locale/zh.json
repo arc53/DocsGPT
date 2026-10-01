@@ -2015,7 +2015,12 @@
       "tooLarge": "文件过大，无法附加(上限 {{size}} MB)",
       "attached": "附件",
       "failed": "失败",
-      "attachment": "附件"
+      "attachment": "附件",
+      "knowledgeHint": "这些文件超出了模型一次能读取的范围。其余部分会在需要时读取。",
+      "knowledgeHintNoTools": "这些文件超出了模型一次能读取的范围。部分文件将被略过。",
+      "addToKnowledge": "添加到知识库",
+      "knowledgeFailed": "无法将这些文件添加到知识库。请重试。",
+      "knowledgeName_other": "{{name}} 及另外 {{count}} 个文件"
     },
     "retry": "重试",
     "failedTitle": "无法生成回复",

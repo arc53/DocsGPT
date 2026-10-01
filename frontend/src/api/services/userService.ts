@@ -125,6 +125,11 @@ const userService = {
     apiClient.post(endpoints.USER.SYNC_SOURCE, data, token),
   reingestSource: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.REINGEST_SOURCE, data, token),
+  createSourceFromAttachments: (
+    data: { attachment_ids: string[]; name?: string },
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(endpoints.USER.SOURCE_FROM_ATTACHMENTS, data, token),
   updateSourceConfig: (
     sourceId: string,
     config: any,

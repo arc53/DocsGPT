@@ -2017,7 +2017,12 @@
       "tooLarge": "檔案過大，無法附加(上限 {{size}} MB)",
       "attached": "附件",
       "failed": "失敗",
-      "attachment": "附件"
+      "attachment": "附件",
+      "knowledgeHint": "這些檔案超出模型一次能讀取的範圍。其餘部分會在需要時讀取。",
+      "knowledgeHintNoTools": "這些檔案超出模型一次能讀取的範圍。部分檔案將被略過。",
+      "addToKnowledge": "新增到知識庫",
+      "knowledgeFailed": "無法將這些檔案新增到知識庫。請再試一次。",
+      "knowledgeName_other": "{{name}} 及另外 {{count}} 個檔案"
     },
     "retry": "重試",
     "failedTitle": "無法產生回覆",
