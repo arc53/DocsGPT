@@ -255,6 +255,17 @@ def _count(files: List[PlannedFile]) -> str:
     return "1 file was" if len(files) == 1 else f"{len(files)} files were"
 
 
+def _visual(planned: PlannedFile) -> bool:
+    """An image, or a PDF with no text layer: something to look at rather than read."""
+    if planned.mime_type.startswith("image/"):
+        return True
+    metadata = planned.attachment.get("metadata") or {}
+    extraction = metadata.get("extraction") if isinstance(metadata, dict) else None
+    return planned.mime_type == "application/pdf" and isinstance(extraction, dict) and (
+        extraction.get("status") == "no_text"
+    )
+
+
 def _instructions(plan: AttachmentPlan) -> List[str]:
     """What the model may do about the files, built from the turn's capabilities."""
     caps = plan.capabilities
@@ -270,6 +281,9 @@ def _instructions(plan: AttachmentPlan) -> List[str]:
             f"Files marked tool or earlier, and the rest of a partial file, can be read or searched "
             f"by ref with {actions}."
         )
+        read_action = _read_action(plan)
+        if caps.vision and read_action and any(_visual(f) for f in tool_files + earlier):
+            lines.append(f"Reading an image or a scanned PDF page with {read_action} shows it to you.")
     elif earlier:
         lines.append(
             "Files marked earlier were attached on an earlier turn; their content is not available "

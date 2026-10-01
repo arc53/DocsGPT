@@ -237,3 +237,54 @@ class TestNeverReachesTheClient:
                 payload = json.loads(chunk.removeprefix("data: ").strip())
                 assert "docsgpt" in payload
                 assert "tool_calls" not in payload["choices"][0]["delta"]
+
+
+class TestFollowUpTurnScenario:
+    """RC-01, last turn: no new files, every invoice reachable through the tool."""
+
+    @staticmethod
+    def rows_for(scenario, keys):
+        from tests.fixtures.many_attachments import generate as gen
+
+        records = {r["key"]: r for r in gen.attachment_records(scenario)}
+        rows = []
+        for key in keys:
+            record = records[key]
+            metadata = {"extraction": {"status": "ok" if record["has_text_layer"] else "no_text"}}
+            if record["pages"]:
+                metadata["page_count"] = record["pages"]
+            rows.append({
+                "id": f"id-{key}", "filename": record["name"], "mime_type": record["mime_type"],
+                "token_count": record["token_count"], "content_hash": record["content_hash"],
+                "metadata": metadata,
+            })
+        return rows
+
+    @pytest.mark.parametrize("vision", [True, False])
+    def test_last_turn_lists_earlier_files_and_names_the_tool(
+        self, vision, agent_base_params, mock_llm, mock_llm_creator, mock_llm_handler_creator, client_tools,
+        log_context,
+    ):
+        from tests.fixtures.many_attachments import generate as gen
+
+        scenario = gen.get_scenario("RC-01")
+        turns = gen.conversations(scenario)[0]
+        last = turns[-1]
+        earlier_keys = list(dict.fromkeys(k for t in turns[:-1] for k in t.attach))
+        caps = {"tool_calling": True, "sandbox": False, "vision": vision}
+        expected = gen.expectations_for(scenario, last, caps)
+
+        agent = make(ClassicAgent, agent_base_params, mock_llm, earlier_attachments=self.rows_for(scenario, earlier_keys))
+        if vision:
+            agent.llm.get_supported_attachment_types = Mock(return_value=["image/png", "image/jpeg"])
+        run(agent, log_context)
+
+        plan = agent.attachment_plan
+        for key, allowed in expected["files"].items():
+            planned = plan.for_attachment(f"id-{key}")
+            assert planned is not None and planned.status.value in gen.planner_statuses(allowed), key
+        block = render_attachment_block(plan)
+        assert expected["props"]["mentions_tools"] is True
+        assert "attachments_read" in block and "attachments_search" in block
+        scans_line = "shows it to you"
+        assert (scans_line in block) is vision

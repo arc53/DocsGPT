@@ -647,13 +647,14 @@ class AttachmentsTool(Tool):
                 "name": READ,
                 "description": (
                     "Read an attached file by ref, a slice at a time; the result says where to "
-                    "continue. Use pages for PDFs, rows for spreadsheets and CSV."
+                    "continue. Use pages for PDFs, rows for spreadsheets and CSV. Images and scanned "
+                    "pages are shown to you when you can see images."
                 ),
                 "parameters": {
                     "properties": {
                         "ref": {
                             "type": "string",
-                            "description": "File ref from the attachments list, e.g. F3.",
+                            "description": "File ref from the attachments list, e.g. F3 (or A2 for an image artifact).",
                             "filled_by_llm": True,
                             "required": True,
                         },
