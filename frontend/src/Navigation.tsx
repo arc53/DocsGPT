@@ -76,7 +76,9 @@ import {
   appendConversations,
   receiveConversations,
   removeConversation,
+  renameConversation,
   setConversations,
+  setConversationsLoading,
   setModalStateDeleteConv,
   setSelectedAgent,
   setSharedAgents,
@@ -268,7 +270,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   );
 
   async function fetchConversations() {
-    dispatch(setConversations({ ...conversations, loading: true }));
+    // Only the flag: a copy of the list from this render would put back
+    // a chat removed just before, and the merge would then keep it.
+    dispatch(setConversationsLoading(true));
     return await getConversations(token)
       .then((fetchedConversations) => {
         dispatch(receiveConversations(fetchedConversations));
@@ -408,7 +412,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       .update(updatedConversation, token)
       .then((response) => response.json())
       .then((data) => {
-        if (data) {
+        if (data?.success) {
+          // A rename keeps the chat's date, so a chat past the newest page
+          // is not in the refetch below: set its name here.
+          const { id, name } = updatedConversation;
+          dispatch(renameConversation({ id, name }));
           fetchConversations();
         }
       })

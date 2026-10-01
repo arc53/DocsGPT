@@ -117,6 +117,10 @@ export const prefSlice = createSlice({
     setConversations: (state, action) => {
       state.conversations = action.payload;
     },
+    /** Flags a fetch in flight without touching the chats already listed. */
+    setConversationsLoading: (state, action: PayloadAction<boolean>) => {
+      state.conversations.loading = action.payload;
+    },
     /**
      * The newest page, fetched again after a new chat, a rename or a
      * delete. It replaces the top of the list and keeps the older chats
@@ -179,6 +183,16 @@ export const prefSlice = createSlice({
       state.conversations.data = state.conversations.data.filter(
         (c) => c.id !== action.payload,
       );
+    },
+    /** A rename keeps the chat's place, so it is applied here, not refetched. */
+    renameConversation: (
+      state,
+      action: PayloadAction<{ id: string; name: string }>,
+    ) => {
+      const chat = state.conversations.data?.find(
+        (c) => c.id === action.payload.id,
+      );
+      if (chat) chat.name = action.payload.name;
     },
     setToken: (state, action) => {
       state.token = action.payload;
@@ -246,6 +260,8 @@ export const {
   receiveConversations,
   appendConversations,
   removeConversation,
+  renameConversation,
+  setConversationsLoading,
   setToken,
   setPrompt,
   setPrompts,
