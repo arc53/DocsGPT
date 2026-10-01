@@ -32,6 +32,7 @@ import { LoadingState } from '@/components/ui/loading-state';
 import Twitter from './assets/TwitterX.svg';
 import Help from './components/Help';
 import {
+  type ConversationAgentFields,
   handleAbort,
   loadConversation,
   selectQueries,
@@ -332,54 +333,55 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     });
   };
 
+  // Where a loaded chat lives (owned agent / shared agent / none) and the
+  // agent its page shows.
+  const resolveConversationRoute = async (
+    index: string,
+    data: ConversationAgentFields,
+  ): Promise<{ path: string; agent: Agent | null }> => {
+    const plain = { path: `/c/${index}`, agent: null };
+    if (!data.agent_id) return plain;
+
+    if (data.is_shared_usage) {
+      if (!data.shared_token) return plain;
+      const sharedResponse = await userService.getSharedAgent(
+        data.shared_token,
+        token,
+      );
+      if (!sharedResponse.ok) return plain;
+      const agent: Agent = await sharedResponse.json();
+      return { path: sharedAgentPath(agent.shared_token), agent: null };
+    }
+
+    const agentResponse = await userService.getAgent(data.agent_id, token);
+    if (!agentResponse.ok) return plain;
+    const agent: Agent = await agentResponse.json();
+    if (agent.shared_token) {
+      return { path: sharedAgentPath(agent.shared_token), agent: null };
+    }
+    return { path: agentChatPath(data.agent_id, index), agent };
+  };
+
   const handleConversationClick = async (index: string) => {
     try {
-      dispatch(setSelectedAgent(null));
-
-      // Pre-fetch to choose the route shape (owned-agent / shared / none).
+      // The agent resolves before the chat is applied, so the old chat
+      // keeps its card until the new one shows with its own.
+      let path = `/c/${index}`;
       const result = await dispatch(
-        loadConversation({ id: index, force: true }),
+        loadConversation({
+          id: index,
+          force: true,
+          resolveAgent: async (data) => {
+            const route = await resolveConversationRoute(index, data);
+            path = route.path;
+            return route.agent;
+          },
+        }),
       ).unwrap();
       // Stale: a newer load has already updated Redux; the URL is
       // wherever that newer flow lands, leave it alone.
       if (result.stale) return;
-      const data = result.data;
-      if (!data) {
-        navigate('/c/new');
-        return;
-      }
-
-      if (!data.agent_id) {
-        navigate(`/c/${index}`);
-        return;
-      }
-
-      let agent: Agent;
-      if (data.is_shared_usage) {
-        const sharedResponse = await userService.getSharedAgent(
-          data.shared_token,
-          token,
-        );
-        if (!sharedResponse.ok) {
-          navigate(`/c/${index}`);
-          return;
-        }
-        agent = await sharedResponse.json();
-        navigate(sharedAgentPath(agent.shared_token));
-      } else {
-        const agentResponse = await userService.getAgent(data.agent_id, token);
-        if (!agentResponse.ok) {
-          navigate(`/c/${index}`);
-          return;
-        }
-        agent = await agentResponse.json();
-        if (agent.shared_token) {
-          navigate(sharedAgentPath(agent.shared_token));
-        } else {
-          await Promise.resolve(dispatch(setSelectedAgent(agent)));
-          navigate(agentChatPath(data.agent_id, index));
-        }
-      }
+      navigate(result.data ? path : '/c/new');
     } catch (error) {
       console.error('Error handling conversation click:', error);
       navigate('/c/new');
