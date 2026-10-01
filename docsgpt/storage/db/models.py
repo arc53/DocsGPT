@@ -489,6 +489,13 @@ Index(
     attachments_table.c.content_hash,
     postgresql_where=attachments_table.c.content_hash.isnot(None),
 )
+# Mirrors the partial index created in migration 0045: zips whose members
+# are still parsing, for the reconciler's stuck-member sweep.
+Index(
+    "attachments_archive_processing_idx",
+    attachments_table.c.created_at,
+    postgresql_where=text("(metadata->'archive'->>'status') = 'processing'"),
+)
 
 # Identity row, one per logical artifact. The stable ``id`` is the handle passed
 # around (chat/workflow state/message bodies carry only this reference, never

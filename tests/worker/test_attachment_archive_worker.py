@@ -408,3 +408,100 @@ def test_members_are_dispatched_as_their_own_idempotent_task(monkeypatch):
 
     assert calls == [{"args": [member_info, USER], "kwargs": {"idempotency_key": "archive-member:h-1"}}]
     assert tasks.store_archive_member.acks_late is True
+
+
+def _backdate_dispatches(info, minutes):
+    """Make the zip's dispatched members look ``minutes`` old."""
+    from datetime import datetime, timedelta, timezone
+
+    from docsgpt.storage.db.session import db_session
+
+    stamp = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+    with db_session() as conn:
+        repo = AttachmentsRepository(conn)
+        row = repo.get_by_legacy_id(info["attachment_id"], USER)
+        archive = row["metadata"]["archive"]
+        archive["dispatched_at"] = {handle: stamp for handle in archive["dispatched_at"]}
+        repo.update(str(row["id"]), USER, {"metadata": {**row["metadata"], "archive": archive}})
+
+
+@pytest.fixture()
+def swept_events(monkeypatch):
+    """Events the reconciler publishes after its sweeps commit."""
+    seen = []
+    monkeypatch.setattr(
+        "docsgpt.events.publisher.publish_user_event",
+        lambda user, kind, payload, scope=None: seen.append((kind, dict(payload))),
+    )
+    return seen
+
+
+@pytest.mark.usefixtures("wired_engine")
+class TestStuckZipMemberSweep:
+    def test_the_timeout_is_a_setting(self):
+        from docsgpt.core.settings import settings
+
+        assert settings.ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT == 1800
+
+    def test_members_pending_past_the_timeout_fail_and_the_zip_completes(
+        self, storage_dir, events, dispatched, swept_events
+    ):
+        from docsgpt.api.user.reconciliation import run_reconciliation
+
+        info = _upload(storage_dir, _zip(ENTRIES))
+        _run(info)
+        first, _ = dispatched.pop(0)
+        _run_member(first)
+        dispatched.clear()  # the broker lost the other two
+        _backdate_dispatches(info, 31)
+
+        summary = run_reconciliation()
+
+        assert summary["archive_members_failed"] == 2
+        parent = _parent(info)
+        archive = parent["metadata"]["archive"]
+        assert archive["status"] == "complete"
+        assert archive["failed"] == 2
+        assert [f["archive_path"] for f in archive["failed_members"]] == ["docs/readme.md", "nested.zip/inner.txt"]
+        assert all("30 minutes" in f["reason"] for f in archive["failed_members"])
+        assert parent["metadata"]["extraction"]["status"] == "ok"
+        assert swept_events[-1][0] == "attachment.completed"
+        completed = swept_events[-1][1]
+        assert completed["attachment_id"] == info["attachment_id"]
+        assert completed["archive"] == {"members": 3, "skipped": 1, "failed": 2}
+        stuck = [m for m in _members(parent["id"]) if m["metadata"]["archive_path"] != "notes.txt"]
+        assert [m["metadata"]["extraction"]["status"] for m in stuck] == ["failed", "failed"]
+
+    def test_fresh_members_are_left_alone(self, storage_dir, events, dispatched, swept_events):
+        from docsgpt.api.user.reconciliation import run_reconciliation
+
+        info = _upload(storage_dir, _zip(ENTRIES))
+        _run(info)
+
+        summary = run_reconciliation()
+
+        assert summary["archive_members_failed"] == 0
+        assert _parent(info)["metadata"]["archive"]["status"] == "processing"
+        assert swept_events == []
+
+    def test_a_failed_member_frees_its_slot_for_the_next(
+        self, storage_dir, events, dispatched, swept_events, monkeypatch
+    ):
+        from docsgpt.api.user.reconciliation import run_reconciliation
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "ATTACHMENT_ARCHIVE_PARALLELISM", 1)
+        info = _upload(storage_dir, _zip(ENTRIES))
+        _run(info)
+        dispatched.clear()  # notes.txt was lost
+        _backdate_dispatches(info, 31)
+
+        assert run_reconciliation()["archive_members_failed"] == 1
+
+        assert _member_names(dispatched) == ["docs/readme.md"]
+        assert "attachment.completed" not in [kind for kind, _ in swept_events]
+        _drain(dispatched)
+        archive = _parent(info)["metadata"]["archive"]
+        assert archive["failed"] == 1
+        assert archive["failed_members"][0]["archive_path"] == "notes.txt"
+        assert events[-1][0] == "attachment.completed"

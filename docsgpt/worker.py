@@ -9,7 +9,7 @@ import shutil
 import string
 import tempfile
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import uuid
 from collections import Counter
@@ -1895,6 +1895,48 @@ def _reused_parse_metadata(row: Dict[str, Any]) -> Dict[str, Any]:
     return copied
 
 
+def _write_attachment_failure_row(
+    repo: AttachmentsRepository, user: str, file_info: Dict[str, Any], metadata: Dict[str, Any]
+) -> None:
+    """Write an upload's failure metadata, never over a parsed row.
+
+    The conditional update carries the no-clobber guard in its own WHERE
+    clause: a success row committed by a concurrent duplicate execution
+    (broker redelivery, the poison guard racing a live attempt) or earlier in
+    the same attempt is never overwritten with a NULL-content failure.
+
+    Args:
+        repo: Repository on the caller's transaction.
+        user: The uploader.
+        file_info: The upload's ``attachment_id``, ``filename``, ``path``.
+        metadata: The row's metadata, failed ``extraction`` included.
+    """
+    attachment_id = str(file_info["attachment_id"])
+    filename = file_info.get("filename") or ""
+    if repo.update_metadata_if_content_null(attachment_id, user, metadata):
+        return
+    if repo.get_by_legacy_id(attachment_id, user) is not None:
+        return
+    repo.create(
+        user,
+        filename,
+        file_info.get("path") or "",
+        mime_type=mimetypes.guess_type(filename)[0] or "application/octet-stream",
+        content=None,
+        token_count=None,
+        metadata=metadata,
+        legacy_mongo_id=attachment_id,
+    )
+
+
+def _failure_metadata(file_info: Dict[str, Any], error: Any, parser: Optional[str] = None) -> Dict[str, Any]:
+    """An upload's metadata with a failed ``extraction`` record."""
+    return {
+        **(file_info.get("metadata") or {}),
+        "extraction": {"status": "failed", "parser": parser, "truncated": False, "error": str(error)[:1024]},
+    }
+
+
 def record_attachment_failure(user, file_info, error, parser=None):
     """Persist a failure row so a broken parse is visible to a DB scan.
 
@@ -1903,40 +1945,12 @@ def record_attachment_failure(user, file_info, error, parser=None):
     goes into ``metadata.extraction``, never into ``content``.
     """
     attachment_id = file_info.get("attachment_id")
-    filename = file_info.get("filename") or ""
     if not attachment_id:
         return
     try:
-        metadata = {
-            **(file_info.get("metadata") or {}),
-            "extraction": {
-                "status": "failed",
-                "parser": parser,
-                "truncated": False,
-                "error": str(error)[:1024],
-            },
-        }
+        metadata = _failure_metadata(file_info, error, parser)
         with db_session() as conn:
-            repo = AttachmentsRepository(conn)
-            # The conditional update carries the no-clobber guard in its own
-            # WHERE clause: a success row committed by a concurrent duplicate
-            # execution (broker redelivery, the poison guard racing a live
-            # attempt) or earlier in this attempt is never overwritten with a
-            # NULL-content failure.
-            if repo.update_metadata_if_content_null(str(attachment_id), user, metadata):
-                return
-            if repo.get_by_legacy_id(str(attachment_id), user) is not None:
-                return
-            repo.create(
-                user,
-                filename,
-                file_info.get("path") or "",
-                mime_type=mimetypes.guess_type(filename)[0] or "application/octet-stream",
-                content=None,
-                token_count=None,
-                metadata=metadata,
-                legacy_mongo_id=str(attachment_id),
-            )
+            _write_attachment_failure_row(AttachmentsRepository(conn), user, file_info, metadata)
     except Exception:
         logging.error(
             f"Failed to record failure row for attachment {attachment_id}",
@@ -2362,31 +2376,42 @@ def _finish_archive(repo: AttachmentsRepository, row: Dict[str, Any], archive: D
     }
 
 
-def _members_to_dispatch(archive: Dict[str, Any], *, upto: Optional[int] = None) -> List[Dict[str, Any]]:
+def _archive_now() -> datetime.datetime:
+    """The current time, as the zip's dispatch stamps record it."""
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def _members_to_dispatch(archive: Dict[str, Any], *, resume: bool = False) -> List[Dict[str, Any]]:
     """Members to hand to the workers so at most the window is in flight.
 
     Members are dispatched in archive order. With ``n`` of them finished,
-    the first ``n + window`` have been dispatched, so each finish frees the
-    slot for exactly one more: the one at index ``n + window - 1``.
+    the first ``n + window`` may have been dispatched; the ones among them
+    not dispatched yet (no ``dispatched_at`` stamp) are due. Every outcome,
+    a worker's or the reconciler's, frees a slot this way.
 
     Args:
         archive: The zip's bookkeeping.
-        upto: Dispatch every unfinished member before this index instead of
-            the single newly freed one (the zip's own task starting or
-            resuming the window).
+        resume: Dispatch every unfinished member in the window, stamped or
+            not (the zip's own task starting or resuming after a retry).
 
     Returns:
         The members' task payloads.
     """
     planned = archive.get("planned") or []
     outcomes = archive.get("outcomes") or {}
+    stamps = archive.get("dispatched_at") or {}
     window = max(1, int(settings.ATTACHMENT_ARCHIVE_PARALLELISM))
-    if upto is not None:
-        return [m for m in planned[: min(upto, len(planned))] if m["attachment_id"] not in outcomes]
-    index = len(outcomes) + window - 1
-    if index < len(planned) and planned[index]["attachment_id"] not in outcomes:
-        return [planned[index]]
-    return []
+    due = [m for m in planned[: len(outcomes) + window] if m["attachment_id"] not in outcomes]
+    if resume:
+        return due
+    return [m for m in due if m["attachment_id"] not in stamps]
+
+
+def _stamp_dispatched(archive: Dict[str, Any], members: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """The bookkeeping with ``members`` stamped as dispatched now."""
+    now = _archive_now().isoformat()
+    stamps = {**(archive.get("dispatched_at") or {}), **{m["attachment_id"]: now for m in members}}
+    return {**archive, "dispatched_at": stamps}
 
 
 def _dispatch_archive_member(member_info: Dict[str, Any], user: str) -> None:
@@ -2426,14 +2451,53 @@ def _is_final_attempt(task: Any, exc: BaseException) -> bool:
     return retries >= max_retries
 
 
-def _record_archive_member_outcome(user: str, member_info: Dict[str, Any], outcome: Dict[str, Any]) -> None:
-    """Count one member's final outcome on its zip, then move the zip on.
+def _apply_archive_outcomes(
+    repo: AttachmentsRepository, row: Dict[str, Any], new_outcomes: Dict[str, Dict[str, Any]]
+) -> Tuple[List[Dict[str, Any]], List[Tuple[str, Dict[str, Any]]]]:
+    """Count members' final outcomes on their zip, then move the zip on.
 
-    Runs under the zip row's lock, so concurrent members serialize here and
-    exactly one sees the last outcome land. A member already counted (a
-    redelivered task) is not counted again. After the commit, the member
-    whose slot this freed is dispatched, and the zip reports progress, or
-    completes when this was its last member.
+    The caller holds the zip row's lock, so concurrent members serialize
+    and exactly one sees the last outcome land. A member already counted (a
+    redelivered task) is not counted again. The members whose slots this
+    freed are stamped as dispatched; the caller dispatches them, and
+    publishes the events, once the transaction commits.
+
+    Args:
+        repo: Repository on the transaction holding the lock.
+        row: The zip's locked row.
+        new_outcomes: Member handle to ``{"status": "ok", "token_count": n}``
+            or ``{"status": "failed", "reason": text}``.
+
+    Returns:
+        The members to dispatch, and the zip's events as ``(type, payload)``
+        pairs: progress, or completion when the last member landed.
+    """
+    archive = _archive_state(row)
+    if archive is None:
+        return [], []
+    planned = archive.get("planned") or []
+    known = {m["attachment_id"] for m in planned}
+    outcomes = dict(archive.get("outcomes") or {})
+    for handle, outcome in new_outcomes.items():
+        if handle in known:
+            outcomes.setdefault(str(handle), outcome)
+    archive = {**archive, "outcomes": outcomes}
+    if len(outcomes) >= len(planned):
+        completed = _finish_archive(repo, row, archive)
+        return [], [
+            ("attachment.progress", _archive_progress_event(row, _ARCHIVE_MEMBERS_DONE_PROGRESS, "storing")),
+            ("attachment.completed", completed),
+        ]
+    to_dispatch = _members_to_dispatch(archive)
+    archive = _stamp_dispatched(archive, to_dispatch)
+    repo.update(str(row["id"]), row["user_id"], {"metadata": {**row["metadata"], "archive": archive}})
+    span = _ARCHIVE_MEMBERS_DONE_PROGRESS - _ARCHIVE_UNPACKED_PROGRESS
+    current = _ARCHIVE_UNPACKED_PROGRESS + int(span * len(outcomes) / len(planned))
+    return to_dispatch, [("attachment.progress", _archive_progress_event(row, current, "processing"))]
+
+
+def _record_archive_member_outcome(user: str, member_info: Dict[str, Any], outcome: Dict[str, Any]) -> None:
+    """Count one member's final outcome on its zip, then dispatch and report.
 
     Args:
         user: The uploader.
@@ -2442,50 +2506,86 @@ def _record_archive_member_outcome(user: str, member_info: Dict[str, Any], outco
             ``{"status": "failed", "reason": text}``.
     """
     parent_id = (member_info.get("metadata") or {}).get("parent_attachment_id")
-    handle = str(member_info["attachment_id"])
-    to_dispatch: List[Dict[str, Any]] = []
-    progress: Optional[Dict[str, Any]] = None
-    completed: Optional[Dict[str, Any]] = None
     with db_session() as conn:
         repo = AttachmentsRepository(conn)
         row = repo.get_for_update(str(parent_id), user) if parent_id else None
-        archive = _archive_state(row)
-        if archive is None:
+        if row is None:
             return
-        planned = archive.get("planned") or []
-        if handle not in {m["attachment_id"] for m in planned}:
-            return
-        outcomes = dict(archive.get("outcomes") or {})
-        outcomes.setdefault(handle, outcome)
-        archive = {**archive, "outcomes": outcomes}
-        if len(outcomes) >= len(planned):
-            completed = _finish_archive(repo, row, archive)
-        else:
-            repo.update(str(row["id"]), user, {"metadata": {**row["metadata"], "archive": archive}})
-            to_dispatch = _members_to_dispatch(archive)
-            span = _ARCHIVE_MEMBERS_DONE_PROGRESS - _ARCHIVE_UNPACKED_PROGRESS
-            current = _ARCHIVE_UNPACKED_PROGRESS + int(span * len(outcomes) / len(planned))
-            progress = _archive_progress_event(row, current, "processing")
+        to_dispatch, events = _apply_archive_outcomes(repo, row, {str(member_info["attachment_id"]): outcome})
     for member in to_dispatch:
         _dispatch_archive_member(member, user)
-    _publish_archive_events(user, row, progress, completed)
+    _publish_archive_events(user, row, events)
 
 
-def _publish_archive_events(
-    user: str, row: Dict[str, Any], progress: Optional[Dict[str, Any]], completed: Optional[Dict[str, Any]]
-) -> None:
-    """Report a zip's progress or completion to the browser, keyed by its handle."""
-    scope = {"kind": "attachment", "id": str(row.get("legacy_mongo_id") or row["id"])}
-    if progress is not None:
-        publish_user_event(user, "attachment.progress", progress, scope=scope)
-    if completed is not None:
-        publish_user_event(
-            user,
-            "attachment.progress",
-            _archive_progress_event(row, _ARCHIVE_MEMBERS_DONE_PROGRESS, "storing"),
-            scope=scope,
+def _archive_event_scope(row: Dict[str, Any]) -> Dict[str, str]:
+    """The SSE scope of a zip's events: its upload handle, which the browser tracks."""
+    return {"kind": "attachment", "id": str(row.get("legacy_mongo_id") or row["id"])}
+
+
+def _publish_archive_events(user: str, row: Dict[str, Any], events: List[Tuple[str, Dict[str, Any]]]) -> None:
+    """Report a zip's progress or completion to the browser."""
+    scope = _archive_event_scope(row)
+    for kind, payload in events:
+        publish_user_event(user, kind, payload, scope=scope)
+
+
+def sweep_stuck_archive_members(
+    conn: Any, *, timeout_seconds: int
+) -> Tuple[int, List[Tuple[Dict[str, Any], str]], List[Tuple[str, str, Dict[str, Any], Dict[str, str]]]]:
+    """Fail zip members queued longer than the timeout without an outcome.
+
+    A member whose task was lost (a broker loss, a crash between the commit
+    and the dispatch) would leave its zip processing forever. Each one past
+    ``timeout_seconds`` since its dispatch gets a failure row and a failed
+    outcome with the reason; that frees its slot for the next member, or
+    completes the zip with honest counts. Runs in the reconciler's
+    transaction; zips a member task holds right now are left to the next
+    tick.
+
+    Args:
+        conn: The reconciler sweep's connection.
+        timeout_seconds: ``ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT``.
+
+    Returns:
+        The number of members failed, the members to dispatch as
+        ``(member_info, user)`` and the events to publish as
+        ``(user, type, payload, scope)``, both for after the commit.
+    """
+    repo = AttachmentsRepository(conn)
+    cutoff = _archive_now() - datetime.timedelta(seconds=timeout_seconds)
+    minutes = max(1, round(timeout_seconds / 60))
+    reason = f"Not processed within {minutes} minutes."
+    failed = 0
+    dispatches: List[Tuple[Dict[str, Any], str]] = []
+    events: List[Tuple[str, str, Dict[str, Any], Dict[str, str]]] = []
+    for row in repo.find_and_lock_processing_archives():
+        archive = _archive_state(row) or {}
+        outcomes = archive.get("outcomes") or {}
+        stamps = archive.get("dispatched_at") or {}
+        stuck = []
+        for member in archive.get("planned") or []:
+            stamp = stamps.get(member["attachment_id"])
+            if member["attachment_id"] in outcomes or not stamp:
+                continue
+            try:
+                stale = datetime.datetime.fromisoformat(stamp) < cutoff
+            except (TypeError, ValueError):
+                stale = True
+            if stale:
+                stuck.append(member)
+        if not stuck:
+            continue
+        user = row["user_id"]
+        for member in stuck:
+            _write_attachment_failure_row(repo, user, member, _failure_metadata(member, reason))
+        to_dispatch, zip_events = _apply_archive_outcomes(
+            repo, row, {m["attachment_id"]: {"status": "failed", "reason": reason} for m in stuck}
         )
-        publish_user_event(user, "attachment.completed", completed, scope=scope)
+        failed += len(stuck)
+        dispatches.extend((member, user) for member in to_dispatch)
+        scope = _archive_event_scope(row)
+        events.extend((user, kind, payload, scope) for kind, payload in zip_events)
+    return failed, dispatches, events
 
 
 def _member_failure_reason(error: Any) -> str:
@@ -2632,6 +2732,9 @@ def _start_archive_members(
             "members": len(planned),
             "planned": planned,
             "outcomes": outcomes,
+            "dispatched_at": {
+                h: t for h, t in (previous.get("dispatched_at") or {}).items() if h in handles and h not in outcomes
+            },
             "skipped": [{"archive_path": s.archive_path, "reason": s.reason} for s in expansion.skipped],
             "skipped_count": expansion.skipped_count,
             "total_bytes": expansion.total_bytes,
@@ -2639,12 +2742,20 @@ def _start_archive_members(
         if len(outcomes) >= len(planned):
             completed = _finish_archive(repo, row, archive)
         else:
+            to_dispatch = _members_to_dispatch(archive, resume=True)
+            archive = _stamp_dispatched(archive, to_dispatch)
             repo.update(parent_id, user, {"metadata": {**row["metadata"], "archive": archive}})
-            window = max(1, int(settings.ATTACHMENT_ARCHIVE_PARALLELISM))
-            to_dispatch = _members_to_dispatch(archive, upto=len(outcomes) + window)
     for member in to_dispatch:
         _dispatch_archive_member(member, user)
-    _publish_archive_events(user, row, None, completed)
+    if completed is not None:
+        _publish_archive_events(
+            user,
+            row,
+            [
+                ("attachment.progress", _archive_progress_event(row, _ARCHIVE_MEMBERS_DONE_PROGRESS, "storing")),
+                ("attachment.completed", completed),
+            ],
+        )
 
 
 def _record_archive_failure(user: str, file_info: Dict[str, Any], parent_id: Optional[str], error: Any) -> None:

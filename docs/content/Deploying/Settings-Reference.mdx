@@ -809,6 +809,12 @@ Type `int`, default `4`, must be `> 0`.
 
 Members of one zip attachment parsed at the same time, each as its own worker task; the next member is queued as one finishes, so a large zip never floods the queue ahead of other uploads.
 
+### `ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT`
+
+Type `int`, default `1800`, must be `> 0`.
+
+Seconds a zip attachment's member may stay unparsed after it is queued (queue wait included) before the reconciler marks it failed, so a lost task never leaves the zip processing forever.
+
 ### `PARSE_PDF_AS_IMAGE`
 
 Type `bool`, default `false`.

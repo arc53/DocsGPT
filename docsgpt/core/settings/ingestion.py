@@ -66,6 +66,14 @@ class IngestionSettings(SettingsGroup):
             "member is queued as one finishes, so a large zip never floods the queue ahead of other uploads."
         ),
     )
+    ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT: int = Field(
+        default=1800,
+        gt=0,
+        description=(
+            "Seconds a zip attachment's member may stay unparsed after it is queued (queue wait included) "
+            "before the reconciler marks it failed, so a lost task never leaves the zip processing forever."
+        ),
+    )
     PARSE_PDF_AS_IMAGE: bool = Field(default=False, description="Render PDF pages to images before parsing.")
     PARSE_IMAGE_REMOTE: bool = Field(default=False, description="Send images to a remote parser.")
     DOC_PARSER_ENGINE: Literal["anydoc", "docling"] = Field(

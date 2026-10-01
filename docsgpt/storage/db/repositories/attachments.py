@@ -138,6 +138,28 @@ class AttachmentsRepository:
         row = result.fetchone()
         return _attachment_to_dict(row) if row is not None else None
 
+    def find_and_lock_processing_archives(self, limit: int = 100) -> list[dict]:
+        """Zips of any user whose members are still parsing, locked for the reconciler.
+
+        Served by the partial index of migration 0045. Rows a member task is
+        updating right now are skipped (``SKIP LOCKED``); the next tick sees
+        them.
+
+        Args:
+            limit: Most rows returned per call, oldest first.
+
+        Returns:
+            The zips' rows, each locked until the transaction ends.
+        """
+        result = self._conn.execute(
+            text(
+                "SELECT * FROM attachments WHERE (metadata->'archive'->>'status') = 'processing' "
+                "ORDER BY created_at LIMIT :limit FOR UPDATE SKIP LOCKED"
+            ),
+            {"limit": int(limit)},
+        )
+        return [_attachment_to_dict(r) for r in result.fetchall()]
+
     def get_any(self, attachment_id: str, user_id: str) -> Optional[dict]:
         """Resolve an attachment by either PG UUID or legacy Mongo ObjectId string."""
         if looks_like_uuid(attachment_id):
