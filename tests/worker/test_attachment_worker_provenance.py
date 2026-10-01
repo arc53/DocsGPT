@@ -264,3 +264,83 @@ class TestPoisonProvenance:
         extraction = row["metadata"]["extraction"]
         assert extraction["status"] == "failed"
         assert "repeated failures" in extraction["error"]
+
+
+def _blank_pdf_bytes(pages: int) -> bytes:
+    """A real PDF with ``pages`` empty pages, built with pypdfium2."""
+    import io
+
+    import pypdfium2 as pdfium
+
+    pdf = pdfium.PdfDocument.new()
+    try:
+        for _ in range(pages):
+            pdf.new_page(612, 792)
+        buffer = io.BytesIO()
+        pdf.save(buffer)
+    finally:
+        pdf.close()
+    return buffer.getvalue()
+
+
+@pytest.mark.usefixtures("wired_engine")
+class TestFingerprintProvenance:
+    """The planner dedupes and sizes attachments from what the worker records."""
+
+    def test_records_sha256_of_original_bytes_and_size(self, storage_dir):
+        import hashlib
+
+        payload = b"invoice 42, total 19.99\n"
+        info = _file_info(storage_dir, content=payload)
+
+        _run_worker(info)
+
+        row = _fetch(info["attachment_id"])
+        assert row["metadata"]["content_hash"] == hashlib.sha256(payload).hexdigest()
+        assert row["size"] == len(payload)
+        # Not a paged format: no page count is claimed.
+        assert "page_count" not in row["metadata"]
+        # The extraction record is untouched by the fingerprint.
+        extraction = row["metadata"]["extraction"]
+        assert {"truncated", "original_tokens", "stored_tokens"} <= set(extraction)
+
+    def test_identical_bytes_hash_identically_across_uploads(self, storage_dir):
+        first = _file_info(storage_dir, filename="a.txt", content=b"same bytes")
+        second = _file_info(storage_dir, filename="b.txt", content=b"same bytes")
+
+        _run_worker(first)
+        _run_worker(second)
+
+        assert (
+            _fetch(first["attachment_id"])["metadata"]["content_hash"]
+            == _fetch(second["attachment_id"])["metadata"]["content_hash"]
+        )
+
+    def test_pdf_records_page_count(self, storage_dir, monkeypatch):
+        payload = _blank_pdf_bytes(3)
+        info = _file_info(storage_dir, filename="report.pdf", content=payload)
+        monkeypatch.setattr(
+            "docsgpt.worker.SimpleDirectoryReader",
+            lambda **kwargs: type("R", (), {"load_data": lambda self: [_Doc("page text")]})(),
+        )
+
+        _run_worker(info)
+
+        row = _fetch(info["attachment_id"])
+        assert row["metadata"]["page_count"] == 3
+
+    def test_unreadable_pdf_still_gets_a_hash(self, storage_dir, monkeypatch):
+        # A file pypdfium2 cannot open keeps its hash; the page count is
+        # simply left out rather than failing the upload.
+        payload = b"%PDF-1.4 not really a pdf"
+        info = _file_info(storage_dir, filename="broken.pdf", content=payload)
+        monkeypatch.setattr(
+            "docsgpt.worker.SimpleDirectoryReader",
+            lambda **kwargs: type("R", (), {"load_data": lambda self: [_Doc("some text")]})(),
+        )
+
+        _run_worker(info)
+
+        row = _fetch(info["attachment_id"])
+        assert row["metadata"]["content_hash"]
+        assert "page_count" not in row["metadata"]

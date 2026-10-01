@@ -1,4 +1,5 @@
 import datetime
+import hashlib
 import io
 import json
 import logging
@@ -1689,6 +1690,46 @@ def _readable_without_text(filename: str) -> bool:
     return mime_type == "application/pdf" or mime_type.startswith("image/")
 
 
+def _attachment_fingerprint(local_path: str, filename: str) -> Dict[str, Any]:
+    """Fingerprint an upload's original bytes while they are local.
+
+    The chat budget planner dedupes re-sent files by ``content_hash`` and
+    sizes native PDF parts by ``page_count``; both are only cheap here, where
+    the bytes already sit on disk.
+
+    Args:
+        local_path: Path of the original upload.
+        filename: The upload's original filename.
+
+    Returns:
+        Dict with ``content_hash`` (sha256 hex) and ``size`` (bytes), plus
+        ``page_count`` for a PDF pypdfium2 can open. Empty when the file
+        cannot be read; a fingerprint never fails the upload.
+    """
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with open(local_path, "rb") as handle:
+            for block in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(block)
+                size += len(block)
+    except OSError:
+        return {}
+    fingerprint: Dict[str, Any] = {"content_hash": digest.hexdigest(), "size": size}
+    if (mimetypes.guess_type(filename)[0] or "") == "application/pdf":
+        try:
+            import pypdfium2 as pdfium
+
+            pdf = pdfium.PdfDocument(local_path)
+            try:
+                fingerprint["page_count"] = len(pdf)
+            finally:
+                pdf.close()
+        except Exception:  # noqa: BLE001 - an unreadable PDF just has no page count
+            pass
+    return fingerprint
+
+
 def _store_png_copy(storage, relative_path: str, mime_type: str) -> tuple[str, dict]:
     """Store a PNG copy, beside the original, of an image the providers reject.
 
@@ -1751,7 +1792,7 @@ def _bounded_attachment_copy(local_path: str) -> tuple[str, bool]:
 
 
 def _upsert_attachment_row(
-    user, filename, relative_path, *, mime_type, content, token_count, metadata, attachment_id
+    user, filename, relative_path, *, mime_type, content, token_count, metadata, attachment_id, size=None
 ):
     """Create or update the attachment row for one upload handle.
 
@@ -1774,6 +1815,7 @@ def _upsert_attachment_row(
                     "content": content,
                     "token_count": token_count,
                     "metadata": metadata,
+                    **({"size": size} if size is not None else {}),
                 },
             )
         else:
@@ -1782,6 +1824,7 @@ def _upsert_attachment_row(
                 filename,
                 relative_path,
                 mime_type=mime_type,
+                size=size,
                 content=content,
                 token_count=token_count,
                 metadata=metadata,
@@ -1888,7 +1931,10 @@ def attachment_worker(self, file_info, user):
         _parser = file_extractor.get(os.path.splitext(filename)[1].lower())
         parser_name = type(_parser).__name__ if _parser is not None else "SimpleDirectoryReader"
 
+        fingerprint: Dict[str, Any] = {}
+
         def _parse_local_file(local_path: str, **kwargs) -> Document:
+            fingerprint.update(_attachment_fingerprint(local_path, filename))
             _reject_unparseable_attachment(local_path, filename, set(file_extractor))
             _reject_attachment_zip_bomb(local_path)
             parse_path, is_temp_copy = _bounded_attachment_copy(local_path)
@@ -1952,6 +1998,7 @@ def attachment_worker(self, file_info, user):
 
         metadata = {
             **metadata,
+            **{k: v for k, v in fingerprint.items() if k in ("content_hash", "page_count")},
             "extraction": {
                 "status": extraction_status,
                 "parser": parser_name,
@@ -1992,6 +2039,7 @@ def attachment_worker(self, file_info, user):
             token_count=token_count,
             metadata=metadata,
             attachment_id=attachment_id,
+            size=fingerprint.get("size"),
         )
 
         logging.info(
