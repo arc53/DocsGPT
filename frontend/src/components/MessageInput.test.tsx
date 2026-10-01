@@ -25,6 +25,7 @@ import uploadReducer, {
   selectSendableAttachmentIds,
   type Attachment,
 } from '../upload/uploadSlice';
+import userService from '../api/services/userService';
 import MessageInput from './MessageInput';
 import { ATTACHMENT_MAX_BYTES } from './message-input/attachmentUpload';
 import { UPLOAD_STALL_TIMEOUT_MS } from './message-input/uploadStallGuard';
@@ -121,6 +122,7 @@ describe('MessageInput send with a failed attachment', () => {
     container.remove();
     globalThis.XMLHttpRequest = realXHR;
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   const render = async (loading = false) => {
@@ -486,6 +488,90 @@ describe('MessageInput send with a failed attachment', () => {
       vi.advanceTimersByTime(1);
     });
     expect(store.getState().upload.attachments[0].status).toBe('failed');
+  });
+
+  const taskStatus = (status: string, result: unknown = null) =>
+    vi
+      .spyOn(userService, 'getTaskStatus')
+      .mockImplementation(
+        async () =>
+          new Response(JSON.stringify({ status, result }), { status: 200 }),
+      );
+
+  const statusOf = () => store.getState().upload.attachments[0].status;
+
+  it('waits for a busy worker to start the file before timing it', async () => {
+    vi.useFakeTimers();
+    const getTaskStatus = taskStatus('PENDING');
+    await storeSlow();
+
+    // Forty files queue behind each other: this one has heard nothing yet.
+    await act(async () => {
+      vi.advanceTimersByTime(10 * 60_000 - 1);
+    });
+    expect(statusOf()).toBe('processing');
+    expect(getTaskStatus).not.toHaveBeenCalled();
+
+    // After ten quiet minutes it asks, and a queued file keeps waiting.
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(getTaskStatus).toHaveBeenCalledWith('celery-slow', null);
+    expect(statusOf()).toBe('processing');
+
+    // The worker takes it: from now on five quiet minutes fail it.
+    await act(async () => {
+      store.dispatch(attachmentProgress('srv-slow', 10, 0));
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(5 * 60_000 - 1);
+    });
+    expect(statusOf()).toBe('processing');
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(statusOf()).toBe('failed');
+  });
+
+  it('times a file the status says a worker took', async () => {
+    vi.useFakeTimers();
+    taskStatus('STARTED');
+    await storeSlow();
+    await act(async () => {
+      vi.advanceTimersByTime(10 * 60_000);
+    });
+    expect(statusOf()).toBe('processing');
+    await act(async () => {
+      vi.advanceTimersByTime(5 * 60_000);
+    });
+    expect(statusOf()).toBe('failed');
+  });
+
+  it('fails the file with the reason the status reports', async () => {
+    vi.useFakeTimers();
+    taskStatus('FAILURE', 'Could not parse the file');
+    await storeSlow();
+    await act(async () => {
+      vi.advanceTimersByTime(10 * 60_000);
+    });
+    const [row] = store.getState().upload.attachments;
+    expect(row.status).toBe('failed');
+    expect(row.errorMessage).toBe('Could not parse the file');
+  });
+
+  it('gives up on a file no worker took within an hour', async () => {
+    vi.useFakeTimers();
+    taskStatus('PENDING');
+    await storeSlow();
+    // Async: each check re-arms the next one once its answer is in.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60 * 60_000 - 1);
+    });
+    expect(statusOf()).toBe('processing');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(statusOf()).toBe('failed');
   });
 
   it('keeps a queued question while another answer is streaming', async () => {
