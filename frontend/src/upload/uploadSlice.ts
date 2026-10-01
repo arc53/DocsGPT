@@ -176,6 +176,22 @@ export function toSendableAttachments(
 }
 
 /**
+ * The reason an ``attachment.failed`` event gives (its ``error``), if any.
+ *
+ * Args:
+ *   payload: The event's payload.
+ *
+ * Returns:
+ *   The worker's reason, or undefined when it sent none.
+ */
+export function attachmentFailureReason(
+  payload: Record<string, unknown>,
+): string | undefined {
+  const error = payload.error;
+  return typeof error === 'string' && error.trim() ? error.trim() : undefined;
+}
+
+/**
  * Apply one ``attachment.*`` event to its row. Shared by the live SSE path
  * and the replay of events that arrived before the row knew its id.
  */
@@ -219,6 +235,8 @@ function applyAttachmentEvent(
     }
     case 'attachment.failed': {
       attachment.status = 'failed';
+      const reason = attachmentFailureReason(payload);
+      if (reason) attachment.errorMessage = reason;
       break;
     }
     default:

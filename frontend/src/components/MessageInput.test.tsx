@@ -298,6 +298,32 @@ describe('MessageInput send with a failed attachment', () => {
     ).toEqual(['srv-small']);
   });
 
+  it("shows the worker's reason when the file failed before the upload returned", async () => {
+    await render();
+    await attachFile('locked.pdf');
+    // The worker beats the response: the stash replay and the recent-events
+    // walk can each apply it, and both must keep the reason.
+    await act(async () => {
+      store.dispatch(
+        sseEventReceived({
+          id: 'evt-failed',
+          type: 'attachment.failed',
+          scope: { kind: 'attachment', id: 'srv-locked' },
+          payload: { error: 'File is password protected' },
+        }),
+      );
+    });
+    await act(async () =>
+      FakeXHR.instances[0].respond(200, {
+        task_id: 'celery-locked',
+        attachment_id: 'srv-locked',
+      }),
+    );
+    const [row] = store.getState().upload.attachments;
+    expect(row.status).toBe('failed');
+    expect(row.errorMessage).toBe('File is password protected');
+  });
+
   const sentFileName = (xhr: FakeXHR) =>
     (xhr.body?.getAll('file') as File[]).map((f) => f.name);
 

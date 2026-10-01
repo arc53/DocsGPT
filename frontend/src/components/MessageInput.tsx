@@ -20,6 +20,7 @@ import userService from '../api/services/userService';
 import SendArrow from '../assets/send.svg?react';
 import {
   addAttachment,
+  attachmentFailureReason,
   removeAttachment,
   selectAttachments,
   toSendableAttachments,
@@ -526,10 +527,16 @@ export default function MessageInput({
           }
           if (event.type === 'attachment.failed') {
             handled = true;
+            const reason = attachmentFailureReason(
+              (event.payload || {}) as Record<string, unknown>,
+            );
             dispatch(
               updateAttachment({
                 id: clientId,
-                updates: { status: 'failed' },
+                updates: {
+                  status: 'failed',
+                  ...(reason ? { errorMessage: reason } : {}),
+                },
               }),
             );
             return true;
