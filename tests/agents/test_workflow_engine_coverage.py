@@ -1129,3 +1129,34 @@ class TestTraceSpans:
         list(engine.execute({}, "q"))
         state_span = [s for s in self.trace.spans if s.name == "workflow_step State"][0]
         assert state_span.status == "error"
+
+
+@pytest.mark.unit
+class TestWorkflowNodeContextOverflow:
+    """A node whose turn cannot fit the window reports the curated overflow error."""
+
+    def test_overflow_is_curated_and_user_facing(self):
+        from docsgpt.agents.context_overflow import ContextOverflowError
+
+        nodes = [
+            _make_node("n1", NodeType.START),
+            _make_node("n2", NodeType.AGENT, "Agent"),
+        ]
+        engine = WorkflowEngine(_make_graph(nodes, [_make_edge("e1", "n1", "n2")]), _make_agent())
+        original_execute = engine._execute_node
+
+        def patched_execute(node):
+            if node.type == NodeType.AGENT:
+                raise ContextOverflowError(
+                    "internal", needed_tokens=5_000, available_tokens=4_000, stage="pre_compression"
+                )
+            yield from original_execute(node)
+
+        engine._execute_node = patched_execute
+        events = list(engine.execute({}, "q"))
+
+        error = [e for e in events if e.get("type") == "error"][0]
+        assert error["user_facing"] is True
+        assert error["code"] == "context_length_exceeded"
+        assert error["params"] == {"needed_tokens": 5_000, "available_tokens": 4_000}
+        assert "5,000" in error["error"]

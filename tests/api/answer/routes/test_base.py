@@ -799,3 +799,41 @@ class TestHonestStreamErrors:
         error = [json.loads(s.split("data: ", 1)[1]) for s in stream if '"type": "error"' in s][-1]
         assert error["code"] == "context_length_exceeded"
         assert "Add to Knowledge" not in error["error"]
+
+
+@pytest.mark.unit
+class TestCuratedStreamErrorCode:
+    def test_a_user_facing_error_keeps_its_code_and_params(self, mock_mongo_db, flask_app):
+        import json as _json
+
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            mock_agent = MagicMock()
+            mock_agent.gen.return_value = iter(
+                [
+                    {
+                        "type": "error",
+                        "user_facing": True,
+                        "error": "Too big for the model.",
+                        "code": "context_length_exceeded",
+                        "params": {"needed_tokens": 2, "available_tokens": 1},
+                    }
+                ]
+            )
+            stream = list(
+                resource.complete_stream(
+                    question="Test?",
+                    agent=mock_agent,
+                    conversation_id=None,
+                    user_api_key=None,
+                    decoded_token={"sub": "user123"},
+                    should_persist=False,
+                )
+            )
+
+        chunk = [s for s in stream if '"type": "error"' in s][0]
+        event = _json.loads(chunk.split("data: ", 1)[1].strip())
+        assert event["code"] == "context_length_exceeded"
+        assert event["params"] == {"needed_tokens": 2, "available_tokens": 1}

@@ -878,8 +878,18 @@ class BaseAnswerResource:
                         # "quota" and rewrite it into a misleading rate-limit message, so
                         # emit it verbatim; sanitize only raw/technical errors.
                         error_text = line.get("error", "An error occurred")
+                        error_extra: Dict[str, Any] = {}
                         if not line.get("user_facing"):
                             error_text = sanitize_api_error(error_text)
+                        elif line.get("code"):
+                            # A curated error's code and params travel with it, so
+                            # the client can word it (context_length_exceeded).
+                            error_extra["code"] = line["code"]
+                            if line.get("params"):
+                                error_extra["params"] = line["params"]
+                            query_metadata["error_code"] = line["code"]
+                            if line.get("params"):
+                                query_metadata["error_params"] = line["params"]
                         stream_error = error_text
                         guardrail_meta = line.get("guardrail")
                         if guardrail_meta:
@@ -904,7 +914,7 @@ class BaseAnswerResource:
                                     "retract": True,
                                 }
                             )
-                        yield _emit({"type": "error", "error": error_text})
+                        yield _emit({"type": "error", "error": error_text, **error_extra})
                     elif line.get("type") == "notice":
                         # Non-fatal, non-terminal notice (e.g. some workflow input
                         # documents were dropped). Forwarded verbatim so the client can
@@ -1893,6 +1903,7 @@ class BaseAnswerResource:
                         "thought": None,
                         "error": event["error"],
                         "error_code": event.get("code"),
+                        "error_params": event.get("params"),
                     }
                 elif event["type"] == "end":
                     stream_ended = True
@@ -1930,3 +1941,18 @@ class BaseAnswerResource:
     def error_stream_generate(self, err_response):
         data = json.dumps({"type": "error", "error": err_response})
         yield f"data: {data}\n\n"
+
+    def curated_error_stream_generate(self, error: BaseException):
+        """One SSE ``error`` event with the curated message, code and params.
+
+        Args:
+            error: What failed the turn before its stream began.
+
+        Yields:
+            The event, worded as :func:`user_facing_error` words it.
+        """
+        public = user_facing_error(error)
+        payload: Dict[str, Any] = {"type": "error", "error": public.message, "code": public.code}
+        if public.params:
+            payload["params"] = public.params
+        yield f"data: {json.dumps(payload)}\n\n"

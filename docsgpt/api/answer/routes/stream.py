@@ -4,6 +4,7 @@ import traceback
 from flask import request, Response
 from flask_restx import fields, Resource
 
+from docsgpt.agents.context_overflow import ContextOverflowError
 from docsgpt.api import api
 
 from docsgpt.api.answer.routes.base import answer_ns, BaseAnswerResource
@@ -17,6 +18,7 @@ from docsgpt.api.answer.services.stream_processor import (
     StreamProcessor,
     flush_trace_after_request,
 )
+from docsgpt.error import bounded_error_text
 from docsgpt.streaming.sse_keepalive import with_sse_keepalive
 
 logger = logging.getLogger(__name__)
@@ -190,6 +192,15 @@ class StreamResource(Resource, BaseAnswerResource):
                         trace=processor.handoff_trace(),
                     ),
                 ),
+                mimetype="text/event-stream",
+            )
+        except ContextOverflowError as e:
+            # Caught ahead of ``ValueError`` (its base class): a turn too big
+            # for the window is not a malformed body.
+            logger.info("/stream - turn does not fit the context window: %s", bounded_error_text(e))
+            return Response(
+                self.curated_error_stream_generate(e),
+                status=400,
                 mimetype="text/event-stream",
             )
         except ResumeInProgressError as e:
