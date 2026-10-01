@@ -59,6 +59,9 @@ MAX_PAGES_IN_SPEC = 10_000
 # Page images one read renders at most (scanned pages, for a vision model).
 MAX_IMAGE_PAGES_PER_CALL = 5
 RENDER_DPI = 150
+# Longest side of a rendered page image, in pixels: a poster or a drawing is
+# rendered at a lower resolution instead of as a huge image.
+MAX_RENDER_SIDE = 2000
 
 # Lexical search: passages of the stored text, ranked with BM25.
 SEARCH_CHUNK_TOKENS = 300
@@ -472,7 +475,12 @@ def _render_pages(data: bytes, pages: Sequence[int]) -> List[Dict[str, Any]]:
         if run and (number is None or number != run[-1] + 1):
             rendered.extend(
                 convert_pdf_to_images(
-                    "original.pdf", storage=storage, first_page=run[0], max_pages=len(run), dpi=RENDER_DPI
+                    "original.pdf",
+                    storage=storage,
+                    first_page=run[0],
+                    max_pages=len(run),
+                    dpi=RENDER_DPI,
+                    max_side=MAX_RENDER_SIDE,
                 )
             )
             run = []

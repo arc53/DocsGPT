@@ -640,3 +640,43 @@ class TestReviewProbes:
         out = fence_file("F1", "a.txt", f"x {evil} y")
         tags = re.findall(r"<\s*/?\s*attached_file\b", out, flags=re.IGNORECASE)
         assert len(tags) == 2  # only the real open and close
+
+
+def _blank_pdf(width_pt: float, height_pt: float) -> bytes:
+    import io
+
+    import pypdfium2
+
+    pdf = pypdfium2.PdfDocument.new()
+    pdf.new_page(width_pt, height_pt)
+    buffer = io.BytesIO()
+    pdf.save(buffer)
+    pdf.close()
+    return buffer.getvalue()
+
+
+def _image_size(rendered: dict) -> tuple:
+    import base64
+    import io
+
+    from PIL import Image
+
+    return Image.open(io.BytesIO(base64.b64decode(rendered["data"]))).size
+
+
+@pytest.mark.unit
+@pytest.mark.skipif(not __import__("shutil").which("pdftoppm"), reason="poppler is not installed")
+class TestRenderedPageSize:
+    def test_a_huge_page_is_capped_on_its_longest_side(self):
+        from docsgpt.agents.tools.attachments import MAX_RENDER_SIDE, _render_pages
+
+        # An A0-sized poster: about 7000 x 9900 px at 150 dpi.
+        images = _render_pages(_blank_pdf(2384, 3370), [1])
+        assert max(_image_size(images[0])) <= MAX_RENDER_SIDE
+
+    def test_an_ordinary_page_keeps_the_render_resolution(self):
+        from docsgpt.agents.tools.attachments import RENDER_DPI, _render_pages
+
+        images = _render_pages(_blank_pdf(612, 792), [1])
+        width, height = _image_size(images[0])
+        assert abs(height - 792 / 72 * RENDER_DPI) <= 2
