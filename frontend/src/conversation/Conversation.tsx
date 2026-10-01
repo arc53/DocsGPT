@@ -152,7 +152,9 @@ export default function Conversation() {
   );
 
   const lastAutoOpenedArtifactId = useRef<string | null>(null);
-  const didInitArtifactAutoOpen = useRef(false);
+  // The mount key the auto-open below last saw; a new one is a chat
+  // whose history must not open anything.
+  const autoOpenMountKey = useRef<number | null>(null);
   const prevConversationId = useRef<string | null>(conversationId);
 
   const [companion, setCompanion] = useState<ChatCompanion | null>(null);
@@ -170,7 +172,13 @@ export default function Conversation() {
       conversationId !== null &&
       isNewChatRoute;
     setPrevMountConversationId(conversationId);
-    if (!isServerAssignedId) setConversationMountKey((k) => k + 1);
+    if (!isServerAssignedId) {
+      // Switching chats keeps this component mounted (a route change
+      // does not remount it), so the per-chat state resets here.
+      setConversationMountKey((k) => k + 1);
+      setQueuedQuestion(null);
+      setLastQueryReturnedErr(false);
+    }
   }
 
   useEffect(() => {
@@ -335,9 +343,10 @@ export default function Conversation() {
   }, [queries]);
 
   useEffect(() => {
-    // Avoid auto-opening an artifact from existing conversation history on first mount.
-    if (!didInitArtifactAutoOpen.current) {
-      didInitArtifactAutoOpen.current = true;
+    // Avoid auto-opening an artifact from a chat's existing history, on
+    // first mount or when another chat loads.
+    if (autoOpenMountKey.current !== conversationMountKey) {
+      autoOpenMountKey.current = conversationMountKey;
       return;
     }
 
@@ -370,7 +379,7 @@ export default function Conversation() {
       id: latest.artifact_id,
       toolName: latest.tool_name,
     });
-  }, [queries]);
+  }, [queries, conversationMountKey]);
 
   const handleOpenArtifact = useCallback(
     (artifact: { id: string; toolName: string }) => {
