@@ -13,6 +13,7 @@ from docsgpt.guardrails import runtime as guardrails_runtime
 from docsgpt.guardrails.types import ACTIONS_BY_STAGE, Stage
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.guardrail_events import (
+    EVENT_OUTCOMES,
     GuardrailEventsRepository,
 )
 from docsgpt.storage.db.session import db_readonly
@@ -99,8 +100,14 @@ def _denied(err: AccessDenied):
 @agents_guardrails_ns.route("/guardrails/events")
 class GuardrailEvents(Resource):
     @api.doc(
-        params={"agent_id": "Agent ID", "limit": "Max rows (default 100)",
-                "offset": "Row offset"},
+        params={
+            "agent_id": "Agent ID",
+            "limit": "Max rows (default 100)",
+            "offset": "Row offset",
+            "days": "Trailing window in days, clamped to 1-365 (optional; invalid values are ignored)",
+            "check": "Exact check name (optional)",
+            "outcome": f"One of {', '.join(EVENT_OUTCOMES)} (optional; unknown values are ignored)",
+        },
         description="List guardrail decisions recorded for an agent",
     )
     def get(self):
@@ -120,6 +127,16 @@ class GuardrailEvents(Resource):
                 jsonify({"success": False, "message": "limit/offset must be integers"}),
                 400,
             )
+        # Filters are optional and forgiving: a bad value drops that filter
+        # rather than failing the page, so a stale UI state still loads.
+        try:
+            days = int(request.args["days"])
+        except (KeyError, TypeError, ValueError):
+            days = None
+        check = request.args.get("check") or None
+        outcome = request.args.get("outcome")
+        if outcome not in EVENT_OUTCOMES:
+            outcome = None
         with db_readonly() as conn:
             try:
                 agent, ra = _logs_access(conn, agent_id, user)
@@ -130,7 +147,8 @@ class GuardrailEvents(Resource):
             # Rows are the owner's view: ``view_logs`` shows a team member
             # what the owner sees, never other members' own chats.
             events = GuardrailEventsRepository(conn).list_for_agent(
-                str(agent["id"]), ra.owner_id, limit=limit, offset=offset
+                str(agent["id"]), ra.owner_id, limit=limit, offset=offset,
+                days=days, check=check, outcome=outcome,
             )
         return make_response(jsonify({"success": True, "events": events}), 200)
 

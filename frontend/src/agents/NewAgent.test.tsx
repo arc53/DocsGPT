@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => {
     Promise.resolve({ ok, json: () => Promise.resolve(body) });
   return {
     jsonResponse,
+    submitResult: undefined as void | Promise<unknown>,
     dispatch: vi.fn(),
     getAgent: vi.fn(() => jsonResponse({})),
     createAgent: vi.fn(() => jsonResponse({ message: 'Name is taken' }, false)),
@@ -115,7 +116,12 @@ vi.mock('../components/MultiSelectPopover', () => ({
     <div data-testid="picker">
       {trigger}
       {items.map((item) => (
-        <div key={item.id} data-group={item.group} data-item={item.id}>
+        <div
+          key={item.id}
+          data-group={item.group}
+          data-item={item.id}
+          data-description={item.description}
+        >
           {item.descriptionNode}
           <button
             type="button"
@@ -155,14 +161,28 @@ vi.mock('../modals/ConfirmationModal', () => ({
   default: ({
     modalState,
     handleSubmit,
+    error,
   }: {
     modalState: string;
-    handleSubmit: () => void;
+    handleSubmit: () => void | Promise<unknown>;
+    error?: string;
   }) =>
     modalState === 'ACTIVE' ? (
-      <button type="button" data-testid="confirm-delete" onClick={handleSubmit}>
-        confirm
-      </button>
+      <>
+        <button
+          type="button"
+          data-testid="confirm-delete"
+          onClick={() => {
+            const result = handleSubmit();
+            // Mark it handled; the tests assert on it afterwards.
+            if (result) result.catch(() => undefined);
+            mocks.submitResult = result;
+          }}
+        >
+          confirm
+        </button>
+        <p data-testid="confirm-error">{error}</p>
+      </>
     ) : null,
 }));
 vi.mock('../preferences/PromptsModal', () => ({ default: () => null }));
@@ -260,14 +280,27 @@ describe('NewAgent form', () => {
     )!;
 
   // Decision 63 (3): every field, picker and button in the form is 42px.
-  it('renders the name field as a default-size (42px) pill Input', async () => {
+  it('renders the name field as a default-size square Input', async () => {
     await render();
     const name = container.querySelector<HTMLInputElement>(
       'input[placeholder="agents.form.placeholders.agentName"]',
     )!;
     expect(name.getAttribute('data-slot')).toBe('input');
     expect(name.getAttribute('data-size')).toBe('default');
-    expect(name.getAttribute('data-shape')).toBe('pill');
+    // S8: form controls are square; only the page chrome is pill.
+    expect(name.getAttribute('data-shape')).toBe('default');
+  });
+
+  it('renders the model Select triggers as square field controls', async () => {
+    await render();
+    const triggers = Array.from(
+      container.querySelectorAll('[data-slot="select-trigger"]'),
+    );
+    expect(triggers.length).toBeGreaterThan(0);
+    for (const trigger of triggers) {
+      expect(trigger.getAttribute('data-size')).toBe('field');
+      expect(trigger.getAttribute('data-shape')).toBe('default');
+    }
   });
 
   it('renders the Add prompt button at the field height', async () => {
@@ -275,10 +308,10 @@ describe('NewAgent form', () => {
     const add = buttonByText('agents.form.buttons.add');
     expect(add.getAttribute('data-variant')).toBe('outline-primary');
     expect(add.getAttribute('data-size')).toBe('field');
-    expect(add.getAttribute('data-shape')).toBe('pill');
+    expect(add.getAttribute('data-shape')).toBe('default');
   });
 
-  it('renders the token and request limits as default-size pill Inputs', async () => {
+  it('renders the token and request limits as default-size square Inputs', async () => {
     await render();
     await act(async () =>
       buttonByText('agents.form.sections.advanced').click(),
@@ -288,7 +321,7 @@ describe('NewAgent form', () => {
         `input[placeholder="agents.form.placeholders.${key}"]`,
       )!;
       expect(field.getAttribute('data-size')).toBe('default');
-      expect(field.getAttribute('data-shape')).toBe('pill');
+      expect(field.getAttribute('data-shape')).toBe('default');
     }
   });
 
@@ -447,6 +480,93 @@ describe('NewAgent form', () => {
       'agents.form.toolsPopup.groupCustom',
       'agents.form.toolsPopup.groupAttached',
     ]);
+  });
+
+  // The sponsor confirmation asks before anything runs with an editor's
+  // access, so the form keeps no attach note; who added what is on the
+  // picker rows.
+  it('marks who added a sponsored tool and source in the pickers, with no note', async () => {
+    mocks.tools = [{ id: 'mine', name: 'api_tool', display_name: 'My API' }];
+    await renderEdit({
+      tools: ['mine'],
+      sources: ['s1'],
+      shared: true,
+      resource_sponsors: [
+        {
+          type: 'tool',
+          id: 'mine',
+          user_id: 'bob',
+          label: 'bob@example.com',
+          active: true,
+        },
+        { type: 'source', id: 's1', user_id: null, label: null, active: true },
+      ],
+    });
+    expect(
+      container
+        .querySelector('[data-item="mine"]')
+        ?.getAttribute('data-description'),
+    ).toBe('agents.form.sponsors.addedBy');
+    expect(
+      container
+        .querySelector('[data-item="s1"]')
+        ?.getAttribute('data-description'),
+    ).toBe('agents.form.sponsors.addedByOther');
+    expect(container.textContent).not.toContain('agents.form.sponsors.attach');
+    expect(container.textContent).not.toContain('publicLinkNote');
+    expect(container.querySelector('[data-slot="alert"]')).toBeNull();
+  });
+
+  // The prompt Select has no description slot: the mark is a hint under it.
+  it('marks a sponsored prompt under its picker', async () => {
+    await renderEdit({
+      prompt_id: 'p1',
+      prompt_name: 'Tone',
+      resource_sponsors: [
+        {
+          type: 'prompt',
+          id: 'p1',
+          user_id: 'bob',
+          label: 'bob@example.com',
+          active: true,
+        },
+      ],
+    });
+    const hint = Array.from(container.querySelectorAll('p')).find(
+      (p) => p.textContent === 'agents.form.sponsors.addedBy',
+    );
+    expect(hint?.className).toContain('text-muted-foreground');
+    expect(hint?.className).toContain('text-xs');
+  });
+
+  // F4: one word for the state, as a warning Badge like the device pill.
+  it('marks a tool whose account needs signing in with a Reconnect badge', async () => {
+    mocks.tools = [
+      {
+        id: 'linear',
+        name: 'mcp_tool',
+        display_name: 'Linear',
+        connection_id: 'c-lin',
+      },
+    ];
+    mocks.connections = [
+      {
+        id: 'c-lin',
+        name: 'Linear',
+        account_label: 'a@x',
+        icon: 'linear',
+        status: 'reconnect_needed',
+      },
+    ];
+    await render();
+    const badge = container.querySelector(
+      '[data-item="linear"] [data-slot="badge"]',
+    );
+    expect(badge?.getAttribute('data-variant')).toBe('warning');
+    expect(badge?.textContent).toBe('settings.connectors.status.reconnect');
+    expect(
+      container.querySelector('[data-item="linear"] p.text-warning'),
+    ).toBeNull();
   });
 
   it('asks before sponsoring and retries the save with the confirmation', async () => {
@@ -652,6 +772,17 @@ describe('NewAgent form', () => {
     );
   });
 
+  it('gives each picker trigger the combobox role', async () => {
+    await render();
+    const triggers = Array.from(
+      container.querySelectorAll('[data-testid="picker"] > button'),
+    );
+    expect(triggers).toHaveLength(3);
+    triggers.forEach((trigger) =>
+      expect(trigger.getAttribute('role')).toBe('combobox'),
+    );
+  });
+
   it('puts Sources beside Tools in a two-up field grid', async () => {
     await render();
     const [sources, tools] = Array.from(
@@ -790,16 +921,18 @@ describe('NewAgent form', () => {
     expect(chevron.getAttribute('class')).toContain('rotate-90');
   });
 
-  it('renders the description as a large ui Textarea', async () => {
+  it('renders the description as a default-size ui Textarea at its own height', async () => {
     await render();
     const description = container.querySelector(
       'textarea[placeholder="agents.form.placeholders.describeAgent"]',
     )!;
     expect(description.getAttribute('data-slot')).toBe('textarea');
-    expect(description.getAttribute('data-size')).toBe('lg');
+    expect(description.getAttribute('data-size')).toBe('default');
+    expect(description.className).toContain('h-32');
+    expect(description.className).toContain('sm:h-24');
   });
 
-  it('renders the pickers as pill comboboxes, muted while empty', async () => {
+  it('renders the pickers as square comboboxes, muted while empty', async () => {
     await render();
     const triggers = Array.from(
       container.querySelectorAll('[data-testid="picker"] > button'),
@@ -809,7 +942,8 @@ describe('NewAgent form', () => {
     for (const trigger of triggers) {
       expect(trigger.getAttribute('data-variant')).toBe('combobox');
       expect(trigger.getAttribute('data-size')).toBe('field');
-      expect(trigger.getAttribute('data-shape')).toBe('pill');
+      expect(trigger.getAttribute('data-shape')).toBe('default');
+      expect(trigger.className).toContain('rounded-md');
       expect(trigger.hasAttribute('data-placeholder')).toBe(true);
       expect(trigger.querySelector('span.truncate')).not.toBeNull();
     }
@@ -858,7 +992,7 @@ describe('NewAgent form', () => {
     // ui/alert's destructive variant.
     expect(alert.className).toContain('border-destructive/50');
     expect(alert.className).toContain('bg-destructive/10');
-    expect(alert.querySelector('svg.lucide-circle-x')).not.toBeNull();
+    expect(alert.querySelector('svg.lucide-circle-alert')).not.toBeNull();
     // Decision 69 (b): the notice sits above the form panel, not in the
     // header's button row.
     expect(draft.parentElement?.contains(alert)).toBe(false);
@@ -873,7 +1007,7 @@ describe('NewAgent form', () => {
       (el) => el.className.includes('font-mono'),
     )!;
     expect(schema.getAttribute('data-slot')).toBe('textarea');
-    expect(schema.getAttribute('data-size')).toBe('lg');
+    expect(schema.getAttribute('data-size')).toBe('default');
 
     await act(async () => setNativeValue(schema, '{ not json'));
     const invalid = Array.from(container.querySelectorAll('div')).find(
@@ -1035,6 +1169,18 @@ describe('NewAgent gating by role', () => {
     ]);
   });
 
+  it('draws the danger zone as the one tinted card with a field pill', async () => {
+    await renderEdit('owner', OWNER);
+    const del = buttonByText('agents.form.dangerZone.deleteButton')!;
+    expect(del.dataset.variant).toBe('destructive-outline');
+    expect(del.dataset.size).toBe('field');
+    expect(del.dataset.shape).toBe('pill');
+    const card = del.closest<HTMLElement>('[data-slot="card"]')!;
+    expect(card.dataset.tone).toBe('destructive');
+    expect(card.dataset.padding).toBe('lg');
+    expect(card.className).toContain('items-center');
+  });
+
   it('hides Share and Delete from an editor but keeps Access details', async () => {
     await renderEdit('editor', EDITOR);
     expect(buttonByText('agents.form.dangerZone.deleteButton')).toBeUndefined();
@@ -1141,7 +1287,7 @@ describe('NewAgent gating by role', () => {
     expect(await menuLabels()).toEqual([]);
   });
 
-  it('reports a failed delete in a toast instead of throwing', async () => {
+  it('keeps a failed delete in the dialog with the server message', async () => {
     mocks.deleteAgent.mockImplementation(() =>
       jsonResponse({ message: 'Only the owner can delete' }, false),
     );
@@ -1154,9 +1300,13 @@ describe('NewAgent gating by role', () => {
         .querySelector<HTMLButtonElement>('[data-testid="confirm-delete"]')!
         .click(),
     );
-    expect(mocks.dispatch).toHaveBeenCalledWith({
-      type: 'actionToast/showActionToast',
-      payload: { variant: 'destructive', message: 'Only the owner can delete' },
-    });
+    await expect(mocks.submitResult).rejects.toThrow();
+    await act(async () => undefined);
+    expect(
+      container.querySelector('[data-testid="confirm-error"]')!.textContent,
+    ).toBe('Only the owner can delete');
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'actionToast/showActionToast' }),
+    );
   });
 });

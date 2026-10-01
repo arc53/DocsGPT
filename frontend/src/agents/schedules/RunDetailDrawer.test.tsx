@@ -55,13 +55,17 @@ describe('RunDetailDrawer', () => {
     expect(panel.dataset.side).toBe('right');
     expect(panel.getAttribute('role')).toBe('dialog');
     expect(panel.className.split(' ')).toEqual(
-      expect.arrayContaining(['bg-background', 'sm:max-w-xl']),
+      expect.arrayContaining(['bg-background', 'sm:max-w-120']),
     );
     expect(panel.querySelector('[data-slot="sheet-title"]')!.textContent).toBe(
       'Run details',
     );
     expect(panel.querySelector('[aria-label="Close"]')).not.toBeNull();
     expect(document.querySelector('aside')).toBeNull();
+    // The title sits in the fixed panel header, beside the X, not the body.
+    const header = panel.querySelector('[data-slot="panel-header"]')!;
+    expect(header.querySelector('[data-slot="sheet-title"]')).not.toBeNull();
+    expect(header.querySelector('[aria-label="Close"]')).not.toBeNull();
   });
 
   it('labels come from the locale, trigger and status included', async () => {
@@ -85,8 +89,14 @@ describe('RunDetailDrawer', () => {
     // so the scrollbar stays clear of the rounded corners.
     const scroller = pre.parentElement!;
     expect(scroller.className.split(' ')).toEqual(
-      expect.arrayContaining(['scrollbar-overlay', 'overflow-y-auto']),
+      expect.arrayContaining([
+        'scrollbar-overlay',
+        'overflow-y-auto',
+        'max-h-40',
+      ]),
     );
+    // ui/code-block CodeBlock maxHeight="sm" (160px).
+    expect(pre.dataset.slot).toBe('code-block');
     const card = scroller.parentElement!;
     expect(card.getAttribute('data-slot')).toBe('card');
     expect(card.getAttribute('data-variant')).toBe('filled');

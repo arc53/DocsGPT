@@ -3,11 +3,11 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import SchedulerToolCallCard from '../agents/schedules/SchedulerToolCallCard';
-import CopyButton from '../components/CopyButton';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import { connectorIconKey } from '../connectors/i18n';
 import ToolIcon from '../components/ToolIcon';
 import { Button } from '../components/ui/button';
+import { CodeBlock, CodePanel } from '../components/ui/code-block';
 import { usePacedText } from '../hooks';
 import {
   getToolChipLabel,
@@ -308,15 +308,15 @@ function InlineToolCallChip({
       </Button>
       {isOpen && (
         <div className="animate-in fade-in mt-2 mr-5 ml-6 flex flex-col gap-2 duration-160 ease-out motion-reduce:animate-none">
-          <ToolCallPanel
+          <CodePanel
             title={t('conversation.inlineSteps.arguments')}
             copyText={JSON.stringify(shownArguments(toolCall), null, 2)}
           >
-            <p className="max-h-80 overflow-y-auto font-mono text-xs whitespace-pre-wrap">
+            <CodeBlock surface="bare" maxHeight="lg">
               {JSON.stringify(shownArguments(toolCall), null, 2)}
-            </p>
-          </ToolCallPanel>
-          <ToolCallPanel
+            </CodeBlock>
+          </CodePanel>
+          <CodePanel
             title={t('conversation.inlineSteps.response')}
             copyText={
               toolCall.status === 'error'
@@ -335,9 +335,9 @@ function InlineToolCallChip({
               </p>
             )}
             {toolCall.status === 'error' && (
-              <p className="text-destructive font-mono text-xs whitespace-pre-wrap">
+              <CodeBlock surface="bare" tone="destructive">
                 {toolCall.error}
-              </p>
+              </CodeBlock>
             )}
             {toolCall.status === 'denied' && (
               <p className="text-muted-foreground text-xs">
@@ -347,35 +347,13 @@ function InlineToolCallChip({
             {!isRunning &&
               toolCall.status !== 'error' &&
               toolCall.status !== 'denied' && (
-                <p className="max-h-80 overflow-y-auto font-mono text-xs whitespace-pre-wrap">
+                <CodeBlock surface="bare" maxHeight="lg">
                   {JSON.stringify(toolCall.result ?? {}, null, 2)}
-                </p>
+                </CodeBlock>
               )}
-          </ToolCallPanel>
+          </CodePanel>
         </div>
       )}
-    </div>
-  );
-}
-
-export function ToolCallPanel({
-  title,
-  copyText,
-  children,
-}: {
-  title: string;
-  copyText: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="bg-answer-bubble overflow-hidden rounded-xl">
-      <div className="flex items-center justify-between px-3 py-1.5">
-        <span className="text-muted-foreground text-xs font-medium">
-          {title}
-        </span>
-        <CopyButton textToCopy={copyText} />
-      </div>
-      <div className="px-3 pb-2">{children}</div>
     </div>
   );
 }

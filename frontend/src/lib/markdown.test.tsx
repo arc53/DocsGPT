@@ -1,9 +1,13 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { markdownHeadings, markdownTables } from './markdown';
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
+
+import { markdownCode, markdownHeadings, markdownTables } from './markdown';
 
 describe('markdownHeadings', () => {
   it('maps h1-h3 to the shared semibold sizes with margins', () => {
@@ -73,5 +77,49 @@ describe('markdownTables', () => {
     expect(host.innerHTML).not.toContain('uppercase');
     expect(host.innerHTML).not.toContain('even:bg-muted');
     expect(host.querySelector('table')!.className).toContain('min-w-0');
+  });
+});
+
+const CODE_MD = 'Call `GET /v1` now.\n\n```python\nprint(1)\n```\n';
+
+const renderCode = (options: Parameters<typeof markdownCode>[0]) => {
+  const host = document.createElement('div');
+  host.innerHTML = renderToStaticMarkup(
+    <ReactMarkdown components={markdownCode(options)}>{CODE_MD}</ReactMarkdown>,
+  );
+  return host;
+};
+
+describe('markdownCode', () => {
+  // One inline chip for every renderer (chat, preview, artifact, source view).
+  it('renders inline code as the chat chip', () => {
+    const chip = renderCode({ surface: 'answer' }).querySelector('p code')!;
+    for (const cls of ['bg-accent', 'rounded-md', 'px-2', 'py-1', 'text-xs']) {
+      expect(chip.className).toContain(cls);
+    }
+    const sourceChip = renderCode({}).querySelector('p code')!;
+    expect(sourceChip.className).toBe(chip.className);
+  });
+
+  it('frames a fenced block with the answer-surface header and a copy button', () => {
+    const host = renderCode({ surface: 'answer' });
+    const header = host.querySelector('.bg-answer-surface')!;
+    expect(header.textContent).toContain('python');
+    expect(
+      header.querySelector('button[aria-label="conversation.copy"]'),
+    ).not.toBeNull();
+    expect(host.textContent).toContain('print(1)');
+  });
+
+  it('uses the muted header outside chat', () => {
+    const host = renderCode({ surface: 'muted' });
+    expect(host.querySelector('.bg-answer-surface')).toBeNull();
+    expect(host.querySelector('.bg-muted')!.textContent).toContain('python');
+  });
+
+  it('leaves fenced code to the caller without a surface', () => {
+    const host = renderCode({});
+    expect(host.querySelector('button')).toBeNull();
+    expect(host.querySelector('pre code')!.textContent).toContain('print(1)');
   });
 });

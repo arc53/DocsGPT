@@ -1,4 +1,4 @@
-import { CalendarIcon, CircleAlert, TriangleAlert } from 'lucide-react';
+import { CalendarIcon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -260,8 +260,6 @@ export default function ScheduleFormModal({
           ? t('agents.schedules.modal.save')
           : t('agents.schedules.modal.create')
       }
-      size="md"
-      mobileVariant="sheet"
       footer={
         <Button
           type="button"
@@ -374,14 +372,12 @@ export default function ScheduleFormModal({
 
         {runAtError && (
           <Alert variant="destructive">
-            <CircleAlert aria-hidden="true" className="size-4" />
             <AlertDescription>{runAtError}</AlertDescription>
           </Alert>
         )}
 
         {saveError !== null && (
           <Alert variant="destructive">
-            <CircleAlert aria-hidden="true" className="size-4" />
             <AlertDescription>
               <p>{t('agents.schedules.modal.errors.saveFailed')}</p>
               {saveError && <p>{saveError}</p>}
@@ -442,7 +438,6 @@ function ApprovalToolsPicker({
           })}
         </div>
         <Alert variant="warning" role="note">
-          <TriangleAlert aria-hidden="true" />
           <AlertDescription>{labels.warning}</AlertDescription>
         </Alert>
       </fieldset>
@@ -471,28 +466,19 @@ function FrequencyTabs({
   const isDisabled = (f: ScheduleFrequency) =>
     lockedKind !== undefined && (f === 'once') !== (lockedKind === 'once');
   return (
-    // The muted track is a plain wrapper: ToggleGroup takes layout only.
-    <div className="bg-muted w-full rounded-full p-1">
-      <ToggleGroup
-        type="single"
-        size="xs"
-        value={frequency}
-        onValueChange={(f) => f && onChange(f as ScheduleFrequency)}
-        aria-label={ariaLabel}
-        className="flex-nowrap"
-      >
-        {FREQUENCIES.map((f) => (
-          <ToggleGroupItem
-            key={f}
-            value={f}
-            disabled={isDisabled(f)}
-            className="flex-1"
-          >
-            {labels[f]}
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
-    </div>
+    <ToggleGroup
+      type="single"
+      fill
+      value={frequency}
+      onValueChange={(f) => f && onChange(f as ScheduleFrequency)}
+      aria-label={ariaLabel}
+    >
+      {FREQUENCIES.map((f) => (
+        <ToggleGroupItem key={f} value={f} disabled={isDisabled(f)}>
+          {labels[f]}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
   );
 }
 
@@ -548,6 +534,7 @@ function OnPicker({ values, onChange, tDay, tMonth, labels }: OnPickerProps) {
           {/* A weekly schedule runs on one day: a radio group. */}
           <ToggleGroup
             type="single"
+            fill
             value={String(values.dayOfWeek)}
             onValueChange={(day) => day && set({ dayOfWeek: Number(day) })}
             aria-label={labels.days}
@@ -630,11 +617,13 @@ function DatePicker({ value, onChange, placeholder }: DatePickerProps) {
   const [open, setOpen] = useState<boolean>(false);
   const selected = dateStringToDate(value);
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    // `modal`: it opens inside the schedule Modal (see multi-select.tsx).
+    <Popover open={open} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <Button
           type="button"
           variant="combobox"
+          size="field"
           aria-label={placeholder}
           data-placeholder={value ? undefined : ''}
           className="justify-start"

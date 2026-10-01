@@ -96,95 +96,134 @@ describe('ResourceStatusNotice', () => {
   const alerts = () =>
     Array.from(container.querySelectorAll('[data-slot="alert"]'));
 
-  it('renders nothing for the owner when everything runs', async () => {
+  it('renders nothing when everything runs', async () => {
     await render(baseAgent);
     expect(container.innerHTML).toBe('');
   });
 
-  it('tells an editor their own items run with their access', async () => {
-    await render(editorAgent);
-    expect(alerts()).toHaveLength(1);
-    expect(container.textContent).toContain('agents.form.sponsors.attachNote');
-    expect(container.textContent).not.toContain('publicLinkNote');
-  });
-
-  it('adds the public-link warning when the agent has a link', async () => {
-    await render({ ...editorAgent, shared: true });
-    expect(container.textContent).toContain(
-      'agents.form.sponsors.publicLinkNote',
-    );
-  });
-
-  it('leaves the attach note out where the page asks it to', async () => {
-    const spies = handlers();
-    await act(async () => {
-      root.render(
-        <ResourceStatusNotice
-          agent={editorAgent}
-          stopped={[]}
-          resolveName={(item) => item.id}
-          showAttachNote={false}
-          {...spies}
-        />,
-      );
+  // The sponsor confirmation asks before anything runs with an editor's
+  // access, and the pickers say who added what: the notice is only the
+  // stopped warning.
+  it('shows no attach note or who added what, only stopped items', async () => {
+    await render({
+      ...editorAgent,
+      shared: true,
+      resource_sponsors: [sponsor({ id: 't1' })],
     });
     expect(container.innerHTML).toBe('');
+
+    await render(
+      { ...editorAgent, resource_sponsors: [sponsor({ id: 't1' })] },
+      [stoppedItem({ key: 'source:s1', type: 'source', id: 's1' })],
+    );
+    expect(alerts()).toHaveLength(1);
+    const [stopped] = alerts();
+    expect(stopped.getAttribute('data-variant')).toBe('warning');
+    expect(stopped.textContent).toContain('agents.form.resourceStates.title');
+    expect(stopped.textContent).not.toContain('agents.form.sponsors');
+    expect(stopped.querySelectorAll('li')).toHaveLength(1);
   });
 
-  it('does not show the attach note to a viewer', async () => {
-    await render({ ...baseAgent, access: 'viewer', allowed_actions: ['use'] });
-    expect(container.innerHTML).toBe('');
-  });
-
-  it('joins names for the app language and does not escape them', async () => {
+  it('names people by email or a short id, the reader as you', async () => {
+    const LONG_SUB = '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0';
     await i18n.use(initReactI18next).init({
       lng: 'jp',
       resources: {
         jp: {
           translation: {
             agents: {
-              form: { sponsors: { addedBy: '{{person}}: {{names}}' } },
+              form: {
+                resourceStates: {
+                  reason: {
+                    sponsorCannotEditAgent: 'agent:{{name}}:{{person}}',
+                    sponsorCannotEditItemYou: 'itemYou:{{name}}',
+                  },
+                  ask: { signInAgain: 'ask:{{person}}' },
+                },
+              },
             },
           },
         },
       },
     });
     try {
-      await render({
-        ...baseAgent,
-        resource_sponsors: [
-          sponsor({ id: 'docs/a' }),
-          sponsor({ id: 'docs/b' }),
-        ],
+      await act(async () => {
+        root.render(
+          <ResourceStatusNotice
+            agent={baseAgent}
+            readerId="me"
+            resolveName={(item) => item.name || `name-${item.id}`}
+            stopped={[
+              stoppedItem({
+                reason: 'sponsor_cannot_edit_agent',
+                sponsor: { user_id: LONG_SUB, label: LONG_SUB },
+              }),
+              stoppedItem({
+                key: 'tool:t2',
+                id: 't2',
+                reason: 'sponsor_cannot_edit_resource',
+                sponsor: { user_id: 'me', label: 'me@example.com' },
+              }),
+              stoppedItem({
+                key: 'tool:t3',
+                id: 't3',
+                reason: 'connection_needs_reconnect',
+                contact: { user_id: 'bob', label: 'bob@example.com' },
+              }),
+            ]}
+          />,
+        );
       });
-      const expected = new Intl.ListFormat('ja', {
-        type: 'conjunction',
-      }).format(['name-docs/a', 'name-docs/b']);
-      expect(container.textContent).toBe(`bob@example.com: ${expected}`);
+      const [agentRow, itemRow, askRow] = Array.from(
+        container.querySelectorAll('li'),
+      );
+      expect(agentRow.textContent).toContain(
+        'agent:name-t1:0f1e2d3c-4b5…c3d2e1f0',
+      );
+      expect(itemRow.textContent).toContain('itemYou:name-t2');
+      expect(askRow.textContent).toContain('ask:bob@example.com');
     } finally {
       await i18n.changeLanguage('en');
     }
   });
 
-  it('lists running sponsored items apart from stopped ones, in one notice', async () => {
-    await render(
-      {
-        ...baseAgent,
-        resource_sponsors: [
-          sponsor({ id: 't1' }),
-          // Stopped sponsorships come through resource_states instead.
-          sponsor({ id: 's1', type: 'source', active: false }),
-        ],
-      },
-      [stoppedItem({ key: 'source:s1', type: 'source', id: 's1' })],
-    );
-    const [running, stopped] = alerts();
-    expect(alerts()).toHaveLength(2);
-    expect(running.getAttribute('role')).toBe('note');
-    expect(running.textContent).toContain('agents.form.sponsors.addedBy');
-    expect(stopped.getAttribute('data-variant')).toBe('warning');
-    expect(stopped.textContent).toContain('agents.form.resourceStates.title');
-    expect(stopped.querySelectorAll('li')).toHaveLength(1);
+  it('drops the service from the reason when the tool is named after it', async () => {
+    const linear = { id: 'c1', connector_key: 'mcp:linear', name: 'Linear' };
+    await render(baseAgent, [
+      stoppedItem({
+        name: 'Linear',
+        reason: 'connection_needs_reconnect',
+        connection: linear,
+      }),
+      stoppedItem({
+        key: 'tool:t2',
+        id: 't2',
+        name: 'Create issue',
+        reason: 'connection_needs_reconnect',
+        connection: linear,
+      }),
+      stoppedItem({
+        key: 'tool:t3',
+        id: 't3',
+        name: 'Ops',
+        reason: 'connection_removed',
+        connection: null,
+      }),
+      stoppedItem({
+        key: 'tool:t4',
+        id: 't4',
+        name: 'linear',
+        reason: 'connector_disabled',
+        connection: linear,
+      }),
+    ]);
+    const [same, other, none, disabled] = Array.from(
+      container.querySelectorAll('li'),
+    ).map((li) => li.textContent ?? '');
+    expect(same).toContain('reason.connectionNeedsReconnectNoService');
+    expect(other).toMatch(/reason\.connectionNeedsReconnect(?!NoService)/);
+    expect(none).toContain('reason.connectionRemovedNoService');
+    expect(disabled).toContain('reason.connectorDisabledNoService');
   });
 
   it.each([
@@ -224,8 +263,6 @@ describe('ResourceStatusNotice', () => {
       ],
     );
     const text = container.textContent ?? '';
-    expect(text).toContain('agents.form.sponsors.addedByOther');
-    expect(text).not.toContain('agents.form.sponsors.addedBy.');
     expect(text).toContain(
       'agents.form.resourceStates.reason.sponsorCannotEditItemOther',
     );
@@ -360,6 +397,11 @@ describe('ResourceStatusNotice', () => {
     ]);
     const takeOver = buttonWith('agents.form.sponsors.takeOver');
     expect(takeOver).toHaveLength(1);
+    // A short label that fits a phone; the item is in the accessible name.
+    expect(takeOver[0].textContent).toBe('agents.form.sponsors.takeOver');
+    expect(takeOver[0].getAttribute('aria-label')).toBe(
+      'agents.form.sponsors.takeOverLabel',
+    );
     await act(async () => takeOver[0].click());
     expect(spies.onTakeOver).toHaveBeenCalledWith(
       expect.objectContaining({ key: 'tool:t1' }),
@@ -375,9 +417,9 @@ describe('ResourceStatusNotice', () => {
     expect(container.textContent).toContain(
       'agents.form.sponsors.takeOverPending',
     );
-    await act(async () =>
-      buttonWith('agents.form.sponsors.undoTakeOver')[0].click(),
-    );
+    const undo = buttonWith('agents.form.sponsors.undoTakeOver')[0];
+    expect(undo.dataset.size).toBe('text');
+    await act(async () => undo.click());
     expect(spies.onUndoTakeover).toHaveBeenCalledWith('tool:t1');
   });
 
@@ -391,5 +433,34 @@ describe('ResourceStatusNotice', () => {
     expect(spies.onRemove).toHaveBeenCalledWith(
       expect.objectContaining({ key: 'tool:t1' }),
     );
+  });
+
+  it('closes from inside the warning and caps the list in its own scroller', async () => {
+    const onClose = vi.fn();
+    await act(async () => {
+      root.render(
+        <ResourceStatusNotice
+          agent={baseAgent}
+          stopped={[stoppedItem({})]}
+          resolveName={(item) => item.id}
+          onClose={onClose}
+        />,
+      );
+    });
+    const [alert] = alerts();
+    const close = alert.querySelector<HTMLButtonElement>(
+      '[aria-label="close"]',
+    );
+    expect(close).not.toBeNull();
+    const list = alert.querySelector('ul')!;
+    expect(list.parentElement!.className).toContain('overflow-y-auto');
+    expect(list.parentElement!.className).toContain('scrollbar-overlay');
+    await act(async () => close!.click());
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('has no close button in the form', async () => {
+    await render(baseAgent, [stoppedItem({})]);
+    expect(container.querySelector('[aria-label="close"]')).toBeNull();
   });
 });

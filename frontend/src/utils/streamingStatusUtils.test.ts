@@ -2,7 +2,11 @@ import type { TFunction } from 'i18next';
 import { describe, expect, it } from 'vitest';
 
 import type { ToolCallsType } from '../conversation/types';
-import { getToolChipLabel } from './streamingStatusUtils';
+import {
+  getToolChipLabel,
+  readableAction,
+  toolCallTitle,
+} from './streamingStatusUtils';
 
 // Stub that renders "key" or "key|value,value" so assertions can check both
 // the selected key and the interpolated values.
@@ -184,5 +188,61 @@ describe('getToolChipLabel', () => {
         t,
       ),
     ).toBe('conversation.toolChip.searchingWeb|docsgpt');
+  });
+});
+
+describe('readableAction', () => {
+  it('drops the service prefix and keeps a bare verb', () => {
+    expect(readableAction('linear_create_issue', 'Linear')).toBe(
+      'create issue',
+    );
+    expect(readableAction('notion-create-pages', 'Notion')).toBe(
+      'create pages',
+    );
+    expect(readableAction('create_issue', 'GitHub')).toBe('create issue');
+    expect(readableAction('search', 'Notion')).toBe('search');
+  });
+
+  it('reads without a service name', () => {
+    expect(readableAction('run_command')).toBe('run command');
+  });
+});
+
+describe('toolCallTitle', () => {
+  it('names the connector and its action in sentence case', () => {
+    expect(
+      toolCallTitle(
+        call({
+          tool_name: 'github',
+          action_name: 'create_issue',
+          connector_key: 'github',
+          connector_name: 'GitHub',
+        }),
+        t,
+      ),
+    ).toBe('conversation.toolApproval.title|GitHub,Create issue');
+  });
+
+  it('shows a dash-named MCP action', () => {
+    expect(
+      toolCallTitle(
+        call({
+          tool_name: 'mcp_tool',
+          action_name: 'notion-create-pages',
+          connector_key: 'mcp:notion',
+          connector_name: 'Notion',
+        }),
+        t,
+      ),
+    ).toBe('conversation.toolApproval.title|Notion,Create pages');
+  });
+
+  it('falls back to the tool name without a connector', () => {
+    expect(
+      toolCallTitle(
+        call({ tool_name: 'remote_device', action_name: 'run_command' }),
+        t,
+      ),
+    ).toBe('conversation.toolApproval.title|Remote Device,Run command');
   });
 });

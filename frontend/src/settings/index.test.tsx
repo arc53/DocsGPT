@@ -2,7 +2,8 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
-const { dispatch, service, state } = vi.hoisted(() => ({
+const { dispatch, service, state, deleted } = vi.hoisted(() => ({
+  deleted: { result: undefined as void | Promise<unknown> },
   dispatch: vi.fn(),
   service: { deletePath: vi.fn() },
   state: {
@@ -48,11 +49,19 @@ vi.mock('./Sources', () => ({
     handleDeleteDocument,
   }: {
     paginatedDocuments: { id: string; name: string }[];
-    handleDeleteDocument: (index: number, doc: unknown) => void;
+    handleDeleteDocument: (
+      index: number,
+      doc: unknown,
+    ) => void | Promise<unknown>;
   }) => (
     <button
       type="button"
-      onClick={() => handleDeleteDocument(0, paginatedDocuments[0])}
+      onClick={() => {
+        const result = handleDeleteDocument(0, paginatedDocuments[0]);
+        // Mark it handled; the tests assert on it afterwards.
+        if (result) result.catch(() => undefined);
+        deleted.result = result;
+      }}
     >
       DELETE
     </button>
@@ -95,37 +104,32 @@ describe('Settings source delete', () => {
 
   const actionTypes = () => dispatch.mock.calls.map(([a]) => a?.type);
 
-  it('a forbidden delete shows an error toast and keeps the source', async () => {
+  // The delete returns its promise to Sources' ConfirmationModal: a
+  // failure rejects with the message the dialog shows, no toast.
+  it('a forbidden delete rejects with the forbidden message and keeps the source', async () => {
     service.deletePath.mockResolvedValue({ ok: false, status: 403 });
     await clickDelete();
     expect(service.deletePath).toHaveBeenCalledWith('b', null);
-    expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'actionToast/showActionToast',
-        payload: expect.objectContaining({
-          variant: 'destructive',
-          message: 'settings.sources.errors.forbidden',
-        }),
-      }),
+    await expect(deleted.result).rejects.toThrow(
+      'settings.sources.errors.forbidden',
     );
+    expect(actionTypes()).not.toContain('actionToast/showActionToast');
     expect(actionTypes()).not.toContain('preference/setSourceDocs');
   });
 
-  it('a failed request shows an error toast', async () => {
+  it('a failed request rejects with the delete message', async () => {
     service.deletePath.mockRejectedValue(new Error('network'));
     await clickDelete();
-    expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        payload: expect.objectContaining({
-          message: 'settings.sources.errors.delete',
-        }),
-      }),
+    await expect(deleted.result).rejects.toThrow(
+      'settings.sources.errors.delete',
     );
+    expect(actionTypes()).not.toContain('actionToast/showActionToast');
   });
 
   it('a successful delete drops the source by id from both lists', async () => {
     service.deletePath.mockResolvedValue({ ok: true, status: 200 });
     await clickDelete();
+    await expect(deleted.result).resolves.toBeUndefined();
     expect(dispatch).toHaveBeenCalledWith({
       type: 'preference/setPaginatedDocuments',
       payload: [],

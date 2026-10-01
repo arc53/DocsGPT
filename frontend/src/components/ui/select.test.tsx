@@ -65,22 +65,40 @@ describe('SelectTrigger sizes', () => {
     expect(trigger({}).dataset.variant).toBe('default');
   });
 
-  it('size="field" is the 38px form-row height, like SelectTrigger field', () => {
+  it('defaults to field, the 38px form-row height', () => {
+    const el = trigger({});
+    expect(el.dataset.size).toBe('field');
+    const classes = el.className.split(' ');
+    expect(classes).toContain('h-9.5');
+    expect(classes).not.toContain('h-9');
+  });
+
+  it('size="field" is the 38px form-row height, like Button field', () => {
     const el = trigger({ size: 'field' });
     expect(el.dataset.size).toBe('field');
     expect(el.className.split(' ')).toContain('h-9.5');
   });
 
-  it.each(['default', 'field'] as const)(
-    'a %s pill starts its text 21px in (px-5)',
-    (size) => {
-      const classes = trigger({ size, shape: 'pill' }).className.split(' ');
-      expect(classes).toContain('rounded-full');
-      expect(classes).toContain('px-5');
-      expect(classes).not.toContain('px-3');
-      expect(classes).not.toContain('px-4');
-    },
-  );
+  it('has no 36px default size', () => {
+    // @ts-expect-error size="default" is gone
+    const classes = trigger({ size: 'default' }).className.split(' ');
+    expect(classes).not.toContain('h-9');
+  });
+
+  it('has no ghost variant', () => {
+    // @ts-expect-error variant="ghost" is gone
+    expect(trigger({ variant: 'ghost' }).className).not.toContain(
+      'data-[state=open]:bg-muted',
+    );
+  });
+
+  it('a field pill starts its text 21px in (px-5)', () => {
+    const classes = trigger({ shape: 'pill' }).className.split(' ');
+    expect(classes).toContain('rounded-full');
+    expect(classes).toContain('px-5');
+    expect(classes).not.toContain('px-3');
+    expect(classes).not.toContain('px-4');
+  });
 
   it('a small pill keeps px-3', () => {
     const classes = trigger({ size: 'sm', shape: 'pill' }).className.split(' ');
@@ -88,15 +106,12 @@ describe('SelectTrigger sizes', () => {
     expect(classes).not.toContain('px-5');
   });
 
-  it.each(['default', 'field'] as const)(
-    '%s text is 16px on phones, 14px from md',
-    (size) => {
-      const classes = trigger({ size }).className.split(' ');
-      expect(classes).toEqual(
-        expect.arrayContaining(['text-base', 'md:text-sm']),
-      );
-    },
-  );
+  it('field text is 16px on phones, 14px from md', () => {
+    const classes = trigger({}).className.split(' ');
+    expect(classes).toEqual(
+      expect.arrayContaining(['text-base', 'md:text-sm']),
+    );
+  });
 
   it('sm text stays 14px', () => {
     const classes = trigger({ size: 'sm' }).className.split(' ');

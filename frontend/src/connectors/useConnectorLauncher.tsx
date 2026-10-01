@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
@@ -47,31 +47,62 @@ type Active =
 const isMcp = (connector: ConnectorDefinition) =>
   connector.auth_kind === 'mcp' || connector.auth_kind === 'mcp_oauth';
 
+type LauncherCallbacks = {
+  /** The run connected an account, or repaired one (a reconnect). */
+  onConnected?: () => void;
+  /** The run ended with nothing connected (cancelled, or closed early). */
+  onCancel?: () => void;
+  /** Sources a sync started from the wizard, still ingesting. */
+  onSynced?: (sourceIds: string[]) => void;
+};
+
 /**
  * The one way to start connecting a catalog entry, used by every entry point
  * (the Connectors page and drawer, Add Source, Add Tool, the chat's Connect
  * card). Returns `launch` and the modals it drives; render `modals` once.
+ *
+ * Args:
+ *   onConnected: Called when a run ends having connected or repaired an
+ *     account.
+ *   onCancel: Called when a run ends with nothing connected, so an opener
+ *     that stepped aside (Add knowledge) can come back.
+ *   onSynced: Called with the sources a sync started from the wizard, still
+ *     ingesting.
  */
 export default function useConnectorLauncher({
   onConnected,
+  onCancel,
   onSynced,
-}: {
-  onConnected?: () => void;
-  /** Sources a sync started from the wizard, still ingesting. */
-  onSynced?: (sourceIds: string[]) => void;
-} = {}) {
+}: LauncherCallbacks = {}) {
   const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
   const token = useSelector(selectToken);
   const [active, setActive] = useState<Active>(null);
+  // An MCP server saved in this run: its summary wizard closing is a connect.
+  const mcpSaved = useRef(false);
 
+  // Every close reads the connections again: a cancelled run may still have
+  // signed in (the account exists, nothing was set up on it).
   const refresh = useCallback(() => {
     dispatch(loadConnectors({ token }));
-    onConnected?.();
-  }, [dispatch, token, onConnected]);
+  }, [dispatch, token]);
+
+  /** End the run: tell the opener whether it connected anything. */
+  const end = useCallback(
+    (connected: boolean) => {
+      setActive(null);
+      refresh();
+      const saved = mcpSaved.current;
+      mcpSaved.current = false;
+      if (connected || saved) onConnected?.();
+      else onCancel?.();
+    },
+    [refresh, onConnected, onCancel],
+  );
 
   const launch = useCallback(
     async (connector: ConnectorDefinition, options: LaunchOptions = {}) => {
+      mcpSaved.current = false;
       if (isMcpPreset(connector)) {
         setActive({
           kind: 'wizard',
@@ -126,6 +157,7 @@ export default function useConnectorLauncher({
   const afterMcpSave = async () => {
     if (active?.kind !== 'mcp') return;
     const connector = active.connector;
+    mcpSaved.current = true;
     const list = await connectorsService.listConnections(token);
     refresh();
     const connections = (list?.connections ?? []) as {
@@ -139,15 +171,23 @@ export default function useConnectorLauncher({
       .sort((a, b) =>
         (b.updated_at ?? '').localeCompare(a.updated_at ?? ''),
       )[0];
-    setActive(
-      saved
-        ? { kind: 'wizard', connector, mode: 'done', connectionId: saved.id }
-        : null,
-    );
+    if (saved) {
+      setActive({
+        kind: 'wizard',
+        connector,
+        mode: 'done',
+        connectionId: saved.id,
+      });
+      return;
+    }
+    end(true);
   };
 
   const closeMcp = (state: ActiveState) => {
-    if (state === 'INACTIVE') setActive(null);
+    if (state !== 'INACTIVE') return;
+    // A save closes the form too; the summary follows (afterMcpSave).
+    if (mcpSaved.current) setActive(null);
+    else end(false);
   };
 
   const modals: ReactNode = (
@@ -160,10 +200,8 @@ export default function useConnectorLauncher({
           mcpToolId={active.mcpToolId}
           purpose={active.purpose}
           onSynced={onSynced}
-          onClose={() => {
-            setActive(null);
-            refresh();
-          }}
+          // A wizard that does not say (an older run) connected nothing.
+          onClose={(connected?: boolean) => end(connected === true)}
         />
       )}
       {active?.kind === 'mcp' && (

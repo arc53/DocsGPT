@@ -105,6 +105,22 @@ describe('FileUpload', () => {
     expect(highlighted?.className).toContain('text-primary');
   });
 
+  it.each(['tile', 'default'] as const)(
+    'draws the focus ring on the %s preview Remove button',
+    async (size) => {
+      await act(async () => {
+        root.render(<FileUpload onUpload={vi.fn()} size={size} showPreview />);
+      });
+      await selectFiles(container, [makeFile('logo.png', 'image/png')]);
+      const remove = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="components.fileUpload.remove"]',
+      );
+      expect(remove).not.toBeNull();
+      expect(remove!.className).toContain('focus-visible:ring-3');
+      expect(remove!.className).toContain('outline-none');
+    },
+  );
+
   it('calls onUpload with a valid file', async () => {
     const onUpload = vi.fn();
     await act(async () => {

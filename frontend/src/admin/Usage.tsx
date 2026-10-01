@@ -26,6 +26,7 @@ import { LoadingState } from '@/components/ui/loading-state';
 import StatCard from '@/components/StatCard';
 import { Card } from '@/components/ui/card';
 import { SectionHeader } from '@/components/ui/section-header';
+import { EmptyState } from '../components/ui/empty-state';
 import { LoadError, fmtMs, fmtNumber, fmtUsd } from './AdminUI';
 import { useChartPalette } from '../utils/chartUtils';
 import UsageChart from './UsageChart';
@@ -115,7 +116,7 @@ export default function Usage() {
           value={groupBy}
           onValueChange={(value) => setGroupBy(value as GroupBy)}
         >
-          <SelectTrigger className="w-40">
+          <SelectTrigger shape="pill" className="w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -210,7 +211,7 @@ export default function Usage() {
       >
         <SectionHeader as="h3" size="xs" title="Top users" />
         {topUsers.length === 0 ? (
-          <p className="text-muted-foreground text-sm">No usage.</p>
+          <EmptyState size="sm" illustration="none" title="No usage." />
         ) : (
           <TableContainer>
             <Table>

@@ -116,11 +116,15 @@ describe('AgentPanel', () => {
     render(makeNode());
     const toggle = advancedToggle();
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(container.textContent).not.toContain(
-      'agents.workflow.builder.filePassing',
-    );
+    // Folded: the fields wait in a closed, inert Collapsible.
+    const body = document.getElementById(
+      toggle.getAttribute('aria-controls')!,
+    )!;
+    expect(body.dataset.state).toBe('closed');
+    expect(body.hasAttribute('inert')).toBe(true);
     act(() => toggle.click());
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(body.dataset.state).toBe('open');
     expect(container.textContent).toContain(
       'agents.workflow.builder.filePassing',
     );

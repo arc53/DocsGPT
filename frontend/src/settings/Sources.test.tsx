@@ -51,7 +51,14 @@ vi.mock('../api/services/modelService', () => ({
 }));
 vi.mock('../preferences/preferenceApi', () => ({
   getDocs: vi.fn(async () => []),
-  getDocsWithPagination: vi.fn(async () => null),
+  // null is a failed load; a page resolves with the docs.
+  getDocsWithPagination: vi.fn(async () => ({
+    docs: [],
+    totalDocuments: 1,
+    totalPages: 1,
+    currentPage: 1,
+    nextCursor: '',
+  })),
 }));
 
 vi.mock('../components/Chunks', () => ({ default: view('chunks') }));
@@ -84,6 +91,7 @@ vi.mock('../upload/Upload', () => ({
 }));
 
 import type { Doc } from '../models/misc';
+import { getDocsWithPagination } from '../preferences/preferenceApi';
 import Sources from './Sources';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -171,6 +179,42 @@ describe('Sources access', () => {
       .map(([action]) => action)
       .filter((action) => action?.type === 'actionToast/showActionToast');
 
+  // The real ConfirmationModal: pending on the delete's promise, and a
+  // rejection keeps the dialog open with its message.
+  it('keeps a failed delete in the confirm dialog with its message', async () => {
+    const handleDeleteDocument = vi.fn(() =>
+      Promise.reject(new Error('settings.sources.errors.forbidden')),
+    );
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <Sources
+            paginatedDocuments={[
+              doc({ access: 'owner', allowed_actions: [...OWNER, 'use'] }),
+            ]}
+            handleDeleteDocument={handleDeleteDocument}
+          />
+        </MemoryRouter>,
+      );
+    });
+    await menuItems();
+    await clickItem('settings.sources.delete');
+    // The confirm copy: the question as the title, the consequence below.
+    expect(
+      document.querySelector('[role="dialog"] [data-slot="dialog-description"]')
+        ?.textContent,
+    ).toBe('settings.sources.deleteConsequence');
+    const submit = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ).find((b) => b.textContent === 'settings.sources.delete')!;
+    expect(submit.getAttribute('data-variant')).toBe('destructive');
+    await act(async () => submit.click());
+    expect(handleDeleteDocument).toHaveBeenCalled();
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog!.textContent).toContain('settings.sources.errors.forbidden');
+  });
+
   it('owner: Edit config, Test retrieval, Convert, Share and Delete', async () => {
     await render(
       doc({
@@ -184,7 +228,7 @@ describe('Sources access', () => {
       'settings.sources.testRetrieval.action',
       'settings.sources.wiki.convert.action',
       'settings.sources.shareWithTeam',
-      'convTile.delete',
+      'settings.sources.delete',
     ]);
   });
 
@@ -212,7 +256,7 @@ describe('Sources access', () => {
     connectors.connections = [];
     expect(items).not.toContain('settings.connectors.manageConnection');
     expect(items).toContain('settings.sources.editConfig');
-    expect(items).toContain('convTile.delete');
+    expect(items).toContain('settings.sources.delete');
   });
 
   // A source whose connection needs signing in again says so on its tile
@@ -231,16 +275,86 @@ describe('Sources access', () => {
     reconnect.mockClear();
     await render(doc({ connectionId: 'conn-1' } as Partial<Doc>));
     connectors.connections = [];
+    // The state is the warning Badge, the action an outline sm pill.
+    const badge = Array.from(
+      container.querySelectorAll('[data-slot="badge"]'),
+    ).find((b) => b.textContent === 'settings.connectors.status.reconnect')!;
+    expect(badge.getAttribute('data-variant')).toBe('warning');
+    expect(badge.hasAttribute('tabindex')).toBe(false);
+    expect(container.textContent).not.toContain(
+      'settings.connectors.detail.paused',
+    );
     const button = Array.from(container.querySelectorAll('button')).find(
       (b) => b.textContent === 'settings.connectors.status.reconnect',
     )!;
     expect(button).toBeDefined();
+    expect(button.getAttribute('data-variant')).toBe('outline');
+    expect(button.getAttribute('data-size')).toBe('sm');
+    expect(button.getAttribute('data-shape')).toBe('pill');
+    // A sibling of the card's own button, never inside it.
+    expect(button.closest('[role="button"]')).toBeNull();
+    expect(button.parentElement!.closest('button')).toBeNull();
     await act(async () => button.click());
     expect(reconnect).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'conn-1', connector_key: 'google_drive' }),
     );
     // Only the reconnect: the source view stays closed.
     expect(container.querySelector('[data-testid="chunks"]')).toBeNull();
+  });
+
+  // The same rule as Tools and the nav dot: an expired or failing sign-in.
+  it.each([
+    ['error', true],
+    ['disconnected', false],
+  ])('status %s offers Reconnect: %s', async (status, shown) => {
+    connectors.connections = [
+      {
+        id: 'conn-1',
+        connector_key: 'google_drive',
+        name: 'Google Drive',
+        status,
+      },
+    ];
+    await render(doc({ connectionId: 'conn-1' } as Partial<Doc>));
+    connectors.connections = [];
+    expect(
+      Array.from(container.querySelectorAll('button')).some(
+        (b) => b.textContent === 'settings.connectors.status.reconnect',
+      ),
+    ).toBe(shown);
+  });
+
+  // DESIGN "A clickable card that holds a link": the card opens through a
+  // stretched button; the menu and Reconnect are its siblings.
+  it('opens the source through a stretched button, controls beside it', async () => {
+    connectors.connections = [
+      {
+        id: 'conn-1',
+        connector_key: 'google_drive',
+        name: 'Google Drive',
+        icon: 'drive',
+        status: 'reconnect_needed',
+      },
+    ];
+    await render(doc({ connectionId: 'conn-1' } as Partial<Doc>));
+    connectors.connections = [];
+    expect(container.querySelector('[role="button"]')).toBeNull();
+    const open = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Contracts"]',
+    )!;
+    expect(open).not.toBeNull();
+    expect(open.className).toContain('after:inset-0');
+    expect(open.querySelector('button, a, [tabindex]')).toBeNull();
+    const menu = container.querySelector<HTMLElement>(
+      '[data-testid="menu-button-src-1"]',
+    )!;
+    expect(open.contains(menu)).toBe(false);
+    expect(menu.closest('.z-10')).not.toBeNull();
+    const card = open.closest('[data-slot="card"]')!;
+    expect(card.className).toContain('has-[>button:focus-visible]:ring-3');
+    // Names the connection from the Knowledge namespace.
+    expect(card.textContent).toContain('settings.sources.viaConnection');
+    expect(card.textContent).not.toContain('settings.tools.viaConnection');
   });
 
   it('offers no Reconnect on a synced source that is running', async () => {
@@ -283,7 +397,7 @@ describe('Sources access', () => {
     await render(doc());
     const items = await menuItems();
     expect(items).toContain('settings.sources.shareWithTeam');
-    expect(items).toContain('convTile.delete');
+    expect(items).toContain('settings.sources.delete');
   });
 
   it('editor: edits but cannot share or delete', async () => {
@@ -314,7 +428,7 @@ describe('Sources access', () => {
     );
     const items = await menuItems();
     expect(items).toContain('settings.sources.shareWithTeam');
-    expect(items).toContain('convTile.delete');
+    expect(items).toContain('settings.sources.delete');
   });
 
   it('viewer: View config and Test retrieval only', async () => {
@@ -476,5 +590,236 @@ describe('Sources access', () => {
       doc({ isNested: true, access: 'editor', allowed_actions: EDITOR }),
     );
     expect(canEditOf('file-tree')).toBe('true');
+  });
+});
+
+describe('Sources paging', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const fetchPage = vi.mocked(getDocsWithPagination);
+
+  beforeEach(() => {
+    localStorage.clear();
+    fetchPage.mockReset();
+    service.getConfig.mockResolvedValue({ json: async () => ({}) });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+  });
+
+  function Where() {
+    const location = useLocation();
+    return <div data-testid="where">{location.search}</div>;
+  }
+
+  const render = async (entry = '/settings/sources') => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={[entry]}>
+          <Sources
+            paginatedDocuments={[doc()]}
+            handleDeleteDocument={vi.fn()}
+          />
+          <Where />
+        </MemoryRouter>,
+      );
+    });
+  };
+
+  const response = (currentPage: number, total = 86) => ({
+    docs: [doc()],
+    totalDocuments: total,
+    totalPages: Math.ceil(total / 12),
+    currentPage,
+    nextCursor: '',
+  });
+
+  const where = () =>
+    container.querySelector('[data-testid="where"]')!.textContent;
+
+  const stubWidth = (desktop: boolean) =>
+    vi.stubGlobal('matchMedia', () => ({ matches: desktop }));
+
+  it('shows a failed load as an error with Retry, not "no sources"', async () => {
+    fetchPage.mockResolvedValue(null);
+    await render();
+    const state = container.querySelector<HTMLElement>(
+      '[data-slot="empty-state"][data-tone="destructive"]',
+    )!;
+    expect(state).not.toBeNull();
+    expect(state.textContent).toContain('settings.sources.loadError');
+    expect(
+      container.querySelector('[data-testid="menu-button-src-1"]'),
+    ).toBeNull();
+    fetchPage.mockResolvedValue(response(1));
+    const retry = Array.from(state.querySelectorAll('button')).find(
+      (b) => b.textContent === 'retry',
+    )!;
+    await act(async () => retry.click());
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+    expect(
+      container.querySelector(
+        '[data-slot="empty-state"][data-tone="destructive"]',
+      ),
+    ).toBeNull();
+  });
+
+  it('asks for 24 per page on desktop', async () => {
+    stubWidth(true);
+    fetchPage.mockResolvedValue(response(1));
+    await render();
+    expect(fetchPage.mock.calls[0][3]).toBe(24);
+  });
+
+  it('asks for 12 per page below desktop, starting on the page in the URL', async () => {
+    stubWidth(false);
+    fetchPage.mockResolvedValue(response(3));
+    await render('/settings/sources?page=3');
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+    const [, , page, rows] = fetchPage.mock.calls[0];
+    expect(page).toBe(3);
+    expect(rows).toBe(12);
+    expect(where()).toBe('?page=3');
+  });
+
+  it('pages with the numbered pager and keeps the page in the URL', async () => {
+    fetchPage.mockResolvedValue(response(1));
+    await render();
+    const pager = container.querySelector('[data-slot="pagination-full"]')!;
+    expect(pager.textContent).toContain('settings.sources.pageRange');
+    const page2 = pager.querySelector<HTMLButtonElement>(
+      '[aria-label="pagination.goToPage"]:not([aria-current])',
+    )!;
+    fetchPage.mockResolvedValue(response(2));
+    await act(async () => page2.click());
+    expect(fetchPage.mock.lastCall![2]).toBe(2);
+    expect(where()).toBe('?page=2');
+  });
+
+  // Deleting the last card on the last page: the server clamps the page.
+  it('follows the page the server clamped to', async () => {
+    fetchPage.mockResolvedValue(response(7, 84));
+    await render('/settings/sources?page=8');
+    expect(where()).toBe('?page=7');
+  });
+
+  // The last card on the last page: the page is fetched again after the
+  // delete, so the server's clamp moves the grid back a page (not an empty
+  // "no sources yet" while other sources exist).
+  it('refetches after a delete and follows the clamped page', async () => {
+    fetchPage.mockResolvedValue(response(8, 85));
+    const handleDeleteDocument = vi.fn(async () => undefined);
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/settings/sources?page=8']}>
+          <Sources
+            paginatedDocuments={[
+              doc({ access: 'owner', allowed_actions: [...OWNER, 'use'] }),
+            ]}
+            handleDeleteDocument={handleDeleteDocument}
+          />
+          <Where />
+        </MemoryRouter>,
+      );
+    });
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[data-testid="menu-button-src-1"]',
+    )!;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      trigger.click();
+    });
+    const item = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((el) => el.textContent === 'settings.sources.delete')!;
+    await act(async () => item.click());
+    fetchPage.mockClear();
+    fetchPage.mockResolvedValue(response(7, 84));
+    const submit = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ).find((b) => b.textContent === 'settings.sources.delete')!;
+    await act(async () => submit.click());
+    expect(handleDeleteDocument).toHaveBeenCalled();
+    expect(fetchPage).toHaveBeenCalled();
+    expect(fetchPage.mock.calls[0][2]).toBe(8);
+    expect(where()).toBe('?page=7');
+  });
+
+  it('uses the remembered page size', async () => {
+    localStorage.setItem('DocsGPTPageSize:sources', '48');
+    fetchPage.mockResolvedValue(response(1));
+    await render();
+    expect(fetchPage.mock.calls[0][3]).toBe(48);
+  });
+
+  it('a new search starts on page 1', async () => {
+    fetchPage.mockResolvedValue(response(3));
+    await render('/settings/sources?page=3');
+    const input = container.querySelector<HTMLInputElement>(
+      '#document-search-input',
+    )!;
+    fetchPage.mockResolvedValue(response(1, 5));
+    await act(async () => {
+      const setValue = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!;
+      setValue.call(input, 'tender');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const [, , page, , search] = fetchPage.mock.lastCall!;
+    expect(page).toBe(1);
+    expect(search).toBe('tender');
+    expect(where()).toBe('');
+  });
+
+  const renderEmpty = async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <Sources paginatedDocuments={[]} handleDeleteDocument={vi.fn()} />
+        </MemoryRouter>,
+      );
+    });
+  };
+
+  // "Connect a service" would open the same Add knowledge modal.
+  it('offers one way in when there is no knowledge yet', async () => {
+    fetchPage.mockResolvedValue(response(1, 0));
+    await renderEmpty();
+    const empty = container.querySelector('[data-slot="empty-state"]')!;
+    expect(empty.getAttribute('data-size')).toBe('default');
+    expect(
+      Array.from(empty.querySelectorAll('button')).map((b) => b.textContent),
+    ).toEqual(['settings.sources.addSource']);
+  });
+
+  it('says no match in the small, unillustrated empty state', async () => {
+    fetchPage.mockResolvedValue(response(1, 0));
+    await renderEmpty();
+    const input = container.querySelector<HTMLInputElement>(
+      '#document-search-input',
+    )!;
+    await act(async () => {
+      const setValue = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!;
+      setValue.call(input, 'nothing');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const empty = container.querySelector('[data-slot="empty-state"]')!;
+    expect(empty.textContent).toContain('settings.sources.noResults');
+    expect(empty.getAttribute('data-size')).toBe('xs');
+    expect(empty.querySelector('svg')).toBeNull();
   });
 });

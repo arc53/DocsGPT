@@ -1,10 +1,10 @@
 import React from 'react';
-import { ChevronRight, Info, TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import ViewOnlyNotice from '@/components/ViewOnlyNotice';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -21,7 +21,7 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { SettingRow } from '@/components/ui/setting-row';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
+import { ToggleChip } from '@/components/ui/toggle-chip';
 
 import userService from '../../api/services/userService';
 import {
@@ -117,6 +117,7 @@ export default function GuardrailsSection({
 }: Props) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = React.useState(false);
+  const bodyId = React.useId();
   const [catalog, setCatalog] = React.useState<GuardrailCatalog | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [openSettings, setOpenSettings] = React.useState<string | null>(null);
@@ -224,244 +225,228 @@ export default function GuardrailsSection({
       className="gap-5"
       data-testid="guardrails-section"
     >
-      <div className="flex flex-wrap items-center gap-2">
-        {/* The heading wraps the toggle: a button's children are
+      {/* The card's gap-5 sits inside the body, so it folds away with it. */}
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* The heading wraps the toggle: a button's children are
             presentational, so a heading inside it is lost to screen readers. */}
-        <h2>
-          <Button
-            type="button"
-            variant="section-toggle"
-            size="sm"
-            onClick={() => setExpanded(!expanded)}
-            aria-expanded={expanded}
-            className="-ml-3 w-fit justify-start"
-            data-testid="guardrails-toggle"
-          >
-            <ChevronRight
-              aria-hidden="true"
-              className={cn(
-                'transition-transform duration-200',
-                expanded && 'rotate-90',
-              )}
-            />
-            <span className="text-lg font-semibold">
+          <h2>
+            <CollapsibleTrigger
+              look="section"
+              open={expanded}
+              onOpenChange={setExpanded}
+              controls={bodyId}
+              data-testid="guardrails-toggle"
+            >
               {t('agents.form.sections.guardrails')}
-            </span>
-          </Button>
-        </h2>
-        {config.enabled && (
-          <Badge variant="success" data-testid="guardrails-active-badge">
-            {t('agents.form.guardrails.activeCount', {
-              count: config.controls.length + floorControls.size,
-            })}
-          </Badge>
-        )}
-        {incompleteCount > 0 && (
-          <Badge
-            variant="destructive"
-            data-testid="guardrails-incomplete-badge"
-          >
-            {t('agents.form.guardrails.needsSetup', {
-              count: incompleteCount,
-            })}
-          </Badge>
-        )}
-      </div>
-
-      {expanded && (
-        <div className="flex flex-col gap-5">
-          {loadError && (
-            <EmptyState
-              tone="destructive"
-              size="sm"
-              illustration="none"
-              title={loadError}
-              action={
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setReloadKey((k) => k + 1)}
-                >
-                  {t('retry')}
-                </Button>
-              }
-            />
-          )}
-
-          {disabled && <ViewOnlyNotice data-testid="guardrails-read-only" />}
-
-          {instanceDisabled && (
-            <Alert variant="warning" data-testid="guardrails-instance-disabled">
-              <TriangleAlert aria-hidden="true" className="size-4" />
-              <AlertDescription>
-                {t('agents.form.guardrails.instanceDisabled')}
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {floorControls.size > 0 && (
-            <Alert variant="info" role="status">
-              <Info aria-hidden="true" className="size-4" />
-              <AlertDescription>
-                {t('agents.form.guardrails.floorNotice', {
-                  count: floorControls.size,
-                })}
-              </AlertDescription>
-            </Alert>
-          )}
-
-          <SettingRow
-            label={t('agents.form.guardrails.enable')}
-            description={t('agents.form.guardrails.enableDescription')}
-            htmlFor={enabledId}
-          >
-            <Switch
-              id={enabledId}
-              checked={config.enabled}
-              disabled={disabled}
-              data-testid="guardrails-enabled"
-              onCheckedChange={(checked) => patch({ enabled: checked })}
-            />
-          </SettingRow>
-
+            </CollapsibleTrigger>
+          </h2>
           {config.enabled && (
-            <>
-              <FormField
-                labelSurface="background"
-                label={t('agents.form.guardrails.mode')}
-                hint={
-                  config.mode === 'monitor_only'
-                    ? t('agents.form.guardrails.monitorHint')
-                    : undefined
-                }
-                disabled={disabled}
+            <Badge variant="success" data-testid="guardrails-active-badge">
+              {t('agents.form.guardrails.activeCount', {
+                count: config.controls.length + floorControls.size,
+              })}
+            </Badge>
+          )}
+          {incompleteCount > 0 && (
+            <Badge
+              variant="destructive"
+              data-testid="guardrails-incomplete-badge"
+            >
+              {t('agents.form.guardrails.needsSetup', {
+                count: incompleteCount,
+              })}
+            </Badge>
+          )}
+        </div>
+
+        <Collapsible open={expanded} id={bodyId}>
+          <div className="flex flex-col gap-5 pt-5">
+            {loadError && (
+              <EmptyState
+                tone="destructive"
+                size="sm"
+                illustration="none"
+                title={loadError}
+                onRetry={() => setReloadKey((k) => k + 1)}
+              />
+            )}
+
+            {disabled && <ViewOnlyNotice data-testid="guardrails-read-only" />}
+
+            {instanceDisabled && (
+              <Alert
+                variant="warning"
+                data-testid="guardrails-instance-disabled"
               >
-                <Select
-                  value={config.mode}
-                  onValueChange={(mode) =>
-                    patch({ mode: mode as GuardrailsConfig['mode'] })
+                <AlertDescription>
+                  {t('agents.form.guardrails.instanceDisabled')}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {floorControls.size > 0 && (
+              <Alert variant="info" role="status">
+                <AlertDescription>
+                  {t('agents.form.guardrails.floorNotice', {
+                    count: floorControls.size,
+                  })}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <SettingRow
+              label={t('agents.form.guardrails.enable')}
+              description={t('agents.form.guardrails.enableDescription')}
+              htmlFor={enabledId}
+            >
+              <Switch
+                id={enabledId}
+                checked={config.enabled}
+                disabled={disabled}
+                data-testid="guardrails-enabled"
+                onCheckedChange={(checked) => patch({ enabled: checked })}
+              />
+            </SettingRow>
+
+            {config.enabled && (
+              <>
+                <FormField
+                  labelSurface="background"
+                  label={t('agents.form.guardrails.mode')}
+                  hint={
+                    config.mode === 'monitor_only'
+                      ? t('agents.form.guardrails.monitorHint')
+                      : undefined
                   }
                   disabled={disabled}
                 >
-                  <SelectTrigger
-                    className="w-full"
-                    size="field"
-                    shape="pill"
-                    data-testid="guardrails-mode"
+                  <Select
+                    value={config.mode}
+                    onValueChange={(mode) =>
+                      patch({ mode: mode as GuardrailsConfig['mode'] })
+                    }
+                    disabled={disabled}
                   >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(catalog?.modes ?? Object.keys(MODE_KEYS)).map((mode) => (
-                      <SelectItem key={mode} value={mode}>
-                        {t(MODE_KEYS[mode] ?? mode)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FormField>
-
-              <div>
-                <p className="mb-3 text-sm font-medium">
-                  {t('agents.form.guardrails.checks')}
-                </p>
-                <div className="flex flex-col gap-3">
-                  {checks.map((info) => (
-                    <CheckCard
-                      key={info.name}
-                      info={info}
-                      catalog={catalog}
-                      config={config}
-                      floorControls={floorControls}
-                      disabled={disabled}
-                      openSettings={openSettings}
-                      setOpenSettings={setOpenSettings}
-                      controlFor={controlFor}
-                      toggleControl={toggleControl}
-                      updateControl={updateControl}
-                      removeControl={removeControl}
-                    />
-                  ))}
-                  {orphanControls.map((control) => (
-                    <Card
-                      key={key(control.check, control.stage)}
-                      tone="destructive"
-                      padding="sm"
-                      className="flex-row items-center justify-between"
-                      data-testid={`guardrail-orphan-${control.check}`}
+                    <SelectTrigger
+                      className="w-full"
+                      size="field"
+                      data-testid="guardrails-mode"
                     >
-                      <p className="text-xs">
-                        {t('agents.form.guardrails.unknownCheck', {
-                          check: control.check,
-                        })}
-                      </p>
-                      <Button
-                        type="button"
-                        variant="ghost-destructive-on-accent"
-                        size="xs"
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(catalog?.modes ?? Object.keys(MODE_KEYS)).map(
+                        (mode) => (
+                          <SelectItem key={mode} value={mode}>
+                            {t(MODE_KEYS[mode] ?? mode)}
+                          </SelectItem>
+                        ),
+                      )}
+                    </SelectContent>
+                  </Select>
+                </FormField>
+
+                <div>
+                  <p className="mb-3 text-sm font-medium">
+                    {t('agents.form.guardrails.checks')}
+                  </p>
+                  <div className="flex flex-col gap-3">
+                    {checks.map((info) => (
+                      <CheckCard
+                        key={info.name}
+                        info={info}
+                        catalog={catalog}
+                        config={config}
+                        floorControls={floorControls}
                         disabled={disabled}
-                        onClick={() =>
-                          removeControl(control.check, control.stage)
-                        }
+                        openSettings={openSettings}
+                        setOpenSettings={setOpenSettings}
+                        controlFor={controlFor}
+                        toggleControl={toggleControl}
+                        updateControl={updateControl}
+                        removeControl={removeControl}
+                      />
+                    ))}
+                    {orphanControls.map((control) => (
+                      <Card
+                        key={key(control.check, control.stage)}
+                        tone="destructive"
+                        padding="sm"
+                        className="flex-row items-center justify-between"
+                        data-testid={`guardrail-orphan-${control.check}`}
                       >
-                        {t('agents.form.guardrails.remove')}
-                      </Button>
-                    </Card>
-                  ))}
+                        <p className="text-xs">
+                          {t('agents.form.guardrails.unknownCheck', {
+                            check: control.check,
+                          })}
+                        </p>
+                        <Button
+                          type="button"
+                          variant="ghost-destructive-on-accent"
+                          size="xs"
+                          disabled={disabled}
+                          onClick={() =>
+                            removeControl(control.check, control.stage)
+                          }
+                        >
+                          {t('agents.form.guardrails.remove')}
+                        </Button>
+                      </Card>
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              <FormField
-                labelSurface="background"
-                label={t('agents.form.guardrails.blockMessage')}
-                hint={t('agents.form.guardrails.blockMessageDescription')}
-                disabled={disabled}
-              >
-                <Input
-                  type="text"
-                  value={config.block_message}
-                  maxLength={500}
-                  data-testid="guardrails-block-message"
-                  onChange={(e) => patch({ block_message: e.target.value })}
-                  shape="pill"
-                />
-              </FormField>
-
-              <SettingRow
-                label={t('agents.form.guardrails.failOpen')}
-                description={t('agents.form.guardrails.failOpenDescription')}
-                htmlFor={failOpenId}
-              >
-                <Switch
-                  id={failOpenId}
-                  checked={config.fail_open}
+                <FormField
+                  labelSurface="background"
+                  label={t('agents.form.guardrails.blockMessage')}
+                  hint={t('agents.form.guardrails.blockMessageDescription')}
                   disabled={disabled}
-                  data-testid="guardrails-fail-open"
-                  onCheckedChange={(checked) => patch({ fail_open: checked })}
-                />
-              </SettingRow>
+                >
+                  <Input
+                    type="text"
+                    value={config.block_message}
+                    maxLength={500}
+                    data-testid="guardrails-block-message"
+                    onChange={(e) => patch({ block_message: e.target.value })}
+                  />
+                </FormField>
 
-              <FormField
-                labelSurface="background"
-                label={t('agents.form.guardrails.timeout')}
-                disabled={disabled}
-              >
-                <NumberField
-                  value={config.timeout_ms}
-                  min={100}
-                  max={60000}
-                  step={100}
-                  fallback={2000}
+                <SettingRow
+                  label={t('agents.form.guardrails.failOpen')}
+                  description={t('agents.form.guardrails.failOpenDescription')}
+                  htmlFor={failOpenId}
+                >
+                  <Switch
+                    id={failOpenId}
+                    checked={config.fail_open}
+                    disabled={disabled}
+                    data-testid="guardrails-fail-open"
+                    onCheckedChange={(checked) => patch({ fail_open: checked })}
+                  />
+                </SettingRow>
+
+                <FormField
+                  labelSurface="background"
+                  label={t('agents.form.guardrails.timeout')}
                   disabled={disabled}
-                  testId="guardrails-timeout"
-                  onCommit={(timeout_ms) => patch({ timeout_ms })}
-                />
-              </FormField>
-            </>
-          )}
-        </div>
-      )}
+                >
+                  <NumberField
+                    value={config.timeout_ms}
+                    min={100}
+                    max={60000}
+                    step={100}
+                    fallback={2000}
+                    disabled={disabled}
+                    testId="guardrails-timeout"
+                    onCommit={(timeout_ms) => patch({ timeout_ms })}
+                  />
+                </FormField>
+              </>
+            )}
+          </div>
+        </Collapsible>
+      </div>
     </Card>
   );
 }
@@ -478,6 +463,7 @@ function NumberField({
   fallback,
   disabled,
   testId,
+  variant = 'filled',
   onCommit,
 }: {
   value: number;
@@ -487,6 +473,8 @@ function NumberField({
   fallback: number;
   disabled?: boolean;
   testId?: string;
+  /** `default` inside a guardrail stage panel (transparent, on the page). */
+  variant?: 'default' | 'filled';
   onCommit: (next: number) => void;
 }) {
   const [draft, setDraft] = React.useState(String(value));
@@ -511,8 +499,7 @@ function NumberField({
         setDraft(String(next));
         onCommit(next);
       }}
-      variant="filled"
-      shape="pill"
+      variant={variant}
     />
   );
 }
@@ -619,33 +606,22 @@ function CheckCard({
           // out a credential strands a control that can never be cleared.
           const canToggle =
             !disabled && !locked && (Boolean(control) || !unavailable);
-          const chip = (
-            <Button
+          // A locked chip is aria-disabled, not disabled, so it keeps full
+          // colour and its hint shows on hover.
+          return (
+            <ToggleChip
               key={stage}
-              type="button"
-              variant={on ? 'secondary' : 'ghost-muted'}
-              size="xs"
-              shape="pill"
-              disabled={!canToggle}
+              pressed={on}
+              locked={locked}
+              disabled={!locked && !canToggle}
+              title={
+                locked ? t('agents.form.guardrails.lockedByFloor') : undefined
+              }
               data-testid={`guardrail-stage-${info.name}-${stage}`}
-              onClick={() => toggleControl(info, stage, !control)}
+              onPressedChange={() => toggleControl(info, stage, !control)}
             >
               {t(STAGE_KEYS[stage] ?? stage)}
-              {locked ? ' 🔒' : ''}
-            </Button>
-          );
-          // A disabled Button takes no pointer events, so the locked chip's
-          // hint lives on a wrapper that can still be hovered.
-          return locked ? (
-            <span
-              key={stage}
-              className="inline-flex"
-              title={t('agents.form.guardrails.lockedByFloor')}
-            >
-              {chip}
-            </span>
-          ) : (
-            chip
+            </ToggleChip>
           );
         })}
       </div>
@@ -657,7 +633,6 @@ function CheckCard({
           role="note"
           data-testid={`guardrail-floor-${k}`}
         >
-          <Info aria-hidden="true" className="size-4" />
           <AlertDescription>
             {t('agents.form.guardrails.floorControl', {
               stage: t(STAGE_KEYS[k.split(':')[1] as GuardrailStage] ?? ''),
@@ -671,14 +646,12 @@ function CheckCard({
         const needsSetup = controlNeedsSetup(control);
         const panelKey = key(control.check, control.stage);
         return (
-          <div
+          <Card
             key={panelKey}
-            className={cn(
-              'rounded-lg px-3 py-2',
-              needsSetup
-                ? 'border-destructive/50 bg-destructive/10 border'
-                : 'bg-muted',
-            )}
+            variant="subtle"
+            padding="sm"
+            tone={needsSetup ? 'destructive' : 'default'}
+            className="gap-0"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-medium">
@@ -696,7 +669,6 @@ function CheckCard({
                 >
                   <SelectTrigger
                     size="sm"
-                    shape="pill"
                     data-testid={`guardrail-action-${control.check}-${control.stage}`}
                   >
                     <SelectValue />
@@ -753,6 +725,7 @@ function CheckCard({
             {openSettings === panelKey && (
               <CheckSettings
                 control={control}
+                onTint={needsSetup}
                 catalog={catalog}
                 disabled={disabled}
                 onChange={(settings) =>
@@ -760,7 +733,7 @@ function CheckCard({
                 }
               />
             )}
-          </div>
+          </Card>
         );
       })}
     </Card>
@@ -773,11 +746,17 @@ function hasSettings(check: string): boolean {
 
 function CheckSettings({
   control,
+  onTint,
   catalog,
   disabled,
   onChange,
 }: {
   control: GuardrailControl;
+  /**
+   * On the needs-setup panel's red soft fill, which no label surface matches:
+   * labels sit above the fields instead of floating on a notch.
+   */
+  onTint: boolean;
   catalog: GuardrailCatalog | null;
   disabled: boolean;
   onChange: (settings: Record<string, any>) => void;
@@ -787,7 +766,12 @@ function CheckSettings({
   const set = (next: Record<string, any>) => onChange({ ...s, ...next });
 
   const listField = (fieldKey: string, label: string, placeholder: string) => (
-    <FormField label={label} labelSurface="muted" disabled={disabled}>
+    <FormField
+      label={label}
+      labelSurface="background"
+      float={!onTint}
+      disabled={disabled}
+    >
       <Textarea
         rows={2}
         size="sm"
@@ -802,7 +786,6 @@ function CheckSettings({
               .filter(Boolean),
           })
         }
-        variant="filled"
       />
     </FormField>
   );
@@ -814,15 +797,12 @@ function CheckSettings({
           {(catalog?.pii_entities ?? []).map((entity) => {
             const on = (s.entities ?? []).includes(entity);
             return (
-              <Button
+              <ToggleChip
                 key={entity}
-                type="button"
-                variant={on ? 'secondary' : 'ghost-muted'}
-                size="xs"
-                shape="pill"
+                pressed={on}
                 disabled={disabled}
                 data-testid={`guardrail-pii-${entity}`}
-                onClick={() =>
+                onPressedChange={() =>
                   set({
                     entities: on
                       ? (s.entities ?? []).filter((e: string) => e !== entity)
@@ -831,7 +811,7 @@ function CheckSettings({
                 }
               >
                 {entity}
-              </Button>
+              </ToggleChip>
             );
           })}
           {(s.entities ?? []).length === 0 && (
@@ -867,7 +847,8 @@ function CheckSettings({
       {control.check === 'policy' && (
         <FormField
           label={t('agents.form.guardrails.policyText')}
-          labelSurface="muted"
+          labelSurface="background"
+          float={!onTint}
           disabled={disabled}
         >
           <Textarea
@@ -876,7 +857,6 @@ function CheckSettings({
             value={s.policy ?? ''}
             data-testid="guardrail-policy-text"
             onChange={(e) => set({ policy: e.target.value })}
-            variant="filled"
           />
         </FormField>
       )}
@@ -885,7 +865,8 @@ function CheckSettings({
         <div className="grid grid-cols-2 gap-2">
           <FormField
             label={t('agents.form.guardrails.minOverlap')}
-            labelSurface="muted"
+            labelSurface="background"
+            float={!onTint}
             disabled={disabled}
           >
             <NumberField
@@ -895,12 +876,14 @@ function CheckSettings({
               step={0.1}
               fallback={0.3}
               disabled={disabled}
+              variant="default"
               onCommit={(min_overlap) => set({ min_overlap })}
             />
           </FormField>
           <FormField
             label={t('agents.form.guardrails.minWords')}
-            labelSurface="muted"
+            labelSurface="background"
+            float={!onTint}
             disabled={disabled}
           >
             <NumberField
@@ -910,6 +893,7 @@ function CheckSettings({
               step={1}
               fallback={25}
               disabled={disabled}
+              variant="default"
               onCommit={(min_words) => set({ min_words })}
             />
           </FormField>
@@ -920,7 +904,8 @@ function CheckSettings({
         <FormField
           label={t('agents.form.guardrails.confidence')}
           hint={t('agents.form.guardrails.confidenceHint')}
-          labelSurface="muted"
+          labelSurface="background"
+          float={!onTint}
           disabled={disabled}
         >
           <NumberField
@@ -930,6 +915,7 @@ function CheckSettings({
             step={0.1}
             fallback={0.7}
             disabled={disabled}
+            variant="default"
             onCommit={(confidence_threshold) => set({ confidence_threshold })}
           />
         </FormField>

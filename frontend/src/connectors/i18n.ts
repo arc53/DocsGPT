@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next';
 
-import type { ConnectorDefinition } from './types';
+import type { Connection, ConnectorDefinition } from './types';
 
 /**
  * Locale key segment for a catalog key. Preset keys look like `mcp:notion`,
@@ -24,6 +24,30 @@ export const connectorDescription = (
  */
 export const isKeyHint = (label: string | null | undefined) =>
   !!label && label.startsWith('…');
+
+/**
+ * What tells two accounts of one service apart on a tile: the name the
+ * owner gave it, else what identifies it (a key hint for pasted keys).
+ *
+ * Args:
+ *   t: The translate function.
+ *   connection: The connection's account fields.
+ *
+ * Returns:
+ *   The account line.
+ */
+export const accountLine = (
+  t: TFunction,
+  connection: Pick<Connection, 'account_name' | 'account_label' | 'auth_kind'>,
+): string =>
+  connection.account_name
+    ? connection.account_name
+    : connection.auth_kind === 'api_key' && isKeyHint(connection.account_label)
+      ? t('settings.connectors.detail.keyEnding', {
+          hint: connection.account_label,
+          interpolation: { escapeValue: false },
+        })
+      : connection.account_label;
 
 /** An action's name in words: `get_triage_responsibility` → "Get triage responsibility". */
 export const actionTitle = (name: string) => {

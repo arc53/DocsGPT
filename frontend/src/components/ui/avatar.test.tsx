@@ -43,3 +43,45 @@ describe('Avatar sizes', () => {
     expect(avatarVariants({ size: 'lg' })).toContain('size-10');
   });
 });
+
+describe('Avatar icon tile', () => {
+  it('is the muted icon square: bg-muted, muted icon, rounded-md', () => {
+    const html = renderToStaticMarkup(
+      <Avatar size="sm" shape="square" variant="icon">
+        <svg />
+      </Avatar>,
+    );
+    const host = document.createElement('div');
+    host.innerHTML = html;
+    const tile = host.firstElementChild as HTMLElement;
+    expect(tile.className.split(' ')).toEqual(
+      expect.arrayContaining([
+        'bg-muted',
+        'text-muted-foreground',
+        'flex',
+        'size-8',
+        'shrink-0',
+        'items-center',
+        'justify-center',
+        'rounded-md',
+      ]),
+    );
+    expect(tile.getAttribute('data-variant')).toBe('icon');
+  });
+
+  it('has an xl size (48px) that rounds rounded-xl when square', () => {
+    const html = renderToStaticMarkup(
+      <Avatar size="xl" shape="square" variant="icon">
+        <svg />
+      </Avatar>,
+    );
+    const host = document.createElement('div');
+    host.innerHTML = html;
+    const classes = (host.firstElementChild as HTMLElement).className.split(
+      ' ',
+    );
+    expect(classes).toContain('size-12');
+    expect(classes).toContain('rounded-xl');
+    expect(classes).not.toContain('rounded-md');
+  });
+});

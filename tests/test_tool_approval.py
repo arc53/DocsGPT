@@ -239,6 +239,58 @@ class TestHandlerApprovalPause:
         (event,) = [e for e in events if e.get("data", {}).get("status") == "awaiting_approval"]
         assert event["data"]["sent_arguments"] == {"text": "hello", "chat_id": "111"}
 
+    def test_approval_event_names_the_connector(self):
+        """The approval card shows the connector's logo and name, never an account."""
+        handler = ConcreteHandler()
+        agent = self._make_agent({
+            "call_id": "c1",
+            "name": "create_issue_0",
+            "tool_name": "github",
+            "tool_id": "0",
+            "action_name": "create_issue",
+            "arguments": {"title": "Delay"},
+            "pause_type": "awaiting_approval",
+            "connector_key": "github",
+            "connector_name": "GitHub",
+            "access": "write",
+            "thought_signature": None,
+        })
+        call = ToolCall(id="c1", name="create_issue_0", arguments='{"title": "Delay"}')
+        gen = handler.handle_tool_calls(agent, [call], {"0": {"name": "github"}}, [])
+        events = []
+        try:
+            while True:
+                events.append(next(gen))
+        except StopIteration:
+            pass
+        (event,) = [e for e in events if e.get("data", {}).get("status") == "awaiting_approval"]
+        assert event["data"]["connector_key"] == "github"
+        assert event["data"]["connector_name"] == "GitHub"
+        assert event["data"]["access"] == "write"
+
+    def test_approval_event_without_a_connector_has_no_connector_fields(self):
+        handler = ConcreteHandler()
+        agent = self._make_agent({
+            "call_id": "c1",
+            "name": "send_msg_0",
+            "tool_name": "telegram",
+            "tool_id": "0",
+            "action_name": "send_msg",
+            "arguments": {"text": "hello"},
+            "pause_type": "awaiting_approval",
+            "thought_signature": None,
+        })
+        call = ToolCall(id="c1", name="send_msg_0", arguments='{"text": "hello"}')
+        gen = handler.handle_tool_calls(agent, [call], {"0": {"name": "telegram"}}, [])
+        events = []
+        try:
+            while True:
+                events.append(next(gen))
+        except StopIteration:
+            pass
+        (event,) = [e for e in events if e.get("data", {}).get("status") == "awaiting_approval"]
+        assert not {"connector_key", "connector_name", "access"} & set(event["data"])
+
     def test_mixed_normal_and_approval(self):
         """First tool runs normally, second needs approval."""
         handler = ConcreteHandler()

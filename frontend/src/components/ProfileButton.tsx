@@ -4,11 +4,17 @@ import { useTranslation } from 'react-i18next';
 import useTokenAuth from '../hooks/useTokenAuth';
 import { Avatar } from './ui/avatar';
 import { Button } from './ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
-import { Separator } from './ui/separator';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 
 /**
- * Top-right account menu for OIDC sessions: an avatar that opens a popover
+ * Top-right account menu for OIDC sessions: an avatar that opens a menu
  * showing the signed-in name/email and a sign-out action. Renders nothing for
  * other auth modes, which carry no user identity.
  */
@@ -43,8 +49,8 @@ export default function ProfileButton({
     );
 
   return (
-    <Popover>
-      <PopoverTrigger asChild>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         {/* inline + pill: the avatar sets the size and the Button brings
             only the round focus ring; ghost's hover fill sits under it. */}
         <Button
@@ -56,37 +62,37 @@ export default function ProfileButton({
         >
           {renderAvatar(size)}
         </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" sideOffset={8} className="w-64 p-0">
-        <div className="flex items-center gap-3 p-4">
-          {renderAvatar('lg')}
-          <span className="flex min-w-0 flex-col">
-            {userName && (
-              <p className="text-foreground truncate text-sm font-medium">
-                {userName}
-              </p>
-            )}
-            {userEmail && (
-              <p className="text-muted-foreground truncate text-xs">
-                {userEmail}
-              </p>
-            )}
-          </span>
-        </div>
-        <Separator />
-        <div className="p-1">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={logout}
-            data-testid="oidc-signout"
-            className="w-full justify-start"
-          >
-            <LogOut className="text-muted-foreground" aria-hidden />
-            {t('auth.signOut')}
-          </Button>
-        </div>
-      </PopoverContent>
-    </Popover>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={8} className="w-64">
+        <DropdownMenuLabel>
+          <div className="flex items-center gap-3">
+            {renderAvatar('lg')}
+            <span className="flex min-w-0 flex-col">
+              {userName && (
+                <span
+                  className="text-foreground truncate text-sm font-medium"
+                  title={userName}
+                >
+                  {userName}
+                </span>
+              )}
+              {userEmail && (
+                <span
+                  className="text-muted-foreground truncate text-xs font-normal"
+                  title={userEmail}
+                >
+                  {userEmail}
+                </span>
+              )}
+            </span>
+          </div>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={logout} data-testid="oidc-signout">
+          <LogOut aria-hidden />
+          {t('auth.signOut')}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

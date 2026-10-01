@@ -2,9 +2,7 @@ import { Search } from 'lucide-react';
 
 import { Input, type InputProps } from './ui/input';
 
-type SearchInputProps = Omit<InputProps, 'shape' | 'leftIcon' | 'size'> & {
-  size?: 'field' | 'sm';
-};
+type SearchInputProps = Omit<InputProps, 'shape' | 'leftIcon' | 'size'>;
 
 /**
  * The search field above a list or grid: a 38px pill with a search icon.
@@ -12,7 +10,6 @@ type SearchInputProps = Omit<InputProps, 'shape' | 'leftIcon' | 'size'> & {
  * `placeholder`; a placeholder-only field is named by its placeholder.
  */
 export default function SearchInput({
-  size = 'field',
   labelSurface = 'background',
   type = 'text',
   label,
@@ -22,7 +19,6 @@ export default function SearchInput({
   return (
     <Input
       type={type}
-      size={size}
       shape="pill"
       label={label}
       placeholder={placeholder}
@@ -30,6 +26,8 @@ export default function SearchInput({
       labelSurface={labelSurface}
       leftIcon={<Search className="text-muted-foreground size-4" aria-hidden />}
       {...props}
+      // One size: every search is the 38px field.
+      size="default"
     />
   );
 }

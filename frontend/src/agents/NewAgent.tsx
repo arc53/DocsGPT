@@ -1,13 +1,5 @@
 import isEqual from 'lodash/isEqual';
-import {
-  ChevronRight,
-  CircleCheck,
-  CircleX,
-  Database,
-  Info,
-  Play,
-  SquarePen,
-} from 'lucide-react';
+import { CircleCheck, CircleX, Database, Play, SquarePen } from 'lucide-react';
 import React, {
   useCallback,
   useEffect,
@@ -22,6 +14,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ActionMenu } from '@/components/ui/dropdown-menu';
@@ -64,7 +57,6 @@ import AgentDetailsModal from '../modals/AgentDetailsModal';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Prompt } from '../models/misc';
-import { showActionToast } from '../notifications/actionToastSlice';
 import {
   selectAgentFolders,
   selectSelectedAgent,
@@ -79,6 +71,7 @@ import PromptsModal from '../preferences/PromptsModal';
 import Prompts from '../settings/Prompts';
 import { UserToolType } from '../settings/types';
 import { can } from '../utils/accessUtils';
+import { isReader, personLabel, readerIdFromToken } from '../utils/personLabel';
 import Upload from '../upload/Upload';
 import {
   selectedSourceIdsFromAgent,
@@ -111,7 +104,7 @@ import {
   withAttachedToolRows,
 } from './sponsorConsent';
 import { useSponsorPrompt } from './useSponsorPrompt';
-import { Agent, ResourceState, ToolSummary } from './types';
+import { Agent, ResourceSponsor, ResourceState, ToolSummary } from './types';
 import WorkflowBuilder from './workflow/WorkflowBuilder';
 
 import type { Model } from '../models/types';
@@ -149,6 +142,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const folderIdFromUrl = searchParams.get('folder_id');
 
   const token = useSelector(selectToken);
+  const readerId = useMemo(() => readerIdFromToken(token), [token]);
   const sourceDocs = useSelector(selectSourceDocs);
   const selectedAgent = useSelector(selectSelectedAgent);
   const prompts = useSelector(selectPrompts);
@@ -221,6 +215,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
+  const [deleteError, setDeleteError] = useState<string>();
   // Access details opened from Share to allow changes: its allowlist unfolds.
   const [detailsOnApiWrites, setDetailsOnApiWrites] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
@@ -250,6 +245,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   }, [dispatch]);
   const [isAdvancedSectionExpanded, setIsAdvancedSectionExpanded] =
     useState(false);
+  const advancedSectionId = React.useId();
 
   const initialAgentRef = useRef<Agent | null>(null);
   const sourceAnchorButtonRef = useRef<HTMLButtonElement>(null);
@@ -344,6 +340,65 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     [agent.prompt_name, prompts, resolveSourceLabel, selectedTools, t],
   );
 
+  // "Added by …" for a tool, source or prompt that runs with an editor's
+  // access (`resource_sponsors`), shown where it is picked; null otherwise.
+  const addedByLabel = useCallback(
+    (type: ResourceSponsor['type'], id: string): string | null => {
+      const sponsor = (agent.resource_sponsors ?? []).find(
+        (item) =>
+          item.active &&
+          item.type === type &&
+          item.id.toLowerCase() === id.toLowerCase(),
+      );
+      if (!sponsor) return null;
+      if (isReader(sponsor, readerId))
+        return t('agents.form.sponsors.addedByYou');
+      const person = sponsor.user_id ? personLabel(sponsor) : null;
+      return person
+        ? t('agents.form.sponsors.addedBy', {
+            person,
+            interpolation: { escapeValue: false },
+          })
+        : t('agents.form.sponsors.addedByOther');
+    },
+    [agent.resource_sponsors, readerId, t],
+  );
+
+  const promptAddedBy = agent.prompt_id
+    ? addedByLabel('prompt', agent.prompt_id)
+    : null;
+
+  /** Picker rows with their "Added by" line in the row's description. */
+  const withAddedBy = useCallback(
+    (
+      items: MultiSelectPopoverItem[],
+      type: ResourceSponsor['type'],
+    ): MultiSelectPopoverItem[] =>
+      items.map((item) => {
+        const addedBy = addedByLabel(type, item.id);
+        if (!addedBy) return item;
+        // A rich description (a status badge) wins over a plain one, so the
+        // line goes above it.
+        return item.descriptionNode
+          ? {
+              ...item,
+              descriptionNode: (
+                <>
+                  <p
+                    className="text-muted-foreground truncate text-xs"
+                    title={addedBy}
+                  >
+                    {addedBy}
+                  </p>
+                  {item.descriptionNode}
+                </>
+              ),
+            }
+          : { ...item, description: addedBy };
+      }),
+    [addedByLabel],
+  );
+
   const sourceItems = useMemo(() => {
     const items = toSourcePickerItems(
       sourceDocs,
@@ -360,18 +415,21 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const unlisted = Array.from(selectedSourceIds)
       .filter((id) => !listed.has(id))
       .map((id) => ({ id, label: resolveSourceLabel(id), icon: <Database /> }));
-    return [...items, ...unlisted];
-  }, [resolveSourceLabel, selectedSourceIds, sourceDocs, t]);
+    return withAddedBy([...items, ...unlisted], 'source');
+  }, [resolveSourceLabel, selectedSourceIds, sourceDocs, t, withAddedBy]);
 
   // The caller's tools, plus a remove-only row for each tool on the agent
   // they can't list (the owner's private tools on a shared agent).
   const toolItems = useMemo(
     () =>
-      withAttachedToolRows(userTools, attachedTools, {
-        group: t('agents.form.toolsPopup.groupAttached'),
-        description: t('agents.form.toolsPopup.attachedHint'),
-      }),
-    [attachedTools, t, userTools],
+      withAddedBy(
+        withAttachedToolRows(userTools, attachedTools, {
+          group: t('agents.form.toolsPopup.groupAttached'),
+          description: t('agents.form.toolsPopup.attachedHint'),
+        }),
+        'tool',
+      ),
+    [attachedTools, t, userTools, withAddedBy],
   );
 
   const selectedSourceNames = useMemo(
@@ -433,28 +491,17 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     navigateBackToAgents();
   };
 
+  // Returned to ConfirmationModal: it stays pending while this runs and
+  // keeps a failure in the dialog (the server's message when it gives one).
   const handleDelete = async (agentId: string) => {
-    try {
-      const response = await userService.deleteAgent(agentId, token);
-      if (!response.ok) {
-        dispatch(
-          showActionToast({
-            variant: 'destructive',
-            message: await extractApiError(response, t('agents.deleteFailed')),
-          }),
-        );
-        return;
-      }
-      navigateBackToAgents();
-    } catch (error) {
-      console.error('Error deleting agent:', error);
-      dispatch(
-        showActionToast({
-          variant: 'destructive',
-          message: t('agents.deleteFailed'),
-        }),
-      );
+    setDeleteError(undefined);
+    const response = await userService.deleteAgent(agentId, token);
+    if (!response.ok) {
+      const message = await extractApiError(response, t('agents.deleteFailed'));
+      setDeleteError(message);
+      throw new Error(message);
     }
+    navigateBackToAgents();
   };
 
   // Fresh sponsor details and run state after a save or a reconnect,
@@ -899,9 +946,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           };
           if (connectionNeedsSignIn(connection)) {
             base.descriptionNode = (
-              <p className="text-warning text-xs">
-                {t('settings.connectors.health.signInAgain')}
-              </p>
+              <Badge variant="warning" className="mt-0.5">
+                {t('settings.connectors.status.reconnect')}
+              </Badge>
             );
           }
           if (tool.name === 'remote_device') {
@@ -1261,7 +1308,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       >
         {submitError && (
           <Alert variant="destructive" className="mb-6">
-            <CircleX aria-hidden="true" />
             <AlertDescription>{submitError}</AlertDescription>
           </Alert>
         )}
@@ -1286,7 +1332,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               label={t('agents.form.labels.name')}
             >
               <Input
-                shape="pill"
                 type="text"
                 value={agent.name}
                 placeholder={t('agents.form.placeholders.agentName')}
@@ -1299,7 +1344,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               className="col-span-2 sm:col-span-1 sm:col-start-2"
             >
               <Textarea
-                size="lg"
                 className="h-32 sm:h-24"
                 placeholder={t('agents.form.placeholders.describeAgent')}
                 value={agent.description}
@@ -1350,7 +1394,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     type="button"
                     variant="combobox"
                     size="field"
-                    shape="pill"
+                    role="combobox"
                     id={sourcesPickerId}
                     ref={sourceAnchorButtonRef}
                     data-placeholder={
@@ -1425,7 +1469,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     type="button"
                     variant="combobox"
                     size="field"
-                    shape="pill"
+                    role="combobox"
                     id={toolsPickerId}
                     ref={toolAnchorButtonRef}
                     data-placeholder={selectedTools.length > 0 ? undefined : ''}
@@ -1443,50 +1487,61 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 }
               />
             </FormField>
-            <div className="flex items-center gap-2 sm:col-span-2">
-              <div className="min-w-0 flex-1">
-                <Prompts
-                  prompts={prompts}
-                  selectedPrompt={
-                    prompts.find((prompt) => prompt.id === agent.prompt_id) ||
-                    // Owner-resolved name from the agent payload: lets a team
-                    // member see the owner's prompt name (which isn't in their
-                    // own prompts list). 'public' hides owner-only edit/share
-                    // affordances on a prompt the viewer doesn't own.
-                    (agent.prompt_name
-                      ? {
-                          name: agent.prompt_name,
-                          id: agent.prompt_id || 'default',
-                          type: 'public',
-                        }
-                      : prompts[0]) || {
-                      name: 'default',
-                      id: 'default',
-                      type: 'public',
+            <div className="flex flex-col sm:col-span-2">
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <Prompts
+                    prompts={prompts}
+                    selectedPrompt={
+                      prompts.find((prompt) => prompt.id === agent.prompt_id) ||
+                      // Owner-resolved name from the agent payload: lets a team
+                      // member see the owner's prompt name (which isn't in their
+                      // own prompts list). 'public' hides owner-only edit/share
+                      // affordances on a prompt the viewer doesn't own.
+                      (agent.prompt_name
+                        ? {
+                            name: agent.prompt_name,
+                            id: agent.prompt_id || 'default',
+                            type: 'public',
+                          }
+                        : prompts[0]) || {
+                        name: 'default',
+                        id: 'default',
+                        type: 'public',
+                      }
                     }
-                  }
-                  onSelectPrompt={(name, id, type) =>
-                    setAgent({ ...agent, prompt_id: id })
-                  }
-                  setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
-                  title={t('agents.form.sections.prompt')}
-                  titleAs="field"
-                  labelSurface="background"
-                  showAddButton={false}
-                />
+                    onSelectPrompt={(name, id, type) =>
+                      setAgent({ ...agent, prompt_id: id })
+                    }
+                    setPrompts={(newPrompts) =>
+                      dispatch(setPrompts(newPrompts))
+                    }
+                    title={t('agents.form.sections.prompt')}
+                    titleAs="field"
+                    labelSurface="background"
+                    showAddButton={false}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline-primary"
+                  size="field"
+                  onClick={() => setAddPromptModal('ACTIVE')}
+                >
+                  {t('agents.form.buttons.add')}
+                </Button>
               </div>
-              <Button
-                type="button"
-                variant="outline-primary"
-                size="field"
-                shape="pill"
-                onClick={() => setAddPromptModal('ACTIVE')}
-              >
-                {t('agents.form.buttons.add')}
-              </Button>
+              {/* The prompt Select has no description slot, so the mark of a
+                  prompt that runs with an editor's access is a hint under it. */}
+              {promptAddedBy && (
+                <p className="text-muted-foreground mt-1.5 text-xs">
+                  {promptAddedBy}
+                </p>
+              )}
             </div>
             <ResourceStatusNotice
               agent={agent}
+              readerId={readerId}
               stopped={stoppedResources}
               resolveName={resolveSponsoredName}
               takeovers={takeovers}
@@ -1510,7 +1565,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   setAgent({ ...agent, agent_type: value })
                 }
               >
-                <SelectTrigger className="w-full" shape="pill" size="field">
+                <SelectTrigger className="w-full" size="field">
                   <SelectValue
                     placeholder={t('agents.form.placeholders.selectType')}
                   />
@@ -1567,7 +1622,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     type="button"
                     variant="combobox"
                     size="field"
-                    shape="pill"
+                    role="combobox"
                     id={modelsPickerId}
                     ref={modelAnchorButtonRef}
                     data-placeholder={
@@ -1598,7 +1653,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     setAgent({ ...agent, default_model_id: value })
                   }
                 >
-                  <SelectTrigger className="w-full" shape="pill" size="field">
+                  <SelectTrigger className="w-full" size="field">
                     <SelectValue
                       placeholder={t(
                         'agents.form.placeholders.selectDefaultModel',
@@ -1621,42 +1676,33 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         </Card>
         <Card variant="subtle" padding="lg" className="gap-5">
           {/* The heading wraps the toggle: a button's children are
-              presentational, so a heading inside it is lost to screen readers. */}
-          <h2>
-            <Button
-              type="button"
-              variant="section-toggle"
-              onClick={() =>
-                setIsAdvancedSectionExpanded(!isAdvancedSectionExpanded)
-              }
-              size="sm"
-              aria-expanded={isAdvancedSectionExpanded}
-              className="-ml-3 w-fit justify-start"
-            >
-              <ChevronRight
-                aria-hidden="true"
-                className={cn(
-                  'transition-transform duration-200',
-                  isAdvancedSectionExpanded && 'rotate-90',
-                )}
-              />
-              <span className="text-lg font-semibold">
-                {t('agents.form.sections.advanced')}
-              </span>
-            </Button>
-          </h2>
-          {isAdvancedSectionExpanded && (
-            <div>
-              <FormField
-                labelSurface="background"
-                label={t('agents.form.advanced.jsonSchema')}
-                hint={t('agents.form.advanced.jsonSchemaDescription')}
+              presentational, so a heading inside it is lost to screen readers.
+              The card's gap-5 sits inside the body, so it folds away with it. */}
+          <div>
+            <h2>
+              <CollapsibleTrigger
+                look="section"
+                open={isAdvancedSectionExpanded}
+                onOpenChange={setIsAdvancedSectionExpanded}
+                controls={advancedSectionId}
               >
-                <Textarea
-                  size="lg"
-                  value={jsonSchemaText}
-                  onChange={(e) => validateAndSetJsonSchema(e.target.value)}
-                  placeholder={`{
+                {t('agents.form.sections.advanced')}
+              </CollapsibleTrigger>
+            </h2>
+            <Collapsible
+              open={isAdvancedSectionExpanded}
+              id={advancedSectionId}
+            >
+              <div className="pt-5">
+                <FormField
+                  labelSurface="background"
+                  label={t('agents.form.advanced.jsonSchema')}
+                  hint={t('agents.form.advanced.jsonSchemaDescription')}
+                >
+                  <Textarea
+                    value={jsonSchemaText}
+                    onChange={(e) => validateAndSetJsonSchema(e.target.value)}
+                    placeholder={`{
 "type": "object",
 "properties": {
   "name": {"type": "string"},
@@ -1665,136 +1711,135 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 "required": ["name", "email"],
 "additionalProperties": false
 }`}
-                  rows={9}
-                  className="font-mono"
-                />
-              </FormField>
-              {jsonSchemaText.trim() !== '' && (
-                <div
-                  className={cn(
-                    'mt-2 flex items-center gap-2 text-sm',
-                    jsonSchemaValid ? 'text-success' : 'text-destructive',
-                  )}
-                >
-                  {jsonSchemaValid ? (
-                    <CircleCheck className="size-4" aria-hidden="true" />
-                  ) : (
-                    <CircleX className="size-4" aria-hidden="true" />
-                  )}
-                  {jsonSchemaValid
-                    ? t('agents.form.advanced.validJson')
-                    : t('agents.form.advanced.invalidJson')}
-                </div>
-              )}
+                    rows={9}
+                    className="font-mono"
+                  />
+                </FormField>
+                {jsonSchemaText.trim() !== '' && (
+                  <div
+                    className={cn(
+                      'mt-2 flex items-center gap-2 text-sm',
+                      jsonSchemaValid ? 'text-success' : 'text-destructive',
+                    )}
+                  >
+                    {jsonSchemaValid ? (
+                      <CircleCheck className="size-4" aria-hidden="true" />
+                    ) : (
+                      <CircleX className="size-4" aria-hidden="true" />
+                    )}
+                    {jsonSchemaValid
+                      ? t('agents.form.advanced.validJson')
+                      : t('agents.form.advanced.invalidJson')}
+                  </div>
+                )}
 
-              <SettingRows className="mt-6">
-                <SettingRow
-                  label={t('agents.form.advanced.tokenLimiting')}
-                  description={t(
-                    'agents.form.advanced.tokenLimitingDescription',
-                  )}
-                  htmlFor={tokenLimitSwitchId}
-                  after={
-                    <Input
-                      type="number"
-                      min="0"
-                      value={agent.token_limit || ''}
-                      onChange={(e) =>
-                        setAgent({
-                          ...agent,
-                          token_limit: e.target.value
-                            ? parseInt(e.target.value)
-                            : undefined,
-                        })
-                      }
-                      disabled={!agent.limited_token_mode || !canEditPolicy}
-                      placeholder={t(
-                        'agents.form.placeholders.enterTokenLimit',
-                      )}
-                      aria-label={t('agents.form.advanced.tokenLimit')}
-                      shape="pill"
-                    />
-                  }
-                >
-                  <Switch
-                    id={tokenLimitSwitchId}
-                    checked={agent.limited_token_mode}
-                    disabled={!canEditPolicy}
-                    onCheckedChange={(checked) => {
-                      setAgent({
-                        ...agent,
-                        limited_token_mode: checked,
-                        limited_request_mode: checked
-                          ? false
-                          : agent.limited_request_mode,
-                      });
-                    }}
-                  />
-                </SettingRow>
-                <SettingRow
-                  label={t('agents.form.advanced.requestLimiting')}
-                  description={t(
-                    'agents.form.advanced.requestLimitingDescription',
-                  )}
-                  htmlFor={requestLimitSwitchId}
-                  after={
-                    <Input
-                      type="number"
-                      min="0"
-                      value={agent.request_limit || ''}
-                      onChange={(e) =>
-                        setAgent({
-                          ...agent,
-                          request_limit: e.target.value
-                            ? parseInt(e.target.value)
-                            : undefined,
-                        })
-                      }
-                      disabled={!agent.limited_request_mode || !canEditPolicy}
-                      placeholder={t(
-                        'agents.form.placeholders.enterRequestLimit',
-                      )}
-                      aria-label={t('agents.form.advanced.requestLimit')}
-                      shape="pill"
-                    />
-                  }
-                >
-                  <Switch
-                    id={requestLimitSwitchId}
-                    checked={agent.limited_request_mode}
-                    disabled={!canEditPolicy}
-                    onCheckedChange={(checked) => {
-                      setAgent({
-                        ...agent,
-                        limited_request_mode: checked,
-                        limited_token_mode: checked
-                          ? false
-                          : agent.limited_token_mode,
-                      });
-                    }}
-                  />
-                </SettingRow>
-                <SettingRow
-                  label={t('agents.form.advanced.systemPromptOverride')}
-                  description={t(
-                    'agents.form.advanced.systemPromptOverrideDescription',
-                  )}
-                  htmlFor={promptOverrideSwitchId}
-                >
-                  <Switch
-                    id={promptOverrideSwitchId}
-                    checked={agent.allow_system_prompt_override}
-                    onCheckedChange={(checked) =>
-                      setAgent({
-                        ...agent,
-                        allow_system_prompt_override: checked,
-                      })
+                <SettingRows className="mt-6">
+                  <SettingRow
+                    label={t('agents.form.advanced.tokenLimiting')}
+                    description={t(
+                      'agents.form.advanced.tokenLimitingDescription',
+                    )}
+                    htmlFor={tokenLimitSwitchId}
+                    after={
+                      <Input
+                        type="number"
+                        min="0"
+                        value={agent.token_limit || ''}
+                        onChange={(e) =>
+                          setAgent({
+                            ...agent,
+                            token_limit: e.target.value
+                              ? parseInt(e.target.value)
+                              : undefined,
+                          })
+                        }
+                        disabled={!agent.limited_token_mode || !canEditPolicy}
+                        placeholder={t(
+                          'agents.form.placeholders.enterTokenLimit',
+                        )}
+                        aria-label={t('agents.form.advanced.tokenLimit')}
+                      />
                     }
-                  />
-                </SettingRow>
-              </SettingRows>
-            </div>
-          )}
+                  >
+                    <Switch
+                      id={tokenLimitSwitchId}
+                      checked={agent.limited_token_mode}
+                      disabled={!canEditPolicy}
+                      onCheckedChange={(checked) => {
+                        setAgent({
+                          ...agent,
+                          limited_token_mode: checked,
+                          limited_request_mode: checked
+                            ? false
+                            : agent.limited_request_mode,
+                        });
+                      }}
+                    />
+                  </SettingRow>
+                  <SettingRow
+                    label={t('agents.form.advanced.requestLimiting')}
+                    description={t(
+                      'agents.form.advanced.requestLimitingDescription',
+                    )}
+                    htmlFor={requestLimitSwitchId}
+                    after={
+                      <Input
+                        type="number"
+                        min="0"
+                        value={agent.request_limit || ''}
+                        onChange={(e) =>
+                          setAgent({
+                            ...agent,
+                            request_limit: e.target.value
+                              ? parseInt(e.target.value)
+                              : undefined,
+                          })
+                        }
+                        disabled={!agent.limited_request_mode || !canEditPolicy}
+                        placeholder={t(
+                          'agents.form.placeholders.enterRequestLimit',
+                        )}
+                        aria-label={t('agents.form.advanced.requestLimit')}
+                      />
+                    }
+                  >
+                    <Switch
+                      id={requestLimitSwitchId}
+                      checked={agent.limited_request_mode}
+                      disabled={!canEditPolicy}
+                      onCheckedChange={(checked) => {
+                        setAgent({
+                          ...agent,
+                          limited_request_mode: checked,
+                          limited_token_mode: checked
+                            ? false
+                            : agent.limited_token_mode,
+                        });
+                      }}
+                    />
+                  </SettingRow>
+                  <SettingRow
+                    label={t('agents.form.advanced.systemPromptOverride')}
+                    description={t(
+                      'agents.form.advanced.systemPromptOverrideDescription',
+                    )}
+                    htmlFor={promptOverrideSwitchId}
+                  >
+                    <Switch
+                      id={promptOverrideSwitchId}
+                      checked={agent.allow_system_prompt_override}
+                      onCheckedChange={(checked) =>
+                        setAgent({
+                          ...agent,
+                          allow_system_prompt_override: checked,
+                        })
+                      }
+                    />
+                  </SettingRow>
+                </SettingRows>
+              </div>
+            </Collapsible>
+          </div>
         </Card>
         <GuardrailsSection
           value={agent.config?.guardrails}
@@ -1815,7 +1860,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             <Card
               tone="destructive"
               padding="lg"
-              className="flex-row flex-wrap items-start justify-between"
+              className="flex-row flex-wrap items-center justify-between"
             >
               <SectionHeader
                 tone="destructive"
@@ -1826,7 +1871,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               <Button
                 type="button"
                 variant="destructive-outline"
-                size="sm"
+                size="field"
+                shape="pill"
                 onClick={() => setDeleteConfirmation('ACTIVE')}
                 className="shrink-0"
               >
@@ -1837,14 +1883,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       </div>
       {sponsorPrompt.modal}
       <ConfirmationModal
-        message={t('agents.deleteConfirmation')}
+        message={t('agents.deleteConfirmation', {
+          interpolation: { escapeValue: false },
+          name: agent.name,
+        })}
+        description={t('agents.deleteConsequence')}
         modalState={deleteConfirmation}
         setModalState={setDeleteConfirmation}
         submitLabel={t('agents.form.buttons.delete')}
-        handleSubmit={() => {
-          handleDelete(agent.id || '');
-          setDeleteConfirmation('INACTIVE');
-        }}
+        handleSubmit={() => handleDelete(agent.id || '')}
+        error={deleteError ?? t('agents.deleteFailed')}
         cancelLabel={t('agents.form.buttons.cancel')}
         variant="destructive"
       />
@@ -1899,6 +1947,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           close={() => setUploadModalState('INACTIVE')}
           onSuccessfulUpload={handleUploadedSource}
           selectUploadedDoc={false}
+          onBrowseConnectors={() =>
+            navigate('/settings/connectors?capability=sync')
+          }
         />
       )}
       <AddPromptModal
@@ -1938,8 +1989,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           <div className="flex min-h-0 flex-1 flex-col">
             {effectiveMode === 'edit' && hasChanges && (
               <div className="px-4 pt-4">
-                <Alert role="note">
-                  <Info />
+                <Alert variant="info" role="note">
                   <AlertDescription>
                     {t('agents.form.preview.unsavedChanges')}
                   </AlertDescription>

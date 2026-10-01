@@ -64,6 +64,7 @@ describe('TraceSheet', () => {
       (button) => button.textContent === 'retry',
     );
     expect(retry).toBeDefined();
+    expect(retry?.className).toContain('rounded-full');
     act(() => retry?.click());
     await flush();
 

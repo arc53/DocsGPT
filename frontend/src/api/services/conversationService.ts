@@ -30,8 +30,20 @@ const conversationService = {
     apiClient.get(endpoints.CONVERSATION.CONVERSATION(id), token, {}),
   tailMessage: (messageId: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.CONVERSATION.MESSAGE_TAIL(messageId), token, {}),
-  getConversations: (token: string | null): Promise<any> =>
-    apiClient.get(endpoints.CONVERSATION.CONVERSATIONS, token, {}),
+  getConversations: (
+    token: string | null,
+    before?: { date: string; id: string },
+  ): Promise<any> =>
+    apiClient.get(
+      before
+        ? `${endpoints.CONVERSATION.CONVERSATIONS}?${new URLSearchParams({
+            before: before.date,
+            before_id: before.id,
+          }).toString()}`
+        : endpoints.CONVERSATION.CONVERSATIONS,
+      token,
+      {},
+    ),
   searchConversations: (
     query: string,
     token: string | null,

@@ -4,6 +4,10 @@ import type { FileRejection } from 'react-dropzone';
 import { ImageUp, X } from 'lucide-react';
 
 import { Dropzone } from '@/components/ui/dropzone';
+import { focusRing } from '@/lib/utils';
+
+// The preview's corner Remove: a 20px primary dot, with the token ring.
+const removeButtonClass = `${focusRing} bg-primary hover:bg-primary/90 absolute -top-2 -right-2 rounded-full p-1 transition-colors outline-none`;
 
 type UploadTextSegment = {
   text: string;
@@ -161,7 +165,7 @@ export const FileUpload = ({
           e.stopPropagation();
           handleRemove();
         }}
-        className="bg-primary hover:bg-primary/90 absolute -top-2 -right-2 rounded-full p-1 transition-colors"
+        className={removeButtonClass}
         aria-label={t('components.fileUpload.remove')}
       >
         <X className="text-primary-foreground size-3" />
@@ -219,7 +223,7 @@ export const FileUpload = ({
               e.stopPropagation();
               handleRemove();
             }}
-            className="bg-primary hover:bg-primary/90 absolute -top-2 -right-2 rounded-full p-1 transition-colors"
+            className={removeButtonClass}
             aria-label={t('components.fileUpload.remove')}
           >
             <X className="text-primary-foreground size-3" />

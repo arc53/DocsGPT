@@ -69,8 +69,13 @@ def _classified(connection: dict, config: dict, actions: list[dict]) -> list[dic
     return [_write_endpoint_access(action) for action in actions]
 
 
-def discover_builtin_actions(user_id: str, connection: dict, writes: bool = False) -> list[dict]:
-    """The actions of a built-in connector's MCP server (GitHub's), read with the connection.
+def discover_connection_actions(user_id: str, connection: dict, writes: bool = False) -> list[dict]:
+    """The actions of the MCP server a connection's tool is: a built-in's (GitHub's) or a preset's.
+
+    Read with the connection's own sign-in: its pasted key or token, or for
+    an MCP preset (Notion, Linear…) its stored OAuth tokens, renewed when
+    they expired. A sign-in the server rejects and that cannot be renewed
+    flags the connection for reconnecting.
 
     Args:
         user_id: The connection's owner.
@@ -83,10 +88,19 @@ def discover_builtin_actions(user_id: str, connection: dict, writes: bool = Fals
         service.ConnectionUnavailable: The connection needs reconnecting.
         Exception: The server could not be reached or listed.
     """
-    config = service.builtin_mcp_config(_builtin_definition(connection), writes=writes)
+    definition = catalog.get_definition(catalog.connector_key_for_row(connection))
+    config = service.connection_mcp_config(definition, writes=writes)
     if config is None:
         raise ValueError("This connector has no MCP server")
-    return _classified(connection, config, _discover(user_id, connection, {"config": config}))
+    try:
+        return _classified(connection, config, _discover(user_id, connection, {"config": config}))
+    except service.ConnectionUnavailable:
+        raise
+    except Exception as exc:
+        if _needs_sign_in(exc):
+            service.mark_reconnect_needed(str(connection["id"]), SIGN_IN_EXPIRED)
+            raise service.ConnectionUnavailable(SIGN_IN_EXPIRED, connection_id=str(connection["id"])) from exc
+        raise
 
 
 def _rediscover(user_id: str, connection: dict, tool: dict, config: dict) -> tuple[set, set, dict]:

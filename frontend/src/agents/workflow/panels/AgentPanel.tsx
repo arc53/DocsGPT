@@ -1,9 +1,8 @@
-import { ChevronRight } from 'lucide-react';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { type Edge, type Node } from 'reactflow';
 
-import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { MultiSelect } from '@/components/ui/multi-select';
@@ -20,7 +19,6 @@ import {
 import { SettingRow, SettingRows } from '@/components/ui/setting-row';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
 
 import { getToolDisplayName } from '../../../utils/toolUtils';
 import { withAttachedOptions } from '../../sponsorConsent';
@@ -119,6 +117,7 @@ export default function AgentPanel({
 }: AgentPanelProps) {
   const { t } = useTranslation();
   const streamId = useId();
+  const advancedId = useId();
   const config = node.data.config || {};
   const [advancedOpen, setAdvancedOpen] = useState(() =>
     hasAdvancedAgentSettings(config, jsonSchemaText, jsonSchemaError),
@@ -130,8 +129,8 @@ export default function AgentPanel({
   const builtinModels = availableModels.filter((m) => m.source !== 'user');
   const userModels = availableModels.filter((m) => m.source === 'user');
   const schemaInvalid = jsonSchemaText.trim() !== '' && jsonSchemaError;
-  const attachedLabel = (name: string) =>
-    t('agents.workflow.builder.attachedOption', { ...NO_ESCAPE, name });
+  // Marks an option only in the list; its chip keeps the plain name.
+  const attachedDescription = t('agents.form.sponsors.addedByOther');
   const toolOptions = withAttachedOptions(
     availableTools.map((tool) => ({
       value: tool.id,
@@ -139,13 +138,13 @@ export default function AgentPanel({
     })),
     attachedTools,
     config.tools || [],
-    attachedLabel,
+    attachedDescription,
   );
   const nodeSourceOptions = withAttachedOptions(
     sourceOptions,
     attachedSources,
     config.sources || [],
-    attachedLabel,
+    attachedDescription,
   );
 
   return (
@@ -332,26 +331,17 @@ export default function AgentPanel({
         </SettingRows>
       </section>
 
-      <div className="flex flex-col gap-5">
-        <Button
-          type="button"
-          variant="link"
-          size="sm"
-          aria-expanded={advancedOpen}
-          onClick={() => setAdvancedOpen((open) => !open)}
-          className="-ml-3 w-fit justify-start"
+      {/* The 20px gap sits inside the body, so it folds away with it. */}
+      <div className="flex flex-col">
+        <CollapsibleTrigger
+          open={advancedOpen}
+          onOpenChange={setAdvancedOpen}
+          controls={advancedId}
         >
-          <ChevronRight
-            aria-hidden="true"
-            className={cn(
-              'transition-transform duration-200',
-              advancedOpen && 'rotate-90',
-            )}
-          />
           {t('agents.workflow.builder.advancedSettings')}
-        </Button>
-        {advancedOpen && (
-          <div className="flex flex-col gap-5">
+        </CollapsibleTrigger>
+        <Collapsible open={advancedOpen} id={advancedId}>
+          <div className="flex flex-col gap-5 pt-5">
             <NodeDocumentsControl
               key={node.id}
               value={config.input_documents ?? []}
@@ -420,7 +410,7 @@ export default function AgentPanel({
               />
             </FormField>
           </div>
-        )}
+        </Collapsible>
       </div>
     </div>
   );

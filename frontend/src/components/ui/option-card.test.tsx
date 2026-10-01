@@ -31,6 +31,8 @@ describe('OptionCard', () => {
       />,
     );
     expect(html).toContain('data-selected="true"');
+    expect(html).toContain('data-[selected=true]:border-primary');
+    expect(html).toContain('data-[selected=true]:bg-primary/5');
     expect(html).toContain('aria-checked="true"');
     expect(html).toContain('bg-primary text-primary-foreground');
     expect(html).toContain('One model, tools and sources.');

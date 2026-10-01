@@ -172,6 +172,12 @@ describe('ImportAgentModal', () => {
       'modals.importAgent.workflowDelete',
       'modals.importAgent.toolUnavailable',
     ]);
+    // The target line is a static note: an info Alert, not announced.
+    const note = document.querySelector(
+      '[data-slot="alert"][data-variant="info"]',
+    );
+    expect(note?.getAttribute('role')).toBe('note');
+    expect(note?.textContent).toContain('modals.importAgent.willUpdate');
 
     await clickButton('modals.importAgent.import');
     const error = document.querySelector(

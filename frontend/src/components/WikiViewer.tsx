@@ -1,12 +1,5 @@
 import copy from 'copy-to-clipboard';
-import {
-  BookOpen,
-  CircleAlert,
-  Copy,
-  FileText,
-  Pencil,
-  TriangleAlert,
-} from 'lucide-react';
+import { BookOpen, Copy, FileText, Pencil } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -265,7 +258,6 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
     if (editError.kind === 'conflict') {
       return (
         <Alert variant="warning">
-          <TriangleAlert />
           <AlertDescription>
             {t('settings.sources.wiki.conflict')}
           </AlertDescription>
@@ -274,7 +266,6 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
     }
     return (
       <Alert variant="destructive">
-        <CircleAlert />
         <AlertDescription>
           {editError.kind === 'forbidden'
             ? t('settings.sources.wiki.forbidden')
@@ -340,17 +331,7 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
           tone="destructive"
           illustration="none"
           title={t('settings.sources.wiki.pageLoadFailed')}
-          action={
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              shape="pill"
-              onClick={() => setContentAttempt((n) => n + 1)}
-            >
-              {t('retry')}
-            </Button>
-          }
+          onRetry={() => setContentAttempt((n) => n + 1)}
         />
       );
     }
@@ -386,17 +367,7 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
           tone="destructive"
           illustration="none"
           title={t('settings.sources.wiki.loadFailed')}
-          action={
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              shape="pill"
-              onClick={() => setPagesAttempt((n) => n + 1)}
-            >
-              {t('retry')}
-            </Button>
-          }
+          onRetry={() => setPagesAttempt((n) => n + 1)}
         />
       );
     }

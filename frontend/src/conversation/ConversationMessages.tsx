@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { RotateCcw, TriangleAlert } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Alert, AlertDescription } from '../components/ui/alert';
@@ -211,7 +211,6 @@ export default function ConversationMessages({
               role="status"
               className={cn(bubbleMargin, 'mr-5 w-auto')}
             >
-              <TriangleAlert className="size-4" aria-hidden="true" />
               <AlertDescription>{query.notice}</AlertDescription>
             </Alert>
           ) : null}

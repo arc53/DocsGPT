@@ -120,6 +120,7 @@ export default function ConnectionHealthToast() {
       {visible.map((event) => {
         const payload = (event.payload ?? {}) as Record<string, unknown>;
         const key = String(payload.connector_key ?? '');
+        const connectionId = String(payload.connection_id ?? '');
         return (
           <Toast key={event.id}>
             <ToastHeader variant="warning">
@@ -141,7 +142,11 @@ export default function ConnectionHealthToast() {
                   connector's drawer. The toast stays until it works. */}
               <Button asChild size="sm" shape="pill">
                 <Link
-                  to={`/settings/connectors?connector=${encodeURIComponent(key)}`}
+                  to={`/settings/connectors?connector=${encodeURIComponent(key)}${
+                    connectionId
+                      ? `&connection=${encodeURIComponent(connectionId)}`
+                      : ''
+                  }`}
                   onClick={(e) => {
                     if (reconnect(payload)) e.preventDefault();
                   }}

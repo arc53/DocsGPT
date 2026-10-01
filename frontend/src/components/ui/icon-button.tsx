@@ -22,7 +22,7 @@ type IconButtonProps = Omit<
   side?: React.ComponentProps<typeof TooltipContent>['side'];
   size?: Extract<
     VariantProps<typeof buttonVariants>['size'],
-    'icon' | 'icon-xs' | 'icon-sm' | 'icon-lg'
+    'icon' | 'icon-xs' | 'icon-sm'
   >;
 };
 

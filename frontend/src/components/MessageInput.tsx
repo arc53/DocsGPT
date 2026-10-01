@@ -14,6 +14,7 @@ import { useDropzone } from 'react-dropzone';
 import i18n from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector, useStore } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 
 import endpoints from '../api/endpoints';
 import userService from '../api/services/userService';
@@ -26,6 +27,7 @@ import {
   reorderAttachments,
 } from '../upload/uploadSlice';
 
+import AddToolModal from '../modals/AddToolModal';
 import { ActiveState, Doc } from '../models/misc';
 import {
   selectSelectedDocs,
@@ -38,6 +40,7 @@ import {
 import type { AppDispatch, RootState } from '../store';
 import Upload from '../upload/Upload';
 import { isTouchDevice } from '../utils/browserUtils';
+import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { IconButton } from './ui/icon-button';
 import { type MultiSelectPopoverItem } from './MultiSelectPopover';
@@ -50,6 +53,7 @@ import {
   selectConnectorCatalog,
 } from '../connectors/connectorsSlice';
 import { toolServiceOf } from '../connectors/toolService';
+import { groupTools } from '../settings/toolGroups';
 import SignInAgainNotice, {
   useSignInAgain,
 } from '../connectors/SignInAgainNotice';
@@ -356,6 +360,9 @@ export default function MessageInput({
   const [toolsLoading, setToolsLoading] = useState(false);
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
+  const [addToolModalState, setAddToolModalState] =
+    useState<ActiveState>('INACTIVE');
+  const navigate = useNavigate();
   const [handleDragActive, setHandleDragActive] = useState<boolean>(false);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [voiceError, setVoiceError] = useState<string | null>(null);
@@ -1593,16 +1600,16 @@ export default function MessageInput({
   const toolService = (tool: UserToolType) =>
     toolServiceOf(tool, connections, catalog);
   const anyConnectedTool = userTools.some((tool) => !!tool.connection_id);
-  // Same groups as the agent builder: built in, one per service, then custom
-  // tools (an API tool, an MCP server with no connection).
-  const isCustomTool = (tool: UserToolType) =>
-    !tool.connection_id &&
-    (tool.name === 'api_tool' || tool.name === 'mcp_tool');
-  const toolRank = (tool: UserToolType) =>
-    tool.connection_id ? 1 : isCustomTool(tool) ? 2 : 0;
-  const toolItems: MultiSelectPopoverItem[] = [...userTools]
-    .sort((a, b) => toolRank(a) - toolRank(b))
-    .map((tool) => {
+  // Same groups as the Tools page and the agent builder: built in, one per
+  // service, then custom tools (an API tool, an MCP server with no
+  // connection).
+  const toolItems: MultiSelectPopoverItem[] = groupTools(
+    userTools,
+    connections,
+    catalog,
+  )
+    .flatMap((group) => group.tools.map((tool) => ({ tool, group })))
+    .map(({ tool, group }) => {
       const service = toolService(tool);
       const connection = service?.connection;
       return {
@@ -1614,10 +1621,11 @@ export default function MessageInput({
           <ToolIcon name={tool.name} className="size-5" />
         ),
         group: anyConnectedTool
-          ? (service?.name ??
-            (isCustomTool(tool)
+          ? group.kind === 'service'
+            ? group.service?.name
+            : group.kind === 'custom'
               ? t('agents.form.toolsPopup.groupCustom')
-              : t('settings.tools.groupBuiltIn')))
+              : t('settings.tools.groupBuiltIn')
           : undefined,
         // Shared-by line; the sign-in warning below wins when both apply.
         description:
@@ -1628,9 +1636,9 @@ export default function MessageInput({
               })
             : undefined,
         descriptionNode: connectionNeedsSignIn(connection) ? (
-          <p className="text-warning text-xs">
-            {t('settings.connectors.health.signInAgain')}
-          </p>
+          <Badge variant="warning">
+            {t('settings.connectors.status.reconnect')}
+          </Badge>
         ) : undefined,
       };
     });
@@ -1850,11 +1858,8 @@ export default function MessageInput({
             <Button
               type="button"
               variant="link"
-              size="inline"
+              size="text"
               onClick={cancelArmedSend}
-              /* eslint-disable-next-line shadcn/no-restyle --
-                 The queued-send Cancel sits inline in the composer's 12px status line; link inline keeps the base text-sm, so it takes the line's size. */
-              className="text-xs"
             >
               {t('conversation.attachments.cancelQueuedSend')}
             </Button>
@@ -1880,7 +1885,6 @@ export default function MessageInput({
               recordingState === 'recording' ||
               recordingState === 'transcribing'
             }
-            tabIndex={1}
             placeholder={t('inputPlaceholder')}
             className="text-foreground placeholder:text-muted-foreground w-full resize-none overflow-x-hidden overflow-y-auto rounded-t-3xl bg-transparent px-2 text-base leading-tight whitespace-pre-wrap opacity-100 focus:outline-hidden sm:px-3"
             onKeyDown={handleKeyDown}
@@ -1911,6 +1915,7 @@ export default function MessageInput({
                 selectedIds={selectedToolIds}
                 onToggle={handleToggleTool}
                 loading={toolsLoading}
+                onAddTool={() => setAddToolModalState('ACTIVE')}
                 notice={
                   <SignInAgainNotice
                     connections={brokenConnections.map(
@@ -1988,6 +1993,22 @@ export default function MessageInput({
           isOnboarding={false}
           renderTab={null}
           close={() => setUploadModalState('INACTIVE')}
+          onBrowseConnectors={() =>
+            navigate('/settings/connectors?capability=sync')
+          }
+        />
+      )}
+
+      {showToolButton && (
+        // A new tool is created on, so it is in the chat once the list
+        // refreshes.
+        <AddToolModal
+          message={t('settings.tools.selectToolSetup')}
+          modalState={addToolModalState}
+          setModalState={setAddToolModalState}
+          getUserTools={fetchUserTools}
+          onToolAdded={fetchUserTools}
+          onDevicePaired={fetchUserTools}
         />
       )}
 

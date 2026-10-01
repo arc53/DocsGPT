@@ -167,7 +167,7 @@ export function readGraphPalette(): GraphPalette {
     series: SERIES_TOKENS.slice(0, GRAPH_TYPE_SERIES).map(([name, fallback]) =>
       readCssVar(name, fallback),
     ),
-    other: readCssVar('--muted-foreground', '#737373'),
+    other: readCssVar('--muted-foreground', '#6b6b6b'),
     primary: readCssVar('--primary', '#7d54d1'),
     hoverStroke: foreground,
     link: readCssVar('--border', '#d9d9d9'),

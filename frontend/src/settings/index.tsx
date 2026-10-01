@@ -7,7 +7,6 @@ import { useMediaQuery } from '../hooks';
 import { Doc } from '../models/misc';
 import SectionIndexPage from '../navigation/SectionIndexPage';
 import SectionShell from '../navigation/SectionShell';
-import { showActionToast } from '../notifications/actionToastSlice';
 import { SETTINGS_SECTION } from '../navigation/sections';
 import {
   selectPaginatedDocuments,
@@ -43,36 +42,32 @@ export default function Settings() {
   const documents = useSelector(selectSourceDocs);
   const paginatedDocuments = useSelector(selectPaginatedDocuments);
 
-  const showDeleteError = (message: string) =>
-    dispatch(showActionToast({ variant: 'destructive', message }));
-
   /**
-   * Deletes a source and drops it from both lists by id. A refused or failed
-   * delete (403 for a role without `delete`) shows a destructive toast and
-   * leaves the lists alone.
+   * Deletes a source and drops it from both lists by id. Returned to Sources'
+   * ConfirmationModal: a refused or failed delete (403 for a role without
+   * `delete`) rejects with the message the dialog shows, and leaves the
+   * lists alone.
    */
-  const handleDeleteClick = (_index: number, doc: Doc) => {
+  const handleDeleteClick = async (_index: number, doc: Doc) => {
     const withoutDoc = (list: Doc[]) => list.filter((d) => d.id !== doc.id);
-    userService
-      .deletePath(doc.id ?? '', token)
-      .then((response: Response) => {
-        if (!response.ok) {
-          showDeleteError(
-            response.status === 403
-              ? t('settings.sources.errors.forbidden')
-              : t('settings.sources.errors.delete'),
-          );
-          return;
-        }
-        if (paginatedDocuments) {
-          dispatch(setPaginatedDocuments(withoutDoc(paginatedDocuments)));
-        }
-        if (documents) dispatch(setSourceDocs(withoutDoc(documents)));
-      })
-      .catch((error) => {
-        console.error(error);
-        showDeleteError(t('settings.sources.errors.delete'));
-      });
+    let response: Response;
+    try {
+      response = await userService.deletePath(doc.id ?? '', token);
+    } catch (error) {
+      console.error(error);
+      throw new Error(t('settings.sources.errors.delete'));
+    }
+    if (!response.ok) {
+      throw new Error(
+        response.status === 403
+          ? t('settings.sources.errors.forbidden')
+          : t('settings.sources.errors.delete'),
+      );
+    }
+    if (paginatedDocuments) {
+      dispatch(setPaginatedDocuments(withoutDoc(paginatedDocuments)));
+    }
+    if (documents) dispatch(setSourceDocs(withoutDoc(documents)));
   };
 
   if (showIndex) {

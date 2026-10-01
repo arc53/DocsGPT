@@ -32,6 +32,8 @@ _MAX_COST_LIMIT = 99_999_999.0
 _MAX_NOTE_LENGTH = 500
 _FLAG_DEFAULTS = {"token_unlimited": False, "cost_unlimited": False, "enabled": True}
 _BUCKET_MESSAGE = f"bucket must be one of: {', '.join(BUCKETS)}"
+_DEFAULT_PAGE_SIZE = 20
+_MAX_PAGE_SIZE = 100
 
 
 def _policy_json(row: dict) -> dict:
@@ -162,18 +164,83 @@ def _unpriced_models(conn) -> list[dict]:
     ]
 
 
+def _int_arg(name: str, default: int, low: int, high: Optional[int] = None) -> int:
+    """Read an integer query arg, falling back to ``default`` and clamping to ``[low, high]``."""
+    try:
+        value = int(request.args.get(name, default))
+    except (TypeError, ValueError):
+        value = default
+    value = max(low, value)
+    return min(value, high) if high is not None else value
+
+
+def _search_term(name: str) -> Optional[str]:
+    """Return the lower-cased, trimmed query arg ``name``, or ``None`` when blank or absent."""
+    term = (request.args.get(name) or "").strip().lower()
+    return term or None
+
+
+def _subject_count(rows: list[dict]) -> int:
+    """The number of distinct subjects (teams or users) among ``rows``."""
+    return len({r["subject_id"] for r in rows})
+
+
+def _page(rows: list[dict], page_arg: str) -> list[dict]:
+    """Slice ``rows`` to the page named by ``page_arg`` when the caller asked for one.
+
+    A page holds ``page_size`` subjects, not rows: every bucket row of a team or
+    user stays on the same page, so its ``all`` row is never apart from the rest.
+
+    Args:
+        rows: The already filtered rows, each subject's rows next to each other.
+        page_arg: The 1-based page query arg (``teams_page`` / ``users_page``);
+            absent means the whole list.
+
+    Returns:
+        The rows of the subjects on the requested page, or every row.
+    """
+    if page_arg not in request.args:
+        return rows
+    size = _int_arg("page_size", _DEFAULT_PAGE_SIZE, 1, _MAX_PAGE_SIZE)
+    offset = (_int_arg(page_arg, 1, 1) - 1) * size
+    subjects = list(dict.fromkeys(r["subject_id"] for r in rows))
+    on_page = set(subjects[offset : offset + size])
+    return [r for r in rows if r["subject_id"] in on_page]
+
+
+def _matches(term: Optional[str], *values: Optional[str]) -> bool:
+    """Whether ``term`` (already lower-cased) is a substring of any non-null value."""
+    return term is None or any(term in value.lower() for value in values if value)
+
+
 @admin_ns.route("/admin/quotas")
 class AdminQuotasResource(Resource):
     @admin_required
     def get(self):
-        """Every stored policy, grouped by layer, plus the models cost limits cannot see."""
+        """Every stored policy, grouped by layer, plus the models cost limits cannot see.
+
+        Query args (all optional; without them every row is returned):
+            teams_q: Case-insensitive substring of the team name or slug.
+            users_q: Case-insensitive substring of the user's subject id or email.
+            teams_page / users_page: 1-based page of that list; only a list whose
+                page arg is given is paginated.
+            page_size: Teams or users per page, clamped to 1-100 (default 20); a
+                page carries every bucket row of each of them.
+
+        ``teams_total`` and ``users_total`` count the teams and users after
+        filtering and before paging. Rows keep the repository order (subject,
+        then bucket).
+        """
         start, resets_at = window_bounds(settings.QUOTA_PERIOD)
+        teams_q, users_q = _search_term("teams_q"), _search_term("users_q")
         with db_readonly() as conn:
             repo = QuotaPoliciesRepository(conn)
             teams = {str(t["id"]): t for t in TeamsRepository(conn).list_all()}
             team_policies = []
             for row in repo.list_by_scope("team"):
                 team = teams.get(str(row["subject_id"]), {})
+                if not _matches(teams_q, team.get("name"), team.get("slug")):
+                    continue
                 team_policies.append(
                     {
                         **_policy_json(row),
@@ -182,15 +249,24 @@ class AdminQuotasResource(Resource):
                         "member_count": team.get("member_count"),
                     }
                 )
+            user_rows = repo.list_by_scope("user")
+            if users_q is not None:
+                emails = UsersRepository(conn).emails_for(r["subject_id"] for r in user_rows)
+                user_rows = [
+                    r for r in user_rows if _matches(users_q, r["subject_id"], emails.get(r["subject_id"]))
+                ]
+            user_policies = [_policy_json(r) for r in user_rows]
             body = {
                 "success": True,
                 "period": settings.QUOTA_PERIOD,
                 "period_start": start.isoformat(),
                 "resets_at": resets_at.isoformat(),
                 "instance": [_policy_json(r) for r in repo.list_by_scope("instance")],
-                "teams": team_policies,
-                "users": [_policy_json(r) for r in repo.list_by_scope("user")],
+                "teams": _page(team_policies, "teams_page"),
+                "users": _page(user_policies, "users_page"),
                 "unpriced_models": _unpriced_models(conn),
+                "teams_total": _subject_count(team_policies),
+                "users_total": _subject_count(user_policies),
             }
         return make_response(jsonify(body), 200)
 

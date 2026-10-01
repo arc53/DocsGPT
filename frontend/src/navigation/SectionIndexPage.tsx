@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 import { ListRow, ListRows } from '@/components/ui/list-row';
 import { selectIsAdmin } from '@/preferences/preferenceSlice';
 
+import ConnectionHealthDot from '../connectors/ConnectionHealthDot';
 import { selectConnectorsEnabled } from '../connectors/connectorsSlice';
 import { getVisibleGroups, type Section } from './sections';
 
@@ -54,10 +55,15 @@ export default function SectionIndexPage({ section }: { section: Section }) {
                       }
                       title={t(item.labelKey)}
                       trailing={
-                        <ChevronRight
-                          className="text-muted-foreground size-4 shrink-0"
-                          aria-hidden
-                        />
+                        <span className="flex items-center gap-2">
+                          {item.path === '/settings/connectors' && (
+                            <ConnectionHealthDot />
+                          )}
+                          <ChevronRight
+                            className="text-muted-foreground size-4 shrink-0"
+                            aria-hidden
+                          />
+                        </span>
                       }
                     >
                       <Link to={item.path} />

@@ -1,9 +1,13 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
+const { events } = vi.hoisted(() => ({ events: { recent: [] as unknown[] } }));
 vi.mock('react-redux', () => ({
   useSelector: (selector: (state: unknown) => unknown) =>
-    selector({ notifications: { recentEvents: [] }, preference: {} }),
+    selector({
+      notifications: { recentEvents: events.recent },
+      preference: {},
+    }),
 }));
 vi.mock('../preferences/preferenceSlice', () => ({
   selectToken: () => 'token',
@@ -60,6 +64,7 @@ describe('MCPServerModal', () => {
   beforeEach(() => {
     testMCPConnection.mockReset();
     saveMCPServer.mockReset();
+    events.recent = [];
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -69,6 +74,7 @@ describe('MCPServerModal', () => {
     act(() => root.unmount());
     container.remove();
     document.body.innerHTML = '';
+    vi.restoreAllMocks();
   });
 
   const render = async (overrides: Partial<typeof server> = {}) => {
@@ -108,14 +114,14 @@ describe('MCPServerModal', () => {
     expect(text()).toContain(
       'settings.tools.mcp.sharedByEditor:{"owner":"Lena Fischer"}',
     );
-    // Informative, not announced: a quiet default Alert with role="note".
+    // Informative, not announced: an info Alert with role="note".
     const note = Array.from(
       document.body.querySelectorAll<HTMLElement>('[data-slot="alert"]'),
     ).find((a) =>
       a.textContent?.includes('settings.tools.mcp.sharedCredentialsNotice'),
     );
     expect(note?.getAttribute('role')).toBe('note');
-    expect(note?.dataset.variant).toBe('default');
+    expect(note?.dataset.variant).toBe('info');
   });
 
   it('masks the API key and bearer token fields', async () => {
@@ -220,5 +226,142 @@ describe('MCPServerModal', () => {
     expect(urlInput().disabled).toBe(false);
     expect(button('settings.tools.mcp.testConnection')).toBeDefined();
     expect(text()).not.toContain('settings.tools.mcp.sharedOAuthOwnerOnly');
+  });
+
+  const alerts = () =>
+    Array.from(
+      document.body.querySelectorAll<HTMLElement>('[data-slot="alert"]'),
+    );
+  const alertWith = (key: string) =>
+    alerts().find((a) => a.textContent?.includes(key));
+  const advancedToggle = () =>
+    button('settings.tools.mcp.advanced') as HTMLButtonElement | undefined;
+  const timeoutInput = () =>
+    document.body.querySelector<HTMLInputElement>('input[type="number"]');
+
+  it('labels the Advanced toggle with a real key, above the fields it reveals', async () => {
+    await render();
+    expect(text()).not.toContain('modals.uploadDoc');
+    const toggle = advancedToggle();
+    expect(toggle).toBeDefined();
+    expect(toggle!.getAttribute('aria-expanded')).toBe('false');
+    // Folded: the fields wait in a closed, inert Collapsible.
+    const body = document.getElementById(
+      toggle!.getAttribute('aria-controls')!,
+    )!;
+    expect(body.dataset.state).toBe('closed');
+    expect(body.hasAttribute('inert')).toBe(true);
+    expect(body.contains(timeoutInput())).toBe(true);
+    const chevron = toggle!.querySelector('svg');
+    expect(chevron?.getAttribute('class')).not.toContain('rotate-90');
+
+    await act(async () => toggle!.click());
+    expect(toggle!.getAttribute('aria-expanded')).toBe('true');
+    expect(body.dataset.state).toBe('open');
+    expect(chevron?.getAttribute('class')).toContain('rotate-90');
+    const input = timeoutInput()!;
+    // The toggle comes first, then the fields it opened.
+    expect(
+      toggle!.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("doesn't repeat the server name label as its placeholder", async () => {
+    await render();
+    const nameInput = Array.from(
+      document.body.querySelectorAll<HTMLInputElement>('input'),
+    ).find((i) => i.value === 'Carrier Rates MCP')!;
+    expect(nameInput.getAttribute('placeholder')).not.toBe(
+      'settings.tools.mcp.serverName',
+    );
+  });
+
+  it('says Save needs a successful test until one passes', async () => {
+    testMCPConnection.mockReturnValue(json({ success: true, tools: [] }));
+    await render();
+    expect(button('settings.tools.mcp.save').disabled).toBe(true);
+    expect(text()).toContain('settings.tools.mcp.testBeforeSave');
+    await act(async () => button('settings.tools.mcp.testConnection').click());
+    expect(button('settings.tools.mcp.save').disabled).toBe(false);
+    expect(text()).not.toContain('settings.tools.mcp.testBeforeSave');
+  });
+
+  it('lists discovered tools as ListRows under a counted heading', async () => {
+    testMCPConnection.mockReturnValue(
+      json({
+        success: true,
+        message: 'Connected',
+        tools: [
+          { name: 'get_rates', description: 'Carrier rates by lane' },
+          { name: 'book_load' },
+        ],
+      }),
+    );
+    await render();
+    await act(async () => button('settings.tools.mcp.testConnection').click());
+    expect(text()).toContain(
+      'settings.tools.mcp.discoveredTools:{"count":2,"formatted":"2"}',
+    );
+    const rows = document.body.querySelectorAll(
+      '[data-slot="list-rows"] [data-slot="list-row"]',
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toContain('get_rates');
+    expect(rows[0].textContent).toContain('Carrier rates by lane');
+    expect(alertWith('Connected')?.dataset.variant).toBe('success');
+  });
+
+  it('puts the save error at the top of the body', async () => {
+    testMCPConnection.mockReturnValue(json({ success: true, tools: [] }));
+    saveMCPServer.mockReturnValue(
+      json({ success: false, message: 'Invalid server URL' }, false, 400),
+    );
+    await render();
+    await act(async () => button('settings.tools.mcp.testConnection').click());
+    await act(async () => button('settings.tools.mcp.save').click());
+    const error = alertWith('Invalid server URL')!;
+    expect(error.dataset.variant).toBe('destructive');
+    expect(error.parentElement?.firstElementChild).toBe(error);
+  });
+
+  it('shows the OAuth wait as info and a blocked popup as a warning', async () => {
+    testMCPConnection.mockReturnValue(
+      json({ requires_oauth: true, task_id: 'task-1' }),
+    );
+    vi.spyOn(window, 'open').mockReturnValue(null);
+    await render({ auth_type: 'oauth', has_encrypted_credentials: false });
+    await act(async () => button('settings.tools.mcp.testConnection').click());
+    expect(
+      alertWith('settings.tools.mcp.oauthInProgress')?.dataset.variant,
+    ).toBe('info');
+
+    events.recent = [
+      {
+        id: 'evt-1',
+        type: 'mcp.oauth.awaiting_redirect',
+        scope: { id: 'task-1' },
+        payload: { authorization_url: 'https://auth.example.com/authorize' },
+      },
+    ];
+    await render({ auth_type: 'oauth', has_encrypted_credentials: false });
+    const blocked = alertWith('settings.tools.mcp.oauthPopupBlocked')!;
+    expect(blocked.dataset.variant).toBe('warning');
+    expect(blocked.textContent).toContain('settings.tools.mcp.openAuthPage');
+  });
+
+  it('leaves Alert icons unsized (the Alert sizes them)', async () => {
+    testMCPConnection.mockReturnValue(
+      json({ success: false, message: 'Refused' }),
+    );
+    await render();
+    await act(async () => button('settings.tools.mcp.testConnection').click());
+    expect(alertWith('Refused')?.dataset.variant).toBe('destructive');
+    const icons = alerts().flatMap((a) =>
+      Array.from(a.querySelectorAll(':scope > svg')),
+    );
+    expect(icons.length).toBeGreaterThan(0);
+    for (const icon of icons) {
+      expect(icon.getAttribute('class') ?? '').not.toMatch(/\bsize-/);
+    }
   });
 });

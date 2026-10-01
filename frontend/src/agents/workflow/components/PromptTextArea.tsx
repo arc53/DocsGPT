@@ -1,12 +1,18 @@
-import { Braces, Plus, Search } from 'lucide-react';
+import { Braces, Plus } from 'lucide-react';
 import { useCallback, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Edge, Node } from 'reactflow';
 
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/components/ui/empty-state';
-import { FormField, FormFieldBoundary } from '@/components/ui/form-field';
-import { Input } from '@/components/ui/input';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import { FormField } from '@/components/ui/form-field';
 import {
   Popover,
   PopoverAnchor,
@@ -247,17 +253,18 @@ function HighlightedOverlay({ text }: { text: string }) {
 function VariableListWithSearch({
   variables,
   onSelect,
+  commandRef,
 }: {
   variables: WorkflowVariable[];
   onSelect: (templatePath: string) => void;
+  /** The Command root, so the textarea can forward arrow keys and Enter. */
+  commandRef?: React.Ref<HTMLDivElement>;
 }) {
   const { t } = useTranslation();
   const [search, setSearch] = useState('');
-  // Own id, and a FormFieldBoundary below: the "Add context" popover renders
-  // inside PromptTextArea's FormField (through a portal), whose context would
-  // otherwise hand this search box the textarea's id and floating placeholder.
-  const searchId = useId();
 
+  // Our own substring match (label or path), in the list's order; cmdk's
+  // fuzzy filter would also re-sort the rows.
   const filtered = useMemo(
     () =>
       variables.filter((v) =>
@@ -271,62 +278,44 @@ function VariableListWithSearch({
   const grouped = useMemo(() => groupBySection(filtered), [filtered]);
 
   return (
-    <FormFieldBoundary>
-      <div className="flex w-full flex-col overflow-hidden">
-        <div className="border-border flex items-center gap-2 border-b px-3 py-2">
-          <Search className="text-muted-foreground size-3.5 shrink-0" />
-          <Input
-            id={searchId}
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t('agents.workflow.variables.searchPlaceholder')}
-            variant="bare"
-          />
-        </div>
-
-        <div className="max-h-48 overflow-y-auto">
-          {filtered.length === 0 ? (
-            <EmptyState
-              size="xs"
-              illustration="none"
-              title={t('agents.workflow.variables.empty')}
-            />
-          ) : (
-            Array.from(grouped.entries()).map(([section, vars]) => (
-              <div key={section}>
-                <div className="text-muted-foreground truncate px-3 pt-2.5 pb-1 text-xs font-semibold tracking-wider uppercase">
-                  {SECTION_LABEL_KEYS[section]
-                    ? t(SECTION_LABEL_KEYS[section])
-                    : section}
-                </div>
-                {vars.map((v) => (
-                  <Button
-                    key={`${section}-${v.templatePath}`}
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onSelect(v.templatePath);
-                    }}
-                    className="w-full justify-start"
-                  >
-                    <Braces className="text-primary size-3.5 shrink-0" />
-                    <span className="text-foreground truncate font-medium">
-                      {v.label}
-                    </span>
-                  </Button>
-                ))}
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </FormFieldBoundary>
+    <Command ref={commandRef} shouldFilter={false}>
+      <CommandInput
+        value={search}
+        onValueChange={setSearch}
+        placeholder={t('agents.workflow.variables.searchPlaceholder')}
+      />
+      <CommandList className="max-h-48">
+        <CommandEmpty>{t('agents.workflow.variables.empty')}</CommandEmpty>
+        {Array.from(grouped.entries()).map(([section, vars]) => (
+          <CommandGroup
+            key={section}
+            heading={
+              SECTION_LABEL_KEYS[section]
+                ? t(SECTION_LABEL_KEYS[section])
+                : section
+            }
+          >
+            {vars.map((v) => (
+              <CommandItem
+                key={`${section}-${v.templatePath}`}
+                value={`${section}-${v.templatePath}`}
+                // Keep focus where it is (the textarea, for the "{{" menu).
+                onMouseDown={(e) => e.preventDefault()}
+                onSelect={() => onSelect(v.templatePath)}
+              >
+                <Braces className="text-primary" />
+                <span className="truncate font-medium">{v.label}</span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        ))}
+      </CommandList>
+    </Command>
   );
 }
+
+// Keys the "{{" menu takes while focus stays in the textarea.
+const MENU_KEYS = new Set(['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter']);
 
 interface PromptTextAreaProps {
   value: string;
@@ -360,6 +349,7 @@ export default function PromptTextArea({
   const [filterText, setFilterText] = useState('');
   const [cursorInsertPos, setCursorInsertPos] = useState<number | null>(null);
   const [contextOpen, setContextOpen] = useState(false);
+  const mentionCommandRef = useRef<HTMLDivElement>(null);
 
   const variables = useMemo(
     () => extractUpstreamVariables(nodes, edges, selectedNodeId),
@@ -374,6 +364,8 @@ export default function PromptTextArea({
       ),
     [variables, filterText],
   );
+
+  const menuOpen = showDropdown && filtered.length > 0;
 
   const checkForTrigger = useCallback(() => {
     const textarea = textareaRef.current;
@@ -478,10 +470,17 @@ export default function PromptTextArea({
           }}
           onKeyUp={checkForTrigger}
           onKeyDown={(e) => {
-            if (showDropdown && e.key === 'Escape') {
+            if (!menuOpen) return;
+            if (e.key === 'Escape') {
               e.preventDefault();
               e.stopPropagation();
               setShowDropdown(false);
+            } else if (MENU_KEYS.has(e.key) && !e.nativeEvent.isComposing) {
+              // Walk and pick in the menu; cmdk listens on its root.
+              e.preventDefault();
+              mentionCommandRef.current?.dispatchEvent(
+                new KeyboardEvent('keydown', { key: e.key, bubbles: true }),
+              );
             }
           }}
           onScroll={() => {
@@ -522,7 +521,7 @@ export default function PromptTextArea({
 
   return (
     <Popover
-      open={showDropdown && filtered.length > 0}
+      open={menuOpen}
       onOpenChange={(open) => {
         if (!open) setShowDropdown(false);
       }}
@@ -547,6 +546,7 @@ export default function PromptTextArea({
         <VariableListWithSearch
           variables={filtered}
           onSelect={insertVariable}
+          commandRef={mentionCommandRef}
         />
       </PopoverContent>
     </Popover>

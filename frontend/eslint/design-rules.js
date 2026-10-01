@@ -74,7 +74,7 @@ export const pageSelectors = [
   ].map((selector) => ({
     selector,
     message:
-      'A drawer\'s width comes from SheetContent size (default 384px, detail 576px, wide 800px), never a w-* or max-w-* class. See DESIGN.md "Modal, not Dialog".',
+      'A side panel\'s width comes from its size (default 480px, wide 800px), never a w-* or max-w-* class. See DESIGN.md "Side panels".',
   })),
   {
     selector: 'JSXOpeningElement[name.name="table"]',

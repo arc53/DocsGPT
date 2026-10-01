@@ -1,26 +1,20 @@
-import { ShieldAlert } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import devicesService, {
   ApprovalMode,
-  AuditEntry,
   Device,
 } from '../api/services/devicesService';
 import CopyButton from '../components/CopyButton';
 import ToolIcon from '../components/ToolIcon';
 import DetailBreadcrumb from '../navigation/DetailBreadcrumb';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '../components/ui/accordion';
+import DeviceAuditList from './DeviceAuditList';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
+import { Collapsible, CollapsibleTrigger } from '../components/ui/collapsible';
 import {
   DescriptionItem,
   DescriptionList,
@@ -39,7 +33,11 @@ import {
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
-import { formatDateTime } from '../utils/dateTimeUtils';
+import {
+  EMPTY_VALUE,
+  formatRelative,
+  formatTimestamp,
+} from '../utils/dateTimeUtils';
 import { UserToolType } from './types';
 
 /** ms-since-last-seen threshold for the online pill. */
@@ -50,26 +48,6 @@ function isOnline(device: Device | null): boolean {
   const t = Date.parse(device.last_seen_at);
   if (Number.isNaN(t)) return false;
   return Date.now() - t < ONLINE_WINDOW_MS;
-}
-
-function formatTimestamp(value: string | null | undefined): string {
-  return value ? formatDateTime(value) : '-';
-}
-
-/** Compact relative span (e.g. "12s", "5m", "3h", "2d") since `value`. */
-function formatRelative(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const t = Date.parse(value);
-  if (Number.isNaN(t)) return null;
-  const diff = Math.max(0, Date.now() - t);
-  const s = Math.floor(diff / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.floor(h / 24);
-  return `${d}d`;
 }
 
 interface Props {
@@ -93,10 +71,10 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const [audit, setAudit] = React.useState<AuditEntry[] | null>(null);
-  const [auditLoading, setAuditLoading] = React.useState(false);
-
   const [revokeState, setRevokeState] = React.useState<ActiveState>('INACTIVE');
+  const [auditOpen, setAuditOpen] = React.useState(false);
+  const [auditLoaded, setAuditLoaded] = React.useState(false);
+  const auditId = React.useId();
 
   const applyDevice = React.useCallback((d: Device) => {
     setDevice(d);
@@ -121,27 +99,6 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
   React.useEffect(() => {
     loadDevice();
   }, [loadDevice]);
-
-  const loadAudit = React.useCallback(() => {
-    if (!deviceId) return;
-    setAuditLoading(true);
-    devicesService
-      .listAudit(deviceId, token)
-      .then((res) => setAudit(res.entries || []))
-      .catch((err) => {
-        console.error('load audit failed', err);
-        setAudit([]);
-      })
-      .finally(() => setAuditLoading(false));
-  }, [deviceId, token]);
-
-  const handleAuditToggle = (value: string) => {
-    // Radix Accordion (type="single") passes the open item id, or empty
-    // when closed. Lazy-fetch on first open.
-    if (value === 'audit' && audit === null) {
-      loadAudit();
-    }
-  };
 
   const hasUnsavedChanges =
     !!device &&
@@ -173,16 +130,11 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
     }
   };
 
+  // Returns the request: a failure keeps the confirm open with its error.
   const handleRevoke = async () => {
     if (!deviceId) return;
-    try {
-      await devicesService.revoke(deviceId, token);
-      setRevokeState('INACTIVE');
-      handleGoBack();
-    } catch (err) {
-      console.error('revoke failed', err);
-      setRevokeState('INACTIVE');
-    }
+    await devicesService.revoke(deviceId, token);
+    handleGoBack();
   };
 
   const online = isOnline(device);
@@ -190,7 +142,7 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
   const pillText =
     (online ? t('settings.devices.online') : t('settings.devices.offline')) +
     (lastSeenAgo
-      ? ` · ${t('settings.devices.seenAgo', { time: lastSeenAgo })}`
+      ? ` · ${t('settings.devices.seen', { time: lastSeenAgo })}`
       : '');
 
   if (loading && !device) {
@@ -231,12 +183,15 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
           title={t('settings.tools.toolIconTitle', { name: tool.displayName })}
           className="size-7"
         />
-        <h2 className="text-foreground text-xl leading-tight font-semibold">
-          {device?.name ||
+        <SectionHeader
+          size="title"
+          title={
+            device?.name ||
             tool.customName ||
             tool.displayName ||
-            t('settings.devices.fallbackName')}
-        </h2>
+            t('settings.devices.fallbackName')
+          }
+        />
         <Badge variant={online ? 'success' : 'neutral'}>{pillText}</Badge>
         {approvalMode === 'full' && (
           <Badge variant="destructive">
@@ -309,7 +264,6 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
           </FormField>
           {approvalMode === 'full' && (
             <Alert variant="destructive">
-              <ShieldAlert className="size-4" aria-hidden="true" />
               <AlertDescription>
                 {t('settings.devices.fullAccessWarning')}
               </AlertDescription>
@@ -336,8 +290,11 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
           </DescriptionItem>
           <DescriptionItem label={t('settings.devices.deviceIdLabel')}>
             <div className="flex flex-wrap items-center gap-2">
-              <code className="text-foreground bg-muted max-w-full truncate rounded-md px-2 py-0.5 font-mono text-xs">
-                {deviceId || '-'}
+              <code
+                className="text-foreground bg-muted max-w-full truncate rounded-md px-2 py-0.5 font-mono text-xs"
+                title={deviceId || undefined}
+              >
+                {deviceId || EMPTY_VALUE}
               </code>
               {deviceId && <CopyButton textToCopy={deviceId} />}
             </div>
@@ -360,96 +317,59 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
           size="xs"
           title={t('settings.devices.auditTitle')}
         />
-        <div className="border-border w-full rounded-xl border">
-          <Accordion
-            type="single"
-            collapsible
-            onValueChange={handleAuditToggle}
-          >
-            <AccordionItem value="audit">
-              <AccordionTrigger>
-                {t('settings.devices.auditTitle')}
-                {audit !== null ? ` (${audit.length})` : ''}
-              </AccordionTrigger>
-              <AccordionContent>
-                {auditLoading ? (
-                  <p className="text-muted-foreground py-2 text-sm">
-                    {t('settings.devices.auditLoading')}
-                  </p>
-                ) : !audit || audit.length === 0 ? (
-                  <p className="text-muted-foreground py-2 text-sm">
-                    {t('settings.devices.auditEmpty')}
-                  </p>
-                ) : (
-                  <ul className="flex flex-col gap-2">
-                    {audit.map((entry) => (
-                      <li
-                        key={entry.id}
-                        className="bg-muted flex flex-col gap-1 rounded-md px-3 py-2 text-xs"
-                      >
-                        <code className="text-foreground block font-mono wrap-anywhere whitespace-pre-wrap">
-                          {entry.command}
-                        </code>
-                        <div className="text-muted-foreground flex flex-wrap gap-3">
-                          <span>
-                            {t('settings.devices.auditDecision')}:{' '}
-                            {entry.decision}
-                          </span>
-                          <span>
-                            {t('settings.devices.auditExit')}:{' '}
-                            {entry.exit_code ?? '-'}
-                          </span>
-                          <span>
-                            {t('settings.devices.auditDuration')}:{' '}
-                            {t('settings.devices.auditDurationValue', {
-                              value: entry.duration_ms ?? '-',
-                            })}
-                          </span>
-                          <span>{formatTimestamp(entry.created_at)}</span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
-        </div>
+        <CollapsibleTrigger
+          open={auditOpen}
+          onOpenChange={(open) => {
+            setAuditOpen(open);
+            setAuditLoaded(true);
+          }}
+          controls={auditId}
+        >
+          {auditOpen
+            ? t('settings.devices.auditHide')
+            : t('settings.devices.auditShow')}
+        </CollapsibleTrigger>
+        <Collapsible open={auditOpen} id={auditId}>
+          {/* Fetched on first open, then kept so closing can animate. */}
+          {auditLoaded && <DeviceAuditList deviceId={deviceId} token={token} />}
+        </Collapsible>
       </section>
 
       {/* Danger zone */}
-      <section className="flex flex-col gap-3">
+      <Card
+        tone="destructive"
+        padding="lg"
+        className="flex-row flex-wrap items-center justify-between"
+      >
         <SectionHeader
           as="h3"
-          size="xs"
           tone="destructive"
           title={t('settings.devices.dangerZone')}
+          description={t('settings.devices.dangerZoneDescription')}
+          className="min-w-0 flex-1"
         />
-        <Card
-          tone="destructive"
-          className="sm:flex-row sm:items-center sm:justify-between"
+        <Button
+          type="button"
+          variant="destructive-outline"
+          size="field"
+          shape="pill"
+          className="shrink-0"
+          onClick={() => setRevokeState('ACTIVE')}
         >
-          <p className="text-muted-foreground text-sm">
-            {t('settings.devices.dangerZoneDescription')}
-          </p>
-          <Button
-            type="button"
-            variant="destructive-outline"
-            shape="pill"
-            className="shrink-0"
-            onClick={() => setRevokeState('ACTIVE')}
-          >
-            {t('settings.devices.revoke')}
-          </Button>
-        </Card>
-      </section>
+          {t('settings.devices.revoke')}
+        </Button>
+      </Card>
 
       <ConfirmationModal
         message={
           device
-            ? t('settings.devices.revokeWarning', { name: device.name })
+            ? t('settings.devices.revokeWarning', {
+                interpolation: { escapeValue: false },
+                name: device.name,
+              })
             : ''
         }
+        description={t('settings.devices.revokeConsequence')}
         modalState={revokeState}
         setModalState={setRevokeState}
         handleSubmit={handleRevoke}

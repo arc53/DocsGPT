@@ -41,11 +41,14 @@ import {
 import ConversationTile from './conversation/ConversationTile';
 import { useMediaQuery } from './hooks';
 import useTokenAuth from './hooks/useTokenAuth';
-import { cn, overlayScrim } from './lib/utils';
+import { cn, focusRing, overlayScrim } from './lib/utils';
 import ConfirmationModal from './modals/ConfirmationModal';
 import JWTModal from './modals/JWTModal';
 import SearchConversationsModal from './modals/SearchConversationsModal';
 import { ActiveState } from './models/misc';
+import { LoadMoreStatus } from './components/ui/load-more-status';
+import { Skeleton } from './components/ui/skeleton';
+import { useScrollSentinel } from './hooks/useLoadMore';
 import { getConversations } from './preferences/preferenceApi';
 import MobileTopBar from './navigation/MobileTopBar';
 import SectionNav from './navigation/SectionNav';
@@ -70,7 +73,12 @@ import {
   selectSharedAgents,
   selectToken,
   setAgents,
+  appendConversations,
+  receiveConversations,
+  removeConversation,
+  renameConversation,
   setConversations,
+  setConversationsLoading,
   setModalStateDeleteConv,
   setSelectedAgent,
   setSharedAgents,
@@ -235,11 +243,39 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     }
   }
 
+  // Older chats load as the end of the list scrolls into view; the list
+  // scrolls with the sidebar column, so there is no inner scroller.
+  const [olderLoading, setOlderLoading] = useState(false);
+  const [olderError, setOlderError] = useState(false);
+  const loadOlderConversations = () => {
+    const list = conversations?.data ?? [];
+    const last = list[list.length - 1];
+    if (!last?.date || olderLoading) return;
+    setOlderLoading(true);
+    setOlderError(false);
+    getConversations(token, { date: last.date, id: last.id })
+      .then((result) => {
+        if (result.data) dispatch(appendConversations(result.data));
+        else setOlderError(true);
+      })
+      .finally(() => setOlderLoading(false));
+  };
+  const olderSentinelRef = useScrollSentinel(
+    loadOlderConversations,
+    !!conversations?.hasMore &&
+      !conversations.loading &&
+      !olderLoading &&
+      !olderError,
+    conversations?.data?.length,
+  );
+
   async function fetchConversations() {
-    dispatch(setConversations({ ...conversations, loading: true }));
+    // Only the flag: a copy of the list from this render would put back
+    // a chat removed just before, and the merge would then keep it.
+    dispatch(setConversationsLoading(true));
     return await getConversations(token)
       .then((fetchedConversations) => {
-        dispatch(setConversations(fetchedConversations));
+        dispatch(receiveConversations(fetchedConversations));
       })
       .catch((error) => {
         console.error('Failed to fetch conversations: ', error);
@@ -255,25 +291,27 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     if (queries.length === 0) resetConversation();
   }, [conversations?.data, dispatch]);
 
+  // Both return the request to ConfirmationModal: pending while it runs,
+  // a failure stays in the dialog.
   const handleDeleteAllConversations = () => {
     setIsDeletingConversation(true);
-    conversationService
-      .deleteAll(token)
-      .then(() => {
-        fetchConversations();
-      })
-      .catch((error) => console.error(error));
+    return conversationService.deleteAll(token).then((response: Response) => {
+      if (!response.ok) throw new Error('Failed to delete conversations');
+      fetchConversations();
+    });
   };
 
   const handleDeleteConversation = (id: string) => {
     setIsDeletingConversation(true);
-    conversationService
+    return conversationService
       .delete(id, {}, token)
-      .then(() => {
+      .then((response: Response) => {
+        if (!response.ok) throw new Error('Failed to delete conversation');
+        // Out of the list at once, wherever it is, then refresh the top.
+        dispatch(removeConversation(id));
         fetchConversations();
         resetConversation();
-      })
-      .catch((error) => console.error(error));
+      });
   };
 
   const handleAgentClick = (agent: Agent) => {
@@ -374,7 +412,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       .update(updatedConversation, token)
       .then((response) => response.json())
       .then((data) => {
-        if (data) {
+        if (data?.success) {
+          // A rename keeps the chat's date, so a chat past the newest page
+          // is not in the refetch below: set its name here.
+          const { id, name } = updatedConversation;
+          dispatch(renameConversation({ id, name }));
           fetchConversations();
         }
       })
@@ -541,7 +583,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               }}
               className={({ isActive }) =>
                 cn(
-                  'group border-sidebar-border hover:border-sidebar-border sticky mx-4 mt-4 flex cursor-pointer items-center gap-2.5 rounded-3xl border p-3 hover:bg-transparent',
+                  focusRing,
+                  'group border-border hover:border-border sticky mx-4 mt-4 flex cursor-pointer items-center gap-2.5 rounded-3xl border p-3 outline-none hover:bg-transparent',
                   isActive && 'bg-transparent',
                 )
               }
@@ -610,7 +653,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                                     imgClassName="size-6 object-contain"
                                   />
                                 </div>
-                                <span className="truncate">{agent.name}</span>
+                                <span className="truncate" title={agent.name}>
+                                  {agent.name}
+                                </span>
                               </Link>
                             </Button>
                             <div
@@ -729,6 +774,33 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                         }
                       />
                     ))}
+                    {olderLoading
+                      ? Array.from({ length: 3 }, (_, i) => (
+                          <div
+                            key={i}
+                            aria-hidden="true"
+                            className="mx-4 mt-4 flex h-9 items-center px-3"
+                          >
+                            <Skeleton className="h-3 w-3/4" />
+                          </div>
+                        ))
+                      : null}
+                    {olderError ? (
+                      <LoadMoreStatus
+                        loading={false}
+                        error
+                        done={false}
+                        onRetry={() => {
+                          setOlderError(false);
+                          loadOlderConversations();
+                        }}
+                      />
+                    ) : null}
+                    <div
+                      ref={olderSentinelRef}
+                      aria-hidden="true"
+                      className="h-px"
+                    />
                   </div>
                 </div>
               ) : (
@@ -811,7 +883,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 <NavLink
                   target="_blank"
                   to={'https://discord.gg/vN7YFfdMpj'}
-                  className={'hover:bg-sidebar-accent rounded-full'}
+                  className={`${focusRing} hover:bg-sidebar-accent rounded-full outline-none`}
                 >
                   <img
                     src={Discord}
@@ -824,7 +896,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 <NavLink
                   target="_blank"
                   to={'https://x.com/docsgptai'}
-                  className={'hover:bg-sidebar-accent rounded-full'}
+                  className={`${focusRing} hover:bg-sidebar-accent rounded-full outline-none`}
                 >
                   <img
                     src={Twitter}
@@ -837,7 +909,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 <NavLink
                   target="_blank"
                   to={'https://github.com/arc53/docsgpt'}
-                  className={'hover:bg-sidebar-accent rounded-full'}
+                  className={`${focusRing} hover:bg-sidebar-accent rounded-full outline-none`}
                 >
                   <img
                     src={Github}
@@ -872,6 +944,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       />
       <ConfirmationModal
         message={t('modals.deleteConv.confirm')}
+        description={t('modals.deleteConv.consequence')}
         modalState={modalStateDeleteConv}
         setModalState={(state) => dispatch(setModalStateDeleteConv(state))}
         submitLabel={t('modals.deleteConv.delete')}
@@ -885,6 +958,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           isOnboarding={false}
           renderTab={null}
           close={() => setUploadModalState('INACTIVE')}
+          onBrowseConnectors={() =>
+            navigate('/settings/connectors?capability=sync')
+          }
         ></Upload>
       )}
       <JWTModal

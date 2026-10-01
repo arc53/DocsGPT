@@ -17,12 +17,7 @@ import { useNavigate } from 'react-router-dom';
 import ProfileButton from '../components/ProfileButton';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../components/ui/dropdown-menu';
+import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { IconButton } from '../components/ui/icon-button';
 import { Input } from '../components/ui/input';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -40,7 +35,8 @@ interface MobileTopBarProps {
   /** The open conversation; turns on Share, Rename and Delete. */
   conversationId?: string | null;
   onRename?: (conversation: { id: string; name: string }) => void;
-  onDelete?: (id: string) => void;
+  /** Return the request's promise: the confirm stays pending on it. */
+  onDelete?: (id: string) => void | Promise<unknown>;
   /** Set for an agent the user owns; adds "Edit agent" to the title menu. */
   editAgentPath?: string;
 }
@@ -200,8 +196,16 @@ export default function MobileTopBar({
       );
     }
     return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
+      <ActionMenu
+        align="start"
+        menuWidth="lg"
+        options={actions.map((action): MenuOption => ({
+          label: action.label,
+          icon: action.icon,
+          variant: action.destructive ? 'destructive' : 'default',
+          onClick: action.onSelect,
+        }))}
+        trigger={
           <Button
             type="button"
             variant="ghost"
@@ -217,20 +221,8 @@ export default function MobileTopBar({
             </span>
             <ChevronDown className="text-muted-foreground" aria-hidden />
           </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="min-w-48">
-          {actions.map((action) => (
-            <DropdownMenuItem
-              key={action.key}
-              variant={action.destructive ? 'destructive' : 'default'}
-              onSelect={action.onSelect}
-            >
-              <action.icon aria-hidden />
-              <span>{action.label}</span>
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
+        }
+      />
     );
   };
 
@@ -267,7 +259,15 @@ export default function MobileTopBar({
       </div>
       {conversationId && (
         <ConfirmationModal
-          message={t('convTile.deleteWarning')}
+          message={
+            title
+              ? t('convTile.deleteWarning', {
+                  interpolation: { escapeValue: false },
+                  name: title,
+                })
+              : t('convTile.deleteWarningUnnamed')
+          }
+          description={t('convTile.deleteConsequence')}
           modalState={deleteModalState}
           setModalState={setDeleteModalState}
           handleSubmit={() => onDelete?.(conversationId)}

@@ -51,45 +51,49 @@ export default function FolderCard({
 
   return (
     <>
+      {/* DESIGN "A clickable card that holds a link": a stretched button
+          opens the folder; the menu is a sibling above it, never inside. */}
       <Card
         variant="filled"
-        interactive
-        padding="default"
-        role="button"
-        tabIndex={0}
-        className="relative flex-row items-center justify-between"
-        onClick={() => onToggleExpand(folder.id)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onToggleExpand(folder.id);
-          }
-        }}
+        interactive="within"
+        className="flex-row items-center justify-between"
       >
-        <div className="flex items-center gap-2 overflow-hidden">
-          <CardTitle className="truncate">{folder.name}</CardTitle>
+        <button
+          type="button"
+          onClick={() => onToggleExpand(folder.id)}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left outline-none after:absolute after:inset-0 after:rounded-2xl"
+        >
+          <CardTitle className="truncate" title={folder.name}>
+            {folder.name}
+          </CardTitle>
           <span className="text-muted-foreground shrink-0 text-xs">
             ({agentCount})
           </span>
+        </button>
+        <div className="relative z-10 ml-2 shrink-0">
+          <ActionMenu
+            options={menuOptions}
+            triggerLabel={t('agents.folders.menuAriaLabel', {
+              folderName: folder.name,
+              interpolation: { escapeValue: false },
+            })}
+            align="end"
+          />
         </div>
-        <ActionMenu
-          options={menuOptions}
-          triggerLabel={t('agents.folders.menuAriaLabel', {
-            folderName: folder.name,
-            interpolation: { escapeValue: false },
-          })}
-          align="end"
-          className="ml-2 shrink-0"
-        />
       </Card>
       <ConfirmationModal
-        message={t('agents.folders.deleteConfirm')}
+        message={t('agents.folders.deleteConfirm', {
+          interpolation: { escapeValue: false },
+          name: folder.name,
+        })}
+        description={t('agents.folders.deleteConsequence')}
         modalState={deleteConfirmation}
         setModalState={setDeleteConfirmation}
-        submitLabel={t('convTile.delete')}
-        handleSubmit={() => {
-          onDelete(folder.id);
-          setDeleteConfirmation('INACTIVE');
+        submitLabel={t('agents.folders.delete')}
+        handleSubmit={async () => {
+          if (!(await onDelete(folder.id))) {
+            throw new Error('Failed to delete folder');
+          }
         }}
         cancelLabel={t('cancel')}
         variant="destructive"

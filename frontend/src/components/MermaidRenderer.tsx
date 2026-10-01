@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-import { CircleAlert } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import {
   oneLight,
@@ -10,18 +10,14 @@ import {
 
 import { selectStatus } from '../conversation/conversationSlice';
 import { useDarkTheme } from '../hooks';
-import CopyButton from './CopyButton';
 import { renderMermaidDiagram } from './mermaidSecurity';
 import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
+import { CodeFrame } from './ui/code-block';
 import { IconButton } from './ui/icon-button';
+import { ToggleChip } from './ui/toggle-chip';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from './ui/dropdown-menu';
+import { ActionMenu } from './ui/dropdown-menu';
 import { MermaidRendererProps } from './types';
 
 const MermaidRenderer: React.FC<MermaidRendererProps> = ({
@@ -268,170 +264,156 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   const errorRender = !isCurrentlyLoading && error;
 
   return (
-    <div className="group border-border bg-card relative overflow-hidden rounded-xl border">
-      <div className="bg-muted flex items-center justify-between px-2 py-1">
-        <span className="text-foreground text-xs font-medium">mermaid</span>
-        <div className="flex items-center gap-2">
-          <CopyButton
-            textToCopy={String(code).replace(/\n$/, '')}
-            side="bottom"
-          />
-
-          {showDiagramOptions && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button type="button" variant="ghost-muted" size="xs">
-                  {t('mermaid.download')} <span className="ml-1">▼</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                {downloadOptions.map((option) => (
-                  <DropdownMenuItem
-                    key={option.label}
-                    onSelect={() => option.action()}
-                  >
-                    {option.label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-
-          {showDiagramOptions && (
-            <Button
-              type="button"
-              variant={showCode ? 'secondary' : 'ghost-muted'}
-              size="xs"
-              onClick={() => setShowCode(!showCode)}
-            >
-              {t('mermaid.code')}
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {isCurrentlyLoading ? (
-        <div className="bg-card flex items-center justify-center p-4">
-          <div className="text-muted-foreground text-sm">
-            {t('mermaid.loading')}
-          </div>
-        </div>
-      ) : errorRender ? (
-        <Alert variant="destructive" className="m-2 w-auto">
-          <CircleAlert />
-          <AlertDescription className="overflow-auto wrap-break-word whitespace-normal">
-            {error}
-          </AlertDescription>
-        </Alert>
-      ) : (
+    <CodeFrame
+      label="mermaid"
+      copyText={String(code).replace(/\n$/, '')}
+      actions={
         <>
-          <div
-            ref={containerRef}
-            className="no-scrollbar bg-card relative block w-full p-4"
-            style={{
-              overflow: 'auto',
-              scrollbarWidth: 'none',
-              msOverflowStyle: 'none',
-              width: '100%',
-            }}
-            onMouseMove={handleMouseMove}
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
-            onKeyDown={handleKeyDown}
-            onWheel={handleWheel}
-            tabIndex={0}
-          >
-            {isHovering && (
-              <>
-                <div className="absolute top-2 right-2 z-10 flex items-center gap-2 rounded-sm bg-black/70 px-2 py-1 text-xs text-white">
-                  <IconButton
-                    label={t('mermaid.decreaseZoom')}
-                    side="bottom"
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() =>
-                      setZoomFactor((prev) => Math.max(1, prev - 0.5))
-                    }
-                    /* eslint-disable-next-line shadcn/no-restyle --
-                       zoom controls sit on the bg-black/70 overlay; ghost's accent hover would paint a light square on it */
-                    className="hover:bg-white/20 hover:text-white"
-                  >
-                    -
-                  </IconButton>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="link"
-                        size="inline"
-                        onClick={() => setZoomFactor(2)}
-                        /* eslint-disable-next-line shadcn/no-restyle --
-                           on the bg-black/70 zoom overlay, like its − / + siblings: keeps the overlay's white 12px regular */
-                        className="text-xs font-normal text-current"
-                      >
-                        {zoomFactor.toFixed(1)}x
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{t('mermaid.resetZoom')}</TooltipContent>
-                  </Tooltip>
-                  <IconButton
-                    label={t('mermaid.increaseZoom')}
-                    side="bottom"
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() =>
-                      setZoomFactor((prev) => Math.min(6, prev + 0.5))
-                    }
-                    /* eslint-disable-next-line shadcn/no-restyle --
-                       zoom controls sit on the bg-black/70 overlay; ghost's accent hover would paint a light square on it */
-                    className="hover:bg-white/20 hover:text-white"
-                  >
-                    +
-                  </IconButton>
-                </div>
-              </>
-            )}
-            <pre
-              ref={diagramRef}
-              className="w-full select-none"
-              id={diagramId.current}
-              key={`mermaid-${diagramId.current}`}
-              style={{
-                transform: isHovering ? `scale(${zoomFactor})` : `scale(1)`,
-                transformOrigin: getTransformOrigin(),
-                transition: 'transform 0.2s ease',
-                cursor: 'default',
-                width: '100%',
-                display: 'flex',
-                justifyContent: 'center',
-              }}
+          {showDiagramOptions && (
+            <ActionMenu
+              trigger={
+                <Button type="button" variant="ghost-muted" size="xs">
+                  {t('mermaid.download')}
+                  <ChevronDown aria-hidden="true" />
+                </Button>
+              }
+              menuWidth="fixed"
+              options={downloadOptions.map((option) => ({
+                label: option.label,
+                onClick: () => option.action(),
+              }))}
             />
-          </div>
+          )}
 
-          {showCode && (
-            <div className="border-border border-t">
-              <div className="bg-muted p-2">
-                <span className="text-foreground text-xs font-medium">
-                  {t('mermaid.codeTitle')}
-                </span>
-              </div>
-              <SyntaxHighlighter
-                language="mermaid"
-                style={isDarkTheme ? vscDarkPlus : oneLight}
-                customStyle={{
-                  margin: 0,
-                  borderRadius: 0,
-                  scrollbarWidth: 'thin',
-                  maxHeight: '300px',
-                }}
-              >
-                {code}
-              </SyntaxHighlighter>
-            </div>
+          {showDiagramOptions && (
+            <ToggleChip pressed={showCode} onPressedChange={setShowCode}>
+              {t('mermaid.code')}
+            </ToggleChip>
           )}
         </>
-      )}
-    </div>
+      }
+    >
+      <div className="bg-card">
+        {isCurrentlyLoading ? (
+          <div className="bg-card flex items-center justify-center p-4">
+            <div className="text-muted-foreground text-sm">
+              {t('mermaid.loading')}
+            </div>
+          </div>
+        ) : errorRender ? (
+          <Alert variant="destructive" className="m-2 w-auto">
+            <AlertDescription className="wrap-break-word whitespace-normal">
+              {error}
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <>
+            <div
+              ref={containerRef}
+              className="no-scrollbar bg-card relative block w-full p-4"
+              style={{
+                overflow: 'auto',
+                scrollbarWidth: 'none',
+                msOverflowStyle: 'none',
+                width: '100%',
+              }}
+              onMouseMove={handleMouseMove}
+              onMouseEnter={handleMouseEnter}
+              onMouseLeave={handleMouseLeave}
+              onKeyDown={handleKeyDown}
+              onWheel={handleWheel}
+              tabIndex={0}
+            >
+              {isHovering && (
+                <>
+                  <div className="absolute top-2 right-2 z-10 flex items-center gap-2 rounded-sm bg-black/70 px-2 py-1 text-xs text-white">
+                    <IconButton
+                      label={t('mermaid.decreaseZoom')}
+                      side="bottom"
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() =>
+                        setZoomFactor((prev) => Math.max(1, prev - 0.5))
+                      }
+                      /* eslint-disable-next-line shadcn/no-restyle --
+                       zoom controls sit on the bg-black/70 overlay; ghost's accent hover would paint a light square on it */
+                      className="hover:bg-white/20 hover:text-white"
+                    >
+                      -
+                    </IconButton>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="link"
+                          size="text"
+                          tone="current"
+                          onClick={() => setZoomFactor(2)}
+                        >
+                          {zoomFactor.toFixed(1)}x
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{t('mermaid.resetZoom')}</TooltipContent>
+                    </Tooltip>
+                    <IconButton
+                      label={t('mermaid.increaseZoom')}
+                      side="bottom"
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() =>
+                        setZoomFactor((prev) => Math.min(6, prev + 0.5))
+                      }
+                      /* eslint-disable-next-line shadcn/no-restyle --
+                       zoom controls sit on the bg-black/70 overlay; ghost's accent hover would paint a light square on it */
+                      className="hover:bg-white/20 hover:text-white"
+                    >
+                      +
+                    </IconButton>
+                  </div>
+                </>
+              )}
+              <pre
+                ref={diagramRef}
+                className="w-full select-none"
+                id={diagramId.current}
+                key={`mermaid-${diagramId.current}`}
+                style={{
+                  transform: isHovering ? `scale(${zoomFactor})` : `scale(1)`,
+                  transformOrigin: getTransformOrigin(),
+                  transition: 'transform 0.2s ease',
+                  cursor: 'default',
+                  width: '100%',
+                  display: 'flex',
+                  justifyContent: 'center',
+                }}
+              />
+            </div>
+
+            {showCode && (
+              <div className="border-border border-t">
+                <div className="bg-muted p-2">
+                  <span className="text-foreground text-xs font-medium">
+                    {t('mermaid.codeTitle')}
+                  </span>
+                </div>
+                <SyntaxHighlighter
+                  language="mermaid"
+                  style={isDarkTheme ? vscDarkPlus : oneLight}
+                  customStyle={{
+                    margin: 0,
+                    borderRadius: 0,
+                    scrollbarWidth: 'thin',
+                    maxHeight: '300px',
+                  }}
+                >
+                  {code}
+                </SyntaxHighlighter>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </CodeFrame>
   );
 };
 

@@ -42,6 +42,20 @@ vi.mock('../connectors/useConnectorLauncher', () => ({
   default: () => ({ launch, modals: null }),
 }));
 
+// The drawer is tested on its own; here only what it is opened with.
+const drawerProps = vi.hoisted(() => vi.fn());
+vi.mock('../connectors/ConnectionDrawer', () => ({
+  default: (props: {
+    connector: { key: string } | null;
+    onClose: () => void;
+  }) => {
+    drawerProps(props);
+    return props.connector ? (
+      <div data-testid="drawer">{props.connector.key}</div>
+    ) : null;
+  },
+}));
+
 import connectorsReducer from '../connectors/connectorsSlice';
 import AddToolModal from './AddToolModal';
 
@@ -93,8 +107,17 @@ describe('AddToolModal', () => {
         name: 'MCP server',
         icon: 'mcp',
         publisher: 'custom',
+        state: 'custom',
+      }),
+      entry({
+        key: 'custom_openapi',
+        name: 'OpenAPI / REST',
+        icon: 'api',
+        publisher: 'custom',
+        state: 'custom',
       }),
     ];
+    drawerProps.mockClear();
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -168,10 +191,79 @@ describe('AddToolModal', () => {
     );
   });
 
-  it('opens a connected service to manage its tools', async () => {
-    await render();
+  it('opens a connected service to manage its tools over the Tools page', async () => {
+    const setModalState = await render();
     await act(async () => service('telegram')!.click());
     expect(launch).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain('DRAWER');
+    expect(setModalState).toHaveBeenCalledWith('INACTIVE');
+    expect(document.body.textContent).not.toContain('DRAWER');
+    expect(
+      document.body.querySelector('[data-testid="drawer"]')?.textContent,
+    ).toBe('telegram');
+  });
+
+  it('draws a service as one tile: state first, the account in the footer', async () => {
+    await render();
+    const connected = service('telegram')!;
+    const badges = Array.from(
+      connected.querySelectorAll<HTMLElement>('[data-slot="badge"]'),
+    );
+    expect(badges[0].textContent).toBe('settings.connectors.status.connected');
+    expect(connected.dataset.variant).toBe('outline');
+    expect(connected.className).not.toMatch(/\bh-44\b/);
+    const available = service('mcp:notion')!;
+    // Available: no footer cue; no badge already says it isn't connected.
+    expect(available.querySelector('[data-slot="card-footer"]')).toBeNull();
+  });
+
+  it('lists the custom kinds last and launches them in place', async () => {
+    await render();
+    const text = document.body.textContent ?? '';
+    expect(text.indexOf('agents.form.toolsPopup.groupCustom')).toBeGreaterThan(
+      text.indexOf('settings.tools.groupBuiltIn'),
+    );
+    const custom = (key: string) =>
+      document.body.querySelector<HTMLButtonElement>(
+        `[data-testid="add-tool-custom-${key}"]`,
+      )!;
+    expect(custom('custom_openapi')).not.toBeNull();
+    // Nothing to be connected: no state, no cue.
+    expect(
+      custom('custom_mcp').querySelector('[data-slot="badge"]'),
+    ).toBeNull();
+    await act(async () => custom('custom_mcp').click());
+    expect(launch).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'custom_mcp' }),
+    );
+  });
+
+  it('ends on Cancel alone, with the Browse all link at the end of the body', async () => {
+    await render();
+    const dialog = document.body.querySelector('[role="dialog"]')!;
+    const buttons = Array.from(dialog.querySelectorAll('button')).map(
+      (b) => b.textContent,
+    );
+    expect(buttons).not.toContain('settings.connectors.addCustom');
+    expect(buttons).toContain('cancel');
+    const link = Array.from(dialog.querySelectorAll('a')).find(
+      (a) => a.textContent === 'settings.connectors.browseAll',
+    )!;
+    expect(link.getAttribute('href')).toBe('/settings/connectors');
+    // A trailing link icon: 12px from Button's link size, not its own class.
+    expect(link.className).toContain("[&_svg:not([class*='size-'])]:size-3");
+    expect(link.querySelector('svg')!.getAttribute('class')).not.toContain(
+      'size-',
+    );
+    expect(dialog.textContent).not.toContain('settings.tools.browseConnectors');
+  });
+
+  it('keeps tool names as typed', async () => {
+    await render();
+    const titles = Array.from(
+      document.body.querySelectorAll('[data-slot="card-title"]'),
+    );
+    expect(titles.length).toBeGreaterThan(0);
+    for (const title of titles)
+      expect(title.className).not.toContain('capitalize');
   });
 });

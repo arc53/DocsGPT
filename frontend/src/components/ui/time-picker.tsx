@@ -76,7 +76,7 @@ export function TimePicker({
       >
         <SelectTrigger
           aria-label={ariaLabel ? `${ariaLabel} hours` : 'Hours'}
-          className="w-17"
+          className="w-19"
         >
           <SelectValue>{pad2(hour)}</SelectValue>
         </SelectTrigger>
@@ -95,7 +95,7 @@ export function TimePicker({
       >
         <SelectTrigger
           aria-label={ariaLabel ? `${ariaLabel} minutes` : 'Minutes'}
-          className="w-17"
+          className="w-19"
         >
           <SelectValue>{pad2(minute)}</SelectValue>
         </SelectTrigger>

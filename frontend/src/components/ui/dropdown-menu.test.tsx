@@ -1,8 +1,9 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { Pencil, Trash2 } from 'lucide-react';
+import { ChevronDown, Pencil, Trash2 } from 'lucide-react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { Button } from './button';
 import { ActionMenu, type MenuOption } from './dropdown-menu';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -112,6 +113,30 @@ describe('ActionMenu', () => {
     expect(onCard).not.toHaveBeenCalled();
   });
 
+  it('draws a separator before an option that asks for one', async () => {
+    await render(
+      <ActionMenu
+        options={[
+          { label: 'Rename', onClick: vi.fn() },
+          { label: 'Disconnect', onClick: vi.fn() },
+          {
+            label: 'Remove',
+            onClick: vi.fn(),
+            variant: 'destructive',
+            separatorBefore: true,
+          },
+        ]}
+        triggerLabel="Menu"
+        open
+      />,
+    );
+    const separators = document.querySelectorAll(
+      '[data-slot="dropdown-menu-separator"]',
+    );
+    expect(separators).toHaveLength(1);
+    expect(separators[0].nextElementSibling?.textContent).toBe('Remove');
+  });
+
   it('marks a disabled option', async () => {
     await render(
       <ActionMenu
@@ -121,5 +146,67 @@ describe('ActionMenu', () => {
       />,
     );
     expect(items()[0].hasAttribute('data-disabled')).toBe(true);
+  });
+});
+
+describe('ActionMenu trigger', () => {
+  it('renders a caller trigger instead of the three-dots button', async () => {
+    await render(
+      <ActionMenu
+        options={options()}
+        trigger={
+          <Button type="button" shape="pill" data-testid="own">
+            Actions
+            <ChevronDown />
+          </Button>
+        }
+      />,
+    );
+    const t = trigger();
+    expect(t.getAttribute('data-testid')).toBe('own');
+    expect(t.textContent).toBe('Actions');
+    expect(t.getAttribute('data-variant')).toBe('default');
+    expect(t.getAttribute('aria-haspopup')).toBe('menu');
+    expect(t.hasAttribute('aria-label')).toBe(false);
+    // No tooltip wraps a labelled trigger.
+    expect(t.hasAttribute('data-state') && t.dataset.state).toBe('closed');
+    expect(document.querySelector('[data-slot="tooltip-trigger"]')).toBeNull();
+  });
+
+  it('lets a trigger click bubble (it is not on a clickable card)', async () => {
+    const parent = vi.fn();
+    await render(
+      <div onClick={parent}>
+        <ActionMenu
+          options={options()}
+          trigger={<Button type="button">Actions</Button>}
+        />
+      </div>,
+    );
+    await act(async () => trigger().click());
+    expect(parent).toHaveBeenCalled();
+  });
+
+  it('takes an element icon (a ConnectorIcon) and a menu width', async () => {
+    await render(
+      <ActionMenu
+        open
+        options={[
+          {
+            label: 'GitHub',
+            icon: <svg data-testid="logo" className="size-4" />,
+            onClick: vi.fn(),
+          },
+        ]}
+        trigger={<Button type="button">Add</Button>}
+        menuWidth="lg"
+      />,
+    );
+    expect(items()[0].querySelector('[data-testid="logo"]')).not.toBeNull();
+    const content = document.querySelector<HTMLElement>(
+      '[data-slot="dropdown-menu-content"]',
+    )!;
+    expect(content.className).toContain('min-w-48');
+    expect(content.className).not.toContain('min-w-36');
   });
 });

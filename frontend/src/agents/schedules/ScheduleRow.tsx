@@ -187,7 +187,10 @@ export default function ScheduleRow({
               )}
             </div>
             {schedule.name && (
-              <p className="text-muted-foreground line-clamp-1 text-sm">
+              <p
+                className="text-muted-foreground line-clamp-1 text-sm"
+                title={schedule.instruction}
+              >
                 {schedule.instruction}
               </p>
             )}

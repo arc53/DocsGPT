@@ -1,5 +1,5 @@
 import { ChevronDown, X } from 'lucide-react';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -11,6 +11,7 @@ import {
   type UploadTask,
 } from '../upload/uploadSlice';
 import { Button } from './ui/button';
+import { Collapsible } from './ui/collapsible';
 import {
   Toast,
   ToastActions,
@@ -49,6 +50,7 @@ const IN_PROGRESS_STATUSES = new Set<UploadTask['status']>([
  */
 export default function UploadToast() {
   const [collapsed, setCollapsed] = useState(false);
+  const rowsId = useId();
 
   const { t } = useTranslation();
   const dispatch = useDispatch();
@@ -84,6 +86,8 @@ export default function UploadToast() {
             variant="ghost-muted"
             size="icon-sm"
             onClick={() => setCollapsed((prev) => !prev)}
+            aria-expanded={!collapsed}
+            aria-controls={rowsId}
             aria-label={
               collapsed
                 ? t('modals.uploadDoc.progress.expandDetails')
@@ -109,25 +113,13 @@ export default function UploadToast() {
         </ToastActions>
       </ToastHeader>
 
-      <div
-        className={cn(
-          'grid overflow-hidden transition-[grid-template-rows] duration-300 ease-out',
-          collapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
-        )}
-      >
-        <div
-          className={cn(
-            'min-h-0 overflow-hidden transition-opacity duration-300',
-            collapsed ? 'opacity-0' : 'opacity-100',
-          )}
-        >
-          <ToastContent scrollable>
-            {visibleTasks.map((task) => (
-              <UploadRow key={task.id} task={task} t={t} />
-            ))}
-          </ToastContent>
-        </div>
-      </div>
+      <Collapsible open={!collapsed} id={rowsId}>
+        <ToastContent scrollable>
+          {visibleTasks.map((task) => (
+            <UploadRow key={task.id} task={task} t={t} />
+          ))}
+        </ToastContent>
+      </Collapsible>
     </Toast>
   );
 }

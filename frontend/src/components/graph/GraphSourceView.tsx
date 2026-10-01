@@ -257,14 +257,14 @@ export default function GraphSourceView({
         }
       />
       <Tabs value={tab} onValueChange={(value) => changeTab(value as GraphTab)}>
-        <TabsList variant="underline">
-          <TabsTrigger value="graph" variant="underline">
+        <TabsList>
+          <TabsTrigger value="graph">
             {t('settings.sources.graphrag.view.tabs.graph')}
           </TabsTrigger>
-          <TabsTrigger value="entities" variant="underline">
+          <TabsTrigger value="entities">
             {t('settings.sources.graphrag.view.tabs.entities')}
           </TabsTrigger>
-          <TabsTrigger value="files" variant="underline">
+          <TabsTrigger value="files">
             {t('settings.sources.graphrag.view.tabs.files')}
           </TabsTrigger>
         </TabsList>

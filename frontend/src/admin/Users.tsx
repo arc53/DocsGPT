@@ -14,14 +14,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import adminService from '../api/services/adminService';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import {
-  ActionMenu,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  type MenuOption,
-} from '../components/ui/dropdown-menu';
+import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { Modal } from '../components/ui/modal';
 import {
   Table,
@@ -39,6 +32,7 @@ import {
 } from '../components/ui/description-list';
 import { LoadingState } from '../components/ui/loading-state';
 import { Pagination } from '../components/ui/pagination';
+import { EmptyState } from '../components/ui/empty-state';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { showActionToast } from '../notifications/actionToastSlice';
@@ -88,10 +82,12 @@ export default function Users() {
   const [quotaUserId, setQuotaUserId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{
     message: string;
+    description: string;
     submitLabel: string;
-    run: () => void;
+    run: () => Promise<void>;
   } | null>(null);
   const [confirmState, setConfirmState] = useState<ActiveState>('INACTIVE');
+  const [confirmError, setConfirmError] = useState<string>();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -123,8 +119,9 @@ export default function Users() {
     load();
   }, [load]);
 
-  // The result shows as a toast in the app's shared ToastViewport
-  // (ActionToast), which auto-dismisses it.
+  // A result the row can't show (a failure, Force logout) is a toast in the
+  // app's shared ToastViewport (ActionToast), which auto-dismisses it. A
+  // success the reloaded row shows (a badge) gets none.
   const setFeedback = (feedback: { ok: boolean; message: string }) =>
     dispatch(
       showActionToast({
@@ -133,35 +130,64 @@ export default function Users() {
       }),
     );
 
-  const run =
-    (fn: () => Promise<Response>, userId: string, successMsg: string) =>
-    async () => {
-      setBusy(userId);
+  // Runs an action and throws its failure message; `run` toasts it, a
+  // confirm keeps it in the dialog. `successMsg` only for a result the
+  // reloaded row doesn't show.
+  const attempt = async (
+    fn: () => Promise<Response>,
+    userId: string,
+    successMsg?: string,
+  ) => {
+    setBusy(userId);
+    try {
+      let res: Response;
       try {
-        const res = await fn();
-        const json = await res.json().catch(() => ({}));
-        if (res.ok && json.success !== false) {
-          setFeedback({ ok: true, message: successMsg });
-          await load();
-        } else {
-          setFeedback({
-            ok: false,
-            message: json.message || `Action failed for ${userId}`,
-          });
-        }
+        res = await fn();
       } catch {
-        setFeedback({ ok: false, message: `Action failed for ${userId}` });
-      } finally {
-        setBusy(null);
+        throw new Error(`Action failed for ${userId}`);
+      }
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.success === false) {
+        throw new Error(json.message || `Action failed for ${userId}`);
+      }
+      if (successMsg) setFeedback({ ok: true, message: successMsg });
+      await load();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const run =
+    (fn: () => Promise<Response>, userId: string, successMsg?: string) =>
+    async () => {
+      try {
+        await attempt(fn, userId, successMsg);
+      } catch (error) {
+        setFeedback({ ok: false, message: (error as Error).message });
+      }
+    };
+
+  // A confirmed action returns its promise to ConfirmationModal, which stays
+  // pending while it runs and shows a failure in the dialog.
+  const confirmed =
+    (fn: () => Promise<Response>, userId: string) => async () => {
+      setConfirmError(undefined);
+      try {
+        await attempt(fn, userId);
+      } catch (error) {
+        setConfirmError((error as Error).message);
+        throw error;
       }
     };
 
   const askConfirm = (
     message: string,
+    description: string,
     submitLabel: string,
-    action: () => void,
+    action: () => Promise<void>,
   ) => {
-    setConfirm({ message, submitLabel, run: action });
+    setConfirmError(undefined);
+    setConfirm({ message, description, submitLabel, run: action });
     setConfirmState('ACTIVE');
   };
 
@@ -192,13 +218,10 @@ export default function Users() {
         destructive: true,
         perform: () =>
           askConfirm(
-            `Revoke admin from ${userId}?`,
+            `Revoke admin from "${userId}"?`,
+            'They lose access to the admin console. You can make them an admin again at any time.',
             'Revoke',
-            run(
-              () => adminService.revokeAdmin(userId, token),
-              userId,
-              `Removed admin from ${userId}`,
-            ),
+            confirmed(() => adminService.revokeAdmin(userId, token), userId),
           ),
       });
     } else {
@@ -206,11 +229,7 @@ export default function Users() {
         key: 'grant',
         label: 'Make admin',
         icon: ShieldCheck,
-        perform: run(
-          () => adminService.grantAdmin(userId, token),
-          userId,
-          `${userId} is now an admin`,
-        ),
+        perform: run(() => adminService.grantAdmin(userId, token), userId),
       });
     }
     if (active) {
@@ -221,12 +240,12 @@ export default function Users() {
         destructive: true,
         perform: () =>
           askConfirm(
-            `Deactivate ${userId}? This revokes their live sessions.`,
+            `Deactivate "${userId}"?`,
+            'Their live sessions are revoked. You can activate them again at any time.',
             'Deactivate',
-            run(
+            confirmed(
               () => adminService.setUserActive(userId, false, token),
               userId,
-              `${userId} deactivated`,
             ),
           ),
       });
@@ -238,7 +257,6 @@ export default function Users() {
         perform: run(
           () => adminService.setUserActive(userId, true, token),
           userId,
-          `${userId} reactivated`,
         ),
       });
     }
@@ -255,7 +273,6 @@ export default function Users() {
     return acts;
   };
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const applySearch = () => {
     setPage(1);
     setQuery(search.trim());
@@ -297,7 +314,7 @@ export default function Users() {
       ) : failed ? (
         <LoadError message="Failed to load users." onRetry={load} />
       ) : users.length === 0 ? (
-        <p className="text-muted-foreground mt-8 text-sm">No users found.</p>
+        <EmptyState size="sm" illustration="none" title="No users found." />
       ) : (
         <>
           <TableContainer>
@@ -388,9 +405,12 @@ export default function Users() {
           </TableContainer>
           <Pagination
             page={page}
-            pageCount={totalPages}
+            pageSize={PAGE_SIZE}
+            total={total}
             onPageChange={setPage}
-            summary={`${fmtNumber(total)} users`}
+            rangeLabel={({ from, to }) =>
+              `${fmtNumber(from)}–${fmtNumber(to)} of ${fmtNumber(total)} users`
+            }
           />
         </>
       )}
@@ -398,14 +418,13 @@ export default function Users() {
       {confirm ? (
         <ConfirmationModal
           message={confirm.message}
+          description={confirm.description}
           modalState={confirmState}
           setModalState={setConfirmState}
           submitLabel={confirm.submitLabel}
           variant="destructive"
-          handleSubmit={() => {
-            confirm.run();
-            setConfirm(null);
-          }}
+          handleSubmit={confirm.run}
+          error={confirmError}
         />
       ) : null}
 
@@ -424,35 +443,30 @@ export default function Users() {
         size="lg"
         footer={
           detail ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <ActionMenu
+              trigger={
                 <Button type="button" variant="outline" size="lg" shape="pill">
                   Actions
                   <ChevronDown />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {buildActions(
-                  detail.user.user_id,
-                  (detail.roles ?? []).includes('admin'),
-                  detail.user?.active ?? true,
-                ).map((act) => (
-                  <DropdownMenuItem
-                    key={act.key}
-                    variant={act.destructive ? 'destructive' : 'default'}
-                    onSelect={() => {
-                      // Close the detail dialog before any confirm dialog opens
-                      // (avoids stacked modals); the list + toast reflect the result.
-                      setDetail(null);
-                      act.perform();
-                    }}
-                  >
-                    <act.icon aria-hidden="true" />
-                    <span>{act.label}</span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              }
+              menuWidth="sm"
+              options={buildActions(
+                detail.user.user_id,
+                (detail.roles ?? []).includes('admin'),
+                detail.user?.active ?? true,
+              ).map((act): MenuOption => ({
+                label: act.label,
+                icon: act.icon,
+                variant: act.destructive ? 'destructive' : 'default',
+                onClick: () => {
+                  // Close the detail dialog before any confirm dialog opens
+                  // (avoids stacked modals); the list + toast reflect the result.
+                  setDetail(null);
+                  act.perform();
+                },
+              }))}
+            />
           ) : undefined
         }
       >

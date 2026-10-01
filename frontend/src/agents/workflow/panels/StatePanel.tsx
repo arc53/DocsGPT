@@ -42,7 +42,7 @@ export default function StatePanel({ node, onUpdate }: NodePanelBodyProps) {
           components={{ code: <code /> }}
           values={{ braced: '{{query}}' }}
         />{' '}
-        <Button variant="link" size="inline" asChild>
+        <Button variant="link" size="text" asChild>
           <a href="https://cel.dev/" target="_blank" rel="noreferrer">
             {t('agents.workflow.builder.learnMore')}
           </a>

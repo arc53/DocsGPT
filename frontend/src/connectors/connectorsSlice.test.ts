@@ -1,5 +1,7 @@
 import reducer, {
+  connectionNeedsSignIn,
   loadConnectors,
+  selectConnectionsNeedAttention,
   type ConnectorsState,
 } from './connectorsSlice';
 import type { Connection } from './types';
@@ -55,5 +57,40 @@ describe('connectorsSlice loadConnectors', () => {
     );
     expect(state.failed).toBe(true);
     expect(state.loading).toBe(false);
+  });
+});
+
+// One definition for every surface (Knowledge, Tools, pickers, the nav dot),
+// matching the backend's "reconnect" card state: an expired or failing
+// sign-in. A disconnect is the user's own act and warns nowhere.
+describe('connectionNeedsSignIn', () => {
+  it.each([
+    ['reconnect_needed', true],
+    ['error', true],
+    ['disconnected', false],
+    ['connected', false],
+    ['pending', false],
+  ])('%s → %s', (status, expected) => {
+    expect(connectionNeedsSignIn({ status })).toBe(expected);
+  });
+
+  it('is false for no connection', () => {
+    expect(connectionNeedsSignIn(undefined)).toBe(false);
+    expect(connectionNeedsSignIn(null)).toBe(false);
+  });
+
+  it('lights the nav dot with the same rule', () => {
+    const state = (statuses: string[]) => ({
+      connectors: {
+        ...reducer(undefined, { type: 'init' }),
+        connections: statuses.map(
+          (status, i) => ({ id: String(i), status }) as unknown as Connection,
+        ),
+      },
+    });
+    expect(selectConnectionsNeedAttention(state(['disconnected']))).toBe(false);
+    expect(selectConnectionsNeedAttention(state(['connected', 'error']))).toBe(
+      true,
+    );
   });
 });

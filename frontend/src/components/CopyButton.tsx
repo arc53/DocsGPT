@@ -13,7 +13,11 @@ type CopyButtonProps = {
    * is a text-only primary pill (Button `lg`, 40px) for a dialog footer.
    */
   size?: 'xs' | 'sm' | 'lg';
-  /** Show a "Copy"/"Copied" label next to the icon (renders at Button `xs`). */
+  /**
+   * Show a "Copy"/"Copied" label next to the icon (renders at Button `xs`).
+   * Never in the code-block family (`ui/code-block`): its copy buttons are
+   * all icon-only at `sm`, drawn by the component.
+   */
   showText?: boolean;
   copiedDuration?: number;
   /** The idle label (default `conversation.copy`). */

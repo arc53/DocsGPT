@@ -2,12 +2,14 @@ import { configureStore } from '@reduxjs/toolkit';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Provider } from 'react-redux';
+import { MemoryRouter } from 'react-router-dom';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 // The upload modal pulls in the whole ingest UI; the composer never opens it here.
 vi.mock('../upload/Upload', () => ({ default: () => null }));
+vi.mock('../modals/AddToolModal', () => ({ default: () => null }));
 vi.mock('../connectors/SignInAgainNotice', () => ({
   default: () => null,
   useSignInAgain: () => ({ reconnect: vi.fn(), modals: null }),
@@ -112,15 +114,17 @@ describe('MessageInput send with a failed attachment', () => {
   const render = async (loading = false) => {
     await act(async () => {
       root.render(
-        <Provider store={store}>
-          <MessageInput
-            onSubmit={onSubmit}
-            loading={loading}
-            showSourceButton={false}
-            showToolButton={false}
-            autoFocus={false}
-          />
-        </Provider>,
+        <MemoryRouter>
+          <Provider store={store}>
+            <MessageInput
+              onSubmit={onSubmit}
+              loading={loading}
+              showSourceButton={false}
+              showToolButton={false}
+              autoFocus={false}
+            />
+          </Provider>
+        </MemoryRouter>,
       );
     });
   };
@@ -168,6 +172,13 @@ describe('MessageInput send with a failed attachment', () => {
       );
     });
   };
+
+  it('keeps the composer in the natural tab order', async () => {
+    await render();
+    // A positive tabIndex jumps the page's tab order; the composer is the
+    // default 0 and is reached where it sits.
+    expect(textarea().hasAttribute('tabindex')).toBe(false);
+  });
 
   it('sends the question and drops the failed file', async () => {
     store.dispatch(addAttachment(att()));

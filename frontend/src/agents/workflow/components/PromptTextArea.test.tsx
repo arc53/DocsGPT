@@ -74,4 +74,71 @@ describe('PromptTextArea mention menu', () => {
 
     expect(menu()).toBeNull();
   });
+
+  const openMenu = (value: string, onChange = vi.fn()) => {
+    act(() => {
+      root.render(
+        <PromptTextArea
+          value={value}
+          onChange={onChange}
+          nodes={[]}
+          edges={[]}
+          selectedNodeId="n1"
+        />,
+      );
+    });
+    const textarea = container.querySelector('textarea')!;
+    act(() => {
+      textarea.focus();
+      textarea.setSelectionRange(value.length, value.length);
+      textarea.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+    });
+    return { textarea, onChange };
+  };
+
+  it('is a Command listbox: group headings and option rows', () => {
+    openMenu('{{');
+    expect(menu().querySelector('[data-slot="command"]')).not.toBeNull();
+    expect(menu().querySelector('[role="listbox"]')).not.toBeNull();
+    const headings = Array.from(
+      menu().querySelectorAll('[cmdk-group-heading]'),
+    ).map((h) => h.textContent);
+    expect(headings).toContain('agents.workflow.variables.globalContext');
+    // The CommandGroup heading, not a hand-written uppercase eyebrow.
+    expect(menu().querySelector('.uppercase')).toBeNull();
+    const options = Array.from(
+      menu().querySelectorAll<HTMLElement>('[role="option"]'),
+    );
+    expect(options.map((o) => o.textContent)).toContain('source.content');
+    expect(menu().querySelector('button')).toBeNull();
+  });
+
+  it('walks the menu with the arrow keys from the textarea and inserts on Enter', () => {
+    const { textarea, onChange } = openMenu('{{');
+    const key = (k: string) =>
+      act(() => {
+        textarea.dispatchEvent(
+          new KeyboardEvent('keydown', { key: k, bubbles: true }),
+        );
+      });
+    const active = () =>
+      menu().querySelector('[data-selected="true"]')?.textContent;
+    const options = Array.from(
+      menu().querySelectorAll<HTMLElement>('[role="option"]'),
+    ).map((o) => o.textContent);
+    expect(active()).toBe(options[0]);
+    key('ArrowDown');
+    expect(active()).toBe(options[1]);
+    key('Enter');
+    expect(onChange).toHaveBeenCalledWith(`{{ ${options[1]} }}`);
+  });
+
+  it('filters by the text typed after "{{"', () => {
+    openMenu('{{ system');
+    const options = Array.from(
+      menu().querySelectorAll<HTMLElement>('[role="option"]'),
+    ).map((o) => o.textContent);
+    expect(options.length).toBeGreaterThan(0);
+    expect(options.every((o) => o?.startsWith('system.'))).toBe(true);
+  });
 });
