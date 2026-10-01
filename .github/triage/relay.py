@@ -22,6 +22,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -29,6 +30,10 @@ API = "https://api.github.com"
 DEFAULT_REPO = "arc53/DocsGPT"
 DEFAULT_BOT = "arc53-machine"
 DEFAULT_SKIP_ASSOCIATIONS = "OWNER,MEMBER,COLLABORATOR"
+# Org membership is often private, and GitHub then reports a maintainer as CONTRIBUTOR.
+DEFAULT_MAINTAINERS = "dartpain,pabik,ManishMadan2882,siiddhantt,tenokami,arc53-machine"
+# Events a bot legitimately sends: CodeRabbit's status, and CI runs started for a bot's push.
+BOT_SENT_EVENTS = frozenset({"status", "workflow_run"})
 LOCALES = ("de", "en", "es", "jp", "ru", "zh", "zh-TW")
 MARKER = "docsgpt-triage"
 
@@ -292,10 +297,30 @@ def ci_state(check_runs: list[dict], workflow_runs: list[dict], statuses: list[d
     return {"state": state, "failed": failed, "pending": pending, "awaiting_approval": awaiting, "passed": passed}
 
 
-def route(event_name: str, event: dict[str, Any], bot: str, skip_associations: set[str]) -> dict[str, Any]:
+@dataclass(frozen=True)
+class Maintainers:
+    """Who maintains the repo: a listed login, or an association GitHub reports for members."""
+
+    logins: frozenset
+    associations: frozenset
+
+    @classmethod
+    def from_env(cls, logins: Optional[str], associations: Optional[str]) -> "Maintainers":
+        """Build from comma-separated lists, falling back to the defaults."""
+        return cls(
+            frozenset(x.strip().lower() for x in (logins or DEFAULT_MAINTAINERS).split(",") if x.strip()),
+            frozenset(x.strip() for x in (associations or DEFAULT_SKIP_ASSOCIATIONS).split(",") if x.strip()),
+        )
+
+    def includes(self, login: Optional[str], association: Optional[str] = None) -> bool:
+        """True for a listed login or a maintainer association."""
+        return (login or "").lower() in self.logins or association in self.associations
+
+
+def route(event_name: str, event: dict[str, Any], bot: str, maintainers: Maintainers) -> dict[str, Any]:
     """Decide what an Actions event asks of the agent; ``kind`` is None to skip."""
     sender = event.get("sender") or {}
-    if sender.get("login") == bot or sender.get("type") == "Bot":
+    if event_name not in BOT_SENT_EVENTS and (sender.get("login") == bot or sender.get("type") == "Bot"):
         return {"kind": None, "reason": f"sender {sender.get('login')} is a bot"}
     action = event.get("action")
     if event_name == "issues" and action in ("opened", "reopened"):
@@ -307,7 +332,7 @@ def route(event_name: str, event: dict[str, Any], bot: str, skip_associations: s
         issue, comment = event["issue"], event["comment"]
         if issue.get("pull_request") or issue.get("state") != "open":
             return {"kind": None, "reason": "comment on a pull request or a closed issue"}
-        if comment.get("author_association") in skip_associations:
+        if maintainers.includes((comment.get("user") or {}).get("login"), comment.get("author_association")):
             return {"kind": None, "reason": "comment from a maintainer"}
         labels = {label["name"] for label in issue.get("labels", [])}
         by_author = (comment.get("user") or {}).get("login") == (issue.get("user") or {}).get("login")
@@ -323,7 +348,7 @@ def route(event_name: str, event: dict[str, Any], bot: str, skip_associations: s
         author = pr.get("user") or {}
         if author.get("type") == "Bot" or author.get("login") == bot:
             return {"kind": None, "reason": "pull request from a bot"}
-        if pr.get("author_association") in skip_associations:
+        if maintainers.includes(author.get("login"), pr.get("author_association")):
             return {"kind": None, "reason": "pull request from a maintainer"}
         return {"kind": "pr_opened", "number": pr["number"]}
     if event_name == "status":
@@ -470,7 +495,7 @@ def similar_items(gh: GitHub, number: int, title: str, qualifier: str = "is:issu
     return similar[:5]
 
 
-def issue_facts(gh: GitHub, number: int, bot: str, skip_associations: set[str]) -> dict[str, Any]:
+def issue_facts(gh: GitHub, number: int, bot: str, maintainers: Maintainers) -> dict[str, Any]:
     """Facts about an issue: content, author, claimants, assignment and linked PRs."""
     issue = gh.get(f"/issues/{number}")
     comments = gh.pages(f"/issues/{number}/comments", limit=200)
@@ -494,7 +519,7 @@ def issue_facts(gh: GitHub, number: int, bot: str, skip_associations: set[str]) 
     claimants = [
         {"login": c["user"]["login"], "at": c["created_at"], "comment_id": c["id"]}
         for c in comments
-        if c.get("author_association") not in skip_associations
+        if not maintainers.includes(c["user"]["login"], c.get("author_association"))
         and c["user"].get("type") != "Bot"
         and c["user"]["login"] != bot
         and is_claim(c.get("body"))
@@ -717,9 +742,10 @@ def write_job(out_dir: str, index: int, kind: str, number: int, payload: dict[st
     return path
 
 
-def review_is_due(facts: dict[str, Any], skip: set[str], bot: str) -> Optional[str]:
+def review_is_due(facts: dict[str, Any], maintainers: Maintainers, bot: str) -> Optional[str]:
     """Why an automatic ``pr_review`` should wait or be skipped, or None when it is due."""
-    if facts["draft"] or facts["author"]["association"] in skip or facts["author"]["login"] == bot:
+    author = facts["author"]
+    if facts["draft"] or maintainers.includes(author["login"], author["association"]) or author["login"] == bot:
         return "draft, or authored by a maintainer or the bot"
     if facts["ci"]["state"] == "pending" or facts["coderabbit"]["status"] == "pending":
         return "checks still running, a later event will review it"
@@ -729,14 +755,26 @@ def review_is_due(facts: dict[str, Any], skip: set[str], bot: str) -> Optional[s
     return None
 
 
+def mark_maintainer(person: dict[str, Any], maintainers: Maintainers) -> dict[str, Any]:
+    """Add ``is_maintainer`` to an author's facts."""
+    person["is_maintainer"] = maintainers.includes(person.get("login"), person.get("association"))
+    return person
+
+
 def jobs_for(
-    gh: GitHub, decision: dict[str, Any], event: dict[str, Any], bot: str, skip: set[str], manual: bool = False
+    gh: GitHub,
+    decision: dict[str, Any],
+    event: dict[str, Any],
+    bot: str,
+    maintainers: Maintainers,
+    manual: bool = False,
 ) -> list[tuple[str, dict[str, Any], str, dict]]:
     """Expand a routing decision into ``(kind, facts, idempotency_key, trigger)`` jobs."""
     kind = decision["kind"]
     if kind.startswith("issue_"):
         number = decision["number"]
-        facts = issue_facts(gh, number, bot, skip)
+        facts = issue_facts(gh, number, bot, maintainers)
+        mark_maintainer(facts["author"], maintainers)
         trigger: dict[str, Any] = {}
         key = f"issue-{number}-{kind}"
         if "comment_id" in decision:
@@ -744,7 +782,7 @@ def jobs_for(
             login = comment["user"]["login"]
             trigger = {
                 "comment": comment_view(comment),
-                "commenter": author_facts(gh, login, comment.get("author_association")),
+                "commenter": mark_maintainer(author_facts(gh, login, comment.get("author_association")), maintainers),
             }
             key += f"-{decision['comment_id']}"
         return [(kind, facts, key, trigger)]
@@ -755,10 +793,11 @@ def jobs_for(
     jobs = []
     for number in numbers:
         facts = pr_facts(gh, number, bot)
+        mark_maintainer(facts["author"], maintainers)
         if "sha" in decision and facts["head_sha"] != decision["sha"]:
             print(f"PR #{number}: head is {facts['head_sha'][:7]}, not the event's {decision['sha'][:7]}")
             continue
-        reason = None if manual or kind != "pr_review" else review_is_due(facts, skip, bot)
+        reason = None if manual or kind != "pr_review" else review_is_due(facts, maintainers, bot)
         if reason:
             print(f"PR #{number}: {reason}")
             continue
@@ -779,7 +818,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     repo = os.environ.get("GITHUB_REPOSITORY") or DEFAULT_REPO
     bot = os.environ.get("TRIAGE_BOT_LOGIN") or DEFAULT_BOT
     mode = "live" if os.environ.get("TRIAGE_MODE") == "live" else "shadow"
-    skip = {s.strip() for s in (os.environ.get("TRIAGE_SKIP_ASSOCIATIONS") or DEFAULT_SKIP_ASSOCIATIONS).split(",")}
+    maintainers = Maintainers.from_env(os.environ.get("TRIAGE_MAINTAINERS"), os.environ.get("TRIAGE_SKIP_ASSOCIATIONS"))
     gh = GitHub(os.environ.get("GITHUB_TOKEN"), repo)
 
     event: dict[str, Any] = {}
@@ -796,13 +835,13 @@ def main(argv: Optional[list[str]] = None) -> int:
             kind = "issue_opened" if inputs.get("target") == "issue" else "pr_review"
             decision = {"kind": kind, "number": int(inputs["number"])}
         else:
-            decision = route(event_name, event, bot, skip)
+            decision = route(event_name, event, bot, maintainers)
     if not decision.get("kind"):
         print(f"Skipped: {decision.get('reason')}")
         return 0
 
     manual = bool(args.issue or args.pr or event.get("inputs"))
-    jobs = jobs_for(gh, decision, event, bot, skip, manual)
+    jobs = jobs_for(gh, decision, event, bot, maintainers, manual)
     for index, (kind, facts, key, trigger) in enumerate(jobs):
         if manual:
             trigger = {**trigger, "manual": True}

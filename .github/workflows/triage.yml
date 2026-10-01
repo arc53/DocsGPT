@@ -45,7 +45,7 @@ jobs:
   relay:
     if: >-
       github.repository == 'arc53/DocsGPT' && vars.TRIAGE_MODE != '' &&
-      github.event.sender.type != 'Bot' &&
+      (github.event_name == 'status' || github.event_name == 'workflow_run' || github.event.sender.type != 'Bot') &&
       (github.event_name != 'status' || (github.event.context == 'CodeRabbit' && github.event.state == 'success'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -69,6 +69,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           TRIAGE_MODE: ${{ vars.TRIAGE_MODE }}
           TRIAGE_BOT_LOGIN: ${{ vars.TRIAGE_BOT_LOGIN }}
+          TRIAGE_MAINTAINERS: ${{ vars.TRIAGE_MAINTAINERS }}
         run: |
           python3 .github/triage/relay.py --out "$RUNNER_TEMP/triage"
           if [ -s "$RUNNER_TEMP/triage/jobs.tsv" ]; then echo "send=true" >> "$GITHUB_OUTPUT"; fi

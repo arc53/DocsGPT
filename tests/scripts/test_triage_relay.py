@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -9,10 +10,11 @@ import pytest
 RELAY_PATH = Path(__file__).resolve().parents[2] / ".github" / "triage" / "relay.py"
 _spec = importlib.util.spec_from_file_location("triage_relay", RELAY_PATH)
 relay = importlib.util.module_from_spec(_spec)
+sys.modules[_spec.name] = relay
 _spec.loader.exec_module(relay)
 
 BOT = "arc53-machine"
-SKIP = {"OWNER", "MEMBER", "COLLABORATOR"}
+SKIP = relay.Maintainers.from_env(None, None)
 
 
 def _issue(**overrides):
@@ -121,8 +123,23 @@ class TestRoute:
         assert relay.route("pull_request_target", event, BOT, SKIP)["kind"] is None
 
     def test_coderabbit_status(self):
-        event = {"context": "CodeRabbit", "state": "success", "sha": "abc", "sender": _sender("coderabbitai")}
+        sender = _sender("coderabbitai[bot]", "Bot")
+        event = {"context": "CodeRabbit", "state": "success", "sha": "abc", "sender": sender}
         assert relay.route("status", event, BOT, SKIP) == {"kind": "pr_review", "sha": "abc"}
+
+    def test_workflow_run_started_by_a_bot(self):
+        run = {"event": "pull_request", "head_sha": "def"}
+        event = {"action": "completed", "workflow_run": run, "sender": _sender("dependabot[bot]", "Bot")}
+        assert relay.route("workflow_run", event, BOT, SKIP)["kind"] == "pr_review"
+
+    def test_bot_comment_is_skipped(self):
+        event = {
+            "action": "created",
+            "issue": _issue(),
+            "comment": _comment("can I work on this?", login="coderabbitai[bot]"),
+            "sender": _sender("coderabbitai[bot]", "Bot"),
+        }
+        assert relay.route("issue_comment", event, BOT, SKIP)["kind"] is None
 
     def test_other_status_is_skipped(self):
         event = {"context": "Vercel – docs", "state": "failure", "sha": "abc", "sender": _sender("vercel")}
@@ -334,3 +351,53 @@ class TestShaEvents:
         monkeypatch.setattr(relay, "prs_for_sha", lambda gh, sha: [5, 6])
         jobs = relay.jobs_for(None, {"kind": "pr_review", "sha": "def"}, {}, BOT, SKIP)
         assert [job[1]["number"] for job in jobs] == [5]
+
+
+class TestMaintainers:
+    def test_listed_login_with_private_membership(self):
+        assert SKIP.includes("dartpain", "CONTRIBUTOR")
+        assert SKIP.includes("ManishMadan2882", None)
+
+    def test_association_counts_without_the_list(self):
+        assert SKIP.includes("someone-new", "MEMBER")
+
+    def test_contributor_is_not_a_maintainer(self):
+        assert not SKIP.includes("someone-new", "CONTRIBUTOR")
+
+    def test_list_from_env_is_case_insensitive(self):
+        maintainers = relay.Maintainers.from_env(" Alice , bob ", "OWNER")
+        assert maintainers.includes("alice") and maintainers.includes("BOB")
+        assert not maintainers.includes("dartpain", "MEMBER")
+
+    def test_claim_from_a_private_member_is_skipped(self):
+        event = {
+            "action": "created",
+            "issue": _issue(),
+            "comment": _comment("I'll take this", login="pabik", association="CONTRIBUTOR"),
+            "sender": _sender("pabik"),
+        }
+        assert relay.route("issue_comment", event, BOT, SKIP)["kind"] is None
+
+    def test_pull_request_from_a_private_member_is_skipped(self):
+        pr = {"number": 5, "draft": False, "user": {"login": "dartpain", "type": "User"}, "author_association": "CONTRIBUTOR"}
+        event = {"action": "opened", "pull_request": pr, "sender": _sender("dartpain")}
+        assert relay.route("pull_request_target", event, BOT, SKIP)["kind"] is None
+
+    def test_issue_opened_by_a_maintainer_is_still_triaged(self):
+        event = {"action": "opened", "issue": _issue(user={"login": "dartpain", "type": "User"}), "sender": _sender("dartpain")}
+        assert relay.route("issues", event, BOT, SKIP) == {"kind": "issue_opened", "number": 7}
+
+    def test_review_skips_a_private_member(self):
+        facts = {
+            "draft": False,
+            "author": {"association": "CONTRIBUTOR", "login": "dartpain"},
+            "ci": {"state": "success"},
+            "coderabbit": {"status": "success"},
+            "head_sha": "abc",
+            "last_bot_review": None,
+        }
+        assert relay.review_is_due(facts, SKIP, BOT) is not None
+
+    def test_mark_maintainer(self):
+        assert relay.mark_maintainer({"login": "dartpain", "association": "CONTRIBUTOR"}, SKIP)["is_maintainer"]
+        assert not relay.mark_maintainer({"login": "dev", "association": "NONE"}, SKIP)["is_maintainer"]
