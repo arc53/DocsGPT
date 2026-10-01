@@ -69,6 +69,25 @@ describe('createTaskQueue', () => {
     await vi.waitFor(() => expect(started).toEqual([0, 1, 2, 3]));
   });
 
+  it('drops a cancelled task before it starts', async () => {
+    const queue = createTaskQueue(1);
+    const gate = deferred();
+    const ran: string[] = [];
+    queue.push(() => {
+      ran.push('first');
+      return gate.promise;
+    });
+    const cancel = queue.push(async () => {
+      ran.push('removed');
+    });
+    queue.push(async () => {
+      ran.push('next');
+    });
+    cancel();
+    gate.resolve();
+    await vi.waitFor(() => expect(ran).toEqual(['first', 'next']));
+  });
+
   it('keeps going after a task throws', async () => {
     const queue = createTaskQueue(1);
     const ran: string[] = [];

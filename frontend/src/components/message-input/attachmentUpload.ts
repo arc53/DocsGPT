@@ -93,6 +93,8 @@ export function parseStoredAttachment(body: unknown): StoredAttachment | null {
  *   options.url: The endpoint URL.
  *   options.token: Bearer token, when the user is signed in.
  *   options.onProgress: Called with the percent of the body sent.
+ *   options.signal: Aborts the request (the chip was removed); the upload
+ *     then ends as ``network``.
  *
  * Returns:
  *   How the upload ended. Never rejects.
@@ -103,9 +105,14 @@ export function uploadAttachmentFile(
     url: string;
     token?: string | null;
     onProgress?: (percent: number) => void;
+    signal?: AbortSignal;
   },
 ): Promise<AttachmentUploadOutcome> {
   return new Promise((resolve) => {
+    if (options.signal?.aborted) {
+      resolve({ kind: 'network' });
+      return;
+    }
     const formData = new FormData();
     formData.append('file', file);
     const xhr = new XMLHttpRequest();
@@ -152,6 +159,9 @@ export function uploadAttachmentFile(
       xhr.setRequestHeader('Authorization', `Bearer ${options.token}`);
     }
     guardUploadStall(xhr);
+    options.signal?.addEventListener('abort', () => xhr.abort(), {
+      once: true,
+    });
     xhr.send(formData);
   });
 }
@@ -233,10 +243,11 @@ export async function checkAttachmentTask(
  *   concurrency: The most tasks allowed to run at the same time.
  *
  * Returns:
- *   The queue; ``push`` adds a task and starts it when a slot is free.
+ *   The queue; ``push`` adds a task and starts it when a slot is free, and
+ *   returns a function that drops the task if it has not started yet.
  */
 export function createTaskQueue(concurrency: number): {
-  push: (task: () => Promise<void>) => void;
+  push: (task: () => Promise<void>) => () => void;
 } {
   const pending: Array<() => Promise<void>> = [];
   let running = 0;
@@ -264,6 +275,10 @@ export function createTaskQueue(concurrency: number): {
     push(task) {
       pending.push(task);
       next();
+      return () => {
+        const index = pending.indexOf(task);
+        if (index !== -1) pending.splice(index, 1);
+      };
     },
   };
 }

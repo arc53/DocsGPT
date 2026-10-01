@@ -87,7 +87,10 @@ class FakeXHR extends EventTarget {
     this.finish(this.onerror, 'error');
   }
 
+  aborted = false;
+
   abort() {
+    this.aborted = true;
     this.finish(this.onabort, 'abort');
   }
 
@@ -398,6 +401,21 @@ describe('MessageInput send with a failed attachment', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(FakeXHR.instances).toHaveLength(4);
+  });
+
+  it('stops the upload of a file the user removed mid-way', async () => {
+    await render();
+    await attachFiles(['a.pdf', 'b.pdf']);
+    const [a, b] = store.getState().upload.attachments;
+    await act(async () => {
+      store.dispatch({ type: 'upload/removeAttachment', payload: a.id });
+    });
+
+    expect(FakeXHR.instances[0].aborted).toBe(true);
+    expect(FakeXHR.instances[1].aborted).toBe(false);
+    expect(store.getState().upload.attachments.map((x) => x.id)).toEqual([
+      b.id,
+    ]);
   });
 
   const oversized = (name: string) => {

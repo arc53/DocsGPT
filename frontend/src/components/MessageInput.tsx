@@ -627,6 +627,17 @@ export default function MessageInput({
     uploadQueueRef.current ??= createTaskQueue(ATTACHMENT_UPLOAD_CONCURRENCY);
     return uploadQueueRef.current;
   }, []);
+  // Uploads not finished yet, by chip id: stops one (drops it from the
+  // queue, aborts its request) when its chip goes.
+  const uploadStoppersRef = useRef(new Map<string, () => void>());
+  useEffect(() => {
+    const present = new Set(attachments.map((attachment) => attachment.id));
+    for (const [id, stop] of uploadStoppersRef.current) {
+      if (present.has(id)) continue;
+      uploadStoppersRef.current.delete(id);
+      stop();
+    }
+  }, [attachments]);
 
   const uploadFiles = useCallback(
     async (incomingFiles: File[]) => {
@@ -693,16 +704,21 @@ export default function MessageInput({
           }),
         );
 
-        getUploadQueue().push(async () => {
+        const controller = new AbortController();
+        const cancel = getUploadQueue().push(async () => {
           // Removed from the composer while it waited for a slot.
           if (!store.getState().upload.attachments.some((a) => a.id === uiId))
             return;
           const outcome = await uploadAttachmentFile(file, {
             url,
             token,
+            signal: controller.signal,
             onProgress: (progress) =>
               dispatch(updateAttachment({ id: uiId, updates: { progress } })),
           });
+          uploadStoppersRef.current.delete(uiId);
+          // Removed while it uploaded: its request was aborted, nothing to show.
+          if (controller.signal.aborted) return;
           if (outcome.kind === 'stored') {
             dispatch(
               updateAttachment({
@@ -733,6 +749,10 @@ export default function MessageInput({
               },
             }),
           );
+        });
+        uploadStoppersRef.current.set(uiId, () => {
+          cancel();
+          controller.abort();
         });
       });
     },
