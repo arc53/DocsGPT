@@ -134,3 +134,19 @@ class TestWhyAFileWasLeftOut:
         with patch.object(ingest, "_find_parsed", return_value=None):
             ingest.ingest_inline_files([pdf], "owner", skipped=skipped)
         assert skipped == {pdf.content_hash: "not_stored"}
+
+
+class TestTheParseWindow:
+    def test_late_results_are_not_each_given_another_second(self, storage, task, monkeypatch):
+        files = [_file(f"%PDF {i}".encode(), name=f"f{i}.pdf") for i in range(3)]
+        results = [_Result(), _Result(), _Result()]
+        for result in results:
+            result.ready = lambda: False
+        task.side_effect = results
+        monkeypatch.setattr(ingest, "_parse_timeout", lambda size: 0.0)
+        skipped = {}
+        with patch.object(ingest, "_find_parsed", return_value=None):
+            ingest.ingest_inline_files(files, "owner", skipped=skipped)
+
+        assert set(skipped.values()) == {"not_parsed"}
+        assert all(not r.timeouts for r in results)

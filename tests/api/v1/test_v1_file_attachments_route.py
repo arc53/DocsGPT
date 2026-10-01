@@ -1,6 +1,7 @@
 """/v1: file parts become attachment rows the turn and its history refer to."""
 
 import base64
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -53,22 +54,49 @@ def _helper(stream_lines, result=None):
     return helper
 
 
-def _post(pg_conn, body, processor, helper, ingest=None):
+class _FakeIngest:
+    """``start_inline_files``' result: ``wait`` runs the test's ingest function."""
+
+    def __init__(self, files, user, ingest, pending=False):
+        self.files, self.user, self._ingest = files, user, ingest
+        self.skipped = {}
+        self.converted = {}
+        self.pending = [object()] if pending else []
+        self.waited = False
+
+    def wait(self):
+        self.waited = True
+        self.pending = []
+        self.converted = self._ingest(self.files, self.user, skipped=self.skipped)
+        return self.converted
+
+
+def _default_ingest(files, user, **_):
+    return {f.content_hash: f"att-{i}" for i, f in enumerate(files)}
+
+
+def _post(pg_conn, body, processor, helper, ingest=None, pending=False, consume=True):
     app = _build_app()
     created = {}
+    started = []
 
     def _make_processor(data, token, **kwargs):
         created["data"] = data
         return processor
 
+    def _start(files, user):
+        started.append(_FakeIngest(files, user, ingest or _default_ingest, pending=pending))
+        return started[-1]
+
     with _patch_v1_db(pg_conn), patch(
         "docsgpt.api.v1.routes.StreamProcessor", side_effect=_make_processor
     ), patch("docsgpt.api.v1.routes._V1AnswerHelper", return_value=helper), patch(
-        "docsgpt.api.v1.routes.ingest_inline_files",
-        side_effect=ingest or (lambda files, user, **_: {f.content_hash: f"att-{i}" for i, f in enumerate(files)}),
+        "docsgpt.api.v1.routes.start_inline_files", side_effect=_start
     ) as ingested:
         with app.test_client() as client:
             response = client.post("/v1/chat/completions", headers={"Authorization": "Bearer x"}, json=body)
+            if not consume:
+                return response, started, created, processor
             raw = response.get_data(as_text=True)
     return response, raw, created.get("data"), ingested
 
@@ -132,3 +160,78 @@ class TestFilePartsBecomeAttachments:
 
         assert response.status_code == 200
         assert [s["reason"] for s in data["skipped_files"]] == ["not_stored"]
+
+
+class TestParsesWaitInsideTheStream:
+    """A streamed request starts its SSE stream before waiting on a parse (CF cuts at 100 s)."""
+
+    def test_the_stream_starts_before_the_parse_is_awaited(self, pg_conn):
+        processor, helper = _processor(), _helper(['data: {"type": "end"}'])
+        app = _build_app()
+        created, started = {}, []
+
+        def _make_processor(data, token, **kwargs):
+            created["data"] = data
+            return processor
+
+        release = threading.Event()
+
+        def _slow_ingest(files, user, **kwargs):
+            assert release.wait(5), "the parse was awaited before the stream started"
+            return _default_ingest(files, user, **kwargs)
+
+        def _start(files, user):
+            started.append(_FakeIngest(files, user, _slow_ingest, pending=True))
+            return started[-1]
+
+        with _patch_v1_db(pg_conn), patch(
+            "docsgpt.api.v1.routes.StreamProcessor", side_effect=_make_processor
+        ), patch("docsgpt.api.v1.routes._V1AnswerHelper", return_value=helper), patch(
+            "docsgpt.api.v1.routes.start_inline_files", side_effect=_start
+        ):
+            with app.test_client() as client:
+                response = client.post(
+                    "/v1/chat/completions", headers={"Authorization": "Bearer x"}, json={**BODY, "stream": True}
+                )
+                # The response is out while the parse is still running.
+                assert response.status_code == 200
+                assert response.mimetype == "text/event-stream"
+                processor.build_agent.assert_not_called()
+                release.set()
+                raw = response.get_data(as_text=True)
+
+        assert started[0].waited
+        processor.build_agent.assert_called_once()
+        assert created["data"]["attachments"] == ["att-0"]
+        assert helper.complete_stream.call_args.kwargs["attachment_ids"] == ["att-0"]
+        assert "[DONE]" in raw or "finish_reason" in raw
+
+    def test_an_error_after_the_parse_ends_the_stream_with_an_error_frame(self, pg_conn):
+        from docsgpt.agents.context_overflow import ContextOverflowError
+
+        processor, helper = _processor(), _helper(['data: {"type": "end"}'])
+        processor.build_agent.side_effect = ContextOverflowError(
+            "raw", needed_tokens=300_000, available_tokens=200_000, stage="pre_compression"
+        )
+
+        response, raw, _, _ = _post(pg_conn, {**BODY, "stream": True}, processor, helper, pending=True)
+
+        assert response.status_code == 200
+        assert '"code": "context_length_exceeded"' in raw
+        assert raw.rstrip().endswith("data: [DONE]")
+
+    def test_a_non_streaming_request_waits_before_answering(self, pg_conn):
+        processor, helper = _processor(), _helper(['data: {"type": "end"}'])
+
+        response, _, data, ingested = _post(pg_conn, BODY, processor, helper, pending=True)
+
+        assert response.status_code == 200
+        assert data["attachments"] == ["att-0"]
+
+    def test_a_stream_without_a_pending_parse_is_unchanged(self, pg_conn):
+        processor, helper = _processor(), _helper(['data: {"type": "end"}'])
+
+        response, raw, data, _ = _post(pg_conn, {**BODY, "stream": True}, processor, helper)
+
+        assert response.status_code == 200
+        assert data["attachments"] == ["att-0"]

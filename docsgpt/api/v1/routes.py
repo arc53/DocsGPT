@@ -12,7 +12,7 @@ import traceback
 from datetime import datetime
 from typing import Any, Dict, Generator, List, Optional
 
-from flask import Blueprint, jsonify, make_response, request, Response
+from flask import Blueprint, current_app, jsonify, make_response, request, Response
 
 from docsgpt.api.answer.routes.base import BaseAnswerResource
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
@@ -28,7 +28,7 @@ from docsgpt.api.answer.services.stream_processor import (
 )
 from docsgpt.agents.context_overflow import ContextOverflowError
 from docsgpt.api.v1 import idempotency as v1_idempotency
-from docsgpt.api.v1.attachments import ingest_inline_files
+from docsgpt.api.v1.attachments import NOT_STORED, InlineIngest, start_inline_files
 from docsgpt.api.v1.session_store import (
     V1Session,
     delete_conversation,
@@ -112,8 +112,31 @@ def _context_length_response(error: BaseException) -> Response:
     return make_response(jsonify(_context_length_error(message)), 400)
 
 
-def _convert_inline_files(internal_data: Dict[str, Any], user: str) -> None:
-    """Store the request's inline files as ``user``'s attachments.
+def _start_inline_files(internal_data: Dict[str, Any], user: str) -> Optional[InlineIngest]:
+    """Reuse, store and queue the request's inline files as ``user``'s attachments.
+
+    The quick part only: parses run on the worker and are awaited by
+    :func:`_finish_inline_files`. Never fails the request.
+
+    Args:
+        internal_data: The translated request; its ``inline_files`` are taken.
+        user: The owner of the rows.
+
+    Returns:
+        The ingest, or None when the request sent no inline files.
+    """
+    files = internal_data.pop("inline_files", None)
+    if not files:
+        return None
+    try:
+        return start_inline_files(files, user)
+    except Exception as exc:
+        logger.warning("Could not store the request's inline files: %s", bounded_error_text(exc))
+        return InlineIngest(files=list(files), skipped={f.content_hash: NOT_STORED for f in files})
+
+
+def _finish_inline_files(internal_data: Dict[str, Any], ingest: Optional[InlineIngest]) -> None:
+    """Wait for the parses and point the request at the attachment rows.
 
     The parts that became attachment rows leave the request the agent sees;
     the rest stay as sent and are named, with the reason, in the turn's
@@ -121,18 +144,68 @@ def _convert_inline_files(internal_data: Dict[str, Any], user: str) -> None:
 
     Args:
         internal_data: The translated request; edited in place.
-        user: The owner of the rows.
+        ingest: What :func:`_start_inline_files` returned.
     """
-    files = internal_data.pop("inline_files", None)
-    if not files:
+    if ingest is None:
         return
-    skipped: Dict[str, str] = {}
     try:
-        converted = ingest_inline_files(files, user, skipped=skipped)
+        converted = ingest.wait()
     except Exception as exc:
-        logger.warning("Could not store the request's inline files: %s", bounded_error_text(exc))
-        converted = {}
-    apply_converted_files(internal_data, files, converted, skipped)
+        logger.warning("Could not wait for the request's inline files: %s", bounded_error_text(exc))
+        converted = dict(ingest.converted)
+    apply_converted_files(internal_data, ingest.files, converted, ingest.skipped)
+
+
+def _error_frames(response: Response) -> Generator[str, None, None]:
+    """An error response as the last frames of an SSE stream."""
+    body = response.get_json(silent=True) if response.is_json else None
+    if not isinstance(body, dict) or "error" not in body:
+        body = {"error": {"message": "Internal server error", "type": "server_error"}}
+    yield f"data: {json.dumps(body)}\n\n"
+    yield "data: [DONE]\n\n"
+
+
+def _stream_after_parsing(
+    app: Any,
+    ingest: InlineIngest,
+    internal_data: Dict[str, Any],
+    processor: StreamProcessor,
+    serve: Any,
+    error_response: Any,
+) -> Generator[str, None, None]:
+    """Wait for the request's parses inside the stream, then run it.
+
+    The route returns this stream at once, wrapped in SSE keepalives, so a
+    proxy in front (Cloudflare cuts a silent response at 100 s) sees bytes
+    while the worker parses. A refusal that would have been an HTTP error
+    before the stream started becomes its last frame, then ``[DONE]``.
+
+    Args:
+        app: The Flask app; its context is pushed here.
+        ingest: The request's started ingest.
+        internal_data: The translated request.
+        processor: The request's processor (its trace is handed off).
+        serve: Runs the request; returns the response the route would have.
+        error_response: Maps an exception to the route's error response.
+
+    Yields:
+        SSE frames.
+    """
+    # The first bytes go out now: the client and any proxy see a live stream.
+    yield ": parsing attached files\n\n"
+    with app.app_context():
+        try:
+            _finish_inline_files(internal_data, ingest)
+            response = serve(processor, keepalive=False)
+        except Exception as exc:
+            response = error_response(exc)
+        if response.mimetype == "text/event-stream":
+            yield from response.response
+            return
+        # Refused before streaming: the stream never wrote the trace.
+        processor._trace_handed_off = False
+        processor.flush_unclaimed_trace()
+        yield from _error_frames(response)
 
 
 def _validate_request_options(data: Dict[str, Any], agent: Dict[str, Any]) -> Optional[Response]:
@@ -306,14 +379,15 @@ def chat_completions():
         internal_data["persist"] = True
 
     # Files and images sent inline become the owner's attachment rows, so the
-    # attachment planner, manifest and attachments tool handle them.
-    _convert_inline_files(internal_data, decoded_token["sub"])
+    # attachment planner, manifest and attachments tool handle them. A
+    # streamed request waits for the parses inside its stream.
+    ingest = _start_inline_files(internal_data, decoded_token["sub"])
+    parse_in_stream = bool(is_stream and ingest is not None and ingest.pending)
+    if not parse_in_stream:
+        _finish_inline_files(internal_data, ingest)
 
-    try:
-        # The token is the owner's, so tell the processor the caller is a key
-        # holder: their writes on the owner's accounts need the allowlist.
-        processor = StreamProcessor(internal_data, decoded_token, trace_source="v1", external_caller=True)
-        flush_trace_after_request(processor)
+    def _serve(processor: StreamProcessor, keepalive: bool = True) -> Response:
+        """Run the request once its files are attachment rows."""
         # Set when this request took the resume claim, so a refusal can release it.
         claimed_conversation_id = None
 
@@ -429,24 +503,23 @@ def chat_completions():
             # claims a key. This is a known, accepted limitation.
             # The stream writes the trace once it runs, after this returns.
             processor.handoff_trace()
+            frames = _stream_response(
+                helper,
+                question,
+                agent,
+                processor,
+                model_name,
+                continuation,
+                should_persist,
+                visibility,
+                strip_reasoning_leak,
+                bool((data.get("stream_options") or {}).get("include_usage")),
+                client_session,
+                finalize_stateless_tool_pause,
+                attachment_ids=internal_data.get("attachments") or None,
+            )
             return Response(
-                with_sse_keepalive(
-                    _stream_response(
-                        helper,
-                        question,
-                        agent,
-                        processor,
-                        model_name,
-                        continuation,
-                        should_persist,
-                        visibility,
-                        strip_reasoning_leak,
-                        bool((data.get("stream_options") or {}).get("include_usage")),
-                        client_session,
-                        finalize_stateless_tool_pause,
-                        attachment_ids=internal_data.get("attachments") or None,
-                    ),
-                ),
+                with_sse_keepalive(frames) if keepalive else frames,
                 mimetype="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
@@ -491,46 +564,79 @@ def chat_completions():
             v1_idempotency.finalize(idem_key, response)
         return response
 
-    except ResumeInProgressError:
-        if idem_key:
-            v1_idempotency.release(idem_key)
-        return make_response(
-            jsonify({
-                "error": {
-                    "message": RESUME_IN_PROGRESS_MESSAGE,
-                    "type": "conflict_error",
-                    "code": "resume_in_progress",
-                }
-            }),
-            409,
-        )
-    except ContextOverflowError as e:
-        if idem_key:
-            v1_idempotency.release(idem_key)
-        logger.info(f"/v1/chat/completions request does not fit the model: {e}")
-        return _context_length_response(e)
-    except ValueError as e:
-        if idem_key:
-            v1_idempotency.release(idem_key)
-        logger.error(
-            f"/v1/chat/completions error: {e} - {traceback.format_exc()}",
-            extra={"error": str(e)},
-        )
-        return make_response(
-            jsonify({"error": {"message": "Failed to process request", "type": "invalid_request"}}),
-            400,
-        )
+    def _error_response(error: BaseException) -> Response:
+        """The response for an error raised while setting up or running the request."""
+        try:
+            raise error
+        except ResumeInProgressError:
+            if idem_key:
+                v1_idempotency.release(idem_key)
+            return make_response(
+                jsonify({
+                    "error": {
+                        "message": RESUME_IN_PROGRESS_MESSAGE,
+                        "type": "conflict_error",
+                        "code": "resume_in_progress",
+                    }
+                }),
+                409,
+            )
+        except ContextOverflowError as e:
+            if idem_key:
+                v1_idempotency.release(idem_key)
+            logger.info(f"/v1/chat/completions request does not fit the model: {e}")
+            return _context_length_response(e)
+        except ValueError as e:
+            if idem_key:
+                v1_idempotency.release(idem_key)
+            logger.error(
+                f"/v1/chat/completions error: {e} - {traceback.format_exc()}",
+                extra={"error": str(e)},
+            )
+            return make_response(
+                jsonify({"error": {"message": "Failed to process request", "type": "invalid_request"}}),
+                400,
+            )
+        except Exception as e:
+            if idem_key:
+                v1_idempotency.release(idem_key)
+            logger.error(
+                f"/v1/chat/completions error: {e} - {traceback.format_exc()}",
+                extra={"error": str(e)},
+            )
+            return make_response(
+                jsonify({"error": {"message": "Internal server error", "type": "server_error"}}),
+                500,
+            )
+
+    try:
+        # The token is the owner's, so tell the processor the caller is a key
+        # holder: their writes on the owner's accounts need the allowlist.
+        processor = StreamProcessor(internal_data, decoded_token, trace_source="v1", external_caller=True)
+        flush_trace_after_request(processor)
+        if parse_in_stream:
+            # The stream writes the trace, or flushes it on a refusal.
+            processor.handoff_trace()
+            return Response(
+                with_sse_keepalive(
+                    _stream_after_parsing(
+                        current_app._get_current_object(),
+                        ingest,
+                        internal_data,
+                        processor,
+                        _serve,
+                        _error_response,
+                    )
+                ),
+                mimetype="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                },
+            )
+        return _serve(processor)
     except Exception as e:
-        if idem_key:
-            v1_idempotency.release(idem_key)
-        logger.error(
-            f"/v1/chat/completions error: {e} - {traceback.format_exc()}",
-            extra={"error": str(e)},
-        )
-        return make_response(
-            jsonify({"error": {"message": "Internal server error", "type": "server_error"}}),
-            500,
-        )
+        return _error_response(e)
 
 
 def _stream_response(
