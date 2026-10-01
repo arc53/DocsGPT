@@ -368,8 +368,18 @@ def stream_token_usage(func):
                 if first_chunk_at is not None
                 else None
             )
+            # Join the text deltas into the string the client actually
+            # rendered before tokenizing: BPE merges across a chunk boundary,
+            # so tokenizing each delta on its own only ever adds tokens
+            # relative to the whole string, exactly like splitting "running"
+            # into "run" + "ning" costs an extra token neither half alone
+            # needed. Non-string chunks (tool-call/thought deltas) aren't
+            # contiguous text, so they keep being counted individually.
+            text = "".join(line for line in batch if isinstance(line, str))
+            call_usage["generated_tokens"] += _count_tokens(text)
             for line in batch:
-                call_usage["generated_tokens"] += _count_tokens(line)
+                if not isinstance(line, str):
+                    call_usage["generated_tokens"] += _count_tokens(line)
             estimated_usage = call_usage
             call_usage = _prefer_provider_usage(self, call_usage)
             self.token_usage["prompt_tokens"] += call_usage["prompt_tokens"]

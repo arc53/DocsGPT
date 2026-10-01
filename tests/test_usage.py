@@ -184,6 +184,53 @@ def test_stream_token_usage_writes_row_per_call(monkeypatch):
 
 
 @pytest.mark.unit
+def test_stream_token_usage_matches_whole_text_token_count(monkeypatch):
+    """A streamed reply must count the same tokens as the same text returned whole.
+
+    BPE merges across a split point, so summing each chunk's token count on
+    its own can only be greater than or equal to tokenizing the joined text
+    once; splitting mid-word is the simplest way to force that. ``generated_tokens``
+    feeds billing and quota, so a provider that streams in small deltas (every
+    provider except OpenAI and Anthropic, which report their own usage) must
+    not be charged more than one that returns the identical text unstreamed.
+    """
+    _install_fake_token_repo(monkeypatch)
+    text = "The quick brown fox jumps over the lazy dog repeatedly until it gets tired."
+    chunks = [text[i : i + 3] for i in range(0, len(text), 3)]
+    assert "".join(chunks) == text
+
+    class DummyLLM:
+        decoded_token = {"sub": "user_123"}
+        user_api_key = "api_key_123"
+        agent_id = "agent_123"
+
+        def __init__(self):
+            # Instance attribute: two ``DummyLLM``s must not share one dict.
+            self.token_usage = {"prompt_tokens": 0, "generated_tokens": 0}
+
+    @gen_token_usage
+    def whole(self, model, messages, stream, tools, **kwargs):
+        _ = (model, messages, stream, tools, kwargs)
+        return text
+
+    @stream_token_usage
+    def chunked(self, model, messages, stream, tools, **kwargs):
+        _ = (model, messages, stream, tools, kwargs)
+        yield from chunks
+
+    whole_llm = DummyLLM()
+    whole(whole_llm, "gpt-4o", [], False, None)
+
+    stream_llm = DummyLLM()
+    list(chunked(stream_llm, "gpt-4o", [], True, None))
+
+    assert (
+        stream_llm.token_usage["generated_tokens"]
+        == whole_llm.token_usage["generated_tokens"]
+    )
+
+
+@pytest.mark.unit
 def test_decorator_propagates_request_id_and_source(monkeypatch):
     """``_request_id`` + ``_token_usage_source`` on the LLM ride along
     with the row insert so DISTINCT counts and source filters work."""
