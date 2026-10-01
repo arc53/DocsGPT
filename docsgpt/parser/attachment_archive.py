@@ -10,7 +10,12 @@ archives included:
 
 * an archive whose uncompressed size is out of proportion to its compressed
   size is rejected whole, as a zip bomb;
-* members past the member count or the total byte budget are skipped;
+* members no parser can read (``accept``) are skipped before they count
+  toward anything, so a ``.git/objects`` tree cannot use up the file limit;
+* members past the member count, the per-file size or the total byte budget
+  are skipped;
+* every entry, nested archives and skipped ones included, counts toward the
+  entry limit, and entries past it are skipped without being read;
 * a zip inside the zip is unpacked under its own path (``inner.zip/a.csv``)
   down to the depth limit; deeper ones are skipped;
 * unsafe paths, links and encrypted members are skipped.
@@ -29,7 +34,7 @@ import zipfile
 import zlib
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from docsgpt.utils import safe_filename
 
@@ -40,6 +45,7 @@ SKIP_REASON_TEXT = {
     "unsupported_entry": "not a regular file",
     "unsupported_type": "unsupported file type",
     "too_many_files": "over the file limit",
+    "file_too_large": "over the per-file size limit",
     "archive_too_large": "over the size limit",
     "nested_too_deep": "archive nested too deep",
     "corrupt": "damaged",
@@ -48,6 +54,8 @@ SKIP_REASON_TEXT = {
 # Skipped members kept with their path; the rest are only counted.
 MAX_RECORDED_SKIPS = 100
 _COPY_CHUNK_BYTES = 64 * 1024
+# Head of a member handed to ``accept`` (the text sniff reads this much).
+_HEAD_BYTES = 8192
 # Archive tool metadata, not user files.
 _JUNK_DIRS = frozenset({"__MACOSX"})
 _JUNK_NAMES = frozenset({".DS_Store", "Thumbs.db", "desktop.ini"})
@@ -80,12 +88,17 @@ class ArchiveLimits:
         max_total_bytes: Uncompressed bytes unpacked across the whole tree.
         max_depth: Archive levels unpacked; 1 is the uploaded zip itself.
         max_ratio: Uncompressed-to-compressed ratio that rejects an archive.
+        max_entries: Entries looked at across the whole tree, whatever
+            becomes of them (nested archives and skipped members included).
+        max_member_bytes: Uncompressed size of one member file.
     """
 
     max_members: int
     max_total_bytes: int
     max_depth: int
     max_ratio: int
+    max_entries: int = 5000
+    max_member_bytes: int = 100 * 1024 * 1024
 
     @classmethod
     def from_settings(cls) -> "ArchiveLimits":
@@ -97,6 +110,8 @@ class ArchiveLimits:
             max_total_bytes=int(settings.ATTACHMENT_ARCHIVE_MAX_BYTES),
             max_depth=int(settings.ATTACHMENT_ARCHIVE_MAX_DEPTH),
             max_ratio=int(settings.ATTACHMENT_ARCHIVE_MAX_RATIO),
+            max_entries=int(settings.ATTACHMENT_ARCHIVE_MAX_ENTRIES),
+            max_member_bytes=int(settings.UPLOAD_MAX_FILE_BYTES),
         )
 
 
@@ -142,12 +157,14 @@ class ArchiveExpansion:
             ``MAX_RECORDED_SKIPS``).
         skipped_count: All members left out, recorded or not.
         total_bytes: Bytes unpacked.
+        entries: Entries looked at, against ``max_entries``.
     """
 
     members: List[ArchiveMember] = field(default_factory=list)
     skipped: List[SkippedMember] = field(default_factory=list)
     skipped_count: int = 0
     total_bytes: int = 0
+    entries: int = 0
 
     def skip(self, archive_path: str, reason: str) -> None:
         """Record a member left out."""
@@ -156,13 +173,24 @@ class ArchiveExpansion:
             self.skipped.append(SkippedMember(archive_path=archive_path, reason=reason))
 
 
-def expand_archive(path: str, dest_dir: str, limits: ArchiveLimits) -> ArchiveExpansion:
+# Whether a member can be parsed: its filename, and a callable returning
+# the first bytes of its content (read only when called).
+AcceptMember = Callable[[str, Callable[[], bytes]], bool]
+
+
+def expand_archive(
+    path: str, dest_dir: str, limits: ArchiveLimits, accept: Optional[AcceptMember] = None
+) -> ArchiveExpansion:
     """Unpack the zip at ``path`` into ``dest_dir``.
 
     Args:
         path: The uploaded zip.
         dest_dir: An existing private directory for the members' bytes.
         limits: The resource ceilings.
+        accept: Whether a member can be parsed, by its filename and head;
+            the ones it refuses are skipped as ``unsupported_type`` before
+            they count toward the member and byte limits. Every member is
+            accepted when omitted.
 
     Returns:
         The unpacked members and the skipped ones.
@@ -172,7 +200,7 @@ def expand_archive(path: str, dest_dir: str, limits: ArchiveLimits) -> ArchiveEx
     """
     expansion = ArchiveExpansion()
     try:
-        _expand_into(path, "", 1, os.path.realpath(dest_dir), limits, expansion)
+        _expand_into(path, "", 1, os.path.realpath(dest_dir), limits, expansion, accept)
     except (zipfile.LargeZipFile, *_MEMBER_READ_ERRORS) as exc:
         raise ArchiveRejectedError(f"The zip file could not be read: {exc}") from exc
     return expansion
@@ -225,6 +253,12 @@ def _check_ratio(archive: zipfile.ZipFile, limits: ArchiveLimits, label: str) ->
         )
 
 
+def _read_head(archive: zipfile.ZipFile, info: zipfile.ZipInfo) -> bytes:
+    """The first ``_HEAD_BYTES`` of a member's content."""
+    with archive.open(info, "r") as source:
+        return source.read(_HEAD_BYTES)
+
+
 def _extract_member(archive: zipfile.ZipFile, info: zipfile.ZipInfo, target: str) -> bool:
     """Copy one member to ``target``, never past its declared size."""
     written = 0
@@ -247,11 +281,16 @@ def _expand_into(
     dest_dir: str,
     limits: ArchiveLimits,
     expansion: ArchiveExpansion,
+    accept: Optional[AcceptMember],
 ) -> None:
     with zipfile.ZipFile(source, "r") as archive:
         _check_ratio(archive, limits, "The zip file" if not prefix else f"The nested archive {prefix.rstrip('/')}")
         for info in archive.infolist():
             if info.is_dir():
+                continue
+            expansion.entries += 1
+            if expansion.entries > limits.max_entries:
+                expansion.skip(prefix + _display_path(info.filename), "too_many_files")
                 continue
             relative = _safe_relative_path(info.filename)
             if relative is None:
@@ -268,13 +307,26 @@ def _expand_into(
             if is_nested and depth >= limits.max_depth:
                 expansion.skip(archive_path, "nested_too_deep")
                 continue
-            if not is_nested and len(expansion.members) >= limits.max_members:
-                expansion.skip(archive_path, "too_many_files")
-                continue
+            filename = relative.rsplit("/", 1)[-1]
+            if not is_nested:
+                if int(info.file_size) > limits.max_member_bytes:
+                    expansion.skip(archive_path, "file_too_large")
+                    continue
+                if accept is not None:
+                    try:
+                        accepted = accept(filename, lambda: _read_head(archive, info))
+                    except _MEMBER_READ_ERRORS:
+                        expansion.skip(archive_path, "corrupt")
+                        continue
+                    if not accepted:
+                        expansion.skip(archive_path, "unsupported_type")
+                        continue
+                if len(expansion.members) >= limits.max_members:
+                    expansion.skip(archive_path, "too_many_files")
+                    continue
             if expansion.total_bytes + int(info.file_size) > limits.max_total_bytes:
                 expansion.skip(archive_path, "archive_too_large")
                 continue
-            filename = relative.rsplit("/", 1)[-1]
             target = os.path.join(dest_dir, f"{uuid.uuid4().hex}_{safe_filename(filename)}")
             try:
                 complete = _extract_member(archive, info, target)
@@ -288,7 +340,7 @@ def _expand_into(
             expansion.total_bytes += int(info.file_size)
             if is_nested:
                 try:
-                    _expand_into(target, archive_path + "/", depth + 1, dest_dir, limits, expansion)
+                    _expand_into(target, archive_path + "/", depth + 1, dest_dir, limits, expansion, accept)
                 except (zipfile.LargeZipFile, *_MEMBER_READ_ERRORS):
                     expansion.skip(archive_path, "nested_archive_invalid")
                 finally:

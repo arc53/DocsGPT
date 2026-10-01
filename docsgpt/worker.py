@@ -2816,7 +2816,8 @@ def _archive_attachment_worker(self, file_info, user):
         AttachmentRejectedError: The file is not a readable zip or is a zip bomb.
     """
     from docsgpt.parser.attachment_archive import ArchiveLimits, ArchiveRejectedError, expand_archive
-    from docsgpt.upload_limits import UnsupportedUploadTypeError, enforce_parseable_attachment
+    from docsgpt.parser.file.constants import attachment_extension
+    from docsgpt.upload_limits import UnsupportedUploadTypeError, enforce_parseable_attachment, looks_like_text
 
     filename = file_info["filename"]
     attachment_id = file_info["attachment_id"]
@@ -2849,10 +2850,21 @@ def _archive_attachment_worker(self, file_info, user):
         storage = StorageCreator.get_storage()
         limits = ArchiveLimits.from_settings()
         fingerprint: Dict[str, Any] = {}
+        file_extractor = get_default_file_extractor(
+            ocr_enabled=settings.OCR_ATTACHMENTS_ENABLED,
+            pdf_text_fast_path=settings.ATTACHMENT_PDF_TEXT_FAST_PATH,
+        )
+        parser_suffixes = set(file_extractor)
+
+        def _accept(member_name: str, read_head) -> bool:
+            # The upload rule (enforce_parseable_attachment) on the member's
+            # head, before it is unpacked: unsupported members never count
+            # toward the zip's file and byte limits.
+            return attachment_extension(member_name) in parser_suffixes or looks_like_text(read_head())
 
         def _expand(local_path: str, **kwargs):
             fingerprint.update(_attachment_fingerprint(local_path, filename))
-            return expand_archive(local_path, work_dir, limits)
+            return expand_archive(local_path, work_dir, limits, accept=_accept)
 
         try:
             expansion = storage.process_file(relative_path, _expand)
@@ -2865,11 +2877,6 @@ def _archive_attachment_worker(self, file_info, user):
         parent = _claim_archive_row(user, file_info, base_metadata, fingerprint.get("size"), content_hash)
         parent_id = str(parent["id"])
 
-        file_extractor = get_default_file_extractor(
-            ocr_enabled=settings.OCR_ATTACHMENTS_ENABLED,
-            pdf_text_fast_path=settings.ATTACHMENT_PDF_TEXT_FAST_PATH,
-        )
-        parser_suffixes = set(file_extractor)
         attachments_dir = os.path.dirname(os.path.dirname(relative_path))
         planned: List[Dict[str, Any]] = []
         total = len(expansion.members) or 1

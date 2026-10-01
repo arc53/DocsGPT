@@ -43,6 +43,15 @@ class IngestionSettings(SettingsGroup):
         gt=0,
         description="Files unpacked from one zip attachment (nested archives included); the rest are skipped.",
     )
+    ATTACHMENT_ARCHIVE_MAX_ENTRIES: int = Field(
+        default=5000,
+        gt=0,
+        description=(
+            "Entries looked at in one zip attachment, nested archives and skipped members included; the rest "
+            "are skipped unread. Bounds the work a zip of many tiny or unsupported entries can cause, "
+            "separately from the file limit."
+        ),
+    )
     ATTACHMENT_ARCHIVE_MAX_BYTES: int = Field(
         default=200 * 1024 * 1024,
         gt=0,

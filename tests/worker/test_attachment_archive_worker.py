@@ -201,6 +201,21 @@ class TestZipAttachment:
 
         assert len(_members(_parent(info)["id"])) == 3
 
+    def test_unsupported_members_do_not_use_up_the_file_limit(self, storage_dir, events, dispatched, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "ATTACHMENT_ARCHIVE_MAX_MEMBERS", 2)
+        objects = [(f".git/objects/{i:02x}/blob", bytes(range(256)) * 4) for i in range(5)]
+        info = _upload(storage_dir, _zip([*objects, ("notes.txt", b"notes"), ("readme.md", b"# readme")]))
+
+        _run_all(info, dispatched)
+
+        parent = _parent(info)
+        assert [m["metadata"]["archive_path"] for m in _members(parent["id"])] == ["notes.txt", "readme.md"]
+        archive = parent["metadata"]["archive"]
+        assert {s["reason"] for s in archive["skipped"]} == {"unsupported_type"}
+        assert archive["skipped_count"] == 5
+
     def test_a_zip_bomb_fails_the_upload(self, storage_dir, events):
         from docsgpt.worker import AttachmentRejectedError
 

@@ -200,3 +200,77 @@ class TestDamagedMembers:
         result = _expand(tmp_path, [("a.txt", b"a"), ("inner.zip", inner)], compression=zipfile.ZIP_STORED)
         assert [m.archive_path for m in result.members] == ["a.txt", "inner.zip/ok.txt"]
         assert [(s.archive_path, s.reason) for s in result.skipped] == [("inner.zip/bad.txt", "corrupt")]
+
+
+def _txt_only(filename, read_head):
+    return filename.endswith(".txt")
+
+
+class TestEntryLimits:
+    def test_unsupported_members_do_not_use_up_the_member_limit(self, tmp_path):
+        limits = ArchiveLimits(max_members=2, max_total_bytes=10**6, max_depth=2, max_ratio=100)
+        objects = [(f".git/objects/{i:02x}/blob", b"\x00\x01binary") for i in range(5)]
+        result = expand_archive(
+            _write_zip(tmp_path, [*objects, ("a.txt", b"a"), ("b.txt", b"b")], compression=zipfile.ZIP_STORED),
+            str(tmp_path),
+            limits,
+            accept=_txt_only,
+        )
+        assert [m.archive_path for m in result.members] == ["a.txt", "b.txt"]
+        assert {s.reason for s in result.skipped} == {"unsupported_type"}
+        assert result.skipped_count == 5
+        assert result.total_bytes == 2
+
+    def test_the_acceptance_check_can_read_the_members_head(self, tmp_path):
+        seen = {}
+
+        def accept(filename, read_head):
+            seen[filename] = read_head()
+            return True
+
+        expand_archive(_write_zip(tmp_path, [("notes.log", b"plain text")]), str(tmp_path), LIMITS, accept=accept)
+        assert seen == {"notes.log": b"plain text"}
+
+    def test_entries_past_the_entry_limit_are_skipped_without_unpacking(self, tmp_path):
+        limits = ArchiveLimits(max_members=200, max_total_bytes=10**6, max_depth=2, max_ratio=100, max_entries=3)
+        result = _expand(tmp_path, [(f"f{i}.bin", b"\x00") for i in range(5)] + [("a.txt", b"a")],
+                         limits=limits, compression=zipfile.ZIP_STORED)
+        assert [m.archive_path for m in result.members] == ["f0.bin", "f1.bin", "f2.bin"]
+        assert [(s.archive_path, s.reason) for s in result.skipped] == [
+            ("f3.bin", "too_many_files"), ("f4.bin", "too_many_files"), ("a.txt", "too_many_files"),
+        ]
+
+    def test_empty_nested_zips_count_toward_the_entry_limit(self, tmp_path):
+        empty = _zip_bytes([])
+        limits = ArchiveLimits(max_members=200, max_total_bytes=10**6, max_depth=2, max_ratio=100, max_entries=10)
+        result = _expand(tmp_path, [(f"{i}.zip", empty) for i in range(50)], limits=limits,
+                         compression=zipfile.ZIP_STORED)
+        assert result.members == []
+        assert result.skipped_count == 40
+        assert {s.reason for s in result.skipped} == {"too_many_files"}
+
+    def test_the_entry_limit_spans_nested_archives(self, tmp_path):
+        inner = _zip_bytes([("x.txt", b"x"), ("y.txt", b"y")])
+        limits = ArchiveLimits(max_members=200, max_total_bytes=10**6, max_depth=2, max_ratio=100, max_entries=3)
+        result = _expand(tmp_path, [("a.txt", b"a"), ("inner.zip", inner), ("b.txt", b"b")], limits=limits,
+                         compression=zipfile.ZIP_STORED)
+        assert [m.archive_path for m in result.members] == ["a.txt", "inner.zip/x.txt"]
+        assert [(s.archive_path, s.reason) for s in result.skipped] == [
+            ("inner.zip/y.txt", "too_many_files"), ("b.txt", "too_many_files"),
+        ]
+
+    def test_a_member_over_the_per_file_limit_is_skipped(self, tmp_path):
+        limits = ArchiveLimits(max_members=200, max_total_bytes=10**6, max_depth=2, max_ratio=100,
+                               max_member_bytes=4)
+        result = _expand(tmp_path, [("big.txt", b"12345"), ("ok.txt", b"1234")], limits=limits,
+                         compression=zipfile.ZIP_STORED)
+        assert [m.archive_path for m in result.members] == ["ok.txt"]
+        assert [(s.archive_path, s.reason) for s in result.skipped] == [("big.txt", "file_too_large")]
+
+    def test_entry_and_file_limits_come_from_settings(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "ATTACHMENT_ARCHIVE_MAX_ENTRIES", 11)
+        monkeypatch.setattr(settings, "UPLOAD_MAX_FILE_BYTES", 12)
+        limits = ArchiveLimits.from_settings()
+        assert (limits.max_entries, limits.max_member_bytes) == (11, 12)
