@@ -1591,7 +1591,7 @@
     },
     "/api/admin/quotas": {
       "get": {
-        "description": "Query args (all optional; without them every row is returned):\n    teams_q: Case-insensitive substring of the team name or slug.\n    users_q: Case-insensitive substring of the user's subject id or email.\n    teams_page / users_page: 1-based page of that list; only a list whose\n        page arg is given is paginated.\n    page_size: Rows per page, clamped to 1-100 (default 20).\n\n``teams_total`` and ``users_total`` count the rows after filtering and\nbefore paging. Rows keep the repository order (subject, then bucket).",
+        "description": "Query args (all optional; without them every row is returned):\n    teams_q: Case-insensitive substring of the team name or slug.\n    users_q: Case-insensitive substring of the user's subject id or email.\n    teams_page / users_page: 1-based page of that list; only a list whose\n        page arg is given is paginated.\n    page_size: Teams or users per page, clamped to 1-100 (default 20); a\n        page carries every bucket row of each of them.\n\n``teams_total`` and ``users_total`` count the teams and users after\nfiltering and before paging. Rows keep the repository order (subject,\nthen bucket).",
         "operationId": "get_admin_quotas_resource",
         "responses": {
           "200": {

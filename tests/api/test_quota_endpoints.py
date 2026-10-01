@@ -276,7 +276,8 @@ class TestQuotaListing:
             "success", "period", "period_start", "resets_at", "instance", "teams", "users",
             "unpriced_models", "teams_total", "users_total",
         }
-        assert (len(body["teams"]), body["teams_total"]) == (4, 4)
+        # Totals count teams and users; Engineering's two buckets are one team.
+        assert (len(body["teams"]), body["teams_total"]) == (4, 3)
         assert (len(body["users"]), body["users_total"]) == (3, 3)
         assert [u["subject_id"] for u in body["users"]] == ["alice-sub", "bob-sub", "carol-sub"]
         assert "email" not in body["users"][0]
@@ -290,7 +291,7 @@ class TestQuotaListing:
         assert [t["team_slug"] for t in by_name["teams"]] == ["q-sales"]
         assert by_name["teams_total"] == 1
         assert {t["team_slug"] for t in by_slug["teams"]} == {"q-eng"}
-        assert (by_slug["teams_total"], [t["bucket"] for t in by_slug["teams"]]) == (2, ["all", "agent"])
+        assert (by_slug["teams_total"], [t["bucket"] for t in by_slug["teams"]]) == (1, ["all", "agent"])
         # A literal ``%`` is not a wildcard; users are left unfiltered.
         assert (none["teams"], none["teams_total"], none["users_total"]) == ([], 0, 3)
 
@@ -301,7 +302,7 @@ class TestQuotaListing:
             by_sub = _body(client.get("/api/admin/quotas?users_q=carol"))
             both = _body(client.get("/api/admin/quotas?users_q=-sub"))
         assert [u["subject_id"] for u in by_email["users"]] == ["alice-sub"]
-        assert (by_email["users_total"], by_email["teams_total"]) == (1, 4)
+        assert (by_email["users_total"], by_email["teams_total"]) == (1, 3)
         assert [u["subject_id"] for u in by_sub["users"]] == ["carol-sub"]
         assert both["users_total"] == 3
 
@@ -311,23 +312,39 @@ class TestQuotaListing:
             first = _body(client.get("/api/admin/quotas?users_page=1&page_size=2"))
             second = _body(client.get("/api/admin/quotas?users_page=2&page_size=2"))
             beyond = _body(client.get("/api/admin/quotas?users_page=9&page_size=2"))
-            teams = _body(client.get("/api/admin/quotas?teams_page=2&page_size=3"))
+            teams = _body(client.get("/api/admin/quotas?teams_page=2&page_size=2"))
         assert [u["subject_id"] for u in first["users"]] == ["alice-sub", "bob-sub"]
         assert [u["subject_id"] for u in second["users"]] == ["carol-sub"]
         assert (beyond["users"], beyond["users_total"]) == ([], 3)
-        assert (first["users_total"], len(first["teams"]), first["teams_total"]) == (3, 4, 4)
-        assert (len(teams["teams"]), teams["teams_total"], len(teams["users"])) == (1, 4, 3)
+        assert (first["users_total"], len(first["teams"]), first["teams_total"]) == (3, 4, 3)
+        assert (len({t["subject_id"] for t in teams["teams"]}), teams["teams_total"], len(teams["users"])) == (1, 3, 3)
 
     def test_paging_is_deterministic_and_combines_with_the_filter(self, client, db):
         _seed_listing(db)
         with _admin():
             everything = _body(client.get("/api/admin/quotas"))["teams"]
-            pages = [
-                _body(client.get(f"/api/admin/quotas?teams_page={n}&page_size=1"))["teams"] for n in (1, 2, 3, 4)
-            ]
+            pages = [_body(client.get(f"/api/admin/quotas?teams_page={n}&page_size=1"))["teams"] for n in (1, 2, 3)]
             filtered = _body(client.get("/api/admin/quotas?teams_q=q-&teams_page=2&page_size=2"))
-        assert [p[0] for p in pages] == everything
-        assert (filtered["teams"], filtered["teams_total"]) == (everything[2:], 4)
+        assert [row for page in pages for row in page] == everything
+        assert (filtered["teams"], filtered["teams_total"]) == (pages[2], 3)
+
+    def test_a_subject_s_buckets_stay_on_one_page(self, client, db):
+        teams = _seed_listing(db)
+        QuotaPoliciesRepository(db).upsert(scope="user", subject_id="bob-sub", bucket="agent", token_limit=5)
+        with _admin():
+            team_pages = [
+                _body(client.get(f"/api/admin/quotas?teams_page={n}&page_size=1")) for n in (1, 2, 3)
+            ]
+            user_pages = [
+                _body(client.get(f"/api/admin/quotas?users_page={n}&page_size=1")) for n in (1, 2, 3)
+            ]
+        for page in team_pages:
+            assert len({t["subject_id"] for t in page["teams"]}) == 1
+            assert page["teams_total"] == 3
+        eng = next(p["teams"] for p in team_pages if p["teams"][0]["subject_id"] == teams["q-eng"])
+        assert [t["bucket"] for t in eng] == ["all", "agent"]
+        assert [[u["bucket"] for u in p["users"]] for p in user_pages] == [["all"], ["all", "agent"], ["all"]]
+        assert {p["users_total"] for p in user_pages} == {3}
 
     @pytest.mark.parametrize(
         "query, expected",

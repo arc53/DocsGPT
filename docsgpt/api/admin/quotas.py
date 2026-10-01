@@ -180,22 +180,32 @@ def _search_term(name: str) -> Optional[str]:
     return term or None
 
 
+def _subject_count(rows: list[dict]) -> int:
+    """The number of distinct subjects (teams or users) among ``rows``."""
+    return len({r["subject_id"] for r in rows})
+
+
 def _page(rows: list[dict], page_arg: str) -> list[dict]:
     """Slice ``rows`` to the page named by ``page_arg`` when the caller asked for one.
 
+    A page holds ``page_size`` subjects, not rows: every bucket row of a team or
+    user stays on the same page, so its ``all`` row is never apart from the rest.
+
     Args:
-        rows: The already filtered, ordered rows.
+        rows: The already filtered rows, each subject's rows next to each other.
         page_arg: The 1-based page query arg (``teams_page`` / ``users_page``);
             absent means the whole list.
 
     Returns:
-        The requested page of ``rows``, or every row.
+        The rows of the subjects on the requested page, or every row.
     """
     if page_arg not in request.args:
         return rows
     size = _int_arg("page_size", _DEFAULT_PAGE_SIZE, 1, _MAX_PAGE_SIZE)
     offset = (_int_arg(page_arg, 1, 1) - 1) * size
-    return rows[offset : offset + size]
+    subjects = list(dict.fromkeys(r["subject_id"] for r in rows))
+    on_page = set(subjects[offset : offset + size])
+    return [r for r in rows if r["subject_id"] in on_page]
 
 
 def _matches(term: Optional[str], *values: Optional[str]) -> bool:
@@ -214,10 +224,12 @@ class AdminQuotasResource(Resource):
             users_q: Case-insensitive substring of the user's subject id or email.
             teams_page / users_page: 1-based page of that list; only a list whose
                 page arg is given is paginated.
-            page_size: Rows per page, clamped to 1-100 (default 20).
+            page_size: Teams or users per page, clamped to 1-100 (default 20); a
+                page carries every bucket row of each of them.
 
-        ``teams_total`` and ``users_total`` count the rows after filtering and
-        before paging. Rows keep the repository order (subject, then bucket).
+        ``teams_total`` and ``users_total`` count the teams and users after
+        filtering and before paging. Rows keep the repository order (subject,
+        then bucket).
         """
         start, resets_at = window_bounds(settings.QUOTA_PERIOD)
         teams_q, users_q = _search_term("teams_q"), _search_term("users_q")
@@ -253,8 +265,8 @@ class AdminQuotasResource(Resource):
                 "teams": _page(team_policies, "teams_page"),
                 "users": _page(user_policies, "users_page"),
                 "unpriced_models": _unpriced_models(conn),
-                "teams_total": len(team_policies),
-                "users_total": len(user_policies),
+                "teams_total": _subject_count(team_policies),
+                "users_total": _subject_count(user_policies),
             }
         return make_response(jsonify(body), 200)
 
