@@ -159,7 +159,15 @@ export const loadConversation = createAsyncThunk<
   }
   const data = await response.json();
   if (!data) return { data: null, stale: false };
-  const agent = resolveAgent ? await resolveAgent(data) : undefined;
+  let agent: Agent | null | undefined;
+  try {
+    agent = resolveAgent ? await resolveAgent(data) : undefined;
+  } catch (error) {
+    // A superseded load must not reject: its caller would navigate away
+    // from the newer chat.
+    if (seq !== loadSeq) return { data: null, stale: true };
+    throw error;
+  }
 
   // A later loadConversation has been issued; drop our writes so its
   // result wins, and tell the caller not to navigate off our return.

@@ -465,6 +465,56 @@ describe('loadConversation with resolveAgent', () => {
     expect(shown(store)).toEqual({ prompt: 'new chat', agent: 'agent-a' });
   });
 
+  it('reports a superseded load as stale even when its resolver fails', async () => {
+    serveConversation('agent-b');
+    const store = makeLoadStore();
+    let fail: ((error: Error) => void) | null = null;
+
+    const first = store.dispatch(
+      loadConversation({
+        id: 'c-2',
+        force: true,
+        resolveAgent: () => new Promise<Agent>((_, reject) => (fail = reject)),
+      }),
+    );
+    await vi.waitFor(() => expect(fail).not.toBeNull());
+    await store.dispatch(
+      loadConversation({
+        id: 'c-3',
+        force: true,
+        resolveAgent: async () => null,
+      }),
+    );
+    fail!(new TypeError('Failed to fetch'));
+
+    // A rejection would send the caller to /c/new over the newer chat.
+    await expect(first.unwrap()).resolves.toEqual({
+      data: null,
+      stale: true,
+    });
+    expect(store.getState().conversation.conversationId).toBe('c-3');
+  });
+
+  it('still fails the current load when its resolver fails', async () => {
+    serveConversation('agent-b');
+    const store = makeLoadStore();
+
+    await expect(
+      store
+        .dispatch(
+          loadConversation({
+            id: 'c-2',
+            force: true,
+            resolveAgent: async () => {
+              throw new TypeError('Failed to fetch');
+            },
+          }),
+        )
+        .unwrap(),
+    ).rejects.toThrow('Failed to fetch');
+    expect(shown(store)).toEqual({ prompt: 'old chat', agent: 'agent-a' });
+  });
+
   it('applies nothing when a newer load superseded it', async () => {
     serveConversation('agent-b');
     const store = makeLoadStore();
