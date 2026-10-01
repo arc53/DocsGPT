@@ -296,6 +296,26 @@ class TestSyntheticPdf:
         assert planned.shown_pages == SYNTHETIC_PDF_MAX_PAGES
         assert f"showing pages 1–{SYNTHETIC_PDF_MAX_PAGES}" in _user_text(prepared[-1])
 
+    def test_an_unknown_length_scan_past_the_cap_offers_the_rest(self):
+        from docsgpt.agents.attachment_budget import SYNTHETIC_PDF_MAX_PAGES
+
+        tools = {
+            "att": {
+                "name": ATTACHMENTS_TOOL_NAME,
+                "actions": [{"name": "attachments_read", "description": "", "parameters": {"properties": {}}}],
+            }
+        }
+        agent = _agent([self._pdf("", None)], types=["image/png"], tools=tools)
+        with patch.object(_Handler, "_convert_pdf_to_images", return_value=self._pages(SYNTHETIC_PDF_MAX_PAGES + 1)):
+            user = _user_text(_prepare(agent)[-1])
+        shown = SYNTHETIC_PDF_MAX_PAGES
+        # The renderer saw more pages than were sent, so the count is not ``shown``.
+        assert f"of {shown}" not in user
+        assert f"showing pages 1–{shown} as images; the PDF has more pages." in user
+        assert f'attachments_read(ref="F1", pages="{shown + 1}-' in user
+        assert "The rest is not available" not in user
+        assert f"partial (pages 1–{shown} sent as images; the PDF has more pages)" in user
+
     def test_a_short_pdf_of_unknown_length_stays_inline(self):
         agent = _agent([self._pdf("", None)], types=["image/png"])
         with patch.object(_Handler, "_convert_pdf_to_images", return_value=self._pages(4)):

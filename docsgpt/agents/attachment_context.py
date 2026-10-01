@@ -106,17 +106,24 @@ def partial_marker(planned: PlannedFile, plan: AttachmentPlan) -> str:
         from docsgpt.agents.tools.attachments import MAX_IMAGE_PAGES_PER_CALL
 
         shown = planned.shown_pages
-        count = planned.page_count or shown
-        head = f"[{planned.ref} {name}: showing pages 1–{shown:,} of {count:,} as images."
-        if read_action and shown < count:
-            following = f"{shown + 1}-{min(shown + MAX_IMAGE_PAGES_PER_CALL, count)}"
-            return f'{head} Read the rest with {read_action}(ref="{planned.ref}", pages="{following}")]'
+        count = planned.page_count
+        # No stored count: the renderer found the PDF runs past the pages sent.
+        last = min(shown + MAX_IMAGE_PAGES_PER_CALL, count) if count else shown + MAX_IMAGE_PAGES_PER_CALL
+        head = f"[{planned.ref} {name}: showing {_pages_shown(shown, count)} as images"
+        head += "." if count else "; the PDF has more pages."
+        if read_action and (not count or shown < count):
+            return f'{head} Read the rest with {read_action}(ref="{planned.ref}", pages="{shown + 1}-{last}")]'
         return f"{head} The rest is not available in this turn; do not guess what it says.]"
     shown = planned.shown_tokens
     head = f"[{planned.ref} {name}: showing tokens 1–{shown:,} of {planned.text_tokens:,}."
     if read_action:
         return f'{head} Read the rest with {read_action}(ref="{planned.ref}", offset={shown})]'
     return f"{head} The rest is not available in this turn; do not guess what it says.]"
+
+
+def _pages_shown(shown: int, count: Optional[int]) -> str:
+    """``pages 1–N of M``, or ``pages 1–N`` when the PDF's page count is unknown."""
+    return f"pages 1–{shown:,} of {count:,}" if count else f"pages 1–{shown:,}"
 
 
 def _read_action(plan: AttachmentPlan) -> Optional[str]:
@@ -321,7 +328,8 @@ def _status(planned: PlannedFile) -> str:
     if status == FileStatus.ARCHIVE:
         return _archive_status(planned)
     if status == FileStatus.PARTIAL and planned.native and planned.shown_pages:
-        return f"partial (pages 1–{planned.shown_pages:,} of {planned.page_count or planned.shown_pages:,} sent as images)"
+        more = "" if planned.page_count else "; the PDF has more pages"
+        return f"partial ({_pages_shown(planned.shown_pages, planned.page_count)} sent as images{more})"
     if status == FileStatus.PARTIAL:
         return f"partial (tokens 1–{planned.shown_tokens:,} of {planned.text_tokens:,})"
     if status == FileStatus.INLINE and planned.native:
