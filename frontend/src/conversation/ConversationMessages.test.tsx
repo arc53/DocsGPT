@@ -25,9 +25,9 @@ vi.mock('./ConversationBubble', () => ({
   ),
 }));
 
-vi.mock('./AddAsKnowledgeAction', () => ({
+vi.mock('./AddToKnowledgeAction', () => ({
   default: ({ files }: { files: { id: string }[] }) => (
-    <span data-testid="add-as-knowledge">
+    <span data-testid="add-to-knowledge">
       {files.map((f) => f.id).join(',')}
     </span>
   ),
@@ -81,9 +81,9 @@ describe('ConversationMessages', () => {
   };
 
   const action = () =>
-    container.querySelector('[data-testid="add-as-knowledge"]');
+    container.querySelector('[data-testid="add-to-knowledge"]');
 
-  it('offers Add as Knowledge under an overflow error of a turn with files', () => {
+  it('offers Add to Knowledge under an overflow error of a turn with files', () => {
     render([overflow], true);
     expect(container.textContent).toContain(overflow.error);
     expect(

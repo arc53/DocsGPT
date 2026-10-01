@@ -147,7 +147,7 @@ describe('MessageInput Knowledge hint', () => {
     await render();
 
     const button = [...container.querySelectorAll('button')].find((b) =>
-      b.textContent?.includes('conversation.attachments.addAsKnowledge'),
+      b.textContent?.includes('conversation.attachments.addToKnowledge'),
     );
     expect(button).toBeDefined();
     await act(async () => button?.click());

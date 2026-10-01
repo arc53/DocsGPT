@@ -2020,7 +2020,7 @@
       "attachment": "附件",
       "knowledgeHint": "這些檔案超出模型一次能讀取的範圍。其餘部分會在需要時讀取。",
       "knowledgeHintNoTools": "這些檔案超出模型一次能讀取的範圍。部分檔案將被略過。",
-      "addAsKnowledge": "新增為知識",
+      "addToKnowledge": "新增到知識庫",
       "knowledgeAdded": "正在將這些檔案新增到知識庫。準備好後請再問一次。",
       "knowledgeFailed": "無法將這些檔案新增到知識庫。請再試一次。",
       "knowledgeName_other": "{{name}} 及另外 {{count}} 個檔案",

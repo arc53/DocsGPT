@@ -95,7 +95,7 @@ def user_facing_error(error: BaseException, *, surface: str = "chat") -> UserFac
     if surface == "v1":
         advice = "Send fewer or smaller files, or add large documents to the agent's sources instead."
     else:
-        advice = "Send fewer or smaller files, or use Add as Knowledge to search them instead of sending them whole."
+        advice = "Send fewer or smaller files, or use Add to Knowledge to search them instead of sending them whole."
     return UserFacingError(CONTEXT_LENGTH_EXCEEDED, f"{size} {advice}")
 
 

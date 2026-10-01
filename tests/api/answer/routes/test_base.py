@@ -783,4 +783,4 @@ class TestHonestStreamErrors:
             )
         error = [json.loads(s.split("data: ", 1)[1]) for s in stream if '"type": "error"' in s][-1]
         assert error["code"] == "context_length_exceeded"
-        assert "Add as Knowledge" not in error["error"]
+        assert "Add to Knowledge" not in error["error"]

@@ -21,7 +21,7 @@ import {
   MessageScrollerViewport,
 } from '../components/ui/message-scroller';
 import Hero from '../Hero';
-import AddAsKnowledgeAction from './AddAsKnowledgeAction';
+import AddToKnowledgeAction from './AddToKnowledgeAction';
 import { deriveArtifactChips } from './artifactChips';
 import ConversationBubble from './ConversationBubble';
 import { FEEDBACK, Query, Status } from './conversationModels';
@@ -54,7 +54,7 @@ type ConversationMessagesProps = {
   /** Active agent id; threaded into SchedulerToolCallCard. */
   agentId?: string;
   /**
-   * Whether a turn whose files did not fit may offer Add as Knowledge. Only
+   * Whether a turn whose files did not fit may offer Add to Knowledge. Only
    * the main chat, where the user picks the Knowledge the chat searches.
    */
   canAddToKnowledge?: boolean;
@@ -205,7 +205,7 @@ export default function ConversationMessages({
           errorCode={query.errorCode}
           errorAction={
             knowledgeFiles ? (
-              <AddAsKnowledgeAction files={knowledgeFiles} />
+              <AddToKnowledgeAction files={knowledgeFiles} />
             ) : undefined
           }
         />

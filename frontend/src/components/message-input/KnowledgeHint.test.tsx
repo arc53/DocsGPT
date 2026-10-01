@@ -57,7 +57,7 @@ describe('KnowledgeHint', () => {
     await render({ onAdd });
     const button = container.querySelector('button');
     expect(button?.textContent).toContain(
-      'conversation.attachments.addAsKnowledge',
+      'conversation.attachments.addToKnowledge',
     );
     await act(async () => button?.click());
     expect(onAdd).toHaveBeenCalledTimes(1);

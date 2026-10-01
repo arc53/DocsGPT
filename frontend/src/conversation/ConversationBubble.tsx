@@ -88,7 +88,7 @@ const ConversationBubble = forwardRef<
      * ``message`` as curated text for the user rather than a raw exception.
      */
     errorCode?: string;
-    /** An action offered under a failed turn's error (Add as Knowledge). */
+    /** An action offered under a failed turn's error (Add to Knowledge). */
     errorAction?: React.ReactNode;
     questionNumber?: number;
     isStreaming?: boolean;

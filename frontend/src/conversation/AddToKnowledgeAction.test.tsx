@@ -14,11 +14,11 @@ vi.mock('../upload/useAddToKnowledge', () => ({
   useAddToKnowledge: () => hook,
 }));
 
-import AddAsKnowledgeAction from './AddAsKnowledgeAction';
+import AddToKnowledgeAction from './AddToKnowledgeAction';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-describe('AddAsKnowledgeAction', () => {
+describe('AddToKnowledgeAction', () => {
   let container: HTMLDivElement;
   let root: Root;
   const files = [
@@ -41,13 +41,13 @@ describe('AddAsKnowledgeAction', () => {
   });
 
   const render = () =>
-    act(async () => root.render(<AddAsKnowledgeAction files={files} />));
+    act(async () => root.render(<AddToKnowledgeAction files={files} />));
 
   it('adds the turn files to Knowledge and says so', async () => {
     hook.addToKnowledge.mockResolvedValue(true);
     await render();
     const button = container.querySelector('button')!;
-    expect(button.textContent).toBe('conversation.attachments.addAsKnowledge');
+    expect(button.textContent).toBe('conversation.attachments.addToKnowledge');
 
     await act(async () => button.click());
 

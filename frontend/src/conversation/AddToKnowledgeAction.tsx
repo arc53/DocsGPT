@@ -12,7 +12,7 @@ import {
  * makes a Knowledge source of them and selects it for the chat once ready,
  * so the question can be asked again against the source.
  */
-export default function AddAsKnowledgeAction({
+export default function AddToKnowledgeAction({
   files,
 }: {
   files: KnowledgeFile[];
@@ -41,7 +41,7 @@ export default function AddAsKnowledgeAction({
         // eslint-disable-next-line shadcn/no-restyle -- the link inherits its Alert's status colour
         className="text-current"
       >
-        {t('conversation.attachments.addAsKnowledge')}
+        {t('conversation.attachments.addToKnowledge')}
       </Button>
       {error && <span>{error}</span>}
     </div>

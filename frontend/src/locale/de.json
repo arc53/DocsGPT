@@ -2033,7 +2033,7 @@
       "attachment": "Anhang",
       "knowledgeHint": "Diese Dateien sind größer, als das Modell auf einmal lesen kann. Den Rest liest es bei Bedarf.",
       "knowledgeHintNoTools": "Diese Dateien sind größer, als das Modell auf einmal lesen kann. Einige werden ausgelassen.",
-      "addAsKnowledge": "Als Wissen hinzufügen",
+      "addToKnowledge": "Zum Wissen hinzufügen",
       "knowledgeAdded": "Die Dateien werden zum Wissen hinzugefügt. Frag erneut, sobald sie bereit sind.",
       "knowledgeFailed": "Die Dateien konnten nicht zum Wissen hinzugefügt werden. Versuche es erneut.",
       "knowledgeName_one": "{{name}} und {{count}} weitere",

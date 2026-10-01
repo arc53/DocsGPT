@@ -107,7 +107,7 @@ class TestUserFacingError:
         assert public.code == "context_length_exceeded"
         assert "262,790" in public.message and "200,000" in public.message
         assert "fewer or smaller files" in public.message
-        assert "Add as Knowledge" in public.message
+        assert "Add to Knowledge" in public.message
         assert "raw detail" not in public.message
 
     def test_a_provider_context_length_error_maps_without_echoing_it(self):
@@ -130,7 +130,7 @@ class TestUserFacingError:
     def test_the_v1_wording_does_not_point_at_the_web_ui(self):
         error = ContextOverflowError("x", needed_tokens=300_000, available_tokens=200_000, stage="build")
         public = user_facing_error(error, surface="v1")
-        assert "Add as Knowledge" not in public.message
+        assert "Add to Knowledge" not in public.message
         assert "fewer or smaller files" in public.message
 
 

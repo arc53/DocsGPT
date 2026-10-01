@@ -62,7 +62,7 @@
 #   mentions_tools: bool        manifest/prompt mentions attachments_* tools
 #   mentions_code_executor: bool
 #   note_names_not_included: bool
-#   knowledge_hint: bool        the composer should offer "Add as Knowledge"
+#   knowledge_hint: bool        the composer should offer "Add to Knowledge"
 #   max_native_images: N        image parts in the request (current + history)
 #   inline_share_max: f         inline attachment tokens <= f * window (+5% tolerance)
 #   compression_calls_before_error: N
