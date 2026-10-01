@@ -693,6 +693,12 @@ class StreamProcessor:
         # Build a normal agent (config / LLM / client tools), no new question.
         agent = self.build_agent("")
         tools_dict = agent.tool_executor.get_tools()
+        # The resent files arrive as attachment rows (the route converted the
+        # parts): plan them against the resent messages, with the attachments
+        # tool in the round, instead of replaying them raw.
+        prepare_resent = getattr(agent, "prepare_resent_attachments", None)
+        if callable(prepare_resent):
+            prepare_resent(tools_dict, prior_messages)
 
         return agent, prior_messages, tools_dict, pending_tool_calls, tool_actions, ""
 

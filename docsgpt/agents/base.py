@@ -1546,6 +1546,51 @@ class BaseAgent(ABC):
         )
         return plan
 
+    def prepare_resent_attachments(self, tools_dict: Dict, messages: List[Dict]) -> None:
+        """Plan the files of a turn the client re-sent whole (a stateless tool round).
+
+        A ``/v1`` client without server-side state resumes by re-posting the
+        whole transcript, files included. They arrive as attachment rows (the
+        route converted the parts), so the round plans them against the
+        resent messages like a fresh turn: what fits is inlined into the last
+        user message when the handler merges the plan, the rest is listed in
+        the manifest and readable with the attachments tool, which is added
+        to the round's tools.
+
+        Args:
+            tools_dict: The round's tools; the attachments tool is added.
+            messages: The resent messages, up to the paused tool calls.
+        """
+        from docsgpt.api.answer.services.compression.token_counter import TokenCounter
+        from docsgpt.core.model_utils import get_token_limit
+
+        current = [a for a in (self.attachments or []) if isinstance(a, dict)]
+        earlier = [a for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)]
+        if not getattr(self, "attachment_planning", False) or not (current or earlier):
+            return
+        carrier = next((m for m in reversed(messages) if isinstance(m, dict) and m.get("role") == "user"), None)
+        if carrier is None:
+            return
+        self._add_attachments_tool(tools_dict)
+        self._prepare_tools(tools_dict)
+        context_limit = get_token_limit(self.model_id, user_id=self.model_user_id or self.user)
+        budget = compute_attachment_budget(
+            window=context_limit,
+            share=float(settings.ATTACHMENT_BUDGET_SHARE),
+            system_tokens=TokenCounter.count_message_tokens(messages),
+        )
+        self.attachment_plan = plan_attachments(
+            current,
+            self.turn_capabilities,
+            budget=budget,
+            earlier=earlier,
+            max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
+        )
+        self._current_turn_message = carrier
+        self._attachments_merged = False
+        self._attachment_token_correction = 0
+        self._sync_attachments_tool()
+
     def _truncate_history_to_fit(
         self,
         history: List[Dict],
