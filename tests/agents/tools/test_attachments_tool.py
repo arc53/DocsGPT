@@ -237,3 +237,100 @@ class TestReadRows:
         )
         assert num_tokens_from_string(body_of(result)) <= 1100
         assert 'rows="' in result.split("</attached_file>", 1)[1]
+
+
+class _LocalStorage:
+    """Storage double that reads the fixture files by absolute path."""
+
+    def get_file(self, path):
+        return open(path, "rb")
+
+
+@pytest.fixture
+def storage(monkeypatch):
+    monkeypatch.setattr("docsgpt.agents.tools.attachments._storage", lambda: _LocalStorage())
+
+
+@pytest.fixture(scope="module")
+def rc04(tmp_path_factory):
+    out = tmp_path_factory.mktemp("ma")
+    manifest = gen.generate_scenario("RC-04", out, "small", groups=["reports"])
+    return out / "RC-04", manifest
+
+
+def pdf_page_text(path, page):
+    import pypdfium2
+
+    pdf = pypdfium2.PdfDocument(str(path))
+    try:
+        textpage = pdf[page - 1].get_textpage()
+        return textpage.get_text_range().replace("\r\n", "\n").strip()
+    finally:
+        pdf.close()
+
+
+@pytest.mark.unit
+class TestReadPdfPages:
+    """RC-04: examiners' reports cut at upload, read page by page from the original."""
+
+    def seed_report(self, db, rc04, index=0):
+        sdir, manifest = rc04
+        entry = [f for f in manifest["files"] if f["group"] == "reports"][index]
+        text = (sdir / entry["text_path"]).read_text(encoding="utf-8")
+        row_id = seed(
+            db, entry["name"], text, mime="application/pdf", path=str(sdir / entry["path"]),
+            content_hash=entry["sha256"], page_count=entry["pages"], truncated=True,
+            original_tokens=entry["full_target_tokens"],
+        )
+        return row_id, sdir / entry["path"], entry
+
+    def test_reads_requested_pages_from_the_original(self, db, storage, rc04):
+        row_id, path, entry = self.seed_report(db, rc04)
+        result = tool_for(current=[row_id]).execute_action("attachments_read", ref="F1", pages="2-3")
+        assert pdf_page_text(path, 2)[:120] in result
+        assert pdf_page_text(path, 3)[:120] in result
+        assert f"pages 2–3 of {entry['pages']}" in result
+        assert 'pages="4' in result
+        assert result.count("</attached_file>") == 1
+
+    def test_last_page_ends_the_file(self, db, storage, rc04):
+        row_id, path, entry = self.seed_report(db, rc04)
+        last = entry["pages"]
+        result = tool_for(current=[row_id]).execute_action("attachments_read", ref="F1", pages=str(last))
+        assert f"page {last} of {last}" in result and "End of file" in result
+
+    def test_pages_past_the_end(self, db, storage, rc04):
+        row_id, _path, entry = self.seed_report(db, rc04)
+        result = tool_for(current=[row_id]).execute_action("attachments_read", ref="F1", pages="99")
+        assert f"has {entry['pages']} pages" in result
+
+    def test_pages_are_capped_by_tokens(self, db, storage, rc04):
+        row_id, _path, entry = self.seed_report(db, rc04)
+        result = tool_for(current=[row_id]).execute_action(
+            "attachments_read", ref="F1", pages=f"1-{entry['pages']}", max_tokens=300
+        )
+        assert num_tokens_from_string(body_of(result)) <= 400
+        assert "Continue with" in result
+
+    def test_past_the_stored_cut_points_at_pages(self, db, storage, rc04):
+        row_id, _path, entry = self.seed_report(db, rc04)
+        stored = num_tokens_from_string((rc04[0] / entry["text_path"]).read_text(encoding="utf-8"))
+        result = tool_for(current=[row_id]).execute_action("attachments_read", ref="F1", offset=stored + 5)
+        assert "cut at upload" in result
+        assert 'pages="' in result
+
+    def test_pages_only_apply_to_pdfs(self, db, storage):
+        a = seed(db, "notes.txt", "alpha beta")
+        result = tool_for(current=[a]).execute_action("attachments_read", ref="F1", pages="1")
+        assert "only for PDF" in result
+
+    def test_missing_original_falls_back_honestly(self, db, monkeypatch, rc04):
+        row_id, _path, _entry = self.seed_report(db, rc04)
+
+        class _Gone:
+            def get_file(self, path):
+                raise FileNotFoundError(path)
+
+        monkeypatch.setattr("docsgpt.agents.tools.attachments._storage", lambda: _Gone())
+        result = tool_for(current=[row_id]).execute_action("attachments_read", ref="F1", pages="2")
+        assert "original file" in result and "offset" in result

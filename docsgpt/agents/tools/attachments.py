@@ -48,6 +48,10 @@ COLLISION_PREFIX = "docsgpt_"
 DEFAULT_READ_TOKENS = 8000
 MAX_READ_TOKENS = 16000
 MIN_READ_TOKENS = 200
+# Pages one read returns as text at most.
+MAX_TEXT_PAGES_PER_CALL = 20
+# A page with fewer visible characters than this has no usable text layer.
+MIN_PAGE_CHARS = 20
 # Room the label, notes and footer take next to the text, inside the
 # per-result cap the handler applies (``TOOL_RESULT_MAX_TOKENS``).
 RESULT_OVERHEAD_TOKENS = 600
@@ -275,6 +279,90 @@ def _parse_range(spec: Any) -> Optional[Tuple[int, Optional[int]]]:
     return first, last
 
 
+def _parse_pages(spec: Any, count: Optional[int]) -> Optional[List[int]]:
+    """``"3"``, ``"2-5"``, ``"7-"`` or ``"1,4,9-10"`` as sorted 1-based page numbers.
+
+    An open range ends at ``count`` (or at the page cap when the count is
+    unknown). Returns None for an unreadable spec.
+    """
+    if isinstance(spec, int):
+        spec = str(spec)
+    if isinstance(spec, (list, tuple)):
+        spec = ",".join(str(p) for p in spec)
+    pages: List[int] = []
+    for part in str(spec or "").split(","):
+        if not part.strip():
+            continue
+        bounds = _parse_range(part)
+        if bounds is None:
+            return None
+        first, last = bounds
+        if last is None:
+            last = count if count else first + MAX_TEXT_PAGES_PER_CALL - 1
+        pages.extend(range(first, max(last, first) + 1))
+        if len(pages) > 10_000:
+            break
+    return sorted(set(pages)) or None
+
+
+def _page_label(pages: List[int]) -> str:
+    """``page 3``, ``pages 3–5`` or ``pages 1, 4, 9``."""
+    if len(pages) == 1:
+        return f"page {pages[0]}"
+    if pages == list(range(pages[0], pages[-1] + 1)):
+        return f"pages {pages[0]}–{pages[-1]}"
+    return "pages " + ", ".join(str(p) for p in pages)
+
+
+def _storage():
+    from docsgpt.storage.storage_creator import StorageCreator
+
+    return StorageCreator.get_storage()
+
+
+def _read_original(path: str) -> bytes:
+    """The stored original file's bytes."""
+    handle = _storage().get_file(path)
+    try:
+        return handle.read()
+    finally:
+        close = getattr(handle, "close", None)
+        if callable(close):
+            close()
+
+
+def _pdf_page_texts(data: bytes, pages: Sequence[int]) -> Tuple[int, Dict[int, str]]:
+    """The text layer of ``pages`` of a PDF, and its page count."""
+    import pypdfium2
+
+    pdf = pypdfium2.PdfDocument(data)
+    try:
+        count = len(pdf)
+        texts: Dict[int, str] = {}
+        for number in pages:
+            if not 1 <= number <= count:
+                continue
+            page = pdf[number - 1]
+            textpage = page.get_textpage()
+            try:
+                text = textpage.get_text_range()
+            finally:
+                textpage.close()
+                page.close()
+            texts[number] = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+        return count, texts
+    finally:
+        pdf.close()
+
+
+def _range_spec(pages: List[int]) -> str:
+    """Compact spec for the next pages to read (``"6-9"``, or a list)."""
+    run = pages[:MAX_TEXT_PAGES_PER_CALL]
+    if run == list(range(run[0], run[-1] + 1)):
+        return f"{run[0]}-{run[-1]}" if len(run) > 1 else str(run[0])
+    return ",".join(str(p) for p in run)
+
+
 def _encoding():
     from docsgpt.utils import get_encoding
 
@@ -320,6 +408,7 @@ class AttachmentsTool(Tool):
                     offset=kwargs.get("offset"),
                     max_tokens=kwargs.get("max_tokens"),
                     rows=kwargs.get("rows"),
+                    pages=kwargs.get("pages"),
                 )
         except Exception:
             logger.exception("attachments tool: %s failed", action)
@@ -340,7 +429,7 @@ class AttachmentsTool(Tool):
                 "name": READ,
                 "description": (
                     "Read an attached file by ref, a slice at a time; the result says where to "
-                    "continue. Use rows for spreadsheets and CSV."
+                    "continue. Use pages for PDFs, rows for spreadsheets and CSV."
                 ),
                 "parameters": {
                     "properties": {
@@ -359,6 +448,12 @@ class AttachmentsTool(Tool):
                         "max_tokens": {
                             "type": "integer",
                             "description": f"Tokens to return (default {DEFAULT_READ_TOKENS}, max {MAX_READ_TOKENS}).",
+                            "filled_by_llm": True,
+                            "required": False,
+                        },
+                        "pages": {
+                            "type": "string",
+                            "description": "PDF pages such as 5 or 12-15, read from the original file.",
                             "filled_by_llm": True,
                             "required": False,
                         },
@@ -490,7 +585,9 @@ class AttachmentsTool(Tool):
     def _content(self, planned: PlannedFile) -> Optional[Dict[str, Any]]:
         return _load_row(planned.attachment_ids[0], self.user)
 
-    def _read(self, ref: Any, *, offset: Any = None, max_tokens: Any = None, rows: Any = None) -> str:
+    def _read(
+        self, ref: Any, *, offset: Any = None, max_tokens: Any = None, rows: Any = None, pages: Any = None
+    ) -> str:
         planned, wanted = self._find(ref)
         if planned is None:
             return self._unknown(wanted)
@@ -500,6 +597,10 @@ class AttachmentsTool(Tool):
         name = sanitize_filename(planned.filename)
         text = str(row.get("content") or "")
         budget = self._read_budget(max_tokens)
+        if pages not in (None, "", []):
+            if planned.mime_type != "application/pdf":
+                return f"{planned.ref} {name} is not a PDF: pages work only for PDFs. Use offset or rows."
+            return self._read_pages(planned, row, pages, budget)
         if not text.strip():
             reason = self._unreadable_reason(planned)
             why = _REASONS.get(reason or "no_text", "no readable text")
@@ -513,10 +614,82 @@ class AttachmentsTool(Tool):
         original = int(extraction.get("original_tokens") or 0)
         if not extraction.get("truncated") or original <= stored:
             return ""
-        return (
-            f"The file was cut at upload: only tokens 1–{stored:,} of ~{original:,} were stored; "
-            f"tokens {stored + 1:,}–{original:,} are not available."
-        )
+        note = f"The file was cut at upload: only tokens 1–{stored:,} of ~{original:,} were stored"
+        if planned.mime_type == "application/pdf" and planned.page_count:
+            first = min(int(planned.page_count * stored / original) + 1, planned.page_count)
+            last = min(first + 4, planned.page_count)
+            return (
+                f"{note}. Read the rest from the original PDF by page, from about page {first:,} of "
+                f'{planned.page_count:,}: {self._action(READ)}(ref="{planned.ref}", pages="{first}-{last}").'
+            )
+        return f"{note}; tokens {stored + 1:,}–{original:,} are not available."
+
+    def _read_pages(self, planned: PlannedFile, row: Dict[str, Any], spec: Any, budget: int) -> str:
+        """Read PDF pages from the original file's text layer.
+
+        The stored text has no page boundaries and may have been cut at
+        upload; the original has both, and reading a text layer is cheap.
+        """
+        name = sanitize_filename(planned.filename)
+        wanted = _parse_pages(spec, planned.page_count)
+        if wanted is None:
+            return f'Invalid pages "{spec}": use a page or a range such as "12-15".'
+        path = row.get("path") or row.get("upload_path")
+        try:
+            data = _read_original(path) if path else None
+            if data is None:
+                raise FileNotFoundError("no stored original")
+            count, texts = _pdf_page_texts(data, wanted[:MAX_TEXT_PAGES_PER_CALL])
+        except Exception as exc:
+            logger.info("attachments tool: original of %s unavailable: %s", planned.ref, exc)
+            return (
+                f"The original file of {planned.ref} {name} could not be opened, so it cannot be read by "
+                f'page. Read its stored text with {self._action(READ)}(ref="{planned.ref}", offset=0) instead.'
+            )
+        wanted = [p for p in wanted if p <= count]
+        if not wanted:
+            return f"{planned.ref} {name} has {count} pages."
+        encoding = _encoding()
+        sections: List[str] = []
+        shown: List[int] = []
+        notes: List[str] = []
+        used = 0
+        for number in wanted[:MAX_TEXT_PAGES_PER_CALL]:
+            text = texts.get(number, "")
+            if len("".join(text.split())) < MIN_PAGE_CHARS:
+                sections.append(f"--- page {number} ---\n[no text layer on this page]")
+                notes.append(str(number))
+                shown.append(number)
+                continue
+            ids = encoding.encode_ordinary(text)
+            if used + len(ids) > budget:
+                if shown:
+                    break
+                text = encoding.decode(ids[:budget])
+                sections.append(f"--- page {number} (first {budget:,} tokens) ---\n{text}")
+                shown.append(number)
+                used = budget
+                break
+            sections.append(f"--- page {number} ---\n{text}")
+            shown.append(number)
+            used += len(ids)
+        label = f"{_page_label(shown)} of {count}"
+        footer = f"[{planned.ref} {name}: showing {label}."
+        if notes:
+            footer += f" Pages without a text layer: {', '.join(notes)}."
+        remaining = [p for p in wanted if p > shown[-1]]
+        if remaining:
+            footer += f' Continue with {self._action(READ)}(ref="{planned.ref}", pages="{_range_spec(remaining)}").]'
+        elif shown[-1] < count:
+            step = max(len(shown), 1)
+            footer += (
+                f' Next pages: {self._action(READ)}(ref="{planned.ref}", '
+                f'pages="{shown[-1] + 1}-{min(shown[-1] + step, count)}").]'
+            )
+        else:
+            footer += " End of file.]"
+        body = "\n\n".join(sections)
+        return "\n".join([UNTRUSTED_NOTE, fence_file(planned.ref, planned.filename, body, range=label), footer])
 
     def _read_tokens(
         self, planned: PlannedFile, row: Dict[str, Any], text: str, offset: Any, budget: int
