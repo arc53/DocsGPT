@@ -1379,6 +1379,18 @@ Type `int`, default `20000`, must be `>= 0`.
 
 Cap on one tool result entering the LLM context (0 disables); journal and DB keep it whole.
 
+### `ATTACHMENT_BUDGET_SHARE`
+
+Type `float`, default `0.5`, must be `> 0` and `<= 1`.
+
+Largest fraction of the model's context window a turn's attached files may take. Files that do not fit are listed in the turn's manifest and, past the first partial one, left to tools.
+
+### `ATTACHMENT_MAX_NATIVE_PARTS`
+
+Type `int`, default `40`, must be `>= 0`.
+
+Native file parts (images, PDFs, PDF page images) sent per turn; past the cap files go as extracted text or are left out. Keep it below the provider's per-request image limit.
+
 ### `ENABLE_CONVERSATION_COMPRESSION`
 
 Type `bool`, default `true`.
