@@ -1419,6 +1419,7 @@
         "mcp_sentry": "Look up Sentry issues, events and releases.",
         "mcp_asana": "Find and update Asana tasks and projects.",
         "mcp_stripe": "Look up customers, payments and subscriptions in Stripe.",
+"mcp_vercel": "Manage Vercel projects, deployments and build logs.",
         "github": "Sync repositories into Knowledge and let agents read code, issues and pull requests."
       },
       "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",

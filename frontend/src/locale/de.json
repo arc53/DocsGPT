@@ -1413,6 +1413,7 @@
         "mcp_sentry": "Sentry-Issues, -Events und -Releases nachschlagen.",
         "mcp_asana": "Asana-Aufgaben und -Projekte finden und aktualisieren.",
         "mcp_stripe": "Kunden, Zahlungen und Abonnements in Stripe nachschlagen.",
+"mcp_vercel": "Vercel-Projekte, Deployments und Build-Logs verwalten.",
         "github": "Repositorys in Wissen synchronisieren und Agenten Code, Issues und Pull Requests lesen lassen."
       },
       "empty": "Noch nichts verbunden. Verbinde einen Dienst, um seine Inhalte zu synchronisieren oder Agenten neue Werkzeuge zu geben.",

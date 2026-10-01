@@ -1412,6 +1412,7 @@
         "mcp_sentry": "查看 Sentry 问题、事件和发布版本。",
         "mcp_asana": "查找和更新 Asana 任务与项目。",
         "mcp_stripe": "查看 Stripe 中的客户、付款和订阅。",
+"mcp_vercel": "管理 Vercel 项目、部署和构建日志。",
         "github": "将仓库同步到知识库，并让智能体读取代码、Issue 和拉取请求。"
       },
       "empty": "尚未连接任何服务。连接一个服务以同步其内容，或为智能体提供新工具。",
