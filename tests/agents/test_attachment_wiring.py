@@ -217,3 +217,18 @@ class TestSandboxToolsSeeTheConversationFiles:
         agent._execute_tool_action({}, Mock())
 
         assert [a["id"] for a in agent.tool_executor.attachments] == ["new"]
+
+
+class TestFilesThatWereNotStored:
+    def test_a_turn_names_them_even_without_any_attachment(self):
+        skipped = [{"filename": "clip.mp4", "mime_type": "video/mp4", "reason": "unsupported"}]
+        agent = _agent(attachments=[], skipped_attachments=skipped)
+        agent._build_messages("system prompt", "q")
+        plan = agent.attachment_plan
+        assert plan is not None and plan.skipped == skipped
+
+    def test_names_are_kept_with_the_turns_files(self):
+        skipped = [{"filename": "clip.mp4", "mime_type": "video/mp4", "reason": "unsupported"}]
+        agent = _agent(attachments=[text_att("a.txt", 300)], skipped_attachments=skipped)
+        agent._build_messages("system prompt", "q")
+        assert agent.attachment_plan.skipped == skipped

@@ -143,6 +143,45 @@ class TestRegenerateExcludesTheReplacedTurns:
         assert [a["id"] for a in sp.earlier_attachments] == ["e0", "e1", "e2", "e3"]
 
 
+class TestV1RequestFiles:
+    """What /v1 tells the processor about the files a stateless client re-sent."""
+
+    def test_files_from_earlier_messages_join_the_earlier_attachments(self):
+        sp = _processor({"question": "next", "earlier_attachments": ["r1", "r2"]})
+        sp.trace_source = "v1"
+        sp.conversation_id = None
+        sp.attachments = []
+        with patch.object(type(sp), "_fetch_attachment_rows", side_effect=lambda ids: [_att(f"{i}.txt", 100, i) for i in ids]):
+            sp._load_conversation_history()
+        assert [a["id"] for a in sp.earlier_attachments] == ["r1", "r2"]
+
+    def test_they_are_merged_with_the_conversations_own_files_once(self):
+        sp = _processor({"conversation_id": "c1", "question": "next", "earlier_attachments": ["e0", "r9"]})
+        sp.trace_source = "v1"
+        sp.attachments = []
+        history = _history(2, 100)
+        history[0]["attachments"] = ["e0"]
+        with patch.object(type(sp), "_fetch_attachment_rows", side_effect=lambda ids: [_att(f"{i}.txt", 100, i) for i in ids]):
+            _run(sp, {"queries": history})
+        assert [a["id"] for a in sp.earlier_attachments] == ["e0", "r9"]
+
+    def test_only_v1_requests_carry_them(self):
+        sp = _processor({"question": "next", "earlier_attachments": ["r1"], "skipped_files": [{"filename": "x"}]})
+        sp.conversation_id = None
+        sp.attachments = []
+        with patch.object(type(sp), "_fetch_attachment_rows") as fetch:
+            sp._load_conversation_history()
+        fetch.assert_not_called()
+        assert sp.earlier_attachments == []
+        assert sp._request_skipped_files() == []
+
+    def test_skipped_files_are_read_from_a_v1_request(self):
+        skipped = [{"filename": "clip.mp4", "mime_type": "video/mp4", "reason": "unsupported"}, "junk"]
+        sp = _processor({"question": "q", "skipped_files": skipped})
+        sp.trace_source = "v1"
+        assert sp._request_skipped_files() == skipped[:1]
+
+
 class TestFitBeforeCompression:
     def test_a_turn_that_cannot_fit_fails_before_any_compression_call(self):
         oversized = [{"type": "text", "text": "clause " * (WINDOW + 5_000)}]

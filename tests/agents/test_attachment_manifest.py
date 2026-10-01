@@ -215,3 +215,28 @@ class TestPartialPageImages:
         assert "pages 1–20 of 57" in block
         assert "attachments_read" not in block
         assert "not available in this turn" in block
+
+
+class TestFilesThatWereNotStored:
+    """/v1 files that never became attachment rows are named with the reason."""
+
+    SKIPPED = [
+        {"filename": "clip.mp4", "mime_type": "video/mp4", "reason": "unsupported"},
+        {"filename": "huge.pdf", "mime_type": "application/pdf", "reason": "too_large"},
+    ]
+
+    def test_they_are_listed_after_the_files_with_their_reason(self):
+        plan = plan_attachments([att("a.txt", 300)], caps(), budget=50_000)
+        plan.skipped = list(self.SKIPPED)
+        manifest = render_manifest(plan)
+        assert "- clip.mp4 | video/mp4 | not stored (a file type that cannot be read)" in manifest
+        assert "- huge.pdf | application/pdf | not stored (larger than the upload limit)" in manifest
+        assert "clip.mp4, huge.pdf" in manifest
+        assert plan.reserved_tokens > plan.inline_tokens + 150 + 30
+
+    def test_a_turn_with_only_such_files_still_says_so(self):
+        plan = plan_attachments([], caps(), budget=50_000)
+        plan.skipped = list(self.SKIPPED[:1])
+        block = render_attachment_block(plan)
+        assert "clip.mp4" in block
+        assert plan.reserved_tokens > 0

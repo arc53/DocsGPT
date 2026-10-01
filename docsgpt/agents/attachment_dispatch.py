@@ -226,6 +226,7 @@ class AttachmentDispatch:
             earlier=earlier,
             max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
         )
+        replanned.skipped = list(plan.skipped)
         _, merged, _ = agent.llm_handler.merge_attachment_plan(fallback, [fresh], fresh, replanned)
         rebuilt[index] = merged
         # The attachments tool lists each file's status and reads images by

@@ -116,7 +116,8 @@ def _convert_inline_files(internal_data: Dict[str, Any], user: str) -> None:
     """Store the request's inline files as ``user``'s attachments.
 
     The parts that became attachment rows leave the request the agent sees;
-    the rest stay as sent. Never fails the request.
+    the rest stay as sent and are named, with the reason, in the turn's
+    manifest. Never fails the request.
 
     Args:
         internal_data: The translated request; edited in place.
@@ -125,12 +126,13 @@ def _convert_inline_files(internal_data: Dict[str, Any], user: str) -> None:
     files = internal_data.pop("inline_files", None)
     if not files:
         return
+    skipped: Dict[str, str] = {}
     try:
-        converted = ingest_inline_files(files, user)
+        converted = ingest_inline_files(files, user, skipped=skipped)
     except Exception as exc:
         logger.warning("Could not store the request's inline files: %s", bounded_error_text(exc))
-        return
-    apply_converted_files(internal_data, files, converted)
+        converted = {}
+    apply_converted_files(internal_data, files, converted, skipped)
 
 
 def _validate_request_options(data: Dict[str, Any], agent: Dict[str, Any]) -> Optional[Response]:

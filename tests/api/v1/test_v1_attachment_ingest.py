@@ -105,3 +105,32 @@ class TestNewFiles:
         with patch.object(ingest, "_find_parsed", side_effect=RuntimeError("db down")):
             converted = ingest.ingest_inline_files([pdf], "owner")
         assert pdf.content_hash in converted
+
+
+class TestWhyAFileWasLeftOut:
+    """Every file that did not become an attachment is reported with a reason."""
+
+    def test_reasons_are_collected(self, storage, task, monkeypatch):
+        monkeypatch.setattr(ingest.settings, "UPLOAD_MAX_FILE_BYTES", 100)
+        big = _file(b"%PDF" + b"x" * 200, name="big.pdf")
+        blob = _file(b"\x00\x01binary", name="clip.mp4", mime="video/mp4")
+        slow = _file(b"%PDF slow", name="slow.pdf")
+        task.side_effect = [_Result(TimeoutError("slow"))]
+        skipped = {}
+        with patch.object(ingest, "_find_parsed", return_value=None):
+            converted = ingest.ingest_inline_files([big, blob, slow], "owner", skipped=skipped)
+
+        assert converted == {}
+        assert skipped == {
+            big.content_hash: "too_large",
+            blob.content_hash: "unsupported",
+            slow.content_hash: "not_parsed",
+        }
+
+    def test_a_storage_failure_is_not_stored(self, storage, task):
+        storage.save_file.side_effect = OSError("disk full")
+        pdf = _file(b"%PDF cannot store")
+        skipped = {}
+        with patch.object(ingest, "_find_parsed", return_value=None):
+            ingest.ingest_inline_files([pdf], "owner", skipped=skipped)
+        assert skipped == {pdf.content_hash: "not_stored"}

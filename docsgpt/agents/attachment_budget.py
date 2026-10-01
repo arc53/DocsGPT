@@ -149,11 +149,15 @@ class AttachmentPlan:
         files: One entry per ref, in upload order.
         capabilities: The capabilities the plan was made for.
         budget: Tokens the plan was allowed to spend.
+        skipped: Files sent with the request that never became attachment
+            rows (``filename``, ``mime_type``, ``reason``): listed in the
+            manifest with the reason, never inlined.
     """
 
     files: List[PlannedFile]
     capabilities: TurnCapabilities
     budget: int
+    skipped: List[Dict[str, Any]] = field(default_factory=list)
     _by_id: Dict[str, PlannedFile] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
@@ -179,12 +183,12 @@ class AttachmentPlan:
     @property
     def manifest_tokens(self) -> int:
         """Estimated size of the manifest; zero when there is nothing to list."""
-        return manifest_estimate(len(self.files))
+        return manifest_estimate(len(self.files) + len(self.skipped))
 
     @property
     def reserved_tokens(self) -> int:
         """Everything the plan adds to the turn: content plus manifest."""
-        return self.inline_tokens + self.manifest_tokens if self.files else 0
+        return self.inline_tokens + self.manifest_tokens if (self.files or self.skipped) else 0
 
     @property
     def current_files(self) -> List[PlannedFile]:

@@ -65,7 +65,7 @@ def _post(pg_conn, body, processor, helper, ingest=None):
         "docsgpt.api.v1.routes.StreamProcessor", side_effect=_make_processor
     ), patch("docsgpt.api.v1.routes._V1AnswerHelper", return_value=helper), patch(
         "docsgpt.api.v1.routes.ingest_inline_files",
-        side_effect=ingest or (lambda files, user: {f.content_hash: f"att-{i}" for i, f in enumerate(files)}),
+        side_effect=ingest or (lambda files, user, **_: {f.content_hash: f"att-{i}" for i, f in enumerate(files)}),
     ) as ingested:
         with app.test_client() as client:
             response = client.post("/v1/chat/completions", headers={"Authorization": "Bearer x"}, json=body)
@@ -104,7 +104,31 @@ class TestFilePartsBecomeAttachments:
     def test_files_that_could_not_be_stored_stay_in_the_request(self, pg_conn):
         processor, helper = _processor(), _helper(['data: {"type": "end"}'])
 
-        _, _, data, _ = _post(pg_conn, BODY, processor, helper, ingest=lambda files, user: {})
+        _, _, data, _ = _post(pg_conn, BODY, processor, helper, ingest=lambda files, user, **_: {})
 
         assert any(p.get("type") == "file" for p in data["multimodal_content"])
         assert not data.get("attachments")
+
+    def test_files_that_could_not_be_stored_are_named_for_the_manifest(self, pg_conn):
+        processor, helper = _processor(), _helper(['data: {"type": "end"}'])
+
+        def _ingest(files, user, skipped=None):
+            skipped.update({f.content_hash: "unsupported" for f in files})
+            return {}
+
+        _, _, data, _ = _post(pg_conn, BODY, processor, helper, ingest=_ingest)
+
+        assert data["skipped_files"] == [
+            {"filename": "PRILOGA_1.pdf", "mime_type": "application/pdf", "reason": "unsupported"}
+        ]
+
+    def test_a_failed_conversion_still_names_the_files(self, pg_conn):
+        processor, helper = _processor(), _helper(['data: {"type": "end"}'])
+
+        def _ingest(files, user, skipped=None):
+            raise RuntimeError("storage down")
+
+        response, _, data, _ = _post(pg_conn, BODY, processor, helper, ingest=_ingest)
+
+        assert response.status_code == 200
+        assert [s["reason"] for s in data["skipped_files"]] == ["not_stored"]

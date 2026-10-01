@@ -147,6 +147,7 @@ class BaseAgent(ABC):
         is_v1: bool = False,
         attachment_planning: bool = False,
         earlier_attachments: Optional[List[Dict]] = None,
+        skipped_attachments: Optional[List[Dict]] = None,
     ):
         self.endpoint = endpoint
         self.llm_name = llm_name
@@ -258,6 +259,10 @@ class BaseAgent(ABC):
         # Files attached on earlier turns of the conversation, in upload
         # order: listed in the plan, never inlined again.
         self.earlier_attachments = list(earlier_attachments or [])
+        # Files the request sent that never became attachment rows (a /v1
+        # file too large, of an unreadable type, or not parsed in time):
+        # named in the manifest with the reason.
+        self.skipped_attachments = [s for s in (skipped_attachments or []) if isinstance(s, dict)]
         self.attachment_plan = None
         # The user message ``_build_messages`` built for this turn; the
         # handler merges the plan into it and compression keeps it whole.
@@ -1549,7 +1554,8 @@ class BaseAgent(ABC):
             return None
         current = [a for a in (self.attachments or []) if isinstance(a, dict)]
         earlier = [a for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)]
-        if not current and not earlier:
+        skipped = list(getattr(self, "skipped_attachments", None) or [])
+        if not current and not earlier and not skipped:
             return None
         if self.turn_capabilities is None:
             self.turn_capabilities = self._compute_turn_capabilities({})
@@ -1568,6 +1574,7 @@ class BaseAgent(ABC):
             earlier=earlier,
             max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
         )
+        plan.skipped = skipped
         logger.info(
             "Attachment plan: %d file(s), budget %d, inline %d tokens (%s)",
             len(plan.files),
@@ -1597,7 +1604,8 @@ class BaseAgent(ABC):
 
         current = [a for a in (self.attachments or []) if isinstance(a, dict)]
         earlier = [a for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)]
-        if not getattr(self, "attachment_planning", False) or not (current or earlier):
+        skipped = list(getattr(self, "skipped_attachments", None) or [])
+        if not getattr(self, "attachment_planning", False) or not (current or earlier or skipped):
             return
         carrier = next((m for m in reversed(messages) if isinstance(m, dict) and m.get("role") == "user"), None)
         if carrier is None:
@@ -1617,6 +1625,7 @@ class BaseAgent(ABC):
             earlier=earlier,
             max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
         )
+        self.attachment_plan.skipped = skipped
         self._current_turn_message = carrier
         self._attachments_merged = False
         self._attachment_token_correction = 0

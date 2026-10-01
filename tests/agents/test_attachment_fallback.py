@@ -439,3 +439,17 @@ class TestNativeReadsOnFallback:
         assert "F1 scan.pdf page 2" in text
         assert "image" not in str([p.get("type") for p in note["content"]] if isinstance(note["content"], list) else "")
         assert "do not guess" in text.lower()
+
+
+def test_the_fallback_manifest_still_names_files_that_were_not_stored():
+    files = [text_att(f"r{i}.txt", 12_000, body_word=f"w{i}") for i in range(3)]
+    agent, _ = _merged_turn([])
+    agent.attachments = files
+    agent.skipped_attachments = [{"filename": "clip.mp4", "mime_type": "video/mp4", "reason": "unsupported"}]
+    messages = agent._build_messages("system prompt", "compare the files")
+    agent._attachments_merged = False
+    messages = agent.llm_handler.prepare_messages(agent, messages, files)
+
+    replanned = AttachmentDispatch(agent).for_fallback(_LLM("fb-small"), messages)
+
+    assert "clip.mp4" in _turn_text(replanned.messages)

@@ -174,3 +174,68 @@ class TestApplyConverted:
         assert not any(p.get("type") == "file" for p in parts)
         assert internal["attachments"] == [f"att-{i}" for i in range(4)]
         assert body == snapshot
+
+
+class TestLeftOutFiles:
+    def _internal(self, scenario_dir: Path) -> Dict[str, Any]:
+        body = v1.build_requests("V1-03", scenario_dir, payload="file_parts")[0]["body"]
+        return translate_request(body, "key")
+
+    def test_files_not_converted_are_listed_with_their_reason(self, scenario_dir: Path):
+        internal = self._internal(scenario_dir)
+        files = internal.pop("inline_files")
+        converted = {files[0].content_hash: "att-0"}
+        skipped = {files[1].content_hash: "too_large"}
+
+        apply_converted_files(internal, files, converted, skipped)
+
+        assert internal["skipped_files"] == [
+            {"filename": files[1].filename, "mime_type": "application/pdf", "reason": "too_large"},
+            {"filename": files[2].filename, "mime_type": "application/pdf", "reason": "not_stored"},
+            {"filename": files[3].filename, "mime_type": "application/pdf", "reason": "not_stored"},
+        ]
+
+    def test_files_are_listed_even_when_none_was_converted(self, scenario_dir: Path):
+        internal = self._internal(scenario_dir)
+        files = internal.pop("inline_files")
+
+        apply_converted_files(internal, files, {}, {f.content_hash: "not_parsed" for f in files})
+
+        assert [s["reason"] for s in internal["skipped_files"]] == ["not_parsed"] * 4
+        assert not internal.get("attachments")
+
+
+class TestEarlierMessages:
+    """A stateless client re-sends every file each turn; only the last message's are new."""
+
+    @staticmethod
+    def _file_part(name: str, payload: bytes) -> Dict[str, Any]:
+        return {"type": "file", "file": {"filename": name, "file_data": _data_url("application/pdf", payload)}}
+
+    def _messages(self):
+        return [
+            {"role": "user", "content": [{"type": "text", "text": "one"}, self._file_part("a.pdf", b"%PDF a")]},
+            {"role": "assistant", "content": "read a"},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "two"},
+                    self._file_part("a.pdf", b"%PDF a"),
+                    self._file_part("b.pdf", b"%PDF b"),
+                ],
+            },
+        ]
+
+    def test_files_of_earlier_user_messages_are_marked(self):
+        files = collect_inline_files(self._messages())
+        assert [(f.filename, f.earlier) for f in files] == [("a.pdf", True), ("b.pdf", False)]
+
+    def test_earlier_files_are_passed_as_earlier_attachments(self):
+        internal = translate_request({"messages": self._messages()}, "key")
+        files = internal.pop("inline_files")
+        converted = {f.content_hash: f"att-{f.filename}" for f in files}
+
+        apply_converted_files(internal, files, converted)
+
+        assert internal["attachments"] == ["att-a.pdf", "att-b.pdf"]
+        assert internal["earlier_attachments"] == ["att-a.pdf"]

@@ -243,9 +243,24 @@ _REASONS = {
 }
 
 
+# Why a file sent with the request never became an attachment.
+_SKIP_REASONS = {
+    "too_large": "larger than the upload limit",
+    "unsupported": "a file type that cannot be read",
+    "not_stored": "could not be stored",
+    "not_parsed": "could not be read in time",
+}
+
+
 def needs_manifest(plan: AttachmentPlan) -> bool:
     """A manifest is shown unless every file is simply inlined whole this turn."""
-    return any(f.status != FileStatus.INLINE or not f.current for f in plan.files)
+    return bool(plan.skipped) or any(f.status != FileStatus.INLINE or not f.current for f in plan.files)
+
+
+def _skipped_line(entry: dict) -> str:
+    reason = _SKIP_REASONS.get(str(entry.get("reason") or ""), _SKIP_REASONS["not_stored"])
+    mime_type = sanitize_filename(entry.get("mime_type") or "application/octet-stream")
+    return f"- {sanitize_filename(entry.get('filename'))} | {mime_type} | not stored ({reason})"
 
 
 def _size(planned: PlannedFile) -> str:
@@ -386,6 +401,13 @@ def _instructions(plan: AttachmentPlan) -> List[str]:
         lines.append("Tell the user which files could not be read.")
     if _archive_skips(plan):
         lines.append("Tell the user which files in an archive were skipped, and why.")
+    if plan.skipped:
+        names = ", ".join(sanitize_filename(s.get("filename")) for s in plan.skipped)
+        lines.append(
+            f"Files marked not stored ({names}) could not be turned into attachments, for the reason "
+            "shown. Unless their content reached you with the message itself, tell the user they "
+            "could not be read."
+        )
     return lines
 
 
@@ -398,9 +420,12 @@ def render_manifest(plan: AttachmentPlan) -> str:
     Returns:
         The ``<attached_files>`` list followed by its instructions.
     """
-    if not plan.files or not needs_manifest(plan):
+    if not (plan.files or plan.skipped) or not needs_manifest(plan):
         return ""
-    listing = "\n".join(_manifest_line(f, sandbox=plan.capabilities.sandbox) for f in plan.files)
+    listing = "\n".join(
+        [_manifest_line(f, sandbox=plan.capabilities.sandbox) for f in plan.files]
+        + [_skipped_line(s) for s in plan.skipped]
+    )
     return "<attached_files>\n" + listing + "\n</attached_files>\n" + "\n".join(_instructions(plan))
 
 
