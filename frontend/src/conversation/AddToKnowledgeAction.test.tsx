@@ -63,6 +63,17 @@ describe('AddToKnowledgeAction', () => {
     );
   });
 
+  it('is a bordered button with the Knowledge icon, not red link text', async () => {
+    await render();
+    const button = container.querySelector('button')!;
+    expect(button.getAttribute('data-variant')).toBe('outline');
+    expect(button.getAttribute('data-shape')).toBe('pill');
+    expect(button.hasAttribute('data-tone')).toBe(false);
+    expect(button.querySelector('svg')).not.toBeNull();
+    // Body text, not the alert's red, so it reads as a control.
+    expect(button.parentElement?.className).toContain('text-foreground');
+  });
+
   it('keeps the button when the server refused, with the reason', async () => {
     hook.addToKnowledge.mockResolvedValue(false);
     hook.error = 'conversation.attachments.knowledgeFailed';

@@ -70,6 +70,19 @@ describe('KnowledgeHint', () => {
     expect(button?.getAttribute('aria-busy')).toBe('true');
   });
 
+  it('keeps its label in place with a spinner after it while busy', async () => {
+    await render({ pending: true });
+    const button = container.querySelector('button')!;
+    // The label stays readable where it was, rather than vanishing under a
+    // spinner centred on the empty space it leaves.
+    expect(button.querySelector('.invisible')).toBeNull();
+    expect(button.firstChild?.textContent).toBe(
+      'conversation.attachments.addToKnowledge',
+    );
+    expect(button.lastElementChild?.getAttribute('data-slot')).toBe('spinner');
+    expect(button.querySelector('.absolute')).toBeNull();
+  });
+
   it('shows a refused request inline', async () => {
     await render({ error: 'Could not add' });
     const alert = container.querySelector('[role="alert"]');

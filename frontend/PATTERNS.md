@@ -175,7 +175,11 @@ A failed chat answer is an `Alert variant="destructive"` on the answer's
 `conversation.failedTitle`,
 and the backend's error (often a raw provider exception) as `font-mono text-xs`
 detail in `AlertDescription`. Its action row is Retry (`RotateCcw`) and Copy,
-both `ghost-muted icon-sm pill` like every other answer action.
+both `ghost-muted icon-sm pill` like every other answer action. An action
+that fixes the error (Add to Knowledge, when a turn's files overflowed the
+model) is an `outline sm pill` Button with a leading lucide icon under the
+message, in a `text-foreground` wrapper so its label is body text rather than
+the alert's red; a link in the alert's colour does not read as a control.
 
 The rows in an answer's step column (Sources, Reasoning, each tool step) are
 one recipe: `Button variant="ghost" size="sm"` at `ml-3.5 w-fit`, which puts a

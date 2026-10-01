@@ -150,11 +150,14 @@ function Button({
     asChild?: boolean;
     /**
      * Disables the button and draws a 16px spinner over its label. The label
-     * stays in the layout (invisible), so the width doesn't jump.
+     * stays in the layout (invisible), so the width doesn't jump. A link
+     * (`size="text"` or `"inline"`) has no frame to hold that space, so its
+     * label stays readable where it is and the spinner follows it.
      */
     loading?: boolean;
   }) {
   const Comp = asChild ? Slot.Root : 'button';
+  const linkSized = size === 'text' || size === 'inline';
 
   return (
     <Comp
@@ -168,12 +171,17 @@ function Button({
       disabled={disabled || loading}
       className={cn(
         buttonVariants({ variant, size, shape, tone }),
-        loading && 'relative',
+        loading && !linkSized && 'relative',
         className,
       )}
       {...props}
     >
-      {loading && !asChild ? (
+      {loading && !asChild && linkSized ? (
+        <>
+          {children}
+          <Spinner size="xs" />
+        </>
+      ) : loading && !asChild ? (
         <>
           <span data-slot="button-label" className="invisible contents">
             {children}

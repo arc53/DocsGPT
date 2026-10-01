@@ -1,3 +1,4 @@
+import { Database } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -32,12 +33,14 @@ export default function AddToKnowledgeAction({
     );
   }
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+    // A real button under the alert's text, in body colour rather than the
+    // alert's red, so it reads as the way out of the error.
+    <div className="text-foreground mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
       <Button
         type="button"
-        variant="link"
-        size="inline"
-        tone="current"
+        variant="outline"
+        size="sm"
+        shape="pill"
         loading={pending}
         onClick={async () => {
           if (await addToKnowledge(files)) {
@@ -46,9 +49,10 @@ export default function AddToKnowledgeAction({
           }
         }}
       >
+        <Database />
         {t('conversation.attachments.addToKnowledge')}
       </Button>
-      {error && <span>{error}</span>}
+      {error && <span className="text-destructive">{error}</span>}
     </div>
   );
 }

@@ -327,7 +327,9 @@ rounded-3xl`) are `variant="sidebar-item"`: left-aligned, full-radius, normal
   disables itself, sets `aria-busy`, and draws a 16px spinner over the label,
   which stays in the layout (invisible) so the width doesn't jump. Keep the
   idle label; never hand-place a `Spinner` in a button, swap the label for
-  "Saving…", or pin a fixed width to stop the jump. The one exception is a
+  "Saving…", or pin a fixed width to stop the jump. A busy link (`size="text"`
+  or `inline`) has no frame to hold that empty space, so `loading` keeps its
+  label readable in place, faded, with the spinner after it. The one exception is a
   button whose busy state says something the user needs: a progress figure
   (a connector's Sync shows "42%") or a mode (the composer's Voice button shows
   "Transcribing"). It keeps its busy label with a `Spinner size="xs"` (the
