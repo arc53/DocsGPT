@@ -18,7 +18,7 @@ import {
 import store from '../store';
 import {
   clearAttachments,
-  selectCompletedAttachments,
+  selectSendableAttachmentIds,
 } from '../upload/uploadSlice';
 
 const initialState: ConversationState = {
@@ -48,9 +48,7 @@ export const fetchPreviewAnswer = createAsyncThunk<
     const { signal } = abortController;
 
     const state = getState() as RootState;
-    const attachmentIds = selectCompletedAttachments(state)
-      .filter((a) => a.id)
-      .map((a) => a.id) as string[];
+    const attachmentIds = selectSendableAttachmentIds(state);
 
     if (attachmentIds.length > 0) {
       dispatch(clearAttachments());

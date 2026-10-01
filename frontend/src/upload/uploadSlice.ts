@@ -100,6 +100,50 @@ interface UploadState {
   dismissedSourceIds: DismissedEntry[];
 }
 
+/**
+ * Give a completed row the server's attachment id as its ``id``.
+ *
+ * Every send path reads ``id``; until completion it holds the client
+ * placeholder, which the backend cannot resolve and silently drops. A row
+ * can complete through the SSE reducer or through ``updateAttachment``
+ * (the race recovery, when the terminal event beat the upload response),
+ * so both go through here.
+ */
+function bindServerId(attachment: Attachment): Attachment {
+  if (attachment.status === 'completed' && attachment.attachmentId) {
+    attachment.id = attachment.attachmentId;
+  }
+  return attachment;
+}
+
+/** An attachment ready to go out with a message: its server id and name. */
+export interface SendableAttachment {
+  id: string;
+  fileName: string;
+}
+
+/**
+ * The attachments a send should carry: completed rows only, by server id.
+ *
+ * The one place that decides which id goes on the wire, so every send path
+ * (chat, agent preview, shared chat, workflow runs) sends the same thing.
+ * A repeated server id is sent once.
+ */
+export function toSendableAttachments(
+  attachments: Attachment[],
+): SendableAttachment[] {
+  const seen = new Set<string>();
+  const sendable: SendableAttachment[] = [];
+  for (const attachment of attachments) {
+    if (attachment.status !== 'completed') continue;
+    const id = attachment.attachmentId ?? attachment.id;
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    sendable.push({ id, fileName: attachment.fileName });
+  }
+  return sendable;
+}
+
 const initialState: UploadState = {
   attachments: [],
   tasks: [],
@@ -127,10 +171,10 @@ export const uploadSlice = createSlice({
         (att) => att.id === action.payload.id,
       );
       if (index !== -1) {
-        state.attachments[index] = {
+        state.attachments[index] = bindServerId({
           ...state.attachments[index],
           ...action.payload.updates,
-        };
+        });
       }
     },
     removeAttachment: (state, action: PayloadAction<string>) => {
@@ -297,12 +341,7 @@ export const uploadSlice = createSlice({
             case 'attachment.completed': {
               attachment.status = 'completed';
               attachment.progress = 100;
-              // Replace the client-generated uuid with the server's
-              // attachment id so question submission
-              // (Conversation.tsx:174) sends an id the backend can
-              // resolve. Without this the backend would silently drop
-              // the attachment from the message context.
-              attachment.id = scopeId;
+              bindServerId(attachment);
               const tokenCount = Number(payload.token_count);
               if (Number.isFinite(tokenCount)) {
                 attachment.token_count = tokenCount;
@@ -438,6 +477,14 @@ export const selectAttachments = (state: RootState) => state.upload.attachments;
 export const selectCompletedAttachments = createSelector(
   [selectAttachments],
   (attachments) => attachments.filter((att) => att.status === 'completed'),
+);
+export const selectSendableAttachments = createSelector(
+  [selectAttachments],
+  toSendableAttachments,
+);
+export const selectSendableAttachmentIds = createSelector(
+  [selectSendableAttachments],
+  (sendable) => sendable.map((attachment) => attachment.id),
 );
 export const selectUploadTasks = (state: RootState) => state.upload.tasks;
 

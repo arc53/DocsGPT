@@ -14,12 +14,15 @@ vi.mock('../connectors/SignInAgainNotice', () => ({
 }));
 
 import connectorsReducer from '../connectors/connectorsSlice';
-import notificationsReducer from '../notifications/notificationsSlice';
+import notificationsReducer, {
+  sseEventReceived,
+} from '../notifications/notificationsSlice';
 import { prefSlice } from '../preferences/preferenceSlice';
 import type { RootState } from '../store';
 import uploadReducer, {
   addAttachment,
   selectCompletedAttachments,
+  selectSendableAttachmentIds,
   type Attachment,
 } from '../upload/uploadSlice';
 import MessageInput from './MessageInput';
@@ -81,6 +84,13 @@ class FakeXHR extends EventTarget {
 
   abort() {
     this.finish(this.onabort, 'abort');
+  }
+
+  /** The server answered with ``status`` and a JSON ``body``. */
+  respond(status: number, body: unknown) {
+    this.status = status;
+    this.responseText = JSON.stringify(body);
+    this.finish(this.onload, 'load');
   }
 }
 
@@ -242,6 +252,40 @@ describe('MessageInput send with a failed attachment', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(onSubmit).toHaveBeenCalledWith('Is it done?');
     expect(store.getState().upload.attachments).toEqual([]);
+  });
+
+  it('sends the server id when the file finished before the upload returned', async () => {
+    await render();
+    await attachFile('small.pdf');
+    const clientId = store.getState().upload.attachments[0].id;
+
+    // The worker is faster than the response: its terminal event lands
+    // while the row has no attachmentId to match it by.
+    await act(async () => {
+      store.dispatch(
+        sseEventReceived({
+          id: 'evt-1',
+          type: 'attachment.completed',
+          scope: { kind: 'attachment', id: 'srv-small' },
+          payload: { token_count: 12 },
+        }),
+      );
+    });
+    await act(async () =>
+      FakeXHR.instances[0].respond(200, {
+        success: true,
+        task_id: 'celery-1',
+        attachment_id: 'srv-small',
+      }),
+    );
+
+    const [row] = store.getState().upload.attachments;
+    expect(row.status).toBe('completed');
+    expect(row.id).toBe('srv-small');
+    expect(row.id).not.toBe(clientId);
+    expect(
+      selectSendableAttachmentIds(store.getState() as unknown as RootState),
+    ).toEqual(['srv-small']);
   });
 
   it('keeps a queued question while another answer is streaming', async () => {

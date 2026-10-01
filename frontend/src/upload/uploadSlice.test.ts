@@ -4,10 +4,14 @@ import notificationsReducer, {
   sseEventReceived,
   type SSEEvent,
 } from '../notifications/notificationsSlice';
+import type { RootState } from '../store';
 import reducer, {
   addAttachment,
   addUploadTask,
   dismissUploadTask,
+  selectSendableAttachmentIds,
+  selectSendableAttachments,
+  toSendableAttachments,
   updateAttachment,
   updateUploadTask,
   type Attachment,
@@ -471,6 +475,9 @@ describe('attachment race recovery', () => {
     expect(uploadState.attachments[0].status).toBe('completed');
     expect(uploadState.attachments[0].progress).toBe(100);
     expect(uploadState.attachments[0].token_count).toBe(99);
+    // The send paths read ``id``: it must be the server's, not the
+    // client placeholder, or the backend silently drops the file.
+    expect(uploadState.attachments[0].id).toBe(ATTACHMENT_ID);
   });
 
   it('attachment.failed envelope can drive a stuck row to failed via reconciler', () => {
@@ -561,5 +568,101 @@ describe('upload race — SSE auto-created duplicate absorbed on sourceId bind',
     expect(task.id).toBe('client-1');
     expect(task.status).toBe('completed');
     expect(task.progress).toBe(100);
+  });
+});
+
+describe('server id binding on completion', () => {
+  const row = (overrides: Partial<Attachment> = {}): Attachment => ({
+    id: 'ui-1',
+    fileName: 'a.pdf',
+    progress: 10,
+    status: 'processing',
+    taskId: 'celery-1',
+    attachmentId: 'srv-1',
+    ...overrides,
+  });
+
+  it('swaps in the server id when an update completes a bound row', () => {
+    let state = reducer(undefined, addAttachment(row()));
+    state = reducer(
+      state,
+      updateAttachment({ id: 'ui-1', updates: { status: 'completed' } }),
+    );
+    expect(state.attachments[0].id).toBe('srv-1');
+  });
+
+  it('binds the id when the same update sets attachmentId and completes', () => {
+    let state = reducer(
+      undefined,
+      addAttachment(row({ attachmentId: undefined, status: 'uploading' })),
+    );
+    state = reducer(
+      state,
+      updateAttachment({
+        id: 'ui-1',
+        updates: { attachmentId: 'srv-2', status: 'completed' },
+      }),
+    );
+    expect(state.attachments[0].id).toBe('srv-2');
+  });
+
+  it('keeps the client id while the row is still processing', () => {
+    let state = reducer(undefined, addAttachment(row()));
+    state = reducer(
+      state,
+      updateAttachment({ id: 'ui-1', updates: { progress: 50 } }),
+    );
+    expect(state.attachments[0].id).toBe('ui-1');
+  });
+});
+
+describe('sendable attachments', () => {
+  const att = (overrides: Partial<Attachment>): Attachment => ({
+    id: 'ui-1',
+    fileName: 'a.pdf',
+    progress: 100,
+    status: 'completed',
+    taskId: 't',
+    ...overrides,
+  });
+
+  it('sends the server id of completed rows only', () => {
+    const rows = [
+      att({ id: 'ui-1', attachmentId: 'srv-1', fileName: 'a.pdf' }),
+      att({ id: 'ui-2', attachmentId: 'srv-2', status: 'processing' }),
+      att({ id: 'ui-3', attachmentId: 'srv-3', status: 'failed' }),
+      att({ id: 'srv-4', attachmentId: 'srv-4', fileName: 'd.pdf' }),
+    ];
+    expect(toSendableAttachments(rows)).toEqual([
+      { id: 'srv-1', fileName: 'a.pdf' },
+      { id: 'srv-4', fileName: 'd.pdf' },
+    ]);
+  });
+
+  it('falls back to id for rows without an attachmentId', () => {
+    expect(toSendableAttachments([att({ id: 'legacy' })])).toEqual([
+      { id: 'legacy', fileName: 'a.pdf' },
+    ]);
+  });
+
+  it('drops empty ids and sends a repeated server id once', () => {
+    const rows = [
+      att({ id: '' }),
+      att({ id: 'ui-1', attachmentId: 'same' }),
+      att({ id: 'ui-2', attachmentId: 'same', fileName: 'copy.pdf' }),
+    ];
+    expect(toSendableAttachments(rows).map((a) => a.id)).toEqual(['same']);
+  });
+
+  it('exposes the same view through the store selectors', () => {
+    const upload = reducer(
+      undefined,
+      addAttachment(att({ id: 'ui-1', attachmentId: 'srv-1' })),
+    );
+    const state = { upload } as unknown as RootState;
+    expect(selectSendableAttachments(state)).toEqual([
+      { id: 'srv-1', fileName: 'a.pdf' },
+    ]);
+    expect(selectSendableAttachmentIds(state)).toEqual(['srv-1']);
   });
 });

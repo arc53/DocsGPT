@@ -39,7 +39,7 @@ import { getSendReadiness } from '../components/message-input/armedSend';
 import {
   clearAttachments,
   selectAttachments,
-  selectCompletedAttachments,
+  selectSendableAttachments,
 } from '../upload/uploadSlice';
 import { cn } from '@/lib/utils';
 
@@ -64,7 +64,7 @@ export default function Conversation() {
   const conversationId = useSelector(selectConversationId);
   const selectedAgent = useSelector(selectSelectedAgent);
   const agents = useSelector(selectAgents);
-  const completedAttachments = useSelector(selectCompletedAttachments);
+  const sendableAttachments = useSelector(selectSendableAttachments);
   const attachments = useSelector(selectAttachments);
   // A direct send (hero card) that must wait for pending attachments is
   // parked here; MessageInput consumes it into an armed composer send.
@@ -232,9 +232,7 @@ export default function Conversation() {
         // instead, where the armed-send banner takes over.
         setQueuedQuestion(trimmedQuestion);
       } else {
-        const filesAttached = completedAttachments
-          .filter((a) => a.id)
-          .map((a) => ({ id: a.id as string, fileName: a.fileName }));
+        const filesAttached = sendableAttachments;
 
         if (!isRetry)
           dispatch(
@@ -255,7 +253,7 @@ export default function Conversation() {
         if (attachments.length > 0) dispatch(clearAttachments());
       }
     },
-    [dispatch, handleFetchAnswer, completedAttachments, attachments, queries],
+    [dispatch, handleFetchAnswer, sendableAttachments, attachments, queries],
   );
 
   const handleFeedback = (query: Query, feedback: FEEDBACK, index: number) => {
