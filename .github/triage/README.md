@@ -44,7 +44,14 @@ DocsGPT schedule (daily, 07:00 UTC) ──► {"kind": "stale_sweep"} ───�
 | CodeRabbit or CI finished | `pr_review` | Verdict `ready`, `changes_needed`, `not_a_fit` or `spam`; one checklist comment per new commit; `waiting-on-author` / `maintainer-review` |
 | Daily schedule | `stale_sweep` | `stale` after 14 idle days waiting on the author, closes 30 days later, frees assignments idle for 30 days |
 
-Maintainers' own issues, comments and PRs, and bots, are skipped.
+Maintainers' comments and PRs, and anything a bot opens or comments, are skipped. Issues
+maintainers open are triaged too (labels, duplicates, the Telegram report) but get no comment.
+Maintainers are the logins in the `TRIAGE_MAINTAINERS` variable (default: the list in
+`relay.py`) plus anyone GitHub reports as owner, member or collaborator; org membership is
+often private, so the list is what catches most of them.
+
+You can also chat with the agent in DocsGPT ("is #2500 a valid issue?"). It answers in the
+chat, sends nothing to Telegram, and changes GitHub only when you ask.
 
 ## Setup
 
@@ -74,6 +81,7 @@ Maintainers' own issues, comments and PRs, and bots, are skipped.
    | `DOCSGPT_TRIAGE_PAT` | secret | A DocsGPT personal access token with `agents:read`, `agents:write`, `prompts:read`, `prompts:write`, `sources:read`, `sources:write`, `tools:read`, `models:read` |
    | `TRIAGE_MODE` | variable | `shadow` to start; both workflows stay off while it is unset |
    | `TRIAGE_BOT_LOGIN` | variable | Optional, defaults to `arc53-machine` |
+   | `TRIAGE_MAINTAINERS` | variable | Optional, comma-separated logins; defaults to the list in `relay.py` |
 
 ## Modes
 

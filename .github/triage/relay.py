@@ -22,6 +22,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -29,6 +30,10 @@ API = "https://api.github.com"
 DEFAULT_REPO = "arc53/DocsGPT"
 DEFAULT_BOT = "arc53-machine"
 DEFAULT_SKIP_ASSOCIATIONS = "OWNER,MEMBER,COLLABORATOR"
+# Org membership is often private, and GitHub then reports a maintainer as CONTRIBUTOR.
+DEFAULT_MAINTAINERS = "dartpain,pabik,ManishMadan2882,siiddhantt,tenokami,arc53-machine"
+# Events a bot legitimately sends: CodeRabbit's status, and CI runs started for a bot's push.
+BOT_SENT_EVENTS = frozenset({"status", "workflow_run"})
 LOCALES = ("de", "en", "es", "jp", "ru", "zh", "zh-TW")
 MARKER = "docsgpt-triage"
 
@@ -292,10 +297,30 @@ def ci_state(check_runs: list[dict], workflow_runs: list[dict], statuses: list[d
     return {"state": state, "failed": failed, "pending": pending, "awaiting_approval": awaiting, "passed": passed}
 
 
-def route(event_name: str, event: dict[str, Any], bot: str, skip_associations: set[str]) -> dict[str, Any]:
+@dataclass(frozen=True)
+class Maintainers:
+    """Who maintains the repo: a listed login, or an association GitHub reports for members."""
+
+    logins: frozenset
+    associations: frozenset
+
+    @classmethod
+    def from_env(cls, logins: Optional[str], associations: Optional[str]) -> "Maintainers":
+        """Build from comma-separated lists, falling back to the defaults."""
+        return cls(
+            frozenset(x.strip().lower() for x in (logins or DEFAULT_MAINTAINERS).split(",") if x.strip()),
+            frozenset(x.strip() for x in (associations or DEFAULT_SKIP_ASSOCIATIONS).split(",") if x.strip()),
+        )
+
+    def includes(self, login: Optional[str], association: Optional[str] = None) -> bool:
+        """True for a listed login or a maintainer association."""
+        return (login or "").lower() in self.logins or association in self.associations
+
+
+def route(event_name: str, event: dict[str, Any], bot: str, maintainers: Maintainers) -> dict[str, Any]:
     """Decide what an Actions event asks of the agent; ``kind`` is None to skip."""
     sender = event.get("sender") or {}
-    if sender.get("login") == bot or sender.get("type") == "Bot":
+    if event_name not in BOT_SENT_EVENTS and (sender.get("login") == bot or sender.get("type") == "Bot"):
         return {"kind": None, "reason": f"sender {sender.get('login')} is a bot"}
     action = event.get("action")
     if event_name == "issues" and action in ("opened", "reopened"):
@@ -307,7 +332,7 @@ def route(event_name: str, event: dict[str, Any], bot: str, skip_associations: s
         issue, comment = event["issue"], event["comment"]
         if issue.get("pull_request") or issue.get("state") != "open":
             return {"kind": None, "reason": "comment on a pull request or a closed issue"}
-        if comment.get("author_association") in skip_associations:
+        if maintainers.includes((comment.get("user") or {}).get("login"), comment.get("author_association")):
             return {"kind": None, "reason": "comment from a maintainer"}
         labels = {label["name"] for label in issue.get("labels", [])}
         by_author = (comment.get("user") or {}).get("login") == (issue.get("user") or {}).get("login")
@@ -323,7 +348,7 @@ def route(event_name: str, event: dict[str, Any], bot: str, skip_associations: s
         author = pr.get("user") or {}
         if author.get("type") == "Bot" or author.get("login") == bot:
             return {"kind": None, "reason": "pull request from a bot"}
-        if pr.get("author_association") in skip_associations:
+        if maintainers.includes(author.get("login"), pr.get("author_association")):
             return {"kind": None, "reason": "pull request from a maintainer"}
         return {"kind": "pr_opened", "number": pr["number"]}
     if event_name == "status":
@@ -343,7 +368,10 @@ def route(event_name: str, event: dict[str, Any], bot: str, skip_associations: s
     return {"kind": None, "reason": f"unhandled event {event_name}.{action}"}
 
 
-def rate_limit_wait(status: int, headers: Any, cap: int = 65) -> Optional[int]:
+SECONDARY_LIMIT_WAIT = 60
+
+
+def rate_limit_wait(status: int, headers: Any, body: bytes = b"", cap: int = 65) -> Optional[int]:
     """Seconds to wait before retrying a rate-limited request, or None when it wasn't one."""
     if status not in (403, 429):
         return None
@@ -352,6 +380,9 @@ def rate_limit_wait(status: int, headers: Any, cap: int = 65) -> Optional[int]:
         return min(int(retry_after), cap)
     if headers.get("X-RateLimit-Remaining") == "0" and (headers.get("X-RateLimit-Reset") or "").isdigit():
         return max(1, min(int(headers["X-RateLimit-Reset"]) - int(time.time()) + 1, cap))
+    # A burst of searches trips the secondary limit, which sends neither header.
+    if b"secondary rate limit" in body.lower():
+        return min(SECONDARY_LIMIT_WAIT, cap)
     return None
 
 
@@ -376,7 +407,7 @@ class GitHub:
                 with urllib.request.urlopen(request, timeout=30) as response:
                     return json.loads(response.read().decode() or "null")
             except urllib.error.HTTPError as error:
-                wait = rate_limit_wait(error.code, error.headers)
+                wait = rate_limit_wait(error.code, error.headers, error.read())
                 if wait is None or attempt == 2:
                     raise
                 print(f"GitHub rate limit, retrying in {wait}s", file=sys.stderr)
@@ -417,19 +448,38 @@ class GitHub:
         return self._request(f"{API}/graphql", data=body)
 
 
+def count_or_none(gh: GitHub, query: str) -> Optional[int]:
+    """A search count, or None when GitHub refuses the query or rate-limits it."""
+    try:
+        return gh.count(query)
+    except urllib.error.HTTPError as error:
+        print(f"Search refused ({error.code}): {query}", file=sys.stderr)
+        return None
+
+
+def search_items(gh: GitHub, query: str, limit: int) -> list[dict[str, Any]]:
+    """Search results for optional facts; empty when GitHub refuses or rate-limits the search."""
+    try:
+        return gh.search(query, limit=limit).get("items", [])
+    except urllib.error.HTTPError as error:
+        print(f"Search refused ({error.code}): {query}", file=sys.stderr)
+        return []
+
+
 def author_facts(gh: GitHub, login: str, association: Optional[str]) -> dict[str, Any]:
     """Account age and history in this repo, for spam and experience signals."""
     user = gh.get(f"users/{login}")
     return {
         "login": login,
         "association": association,
+        "type": user.get("type"),
         "account_age_days": days_since(user.get("created_at")),
         "public_repos": user.get("public_repos"),
         "followers": user.get("followers"),
-        "prs_merged_here": gh.count(f"is:pr is:merged author:{login}"),
-        "prs_open_here": gh.count(f"is:pr is:open author:{login}"),
-        "issues_opened_here": gh.count(f"is:issue author:{login}"),
-        "issues_assigned_open_here": gh.count(f"is:issue is:open assignee:{login}"),
+        "prs_merged_here": count_or_none(gh, f"is:pr is:merged author:{login}"),
+        "prs_open_here": count_or_none(gh, f"is:pr is:open author:{login}"),
+        "issues_opened_here": count_or_none(gh, f"is:issue author:{login}"),
+        "issues_assigned_open_here": count_or_none(gh, f"is:issue is:open assignee:{login}"),
     }
 
 
@@ -449,9 +499,9 @@ def similar_items(gh: GitHub, number: int, title: str, qualifier: str = "is:issu
     keywords = title_keywords(title)[:4]
     if not keywords:
         return []
-    found = gh.search(f"{qualifier} in:title {' '.join(keywords[:3])}", limit=6).get("items", [])
+    found = search_items(gh, f"{qualifier} in:title {' '.join(keywords[:3])}", 6)
     if len(found) < 3 and len(keywords) > 1:
-        found += gh.search(f"{qualifier} in:title {' OR '.join(keywords)}", limit=6).get("items", [])
+        found += search_items(gh, f"{qualifier} in:title {' OR '.join(keywords)}", 6)
     seen: set[int] = set()
     similar = []
     for item in found:
@@ -470,7 +520,7 @@ def similar_items(gh: GitHub, number: int, title: str, qualifier: str = "is:issu
     return similar[:5]
 
 
-def issue_facts(gh: GitHub, number: int, bot: str, skip_associations: set[str]) -> dict[str, Any]:
+def issue_facts(gh: GitHub, number: int, bot: str, maintainers: Maintainers) -> dict[str, Any]:
     """Facts about an issue: content, author, claimants, assignment and linked PRs."""
     issue = gh.get(f"/issues/{number}")
     comments = gh.pages(f"/issues/{number}/comments", limit=200)
@@ -494,7 +544,7 @@ def issue_facts(gh: GitHub, number: int, bot: str, skip_associations: set[str]) 
     claimants = [
         {"login": c["user"]["login"], "at": c["created_at"], "comment_id": c["id"]}
         for c in comments
-        if c.get("author_association") not in skip_associations
+        if not maintainers.includes(c["user"]["login"], c.get("author_association"))
         and c["user"].get("type") != "Bot"
         and c["user"]["login"] != bot
         and is_claim(c.get("body"))
@@ -625,7 +675,7 @@ def pr_facts(gh: GitHub, number: int, bot: str) -> dict[str, Any]:
             continue
         competing = [
             item["number"]
-            for item in gh.search(f'is:pr is:open "#{issue_number}"', limit=10).get("items", [])
+            for item in search_items(gh, f'is:pr is:open "#{issue_number}"', 10)
             if item["number"] != number
         ]
         linked.append(
@@ -679,7 +729,11 @@ def pr_facts(gh: GitHub, number: int, bot: str) -> dict[str, Any]:
 
 
 def prs_for_sha(gh: GitHub, sha: str) -> list[int]:
-    """Open PRs a search associates with ``sha``; callers check the head themselves."""
+    """Open PRs a search associates with ``sha``; callers check the head themselves.
+
+    Unlike the optional searches this one is not allowed to fail quietly: with no
+    PR found the review would be skipped unseen, so an error fails the run instead.
+    """
     items = gh.search(f"is:pr is:open {sha}", limit=5).get("items", [])
     return [item["number"] for item in items]
 
@@ -717,10 +771,13 @@ def write_job(out_dir: str, index: int, kind: str, number: int, payload: dict[st
     return path
 
 
-def review_is_due(facts: dict[str, Any], skip: set[str], bot: str) -> Optional[str]:
+def review_is_due(facts: dict[str, Any], maintainers: Maintainers, bot: str) -> Optional[str]:
     """Why an automatic ``pr_review`` should wait or be skipped, or None when it is due."""
-    if facts["draft"] or facts["author"]["association"] in skip or facts["author"]["login"] == bot:
-        return "draft, or authored by a maintainer or the bot"
+    author = facts["author"]
+    if author.get("type") == "Bot" or author["login"] == bot:
+        return "authored by a bot"
+    if facts["draft"] or maintainers.includes(author["login"], author["association"]):
+        return "draft, or authored by a maintainer"
     if facts["ci"]["state"] == "pending" or facts["coderabbit"]["status"] == "pending":
         return "checks still running, a later event will review it"
     last = facts["last_bot_review"] or {}
@@ -729,14 +786,26 @@ def review_is_due(facts: dict[str, Any], skip: set[str], bot: str) -> Optional[s
     return None
 
 
+def mark_maintainer(person: dict[str, Any], maintainers: Maintainers) -> dict[str, Any]:
+    """Add ``is_maintainer`` to an author's facts."""
+    person["is_maintainer"] = maintainers.includes(person.get("login"), person.get("association"))
+    return person
+
+
 def jobs_for(
-    gh: GitHub, decision: dict[str, Any], event: dict[str, Any], bot: str, skip: set[str], manual: bool = False
+    gh: GitHub,
+    decision: dict[str, Any],
+    event: dict[str, Any],
+    bot: str,
+    maintainers: Maintainers,
+    manual: bool = False,
 ) -> list[tuple[str, dict[str, Any], str, dict]]:
     """Expand a routing decision into ``(kind, facts, idempotency_key, trigger)`` jobs."""
     kind = decision["kind"]
     if kind.startswith("issue_"):
         number = decision["number"]
-        facts = issue_facts(gh, number, bot, skip)
+        facts = issue_facts(gh, number, bot, maintainers)
+        mark_maintainer(facts["author"], maintainers)
         trigger: dict[str, Any] = {}
         key = f"issue-{number}-{kind}"
         if "comment_id" in decision:
@@ -744,7 +813,7 @@ def jobs_for(
             login = comment["user"]["login"]
             trigger = {
                 "comment": comment_view(comment),
-                "commenter": author_facts(gh, login, comment.get("author_association")),
+                "commenter": mark_maintainer(author_facts(gh, login, comment.get("author_association")), maintainers),
             }
             key += f"-{decision['comment_id']}"
         return [(kind, facts, key, trigger)]
@@ -754,11 +823,17 @@ def jobs_for(
         numbers = decision.get("numbers") or prs_for_sha(gh, decision["sha"])
     jobs = []
     for number in numbers:
+        if not manual:
+            author = gh.get(f"/pulls/{number}").get("user") or {}
+            if author.get("type") == "Bot" or author.get("login") == bot:
+                print(f"PR #{number}: authored by a bot")
+                continue
         facts = pr_facts(gh, number, bot)
+        mark_maintainer(facts["author"], maintainers)
         if "sha" in decision and facts["head_sha"] != decision["sha"]:
             print(f"PR #{number}: head is {facts['head_sha'][:7]}, not the event's {decision['sha'][:7]}")
             continue
-        reason = None if manual or kind != "pr_review" else review_is_due(facts, skip, bot)
+        reason = None if manual or kind != "pr_review" else review_is_due(facts, maintainers, bot)
         if reason:
             print(f"PR #{number}: {reason}")
             continue
@@ -779,7 +854,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     repo = os.environ.get("GITHUB_REPOSITORY") or DEFAULT_REPO
     bot = os.environ.get("TRIAGE_BOT_LOGIN") or DEFAULT_BOT
     mode = "live" if os.environ.get("TRIAGE_MODE") == "live" else "shadow"
-    skip = {s.strip() for s in (os.environ.get("TRIAGE_SKIP_ASSOCIATIONS") or DEFAULT_SKIP_ASSOCIATIONS).split(",")}
+    maintainers = Maintainers.from_env(os.environ.get("TRIAGE_MAINTAINERS"), os.environ.get("TRIAGE_SKIP_ASSOCIATIONS"))
     gh = GitHub(os.environ.get("GITHUB_TOKEN"), repo)
 
     event: dict[str, Any] = {}
@@ -796,13 +871,13 @@ def main(argv: Optional[list[str]] = None) -> int:
             kind = "issue_opened" if inputs.get("target") == "issue" else "pr_review"
             decision = {"kind": kind, "number": int(inputs["number"])}
         else:
-            decision = route(event_name, event, bot, skip)
+            decision = route(event_name, event, bot, maintainers)
     if not decision.get("kind"):
         print(f"Skipped: {decision.get('reason')}")
         return 0
 
     manual = bool(args.issue or args.pr or event.get("inputs"))
-    jobs = jobs_for(gh, decision, event, bot, skip, manual)
+    jobs = jobs_for(gh, decision, event, bot, maintainers, manual)
     for index, (kind, facts, key, trigger) in enumerate(jobs):
         if manual:
             trigger = {**trigger, "manual": True}
