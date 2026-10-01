@@ -114,7 +114,7 @@ class TestBuildTurnCapabilities:
         caps = TurnCapabilities(
             tool_calling=False, vision=False, native_pdf=False, sandbox=False, window=1, is_v1=False,
         )
-        with pytest.raises(Exception):
+        with pytest.raises(AttributeError):
             caps.vision = True
 
 

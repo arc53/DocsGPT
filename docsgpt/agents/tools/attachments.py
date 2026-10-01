@@ -1222,7 +1222,6 @@ class AttachmentsTool(Tool):
                 text = encoding.decode(ids[:budget])
                 sections.append(f"--- page {number} (first {budget:,} tokens) ---\n{text}")
                 shown.append(number)
-                used = budget
                 break
             sections.append(f"--- page {number} ---\n{text}")
             shown.append(number)
