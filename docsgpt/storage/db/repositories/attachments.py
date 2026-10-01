@@ -259,7 +259,7 @@ class AttachmentsRepository:
         result = self._conn.execute(
             text(
                 f"SELECT {_PLANNING_COLUMNS} "
-                "FROM attachments WHERE id::text = ANY(:ids) AND user_id = :user_id"
+                "FROM attachments WHERE id = ANY(CAST(:ids AS uuid[])) AND user_id = :user_id"
             ),
             {"ids": wanted, "user_id": user_id},
         )

@@ -89,7 +89,7 @@ def link_attachments_to_source(conn: Connection, ids: list[str], user_id: str, s
         text(
             "UPDATE attachments SET metadata = COALESCE(metadata, '{}'::jsonb) "
             "|| jsonb_build_object('knowledge_source_id', CAST(:source_id AS text)) "
-            "WHERE id::text = ANY(:ids) AND user_id = :user_id"
+            "WHERE id = ANY(CAST(:ids AS uuid[])) AND user_id = :user_id"
         ),
         {"ids": wanted, "user_id": user_id, "source_id": str(source_id)},
     )
