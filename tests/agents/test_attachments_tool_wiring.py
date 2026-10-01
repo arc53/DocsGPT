@@ -96,7 +96,9 @@ def test_added_when_the_conversation_has_files(
     assert not entry.get("client_side")
     assert not any(a.get("require_approval") for a in entry["actions"])
     assert agent.turn_capabilities.attachments_tool
-    assert set(agent.turn_capabilities.attachments_actions) >= {"attachments_list", "attachments_read"}
+    assert set(agent.turn_capabilities.attachments_actions) == {
+        "attachments_list", "attachments_read", "attachments_search"
+    }
     assert entry["config"]["current_ids"] == ["id-a"]
 
 

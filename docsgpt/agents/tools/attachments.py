@@ -15,8 +15,11 @@ only in ``docsgpt`` extension frames.
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
+import unicodedata
+from collections import Counter
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from docsgpt.agents.attachment_budget import (
@@ -40,7 +43,8 @@ ATTACHMENTS_TOOL_ID = "attachments"
 
 LIST = "attachments_list"
 READ = "attachments_read"
-ACTIONS: Tuple[str, ...] = (LIST, READ)
+SEARCH = "attachments_search"
+ACTIONS: Tuple[str, ...] = (LIST, READ, SEARCH)
 # Prefix our action names take when a client tool already uses one of them:
 # the client's tool keeps its name, ours moves aside.
 COLLISION_PREFIX = "docsgpt_"
@@ -53,6 +57,15 @@ MAX_TEXT_PAGES_PER_CALL = 20
 # Page images one read renders at most (scanned pages, for a vision model).
 MAX_IMAGE_PAGES_PER_CALL = 5
 RENDER_DPI = 150
+
+# Lexical search: passages of the stored text, ranked with BM25.
+SEARCH_CHUNK_TOKENS = 300
+SEARCH_CHUNK_STRIDE = 240
+DEFAULT_SEARCH_K = 8
+MAX_SEARCH_K = 20
+SNIPPET_CHARS = 700
+BM25_K1 = 1.2
+BM25_B = 0.75
 # A page with fewer visible characters than this has no usable text layer.
 MIN_PAGE_CHARS = 20
 # Room the label, notes and footer take next to the text, inside the
@@ -427,6 +440,128 @@ def _render_pages(data: bytes, pages: Sequence[int]) -> List[Dict[str, Any]]:
     return rendered
 
 
+_WORD_RE: Optional["re.Pattern[str]"] = None
+
+
+def _word_re() -> "re.Pattern[str]":
+    """Letters, digits and combining marks: a word in any script.
+
+    ``\\w`` alone splits Devanagari (and other abugidas) at every vowel sign
+    and virama, which are combining marks; adding them keeps words whole.
+    """
+    global _WORD_RE
+    if _WORD_RE is None:
+        marks: List[str] = []
+        start = None
+        for code in range(0x10000):
+            is_mark = unicodedata.category(chr(code)).startswith("M")
+            if is_mark and start is None:
+                start = code
+            elif not is_mark and start is not None:
+                marks.append(f"\\u{start:04x}-\\u{code - 1:04x}")
+                start = None
+        _WORD_RE = re.compile(rf"[\w{''.join(marks)}]+")
+    return _WORD_RE
+
+
+def search_tokens(text: str) -> List[str]:
+    """Lower-cased words of ``text``, in any script.
+
+    Args:
+        text: Text to tokenize.
+
+    Returns:
+        The words, NFC-normalized and case-folded.
+    """
+    return [word.casefold() for word in _word_re().findall(unicodedata.normalize("NFC", text or ""))]
+
+
+class _Passage:
+    """One indexed window of a file's stored text."""
+
+    __slots__ = ("planned", "start", "end", "text", "length")
+
+    def __init__(self, planned: PlannedFile, start: int, end: int, text: str, length: int) -> None:
+        self.planned = planned
+        self.start = start
+        self.end = end
+        self.text = text
+        self.length = length
+
+
+class _Index:
+    """In-memory BM25 over passages of the conversation's stored text."""
+
+    def __init__(self) -> None:
+        self.passages: List[_Passage] = []
+        self.postings: Dict[str, List[Tuple[int, int]]] = {}
+        self.total_length = 0
+
+    def add(self, planned: PlannedFile, text: str) -> None:
+        encoding = _encoding()
+        ids = encoding.encode_ordinary(text)
+        start = 0
+        while start < len(ids):
+            end = min(start + SEARCH_CHUNK_TOKENS, len(ids))
+            chunk = encoding.decode(ids[start:end])
+            counts = Counter(search_tokens(chunk))
+            index = len(self.passages)
+            length = sum(counts.values())
+            self.passages.append(_Passage(planned, start, end, chunk, length))
+            self.total_length += length
+            for term, tf in counts.items():
+                self.postings.setdefault(term, []).append((index, tf))
+            if end >= len(ids):
+                break
+            start += SEARCH_CHUNK_STRIDE
+
+    def search(self, query: str, refs: Optional[set], k: int) -> List[Tuple[float, _Passage]]:
+        terms = list(dict.fromkeys(search_tokens(query)))
+        if not terms or not self.passages:
+            return []
+        n = len(self.passages)
+        average = self.total_length / n if n else 1.0
+        scores: Dict[int, float] = {}
+        for term in terms:
+            postings = self.postings.get(term)
+            if not postings:
+                continue
+            idf = math.log(1 + (n - len(postings) + 0.5) / (len(postings) + 0.5))
+            for index, tf in postings:
+                passage = self.passages[index]
+                if refs is not None and passage.planned.ref not in refs:
+                    continue
+                norm = tf * (BM25_K1 + 1) / (tf + BM25_K1 * (1 - BM25_B + BM25_B * passage.length / average))
+                scores[index] = scores.get(index, 0.0) + idf * norm
+        ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
+        hits: List[Tuple[float, _Passage]] = []
+        for index, score in ranked:
+            passage = self.passages[index]
+            # Overlapping windows of one file would repeat the same text.
+            if any(
+                kept.planned is passage.planned and abs(kept.start - passage.start) < SEARCH_CHUNK_TOKENS
+                for _, kept in hits
+            ):
+                continue
+            hits.append((score, passage))
+            if len(hits) >= k:
+                break
+        return hits
+
+
+def _snippet(text: str, query: str) -> str:
+    """The part of a passage around the first query word, at most ``SNIPPET_CHARS`` long."""
+    if len(text) <= SNIPPET_CHARS:
+        return text.strip()
+    folded = unicodedata.normalize("NFC", text).casefold()
+    positions = [folded.find(term) for term in search_tokens(query)]
+    found = [p for p in positions if p >= 0]
+    centre = min(found) if found else 0
+    start = max(min(centre - SNIPPET_CHARS // 3, len(text) - SNIPPET_CHARS), 0)
+    piece = text[start:start + SNIPPET_CHARS].strip()
+    return ("…" if start > 0 else "") + piece + ("…" if start + SNIPPET_CHARS < len(text) else "")
+
+
 def _encoding():
     from docsgpt.utils import get_encoding
 
@@ -448,6 +583,8 @@ class AttachmentsTool(Tool):
         self._files: Optional[List[PlannedFile]] = None
         self._native_queue: List[Dict[str, Any]] = []
         self._native_used = 0
+        self._index: Optional[_Index] = None
+        self._unsearchable: List[PlannedFile] = []
 
     def drain_native_parts(self) -> List[Dict[str, Any]]:
         """Images this tool's reads asked to show, emptied as they are taken.
@@ -489,6 +626,8 @@ class AttachmentsTool(Tool):
                     rows=kwargs.get("rows"),
                     pages=kwargs.get("pages"),
                 )
+            if action == SEARCH:
+                return self._search(kwargs.get("query"), refs=kwargs.get("refs"), k=kwargs.get("k"))
         except Exception:
             logger.exception("attachments tool: %s failed", action)
             return "Error: the attachments could not be read right now."
@@ -539,6 +678,36 @@ class AttachmentsTool(Tool):
                         "rows": {
                             "type": "string",
                             "description": "Line range such as 100-200 (1-based, the header is row 1).",
+                            "filled_by_llm": True,
+                            "required": False,
+                        },
+                    }
+                },
+            },
+            {
+                "name": SEARCH,
+                "description": (
+                    "Search the text of the attached files by keywords. Returns passages with the ref and "
+                    "offset to read on from."
+                ),
+                "parameters": {
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Keywords to look for, in the files' language.",
+                            "filled_by_llm": True,
+                            "required": True,
+                        },
+                        "refs": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Only search these refs, e.g. [\"F2\", \"F5\"].",
+                            "filled_by_llm": True,
+                            "required": False,
+                        },
+                        "k": {
+                            "type": "integer",
+                            "description": f"Passages to return (default {DEFAULT_SEARCH_K}, max {MAX_SEARCH_K}).",
                             "filled_by_llm": True,
                             "required": False,
                         },
@@ -777,6 +946,65 @@ class AttachmentsTool(Tool):
         if preview:
             return "\n".join([UNTRUSTED_NOTE, fence_file(ref, filename, str(preview))])
         return f"Artifact {ref} {name} ({mime_type or 'unknown type'}) has no readable content here."
+
+    # ---- attachments_search ----
+
+    def _search_index(self) -> _Index:
+        """Index every file's stored text once per tool (one turn)."""
+        if self._index is None:
+            index = _Index()
+            unsearchable: List[PlannedFile] = []
+            for planned in self.files():
+                row = self._content(planned) if self._has_text(planned) else None
+                text = str((row or {}).get("content") or "")
+                if text.strip():
+                    index.add(planned, text)
+                else:
+                    unsearchable.append(planned)
+            self._index, self._unsearchable = index, unsearchable
+        return self._index
+
+    def _search(self, query: Any, *, refs: Any = None, k: Any = None) -> str:
+        query = str(query or "").strip()
+        if not query:
+            return "Error: a query is required."
+        try:
+            limit = int(k) if k not in (None, "") else DEFAULT_SEARCH_K
+        except (TypeError, ValueError):
+            limit = DEFAULT_SEARCH_K
+        limit = max(min(limit, MAX_SEARCH_K), 1)
+        wanted: Optional[set] = None
+        if refs not in (None, "", []):
+            items = refs if isinstance(refs, (list, tuple)) else str(refs).split(",")
+            wanted = set()
+            for item in items:
+                planned, label = self._find(item)
+                wanted.add(planned.ref if planned is not None else label)
+        index = self._search_index()
+        hits = index.search(query, wanted, limit)
+        skipped = [p for p in self._unsearchable if wanted is None or p.ref in wanted]
+        skipped_note = (
+            "Files with no text to search: "
+            + ", ".join(f"{p.ref} {sanitize_filename(p.filename)}" for p in skipped)
+            + "."
+            if skipped
+            else ""
+        )
+        if not hits:
+            message = f'No matches for "{sanitize_filename(query)}" in the attached files.'
+            return f"{message} {skipped_note}".strip()
+        lines = [f'{len(hits)} passage(s) for "{sanitize_filename(query)}", best first. {UNTRUSTED_NOTE}']
+        for _score, passage in hits:
+            planned = passage.planned
+            span = f"tokens {passage.start + 1:,}–{passage.end:,}"
+            lines.append(
+                f"- {planned.ref} {sanitize_filename(planned.filename)} ({span}, read on with "
+                f'{self._action(READ)}(ref="{planned.ref}", offset={passage.start}))'
+            )
+            lines.append(fence_file(planned.ref, planned.filename, _snippet(passage.text, query), range=span))
+        if skipped_note:
+            lines.append(skipped_note)
+        return "\n".join(lines)
 
     def _cut_note(self, planned: PlannedFile, row: Dict[str, Any], stored: int) -> str:
         extraction = _extraction(row)
