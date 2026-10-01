@@ -8,7 +8,9 @@ import reducer, {
   clearRoles,
   CONVERSATIONS_PAGE_SIZE,
   removeConversation,
+  renameConversation,
   setConversationsHead,
+  setConversationsLoading,
   prefListenerMiddleware,
   selectIsAdmin,
   selectRoles,
@@ -155,5 +157,33 @@ describe('conversation list paging', () => {
     state = reducer(state, removeConversation(`c${full + 2}`));
     expect(ids(state)).not.toContain(`c${full + 2}`);
     expect(ids(state)).toHaveLength(full + 4);
+  });
+
+  // Deleting refreshes the newest page; flagging the list as loading must not
+  // put back a chat removed past the first page, or the merge keeps it.
+  it('a deleted older chat stays gone through the refresh that follows', () => {
+    let state = reducer(baseState(), setConversationsHead(range(0, full)));
+    state = reducer(state, appendConversations(range(full, full)));
+    const gone = `c${full + 15}`;
+    state = reducer(state, removeConversation(gone));
+    state = reducer(state, setConversationsLoading(true));
+    expect(state.conversations.loading).toBe(true);
+    state = reducer(state, setConversationsHead(range(0, full)));
+    expect(ids(state)).not.toContain(gone);
+    expect(ids(state)).toHaveLength(2 * full - 1);
+    expect(state.conversations.loading).toBe(false);
+  });
+
+  // A rename keeps the chat's date, so a chat past the first page is never
+  // in the refreshed newest page; the new name has to be written here.
+  it('renames a chat wherever it is in the list', () => {
+    let state = reducer(baseState(), setConversationsHead(range(0, full)));
+    state = reducer(state, appendConversations(range(full, 5)));
+    const id = `c${full + 3}`;
+    state = reducer(state, renameConversation({ id, name: 'Renamed' }));
+    state = reducer(state, setConversationsHead(range(0, full)));
+    const chat = state.conversations.data?.find((c) => c.id === id);
+    expect(chat?.name).toBe('Renamed');
+    expect(ids(state)).toHaveLength(full + 5);
   });
 });

@@ -18,6 +18,7 @@ import {
   selectToken,
   receiveConversations,
   setConversations,
+  setConversationsLoading,
   setPrompts,
   setSourceDocs,
   setSpeechAvailability,
@@ -121,7 +122,7 @@ export default function useDataInitializer(isAuthLoading: boolean) {
 
     const fetchConversationsData = async () => {
       if (!conversations?.data) {
-        dispatch(setConversations({ ...conversations, loading: true }));
+        dispatch(setConversationsLoading(true));
         try {
           const fetchedConversations = await getConversations(token);
           dispatch(receiveConversations(fetchedConversations));
