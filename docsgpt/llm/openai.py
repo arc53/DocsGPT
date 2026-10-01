@@ -4,10 +4,11 @@ import io
 import json
 import logging
 import os.path
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from openai import BadRequestError, OpenAI
 
+from docsgpt.attachment_names import normalize_attachment_filename
 from docsgpt.core.settings import settings
 from docsgpt.llm.base import BaseLLM, optional_int
 from docsgpt.storage.storage_creator import StorageCreator
@@ -84,6 +85,13 @@ def _is_tools_unsupported_error(error: Exception) -> bool:
     """
     haystack = _provider_message(error).lower()
     return any(marker in haystack for marker in _TOOLS_UNSUPPORTED_MARKERS)
+
+
+def _data_url_mime(value) -> Optional[str]:
+    """The MIME type of a ``data:`` URL, or None."""
+    if isinstance(value, str) and value.startswith("data:"):
+        return value[len("data:"):].split(";", 1)[0].split(",", 1)[0] or None
+    return None
 
 
 def _truncate_base64_for_logging(messages):
@@ -366,8 +374,12 @@ class OpenAILLM(BaseLLM):
             # into ``input_file`` — and Azure Responses then rejects on
             # the ``file_data`` regardless of the ``file_id``.
             return {"type": "file", "file": {"file_id": file_obj["file_id"]}}
-        filename = file_obj.get("filename") or "upload.pdf"
         file_data = file_obj.get("file_data")
+        # The Files API rejects an upper-case extension (".PDF") as an
+        # unsupported file type; upload under a normalized name.
+        filename = normalize_attachment_filename(
+            file_obj.get("filename") or "upload.pdf", _data_url_mime(file_data)
+        )
         if file_data:
             payload = file_data
             if payload.startswith("data:"):
@@ -1945,6 +1957,11 @@ class OpenAILLM(BaseLLM):
                     prepared_messages[user_message_index]["content"].append(
                         {"type": "file", "file": {"file_id": file_id}}
                     )
+                    attachment_id = attachment.get("id") or attachment.get("_id")
+                    if attachment_id:
+                        # A fallback that cannot take the part swaps in this
+                        # attachment's own text.
+                        self.__dict__.setdefault("_file_part_attachments", {})[file_id] = str(attachment_id)
                 except Exception as e:
                     logging.error(f"Error uploading PDF to OpenAI: {e}", exc_info=True)
                     # Truthy, not membership — ``content`` is always a key on a
@@ -2095,10 +2112,17 @@ class OpenAILLM(BaseLLM):
         if not self.storage.file_exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
         try:
+            # The stored name may be the client's (``PRILOGA_1.PDF``); the Files
+            # API rejects an upper-case extension as an unsupported type.
+            upload_name = normalize_attachment_filename(
+                attachment.get("filename") or os.path.basename(file_path or ""),
+                attachment.get("mime_type"),
+            )
+
             def _upload(local_path, **_kwargs):
                 with open(local_path, "rb") as uploaded_file:
                     return self.client.files.create(
-                        file=uploaded_file,
+                        file=(upload_name, uploaded_file),
                         purpose="assistants",
                     ).id
 

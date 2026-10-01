@@ -461,6 +461,40 @@ class TestGetMessageTail:
         assert response.json["status"] == "streaming"
         assert response.json["message_id"] == msg_id
 
+    def test_failed_tail_carries_the_error_code(self, app, pg_conn):
+        from docsgpt.api.user.conversations.routes import GetMessageTail
+        from docsgpt.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        owner = "user-owner-failed"
+        _, msg_id = self._seed_in_flight_message(pg_conn, owner)
+        ConversationsRepository(pg_conn).update_message_by_id(
+            msg_id,
+            {
+                "status": "failed",
+                "metadata": {
+                    "error": "This message is too large for the model.",
+                    "error_code": "context_length_exceeded",
+                    "error_params": {"needed_tokens": 300000, "available_tokens": 200000},
+                },
+            },
+        )
+
+        with _patch_conversations_db(pg_conn), app.test_request_context(
+            f"/api/messages/{msg_id}/tail"
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": owner}
+            response = GetMessageTail().get(msg_id)
+
+        assert response.status_code == 200
+        assert response.json["status"] == "failed"
+        assert response.json["error"] == "This message is too large for the model."
+        assert response.json["error_code"] == "context_length_exceeded"
+        assert response.json["error_params"] == {"needed_tokens": 300000, "available_tokens": 200000}
+
     def test_shared_user_can_tail(self, app, pg_conn):
         """A user in ``conversations.shared_with`` must be able to tail
         an in-flight placeholder. Without the shared-with predicate

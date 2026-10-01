@@ -2007,14 +2007,35 @@
       "attach": "添付",
       "remove": "添付ファイルを削除",
       "uploadFailed": "アップロードに失敗しました。ファイルを読み取れなかったか、接続が切断されました。",
+      "tooLarge": "添付するには大きすぎます(上限 {{size}} MB)",
       "attached": "添付ファイル",
       "failed": "失敗",
       "attachment": "添付ファイル",
+      "knowledgeHint": "これらのファイルはモデルが一度に読める量を超えています。残りは必要に応じて読み込みます。",
+      "knowledgeHintNoTools": "これらのファイルはモデルが一度に読める量を超えています。一部は含まれません。",
+      "addToKnowledge": "ナレッジに追加",
+      "knowledgeAdded": "ファイルをナレッジに追加しています。準備ができたら、もう一度質問してください。",
+      "knowledgeFailed": "ファイルをナレッジに追加できませんでした。もう一度お試しください。",
+      "knowledgeName_other": "{{name}} ほか{{count}}件",
+      "unsupportedType": "サポートされていないファイル形式です({{extension}})",
       "waitingToSend_one": "{{count}} 件のファイルの処理が終わると送信されます…",
-      "waitingToSend_other": "{{count}} 件のファイルの処理が終わると送信されます…"
+      "waitingToSend_other": "{{count}} 件のファイルの処理が終わると送信されます…",
+      "cancelQueuedSend": "キャンセル",
+      "unreadableByModel": "{{model}} は {{name}} を読み取れません。画像や PDF に対応したモデルに切り替えてください",
+      "queued": "アップロード待ち",
+      "uploading": "アップロード中",
+      "processing": "処理中"
     },
     "retry": "再試行",
     "failedTitle": "応答を生成できませんでした",
+    "errors": {
+      "contextLength": "このメッセージと添付ファイルは、モデルのコンテキストウィンドウに収まりません。ファイルの数を減らすか、小さいファイルを送ってください。",
+      "contextLengthKnowledge": "このメッセージと添付ファイルは、モデルのコンテキストウィンドウに収まりません。ファイルの数を減らすか小さいファイルを送るか、「ナレッジに追加」を使って、ファイル全体を送る代わりに検索してください。",
+      "contextLengthSized": "このメッセージと添付ファイルには約 {{needed, number}} トークンが必要で、モデルが扱える量（{{available, number}} トークン）を超えています。ファイルの数を減らすか、小さいファイルを送ってください。",
+      "contextLengthSizedKnowledge": "このメッセージと添付ファイルには約 {{needed, number}} トークンが必要で、モデルが扱える量（{{available, number}} トークン）を超えています。ファイルの数を減らすか小さいファイルを送るか、「ナレッジに追加」を使って、ファイル全体を送る代わりに検索してください。",
+      "serverError": "しばらくしてからもう一度お試しください。ご不便をおかけして申し訳ありません。",
+      "clientDisconnect": "応答が生成される前に中断されました。もう一度お試しください。"
+    },
     "reasoning": "推論",
     "wikiWrite": {
       "edited": "Wikiを編集",
@@ -2046,7 +2067,16 @@
       "creatingArtifact": "アーティファクトを作成中…",
       "usingTool": "{{tool}} を使用中…",
       "searchingConnector": "{{name}} を検索中…",
-      "usingConnector": "{{name}} を使用中…"
+      "usingConnector": "{{name}} を使用中…",
+      "attachmentsSearch": "ファイルで「{{query}}」を検索中…",
+      "attachmentsSearchGeneric": "ファイルを検索中…",
+      "attachmentsRead": "{{ref}} を読み込み中…",
+      "attachmentsReadPage": "{{ref}}（{{pages}} ページ）を読み込み中…",
+      "attachmentsReadPages": "{{ref}}（{{pages}} ページ）を読み込み中…",
+      "attachmentsReadRows": "{{ref}}（{{rows}} 行）を読み込み中…",
+      "attachmentsReadGeneric": "ファイルを読み込み中…",
+      "attachmentsImage": "画像 {{ref}} を表示中…",
+      "attachmentsList": "ファイルを一覧表示中…"
     },
     "toolChip": {
       "searchingWeb": "ウェブ検索済み · 「{{query}}」",
@@ -2060,7 +2090,16 @@
       "usingTool": "{{tool}} を使用済み",
       "searchedConnector": "{{name}} を検索しました",
       "readConnector": "{{name}} から読み取りました",
-      "usedConnector": "{{name}} を使用: {{action}}"
+      "usedConnector": "{{name}} を使用: {{action}}",
+      "attachmentsSearch": "ファイルで「{{query}}」を検索しました",
+      "attachmentsSearchGeneric": "ファイルを検索しました",
+      "attachmentsRead": "{{ref}} を読み込みました",
+      "attachmentsReadPage": "{{ref}}（{{pages}} ページ）を読み込みました",
+      "attachmentsReadPages": "{{ref}}（{{pages}} ページ）を読み込みました",
+      "attachmentsReadRows": "{{ref}}（{{rows}} 行）を読み込みました",
+      "attachmentsReadGeneric": "ファイルを読み込みました",
+      "attachmentsImage": "画像 {{ref}} を表示しました",
+      "attachmentsList": "ファイルを一覧表示しました"
     },
     "inlineSteps": {
       "arguments": "引数",

@@ -2006,14 +2006,35 @@
       "attach": "附件",
       "remove": "删除附件",
       "uploadFailed": "上传失败。无法读取文件或连接已断开。",
+      "tooLarge": "文件过大，无法附加(上限 {{size}} MB)",
       "attached": "附件",
       "failed": "失败",
       "attachment": "附件",
+      "knowledgeHint": "这些文件超出了模型一次能读取的范围。其余部分会在需要时读取。",
+      "knowledgeHintNoTools": "这些文件超出了模型一次能读取的范围。部分文件将被略过。",
+      "addToKnowledge": "添加到知识库",
+      "knowledgeAdded": "正在将这些文件添加到知识库。准备好后请再问一次。",
+      "knowledgeFailed": "无法将这些文件添加到知识库。请重试。",
+      "knowledgeName_other": "{{name}} 及另外 {{count}} 个文件",
+      "unsupportedType": "不支持的文件类型({{extension}})",
       "waitingToSend_one": "{{count}} 个文件处理完成后发送…",
-      "waitingToSend_other": "{{count}} 个文件处理完成后发送…"
+      "waitingToSend_other": "{{count}} 个文件处理完成后发送…",
+      "cancelQueuedSend": "取消",
+      "unreadableByModel": "{{model}} 无法读取 {{name}}，请切换到支持图片或 PDF 的模型",
+      "queued": "等待上传",
+      "uploading": "正在上传",
+      "processing": "正在处理"
     },
     "retry": "重试",
     "failedTitle": "无法生成回复",
+    "errors": {
+      "contextLength": "此消息及其附件太大，超出了模型的上下文窗口。请发送更少或更小的文件。",
+      "contextLengthKnowledge": "此消息及其附件太大，超出了模型的上下文窗口。请发送更少或更小的文件，或使用“添加到知识库”来检索它们，而不是整个发送。",
+      "contextLengthSized": "此消息及其附件大约需要 {{needed, number}} 个 token，超出了模型可接受的上限（{{available, number}} 个 token）。请发送更少或更小的文件。",
+      "contextLengthSizedKnowledge": "此消息及其附件大约需要 {{needed, number}} 个 token，超出了模型可接受的上限（{{available, number}} 个 token）。请发送更少或更小的文件，或使用“添加到知识库”来检索它们，而不是整个发送。",
+      "serverError": "请稍后再试。给您带来不便，敬请谅解。",
+      "clientDisconnect": "回复在生成任何内容之前就中断了。请重试。"
+    },
     "reasoning": "推理",
     "wikiWrite": {
       "edited": "已编辑 Wiki",
@@ -2045,7 +2066,16 @@
       "creatingArtifact": "正在创建工件…",
       "usingTool": "正在使用 {{tool}}…",
       "searchingConnector": "正在搜索 {{name}}…",
-      "usingConnector": "正在使用 {{name}}…"
+      "usingConnector": "正在使用 {{name}}…",
+      "attachmentsSearch": "正在文件中搜索“{{query}}”…",
+      "attachmentsSearchGeneric": "正在搜索文件…",
+      "attachmentsRead": "正在读取 {{ref}}…",
+      "attachmentsReadPage": "正在读取 {{ref}}（第 {{pages}} 页）…",
+      "attachmentsReadPages": "正在读取 {{ref}}（第 {{pages}} 页）…",
+      "attachmentsReadRows": "正在读取 {{ref}}（第 {{rows}} 行）…",
+      "attachmentsReadGeneric": "正在读取文件…",
+      "attachmentsImage": "正在查看图片 {{ref}}…",
+      "attachmentsList": "正在列出文件…"
     },
     "toolChip": {
       "searchingWeb": "已搜索网络 · “{{query}}”",
@@ -2059,7 +2089,16 @@
       "usingTool": "已使用 {{tool}}",
       "searchedConnector": "已搜索 {{name}}",
       "readConnector": "已从 {{name}} 读取",
-      "usedConnector": "已使用 {{name}}：{{action}}"
+      "usedConnector": "已使用 {{name}}：{{action}}",
+      "attachmentsSearch": "已在文件中搜索“{{query}}”",
+      "attachmentsSearchGeneric": "已搜索文件",
+      "attachmentsRead": "已读取 {{ref}}",
+      "attachmentsReadPage": "已读取 {{ref}}（第 {{pages}} 页）",
+      "attachmentsReadPages": "已读取 {{ref}}（第 {{pages}} 页）",
+      "attachmentsReadRows": "已读取 {{ref}}（第 {{rows}} 行）",
+      "attachmentsReadGeneric": "已读取文件",
+      "attachmentsImage": "已查看图片 {{ref}}",
+      "attachmentsList": "已列出文件"
     },
     "inlineSteps": {
       "arguments": "参数",

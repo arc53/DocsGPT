@@ -2016,14 +2016,36 @@
       "attach": "Anhängen",
       "remove": "Anhang entfernen",
       "uploadFailed": "Upload fehlgeschlagen. Die Datei konnte nicht gelesen werden oder die Verbindung wurde unterbrochen.",
+      "tooLarge": "Zu groß zum Anhängen (Limit {{size}} MB)",
       "attached": "Anhang",
       "failed": "Fehlgeschlagen",
       "attachment": "Anhang",
+      "knowledgeHint": "Diese Dateien sind größer, als das Modell auf einmal lesen kann. Den Rest liest es bei Bedarf.",
+      "knowledgeHintNoTools": "Diese Dateien sind größer, als das Modell auf einmal lesen kann. Einige werden ausgelassen.",
+      "addToKnowledge": "Zum Wissen hinzufügen",
+      "knowledgeAdded": "Die Dateien werden zum Wissen hinzugefügt. Frag erneut, sobald sie bereit sind.",
+      "knowledgeFailed": "Die Dateien konnten nicht zum Wissen hinzugefügt werden. Versuche es erneut.",
+      "knowledgeName_one": "{{name}} und {{count}} weitere",
+      "knowledgeName_other": "{{name}} und {{count}} weitere",
+      "unsupportedType": "Kein unterstützter Dateityp ({{extension}})",
       "waitingToSend_one": "Wird gesendet, sobald {{count}} Datei verarbeitet ist…",
-      "waitingToSend_other": "Wird gesendet, sobald {{count}} Dateien verarbeitet sind…"
+      "waitingToSend_other": "Wird gesendet, sobald {{count}} Dateien verarbeitet sind…",
+      "cancelQueuedSend": "Abbrechen",
+      "unreadableByModel": "{{model}} kann {{name}} nicht lesen – wechsle zu einem Modell, das Bilder oder PDFs unterstützt",
+      "queued": "Wartet auf Upload",
+      "uploading": "Wird hochgeladen",
+      "processing": "Wird verarbeitet"
     },
     "retry": "Erneut versuchen",
     "failedTitle": "Antwort konnte nicht erstellt werden",
+    "errors": {
+      "contextLength": "Diese Nachricht und ihre angehängten Dateien sind zu groß für das Kontextfenster des Modells. Sende weniger oder kleinere Dateien.",
+      "contextLengthKnowledge": "Diese Nachricht und ihre angehängten Dateien sind zu groß für das Kontextfenster des Modells. Sende weniger oder kleinere Dateien oder nutze „Zum Wissen hinzufügen“, um sie zu durchsuchen, statt sie vollständig zu senden.",
+      "contextLengthSized": "Diese Nachricht und ihre angehängten Dateien brauchen etwa {{needed, number}} Tokens, mehr als das Modell aufnehmen kann ({{available, number}} Tokens). Sende weniger oder kleinere Dateien.",
+      "contextLengthSizedKnowledge": "Diese Nachricht und ihre angehängten Dateien brauchen etwa {{needed, number}} Tokens, mehr als das Modell aufnehmen kann ({{available, number}} Tokens). Sende weniger oder kleinere Dateien oder nutze „Zum Wissen hinzufügen“, um sie zu durchsuchen, statt sie vollständig zu senden.",
+      "serverError": "Bitte versuche es später erneut. Wir entschuldigen uns für die Unannehmlichkeiten.",
+      "clientDisconnect": "Die Antwort brach ab, bevor etwas erzeugt wurde. Versuche es erneut."
+    },
     "reasoning": "Begründung",
     "wikiWrite": {
       "edited": "Wiki bearbeitet",
@@ -2055,7 +2077,16 @@
       "creatingArtifact": "Erstelle ein Artefakt…",
       "usingTool": "Verwende {{tool}}…",
       "searchingConnector": "Durchsuche {{name}}…",
-      "usingConnector": "Nutze {{name}}…"
+      "usingConnector": "Nutze {{name}}…",
+      "attachmentsSearch": "Durchsuche Dateien nach „{{query}}“…",
+      "attachmentsSearchGeneric": "Durchsuche Dateien…",
+      "attachmentsRead": "Lese {{ref}}…",
+      "attachmentsReadPage": "Lese {{ref}} (Seite {{pages}})…",
+      "attachmentsReadPages": "Lese {{ref}} (Seiten {{pages}})…",
+      "attachmentsReadRows": "Lese {{ref}} (Zeilen {{rows}})…",
+      "attachmentsReadGeneric": "Lese eine Datei…",
+      "attachmentsImage": "Betrachte Bild {{ref}}…",
+      "attachmentsList": "Liste Dateien auf…"
     },
     "toolChip": {
       "searchingWeb": "Im Web gesucht · „{{query}}“",
@@ -2069,7 +2100,16 @@
       "usingTool": "{{tool}} verwendet",
       "searchedConnector": "{{name}} durchsucht",
       "readConnector": "Aus {{name}} gelesen",
-      "usedConnector": "{{name}} genutzt: {{action}}"
+      "usedConnector": "{{name}} genutzt: {{action}}",
+      "attachmentsSearch": "Dateien nach „{{query}}“ durchsucht",
+      "attachmentsSearchGeneric": "Dateien durchsucht",
+      "attachmentsRead": "{{ref}} gelesen",
+      "attachmentsReadPage": "{{ref}} gelesen (Seite {{pages}})",
+      "attachmentsReadPages": "{{ref}} gelesen (Seiten {{pages}})",
+      "attachmentsReadRows": "{{ref}} gelesen (Zeilen {{rows}})",
+      "attachmentsReadGeneric": "Eine Datei gelesen",
+      "attachmentsImage": "Bild {{ref}} angesehen",
+      "attachmentsList": "Dateien aufgelistet"
     },
     "inlineSteps": {
       "arguments": "Argumente",

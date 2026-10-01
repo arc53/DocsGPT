@@ -251,6 +251,33 @@ class IdempotencyRepository:
         )
         return result.rowcount > 0
 
+    def live_lease_keys(self, keys: list[str]) -> set[str]:
+        """The keys among ``keys`` whose task holds a live lease right now.
+
+        A live lease means a worker is running the task and its heartbeat
+        is current, so a sweep must not treat the task as lost.
+
+        Args:
+            keys: Idempotency keys to look up.
+
+        Returns:
+            The subset with a pending row and an unexpired lease.
+        """
+        if not keys:
+            return set()
+        result = self._conn.execute(
+            text(
+                """
+                SELECT idempotency_key FROM task_dedup
+                WHERE idempotency_key = ANY(:keys)
+                  AND status = 'pending'
+                  AND lease_expires_at > clock_timestamp()
+                """
+            ),
+            {"keys": list(keys)},
+        )
+        return {row[0] for row in result.fetchall()}
+
     def release_lease(self, key: str, owner_id: str) -> bool:
         """Clear ``lease_owner_id`` / ``lease_expires_at`` on the
         wrapper's exception path so Celery's autoretry_for doesn't have

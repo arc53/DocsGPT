@@ -327,7 +327,9 @@ rounded-3xl`) are `variant="sidebar-item"`: left-aligned, full-radius, normal
   disables itself, sets `aria-busy`, and draws a 16px spinner over the label,
   which stays in the layout (invisible) so the width doesn't jump. Keep the
   idle label; never hand-place a `Spinner` in a button, swap the label for
-  "Saving…", or pin a fixed width to stop the jump. The one exception is a
+  "Saving…", or pin a fixed width to stop the jump. A busy link (`size="text"`
+  or `inline`) has no frame to hold that empty space, so `loading` keeps its
+  label readable in place, faded, with the spinner after it. The one exception is a
   button whose busy state says something the user needs: a progress figure
   (a connector's Sync shows "42%") or a mode (the composer's Voice button shows
   "Transcribing"). It keeps its busy label with a `Spinner size="xs"` (the
@@ -783,7 +785,9 @@ cover the button above; the default `top` everywhere else (under an answer,
 in the composer, in rows). Toast close and collapse buttons are plain `Button`s with
 an `aria-label` and no tooltip.
 
-Tooltips open after 400ms. One `TooltipProvider` is mounted in `main.tsx`,
+Tooltip text is 12px in a box at most 320px wide (`max-w-xs`) that wraps
+with `text-pretty`, so a two-line tooltip fills its box; `text-balance` would
+even the lines out and leave half the box empty. Tooltips open after 400ms. One `TooltipProvider` is mounted in `main.tsx`,
 so moving along a row of icon buttons opens each at once after the first
 (Radix's skip-delay); a `Tooltip` outside it (tests, a portal root) adds its
 own provider. For a hint on something that is not an icon button, compose

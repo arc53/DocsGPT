@@ -677,7 +677,10 @@ class TestAttachmentWorkerPublishes:
         ]
         assert publishes.calls[1][2]["current"] == 30
         failed = publishes.calls[2][2]
-        assert "parse boom" in failed["error"]
+        # The raw exception text stays in the logs; the chip gets a curated message.
+        assert "parse boom" not in failed["error"]
+        assert failed["code"] == "processing_failed"
+        assert failed["error"] == "This file could not be processed."
         assert failed["filename"] == "notes.txt"
 
 

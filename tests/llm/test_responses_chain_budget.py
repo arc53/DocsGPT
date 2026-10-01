@@ -417,3 +417,28 @@ def test_recorded_request_without_a_head_clears_the_committed_hash(monkeypatch):
     assert llm._chain_system_hash is None
     chained, _ = llm._build_responses_input(_messages("sys v1"), "resp_2")
     assert _roles(chained) == ["system", "user"]
+
+
+# ── replayed images ──────────────────────────────────────────────────────────
+
+
+def _image(att_id):
+    return {"id": att_id, "filename": f"{att_id}.png", "mime_type": "image/png"}
+
+
+@pytest.mark.unit
+def test_chain_restarts_before_replayed_images_pass_the_cap(monkeypatch):
+    # A chained request makes the provider replay every earlier turn's
+    # input, images included: one screenshot per turn hit the 50-image
+    # limit on a turn that attached nothing. The local history replays no
+    # images (earlier files are listed in the manifest), so start from it.
+    agent = _agent(monkeypatch, [_turn(500)], ATTACHMENT_MAX_NATIVE_PARTS=3)
+    agent.earlier_attachments = [_image(f"e{i}") for i in range(4)]
+    assert agent._previous_response_id() is None
+
+
+@pytest.mark.unit
+def test_chain_kept_while_replayed_images_stay_under_the_cap(monkeypatch):
+    agent = _agent(monkeypatch, [_turn(500)], ATTACHMENT_MAX_NATIVE_PARTS=3)
+    agent.earlier_attachments = [_image("e1"), {"id": "d", "mime_type": "text/plain"}]
+    assert agent._previous_response_id() == "resp_1"

@@ -253,6 +253,9 @@ def get_config():
         # Lets a frontend built before the Connectors page run against this
         # backend, and a new frontend hide the page against an older one.
         "connectors_enabled": True,
+        # The composer offers Knowledge once its files pass this share of
+        # the selected model's window.
+        "attachment_budget_share": float(settings.ATTACHMENT_BUDGET_SHARE),
     }
     if settings.AUTH_TYPE == "oidc":
         response["oidc"] = {

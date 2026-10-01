@@ -539,6 +539,26 @@ describe('ConversationBubble', () => {
     expect(buttonByText('retry')).toBeDefined();
   });
 
+  it('shows a curated error as readable text, with its action under it', async () => {
+    const curated =
+      'This message and its attached files are too large for the model.';
+    await render(
+      <ConversationBubble
+        type="ERROR"
+        message={curated}
+        errorCode="context_length_exceeded"
+        errorAction={<button type="button">add-knowledge</button>}
+        retryBtn={<button type="button">retry</button>}
+      />,
+    );
+    const detail = container.querySelector(
+      '[role="alert"] [data-slot="alert-description"]',
+    )!;
+    expect(detail.textContent).toContain(curated);
+    expect(detail.innerHTML).not.toContain('font-mono');
+    expect(buttonByText('add-knowledge')).toBeDefined();
+  });
+
   it('makes the Sources header a step row that opens the All sources sheet', async () => {
     const sources = [1, 2, 3, 4].map((n) => ({
       title: `Doc ${n}`,

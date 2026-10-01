@@ -2007,14 +2007,35 @@
       "attach": "附件",
       "remove": "刪除附件",
       "uploadFailed": "上傳失敗。無法讀取檔案或連線已中斷。",
+      "tooLarge": "檔案過大，無法附加(上限 {{size}} MB)",
       "attached": "附件",
       "failed": "失敗",
       "attachment": "附件",
+      "knowledgeHint": "這些檔案超出模型一次能讀取的範圍。其餘部分會在需要時讀取。",
+      "knowledgeHintNoTools": "這些檔案超出模型一次能讀取的範圍。部分檔案將被略過。",
+      "addToKnowledge": "新增到知識庫",
+      "knowledgeAdded": "正在將這些檔案新增到知識庫。準備好後請再問一次。",
+      "knowledgeFailed": "無法將這些檔案新增到知識庫。請再試一次。",
+      "knowledgeName_other": "{{name}} 及另外 {{count}} 個檔案",
+      "unsupportedType": "不支援的檔案類型({{extension}})",
       "waitingToSend_one": "{{count}} 個檔案處理完成後傳送…",
-      "waitingToSend_other": "{{count}} 個檔案處理完成後傳送…"
+      "waitingToSend_other": "{{count}} 個檔案處理完成後傳送…",
+      "cancelQueuedSend": "取消",
+      "unreadableByModel": "{{model}} 無法讀取 {{name}}，請切換到支援圖片或 PDF 的模型",
+      "queued": "等待上傳",
+      "uploading": "正在上傳",
+      "processing": "正在處理"
     },
     "retry": "重試",
     "failedTitle": "無法產生回覆",
+    "errors": {
+      "contextLength": "此訊息及其附件太大，超出模型的上下文視窗。請傳送更少或更小的檔案。",
+      "contextLengthKnowledge": "此訊息及其附件太大，超出模型的上下文視窗。請傳送更少或更小的檔案，或使用「新增到知識庫」來搜尋它們，而不是整個傳送。",
+      "contextLengthSized": "此訊息及其附件大約需要 {{needed, number}} 個 token，超出模型可接受的上限（{{available, number}} 個 token）。請傳送更少或更小的檔案。",
+      "contextLengthSizedKnowledge": "此訊息及其附件大約需要 {{needed, number}} 個 token，超出模型可接受的上限（{{available, number}} 個 token）。請傳送更少或更小的檔案，或使用「新增到知識庫」來搜尋它們，而不是整個傳送。",
+      "serverError": "請稍後再試。造成不便，敬請見諒。",
+      "clientDisconnect": "回覆在產生任何內容之前就中斷了。請重試。"
+    },
     "reasoning": "推理",
     "wikiWrite": {
       "edited": "已編輯 Wiki",
@@ -2046,7 +2067,16 @@
       "creatingArtifact": "正在建立 Artifact…",
       "usingTool": "正在使用 {{tool}}…",
       "searchingConnector": "正在搜尋 {{name}}…",
-      "usingConnector": "正在使用 {{name}}…"
+      "usingConnector": "正在使用 {{name}}…",
+      "attachmentsSearch": "正在檔案中搜尋「{{query}}」…",
+      "attachmentsSearchGeneric": "正在搜尋檔案…",
+      "attachmentsRead": "正在讀取 {{ref}}…",
+      "attachmentsReadPage": "正在讀取 {{ref}}（第 {{pages}} 頁）…",
+      "attachmentsReadPages": "正在讀取 {{ref}}（第 {{pages}} 頁）…",
+      "attachmentsReadRows": "正在讀取 {{ref}}（第 {{rows}} 列）…",
+      "attachmentsReadGeneric": "正在讀取檔案…",
+      "attachmentsImage": "正在檢視圖片 {{ref}}…",
+      "attachmentsList": "正在列出檔案…"
     },
     "toolChip": {
       "searchingWeb": "已搜尋網路 · 「{{query}}」",
@@ -2060,7 +2090,16 @@
       "usingTool": "已使用 {{tool}}",
       "searchedConnector": "已搜尋 {{name}}",
       "readConnector": "已從 {{name}} 讀取",
-      "usedConnector": "已使用 {{name}}：{{action}}"
+      "usedConnector": "已使用 {{name}}：{{action}}",
+      "attachmentsSearch": "已在檔案中搜尋「{{query}}」",
+      "attachmentsSearchGeneric": "已搜尋檔案",
+      "attachmentsRead": "已讀取 {{ref}}",
+      "attachmentsReadPage": "已讀取 {{ref}}（第 {{pages}} 頁）",
+      "attachmentsReadPages": "已讀取 {{ref}}（第 {{pages}} 頁）",
+      "attachmentsReadRows": "已讀取 {{ref}}（第 {{rows}} 列）",
+      "attachmentsReadGeneric": "已讀取檔案",
+      "attachmentsImage": "已檢視圖片 {{ref}}",
+      "attachmentsList": "已列出檔案"
     },
     "inlineSteps": {
       "arguments": "參數",

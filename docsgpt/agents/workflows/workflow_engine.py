@@ -24,7 +24,8 @@ from docsgpt.core.json_schema_utils import (
     JsonSchemaValidationError,
     normalize_json_schema_payload,
 )
-from docsgpt.error import sanitize_api_error
+from docsgpt.agents.context_overflow import is_context_length_error
+from docsgpt.error import sanitize_api_error, user_facing_error
 from docsgpt.templates.namespaces import NamespaceManager
 from docsgpt.templates.template_engine import TemplateEngine, TemplateRenderError
 
@@ -201,6 +202,15 @@ class WorkflowEngine:
                     if is_config_error
                     else sanitize_api_error(e)
                 )
+                # A turn too big for the model's window gets the curated
+                # message, with the code and sizes the client words it from.
+                curated: Dict[str, Any] = {}
+                if is_context_length_error(e):
+                    public = user_facing_error(e)
+                    user_friendly_error = public.message
+                    curated = {"code": public.code}
+                    if public.params:
+                        curated["params"] = public.params
                 yield {
                     "type": "workflow_step",
                     "node_id": node.id,
@@ -213,7 +223,8 @@ class WorkflowEngine:
                 yield {
                     "type": "error",
                     "error": user_friendly_error,
-                    "user_facing": is_config_error,
+                    "user_facing": is_config_error or bool(curated),
+                    **curated,
                 }
                 break
             self.execution_log.append(log_entry)

@@ -4,6 +4,7 @@ import traceback
 from flask import make_response, request
 from flask_restx import fields, Resource
 
+from docsgpt.agents.context_overflow import ContextOverflowError
 from docsgpt.api import api
 
 from docsgpt.api.answer.routes.base import answer_ns, BaseAnswerResource
@@ -17,6 +18,7 @@ from docsgpt.api.answer.services.stream_processor import (
     StreamProcessor,
     flush_trace_after_request,
 )
+from docsgpt.error import bounded_error_text, user_facing_error
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +172,12 @@ class AnswerResource(Resource, BaseAnswerResource):
             stream_result = self.process_response_stream(stream)
 
             if stream_result["error"]:
-                return make_response({"error": stream_result["error"]}, 400)
+                body = {"error": stream_result["error"]}
+                if stream_result.get("error_code"):
+                    body["code"] = stream_result["error_code"]
+                if stream_result.get("error_params"):
+                    body["params"] = stream_result["error_params"]
+                return make_response(body, 400)
 
             result = {
                 "conversation_id": stream_result["conversation_id"],
@@ -183,6 +190,14 @@ class AnswerResource(Resource, BaseAnswerResource):
             extra_info = stream_result.get("extra")
             if extra_info:
                 result.update(extra_info)
+        except ContextOverflowError as e:
+            # A turn too big for the window, found before any provider call.
+            logger.info("/api/answer - turn does not fit the context window: %s", bounded_error_text(e))
+            public = user_facing_error(e)
+            body = {"error": public.message, "code": public.code}
+            if public.params:
+                body["params"] = public.params
+            return make_response(body, 400)
         except ResumeInProgressError as e:
             # Another request already owns this conversation's continuation
             # claim. Same contract as ``/stream`` and ``/v1/chat/completions``:

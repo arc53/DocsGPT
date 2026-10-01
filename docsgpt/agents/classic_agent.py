@@ -42,6 +42,7 @@ class ClassicAgent(BaseAgent):
             add_graph_search_tool(tools_dict, self.retriever_config)
         if self.wiki_config:
             add_wiki_tool(tools_dict, self.wiki_config)
+        self._add_attachments_tool(tools_dict)
         self._prepare_tools(tools_dict)
 
         messages = self._build_messages(self.prompt, query)

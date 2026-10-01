@@ -153,6 +153,15 @@ class TestConfigRoute:
         assert data["stt_available"] is False
 
     @pytest.mark.unit
+    def test_exposes_attachment_budget_share(self, client):
+        with patch("docsgpt.app.settings") as mock_settings:
+            mock_settings.AUTH_TYPE = None
+            mock_settings.ATTACHMENT_BUDGET_SHARE = 0.4
+            response = client.get("/api/config")
+        data = json.loads(response.data)
+        assert data["attachment_budget_share"] == 0.4
+
+    @pytest.mark.unit
     def test_oidc_config_exposes_login_paths(self, client):
         with patch("docsgpt.app.settings") as mock_settings:
             mock_settings.AUTH_TYPE = "oidc"

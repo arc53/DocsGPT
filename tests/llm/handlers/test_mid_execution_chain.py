@@ -75,7 +75,7 @@ def _run(handler, agent, result):
         handler,
         "_rebuild_messages_after_compression",
         return_value=[{"role": "system", "content": "rebuilt"}],
-    ), patch.object(handler, "_prune_messages_minimal", return_value=None):
+    ):
         return handler._perform_mid_execution_compression(
             agent, [{"role": "user", "content": "hi"}]
         ), conv_service
@@ -132,7 +132,7 @@ def _run_with(handler, agent, result, db_conversation, synthetic):
         handler,
         "_rebuild_messages_after_compression",
         return_value=[{"role": "system", "content": "rebuilt"}],
-    ), patch.object(handler, "_prune_messages_minimal", return_value=None):
+    ):
         outcome = handler._perform_mid_execution_compression(
             agent, [{"role": "user", "content": "hi"}]
         )

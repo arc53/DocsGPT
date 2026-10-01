@@ -2022,6 +2022,7 @@
       "attach": "Attach",
       "remove": "Remove attachment",
       "uploadFailed": "Upload failed. The file couldn't be read or the connection dropped.",
+      "tooLarge": "Too large to attach (limit {{size}} MB)",
       "waitingToSend_one": "Will send when {{count}} file finishes processing…",
       "waitingToSend_other": "Will send when {{count}} files finish processing…",
       "cancelQueuedSend": "Cancel",
@@ -2029,10 +2030,28 @@
       "unreadableByModel": "{{model}} can't read {{name}} — switch to a model that supports images or PDFs",
       "attached": "Attachment",
       "failed": "Failed",
-      "attachment": "Attachment"
+      "attachment": "Attachment",
+      "knowledgeHint": "These files are larger than the model can read at once. It will read the rest as needed.",
+      "knowledgeHintNoTools": "These files are larger than the model can read at once. Some will be left out.",
+      "addToKnowledge": "Add to Knowledge",
+      "knowledgeAdded": "Adding these files to Knowledge. Ask again when they're ready.",
+      "knowledgeFailed": "Couldn't add these files to Knowledge. Try again.",
+      "knowledgeName_one": "{{name}} and {{count}} more",
+      "knowledgeName_other": "{{name}} and {{count}} more",
+      "queued": "Waiting to upload",
+      "uploading": "Uploading",
+      "processing": "Processing"
     },
     "retry": "Retry",
     "failedTitle": "Couldn't generate a response",
+    "errors": {
+      "contextLength": "This message and its attached files are too large for the model's context window. Send fewer or smaller files.",
+      "contextLengthKnowledge": "This message and its attached files are too large for the model's context window. Send fewer or smaller files, or use Add to Knowledge to search them instead of sending them whole.",
+      "contextLengthSized": "This message and its attached files need about {{needed, number}} tokens, more than the model can take ({{available, number}} tokens). Send fewer or smaller files.",
+      "contextLengthSizedKnowledge": "This message and its attached files need about {{needed, number}} tokens, more than the model can take ({{available, number}} tokens). Send fewer or smaller files, or use Add to Knowledge to search them instead of sending them whole.",
+      "serverError": "Please try again later. We apologize for any inconvenience.",
+      "clientDisconnect": "The response stopped before anything was produced. Try again."
+    },
     "reasoning": "Reasoning",
     "wikiWrite": {
       "edited": "Edited wiki",
@@ -2064,7 +2083,16 @@
       "creatingArtifact": "Creating an artifact…",
       "usingTool": "Using {{tool}}…",
       "searchingConnector": "Searching {{name}}…",
-      "usingConnector": "Using {{name}}…"
+      "usingConnector": "Using {{name}}…",
+      "attachmentsSearch": "Searching files for “{{query}}”…",
+      "attachmentsSearchGeneric": "Searching files…",
+      "attachmentsRead": "Reading {{ref}}…",
+      "attachmentsReadPage": "Reading {{ref}} (page {{pages}})…",
+      "attachmentsReadPages": "Reading {{ref}} (pages {{pages}})…",
+      "attachmentsReadRows": "Reading {{ref}} (rows {{rows}})…",
+      "attachmentsReadGeneric": "Reading a file…",
+      "attachmentsImage": "Viewing image {{ref}}…",
+      "attachmentsList": "Listing files…"
     },
     "toolChip": {
       "searchingWeb": "Searched the web · “{{query}}”",
@@ -2078,7 +2106,16 @@
       "usingTool": "Used {{tool}}",
       "searchedConnector": "Searched {{name}}",
       "readConnector": "Read from {{name}}",
-      "usedConnector": "Used {{name}}: {{action}}"
+      "usedConnector": "Used {{name}}: {{action}}",
+      "attachmentsSearch": "Searched files for “{{query}}”",
+      "attachmentsSearchGeneric": "Searched files",
+      "attachmentsRead": "Read {{ref}}",
+      "attachmentsReadPage": "Read {{ref}} (page {{pages}})",
+      "attachmentsReadPages": "Read {{ref}} (pages {{pages}})",
+      "attachmentsReadRows": "Read {{ref}} (rows {{rows}})",
+      "attachmentsReadGeneric": "Read a file",
+      "attachmentsImage": "Viewed image {{ref}}",
+      "attachmentsList": "Listed files"
     },
     "inlineSteps": {
       "arguments": "Arguments",

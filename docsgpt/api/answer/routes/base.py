@@ -5,6 +5,7 @@ import json
 import logging
 import threading
 import time
+import traceback
 import uuid
 from typing import Any, Callable, Dict, Generator, List, Optional
 
@@ -24,7 +25,7 @@ from docsgpt.core.model_utils import (
 )
 
 from docsgpt.core.settings import settings
-from docsgpt.error import sanitize_api_error
+from docsgpt.error import bounded_error_text, sanitize_api_error, user_facing_error
 from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.quotas.http import quota_exceeded_response
 from docsgpt.quotas.service import QuotaService
@@ -55,6 +56,15 @@ STREAM_HEARTBEAT_INTERVAL = 30
 # worst case for a 25-round tool loop, but finite, so a wedged-but-alive
 # stream still gets swept eventually.
 STREAM_HEARTBEAT_MAX_SECONDS = 3600
+
+
+class ClientDisconnected(GeneratorExit):
+    """Raised inside a stream whose client the route saw go away.
+
+    Handled exactly as the generator being closed by a disconnect (the
+    partial answer is saved, the row marked aborted), except that the
+    stream then ends instead of re-raising: nobody closed it.
+    """
 
 
 class StreamSuperseded(Exception):
@@ -116,6 +126,27 @@ def _traced_stream(
 
     return wrapper
 
+
+
+
+def _client_gone(agent: Any) -> bool:
+    """Whether the route flagged the agent's client as disconnected."""
+    event = getattr(agent, "client_disconnected", None)
+    return isinstance(event, threading.Event) and event.is_set()
+
+def _native_image_names(agent: Any) -> List[str]:
+    """Files the turn sent to the model as images, for a provider's image refusal."""
+    plan = getattr(agent, "attachment_plan", None)
+    names: List[str] = []
+    try:
+        for planned in getattr(plan, "files", None) or []:
+            if getattr(planned, "native", False) is True and str(getattr(planned, "mime_type", "")).startswith(
+                "image/"
+            ):
+                names.append(str(planned.filename))
+    except Exception:
+        return []
+    return names
 
 class BaseAnswerResource:
     """Shared base class for answer endpoints"""
@@ -826,6 +857,10 @@ class BaseAnswerResource:
                 # nothing and is only cancelled when that call returns.
                 if stream_cancelled.is_set():
                     raise StreamSuperseded(reserved_message_id or "")
+                # A client that cannot rejoin the stream went away (``/v1``):
+                # stop the agent here and save what there is, as an abort.
+                if _client_gone(agent):
+                    raise ClientDisconnected()
                 if "metadata" in line:
                     query_metadata.update(line["metadata"])
                 elif "answer" in line:
@@ -877,8 +912,18 @@ class BaseAnswerResource:
                         # "quota" and rewrite it into a misleading rate-limit message, so
                         # emit it verbatim; sanitize only raw/technical errors.
                         error_text = line.get("error", "An error occurred")
+                        error_extra: Dict[str, Any] = {}
                         if not line.get("user_facing"):
                             error_text = sanitize_api_error(error_text)
+                        elif line.get("code"):
+                            # A curated error's code and params travel with it, so
+                            # the client can word it (context_length_exceeded).
+                            error_extra["code"] = line["code"]
+                            if line.get("params"):
+                                error_extra["params"] = line["params"]
+                            query_metadata["error_code"] = line["code"]
+                            if line.get("params"):
+                                query_metadata["error_params"] = line["params"]
                         stream_error = error_text
                         guardrail_meta = line.get("guardrail")
                         if guardrail_meta:
@@ -903,7 +948,7 @@ class BaseAnswerResource:
                                     "retract": True,
                                 }
                             )
-                        yield _emit({"type": "error", "error": error_text})
+                        yield _emit({"type": "error", "error": error_text, **error_extra})
                     elif line.get("type") == "notice":
                         # Non-fatal, non-terminal notice (e.g. some workflow input
                         # documents were dropped). Forwarded verbatim so the client can
@@ -1070,6 +1115,10 @@ class BaseAnswerResource:
                                     ),
                                     "agent_id": agent_id,
                                     "agent_type": agent.__class__.__name__,
+                                    # Images an attachments read queued in the
+                                    # paused round, by reference; the resume
+                                    # shows them after the tool results.
+                                    "native_reads": continuation.get("native_reads") or [],
                                     "prompt": getattr(agent, "prompt", ""),
                                     "json_schema": getattr(agent, "json_schema", None),
                                     "retriever_config": getattr(agent, "retriever_config", None),
@@ -1413,7 +1462,7 @@ class BaseAnswerResource:
             # sitting in memory.
             if journal_writer is not None:
                 journal_writer.close()
-        except GeneratorExit:
+        except GeneratorExit as stream_exit:
             logger.info(f"Stream aborted by client for question: {question[:50]}... ")
             # Drain any buffered events before the terminal one-shot
             # ``record_event`` below — keeps the journal's seq order
@@ -1599,6 +1648,9 @@ class BaseAnswerResource:
                         f"Failed to journal terminal event on abort: {journal_err}",
                         exc_info=True,
                     )
+            if isinstance(stream_exit, ClientDisconnected):
+                # Raised here, not by a close(): the generator ends normally.
+                return
             raise
         except StreamSuperseded as e:
             # Deliberately ahead of the generic handler below: this is not a
@@ -1623,7 +1675,22 @@ class BaseAnswerResource:
             tracing.discard(tracing.current_trace())
             return
         except Exception as e:
-            logger.error(f"Error in stream: {str(e)}", exc_info=True)
+            # Bounded and without the exception attached: a provider error can
+            # echo the request, base64 file parts included. The frames still
+            # say where it failed.
+            logger.error(
+                "Error in stream: %s\n%s",
+                bounded_error_text(e),
+                "".join(traceback.format_tb(e.__traceback__)),
+            )
+            # What the user is told and what the failed row keeps: curated
+            # text with a code, never the exception (a provider error can echo
+            # the request, base64 file parts included).
+            public_error = user_facing_error(
+                e,
+                surface="v1" if getattr(agent, "is_v1", False) is True else "chat",
+                image_names=_native_image_names(agent),
+            )
             trace = tracing.current_trace()
             if trace is not None:
                 trace.outcome = tracing.STATUS_ERROR
@@ -1662,6 +1729,10 @@ class BaseAnswerResource:
                 # ``update_message_by_id`` lets that second answer through,
                 # exactly as it already does for the reconciler's own marker.
                 failure_metadata = dict(query_metadata or {})
+                failure_metadata["error"] = public_error.message
+                failure_metadata["error_code"] = public_error.code
+                if public_error.params:
+                    failure_metadata["error_params"] = public_error.params
                 if claim_released:
                     failure_metadata["resume_retryable"] = True
                 try:
@@ -1695,12 +1766,14 @@ class BaseAnswerResource:
                 attachment_ids=attachment_ids,
                 request_id=request_id,
                 message_id=reserved_message_id,
-                error=f"{type(e).__name__}: {e}",
+                error=bounded_error_text(e),
             )
             yield _emit(
                 {
                     "type": "error",
-                    "error": "Please try again later. We apologize for any inconvenience.",
+                    "error": public_error.message,
+                    "code": public_error.code,
+                    **({"params": public_error.params} if public_error.params else {}),
                 }
             )
             # Drain the terminal ``error`` event we just yielded so a
@@ -1868,6 +1941,8 @@ class BaseAnswerResource:
                         "tool_calls": None,
                         "thought": None,
                         "error": event["error"],
+                        "error_code": event.get("code"),
+                        "error_params": event.get("params"),
                     }
                 elif event["type"] == "end":
                     stream_ended = True
@@ -1905,3 +1980,18 @@ class BaseAnswerResource:
     def error_stream_generate(self, err_response):
         data = json.dumps({"type": "error", "error": err_response})
         yield f"data: {data}\n\n"
+
+    def curated_error_stream_generate(self, error: BaseException):
+        """One SSE ``error`` event with the curated message, code and params.
+
+        Args:
+            error: What failed the turn before its stream began.
+
+        Yields:
+            The event, worded as :func:`user_facing_error` words it.
+        """
+        public = user_facing_error(error)
+        payload: Dict[str, Any] = {"type": "error", "error": public.message, "code": public.code}
+        if public.params:
+            payload["params"] = public.params
+        yield f"data: {json.dumps(payload)}\n\n"

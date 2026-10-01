@@ -83,6 +83,7 @@ const makeStore = (
     rolesResolved: false,
     ttsAvailable: true,
     sttAvailable: true,
+    attachmentBudgetShare: null,
   };
   const conversation: ConversationState = {
     queries: [],

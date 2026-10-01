@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -65,8 +68,20 @@ class TestSnapshot:
         path: Path = snapshot_path()
         if not path.parent.parent.is_dir():
             pytest.skip("docs tree not present (installed package, not a checkout)")
-        assert path.exists() and path.read_text(encoding="utf-8") == render_spec(), (
-            f"{path} is stale; run: python -m docsgpt.api.reference --write"
+        # Rendered in a fresh interpreter, as ``--write`` renders it: the order
+        # of the spec's tags follows the order the API namespaces were
+        # registered in, which in this process depends on what other test
+        # modules (collected by the same xdist worker) imported first.
+        result = subprocess.run(
+            [sys.executable, "-m", "docsgpt.api.reference", "--check"],
+            cwd=path.parents[2],
+            env=os.environ.copy(),
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        assert path.exists() and result.returncode == 0, (
+            f"{path} is stale; run: python -m docsgpt.api.reference --write\n{result.stderr[-2000:]}"
         )
 
 

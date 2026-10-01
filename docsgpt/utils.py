@@ -7,7 +7,7 @@ import os
 import re
 import uuid
 from pathlib import Path, PurePosixPath
-from typing import List
+from typing import List, Optional
 
 import tiktoken
 from flask import jsonify, make_response
@@ -415,12 +415,45 @@ def calculate_compression_threshold(
     return threshold
 
 
+def _page_dpis(pdf_bytes: bytes, first_page: int, last_page: int, dpi: int, max_side: int) -> List[tuple]:
+    """``(page, dpi)`` for each page in range, lowered where the page would exceed ``max_side`` px.
+
+    Args:
+        pdf_bytes: The PDF.
+        first_page: First 1-based page.
+        last_page: Last 1-based page (cut at the page count).
+        dpi: The resolution pages are rendered at.
+        max_side: Longest side allowed, in pixels.
+
+    Returns:
+        One entry per existing page in range, in order.
+    """
+    import pypdfium2
+
+    pdf = pypdfium2.PdfDocument(pdf_bytes)
+    try:
+        pages = []
+        for number in range(first_page, min(last_page, len(pdf)) + 1):
+            page = pdf[number - 1]
+            try:
+                width, height = page.get_size()
+            finally:
+                page.close()
+            longest_inches = max(width, height, 1.0) / 72.0
+            pages.append((number, max(min(dpi, int(max_side / longest_inches)), 1)))
+        return pages
+    finally:
+        pdf.close()
+
+
 def convert_pdf_to_images(
     file_path: str,
     storage=None,
     max_pages: int = 20,
     dpi: int = 150,
     image_format: str = "PNG",
+    first_page: int = 1,
+    max_side: Optional[int] = None,
 ) -> List[dict]:
     """
     Convert PDF pages to images for LLMs that support images but not PDFs.
@@ -434,6 +467,10 @@ def convert_pdf_to_images(
         max_pages: Maximum number of pages to convert (default 20 to avoid context overflow)
         dpi: Resolution for rendering (default 150 for balance of quality/size)
         image_format: Output format (PNG recommended for quality)
+        first_page: 1-based page to start at; ``max_pages`` pages are rendered from it
+        max_side: Longest side of a rendered page in pixels; a page that
+            would be larger at ``dpi`` (a poster, a drawing) is rendered at
+            the lower resolution that fits. None renders every page at ``dpi``.
 
     Returns:
         List of dicts with keys:
@@ -457,29 +494,47 @@ def convert_pdf_to_images(
 
     images_data = []
     mime_type = f"image/{image_format.lower()}"
+    first_page = max(int(first_page or 1), 1)
+    last_page = first_page + max(int(max_pages), 1) - 1
 
     try:
+        if max_side:
+            if storage and hasattr(storage, "get_file"):
+                with storage.get_file(file_path) as pdf_file:
+                    pdf_bytes = pdf_file.read()
+            else:
+                with open(file_path, "rb") as pdf_file:
+                    pdf_bytes = pdf_file.read()
+            pil_images = []
+            for page, page_dpi in _page_dpis(pdf_bytes, first_page, last_page, dpi, int(max_side)):
+                rendered = convert_from_bytes(
+                    pdf_bytes, dpi=page_dpi, fmt=image_format.lower(), first_page=page, last_page=page
+                )
+                for image in rendered:
+                    # Rounding in the renderer can overshoot by a pixel.
+                    image.thumbnail((int(max_side), int(max_side)))
+                pil_images.extend(rendered)
         # Get PDF content either from storage or direct file path
-        if storage and hasattr(storage, "get_file"):
+        elif storage and hasattr(storage, "get_file"):
             with storage.get_file(file_path) as pdf_file:
                 pdf_bytes = pdf_file.read()
                 pil_images = convert_from_bytes(
                     pdf_bytes,
                     dpi=dpi,
                     fmt=image_format.lower(),
-                    first_page=1,
-                    last_page=max_pages,
+                    first_page=first_page,
+                    last_page=last_page,
                 )
         else:
             pil_images = convert_from_path(
                 file_path,
                 dpi=dpi,
                 fmt=image_format.lower(),
-                first_page=1,
-                last_page=max_pages,
+                first_page=first_page,
+                last_page=last_page,
             )
 
-        for page_num, pil_image in enumerate(pil_images, start=1):
+        for page_num, pil_image in enumerate(pil_images, start=first_page):
             # Convert PIL image to base64
             buffer = io.BytesIO()
             pil_image.save(buffer, format=image_format)

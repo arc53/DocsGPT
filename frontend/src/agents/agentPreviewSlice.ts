@@ -15,10 +15,15 @@ import {
   Query,
   Status,
 } from '../conversation/conversationModels';
+import {
+  type ErrorParams,
+  readStreamError,
+  setErrorDetail,
+} from '../conversation/curatedError';
 import store from '../store';
 import {
   clearAttachments,
-  selectCompletedAttachments,
+  selectSendableAttachmentIds,
 } from '../upload/uploadSlice';
 
 const initialState: ConversationState = {
@@ -48,9 +53,7 @@ export const fetchPreviewAnswer = createAsyncThunk<
     const { signal } = abortController;
 
     const state = getState() as RootState;
-    const attachmentIds = selectCompletedAttachments(state)
-      .filter((a) => a.id)
-      .map((a) => a.id) as string[];
+    const attachmentIds = selectSendableAttachmentIds(state);
 
     if (attachmentIds.length > 0) {
       dispatch(clearAttachments());
@@ -102,7 +105,7 @@ export const fetchPreviewAnswer = createAsyncThunk<
               dispatch(
                 agentPreviewSlice.actions.raiseError({
                   index: targetIndex,
-                  message: data.error,
+                  ...readStreamError(data),
                 }),
               );
             } else if (data.type === 'structured_answer') {
@@ -213,6 +216,8 @@ export const agentPreviewSlice = createSlice({
       delete state.queries[index].tool_calls;
       delete state.queries[index].segments;
       delete state.queries[index].error;
+      delete state.queries[index].errorCode;
+      delete state.queries[index].errorParams;
       delete state.queries[index].structured;
       delete state.queries[index].schema;
       delete state.queries[index].feedback;
@@ -309,10 +314,15 @@ export const agentPreviewSlice = createSlice({
       action: PayloadAction<{
         index: number;
         message: string;
+        /** Why the turn failed (``context_length_exceeded``), when known. */
+        code?: string;
+        /** The values a curated error was worded from. */
+        params?: ErrorParams;
       }>,
     ) {
-      const { index, message } = action.payload;
+      const { index, message, code, params } = action.payload;
       state.queries[index].error = message;
+      setErrorDetail(state.queries[index], code, params);
     },
     resetPreview: (state) => {
       state.queries = initialState.queries;

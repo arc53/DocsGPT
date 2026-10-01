@@ -64,6 +64,9 @@ export interface Preference {
   // config loads, so a backend without these flags keeps showing the controls.
   ttsAvailable: boolean;
   sttAvailable: boolean;
+  // Share of the model's window a turn's attached files may take
+  // (/api/config ``attachment_budget_share``); null until the config loads.
+  attachmentBudgetShare: number | null;
 }
 
 const initialState: Preference = {
@@ -96,6 +99,7 @@ const initialState: Preference = {
   rolesResolved: false,
   ttsAvailable: true,
   sttAvailable: true,
+  attachmentBudgetShare: null,
 };
 
 export const prefSlice = createSlice({
@@ -248,6 +252,9 @@ export const prefSlice = createSlice({
       state.ttsAvailable = action.payload.tts;
       state.sttAvailable = action.payload.stt;
     },
+    setAttachmentBudgetShare: (state, action: PayloadAction<number | null>) => {
+      state.attachmentBudgetShare = action.payload;
+    },
   },
 });
 
@@ -279,6 +286,7 @@ export const {
   setRoles,
   clearRoles,
   setSpeechAvailability,
+  setAttachmentBudgetShare,
 } = prefSlice.actions;
 export default prefSlice.reducer;
 
@@ -431,3 +439,5 @@ export const selectTtsAvailable = (state: RootState) =>
   state.preference.ttsAvailable;
 export const selectSttAvailable = (state: RootState) =>
   state.preference.sttAvailable;
+export const selectAttachmentBudgetShare = (state: RootState) =>
+  state.preference.attachmentBudgetShare;

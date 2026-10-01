@@ -47,7 +47,7 @@ import MessageInput from '../../components/MessageInput';
 import ConversationBubble from '../../conversation/ConversationBubble';
 import { Query } from '../../conversation/conversationModels';
 import { AppDispatch } from '../../store';
-import { selectCompletedAttachments } from '../../upload/uploadSlice';
+import { selectSendableAttachments } from '../../upload/uploadSlice';
 import { WorkflowEdge, WorkflowNode } from '../types/workflow';
 import WorkflowRunArtifacts from './WorkflowRunArtifacts';
 import {
@@ -479,8 +479,8 @@ export default function WorkflowPreview({
   const status = useSelector(selectWorkflowPreviewStatus);
   const executionSteps = useSelector(selectWorkflowExecutionSteps);
   const activeNodeId = useSelector(selectActiveNodeId);
-  const completedAttachments = useSelector(selectCompletedAttachments);
-  const hasCompletedAttachment = completedAttachments.length > 0;
+  const sendableAttachments = useSelector(selectSendableAttachments);
+  const hasCompletedAttachment = sendableAttachments.length > 0;
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
   const [sendBlockedMessage, setSendBlockedMessage] = useState<string | null>(

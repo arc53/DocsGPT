@@ -199,3 +199,20 @@ class TestResumePublicLink:
         assert all(
             a.get("require_approval") for a in tools["wiki"]["actions"] if a["name"] != "wiki_view"
         )
+
+
+@pytest.mark.unit
+class TestResumeRestoresQueuedImages:
+    def test_images_saved_with_the_pause_are_queued_again(self, resume):
+        saved = [{"label": "F2 plan.png", "attachment": {"path": "inputs/plan.png", "mime_type": "image/png"}}]
+        state = _state(native_reads=saved)
+
+        _, executor, _ = resume(state, {"api_key": "agent-key"}, {"sub": OWNER})
+
+        assert executor.pending_native_parts == [
+            {"label": "F2 plan.png", "attachment": {"path": "inputs/plan.png", "mime_type": "image/png"}}
+        ]
+
+    def test_a_state_without_images_queues_none(self, resume):
+        _, executor, _ = resume(_state(), {"api_key": "agent-key"}, {"sub": OWNER})
+        assert executor.pending_native_parts == []

@@ -3,13 +3,18 @@ import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
 import store from '../store';
 import { Query, Status, Answer } from '../conversation/conversationModels';
+import {
+  type ErrorParams,
+  readStreamError,
+  setErrorDetail,
+} from './curatedError';
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import {
   handleFetchSharedAnswer,
   handleFetchSharedAnswerStreaming,
 } from './conversationHandlers';
 import {
-  selectCompletedAttachments,
+  selectSendableAttachmentIds,
   clearAttachments,
 } from '../upload/uploadSlice';
 
@@ -34,9 +39,7 @@ export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
   async ({ question }, { dispatch, getState, signal }) => {
     const state = getState() as RootState;
 
-    const attachmentIds = selectCompletedAttachments(state)
-      .filter((a) => a.id)
-      .map((a) => a.id) as string[];
+    const attachmentIds = selectSendableAttachmentIds(state);
 
     if (attachmentIds.length > 0) {
       dispatch(clearAttachments());
@@ -97,7 +100,7 @@ export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
               dispatch(
                 sharedConversationSlice.actions.raiseError({
                   index: state.sharedConversation.queries.length - 1,
-                  message: data.error,
+                  ...readStreamError(data),
                 }),
               );
             } else {
@@ -249,10 +252,18 @@ export const sharedConversationSlice = createSlice({
     },
     raiseError(
       state,
-      action: PayloadAction<{ index: number; message: string }>,
+      action: PayloadAction<{
+        index: number;
+        message: string;
+        /** Why the turn failed (``context_length_exceeded``), when known. */
+        code?: string;
+        /** The values a curated error was worded from. */
+        params?: ErrorParams;
+      }>,
     ) {
-      const { index, message } = action.payload;
+      const { index, message, code, params } = action.payload;
       state.queries[index].error = message;
+      setErrorDetail(state.queries[index], code, params);
     },
     retractResponse(state, action: PayloadAction<{ index: number }>) {
       // A guardrail tripped after tokens were already rendered. The backend
@@ -304,6 +315,7 @@ export const {
   setIdentifier,
   setFetchedData,
   setClientApiKey,
+  raiseError,
   updateQuery,
   updateStreamingQuery,
   updateThought,

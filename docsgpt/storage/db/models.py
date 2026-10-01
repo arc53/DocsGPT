@@ -478,6 +478,23 @@ attachments_table = Table(
     Column("metadata", JSONB),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
+    # sha256 of the original bytes; indexed with user_id so an identical
+    # re-upload reuses the parsed text (0044).
+    Column("content_hash", Text),
+)
+# Mirrors the partial index created in migration 0044.
+Index(
+    "attachments_user_content_hash_idx",
+    attachments_table.c.user_id,
+    attachments_table.c.content_hash,
+    postgresql_where=attachments_table.c.content_hash.isnot(None),
+)
+# Mirrors the partial index created in migration 0045: zips whose members
+# are still parsing, for the reconciler's stuck-member sweep.
+Index(
+    "attachments_archive_processing_idx",
+    attachments_table.c.created_at,
+    postgresql_where=text("(metadata->'archive'->>'status') = 'processing'"),
 )
 
 # Identity row, one per logical artifact. The stable ``id`` is the handle passed

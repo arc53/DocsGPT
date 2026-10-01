@@ -2016,14 +2016,36 @@
       "attach": "Adjuntar",
       "remove": "Eliminar adjunto",
       "uploadFailed": "Error al subir. No se pudo leer el archivo o se perdió la conexión.",
+      "tooLarge": "Demasiado grande para adjuntar (límite {{size}} MB)",
       "attached": "Adjunto",
       "failed": "Error",
       "attachment": "Adjunto",
+      "knowledgeHint": "Estos archivos superan lo que el modelo puede leer de una vez. Leerá el resto cuando lo necesite.",
+      "knowledgeHintNoTools": "Estos archivos superan lo que el modelo puede leer de una vez. Algunos quedarán fuera.",
+      "addToKnowledge": "Añadir al conocimiento",
+      "knowledgeAdded": "Añadiendo estos archivos al conocimiento. Vuelve a preguntar cuando estén listos.",
+      "knowledgeFailed": "No se pudieron añadir estos archivos al conocimiento. Inténtalo de nuevo.",
+      "knowledgeName_one": "{{name}} y {{count}} más",
+      "knowledgeName_other": "{{name}} y {{count}} más",
+      "unsupportedType": "Tipo de archivo no compatible ({{extension}})",
       "waitingToSend_one": "Se enviará cuando termine de procesarse {{count}} archivo…",
-      "waitingToSend_other": "Se enviará cuando terminen de procesarse {{count}} archivos…"
+      "waitingToSend_other": "Se enviará cuando terminen de procesarse {{count}} archivos…",
+      "cancelQueuedSend": "Cancelar",
+      "unreadableByModel": "{{model}} no puede leer {{name}}: cambia a un modelo compatible con imágenes o PDF",
+      "queued": "En espera para subir",
+      "uploading": "Subiendo",
+      "processing": "Procesando"
     },
     "retry": "Reintentar",
     "failedTitle": "No se pudo generar una respuesta",
+    "errors": {
+      "contextLength": "Este mensaje y sus archivos adjuntos son demasiado grandes para la ventana de contexto del modelo. Envía menos archivos o archivos más pequeños.",
+      "contextLengthKnowledge": "Este mensaje y sus archivos adjuntos son demasiado grandes para la ventana de contexto del modelo. Envía menos archivos o archivos más pequeños, o usa «Añadir al conocimiento» para buscar en ellos en lugar de enviarlos completos.",
+      "contextLengthSized": "Este mensaje y sus archivos adjuntos necesitan unos {{needed, number}} tokens, más de los que admite el modelo ({{available, number}} tokens). Envía menos archivos o archivos más pequeños.",
+      "contextLengthSizedKnowledge": "Este mensaje y sus archivos adjuntos necesitan unos {{needed, number}} tokens, más de los que admite el modelo ({{available, number}} tokens). Envía menos archivos o archivos más pequeños, o usa «Añadir al conocimiento» para buscar en ellos en lugar de enviarlos completos.",
+      "serverError": "Inténtalo de nuevo más tarde. Disculpa las molestias.",
+      "clientDisconnect": "La respuesta se detuvo antes de producir nada. Inténtalo de nuevo."
+    },
     "reasoning": "Razonamiento",
     "wikiWrite": {
       "edited": "Wiki editada",
@@ -2055,7 +2077,16 @@
       "creatingArtifact": "Creando un artefacto…",
       "usingTool": "Usando {{tool}}…",
       "searchingConnector": "Buscando en {{name}}…",
-      "usingConnector": "Usando {{name}}…"
+      "usingConnector": "Usando {{name}}…",
+      "attachmentsSearch": "Buscando «{{query}}» en los archivos…",
+      "attachmentsSearchGeneric": "Buscando en los archivos…",
+      "attachmentsRead": "Leyendo {{ref}}…",
+      "attachmentsReadPage": "Leyendo {{ref}} (página {{pages}})…",
+      "attachmentsReadPages": "Leyendo {{ref}} (páginas {{pages}})…",
+      "attachmentsReadRows": "Leyendo {{ref}} (filas {{rows}})…",
+      "attachmentsReadGeneric": "Leyendo un archivo…",
+      "attachmentsImage": "Viendo la imagen {{ref}}…",
+      "attachmentsList": "Listando archivos…"
     },
     "toolChip": {
       "searchingWeb": "Buscado en la web · “{{query}}”",
@@ -2069,7 +2100,16 @@
       "usingTool": "Usado {{tool}}",
       "searchedConnector": "Buscó en {{name}}",
       "readConnector": "Leyó de {{name}}",
-      "usedConnector": "Usó {{name}}: {{action}}"
+      "usedConnector": "Usó {{name}}: {{action}}",
+      "attachmentsSearch": "Buscó «{{query}}» en los archivos",
+      "attachmentsSearchGeneric": "Buscó en los archivos",
+      "attachmentsRead": "Leyó {{ref}}",
+      "attachmentsReadPage": "Leyó {{ref}} (página {{pages}})",
+      "attachmentsReadPages": "Leyó {{ref}} (páginas {{pages}})",
+      "attachmentsReadRows": "Leyó {{ref}} (filas {{rows}})",
+      "attachmentsReadGeneric": "Leyó un archivo",
+      "attachmentsImage": "Vio la imagen {{ref}}",
+      "attachmentsList": "Listó los archivos"
     },
     "inlineSteps": {
       "arguments": "Argumentos",

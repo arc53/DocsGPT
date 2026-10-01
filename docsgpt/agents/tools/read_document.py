@@ -93,8 +93,8 @@ class ReadDocumentTool(Tool):
                         "input": {
                             "type": "string",
                             "description": "Document to read; accepts the short ref like `A1` returned by a "
-                            "previous artifact action, a full artifact id, or the name/id of a file the user "
-                            "attached to this conversation.",
+                            "previous artifact action, a full artifact id, or a file the user attached to "
+                            "this conversation by its ref like `F3` (or its name).",
                         },
                         "output": {
                             "type": "string",

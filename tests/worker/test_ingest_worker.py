@@ -95,6 +95,39 @@ def _spy_chunker(monkeypatch):
 
 @pytest.mark.unit
 class TestIngestWorker:
+    def test_copies_the_given_originals_into_the_source_first(
+        self, patch_worker_db, task_self, monkeypatch
+    ):
+        from docsgpt import worker
+
+        captured: list[dict] = []
+        _patch_ingest_pipeline(monkeypatch, captured)
+        storage = worker.StorageCreator.get_storage()
+        storage.is_directory.return_value = True
+        storage.list_files.return_value = []
+        storage.get_file.side_effect = lambda path: BytesIO(path.encode())
+        saved = []
+        storage.save_file.side_effect = lambda data, path, **kw: saved.append((data.read(), path))
+
+        worker.ingest_worker(
+            task_self,
+            directory="inputs",
+            formats=[".txt"],
+            job_name="job1",
+            file_path="inputs/eve/job1",
+            filename="job1",
+            user="eve",
+            copy_files=[
+                {"from": "inputs/eve/attachments/h1/a.txt", "to": "inputs/eve/job1/a.txt"},
+                {"from": "inputs/eve/attachments/h2/b.txt", "to": "inputs/eve/job1/b.txt"},
+            ],
+        )
+
+        assert saved == [
+            (b"inputs/eve/attachments/h1/a.txt", "inputs/eve/job1/a.txt"),
+            (b"inputs/eve/attachments/h2/b.txt", "inputs/eve/job1/b.txt"),
+        ]
+
     def test_invokes_upload_index_with_expected_payload(
         self, patch_worker_db, task_self, monkeypatch
     ):

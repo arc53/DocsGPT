@@ -288,6 +288,33 @@ class TestGetAttachmentsContent:
             )
         assert got == []
 
+    def test_a_zip_is_followed_by_its_members(self, pg_conn):
+        from docsgpt.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        from docsgpt.storage.db.repositories.attachments import (
+            AttachmentsRepository,
+        )
+
+        repo = AttachmentsRepository(pg_conn)
+        parent = repo.create(
+            "u", "bundle.zip", "/z", content="index",
+            metadata={"archive": {"members": 1}},
+        )
+        member = repo.create(
+            "u", "a.txt", "/a", content="member text",
+            metadata={
+                "parent_attachment_id": str(parent["id"]),
+                "archive_path": "a.txt",
+                "archive_index": 0,
+            },
+        )
+        sp = StreamProcessor({"question": "q"}, {"sub": "u"})
+        with _patch_db(pg_conn):
+            got = sp._get_attachments_content([str(parent["id"])], "u")
+        assert [a["id"] for a in got] == [parent["id"], member["id"]]
+        assert got[1]["content"] == "member text"
+
 
 class TestResolveAgentId:
     def test_returns_agent_id_from_request(self):

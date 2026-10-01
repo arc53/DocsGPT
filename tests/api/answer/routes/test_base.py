@@ -1,3 +1,4 @@
+import json
 import uuid
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
@@ -698,3 +699,213 @@ class TestCheckUsagePgConn:
             result = resource.check_usage({"user_api_key": "k5"})
         # With default limit and no token usage, should pass
         assert result is None
+
+
+@pytest.mark.unit
+class TestHonestStreamErrors:
+    """A failed turn tells the user what happened, and stores only that."""
+
+    def _run(self, flask_app, error, persist=False):
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            resource.conversation_service = MagicMock()
+            resource.conversation_service.save_user_question.return_value = {
+                "conversation_id": "c1",
+                "message_id": "m1",
+            }
+            agent = MagicMock()
+            agent.gen.side_effect = error
+            stream = list(
+                resource.complete_stream(
+                    question="Test?",
+                    agent=agent,
+                    conversation_id=None,
+                    user_api_key=None,
+                    decoded_token={"sub": "user123"},
+                    should_persist=persist,
+                )
+            )
+        errors = [json.loads(s.split("data: ", 1)[1]) for s in stream if '"type": "error"' in s]
+        return resource, errors
+
+    def test_an_overflow_streams_a_coded_curated_error(self, mock_mongo_db, flask_app):
+        from docsgpt.agents.context_overflow import ContextOverflowError
+
+        error = ContextOverflowError("raw", needed_tokens=300_000, available_tokens=200_000, stage="dispatch")
+        _, errors = self._run(flask_app, error)
+
+        assert errors[-1]["code"] == "context_length_exceeded"
+        assert "300,000" in errors[-1]["error"]
+        assert "Please try again later" not in errors[-1]["error"]
+        assert errors[-1]["params"] == {"needed_tokens": 300_000, "available_tokens": 200_000}
+
+    def test_the_failed_row_stores_the_curated_text(self, mock_mongo_db, flask_app):
+        from docsgpt.agents.context_overflow import ContextOverflowError
+
+        error = ContextOverflowError("raw", needed_tokens=300_000, available_tokens=200_000, stage="dispatch")
+        resource, errors = self._run(flask_app, error, persist=True)
+
+        kwargs = resource.conversation_service.finalize_message.call_args.kwargs
+        assert kwargs["status"] == "failed"
+        assert kwargs["metadata"]["error"] == errors[-1]["error"]
+        assert kwargs["metadata"]["error_code"] == "context_length_exceeded"
+        assert kwargs["metadata"]["error_params"] == {"needed_tokens": 300_000, "available_tokens": 200_000}
+
+    def test_a_raw_provider_error_never_reaches_the_row(self, mock_mongo_db, flask_app):
+        payload = "data:application/pdf;base64," + "QUJD" * 50_000
+        resource, errors = self._run(flask_app, RuntimeError(f"422 Input should be a valid string {payload}"), True)
+
+        kwargs = resource.conversation_service.finalize_message.call_args.kwargs
+        assert "QUJDQUJD" not in kwargs["metadata"]["error"]
+        assert kwargs["metadata"]["error_code"] == "server_error"
+        assert errors[-1]["code"] == "server_error"
+
+    def test_a_raw_provider_error_never_reaches_the_logs(self, mock_mongo_db, flask_app, caplog):
+        import logging
+
+        payload = "data:application/pdf;base64," + "QUJD" * 50_000
+        with caplog.at_level(logging.DEBUG, logger="docsgpt.api.answer.routes.base"):
+            self._run(flask_app, RuntimeError(f"422 Input should be a valid string {payload}"), True)
+
+        records = [r for r in caplog.records if r.name == "docsgpt.api.answer.routes.base"]
+        assert records
+        for record in records:
+            assert "QUJDQUJD" not in record.getMessage()
+            assert record.exc_info is None or "QUJDQUJD" not in str(record.exc_info[1])
+
+    def test_a_rejected_image_names_the_turns_native_images(self, mock_mongo_db, flask_app):
+        from types import SimpleNamespace
+
+        from docsgpt.agents.attachment_budget import AttachmentPlan
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        def _planned(name, mime, native):
+            return SimpleNamespace(filename=name, mime_type=mime, native=native)
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            agent = MagicMock()
+            agent.is_v1 = False
+            agent.attachment_plan = MagicMock(spec=AttachmentPlan)
+            agent.attachment_plan.files = [
+                _planned("good.png", "image/png", True),
+                _planned("notes.txt", "text/plain", False),
+                _planned("odd.jpg", "image/jpeg", True),
+                _planned("later.png", "image/png", False),
+            ]
+            agent.gen.side_effect = RuntimeError(
+                "Error code: 400 - {'error': {'code': 'image_parse_error', 'message': 'You uploaded an unsupported image.'}}"
+            )
+            stream = list(
+                resource.complete_stream(
+                    question="Test?",
+                    agent=agent,
+                    conversation_id=None,
+                    user_api_key=None,
+                    decoded_token={"sub": "user123"},
+                    should_persist=False,
+                )
+            )
+        error = [json.loads(s.split("data: ", 1)[1]) for s in stream if '"type": "error"' in s][-1]
+        assert error["code"] == "image_unreadable"
+        assert error["params"] == {"files": ["good.png", "odd.jpg"]}
+
+    def test_a_v1_turn_gets_the_api_wording(self, mock_mongo_db, flask_app):
+        from docsgpt.agents.context_overflow import ContextOverflowError
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            agent = MagicMock()
+            agent.is_v1 = True
+            agent.gen.side_effect = ContextOverflowError(
+                "raw", needed_tokens=300_000, available_tokens=200_000, stage="dispatch"
+            )
+            stream = list(
+                resource.complete_stream(
+                    question="Test?",
+                    agent=agent,
+                    conversation_id=None,
+                    user_api_key=None,
+                    decoded_token={"sub": "user123"},
+                    should_persist=False,
+                )
+            )
+        error = [json.loads(s.split("data: ", 1)[1]) for s in stream if '"type": "error"' in s][-1]
+        assert error["code"] == "context_length_exceeded"
+        assert "Add to Knowledge" not in error["error"]
+
+
+@pytest.mark.unit
+class TestCuratedStreamErrorCode:
+    def test_a_user_facing_error_keeps_its_code_and_params(self, mock_mongo_db, flask_app):
+        import json as _json
+
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            mock_agent = MagicMock()
+            mock_agent.gen.return_value = iter(
+                [
+                    {
+                        "type": "error",
+                        "user_facing": True,
+                        "error": "Too big for the model.",
+                        "code": "context_length_exceeded",
+                        "params": {"needed_tokens": 2, "available_tokens": 1},
+                    }
+                ]
+            )
+            stream = list(
+                resource.complete_stream(
+                    question="Test?",
+                    agent=mock_agent,
+                    conversation_id=None,
+                    user_api_key=None,
+                    decoded_token={"sub": "user123"},
+                    should_persist=False,
+                )
+            )
+
+        chunk = [s for s in stream if '"type": "error"' in s][0]
+        event = _json.loads(chunk.split("data: ", 1)[1].strip())
+        assert event["code"] == "context_length_exceeded"
+        assert event["params"] == {"needed_tokens": 2, "available_tokens": 1}
+
+
+@pytest.mark.unit
+class TestClientDisconnect:
+    def test_the_agent_loop_stops_once_the_client_is_gone(self, mock_mongo_db, flask_app):
+        import threading
+
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        gone = threading.Event()
+        produced = []
+
+        def _gen(*args, **kwargs):
+            for i in range(50):
+                produced.append(i)
+                if i == 3:
+                    gone.set()
+                yield {"answer": f"chunk{i} "}
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            agent = MagicMock()
+            agent.client_disconnected = gone
+            agent.gen.side_effect = _gen
+            list(
+                resource.complete_stream(
+                    question="Test?",
+                    agent=agent,
+                    conversation_id=None,
+                    user_api_key=None,
+                    decoded_token={"sub": "user123"},
+                    should_persist=False,
+                )
+            )
+        assert len(produced) < 10

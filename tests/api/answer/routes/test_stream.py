@@ -197,3 +197,34 @@ class TestStreamResourcePost:
             call_kwargs = mock_complete.call_args
             assert call_kwargs.kwargs.get("index") == 3
             assert call_kwargs.kwargs.get("attachment_ids") == ["att1", "att2"]
+
+
+@pytest.mark.unit
+class TestStreamContextOverflow:
+    """A turn too big for the window before streaming gets the curated error, not "Malformed"."""
+
+    def test_pre_stream_overflow_is_the_curated_error(self, stream_client, mock_stream_processor):
+        from docsgpt.agents.context_overflow import ContextOverflowError
+
+        mock_stream_processor.build_agent.side_effect = ContextOverflowError(
+            "raw internal text", needed_tokens=12_000, available_tokens=3_000, stage="pre_compression"
+        )
+        with patch(
+            "docsgpt.api.answer.routes.stream.StreamResource.validate_request",
+            return_value=None,
+        ):
+            resp = stream_client.post(
+                "/stream",
+                data=json.dumps({"question": "test"}),
+                content_type="application/json",
+            )
+
+        assert resp.status_code == 400
+        assert "text/event-stream" in resp.content_type
+        body = resp.get_data(as_text=True)
+        event = json.loads(body.split("data: ", 1)[1].strip())
+        assert event["type"] == "error"
+        assert event["code"] == "context_length_exceeded"
+        assert event["params"] == {"needed_tokens": 12_000, "available_tokens": 3_000}
+        assert "12,000" in event["error"]
+        assert "Malformed" not in body

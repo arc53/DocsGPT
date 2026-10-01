@@ -298,6 +298,35 @@ describe('Button loading', () => {
   });
 });
 
+describe('Button loading as a link', () => {
+  const parse = (element: React.ReactElement) => {
+    const host = document.createElement('div');
+    host.innerHTML = renderToStaticMarkup(element);
+    return host.firstElementChild as HTMLButtonElement;
+  };
+
+  it.each(['text', 'inline'] as const)(
+    'size="%s" keeps the label visible with a spinner after it',
+    (size) => {
+      // A link has no frame, so a hidden label leaves a lone spinner in empty
+      // space; it stays readable and the spinner follows it instead.
+      const button = parse(
+        <Button variant="link" size={size} loading>
+          Add to Knowledge
+        </Button>,
+      );
+      expect(button.disabled).toBe(true);
+      expect(button.getAttribute('aria-busy')).toBe('true');
+      expect(button.querySelector('.invisible')).toBeNull();
+      expect(button.querySelector('.absolute')).toBeNull();
+      expect(button.firstChild?.textContent).toBe('Add to Knowledge');
+      const spinner = button.lastElementChild!;
+      expect(spinner.getAttribute('data-slot')).toBe('spinner');
+      expect(spinner.getAttribute('data-size')).toBe('xs');
+    },
+  );
+});
+
 describe('Button loading with an icon', () => {
   it('keeps the icon padding while the label is wrapped', () => {
     const html = renderToStaticMarkup(

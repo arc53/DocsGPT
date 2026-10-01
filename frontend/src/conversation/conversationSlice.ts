@@ -20,10 +20,15 @@ import {
 import type { RootState } from '../store';
 import {
   clearAttachments,
-  selectCompletedAttachments,
+  selectSendableAttachmentIds,
 } from '../upload/uploadSlice';
 import { newIdempotencyKey } from '../utils/idempotency';
 import { appendThoughtText, recordToolCall } from './answerSegments';
+import {
+  type ErrorParams,
+  readStreamError,
+  setErrorDetail,
+} from './curatedError';
 import {
   handleFetchAnswer,
   handleFetchAnswerSteaming,
@@ -51,6 +56,32 @@ function toClientFeedback(value: unknown): FEEDBACK | undefined {
   if (typeof value !== 'string') return undefined;
   const upper = value.toUpperCase();
   return upper === 'LIKE' || upper === 'DISLIKE' ? upper : undefined;
+}
+
+const FAILED_FALLBACK = 'Generation failed before completing.';
+
+/**
+ * A failed turn's stored error as ``{message, code, params}``. The backend
+ * stores curated text in ``error``, its reason in ``error_code``
+ * (``context_length_exceeded``) and the values it was worded from in
+ * ``error_params``; an ``error`` object with ``message``, ``code`` and
+ * ``params`` is read too. Older rows carry only the text.
+ */
+export function readStoredError(
+  error: unknown,
+  code: unknown,
+  params?: unknown,
+): { message: string; code?: string; params?: ErrorParams } {
+  if (error && typeof error === 'object') {
+    const obj = error as {
+      message?: unknown;
+      code?: unknown;
+      params?: unknown;
+    };
+    return readStoredError(obj.message, obj.code ?? code, obj.params ?? params);
+  }
+  const stored = readStreamError({ error, code, params });
+  return { ...stored, message: stored.message || FAILED_FALLBACK };
 }
 
 export function mapServerQueryToClient(raw: any): Query {
@@ -82,9 +113,13 @@ export function mapServerQueryToClient(raw: any): Query {
     query.response = raw?.response ?? '';
   }
   if (isFailed) {
-    query.error =
-      (typeof metadata.error === 'string' && metadata.error) ||
-      'Generation failed before completing.';
+    const stored = readStoredError(
+      metadata.error,
+      metadata.error_code,
+      metadata.error_params,
+    );
+    query.error = stored.message;
+    setErrorDetail(query, stored.code, stored.params);
   }
   return query;
 }
@@ -218,9 +253,7 @@ export const fetchAnswer = createAsyncThunk<
   if (arg.attachmentIds !== undefined) {
     attachmentIds = arg.attachmentIds;
   } else {
-    attachmentIds = selectCompletedAttachments(state)
-      .filter((a) => a.id)
-      .map((a) => a.id) as string[];
+    attachmentIds = selectSendableAttachmentIds(state);
     if (attachmentIds.length > 0) {
       dispatch(clearAttachments());
     }
@@ -372,7 +405,7 @@ export const fetchAnswer = createAsyncThunk<
                 conversationSlice.actions.raiseError({
                   conversationId: currentConversationId,
                   index: targetIndex,
-                  message: data.error,
+                  ...readStreamError(data),
                 }),
               );
             } else {
@@ -542,7 +575,7 @@ export const fetchAnswer = createAsyncThunk<
                 conversationSlice.actions.raiseError({
                   conversationId: currentConversationId,
                   index: targetIndex,
-                  message: data.error,
+                  ...readStreamError(data),
                 }),
               );
             } else if (data.type === 'structured_answer') {
@@ -822,7 +855,7 @@ export const submitToolActions = createAsyncThunk<
           conversationSlice.actions.raiseError({
             conversationId,
             index: targetIndex,
-            message: data.error,
+            ...readStreamError(data),
           }),
         );
       } else if (data.type === 'answer') {
@@ -868,6 +901,8 @@ export const conversationSlice = createSlice({
       delete state.queries[index].tool_calls;
       delete state.queries[index].segments;
       delete state.queries[index].error;
+      delete state.queries[index].errorCode;
+      delete state.queries[index].errorParams;
       delete state.queries[index].structured;
       delete state.queries[index].schema;
       delete state.queries[index].feedback;
@@ -1103,9 +1138,13 @@ export const conversationSlice = createSlice({
       query.lastHeartbeatAt = tail?.last_heartbeat_at ?? query.lastHeartbeatAt;
       if (status === 'failed') {
         // Surface as error so the placeholder text never renders.
-        query.error =
-          (typeof tail?.error === 'string' && tail.error) ||
-          'Generation failed before completing.';
+        const stored = readStoredError(
+          tail?.error,
+          tail?.error_code,
+          tail?.error_params,
+        );
+        query.error = stored.message;
+        setErrorDetail(query, stored.code, stored.params);
         delete query.response;
         return;
       }
@@ -1128,6 +1167,8 @@ export const conversationSlice = createSlice({
       }
       if (status === 'complete') {
         delete query.error;
+        delete query.errorCode;
+        delete query.errorParams;
       }
     },
     raiseError(
@@ -1136,12 +1177,17 @@ export const conversationSlice = createSlice({
         conversationId: string | null;
         index: number;
         message: string;
+        /** Why the turn failed (``context_length_exceeded``), when known. */
+        code?: string;
+        /** The values a curated error was worded from. */
+        params?: ErrorParams;
       }>,
     ) {
-      const { conversationId, index, message } = action.payload;
+      const { conversationId, index, message, code, params } = action.payload;
       if (state.conversationId !== conversationId) return;
 
       state.queries[index].error = message;
+      setErrorDetail(state.queries[index], code, params);
     },
 
     // Non-fatal counterpart to ``raiseError``: records a notice on the query

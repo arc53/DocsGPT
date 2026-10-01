@@ -577,6 +577,15 @@ class ToolExecutor:
         # sandbox tools so a referenced attachment can be lazily bridged to a
         # conversation-scoped artifact at tool-use time.
         self.attachments: List[Dict] = []
+        # Images a tool asked to show the model (``attachments_read`` on an
+        # image or a scanned page). The LLM handler adds them in a user
+        # message after the tool results and empties this list.
+        self.pending_native_parts: List[Dict] = []
+        # Context a tool result may still take (tokens below the compression
+        # threshold), set by the LLM handler before each call, and the
+        # compression epoch: tools that size or dedupe their results read both.
+        self.context_room_tokens: Optional[int] = None
+        self.context_epoch = 0
         self.client_tools: Optional[List[Dict]] = None
         self._name_to_tool: Dict[str, Tuple[str, str]] = {}
         # Per-NAME failure counts for invented tool names this turn. After
@@ -1765,6 +1774,10 @@ class ToolExecutor:
         except ConnectionUnavailable as exc:
             tool, connection_error = None, str(exc)
 
+        hint = getattr(tool, "set_context_hint", None) if tool is not None else None
+        if callable(hint):
+            hint(room_tokens=self.context_room_tokens, epoch=self.context_epoch)
+
         if tool is None:
             error_message = connection_error and (
                 f"{connection_error}. Ask the user to connect it in Settings > Connectors, then try again."
@@ -1812,6 +1825,7 @@ class ToolExecutor:
                     _redact_args_for_log(call_args),
                 )
                 result = tool.execute_action(action_name, **parameters)
+                self._collect_native_parts(tool)
         except Exception as exc:
             if proposed_ok:
                 _mark_failed(
@@ -2116,6 +2130,19 @@ class ToolExecutor:
     _PRESERVED_TOOL_CALL_KEYS = (
         "artifacts", "device_id", "connector_key", "connector_name", "access", "sent_arguments",
     )
+
+    def _collect_native_parts(self, tool: Any) -> None:
+        """Take the images a tool queued for the model, if it queues any."""
+        drain = getattr(tool, "drain_native_parts", None)
+        if not callable(drain):
+            return
+        try:
+            parts = drain()
+        except Exception:
+            logger.exception("Failed to collect images from tool %s", type(tool).__name__)
+            return
+        if isinstance(parts, list):
+            self.pending_native_parts.extend(p for p in parts if isinstance(p, dict))
 
     def get_truncated_tool_calls(self) -> List[Dict]:
         """Project tool calls into the shape that is streamed and persisted.

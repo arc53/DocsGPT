@@ -20,6 +20,7 @@ import {
   setConversations,
   setConversationsLoading,
   setPrompts,
+  setAttachmentBudgetShare,
   setSourceDocs,
   setSpeechAvailability,
 } from '../preferences/preferenceSlice';
@@ -42,7 +43,7 @@ export default function useDataInitializer(isAuthLoading: boolean) {
   const token = useSelector(selectToken);
   const conversations = useSelector(selectConversations);
 
-  // Speech features; /api/config needs no auth.
+  // Speech features and the attachment budget; /api/config needs no auth.
   useEffect(() => {
     userService
       .getConfig()
@@ -56,6 +57,12 @@ export default function useDataInitializer(isAuthLoading: boolean) {
         );
         // A backend from before connectors has no flag: hide the page.
         dispatch(setConnectorsEnabled(config?.connectors_enabled === true));
+        const share = Number(config?.attachment_budget_share);
+        dispatch(
+          setAttachmentBudgetShare(
+            Number.isFinite(share) && share > 0 ? share : null,
+          ),
+        );
       })
       .catch(() => undefined);
   }, [dispatch]);
