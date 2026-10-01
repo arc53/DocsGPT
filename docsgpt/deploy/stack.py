@@ -13,6 +13,8 @@ from docsgpt.core import paths
 COMPOSE_FILE = "docker-compose.yaml"
 RECORD_FILE = "install.json"
 DEFAULT_PORT = 7091
+# What the app uses when API_URL is unset (docsgpt/core/settings/workers.py).
+DEFAULT_API_URL = f"http://localhost:{DEFAULT_PORT}"
 EXPOSURES = ("local", "network", "domain")
 
 PROVIDERS = {
@@ -24,6 +26,10 @@ PROVIDERS = {
     "groq": "Groq",
     "openai-compatible": "OpenAI-compatible server (Ollama, vLLM, LM Studio, ...)",
 }
+
+# The public key credentials are sealed with when ENCRYPTION_SECRET_KEY is unset. Kept here
+# rather than imported: docsgpt.security.encryption loads the settings of whatever runs this.
+DEFAULT_ENCRYPTION_KEY = "default-docsgpt-encryption-key"
 
 _LOCAL_BINDS = ("", "127.0.0.1", "localhost", "::1")
 _ALL_INTERFACES = ("0.0.0.0", "::")
@@ -104,12 +110,21 @@ def plan(
     provider: Optional[Mapping[str, Optional[str]]] = None,
     docling: Optional[bool] = None,
     secret: Optional[Callable[[], str]] = None,
+    lan_ip: Optional[str] = None,
+    written_api_url: Optional[str] = None,
 ) -> dict[str, Optional[str]]:
     """The ``.env`` changes for an ``up``: only keys that change, ``None`` for a key to remove.
 
     Settings the user did not ask to change are left alone, secrets are generated
-    once, and the database password is only set for a database that does not exist
-    yet (Postgres reads it when the volume is created).
+    once, and the database password and the credential encryption key are only set
+    for a database that does not exist yet: Postgres reads the password when the
+    volume is created, and credentials an existing database already holds are
+    sealed with the key it ran with.
+
+    Given ``lan_ip``, ``API_URL`` follows the address DocsGPT is opened at (see
+    :func:`public_api_url`; ``written_api_url`` is the value the last ``up``
+    recorded writing); the worker keeps its own in-stack value from the Compose
+    file.
     """
     secret = secret or (lambda: secrets.token_hex(32))
     wanted: dict[str, Optional[str]] = {"DOCSGPT_IMAGE_TAG": image_tag}
@@ -134,8 +149,10 @@ def plan(
     for key in ("INTERNAL_KEY", "JWT_SECRET_KEY"):
         if not existing.get(key):
             wanted[key] = secret()
-    if not existing.get("POSTGRES_PASSWORD") and fresh_database:
-        wanted["POSTGRES_PASSWORD"] = secret()
+    if fresh_database:
+        for key in ("POSTGRES_PASSWORD", "ENCRYPTION_SECRET_KEY"):
+            if not existing.get(key):
+                wanted[key] = secret()
     if "VITE_API_STREAMING" not in existing:
         wanted["VITE_API_STREAMING"] = "true"
     if port is not None:
@@ -146,6 +163,11 @@ def plan(
         provider = provider_settings("docsgpt")
     if provider:
         wanted.update(provider)
+    if lan_ip is not None:
+        after = {key: value for key, value in {**existing, **wanted}.items() if value is not None}
+        api_url = public_api_url(existing, after, lan_ip, written_api_url)
+        if api_url != "":
+            wanted["API_URL"] = api_url
 
     return {
         key: value
@@ -168,6 +190,51 @@ def url(env: Mapping[str, str], lan_ip: str) -> str:
         host = lan_ip if bind in _ALL_INTERFACES else bind
         return f"http://{host}:{_port(env)}"
     return f"http://localhost:{_port(env)}"
+
+
+def owns_api_url(existing: Mapping[str, str], written: Optional[str], lan_ip: str) -> bool:
+    """Whether ``API_URL`` in ``existing`` is ``up``'s to change rather than the operator's.
+
+    It is when it is unset, the app's default, the value the last ``up`` recorded
+    writing, or the address ``up`` would write for these settings (installs from
+    before the record kept it).
+
+    Args:
+        existing: The settings before this ``up``.
+        written: The ``API_URL`` the last ``up`` recorded writing, if any.
+        lan_ip: This machine's network address.
+
+    Returns:
+        True when ``up`` may replace or remove it.
+    """
+    current = existing.get("API_URL")
+    return not current or current in (DEFAULT_API_URL, written, url(existing, lan_ip))
+
+
+def public_api_url(
+    existing: Mapping[str, str], after: Mapping[str, str], lan_ip: str, written: Optional[str] = None
+) -> Optional[str]:
+    """The ``API_URL`` for the settings in ``after``: a URL, ``None`` to remove it, ``""`` to leave it.
+
+    The API builds agent image, webhook, device pairing and MCP OAuth callback
+    URLs from ``API_URL``, and without it they point at ``http://localhost:7091``.
+    It is set to the address :func:`url` prints, and dropped when that is the
+    default anyway. A value the operator wrote (see :func:`owns_api_url`) is
+    never touched.
+
+    Args:
+        existing: The settings before this ``up``.
+        after: The settings this ``up`` writes.
+        lan_ip: This machine's network address.
+        written: The ``API_URL`` the last ``up`` recorded writing, if any.
+
+    Returns:
+        The new value, ``None`` to remove the key, or ``""`` to leave it as it is.
+    """
+    if not owns_api_url(existing, written, lan_ip):
+        return ""
+    wanted = url(after, lan_ip)
+    return None if wanted == DEFAULT_API_URL else wanted
 
 
 def health_url(env: Mapping[str, str]) -> str:

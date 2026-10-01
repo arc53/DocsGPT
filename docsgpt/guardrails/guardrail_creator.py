@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Optional, Type
 
 from docsgpt.core.settings import settings
 from docsgpt.guardrails.base import GuardrailCheck
+
+logger = logging.getLogger(__name__)
 
 
 class GuardrailCreator:
@@ -61,3 +64,28 @@ class GuardrailCreator:
     def catalog(cls) -> List[Dict[str, Any]]:
         cls._ensure_builtin()
         return [cls.checks[k].describe() for k in cls.enabled_keys()]
+
+
+def warn_unknown_checks_enabled() -> List[str]:
+    """Log a warning for ``GUARDRAILS_CHECKS_ENABLED`` entries that name no registered check.
+
+    Such entries are filtered out like any other name outside the allowlist, so a typo, or a
+    value such as ``none`` meant to turn checks off, quietly leaves only the names that do
+    match: with none left, every check is disabled. That stays the behaviour; this only says so.
+
+    Returns:
+        The unknown entries, in the order they were configured; empty when every entry is a check.
+    """
+    GuardrailCreator._ensure_builtin()
+    configured = settings.GUARDRAILS_CHECKS_ENABLED or []
+    unknown = [key for key in configured if key not in GuardrailCreator.checks]
+    if unknown:
+        enabled = GuardrailCreator.enabled_keys()
+        logger.warning(
+            "GUARDRAILS_CHECKS_ENABLED has entries that are not registered guardrail checks: %s. They are "
+            "ignored, so %s. Registered checks: %s. To turn guardrails off, set GUARDRAILS_ENABLED=false instead.",
+            ", ".join(unknown),
+            "the enabled checks are " + ", ".join(enabled) if enabled else "no guardrail check is enabled",
+            ", ".join(sorted(GuardrailCreator.checks)),
+        )
+    return unknown

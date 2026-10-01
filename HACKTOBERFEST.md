@@ -1,39 +1,58 @@
-# **🎉 Join the Hacktoberfest with DocsGPT and win a Free T-shirt for a meaningful PR! 🎉**
+# 🎃 Hacktoberfest 2026 with DocsGPT
 
-Welcome, contributors! We're excited to announce that DocsGPT is participating in Hacktoberfest. Get involved by submitting meaningful pull requests.
+Welcome, contributors! DocsGPT is taking part in [Hacktoberfest](https://hacktoberfest.com/) 2026, from **October 1
+to October 31, 2026**.
 
-All Meaningful contributors with accepted PRs that were created for issues with the `hacktoberfest` label (set by our maintainer team: dartpain, siiddhantt, pabik, ManishMadan2882) will receive a cool T-shirt! 🤩.
-<img width="1331" height="678" alt="hacktoberfest-mocks-preview" src="https://github.com/user-attachments/assets/633f6377-38db-48f5-b519-a8b3855a9eb4" />
+We're giving away **T-shirts for meaningful contributions** 👕: merged pull requests that fix a real bug, add a
+feature or noticeably improve the docs. Typo fixes and other trivial changes don't qualify.
 
-Fill in [this form](https://forms.gle/Npaba4n9Epfyx56S8
-) after your PR was merged please 
+Any meaningful pull request merged during Hacktoberfest qualifies, whether or not it closes a labelled issue. Our
+maintainer team (dartpain, siiddhantt, pabik, ManishMadan2882) sets the `hacktoberfest` label on issues that are good to
+pick up; those are suggestions, not a requirement. The team also reviews the pull requests.
 
-If you are in doubt don't hesitate to ping us on discord, ping me - Alex (dartpain).
+**The T-shirt design and the claim form will be announced later**, on our [Discord](https://discord.gg/vN7YFfdMpj)
+and in the [README](README.md). Keep a link to your merged PR so you can claim once the form is out.
 
-## 📜 Here's How to Contribute:
-```text
-🛠️ Code: This is the golden ticket! Make meaningful contributions through PRs.
+Here are the T-shirts from previous years:
 
-🧩 API extension: Build an app utilising DocsGPT API. We prefer submissions that showcase original ideas and turn the API into an AI agent.
-They can be a completely separate repos. 
-For example: 
-https://github.com/arc53/tg-bot-docsgpt-extenstion or 
-https://github.com/arc53/DocsGPT-cli
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <img src="docs/public/hacktoberfest-tee-2023.jpg" alt="The 2023 DocsGPT T-shirt: black, a small white dinosaur on the front and a purple dinosaur at a computer on the back" width="100%">
+      <p align="center"><b>2023</b></p>
+    </td>
+    <td width="33%" valign="top">
+      <img src="docs/public/hacktoberfest-tee-2024.jpg" alt="The 2024 DocsGPT T-shirt: white, with a print of a purple dinosaur toy at a tiny computer" width="100%">
+      <p align="center"><b>2024</b>: designed by Cardboard, winner of #DocsGPTDesignQuest</p>
+    </td>
+    <td width="33%" valign="top">
+      <img src="docs/public/hacktoberfest-tee-2025.jpg" alt="The 2025 DocsGPT T-shirt: black, a small purple dinosaur on the front and a row of pastel dinosaurs on the back" width="100%">
+      <p align="center"><b>2025</b></p>
+    </td>
+  </tr>
+</table>
 
-Non-Code Contributions:
+If you're in doubt, don't hesitate to ask on Discord or ping me, Alex (dartpain).
 
-📚 Wiki: Improve our documentation, create a guide.
+## 📜 How to contribute
 
-🖥️ Design: Improve the UI/UX or design a new feature.
-```
+- 🛠️ **Code**: the golden ticket. Fix a bug or build a feature through a pull request. The
+  [`hacktoberfest` issues](https://github.com/arc53/DocsGPT/issues?q=is%3Aissue+is%3Aopen+label%3Ahacktoberfest) are a
+  good place to start, but any other issue counts too.
+- 🧩 **API extension**: build an app on top of the DocsGPT API. We prefer submissions that show an original idea and
+  turn the API into an AI agent. It can live in its own repository, like the
+  [Telegram bot](https://github.com/arc53/tg-bot-docsgpt-extenstion) or the
+  [DocsGPT CLI](https://github.com/arc53/DocsGPT-cli).
+- 📚 **Docs**: improve the [documentation](https://docs.docsgpt.cloud/) or write a guide. The site's source is in the
+  [`docs/`](docs/) folder.
+- 🖥️ **Design**: improve the UI/UX or design a new feature.
 
-### 📝 Guidelines for Pull Requests:
-- Familiarize yourself with the current contributions and our [Roadmap](https://github.com/orgs/arc53/projects/2).
-- Before contributing check existing [issues](https://github.com/arc53/DocsGPT/issues) or [create](https://github.com/arc53/DocsGPT/issues/new/choose) an issue and wait to get assigned.
-- Once you are finished with your contribution, please fill in this [form](https://forms.gle/Npaba4n9Epfyx56S8).
-- Refer to the [Documentation](https://docs.docsgpt.cloud/).
-- Feel free to join our [Discord](https://discord.gg/vN7YFfdMpj) server. We're here to help newcomers, so don't hesitate to jump in! Join us [here](https://discord.gg/vN7YFfdMpj).
-  
-Thank you very much for considering contributing to DocsGPT during Hacktoberfest! 🙏 Your contributions (not just simple typos) could earn you a stylish new t-shirt.
+## 📝 Guidelines for pull requests
 
-We will publish a t-shirt design later into the October.
+- Look at the current contributions and our [roadmap](https://github.com/orgs/arc53/projects/2).
+- Before you start, check the existing [issues](https://github.com/arc53/DocsGPT/issues) or
+  [create one](https://github.com/arc53/DocsGPT/issues/new/choose), and wait to be assigned.
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [documentation](https://docs.docsgpt.cloud/).
+- Join our [Discord](https://discord.gg/vN7YFfdMpj) server. We're here to help newcomers, so jump in!
+
+Thank you very much for considering contributing to DocsGPT during Hacktoberfest! 🙏

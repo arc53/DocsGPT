@@ -51,7 +51,7 @@
 #      `{{.NetworkSettings.Networks.docsgpt-oss_sandbox-egress.IPAddress}}` form
 #      never parsed. Both IPs are read on sandbox-net so source+dest match the
 #      shared path:
-#        CF="-f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.sandbox.yaml -f deployment/optional/docker-compose.optional.sandbox-egress.yaml"
+#        CF="--env-file .env -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.sandbox.yaml -f deployment/optional/docker-compose.optional.sandbox-egress.yaml"
 #        NET=docsgpt-oss_sandbox-net
 #        SBX=$(docker inspect -f "{{(index .NetworkSettings.Networks \"$NET\").IPAddress}}" "$(docker compose $CF ps -q docsgpt-sandbox)")
 #        BE=$( docker inspect -f "{{(index .NetworkSettings.Networks \"$NET\").IPAddress}}" "$(docker compose $CF ps -q backend)")
@@ -76,7 +76,7 @@
 #      backend auth and/or approach (1).
 #
 # Apply on top of the base stack AND the sandbox overlay (order matters):
-#   docker compose -f deployment/docker-compose.yaml \
+#   docker compose --env-file .env -f deployment/docker-compose.yaml \
 #     -f deployment/optional/docker-compose.optional.sandbox.yaml \
 #     -f deployment/optional/docker-compose.optional.sandbox-egress.yaml up -d
 #

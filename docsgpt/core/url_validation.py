@@ -35,10 +35,34 @@ METADATA_IPS: Set[str] = {
 # Allowed schemes for external requests
 ALLOWED_SCHEMES: Set[str] = {"http", "https"}
 
+# Carrier-grade NAT (RFC 6598). Python's ``ipaddress`` does not count it as
+# ``is_private``, so it is checked on its own, as in docsgpt/security/safe_url.py.
+CGNAT_NETWORK_V4 = ipaddress.IPv4Network("100.64.0.0/10")
+
+
+def _unwrap_ipv4_mapped(
+    ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
+    """Return the IPv4 address an IPv4-mapped IPv6 address carries.
+
+    ``::ffff:a.b.c.d`` reaches ``a.b.c.d`` on a dual-stack socket, so it is
+    judged by the IPv4 rules (the CGNAT range among them).
+
+    Args:
+        ip: A parsed IPv4 or IPv6 address.
+
+    Returns:
+        The embedded IPv4 address for ``::ffff:0:0/96``, otherwise ``ip``.
+    """
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        return ip.ipv4_mapped
+    return ip
+
 
 def is_private_ip(ip_str: str) -> bool:
     """
-    Check if an IP address is private, loopback, or link-local.
+    Check if an IP address is private, loopback, link-local, reserved,
+    multicast, unspecified or carrier-grade NAT.
 
     Args:
         ip_str: IP address as a string
@@ -47,14 +71,15 @@ def is_private_ip(ip_str: str) -> bool:
         True if the IP is private/internal, False otherwise
     """
     try:
-        ip = ipaddress.ip_address(ip_str)
+        ip = _unwrap_ipv4_mapped(ipaddress.ip_address(ip_str))
         return (
             ip.is_private or
             ip.is_loopback or
             ip.is_link_local or
             ip.is_reserved or
             ip.is_multicast or
-            ip.is_unspecified
+            ip.is_unspecified or
+            (isinstance(ip, ipaddress.IPv4Address) and ip in CGNAT_NETWORK_V4)
         )
     except ValueError:
         # If we can't parse it as an IP, return False
@@ -63,7 +88,8 @@ def is_private_ip(ip_str: str) -> bool:
 
 def is_metadata_ip(ip_str: str) -> bool:
     """
-    Check if an IP address is a cloud metadata service IP.
+    Check if an IP address is a cloud metadata service IP, in any spelling
+    (IPv4-mapped IPv6, or an IPv6 address written out differently).
 
     Args:
         ip_str: IP address as a string
@@ -71,7 +97,10 @@ def is_metadata_ip(ip_str: str) -> bool:
     Returns:
         True if the IP is a metadata service, False otherwise
     """
-    return ip_str in METADATA_IPS
+    try:
+        return str(_unwrap_ipv4_mapped(ipaddress.ip_address(ip_str))) in METADATA_IPS
+    except ValueError:
+        return ip_str in METADATA_IPS
 
 
 def resolve_hostname(hostname: str) -> Optional[str]:

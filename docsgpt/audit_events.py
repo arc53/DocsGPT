@@ -41,6 +41,7 @@ _EXACT: dict[str, str] = {
     # How the instance is configured.
     "quota_policy_set": "config",
     "quota_policy_deleted": "config",
+    "connector_policy_set": "config",
 }
 
 # Dotted namespaces, matched on the part before the first ``.``.

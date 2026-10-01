@@ -1,0 +1,441 @@
+---
+title: SSE Notifications Runbook
+description: Diagnose missing notifications, a bell badge that never lights up, upload toasts that hang and chat answers that don't reconnect - Redis checks, the symptom map, failure modes and the realtime event settings.
+---
+
+# SSE Notifications Runbook
+
+> Operations guide for "user says they didn't get a notification" — and
+> the related "the bell never lights up" / "my upload toast hangs" /
+> "the chat answer doesn't reconnect" symptoms.
+
+The user-facing notifications channel is the SSE pipe at
+`/api/events` plus per-message reconnects at
+`/api/messages/<id>/events`. This document maps a user complaint to
+the diagnostic that surfaces the cause.
+
+---
+
+## TL;DR — first 60 seconds
+
+Every `redis-cli -n 2` in this runbook assumes the default
+`CACHE_REDIS_URL` (`redis://…:6379/2`); the notification streams live in
+whatever database that URL names. With a different host, port or database,
+use `redis-cli -u "$CACHE_REDIS_URL" …` instead of `-n 2`. Under Docker
+Compose, run the commands inside the Redis container:
+`docker compose exec redis redis-cli -n 2 …`.
+
+Run these three commands in parallel before anything else:
+
+```bash
+# 1) Is Redis up and serving the pipe? Should print PONG instantly.
+redis-cli -n 2 PING
+
+# 2) Anyone subscribed to the channel right now? Numbers per channel.
+redis-cli -n 2 PUBSUB NUMSUB user:<user_id>
+
+# 3) Is the user's backlog populated? Returns the count of journaled events.
+redis-cli -n 2 XLEN user:<user_id>:stream
+```
+
+- `PING` failing → Redis is the problem. Skip to "Redis-down".
+- `NUMSUB user:<user_id>` returns 0 → no client connected. Skip to "Client never connects".
+- `XLEN user:<user_id>:stream` returns 0 or low → publisher isn't writing. Skip to "Publisher silent".
+- All three look healthy → the events are flowing on the wire; the issue is downstream of the slice (UI rendering, toast suppression, etc.). Skip to "Events flowing but UI silent".
+
+---
+
+## Architecture cheat-sheet
+
+```
+Worker (publish_user_event)             Frontend tab
+        │                                    ▲
+        ▼                                    │  GET /api/events SSE
+  Redis Streams: XADD                  async route (event loop)
+  user:<id>:stream  ──────────────►   replay_backlog (snapshot)
+        │                                    +
+        ▼                              AsyncTopic.subscribe (live tail)
+  Redis pub/sub: PUBLISH                     │
+  user:<id>  ────────────────────────────────┘
+```
+
+**Source of truth:**
+- Persistent journal: Redis Stream `user:<user_id>:stream`, capped at
+  `EVENTS_STREAM_MAXLEN` (default 1000) entries via `MAXLEN ~`. ~24h
+  at typical event rates.
+- Live fan-out: Redis pub/sub channel `user:<user_id>`. No durability;
+  subscribers must be attached at publish time.
+
+The chat-stream pipe is separate, parallel infrastructure:
+- Journal: Postgres `message_events` table.
+- Live fan-out: Redis pub/sub `channel:<message_id>`.
+
+Same patterns, different durability layer. This doc covers both;
+they share most diagnostic commands.
+
+---
+
+## Symptom → diagnostic map
+
+### A. "I uploaded a source and the toast never appeared"
+
+User flow: chat → upload → expect toast.
+
+| Step                                              | Command                                                       | Expect                                          |
+| ------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------------------- |
+| Worker received the task                          | `tail -f celery.log` filtered by user                         | `ingest_worker` start log line                  |
+| Worker published the queued event                 | `redis-cli -n 2 XREVRANGE user:<id>:stream + - COUNT 5`       | A `source.ingest.queued` entry within seconds   |
+| Frontend got it                                   | DevTools → Network → `/api/events` → EventStream tab          | `data: {"type":"source.ingest.queued",...}`     |
+| Slice updated                                     | Redux DevTools → state.upload.tasks                           | Task with matching `sourceId`, `status:'training'` |
+
+If the worker's queued log line is there but the XADD didn't land →
+look for a `publish_user_event payload not JSON-serializable` warning
+in the worker log (the publisher swallows `TypeError`).
+
+If the XADD landed but the frontend never received it → check
+`PUBSUB NUMSUB user:<id>` while the user is on the page. If 0, the
+SSE connection isn't subscribed; skip to "Client never connects".
+
+If the frontend received it but the toast didn't render → the
+`uploadSlice` extraReducer requires `task.sourceId` to match the
+event's `scope.id`. Check the upload route returned `source_id` in
+its POST response (the upload, connector, and reingest paths all
+include it). Idempotent / cached responses must also include
+`source_id` (`_claim_task_or_get_cached`).
+
+### B. "The bell badge never goes up"
+
+There is no bell — the global notifications surface is per-event
+toasts, not an aggregated counter. If the user is on an old build,
+`Cmd-Shift-R` to bypass cache. All toasts share one `ToastViewport`
+mounted in `frontend/src/App.tsx`:
+
+| Toast                    | Fed by                                                            |
+| ------------------------ | ----------------------------------------------------------------- |
+| `UploadToast`            | `source.ingest.*` events, through `uploadSlice`                   |
+| `ToolApprovalToast`      | `tool.approval.required` (revoked by `tool.approval.cleared`)     |
+| `TeamNotificationToast`  | `team.member_added` and `resource.shared`                         |
+| `ConnectionHealthToast`  | `connection.reconnect_needed`                                     |
+| `ActionToast`            | Not SSE: the result of an action the current page just ran (`actionToastSlice`) |
+
+The SSE-driven toasts read the ring of recent events in
+`notificationsSlice`. `attachment.*` events update the message box's
+attachment chips, not a toast, and the `schedule.*` and
+`graph.extract.*` events update their own pages.
+
+### C. "My chat answer froze mid-stream and never recovered"
+
+User flow: ask question → answer streaming → network blip → answer
+stops; should reconnect.
+
+```bash
+# Was the original message reserved in PG?
+psql -c "SELECT id, status, prompt FROM conversation_messages \
+  WHERE user_id = '<user>' ORDER BY timestamp DESC LIMIT 5;"
+
+# Did the journal capture events past the user's last-seen seq?
+psql -c "SELECT sequence_no, event_type FROM message_events \
+  WHERE message_id = '<id>' ORDER BY sequence_no;"
+
+# Is the live tail still producing? (subscribe and watch)
+redis-cli -n 2 SUBSCRIBE channel:<message_id>
+```
+
+The frontend should reconnect via `GET /api/messages/<id>/events`
+when the original POST stream closes without a typed `end` or
+`error` event. If it's not reconnecting, `console.warn('Stream
+reconnect failed', ...)` will be in the browser console — the
+reconnect HTTP errored. Common cases:
+
+- The user's JWT rotated mid-stream → 401 on the GET. Frontend
+  doesn't auto-refresh; the user reloads.
+- The user is on a different host than the API and CORS is rejecting
+  the GET → check `docsgpt/asgi.py` allow-headers.
+
+### D. "The dev install never delivers any notifications at all"
+
+`AUTH_TYPE` unset (the default) or `simple_jwt` means
+`decoded_token = {"sub": "local"}` for every request. The SSE client connects without the
+`Authorization` header in this case, and `user:local:stream` is
+the shared channel everything goes to. If the user has multiple dev
+machines pointing at the same Redis, they will see each other's
+events. Confirm with:
+
+```bash
+redis-cli -n 2 KEYS 'user:local:*'
+```
+
+If multiple deployments share the Redis, document that as a known
+multi-user-on-local-channel limitation. `simple_jwt` does not help:
+its one shared token also carries `sub: "local"`. Set
+`AUTH_TYPE=oidc` for per-user streams, or `session_jwt` for
+per-browser streams (it separates browsers, not people).
+
+### E. "The notifications channel was working, then suddenly stopped after the user reloaded the page"
+
+Likely path: `backlog.truncated` event fired, the slice cleared
+`lastEventId` to null, the closure was carrying the same stale id and
+re-tripped the same truncation on every reconnect. **Verify the user
+is on a current build — `eventStreamClient.ts` must re-read
+`lastEventId = opts.getLastEventId();` without a truthy guard so the
+null clear propagates into the next reconnect.**
+
+### F. "I keep getting 429 on /api/events"
+
+The per-user concurrent-connection cap (`SSE_MAX_CONCURRENT_PER_USER`,
+default 8) refused the connection. User has too many tabs open or a
+runaway reconnect loop. The cap covers `/api/events` and chat reconnects
+together.
+
+Each open stream holds a lease in a sorted set scored by its last
+refresh; `redis-cli -n 2 ZRANGE user:<id>:sse_leases 0 -1 WITHSCORES`
+lists them. A live stream refreshes its lease as it sends frames. A
+lease whose stream died without cleanup (worker SIGKILL, OOM) stops
+counting once it is older than the lease TTL: 60s, or 4 ×
+`SSE_KEEPALIVE_SECONDS` if that is larger. The cap heals on its own;
+`redis-cli -n 2 DEL user:<id>:sse_leases` clears it immediately.
+
+### G. "Replay snapshot stops at 200 events"
+
+The route caps each replay at `EVENTS_REPLAY_MAX_PER_REQUEST`
+(default 200). The cap is intentionally **silent** — the route does NOT
+emit a `backlog.truncated` notice for cap-hit. The 200 entries each
+carry their own `id:` header, so the frontend's slice cursor
+advances to the most-recent delivered id. Next reconnect sends
+`last_event_id=<max_replayed>` and the snapshot resumes from there.
+A user that was 1000 entries behind catches up over ~5 reconnects.
+
+If the user reports getting HTTP 429 on `/api/events` despite being
+well under `SSE_MAX_CONCURRENT_PER_USER`, they hit the windowed
+replay budget (`EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW`, default
+30 / `EVENTS_REPLAY_BUDGET_WINDOW_SECONDS` 60s). The route refuses
+the connection so the slice cursor stays pinned at whatever value
+it had; the frontend backs off and the next reconnect (after the
+window rolls) gets the proper snapshot. Serving the live tail
+without a snapshot used to be the behavior here, but that let the
+client advance `lastEventId` past entries it never received,
+permanently stranding the un-replayed window — so the route now
+429s instead. `redis-cli -n 2 GET user:<id>:replay_count` shows the
+current counter; TTL is the window size.
+
+`backlog.truncated` is emitted ONLY when the client's
+`Last-Event-ID` has slid off the retained window — trimmed by MAXLEN,
+or older than the age floor (`EVENTS_REPLAY_MAX_AGE_HOURS`, default 48;
+replay never returns older entries) — i.e. the journal is genuinely gone
+past the cursor and the frontend should clear the
+slice cursor and refetch state. Treating cap-hit or
+budget-exhaustion the same way would lock the user into re-receiving
+the oldest 200 entries on every reconnect (the cursor would clear,
+the snapshot would re-serve from the start, the cap would re-trip).
+
+### H. "User says push notifications stopped after a deploy"
+
+- Pull `event.published topic=user:<id> type=...` from the worker
+  logs to confirm the publisher is still firing. This line is logged at
+  DEBUG, and DocsGPT logs at INFO, so it appears only in a build with
+  debug logging turned on; otherwise check `XREVRANGE` on the user's
+  stream instead.
+- Pull `event.connect user=<id>` from the API logs to confirm the
+  client is reconnecting.
+- Check the async Redis pool. Every open `/api/events` stream holds
+  one connection from it, so concurrent streams per worker are bounded
+  by `ASYNC_REDIS_MAX_CONNECTIONS` (default 2000). When the pool is
+  full the API logs `async Redis pool exhausted subscribing to
+  user:<id>` and the stream closes at once, so clients reconnect in a
+  loop. Raise the setting (keeping the total across workers under the
+  Redis server's `maxclients`) or add workers.
+
+---
+
+## Common failure modes
+
+### Redis-down
+
+Symptoms: `/api/events` returns 200 but emits only `: connected`
+then the body closes. `XLEN` and `PUBLISH` both fail. The publisher,
+`publish_user_event`, swallows the failure and returns `None`. When the
+XADD fails it logs `xadd failed for user=<id> event_type=<type>` at ERROR
+with a traceback — grep the worker and API logs for it. Only when no Redis
+client can be created at all does it log `Redis unavailable; skipping
+publish_user_event`, at DEBUG. Either way the live tail publish is skipped
+too, since an event with no journal id is never published. Frontend retries forever with
+exponential backoff.
+
+Resolution: bring Redis back. The journal is gone (was in-memory
+only — Streams persist within a single Redis instance, no replication
+configured). New events flow as soon as Redis comes back.
+
+### `AUTH_TYPE` misconfigured = sub:"local" cross-stream
+
+Symptoms: every user shares `user:local:stream`. Any user sees
+everyone else's notifications.
+
+Cause: `AUTH_TYPE` is unset or `simple_jwt`. Both resolve every
+request to `sub: "local"`; the `simple_jwt` token is one shared
+secret for one shared user.
+
+Resolution: set `AUTH_TYPE=oidc` in `.env` for per-user streams
+(`session_jwt` gives each browser its own stream, but anyone who can
+reach the instance gets one). The events route logs a one-time
+WARNING per process when `sub == "local"` is observed ("AUTH_TYPE
+unset or simple_jwt"). A repeat WARNING after a restart confirms the
+misconfiguration.
+
+### MAXLEN trimmed past Last-Event-ID
+
+Symptoms: client reconnects with `last_event_id=X`, snapshot returns
+the entire MAXLEN'd backlog (because X is older than the oldest
+retained entry). Old events appear duplicated.
+
+Detection: the route compares the cursor with the newer of the oldest
+retained entry (`_oldest_retained_id`) and the age floor
+(`EVENTS_REPLAY_MAX_AGE_HOURS`), and emits `backlog.truncated` when the
+cursor is older. Frontend's
+`dispatchSSEEvent` clears `lastEventId` so the next reconnect starts
+fresh.
+
+If the WARNING isn't firing but symptoms match: the user's client
+may have a corrupt cached `lastEventId`. `localStorage` doesn't
+store this state; check Redux state via DevTools.
+
+### Stale event-stream client
+
+Symptoms: events visible in `XRANGE` but the frontend slice doesn't
+update.
+
+```bash
+# Is the client subscribed?
+redis-cli -n 2 PUBSUB NUMSUB user:<id>
+
+# When did its connection start?
+grep "event.connect user=<id>" /var/log/docsgpt.log | tail -3
+```
+
+If `NUMSUB` is 0 and no recent `event.connect`, the user's tab is
+closed or the connection died and never reconnected. Push them to
+reload.
+
+### Publisher silent
+
+Symptoms: worker is processing the task (Celery says SUCCESS), but
+no XADD and no PUBLISH. User sees no events.
+
+```bash
+# Was the publisher import error suppressed?
+grep "publish_user_event" /var/log/celery.log | grep -i "warn\|error" | tail -20
+
+# Is push disabled? (installer / `docsgpt up` installs; otherwise read .env)
+docsgpt env get ENABLE_SSE_PUSH
+```
+
+Nothing logs the setting itself. With push disabled, `/api/events`
+sends a `: push_disabled` comment and closes, which you can see in
+DevTools → Network → `/api/events`. `ENABLE_SSE_PUSH=False` in `.env`
+silences the publisher globally. Useful for incident response if a runaway publisher is
+DoS'ing Redis; toggle off, fix root cause, toggle on.
+
+---
+
+## Useful one-liners
+
+```bash
+# Watch a user's live event stream in real time (all events, all types)
+redis-cli -n 2 PSUBSCRIBE 'user:*' | grep "user:<id>"
+
+# Last 10 events the user would see on reconnect
+redis-cli -n 2 XREVRANGE user:<id>:stream + - COUNT 10
+
+# Live count of subscribed clients per user
+redis-cli -n 2 PUBSUB NUMSUB $(redis-cli -n 2 PUBSUB CHANNELS 'user:*')
+
+# Trim a runaway stream (CAREFUL — destroys backlog for all current
+# subscribers; OK after explaining to the user)
+redis-cli -n 2 XTRIM user:<id>:stream MAXLEN 0
+
+# Clear a user's SSE connection leases (they also age out on their own)
+redis-cli -n 2 DEL user:<id>:sse_leases
+
+# Force-flip every client to re-snapshot (drop the stream key entirely
+# — destroys the backlog; clients reconnect with their last id and
+# get a backlog.truncated)
+redis-cli -n 2 DEL user:<id>:stream
+```
+
+---
+
+## Settings reference
+
+Notification settings in `docsgpt/core/settings/events.py` (the file also
+holds the `REMOTE_DEVICE_*` settings; see the settings reference):
+
+| Setting                                       | Default | Purpose                                       |
+| --------------------------------------------- | ------- | --------------------------------------------- |
+| `ENABLE_SSE_PUSH`                             | `True`  | Master switch. False = publisher no-ops, route serves "push_disabled" comment. |
+| `EVENTS_STREAM_MAXLEN`                        | `1000`  | Per-user backlog cap. Approximate via `XADD MAXLEN ~`. |
+| `SSE_KEEPALIVE_SECONDS`                       | `15`    | Comment-frame cadence. Must sit under reverse-proxy idle close. |
+| `SSE_MAX_CONCURRENT_PER_USER`                 | `8`     | Cap on simultaneous SSE connections per user. 0 = disabled. |
+| `ASYNC_REDIS_MAX_CONNECTIONS`                 | `2000`  | Async Redis pool per API worker; each open stream holds one connection. |
+| `EVENTS_REPLAY_MAX_PER_REQUEST`               | `200`   | Hard cap on snapshot rows per request. |
+| `EVENTS_REPLAY_MAX_AGE_HOURS`                 | `48`    | Oldest entry a replay returns; an older cursor gets `backlog.truncated`. 0 = no age floor. |
+| `EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW`    | `30`    | Per-user replays per window. 0 = disabled. |
+| `EVENTS_REPLAY_BUDGET_WINDOW_SECONDS`         | `60`    | Window length. |
+| `MESSAGE_EVENTS_RETENTION_DAYS`               | `14`    | Retention for the `message_events` journal; `cleanup_message_events` beat task deletes older rows. |
+
+---
+
+## Known limitations
+
+### Each tab runs its own SSE connection
+
+There is no cross-tab dedup. Every tab open to the app holds its
+own SSE connection and dispatches every received event into its
+own Redux store, so a user with N tabs open will see N copies of
+each toast. With `SSE_MAX_CONCURRENT_PER_USER=8` (the default) a
+heavy multi-tab user can also hit the connection cap and start
+seeing 429s. Cross-tab dedup via a `BroadcastChannel` ring +
+`navigator.locks`-based leader election is tracked as future work.
+
+### `/c/<unknown-id>` normalises to `/c/new`
+
+If a user navigates to a conversation id that isn't in their
+loaded list, the conversation route rewrites the URL to `/c/new`.
+`ToolApprovalToast`'s gate uses `useMatch('/c/:conversationId')`,
+so for the brief window after the rewrite the toast may surface
+for a conversation the user *thought* they were already viewing.
+Pre-existing route behaviour; not a notifications regression.
+
+### Terminal events un-dismiss running uploads
+
+`frontend/src/upload/uploadSlice.ts` sets `dismissed: false` when
+an upload reaches `completed` or `failed`. If the user dismissed a
+running task and the terminal SSE arrives later, the toast pops
+back. Intentional ("notify the user it's done"); revisit if the
+re-surface UX is too aggressive for v2.
+
+### Both SSE channels need the ASGI entrypoint
+
+`GET /api/events` and the chat-stream reconnect reader
+`GET /api/messages/<id>/events` are native-async Starlette routes
+mounted in `docsgpt/asgi.py`, not Flask routes. Plain `flask run`
+serves only the WSGI Flask app, so under it both endpoints 404:
+no live notifications, and reconnect-after-disconnect can't resume.
+Run the backend via `uvicorn docsgpt.asgi:asgi_app --reload` (or the
+production gunicorn uvicorn-worker) to exercise them; `--reload`
+picks up edits to `docsgpt/api/events/routes.py`.
+
+### MCP OAuth completion can fall outside the user stream's MAXLEN window
+
+`get_oauth_status` scans up to `EVENTS_STREAM_MAXLEN` (~1000) entries via `XREVRANGE`. If the user has a high-rate ingest running concurrent with the OAuth handshake, the `mcp.oauth.completed` envelope can be trimmed off the back before they click Save. Symptom: backend returns "OAuth failed or not completed" even though the popup completed successfully.
+
+Mitigation today: bump `EVENTS_STREAM_MAXLEN` per-deployment if your users routinely flood the channel during OAuth flows. A dedicated short-TTL Redis key for OAuth task results is tracked as a follow-up.
+
+### React StrictMode double-mounts SSE
+
+In dev, React 18 StrictMode mounts → unmounts → remounts every
+component, briefly opening two SSE connections per tab before the
+first is aborted. With `SSE_MAX_CONCURRENT_PER_USER=8` and 4–5
+tabs open concurrently you can transiently hit the cap and see
+HTTP 429 on cold-load. The first connection's counter increment
+fires before the AbortController-induced disconnect can decrement
+it. Production (single mount, no StrictMode) is unaffected; raise
+the cap in dev or accept transient 429s.

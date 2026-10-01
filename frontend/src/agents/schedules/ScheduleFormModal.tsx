@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Card } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import {
@@ -38,11 +39,17 @@ import {
   type ScheduleFrequency,
 } from './cronBuilder';
 import TimezoneCombobox from './TimezoneCombobox';
+import {
+  buildToolAllowlist,
+  initialApprovedIds,
+  type ApprovalTool,
+} from './toolApproval';
 
 export type ScheduleFormModalProps = {
   open: boolean;
   initial?: Schedule | null;
-  agentToolIds: string[];
+  /** The agent's tools with an action that needs approval (see toolApproval). */
+  approvalTools: ApprovalTool[];
   onClose: () => void;
   onSubmit: (payload: ScheduleCreatePayload) => Promise<void> | void;
   submitting?: boolean;
@@ -100,11 +107,16 @@ const formatDateLabel = (value: string): string => {
   return formatDateOnly(value);
 };
 
+/** Whether two ISO timestamps fall in the same minute. */
+const sameMinute = (a: string, b: string): boolean =>
+  Math.floor(new Date(a).getTime() / 60000) ===
+  Math.floor(new Date(b).getTime() / 60000);
+
 /** Create/edit a Schedule via a modal dialog. */
 export default function ScheduleFormModal({
   open,
   initial,
-  agentToolIds,
+  approvalTools,
   onClose,
   onSubmit,
   submitting,
@@ -137,6 +149,19 @@ export default function ScheduleFormModal({
   );
   const [values, setValues] = useState<ScheduleFormValues>(defaults);
   const [timezone, setTimezone] = useState<string>(initialTimezone);
+  // Nothing that needs approval runs unattended until the user ticks it.
+  const [approvedIds, setApprovedIds] = useState<string[]>(() =>
+    initialApprovedIds(
+      approvalTools.map((tool) => tool.id),
+      initial?.tool_allowlist,
+    ),
+  );
+  const toggleApproved = (id: string, checked: boolean) =>
+    setApprovedIds((current) =>
+      checked
+        ? [...current.filter((item) => item !== id), id]
+        : current.filter((item) => item !== id),
+    );
   const timezoneOptions = useMemo<string[]>(() => {
     const list = supportedTimezones();
     // Make sure the current selection is always present, even if absent from
@@ -147,6 +172,8 @@ export default function ScheduleFormModal({
   // the past spans the date, time and timezone, so it is an Alert.
   const [instructionError, setInstructionError] = useState<string | null>(null);
   const [runAtError, setRunAtError] = useState<string | null>(null);
+  // Why the server refused the save; its message is shown as the detail.
+  const [saveError, setSaveError] = useState<string | null>(null);
   const setError = (field: 'instruction' | 'runAt', message: string) => {
     setInstructionError(field === 'instruction' ? message : null);
     setRunAtError(field === 'runAt' ? message : null);
@@ -167,7 +194,11 @@ export default function ScheduleFormModal({
       instruction: instruction.trim(),
       timezone,
       name: name.trim() || undefined,
-      tool_allowlist: agentToolIds,
+      tool_allowlist: buildToolAllowlist(
+        approvalTools.map((tool) => tool.id),
+        approvedIds,
+        initial?.tool_allowlist,
+      ),
     };
     if (values.frequency === 'once') {
       let runAt: string;
@@ -177,12 +208,21 @@ export default function ScheduleFormModal({
         setError('runAt', t('agents.schedules.modal.errors.runAtInPast'));
         return;
       }
-      if (new Date(runAt).getTime() <= Date.now()) {
-        setError('runAt', t('agents.schedules.modal.errors.runAtInPast'));
-        return;
-      }
       payload.trigger_type = 'once';
-      payload.run_at = runAt;
+      // An edit that keeps the saved time leaves run_at out, so renaming a
+      // task that is due soon (or a paused one whose time has passed) isn't
+      // refused as a time in the past. The form works in whole minutes.
+      const unchanged =
+        initial?.trigger_type === 'once' &&
+        Boolean(initial.run_at) &&
+        sameMinute(runAt, initial.run_at as string);
+      if (!unchanged) {
+        if (new Date(runAt).getTime() <= Date.now()) {
+          setError('runAt', t('agents.schedules.modal.errors.runAtInPast'));
+          return;
+        }
+        payload.run_at = runAt;
+      }
     } else {
       const cron = buildCron(values.frequency, values);
       if (!cron) {
@@ -197,7 +237,15 @@ export default function ScheduleFormModal({
     }
     setInstructionError(null);
     setRunAtError(null);
-    await onSubmit(payload);
+    setSaveError(null);
+    try {
+      await onSubmit(payload);
+    } catch (err) {
+      // A thunk's unwrap() rejects with a serialized error: a plain object
+      // with the message, not an Error instance.
+      const message = (err as { message?: unknown } | null)?.message;
+      setSaveError(typeof message === 'string' ? message : '');
+    }
   };
 
   const isEdit = Boolean(initial?.id);
@@ -245,6 +293,13 @@ export default function ScheduleFormModal({
         <FrequencyTabs
           frequency={values.frequency}
           onChange={setFrequency}
+          lockedKind={
+            isEdit
+              ? initial?.trigger_type === 'once'
+                ? 'once'
+                : 'recurring'
+              : undefined
+          }
           labels={{
             once: t('agents.schedules.modal.frequency.once'),
             daily: t('agents.schedules.modal.frequency.daily'),
@@ -302,13 +357,91 @@ export default function ScheduleFormModal({
           />
         </FormField>
 
+        {approvalTools.length > 0 && (
+          <ApprovalToolsPicker
+            tools={approvalTools}
+            approvedIds={approvedIds}
+            onToggle={toggleApproved}
+            labels={{
+              label: t('agents.schedules.modal.approvalTools.label'),
+              hint: t('agents.schedules.modal.approvalTools.hint'),
+              warning: t('agents.schedules.modal.approvalTools.warning'),
+            }}
+          />
+        )}
+
         {runAtError && (
           <Alert variant="destructive">
             <AlertDescription>{runAtError}</AlertDescription>
           </Alert>
         )}
+
+        {saveError !== null && (
+          <Alert variant="destructive">
+            <AlertDescription>
+              <p>{t('agents.schedules.modal.errors.saveFailed')}</p>
+              {saveError && <p>{saveError}</p>}
+            </AlertDescription>
+          </Alert>
+        )}
       </div>
     </Modal>
+  );
+}
+
+type ApprovalToolsPickerProps = {
+  tools: ApprovalTool[];
+  approvedIds: string[];
+  onToggle: (id: string, checked: boolean) => void;
+  labels: { label: string; hint: string; warning: string };
+};
+
+/**
+ * Opt-in checkboxes for the tools whose actions need approval. A ticked tool
+ * runs those actions in a scheduled run without asking, so the warning stays
+ * in view while any tool is listed.
+ */
+function ApprovalToolsPicker({
+  tools,
+  approvedIds,
+  onToggle,
+  labels,
+}: ApprovalToolsPickerProps) {
+  return (
+    <Card padding="sm">
+      <fieldset className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
+        <legend className="text-foreground text-sm font-medium">
+          {labels.label}
+        </legend>
+        <p className="text-muted-foreground text-xs">{labels.hint}</p>
+        <div className="flex flex-col gap-2.5">
+          {tools.map((tool) => {
+            const id = `schedule-approve-${tool.id}`;
+            return (
+              <label
+                key={tool.id}
+                htmlFor={id}
+                className="flex cursor-pointer items-center gap-3"
+              >
+                <Checkbox
+                  id={id}
+                  checked={approvedIds.includes(tool.id)}
+                  onCheckedChange={(checked) =>
+                    onToggle(tool.id, checked === true)
+                  }
+                />
+                <span className="text-foreground min-w-0 text-sm break-words">
+                  {tool.name}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        <Alert variant="warning" role="note">
+          <AlertDescription>{labels.warning}</AlertDescription>
+        </Alert>
+      </fieldset>
+    </Card>
   );
 }
 
@@ -317,6 +450,8 @@ type FrequencyTabsProps = {
   onChange: (f: ScheduleFrequency) => void;
   labels: Record<ScheduleFrequency, string>;
   ariaLabel: string;
+  /** When editing, the saved kind; tabs of the other kind are disabled. */
+  lockedKind?: 'once' | 'recurring';
 };
 
 function FrequencyTabs({
@@ -324,7 +459,12 @@ function FrequencyTabs({
   onChange,
   labels,
   ariaLabel,
+  lockedKind,
 }: FrequencyTabsProps) {
+  // A saved schedule can't change between one-time and recurring: the API
+  // keeps its trigger type, so the other kind's tabs are disabled.
+  const isDisabled = (f: ScheduleFrequency) =>
+    lockedKind !== undefined && (f === 'once') !== (lockedKind === 'once');
   return (
     <ToggleGroup
       type="single"
@@ -334,7 +474,7 @@ function FrequencyTabs({
       aria-label={ariaLabel}
     >
       {FREQUENCIES.map((f) => (
-        <ToggleGroupItem key={f} value={f}>
+        <ToggleGroupItem key={f} value={f} disabled={isDisabled(f)}>
           {labels[f]}
         </ToggleGroupItem>
       ))}

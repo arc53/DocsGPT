@@ -1,0 +1,101 @@
+---
+title: docsgpt CLI Reference
+description: Every docsgpt subcommand and its main options, for the installer, pip installs, the Docker image and a source checkout.
+---
+
+import { Callout } from 'nextra/components'
+
+# docsgpt CLI Reference
+
+The `docsgpt` command installs and manages a DocsGPT stack, runs the API and the
+worker, and carries the maintenance commands. `docsgpt --help` lists the
+subcommands and `docsgpt <command> --help` shows each one's options.
+
+## Where the command is
+
+| Install | How to run it |
+| --- | --- |
+| Installer (`curl … docs.ac/install`), `uv tool install docsgpt`, `pipx install docsgpt` or `pip install docsgpt` | `docsgpt …` |
+| Source checkout | `uv sync` puts `docsgpt` in `.venv`; `python -m docsgpt …` from the repository root works without installing |
+| Docker image (Compose, Kubernetes) | `python -m docsgpt …`. The image has no `docsgpt` console script. For example `docker compose exec backend python -m docsgpt migrate` |
+
+<Callout type="info">
+  Images up to 0.21.0 have no `python -m docsgpt` entry point. Run
+  `python -m docsgpt.cli …` there; it works on every version.
+</Callout>
+
+## Stack commands
+
+These manage the stack that `docsgpt up` created, on Docker or, with
+`--native`, as launchd or systemd services. Each takes `--dir` to name the stack
+directory; without it they use `DOCSGPT_HOME`, else `~/.docsgpt/server`
+(`/opt/docsgpt` for root on Linux). They never act on a source checkout.
+
+| Command | What it does |
+| --- | --- |
+| `docsgpt up` | Install DocsGPT or update the running stack, then start it. See the options below. |
+| `docsgpt status` | Version, address, containers or services, and whether the API answers. Exits 1 when it does not. |
+| `docsgpt logs [-f] [--tail N] [service ...]` | Container logs, or on a native install the log files under `<stack>/logs`. |
+| `docsgpt token` | Print the access token, for installs reachable beyond this computer. |
+| `docsgpt open` | Open DocsGPT in the browser. |
+| `docsgpt env` | Print the path of the stack's `.env`. |
+| `docsgpt env get KEY` | Print one setting from it. |
+| `docsgpt env set KEY=VALUE ... [--no-restart]` | Change settings. A running native install restarts by itself unless `--no-restart`; on Docker, run `docsgpt up` to apply. |
+| `docsgpt restart [service ...]` | Restart the services without changing anything else. |
+| `docsgpt down` | Stop the stack. Settings and data stay. |
+| `docsgpt upgrade [--version X.Y.Z]` | Upgrade the package and restart the stack on the new version. For a `uv tool` install it does both; otherwise it prints the `pipx` or `pip` command to run, then run `docsgpt up`. |
+| `docsgpt backup [--out DIR] [--with-settings]` | Write an archive of the database and the data volumes (Docker installs). See [Backups](/Deploying/Docker-Deploying#backups). |
+| `docsgpt restore ARCHIVE [-y] [--force]` | Put a backup back over this install (Docker installs). |
+| `docsgpt uninstall [-y] [--purge]` | Remove the containers or services; `--purge` also deletes the settings and all data. |
+| `docsgpt doctor [--postgres-uri URI] [--redis-url URL]` | Check what this machine needs: the settings file, Postgres, Redis, the model provider and the default model. It reads the `.env` DocsGPT would load, or the stack's with `--dir`. |
+
+### `docsgpt up` options
+
+| Option | Effect |
+| --- | --- |
+| `--expose local\|network\|domain` | Who can reach it: this computer only (default), the network (plain HTTP, with an access token), or a domain. |
+| `--domain NAME` | Serve that domain over HTTPS, with a certificate from Let's Encrypt. Implies `--expose domain`. |
+| `--port N` | Host port for the UI and API (default `7091`). |
+| `--provider NAME`, `--api-key KEY`, `--model NAME`, `--base-url URL` | The model provider: `docsgpt` (default), `openai`, `anthropic`, `google`, `openrouter`, `groq` or `openai-compatible`. `DOCSGPT_API_KEY` can carry the key instead. |
+| `--docling` / `--no-docling` | Switch to the image with the docling parser engine and OCR, or back. |
+| `--image-tag TAG` | Run another image tag than the package's version, for example `develop`. |
+| `--native`, `--postgres-uri URI`, `--redis-url URL` | Run the API and the worker as services on this machine, against your own Postgres and Redis. See [Install with pip](/Deploying/Pip-Install#run-it-as-services-without-docker). |
+| `-y`, `--yes` | Ask nothing: use the flags, then the defaults. |
+| `--reconfigure` | Ask the setup questions again. |
+| `--adopt` | Take over a stack started from the standalone Compose file in another folder. |
+| `--no-open`, `--timeout SECONDS` | Don't open the browser; how long to wait for the API (default 300). |
+
+## Service commands
+
+These run one DocsGPT process in the foreground, for pip installs, service
+units and containers. They read settings from the `.env` described in
+[App Configuration](/Deploying/DocsGPT-Settings)
+and print the data home and env file they use.
+
+| Command | What it does |
+| --- | --- |
+| `docsgpt api [--host H] [--port P] [--workers N] [--reload]` | Serve the API and the web UI (gunicorn; uvicorn with auto-reload under `--reload`). Listens on `127.0.0.1:7091` by default. |
+| `docsgpt worker [-Q QUEUES] [--concurrency N] [--pool POOL] [-l LEVEL] [--no-beat]` | Run the Celery worker with the beat scheduler embedded. The worker is required: query embedding runs on it. |
+| `docsgpt beat [-l LEVEL]` | Run the scheduler on its own, on Windows or next to workers started with `--no-beat`. |
+| `docsgpt dev [--ui] [--mock-llm] [--no-worker] [--no-reload]` | Run a checkout's API, worker and, with `--ui`, the frontend dev server, with reload. See [Development Environment](/Deploying/Development-Environment). |
+
+## Database and maintenance commands
+
+`migrate`, `grant-admin`, `connectors reencrypt` and `reembed` act on the database in `POSTGRES_URI`. On a Docker install, including the installer's default,
+the host has neither that setting nor a route to the stack's Postgres, so run them inside the backend
+container from the stack directory, for example
+`docker compose exec backend python -m docsgpt grant-admin <user_id>`.
+
+| Command | What it does |
+| --- | --- |
+| `docsgpt migrate [--no-create]` | Create the Postgres database if it is missing and apply the migrations. `--no-create` fails instead of creating it. See [PostgreSQL for User Data](/Deploying/Postgres-Migration#production-hardening). |
+| `docsgpt grant-admin USER_ID [--revoke\|--force]`, `docsgpt grant-admin --list` | Grant, revoke or list the admin role. Takes effect under `AUTH_TYPE=oidc`; `USER_ID` is the OIDC `sub`. See [Access Control](/Deploying/Access-Control#bootstrapping-the-first-admin). |
+| `docsgpt connectors reencrypt` | Rewrite stored connections, tool secrets and custom-model keys with the current `ENCRYPTION_SECRET_KEY` after a key rotation. |
+| `docsgpt reembed [--dry-run] [--sources IDS] [--batch-size N]` | Re-embed every index after changing `EMBEDDINGS_NAME`. See [Upgrading](/upgrading). |
+| `docsgpt prefetch-models [MODEL ...]` | Download the embedding models and their tokenizers ahead of time. See [Air-Gapped Deployment](/Deploying/Air-Gapped). |
+| `docsgpt verify-offline [MODEL ...]` | Check that a prepared install serves its defaults with networking off. |
+| `docsgpt ocr-check [--engine tesseract\|deepseek] [--file PATH]` | Send one page to the configured OCR engine and report the endpoint, time, text and token usage. See [DeepSeek-OCR](/Sources/ocr#deepseek-ocr). |
+
+The scripts under `scripts/` in the repository are not part of this command and
+run only from a source checkout. See
+[Maintenance scripts](/upgrading#maintenance-scripts).

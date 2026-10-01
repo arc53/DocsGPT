@@ -1607,7 +1607,9 @@ def reencrypt_all(batch_size: int = 500) -> dict:
     """Rewrite every connection's credentials with the current key.
 
     Run after rotating ENCRYPTION_SECRET_KEY with the old value in
-    ENCRYPTION_SECRET_KEY_PREVIOUS; afterwards the previous key can go.
+    ENCRYPTION_SECRET_KEY_PREVIOUS. Secrets saved on tools and custom models
+    are rewritten by :func:`reencrypt_saved_secrets`; once both have run
+    cleanly, the previous key can go.
 
     Returns:
         ``{"rewritten": n, "current": n, "failed": n}``; failed rows (neither
@@ -1650,6 +1652,91 @@ def reencrypt_all(batch_size: int = 500) -> dict:
                 counts["rewritten"] += 1
     for connection_id in failed_ids:
         mark_reconnect_needed(connection_id, DECRYPT_ERROR)
+    return counts
+
+
+# The keys of ``user_tools.config`` that hold v1 secret blobs.
+_TOOL_SECRET_KEYS = ("encrypted_credentials", "encrypted_action_secrets")
+
+
+def reencrypt_saved_secrets(batch_size: int = 500) -> dict:
+    """Rewrite the secrets saved on tools and custom models with the current key.
+
+    Covers tool secrets (``user_tools.config`` ``encrypted_credentials``, which
+    holds API keys and MCP per-tool credentials, and ``encrypted_action_secrets``,
+    the API Tool's header and query secrets) and custom-model API keys
+    (``user_custom_models.api_key_encrypted``). Each blob is read with
+    ENCRYPTION_SECRET_KEY, then ENCRYPTION_SECRET_KEY_PREVIOUS; one only the
+    previous key opens is rewritten, one neither opens is left as it is.
+    Running it again changes nothing.
+
+    Args:
+        batch_size: Rows locked and rewritten per transaction.
+
+    Returns:
+        ``{"rewritten": n, "current": n, "failed": n}``, counted per secret.
+    """
+    import json
+
+    from sqlalchemy import text
+
+    from docsgpt.security.encryption import reseal_credentials
+
+    counts = {"rewritten": 0, "current": 0, "failed": 0}
+    last_id = "00000000-0000-0000-0000-000000000000"
+    while True:
+        with db_session() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT id, user_id, config FROM user_tools "
+                    "WHERE (config ? 'encrypted_credentials' OR config ? 'encrypted_action_secrets') "
+                    "AND id > CAST(:last AS uuid) ORDER BY id LIMIT :batch FOR UPDATE"
+                ),
+                {"last": last_id, "batch": batch_size},
+            ).fetchall()
+            if not rows:
+                break
+            for row in rows:
+                last_id = str(row.id)
+                config = row.config or {}
+                patch: dict = {}
+                for key in _TOOL_SECRET_KEYS:
+                    blob = config.get(key)
+                    if not blob or not isinstance(blob, str):
+                        continue
+                    status, resealed = reseal_credentials(blob, row.user_id)
+                    counts[status] += 1
+                    if resealed:
+                        patch[key] = resealed
+                if patch:
+                    conn.execute(
+                        text("UPDATE user_tools SET config = config || CAST(:patch AS jsonb) WHERE id = :id"),
+                        {"patch": json.dumps(patch), "id": row.id},
+                    )
+
+    last_id = "00000000-0000-0000-0000-000000000000"
+    while True:
+        with db_session() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT id, user_id, api_key_encrypted FROM user_custom_models "
+                    "WHERE id > CAST(:last AS uuid) ORDER BY id LIMIT :batch FOR UPDATE"
+                ),
+                {"last": last_id, "batch": batch_size},
+            ).fetchall()
+            if not rows:
+                break
+            for row in rows:
+                last_id = str(row.id)
+                if not row.api_key_encrypted:
+                    continue
+                status, resealed = reseal_credentials(row.api_key_encrypted, row.user_id)
+                counts[status] += 1
+                if resealed:
+                    conn.execute(
+                        text("UPDATE user_custom_models SET api_key_encrypted = :blob WHERE id = :id"),
+                        {"blob": resealed, "id": row.id},
+                    )
     return counts
 
 

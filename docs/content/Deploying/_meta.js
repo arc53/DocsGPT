@@ -1,64 +1,40 @@
 export default {
-  "DocsGPT-Settings": {
-    "title": "⚙️ App Configuration",
-    "href": "/Deploying/DocsGPT-Settings"
+  "-- install": {
+    "type": "separator",
+    "title": "Install"
   },
-  "Settings-Reference": {
-    "title": "📖 Settings Reference",
-    "href": "/Deploying/Settings-Reference"
+  "index": "🧭 Choose a Deployment",
+  "Docker-Deploying": "🛳️ Docker Setup",
+  "Pip-Install": "🐍 Install with pip",
+  "Kubernetes-Deploying": "☸️ Deploying on Kubernetes",
+  "Air-Gapped": "🔒 Air-Gapped Deployment",
+  "Sandbox": "🧪 Code Execution Sandbox",
+  "cli": "⌨️ docsgpt CLI Reference",
+  "-- configure": {
+    "type": "separator",
+    "title": "Configure"
   },
-  "OIDC-SSO": {
-    "title": "🔐 SSO with OIDC",
-    "href": "/Deploying/OIDC-SSO"
+  "DocsGPT-Settings": "⚙️ App Configuration",
+  "Settings-Reference": "📖 Settings Reference",
+  "-- secure": {
+    "type": "separator",
+    "title": "Secure & administer"
   },
-  "Access-Control": {
-    "title": "👥 Access Control & Teams",
-    "href": "/Deploying/Access-Control"
+  "Security": "🛡️ Security Checklist",
+  "OIDC-SSO": "🔐 SSO with OIDC",
+  "Access-Control": "👥 Access Control & Teams",
+  "Usage-Quotas": "📊 Usage Quotas",
+  "-- operate": {
+    "type": "separator",
+    "title": "Operate"
   },
-  "Usage-Quotas": {
-    "title": "📊 Usage Quotas",
-    "href": "/Deploying/Usage-Quotas"
+  "Observability": "🔭 Observability",
+  "Background-Jobs": "🧹 Background Jobs & Retention",
+  "Postgres-Migration": "🐘 PostgreSQL for User Data",
+  "Troubleshooting": "🩺 Troubleshooting",
+  "-- develop": {
+    "type": "separator",
+    "title": "Develop"
   },
-  "Docker-Deploying": {
-    "title": "🛳️ Docker Setup",
-    "href": "/Deploying/Docker-Deploying"
-  },
-  "Pip-Install": {
-    "title": "🐍 Install with pip",
-    "href": "/Deploying/Pip-Install"
-  },
-  "Development-Environment": {
-    "title": "🛠️Development Environment",
-    "href": "/Deploying/Development-Environment"
-  },
-  "Kubernetes-Deploying": {
-    "title": "☸️ Deploying on Kubernetes",
-    "href": "/Deploying/Kubernetes-Deploying"
-  },
-  "Air-Gapped": {
-    "title": "🔒 Air-Gapped Deployment",
-    "href": "/Deploying/Air-Gapped"
-  },
-  "Hosting-the-app": {
-    "title": "☁️ Hosting DocsGPT",
-    "href": "/Deploying/Hosting-the-app"
-  },
-  "Postgres-Migration": {
-    "title": "🐘 PostgreSQL for User Data",
-    "href": "/Deploying/Postgres-Migration"
-  },
-  "Observability": {
-    "title": "🔭 Observability",
-    "href": "/Deploying/Observability"
-  },
-  "Amazon-Lightsail": {
-    "title": "Hosting DocsGPT on Amazon Lightsail",
-    "href": "/Deploying/Amazon-Lightsail",
-    "display": "hidden"
-  },
-  "Railway": {
-    "title": "Hosting DocsGPT on Railway",
-    "href": "/Deploying/Railway",
-    "display": "hidden"
-  }
+  "Development-Environment": "🛠️ Development Environment"
 }

@@ -1,0 +1,85 @@
+---
+title: Google Drive Connector
+description: Connect your Google Drive as an external knowledge base to upload and process files directly from your Google Drive account.
+---
+
+import { Callout } from 'nextra/components'
+import { Steps } from 'nextra/components'
+
+# Google Drive Connector
+
+Connect your Google Drive account to upload and process files directly as an external knowledge base. Supports Google Workspace files (Docs, Sheets, Slides), Office files, PDFs, text files, CSVs, images, and more. Authentication is handled via Google OAuth 2.0 with automatic token refresh.
+
+<Callout type="info">
+Members connect this service from **Settings > Connectors**, and one sign-in serves every source that uses it. Admins can check what is still missing in **Admin > Connectors**. See [Connectors](/Sources/Connectors).
+</Callout>
+
+## Setup
+
+<Steps>
+
+### Step 1: Create a Google Cloud Project
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and create a new project (or select an existing one)
+2. Navigate to **APIs & Services** > **Library**, search for "Google Drive API", and click **Enable**
+
+### Step 2: Create OAuth 2.0 Credentials
+
+1. Go to **APIs & Services** > **Credentials** > **Create Credentials** > **OAuth client ID**
+2. If prompted, configure the OAuth consent screen: **Internal** for a Google Workspace organization, otherwise **External** (see the note on verification below), and fill in the required fields
+3. Select **Web application** as the application type
+4. Only if you will use Google's own file picker (`VITE_GOOGLE_CLIENT_ID`, Step 3): add the origin you open DocsGPT from to **Authorized JavaScript origins**, for example `http://localhost:5173` for the frontend dev server or the Docker Compose frontend, or the API origin (`http://localhost:7091`) when the API serves the UI. DocsGPT's own picker and the sign-in don't need it.
+5. Add your callback URL to **Authorized redirect URIs**:
+   - Local: `http://127.0.0.1:7091/api/connectors/callback` (the default `CONNECTOR_REDIRECT_BASE_URI`; Admin > Connectors shows the exact value to copy)
+   - Production: `https://yourdomain.com/api/connectors/callback` (the value of `CONNECTOR_REDIRECT_BASE_URI`, registered as-is)
+6. Click **Create** and copy the **Client ID** and **Client Secret**
+
+### Step 3: Configure Environment Variables
+
+Add to your backend `.env` file:
+
+```env
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+```
+
+Optionally, to use Google's own file picker instead of DocsGPT's, enable the **Google Picker API** in the same project and add to your frontend `.env` file:
+
+```env
+VITE_GOOGLE_CLIENT_ID=your-google-client-id
+VITE_GOOGLE_PICKER_API_KEY=your-google-api-key
+```
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `GOOGLE_CLIENT_ID` | OAuth Client ID from GCP Credentials | Yes |
+| `GOOGLE_CLIENT_SECRET` | OAuth Client Secret from GCP Credentials | Yes |
+| `VITE_GOOGLE_CLIENT_ID` | Same Client ID, used by the frontend for Google's file picker | No |
+| `VITE_GOOGLE_PICKER_API_KEY` | API key (**APIs & Services** > **Credentials** > **Create Credentials** > **API key**) passed to Google's file picker as its developer key | No |
+| `CONNECTOR_ALLOWED_ORIGINS` | Comma-separated frontend origins allowed to receive the sign-in result, e.g. `https://docsgpt.example.com`. Not needed when the frontend shares the API origin, or in local dev when the callback is on `localhost`/`127.0.0.1` and the frontend runs on port 5173 | When the frontend is on its own origin |
+
+<Callout type="warning" emoji="⚠️">
+If you set `VITE_GOOGLE_CLIENT_ID`, use the same Client ID as the backend. Publish the OAuth consent screen (or use an internal Workspace app): apps left in Testing get refresh tokens that expire after seven days, which stops background sync.
+</Callout>
+
+<Callout type="info">
+DocsGPT requests the `https://www.googleapis.com/auth/drive.readonly` scope, which Google classifies as **restricted**. An **Internal** Workspace app needs no review. A published **External** app must pass Google's verification for restricted scopes before accounts outside your organization can use it without the unverified-app warning and user cap.
+</Callout>
+
+### Step 4: Restart and Use
+
+Restart your application, then go to **Settings > Connectors** and pick **Google Drive**. You'll be redirected to Google to sign in, then can browse and select files to process.
+
+</Steps>
+
+## Troubleshooting
+
+- **Google Drive is not offered** — `GOOGLE_CLIENT_ID` or `GOOGLE_CLIENT_SECRET` is missing from the backend `.env`, so the connector stays off. Admin > Connectors lists which one.
+- **Authentication failed** — Check that the redirect URI matches exactly and equals `CONNECTOR_REDIRECT_BASE_URI`, with no query parameters. Ensure the Google Drive API is enabled.
+- **Sign-in popup closes but the account never connects** — The frontend origin is not allowed to receive the result. Add it to `CONNECTOR_ALLOWED_ORIGINS` in the backend `.env`.
+- **Permission denied** — Verify the OAuth consent screen is configured and the user has access to the target files.
+- **Files not processing** — Check backend logs and verify that backend environment variables are correctly set.
+
+<Callout type="tip" emoji="💡">
+For production deployments, add your actual domain to the OAuth consent screen and authorized origins/redirect URIs.
+</Callout>

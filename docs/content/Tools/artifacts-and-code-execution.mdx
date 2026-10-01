@@ -1,5 +1,5 @@
 ---
-title: 📦 Artifacts and Code Execution
+title: Artifacts and Code Execution
 description: Generate editable documents, run sandboxed code, and read files with the DocsGPT artifact, code executor, and read document tools.
 ---
 
@@ -13,14 +13,13 @@ DocsGPT can generate documents, run code, and read files for you during a chat o
 - **Code Executor** runs code in a sandboxed session and turns any files the code writes into downloadable artifacts.
 - **Read Document** parses an uploaded or produced file (PDF, Word, PowerPoint, and more) into text, markdown, or structured data.
 
-All three are opt-in: enable Artifact and Code Executor per agent in the tool picker (they need a running [sandbox runner](https://github.com/arc53/DocsGPT/tree/main/deployment/sandbox)), and Read Document is available inside workflows. A new agent starts with no tools enabled.
+All three are opt-in: enable Artifact and Code Executor per agent in the tool picker (they need a running sandbox; see [Code Execution Sandbox](/Deploying/Sandbox)), and Read Document is available inside workflows. A new agent starts with no tools enabled.
 
 If your deployment runs a sandbox and you want these available in every chat
 rather than per agent, add them to `DEFAULT_CHAT_TOOLS`:
 
-```python
-DEFAULT_CHAT_TOOLS = ["memory", "read_webpage", "scheduler",
-                      "code_executor", "artifact_generator"]
+```env
+DEFAULT_CHAT_TOOLS=["memory","read_webpage","scheduler","code_executor","artifact_generator"]
 ```
 
 They are left out of the shipped default deliberately: both execute through the
@@ -35,6 +34,12 @@ In a normal chat, a produced artifact appears as a chip under the assistant's re
 - preview the content in a side panel (HTML and similar kinds render inline),
 - download the file,
 - ask for changes, which create a new version.
+
+<Callout type="info">
+  Downloads need the API served through the ASGI app (`docsgpt.asgi:asgi_app`), as `docsgpt api`, `docsgpt dev`
+  and the Docker images do. Under `flask run`, `GET /api/artifacts/<id>/download` returns 404. See
+  [ASGI-only features](/Deploying/Development-Environment#asgi-only-features).
+</Callout>
 
 ### The Artifact tool
 
@@ -52,9 +57,10 @@ The Code Executor runs Python in a sandboxed, stateful session bound to your con
 
 Key points:
 
-- The session is stateful, so variables, imports, and files persist between calls in the same conversation while it is kept alive.
+- A session is closed after each run unless the model asks to keep it alive. When it does, variables, imports, and files persist between calls in the same conversation (or workflow run) until the session has been idle for the time the model asked for, at most `SANDBOX_MAX_TTL` (1200 seconds by default).
 - Only a compact summary is returned to the model (an output tail plus artifact references), never raw file bytes.
-- Each run has a fixed wall-clock limit of about 60 seconds. For longer work, start it in the background and check back with more calls.
+- Each run is limited to `SANDBOX_EXEC_TIMEOUT` seconds of wall-clock time (60 by default). For longer work, the model starts the job in the background and checks back with more calls.
+- Every file a run creates or changes is saved as an artifact, except files under `tmp/`. The model can instead name the files or globs to keep.
 - Install packages from inside the code itself when you need them.
 
 <Callout type="warning">
@@ -65,7 +71,7 @@ Key points:
 
 ### Run inputs
 
-You can pass files into a run. Each input accepts a short reference returned by a previous artifact action, a full artifact id, or the name or id of a file you attached to the conversation. The referenced files are placed in the workspace before the code runs.
+You can pass files into a run. Each input accepts a short reference returned by a previous artifact action, a full artifact id, or the name or id of a file you attached to the conversation. Each referenced file is placed in the workspace at `inputs/<filename>` before the code runs.
 
 ## Read Document
 
@@ -87,12 +93,14 @@ See [Workflow Nodes](/Agents/nodes) for the node-level details.
 
 Code execution and rendering run inside a sandbox. DocsGPT ships two backends, selected with `SANDBOX_BACKEND`:
 
-- **`jupyter`** (default): a self-hosted runner that you operate. See the runner setup notes under `deployment/sandbox`.
-- **`daytona`**: Daytona Cloud, a managed per-session sandbox. Set `DAYTONA_API_KEY` and choose a region with `DAYTONA_TARGET`.
+- **`jupyter`** (default): a self-hosted runner that you operate, added with a Compose overlay, a Kubernetes manifest, or the `arc53/docsgpt-sandbox` image. It needs a shared `SANDBOX_GATEWAY_AUTH_TOKEN`. One runner is one trust domain: sessions are separated only by working directory.
+- **`daytona`**: Daytona Cloud, a managed per-session sandbox. Set `DAYTONA_API_KEY` and choose a region with `DAYTONA_TARGET`. Use it for multi-tenant or untrusted workloads.
+
+[Code Execution Sandbox](/Deploying/Sandbox) has the setup steps for each.
 
 ### Render libraries on Daytona
 
-Artifact rendering imports `python-pptx`, `python-docx`, `openpyxl`, and `reportlab` inside the sandbox. The self-hosted runner already has them. Daytona's default image does not, so presentation, document, spreadsheet, and pdf rendering fail there until you point Daytona at an image that includes them. HTML and markdown artifacts need no extra libraries and work on any image.
+Artifact rendering imports `python-pptx`, `python-docx`, `openpyxl`, and `reportlab` inside the sandbox. The self-hosted runner already has them. Daytona's default image does not, so presentation, document, spreadsheet, and pdf rendering fail there until you point Daytona at an image that includes them. HTML artifacts need no extra libraries and work on any image.
 
 Build a snapshot with the libraries once, then set `DAYTONA_SNAPSHOT` to it:
 
@@ -106,6 +114,7 @@ python scripts/build_daytona_snapshot.py
 ### Useful settings
 
 - `SANDBOX_BACKEND`: `jupyter` or `daytona`.
+- `SANDBOX_GATEWAY_URL`, `SANDBOX_GATEWAY_AUTH_TOKEN`, `SANDBOX_KERNEL_NAME`: where the Jupyter runner is, its shared token, and the kernel each session uses (`docsgpt-python`, which strips secrets from the kernel environment).
 - `SANDBOX_EXEC_TIMEOUT`: per-run wall-clock cap in seconds.
 - `SANDBOX_MAX_TTL`: upper bound on how long a kept-alive session lives.
 - `DAYTONA_API_KEY`, `DAYTONA_TARGET`, `DAYTONA_SNAPSHOT`: Daytona Cloud settings.

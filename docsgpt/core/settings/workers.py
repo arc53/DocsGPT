@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 from pydantic import Field
 
 from docsgpt.core.settings._shared import SettingsGroup
@@ -35,5 +37,18 @@ class WorkerSettings(SettingsGroup):
         default=0, ge=0, description="Recycle a worker child after N tasks; 0 disables."
     )
     API_URL: str = Field(
-        default="http://localhost:7091", description="Backend URL the Celery worker calls back into."
+        default="http://localhost:7091",
+        description=(
+            "Address of the API. The worker hands finished indexes to it here, and the API builds the agent image, "
+            "agent webhook, device pairing and MCP OAuth callback links it hands out from it, so on the API set it "
+            "to the address browsers use. Docker Compose sets the worker's to http://backend:7091."
+        ),
+    )
+    WORKER_API_URL: Optional[str] = Field(
+        default=None,
+        description=(
+            "Address the worker uses for its own calls into the API (handing over finished indexes). Unset falls "
+            "back to API_URL. Set it when the API and the worker share one settings file and API_URL is a public "
+            "address, e.g. http://127.0.0.1:7091; `docsgpt up --native` does."
+        ),
     )

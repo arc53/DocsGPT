@@ -847,7 +847,9 @@ class CreateWikiSource(Resource):
                     source_id=source_id,
                     user_id=user,
                     type="wiki",
-                    config={"kind": "wiki"},
+                    # Same config as a converted wiki: browsed through the
+                    # tool (``agentic_tool``), not pre-fetched.
+                    config=SourceConfig().wiki_enabled(),
                     directory_structure={},
                     tokens=0,
                     # Wiki pages are embedded like any other source, so record

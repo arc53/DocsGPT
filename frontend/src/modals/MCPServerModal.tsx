@@ -305,9 +305,8 @@ export default function MCPServerModal({
    * Drive the OAuth handshake straight from the SSE stream:
    *
    * - ``mcp.oauth.awaiting_redirect`` → open the popup with the
-   *   ``authorization_url`` carried on the envelope. Previously this URL
-   *   came from polling ``/api/mcp_server/oauth_status/<task_id>``; the
-   *   worker now publishes it inline so we never need to poll.
+   *   ``authorization_url`` carried on the envelope. The worker publishes
+   *   it inline; there is no polling endpoint, so OAuth needs SSE push on.
    * - ``mcp.oauth.completed`` → enable Save, surface discovered tools,
    *   invoke ``onComplete`` (resolves ``testConnection``'s pending state).
    * - ``mcp.oauth.failed`` → surface the error and reset Save.

@@ -1,12 +1,12 @@
 ---
-title: 🛠️ Creating a Custom Tool
+title: Creating a Custom Tool
 description: Learn how to create custom Python tools to extend DocsGPT's functionality and integrate with various services or perform specific actions.
 ---
 
 import { Callout } from 'nextra/components';
 import { Steps } from 'nextra/components';
 
-# 🛠️ Creating a Custom Python Tool
+# Creating a Custom Tool
 
 This guide provides developers with a comprehensive, step-by-step approach to creating their own custom tools for DocsGPT. By developing custom tools, you can significantly extend DocsGPT's capabilities, enabling it to interact with new data sources, services, and perform specialized actions tailored to your unique needs.
 
@@ -16,7 +16,7 @@ This guide provides developers with a comprehensive, step-by-step approach to cr
 
 While DocsGPT offers a range of built-in tools and a versatile API Tool, there are many scenarios where a custom Python tool is the best solution:
 
-* **Integrating with Proprietary Systems:** Connect to internal APIs, databases, or services that are not publicly accessible or require complex authentication.
+* **Integrating with Proprietary Systems:** Connect to internal APIs, databases, or services that are not publicly accessible or require complex authentication. The API Tool and MCP servers refuse private and loopback addresses ([Outbound network access](/Deploying/Security#outbound-network-access)); code in a custom tool is not bound by that check.
 * **Adding Domain-Specific Functionalities:** Implement logic specific to your industry or use case that isn't covered by general-purpose tools.
 * **Automating Unique Workflows:** Create tools that orchestrate multiple steps or interact with systems in a way unique to your operational needs.
 * **Connecting to Any System with an Accessible Interface:** If you can interact with a system programmatically using Python (e.g., through libraries, SDKs, or direct HTTP requests), you can likely build a DocsGPT tool for it.
@@ -37,6 +37,21 @@ Custom tools in DocsGPT are Python classes that inherit from a base `Tool` class
 
 The **foundation** for all custom tools is the abstract base class, located in `docsgpt/agents/tools/base.py`. Your custom tool class **must** inherit from this class.
 
+### Class docstring (required)
+
+Give the class a docstring. Its first line is the name shown in the Add Tool catalog, and the rest is the description shown under it:
+
+```python
+class BraveSearchTool(Tool):
+    """
+    Brave Search
+    A tool for performing web and image searches using the Brave Search API.
+    Requires an API key for authentication.
+    """
+```
+
+A tool without a docstring is listed under its key (the module filename) with no description.
+
 ### Essential Methods to Implement
 
 Your custom tool class needs to implement the following methods:
@@ -44,7 +59,8 @@ Your custom tool class needs to implement the following methods:
 1. **`__init__(self, config: dict)`**
     
     - **Purpose:** The constructor for your tool. It's called when DocsGPT initializes the tool.
-    - **Usage:** This method is typically used to receive and store tool-specific configurations passed via the `config` dictionary. This dictionary is populated based on the tool's settings, often configured through the DocsGPT UI or environment variables. For example, you would store API keys, base URLs, or database connection strings here.
+    - **Usage:** Store the tool-specific values passed in the `config` dictionary, such as API keys, base URLs or connection strings. They come from the tool instance a user adds in the UI (see [Configuration & Secrets Management](#configuration--secrets-management)), not from environment variables or config files.
+    - **Accept an empty dict.** DocsGPT builds every tool with `config={}` to read its catalog entry and action metadata, so read values with `config.get(...)` and don't raise when a key is missing. A constructor that requires a key breaks tool loading.
     - **Example** (`brave.py`)**:**
         ``` python
         class BraveSearchTool(Tool):
@@ -130,23 +146,34 @@ Your custom tool class needs to implement the following methods:
         
 4. **`get_config_requirements(self) -> dict`**
     
-    - **Purpose:** Defines the configuration parameters that your tool needs to function (e.g., API keys, specific base URLs, connection strings, default settings). This information can be used by the DocsGPT UI to dynamically render configuration fields for your tool or for validation.
-    - **Return Value:** A dictionary where keys are the configuration item names (which will be keys in the `config` dict passed to `__init__`) and values are dictionaries describing each requirement:
-        - `type` (str): The expected data type of the config value (e.g., "string", "boolean", "integer").
+    - **Purpose:** Defines the configuration parameters that your tool needs to function (e.g., API keys, specific base URLs, connection strings, default settings). The DocsGPT UI renders the tool's configuration form from it, and the API validates submitted values against it. Return `{}` if the tool needs no configuration.
+    - **Return Value:** A dictionary where keys are the configuration item names (which will be keys in the `config` dict passed to `__init__`) and values are dictionaries describing each field:
+        - `type` (str): `"string"` or `"number"`. A number field renders a numeric input and must be a positive number.
+        - `label` (str): The form label, also used in validation messages. Defaults to the key.
         - `description` (str): A human-readable description of what this configuration item is for.
-        - `secret` (bool, optional): Set to `True` if the value is sensitive (e.g., an API key) and should be masked or handled specially in UIs. Defaults to `False`.
+        - `required` (bool, optional): The form and the API refuse to save the tool without a value.
+        - `secret` (bool, optional): The value is sensitive (an API key, a password). The form masks it, and it is stored encrypted and never sent back to the browser. Defaults to `False`.
+        - `order` (int, optional): Sort position in the form. Fields without one go last.
+        - `enum` (list of str, optional): Renders a select with these choices, and the API rejects any other value.
+        - `default` (optional): The value used when the user leaves the field empty.
+        - `depends_on` (dict, optional): Show and validate this field only when other fields hold the given values, for example `{"auth_type": "api_key"}`.
     - **Example (`brave.py`):**
         
         ``` python
         def get_config_requirements(self):
             return {
-                "token": { # This 'token' will be a key in the config dict for __init__
+                "token": {  # This 'token' will be a key in the config dict for __init__
                     "type": "string",
+                    "label": "API Key",
                     "description": "Brave Search API key for authentication",
-                    "secret": True
+                    "required": True,
+                    "secret": True,
+                    "order": 1,
                 },
             }
-        ```    
+        ```
+
+        `mcp_tool.py` shows `enum`, `default` and `depends_on` together (an authentication type select that reveals the matching credential fields).
 
 ## Tool Registration and Discovery
 
@@ -158,12 +185,17 @@ As long as your custom tool:
 2. Correctly inherits from the `Tool` base class.
 3. Implements all the abstract methods (`execute_action`, `get_actions_metadata`, `get_config_requirements`).
 
-The `ToolManager` should be able to load it when DocsGPT starts. 
+The `ToolManager` loads it when DocsGPT starts, so restart the API and the Celery worker after adding or changing a tool. A few more rules decide how it is registered:
+
+- **The module filename is the tool's key.** A tool in `docsgpt/agents/tools/weather.py` is stored as `weather` in each user's tool rows, and renaming the file orphans the tools users already added. Put one `Tool` subclass in each module.
+- **`internal = True` hides a tool from the catalog.** Set it as a class attribute for a tool that DocsGPT attaches itself rather than one users add (the built-in Scheduler, Read Document and Wiki tools do this).
+- **Tools that need the calling user's id are listed by name.** `ToolManager` passes `user_id` as a second constructor argument only to the modules named in the two sets in `tool_manager.py` (`load_tool` and `execute_action`), such as `memory`, `notes` and `todo_list`. If your tool stores data per user, add its module name to both sets and accept `def __init__(self, config, user_id=None)`.
+- **Mark read-only actions.** Each action is treated as a read or a write. The approval and permission checks use this, and so does the rule that refuses a write on the owner's stored credentials when the caller is an agent API key, a widget or a public link. Set `"access": "read"` or `"access": "write"` on an action's metadata to decide it. Without it, an action is a read only when its name contains a read verb (`get`, `list`, `search`, `query`, `find`, `read`, `fetch`, `lookup`, `describe`, `retrieve`) and no write verb, and otherwise a write.
 
 ## Configuration & Secrets Management
 
-- **Configuration Source:** The `config` dictionary passed to your tool's `__init__` method is typically populated from settings defined in the DocsGPT UI (if available for the tool) or from environment variables/configuration files that DocsGPT loads (see [⚙️ App Configuration](/Deploying/DocsGPT-Settings)). The keys in this dictionary should match the names you define in `get_config_requirements()`.
-- **Secrets:** Never hardcode secrets (like API keys or passwords) directly into your tool's Python code. Instead, define them as configuration requirements (using `secret: True` in `get_config_requirements()`) and let DocsGPT's configuration system inject them via the `config` dictionary at runtime. This ensures that secrets are managed securely and are not exposed in your codebase.
+- **Configuration Source:** The `config` dictionary comes from the tool instance a user adds in the DocsGPT UI, which is stored as that user's tool row. Its keys are the names you define in `get_config_requirements()`. Nothing reads tool configuration from environment variables or config files, and each user who adds the tool supplies their own values. At run time DocsGPT also adds keys of its own (such as `tool_id`), so ignore keys you don't use.
+- **Secrets:** Never hardcode secrets (like API keys or passwords) directly into your tool's Python code. Define them as configuration fields with `"secret": True`. DocsGPT encrypts those values with a key bound to the tool's owner, keeps them out of API responses, and decrypts them into `config` only when the tool runs.
 
 ## Best Practices for Tool Development
 

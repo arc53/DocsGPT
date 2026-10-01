@@ -4,33 +4,39 @@ OCR in DocsGPT has two backends, selected by ``OCR_BACKEND``:
 
 * ``docling`` — the layout-model pipeline in ``docling_parser.py``. Hybrid
   OCR (only the bitmap regions of a page), reading-order and table
-  structure recovery, and five engines (tesseract / auto / ocrmac /
-  rapidocr / deepseek). Costs the optional docling install (torch, ONNX
-  models, gigabytes of image) and seconds to minutes per file.
+  structure recovery, and four engines (tesseract / auto / ocrmac /
+  rapidocr). Costs the optional docling install (torch, ONNX models,
+  gigabytes of image) and seconds to minutes per file.
 * ``native`` (this module) — page rendering with pypdfium2 and Pillow, both
   core dependencies, feeding one of two engines directly: the system
   ``tesseract`` binary, or a DeepSeek-OCR model behind an OpenAI-compatible
-  endpoint (Ollama / vLLM). No ML models load in the worker. Pages that
-  carry a text layer are read through pypdfium2 and never OCR'd; pages
-  without one are rendered and OCR'd. What it lacks against docling is the
-  layout model: multi-column scans rely on tesseract's own page
-  segmentation, and tesseract yields tables as plain lines (DeepSeek-OCR
-  emits Markdown tables itself).
+  endpoint (a local Ollama / vLLM, or a hosted API such as Novita or
+  DeepInfra). DeepSeek-OCR always runs here, never through docling. No ML
+  models load in the worker. Pages that carry a text layer are read through
+  pypdfium2 and never OCR'd; pages without one are rendered and OCR'd. What
+  it lacks against docling is the layout model: multi-column scans rely on
+  tesseract's own page segmentation, and tesseract yields tables as plain
+  lines (DeepSeek-OCR emits Markdown tables itself).
 
-``auto`` picks docling when it is installed and native otherwise, so a
-deployment that never installs the docling extra gets working OCR from the
-tesseract binary alone, and one that does install it keeps today's
-behaviour unchanged.
+``auto`` picks docling when it is installed and native otherwise (always
+native under ``OCR_ENGINE=deepseek``), so a deployment that never installs
+the docling extra gets working OCR from the tesseract binary alone, and one
+that does install it keeps today's behaviour unchanged.
 """
 import base64
 import functools
 import io
 import logging
+import random
 import re
 import shutil
 import subprocess
+import threading
+import time
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Protocol, Tuple, Union
+from typing import Dict, Hashable, Iterable, List, Optional, Protocol, Tuple, TypeVar, Union
 
 from docsgpt.parser.file.base_parser import (
     BaseParser,
@@ -71,15 +77,44 @@ _TESSERACT_TIMEOUT_SECONDS = 300
 # so the exit code alone cannot catch OCR_LANGS=eng+chi_sim without chi_sim.
 _TESSERACT_LANG_ERROR_RE = re.compile(r"Error opening data file|Failed loading language")
 _TESSERACT_LANG_RE = re.compile(r"^[A-Za-z0-9_/\-]+$")
-# docling's DeepSeek-OCR prompt minus its ``<|grounding|>`` prefix: grounding
-# makes the model wrap every element in ref/det tags with bounding boxes,
-# which docling parses back into a layout tree. Plain Markdown is what the
-# ingestion pipeline stores, so ask for that directly.
-DEEPSEEK_PROMPT = "Convert the document to markdown."
+# Default instruction (``OCR_DEEPSEEK_PROMPT``). Measured 2026-09 on real
+# pages against their text layers, Ollama deepseek-ocr:3b: "Free OCR." kept
+# 94-100% of the words and wrote tables as Markdown; "Convert the document to
+# markdown." kept 17% of a table page, because it emits HTML tables whose
+# cell tags the server strips as special tokens, gluing every cell together.
+DEEPSEEK_PROMPT = "Free OCR."
 _DEEPSEEK_MAX_TOKENS = 4096
-# Defensive cleanup should a served model still emit grounding markup.
+# Where DeepSeek-OCR runs: provider -> (chat-completions URL, model, hosted).
+# Hosted presets need an API key and default to concurrent page requests; a
+# laptop-hosted Ollama only slows down under parallel requests.
+DEEPSEEK_PROVIDERS: Dict[str, Tuple[Optional[str], Optional[str], bool]] = {
+    "ollama": ("http://localhost:11434/v1/chat/completions", "deepseek-ocr:3b", False),
+    "vllm": ("http://localhost:8000/v1/chat/completions", "deepseek-ai/DeepSeek-OCR", False),
+    "novita": ("https://api.novita.ai/openai/chat/completions", "deepseek/deepseek-ocr-2", True),
+    "deepinfra": ("https://api.deepinfra.com/v1/openai/chat/completions", "deepseek-ai/DeepSeek-OCR", True),
+    "custom": (None, None, False),
+}
+# Providers whose default is several pages in flight: hosted APIs and vLLM,
+# which batches concurrent requests on the GPU.
+_CONCURRENT_PROVIDERS = frozenset({"vllm", "novita", "deepinfra"})
+_DEFAULT_HOSTED_CONCURRENCY = 4
+# Statuses worth another attempt: rate limits and transient server failures.
+_RETRY_STATUSES = (408, 409, 425, 429, 500, 502, 503, 504)
+_MAX_RETRY_WAIT_SECONDS = 60.0
+_BASE_RETRY_WAIT_SECONDS = 1.0
+# Output cleanup. Grounding markup (<|ref|>/<|det|>, or the bare
+# ``label[[x1, y1, x2, y2]]`` lines a server that strips special tokens
+# leaves), chat-template tokens the model sometimes leaks, and the <p>/<br>
+# tags it uses for plain paragraphs. HTML tables are kept: their structure
+# is content.
 _DEEPSEEK_DET_BLOCK_RE = re.compile(r"<\|det\|>.*?<\|/det\|>", re.DOTALL)
-_DEEPSEEK_TAG_RE = re.compile(r"<\|/?ref\|>|<\|grounding\|>|<\|end▁of▁sentence\|>")
+_DEEPSEEK_TAG_RE = re.compile(
+    r"<\|/?ref\|>|<\|grounding\|>|<\|end▁of▁sentence\|>|<\|im_(?:start|end|begin)\|>"
+)
+_DEEPSEEK_BOX_LINE_RE = re.compile(r"^[a-z_]+\[\[\d+(?:,\s*\d+){3}\]\]\s*$\n?", re.MULTILINE)
+_HTML_BREAK_RE = re.compile(r"<br\s*/?>")
+_HTML_PARAGRAPH_END_RE = re.compile(r"</p>[ \t]*")
+_BLANK_LINES_RE = re.compile(r"\n{3,}")
 # tesseract's CJK models emit one space between every character ("互相 保密 协议")
 # because they segment by glyph. Chinese and Japanese are written without
 # word spaces, so collapse whitespace between two CJK characters (or CJK
@@ -118,9 +153,10 @@ def resolve_ocr_backend(requested: Optional[str] = None) -> str:
         requested: ``auto`` | ``docling`` | ``native``, or None to read the setting.
 
     Returns:
-        ``"docling"`` or ``"native"``. ``auto`` prefers docling when it is
-        installed; ``docling`` without the install degrades to native with a
-        warning rather than leaving OCR off.
+        ``"docling"`` or ``"native"``. ``OCR_ENGINE=deepseek`` is always
+        native. Otherwise ``auto`` prefers docling when it is installed;
+        ``docling`` without the install degrades to native with a warning
+        rather than leaving OCR off.
     """
     from docsgpt.core.settings import settings
 
@@ -128,6 +164,12 @@ def resolve_ocr_backend(requested: Optional[str] = None) -> str:
     if backend not in VALID_OCR_BACKENDS:
         logger.warning(f"Unknown OCR_BACKEND {backend!r}; using auto")
         backend = "auto"
+    if str(settings.OCR_ENGINE or "").strip().lower() == "deepseek":
+        # DeepSeek-OCR is an HTTP call per page; the native parsers make it
+        # directly, so it never needs (or loads) docling.
+        if backend == "docling":
+            logger.info("OCR_ENGINE=deepseek runs on the native OCR backend; ignoring OCR_BACKEND=docling")
+        return "native"
     docling_installed = module_available("docling")
     if backend == "docling" and not docling_installed:
         logger.warning(
@@ -353,24 +395,151 @@ def collapse_cjk_spaces(text: str) -> str:
 
 
 def clean_deepseek_output(text: str) -> str:
-    """Strip DeepSeek-OCR grounding markup, keeping the referenced text."""
+    """Strip DeepSeek-OCR grounding markup and leaked tokens; turn <p>/<br> into line breaks."""
     text = _DEEPSEEK_DET_BLOCK_RE.sub("", text)
-    return _DEEPSEEK_TAG_RE.sub("", text).strip()
+    text = _DEEPSEEK_TAG_RE.sub("", text)
+    text = _DEEPSEEK_BOX_LINE_RE.sub("", text)
+    text = _HTML_BREAK_RE.sub("\n", text)
+    text = _HTML_PARAGRAPH_END_RE.sub("\n\n", text).replace("<p>", "")
+    return _BLANK_LINES_RE.sub("\n\n", text).strip()
+
+
+def _sleep(seconds: float) -> None:
+    """Backoff wait; a module attribute so tests can skip it."""
+    time.sleep(seconds)
+
+
+@dataclass(frozen=True)
+class DeepseekEndpoint:
+    """The DeepSeek-OCR endpoint the settings resolve to.
+
+    Attributes:
+        provider: ``OCR_DEEPSEEK_PROVIDER``.
+        url: Chat-completions URL.
+        model: Model name at that URL.
+        api_key: Bearer token, or None for a keyless local server.
+        timeout: Seconds per page request.
+        concurrency: Page requests in flight per file.
+        max_retries: Retries per page after a 429, a 5xx or a refused connection.
+        hosted: Whether the preset is a third-party API.
+        prompt: Instruction sent with every page (``OCR_DEEPSEEK_PROMPT``).
+        problem: Why the endpoint cannot be used as configured, or None.
+    """
+
+    provider: str
+    url: str
+    model: str
+    api_key: Optional[str]
+    timeout: float
+    concurrency: int
+    max_retries: int
+    hosted: bool
+    prompt: str = DEEPSEEK_PROMPT
+    problem: Optional[str] = None
+
+    def headers(self) -> Dict[str, str]:
+        """Request headers: the bearer token when one is configured."""
+        return {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+
+    def describe(self) -> str:
+        """One line for logs and ``docsgpt ocr-check``; never includes the key."""
+        key = "set" if self.api_key else "none"
+        return (
+            f"provider={self.provider} url={self.url or '(unset)'} model={self.model or '(unset)'} "
+            f"api_key={key} concurrency={self.concurrency} timeout={self.timeout:.0f}s retries={self.max_retries}"
+        )
+
+
+def resolve_deepseek_endpoint() -> DeepseekEndpoint:
+    """Resolve ``OCR_DEEPSEEK_*`` into an endpoint: the provider preset, overridden by explicit values.
+
+    Never raises: a configuration that cannot work (a hosted preset without a
+    key, ``custom`` without a URL or model) comes back with ``problem`` set,
+    and the engine raises it only when a page actually needs OCR — so
+    text-layer documents keep parsing, as with a missing tesseract binary.
+    """
+    from docsgpt.core.settings import settings
+
+    provider = str(settings.OCR_DEEPSEEK_PROVIDER or "ollama").strip().lower()
+    if provider not in DEEPSEEK_PROVIDERS:
+        logger.warning(f"Unknown OCR_DEEPSEEK_PROVIDER {provider!r}; using ollama")
+        provider = "ollama"
+    preset_url, preset_model, hosted = DEEPSEEK_PROVIDERS[provider]
+    url = settings.OCR_DEEPSEEK_URL or preset_url or ""
+    model = settings.OCR_DEEPSEEK_MODEL or preset_model or ""
+    api_key = settings.OCR_DEEPSEEK_API_KEY
+    if not api_key and provider == "novita":
+        api_key = settings.NOVITA_API_KEY
+    concurrency = settings.OCR_DEEPSEEK_CONCURRENCY or (
+        _DEFAULT_HOSTED_CONCURRENCY if provider in _CONCURRENT_PROVIDERS else 1
+    )
+    problem = None
+    if not url:
+        problem = f"OCR_DEEPSEEK_PROVIDER={provider} needs OCR_DEEPSEEK_URL (the chat-completions URL)"
+    elif not model:
+        problem = f"OCR_DEEPSEEK_PROVIDER={provider} needs OCR_DEEPSEEK_MODEL (the model name at {url})"
+    elif hosted and not api_key:
+        extra = " (or NOVITA_API_KEY)" if provider == "novita" else ""
+        problem = f"OCR_DEEPSEEK_PROVIDER={provider} needs an API key: set OCR_DEEPSEEK_API_KEY{extra}"
+    return DeepseekEndpoint(
+        provider=provider,
+        url=url,
+        model=model,
+        api_key=api_key,
+        timeout=float(settings.OCR_DEEPSEEK_TIMEOUT),
+        concurrency=max(1, int(concurrency)),
+        max_retries=max(0, int(settings.OCR_DEEPSEEK_MAX_RETRIES)),
+        hosted=hosted,
+        prompt=str(settings.OCR_DEEPSEEK_PROMPT or "").strip() or DEEPSEEK_PROMPT,
+        problem=problem,
+    )
+
+
+def _retry_after_seconds(response) -> Optional[float]:
+    """``Retry-After`` in seconds when the server sent a numeric one."""
+    value = (getattr(response, "headers", None) or {}).get("Retry-After")
+    try:
+        return max(0.0, float(value)) if value is not None else None
+    except (TypeError, ValueError):
+        return None  # an HTTP-date; fall back to exponential backoff
+
+
+def _backoff_seconds(attempt: int) -> float:
+    return min(_MAX_RETRY_WAIT_SECONDS, _BASE_RETRY_WAIT_SECONDS * 2**attempt + random.uniform(0, 0.5))
+
+
+def _token_count(value) -> int:
+    """A usage count from a response; a server that omits or garbles it counts as 0."""
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError, OverflowError):  # OverflowError: 1e309 decodes to inf
+        return 0
+
+
+def _error_body(response) -> str:
+    try:
+        return str(response.text or "").strip()[:300]
+    except Exception:  # noqa: BLE001 - only for the error message
+        return ""
 
 
 class DeepseekOcrEngine:
     """DeepSeek-OCR over an OpenAI-compatible chat-completions endpoint.
 
-    One request per page, sequentially. The image travels as a base64 data
-    URL, which both Ollama and vLLM accept. Pages are sent one at a time
-    because the model server, not the worker, is the bottleneck; docling's
-    default of four concurrent requests and a 90 s timeout is what broke on
-    a laptop-hosted Ollama in testing.
+    One request per page. The image travels as a base64 data URL, which
+    Ollama, vLLM and the hosted APIs all accept. Local presets send pages one
+    at a time because the model server, not the worker, is the bottleneck
+    (docling's four concurrent requests with a 90 s timeout broke a
+    laptop-hosted Ollama in testing); hosted presets default to several in
+    flight, which ``ocr_images`` schedules. Rate limits and 5xx responses are
+    retried with backoff; token usage is summed for the file's metadata.
 
     Attributes:
-        url: Chat-completions URL (``OCR_DEEPSEEK_URL``).
-        model: Model name at that endpoint (``OCR_DEEPSEEK_MODEL``).
-        timeout: Seconds per page (``OCR_DEEPSEEK_TIMEOUT``).
+        url: Chat-completions URL.
+        model: Model name at that endpoint.
+        timeout: Seconds per page.
+        concurrency: Page requests in flight per file.
+        max_retries: Retries per page after a transient failure.
         prompt: Instruction sent with every page image.
     """
 
@@ -381,16 +550,23 @@ class DeepseekOcrEngine:
         url: Optional[str] = None,
         model: Optional[str] = None,
         timeout: Optional[float] = None,
-        prompt: str = DEEPSEEK_PROMPT,
+        prompt: Optional[str] = None,
         max_tokens: int = _DEEPSEEK_MAX_TOKENS,
+        endpoint: Optional[DeepseekEndpoint] = None,
     ) -> None:
-        from docsgpt.core.settings import settings
-
-        self.url = url or settings.OCR_DEEPSEEK_URL
-        self.model = model or settings.OCR_DEEPSEEK_MODEL
-        self.timeout = float(timeout if timeout is not None else settings.OCR_DEEPSEEK_TIMEOUT)
-        self.prompt = prompt
+        resolved = endpoint or resolve_deepseek_endpoint()
+        self.endpoint = resolved
+        self.url = url or resolved.url
+        self.model = model or resolved.model
+        self.timeout = float(timeout if timeout is not None else resolved.timeout)
+        self.concurrency = resolved.concurrency
+        self.max_retries = resolved.max_retries
+        self.prompt = prompt or resolved.prompt
         self.max_tokens = max_tokens
+        # An explicit URL and model mean the caller configured the endpoint itself.
+        self._problem = None if (url and model) else resolved.problem
+        self._usage_lock = threading.Lock()
+        self._usage = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0}
 
     def payload(self, image) -> Dict:
         """The chat-completions request body for one page image."""
@@ -410,34 +586,110 @@ class DeepseekOcrEngine:
             "temperature": 0,
         }
 
+    def usage(self) -> Dict[str, int]:
+        """Requests and tokens since the last ``reset_usage``."""
+        with self._usage_lock:
+            return dict(self._usage)
+
+    def reset_usage(self) -> None:
+        """Start counting usage for a new file."""
+        with self._usage_lock:
+            self._usage = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0}
+
+    def _record_usage(self, body: Dict) -> None:
+        usage = body.get("usage") if isinstance(body, dict) else None
+        usage = usage if isinstance(usage, dict) else {}
+        with self._usage_lock:
+            self._usage["requests"] += 1
+            for key in ("prompt_tokens", "completion_tokens"):
+                self._usage[key] += _token_count(usage.get(key))
+
+    def _post(self, body: Dict):
+        """POST one page, retrying rate limits, 5xx responses and refused connections.
+
+        Raises:
+            OcrUnavailableError: The endpoint rejected the key or does not serve the model.
+            DocumentParseError: Any other failure, after the retries.
+        """
+        import requests
+
+        headers = self.endpoint.headers()
+        attempt = 0
+        while True:
+            try:
+                response = requests.post(self.url, json=body, headers=headers, timeout=self.timeout)
+            except requests.exceptions.ConnectionError as exc:
+                # ConnectTimeout lands here too; a read timeout does not.
+                if attempt < self.max_retries:
+                    wait_s = _backoff_seconds(attempt)
+                    logger.warning(f"DeepSeek-OCR endpoint {self.url} unreachable ({exc}); retrying in {wait_s:.1f}s")
+                    _sleep(wait_s)
+                    attempt += 1
+                    continue
+                raise DocumentParseError(
+                    f"DeepSeek-OCR request to {self.url} failed: {exc}. Check OCR_DEEPSEEK_URL "
+                    f"and that model {self.model!r} is served (e.g. `ollama pull {self.model}`)."
+                ) from exc
+            except requests.exceptions.Timeout as exc:
+                raise DocumentParseError(
+                    f"DeepSeek-OCR request to {self.url} timed out after {self.timeout:.0f}s on a page; "
+                    "raise OCR_DEEPSEEK_TIMEOUT for a slow model server."
+                ) from exc
+            except requests.RequestException as exc:
+                raise DocumentParseError(f"DeepSeek-OCR request to {self.url} failed: {exc}") from exc
+
+            status = response.status_code
+            if status in _RETRY_STATUSES and attempt < self.max_retries:
+                retry_after = _retry_after_seconds(response)
+                wait_s = min(_MAX_RETRY_WAIT_SECONDS, retry_after) if retry_after is not None else _backoff_seconds(
+                    attempt
+                )
+                logger.warning(f"DeepSeek-OCR endpoint {self.url} returned {status}; retrying in {wait_s:.1f}s")
+                _sleep(wait_s)
+                attempt += 1
+                continue
+            if status in (401, 403):
+                raise OcrUnavailableError(
+                    f"DeepSeek-OCR endpoint {self.url} rejected the request ({status}): {_error_body(response)}. "
+                    "Check OCR_DEEPSEEK_API_KEY."
+                )
+            if status == 404:
+                raise OcrUnavailableError(
+                    f"DeepSeek-OCR endpoint {self.url} returned 404 for model {self.model!r}: "
+                    f"{_error_body(response)}. Check OCR_DEEPSEEK_URL and OCR_DEEPSEEK_MODEL "
+                    f"(for Ollama: `ollama pull {self.model}`)."
+                )
+            try:
+                response.raise_for_status()
+            except requests.HTTPError as exc:
+                raise DocumentParseError(
+                    f"DeepSeek-OCR endpoint {self.url} returned {status}: {_error_body(response)}"
+                ) from exc
+            return response
+
     def ocr_image(self, image) -> str:
         """OCR one PIL image through the endpoint.
 
         Raises:
+            OcrUnavailableError: The endpoint is misconfigured, rejected the
+                key or does not serve the model.
             DocumentParseError: The request failed, timed out, or the
                 response was not a chat completion.
         """
-        import requests
-
+        if self._problem:
+            raise OcrUnavailableError(self._problem)
+        response = self._post(self.payload(image))
         try:
-            response = requests.post(self.url, json=self.payload(image), timeout=self.timeout)
-            response.raise_for_status()
             body = response.json()
-        except requests.exceptions.JSONDecodeError as exc:
-            # Subclasses RequestException too, so it must be caught first or a
-            # proxy's HTML error page is reported as a connection failure.
+        except ValueError as exc:  # requests' JSONDecodeError included: a proxy's HTML error page
             raise DocumentParseError(f"DeepSeek-OCR endpoint {self.url} returned a non-JSON body") from exc
-        except requests.RequestException as exc:
-            raise DocumentParseError(
-                f"DeepSeek-OCR request to {self.url} failed: {exc}. Check OCR_DEEPSEEK_URL "
-                f"and that model {self.model!r} is served (e.g. `ollama pull {self.model}`)."
-            ) from exc
         try:
             content = body["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
             raise DocumentParseError(
                 f"DeepSeek-OCR endpoint {self.url} returned no chat completion: {str(body)[:200]}"
             ) from exc
+        self._record_usage(body)
         if isinstance(content, list):  # some servers return content parts
             content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
         return clean_deepseek_output(str(content or ""))
@@ -449,6 +701,114 @@ def build_native_ocr_engine(engine: Optional[str] = None, languages: Optional[Li
     if resolved == "deepseek":
         return DeepseekOcrEngine()
     return TesseractEngine(languages=languages)
+
+
+K = TypeVar("K", bound=Hashable)
+
+
+def ocr_images(engine: OcrEngine, items: Iterable[Tuple[K, object]], skip_failed: bool = False) -> Dict[K, str]:
+    """OCR ``(key, image)`` pairs, up to ``engine.concurrency`` requests at a time.
+
+    ``items`` is consumed on the calling thread — PDF pages are rendered
+    there, since pypdfium2 is not thread-safe — and no more than twice the
+    concurrency of rendered pages wait for a free slot, so a 500-page scan
+    never sits in memory at once. Engines without a ``concurrency``
+    attribute (tesseract) run sequentially.
+
+    Args:
+        engine: The OCR engine.
+        items: Page keys and PIL images, in page order.
+        skip_failed: Log and leave out a page whose OCR failed instead of
+            raising (mixed documents, where the text pages are already safe).
+
+    Returns:
+        Key -> stripped text, in the order ``items`` produced them.
+
+    Raises:
+        Exception: The first page failure, unless ``skip_failed``.
+    """
+    workers = max(1, int(getattr(engine, "concurrency", 1) or 1))
+    order: List[K] = []
+    results: Dict[K, str] = {}
+
+    def _failed(key: K, exc: Exception) -> None:
+        if not skip_failed:
+            raise exc
+        label = key + 1 if isinstance(key, int) else key
+        logger.warning(f"OCR of page {label} failed ({exc}); skipping that page")
+
+    if workers == 1:
+        for key, image in items:
+            order.append(key)
+            try:
+                results[key] = (engine.ocr_image(image) or "").strip()
+            except Exception as exc:  # noqa: BLE001 - re-raised unless skip_failed
+                _failed(key, exc)
+        return {key: results[key] for key in order if key in results}
+
+    pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="ocr")
+    pending: Dict[Future, K] = {}
+
+    def _collect(done) -> None:
+        for future in done:
+            key = pending.pop(future)
+            try:
+                results[key] = (future.result() or "").strip()
+            except Exception as exc:  # noqa: BLE001 - re-raised unless skip_failed
+                _failed(key, exc)
+
+    try:
+        for key, image in items:
+            order.append(key)
+            pending[pool.submit(engine.ocr_image, image)] = key
+            while len(pending) >= workers * 2:
+                done, _ = wait(pending, return_when=FIRST_COMPLETED)
+                _collect(done)
+        while pending:
+            done, _ = wait(pending, return_when=FIRST_COMPLETED)
+            _collect(done)
+    except BaseException:
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    pool.shutdown(wait=True)
+    return {key: results[key] for key in order if key in results}
+
+
+def _reset_usage(engine: OcrEngine) -> None:
+    reset = getattr(engine, "reset_usage", None)
+    if callable(reset):
+        reset()
+
+
+def usage_metadata(engine: OcrEngine) -> Dict[str, int]:
+    """Flat ``ocr_*`` usage fields for an engine that reports usage and made requests, else {}.
+
+    Flat integers rather than a nested dict because parser metadata is
+    copied onto every chunk, and not every vector store takes nested values.
+    """
+    usage_fn = getattr(engine, "usage", None)
+    if not callable(usage_fn):
+        return {}
+    usage = usage_fn() or {}
+    if not usage.get("requests"):
+        return {}
+    return {
+        "ocr_requests": int(usage.get("requests", 0)),
+        "ocr_prompt_tokens": int(usage.get("prompt_tokens", 0)),
+        "ocr_completion_tokens": int(usage.get("completion_tokens", 0)),
+    }
+
+
+def _log_usage(name: str, engine: OcrEngine, usage: Dict[str, int]) -> None:
+    if usage:
+        logger.info(
+            "OCR usage for %s (%s): %d request(s), %d prompt token(s), %d completion token(s)",
+            name,
+            engine.name,
+            usage["ocr_requests"],
+            usage["ocr_prompt_tokens"],
+            usage["ocr_completion_tokens"],
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -609,10 +969,14 @@ class NativeOcrPdfParser(BaseParser):
         min_text_chars: Text-layer characters per page below which the page is OCR'd.
         ocr_enabled: Always True; lets callers that inspect their fallback
             parser (``AnydocParser``) phrase their errors correctly.
+        batch_ocr_pages: ``ocr_pages`` takes several pages and ``skip_failed``,
+            so ``AnydocParser`` hands it every scanned page at once.
         last_engine: Engine name behind the most recent parse.
+        last_ocr_usage: ``ocr_*`` usage fields of the most recent ``ocr_pages`` call.
     """
 
     ocr_enabled = True
+    batch_ocr_pages = True
 
     def __init__(
         self,
@@ -626,6 +990,7 @@ class NativeOcrPdfParser(BaseParser):
         self.text_parser = text_parser
         self.min_text_chars = max(1, int(min_text_chars))
         self.last_engine: Optional[str] = None
+        self.last_ocr_usage: Dict[str, int] = {}
         self._last_metadata: Dict = {}
 
     def _init_parser(self) -> Dict:
@@ -661,11 +1026,16 @@ class NativeOcrPdfParser(BaseParser):
                 page.close()
         return counts
 
-    def ocr_pages(self, file: Path, indices: List[int]) -> Dict[int, str]:
+    def ocr_pages(self, file: Path, indices: List[int], skip_failed: bool = False) -> Dict[int, str]:
         """OCR only the given 0-based pages of ``file``, ignoring their text layers.
 
         Used by ``AnydocParser`` for mixed documents: anydoc has already read
         the text pages, so only the scanned ones come here.
+
+        Args:
+            file: The PDF.
+            indices: 0-based pages to OCR; out-of-range ones are ignored.
+            skip_failed: Leave out a page whose OCR failed instead of raising.
 
         Returns:
             Page index -> recognised text, in the order requested.
@@ -681,17 +1051,22 @@ class NativeOcrPdfParser(BaseParser):
             pdf = pdfium.PdfDocument(str(path))
         except Exception as exc:
             raise DocumentParseError(f"Failed to open {path.name} with pypdfium2: {exc}") from exc
-        texts: Dict[int, str] = {}
+        _reset_usage(engine)
         try:
             dpi = render_dpi()
-            for index in indices:
-                if index < 0 or index >= len(pdf):
-                    continue
-                page = pdf[index]
-                try:
-                    texts[index] = (engine.ocr_image(_render_page(page, dpi)) or "").strip()
-                finally:
-                    page.close()
+
+            def _pages():
+                for index in indices:
+                    if index < 0 or index >= len(pdf):
+                        continue
+                    page = pdf[index]
+                    try:
+                        image = _render_page(page, dpi)
+                    finally:
+                        page.close()
+                    yield index, image
+
+            texts = ocr_images(engine, _pages(), skip_failed=skip_failed)
         except DocumentParseError:
             raise
         except Exception as exc:
@@ -699,6 +1074,8 @@ class NativeOcrPdfParser(BaseParser):
         finally:
             pdf.close()
         self.last_engine = engine.name
+        self.last_ocr_usage = usage_metadata(engine)
+        _log_usage(path.name, engine, self.last_ocr_usage)
         return texts
 
     def text_layer_delegate(self, file: Path) -> Optional[BaseParser]:
@@ -768,21 +1145,31 @@ class NativeOcrPdfParser(BaseParser):
                 pdf = None
                 return self._delegate_text(path, errors)
             dpi = render_dpi()
-            for index in range(page_count):
-                page = pdf[index]
-                try:
-                    if counts[index] >= self.min_text_chars:
-                        textpage = page.get_textpage()
-                        try:
-                            text = textpage.get_text_bounded()
-                        finally:
-                            textpage.close()
-                    else:
-                        text = engine.ocr_image(_render_page(page, dpi))
-                        ocr_pages += 1
-                finally:
-                    page.close()
-                pages_text.append((text or "").strip())
+            pages_text = [""] * page_count
+
+            def _scanned_pages():
+                # Reads text pages in place and yields renders of the rest, all
+                # on this thread; only the OCR requests run concurrently.
+                for index in range(page_count):
+                    page = pdf[index]
+                    try:
+                        if counts[index] >= self.min_text_chars:
+                            textpage = page.get_textpage()
+                            try:
+                                pages_text[index] = (textpage.get_text_bounded() or "").strip()
+                            finally:
+                                textpage.close()
+                            continue
+                        image = _render_page(page, dpi)
+                    finally:
+                        page.close()
+                    yield index, image
+
+            _reset_usage(engine)
+            ocr_texts = ocr_images(engine, _scanned_pages())
+            for index, text in ocr_texts.items():
+                pages_text[index] = text
+            ocr_pages = len(ocr_texts)
         except DocumentParseError:
             raise
         except Exception as exc:
@@ -794,7 +1181,14 @@ class NativeOcrPdfParser(BaseParser):
         content = "\n\n".join(pages_text)
         _check_near_empty(path.name, engine.name, content, page_count, ocr_pages)
         self.last_engine = engine.name
-        self._last_metadata = {"parse_engine": engine.name, "pdf_pages": page_count, "ocr_pages": ocr_pages}
+        self.last_ocr_usage = usage_metadata(engine)
+        self._last_metadata = {
+            "parse_engine": engine.name,
+            "pdf_pages": page_count,
+            "ocr_pages": ocr_pages,
+            **self.last_ocr_usage,
+        }
+        _log_usage(path.name, engine, self.last_ocr_usage)
         logger.info(
             "Parsed %s with native OCR (%s): %d/%d page(s) OCR'd, %d chars",
             path.name,
@@ -851,21 +1245,26 @@ class NativeOcrImageParser(BaseParser):
         if self.engine is None:
             self.engine = build_native_ocr_engine()
         engine = self.engine
-        texts: List[str] = []
+        _reset_usage(engine)
         try:
             with Image.open(path) as image:
                 frames = ImageSequence.Iterator(image) if path.suffix.lower() in (".tif", ".tiff") else [image]
-                for frame in frames:
-                    texts.append((engine.ocr_image(fit_to_pixel_budget(frame)) or "").strip())
+                # A TIFF frame is the same object seeked to the next page, so a
+                # frame handed to a concurrent request must be a copy.
+                texts = ocr_images(
+                    engine, ((index, fit_to_pixel_budget(frame).copy()) for index, frame in enumerate(frames))
+                )
         except DocumentParseError:
             raise
         except Exception as exc:
             raise DocumentParseError(f"Failed to OCR {path.name} ({engine.name}): {exc}") from exc
 
-        content = "\n\n".join(texts)
+        content = "\n\n".join(texts.values())
         _check_near_empty(path.name, engine.name, content, max(1, len(texts)), len(texts))
         self.last_engine = engine.name
-        self._last_metadata = {"parse_engine": engine.name, "ocr_pages": len(texts)}
+        usage = usage_metadata(engine)
+        self._last_metadata = {"parse_engine": engine.name, "ocr_pages": len(texts), **usage}
+        _log_usage(path.name, engine, usage)
         return content
 
     def get_file_metadata(self, file: Path) -> Dict:

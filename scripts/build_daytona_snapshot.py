@@ -17,9 +17,11 @@ Then set in .env::
 
     DAYTONA_SNAPSHOT=docsgpt-artifacts-py312
 
-Keep the pins in sync with the backend venv (python-pptx / openpyxl / lxml /
-pillow are in docsgpt/requirements.txt; python-docx and reportlab arrive
-transitively) so the Daytona render output matches the Jupyter-backend output.
+Keep the render-library pins in sync with the self-hosted runner image
+(deployment/sandbox/Dockerfile) so the Daytona render output matches the
+Jupyter-backend output. lxml and pillow are not pinned in the runner (pip
+resolves them there); they are pinned here only to keep the snapshot
+reproducible.
 """
 
 from __future__ import annotations
@@ -28,12 +30,12 @@ import argparse
 import sys
 
 # Render libraries imported by the artifact tool's renderers, pinned to the
-# versions installed in the backend venv as of this writing.
+# same versions as deployment/sandbox/Dockerfile.
 RENDER_PINS = [
     "python-pptx==1.0.2",
-    "python-docx==1.2.0",
+    "python-docx==1.1.2",
     "openpyxl==3.1.5",
-    "reportlab==4.5.1",
+    "reportlab==4.2.5",
     "lxml==6.0.2",
     "pillow==11.3.0",
 ]

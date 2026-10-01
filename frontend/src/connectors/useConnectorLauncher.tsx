@@ -52,6 +52,8 @@ type LauncherCallbacks = {
   onConnected?: () => void;
   /** The run ended with nothing connected (cancelled, or closed early). */
   onCancel?: () => void;
+  /** Sources a sync started from the wizard, still ingesting. */
+  onSynced?: (sourceIds: string[]) => void;
 };
 
 /**
@@ -64,10 +66,13 @@ type LauncherCallbacks = {
  *     account.
  *   onCancel: Called when a run ends with nothing connected, so an opener
  *     that stepped aside (Add knowledge) can come back.
+ *   onSynced: Called with the sources a sync started from the wizard, still
+ *     ingesting.
  */
 export default function useConnectorLauncher({
   onConnected,
   onCancel,
+  onSynced,
 }: LauncherCallbacks = {}) {
   const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
@@ -194,6 +199,7 @@ export default function useConnectorLauncher({
           connectionId={active.connectionId}
           mcpToolId={active.mcpToolId}
           purpose={active.purpose}
+          onSynced={onSynced}
           // A wizard that does not say (an older run) connected nothing.
           onClose={(connected?: boolean) => end(connected === true)}
         />

@@ -2484,11 +2484,17 @@
         "timezoneEmpty": "找不到時區。",
         "instructionsLabel": "指令",
         "instructionsPlaceholder": "在此輸入提示。",
+        "approvalTools": {
+          "label": "需要核准的工具",
+          "hint": "排程執行時無人可以核准，因此除非你在此勾選對應工具，否則需要核准的操作會被拒絕。其他操作照常執行。",
+          "warning": "每次執行此排程時，已勾選工具中需要核准的操作都會直接執行，不再詢問。"
+        },
         "create": "建立任務",
         "save": "儲存變更",
         "errors": {
           "instructionRequired": "指令為必填。",
-          "runAtInPast": "請選擇未來的日期／時間。"
+          "runAtInPast": "請選擇未來的日期／時間。",
+          "saveFailed": "無法儲存排程。"
         },
         "days": {
           "mon": "週一",

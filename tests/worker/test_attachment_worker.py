@@ -27,7 +27,14 @@ class TestAttachmentWorker:
 
         fake_doc = Document(
             text="hello world",
-            extra_info={"transcript_language": "en"},
+            extra_info={
+                "transcript_language": "en",
+                "ocr_pages": 2,
+                "ocr_requests": 2,
+                "ocr_prompt_tokens": 1500,
+                "ocr_completion_tokens": 300,
+                "title": "notes.txt",
+            },
         )
 
         fake_storage = MagicMock(name="storage")
@@ -55,6 +62,10 @@ class TestAttachmentWorker:
         # Parser metadata (``transcript_*``) should have been merged in.
         assert result["metadata"]["transcript_language"] == "en"
         assert result["metadata"]["source"] == "chat"
+        # So is what OCR cost: pages and, for an API engine, requests and tokens.
+        assert result["metadata"]["ocr_pages"] == 2
+        assert result["metadata"]["ocr_prompt_tokens"] == 1500
+        assert "title" not in result["metadata"]
 
         # Row should be resolvable by the caller-visible handle stored in
         # ``legacy_mongo_id``.

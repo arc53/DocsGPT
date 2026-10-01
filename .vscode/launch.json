@@ -39,8 +39,19 @@
         "worker",
         "-l",
         "INFO",
+        "-B",
         "--pool=solo"
       ],
+      "windows": {
+        "args": [
+          "-A",
+          "docsgpt.app.celery",
+          "worker",
+          "-l",
+          "INFO",
+          "--pool=solo"
+        ]
+      },
       "cwd": "${workspaceFolder}"
     },
     {

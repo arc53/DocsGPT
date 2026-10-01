@@ -455,6 +455,188 @@ class TestResumeOnceStale:
         assert body["status"] == "active"
 
 
+def _as_dt(value) -> datetime:
+    """Read a timestamp the repository returns as a datetime or ISO string."""
+    return value if isinstance(value, datetime) else datetime.fromisoformat(value)
+
+
+class TestPutRunAt:
+    """PUT reschedules a one-time task through ``run_at``."""
+
+    def _once(self, conn, *, status="active", hours=1, tz="UTC"):
+        agent_id = _make_agent(conn)
+        fire = _now() + timedelta(hours=hours)
+        return SchedulesRepository(conn).create(
+            user_id="u1", agent_id=agent_id, trigger_type="once",
+            instruction="i", run_at=fire,
+            next_run_at=fire if status == "active" else None,
+            timezone=tz, status=status,
+        )
+
+    def _put(self, app, conn, schedule_id, body):
+        from docsgpt.api.user.schedules.routes import ScheduleResource
+
+        with _patch_db(conn), app.test_request_context(
+            f"/api/schedules/{schedule_id}", method="PUT", json=body,
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            return ScheduleResource().put(schedule_id)
+
+    def test_moves_run_at_and_next_run_at(self, app, pg_conn):
+        s = self._once(pg_conn)
+        new_fire = (_now() + timedelta(hours=5)).replace(microsecond=0)
+        resp = self._put(
+            app, pg_conn, str(s["id"]), {"run_at": new_fire.isoformat()},
+        )
+        assert resp.status_code == 200
+        row = SchedulesRepository(pg_conn).get(str(s["id"]), "u1")
+        assert _as_dt(row["run_at"]) == new_fire
+        assert _as_dt(row["next_run_at"]) == new_fire
+
+    def test_naive_run_at_uses_the_effective_timezone(self, app, pg_conn):
+        s = self._once(pg_conn, tz="UTC")
+        local = (_now() + timedelta(days=2)).astimezone(
+            __import__("zoneinfo").ZoneInfo("America/New_York"),
+        ).replace(microsecond=0, tzinfo=None)
+        resp = self._put(
+            app, pg_conn, str(s["id"]),
+            {"run_at": local.isoformat(), "timezone": "America/New_York"},
+        )
+        assert resp.status_code == 200
+        row = SchedulesRepository(pg_conn).get(str(s["id"]), "u1")
+        expected = local.replace(
+            tzinfo=__import__("zoneinfo").ZoneInfo("America/New_York"),
+        ).astimezone(timezone.utc)
+        assert _as_dt(row["run_at"]) == expected
+        assert row["timezone"] == "America/New_York"
+
+    def test_rejects_past_run_at(self, app, pg_conn):
+        s = self._once(pg_conn)
+        past = (_now() - timedelta(minutes=5)).isoformat()
+        resp = self._put(app, pg_conn, str(s["id"]), {"run_at": past})
+        assert resp.status_code == 400
+        assert "past" in resp.get_json()["message"]
+
+    def test_rejects_beyond_horizon(self, app, pg_conn):
+        s = self._once(pg_conn)
+        far = (_now() + timedelta(days=4000)).isoformat()
+        resp = self._put(app, pg_conn, str(s["id"]), {"run_at": far})
+        assert resp.status_code == 400
+        assert "horizon" in resp.get_json()["message"]
+
+    def test_rejects_invalid_run_at(self, app, pg_conn):
+        s = self._once(pg_conn)
+        resp = self._put(app, pg_conn, str(s["id"]), {"run_at": "tomorrow"})
+        assert resp.status_code == 400
+
+    def test_rejects_run_at_on_recurring(self, app, pg_conn):
+        agent_id = _make_agent(pg_conn)
+        s = SchedulesRepository(pg_conn).create(
+            user_id="u1", agent_id=agent_id, trigger_type="recurring",
+            instruction="i", cron="0 9 * * *",
+            next_run_at=_now() + timedelta(hours=1),
+        )
+        resp = self._put(
+            app, pg_conn, str(s["id"]),
+            {"run_at": (_now() + timedelta(hours=5)).isoformat()},
+        )
+        assert resp.status_code == 400
+        assert "one-time" in resp.get_json()["message"]
+
+    def test_paused_task_keeps_next_run_at_empty(self, app, pg_conn):
+        s = self._once(pg_conn, status="paused")
+        new_fire = (_now() + timedelta(hours=5)).replace(microsecond=0)
+        resp = self._put(
+            app, pg_conn, str(s["id"]), {"run_at": new_fire.isoformat()},
+        )
+        assert resp.status_code == 200
+        row = SchedulesRepository(pg_conn).get(str(s["id"]), "u1")
+        assert _as_dt(row["run_at"]) == new_fire
+        assert row["next_run_at"] is None
+
+    @pytest.mark.parametrize("status", ["completed", "cancelled"])
+    def test_finished_task_cannot_be_rescheduled(self, app, pg_conn, status):
+        s = self._once(pg_conn, status=status)
+        resp = self._put(
+            app, pg_conn, str(s["id"]),
+            {"run_at": (_now() + timedelta(hours=5)).isoformat()},
+        )
+        assert resp.status_code == 409
+
+    def test_task_already_dispatched_cannot_be_rescheduled(self, app, pg_conn):
+        s = self._once(pg_conn)
+        pg_conn.execute(
+            text("UPDATE schedules SET next_run_at = NULL WHERE id = CAST(:id AS uuid)"),
+            {"id": str(s["id"])},
+        )
+        resp = self._put(
+            app, pg_conn, str(s["id"]),
+            {"run_at": (_now() + timedelta(hours=5)).isoformat()},
+        )
+        assert resp.status_code == 409
+        row = SchedulesRepository(pg_conn).get(str(s["id"]), "u1")
+        assert row["next_run_at"] is None
+
+    def test_dispatch_between_read_and_write_returns_409(self, app, pg_conn):
+        """The dispatcher claims the task after the PUT read it as pending."""
+        from docsgpt.api.user.schedules import routes
+
+        s = self._once(pg_conn)
+        original_run_at = SchedulesRepository(pg_conn).get(str(s["id"]), "u1")["run_at"]
+        real_schedule_for = routes._schedule_for
+
+        def read_then_dispatch(conn, schedule_id, user_id):
+            row, acting = real_schedule_for(conn, schedule_id, user_id)
+            conn.execute(
+                text(
+                    "UPDATE schedules SET next_run_at = NULL, last_run_at = now() "
+                    "WHERE id = CAST(:id AS uuid)"
+                ),
+                {"id": schedule_id},
+            )
+            return row, acting
+
+        with patch.object(routes, "_schedule_for", read_then_dispatch):
+            resp = self._put(
+                app, pg_conn, str(s["id"]),
+                {"run_at": (_now() + timedelta(hours=5)).isoformat(), "name": "moved"},
+            )
+        assert resp.status_code == 409
+        row = SchedulesRepository(pg_conn).get(str(s["id"]), "u1")
+        assert row["next_run_at"] is None
+        assert row["run_at"] == original_run_at
+        assert row["name"] is None
+
+    def test_pause_between_read_and_write_keeps_next_run_at_empty(self, app, pg_conn):
+        """A pause after the read must not be re-armed by the reschedule."""
+        from docsgpt.api.user.schedules import routes
+
+        s = self._once(pg_conn)
+        real_schedule_for = routes._schedule_for
+
+        def read_then_pause(conn, schedule_id, user_id):
+            row, acting = real_schedule_for(conn, schedule_id, user_id)
+            conn.execute(
+                text(
+                    "UPDATE schedules SET status = 'paused', next_run_at = NULL "
+                    "WHERE id = CAST(:id AS uuid)"
+                ),
+                {"id": schedule_id},
+            )
+            return row, acting
+
+        with patch.object(routes, "_schedule_for", read_then_pause):
+            resp = self._put(
+                app, pg_conn, str(s["id"]),
+                {"run_at": (_now() + timedelta(hours=5)).isoformat()},
+            )
+        assert resp.status_code == 409
+        row = SchedulesRepository(pg_conn).get(str(s["id"]), "u1")
+        assert row["status"] == "paused"
+        assert row["next_run_at"] is None
+
+
 class TestRunList:
     def test_list_owner_scoped(self, app, pg_conn):
         from docsgpt.api.user.schedules.routes import ScheduleRunList

@@ -1,3 +1,15 @@
+# The DocsGPT API (which also serves the web UI) and the Celery worker.
+#
+# Both pods skip the in-app schema bootstrap (AUTO_MIGRATE / AUTO_CREATE_DB =
+# false): the `postgres-init` Job under deployment/k8s/jobs/ migrates the
+# database, so replicas never race each other on a rollout. A
+# `wait-for-migrations` init container holds each pod until the schema is at
+# exactly the revision its image ships. Rolling back to an older image
+# therefore waits until the database is restored or downgraded to that
+# revision (see "Rolling back" in the Kubernetes guide).
+#
+# Uploads are stored in the bucket named in docsgpt-secrets (STORAGE_TYPE=s3)
+# and vectors in pgvector, so any number of API and worker replicas share them.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,23 +25,104 @@ spec:
         app: docsgpt-api
     spec:
       initContainers:
-      # Block pod start until Postgres accepts connections. The `postgres-init`
-      # Job is responsible for running alembic migrations; this container only
-      # waits for the server to be reachable.
-      - name: wait-for-postgres
-        image: postgres:16-alpine
+      # Refuse to start while docsgpt-secrets is not filled in.
+      - name: check-secrets
+        image: arc53/docsgpt:0.21.0
+        envFrom:
+        - secretRef:
+            name: docsgpt-secrets
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"
         command:
           - sh
           - -c
           - |
-            until pg_isready -h postgres -p 5432 -U docsgpt -d docsgpt; do
-              echo "Waiting for postgres..."; sleep 2;
+            problems=""
+            fail() { problems="$problems
+              - $1"; }
+            for key in $(env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*REPLACE_ME.*/\1/p' | sort -u); do
+              fail "$key still contains REPLACE_ME"
             done
+            for key in INTERNAL_KEY JWT_SECRET_KEY ENCRYPTION_SECRET_KEY POSTGRES_URI; do
+              eval "value=\${$key:-}"
+              [ -n "$value" ] || fail "$key is empty or missing"
+            done
+            storage=$(printf '%s' "${STORAGE_TYPE:-local}" | tr '[:upper:]' '[:lower:]')
+            if [ "$storage" = "s3" ] && [ -z "${S3_BUCKET_NAME:-}" ]; then
+              fail "S3_BUCKET_NAME is empty or missing while STORAGE_TYPE is s3"
+            fi
+            case "${POSTGRES_URI:-}" in
+              *@postgres:*|*@postgres/*)
+                case "$POSTGRES_URI" in
+                  *":${POSTGRES_PASSWORD:-}@postgres"[:/]*) ;;
+                  *) fail "the password in POSTGRES_URI does not match POSTGRES_PASSWORD" ;;
+                esac ;;
+            esac
+            if [ -n "$problems" ]; then
+              echo "docsgpt-secrets is not filled in:$problems" >&2
+              echo "Fix deployment/k8s/docsgpt-secrets.yaml and apply it (see the Kubernetes guide)." >&2
+              exit 1
+            fi
+      # Block pod start until the postgres-init Job has migrated the database
+      # to the schema this image needs. On an upgrade, the old pods keep
+      # serving until then.
+      - name: wait-for-migrations
+        image: arc53/docsgpt:0.21.0
+        envFrom:
+        - secretRef:
+            name: docsgpt-secrets
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        command:
+          - python
+          - -c
+          - |
+            import time
+            from pathlib import Path
+
+            import docsgpt
+            from alembic.runtime.migration import MigrationContext
+            from alembic.script import ScriptDirectory
+            from sqlalchemy import create_engine
+
+            from docsgpt.core.settings import settings
+
+            head = ScriptDirectory(str(Path(docsgpt.__file__).parent / "alembic")).get_current_head()
+            engine = None
+            while True:
+                try:
+                    if engine is None:
+                        engine = create_engine(settings.POSTGRES_URI, pool_pre_ping=True)
+                    with engine.connect() as conn:
+                        current = MigrationContext.configure(conn).get_current_revision()
+                except Exception as exc:
+                    current = "unreachable (%s)" % exc.__class__.__name__
+                if current == head:
+                    break
+                print("Waiting for job/postgres-init: schema at %s, this image needs %s" % (current, head), flush=True)
+                time.sleep(5)
       containers:
       - name: docsgpt-api
-        image: arc53/docsgpt
+        image: arc53/docsgpt:0.21.0
         ports:
         - containerPort: 7091
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 7091
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
         resources:
           limits:
             memory: "4Gi"
@@ -41,18 +134,8 @@ spec:
         - secretRef:
             name: docsgpt-secrets
         env:
-        - name: FLASK_APP
-          value: "docsgpt/app.py"
         - name: DEPLOYMENT_TYPE
           value: "cloud"
-        - name: POSTGRES_URI
-          valueFrom:
-            secretKeyRef:
-              name: docsgpt-secrets
-              key: POSTGRES_URI
-        # Disable in-app auto-bootstrap. The `postgres-init` Job under
-        # deployment/k8s/jobs/ owns schema creation and Alembic migrations,
-        # so application pods must not race with it on rollout.
         - name: AUTO_MIGRATE
           value: "false"
         - name: AUTO_CREATE_DB
@@ -73,21 +156,104 @@ spec:
         app: docsgpt-worker
     spec:
       initContainers:
-      - name: wait-for-postgres
-        image: postgres:16-alpine
+      # Refuse to start while docsgpt-secrets is not filled in.
+      - name: check-secrets
+        image: arc53/docsgpt:0.21.0
+        envFrom:
+        - secretRef:
+            name: docsgpt-secrets
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"
         command:
           - sh
           - -c
           - |
-            until pg_isready -h postgres -p 5432 -U docsgpt -d docsgpt; do
-              echo "Waiting for postgres..."; sleep 2;
+            problems=""
+            fail() { problems="$problems
+              - $1"; }
+            for key in $(env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*REPLACE_ME.*/\1/p' | sort -u); do
+              fail "$key still contains REPLACE_ME"
             done
+            for key in INTERNAL_KEY JWT_SECRET_KEY ENCRYPTION_SECRET_KEY POSTGRES_URI; do
+              eval "value=\${$key:-}"
+              [ -n "$value" ] || fail "$key is empty or missing"
+            done
+            storage=$(printf '%s' "${STORAGE_TYPE:-local}" | tr '[:upper:]' '[:lower:]')
+            if [ "$storage" = "s3" ] && [ -z "${S3_BUCKET_NAME:-}" ]; then
+              fail "S3_BUCKET_NAME is empty or missing while STORAGE_TYPE is s3"
+            fi
+            case "${POSTGRES_URI:-}" in
+              *@postgres:*|*@postgres/*)
+                case "$POSTGRES_URI" in
+                  *":${POSTGRES_PASSWORD:-}@postgres"[:/]*) ;;
+                  *) fail "the password in POSTGRES_URI does not match POSTGRES_PASSWORD" ;;
+                esac ;;
+            esac
+            if [ -n "$problems" ]; then
+              echo "docsgpt-secrets is not filled in:$problems" >&2
+              echo "Fix deployment/k8s/docsgpt-secrets.yaml and apply it (see the Kubernetes guide)." >&2
+              exit 1
+            fi
+      # Block pod start until the postgres-init Job has migrated the database
+      # to the schema this image needs. On an upgrade, the old pods keep
+      # serving until then.
+      - name: wait-for-migrations
+        image: arc53/docsgpt:0.21.0
+        envFrom:
+        - secretRef:
+            name: docsgpt-secrets
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        command:
+          - python
+          - -c
+          - |
+            import time
+            from pathlib import Path
+
+            import docsgpt
+            from alembic.runtime.migration import MigrationContext
+            from alembic.script import ScriptDirectory
+            from sqlalchemy import create_engine
+
+            from docsgpt.core.settings import settings
+
+            head = ScriptDirectory(str(Path(docsgpt.__file__).parent / "alembic")).get_current_head()
+            engine = None
+            while True:
+                try:
+                    if engine is None:
+                        engine = create_engine(settings.POSTGRES_URI, pool_pre_ping=True)
+                    with engine.connect() as conn:
+                        current = MigrationContext.configure(conn).get_current_revision()
+                except Exception as exc:
+                    current = "unreachable (%s)" % exc.__class__.__name__
+                if current == head:
+                    break
+                print("Waiting for job/postgres-init: schema at %s, this image needs %s" % (current, head), flush=True)
+                time.sleep(5)
       containers:
       - name: docsgpt-worker
-        image: arc53/docsgpt
-        # `parsing` queue carries read_document/parse_document; required for its await to resolve.
-        # For heavy/OCR parsing, run a separate deployment with `-Q parsing` (and GPU env).
-        command: ["celery", "-A", "docsgpt.app.celery", "worker", "-l", "INFO", "-n", "worker.%h", "-Q", "docsgpt,parsing,embeddings"]
+        image: arc53/docsgpt:0.21.0
+        # -B embeds the beat scheduler, which fires scheduled agent runs, source
+        # syncs, reconciliation and cleanups. It is safe on every replica: the
+        # RedBeat lock in Redis lets only one of them schedule at a time.
+        # The queues: docsgpt (ingestion and app tasks), parsing (read_document)
+        # and embeddings (query embedding for the API; without it every search
+        # times out). For heavy or OCR parsing, run a separate Deployment with
+        # `-Q parsing`.
+        command: ["celery", "-A", "docsgpt.app.celery", "worker", "-B", "-l", "INFO", "-n", "worker.%h",
+                  "-Q", "docsgpt,parsing,embeddings"]
         resources:
           limits:
             memory: "4Gi"
@@ -101,49 +267,10 @@ spec:
         env:
         - name: DEPLOYMENT_TYPE
           value: "cloud"
+        # The worker hands finished indexes to the API over the in-cluster Service.
         - name: API_URL
-          value: "http://<your-api-endpoint>"
-        - name: POSTGRES_URI
-          valueFrom:
-            secretKeyRef:
-              name: docsgpt-secrets
-              key: POSTGRES_URI
-        # Disable in-app auto-bootstrap. The `postgres-init` Job under
-        # deployment/k8s/jobs/ owns schema creation and Alembic migrations,
-        # so application pods must not race with it on rollout.
+          value: "http://docsgpt-api-service"
         - name: AUTO_MIGRATE
           value: "false"
         - name: AUTO_CREATE_DB
           value: "false"
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: docsgpt-frontend
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: docsgpt-frontend
-  template:
-    metadata:
-      labels:
-        app: docsgpt-frontend
-    spec:
-      containers:
-      - name: docsgpt-frontend
-        image: arc53/docsgpt-fe
-        ports:
-        - containerPort: 5173
-        resources:
-          limits:
-            memory: "1Gi"
-            cpu: "1"
-          requests:
-            memory: "256Mi"
-            cpu: "100m"
-        env:
-        - name: VITE_API_HOST
-          value: "http://<your-api-endpoint>"
-        - name: VITE_API_STREAMING
-          value: "true"

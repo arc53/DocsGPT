@@ -102,6 +102,12 @@ def _resolve_ocr_engine(requested: Optional[str]) -> str:
             f"Unknown OCR_ENGINE {engine!r}; using docling auto-selection"
         )
         return "auto"
+    if engine == "deepseek":
+        # DeepSeek-OCR runs only on the native backend (ocr_parser.py), which
+        # resolve_ocr_backend always picks for it; a docling parser built with
+        # it anyway (a direct construction) OCRs with docling's own engine.
+        logger.warning("OCR_ENGINE=deepseek runs on the native OCR backend, not docling; using docling auto-selection")
+        return "auto"
     if engine == "tesseract" and shutil.which("tesseract") is None:
         logger.warning(
             "OCR_ENGINE=tesseract but no tesseract binary is on PATH (install "
@@ -137,7 +143,7 @@ def _build_ocr_options(
     ``force_full_page_ocr`` onto whatever options end up active.
 
     Args:
-        engine: A ``_resolve_ocr_engine`` result other than ``deepseek``.
+        engine: A ``_resolve_ocr_engine`` result.
         languages: Engine-specific language list; None uses the engine's
             default (tesseract reads ``settings.OCR_LANGS``).
         force_full_page_ocr: OCR whole pages instead of only bitmap regions.
@@ -455,7 +461,8 @@ class DoclingParser(BaseParser):
             table_structure: Enable table structure recognition
             export_format: Output format ('markdown', 'text', 'html')
             ocr_engine: OCR engine when OCR is enabled — one of
-                ``tesseract | auto | ocrmac | rapidocr | deepseek``. None
+                ``tesseract | auto | ocrmac | rapidocr`` (``deepseek`` belongs
+                to the native backend and becomes ``auto`` here). None
                 reads ``settings.OCR_ENGINE`` at converter build time; an
                 unavailable engine degrades to docling's auto-selection with
                 a warning.
@@ -483,7 +490,6 @@ class DoclingParser(BaseParser):
           PDF pipeline (layout + TableFormer) with that engine's OCR options.
           ``force_full_page_ocr=False`` (default) OCRs only the bitmap regions
           the layout model finds; True routes whole pages through OCR.
-        - ``deepseek``: the VLM pipeline instead (``_create_vlm_converter``).
 
         Returns:
             DocumentConverter instance
@@ -500,8 +506,6 @@ class DoclingParser(BaseParser):
 
         engine = _resolve_ocr_engine(self.ocr_engine) if self.ocr_enabled else None
         self._active_ocr_engine = engine
-        if engine == "deepseek":
-            return self._create_vlm_converter()
 
         pipeline_options = PdfPipelineOptions(
             do_ocr=self.ocr_enabled,
@@ -530,51 +534,6 @@ class DoclingParser(BaseParser):
                 ),
                 InputFormat.IMAGE: ImageFormatOption(
                     pipeline_options=pipeline_options,
-                ),
-            }
-        )
-
-    def _create_vlm_converter(self):
-        """DeepSeek-OCR converter via docling's VLM pipeline.
-
-        Each page goes to an OpenAI-compatible endpoint (Ollama or vLLM;
-        ``OCR_DEEPSEEK_URL`` / ``OCR_DEEPSEEK_MODEL``) and the grounded output
-        is parsed back into a DoclingDocument. This replaces the *entire*
-        classic pipeline — no layout/TableFormer/OCR models load in the worker
-        (~370 MB RSS vs 1.0-1.6 GB measured), the compute lives in the model
-        server. Bench trade-offs (2026-08): best table/CJK/degraded-scan
-        quality of every engine tried, ~10-20 s/page on modest hardware, and
-        occasional silent drops of page-level elements (titles).
-        """
-        from docling.datamodel import vlm_model_specs
-        from docling.datamodel.pipeline_options import VlmPipelineOptions
-        from docling.document_converter import (
-            DocumentConverter,
-            ImageFormatOption,
-            InputFormat,
-            PdfFormatOption,
-        )
-        from docling.pipeline.vlm_pipeline import VlmPipeline
-
-        from docsgpt.core.settings import settings
-
-        vlm_options = vlm_model_specs.DEEPSEEKOCR_OLLAMA.model_copy(deep=True)
-        vlm_options.url = settings.OCR_DEEPSEEK_URL
-        vlm_options.params["model"] = settings.OCR_DEEPSEEK_MODEL
-        # docling's spec default is 90 s per request, which a laptop-hosted
-        # 3B model overruns; honour the same per-page budget the native
-        # backend gives the endpoint.
-        vlm_options.timeout = float(settings.OCR_DEEPSEEK_TIMEOUT)
-        pipeline_options = VlmPipelineOptions(
-            vlm_options=vlm_options, enable_remote_services=True
-        )
-        return DocumentConverter(
-            format_options={
-                InputFormat.PDF: PdfFormatOption(
-                    pipeline_cls=VlmPipeline, pipeline_options=pipeline_options
-                ),
-                InputFormat.IMAGE: ImageFormatOption(
-                    pipeline_cls=VlmPipeline, pipeline_options=pipeline_options
                 ),
             }
         )

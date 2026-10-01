@@ -174,6 +174,57 @@ class TestAdminPolicies:
                     pg_conn, "bob", catalog.get_definition("telegram"), {"token": "long-enough-token"},
                 )
 
+    def test_a_policy_change_is_audited(self, app, pg_conn):
+        """Admin mutations go to auth_events, so the activity feed shows who switched a connector off."""
+        from docsgpt.api.admin.connectors import AdminConnectorsResource
+
+        with _db(pg_conn):
+            resp = _call(app, AdminConnectorsResource, "put", "/api/admin/connectors", roles=["admin"], body={
+                "policies": {"telegram": {"enabled": False, "credential_mode": "member"}},
+                "allow_custom_mcp": False,
+            })
+        assert resp.status_code == 200
+        rows = pg_conn.execute(
+            text("SELECT user_id, actor_id, target_id, metadata FROM auth_events WHERE event = 'connector_policy_set'")
+        ).fetchall()
+        assert len(rows) == 1
+        user_id, actor_id, target_id, metadata = rows[0]
+        assert user_id == "alice" and actor_id == "alice" and target_id is None
+        assert metadata["policies"] == {"telegram": {"enabled": False, "credential_mode": "member"}}
+        assert metadata["allow_custom_mcp"] is False
+        assert metadata["by"] == "alice" and metadata["via"] == "admin_api"
+
+    def test_a_put_that_changes_nothing_is_not_audited(self, app, pg_conn):
+        from docsgpt.api.admin.connectors import AdminConnectorsResource
+
+        body = {"policies": {"telegram": {"enabled": False}}, "allow_custom_mcp": False}
+        with _db(pg_conn):
+            for _ in range(2):
+                resp = _call(app, AdminConnectorsResource, "put", "/api/admin/connectors", roles=["admin"], body=body)
+                assert resp.status_code == 200
+            resp = _call(app, AdminConnectorsResource, "put", "/api/admin/connectors", roles=["admin"],
+                         body={"policies": {}})
+            assert resp.status_code == 200
+        rows = pg_conn.execute(
+            text("SELECT metadata FROM auth_events WHERE event = 'connector_policy_set'")
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0][0]["changes"] == {
+            "telegram": {"enabled": [True, False]},
+            "allow_custom_mcp": [True, False],
+        }
+
+    def test_a_rejected_policy_change_is_not_audited(self, app, pg_conn):
+        from docsgpt.api.admin.connectors import AdminConnectorsResource
+
+        with _db(pg_conn):
+            resp = _call(app, AdminConnectorsResource, "put", "/api/admin/connectors", roles=["admin"], body={
+                "policies": {"no-such-connector": {"enabled": False}},
+            })
+        assert resp.status_code == 400
+        count = pg_conn.execute(text("SELECT count(*) FROM auth_events WHERE event = 'connector_policy_set'"))
+        assert count.scalar() == 0
+
     def test_a_preset_server_on_a_key_follows_the_preset_switch(self, app, pg_conn):
         """A key-based connection to a preset's server is that preset, not a
         custom server: turning custom servers off leaves it alone, and turning

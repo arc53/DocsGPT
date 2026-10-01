@@ -29,15 +29,20 @@ class OpenAIEmbeddings:
         """Build the client, routing to Azure when the Azure settings are set.
 
         Args:
-            openai_api_key: API key; falls back to ``EMBEDDINGS_KEY`` then
-                ``OPENAI_API_KEY``.
+            openai_api_key: API key; falls back to ``EMBEDDINGS_KEY``, then
+                ``OPENAI_API_KEY``, then the LLM's ``API_KEY`` when
+                ``LLM_PROVIDER`` is ``openai`` (the same key serves both).
             model: Model name, or the Azure deployment name when running
                 against Azure.
         """
+        # The generic API_KEY is only an OpenAI key when the LLM provider is
+        # OpenAI; for any other provider it must not be sent to OpenAI.
+        llm_key = settings.API_KEY if settings.LLM_PROVIDER == "openai" else None
         api_key = (
             openai_api_key
             or settings.EMBEDDINGS_KEY
             or settings.OPENAI_API_KEY
+            or llm_key
             or NO_API_KEY
         )
         self.model = model or DEFAULT_MODEL

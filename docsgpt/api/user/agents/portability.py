@@ -1734,7 +1734,10 @@ def _read_import_payload(req):
             data.get("yaml") or data.get("content") or "",
             resolution if isinstance(resolution, dict) else {},
         )
-    if "file" in req.files:
+    # Only a multipart body may hold a ``file`` field. Looking for one in any
+    # other body makes Werkzeug parse it as a form and use up the stream, so
+    # ``curl --data-binary @agent.yaml`` (sent as form-urlencoded) read empty.
+    if content_type.startswith("multipart/form-data") and "file" in req.files:
         raw = req.files["file"].read(MAX_IMPORT_BYTES + 1)
         if len(raw) > MAX_IMPORT_BYTES:
             raise AgentImportError("Import document too large")
@@ -1841,7 +1844,7 @@ class ImportAgentPlan(Resource):
 
 @agents_portability_ns.route("/import_agent")
 class ImportAgent(Resource):
-    @api.doc(description="Import an agent from YAML (created as a draft)")
+    @api.doc(description="Import an agent from YAML: create a draft, or update the agent matched by id or slug")
     def post(self):
         if not (decoded_token := request.decoded_token):
             return make_response(jsonify({"success": False}), 401)

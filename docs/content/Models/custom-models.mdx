@@ -1,0 +1,102 @@
+---
+title: Custom Models
+description: Add your own OpenAI-compatible model in Settings → Custom Models - the fields, Test connection, where the model appears, how its API key is stored, why only public endpoints are allowed, and the /api/user/models endpoints.
+---
+
+import { Callout } from 'nextra/components'
+
+# Custom Models
+
+**Settings → Custom Models** lets any signed-in user add a model from an OpenAI-compatible endpoint (Mistral, Together, a hosted vLLM, and so on) with their own API key. The model is private to that user: it appears in their model pickers next to the models the operator configured, and nobody else sees it.
+
+Operators who want a model available to everyone configure it on the server instead, with a [cloud provider key](/Models/cloud-providers), `OPENAI_BASE_URL`, or a model YAML in [`MODELS_CONFIG_DIR`](/Deploying/DocsGPT-Settings#adding-custom-models-models_config_dir).
+
+## Add a model
+
+1. Open **Settings → Custom Models** and click **Add Model**.
+2. Fill in the fields:
+
+   | Field | What to enter |
+   | --- | --- |
+   | **Display name** | The name shown in model pickers, for example `My Mistral`. |
+   | **Model ID** | The model name the provider's API expects, sent as-is, for example `mistral-large-latest`. |
+   | **Description** | Optional. |
+   | **Base URL** | The provider's OpenAI-compatible base URL, including the version path, for example `https://api.mistral.ai/v1`. DocsGPT appends `/chat/completions` (or `/responses`). Must be a public address; see [Public endpoints only](#public-endpoints-only). |
+   | **API key** | The key for that endpoint. Required: a model can't be saved without one. |
+
+3. Set the **Capabilities** so DocsGPT uses the model correctly:
+
+   | Capability | Default | Meaning |
+   | --- | --- | --- |
+   | **Tools** | on | The model supports function calling, so agents can give it tools. |
+   | **Structured output** | on | The model supports JSON-schema responses. |
+   | **Images** | off | The model accepts image attachments. |
+   | **Context window** | `128000` | Tokens the model accepts, between 1,000 and 10,000,000. DocsGPT uses it to decide when to compress conversation history. |
+   | **API protocol** | Chat Completions | `Chat Completions` (`/chat/completions`) or `Responses` (`/responses`). Most providers only offer Chat Completions. |
+   | **Reasoning effort** | Provider default | For reasoning models: `none`, `minimal`, `low`, `medium`, `high` or `xhigh`. Leave it at **Provider default** unless the model documents the parameter. |
+
+4. Click **Test connection**, then **Save**.
+
+**Test connection** sends a tiny request (`hi`, with a 1-token limit, or 16 for the Responses protocol) to the endpoint with the values currently in the form, before anything is saved, and shows **Connection successful.** or the provider's error. It times out after 5 seconds and doesn't follow redirects. When you edit a saved model, leave **API key** blank to test (and keep) the stored key.
+
+## Where the model appears
+
+Enabled custom models are listed next to the operator's models in:
+
+- the model picker when you start a chat without an agent,
+- the model selector in the agent builder and in workflow **AI Agent** nodes, where they are grouped under **My Models**,
+- the model lists in a source's settings (the GraphRAG extraction model, for example).
+
+An agent that uses your custom model keeps using it for everyone who can run the agent: team members you share it with and [agent API key](/API/agent-keys) callers. Their requests go to your endpoint with your key. If you delete the model, or its key can no longer be decrypted, the agent falls back to the instance's default model.
+
+To edit or delete a model, open the menu on its card in **Settings → Custom Models**. A model disabled through the API (`"enabled": false`) shows a **Disabled** badge and is hidden from the pickers.
+
+## Public endpoints only
+
+The base URL must resolve to a public address. DocsGPT refuses `localhost`, loopback, private (RFC 1918), link-local, carrier-grade NAT, multicast and reserved addresses, both when you save the model and on every request, and pins each request to the address it checked. This stops users from turning the instance into a proxy to its internal network. See [Outbound network access](/Deploying/Security#outbound-network-access).
+
+So a model running on the same machine or your LAN (a local Ollama, LM Studio or vLLM) can't be added here. Configure it as the operator instead, with `OPENAI_BASE_URL` or a model YAML, which aren't checked: see [Local inference](/Models/local-inference).
+
+## How the API key is stored
+
+The API key is encrypted with `ENCRYPTION_SECRET_KEY` and a per-user salt before it is written to the database, and the API never returns it. Set your own `ENCRYPTION_SECRET_KEY` before users add models; with the public default the keys are only as safe as that default (see [Secrets to set before going live](/Deploying/DocsGPT-Settings#secrets-to-set-before-going-live)).
+
+When the operator rotates the key, `docsgpt connectors reencrypt` rewrites custom-model keys along with connections and tool secrets. A model whose key neither the current nor the previous key opens is left out of the pickers until you edit it and enter the API key again.
+
+## API
+
+The same operations are available over the API. With a [personal access token](/API/personal-access-tokens), reading needs the `models:read` scope and every other call needs `models:write`.
+
+| Method and path | Does |
+| --- | --- |
+| `GET /api/models` | Lists every model available to the caller, including their custom models (`"source": "user"`). A token with `chat:run` can call it too. |
+| `GET /api/user/models` | Lists the caller's custom models. |
+| `POST /api/user/models` | Adds a model. |
+| `GET`, `PATCH`, `DELETE /api/user/models/<id>` | Reads, updates or deletes one model. In a `PATCH`, a missing or empty `api_key` keeps the stored key. |
+| `POST /api/user/models/test` | Tests unsaved values (`base_url`, `api_key`, `upstream_model_id`, optional `capabilities`). |
+| `POST /api/user/models/<id>/test` | Tests a saved model; any of `base_url`, `api_key` and `upstream_model_id` in the body override the stored values. |
+
+```bash
+curl -X POST https://your-docsgpt/api/user/models \
+  -H "Authorization: Bearer dgpt_pat_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "display_name": "My Mistral",
+    "upstream_model_id": "mistral-large-latest",
+    "base_url": "https://api.mistral.ai/v1",
+    "api_key": "YOUR_MISTRAL_KEY",
+    "capabilities": {
+      "supports_tools": true,
+      "supports_structured_output": true,
+      "attachments": [],
+      "context_window": 128000,
+      "api_flavor": "chat_completions"
+    }
+  }'
+```
+
+The response is the saved model without its key. Its `id` is what an agent's `default_model_id` stores. The test endpoints answer `200` with `{"ok": true}` or `{"ok": false, "error": "..."}`, and `400` when the base URL is refused, the capabilities are invalid, or a saved model's stored key can't be decrypted.
+
+<Callout type="info">
+There is no setting that turns Custom Models off: every signed-in user can add models.
+</Callout>

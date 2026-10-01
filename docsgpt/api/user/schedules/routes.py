@@ -184,6 +184,48 @@ def _user_id() -> Optional[str]:
     return decoded.get("sub")
 
 
+def _reschedule_once(
+    existing: Dict[str, Any], run_at_raw: Any, tz_override: Optional[str],
+) -> tuple[Dict[str, Any], Any]:
+    """Validate a new ``run_at`` for a one-time task and build its update.
+
+    Applies the same rules as creating a one-time task: a naive time is read
+    in the task's timezone (the one in the same request, if any), and the time
+    must be in the future and within ``SCHEDULE_ONCE_MAX_HORIZON``. An active
+    task is re-armed at the new time; a paused one keeps ``next_run_at`` empty
+    so that resuming it picks the new ``run_at`` up.
+
+    Args:
+        existing: The stored schedule row.
+        run_at_raw: The ``run_at`` value from the request body.
+        tz_override: The timezone sent in the same request, if any.
+
+    Returns:
+        ``(fields, None)`` with the columns to update, or ``({}, response)``
+        with the error response to return.
+    """
+    if existing.get("trigger_type") != "once":
+        return {}, _err(
+            "run_at can only be changed on a one-time task; "
+            "change a recurring schedule's cron instead",
+        )
+    status = existing.get("status")
+    if status in ("completed", "cancelled"):
+        return {}, _err(f"a {status} task can't be rescheduled", 409)
+    if status == "active" and existing.get("next_run_at") is None:
+        return {}, _err("the task is already running and can't be rescheduled", 409)
+    tz_name = tz_override or existing.get("timezone") or "UTC"
+    try:
+        fire = parse_run_at(run_at_raw, tz_name)
+        clamp_once_horizon(fire, settings.SCHEDULE_ONCE_MAX_HORIZON)
+    except ScheduleValidationError as exc:
+        return {}, _err(str(exc))
+    fields: Dict[str, Any] = {"run_at": fire}
+    if status == "active":
+        fields["next_run_at"] = fire
+    return fields, None
+
+
 def _publish_schedule_event(
     user_id: str, event_type: str, schedule_id: str, *, status: str,
 ) -> None:
@@ -514,6 +556,13 @@ class ScheduleResource(Resource):
                 existing, acting = _schedule_for(conn, schedule_id, user_id)
             except AccessDenied as denied:
                 return _err(denied.message, denied.status)
+            if "run_at" in data:
+                rescheduled, error = _reschedule_once(
+                    existing, data["run_at"], fields_in.get("timezone"),
+                )
+                if error is not None:
+                    return error
+                fields_in.update(rescheduled)
             if (
                 ("cron" in fields_in or "timezone" in fields_in)
                 and existing.get("trigger_type") == "recurring"
@@ -538,9 +587,20 @@ class ScheduleResource(Resource):
                         )
                     except ScheduleValidationError as exc:
                         return _err(str(exc))
+            # A reschedule only lands on a task that is still pending: the
+            # dispatcher may have claimed it (or someone paused it) since it
+            # was read above, and re-arming it then would lose the edit.
             updated = SchedulesRepository(conn).update(
                 schedule_id, acting, fields_in,
+                pending_once_status=(
+                    existing.get("status") if "run_at" in data else None
+                ),
             )
+            if updated is None and "run_at" in data:
+                return _err(
+                    "the task started or changed while you edited it; reload and try again",
+                    409,
+                )
         return _ok({"schedule": _format_schedule(updated or {})})
 
     @api.doc(description="Pause / resume a schedule.")

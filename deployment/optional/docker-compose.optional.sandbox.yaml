@@ -6,15 +6,16 @@
 # kernels, never child containers, and the Docker socket is NOT mounted) and
 # wires the app to it.
 #
-# Apply on top of the base stack (order matters -- base first):
-#   docker compose -f deployment/docker-compose.yaml \
-#     -f deployment/optional/docker-compose.optional.sandbox.yaml up
+# Apply on top of the base stack from the repository root (order matters -- base first):
+#   docker compose --env-file .env -f deployment/docker-compose.yaml \
+#     -f deployment/optional/docker-compose.optional.sandbox.yaml up -d
 #
 # REQUIRED: set a shared gateway token before starting. The runner's gateway
 # authenticates every HTTP + WebSocket request with it (so kernel code cannot
 # reach the gateway control API over loopback -- enumerate/kill sibling kernels
 # or bypass the session cap), and the app sends it as `Authorization: token`.
-# Compose fails to start if it is unset. Put it in `deployment/.env` or export it:
+# Compose fails to start if it is unset. Put it in the root `.env` (read through
+# `--env-file .env`) or export it:
 #   export SANDBOX_GATEWAY_AUTH_TOKEN=$(openssl rand -hex 32)
 #
 # SECURITY POSTURE (single trust domain): all sessions share this one

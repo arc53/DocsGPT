@@ -3,6 +3,8 @@ title: Connecting DocsGPT to Cloud LLM Providers
 description: Connect DocsGPT to various Cloud Large Language Model (LLM) providers to power your document Q&A.
 ---
 
+import { Callout } from 'nextra/components'
+
 # Connecting DocsGPT to Cloud LLM Providers
 
 DocsGPT is designed to seamlessly integrate with a variety of Cloud Large Language Model (LLM) providers, giving you access to state-of-the-art AI models for document question answering.
@@ -13,52 +15,86 @@ The primary method for configuring your LLM provider in DocsGPT is through the `
 
 To connect to a cloud LLM provider, you will typically need to configure the following basic settings in your `.env` file:
 
-*   **`LLM_PROVIDER`**:  This setting is essential and identifies the specific cloud provider you wish to use (e.g., `openai`, `google`, `anthropic`).
-*   **`LLM_NAME`**:  Specifies the exact model you want to utilize from your chosen provider (e.g., `gpt-5.1`, `gemini-3.5-flash`, `claude-3-5-sonnet-20241022`).  Refer to your provider's documentation for a list of available models.
-*   **`API_KEY`**:  Almost all cloud LLM providers require an API key for authentication. Obtain your API key from your chosen provider's platform and securely store it in your `.env` file.
+*   **`LLM_PROVIDER`**:  The provider whose models answer by default (for example `openai`, `google`, `anthropic`).
+*   **`API_KEY`**:  Your API key for that provider. You can use the provider's own variable instead, such as `OPENAI_API_KEY` (see [Provider API keys](#provider-api-keys)).
+*   **`LLM_NAME`** (optional):  The default model. It must be a model id from DocsGPT's [model catalog](https://github.com/arc53/DocsGPT/tree/main/docsgpt/core/models), such as `gpt-5.5`, `gemini-3.5-flash` or `claude-sonnet-4-6`, or from your own [custom model YAML](/Deploying/DocsGPT-Settings#adding-custom-models-models_config_dir). A name that is not in the catalog is ignored, and DocsGPT logs a warning and uses the provider's first model. Leave it unset to use that first model.
+
+For example:
+
+```
+LLM_PROVIDER=openai
+API_KEY=YOUR_OPENAI_API_KEY
+LLM_NAME=gpt-5.5
+```
+
+<Callout type="warning">
+If DocsGPT cannot register a model for the provider you chose, for example because the key is missing or `LLM_PROVIDER` is misspelled, the default model is the hosted DocsGPT model and chats are sent to the public DocsGPT API. The API and the worker log an `ERROR` at startup when this happens, and `docsgpt doctor` reports it as a failure. Check the startup log after changing providers.
+</Callout>
 
 ## Explicitly Supported Cloud Providers
 
-DocsGPT offers direct, streamlined support for the following cloud LLM providers, making configuration straightforward.  The table below outlines the `LLM_PROVIDER` and example `LLM_NAME` values to use for each provider in your `.env` file.
+DocsGPT offers direct, streamlined support for the following cloud LLM providers. The table below outlines the `LLM_PROVIDER` value and an example `LLM_NAME` (a catalog id) for each provider.
 
-| Provider                     | `LLM_PROVIDER` | Example `LLM_NAME`          |
-| :--------------------------- | :------------- | :-------------------------- |
-| DocsGPT Public API           | `docsgpt`      | `None`                      |
-| OpenAI                       | `openai`       | `gpt-5.1`                   |
-| OpenAI-compatible (BYOM)     | `openai_compatible` | (any; with per-model `base_url`/`api_key`) |
-| Google (Vertex AI, Gemini)   | `google`       | `gemini-3.5-flash`          |
-| Anthropic (Claude)           | `anthropic`    | `claude-3-5-sonnet-20241022`|
-| Groq                         | `groq`         | `llama-3.3-70b-versatile`   |
-| OpenRouter                   | `openrouter`   | (See OpenRouter docs)       |
-| Novita AI                    | `novita`       | (See Novita docs)           |
-| HuggingFace Inference API    | `huggingface`  | `meta-llama/Llama-3.1-8B-Instruct` |
+| Provider                          | `LLM_PROVIDER` | Example `LLM_NAME`          |
+| :-------------------------------- | :------------- | :-------------------------- |
+| DocsGPT Public API                | `docsgpt`      | unset                       |
+| OpenAI                            | `openai`       | `gpt-5.5`                   |
+| Google Gemini (AI Studio API key) | `google`       | `gemini-3.5-flash`          |
+| Anthropic (Claude)                | `anthropic`    | `claude-sonnet-4-6`         |
+| Groq                              | `groq`         | `llama-3.3-70b-versatile`   |
+| OpenRouter                        | `openrouter`   | `deepseek/deepseek-v3.2`    |
+| Novita AI                         | `novita`       | `moonshotai/kimi-k2.6`      |
 
-DocsGPT also ships a **model catalog** (`docsgpt/core/models/*.yaml`) that the in-app model picker reads, so common models from these providers — including DeepSeek — appear ready to select once the matching API key is set.
+The Google provider uses a Gemini API key from Google AI Studio. Vertex AI credentials (a project, a location and a service account) are not supported.
+
+DocsGPT also ships a **model catalog** (`docsgpt/core/models/*.yaml`) that the in-app model picker reads. It includes DeepSeek, Alibaba Qwen and Z.ai GLM models, which appear once their key is set; see the table below.
+
+## Provider API keys
+
+Each provider's models are registered when its key is set. `API_KEY` counts as the key of the provider named in `LLM_PROVIDER`; the other variables can be set together to offer several providers in the model picker.
+
+| Variable              | Models registered                                  |
+| :-------------------- | :------------------------------------------------- |
+| `OPENAI_API_KEY`      | OpenAI (`gpt-5.5`, `gpt-5.4-mini`, ...)            |
+| `ANTHROPIC_API_KEY`   | Anthropic (`claude-opus-4-7`, `claude-sonnet-4-6`, ...) |
+| `GOOGLE_API_KEY`      | Google Gemini (`gemini-3.1-pro-preview`, `gemini-3.5-flash`, ...) |
+| `GROQ_API_KEY`        | Groq                                               |
+| `OPEN_ROUTER_API_KEY` | OpenRouter                                         |
+| `NOVITA_API_KEY`      | Novita                                             |
+| `DEEPSEEK_API_KEY`    | DeepSeek (`deepseek-v4-flash`, `deepseek-v4-pro`)  |
+| `DASHSCOPE_API_KEY`   | Alibaba Qwen (`qwen3.8-max`)                       |
+| `ZAI_API_KEY`         | Z.ai GLM (`glm-5.3`)                               |
+
+`LLM_PROVIDER` still decides the default. With `LLM_PROVIDER=openai`, `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` both set, both providers appear in the picker and `gpt-5.5` is the default. To make a DeepSeek, Qwen or GLM model the default, set `LLM_NAME` to its id (for example `LLM_NAME=deepseek-v4-flash`).
+
+To add a provider or model that is not in the catalog, write a model YAML and load it with [`MODELS_CONFIG_DIR`](/Deploying/DocsGPT-Settings#adding-custom-models-models_config_dir).
 
 ## Connecting to OpenAI-Compatible Cloud APIs
 
-DocsGPT's flexible architecture allows you to connect to any cloud provider that offers an API compatible with the OpenAI API standard. This opens up a vast ecosystem of LLM services.
+DocsGPT can also connect to any cloud provider that offers an OpenAI-compatible API through `OPENAI_BASE_URL`. Set `LLM_PROVIDER=openai`, the provider's endpoint as `OPENAI_BASE_URL`, its key as `API_KEY`, and the model name as `LLM_NAME`. `LLM_NAME` is required here, because DocsGPT registers exactly the model(s) it names; separate several with commas.
 
-To connect to an OpenAI-compatible cloud provider, you will still use `LLM_PROVIDER=openai` in your `.env` file.  However, you will also need to specify the API endpoint of your chosen provider using the `OPENAI_BASE_URL` setting.  You will also likely need to provide an `API_KEY` and `LLM_NAME` as required by that provider.
+Setting `OPENAI_BASE_URL` hides the DocsGPT and OpenAI catalogs, so only the models in `LLM_NAME` are offered, plus any whose provider-specific key is set.
 
 **Example for DeepSeek (OpenAI-Compatible API):**
-
-To connect to DeepSeek, which offers an OpenAI-compatible API, your `.env` file could be configured as follows:
 
 ```
 LLM_PROVIDER=openai
 API_KEY=YOUR_API_KEY # Your DeepSeek API key
-LLM_NAME=deepseek-chat # Or your desired DeepSeek model name
+LLM_NAME=deepseek-v4-flash # The model name DeepSeek's API expects
 OPENAI_BASE_URL=https://api.deepseek.com/v1 # DeepSeek's OpenAI API URL
 ```
 
+DeepSeek is also in the catalog, so setting `DEEPSEEK_API_KEY` is usually simpler: it keeps the rest of the catalog available.
+
 Remember to consult the documentation of your chosen OpenAI-compatible cloud provider for their specific API endpoint, required model names, and authentication methods.
 
-### Dedicated `openai_compatible` provider (bring-your-own-model)
+### The `openai_compatible` provider
 
-Beyond the global `OPENAI_BASE_URL`, DocsGPT has a first-class `openai_compatible` provider. It lets a model carry its **own** `base_url` and `api_key`, which is how per-user "bring your own model" (BYOM) endpoints work — each model can point at a different OpenAI-compatible server without changing instance-wide settings. Outbound requests use an SSRF-pinned HTTP client for safety.
+`openai_compatible` is not a value for `LLM_PROVIDER` on its own: setting it registers nothing unless a model YAML with its key is loaded. It is the provider behind models that carry their **own** `base_url` and API key:
 
-This is the mechanism behind catalog entries like DeepSeek, which declare their own `base_url` and API key environment variable rather than relying on `OPENAI_BASE_URL`.
+- catalog entries such as DeepSeek, Alibaba and Z.ai, which name their key variable (`api_key_env`) and endpoint in their YAML;
+- your own model YAMLs in [`MODELS_CONFIG_DIR`](/Deploying/DocsGPT-Settings#adding-custom-models-models_config_dir);
+- per-user custom models that users add in **Settings → Custom Models** (bring your own model). Outbound requests for these use an SSRF-pinned HTTP client, so their base URL must be a public address: a server on `localhost` or your LAN (such as a local Ollama) is refused. Configure those as the operator, with `OPENAI_BASE_URL` or a model YAML, which is not checked. See [Outbound network access](/Deploying/Security#outbound-network-access).
 
 ## OpenAI Responses API and reasoning
 
@@ -75,4 +111,4 @@ See [App Configuration](/Deploying/DocsGPT-Settings) for the full settings refer
 
 ## Adding Support for Other Cloud Providers
 
-If you wish to connect to a cloud provider that is not explicitly listed above or doesn't offer OpenAI API compatibility, you can extend DocsGPT to support it. Within the DocsGPT repository, navigate to the `docsgpt/llm` directory. Here, you will find Python files defining the existing LLM integrations.  You can use these files as examples to create a new module for your desired cloud provider.  After creating your new LLM module, you will need to register it within the `llm_creator.py` file. This process involves some coding, but it allows for virtually unlimited extensibility to connect to any cloud-based LLM service with an accessible API.
+If you wish to connect to a cloud provider that is not explicitly listed above or doesn't offer OpenAI API compatibility, you can extend DocsGPT to support it. Write an LLM class in `docsgpt/llm/` (the existing modules are examples) and a provider plugin in `docsgpt/llm/providers/` that points at it and says how to find its API key, then add the plugin to `ALL_PROVIDERS` in `docsgpt/llm/providers/__init__.py` and list its models in a YAML under `docsgpt/core/models/`. See [Adding Support for Other Local Engines](/Models/local-inference#adding-support-for-other-local-engines) for the two parts.

@@ -117,7 +117,7 @@ Separately from *who may sign in*, you can map an IdP group to the global **admi
 OIDC_ADMIN_GROUPS=platform-admins
 ```
 
-Members of the listed groups are granted admin; the mapping is re-evaluated at every login **and** every [silent renewal](#silent-session-renewal), so removing a user from the admin group revokes their admin at the next renewal (exactly like the sign-in allowlist). It is independent of `OIDC_ALLOWED_GROUPS`, and leaving it unset never mass-revokes admin. On a fresh deployment this is the only way to create the first admin. For the full roles, teams, and admin-dashboard model see [Access Control, Roles & Teams](/Deploying/Access-Control).
+Members of the listed groups are granted admin; the mapping is re-evaluated at every login **and** every [silent renewal](#silent-session-renewal), so removing a user from the admin group revokes their admin at the next renewal (exactly like the sign-in allowlist). It is independent of `OIDC_ALLOWED_GROUPS`, and leaving it unset never mass-revokes admin. On a fresh deployment, bootstrap the first admin with this mapping or with the `docsgpt grant-admin` command (see [Bootstrapping the first admin](/Deploying/Access-Control#bootstrapping-the-first-admin)). For the full roles, teams, and admin-dashboard model see [Access Control, Roles & Teams](/Deploying/Access-Control).
 
 ## Silent session renewal
 
@@ -194,24 +194,11 @@ They differ whenever someone acts on someone else: an admin deactivating an acco
 
 A `BEFORE INSERT` trigger fills both columns for any row that arrives without an `actor_id`, applying the same rules as the migration's backfill. That keeps attribution intact for a writer from a release that predates the columns — during a rolling deployment, for instance — instead of rejecting the insert or flattening the actor to a sentinel.
 
-| Event | Recorded when |
-| --- | --- |
-| `oidc_login` | A user signs in successfully. |
-| `oidc_login_denied` | A sign-in is rejected — `metadata.reason` is `not_authorized` (group allowlist) or `account_disabled`. |
-| `oidc_refresh` | A session is silently renewed. |
-| `backchannel_logout` | The IdP revokes sessions via back-channel logout. |
-| `scim_created` / `scim_deactivated` / `scim_reactivated` | SCIM lifecycle changes. |
-| `role_granted` / `role_revoked` | The admin role is granted/revoked (`metadata.source` is `manual` or `oidc_group`). |
-| `admin_user_activated` / `admin_user_deactivated` | An admin activates/deactivates a user. |
-| `admin_sessions_revoked` | An admin force-logs-out a user. |
-| `pat_created` / `pat_revoked` / `pat_regenerated` | Personal access token lifecycle. |
-| `quota_policy_set` / `quota_policy_deleted` | A [usage quota](/Deploying/Usage-Quotas) is changed. |
-| `team.*` | Team management — `team.create`, `team.member_add`, `team.member_role`, `team.member_remove`, `team.share`, `team.unshare`, `team.transfer_owner`, `team.delete`. |
-| `source.*` | `source.created`, `source.deleted`, `source.reingested`. |
-| `agent.*` | `agent.created`, `agent.updated`, `agent.deleted`, `agent.key_regenerated`. |
-| `conversation.*` | `conversation.deleted`, `conversation.deleted_all`. |
-
-`agent.updated` records the names of the fields that changed, never their values — an agent's fields carry prompts and credentials.
+The events this page covers are `oidc_login`, `oidc_login_denied` (`metadata.reason` is `not_authorized` or
+`account_disabled`), `oidc_refresh`, `backchannel_logout`, `scim_created` / `scim_deactivated` /
+`scim_reactivated`, and `role_granted` / `role_revoked` with `metadata.source` = `oidc_group` for a group-driven
+change. The same table also records admin, team, quota, token and data-plane events; the full list is the
+[audit event table](/Deploying/Access-Control#audit-log).
 
 See [Access Control, Roles & Teams](/Deploying/Access-Control#activity-feed) for the admin Activity view that reads these events, and for the two other journals it merges them with. To query the table directly:
 
@@ -232,11 +219,12 @@ When sign-in fails, the browser lands back on the frontend with an `#oidc_error=
 | `auth_failed` | Token exchange or ID-token validation failed — check the API logs. Most common: `OIDC_ISSUER` doesn't match the issuer the discovery document reports (for Authentik this includes the application slug and trailing slash), or clock skew beyond the allowed 60 seconds. |
 | `missing_claim` | Neither the ID token nor userinfo contains `OIDC_USER_ID_CLAIM`. Make sure the matching scope is requested (`OIDC_SCOPES`) and the IdP actually emits the claim, or switch the setting back to `sub`. |
 | `not_authorized` | The user's groups don't intersect `OIDC_ALLOWED_GROUPS` — see [Restricting sign-in by group](#restricting-sign-in-by-group). |
-| `account_disabled` | The account was deactivated via [SCIM](#scim-user-provisioning) or by an operator. Reactivate it over SCIM to restore access. |
+| `account_disabled` | The account was deactivated via [SCIM](#scim-user-provisioning) or by an admin. Reactivate it over SCIM, or from **Admin → Users** (`PATCH /api/admin/users/<id>` with `{"active": true}`). |
 
 Other issues:
 
 - **IdP shows a redirect URI error** — the callback URL registered at the IdP must match exactly. Behind a reverse proxy, set `OIDC_REDIRECT_URI` to the public callback URL instead of relying on the derived default.
 - **Revoked users can still access DocsGPT** — without back-channel logout, sessions outlive IdP-side revocation until the next renewal or expiry. Configure [back-channel logout](#back-channel-logout) for instant revocation, deactivate the user over [SCIM](#scim-user-provisioning), or lower `OIDC_SESSION_LIFETIME_SECONDS`.
-- **SCIM requests fail** — `404`: `SCIM_ENABLED` is not `true`. `503`: SCIM is enabled but `SCIM_TOKEN` is unset. `401`: the presented bearer token doesn't match `SCIM_TOKEN`.
+- **The API refuses to start** — settings validation fails before the app loads. `AUTH_TYPE=oidc requires settings: OIDC_ISSUER, ...` names the missing `OIDC_ISSUER`, `OIDC_CLIENT_ID` or `OIDC_FRONTEND_URL`. `SCIM_ENABLED requires settings: SCIM_TOKEN` means SCIM is on without a token.
+- **SCIM requests fail** — `404`: `SCIM_ENABLED` is not `true`. `401`: the presented bearer token doesn't match `SCIM_TOKEN`.
 - **Login endpoints return 503** — Redis is unreachable or the IdP discovery document can't be fetched from the API host.

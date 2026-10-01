@@ -5,34 +5,42 @@ import { Provider } from 'react-redux';
 import { MemoryRouter } from 'react-router-dom';
 
 // The wizard is tested on its own; here only what it is opened with matters.
+const wizardProps = vi.hoisted(() => ({
+  onSynced: undefined as ((ids: string[]) => void) | undefined,
+}));
 vi.mock('./ConnectWizard', () => ({
   default: ({
     mode,
     connectionId,
     purpose,
+    onSynced,
     onClose,
   }: {
     mode: string;
     connectionId?: string;
     purpose?: string;
+    onSynced?: (ids: string[]) => void;
     onClose: (connected?: boolean) => void;
-  }) => (
-    <div data-testid="wizard" data-purpose={purpose ?? ''}>
-      <span data-testid="wizard-state">{`${mode}:${connectionId ?? ''}`}</span>
-      <button
-        type="button"
-        data-close="connected"
-        onClick={() => onClose(true)}
-      />
-      <button
-        type="button"
-        data-close="cancel"
-        onClick={() => onClose(false)}
-      />
-      {/* A wizard from before the `connected` argument. */}
-      <button type="button" data-close="bare" onClick={() => onClose()} />
-    </div>
-  ),
+  }) => {
+    wizardProps.onSynced = onSynced;
+    return (
+      <div data-testid="wizard" data-purpose={purpose ?? ''}>
+        <span data-testid="wizard-state">{`${mode}:${connectionId ?? ''}`}</span>
+        <button
+          type="button"
+          data-close="connected"
+          onClick={() => onClose(true)}
+        />
+        <button
+          type="button"
+          data-close="cancel"
+          onClick={() => onClose(false)}
+        />
+        {/* A wizard from before the `connected` argument. */}
+        <button type="button" data-close="bare" onClick={() => onClose()} />
+      </div>
+    );
+  },
 }));
 vi.mock('../modals/MCPServerModal', () => ({ default: () => null }));
 
@@ -66,9 +74,14 @@ let launchRef: ((c: ConnectorDefinition, o?: LaunchOptions) => void) | null =
 
 const onConnected = vi.fn();
 const onCancel = vi.fn();
+const onSynced = vi.fn();
 
 function Harness() {
-  const { launch, modals } = useConnectorLauncher({ onConnected, onCancel });
+  const { launch, modals } = useConnectorLauncher({
+    onConnected,
+    onCancel,
+    onSynced,
+  });
   launchRef = launch;
   return <>{modals}</>;
 }
@@ -144,6 +157,12 @@ describe('useConnectorLauncher', () => {
     await act(async () => launchRef!(DRIVE, { purpose: 'knowledge' }));
     expect(wizard()).toBe('connect:');
     expect(purpose()).toBe('knowledge');
+  });
+
+  it('passes the sources a sync started on to its opener', async () => {
+    await act(async () => launchRef!(DRIVE, { purpose: 'knowledge' }));
+    wizardProps.onSynced!(['src-1']);
+    expect(onSynced).toHaveBeenCalledWith(['src-1']);
   });
 
   it('leaves a plain connect without a purpose', async () => {

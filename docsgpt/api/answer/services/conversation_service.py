@@ -215,14 +215,13 @@ class ConversationService:
                 completion = question[:50] if question else "New Conversation"
 
             resolved_api_key: Optional[str] = None
-            resolved_agent_id: Optional[str] = None
+            # A draft agent has no key, but the conversation is still its.
+            resolved_agent_id: Optional[str] = agent_id or None
             if api_key:
                 with db_readonly() as conn:
                     agent = AgentsRepository(conn).find_by_key(api_key)
                 if agent:
                     resolved_api_key = agent.get("key")
-                if agent_id:
-                    resolved_agent_id = agent_id
 
             with db_session() as conn:
                 repo = ConversationsRepository(conn)
@@ -279,14 +278,13 @@ class ConversationService:
         request_id = request_id or str(uuid.uuid4())
 
         resolved_api_key: Optional[str] = None
-        resolved_agent_id: Optional[str] = None
+        # A draft agent has no key, but the conversation is still its.
+        resolved_agent_id: Optional[str] = agent_id or None
         if api_key and not conversation_id:
             with db_readonly() as conn:
                 agent = AgentsRepository(conn).find_by_key(api_key)
             if agent:
                 resolved_api_key = agent.get("key")
-            if agent_id:
-                resolved_agent_id = agent_id
 
         with db_session() as conn:
             repo = ConversationsRepository(conn)

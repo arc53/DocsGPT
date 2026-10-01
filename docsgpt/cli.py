@@ -182,6 +182,8 @@ SCRIPTS = {
     "prefetch-models": ("prefetch_models", "download the embedding, tokenizer and parser models"),
     "verify-offline": ("verify_offline", "check that the install runs with networking off"),
     "reembed": ("reembed", "re-embed every index with the configured embedding model"),
+    "grant-admin": ("grant_admin", "grant, revoke or list the admin role (AUTH_TYPE=oidc)"),
+    "ocr-check": ("ocr_check", "send one page to the configured OCR engine and report what came back"),
 }
 
 
@@ -286,11 +288,16 @@ def _add_deploy_commands(commands) -> None:
 
 
 def _connectors(args: argparse.Namespace) -> int:
-    """``docsgpt connectors reencrypt``: move every credential onto the current key."""
+    """``docsgpt connectors reencrypt``: move every stored credential onto the current key.
+
+    Rewrites connections, then the secrets saved on tools and custom models.
+    Anything neither ENCRYPTION_SECRET_KEY nor ENCRYPTION_SECRET_KEY_PREVIOUS
+    opens is left as it is and counted.
+    """
     if getattr(args, "connectors_action", None) != "reencrypt":
         print("usage: docsgpt connectors reencrypt", file=sys.stderr)
         return 2
-    from docsgpt.connectors.service import reencrypt_all
+    from docsgpt.connectors.service import reencrypt_all, reencrypt_saved_secrets
 
     counts = reencrypt_all()
     print(
@@ -304,7 +311,22 @@ def _connectors(args: argparse.Namespace) -> int:
             "their owners must reconnect them.",
             file=sys.stderr,
         )
-    return 1 if counts["failed"] else 0
+    saved = reencrypt_saved_secrets()
+    print(
+        f"docsgpt: re-encrypted {saved['rewritten']} tool and custom-model secret(s), "
+        f"{saved['current']} already current, {saved['failed']} unreadable",
+        file=sys.stderr,
+    )
+    if saved["failed"]:
+        print(
+            "docsgpt: unreadable tool and custom-model secrets were left unchanged; set the key they were "
+            "saved with as ENCRYPTION_SECRET_KEY_PREVIOUS and run this again, or have their owners enter them again.",
+            file=sys.stderr,
+        )
+    if counts["failed"] or saved["failed"]:
+        return 1
+    print("docsgpt: everything is on the current key; ENCRYPTION_SECRET_KEY_PREVIOUS can be removed.", file=sys.stderr)
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -337,11 +359,16 @@ def build_parser() -> argparse.ArgumentParser:
     migrate.add_argument("--no-create", dest="create_db", action="store_false", help="fail instead of creating a missing database")
     migrate.set_defaults(func=_migrate)
 
-    connectors = commands.add_parser("connectors", help="manage stored connector credentials")
+    connectors = commands.add_parser(
+        "connectors", help="manage stored credentials (connections, tool and custom-model secrets)"
+    )
     connector_actions = connectors.add_subparsers(dest="connectors_action", metavar="<action>")
     connector_actions.add_parser(
         "reencrypt",
-        help="rewrite every stored credential with ENCRYPTION_SECRET_KEY (after a key rotation)",
+        help=(
+            "rewrite connections, tool and custom-model secrets with ENCRYPTION_SECRET_KEY "
+            "(after a key rotation; then ENCRYPTION_SECRET_KEY_PREVIOUS can go)"
+        ),
     )
     connectors.set_defaults(func=_connectors)
 

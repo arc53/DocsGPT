@@ -38,8 +38,46 @@ vi.mock('react-redux', () => ({
       return null;
     }
   },
-  useDispatch: () => vi.fn(),
-  useStore: () => ({ getState: () => ({}) }),
+  useDispatch: () => fakeStore.dispatch,
+  useStore: () => fakeStore,
+}));
+
+// Just enough of the Redux store for Upload's ingest tracking: the upload
+// tasks and recent notification events it watches, and a way to notify it.
+const fakeStore = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
+  const state = {
+    upload: { tasks: [] as Record<string, unknown>[] },
+    notifications: { recentEvents: [] as Record<string, unknown>[] },
+    preference: { selectedDocs: [] as { id: string }[] },
+  };
+  return {
+    state,
+    getState: () => state,
+    // Applies the chat selection; every other action is ignored.
+    dispatch: (action: { type?: string; payload?: unknown }) => {
+      if (action?.type === 'preference/setSelectedDocs')
+        state.preference.selectedDocs = action.payload as { id: string }[];
+      return action;
+    },
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    notify: () => listeners.forEach((listener) => listener()),
+    reset: () => {
+      listeners.clear();
+      state.upload.tasks = [];
+      state.notifications.recentEvents = [];
+      state.preference.selectedDocs = [];
+    },
+  };
+});
+
+const getDocs = vi.hoisted(() => vi.fn());
+vi.mock('../preferences/preferenceApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../preferences/preferenceApi')>()),
+  getDocs,
 }));
 
 vi.mock('../api/services/userService', () => ({
@@ -50,12 +88,17 @@ vi.mock('../api/services/userService', () => ({
 
 const launch = vi.hoisted(() => vi.fn());
 // What Upload asked the launcher to report back (B5).
-const launcherOpts = vi.hoisted(() => ({
-  current: {} as { onConnected?: () => void; onCancel?: () => void },
+type LauncherOptions = {
+  onConnected?: () => void;
+  onCancel?: () => void;
+  onSynced?: (sourceIds: string[]) => void;
+};
+const launcher = vi.hoisted(() => ({
+  options: undefined as LauncherOptions | undefined,
 }));
 vi.mock('../connectors/useConnectorLauncher', () => ({
-  default: (opts: { onConnected?: () => void; onCancel?: () => void }) => {
-    launcherOpts.current = opts ?? {};
+  default: (options?: LauncherOptions) => {
+    launcher.options = options;
     return { launch, modals: null };
   },
 }));
@@ -370,11 +413,11 @@ describe('Upload source-type tiles', () => {
     await render();
     await act(async () => serviceTile('Google Drive').click());
     expect(section()).toBeUndefined();
-    await act(async () => launcherOpts.current.onCancel?.());
+    await act(async () => launcher.options?.onCancel?.());
     expect(close).not.toHaveBeenCalled();
     expect(serviceNames()).toContain('Google Drive');
     await act(async () => serviceTile('Google Drive').click());
-    await act(async () => launcherOpts.current.onConnected?.());
+    await act(async () => launcher.options?.onConnected?.());
     expect(close).toHaveBeenCalled();
   });
 
@@ -500,7 +543,7 @@ describe('Upload source-type tiles', () => {
       await render();
       await act(async () => serviceTile('GitHub').click());
       await act(async () => handOver()!.click());
-      await act(async () => launcherOpts.current.onCancel?.());
+      await act(async () => launcher.options?.onCancel?.());
       expect(close).not.toHaveBeenCalled();
       expect(document.body.textContent).toContain(
         'modals.uploadDoc.ingestors.github.heading',
@@ -607,6 +650,121 @@ describe('Upload source-type tiles', () => {
     expect(train!.disabled).toBe(true);
     expect(train!.className).not.toContain('bg-gray-300');
     expect(train!.className).toContain('bg-primary');
+  });
+});
+
+// A service connected from Connect your data syncs its content like an upload
+// ingests: the Knowledge list is re-read once the synced source is ingested.
+describe('Upload connected-service sync', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    fakeStore.reset();
+    getDocs.mockReset();
+    getDocs.mockResolvedValue([{ id: 'src-1', name: 'Espresso One docs' }]);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    fakeStore.reset();
+  });
+
+  const render = async (onSuccessfulUpload: (id?: string) => void) => {
+    await act(async () => {
+      root.render(
+        <Upload
+          receivedFile={[]}
+          setModalState={vi.fn()}
+          isOnboarding={false}
+          renderTab={null}
+          close={vi.fn()}
+          onSuccessfulUpload={onSuccessfulUpload}
+        />,
+      );
+    });
+  };
+
+  it('refreshes the Knowledge list once a synced source finishes ingesting', async () => {
+    const onSuccessfulUpload = vi.fn();
+    await render(onSuccessfulUpload);
+    expect(launcher.options?.onSynced).toBeTypeOf('function');
+    await act(async () => launcher.options!.onSynced!(['src-1']));
+    // Still ingesting: nothing to show yet.
+    fakeStore.state.upload.tasks = [
+      { id: 'src-1', sourceId: 'src-1', status: 'training', progress: 40 },
+    ];
+    await act(async () => fakeStore.notify());
+    expect(getDocs).not.toHaveBeenCalled();
+    fakeStore.state.upload.tasks = [
+      { id: 'src-1', sourceId: 'src-1', status: 'completed', progress: 100 },
+    ];
+    await act(async () => fakeStore.notify());
+    expect(getDocs).toHaveBeenCalledTimes(1);
+    expect(onSuccessfulUpload).toHaveBeenCalledWith('src-1');
+  });
+
+  it('refreshes when the completion arrived before any progress', async () => {
+    const onSuccessfulUpload = vi.fn();
+    await render(onSuccessfulUpload);
+    // The slice makes no task from a lone completion event.
+    fakeStore.state.notifications.recentEvents = [
+      { type: 'source.ingest.completed', scope: { id: 'src-1' } },
+    ];
+    await act(async () => launcher.options!.onSynced!(['src-1']));
+    expect(getDocs).toHaveBeenCalledTimes(1);
+    expect(onSuccessfulUpload).toHaveBeenCalledWith('src-1');
+  });
+
+  const complete = async (ids: string[]) => {
+    fakeStore.state.upload.tasks = ids.map((id) => ({
+      id,
+      sourceId: id,
+      status: 'completed',
+      progress: 100,
+    }));
+    await act(async () => fakeStore.notify());
+  };
+
+  it('selects every source one sync started, as each finishes', async () => {
+    getDocs.mockResolvedValue([
+      { id: 'src-1', name: 'Handbook' },
+      { id: 'src-2', name: 'FAQ' },
+    ]);
+    await render(vi.fn());
+    await act(async () => launcher.options!.onSynced!(['src-1', 'src-2']));
+    await complete(['src-1']);
+    await complete(['src-1', 'src-2']);
+    expect(fakeStore.state.preference.selectedDocs.map((d) => d.id)).toEqual([
+      'src-1',
+      'src-2',
+    ]);
+  });
+
+  it('still replaces a single earlier selection with the new source', async () => {
+    fakeStore.state.preference.selectedDocs = [{ id: 'old' }];
+    await render(vi.fn());
+    await act(async () => launcher.options!.onSynced!(['src-1']));
+    await complete(['src-1']);
+    expect(fakeStore.state.preference.selectedDocs.map((d) => d.id)).toEqual([
+      'src-1',
+    ]);
+  });
+
+  it('does not refresh for a sync that failed', async () => {
+    const onSuccessfulUpload = vi.fn();
+    await render(onSuccessfulUpload);
+    await act(async () => launcher.options!.onSynced!(['src-1']));
+    fakeStore.state.upload.tasks = [
+      { id: 'src-1', sourceId: 'src-1', status: 'failed', progress: 0 },
+    ];
+    await act(async () => fakeStore.notify());
+    expect(getDocs).not.toHaveBeenCalled();
+    expect(onSuccessfulUpload).not.toHaveBeenCalled();
   });
 });
 

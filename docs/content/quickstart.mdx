@@ -1,11 +1,28 @@
 ---
-title: Quickstart - Launching DocsGPT Web App
+title: Quickstart
 description: Install and start DocsGPT with one command, or from a clone with the setup script.
 ---
 
 import { Callout } from 'nextra/components'
 
 # Quickstart
+
+<video
+  autoPlay
+  muted
+  loop
+  playsInline
+  controls
+  width={1440}
+  height={900}
+  poster="/quickstart-poster.png"
+  aria-label="Screen recording: starting DocsGPT with docsgpt up, then asking it a question in the browser"
+  style={{ width: '100%', height: 'auto', borderRadius: '0.5rem' }}
+>
+  <source src="/quickstart.mp4" type="video/mp4" />
+</video>
+
+*The recording runs `docsgpt up`, the step the installer ends with, on a fresh machine user, here with `--port 7391`. It answers the two setup questions with the defaults, only this computer and the DocsGPT public API, and Docker Compose pulls the database images and starts the services; the wait for the first start is sped up. When DocsGPT prints its address, the recording opens it in the browser, asks "What is DocsGPT? Answer in two sentences." and the answer streams in. The installer's own steps before `docsgpt up` (checking for Docker, installing uv and the package) are not shown.*
 
 **Prerequisites:**
 
@@ -60,7 +77,7 @@ curl -fsSL https://docs.ac/install | bash -s -- --yes --domain docs.example.com 
 | `docsgpt down` | Stop DocsGPT |
 | `docsgpt uninstall` | Remove it; `--purge` also deletes settings and data |
 
-Running the install command again also upgrades. See [Run it with `docsgpt up`](/Deploying/Docker-Deploying#run-it-with-docsgpt-up) for the details.
+Running the install command again also upgrades. See [Run it with `docsgpt up`](/Deploying/Docker-Deploying#run-it-with-docsgpt-up) for the details, and the [docsgpt CLI reference](/Deploying/cli) for every command.
 
 ## From a clone, with the setup script
 
@@ -104,7 +121,7 @@ To work from the source tree, for example to build the images yourself, use `set
 
    * **3) Connect Local Inference Engine:** If you already run a local inference engine like Llama.cpp, Text Generation Inference (TGI), vLLM, or others, choose this option and provide the connection details.
 
-   * **4) Connect Cloud API Provider:** Connect DocsGPT to a Cloud API provider such as OpenAI, Google (Vertex AI/Gemini), Anthropic (Claude), Groq, HuggingFace Inference API, or Azure OpenAI. You will need an API key from your chosen provider.
+   * **4) Connect Cloud API Provider:** Connect DocsGPT to OpenAI, Google Gemini (AI Studio API key), Anthropic (Claude), Groq or Novita. You will need an API key from your chosen provider. For other providers, see [Cloud LLM Providers](/Models/cloud-providers).
 
    * **5) Modify DocsGPT's source code and rebuild the Docker images locally.** Instead of pulling prebuilt images from Docker Hub, you build the backend and frontend from source, to customize how DocsGPT works internally or to run it in an environment without internet access.
 
@@ -115,8 +132,12 @@ To work from the source tree, for example to build the images yourself, use `set
 5. **Stopping DocsGPT:** in the `DocsGPT` directory, run the `docker compose down` command the script printed at the end, for example:
 
    ```bash
-   docker compose -f deployment/docker-compose-hub.yaml down
+   docker compose --env-file .env -f deployment/docker-compose-hub.yaml down
    ```
+
+   With the Ollama option, the printed command also names the Ollama overlay file; without it, the Ollama container keeps running.
+
+**Image version:** the setup script runs the `develop` images, built from the `main` branch, not the latest release. To run a release, add `DOCSGPT_IMAGE_TAG=<version>` (for example `0.21.0`) to `.env`, then run `docker compose --env-file .env -f deployment/docker-compose-hub.yaml up -d` (plus the Ollama overlay if you use it). See [Using the Source Checkout](/Deploying/Docker-Deploying#using-the-source-checkout).
 
 **Important for Windows:** Ensure Docker Desktop is installed and running before you start. The script tries to start Docker if it is not running, but you may need to start it manually.
 

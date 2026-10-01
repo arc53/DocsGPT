@@ -1,0 +1,602 @@
+---
+title: Interacting with Agents via API
+description: Learn how to programmatically interact with DocsGPT Agents using the streaming and non-streaming API endpoints.
+---
+
+import { Callout, Tabs } from 'nextra/components';
+
+# Interacting with Agents via API
+
+DocsGPT Agents can be accessed programmatically through API endpoints. This page covers:
+
+- Non-streaming answers (`/api/answer`)
+- Streaming answers over SSE (`/stream`)
+- Tools that need approval (pausing and resuming a turn)
+- Search without a model call (`/api/search`)
+- File/image attachments (`/api/store_attachment` + `/api/task_status` + `/stream`)
+- Agent export and import
+
+When you use an agent `api_key`, DocsGPT loads that agent's configuration automatically (prompt, tools, sources, default model). You usually only need to send `question` and `api_key`.
+
+<Callout type="info">
+Looking to connect an existing OpenAI-compatible client (opencode, aider, the OpenAI SDKs, etc.) to a DocsGPT Agent? Use the [OpenAI-Compatible Chat Completions API](/API/openai-compatible) — it speaks the standard chat completions protocol so no adapter code is required.
+</Callout>
+
+## Base URL
+
+<Callout type="info">
+For DocsGPT Cloud, use `https://gptcloud.arc53.com` as the base URL.
+</Callout>
+
+- Local: `http://localhost:7091`
+- Cloud: `https://gptcloud.arc53.com`
+
+## How Request Resolution Works
+
+DocsGPT resolves your request in this order:
+
+1. If `api_key` is provided, DocsGPT loads the mapped agent and executes with that config.
+2. If `agent_id` is provided (typically with JWT auth), DocsGPT loads that agent if allowed.
+3. If neither is provided, DocsGPT uses request-level fields (`prompt_id`, `active_docs`, `retriever`, etc.).
+
+Authentication:
+
+- Agent API-key flow: include `api_key` in the JSON or form body.
+- Signed-in flow: send `Authorization: Bearer <token>`, where the token is a session token or a [personal access token](/API/personal-access-tokens) with the `chat:run` scope, and pick the agent with `agent_id`.
+
+See the [API overview](/API#choose-a-credential) for how each credential works.
+
+<Callout type="warning">
+A key holder can't approve anything on the agent owner's behalf. When the agent is called with its `api_key` by anyone but its signed-in owner, a write action that uses the owner's connected accounts or saved credentials is refused unless the owner allows it: the agent gets a refusal instead of a result, and the `tool_call` event reports `"status": "denied"` with `"error_type": "tool_not_allowed"`. See [Letting API callers make changes](#letting-api-callers-make-changes).
+</Callout>
+
+## Endpoints
+
+- `POST /api/answer` (non-streaming)
+- `POST /stream` (SSE streaming)
+- `POST /api/store_attachment` (multipart upload)
+- `GET /api/task_status?task_id=...` (Celery task polling)
+
+## Request Parameters
+
+Common request body fields:
+
+| Field | Type | Required | Applies to | Notes |
+| --- | --- | --- | --- | --- |
+| `question` | `string` | Yes | `/api/answer`, `/stream` | User query. |
+| `api_key` | `string` | Usually | `/api/answer`, `/stream` | Recommended for agent API use. Loads agent config from key. |
+| `conversation_id` | `string` | No | `/api/answer`, `/stream` | Continue an existing conversation. |
+| `history` | `string` (JSON-encoded array) | No | `/api/answer`, `/stream` | Used for new conversations. Format: `[{\"prompt\":\"...\",\"response\":\"...\"}]`. |
+| `model_id` | `string` | No | `/api/answer`, `/stream` | Override model for this request. |
+| `save_conversation` | `boolean` | No | `/api/answer`, `/stream` | Deprecated, no effect. Conversations are always persisted; use `visibility` to control sidebar listing. |
+| `visibility` | `string` | No | `/api/answer`, `/stream` | `"listed"` shows the conversation in the owner's sidebar. Any other value (or omitting it) persists it hidden. Default `hidden`. |
+| `passthrough` | `object` | No | `/api/answer`, `/stream` | Dynamic values injected into prompt templates. |
+| `prompt_id` | `string` | No | `/api/answer`, `/stream` | Ignored when `api_key` already defines prompt. |
+| `active_docs` | `string` or `string[]` | No | `/api/answer`, `/stream` | Overrides active docs when not using key-owned source config. |
+| `retriever` | `string` | No | `/api/answer`, `/stream` | Retriever type (for example `classic`). Ignored when `api_key` or `agent_id` selects an agent: the agent's retriever is used. |
+| `chunks` | `number` | No | `/api/answer`, `/stream` | Retrieval chunk count, default `6`: a total for the request, split across its sources. Clamped to `0`-`500`; `0` skips retrieval. Ignored when `api_key` or `agent_id` selects an agent (the agent's value is used), and when a source has its own chunk count configured (the source's value wins). |
+| `isNoneDoc` | `boolean` | No | `/api/answer`, `/stream` | Skip document retrieval. |
+| `agent_id` | `string` | No | `/api/answer`, `/stream` | Alternative to `api_key` when using authenticated user context. |
+
+Streaming-only fields:
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `attachments` | `string[]` | No | List of attachment IDs from `/api/task_status` success result. |
+| `index` | `number` | No | Update an existing query index. If provided, `conversation_id` is required. |
+
+To resume a turn that paused for tool approval, send `conversation_id` and `tool_actions` instead of `question`; see [Tools that need approval](#tools-that-need-approval).
+
+## Non-Streaming API (`/api/answer`)
+
+`/api/answer` waits for completion and returns one JSON response.
+
+<Callout type="info">
+`attachments` are currently handled through `/stream`. For file/image-attached queries, use the streaming endpoint.
+</Callout>
+
+Response fields:
+
+- `conversation_id`
+- `answer`
+- `sources`
+- `tool_calls`
+- `thought`
+- `pending_tool_calls`, when the turn paused for tool approval (see [Tools that need approval](#tools-that-need-approval))
+- Optional structured output metadata (`structured`, `schema`) when enabled
+
+An error during the run returns HTTP `400` with `{"error": "..."}`.
+
+### Examples
+
+<Tabs items={['cURL', 'Python', 'JavaScript']}>
+  <Tabs.Tab>
+    ```bash
+    curl -X POST http://localhost:7091/api/answer \
+    -H "Content-Type: application/json" \
+    -d '{"question":"your question here","api_key":"your_agent_api_key"}'
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```python
+    import requests
+
+    API_URL = "http://localhost:7091/api/answer"
+    API_KEY = "your_agent_api_key"
+    QUESTION = "your question here"
+
+    response = requests.post(
+        API_URL,
+        json={"question": QUESTION, "api_key": API_KEY}
+    )
+
+    if response.status_code == 200:
+        print(response.json())
+    else:
+        print(f"Error: {response.status_code}")
+        print(response.text)
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```javascript
+    const apiUrl = 'http://localhost:7091/api/answer';
+    const apiKey = 'your_agent_api_key';
+    const question = 'your question here';
+
+    async function getAnswer() {
+    try {
+        const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ question, api_key: apiKey }),
+        });
+
+        if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log(data);
+    } catch (error) {
+        console.error("Failed to fetch answer:", error);
+    }
+    }
+
+    getAnswer();
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+---
+
+## Streaming API (`/stream`)
+
+`/stream` returns a Server-Sent Events (SSE) stream so you can render output token-by-token.
+
+### SSE Event Types
+
+Each `data:` frame is JSON with `type`:
+
+| Type | Fields | Meaning |
+| --- | --- | --- |
+| `message_id` | `message_id`, `conversation_id`, `request_id` | First event of the stream. `message_id` identifies the answer being written; use it to [reconnect](#reconnecting-to-an-interrupted-stream). `conversation_id` is `null` for a new conversation until the `id` event. |
+| `answer` | `answer` | Incremental answer chunk. |
+| `thought` | `thought` | Reasoning chunk (model and agent dependent). |
+| `source` | `source` | The retrieved sources and chunks. |
+| `tool_call` | `data` | One tool call's progress or outcome: `tool_name`, `action_name`, `call_id`, `arguments`, `status` (`pending`, `completed`, `error`, `denied`, `skipped`, `awaiting_approval` or `requires_client_execution`) and `result` or `error`. |
+| `tool_calls` | `tool_calls` | The completed tool calls of the turn. |
+| `tool_calls_pending` | `data.pending_tool_calls` | The turn paused on tools that need approval or client-side execution. See [Tools that need approval](#tools-that-need-approval). |
+| `structured_answer` | `answer`, `structured`, `schema` | Final structured payload (when schema mode is active). |
+| `research_plan`, `research_progress` | `data` | Progress of a research agent. |
+| `workflow_run` | `workflow_run_id` | A workflow agent started a run. |
+| `workflow_step` | `node_id`, `node_type`, `node_title`, `status`, and `output`/`state_delta` or `error` | A workflow node is `running`, `completed` or `failed`. |
+| `notice` | `notice` | A non-fatal message for the user (for example, some input documents were skipped). |
+| `guardrail` | `guardrail`, `retract` | A [guardrail](/Agents/guardrails) blocked the answer mid-stream. With `retract: true`, discard the text already shown; an `error` event with the block message follows. |
+| `error` | `error` | Error message. |
+| `id` | `id` | The conversation ID. |
+| `end` | | The stream is complete. |
+
+New event types can be added, so ignore types you don't handle.
+
+Framing:
+
+- When the answer is saved (the normal case), every record carries an `id: <n>` line before its `data:` line. `n` is the event's sequence number within the message; keep the last one you saw to reconnect.
+- While the model is working but has nothing to send, the stream sends keepalive comments (`: keepalive`) every `SSE_KEEPALIVE_SECONDS` (15 by default). SSE clients ignore them; a hand-written parser should skip lines that start with `:`.
+
+### Reconnecting to an interrupted stream
+
+If the connection drops, the answer keeps generating on the server. Reopen it with `GET /api/messages/<message_id>/events`, sending the last sequence number you processed as `Last-Event-ID` (or `?last_event_id=`). You get the events you missed, then the rest live. See [Chat answer reconnect](/API/realtime-events#chat-answer-reconnect); this route needs the API served through the ASGI app.
+
+### Examples
+
+<Tabs items={['cURL', 'Python', 'JavaScript']}>
+  <Tabs.Tab>
+    ```bash
+    curl -X POST http://localhost:7091/stream \
+    -H "Content-Type: application/json" \
+    -H "Accept: text/event-stream" \
+    -d '{"question":"your question here","api_key":"your_agent_api_key"}'
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```python
+    import requests
+    import json
+
+    API_URL = "http://localhost:7091/stream"
+    payload = {
+        "question": "your question here",
+        "api_key": "your_agent_api_key"
+    }
+
+    with requests.post(API_URL, json=payload, stream=True) as r:
+        for line in r.iter_lines():
+            if line:
+                decoded_line = line.decode('utf-8')
+                if decoded_line.startswith('data: '):
+                    try:
+                        data = json.loads(decoded_line[6:])
+                        print(data)
+                    except json.JSONDecodeError:
+                        pass
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```javascript
+    const apiUrl = 'http://localhost:7091/stream';
+    const apiKey = 'your_agent_api_key';
+    const question = 'your question here';
+
+    async function getStream() {
+    try {
+        const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream'
+        },
+        body: JSON.stringify({ question, api_key: apiKey }),
+        });
+
+        if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        // Note: This parsing method assumes each chunk contains whole lines.
+        // For a more robust production implementation, buffer the chunks
+        // and process them line by line.
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+            if (line.startsWith('data: ')) {
+            try {
+                const data = JSON.parse(line.substring(6));
+                console.log(data);
+            } catch (e) {
+                console.error("Failed to parse JSON from SSE event:", e);
+            }
+            }
+        }
+        }
+    } catch (error) {
+        console.error("Failed to fetch stream:", error);
+    }
+    }
+
+    getStream();
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+---
+
+## Tools that need approval
+
+A tool action can require approval (its **Approval** switch, or a remote device's approval mode), and a client-side tool is run by the caller. When the agent calls one, the turn pauses:
+
+- `/stream` sends a `tool_call` event with `"status": "awaiting_approval"` (or `"requires_client_execution"`), then a `tool_calls_pending` event, then `id` and `end`.
+- `/api/answer` returns the answer so far with a top-level `pending_tool_calls` list.
+
+Each entry in `pending_tool_calls` identifies one call:
+
+```json
+{
+  "type": "tool_calls_pending",
+  "data": {
+    "pending_tool_calls": [
+      {
+        "call_id": "call_abc123",
+        "tool_name": "api_tool",
+        "action_name": "create_ticket",
+        "arguments": {"title": "Printer on fire"},
+        "pause_type": "awaiting_approval"
+      }
+    ]
+  }
+}
+```
+
+To resume, send the same endpoint a request with `conversation_id` and `tool_actions` and no `question`. Authenticate the same way as the original request (the same `api_key`, or the same bearer token and `agent_id`):
+
+```bash
+curl -X POST http://localhost:7091/api/answer \
+  -H "Content-Type: application/json" \
+  -d '{
+    "api_key": "your_agent_api_key",
+    "conversation_id": "<conversation_id>",
+    "tool_actions": [
+      {"call_id": "call_abc123", "decision": "approved"}
+    ]
+  }'
+```
+
+Each action names a `call_id` and one of:
+
+- `"decision": "approved"`: the server runs the tool.
+- `"decision": "denied"`, with an optional `comment`: the model is told the call was denied, and why.
+- `"result": ...`: for a client-side tool, the output your code produced.
+
+A pending call you leave out is treated as denied. The turn then continues and streams or returns as usual, and may pause again. A second resume of the same conversation while one is running returns HTTP `409` (`"code": "resume_in_progress"` on `/api/answer`). A conversation that belongs to another agent can't be resumed with this agent's key.
+
+Write actions on the owner's accounts or credentials never reach this pause for an API-key caller: they are refused outright unless the owner allowed them (see below).
+
+## Letting API callers make changes
+
+Nobody can approve for the agent's owner through an API key, the chat widget or a public link. So when one of these callers makes the agent take a **write action** that uses the owner's connected account or saved credentials (an API tool action that sends a header or query value the owner saved, an MCP server the owner signed in to, a connector in the owner's account), DocsGPT refuses it unless the owner has allowed that action. Reads are not limited, and neither are tools where each person connects their own account.
+
+The owner allows actions in the agent's **Access Details > Changes others can make as you**, or through the API in `config.api_write_allowlist`:
+
+- Each entry is `"<tool_id>:<action_name>"`. `GET /api/get_agent?id=<agent_id>` lists the candidates: each tool entry in its `resource_states` list (`"type": "tool"`) carries the tool's `id` and an `owner_credential_writes` list of its write actions on the owner's credentials.
+- At most 200 entries. Entries are trimmed, deduplicated and sorted when saved.
+- Only the owner can change the list. When a team editor updates the agent, the stored list is kept whatever the request sends.
+- An allowed action runs **without an approval prompt** for these callers, even if the tool asks for approval in the owner's chats.
+
+`config` holds both `api_write_allowlist` and the agent's [guardrails](/Agents/guardrails), and `PUT /api/update_agent/<agent_id>` replaces the whole `config`. Read it first and send it all back, or you clear the other half:
+
+```python
+import requests
+
+BASE = "http://localhost:7091"
+HEADERS = {"Authorization": "Bearer <token>"}
+agent_id = "<agent_id>"
+
+agent = requests.get(f"{BASE}/api/get_agent", params={"id": agent_id}, headers=HEADERS).json()
+config = agent.get("config") or {}
+config["api_write_allowlist"] = sorted(
+    set(config.get("api_write_allowlist", [])) | {"<tool_id>:create_ticket"}
+)
+requests.put(
+    f"{BASE}/api/update_agent/{agent_id}",
+    headers=HEADERS,
+    json={"config": config},
+).raise_for_status()
+```
+
+Webhook runs are the owner's own automation and are not limited by this list; see [Agent webhooks](/API/webhooks#how-a-webhook-run-behaves).
+
+## Search API
+
+`POST /api/search` returns the chunks of an agent's sources that best match a query, without calling a model. The [search widget](/Extensions/search-widget) uses it.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `question` | `string` | Yes | The search query. |
+| `api_key` | `string` | Yes | The agent's API key; the agent's sources are searched. |
+| `chunks` | `number` | No | Maximum number of results, default `5`. `0` or less returns an empty list without checking the key. |
+
+```bash
+curl -X POST http://localhost:7091/api/search \
+  -H "Content-Type: application/json" \
+  -d '{"question": "How do I reset my password?", "api_key": "your_agent_api_key", "chunks": 3}'
+```
+
+The response is a JSON list, empty when the agent has no sources:
+
+```json
+[
+  {"text": "To reset your password, open Settings...", "title": "account.md", "source": "..."}
+]
+```
+
+Errors: `400` when `question` or `api_key` is missing, `401` for an unknown key, `500` if the search fails.
+
+---
+
+## Attachments API (Including Images)
+
+To attach an image (or other file) to a query:
+
+1. Upload file(s) to `/api/store_attachment` (multipart/form-data).
+2. Poll `/api/task_status` until `status=SUCCESS`.
+3. Read `result.attachment_id` from task result.
+4. Send that ID in `/stream` as `attachments: ["..."]`.
+
+<Callout type="warning">
+Attachments are processed asynchronously. Do not call `/stream` with an attachment until its task has finished with `SUCCESS`.
+</Callout>
+
+### Step 1: Upload Attachment
+
+`POST /api/store_attachment`
+
+- Content type: `multipart/form-data`
+- Form fields:
+  - `file` (required, can be repeated for multi-file upload)
+  - `api_key` (optional if JWT is present; useful for API-key-only flows)
+
+Example upload (single image):
+
+```bash
+curl -X POST http://localhost:7091/api/store_attachment \
+  -F "file=@/absolute/path/to/image.png" \
+  -F "api_key=your_agent_api_key"
+```
+
+Possible response (single-file upload):
+
+```json
+{
+  "success": true,
+  "task_id": "34f1cb56-7c7f-4d5f-a973-4ea7e65f7a10",
+  "message": "File uploaded successfully. Processing started."
+}
+```
+
+### Step 2: Poll Task Status
+
+```bash
+curl "http://localhost:7091/api/task_status?task_id=34f1cb56-7c7f-4d5f-a973-4ea7e65f7a10"
+```
+
+When complete:
+
+```json
+{
+  "status": "SUCCESS",
+  "result": {
+    "attachment_id": "67b4f8f2618dc9f19384a9e1",
+    "filename": "image.png",
+    "mime_type": "image/png"
+  }
+}
+```
+
+### Step 3: Attach to `/stream` Request
+
+Use the `attachment_id` in `attachments`.
+
+```bash
+curl -X POST http://localhost:7091/stream \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -d '{
+    "question": "Describe this image",
+    "api_key": "your_agent_api_key",
+    "attachments": ["67b4f8f2618dc9f19384a9e1"]
+  }'
+```
+
+### Image/Attachment Behavior Notes
+
+- Typical image MIME types supported for native vision flows: `image/png`, `image/jpeg`, `image/jpg`, `image/webp`, `image/gif`.
+- If the selected model/provider does not support a file type natively, DocsGPT falls back to parsed text content.
+- For providers that support images but not native PDF file attachments, DocsGPT can convert PDF pages to images (synthetic PDF support).
+- Attachments are user-scoped. Upload and query must be done under the same user context (same API key owner or same JWT user).
+
+## Agent Portability (Export & Import)
+
+Agents can be exported to a portable YAML file and imported into another DocsGPT instance (or back into the same one). This is how you move an agent between environments or keep a reviewable definition in version control.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/export_agent?id=<agent_id>` | Download the agent as a `*.agent.yaml` file. |
+| `POST` | `/api/import_agent/plan` | Dry run: parse the file and report what an import would do, without changing anything. |
+| `POST` | `/api/import_agent` | Import the file: create a new draft agent, or update the agent it matches. |
+
+Send the YAML as an uploaded `file`, as the raw body with a YAML content type, or inside a JSON body. Only the JSON form can carry a `resolution` (see below).
+
+```bash
+# Export
+curl -L "https://your-docsgpt/api/export_agent?id=<agent_id>" \
+  -H "Authorization: Bearer <token>" -o my-agent.agent.yaml
+
+# Preview what an import would do
+curl -X POST https://your-docsgpt/api/import_agent/plan \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@my-agent.agent.yaml"
+
+# Import
+curl -X POST https://your-docsgpt/api/import_agent \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/x-yaml" \
+  --data-binary @my-agent.agent.yaml
+
+# Import with a resolution (JSON body)
+curl -X POST https://your-docsgpt/api/import_agent \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -Rs '{yaml: ., resolution: {sources: {"Product docs": "<your-source-id>"}}}' my-agent.agent.yaml)"
+```
+
+### Create or update
+
+An import is matched to one of your agents by `metadata.id`, then by `metadata.slug`:
+
+- **No match:** a new agent is created as a **draft**.
+- **Match:** that agent is updated and keeps its status, so a published agent stays published with the same API key.
+
+On an update the file is authoritative: fields it sets are written even when that clears a value, such as removing all models, dropping `json_schema` or switching the prompt back to the default. Re-importing an edited file therefore syncs the agent to it. The response reports `agent_id`, `action` (`created` or `updated`), `status`, `agent_type`, `slug` and any `warnings`.
+
+### The plan
+
+`/api/import_agent/plan` returns `{"success": true, "plan": {...}}` with how each part of the file resolves:
+
+| Part | Statuses |
+| --- | --- |
+| `target` | `action`: `create`, or `update` with the `agent_id` it matched and `matched_by` (`id` or `slug`) |
+| `sources` | `matched` (one of your sources has that name; the oldest wins when several do) or `missing` (left unattached) |
+| `tools` | `builtin`, `reuse` (one of your tools matches its type and name), `create` (a new tool is created; `requires_secrets` lists what you must supply) or `unavailable` |
+| `prompt` | `reuse`, `create` or `default` |
+| `models` | `matched` or `unavailable` for built-in models; `reuse` or `create` for custom models (a new custom model needs an `api_key`) |
+| `workflow` | For a workflow agent: `create` or `update` with node and edge counts, `delete` when the import would remove the workflow, or `null` |
+
+Each tool in the plan has a `key` (`tool-0`, `tool-1`, ... in file order) that the resolution refers to.
+
+### The resolution
+
+`resolution` overrides how references resolve. It is read only from a JSON body (`{"yaml": "...", "resolution": {...}}`):
+
+```json
+{
+  "sources": { "Product docs": "<id of one of your sources>" },
+  "tools": {
+    "tool-0": { "decision": "reuse", "tool_id": "<id of one of your tools>" },
+    "tool-1": { "decision": "create", "secrets": { "api_key": "..." } },
+    "tool-2": { "decision": "skip" }
+  },
+  "models": { "My custom model": { "api_key": "..." } }
+}
+```
+
+- `sources` maps a source name in the file to one of your source ids.
+- `tools` takes a decision per tool key: `reuse` an existing tool, `create` a new one with the given secrets, or `skip` it.
+- `models` supplies the API key for a custom model that has to be created, keyed by its display name.
+
+Ids you pass must belong to you; any other id is ignored with a warning. Prompts are not resolvable: the file's prompt is reused when you already have one with the same name and content, and created otherwise.
+
+### Workflow agents
+
+A workflow agent exports its graph under `spec.workflow`, and import validates it (up to 200 nodes and 400 edges) and creates the workflow or adds a new version of it. Tools, sources and custom models used inside the nodes are resolved like the agent's own.
+
+Leaving `workflow` out of a file changes nothing. An explicit `workflow: null` imported over a draft workflow agent **deletes** its workflow, with its run history and artifacts; the plan's `workflow` block shows `"action": "delete"` first. A published workflow agent keeps its workflow.
+
+Notes:
+
+- **Secrets are stripped on export**: API keys and tool credentials are never written into the YAML, so you supply them in the resolution or re-enter them after import.
+- Imported tool URLs are validated against SSRF protections, the same as when creating tools normally.
+- With a [personal access token](/API/personal-access-tokens), import needs `agents:write`; a token restricted to specific agents can only update those, and one restricted on sources, prompts, tools or workflows can't import.
+
+## Searching Conversations
+
+Search across your conversations by name and message content:
+
+```text
+GET /api/search_conversations?q=<query>&limit=30
+```
+
+| Parameter | Default | Description |
+| --- | --- | --- |
+| `q` | — (required) | Case-insensitive substring to search for. |
+| `limit` | `30` | Max results (max `100`). |
+
+Each result includes a `match_field` (`name`, `prompt`, or `response`) and a `match_snippet` showing the matched text in context, in addition to the fields returned by `/api/get_conversations`.

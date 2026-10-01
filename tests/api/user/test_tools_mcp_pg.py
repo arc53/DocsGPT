@@ -169,6 +169,22 @@ class TestTestMCPServerConfig:
             response = TestMCPServerConfig().post()
         assert response.status_code == 400
 
+    def test_a_blocked_address_is_named_to_the_user(self, app):
+        """The dialog shows this reason, not a generic configuration error."""
+        from docsgpt.api.user.tools.mcp import TestMCPServerConfig
+
+        with app.test_request_context(
+            "/api/mcp_server/test", method="POST",
+            json={"config": {"transport_type": "http", "server_url": "http://10.0.0.5/mcp"}},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = TestMCPServerConfig().post()
+        assert response.status_code == 400
+        assert response.json["error"].startswith("Invalid server URL: ")
+        assert "private" in response.json["error"]
+        assert response.json["message"] == response.json["error"]
+
     def test_connection_success(self, app):
         from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
@@ -328,6 +344,19 @@ class TestMCPServerSave:
             request.decoded_token = {"sub": "u"}
             response = MCPServerSave().post()
         assert response.status_code == 400
+
+    def test_a_blocked_address_is_named_to_the_user(self, app):
+        from docsgpt.api.user.tools.mcp import MCPServerSave
+
+        with app.test_request_context(
+            "/api/mcp_server/save", method="POST",
+            json={"displayName": "Srv", "config": {"transport_type": "http", "server_url": "http://127.0.0.1:9000"}},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = MCPServerSave().post()
+        assert response.status_code == 400
+        assert response.json["error"].startswith("Invalid server URL: ")
 
     def test_oauth_missing_task_id_returns_400(self, app):
         from docsgpt.api.user.tools.mcp import MCPServerSave

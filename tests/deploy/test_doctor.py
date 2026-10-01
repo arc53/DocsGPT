@@ -252,6 +252,73 @@ class TestChecks:
         # real contract and the pattern CodeQL warns about.
         assert check.detail == f"openai at {commands._endpoint(url)}"
 
+    def test_a_provider_specific_key_counts_as_a_key(self):
+        check = commands._check_provider({"LLM_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "ak"})
+        assert check.level == "ok"
+
+    def test_the_hosted_default_model_is_fine_when_chosen(self):
+        check = commands._check_model({"LLM_PROVIDER": "docsgpt"})
+        assert check.level == "ok"
+        assert "docsgpt-local" in check.detail
+
+    def test_the_default_model_is_the_chosen_providers(self):
+        check = commands._check_model({"LLM_PROVIDER": "openai", "API_KEY": "sk-test"})
+        assert check.level == "ok"
+        assert "gpt-5.5" in check.detail and "openai" in check.detail
+
+    def test_a_provider_that_falls_back_to_the_hosted_api_fails(self):
+        check = commands._check_model({"LLM_PROVIDER": "anthropic"})
+        assert check.level == "fail"
+        assert "hosted DocsGPT API" in check.detail
+        assert "ANTHROPIC_API_KEY" in check.detail
+
+    def test_an_ignored_llm_name_is_a_warning(self):
+        check = commands._check_model({"LLM_PROVIDER": "openai", "API_KEY": "sk", "LLM_NAME": "gpt-4o"})
+        assert check.level == "warn"
+        assert "gpt-4o" in check.detail
+
+    def test_no_model_at_all_fails(self):
+        check = commands._check_model({"LLM_PROVIDER": "openai", "OPENAI_BASE_URL": "http://localhost:11434/v1"})
+        assert check.level == "fail"
+        assert "LLM_NAME" in check.detail
+
+    def test_only_the_settings_file_counts(self, monkeypatch):
+        """A key in the shell running doctor is not a key the service has."""
+        import os
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "from-the-shell")
+        check = commands._check_model({"LLM_PROVIDER": "anthropic"})
+        assert check.level == "fail"
+        assert os.environ["ANTHROPIC_API_KEY"] == "from-the-shell"
+
+    def test_invalid_settings_are_reported_not_raised(self):
+        check = commands._check_model({"VECTOR_STORE": "not-a-store"})
+        assert check.level == "fail"
+
+    def test_a_catalog_key_counts_for_openai_compatible(self):
+        """DEEPSEEK_API_KEY is the key an openai_compatible catalog names in api_key_env."""
+        check = commands._check_provider({"LLM_PROVIDER": "openai_compatible", "DEEPSEEK_API_KEY": "dk"})
+        assert check.level == "ok"
+
+    def test_openai_compatible_without_any_catalog_key_is_a_problem(self):
+        check = commands._check_provider({"LLM_PROVIDER": "openai_compatible"})
+        assert check.level == "fail"
+
+    def test_openai_compatible_with_a_local_endpoint_needs_no_catalog_key(self):
+        """OPENAI_BASE_URL plus LLM_NAME registers the server's models without any model YAML."""
+        env = {"LLM_PROVIDER": "openai_compatible", "OPENAI_BASE_URL": "http://localhost:11434/v1", "LLM_NAME": "llama3"}
+        check = commands._check_provider(env)
+        assert check.level == "ok"
+        assert "localhost:11434" in check.detail
+
+    def test_openai_compatible_with_a_base_url_but_no_model_name_is_still_a_problem(self):
+        check = commands._check_provider({"LLM_PROVIDER": "openai_compatible", "OPENAI_BASE_URL": "http://h:1/v1"})
+        assert check.level == "fail"
+
+    def test_the_provider_check_survives_settings_that_do_not_load(self):
+        check = commands._check_provider({"LLM_PROVIDER": "openai", "API_KEY": "x", "VECTOR_STORE": "lancedb"})
+        assert check.level == "ok"
+
     def test_services_are_named_for_the_install(self, tmp_path):
         names = _names(tmp_path)
         assert commands._chosen_services(names, []) == list(names)
@@ -542,3 +609,71 @@ class TestDoctor:
         (tmp_path / ".env").write_text("LLM_PROVIDER=docsgpt\n", encoding="utf-8")
         _run(["doctor", "--dir", str(tmp_path)], _context())
         assert str(tmp_path / ".env") in capsys.readouterr().out
+
+
+def _doctor_subprocess(tmp_path, stack_env: str, **environ: str):
+    """Run ``python -m docsgpt doctor --dir`` as a user would, in a clean environment."""
+    import os
+    import subprocess
+    import sys
+
+    stack = tmp_path / "stack"
+    home = tmp_path / "home"
+    stack.mkdir(parents=True)
+    home.mkdir(parents=True, exist_ok=True)
+    (stack / ".env").write_text(stack_env, encoding="utf-8")
+    env = {"HOME": str(tmp_path), "PATH": os.environ.get("PATH", ""), "DOCSGPT_HOME": str(home)}
+    env.update(environ)
+    return subprocess.run(
+        [sys.executable, "-m", "docsgpt", "doctor", "--dir", str(stack)],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    ), home
+
+
+class TestDoctorEndToEnd:
+    """Doctor exists to explain a broken setup, so no settings file may make it trace back."""
+
+    def test_a_settings_file_that_fails_validation_is_a_model_failure(self, tmp_path):
+        result, _ = _doctor_subprocess(tmp_path, "LLM_PROVIDER=openai\nAPI_KEY=sk\nVECTOR_STORE=lancedb\n")
+        assert "Traceback" not in result.stderr, result.stderr
+        lines = result.stdout.splitlines()
+        model = [line for line in lines if " model " in line]
+        assert model and "FAIL" in model[0] and "VECTOR_STORE" in model[0]
+        assert any(" provider " in line and "ok" in line for line in lines)
+
+    def test_the_default_settings_file_failing_validation_is_reported(self, tmp_path):
+        """Without --dir doctor checks the data home's .env, the same file the app imports settings from."""
+        import os
+        import subprocess
+        import sys
+
+        (tmp_path / ".env").write_text("LLM_PROVIDER=openai\nAPI_KEY=sk\nVECTOR_STORE=lancedb\n", encoding="utf-8")
+        env = {"HOME": str(tmp_path), "PATH": os.environ.get("PATH", ""), "DOCSGPT_HOME": str(tmp_path)}
+        result = subprocess.run(
+            [sys.executable, "-m", "docsgpt", "doctor"], env=env, capture_output=True, text=True, timeout=120
+        )
+        assert "Traceback" not in result.stderr, result.stderr
+        model = [line for line in result.stdout.splitlines() if " model " in line]
+        assert model and "FAIL" in model[0] and "VECTOR_STORE" in model[0]
+
+    def test_a_broken_checkout_settings_file_does_not_matter_with_dir(self, tmp_path):
+        home = tmp_path / "home"
+        home.mkdir()
+        (home / ".env").write_text("VECTOR_STORE=lancedb\n", encoding="utf-8")
+        result, _ = _doctor_subprocess(tmp_path / "run", "LLM_PROVIDER=openai\nAPI_KEY=sk\n", DOCSGPT_HOME=str(home))
+        assert "Traceback" not in result.stderr, result.stderr
+        assert any(" model " in line and "gpt-5.5" in line for line in result.stdout.splitlines())
+
+    def test_a_missing_env_file_variable_does_not_matter_with_dir(self, tmp_path):
+        result, _ = _doctor_subprocess(
+            tmp_path, "LLM_PROVIDER=openai\nAPI_KEY=sk\n", DOCSGPT_ENV_FILE=str(tmp_path / "missing.env")
+        )
+        assert "Traceback" not in result.stderr, result.stderr
+        assert any(" model " in line and "gpt-5.5" in line for line in result.stdout.splitlines())
+
+    def test_registry_logging_stays_out_of_the_report(self, tmp_path):
+        result, _ = _doctor_subprocess(tmp_path, "LLM_PROVIDER=openai\nAPI_KEY=sk\n")
+        assert "skipped: env var" not in result.stdout + result.stderr

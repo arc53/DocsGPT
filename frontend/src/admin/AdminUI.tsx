@@ -96,6 +96,7 @@ const EVENT_LABELS: Record<string, string> = {
   scim_reactivated: 'Activated (SCIM)',
   quota_policy_set: 'Quota set',
   quota_policy_deleted: 'Quota removed',
+  connector_policy_set: 'Connector policy changed',
   pat_created: 'Token created',
   pat_revoked: 'Token revoked',
   pat_regenerated: 'Token regenerated',

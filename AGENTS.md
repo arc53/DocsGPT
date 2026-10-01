@@ -17,8 +17,10 @@ For feature work, do **not** assume the environment needs to be recreated.
 > MongoDB is **not** required for the default install. It is only needed if
 > the user opts into the Mongo vector-store backend (`VECTOR_STORE=mongodb`)
 > or is running the one-shot `scripts/db/backfill.py` to migrate existing
-> user data from the legacy Mongo-based install. In those cases, `pymongo`
-> is available as an optional extra, not a core dependency.
+> user data from the legacy Mongo-based install. `pymongo` is not a
+> dependency or an extra: install it separately with
+> `uv pip install 'pymongo>=4.6'` (a later `uv sync` removes it again).
+> The vector store needs Atlas `$vectorSearch`, not a plain `mongo` container.
 
 ## Normal local development commands
 
@@ -27,20 +29,31 @@ Use these commands once the dev prerequisites above are satisfied.
 ### Backend
 
 ```bash
+uv sync                    # deps from uv.lock + the dev group (test tools, ruff) + docsgpt itself, editable
 source .venv/bin/activate  # macOS/Linux
-uv pip install -r docsgpt/requirements.txt  # or: pip install -r docsgpt/requirements.txt
-# Optional extras (not installed by default; each file = core + the extra):
-# uv pip install -r docsgpt/requirements-docling.txt   # docling parser engine (OCR backend, structured output)
-# uv pip install -r docsgpt/requirements-milvus.txt    # VECTOR_STORE=milvus
-# With uv alone: `uv sync --extra docling` (pyproject.toml + uv.lock are the source of truth).
+# pip instead: pip install -r docsgpt/requirements.txt -r tests/requirements.txt && pip install -e .
+# Optional extras (not installed by default); name every extra you want, `uv sync` removes the others:
+# uv sync --extra docling   # docling parser engine (OCR backend, structured output)
+# uv sync --extra milvus    # VECTOR_STORE=milvus
+# pip: pip install -r docsgpt/requirements-docling.txt (or requirements-milvus.txt); each file = core + the extra.
 # `uv pip install -r docsgpt/requirements-docling.txt` needs UV_INDEX_STRATEGY=unsafe-best-match
 # (the file adds the PyTorch CPU index; prefer `uv sync --extra docling`).
 ```
 
+Python 3.12 (`requires-python >=3.12`; CI runs 3.12). A dev `.env` starts from
+`cp .env-template .env` and needs at least `POSTGRES_URI` and `INTERNAL_KEY`
+(see `docs/content/Deploying/Development-Environment.mdx`).
+
 The backend is also an installable package (`pyproject.toml`, hatchling).
-`uv sync` installs it editable and puts a `docsgpt` command on PATH:
-`docsgpt api --reload`, `docsgpt worker`, `docsgpt migrate`,
-`docsgpt prefetch-models`, `docsgpt verify-offline`. Runtime data (`.env`,
+`uv sync` (or `pip install -e .`) installs it editable and puts a `docsgpt` command on PATH;
+`python -m docsgpt <command>` works without that step. The quickest dev loop is
+`docsgpt dev`: it runs the API and the worker (with beat) from the checkout, both
+reloading on save, in one terminal; `--ui` adds the Vite dev server and
+`--mock-llm` runs `scripts/mock_llm.py` so no provider key is needed.
+`docsgpt doctor` checks PostgreSQL (reachable, schema current), Redis, the model
+provider and the API port; run it first when something does not start.
+Other commands: `docsgpt api --reload`, `docsgpt worker`, `docsgpt beat`, `docsgpt migrate`,
+`docsgpt grant-admin`, `docsgpt prefetch-models`, `docsgpt verify-offline`. Runtime data (`.env`,
 `inputs/`, `indexes/`) lives in the checkout by default; `DOCSGPT_HOME` moves
 that data home, and `DOCSGPT_ENV_FILE` selects only the `.env` file (see
 `docsgpt/core/paths.py`). `bash scripts/build_frontend.sh` builds the web UI
@@ -77,21 +90,34 @@ for a long time; on Flask each would pin a WSGI threadpool slot. Under
 `flask run` those paths 404: chat still works (`POST /stream` is a Flask
 route), but live notifications, stream auto-resume, paired devices and
 artifact downloads don't. Use `flask run` only when you don't need them.
+`docsgpt api` and `docsgpt dev` serve the ASGI app. The user-facing copy of
+this list is the "ASGI-only features" section of
+`docs/content/Deploying/Development-Environment.mdx`; keep the two in step.
 
-Production uses `gunicorn -k uvicorn_worker.UvicornWorker` against the same
-`docsgpt.asgi:asgi_app` target; see `docsgpt/Dockerfile` for the
-full flag set.
+Production uses `gunicorn -k docsgpt.gunicorn_worker.BoundedDrainUvicornWorker`
+against the same `docsgpt.asgi:asgi_app` target; see `docsgpt/Dockerfile` for
+the full flag set.
 
-Run the Celery worker in a separate terminal:
+Run the Celery worker, with the embedded beat scheduler (`-B`), in a separate
+terminal:
 
 ```bash
-celery -A docsgpt.app.celery worker -l INFO
+celery -A docsgpt.app.celery worker -l INFO -B
 ```
+
+`docsgpt worker` (or `python -m docsgpt worker`) runs the same thing: it adds
+`-B` itself (`--no-beat` drops it) and picks the solo pool on macOS and Windows.
+
+**Beat must run somewhere.** It fires scheduled agent runs, source syncs,
+reconciliation, retention cleanups and the version check; without it they
+silently never happen. Extra beat instances are safe (RedBeat holds a lock in
+Redis). Celery rejects `-B` on Windows: drop it there and run
+`celery -A docsgpt.app.celery beat -l INFO` (or `docsgpt beat`) next to the worker.
 
 **The worker is required for retrieval, not optional.** `EMBEDDINGS_DELEGATE_TO_WORKER`
 defaults on, so the API embeds each query by dispatching to the worker rather than
 loading a model of its own — which keeps the API process around 285 MB instead of
-1.2 GB. Without a worker consuming `EMBEDDINGS_QUEUE`, every search fails after
+about 660 MB. Without a worker consuming `EMBEDDINGS_QUEUE`, every search fails after
 `EMBEDDINGS_DELEGATE_TIMEOUT`. To run the API on its own, either set
 `EMBEDDINGS_DELEGATE_TO_WORKER=false` (loads the model in-process) or point
 `EMBEDDINGS_BASE_URL` at an embeddings service.
@@ -99,7 +125,7 @@ loading a model of its own — which keeps the API process around 285 MB instead
 On macOS, prefer the solo pool for Celery:
 
 ```bash
-python -m celery -A docsgpt.app.celery worker -l INFO --pool=solo
+python -m celery -A docsgpt.app.celery worker -l INFO -B --pool=solo
 ```
 
 Note that `--pool=solo` costs roughly 350 ms per query embed against ~55 ms on the
@@ -112,7 +138,8 @@ tool / workflow native-file parse) alike. Use `-Q` only to split load: run the m
 worker with `-Q docsgpt`, a dedicated (e.g. GPU-enabled) parser worker with
 `-Q parsing` for heavy OCR, and `-Q embeddings` to keep query latency off the ingest
 pool. Note the main `ingest` task parses in-process on `docsgpt`; only
-`read_document` is routed to `parsing`.
+`read_document` is routed to `parsing`. When you split workers, keep `-B` on
+at least one of them.
 
 ### Frontend
 
@@ -137,6 +164,13 @@ npm install
 ruff check .
 python -m pytest
 ```
+
+The suite needs the test dependencies (`uv sync` installs the `dev` group; pip users
+install `tests/requirements.txt`, and pytest-cov is mandatory because `pytest.ini`
+passes `--cov`). DB-backed tests start a throwaway cluster through
+`pytest-postgresql`, so the PostgreSQL server binaries (`pg_ctl`, `initdb`) must be
+on `PATH` or reachable through `pg_config`; a running Postgres is not required.
+See CONTRIBUTING.md "Running the tests".
 
 On **macOS**, run the suite with `KMP_DUPLICATE_LIB_OK=TRUE`:
 
@@ -178,7 +212,7 @@ vale .
 - `frontend/`: Vite + React + TypeScript application.
 - `frontend/src/`: main UI code, including `components`, `conversation`, `hooks`, `locale`, `settings`, `upload`, and Redux store wiring in `store.ts`.
 - `docs/`: separate documentation site built with Next.js/Nextra.
-- `extensions/`: integrations and widgets — currently the Chatwoot webhook bridge and the React widget (published to npm as `docsgpt`). The Discord bot, Slack bot, and Chrome extension have been moved to their own repos under `arc53/`.
+- `extensions/`: integrations and widgets — currently the Chatwoot webhook bridge and the React widget (published to npm as `docsgpt`). The Discord, Slack and Telegram bots live in their own repos (`arc53/discord-docsgpt-extension`, `arc53/slack-bot-docsgpt-extenstion`, `arc53/tg-bot-docsgpt-extenstion`); the old Chrome extension was removed and has no public successor.
 - `deployment/`: Docker Compose variants and Kubernetes manifests.
 
 ## Coding rules
@@ -199,6 +233,7 @@ vale .
 - Agents and tools are in `docsgpt/agents/` and `docsgpt/agents/tools/`.
 - Celery setup/config lives in `docsgpt/celery_init.py` and `docsgpt/celeryconfig.py`.
 - Settings and env vars are managed via Pydantic in `docsgpt/core/settings/` (one module per domain, composed into `Settings`). Every field needs a `description`; regenerate the docs reference with `python -m docsgpt.core.settings.reference --write`.
+- REST routes are documented from the flask-restx Swagger document; after adding or changing a route, regenerate the docs snapshot with `python -m docsgpt.api.reference --write` (CI fails if `docs/data/swagger.json` is stale).
 
 ### Frontend
 

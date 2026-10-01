@@ -9,9 +9,21 @@ two-step change in this file:
 2. Add a single entry to :data:`BACKFILLERS`.
 
 There are intentionally no per-collection CLI flags or environment
-variables — ``USE_POSTGRES`` / ``READ_POSTGRES`` in ``.env`` are the
-only knobs operators need. This script discovers what's available from
-the :data:`BACKFILLERS` registry and runs whichever tables were asked for.
+variables: ``--tables`` picks from the :data:`BACKFILLERS` registry, and
+every registered table runs when it is omitted. The source is
+``MONGO_URI`` (database ``docsgpt`` unless ``--mongo-db`` names another)
+and the target is ``POSTGRES_URI``.
+
+Before writing, the script prepares Postgres the way the app does when it
+starts: it creates the database when ``AUTO_CREATE_DB`` allows and runs the
+migrations when ``AUTO_MIGRATE`` allows, so it also works against a fresh
+database. ``--dry-run`` touches neither, so run ``docsgpt migrate`` first
+if you dry-run against an empty database.
+
+The FAISS index rename (``rename_faiss_indexes``) goes through the storage
+layer, so it acts on the same ``indexes/`` directory (or S3 bucket) the app
+uses: run it with the ``DOCSGPT_HOME`` / storage settings of the install
+being migrated.
 
 This script imports ``pymongo`` directly. ``pymongo`` is not part of the
 base ``docsgpt/requirements.txt`` post-migration — install it
@@ -25,6 +37,7 @@ Usage::
     python scripts/db/backfill.py --tables users     # only specific tables
     python scripts/db/backfill.py --dry-run          # count without writing
     python scripts/db/backfill.py --batch 1000       # tune commit size
+    python scripts/db/backfill.py --mongo-db mydb    # Mongo database not named docsgpt
 
 Exit codes:
     0 — every requested table completed successfully
@@ -42,7 +55,7 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Sequence
 
 # Make the project root importable regardless of cwd.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -50,14 +63,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from sqlalchemy import Connection, text  # noqa: E402
 
 from docsgpt.core.settings import settings  # noqa: E402
+from docsgpt.storage.db.bootstrap import ensure_database_ready  # noqa: E402
 from docsgpt.storage.db.engine import get_engine  # noqa: E402
 
 
 # The backfill tool is the one remaining consumer of MongoDB in this repo.
 # It reads from Mongo and writes to Postgres, so it keeps its own client
 # rather than going through the (now-deleted) ``docsgpt.core.mongo_db``
-# wrapper. The DB name is hard-coded to ``docsgpt`` — historically surfaced
-# as ``settings.MONGO_DB_NAME`` but that setting has been removed post-cutover.
+# wrapper. The DB name defaults to ``docsgpt`` (the old ``MONGO_DB_NAME``
+# default; that setting has been removed post-cutover) and ``--mongo-db``
+# overrides it. The database in ``MONGO_URI`` is deliberately not used: legacy
+# URIs often name the auth database there (``/admin``), not the data one.
 _MONGO_DB_NAME = "docsgpt"
 
 logger = logging.getLogger("backfill")
@@ -848,7 +864,7 @@ def _rename_faiss_indexes(
     """Rename FAISS index dirs from legacy Mongo ObjectId to PG UUID.
 
     FAISS-specific: other vector stores (Qdrant, Elasticsearch, Chroma,
-    pgvector, Milvus, LanceDB, MongoDB Atlas Vector Search) key their
+    pgvector, Milvus, MongoDB Atlas Vector Search) key their
     collections/indexes by the source identifier the application hands
     them at query time — once the app starts emitting PG UUIDs post-
     cutover, the next write re-keys the remote collection automatically
@@ -2491,7 +2507,15 @@ BACKFILLERS: dict[str, BackfillFn] = {
 # ---------------------------------------------------------------------------
 
 
-def main() -> int:
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    """Copy the requested tables from MongoDB into Postgres.
+
+    Args:
+        argv: Command-line arguments; ``sys.argv[1:]`` when omitted.
+
+    Returns:
+        0 when every table succeeded, 1 on misconfiguration, 2 when a table failed.
+    """
     parser = argparse.ArgumentParser(
         description="Backfill DocsGPT Postgres tables from MongoDB."
     )
@@ -2514,7 +2538,12 @@ def main() -> int:
         default=500,
         help="How many rows to commit per Postgres statement (default: 500).",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--mongo-db",
+        default=_MONGO_DB_NAME,
+        help=f"MongoDB database to read (default: {_MONGO_DB_NAME}).",
+    )
+    args = parser.parse_args(argv)
 
     logging.basicConfig(
         level=logging.INFO,
@@ -2551,7 +2580,17 @@ def main() -> int:
         return 1
 
     mongo = MongoClient(settings.MONGO_URI)
-    mongo_db = mongo[_MONGO_DB_NAME]
+    mongo_db = mongo[args.mongo_db]
+
+    # Same bootstrap the app runs on start, so a fresh database gets its
+    # schema instead of failing with ``relation ... does not exist``.
+    if not args.dry_run:
+        ensure_database_ready(
+            settings.POSTGRES_URI,
+            create_db=settings.AUTO_CREATE_DB,
+            migrate=settings.AUTO_MIGRATE,
+            logger=logger,
+        )
     engine = get_engine()
 
     # Ensure the ``__system__`` sentinel user exists before any template
