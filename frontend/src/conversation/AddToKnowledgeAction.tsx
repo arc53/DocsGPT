@@ -14,8 +14,11 @@ import {
  */
 export default function AddToKnowledgeAction({
   files,
+  onAdded,
 }: {
   files: KnowledgeFile[];
+  /** Called once the server accepted the files. */
+  onAdded?: () => void;
 }) {
   const { t } = useTranslation();
   const { addToKnowledge, pending, error } = useAddToKnowledge();
@@ -36,7 +39,10 @@ export default function AddToKnowledgeAction({
         size="inline"
         loading={pending}
         onClick={async () => {
-          if (await addToKnowledge(files)) setAdded(true);
+          if (await addToKnowledge(files)) {
+            setAdded(true);
+            onAdded?.();
+          }
         }}
         // eslint-disable-next-line shadcn/no-restyle -- the link inherits its Alert's status colour
         className="text-current"
