@@ -1,7 +1,9 @@
 """A zip attachment is unpacked into one attachment per member.
 
 Runs the worker against a real ephemeral Postgres and local storage, so the
-rows it writes are asserted as stored.
+rows it writes are asserted as stored. Members parse as their own Celery
+tasks: the dispatch seam is replaced by a queue the tests drain, standing in
+for the workers.
 """
 
 from __future__ import annotations
@@ -22,6 +24,15 @@ USER = "zip-user"
 class _StubTask:
     def update_state(self, *args, **kwargs):
         pass
+
+
+class _RetryingTask(_StubTask):
+    """A task with retries left, as Celery binds it on a first attempt."""
+
+    max_retries = 3
+
+    class request:
+        retries = 0
 
 
 @pytest.fixture()
@@ -72,10 +83,43 @@ def _upload(storage_dir, payload, filename="bundle.zip"):
     return {"filename": filename, "attachment_id": attachment_id, "path": rel_path, "metadata": {}}
 
 
+@pytest.fixture()
+def dispatched(monkeypatch):
+    """Member tasks handed to Celery, in dispatch order."""
+    queue = []
+    monkeypatch.setattr(
+        "docsgpt.worker._dispatch_archive_member",
+        lambda member_info, user: queue.append((member_info, user)),
+    )
+    return queue
+
+
 def _run(info):
+    """Run the zip's own task (unpack and dispatch), not its members."""
     from docsgpt.worker import attachment_worker
 
     return attachment_worker(_StubTask(), info, USER)
+
+
+def _run_member(member_info, task=None):
+    from docsgpt.worker import archive_member_worker
+
+    return archive_member_worker(task or _StubTask(), member_info, USER)
+
+
+def _drain(queue, *, newest_first=False, peak=None):
+    """Run every dispatched member task until none is left."""
+    while queue:
+        if peak is not None:
+            peak.append(len(queue))
+        member_info, _ = queue.pop() if newest_first else queue.pop(0)
+        _run_member(member_info)
+
+
+def _run_all(info, queue, **kwargs):
+    result = _run(info)
+    _drain(queue, **kwargs)
+    return result
 
 
 def _parent(info):
@@ -98,12 +142,12 @@ ENTRIES = [
 ]
 
 
-@pytest.mark.usefixtures("wired_engine")
+@pytest.mark.usefixtures("wired_engine", "dispatched")
 class TestZipAttachment:
-    def test_members_become_their_own_parsed_attachments(self, storage_dir, events):
+    def test_members_become_their_own_parsed_attachments(self, storage_dir, events, dispatched):
         info = _upload(storage_dir, _zip(ENTRIES))
 
-        result = _run(info)
+        result = _run_all(info, dispatched)
 
         parent = _parent(info)
         members = _members(parent["id"])
@@ -120,10 +164,10 @@ class TestZipAttachment:
             assert member["upload_path"] != parent["upload_path"]
         assert result["attachment_id"] == info["attachment_id"]
 
-    def test_parent_is_an_index_not_the_compressed_bytes(self, storage_dir, events):
+    def test_parent_is_an_index_not_the_compressed_bytes(self, storage_dir, events, dispatched):
         info = _upload(storage_dir, _zip(ENTRIES))
 
-        _run(info)
+        _run_all(info, dispatched)
 
         parent = _parent(info)
         assert parent["mime_type"] == "application/zip"
@@ -136,24 +180,24 @@ class TestZipAttachment:
         assert parent["metadata"]["extraction"]["status"] == "ok"
         assert parent["content_hash"]
 
-    def test_only_the_zip_reports_progress(self, storage_dir, events):
+    def test_only_the_zip_reports_progress(self, storage_dir, events, dispatched):
         info = _upload(storage_dir, _zip(ENTRIES))
 
-        _run(info)
+        _run_all(info, dispatched)
 
         ids = {payload["attachment_id"] for _, payload in events}
         assert ids == {info["attachment_id"]}
         kinds = [kind for kind, _ in events]
         assert kinds[0] == "attachment.queued" and kinds[-1] == "attachment.completed"
         completed = events[-1][1]
-        assert completed["archive"] == {"members": 3, "skipped": 1}
+        assert completed["archive"] == {"members": 3, "skipped": 1, "failed": 0}
         assert completed["token_count"] > 0
 
-    def test_a_retry_updates_the_same_member_rows(self, storage_dir, events):
+    def test_a_retry_updates_the_same_member_rows(self, storage_dir, events, dispatched):
         info = _upload(storage_dir, _zip(ENTRIES))
 
-        _run(info)
-        _run(info)
+        _run_all(info, dispatched)
+        _run_all(info, dispatched)
 
         assert len(_members(_parent(info)["id"])) == 3
 
@@ -170,3 +214,197 @@ class TestZipAttachment:
 
         assert events[-1][0] == "attachment.failed"
         assert _parent(info)["metadata"]["extraction"]["status"] == "failed"
+
+
+def _member_names(queue):
+    return [member_info["metadata"]["archive_path"] for member_info, _ in queue]
+
+
+@pytest.mark.usefixtures("wired_engine")
+class TestZipMemberFanOut:
+    @pytest.fixture(autouse=True)
+    def _window_of_two(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "ATTACHMENT_ARCHIVE_PARALLELISM", 2)
+
+    def test_the_zip_task_dispatches_members_instead_of_parsing_them(self, storage_dir, events, dispatched):
+        info = _upload(storage_dir, _zip(ENTRIES))
+
+        _run(info)
+
+        assert _member_names(dispatched) == ["notes.txt", "docs/readme.md"]
+        parent = _parent(info)
+        assert parent["metadata"]["extraction"]["status"] == "processing"
+        assert _members(parent["id"]) == []
+        assert "attachment.completed" not in [kind for kind, _ in events]
+        for member_info, user in dispatched:
+            assert user == USER
+            assert member_info["metadata"]["parent_attachment_id"] == str(parent["id"])
+            assert (storage_dir / member_info["path"]).is_file()
+
+    def test_at_most_the_window_of_members_is_in_flight(self, storage_dir, events, dispatched):
+        info = _upload(storage_dir, _zip(ENTRIES))
+        peak = []
+
+        _run(info)
+        handled = []
+        while dispatched:
+            peak.append(len(dispatched))
+            member_info, _ = dispatched.pop(0)
+            handled.append(member_info["metadata"]["archive_path"])
+            _run_member(member_info)
+
+        assert max(peak) == 2
+        assert handled == ["notes.txt", "docs/readme.md", "nested.zip/inner.txt"]
+
+    def test_the_zip_completes_once_after_its_last_member(self, storage_dir, events, dispatched):
+        info = _upload(storage_dir, _zip(ENTRIES))
+
+        _run_all(info, dispatched, newest_first=True)
+
+        kinds = [kind for kind, _ in events]
+        assert kinds.count("attachment.completed") == 1
+        assert kinds[-1] == "attachment.completed"
+        parent = _parent(info)
+        members = _members(parent["id"])
+        assert events[-1][1]["token_count"] == sum(m["token_count"] for m in members)
+        assert events[-1][1]["archive"] == {"members": 3, "skipped": 1, "failed": 0}
+        assert parent["metadata"]["extraction"]["status"] == "ok"
+        assert "nested.zip/inner.txt" in parent["content"]
+        assert all(m["metadata"]["extraction"]["status"] == "ok" for m in members)
+
+    def test_progress_moves_as_members_finish(self, storage_dir, events, dispatched):
+        info = _upload(storage_dir, _zip(ENTRIES))
+
+        _run_all(info, dispatched)
+
+        currents = [p["current"] for kind, p in events if kind == "attachment.progress"]
+        assert currents == sorted(currents)
+        assert len(set(currents)) >= 4
+
+    def test_a_failed_member_is_recorded_with_its_reason(self, storage_dir, events, dispatched, monkeypatch):
+        import docsgpt.worker as worker
+
+        real = worker._single_attachment_worker
+
+        def flaky(task, member_info, user, **kwargs):
+            if member_info["metadata"]["archive_path"] == "docs/readme.md":
+                raise ValueError("parser exploded")
+            return real(task, member_info, user, **kwargs)
+
+        monkeypatch.setattr(worker, "_single_attachment_worker", flaky)
+        info = _upload(storage_dir, _zip(ENTRIES))
+
+        _run_all(info, dispatched)
+
+        parent = _parent(info)
+        archive = parent["metadata"]["archive"]
+        assert archive["failed"] == 1
+        assert archive["failed_members"] == [{"archive_path": "docs/readme.md", "reason": "parser exploded"}]
+        assert "docs/readme.md (could not be parsed: parser exploded)" in parent["content"]
+        assert events[-1][0] == "attachment.completed"
+        assert events[-1][1]["archive"] == {"members": 3, "skipped": 1, "failed": 1}
+
+    def test_a_member_with_retries_left_does_not_count_until_it_settles(
+        self, storage_dir, events, dispatched, monkeypatch
+    ):
+        import docsgpt.worker as worker
+
+        real = worker._single_attachment_worker
+        failures = {"left": 1}
+
+        def blip(task, member_info, user, **kwargs):
+            if member_info["metadata"]["archive_path"] == "notes.txt" and failures["left"]:
+                failures["left"] -= 1
+                raise ConnectionError("storage blip")
+            return real(task, member_info, user, **kwargs)
+
+        monkeypatch.setattr(worker, "_single_attachment_worker", blip)
+        info = _upload(storage_dir, _zip(ENTRIES))
+        _run(info)
+        first, _ = dispatched.pop(0)
+
+        with pytest.raises(ConnectionError):
+            _run_member(first, task=_RetryingTask())
+
+        assert _member_names(dispatched) == ["docs/readme.md"]
+        assert "outcomes" in _parent(info)["metadata"]["archive"]
+        assert first["attachment_id"] not in _parent(info)["metadata"]["archive"]["outcomes"]
+
+        _run_member(first, task=_RetryingTask())
+        _drain(dispatched)
+
+        archive = _parent(info)["metadata"]["archive"]
+        assert archive["failed"] == 0
+        assert events[-1][0] == "attachment.completed"
+
+    def test_a_redelivered_member_is_counted_once(self, storage_dir, events, dispatched):
+        info = _upload(storage_dir, _zip(ENTRIES))
+        _run(info)
+        first, _ = dispatched.pop(0)
+
+        _run_member(first)
+        _run_member(first)
+        _drain(dispatched)
+
+        kinds = [kind for kind, _ in events]
+        assert kinds.count("attachment.completed") == 1
+        assert _parent(info)["metadata"]["archive"]["members"] == 3
+
+    def test_a_poisoned_member_still_lets_the_zip_complete(self, storage_dir, events, dispatched):
+        from docsgpt.api.user.tasks import _emit_archive_member_poison_event
+
+        info = _upload(storage_dir, _zip(ENTRIES))
+        _run(info)
+        first, _ = dispatched.pop(0)
+
+        _emit_archive_member_poison_event("store_archive_member", {"user": USER, "member_info": first})
+        _drain(dispatched)
+
+        parent = _parent(info)
+        archive = parent["metadata"]["archive"]
+        assert archive["failed"] == 1
+        assert archive["failed_members"][0]["archive_path"] == "notes.txt"
+        assert events[-1][0] == "attachment.completed"
+        member = next(m for m in _members(parent["id"]) if m["metadata"]["archive_path"] == "notes.txt")
+        assert member["metadata"]["extraction"]["status"] == "failed"
+
+    def test_a_retried_zip_keeps_the_members_that_finished(self, storage_dir, events, dispatched):
+        info = _upload(storage_dir, _zip(ENTRIES))
+        _run(info)
+        first, _ = dispatched.pop(0)
+        _run_member(first)
+
+        _run(info)
+        _drain(dispatched)
+
+        assert [kind for kind, _ in events].count("attachment.completed") == 1
+        parent = _parent(info)
+        assert parent["metadata"]["archive"]["members"] == 3
+        assert parent["metadata"]["archive"]["failed"] == 0
+        assert len(_members(parent["id"])) == 3
+
+    def test_a_zip_with_nothing_to_parse_completes_at_once(self, storage_dir, events, dispatched):
+        info = _upload(storage_dir, _zip([("tool.exe", bytes(range(256)) * 8)]))
+
+        _run(info)
+
+        assert dispatched == []
+        assert events[-1][0] == "attachment.completed"
+        assert events[-1][1]["archive"] == {"members": 0, "skipped": 1, "failed": 0}
+        assert _parent(info)["metadata"]["extraction"]["status"] == "ok"
+
+
+def test_members_are_dispatched_as_their_own_idempotent_task(monkeypatch):
+    from docsgpt.api.user import tasks
+    from docsgpt.worker import _dispatch_archive_member
+
+    calls = []
+    monkeypatch.setattr(tasks.store_archive_member, "apply_async", lambda **kw: calls.append(kw))
+    member_info = {"attachment_id": "h-1", "filename": "a.csv", "path": "p", "metadata": {}}
+
+    _dispatch_archive_member(member_info, USER)
+
+    assert calls == [{"args": [member_info, USER], "kwargs": {"idempotency_key": "archive-member:h-1"}}]
+    assert tasks.store_archive_member.acks_late is True

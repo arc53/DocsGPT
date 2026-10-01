@@ -9,7 +9,7 @@ import shutil
 import string
 import tempfile
 import threading
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import uuid
 from collections import Counter
@@ -2215,16 +2215,21 @@ def _single_attachment_worker(self, file_info, user, *, emit_events: bool = True
         raise
 
 
-
-
-def _archive_index_text(filename: str, member_paths: list, expansion: Any, failed: list) -> str:
+def _archive_index_text(
+    filename: str,
+    member_paths: List[str],
+    skipped: List[Dict[str, Any]],
+    skipped_count: int,
+    failed: Dict[str, str],
+) -> str:
     """The text stored for a zip itself: what it held and what was left out.
 
     Args:
         filename: The zip's name.
         member_paths: Archive paths of the members stored as attachments.
-        expansion: The ``ArchiveExpansion``, for the skipped members.
-        failed: Archive paths of members whose parse failed.
+        skipped: Recorded skips, ``{"archive_path", "reason"}`` each.
+        skipped_count: All members left out, recorded or not.
+        failed: Archive path to failure reason, for members whose parse failed.
 
     Returns:
         A short plain-text index; never the archive's bytes.
@@ -2233,18 +2238,23 @@ def _archive_index_text(filename: str, member_paths: list, expansion: Any, faile
 
     lines = [
         f"Archive {filename}: {len(member_paths)} file(s) unpacked, each attached separately; "
-        f"{expansion.skipped_count} skipped."
+        f"{skipped_count} skipped."
     ]
     if member_paths:
         lines.append("Files:")
-        lines.extend(f"- {path}" + (" (could not be parsed)" if path in failed else "") for path in member_paths)
-    if expansion.skipped:
+        for path in member_paths:
+            if path not in failed:
+                lines.append(f"- {path}")
+            elif failed[path]:
+                lines.append(f"- {path} (could not be parsed: {failed[path]})")
+            else:
+                lines.append(f"- {path} (could not be parsed)")
+    if skipped:
         lines.append("Skipped:")
         lines.extend(
-            f"- {item.archive_path}: {SKIP_REASON_TEXT.get(item.reason, item.reason)}"
-            for item in expansion.skipped
+            f"- {item['archive_path']}: {SKIP_REASON_TEXT.get(item['reason'], item['reason'])}" for item in skipped
         )
-        hidden = expansion.skipped_count - len(expansion.skipped)
+        hidden = skipped_count - len(skipped)
         if hidden > 0:
             lines.append(f"- and {hidden} more")
     return "\n".join(lines)
@@ -2255,19 +2265,431 @@ def _archive_member_handle(attachment_id: Any, index: int, archive_path: str) ->
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"docsgpt-archive:{attachment_id}:{index}:{archive_path}"))
 
 
+# Progress the zip reports: unpacking fills up to the first mark, its members
+# finishing move it to the second, and completing the zip takes it to 100.
+_ARCHIVE_UNPACKED_PROGRESS = 30
+_ARCHIVE_MEMBERS_DONE_PROGRESS = 90
+# Longest member failure reason kept on the zip.
+_ARCHIVE_FAILURE_REASON_CHARS = 300
+
+
+def _archive_state(row: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The zip's in-progress member bookkeeping, or None once it completed."""
+    metadata = (row or {}).get("metadata")
+    archive = metadata.get("archive") if isinstance(metadata, dict) else None
+    if isinstance(archive, dict) and archive.get("status") == "processing":
+        return archive
+    return None
+
+
+def _archive_progress_event(row: Dict[str, Any], current: int, stage: str) -> Dict[str, Any]:
+    """A zip's ``attachment.progress`` payload, keyed by its upload handle."""
+    return {
+        "attachment_id": str(row.get("legacy_mongo_id") or row["id"]),
+        "filename": row.get("filename") or "",
+        "current": current,
+        "stage": stage,
+    }
+
+
+def _finish_archive(repo: AttachmentsRepository, row: Dict[str, Any], archive: Dict[str, Any]) -> Dict[str, Any]:
+    """Write the zip's index once every member has an outcome.
+
+    Called under the zip row's lock with ``archive`` holding an outcome for
+    every planned member. The bookkeeping (``planned`` / ``outcomes``) is
+    replaced by the summary the planner and manifest read.
+
+    Args:
+        repo: Repository on the transaction holding the lock.
+        row: The zip's row.
+        archive: Its bookkeeping, complete.
+
+    Returns:
+        The ``attachment.completed`` payload to publish once committed.
+    """
+    planned = archive.get("planned") or []
+    outcomes = archive.get("outcomes") or {}
+    skipped = [s for s in archive.get("skipped") or [] if isinstance(s, dict)]
+    skipped_count = int(archive.get("skipped_count") or 0)
+    member_paths: List[str] = []
+    failed_members: List[Dict[str, str]] = []
+    member_tokens = 0
+    for member in planned:
+        path = member["metadata"]["archive_path"]
+        member_paths.append(path)
+        outcome = outcomes.get(member["attachment_id"]) or {}
+        if outcome.get("status") == "ok":
+            member_tokens += int(outcome.get("token_count") or 0)
+        else:
+            failed_members.append({"archive_path": path, "reason": str(outcome.get("reason") or "")})
+    filename = row.get("filename") or ""
+    index_text = _archive_index_text(
+        filename,
+        member_paths,
+        skipped,
+        skipped_count,
+        {item["archive_path"]: item["reason"] for item in failed_members},
+    )
+    index_tokens = len(get_encoding().encode_ordinary(index_text))
+    summary = {
+        "status": "complete",
+        "members": len(planned),
+        "failed": len(failed_members),
+        "failed_members": failed_members,
+        "skipped": skipped,
+        "skipped_count": skipped_count,
+        "total_bytes": int(archive.get("total_bytes") or 0),
+    }
+    metadata = {
+        **(row.get("metadata") or {}),
+        "archive": summary,
+        "extraction": {
+            "status": "ok",
+            "parser": "archive",
+            "truncated": False,
+            "original_tokens": index_tokens,
+            "stored_tokens": index_tokens,
+        },
+    }
+    repo.update(str(row["id"]), row["user_id"], {"content": index_text, "token_count": index_tokens, "metadata": metadata})
+    return {
+        "attachment_id": str(row.get("legacy_mongo_id") or row["id"]),
+        "filename": filename,
+        "token_count": member_tokens,
+        "mime_type": "application/zip",
+        "extraction_status": "ok",
+        "archive": {"members": len(planned), "skipped": skipped_count, "failed": len(failed_members)},
+    }
+
+
+def _members_to_dispatch(archive: Dict[str, Any], *, upto: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Members to hand to the workers so at most the window is in flight.
+
+    Members are dispatched in archive order. With ``n`` of them finished,
+    the first ``n + window`` have been dispatched, so each finish frees the
+    slot for exactly one more: the one at index ``n + window - 1``.
+
+    Args:
+        archive: The zip's bookkeeping.
+        upto: Dispatch every unfinished member before this index instead of
+            the single newly freed one (the zip's own task starting or
+            resuming the window).
+
+    Returns:
+        The members' task payloads.
+    """
+    planned = archive.get("planned") or []
+    outcomes = archive.get("outcomes") or {}
+    window = max(1, int(settings.ATTACHMENT_ARCHIVE_PARALLELISM))
+    if upto is not None:
+        return [m for m in planned[: min(upto, len(planned))] if m["attachment_id"] not in outcomes]
+    index = len(outcomes) + window - 1
+    if index < len(planned) and planned[index]["attachment_id"] not in outcomes:
+        return [planned[index]]
+    return []
+
+
+def _dispatch_archive_member(member_info: Dict[str, Any], user: str) -> None:
+    """Queue one zip member's parse as its own Celery task.
+
+    The idempotency key is the member's handle: a duplicate dispatch (a
+    retried zip resuming its window) waits for or reuses the first run, and
+    a member that keeps killing its worker trips the poison guard, which
+    records it as failed so the zip still completes.
+    """
+    from docsgpt.api.user.tasks import store_archive_member
+
+    store_archive_member.apply_async(
+        args=[member_info, user],
+        kwargs={"idempotency_key": f"archive-member:{member_info['attachment_id']}"},
+    )
+
+
+def _is_final_attempt(task: Any, exc: BaseException) -> bool:
+    """Whether Celery will not retry ``task`` after ``exc``.
+
+    Args:
+        task: The bound task (or a stand-in without retry settings, which
+            never retries).
+        exc: The exception the attempt raised.
+
+    Returns:
+        True when the exception is not retried or the retries are spent.
+    """
+    no_retry = tuple(getattr(task, "dont_autoretry_for", None) or ())
+    if no_retry and isinstance(exc, no_retry):
+        return True
+    max_retries = getattr(task, "max_retries", None)
+    if max_retries is None:
+        return True
+    retries = getattr(getattr(task, "request", None), "retries", 0) or 0
+    return retries >= max_retries
+
+
+def _record_archive_member_outcome(user: str, member_info: Dict[str, Any], outcome: Dict[str, Any]) -> None:
+    """Count one member's final outcome on its zip, then move the zip on.
+
+    Runs under the zip row's lock, so concurrent members serialize here and
+    exactly one sees the last outcome land. A member already counted (a
+    redelivered task) is not counted again. After the commit, the member
+    whose slot this freed is dispatched, and the zip reports progress, or
+    completes when this was its last member.
+
+    Args:
+        user: The uploader.
+        member_info: The member's task payload.
+        outcome: ``{"status": "ok", "token_count": n}`` or
+            ``{"status": "failed", "reason": text}``.
+    """
+    parent_id = (member_info.get("metadata") or {}).get("parent_attachment_id")
+    handle = str(member_info["attachment_id"])
+    to_dispatch: List[Dict[str, Any]] = []
+    progress: Optional[Dict[str, Any]] = None
+    completed: Optional[Dict[str, Any]] = None
+    with db_session() as conn:
+        repo = AttachmentsRepository(conn)
+        row = repo.get_for_update(str(parent_id), user) if parent_id else None
+        archive = _archive_state(row)
+        if archive is None:
+            return
+        planned = archive.get("planned") or []
+        if handle not in {m["attachment_id"] for m in planned}:
+            return
+        outcomes = dict(archive.get("outcomes") or {})
+        outcomes.setdefault(handle, outcome)
+        archive = {**archive, "outcomes": outcomes}
+        if len(outcomes) >= len(planned):
+            completed = _finish_archive(repo, row, archive)
+        else:
+            repo.update(str(row["id"]), user, {"metadata": {**row["metadata"], "archive": archive}})
+            to_dispatch = _members_to_dispatch(archive)
+            span = _ARCHIVE_MEMBERS_DONE_PROGRESS - _ARCHIVE_UNPACKED_PROGRESS
+            current = _ARCHIVE_UNPACKED_PROGRESS + int(span * len(outcomes) / len(planned))
+            progress = _archive_progress_event(row, current, "processing")
+    for member in to_dispatch:
+        _dispatch_archive_member(member, user)
+    _publish_archive_events(user, row, progress, completed)
+
+
+def _publish_archive_events(
+    user: str, row: Dict[str, Any], progress: Optional[Dict[str, Any]], completed: Optional[Dict[str, Any]]
+) -> None:
+    """Report a zip's progress or completion to the browser, keyed by its handle."""
+    scope = {"kind": "attachment", "id": str(row.get("legacy_mongo_id") or row["id"])}
+    if progress is not None:
+        publish_user_event(user, "attachment.progress", progress, scope=scope)
+    if completed is not None:
+        publish_user_event(
+            user,
+            "attachment.progress",
+            _archive_progress_event(row, _ARCHIVE_MEMBERS_DONE_PROGRESS, "storing"),
+            scope=scope,
+        )
+        publish_user_event(user, "attachment.completed", completed, scope=scope)
+
+
+def _member_failure_reason(error: Any) -> str:
+    """A member's failure reason as the zip records it: short, one line."""
+    text = " ".join(str(error).split()) or type(error).__name__
+    return text[:_ARCHIVE_FAILURE_REASON_CHARS]
+
+
+def archive_member_worker(self, member_info: Dict[str, Any], user: str) -> Dict[str, Any]:
+    """Parse one member of a zip attachment, then count it on the zip.
+
+    The member is parsed like any upload but silently: the browser tracks
+    only the zip. A failure is counted only once it is final (not retried,
+    or out of retries), with its reason, so one bad file never holds the
+    zip back and a transient one is not reported as lost.
+
+    Args:
+        self: The Celery task, for its retry state.
+        member_info: ``filename``, ``attachment_id`` (the member's handle),
+            ``path`` and ``metadata`` (``parent_attachment_id``,
+            ``archive_path``, ``archive_index``).
+        user: The uploader.
+
+    Returns:
+        The member's handle and outcome.
+
+    Raises:
+        Exception: The parse failed and Celery will retry it.
+    """
+    try:
+        result = _single_attachment_worker(_SilentTask(), member_info, user, emit_events=False)
+    except Exception as exc:
+        if not _is_final_attempt(self, exc):
+            raise
+        logging.warning(
+            f"Archive member {member_info.get('metadata', {}).get('archive_path')} could not be parsed",
+            extra={"user": user},
+            exc_info=True,
+        )
+        outcome = {"status": "failed", "reason": _member_failure_reason(exc)}
+    else:
+        outcome = {"status": "ok", "token_count": int(result.get("token_count") or 0)}
+    _record_archive_member_outcome(user, member_info, outcome)
+    return {"attachment_id": str(member_info["attachment_id"]), **outcome}
+
+
+def record_archive_member_failure(user: str, member_info: Dict[str, Any], error: Any) -> None:
+    """Fail a member whose task never got to (the poison guard), so its zip completes.
+
+    Args:
+        user: The uploader.
+        member_info: The member's task payload.
+        error: Why it failed.
+    """
+    record_attachment_failure(user, member_info, error)
+    _record_archive_member_outcome(user, member_info, {"status": "failed", "reason": _member_failure_reason(error)})
+
+
+def _claim_archive_row(
+    user: str,
+    file_info: Dict[str, Any],
+    metadata: Dict[str, Any],
+    size: Optional[int],
+    content_hash: Optional[str],
+) -> Dict[str, Any]:
+    """Create or refresh the zip's own row before its members are stored.
+
+    A retried zip keeps the bookkeeping of the run before it, so members
+    already counted stay counted.
+
+    Args:
+        user: The uploader.
+        file_info: The zip's task payload.
+        metadata: The zip's upload metadata (with its content hash).
+        size: The zip's size in bytes.
+        content_hash: sha256 of the zip's bytes.
+
+    Returns:
+        The zip's row as written.
+    """
+    attachment_id = str(file_info["attachment_id"])
+    fields: Dict[str, Any] = {
+        "filename": file_info["filename"],
+        "upload_path": file_info["path"],
+        "mime_type": "application/zip",
+        **({"size": size} if size is not None else {}),
+        **({"content_hash": content_hash} if content_hash else {}),
+    }
+    processing = {**metadata, "extraction": {"status": "processing", "parser": "archive"}}
+    with db_session() as conn:
+        repo = AttachmentsRepository(conn)
+        existing = repo.get_by_legacy_id(attachment_id, user)
+        if existing is None:
+            return repo.create(
+                user,
+                fields["filename"],
+                fields["upload_path"],
+                mime_type="application/zip",
+                size=size,
+                content=None,
+                token_count=None,
+                metadata=processing,
+                legacy_mongo_id=attachment_id,
+                content_hash=content_hash,
+            )
+        row = repo.get_for_update(str(existing["id"]), user) or existing
+        previous = (row.get("metadata") or {}).get("archive")
+        if isinstance(previous, dict):
+            processing["archive"] = previous
+        repo.update(str(row["id"]), user, {**fields, "metadata": processing})
+        return {**row, **fields, "metadata": processing}
+
+
+def _start_archive_members(
+    user: str,
+    parent_id: str,
+    planned: List[Dict[str, Any]],
+    expansion: Any,
+) -> None:
+    """Record the zip's members and hand the first window of them to the workers.
+
+    Members a previous run of this zip already counted keep their outcomes
+    and are not dispatched again. A zip with nothing to parse (or whose
+    members were all counted) completes here.
+
+    Args:
+        user: The uploader.
+        parent_id: The zip row's PG id.
+        planned: The members' task payloads, in archive order.
+        expansion: The ``ArchiveExpansion``, for the skipped members.
+    """
+    handles = {m["attachment_id"] for m in planned}
+    completed: Optional[Dict[str, Any]] = None
+    to_dispatch: List[Dict[str, Any]] = []
+    with db_session() as conn:
+        repo = AttachmentsRepository(conn)
+        row = repo.get_for_update(parent_id, user)
+        if row is None:
+            return
+        previous = _archive_state(row) or {}
+        outcomes = {h: o for h, o in (previous.get("outcomes") or {}).items() if h in handles}
+        archive = {
+            "status": "processing",
+            "members": len(planned),
+            "planned": planned,
+            "outcomes": outcomes,
+            "skipped": [{"archive_path": s.archive_path, "reason": s.reason} for s in expansion.skipped],
+            "skipped_count": expansion.skipped_count,
+            "total_bytes": expansion.total_bytes,
+        }
+        if len(outcomes) >= len(planned):
+            completed = _finish_archive(repo, row, archive)
+        else:
+            repo.update(parent_id, user, {"metadata": {**row["metadata"], "archive": archive}})
+            window = max(1, int(settings.ATTACHMENT_ARCHIVE_PARALLELISM))
+            to_dispatch = _members_to_dispatch(archive, upto=len(outcomes) + window)
+    for member in to_dispatch:
+        _dispatch_archive_member(member, user)
+    _publish_archive_events(user, row, None, completed)
+
+
+def _record_archive_failure(user: str, file_info: Dict[str, Any], parent_id: Optional[str], error: Any) -> None:
+    """Mark the zip failed without losing its members' bookkeeping.
+
+    Before the zip has a row this is the ordinary failure row. After, only
+    ``metadata.extraction`` changes, so a retry resumes the members already
+    counted.
+    """
+    if parent_id is None:
+        record_attachment_failure(user, file_info, error, parser="archive")
+        return
+    try:
+        with db_session() as conn:
+            repo = AttachmentsRepository(conn)
+            row = repo.get_for_update(parent_id, user)
+            if row is None:
+                return
+            extraction = {"status": "failed", "parser": "archive", "truncated": False, "error": str(error)[:1024]}
+            repo.update(parent_id, user, {"metadata": {**(row.get("metadata") or {}), "extraction": extraction}})
+    except Exception:
+        logging.error(
+            f"Failed to record failure for archive {file_info.get('attachment_id')}",
+            extra={"user": user},
+            exc_info=True,
+        )
+
+
 def _archive_attachment_worker(self, file_info, user):
-    """Unpack a zip attachment into one attachment per member.
+    """Unpack a zip attachment and fan its members out to their own tasks.
 
     The zip keeps its own row as an index (``metadata.archive`` and a short
     text listing, never the compressed bytes). Each member is stored next to
-    the other uploads and parsed like one, in its own row linked by
-    ``metadata.parent_attachment_id`` / ``archive_path`` / ``archive_index``;
-    members load in archive order after the zip wherever the zip is
-    attached (``AttachmentsRepository.list_for_planning`` /
-    ``expand_archives``). Members with no parser that are not text are
-    skipped, like every member the limits leave out, with a reason recorded
-    on the zip. Only the zip reports SSE progress: the browser shows the zip
-    as one file.
+    the other uploads and parsed like one by its own ``store_archive_member``
+    task, in its own row linked by ``metadata.parent_attachment_id`` /
+    ``archive_path`` / ``archive_index``; members load in archive order after
+    the zip wherever the zip is attached
+    (``AttachmentsRepository.list_for_planning`` / ``expand_archives``).
+    At most ``ATTACHMENT_ARCHIVE_PARALLELISM`` members of one zip are queued
+    at a time; each one that finishes queues the next. The zip completes
+    (its ``attachment.completed`` event, which the composer waits for) when
+    the last member has an outcome. Members with no parser that are not
+    text are skipped, like every member the limits leave out, with a reason
+    recorded on the zip. Only the zip reports SSE progress: the browser
+    shows the zip as one file.
 
     Args:
         self: The Celery task, for progress updates.
@@ -2276,7 +2698,8 @@ def _archive_attachment_worker(self, file_info, user):
         user: The uploader.
 
     Returns:
-        The zip's stored summary.
+        The zip's summary. Its members are still being parsed unless the
+        zip had none.
 
     Raises:
         AttachmentRejectedError: The file is not a readable zip or is a zip bomb.
@@ -2289,6 +2712,22 @@ def _archive_attachment_worker(self, file_info, user):
     relative_path = file_info["path"]
     metadata = file_info.get("metadata", {}) or {}
     scope = {"kind": "attachment", "id": str(attachment_id)}
+    parent_id: Optional[str] = None
+
+    with db_readonly() as conn:
+        existing = AttachmentsRepository(conn).get_by_legacy_id(str(attachment_id), user)
+    existing_archive = ((existing or {}).get("metadata") or {}).get("archive")
+    if isinstance(existing_archive, dict) and existing_archive.get("status") == "complete":
+        # A redelivery of a zip that already completed: its members are
+        # parsed and counted, so there is nothing to redo.
+        return {
+            "filename": filename,
+            "path": relative_path,
+            "token_count": existing.get("token_count"),
+            "attachment_id": attachment_id,
+            "mime_type": "application/zip",
+            "metadata": existing.get("metadata"),
+        }
 
     publish_user_event(
         user, "attachment.queued", {"attachment_id": str(attachment_id), "filename": filename}, scope=scope
@@ -2312,20 +2751,8 @@ def _archive_attachment_worker(self, file_info, user):
         content_hash = fingerprint.get("content_hash")
         base_metadata = {**metadata, **({"content_hash": content_hash} if content_hash else {})}
         # The zip's row first, so its members can name it.
-        _upsert_attachment_row(
-            user,
-            filename,
-            relative_path,
-            mime_type="application/zip",
-            content=None,
-            token_count=None,
-            metadata={**base_metadata, "extraction": {"status": "processing", "parser": "archive"}},
-            attachment_id=attachment_id,
-            size=fingerprint.get("size"),
-            content_hash=content_hash,
-        )
-        with db_readonly() as conn:
-            parent_id = str(AttachmentsRepository(conn).get_by_legacy_id(str(attachment_id), user)["id"])
+        parent = _claim_archive_row(user, file_info, base_metadata, fingerprint.get("size"), content_hash)
+        parent_id = str(parent["id"])
 
         file_extractor = get_default_file_extractor(
             ocr_enabled=settings.OCR_ATTACHMENTS_ENABLED,
@@ -2333,12 +2760,10 @@ def _archive_attachment_worker(self, file_info, user):
         )
         parser_suffixes = set(file_extractor)
         attachments_dir = os.path.dirname(os.path.dirname(relative_path))
-        stored_paths: list = []
-        failed_paths: list = []
-        member_tokens = 0
+        planned: List[Dict[str, Any]] = []
         total = len(expansion.members) or 1
         for index, member in enumerate(expansion.members):
-            current = 30 + int(50 * index / total)
+            current = 10 + int((_ARCHIVE_UNPACKED_PROGRESS - 10) * index / total)
             self.update_state(state="PROGRESS", meta={"current": current, "status": "Unpacking"})
             publish_user_event(
                 user,
@@ -2355,95 +2780,32 @@ def _archive_attachment_worker(self, file_info, user):
             member_path = f"{attachments_dir}/{handle}/{safe_filename(member.filename)}"
             with open(member.local_path, "rb") as member_bytes:
                 storage_metadata = storage.save_file(member_bytes, member_path) or {}
-            member_info = {
-                "filename": member.filename,
-                "attachment_id": handle,
-                "path": member_path,
-                "metadata": {
-                    **(storage_metadata if isinstance(storage_metadata, dict) else {}),
-                    "parent_attachment_id": parent_id,
-                    "archive_path": member.archive_path,
-                    "archive_index": index,
-                },
-            }
-            stored_paths.append(member.archive_path)
-            try:
-                result = _single_attachment_worker(_SilentTask(), member_info, user, emit_events=False)
-                member_tokens += int(result.get("token_count") or 0)
-            except Exception:
-                # The member's own failure row is written by its error path;
-                # one bad file never sinks the rest of the archive.
-                logging.warning(
-                    f"Archive member {member.archive_path} of {filename} could not be parsed",
-                    extra={"user": user},
-                    exc_info=True,
-                )
-                failed_paths.append(member.archive_path)
+            planned.append(
+                {
+                    "filename": member.filename,
+                    "attachment_id": handle,
+                    "path": member_path,
+                    "metadata": {
+                        **(storage_metadata if isinstance(storage_metadata, dict) else {}),
+                        "parent_attachment_id": parent_id,
+                        "archive_path": member.archive_path,
+                        "archive_index": index,
+                    },
+                }
+            )
 
-        self.update_state(state="PROGRESS", meta={"current": 80, "status": "Storing in database"})
-        publish_user_event(
-            user,
-            "attachment.progress",
-            {"attachment_id": str(attachment_id), "filename": filename, "current": 80, "stage": "storing"},
-            scope=scope,
-        )
-        index_text = _archive_index_text(filename, stored_paths, expansion, failed_paths)
-        index_tokens = len(get_encoding().encode_ordinary(index_text))
-        archive_summary = {
-            "members": len(stored_paths),
-            "failed": len(failed_paths),
-            "skipped": [{"archive_path": s.archive_path, "reason": s.reason} for s in expansion.skipped],
-            "skipped_count": expansion.skipped_count,
-            "total_bytes": expansion.total_bytes,
-        }
-        final_metadata = {
-            **base_metadata,
-            "archive": archive_summary,
-            "extraction": {
-                "status": "ok",
-                "parser": "archive",
-                "truncated": False,
-                "original_tokens": index_tokens,
-                "stored_tokens": index_tokens,
-            },
-        }
-        _upsert_attachment_row(
-            user,
-            filename,
-            relative_path,
-            mime_type="application/zip",
-            content=index_text,
-            token_count=index_tokens,
-            metadata=final_metadata,
-            attachment_id=attachment_id,
-            size=fingerprint.get("size"),
-            content_hash=content_hash,
-        )
-        self.update_state(state="PROGRESS", meta={"current": 100, "status": "Complete"})
-        publish_user_event(
-            user,
-            "attachment.completed",
-            {
-                "attachment_id": str(attachment_id),
-                "filename": filename,
-                "token_count": member_tokens,
-                "mime_type": "application/zip",
-                "extraction_status": "ok",
-                "archive": {"members": len(stored_paths), "skipped": expansion.skipped_count},
-            },
-            scope=scope,
-        )
+        self.update_state(state="PROGRESS", meta={"current": _ARCHIVE_UNPACKED_PROGRESS, "status": "Parsing files"})
+        _start_archive_members(user, parent_id, planned, expansion)
         return {
             "filename": filename,
             "path": relative_path,
-            "token_count": member_tokens,
             "attachment_id": attachment_id,
             "mime_type": "application/zip",
-            "metadata": final_metadata,
+            "members": len(planned),
         }
     except Exception as e:
         logging.error(f"Error unpacking archive {filename}: {e}", extra={"user": user}, exc_info=True)
-        record_attachment_failure(user, file_info, e, parser="archive")
+        _record_archive_failure(user, file_info, parent_id, e)
         publish_user_event(
             user,
             "attachment.failed",

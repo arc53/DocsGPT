@@ -58,6 +58,14 @@ class IngestionSettings(SettingsGroup):
         gt=0,
         description="Uncompressed-to-compressed ratio above which a zip attachment is rejected as a zip bomb.",
     )
+    ATTACHMENT_ARCHIVE_PARALLELISM: int = Field(
+        default=4,
+        gt=0,
+        description=(
+            "Members of one zip attachment parsed at the same time, each as its own worker task; the next "
+            "member is queued as one finishes, so a large zip never floods the queue ahead of other uploads."
+        ),
+    )
     PARSE_PDF_AS_IMAGE: bool = Field(default=False, description="Render PDF pages to images before parsing.")
     PARSE_IMAGE_REMOTE: bool = Field(default=False, description="Send images to a remote parser.")
     DOC_PARSER_ENGINE: Literal["anydoc", "docling"] = Field(

@@ -10,6 +10,7 @@ from docsgpt.parser.file.base_parser import DocumentParseError
 from docsgpt.worker import (
     AttachmentRejectedError,
     agent_webhook_worker,
+    archive_member_worker,
     attachment_worker,
     ingest_worker,
     mcp_oauth,
@@ -341,6 +342,38 @@ def _emit_attachment_poison_event(task_name, bound):
 def store_attachment(self, file_info, user, idempotency_key=None):
     resp = attachment_worker(self, file_info, user)
     return resp
+
+
+def _emit_archive_member_poison_event(task_name, bound):
+    """Fail a zip member whose task keeps dying, so the zip still completes.
+
+    The poison guard returns before the worker runs; without this the member
+    never gets an outcome and its zip never reports ``attachment.completed``.
+    The zip, not the member, reports to the browser.
+    """
+    user = bound.get("user")
+    member_info = bound.get("member_info") or {}
+    if not user or not member_info.get("attachment_id"):
+        return
+    from docsgpt.worker import record_archive_member_failure
+
+    record_archive_member_failure(user, member_info, "Processing stopped after repeated failures.")
+
+
+# One member of a zip attachment, dispatched by the zip's own task (at most
+# ATTACHMENT_ARCHIVE_PARALLELISM at a time per zip). Same deterministic
+# failures as store_attachment skip the retries; a member's final failure is
+# recorded on its zip rather than raised, so the zip still completes.
+@celery.task(
+    **durable_task(
+        dont_autoretry_for=(DataError, AttachmentRejectedError, DocumentParseError),
+    )
+)
+@with_idempotency(
+    task_name="store_archive_member", on_poison=_emit_archive_member_poison_event,
+)
+def store_archive_member(self, member_info, user, idempotency_key=None):
+    return archive_member_worker(self, member_info, user)
 
 
 @celery.task(**DURABLE_TASK)

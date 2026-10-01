@@ -115,6 +115,29 @@ class AttachmentsRepository:
         row = result.fetchone()
         return _attachment_to_dict(row) if row is not None else None
 
+    def get_for_update(self, attachment_id: str, user_id: str) -> Optional[dict]:
+        """Read one of the owner's rows and lock it until the transaction ends.
+
+        A zip's member tasks finish on different workers; each records its
+        outcome on the zip's row under this lock, so exactly one of them sees
+        the last member done and completes the zip.
+
+        Args:
+            attachment_id: The PG ``attachments.id``.
+            user_id: The owner.
+
+        Returns:
+            The row, or None when it is not the owner's or the id is not a UUID.
+        """
+        if not looks_like_uuid(str(attachment_id)):
+            return None
+        result = self._conn.execute(
+            text("SELECT * FROM attachments WHERE id = CAST(:id AS uuid) AND user_id = :user_id FOR UPDATE"),
+            {"id": str(attachment_id), "user_id": user_id},
+        )
+        row = result.fetchone()
+        return _attachment_to_dict(row) if row is not None else None
+
     def get_any(self, attachment_id: str, user_id: str) -> Optional[dict]:
         """Resolve an attachment by either PG UUID or legacy Mongo ObjectId string."""
         if looks_like_uuid(attachment_id):

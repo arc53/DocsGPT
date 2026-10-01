@@ -290,3 +290,36 @@ class TestArchiveMembers:
         row = repo.get(loose["id"], "u")
         assert repo.expand_archives([row], "u") == [row]
         assert repo.expand_archives([], "u") == []
+
+
+class TestGetForUpdate:
+    """A zip's member tasks serialize their bookkeeping on the zip's row."""
+
+    def test_returns_the_owners_row(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "bundle.zip", "/p", metadata={"archive": {"status": "processing"}})
+
+        row = repo.get_for_update(str(doc["id"]), "u")
+
+        assert row["metadata"]["archive"] == {"status": "processing"}
+
+    def test_other_users_and_bad_ids_get_nothing(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "bundle.zip", "/p")
+
+        assert repo.get_for_update(str(doc["id"]), "someone-else") is None
+        assert repo.get_for_update("not-a-uuid", "u") is None
+
+    def test_locks_the_row(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "bundle.zip", "/p")
+
+        repo.get_for_update(str(doc["id"]), "u")
+
+        locks = pg_conn.execute(
+            text(
+                "SELECT count(*) FROM pg_locks l JOIN pg_class c ON c.oid = l.relation "
+                "WHERE c.relname = 'attachments' AND l.mode = 'RowShareLock' AND l.pid = pg_backend_pid()"
+            )
+        ).scalar()
+        assert locks >= 1
