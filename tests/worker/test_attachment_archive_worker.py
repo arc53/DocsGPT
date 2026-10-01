@@ -328,11 +328,40 @@ class TestZipMemberFanOut:
 
         parent = _parent(info)
         archive = parent["metadata"]["archive"]
+        reason = worker.ATTACHMENT_FAILURE_MESSAGES["processing_failed"]
         assert archive["failed"] == 1
-        assert archive["failed_members"] == [{"archive_path": "docs/readme.md", "reason": "parser exploded"}]
-        assert "docs/readme.md (could not be parsed: parser exploded)" in parent["content"]
+        assert archive["failed_members"] == [{"archive_path": "docs/readme.md", "reason": reason}]
+        assert f"docs/readme.md (could not be parsed: {reason})" in parent["content"]
         assert events[-1][0] == "attachment.completed"
         assert events[-1][1]["archive"] == {"members": 3, "skipped": 1, "failed": 1}
+
+    def test_a_member_failure_never_puts_the_exception_text_in_the_index(
+        self, storage_dir, events, dispatched, monkeypatch
+    ):
+        import docsgpt.worker as worker
+
+        real = worker._single_attachment_worker
+
+        def flaky(task, member_info, user, **kwargs):
+            if member_info["metadata"]["archive_path"] == "docs/readme.md":
+                raise RuntimeError("cannot open /srv/inputs/u-secret/readme.md: s3 key AKIAEXAMPLE")
+            if member_info["metadata"]["archive_path"] == "notes.txt":
+                raise worker.AttachmentRejectedError("decoder said 0xdeadbeef", code="image_unreadable")
+            return real(task, member_info, user, **kwargs)
+
+        monkeypatch.setattr(worker, "_single_attachment_worker", flaky)
+        info = _upload(storage_dir, _zip(ENTRIES))
+
+        _run_all(info, dispatched)
+
+        parent = _parent(info)
+        reasons = {f["archive_path"]: f["reason"] for f in parent["metadata"]["archive"]["failed_members"]}
+        assert reasons == {
+            "docs/readme.md": worker.ATTACHMENT_FAILURE_MESSAGES["processing_failed"],
+            "notes.txt": worker.ATTACHMENT_FAILURE_MESSAGES["image_unreadable"],
+        }
+        for leaked in ("u-secret", "AKIAEXAMPLE", "0xdeadbeef"):
+            assert leaked not in parent["content"]
 
     def test_a_member_with_retries_left_does_not_count_until_it_settles(
         self, storage_dir, events, dispatched, monkeypatch
@@ -393,7 +422,10 @@ class TestZipMemberFanOut:
         parent = _parent(info)
         archive = parent["metadata"]["archive"]
         assert archive["failed"] == 1
-        assert archive["failed_members"][0]["archive_path"] == "notes.txt"
+        assert archive["failed_members"][0] == {
+            "archive_path": "notes.txt",
+            "reason": "Processing stopped after repeated failures.",
+        }
         assert events[-1][0] == "attachment.completed"
         member = next(m for m in _members(parent["id"]) if m["metadata"]["archive_path"] == "notes.txt")
         assert member["metadata"]["extraction"]["status"] == "failed"
@@ -638,7 +670,8 @@ class TestZipMemberDispatchFailure:
         assert archive["status"] == "complete"
         assert archive["failed"] == 1
         assert archive["failed_members"][0]["archive_path"] == "docs/readme.md"
-        assert "broker unreachable" in archive["failed_members"][0]["reason"]
+        assert archive["failed_members"][0]["reason"] == "Could not be queued for processing."
+        assert "broker unreachable" not in parent["content"]
         assert events[-1][0] == "attachment.completed"
         member = next(m for m in _members(parent["id"]) if m["metadata"]["archive_path"] == "docs/readme.md")
         assert member["metadata"]["extraction"]["status"] == "failed"

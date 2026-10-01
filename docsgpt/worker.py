@@ -2729,11 +2729,11 @@ def _dispatch_archive_members(members: List[Dict[str, Any]], user: str) -> None:
         if error is None:
             continue
         logging.error(
-            f"Could not queue archive member {member.get('metadata', {}).get('archive_path')}",
+            f"Could not queue archive member {member.get('metadata', {}).get('archive_path')}: "
+            f"{_failure_log_text(error)}",
             extra={"user": user},
-            exc_info=error,
         )
-        reason = f"Could not be queued for processing: {_member_failure_reason(error)}"
+        reason = "Could not be queued for processing."
         record_attachment_failure(user, member, reason)
         pending.extend(
             _count_archive_member_outcome(
@@ -2834,10 +2834,27 @@ def sweep_stuck_archive_members(
     return failed, dispatches, events
 
 
-def _member_failure_reason(error: Any) -> str:
-    """A member's failure reason as the zip records it: short, one line."""
-    text = " ".join(str(error).split()) or type(error).__name__
-    return text[:_ARCHIVE_FAILURE_REASON_CHARS]
+def _member_failure_reason(error: Any, filename: Optional[str] = None) -> str:
+    """A member's failure reason as the zip records it: short, one line.
+
+    The zip's index is the model's view of the archive, so an exception
+    becomes the user-safe message a single failed file gets; its own text
+    (paths, parser internals, sometimes the file's bytes) stays in the logs.
+    A reason given as text is already curated (the poison guard's, the
+    reconciler's) and is kept.
+
+    Args:
+        error: The exception, or a curated reason.
+        filename: The member's filename, named in the unsupported-type message.
+
+    Returns:
+        The reason, at most ``_ARCHIVE_FAILURE_REASON_CHARS`` long.
+    """
+    if isinstance(error, BaseException):
+        text = attachment_failure(error, filename)["error"]
+    else:
+        text = " ".join(str(error).split())
+    return (text or ATTACHMENT_FAILURE_MESSAGES["processing_failed"])[:_ARCHIVE_FAILURE_REASON_CHARS]
 
 
 def archive_member_worker(self, member_info: Dict[str, Any], user: str) -> Dict[str, Any]:
@@ -2867,11 +2884,11 @@ def archive_member_worker(self, member_info: Dict[str, Any], user: str) -> Dict[
         if not _is_final_attempt(self, exc):
             raise
         logging.warning(
-            f"Archive member {member_info.get('metadata', {}).get('archive_path')} could not be parsed",
+            f"Archive member {member_info.get('metadata', {}).get('archive_path')} could not be parsed: "
+            f"{_failure_log_text(exc)}",
             extra={"user": user},
-            exc_info=True,
         )
-        outcome = {"status": "failed", "reason": _member_failure_reason(exc)}
+        outcome = {"status": "failed", "reason": _member_failure_reason(exc, member_info.get("filename"))}
     else:
         outcome = {"status": "ok", "token_count": int(result.get("token_count") or 0)}
     _record_archive_member_outcome(user, member_info, outcome)
@@ -2887,7 +2904,8 @@ def record_archive_member_failure(user: str, member_info: Dict[str, Any], error:
         error: Why it failed.
     """
     record_attachment_failure(user, member_info, error)
-    _record_archive_member_outcome(user, member_info, {"status": "failed", "reason": _member_failure_reason(error)})
+    reason = _member_failure_reason(error, member_info.get("filename"))
+    _record_archive_member_outcome(user, member_info, {"status": "failed", "reason": reason})
 
 
 def _claim_archive_row(
