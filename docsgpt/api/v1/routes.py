@@ -46,7 +46,7 @@ from docsgpt.api.v1.translator import (
 )
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
-from docsgpt.error import CONTEXT_LENGTH_EXCEEDED, user_facing_error
+from docsgpt.error import CONTEXT_LENGTH_EXCEEDED, bounded_error_text, user_facing_error
 from docsgpt.storage.db.session import db_readonly
 from docsgpt.streaming.sse_keepalive import with_sse_keepalive
 
@@ -127,8 +127,8 @@ def _convert_inline_files(internal_data: Dict[str, Any], user: str) -> None:
         return
     try:
         converted = ingest_inline_files(files, user)
-    except Exception:
-        logger.warning("Could not store the request's inline files", exc_info=True)
+    except Exception as exc:
+        logger.warning("Could not store the request's inline files: %s", bounded_error_text(exc))
         return
     apply_converted_files(internal_data, files, converted)
 

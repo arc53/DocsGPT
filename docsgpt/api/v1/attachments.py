@@ -31,6 +31,7 @@ from werkzeug.datastructures import FileStorage
 
 from docsgpt.api.v1.translator import InlineFile
 from docsgpt.core.settings import settings
+from docsgpt.error import bounded_error_text
 from docsgpt.utils import safe_filename
 
 logger = logging.getLogger(__name__)
@@ -113,8 +114,8 @@ def ingest_inline_files(files: List[InlineFile], user: str) -> Dict[str, str]:
             continue
         try:
             row = _find_parsed(user, inline.content_hash)
-        except Exception:
-            logger.warning("Could not look up an earlier parse of %s", inline.filename, exc_info=True)
+        except Exception as exc:
+            logger.warning("Could not look up an earlier parse of %s: %s", inline.filename, bounded_error_text(exc))
             row = None
         if row and row.get("id"):
             converted[inline.content_hash] = str(row["id"])
@@ -124,7 +125,7 @@ def ingest_inline_files(files: List[InlineFile], user: str) -> Dict[str, str]:
             timeout = _parse_timeout(len(inline.data))
             pending.append((inline, file_info["attachment_id"], _dispatch_parse(file_info, user, timeout), timeout))
         except Exception as exc:
-            logger.warning("v1 file %s was not stored as an attachment: %s", inline.filename, exc)
+            logger.warning("v1 file %s was not stored as an attachment: %s", inline.filename, bounded_error_text(exc))
 
     if pending:
         deadline = time.monotonic() + max(timeout for *_, timeout in pending)
@@ -133,7 +134,7 @@ def ingest_inline_files(files: List[InlineFile], user: str) -> Dict[str, str]:
             try:
                 result.get(timeout=remaining, disable_sync_subtasks=False)
             except Exception as exc:
-                logger.warning("v1 file %s was not parsed: %s", inline.filename, exc)
+                logger.warning("v1 file %s was not parsed: %s", inline.filename, bounded_error_text(exc))
                 continue
             converted[inline.content_hash] = attachment_id
     # Request order, whichever path each file took.

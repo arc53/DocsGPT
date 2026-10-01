@@ -9,6 +9,7 @@ import openai
 from docsgpt.cache import gen_cache, stream_cache
 
 from docsgpt.core.settings import settings
+from docsgpt.error import bounded_error_text
 from docsgpt.usage import gen_token_usage, stream_token_usage
 
 logger = logging.getLogger(__name__)
@@ -433,13 +434,15 @@ class BaseLLM(ABC):
             if callable(native_reads_for):
                 try:
                     messages, rebuilt_reads = native_reads_for(fallback, messages)
-                except Exception:
-                    logger.warning("Could not rebuild the requested images for the fallback", exc_info=True)
+                except Exception as exc:
+                    logger.warning(
+                        "Could not rebuild the requested images for the fallback: %s", bounded_error_text(exc)
+                    )
             if dispatch is not None:
                 try:
                     replanned = dispatch.for_fallback(fallback, messages)
-                except Exception:
-                    logger.warning("Could not re-plan attachments for the fallback", exc_info=True)
+                except Exception as exc:
+                    logger.warning("Could not re-plan attachments for the fallback: %s", bounded_error_text(exc))
             if replanned is not None:
                 messages = replanned.messages
                 fallback_kwargs["_attachment_dispatch"] = replanned.dispatch
