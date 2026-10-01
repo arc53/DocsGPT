@@ -626,3 +626,76 @@ class TestAttachmentTypeGuard:
 
         assert result["filename"] == "server.log"
         assert result["token_count"] > 0
+
+
+@pytest.mark.unit
+class TestImageValidation:
+    """A damaged image fails in the worker instead of reaching the model as "ok"."""
+
+    @staticmethod
+    def _png(tmp_path, name="ok.png"):
+        from PIL import Image
+
+        path = tmp_path / name
+        Image.new("RGB", (40, 30), color=(1, 2, 3)).save(path, format="PNG")
+        return path
+
+    def test_a_valid_image_passes_and_reports_its_size(self, tmp_path):
+        from docsgpt import worker
+
+        assert worker._check_attachment_image(str(self._png(tmp_path)), "ok.png") == {"width": 40, "height": 30}
+
+    def test_a_non_image_is_not_checked(self, tmp_path):
+        from docsgpt import worker
+
+        path = tmp_path / "notes.txt"
+        path.write_text("hello")
+        assert worker._check_attachment_image(str(path), "notes.txt") is None
+
+    @pytest.mark.parametrize("cut", [60, 200])
+    def test_a_broken_or_truncated_image_is_rejected(self, tmp_path, cut):
+        from docsgpt import worker
+
+        good = self._png(tmp_path).read_bytes()
+        broken = tmp_path / "broken.png"
+        broken.write_bytes(good[:cut] if cut < len(good) else good[:60])
+        with pytest.raises(worker.AttachmentRejectedError) as info:
+            worker._check_attachment_image(str(broken), "broken.png")
+        assert info.value.code == "image_unreadable"
+
+    def test_the_worker_fails_a_broken_png_with_its_code(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, tmp_path
+    ):
+        from docsgpt import worker
+
+        local_path = tmp_path / "shot.png"
+        local_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 52)
+        events = []
+        fake_storage = MagicMock(name="storage")
+        fake_storage.process_file.side_effect = lambda path, callback: callback(str(local_path))
+        monkeypatch.setattr(worker.StorageCreator, "get_storage", lambda: fake_storage)
+        monkeypatch.setattr(
+            worker,
+            "get_default_file_extractor",
+            lambda ocr_enabled=False, pdf_text_fast_path=False: {".png": object()},
+        )
+        monkeypatch.setattr(
+            worker,
+            "publish_user_event",
+            lambda user, name, payload, **kwargs: events.append((name, payload)),
+        )
+        file_info = {
+            "filename": "shot.png",
+            "attachment_id": "507f1f77bcf86cd799439031",
+            "path": "uploads/user1/attachments/shot.png",
+            "metadata": {"source": "chat"},
+        }
+
+        with pytest.raises(worker.AttachmentRejectedError):
+            worker.attachment_worker(task_self, file_info, "user1")
+
+        failed = [payload for name, payload in events if name == "attachment.failed"]
+        assert failed and failed[0]["code"] == "image_unreadable"
+        row = AttachmentsRepository(pg_conn).get_by_legacy_id(file_info["attachment_id"], "user1")
+        assert row["metadata"]["extraction"]["status"] == "failed"
+        assert row["metadata"]["extraction"]["code"] == "image_unreadable"

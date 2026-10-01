@@ -143,6 +143,37 @@ class TestUserFacingError:
 
 
 @pytest.mark.unit
+class TestRejectedImage:
+    _OPENAI = (
+        "Error code: 400 - {'error': {'message': 'You uploaded an unsupported image. Please make sure "
+        "your image is valid.', 'type': 'invalid_request_error', 'param': None, 'code': 'image_parse_error'}}"
+    )
+
+    def test_a_rejected_image_names_the_images_sent(self):
+        public = user_facing_error(RuntimeError(self._OPENAI), image_names=["a.png", "b.jpg"])
+
+        assert public.code == "image_unreadable"
+        assert "a.png" in public.message and "b.jpg" in public.message
+        assert "Please try again later" not in public.message
+        assert public.params == {"files": ["a.png", "b.jpg"]}
+
+    def test_one_image_is_named_as_the_one(self):
+        public = user_facing_error(RuntimeError(self._OPENAI), image_names=["shot.png"])
+        assert "shot.png" in public.message
+        assert public.params == {"files": ["shot.png"]}
+
+    def test_without_names_it_still_says_an_image_was_rejected(self):
+        error = RuntimeError("anthropic 400: Could not process image")
+        error.code = None
+        public = user_facing_error(error)
+        assert public.code == "image_unreadable"
+        assert public.params == {}
+
+    def test_an_unrelated_error_is_not_an_image_error(self):
+        assert user_facing_error(RuntimeError("500 upstream"), image_names=["a.png"]).code == "server_error"
+
+
+@pytest.mark.unit
 class TestBoundedErrorText:
     def test_base64_payloads_are_cut_out(self):
         text = bounded_error_text(RuntimeError("bad part: data:application/pdf;base64," + "QUJD" * 100_000))

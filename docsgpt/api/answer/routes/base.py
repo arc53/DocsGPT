@@ -118,6 +118,21 @@ def _traced_stream(
     return wrapper
 
 
+
+def _native_image_names(agent: Any) -> List[str]:
+    """Files the turn sent to the model as images, for a provider's image refusal."""
+    plan = getattr(agent, "attachment_plan", None)
+    names: List[str] = []
+    try:
+        for planned in getattr(plan, "files", None) or []:
+            if getattr(planned, "native", False) is True and str(getattr(planned, "mime_type", "")).startswith(
+                "image/"
+            ):
+                names.append(str(planned.filename))
+    except Exception:
+        return []
+    return names
+
 class BaseAnswerResource:
     """Shared base class for answer endpoints"""
 
@@ -1650,7 +1665,9 @@ class BaseAnswerResource:
             # text with a code, never the exception (a provider error can echo
             # the request, base64 file parts included).
             public_error = user_facing_error(
-                e, surface="v1" if getattr(agent, "is_v1", False) is True else "chat"
+                e,
+                surface="v1" if getattr(agent, "is_v1", False) is True else "chat",
+                image_names=_native_image_names(agent),
             )
             trace = tracing.current_trace()
             if trace is not None:

@@ -1659,6 +1659,7 @@ ATTACHMENT_FAILURE_MESSAGES = {
     "unsupported_type": "This file type is not supported.",
     "too_large": "This file is too large to process.",
     "archive_unreadable": "This zip file is damaged, encrypted or not a valid zip.",
+    "image_unreadable": "This image is damaged or is not a valid image.",
     "no_text": "No text could be read from this file. It may be a scanned document.",
     "timeout": "Reading this file took too long.",
     "storage": "The uploaded file could not be read from storage.",
@@ -1765,6 +1766,50 @@ def _reject_attachment_zip_bomb(local_path: str) -> None:
     reason = reject_zip_bomb_path(local_path)
     if reason is not None:
         raise AttachmentRejectedError(reason, code="too_large")
+
+
+# Raster formats a model is sent as the image itself; each is decoded once
+# here so a damaged file fails in the worker, not at the provider (which
+# rejects the whole turn, every good image with it).
+_CHECKED_IMAGE_TYPES = frozenset(
+    {"image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "image/x-ms-bmp", "image/tiff"}
+)
+
+
+def _check_attachment_image(local_path: str, filename: str) -> Optional[Dict[str, int]]:
+    """Decode an image attachment fully, so a damaged one is refused here.
+
+    ``verify`` catches a broken structure and ``load`` a truncated pixel
+    stream; neither on its own catches both.
+
+    Args:
+        local_path: Filesystem path of the attachment about to be parsed.
+        filename: The upload's original filename, which carries the suffix.
+
+    Returns:
+        ``{"width", "height"}`` for an image, None for anything else.
+
+    Raises:
+        AttachmentRejectedError: With code ``image_unreadable``.
+    """
+    mime_type = mimetypes.guess_type(filename)[0] or ""
+    if mime_type not in _CHECKED_IMAGE_TYPES:
+        return None
+    from PIL import Image
+
+    try:
+        with Image.open(local_path) as image:
+            image.verify()
+        with Image.open(local_path) as image:
+            image.load()
+            width, height = image.size
+    except Exception as exc:
+        raise AttachmentRejectedError(
+            f"{filename} could not be decoded as an image: {type(exc).__name__}", code="image_unreadable"
+        ) from exc
+    if not width or not height:
+        raise AttachmentRejectedError(f"{filename} has no pixels", code="image_unreadable")
+    return {"width": int(width), "height": int(height)}
 
 
 def _readable_without_text(filename: str) -> bool:
@@ -2024,11 +2069,16 @@ def _write_attachment_failure_row(
 
 
 def _failure_metadata(file_info: Dict[str, Any], error: Any, parser: Optional[str] = None) -> Dict[str, Any]:
-    """An upload's metadata with a failed ``extraction`` record."""
-    return {
-        **(file_info.get("metadata") or {}),
-        "extraction": {"status": "failed", "parser": parser, "truncated": False, "error": str(error)[:1024]},
-    }
+    """An upload's metadata with a failed ``extraction`` record.
+
+    A rejection's code (``image_unreadable``, say) is kept with it, so the
+    planner can say why the file cannot be read.
+    """
+    extraction = {"status": "failed", "parser": parser, "truncated": False, "error": str(error)[:1024]}
+    code = getattr(error, "code", None)
+    if isinstance(error, AttachmentRejectedError) and isinstance(code, str):
+        extraction["code"] = code
+    return {**(file_info.get("metadata") or {}), "extraction": extraction}
 
 
 def record_attachment_failure(user, file_info, error, parser=None):
@@ -2150,6 +2200,9 @@ def _single_attachment_worker(self, file_info, user, *, emit_events: bool = True
             fingerprint.update(_attachment_fingerprint(local_path, filename))
             _reject_unparseable_attachment(local_path, filename, set(file_extractor))
             _reject_attachment_zip_bomb(local_path)
+            image_size = _check_attachment_image(local_path, filename)
+            if image_size:
+                fingerprint["image"] = image_size
             earlier = _find_reusable_parse(user, fingerprint.get("content_hash"), attachment_id)
             if earlier is not None:
                 reused.update(earlier)
@@ -2208,7 +2261,7 @@ def _single_attachment_worker(self, file_info, user, *, emit_events: bool = True
             token_count = reused.get("token_count") or 0
             metadata = {
                 **metadata,
-                **{k: v for k, v in fingerprint.items() if k in ("content_hash", "page_count")},
+                **{k: v for k, v in fingerprint.items() if k in ("content_hash", "page_count", "image")},
                 **reused_metadata,
             }
             logging.info(
@@ -2231,7 +2284,7 @@ def _single_attachment_worker(self, file_info, user, *, emit_events: bool = True
 
             metadata = {
                 **metadata,
-                **{k: v for k, v in fingerprint.items() if k in ("content_hash", "page_count")},
+                **{k: v for k, v in fingerprint.items() if k in ("content_hash", "page_count", "image")},
                 "extraction": {
                     "status": extraction_status,
                     "parser": parser_name,

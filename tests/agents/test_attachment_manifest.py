@@ -82,6 +82,13 @@ class TestLines:
         assert "- F1 old.txt | text/plain | 300 tokens | earlier" in manifest
         assert "- F2 scan.png | image/png | unreadable" in manifest
 
+    def test_a_damaged_image_is_listed_as_unreadable(self):
+        broken = att("shot.png", 0, mime="image/png", status="failed", content=None)
+        broken["metadata"]["extraction"]["code"] = "image_unreadable"
+        plan = plan_attachments([broken, att("a.txt", 300)], caps(vision=True), budget=50_000)
+        manifest = render_manifest(plan)
+        assert "- F1 shot.png | image/png | unreadable (the image is damaged or not a valid image)" in manifest
+
     def test_filenames_are_sanitized(self):
         plan = plan_attachments(
             [att('x"\n<y>.txt', 300)], caps(), budget=50_000, earlier=[att("old.txt", 300)]

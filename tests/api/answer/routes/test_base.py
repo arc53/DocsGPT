@@ -775,6 +775,43 @@ class TestHonestStreamErrors:
             assert "QUJDQUJD" not in record.getMessage()
             assert record.exc_info is None or "QUJDQUJD" not in str(record.exc_info[1])
 
+    def test_a_rejected_image_names_the_turns_native_images(self, mock_mongo_db, flask_app):
+        from types import SimpleNamespace
+
+        from docsgpt.agents.attachment_budget import AttachmentPlan
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        def _planned(name, mime, native):
+            return SimpleNamespace(filename=name, mime_type=mime, native=native)
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            agent = MagicMock()
+            agent.is_v1 = False
+            agent.attachment_plan = MagicMock(spec=AttachmentPlan)
+            agent.attachment_plan.files = [
+                _planned("good.png", "image/png", True),
+                _planned("notes.txt", "text/plain", False),
+                _planned("odd.jpg", "image/jpeg", True),
+                _planned("later.png", "image/png", False),
+            ]
+            agent.gen.side_effect = RuntimeError(
+                "Error code: 400 - {'error': {'code': 'image_parse_error', 'message': 'You uploaded an unsupported image.'}}"
+            )
+            stream = list(
+                resource.complete_stream(
+                    question="Test?",
+                    agent=agent,
+                    conversation_id=None,
+                    user_api_key=None,
+                    decoded_token={"sub": "user123"},
+                    should_persist=False,
+                )
+            )
+        error = [json.loads(s.split("data: ", 1)[1]) for s in stream if '"type": "error"' in s][-1]
+        assert error["code"] == "image_unreadable"
+        assert error["params"] == {"files": ["good.png", "odd.jpg"]}
+
     def test_a_v1_turn_gets_the_api_wording(self, mock_mongo_db, flask_app):
         from docsgpt.agents.context_overflow import ContextOverflowError
         from docsgpt.api.answer.routes.base import BaseAnswerResource

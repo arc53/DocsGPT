@@ -555,12 +555,19 @@ def _has_text(row: Dict[str, Any]) -> bool:
     return content is not None and bool(str(content).strip())
 
 
+def _image_unreadable(row: Dict[str, Any]) -> bool:
+    """The worker found the image damaged: a provider would reject the whole turn."""
+    return _extraction(row).get("code") == "image_unreadable"
+
+
 def _native_readable(row: Dict[str, Any]) -> bool:
-    """The original file exists to send (a failed parse may have no file)."""
-    return _extraction(row).get("status") != "failed"
+    """The original file exists to send and is not a damaged image."""
+    return _extraction(row).get("status") != "failed" and not _image_unreadable(row)
 
 
 def _unreadable_reason(row: Dict[str, Any], capabilities: TurnCapabilities) -> str:
+    if _image_unreadable(row):
+        return "image_unreadable"
     status = _extraction(row).get("status")
     if status == "failed":
         return "extraction_failed"

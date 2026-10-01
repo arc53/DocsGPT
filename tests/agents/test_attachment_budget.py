@@ -478,3 +478,16 @@ class TestSyntheticPdfPageCap:
         assert file.native is True
         assert file.native_parts == SYNTHETIC_PDF_MAX_PAGES
         assert file.shown_pages == SYNTHETIC_PDF_MAX_PAGES
+
+
+class TestUnreadableImages:
+    def test_a_damaged_image_is_never_sent_natively(self):
+        row = att("shot.png", 0, mime="image/png", status="failed", content=None)
+        row["metadata"]["extraction"]["code"] = "image_unreadable"
+        plan = plan_attachments([row], caps(vision=True), budget=50_000)
+
+        entry = plan.files[0]
+        assert entry.status == FileStatus.UNREADABLE
+        assert entry.native is False
+        assert entry.reason == "image_unreadable"
+        assert plan.native_tokens == 0

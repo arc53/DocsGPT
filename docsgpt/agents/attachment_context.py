@@ -238,6 +238,7 @@ def native_note(plan: AttachmentPlan) -> str:
 _REASONS = {
     "needs_vision": "needs a model that reads images or scanned PDFs",
     "extraction_failed": "could not be parsed",
+    "image_unreadable": "the image is damaged or not a valid image",
     "no_text": "no readable text",
     "conversion_failed": "could not be converted for this model",
 }
