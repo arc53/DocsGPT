@@ -104,6 +104,9 @@ class PlannedFile:
         shown_tokens: Text tokens shown inline (the ``N`` of a partial,
             the preview of a sandbox file).
         native_parts: Native parts the file is sent as.
+        shown_pages: Pages sent as images when a scanned PDF is longer than
+            the page images a vision model without PDF support gets (the
+            native counterpart of a partial head).
         reason: Why the file was left out, when it was.
         sandbox_eligible: The code sandbox is in the turn and can take the
             file (its size is within ``SANDBOX_MAX_INPUT_BYTES`` or unknown).
@@ -123,6 +126,7 @@ class PlannedFile:
     inline_tokens: int = 0
     shown_tokens: int = 0
     native_parts: int = 0
+    shown_pages: int = 0
     reason: Optional[str] = None
     sandbox_eligible: bool = False
 
@@ -377,6 +381,11 @@ def plan_attachments(
         row = planned.attachment
         has_text = _has_text(row)
         native_ok = capabilities.reads_natively(planned.mime_type) and _native_readable(row)
+        # Page images stop at SYNTHETIC_PDF_MAX_PAGES: a longer PDF with a
+        # text layer is sent as text instead, so no page is silently lost.
+        pages_capped = _pages_capped(planned, capabilities)
+        if native_ok and pages_capped and has_text:
+            native_ok = False
 
         if is_archive(row):
             # A zip's members follow it as files of their own; its stored
@@ -409,6 +418,11 @@ def plan_attachments(
                 planned.native = True
                 planned.native_parts = parts
                 planned.inline_tokens = cost
+                if pages_capped:
+                    # A scan longer than the page images: the first pages
+                    # go, marked as partial so the model reads on or says so.
+                    planned.status = FileStatus.PARTIAL
+                    planned.shown_pages = parts
                 native_used += parts
                 remaining -= cost
                 continue
@@ -535,6 +549,15 @@ def _unreadable_reason(row: Dict[str, Any], capabilities: TurnCapabilities) -> s
     if mime_type == "application/pdf" and status == "no_text":
         return "needs_vision"
     return "no_text"
+
+
+def _pages_capped(planned: PlannedFile, capabilities: TurnCapabilities) -> bool:
+    """The PDF has more pages than a vision model without PDF support is sent."""
+    return (
+        planned.mime_type == "application/pdf"
+        and capabilities.synthetic_pdf
+        and (planned.page_count or 0) > SYNTHETIC_PDF_MAX_PAGES
+    )
 
 
 def _native_parts(planned: PlannedFile, capabilities: TurnCapabilities) -> int:

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Generator, List, Optional, Union
 
 from docsgpt.agents.tool_executor import trace_unexecuted_tool_call
+from docsgpt.error import bounded_error_text
 from docsgpt.logging import build_stack_data
 
 logger = logging.getLogger(__name__)
@@ -384,22 +385,19 @@ class LLMHandler(ABC):
 
         natives = []
         for planned in plan.files:
-            if not (planned.native and planned.status == FileStatus.INLINE):
+            if not (planned.native and planned.status in (FileStatus.INLINE, FileStatus.PARTIAL)):
                 continue
             attachment = planned.attachment
             if attachment.get("mime_type") == "application/pdf" and plan.capabilities.synthetic_pdf:
                 try:
                     natives.extend(self._convert_pdf_to_images(attachment))
                 except Exception as e:
-                    logger.error(f"Failed to convert PDF {planned.ref} to images, sending its text: {e}")
-                    # Its extracted text, when there is any, stands in.
-                    planned.native = False
-                    planned.native_parts = 0
-                    planned.shown_tokens = planned.text_tokens if attachment.get("content") else 0
-                    if not planned.shown_tokens:
-                        planned.inline_tokens = 0
-                        planned.status = FileStatus.UNREADABLE
-                        planned.reason = "conversion_failed"
+                    logger.error(
+                        "Failed to convert PDF %s to images, sending its text: %s",
+                        planned.ref,
+                        bounded_error_text(e),
+                    )
+                    self._use_text_instead(planned)
                 continue
             natives.append(attachment)
 
@@ -424,6 +422,47 @@ class LLMHandler(ABC):
                 carrier["content"] = f"{block}\n\n{text}" if text else block
 
         return prepared, carrier, self._native_part_estimate(carrier) - before
+
+    @staticmethod
+    def _use_text_instead(planned) -> None:
+        """Switch a PDF whose page images could not be made to its extracted text.
+
+        The text is charged for what it is, within what the plan budgeted
+        for the page images: a text longer than that is sent as a partial
+        head with its marker. With no text the file is unreadable.
+
+        Args:
+            planned: The plan entry; edited in place.
+        """
+        from docsgpt.agents.attachment_budget import (
+            MIN_PARTIAL_TOKENS,
+            PARTIAL_MARKER_TOKENS,
+            PER_FILE_OVERHEAD_TOKENS,
+            FileStatus,
+        )
+
+        budgeted = planned.inline_tokens
+        planned.native = False
+        planned.native_parts = 0
+        planned.shown_pages = 0
+        has_text = bool(str(planned.attachment.get("content") or "").strip()) and planned.text_tokens > 0
+        whole = planned.text_tokens + PER_FILE_OVERHEAD_TOKENS
+        head = budgeted - PER_FILE_OVERHEAD_TOKENS - PARTIAL_MARKER_TOKENS
+        if has_text and whole <= budgeted:
+            planned.status = FileStatus.INLINE
+            planned.shown_tokens = planned.text_tokens
+            planned.inline_tokens = whole
+        elif has_text and head >= min(MIN_PARTIAL_TOKENS, planned.text_tokens):
+            planned.status = FileStatus.PARTIAL
+            planned.shown_tokens = head
+            planned.inline_tokens = budgeted
+        else:
+            planned.status = FileStatus.UNREADABLE
+            planned.shown_tokens = 0
+            planned.inline_tokens = 0
+            planned.reason = "conversion_failed"
+            return
+        planned.reason = None
 
     @staticmethod
     def _native_part_estimate(message: Dict) -> int:

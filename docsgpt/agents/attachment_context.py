@@ -96,9 +96,19 @@ def partial_marker(planned: PlannedFile, plan: AttachmentPlan) -> str:
         The marker text.
     """
     name = sanitize_filename(planned.filename)
+    read_action = _read_action(plan)
+    if planned.native and planned.shown_pages:
+        from docsgpt.agents.tools.attachments import MAX_IMAGE_PAGES_PER_CALL
+
+        shown = planned.shown_pages
+        count = planned.page_count or shown
+        head = f"[{planned.ref} {name}: showing pages 1–{shown:,} of {count:,} as images."
+        if read_action and shown < count:
+            following = f"{shown + 1}-{min(shown + MAX_IMAGE_PAGES_PER_CALL, count)}"
+            return f'{head} Read the rest with {read_action}(ref="{planned.ref}", pages="{following}")]'
+        return f"{head} The rest is not available in this turn; do not guess what it says.]"
     shown = planned.shown_tokens
     head = f"[{planned.ref} {name}: showing tokens 1–{shown:,} of {planned.text_tokens:,}."
-    read_action = _read_action(plan)
     if read_action:
         return f'{head} Read the rest with {read_action}(ref="{planned.ref}", offset={shown})]'
     return f"{head} The rest is not available in this turn; do not guess what it says.]"
@@ -195,6 +205,22 @@ def unreadable_note(plan: AttachmentPlan) -> str:
     )
 
 
+def page_image_markers(plan: AttachmentPlan) -> List[str]:
+    """Markers for scanned PDFs sent as only their first page images.
+
+    Args:
+        plan: The turn's plan.
+
+    Returns:
+        One marker per such file, in ref order.
+    """
+    return [
+        partial_marker(f, plan)
+        for f in plan.files
+        if f.native and f.status == FileStatus.PARTIAL and f.shown_pages
+    ]
+
+
 def native_note(plan: AttachmentPlan) -> str:
     """Name the native parts that follow the message, in order."""
     natives = [f for f in plan.files if f.native and f.in_context]
@@ -264,6 +290,8 @@ def _status(planned: PlannedFile) -> str:
     status = planned.status
     if status == FileStatus.ARCHIVE:
         return _archive_status(planned)
+    if status == FileStatus.PARTIAL and planned.native and planned.shown_pages:
+        return f"partial (pages 1–{planned.shown_pages:,} of {planned.page_count or planned.shown_pages:,} sent as images)"
     if status == FileStatus.PARTIAL:
         return f"partial (tokens 1–{planned.shown_tokens:,} of {planned.text_tokens:,})"
     if status == FileStatus.INLINE and planned.native:
@@ -388,6 +416,7 @@ def render_attachment_block(plan: AttachmentPlan) -> str:
     if sections:
         parts.append(UNTRUSTED_NOTE)
         parts.extend(sections)
+    parts.extend(page_image_markers(plan))
     for note in (native_note(plan), unreadable_note(plan)):
         if note:
             parts.append(note)

@@ -121,6 +121,14 @@ class TestList:
         line_b = [line for line in result.splitlines() if "F2 b.txt" in line][0]
         assert "partial" in line_b
 
+    def test_a_scan_sent_as_its_first_page_images_says_which_pages(self, db):
+        scan = seed(db, "scan.pdf", "", mime="application/pdf", status="no_text", page_count=57)
+        config_plan = {"F1": {"status": "partial", "shown_tokens": 0, "shown_pages": 20, "native": True}}
+        result = tool_for(current=[scan], plan=config_plan).execute_action("attachments_list")
+        line = [line for line in result.splitlines() if "F1 scan.pdf" in line][0]
+        assert "pages 1–20" in line
+        assert "tokens 1–0" not in line
+
     def test_reports_cut_at_upload_and_unreadable(self, db):
         cut = seed(db, "big.txt", "word " * 100, truncated=True, original_tokens=454_000)
         broken = seed(db, "broken.docx", "", status="failed")

@@ -430,3 +430,34 @@ class TestArchives:
     def test_an_earlier_zip_stays_earlier(self):
         plan = plan_attachments([], caps(), budget=50_000, earlier=[zip_parent(), att("a.txt", 10)])
         assert [f.status for f in plan.files] == [FileStatus.EARLIER, FileStatus.EARLIER]
+
+
+class TestSyntheticPdfPageCap:
+    """A vision model without native PDF sees at most SYNTHETIC_PDF_MAX_PAGES page images."""
+
+    def test_long_pdf_with_text_goes_as_text_not_capped_page_images(self):
+        from docsgpt.agents.attachment_budget import SYNTHETIC_PDF_MAX_PAGES
+
+        pdf = att("report.pdf", 9_000, mime="application/pdf", pages=SYNTHETIC_PDF_MAX_PAGES + 10)
+        plan = plan_attachments([pdf], caps(vision=True), budget=100_000)
+        file = plan.files[0]
+        assert file.native is False
+        assert file.status == FileStatus.INLINE
+        assert file.shown_tokens == 9_000
+
+    def test_short_pdf_with_text_still_goes_as_page_images(self):
+        pdf = att("deck.pdf", 900, mime="application/pdf", pages=5)
+        plan = plan_attachments([pdf], caps(vision=True), budget=100_000)
+        assert plan.files[0].native is True
+        assert plan.files[0].status == FileStatus.INLINE
+
+    def test_long_scan_is_partial_with_the_pages_it_shows(self):
+        from docsgpt.agents.attachment_budget import SYNTHETIC_PDF_MAX_PAGES
+
+        scan = att("scan.pdf", 0, mime="application/pdf", status="no_text", content="", pages=57)
+        plan = plan_attachments([scan], caps(vision=True, attachments_tool=True), budget=100_000)
+        file = plan.files[0]
+        assert file.status == FileStatus.PARTIAL
+        assert file.native is True
+        assert file.native_parts == SYNTHETIC_PDF_MAX_PAGES
+        assert file.shown_pages == SYNTHETIC_PDF_MAX_PAGES

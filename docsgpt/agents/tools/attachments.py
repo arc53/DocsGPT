@@ -105,7 +105,8 @@ def build_attachments_tool_config(
         current_ids: This turn's attachment ids, in upload order.
         earlier_ids: Earlier turns' attachment ids, in upload order.
         actions: Our action names as the model sees them, by base name.
-        plan: This turn's plan per ref (``status``, ``shown_tokens``, ``reason``).
+        plan: This turn's plan per ref (``status``, ``shown_tokens``,
+            ``shown_pages``, ``reason``).
         vision: The model reads images.
         image_types: Image MIME types the model takes; None means any.
         max_native_parts: Images the tool may still add this turn.
@@ -211,6 +212,7 @@ def sync_attachments_tool(
             planned.ref: {
                 "status": planned.status.value,
                 "shown_tokens": int(planned.shown_tokens or 0),
+                "shown_pages": int(planned.shown_pages or 0),
                 "native": bool(planned.native),
                 "reason": planned.reason,
             }
@@ -818,6 +820,9 @@ class AttachmentsTool(Tool):
     def _status(self, planned: PlannedFile) -> str:
         info = self._plan_info(planned)
         status = info.get("status") or ("available" if planned.current else "earlier")
+        if status == "partial" and int(info.get("shown_pages") or 0):
+            pages = int(info["shown_pages"])
+            return f"partial (pages 1–{pages:,} are in your context as images)"
         if status == "partial":
             return f"partial (tokens 1–{int(info.get('shown_tokens') or 0):,} are in your context)"
         if status == "inline":
