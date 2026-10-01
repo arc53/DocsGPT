@@ -175,15 +175,26 @@ export default function Conversation() {
   const [prevMountConversationId, setPrevMountConversationId] = useState<
     string | null
   >(conversationId);
-  if (prevMountConversationId !== conversationId) {
+  const [prevMountAgentId, setPrevMountAgentId] = useState(urlAgentId);
+  const conversationChanged = prevMountConversationId !== conversationId;
+  const agentChanged = prevMountAgentId !== urlAgentId;
+  if (conversationChanged || agentChanged) {
     const isServerAssignedId =
       prevMountConversationId === null &&
       conversationId !== null &&
       isNewChatRoute &&
       unsavedFirstPrompt !== null &&
       unsavedFirstPrompt === firstPrompt;
+    // Another agent's new chat keeps the null id, so only the agent tells
+    // it apart; a draft or armed send must not carry over to that agent.
+    const isNewChatForAnotherAgent =
+      agentChanged && prevMountConversationId === null && !conversationId;
     setPrevMountConversationId(conversationId);
-    if (!isServerAssignedId) {
+    setPrevMountAgentId(urlAgentId);
+    if (
+      (conversationChanged && !isServerAssignedId) ||
+      isNewChatForAnotherAgent
+    ) {
       // Switching chats keeps this component mounted (a route change
       // does not remount it), so the per-chat state resets here.
       setConversationMountKey((k) => k + 1);
