@@ -197,8 +197,8 @@ class TestNative:
         user = _user_text(prepared[-1])
         assert "notes body" in user
         assert "pdf text" not in user
-        # Native parts are named in order so the model can tell them apart.
-        assert "F1 deck.pdf" in user
+        # A single native part needs no label; several are named in order.
+        assert "Files attached after this message" not in user
 
     def test_native_size_is_recorded_for_the_context_gate(self):
         pdf = {
@@ -238,3 +238,14 @@ class TestLegacyPath:
         messages = [{"role": "system", "content": "sys"}, {"role": "user", "content": "q"}]
         out = handler.prepare_messages(agent, messages, [{"id": "a", "content": "legacy text"}])
         assert "legacy text" in out[0]["content"]
+
+
+class TestManifestPlacement:
+    def test_manifest_goes_into_the_turn_never_the_system_prompt(self):
+        files = [text_att(f"r{i}.txt", "lorem ipsum " * 10_000) for i in range(6)]
+        agent = _agent(files)
+        prepared = _prepare(agent)
+        assert prepared[0]["content"] == "SYSTEM"
+        user = _user_text(prepared[-1])
+        assert user.startswith("<attached_files>")
+        assert "- F6 r5.txt" in user

@@ -447,6 +447,14 @@ class BaseAgent(ABC):
         ):
             return None
 
+        if self._replayed_native_parts() > int(settings.ATTACHMENT_MAX_NATIVE_PARTS):
+            logger.info(
+                "Responses chain reset: the stored transcript would replay more "
+                "attached images and PDFs than the per-turn cap; starting from the "
+                "local history, which lists earlier files instead"
+            )
+            return None
+
         current_epoch = _parse_epoch(getattr(self, "last_compression_at", None))
         if current_epoch is not None:
             turn_epoch = _parse_epoch(meta.get("compression_epoch"))
@@ -483,6 +491,31 @@ class BaseAgent(ABC):
             )
             return None
         return meta["response_id"]
+
+    def _replayed_native_parts(self) -> int:
+        """Native files a chained request would make the provider see.
+
+        Chaining replays every earlier turn's input server-side, images and
+        PDFs included, on top of this turn's own native parts. Local history
+        replays none: earlier files are listed in the manifest instead.
+
+        Returns:
+            Earlier image/PDF attachments plus this turn's planned native parts.
+        """
+        earlier = getattr(self, "earlier_attachments", None) or []
+        count = sum(
+            1
+            for row in earlier
+            if isinstance(row, dict)
+            and (
+                str(row.get("mime_type") or "").startswith("image/")
+                or row.get("mime_type") == "application/pdf"
+            )
+        )
+        plan = getattr(self, "attachment_plan", None)
+        if isinstance(plan, AttachmentPlan):
+            count += plan.native_parts
+        return count
 
     def _previous_responses_state(self) -> Optional[Dict[str, Any]]:
         """Return continuity state from the immediately preceding turn."""

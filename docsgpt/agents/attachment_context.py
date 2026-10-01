@@ -1,10 +1,16 @@
 """Render a turn's attachment plan into the text placed before the user's message.
 
-The block carries every file's content the plan inlines, each labelled with
-its ref and filename and fenced as untrusted data, plus the notes the model
-needs to stay honest about what it did not see: a marker after a partial
-head and a note naming files it cannot read. Native parts (images, PDFs) are
-sent by the provider after the message text; the block names them in order.
+The block starts with a manifest whenever any file is not simply inlined
+whole: one line per conversation file (ref, name, type, size, status) and
+instructions built from the turn's capabilities, which name only the tools
+really in the request. Then come the contents the plan inlines, each labelled
+with its ref and filename and fenced as untrusted data, a marker after a
+partial head, and a note naming files the model cannot read. Native parts
+(images, PDFs) are sent by the provider after the message text.
+
+The block goes into the turn's user message, not the system prompt: the
+system prompt stays cache-stable and survives agent and /v1 prompt
+overrides.
 """
 
 from __future__ import annotations
@@ -172,10 +178,112 @@ def unreadable_note(plan: AttachmentPlan) -> str:
 def native_note(plan: AttachmentPlan) -> str:
     """Name the native parts that follow the message, in order."""
     natives = [f for f in plan.files if f.native and f.in_context]
-    if not natives:
+    if len(natives) < 2:
         return ""
     listed = ", ".join(f"{f.ref} {sanitize_filename(f.filename)}" for f in natives)
     return f"Files attached after this message, in order: {listed}."
+
+
+_REASONS = {
+    "needs_vision": "needs a model that reads images or scanned PDFs",
+    "extraction_failed": "could not be parsed",
+    "no_text": "no readable text",
+    "conversion_failed": "could not be converted for this model",
+}
+
+
+def needs_manifest(plan: AttachmentPlan) -> bool:
+    """A manifest is shown unless every file is simply inlined whole this turn."""
+    return any(f.status != FileStatus.INLINE or not f.current for f in plan.files)
+
+
+def _size(planned: PlannedFile) -> str:
+    parts = []
+    if planned.text_tokens:
+        parts.append(f"{planned.text_tokens:,} tokens")
+    if planned.page_count:
+        parts.append(f"{planned.page_count:,} pages")
+    return ", ".join(parts)
+
+
+def _status(planned: PlannedFile) -> str:
+    status = planned.status
+    if status == FileStatus.PARTIAL:
+        return f"partial (tokens 1–{planned.shown_tokens:,} of {planned.text_tokens:,})"
+    if status == FileStatus.INLINE and planned.native:
+        return "inline (sent as a file)"
+    if status == FileStatus.UNREADABLE and planned.reason in _REASONS:
+        return f"unreadable ({_REASONS[planned.reason]})"
+    return status.value
+
+
+def _manifest_line(planned: PlannedFile) -> str:
+    fields = [f"{planned.ref} {sanitize_filename(planned.filename)}", planned.mime_type]
+    size = _size(planned)
+    if size and planned.status != FileStatus.UNREADABLE:
+        fields.append(size)
+    fields.append(_status(planned))
+    return "- " + " | ".join(fields)
+
+
+def _names(files: List[PlannedFile]) -> str:
+    return ", ".join(sanitize_filename(f.filename) for f in files)
+
+
+def _count(files: List[PlannedFile]) -> str:
+    return "1 file was" if len(files) == 1 else f"{len(files)} files were"
+
+
+def _instructions(plan: AttachmentPlan) -> List[str]:
+    """What the model may do about the files, built from the turn's capabilities."""
+    caps = plan.capabilities
+    lines = [
+        "These are the files in this conversation. Content marked inline or partial is in this "
+        "message. Do not guess what a file you have not seen says."
+    ]
+    tool_files = plan.with_status(FileStatus.TOOL)
+    earlier = plan.with_status(FileStatus.EARLIER)
+    if caps.attachments_tool and (tool_files or earlier or plan.with_status(FileStatus.PARTIAL)):
+        actions = ", ".join(caps.attachments_actions)
+        lines.append(
+            f"Files marked tool or earlier, and the rest of a partial file, can be read or searched "
+            f"by ref with {actions}."
+        )
+    elif earlier:
+        lines.append(
+            "Files marked earlier were attached on an earlier turn; their content is not available "
+            "in this turn. If you need one, ask the user to attach it again."
+        )
+    sandbox = plan.with_status(FileStatus.SANDBOX)
+    if sandbox and caps.sandbox_action:
+        lines.append(
+            f"Files marked sandbox are not in your context beyond a short preview: load them with "
+            f'{caps.sandbox_action} by passing the filename in "inputs" ({_names(sandbox)}).'
+        )
+    left_out = [f for f in plan.with_status(FileStatus.NOT_INCLUDED) if f.current]
+    if left_out:
+        lines.append(
+            f"{_count(left_out)} not included: {_names(left_out)}. They did not fit this model's "
+            "context; tell the user they were left out."
+        )
+    if plan.with_status(FileStatus.UNREADABLE):
+        lines.append("Tell the user which files could not be read.")
+    return lines
+
+
+def render_manifest(plan: AttachmentPlan) -> str:
+    """The manifest for a turn, or an empty string when every file fit whole.
+
+    Args:
+        plan: The turn's plan.
+
+    Returns:
+        The ``<attached_files>`` list followed by its instructions.
+    """
+    if not plan.files or not needs_manifest(plan):
+        return ""
+    listing = "\n".join(_manifest_line(f) for f in plan.files)
+    return "<attached_files>\n" + listing + "\n</attached_files>\n" + "\n".join(_instructions(plan))
 
 
 def render_attachment_block(plan: AttachmentPlan) -> str:
@@ -188,6 +296,9 @@ def render_attachment_block(plan: AttachmentPlan) -> str:
         The block, or an empty string when there is nothing to say.
     """
     parts: List[str] = []
+    manifest = render_manifest(plan)
+    if manifest:
+        parts.append(manifest)
     sections = render_file_sections(plan)
     if sections:
         parts.append(UNTRUSTED_NOTE)

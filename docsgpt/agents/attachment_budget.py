@@ -26,7 +26,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from docsgpt.agents.turn_capabilities import TurnCapabilities
 
@@ -495,9 +495,3 @@ def _fits_sandbox(row: Dict[str, Any], max_bytes: int) -> bool:
         return True
     return size <= max_bytes
 
-
-def iter_inline(plan: Optional[AttachmentPlan]) -> Iterable[PlannedFile]:
-    """Files whose content (whole, head or preview) is in the context."""
-    if plan is None:
-        return []
-    return [f for f in plan.files if f.in_context]
