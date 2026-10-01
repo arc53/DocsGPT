@@ -491,3 +491,16 @@ class TestUnreadableImages:
         assert entry.native is False
         assert entry.reason == "image_unreadable"
         assert plan.native_tokens == 0
+
+
+class TestPageImageCost:
+    def test_a_rendered_page_is_costed_at_the_measured_rate(self):
+        from docsgpt.agents.attachment_budget import PAGE_IMAGE_TOKENS, PER_FILE_OVERHEAD_TOKENS
+
+        assert PAGE_IMAGE_TOKENS >= 2500
+        pdf = att("deck.pdf", 3_000, mime="application/pdf", pages=10)
+        plan = plan_attachments([pdf], caps(vision=True), budget=200_000)
+
+        entry = plan.files[0]
+        assert entry.native is True
+        assert entry.inline_tokens == 10 * PAGE_IMAGE_TOKENS + PER_FILE_OVERHEAD_TOKENS

@@ -795,7 +795,7 @@ class TestConvertPdfToImages:
             mock_convert.assert_called_once_with(
                 file_path="/tmp/doc.pdf",
                 storage=mock_storage,
-                max_pages=20,
+                max_pages=21,  # one past the cap signals a longer PDF
                 dpi=150,
             )
             assert result == expected

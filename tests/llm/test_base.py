@@ -1032,7 +1032,7 @@ class TestConvertPdfToImagesAdditional:
 
         result = handler._convert_pdf_to_images({"path": "/tmp/doc.pdf"})
         assert captured_kwargs["dpi"] == 150
-        assert captured_kwargs["max_pages"] == 20
+        assert captured_kwargs["max_pages"] == 21  # one past the cap signals a longer PDF
         assert len(result) == 1
 
 
@@ -1791,7 +1791,7 @@ class TestConvertPdfDpiArg:
         )
         handler._convert_pdf_to_images({"path": "/tmp/doc.pdf"})
         assert call_args["dpi"] == 150
-        assert call_args["max_pages"] == 20
+        assert call_args["max_pages"] == 21  # one past the cap signals a longer PDF
 
 
 # ---------------------------------------------------------------------------

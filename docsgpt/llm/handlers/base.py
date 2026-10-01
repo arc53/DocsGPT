@@ -322,7 +322,10 @@ class LLMHandler(ABC):
                     f"Converting PDF to images for synthetic PDF support: {attachment.get('path', 'unknown')}"
                 )
                 try:
-                    converted_images = self._convert_pdf_to_images(attachment)
+                    from docsgpt.agents.attachment_budget import SYNTHETIC_PDF_MAX_PAGES
+
+                    # The renderer returns one page past the cap as a signal.
+                    converted_images = self._convert_pdf_to_images(attachment)[:SYNTHETIC_PDF_MAX_PAGES]
                     processed_attachments.extend(converted_images)
                     logger.info(
                         f"Converted PDF to {len(converted_images)} images"
@@ -433,7 +436,7 @@ class LLMHandler(ABC):
             The prepared messages, the merged carrier, and what the token
             counter charges for the native parts the merge added.
         """
-        from docsgpt.agents.attachment_budget import FileStatus
+        from docsgpt.agents.attachment_budget import SYNTHETIC_PDF_MAX_PAGES, FileStatus
         from docsgpt.agents.attachment_context import render_attachment_block
 
         natives = []
@@ -443,7 +446,7 @@ class LLMHandler(ABC):
             attachment = planned.attachment
             if attachment.get("mime_type") == "application/pdf" and plan.capabilities.synthetic_pdf:
                 try:
-                    natives.extend(self._convert_pdf_to_images(attachment))
+                    pages = self._convert_pdf_to_images(attachment)
                 except Exception as e:
                     logger.error(
                         "Failed to convert PDF %s to images, sending its text: %s",
@@ -451,6 +454,19 @@ class LLMHandler(ABC):
                         bounded_error_text(e),
                     )
                     self._use_text_instead(planned)
+                    continue
+                if len(pages) > SYNTHETIC_PDF_MAX_PAGES:
+                    # The PDF runs past the page images a turn gets (its page
+                    # count was unknown when planned). Never drop the rest
+                    # silently: send its text, or mark the pages as partial.
+                    if self._has_text(planned):
+                        self._use_text_instead(planned)
+                        continue
+                    pages = pages[:SYNTHETIC_PDF_MAX_PAGES]
+                    planned.status = FileStatus.PARTIAL
+                    planned.shown_pages = len(pages)
+                    planned.native_parts = len(pages)
+                natives.extend(pages)
                 continue
             natives.append(attachment)
 
@@ -477,6 +493,11 @@ class LLMHandler(ABC):
         return prepared, carrier, self._native_part_estimate(carrier) - before
 
     @staticmethod
+    def _has_text(planned) -> bool:
+        """Whether a plan entry has stored text to send instead of page images."""
+        return bool(str(planned.attachment.get("content") or "").strip()) and planned.text_tokens > 0
+
+    @staticmethod
     def _use_text_instead(planned) -> None:
         """Switch a PDF whose page images could not be made to its extracted text.
 
@@ -498,7 +519,7 @@ class LLMHandler(ABC):
         planned.native = False
         planned.native_parts = 0
         planned.shown_pages = 0
-        has_text = bool(str(planned.attachment.get("content") or "").strip()) and planned.text_tokens > 0
+        has_text = LLMHandler._has_text(planned)
         whole = planned.text_tokens + PER_FILE_OVERHEAD_TOKENS
         head = budgeted - PER_FILE_OVERHEAD_TOKENS - PARTIAL_MARKER_TOKENS
         if has_text and whole <= budgeted:
@@ -538,7 +559,9 @@ class LLMHandler(ABC):
             attachment: PDF attachment dictionary with 'path' and optional 'content'
 
         Returns:
-            List of image attachment dictionaries with 'data', 'mime_type', and 'page'
+            List of image attachment dictionaries with 'data', 'mime_type', and 'page':
+            at most one more than ``SYNTHETIC_PDF_MAX_PAGES``, the extra page
+            only saying the PDF is longer.
         """
         from docsgpt.utils import convert_pdf_to_images
         from docsgpt.storage.storage_creator import StorageCreator
@@ -549,11 +572,14 @@ class LLMHandler(ABC):
 
         storage = StorageCreator.get_storage()
 
-        # Convert PDF to images
+        from docsgpt.agents.attachment_budget import SYNTHETIC_PDF_MAX_PAGES
+
+        # One page past the cap, so a caller can tell a PDF that runs on
+        # from one that ends exactly at the cap.
         images_data = convert_pdf_to_images(
             file_path=file_path,
             storage=storage,
-            max_pages=20,
+            max_pages=SYNTHETIC_PDF_MAX_PAGES + 1,
             dpi=150,
         )
 

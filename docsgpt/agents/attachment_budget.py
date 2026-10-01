@@ -38,6 +38,13 @@ IMAGE_PART_TOKENS = 1500
 # Extra context a native PDF part costs per page on top of its text: providers
 # send each page as an image too. A conservative average across providers.
 NATIVE_PDF_PAGE_TOKENS = 500
+# Context one PDF page rendered as an image takes (150 dpi, a page of
+# roughly 1240x1754 px). Measured, not the per-image guess above: an
+# end-to-end run of a 200k-window vision model planned ~100k tokens of page
+# images and was billed 137,952, about 2.5k tokens a page against the 1.5k
+# assumed. The provider formulas tile by pixel size and differ by model, so
+# the measured rate is used rather than one formula.
+PAGE_IMAGE_TOKENS = 2500
 # Page images a PDF becomes on a vision model without native PDF support
 # (``LLMHandler._convert_pdf_to_images``).
 SYNTHETIC_PDF_MAX_PAGES = 20
@@ -600,7 +607,7 @@ def _native_cost(planned: PlannedFile, capabilities: TurnCapabilities) -> int:
         return IMAGE_PART_TOKENS
     if planned.mime_type == "application/pdf":
         if capabilities.synthetic_pdf:
-            return _native_parts(planned, capabilities) * IMAGE_PART_TOKENS
+            return _native_parts(planned, capabilities) * PAGE_IMAGE_TOKENS
         pages = planned.page_count or 1
         return planned.original_tokens + pages * NATIVE_PDF_PAGE_TOKENS
     return max(planned.original_tokens, IMAGE_PART_TOKENS)

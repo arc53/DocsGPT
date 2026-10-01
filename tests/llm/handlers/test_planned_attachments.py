@@ -217,6 +217,12 @@ class TestNative:
 class TestSyntheticPdf:
     """A vision model without native PDF gets PDFs as page images."""
 
+    @pytest.fixture(autouse=True)
+    def _room_for_twenty_pages(self):
+        # Twenty page images take ~50k tokens: a 100k window cannot budget them.
+        with patch("docsgpt.core.model_utils.get_token_limit", return_value=300_000):
+            yield
+
     def test_a_long_scan_sends_its_first_page_images_with_a_marker(self):
         scan = {
             "id": "s1",
@@ -234,6 +240,69 @@ class TestSyntheticPdf:
         sent = agent.llm.prepare_messages_with_attachments.call_args[0][1]
         assert len(sent) == 20
         assert "pages 1–20 of 57" in _user_text(prepared[-1])
+
+    @staticmethod
+    def _pdf(content, page_count=None):
+        metadata = {"extraction": {"status": "ok" if content else "no_text"}}
+        if page_count is not None:
+            metadata["page_count"] = page_count
+        return {
+            "id": "p1",
+            "filename": "rulebook.pdf",
+            "mime_type": "application/pdf",
+            "path": "u/rulebook.pdf",
+            "content": content,
+            "token_count": num_tokens_from_string(content) if content else 0,
+            "metadata": metadata,
+        }
+
+    @staticmethod
+    def _pages(count):
+        return [{"data": "b64", "mime_type": "image/png", "page": n} for n in range(1, count + 1)]
+
+    def test_the_renderer_is_asked_for_one_page_past_the_cap(self):
+        from docsgpt.agents.attachment_budget import SYNTHETIC_PDF_MAX_PAGES
+
+        agent = _agent([self._pdf("", None)], types=["image/png"])
+        with patch("docsgpt.utils.convert_pdf_to_images", return_value=self._pages(3)) as convert, patch(
+            "docsgpt.storage.storage_creator.StorageCreator.get_storage"
+        ):
+            _prepare(agent)
+        assert convert.call_args.kwargs["max_pages"] == SYNTHETIC_PDF_MAX_PAGES + 1
+
+    def test_an_unknown_length_pdf_with_text_that_runs_past_the_cap_is_sent_as_text(self):
+        from docsgpt.agents.attachment_budget import SYNTHETIC_PDF_MAX_PAGES
+
+        body = "rule text " * 2000
+        agent = _agent([self._pdf(body, None)], types=["image/png"])
+        with patch.object(_Handler, "_convert_pdf_to_images", return_value=self._pages(SYNTHETIC_PDF_MAX_PAGES + 1)):
+            prepared = _prepare(agent)
+        planned = agent.attachment_plan.files[0]
+        assert planned.native is False
+        assert planned.status.value in ("inline", "partial")
+        assert body.strip()[:40] in _user_text(prepared[-1])
+        agent.llm.prepare_messages_with_attachments.assert_not_called()
+
+    def test_an_unknown_length_scan_past_the_cap_is_partial_never_inline(self):
+        from docsgpt.agents.attachment_budget import SYNTHETIC_PDF_MAX_PAGES
+
+        agent = _agent([self._pdf("", None)], types=["image/png"])
+        with patch.object(_Handler, "_convert_pdf_to_images", return_value=self._pages(SYNTHETIC_PDF_MAX_PAGES + 1)):
+            prepared = _prepare(agent)
+        planned = agent.attachment_plan.files[0]
+        sent = agent.llm.prepare_messages_with_attachments.call_args[0][1]
+        assert len(sent) == SYNTHETIC_PDF_MAX_PAGES
+        assert planned.status.value == "partial"
+        assert planned.shown_pages == SYNTHETIC_PDF_MAX_PAGES
+        assert f"showing pages 1–{SYNTHETIC_PDF_MAX_PAGES}" in _user_text(prepared[-1])
+
+    def test_a_short_pdf_of_unknown_length_stays_inline(self):
+        agent = _agent([self._pdf("", None)], types=["image/png"])
+        with patch.object(_Handler, "_convert_pdf_to_images", return_value=self._pages(4)):
+            _prepare(agent)
+        planned = agent.attachment_plan.files[0]
+        assert planned.status.value == "inline"
+        assert len(agent.llm.prepare_messages_with_attachments.call_args[0][1]) == 4
 
     def test_a_failed_conversion_is_charged_for_its_text_not_page_images(self):
         body = "page text " * 300
