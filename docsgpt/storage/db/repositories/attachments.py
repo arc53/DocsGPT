@@ -18,6 +18,18 @@ _UPDATABLE_SCALARS = {
 }
 _UPDATABLE_JSONB = {"metadata"}
 
+# Columns the chat planner reads; everything but the (large) text.
+_PLANNING_COLUMNS = (
+    "id, user_id, filename, upload_path, mime_type, size, token_count, "
+    "metadata, created_at, legacy_mongo_id, content_hash"
+)
+
+
+def _is_archive(row: dict) -> bool:
+    """A zip attachment unpacked into member rows (``metadata.archive``)."""
+    metadata = row.get("metadata")
+    return isinstance(metadata, dict) and isinstance(metadata.get("archive"), dict)
+
 
 def _attachment_to_dict(row: Any) -> dict:
     """row_to_dict + ``upload_path``→``path`` alias.
@@ -201,8 +213,7 @@ class AttachmentsRepository:
             return []
         result = self._conn.execute(
             text(
-                "SELECT id, user_id, filename, upload_path, mime_type, size, token_count, "
-                "metadata, created_at, legacy_mongo_id, content_hash "
+                f"SELECT {_PLANNING_COLUMNS} "
                 "FROM attachments WHERE id::text = ANY(:ids) AND user_id = :user_id"
             ),
             {"ids": wanted, "user_id": user_id},
@@ -211,7 +222,54 @@ class AttachmentsRepository:
         for row in result.fetchall():
             out = _attachment_to_dict(row)
             by_id[str(out["id"])] = out
-        return [by_id[i] for i in dict.fromkeys(wanted) if i in by_id]
+        rows = [by_id[i] for i in dict.fromkeys(wanted) if i in by_id]
+        return self._with_archive_members(rows, user_id, _PLANNING_COLUMNS)
+
+    def expand_archives(self, rows: list[dict], user_id: str) -> list[dict]:
+        """Follow each zip attachment with its member rows, text included.
+
+        A zip attached to a chat is unpacked by the worker into one row per
+        member; the request names only the zip. Loading a turn's attachments
+        through this puts the members right after their zip, in archive
+        order, so they are planned, read and referenced like any upload.
+
+        Args:
+            rows: Full attachment rows, in upload order.
+            user_id: The owner; only their member rows are added.
+
+        Returns:
+            The rows with members inserted; a row listed twice appears once.
+        """
+        return self._with_archive_members(rows, user_id, "*")
+
+    def _with_archive_members(self, rows: list[dict], user_id: str, columns: str) -> list[dict]:
+        """Insert each archive's member rows after it (owner-scoped, archive order, no repeats)."""
+        parent_ids = [str(r["id"]) for r in rows if _is_archive(r)]
+        if not parent_ids:
+            return rows
+        result = self._conn.execute(
+            text(
+                f"SELECT {columns} FROM attachments "
+                "WHERE user_id = :user_id AND metadata->>'parent_attachment_id' = ANY(:parent_ids) "
+                "ORDER BY metadata->>'parent_attachment_id', "
+                "CASE WHEN metadata->>'archive_index' ~ '^[0-9]{1,9}$' "
+                "THEN (metadata->>'archive_index')::int END NULLS LAST, created_at"
+            ),
+            {"user_id": user_id, "parent_ids": parent_ids},
+        )
+        members: dict[str, list[dict]] = {}
+        for row in result.fetchall():
+            out = _attachment_to_dict(row)
+            members.setdefault(str(out["metadata"]["parent_attachment_id"]), []).append(out)
+        expanded: list[dict] = []
+        seen: set[str] = set()
+        for row in rows:
+            for item in [row, *members.get(str(row["id"]), [])]:
+                key = str(item["id"])
+                if key not in seen:
+                    seen.add(key)
+                    expanded.append(item)
+        return expanded
 
     def find_by_hash(
         self,

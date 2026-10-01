@@ -28,7 +28,7 @@ from docsgpt.parser.embedding_pipeline import (
 )
 from docsgpt.parser.file.base_parser import NoTextLayerError
 from docsgpt.parser.file.bulk import SimpleDirectoryReader, get_default_file_extractor
-from docsgpt.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
+from docsgpt.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS, is_attachment_archive
 from docsgpt.parser.file.image_parser import (
     VISION_CONVERTIBLE_MIME_TYPES,
     convert_image_to_png,
@@ -1946,9 +1946,50 @@ def record_attachment_failure(user, file_info, error, parser=None):
 
 
 def attachment_worker(self, file_info, user):
+    """Process and store one uploaded attachment without vectorization.
+
+    A zip is unpacked into one attachment per member
+    (``_archive_attachment_worker``); anything else is parsed as one file.
+
+    Args:
+        self: The Celery task, for progress updates.
+        file_info: ``filename``, ``attachment_id`` (the upload handle),
+            ``path`` (storage path) and upload ``metadata``.
+        user: The uploader.
+
+    Returns:
+        The stored attachment's summary.
     """
-    Process and store a single attachment without vectorization.
+    if is_attachment_archive(file_info.get("filename")):
+        return _archive_attachment_worker(self, file_info, user)
+    return _single_attachment_worker(self, file_info, user)
+
+
+def _no_event(*args: Any, **kwargs: Any) -> None:
+    """Stand-in for ``publish_user_event`` where nothing should reach the UI."""
+
+
+class _SilentTask:
+    """Stand-in Celery task for a member parsed inside a zip's own task."""
+
+    def update_state(self, *args: Any, **kwargs: Any) -> None:
+        """Progress of a member is reported by the zip, not per member."""
+
+
+def _single_attachment_worker(self, file_info, user, *, emit_events: bool = True):
+    """Process and store a single attachment without vectorization.
+
+    Args:
+        self: The Celery task (or a stand-in), for progress updates.
+        file_info: ``filename``, ``attachment_id``, ``path``, ``metadata``.
+        user: The uploader.
+        emit_events: Publish the attachment SSE events; off for a zip's
+            members, which the browser never uploaded and does not track.
+
+    Returns:
+        The stored attachment's summary.
     """
+    publish = publish_user_event if emit_events else _no_event
 
     filename = file_info["filename"]
     attachment_id = file_info["attachment_id"]
@@ -1956,7 +1997,7 @@ def attachment_worker(self, file_info, user):
     metadata = file_info.get("metadata", {})
     parser_name = None
 
-    publish_user_event(
+    publish(
         user,
         "attachment.queued",
         {"attachment_id": str(attachment_id), "filename": filename},
@@ -1970,7 +2011,7 @@ def attachment_worker(self, file_info, user):
         self.update_state(
             state="PROGRESS", meta={"current": 30, "status": "Processing content"}
         )
-        publish_user_event(
+        publish(
             user,
             "attachment.progress",
             {
@@ -2096,7 +2137,7 @@ def attachment_worker(self, file_info, user):
         self.update_state(
             state="PROGRESS", meta={"current": 80, "status": "Storing in database"}
         )
-        publish_user_event(
+        publish(
             user,
             "attachment.progress",
             {
@@ -2133,7 +2174,7 @@ def attachment_worker(self, file_info, user):
 
         self.update_state(state="PROGRESS", meta={"current": 100, "status": "Complete"})
 
-        publish_user_event(
+        publish(
             user,
             "attachment.completed",
             {
@@ -2161,7 +2202,7 @@ def attachment_worker(self, file_info, user):
             exc_info=True,
         )
         record_attachment_failure(user, file_info, e, parser=parser_name)
-        publish_user_event(
+        publish(
             user,
             "attachment.failed",
             {
@@ -2172,6 +2213,246 @@ def attachment_worker(self, file_info, user):
             scope={"kind": "attachment", "id": str(attachment_id)},
         )
         raise
+
+
+
+
+def _archive_index_text(filename: str, member_paths: list, expansion: Any, failed: list) -> str:
+    """The text stored for a zip itself: what it held and what was left out.
+
+    Args:
+        filename: The zip's name.
+        member_paths: Archive paths of the members stored as attachments.
+        expansion: The ``ArchiveExpansion``, for the skipped members.
+        failed: Archive paths of members whose parse failed.
+
+    Returns:
+        A short plain-text index; never the archive's bytes.
+    """
+    from docsgpt.parser.attachment_archive import SKIP_REASON_TEXT
+
+    lines = [
+        f"Archive {filename}: {len(member_paths)} file(s) unpacked, each attached separately; "
+        f"{expansion.skipped_count} skipped."
+    ]
+    if member_paths:
+        lines.append("Files:")
+        lines.extend(f"- {path}" + (" (could not be parsed)" if path in failed else "") for path in member_paths)
+    if expansion.skipped:
+        lines.append("Skipped:")
+        lines.extend(
+            f"- {item.archive_path}: {SKIP_REASON_TEXT.get(item.reason, item.reason)}"
+            for item in expansion.skipped
+        )
+        hidden = expansion.skipped_count - len(expansion.skipped)
+        if hidden > 0:
+            lines.append(f"- and {hidden} more")
+    return "\n".join(lines)
+
+
+def _archive_member_handle(attachment_id: Any, index: int, archive_path: str) -> str:
+    """A member's upload handle, the same on every retry of the zip's task."""
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"docsgpt-archive:{attachment_id}:{index}:{archive_path}"))
+
+
+def _archive_attachment_worker(self, file_info, user):
+    """Unpack a zip attachment into one attachment per member.
+
+    The zip keeps its own row as an index (``metadata.archive`` and a short
+    text listing, never the compressed bytes). Each member is stored next to
+    the other uploads and parsed like one, in its own row linked by
+    ``metadata.parent_attachment_id`` / ``archive_path`` / ``archive_index``;
+    members load in archive order after the zip wherever the zip is
+    attached (``AttachmentsRepository.list_for_planning`` /
+    ``expand_archives``). Members with no parser that are not text are
+    skipped, like every member the limits leave out, with a reason recorded
+    on the zip. Only the zip reports SSE progress: the browser shows the zip
+    as one file.
+
+    Args:
+        self: The Celery task, for progress updates.
+        file_info: The zip's ``filename``, ``attachment_id``, ``path``,
+            ``metadata``.
+        user: The uploader.
+
+    Returns:
+        The zip's stored summary.
+
+    Raises:
+        AttachmentRejectedError: The file is not a readable zip or is a zip bomb.
+    """
+    from docsgpt.parser.attachment_archive import ArchiveLimits, ArchiveRejectedError, expand_archive
+    from docsgpt.upload_limits import UnsupportedUploadTypeError, enforce_parseable_attachment
+
+    filename = file_info["filename"]
+    attachment_id = file_info["attachment_id"]
+    relative_path = file_info["path"]
+    metadata = file_info.get("metadata", {}) or {}
+    scope = {"kind": "attachment", "id": str(attachment_id)}
+
+    publish_user_event(
+        user, "attachment.queued", {"attachment_id": str(attachment_id), "filename": filename}, scope=scope
+    )
+    work_dir = tempfile.mkdtemp(prefix="docsgpt-archive-")
+    try:
+        self.update_state(state="PROGRESS", meta={"current": 10})
+        storage = StorageCreator.get_storage()
+        limits = ArchiveLimits.from_settings()
+        fingerprint: Dict[str, Any] = {}
+
+        def _expand(local_path: str, **kwargs):
+            fingerprint.update(_attachment_fingerprint(local_path, filename))
+            return expand_archive(local_path, work_dir, limits)
+
+        try:
+            expansion = storage.process_file(relative_path, _expand)
+        except ArchiveRejectedError as exc:
+            raise AttachmentRejectedError(str(exc)) from exc
+
+        content_hash = fingerprint.get("content_hash")
+        base_metadata = {**metadata, **({"content_hash": content_hash} if content_hash else {})}
+        # The zip's row first, so its members can name it.
+        _upsert_attachment_row(
+            user,
+            filename,
+            relative_path,
+            mime_type="application/zip",
+            content=None,
+            token_count=None,
+            metadata={**base_metadata, "extraction": {"status": "processing", "parser": "archive"}},
+            attachment_id=attachment_id,
+            size=fingerprint.get("size"),
+            content_hash=content_hash,
+        )
+        with db_readonly() as conn:
+            parent_id = str(AttachmentsRepository(conn).get_by_legacy_id(str(attachment_id), user)["id"])
+
+        file_extractor = get_default_file_extractor(
+            ocr_enabled=settings.OCR_ATTACHMENTS_ENABLED,
+            pdf_text_fast_path=settings.ATTACHMENT_PDF_TEXT_FAST_PATH,
+        )
+        parser_suffixes = set(file_extractor)
+        attachments_dir = os.path.dirname(os.path.dirname(relative_path))
+        stored_paths: list = []
+        failed_paths: list = []
+        member_tokens = 0
+        total = len(expansion.members) or 1
+        for index, member in enumerate(expansion.members):
+            current = 30 + int(50 * index / total)
+            self.update_state(state="PROGRESS", meta={"current": current, "status": "Unpacking"})
+            publish_user_event(
+                user,
+                "attachment.progress",
+                {"attachment_id": str(attachment_id), "filename": filename, "current": current, "stage": "processing"},
+                scope=scope,
+            )
+            try:
+                enforce_parseable_attachment(member.local_path, member.filename, parser_suffixes)
+            except UnsupportedUploadTypeError:
+                expansion.skip(member.archive_path, "unsupported_type")
+                continue
+            handle = _archive_member_handle(attachment_id, index, member.archive_path)
+            member_path = f"{attachments_dir}/{handle}/{safe_filename(member.filename)}"
+            with open(member.local_path, "rb") as member_bytes:
+                storage_metadata = storage.save_file(member_bytes, member_path) or {}
+            member_info = {
+                "filename": member.filename,
+                "attachment_id": handle,
+                "path": member_path,
+                "metadata": {
+                    **(storage_metadata if isinstance(storage_metadata, dict) else {}),
+                    "parent_attachment_id": parent_id,
+                    "archive_path": member.archive_path,
+                    "archive_index": index,
+                },
+            }
+            stored_paths.append(member.archive_path)
+            try:
+                result = _single_attachment_worker(_SilentTask(), member_info, user, emit_events=False)
+                member_tokens += int(result.get("token_count") or 0)
+            except Exception:
+                # The member's own failure row is written by its error path;
+                # one bad file never sinks the rest of the archive.
+                logging.warning(
+                    f"Archive member {member.archive_path} of {filename} could not be parsed",
+                    extra={"user": user},
+                    exc_info=True,
+                )
+                failed_paths.append(member.archive_path)
+
+        self.update_state(state="PROGRESS", meta={"current": 80, "status": "Storing in database"})
+        publish_user_event(
+            user,
+            "attachment.progress",
+            {"attachment_id": str(attachment_id), "filename": filename, "current": 80, "stage": "storing"},
+            scope=scope,
+        )
+        index_text = _archive_index_text(filename, stored_paths, expansion, failed_paths)
+        index_tokens = len(get_encoding().encode_ordinary(index_text))
+        archive_summary = {
+            "members": len(stored_paths),
+            "failed": len(failed_paths),
+            "skipped": [{"archive_path": s.archive_path, "reason": s.reason} for s in expansion.skipped],
+            "skipped_count": expansion.skipped_count,
+            "total_bytes": expansion.total_bytes,
+        }
+        final_metadata = {
+            **base_metadata,
+            "archive": archive_summary,
+            "extraction": {
+                "status": "ok",
+                "parser": "archive",
+                "truncated": False,
+                "original_tokens": index_tokens,
+                "stored_tokens": index_tokens,
+            },
+        }
+        _upsert_attachment_row(
+            user,
+            filename,
+            relative_path,
+            mime_type="application/zip",
+            content=index_text,
+            token_count=index_tokens,
+            metadata=final_metadata,
+            attachment_id=attachment_id,
+            size=fingerprint.get("size"),
+            content_hash=content_hash,
+        )
+        self.update_state(state="PROGRESS", meta={"current": 100, "status": "Complete"})
+        publish_user_event(
+            user,
+            "attachment.completed",
+            {
+                "attachment_id": str(attachment_id),
+                "filename": filename,
+                "token_count": member_tokens,
+                "mime_type": "application/zip",
+                "extraction_status": "ok",
+                "archive": {"members": len(stored_paths), "skipped": expansion.skipped_count},
+            },
+            scope=scope,
+        )
+        return {
+            "filename": filename,
+            "path": relative_path,
+            "token_count": member_tokens,
+            "attachment_id": attachment_id,
+            "mime_type": "application/zip",
+            "metadata": final_metadata,
+        }
+    except Exception as e:
+        logging.error(f"Error unpacking archive {filename}: {e}", extra={"user": user}, exc_info=True)
+        record_attachment_failure(user, file_info, e, parser="archive")
+        publish_user_event(
+            user,
+            "attachment.failed",
+            {"attachment_id": str(attachment_id), "filename": filename, "error": str(e)[:1024]},
+            scope=scope,
+        )
+        raise
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
 
 
 def parse_document_worker(self, artifact_id, parent, user_id, options):

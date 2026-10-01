@@ -81,6 +81,20 @@ def test_enforce_parseable_attachment_rejects_binary_without_a_parser(
     assert str(excinfo.value).startswith("Unsupported file type")
 
 
+@pytest.mark.parametrize("filename", ["bundle.zip", "BUNDLE.ZIP"])
+def test_enforce_parseable_attachment_admits_a_real_zip(filename, tmp_path):
+    """A zip attachment is unpacked into its members by the worker, so it is let through."""
+    import zipfile
+
+    from docsgpt.upload_limits import enforce_parseable_attachment
+
+    path = tmp_path / "staged.bin"
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("a.txt", "hello")
+
+    enforce_parseable_attachment(path, filename)
+
+
 def test_enforce_parseable_attachment_rejects_binary_named_as_text(tmp_path):
     """.txt has no parser — it *is* the fallthrough — so it is sniffed like any suffix.
 

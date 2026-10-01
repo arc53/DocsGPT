@@ -1023,6 +1023,8 @@ class StreamProcessor:
                             f"Error retrieving attachment {attachment_id}: {e}",
                             exc_info=True,
                         )
+                # A zip is followed by the files the worker unpacked from it.
+                attachments = repo.expand_archives(attachments, user_id)
         except Exception as e:
             logger.error(f"Error opening attachments connection: {e}", exc_info=True)
         return attachments

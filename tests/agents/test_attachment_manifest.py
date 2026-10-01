@@ -171,3 +171,30 @@ class TestBlockOrder:
             budget=50_000,
         )
         assert "F1 a.png, F2 b.png" in render_attachment_block(two)
+
+
+class TestArchives:
+    def _plan(self, skipped=()):
+        parent = att("bundle.zip", 40, mime="application/zip", content="Archive index")
+        parent["metadata"]["archive"] = {
+            "members": 2,
+            "skipped": [{"archive_path": p, "reason": r} for p, r in skipped],
+            "skipped_count": len(skipped),
+        }
+        return plan_attachments([parent, att("a.txt", 100), att("b.txt", 100)], caps(), budget=50_000)
+
+    def test_the_zip_line_says_its_files_follow(self):
+        manifest = render_manifest(self._plan())
+        line = next(line for line in manifest.splitlines() if "bundle.zip" in line)
+        assert "archive of 2 files, listed after it" in line
+        assert "- F2 a.txt" in manifest and "- F3 b.txt" in manifest
+
+    def test_skipped_members_are_named_with_their_reason(self):
+        manifest = render_manifest(self._plan(skipped=[("tool.exe", "unsupported_type"), ("x/deep.zip", "nested_too_deep")]))
+        line = next(line for line in manifest.splitlines() if "bundle.zip" in line)
+        assert "2 skipped: tool.exe (unsupported file type), x/deep.zip (archive nested too deep)" in line
+        assert "Tell the user which files in an archive were skipped" in manifest
+
+    def test_the_index_text_is_never_inlined(self):
+        block = render_attachment_block(self._plan())
+        assert "Archive index" not in block

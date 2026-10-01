@@ -779,6 +779,30 @@ Type `int`, default `3`, must be `>= 0`.
 
 Maximum nesting depth of archives inside archives.
 
+### `ATTACHMENT_ARCHIVE_MAX_MEMBERS`
+
+Type `int`, default `200`, must be `> 0`.
+
+Files unpacked from one zip attachment (nested archives included); the rest are skipped.
+
+### `ATTACHMENT_ARCHIVE_MAX_BYTES`
+
+Type `int`, default `209715200`, must be `> 0`.
+
+Total uncompressed bytes unpacked from one zip attachment; members past it are skipped.
+
+### `ATTACHMENT_ARCHIVE_MAX_DEPTH`
+
+Type `int`, default `2`, must be `>= 1`.
+
+Archive levels unpacked from a zip attachment (2 = a zip inside the zip); deeper ones are skipped.
+
+### `ATTACHMENT_ARCHIVE_MAX_RATIO`
+
+Type `int`, default `100`, must be `> 0`.
+
+Uncompressed-to-compressed ratio above which a zip attachment is rejected as a zip bomb.
+
 ### `PARSE_PDF_AS_IMAGE`
 
 Type `bool`, default `false`.

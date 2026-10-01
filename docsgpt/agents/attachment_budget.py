@@ -18,7 +18,9 @@ the same plan:
   useful; native parts are never cut;
 * the rest are left for a tool (``tool``), a spreadsheet goes to the code
   sandbox with a short preview (``sandbox``), and with no tool to reach them
-  they are ``not_included``.
+  they are ``not_included``;
+* a zip is listed (``archive``) but never inlined: the worker unpacked it,
+  and its members follow it in the rows as files of their own.
 """
 
 from __future__ import annotations
@@ -79,6 +81,7 @@ class FileStatus(str, Enum):
     EARLIER = "earlier"
     NOT_INCLUDED = "not_included"
     UNREADABLE = "unreadable"
+    ARCHIVE = "archive"
 
 
 @dataclass(eq=False)
@@ -375,6 +378,12 @@ def plan_attachments(
         has_text = _has_text(row)
         native_ok = capabilities.reads_natively(planned.mime_type) and _native_readable(row)
 
+        if is_archive(row):
+            # A zip's members follow it as files of their own; its stored
+            # text is only an index of them.
+            planned.status = FileStatus.ARCHIVE
+            continue
+
         if not has_text and not native_ok:
             planned.status = FileStatus.UNREADABLE
             planned.reason = _unreadable_reason(row, capabilities)
@@ -438,6 +447,11 @@ def plan_attachments(
             planned.sandbox_eligible = _fits_sandbox(planned.attachment, sandbox_max_input_bytes)
 
     return AttachmentPlan(files=files, capabilities=capabilities, budget=max(int(budget), 0))
+
+
+def is_archive(row: Dict[str, Any]) -> bool:
+    """A zip attachment unpacked into member attachments (``metadata.archive``)."""
+    return isinstance(_metadata(row).get("archive"), dict)
 
 
 def _attachment_id(row: Dict[str, Any]) -> str:

@@ -224,3 +224,69 @@ class TestContentHash:
         repo = _repo(pg_conn)
         doc = repo.create("u", "a.pdf", "/a", content_hash=self._HASH)
         assert repo.list_for_planning([doc["id"]], "u")[0]["content_hash"] == self._HASH
+
+
+class TestArchiveMembers:
+    """A zip's members load right after it, in archive order, wherever the zip is attached."""
+
+    def _archive(self, repo, user="u"):
+        parent = repo.create(
+            user, "bundle.zip", "/z", content="index", metadata={"archive": {"members": 2}}
+        )
+        second = repo.create(
+            user, "b.txt", "/b", content="b",
+            metadata={"parent_attachment_id": str(parent["id"]), "archive_path": "b.txt", "archive_index": 1},
+        )
+        first = repo.create(
+            user, "a.txt", "/a", content="a",
+            metadata={"parent_attachment_id": str(parent["id"]), "archive_path": "a.txt", "archive_index": 0},
+        )
+        return parent, first, second
+
+    def test_list_for_planning_follows_the_zip_with_its_members(self, pg_conn):
+        repo = _repo(pg_conn)
+        before = repo.create("u", "before.txt", "/x")
+        parent, first, second = self._archive(repo)
+        after = repo.create("u", "after.txt", "/y")
+
+        rows = repo.list_for_planning([before["id"], parent["id"], after["id"]], "u")
+
+        assert [r["id"] for r in rows] == [before["id"], parent["id"], first["id"], second["id"], after["id"]]
+        assert all("content" not in r for r in rows)
+
+    def test_members_named_explicitly_are_not_listed_twice(self, pg_conn):
+        repo = _repo(pg_conn)
+        parent, first, second = self._archive(repo)
+
+        rows = repo.list_for_planning([parent["id"], first["id"], second["id"]], "u")
+
+        assert [r["id"] for r in rows] == [parent["id"], first["id"], second["id"]]
+
+    def test_expand_archives_adds_full_member_rows(self, pg_conn):
+        repo = _repo(pg_conn)
+        parent, first, second = self._archive(repo)
+        loose = repo.create("u", "loose.txt", "/l", content="loose")
+
+        rows = repo.expand_archives([repo.get(parent["id"], "u"), repo.get(loose["id"], "u")], "u")
+
+        assert [r["id"] for r in rows] == [parent["id"], first["id"], second["id"], loose["id"]]
+        assert rows[1]["content"] == "a"
+
+    def test_other_users_rows_never_join_a_zip(self, pg_conn):
+        repo = _repo(pg_conn)
+        parent, first, second = self._archive(repo)
+        repo.create(
+            "intruder", "evil.txt", "/e", content="e",
+            metadata={"parent_attachment_id": str(parent["id"]), "archive_path": "evil.txt", "archive_index": -1},
+        )
+
+        rows = repo.list_for_planning([parent["id"]], "u")
+
+        assert [r["id"] for r in rows] == [parent["id"], first["id"], second["id"]]
+
+    def test_rows_without_archives_pass_through(self, pg_conn):
+        repo = _repo(pg_conn)
+        loose = repo.create("u", "loose.txt", "/l", content="loose")
+        row = repo.get(loose["id"], "u")
+        assert repo.expand_archives([row], "u") == [row]
+        assert repo.expand_archives([], "u") == []

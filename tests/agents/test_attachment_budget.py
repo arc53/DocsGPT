@@ -403,3 +403,30 @@ class TestEarlierRowsWithoutText:
         plan = plan_attachments([again], caps(), budget=50_000, earlier=[old])
         assert plan.files[0].status == FileStatus.INLINE
         assert plan.files[0].attachment is again
+
+
+def zip_parent(name="bundle.zip", members=2, skipped=()):
+    row = att(name, 40, mime="application/zip", content="Archive index")
+    row["metadata"]["archive"] = {
+        "members": members,
+        "skipped": [{"archive_path": p, "reason": r} for p, r in skipped],
+        "skipped_count": len(skipped),
+    }
+    return row
+
+
+class TestArchives:
+    def test_the_zip_is_listed_not_inlined_and_its_members_are_planned(self):
+        parent = zip_parent()
+        a, b = att("a.txt", 500), att("b.txt", 500)
+        plan = plan_attachments([parent, a, b], caps(), budget=50_000)
+        assert [(f.ref, f.filename, f.status) for f in plan.files] == [
+            ("F1", "bundle.zip", FileStatus.ARCHIVE),
+            ("F2", "a.txt", FileStatus.INLINE),
+            ("F3", "b.txt", FileStatus.INLINE),
+        ]
+        assert plan.files[0].inline_tokens == 0
+
+    def test_an_earlier_zip_stays_earlier(self):
+        plan = plan_attachments([], caps(), budget=50_000, earlier=[zip_parent(), att("a.txt", 10)])
+        assert [f.status for f in plan.files] == [FileStatus.EARLIER, FileStatus.EARLIER]

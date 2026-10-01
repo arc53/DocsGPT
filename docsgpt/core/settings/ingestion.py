@@ -37,6 +37,27 @@ class IngestionSettings(SettingsGroup):
     UPLOAD_MAX_ARCHIVE_DEPTH: int = Field(
         default=3, ge=0, description="Maximum nesting depth of archives inside archives."
     )
+    # A zip attached to a chat is unpacked into one attachment per member.
+    ATTACHMENT_ARCHIVE_MAX_MEMBERS: int = Field(
+        default=200,
+        gt=0,
+        description="Files unpacked from one zip attachment (nested archives included); the rest are skipped.",
+    )
+    ATTACHMENT_ARCHIVE_MAX_BYTES: int = Field(
+        default=200 * 1024 * 1024,
+        gt=0,
+        description="Total uncompressed bytes unpacked from one zip attachment; members past it are skipped.",
+    )
+    ATTACHMENT_ARCHIVE_MAX_DEPTH: int = Field(
+        default=2,
+        ge=1,
+        description="Archive levels unpacked from a zip attachment (2 = a zip inside the zip); deeper ones are skipped.",
+    )
+    ATTACHMENT_ARCHIVE_MAX_RATIO: int = Field(
+        default=100,
+        gt=0,
+        description="Uncompressed-to-compressed ratio above which a zip attachment is rejected as a zip bomb.",
+    )
     PARSE_PDF_AS_IMAGE: bool = Field(default=False, description="Render PDF pages to images before parsing.")
     PARSE_IMAGE_REMOTE: bool = Field(default=False, description="Send images to a remote parser.")
     DOC_PARSER_ENGINE: Literal["anydoc", "docling"] = Field(
