@@ -1,6 +1,6 @@
 ---
 title: OpenAI-Compatible API
-description: Connect any OpenAI-compatible client to DocsGPT Agents via /v1/chat/completions — streaming, structured output, multimodal, tool calling, reasoning, and idempotent retries.
+description: Connect any OpenAI-compatible client to DocsGPT Agents via /v1/chat/completions — streaming, structured output, files and images, tool calling, reasoning, and idempotent retries.
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -144,9 +144,16 @@ You can force the model to return JSON matching a schema, using either the OpenA
 - `response_format: {"type": "json_object"}` requests JSON without a fixed schema (the model is steered by the prompt).
 - `response_schema` is a DocsGPT convenience: pass a raw JSON Schema object (or a `{"schema": {...}}` wrapper) directly.
 
-## Multimodal Input (text + images)
+## Files and Images
 
-User messages may use OpenAI typed-content arrays with `image_url` parts. Images are forwarded to vision-capable models.
+Send files the way the OpenAI API takes them, in the `content` array of a user message:
+
+| Part | Shape |
+| --- | --- |
+| `file` | `{"type": "file", "file": {"filename": "report.pdf", "file_data": "data:application/pdf;base64,..."}}` |
+| `input_file` | `{"type": "input_file", "filename": "report.pdf", "file_data": "data:application/pdf;base64,..."}` |
+| `image_url` | `{"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}` |
+| `input_image` | `{"type": "input_image", "image_url": "data:image/png;base64,..."}` |
 
 ```json
 {
@@ -155,13 +162,26 @@ User messages may use OpenAI typed-content arrays with `image_url` parts. Images
     {
       "role": "user",
       "content": [
-        {"type": "text", "text": "What's in this screenshot?"},
-        {"type": "image_url", "image_url": {"url": "https://example.com/shot.png"}}
+        {"type": "text", "text": "Compare the two contracts"},
+        {"type": "file", "file": {"filename": "contract_a.pdf", "file_data": "data:application/pdf;base64,JVBERi0..."}},
+        {"type": "file", "file": {"filename": "contract_b.docx", "file_data": "data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,UEsDB..."}}
       ]
     }
   ]
 }
 ```
+
+Each file becomes an attachment of the agent's owner, parsed like a file uploaded in the chat, and the parts are taken out of the turn before the model sees it. Your `messages` are never rewritten or sent back to you.
+
+- **Re-sent files cost nothing extra.** Files are matched by their bytes (SHA-256). A file the agent's owner already has, from this conversation or any other, reuses its parsed text instead of being parsed again, so you can keep re-sending every file on every turn and tool round.
+- **Only what fits goes into the prompt.** Up to half of the model's context window (`ATTACHMENT_BUDGET_SHARE`) goes to the turn's files, in the order you sent them. A file that does not fit whole is shown from the start with a note saying how much is included; the rest are left out of the prompt. Images and PDFs go to models that read them natively (at most `ATTACHMENT_MAX_NATIVE_PARTS` per turn); other models get the extracted text.
+- **The model gets a list of the files.** A short manifest is added to the user message on the server: one line per file with a reference (`F1`, `F2`, ...), its size and whether it is in the prompt. Files from earlier turns of a stored conversation stay listed there.
+- **The model can read the rest itself.** When the model takes tools, the turn gets server-side tools to list, read (by token offset or PDF page) and search the conversation's files, and to look at images and scanned pages on vision models. They run on the server and never appear in `tool_calls` or pause your tool loop, even when you send your own tools with similar names. Their activity shows up only in `docsgpt` frames. A model without tool support is told which files were left out.
+- **Limits.** A file can be up to `UPLOAD_MAX_FILE_BYTES` (100 MB by default). A file that is larger, cannot be parsed, or is a type no parser reads stays in the request as you sent it. Remote image URLs (`https://...`) and `file_id` parts are passed through unchanged.
+
+<Callout type="info">
+Prefer `file` parts, or attachment ids in `docsgpt.attachments`, over pasting a document's text into the message. Pasted text is part of the message itself: it is always sent whole, and a turn that is too long fails. Files are budgeted, deduplicated and readable on demand.
+</Callout>
 
 ## Tool Calling (client-side, stateless)
 
@@ -186,6 +206,23 @@ You can register your own tools and execute them on the client. The flow is stat
   "tools": [ { "type": "function", "function": { "name": "get_weather", "...": "..." } } ]
 }
 ```
+
+## Errors
+
+A request that does not fit the model's context window gets the error OpenAI returns for one, with HTTP `400`:
+
+```json
+{
+  "error": {
+    "message": "This message and its attached files need about 262,790 tokens, more than the model can take (200,000 tokens). Send fewer or smaller files, or add large documents to the agent's sources instead.",
+    "type": "invalid_request_error",
+    "param": "messages",
+    "code": "context_length_exceeded"
+  }
+}
+```
+
+When streaming, the size may only be known after the stream has started. The same `error` object then arrives as the last frame, followed by `data: [DONE]`. Retrying the same request fails the same way: send fewer or smaller files, shorten pasted text, or add large documents to the agent's sources.
 
 ## Reasoning
 
@@ -251,7 +288,7 @@ DocsGPT adds an optional `docsgpt` object to both requests and responses for fea
 
 | Field | Description |
 | --- | --- |
-| `attachments` | List of attachment IDs to include as context for this turn. Upload them with the native [`/api/store_attachment`](/API/agent-api#attachments-api-including-images). |
+| `attachments` | List of attachment IDs to include as context for this turn, handled like [file parts](#files-and-images). Upload them with the native [`/api/store_attachment`](/API/agent-api#attachments-api-including-images). |
 | `conversation_id` | Continue a stored conversation (see [Continuing a conversation](#continuing-a-conversation)). A top-level `conversation_id` works too. |
 | `session_id` | Link requests into one conversation (see [Session headers](#session-headers)). |
 
@@ -267,4 +304,4 @@ When streaming, these arrive on otherwise-empty chunks that carry a top-level `d
 
 ## When to Use Native Endpoints Instead
 
-Use [`/api/answer` or `/stream`](/API/agent-api) if you need `passthrough` template variables or sidebar visibility control via `visibility`. Uploading an attachment also uses the native `/api/store_attachment`; the resulting id then works in `docsgpt.attachments`.
+Use [`/api/answer` or `/stream`](/API/agent-api) if you need `passthrough` template variables or sidebar visibility control via `visibility`. To upload a file once and refer to it by id instead of sending its bytes, use the native `/api/store_attachment`; the resulting id then works in `docsgpt.attachments`.
