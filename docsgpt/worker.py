@@ -1864,8 +1864,9 @@ def _find_reusable_parse(user: str, content_hash: Optional[str], attachment_id: 
         return None
     try:
         with db_readonly() as conn:
+            # Never a zip's row: it holds the zip's index, not this file's text.
             return AttachmentsRepository(conn).find_by_hash(
-                user, content_hash, exclude_legacy_id=str(attachment_id)
+                user, content_hash, exclude_legacy_id=str(attachment_id), archive=False
             )
     except Exception:
         logging.warning("Attachment content-hash lookup failed; parsing instead", exc_info=True)

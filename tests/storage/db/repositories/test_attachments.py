@@ -220,6 +220,30 @@ class TestContentHash:
         assert repo.find_by_hash("u", self._HASH, exclude_legacy_id="handle-1") is None
         assert repo.find_by_hash("u", "") is None
 
+    def test_find_by_hash_never_returns_a_zip_still_unpacking(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create(
+            "u", "b.zip", "/z", content="partial index", content_hash=self._HASH,
+            metadata={"archive": {"status": "processing"}},
+        )
+
+        assert repo.find_by_hash("u", self._HASH) is None
+        assert repo.find_by_hash("u", self._HASH, archive=True) is None
+
+    def test_find_by_hash_matches_zips_only_to_zips(self, pg_conn):
+        repo = _repo(pg_conn)
+        zipped = repo.create(
+            "u", "b.zip", "/z", content="Archive b.zip: 2 file(s)", content_hash=self._HASH,
+            metadata={"archive": {"status": "complete"}},
+        )
+
+        assert repo.find_by_hash("u", self._HASH, archive=False) is None
+        assert repo.find_by_hash("u", self._HASH, archive=True)["id"] == zipped["id"]
+
+        plain = repo.create("u", "b.docx", "/d", content="text", content_hash=self._HASH, metadata={})
+        assert repo.find_by_hash("u", self._HASH, archive=False)["id"] == plain["id"]
+        assert repo.find_by_hash("u", self._HASH, archive=True)["id"] == zipped["id"]
+
     def test_list_for_planning_includes_the_hash(self, pg_conn):
         repo = _repo(pg_conn)
         doc = repo.create("u", "a.pdf", "/a", content_hash=self._HASH)
