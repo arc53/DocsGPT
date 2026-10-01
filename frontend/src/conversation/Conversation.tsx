@@ -23,6 +23,7 @@ import { AppDispatch } from '../store';
 import { handleSendFeedback } from './conversationHandlers';
 import ConversationMessages from './ConversationMessages';
 import { FEEDBACK, Query } from './conversationModels';
+import { composerSubmitTarget, resendPlan } from './turnSubmission';
 import { ToolCallsType } from './types';
 import {
   addQuery,
@@ -209,21 +210,28 @@ export default function Conversation() {
 
       if (index !== undefined) {
         // Retry/edit of an existing turn: re-send the ids bound to that
-        // row — the composer slice was consumed by the original send.
-        const rowAttachmentIds = (queries[index]?.attachments ?? []).map(
-          (a) => a.id,
-        );
+        // row — the composer slice was consumed by the original send —
+        // unless they went to Knowledge since.
+        const plan = resendPlan(queries[index], isRetry);
+        if (plan.dropRowAttachments) {
+          dispatch(
+            updateQuery({
+              index,
+              query: { attachments: undefined, attachmentsInKnowledge: false },
+            }),
+          );
+        }
         dispatch(
           resendQuery({
             index,
             prompt: trimmedQuestion,
-            keepIdempotencyKey: isRetry,
+            keepIdempotencyKey: plan.keepIdempotencyKey,
           }),
         );
         handleFetchAnswer({
           question: trimmedQuestion,
           index,
-          attachmentIds: rowAttachmentIds,
+          attachmentIds: plan.attachmentIds,
         });
       } else if (getSendReadiness(attachments).state !== 'ready') {
         // Direct new sends (hero suggestion cards) bypass MessageInput's
@@ -288,15 +296,18 @@ export default function Conversation() {
     if (updated === true) {
       handleQuestion({ question: question as string, index: indx });
     } else if (question && status !== 'loading') {
-      if (lastQueryReturnedErr && queries.length > 0) {
-        const retryIndex = queries.length - 1;
+      const target = composerSubmitTarget({
+        question,
+        queries,
+        lastQueryReturnedErr,
+        composerFileCount: sendableAttachments.length,
+      });
+      if (target.kind === 'retry') {
         // Different prompt = new logical action, fresh idempotency key.
-        const prevPrompt = queries[retryIndex].prompt;
-        const isSamePrompt = prevPrompt === question;
-        if (!isSamePrompt) {
+        if (!target.samePrompt) {
           dispatch(
             updateQuery({
-              index: retryIndex,
+              index: target.index,
               query: {
                 prompt: question,
               },
@@ -305,8 +316,8 @@ export default function Conversation() {
         }
         handleQuestion({
           question,
-          isRetry: isSamePrompt,
-          index: retryIndex,
+          isRetry: target.samePrompt,
+          index: target.index,
         });
       } else {
         handleQuestion({
@@ -315,6 +326,13 @@ export default function Conversation() {
       }
     }
   };
+
+  const handleKnowledgeAdded = useCallback(
+    (index: number) => {
+      dispatch(updateQuery({ index, query: { attachmentsInKnowledge: true } }));
+    },
+    [dispatch],
+  );
 
   useEffect(() => {
     if (queries.length) {
@@ -399,6 +417,7 @@ export default function Conversation() {
               // Same rule as the composer's Knowledge picker: an agent's
               // sources are its own.
               canAddToKnowledge={!selectedAgent}
+              onKnowledgeAdded={handleKnowledgeAdded}
               headerContent={
                 selectedAgent ? (
                   <div className="flex w-full items-center justify-center py-4">

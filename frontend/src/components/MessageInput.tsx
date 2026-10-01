@@ -20,6 +20,7 @@ import userService from '../api/services/userService';
 import SendArrow from '../assets/send.svg?react';
 import {
   addAttachment,
+  attachmentFailureReason,
   removeAttachment,
   selectAttachments,
   toSendableAttachments,
@@ -67,8 +68,12 @@ import {
 } from './message-input';
 import { useArmedSend } from './message-input/armedSend';
 import {
+  ATTACHMENT_IDLE_MS,
   ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_QUEUE_CHECK_MS,
+  ATTACHMENT_QUEUE_MAX_CHECKS,
   ATTACHMENT_UPLOAD_CONCURRENCY,
+  checkAttachmentTask,
   createTaskQueue,
   uploadAttachmentFile,
 } from './message-input/attachmentUpload';
@@ -483,7 +488,7 @@ export default function MessageInput({
   // the row so it can't stay stuck on 'processing'. Mirrors
   // Upload.tsx's ``trackTraining``.
   const trackAttachment = useCallback(
-    (clientId: string, attachmentId: string) => {
+    (clientId: string, attachmentId: string, taskId: string) => {
       let handled = false;
 
       const check = () => {
@@ -522,10 +527,16 @@ export default function MessageInput({
           }
           if (event.type === 'attachment.failed') {
             handled = true;
+            const reason = attachmentFailureReason(
+              (event.payload || {}) as Record<string, unknown>,
+            );
             dispatch(
               updateAttachment({
                 id: clientId,
-                updates: { status: 'failed' },
+                updates: {
+                  status: 'failed',
+                  ...(reason ? { errorMessage: reason } : {}),
+                },
               }),
             );
             return true;
@@ -535,32 +546,63 @@ export default function MessageInput({
       };
 
       if (check()) return;
-      // An idle window, not a total cap: a big zip (one task per member) or a
+      // Two clocks. Until the worker takes the file (its first queued or
+      // progress event) nothing is timed: a set of forty files queues behind
+      // itself, and a busy worker can take many minutes to reach the last
+      // one. Every ten quiet minutes the task status is asked instead; a
+      // file still queued waits on, up to an hour. Once the worker has it,
+      // an idle window, not a total cap: a big zip (one task per member) or a
       // slow scan keeps reporting progress, and each report restarts it.
-      const IDLE_MS = 5 * 60_000;
       const activityOf = () =>
         store.getState().upload.attachments.find((a) => a.id === clientId)
           ?.activity ?? 0;
       let lastActivity = activityOf();
+      let started = lastActivity > 0;
+      let queueChecks = 0;
+      let timer: number | undefined;
       let unsubscribe: (() => void) | null = null;
-      const onIdle = () => {
+      const arm = (ms: number, onElapsed: () => void) => {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(onElapsed, ms);
+      };
+      const fail = (reason: string, errorMessage?: string) => {
+        window.clearTimeout(timer);
         unsubscribe?.();
-        if (!handled) {
-          handled = true;
-          console.warn(
-            'trackAttachment: no progress from the worker',
-            clientId,
-            attachmentId,
-          );
-          dispatch(
-            updateAttachment({
-              id: clientId,
-              updates: { status: 'failed' },
-            }),
-          );
+        if (handled) return;
+        handled = true;
+        console.warn(`trackAttachment: ${reason}`, clientId, attachmentId);
+        dispatch(
+          updateAttachment({
+            id: clientId,
+            updates: {
+              status: 'failed',
+              ...(errorMessage ? { errorMessage } : {}),
+            },
+          }),
+        );
+      };
+      const onIdle = () => fail('no progress from the worker');
+      const onQueueCheck = async () => {
+        if (handled || started) return;
+        const task = taskId
+          ? await checkAttachmentTask(taskId, token)
+          : ({ state: 'unknown' } as const);
+        if (handled || started) return;
+        if (task.state === 'failed') {
+          fail('the parse task failed', task.message);
+        } else if (task.state === 'unavailable') {
+          fail('no worker is running');
+        } else if (task.state === 'started') {
+          started = true;
+          arm(ATTACHMENT_IDLE_MS, onIdle);
+        } else if (++queueChecks >= ATTACHMENT_QUEUE_MAX_CHECKS) {
+          fail('no worker took the file');
+        } else {
+          arm(ATTACHMENT_QUEUE_CHECK_MS, () => void onQueueCheck());
         }
       };
-      let timer = window.setTimeout(onIdle, IDLE_MS);
+      if (started) arm(ATTACHMENT_IDLE_MS, onIdle);
+      else arm(ATTACHMENT_QUEUE_CHECK_MS, () => void onQueueCheck());
       unsubscribe = store.subscribe(() => {
         if (check()) {
           window.clearTimeout(timer);
@@ -570,12 +612,12 @@ export default function MessageInput({
         const activity = activityOf();
         if (activity !== lastActivity) {
           lastActivity = activity;
-          window.clearTimeout(timer);
-          timer = window.setTimeout(onIdle, IDLE_MS);
+          started = true;
+          arm(ATTACHMENT_IDLE_MS, onIdle);
         }
       });
     },
-    [dispatch, store],
+    [dispatch, store, token],
   );
 
   const uploadQueueRef = useRef<ReturnType<typeof createTaskQueue> | null>(
@@ -585,6 +627,17 @@ export default function MessageInput({
     uploadQueueRef.current ??= createTaskQueue(ATTACHMENT_UPLOAD_CONCURRENCY);
     return uploadQueueRef.current;
   }, []);
+  // Uploads not finished yet, by chip id: stops one (drops it from the
+  // queue, aborts its request) when its chip goes.
+  const uploadStoppersRef = useRef(new Map<string, () => void>());
+  useEffect(() => {
+    const present = new Set(attachments.map((attachment) => attachment.id));
+    for (const [id, stop] of uploadStoppersRef.current) {
+      if (present.has(id)) continue;
+      uploadStoppersRef.current.delete(id);
+      stop();
+    }
+  }, [attachments]);
 
   const uploadFiles = useCallback(
     async (incomingFiles: File[]) => {
@@ -651,16 +704,21 @@ export default function MessageInput({
           }),
         );
 
-        getUploadQueue().push(async () => {
+        const controller = new AbortController();
+        const cancel = getUploadQueue().push(async () => {
           // Removed from the composer while it waited for a slot.
           if (!store.getState().upload.attachments.some((a) => a.id === uiId))
             return;
           const outcome = await uploadAttachmentFile(file, {
             url,
             token,
+            signal: controller.signal,
             onProgress: (progress) =>
               dispatch(updateAttachment({ id: uiId, updates: { progress } })),
           });
+          uploadStoppersRef.current.delete(uiId);
+          // Removed while it uploaded: its request was aborted, nothing to show.
+          if (controller.signal.aborted) return;
           if (outcome.kind === 'stored') {
             dispatch(
               updateAttachment({
@@ -675,7 +733,7 @@ export default function MessageInput({
               }),
             );
             if (outcome.attachmentId) {
-              trackAttachment(uiId, outcome.attachmentId);
+              trackAttachment(uiId, outcome.attachmentId, outcome.taskId);
             }
             return;
           }
@@ -691,6 +749,10 @@ export default function MessageInput({
               },
             }),
           );
+        });
+        uploadStoppersRef.current.set(uiId, () => {
+          cancel();
+          controller.abort();
         });
       });
     },

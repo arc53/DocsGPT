@@ -28,6 +28,7 @@ describe('AddToKnowledgeAction', () => {
 
   beforeEach(() => {
     hook.addToKnowledge.mockReset();
+    onAdded.mockReset();
     hook.pending = false;
     hook.error = null;
     container = document.createElement('div');
@@ -40,8 +41,11 @@ describe('AddToKnowledgeAction', () => {
     container.remove();
   });
 
+  const onAdded = vi.fn();
   const render = () =>
-    act(async () => root.render(<AddToKnowledgeAction files={files} />));
+    act(async () =>
+      root.render(<AddToKnowledgeAction files={files} onAdded={onAdded} />),
+    );
 
   it('adds the turn files to Knowledge and says so', async () => {
     hook.addToKnowledge.mockResolvedValue(true);
@@ -52,6 +56,7 @@ describe('AddToKnowledgeAction', () => {
     await act(async () => button.click());
 
     expect(hook.addToKnowledge).toHaveBeenCalledWith(files);
+    expect(onAdded).toHaveBeenCalledTimes(1);
     expect(container.querySelector('button')).toBeNull();
     expect(container.textContent).toContain(
       'conversation.attachments.knowledgeAdded',
@@ -64,6 +69,7 @@ describe('AddToKnowledgeAction', () => {
     await render();
     await act(async () => container.querySelector('button')!.click());
     expect(container.querySelector('button')).not.toBeNull();
+    expect(onAdded).not.toHaveBeenCalled();
     expect(container.textContent).toContain(
       'conversation.attachments.knowledgeFailed',
     );

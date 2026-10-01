@@ -1,3 +1,4 @@
+import userService from '../../api/services/userService';
 import { parseUploadErrorMessage } from '../../constants/fileUpload';
 import { guardUploadStall } from './uploadStallGuard';
 
@@ -14,6 +15,24 @@ export const ATTACHMENT_UPLOAD_CONCURRENCY = 4;
  * own limit per file when a deployment sets a lower one.
  */
 export const ATTACHMENT_MAX_BYTES = 100 * 1024 * 1024;
+
+/**
+ * How long a file the worker is parsing may go without a progress event
+ * before the composer gives up on it.
+ */
+export const ATTACHMENT_IDLE_MS = 5 * 60_000;
+
+/**
+ * How long a stored file may wait for its first worker event before the
+ * composer asks the task status where it stands.
+ */
+export const ATTACHMENT_QUEUE_CHECK_MS = 10 * 60_000;
+
+/**
+ * Status checks a still-queued file gets before the composer gives up on it:
+ * an hour of waiting for a worker at ``ATTACHMENT_QUEUE_CHECK_MS``.
+ */
+export const ATTACHMENT_QUEUE_MAX_CHECKS = 6;
 
 /** What the server returns for a file it stored and queued for parsing. */
 export interface StoredAttachment {
@@ -74,6 +93,8 @@ export function parseStoredAttachment(body: unknown): StoredAttachment | null {
  *   options.url: The endpoint URL.
  *   options.token: Bearer token, when the user is signed in.
  *   options.onProgress: Called with the percent of the body sent.
+ *   options.signal: Aborts the request (the chip was removed); the upload
+ *     then ends as ``network``.
  *
  * Returns:
  *   How the upload ended. Never rejects.
@@ -84,9 +105,14 @@ export function uploadAttachmentFile(
     url: string;
     token?: string | null;
     onProgress?: (percent: number) => void;
+    signal?: AbortSignal;
   },
 ): Promise<AttachmentUploadOutcome> {
   return new Promise((resolve) => {
+    if (options.signal?.aborted) {
+      resolve({ kind: 'network' });
+      return;
+    }
     const formData = new FormData();
     formData.append('file', file);
     const xhr = new XMLHttpRequest();
@@ -133,8 +159,80 @@ export function uploadAttachmentFile(
       xhr.setRequestHeader('Authorization', `Bearer ${options.token}`);
     }
     guardUploadStall(xhr);
+    options.signal?.addEventListener('abort', () => xhr.abort(), {
+      once: true,
+    });
     xhr.send(formData);
   });
+}
+
+/**
+ * Where a stored file's parse task stands, from the task-status endpoint.
+ *
+ * ``queued``: no worker has taken it yet. ``started``: a worker has (or has
+ * finished; the outcome follows as an ``attachment.*`` event). ``failed``:
+ * the task failed, with the reason when the endpoint gives one.
+ * ``unavailable``: no worker answers at all. ``unknown``: no usable answer.
+ */
+export type AttachmentTaskState =
+  | { state: 'queued' }
+  | { state: 'started' }
+  | { state: 'failed'; message?: string }
+  | { state: 'unavailable' }
+  | { state: 'unknown' };
+
+const QUEUED_TASK_STATES = new Set(['PENDING', 'RECEIVED']);
+const STARTED_TASK_STATES = new Set([
+  'STARTED',
+  'PROGRESS',
+  'RETRY',
+  'SUCCESS',
+]);
+const FAILED_TASK_STATES = new Set(['FAILURE', 'REVOKED']);
+
+/**
+ * Ask the task-status endpoint where a file's parse task stands.
+ *
+ * Args:
+ *   taskId: The Celery task id the upload response returned.
+ *   token: Bearer token, when the user is signed in.
+ *   getTaskStatus: The status request; the user service's by default.
+ *
+ * Returns:
+ *   The task's state. Never rejects.
+ */
+export async function checkAttachmentTask(
+  taskId: string,
+  token: string | null,
+  getTaskStatus: (
+    taskId: string,
+    token: string | null,
+  ) => Promise<Response> = userService.getTaskStatus,
+): Promise<AttachmentTaskState> {
+  let response: Response;
+  try {
+    response = await getTaskStatus(taskId, token);
+  } catch {
+    return { state: 'unknown' };
+  }
+  // The endpoint answers 503 when no worker replies to a ping.
+  if (response.status === 503) return { state: 'unavailable' };
+  if (!response.ok) return { state: 'unknown' };
+  const body = (await response.json().catch(() => null)) as {
+    status?: unknown;
+    result?: unknown;
+  } | null;
+  const status = typeof body?.status === 'string' ? body.status : '';
+  if (QUEUED_TASK_STATES.has(status)) return { state: 'queued' };
+  if (STARTED_TASK_STATES.has(status)) return { state: 'started' };
+  if (FAILED_TASK_STATES.has(status)) {
+    const message =
+      typeof body?.result === 'string' && body.result.trim()
+        ? body.result
+        : undefined;
+    return message ? { state: 'failed', message } : { state: 'failed' };
+  }
+  return { state: 'unknown' };
 }
 
 /**
@@ -145,10 +243,11 @@ export function uploadAttachmentFile(
  *   concurrency: The most tasks allowed to run at the same time.
  *
  * Returns:
- *   The queue; ``push`` adds a task and starts it when a slot is free.
+ *   The queue; ``push`` adds a task and starts it when a slot is free, and
+ *   returns a function that drops the task if it has not started yet.
  */
 export function createTaskQueue(concurrency: number): {
-  push: (task: () => Promise<void>) => void;
+  push: (task: () => Promise<void>) => () => void;
 } {
   const pending: Array<() => Promise<void>> = [];
   let running = 0;
@@ -176,6 +275,10 @@ export function createTaskQueue(concurrency: number): {
     push(task) {
       pending.push(task);
       next();
+      return () => {
+        const index = pending.indexOf(task);
+        if (index !== -1) pending.splice(index, 1);
+      };
     },
   };
 }

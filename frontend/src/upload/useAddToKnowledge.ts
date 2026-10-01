@@ -13,7 +13,6 @@ import {
   setSourceDocs,
 } from '../preferences/preferenceSlice';
 import type { RootState } from '../store';
-import { newIdempotencyKey } from '../utils/idempotency';
 import {
   addUploadTask,
   removeUploadTask,
@@ -26,19 +25,62 @@ export interface KnowledgeFile {
   fileName: string;
 }
 
-// One Idempotency-Key per file set for the page's life. A repeat for the same
-// files (a second click, the composer hint and the error action, a retry after
-// a lost response) gets the source the first request made, not a duplicate.
-const knowledgeKeys = new Map<string, string>();
+const KNOWLEDGE_KEY_PREFIX = 'attachments-knowledge:';
 
-function knowledgeKey(ids: string[]): string {
-  const set = [...new Set(ids)].sort().join('\n');
-  let key = knowledgeKeys.get(set);
-  if (!key) {
-    key = newIdempotencyKey();
-    knowledgeKeys.set(set, key);
+/** 53-bit string hash (cyrb53); ``seed`` picks one of a family. */
+function cyrb53(text: string, seed: number): number {
+  let h1 = 0xdeadbeef ^ seed;
+  let h2 = 0x41c6ce57 ^ seed;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
   }
-  return key;
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+  h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+  h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+}
+
+/**
+ * The Idempotency-Key for turning a set of attachments into Knowledge.
+ *
+ * Derived from the sorted, deduplicated ids alone, so a repeat for the same
+ * files (a second click, the composer hint and the error action, a retry
+ * after a lost response, the same action after a reload) gets the source the
+ * first request made, not a duplicate. SHA-256 where Web Crypto is
+ * available; plain-HTTP hosts have no ``crypto.subtle``, and get a wide
+ * non-cryptographic hash instead (the server scopes keys by user, so it only
+ * has to tell one user's file sets apart).
+ *
+ * Args:
+ *   ids: The attachment ids.
+ *
+ * Returns:
+ *   The key, at most 128 characters.
+ */
+export async function knowledgeIdempotencyKey(ids: string[]): Promise<string> {
+  const set = [...new Set(ids)].sort().join('\n');
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle) {
+    try {
+      const digest = await subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(set),
+      );
+      const hex = Array.from(new Uint8Array(digest), (byte) =>
+        byte.toString(16).padStart(2, '0'),
+      ).join('');
+      return `${KNOWLEDGE_KEY_PREFIX}${hex}`;
+    } catch {
+      // Fall through to the portable hash.
+    }
+  }
+  const hex = [1, 2, 3, 4]
+    .map((seed) => cyrb53(set, seed).toString(16).padStart(14, '0'))
+    .join('');
+  return `${KNOWLEDGE_KEY_PREFIX}h:${hex}`;
 }
 
 // An ingest of many large files can take a while; the wait is only a store
@@ -160,7 +202,7 @@ export function useAddToKnowledge() {
         const response = await userService.createSourceFromAttachments(
           { attachment_ids: ids, name },
           token,
-          knowledgeKey(ids),
+          await knowledgeIdempotencyKey(ids),
         );
         const data = await response.json().catch(() => null);
         if (!response.ok || !data?.success || !data.source_id) {

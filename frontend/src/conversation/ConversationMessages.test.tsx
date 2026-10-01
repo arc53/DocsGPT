@@ -26,10 +26,16 @@ vi.mock('./ConversationBubble', () => ({
 }));
 
 vi.mock('./AddToKnowledgeAction', () => ({
-  default: ({ files }: { files: { id: string }[] }) => (
-    <span data-testid="add-to-knowledge">
+  default: ({
+    files,
+    onAdded,
+  }: {
+    files: { id: string }[];
+    onAdded?: () => void;
+  }) => (
+    <button type="button" data-testid="add-to-knowledge" onClick={onAdded}>
       {files.map((f) => f.id).join(',')}
-    </span>
+    </button>
   ),
 }));
 
@@ -57,6 +63,7 @@ describe('ConversationMessages', () => {
     container.remove();
   });
 
+  const onKnowledgeAdded = vi.fn();
   const render = (queries: Query[], canAddToKnowledge = false) =>
     act(() => {
       root.render(
@@ -66,6 +73,7 @@ describe('ConversationMessages', () => {
           queries={queries}
           status="idle"
           canAddToKnowledge={canAddToKnowledge}
+          onKnowledgeAdded={onKnowledgeAdded}
         />,
       );
     });
@@ -92,6 +100,13 @@ describe('ConversationMessages', () => {
       container.querySelector('[data-error-code="context_length_exceeded"]'),
     ).not.toBeNull();
     expect(action()?.textContent).toBe('a1,a2');
+  });
+
+  it('reports which turn its files went to Knowledge from', () => {
+    onKnowledgeAdded.mockReset();
+    render([{ prompt: 'q', response: 'a' }, overflow], true);
+    act(() => (action() as HTMLButtonElement).click());
+    expect(onKnowledgeAdded).toHaveBeenCalledWith(1);
   });
 
   it('does not offer it for a turn without files or another error', () => {

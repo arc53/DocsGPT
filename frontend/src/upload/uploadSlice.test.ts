@@ -739,6 +739,34 @@ describe('attachment events that arrive before the upload response', () => {
     expect(state.attachments[0].status).toBe('failed');
   });
 
+  it("keeps the worker's reason on a failed row", () => {
+    let state = reducer(undefined, addAttachment(uploading('ui-1')));
+    state = reducer(state, bind('ui-1', 'srv-1'));
+    state = reducer(
+      state,
+      sseEventReceived(
+        attEvent('attachment.failed', 'srv-1', {
+          error: 'File is password protected',
+        }),
+      ),
+    );
+    expect(state.attachments[0].status).toBe('failed');
+    expect(state.attachments[0].errorMessage).toBe(
+      'File is password protected',
+    );
+  });
+
+  it('leaves a failed row without a reason when the worker gave none', () => {
+    let state = reducer(undefined, addAttachment(uploading('ui-1')));
+    state = reducer(state, bind('ui-1', 'srv-1'));
+    state = reducer(
+      state,
+      sseEventReceived(attEvent('attachment.failed', 'srv-1', { error: ' ' })),
+    );
+    expect(state.attachments[0].status).toBe('failed');
+    expect(state.attachments[0].errorMessage).toBeUndefined();
+  });
+
   it('keeps progress from stashed events without completing the row', () => {
     let state = reducer(undefined, addAttachment(uploading('ui-1')));
     state = reducer(

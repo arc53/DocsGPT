@@ -59,6 +59,8 @@ type ConversationMessagesProps = {
    * the main chat, where the user picks the Knowledge the chat searches.
    */
   canAddToKnowledge?: boolean;
+  /** A failed turn's files were accepted as Knowledge; ``index`` is the turn. */
+  onKnowledgeAdded?: (index: number) => void;
 };
 
 // The backend's code for a turn that did not fit the model's window.
@@ -85,6 +87,7 @@ export default function ConversationMessages({
   isSplitView = false,
   agentId,
   canAddToKnowledge = false,
+  onKnowledgeAdded,
 }: ConversationMessagesProps) {
   const { t } = useTranslation();
 
@@ -212,7 +215,10 @@ export default function ConversationMessages({
           errorCode={query.errorCode}
           errorAction={
             knowledgeFiles ? (
-              <AddToKnowledgeAction files={knowledgeFiles} />
+              <AddToKnowledgeAction
+                files={knowledgeFiles}
+                onAdded={() => onKnowledgeAdded?.(index)}
+              />
             ) : undefined
           }
         />
