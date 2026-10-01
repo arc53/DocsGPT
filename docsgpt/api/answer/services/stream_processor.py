@@ -1984,6 +1984,7 @@ class StreamProcessor:
             "llm": llm,
             "llm_handler": llm_handler,
             "tool_executor": tool_executor,
+            "is_v1": self.trace_source == "v1",
         }
 
         # Restore the search-tool config on resume. Classic agents carry one
@@ -2178,6 +2179,7 @@ class StreamProcessor:
             "tool_executor": tool_executor,
             "agent_config": self.agent_config.get("config") or {},
             "request_id": self.request_id or self.data.get("request_id"),
+            "is_v1": self.trace_source == "v1",
         }
 
         # Wiki tool injection + authz: only for agent types that build a

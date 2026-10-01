@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List, Optional
 
+from docsgpt.agents.turn_capabilities import TurnCapabilities, build_turn_capabilities
 from docsgpt.agents.tool_executor import (
     ToolExecutor,
     trace_unexecuted_tool_call,
@@ -30,6 +31,7 @@ from docsgpt.guardrails.stream import StreamingOutputGuard
 from docsgpt.guardrails.types import Action, Stage, resolve_tool_result
 from docsgpt.llm.handlers.handler_creator import LLMHandlerCreator
 from docsgpt.llm.llm_creator import LLMCreator
+from docsgpt.sandbox import sandbox_configured
 from docsgpt.logging import (
     agent_log_context,
     build_stack_data,
@@ -91,6 +93,8 @@ class BaseAgent(ABC):
     _guardrail_engine_built = False
     guardrails_config = None
     request_id = None
+    is_v1 = False
+    turn_capabilities: Optional[TurnCapabilities] = None
 
     def __init__(
         self,
@@ -125,6 +129,7 @@ class BaseAgent(ABC):
         model_user_id: Optional[str] = None,
         agent_config: Optional[Dict] = None,
         request_id: Optional[str] = None,
+        is_v1: bool = False,
     ):
         self.endpoint = endpoint
         self.llm_name = llm_name
@@ -224,6 +229,11 @@ class BaseAgent(ABC):
         self.initial_user_id: Optional[str] = None
 
         self.request_id = request_id
+        # The turn came through ``/v1/chat/completions``: the client owns the
+        # transcript, so nothing it sent may be rewritten or echoed.
+        self.is_v1 = bool(is_v1)
+        # Set by ``_prepare_tools`` once the turn's final tool list is known.
+        self.turn_capabilities = None
         self.guardrails_config = resolve_guardrails_config(agent_config)
         self._guardrail_engine = None
         self._guardrail_engine_built = False
@@ -683,6 +693,71 @@ class BaseAgent(ABC):
         # The executor gates tool calls itself, so it needs this run's engine.
         self.tool_executor.guardrail_engine = self.guardrails
         self.tools = self.tool_executor.prepare_tools_for_llm(tools_dict)
+        self.turn_capabilities = self._compute_turn_capabilities(tools_dict)
+
+    def _server_tool_actions(self, tools_dict: Dict) -> Dict[str, List[str]]:
+        """LLM-visible action names of this turn's server-side tools, by tool name.
+
+        Read from the executor's name mapping, so it reflects exactly what
+        ``prepare_tools_for_llm`` handed the model (inactive actions and
+        collapsed duplicates excluded). Client-executed tools are left out: a
+        client tool that happens to share a name is not ours to route to.
+
+        Args:
+            tools_dict: The turn's tools, as passed to ``_prepare_tools``.
+
+        Returns:
+            Tool-dict ``name`` mapped to its LLM-visible action names.
+        """
+        mapping = getattr(self.tool_executor, "_name_to_tool", None)
+        if not isinstance(mapping, dict) or not isinstance(tools_dict, dict):
+            return {}
+        actions: Dict[str, List[str]] = {}
+        for llm_name, target in mapping.items():
+            if not isinstance(target, tuple) or not target:
+                continue
+            tool = tools_dict.get(target[0])
+            if not isinstance(tool, dict) or tool.get("client_side"):
+                continue
+            name = tool.get("name")
+            if isinstance(name, str) and name:
+                actions.setdefault(name, []).append(llm_name)
+        return actions
+
+    def _compute_turn_capabilities(self, tools_dict: Dict) -> TurnCapabilities:
+        """Resolve what this turn can do with attachments, once per turn.
+
+        Args:
+            tools_dict: The turn's final tools.
+
+        Returns:
+            The turn's capabilities, read by the attachment planner and the
+            manifest.
+        """
+        from docsgpt.core.model_utils import get_token_limit
+
+        try:
+            supported = self.llm.get_supported_attachment_types()
+        except Exception:
+            supported = []
+        if not isinstance(supported, (list, tuple, set, frozenset)):
+            supported = []
+        try:
+            window = int(
+                get_token_limit(self.model_id, user_id=self.model_user_id or self.user)
+            )
+        except Exception:
+            window = int(settings.DEFAULT_LLM_TOKEN_LIMIT)
+        tool_calling = bool(self.tools) and self._llm_supports_tools()
+        server_tools = self._server_tool_actions(tools_dict)
+        return build_turn_capabilities(
+            supported_attachment_types=supported,
+            tool_calling=tool_calling,
+            server_tools=server_tools,
+            window=window,
+            is_v1=self.is_v1,
+            sandbox_available="code_executor" in server_tools and sandbox_configured(),
+        )
 
     def _execute_tool_action(self, tools_dict, call):
         # Mirror the request's attachments onto the executor so sandbox tools
