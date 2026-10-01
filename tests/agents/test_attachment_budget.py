@@ -253,6 +253,14 @@ class TestDedupeAndRefs:
         assert plan.for_attachment(b["id"]).ref == "F1"
         assert plan.inline_tokens < 2 * 600
 
+    def test_hash_column_collapses_like_the_metadata_hash(self):
+        """Rows read after migration 0044 carry the hash as a column."""
+        a = att("a.pdf", 500)
+        a["content_hash"] = "h1"
+        b = att("b.pdf", 500, content_hash="h1")
+        plan = plan_attachments([a, b], caps(), budget=50_000)
+        assert [f.attachment_ids for f in plan.files] == [(a["id"], b["id"])]
+
     def test_filename_and_size_fallback(self):
         a = att("same.txt", 500, size=1234)
         b = att("same.txt", 500, size=1234)

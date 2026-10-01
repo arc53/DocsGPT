@@ -14,6 +14,7 @@ from docsgpt.utils import strip_null_bytes
 _UPDATABLE_SCALARS = {
     "filename", "upload_path", "mime_type", "size",
     "content", "token_count", "openai_file_id", "google_file_uri",
+    "content_hash",
 }
 _UPDATABLE_JSONB = {"metadata"}
 
@@ -51,6 +52,7 @@ class AttachmentsRepository:
         google_file_uri: Optional[str] = None,
         metadata: Any = None,
         legacy_mongo_id: Optional[str] = None,
+        content_hash: Optional[str] = None,
     ) -> dict:
         result = self._conn.execute(
             text(
@@ -58,12 +60,12 @@ class AttachmentsRepository:
                 INSERT INTO attachments (
                     user_id, filename, upload_path, mime_type, size,
                     content, token_count, openai_file_id, google_file_uri,
-                    metadata, legacy_mongo_id
+                    metadata, legacy_mongo_id, content_hash
                 )
                 VALUES (
                     :user_id, :filename, :upload_path, :mime_type, :size,
                     :content, :token_count, :openai_file_id, :google_file_uri,
-                    CAST(:metadata AS jsonb), :legacy_mongo_id
+                    CAST(:metadata AS jsonb), :legacy_mongo_id, :content_hash
                 )
                 RETURNING *
                 """
@@ -86,6 +88,7 @@ class AttachmentsRepository:
                     else None
                 ),
                 "legacy_mongo_id": legacy_mongo_id,
+                "content_hash": content_hash,
             },
         )
         return _attachment_to_dict(result.fetchone())
@@ -199,7 +202,7 @@ class AttachmentsRepository:
         result = self._conn.execute(
             text(
                 "SELECT id, user_id, filename, upload_path, mime_type, size, token_count, "
-                "metadata, created_at, legacy_mongo_id "
+                "metadata, created_at, legacy_mongo_id, content_hash "
                 "FROM attachments WHERE id::text = ANY(:ids) AND user_id = :user_id"
             ),
             {"ids": wanted, "user_id": user_id},
@@ -209,6 +212,43 @@ class AttachmentsRepository:
             out = _attachment_to_dict(row)
             by_id[str(out["id"])] = out
         return [by_id[i] for i in dict.fromkeys(wanted) if i in by_id]
+
+    def find_by_hash(
+        self,
+        user_id: str,
+        content_hash: str,
+        *,
+        exclude_legacy_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        """The user's newest successfully parsed upload of the same bytes.
+
+        Lets an upload of bytes the user already sent reuse the parsed text
+        instead of parsing again; the new upload still gets its own row.
+
+        Args:
+            user_id: The owner; other users' rows are never returned.
+            content_hash: sha256 hex of the original bytes.
+            exclude_legacy_id: Upload handle to skip, so a retried task never
+                matches its own earlier attempt.
+
+        Returns:
+            The full row, or None when there is no parsed row with that hash
+            (failed parses store no content and are skipped).
+        """
+        if not content_hash:
+            return None
+        sql = (
+            "SELECT * FROM attachments "
+            "WHERE user_id = :user_id AND content_hash = :content_hash "
+            "AND content IS NOT NULL"
+        )
+        params: dict[str, Any] = {"user_id": user_id, "content_hash": content_hash}
+        if exclude_legacy_id is not None:
+            sql += " AND legacy_mongo_id IS DISTINCT FROM :exclude_legacy_id"
+            params["exclude_legacy_id"] = str(exclude_legacy_id)
+        sql += " ORDER BY created_at DESC LIMIT 1"
+        row = self._conn.execute(text(sql), params).fetchone()
+        return _attachment_to_dict(row) if row is not None else None
 
     def list_for_user(self, user_id: str) -> list[dict]:
         result = self._conn.execute(

@@ -8,7 +8,7 @@ the same plan:
 
 * every file gets a stable conversation-scoped ref ``F1..Fn`` in upload order
   (earlier turns first), with re-sent copies collapsed onto the first ref by
-  ``metadata.content_hash`` (falling back to filename and byte size);
+  ``content_hash`` (falling back to filename and byte size);
 * files from earlier turns are never inlined again (status ``earlier``);
 * this turn's files are walked in upload order: a file that fits whole is
   inlined (as a native part when the model reads its type, else as text); a
@@ -404,7 +404,7 @@ def _extraction(row: Dict[str, Any]) -> Dict[str, Any]:
 
 def _dedupe_key(row: Dict[str, Any]) -> Tuple[Any, ...]:
     """Content hash, else filename plus a known size, else the row itself."""
-    content_hash = _metadata(row).get("content_hash")
+    content_hash = row.get("content_hash") or _metadata(row).get("content_hash")
     if content_hash:
         return ("hash", str(content_hash))
     size = row.get("size")

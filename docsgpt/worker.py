@@ -9,7 +9,7 @@ import shutil
 import string
 import tempfile
 import threading
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import uuid
 from collections import Counter
@@ -1792,7 +1792,17 @@ def _bounded_attachment_copy(local_path: str) -> tuple[str, bool]:
 
 
 def _upsert_attachment_row(
-    user, filename, relative_path, *, mime_type, content, token_count, metadata, attachment_id, size=None
+    user,
+    filename,
+    relative_path,
+    *,
+    mime_type,
+    content,
+    token_count,
+    metadata,
+    attachment_id,
+    size=None,
+    content_hash=None,
 ):
     """Create or update the attachment row for one upload handle.
 
@@ -1816,6 +1826,7 @@ def _upsert_attachment_row(
                     "token_count": token_count,
                     "metadata": metadata,
                     **({"size": size} if size is not None else {}),
+                    **({"content_hash": content_hash} if content_hash else {}),
                 },
             )
         else:
@@ -1829,7 +1840,59 @@ def _upsert_attachment_row(
                 token_count=token_count,
                 metadata=metadata,
                 legacy_mongo_id=str(attachment_id),
+                content_hash=content_hash,
             )
+
+
+def _find_reusable_parse(user: str, content_hash: Optional[str], attachment_id: Any) -> Optional[Dict[str, Any]]:
+    """The user's earlier parsed upload of the same bytes, if any.
+
+    A /v1 client re-sends every file on every turn and a user re-attaches the
+    same file across conversations; parsing it again only costs time. Never
+    fails the upload: a lookup error just means the file is parsed.
+
+    Args:
+        user: The uploader; only their own rows are considered.
+        content_hash: sha256 hex of the upload's bytes.
+        attachment_id: This upload's handle, skipped so a retry never reuses
+            its own earlier attempt.
+
+    Returns:
+        The earlier row (with its content), or None.
+    """
+    if not content_hash:
+        return None
+    try:
+        with db_readonly() as conn:
+            return AttachmentsRepository(conn).find_by_hash(
+                user, content_hash, exclude_legacy_id=str(attachment_id)
+            )
+    except Exception:
+        logging.warning("Attachment content-hash lookup failed; parsing instead", exc_info=True)
+        return None
+
+
+def _reused_parse_metadata(row: Dict[str, Any]) -> Dict[str, Any]:
+    """The parse-derived metadata of an earlier row, to copy onto a reuse.
+
+    Upload-specific keys (storage details, archive membership) stay with the
+    row they describe.
+
+    Args:
+        row: The earlier attachment row.
+
+    Returns:
+        Its extraction record, page count, transcript/OCR details and parse
+        warnings, plus ``reused_from`` naming the row.
+    """
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    copied = {
+        key: value
+        for key, value in metadata.items()
+        if key in ("extraction", "page_count", "parse_warnings") or key.startswith(("transcript_", "ocr_"))
+    }
+    copied["reused_from"] = str(row.get("id"))
+    return copied
 
 
 def record_attachment_failure(user, file_info, error, parser=None):
@@ -1932,11 +1995,16 @@ def attachment_worker(self, file_info, user):
         parser_name = type(_parser).__name__ if _parser is not None else "SimpleDirectoryReader"
 
         fingerprint: Dict[str, Any] = {}
+        reused: Dict[str, Any] = {}
 
         def _parse_local_file(local_path: str, **kwargs) -> Document:
             fingerprint.update(_attachment_fingerprint(local_path, filename))
             _reject_unparseable_attachment(local_path, filename, set(file_extractor))
             _reject_attachment_zip_bomb(local_path)
+            earlier = _find_reusable_parse(user, fingerprint.get("content_hash"), attachment_id)
+            if earlier is not None:
+                reused.update(earlier)
+                return Document(text=earlier.get("content") or "", extra_info={})
             parse_path, is_temp_copy = _bounded_attachment_copy(local_path)
             try:
                 return SimpleDirectoryReader(
@@ -1983,31 +2051,47 @@ def attachment_worker(self, file_info, user):
         if parser_metadata:
             metadata = {**metadata, **parser_metadata}
 
-        # Gate and cut in the same unit. The old form gated on tokens but cut
-        # at 250k *chars*, which for dense scripts (CJK ~1.4 tokens/char)
-        # stored 300k+ tokens while looking like a clean extraction.
-        encoding = get_encoding()
-        tokens = encoding.encode_ordinary(content)
-        original_tokens = len(tokens)
-        truncated = original_tokens > ATTACHMENT_MAX_TOKENS
-        if truncated:
-            content = encoding.decode(tokens[:ATTACHMENT_MAX_TOKENS])
-            token_count = ATTACHMENT_MAX_TOKENS
+        if reused:
+            # Same bytes, already parsed for this user: copy the stored text
+            # and its extraction record instead of parsing again.
+            reused_metadata = _reused_parse_metadata(reused)
+            extraction_status = (reused_metadata.get("extraction") or {}).get("status") or "ok"
+            token_count = reused.get("token_count") or 0
+            metadata = {
+                **metadata,
+                **{k: v for k, v in fingerprint.items() if k in ("content_hash", "page_count")},
+                **reused_metadata,
+            }
+            logging.info(
+                f"Attachment {filename} reuses the parse of attachment {reused.get('id')}",
+                extra={"user": user},
+            )
         else:
-            token_count = original_tokens
+            # Gate and cut in the same unit. The old form gated on tokens but cut
+            # at 250k *chars*, which for dense scripts (CJK ~1.4 tokens/char)
+            # stored 300k+ tokens while looking like a clean extraction.
+            encoding = get_encoding()
+            tokens = encoding.encode_ordinary(content)
+            original_tokens = len(tokens)
+            truncated = original_tokens > ATTACHMENT_MAX_TOKENS
+            if truncated:
+                content = encoding.decode(tokens[:ATTACHMENT_MAX_TOKENS])
+                token_count = ATTACHMENT_MAX_TOKENS
+            else:
+                token_count = original_tokens
 
-        metadata = {
-            **metadata,
-            **{k: v for k, v in fingerprint.items() if k in ("content_hash", "page_count")},
-            "extraction": {
-                "status": extraction_status,
-                "parser": parser_name,
-                "truncated": truncated,
-                "original_tokens": original_tokens,
-                "stored_tokens": token_count,
-                **({"reason": no_text_reason} if no_text_reason else {}),
-            },
-        }
+            metadata = {
+                **metadata,
+                **{k: v for k, v in fingerprint.items() if k in ("content_hash", "page_count")},
+                "extraction": {
+                    "status": extraction_status,
+                    "parser": parser_name,
+                    "truncated": truncated,
+                    "original_tokens": original_tokens,
+                    "stored_tokens": token_count,
+                    **({"reason": no_text_reason} if no_text_reason else {}),
+                },
+            }
 
         self.update_state(
             state="PROGRESS", meta={"current": 80, "status": "Storing in database"}
@@ -2040,6 +2124,7 @@ def attachment_worker(self, file_info, user):
             metadata=metadata,
             attachment_id=attachment_id,
             size=fingerprint.get("size"),
+            content_hash=fingerprint.get("content_hash"),
         )
 
         logging.info(

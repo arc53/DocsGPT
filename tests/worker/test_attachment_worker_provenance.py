@@ -344,3 +344,78 @@ class TestFingerprintProvenance:
         row = _fetch(info["attachment_id"])
         assert row["metadata"]["content_hash"]
         assert "page_count" not in row["metadata"]
+
+
+def _counting_reader(monkeypatch, text="parsed once"):
+    """Patch the worker's reader with one that counts parses."""
+    calls = []
+
+    def _reader(**kwargs):
+        calls.append(kwargs.get("input_files"))
+        return type("R", (), {"load_data": lambda self: [_Doc(text)]})()
+
+    monkeypatch.setattr("docsgpt.worker.SimpleDirectoryReader", _reader)
+    return calls
+
+
+@pytest.mark.usefixtures("wired_engine")
+class TestContentHashReuse:
+    """Identical bytes from the same user reuse the parsed text, each upload keeping its own row."""
+
+    def test_hash_is_written_to_the_column(self, storage_dir):
+        import hashlib
+
+        payload = b"column hash"
+        info = _file_info(storage_dir, content=payload)
+
+        _run_worker(info)
+
+        assert _fetch(info["attachment_id"])["content_hash"] == hashlib.sha256(payload).hexdigest()
+
+    def test_second_upload_of_the_same_bytes_is_not_parsed_again(self, storage_dir, monkeypatch):
+        calls = _counting_reader(monkeypatch)
+        first = _file_info(storage_dir, filename="a.txt", content=b"same bytes")
+        second = _file_info(storage_dir, filename="b.txt", content=b"same bytes")
+
+        _run_worker(first)
+        result = _run_worker(second)
+
+        assert len(calls) == 1
+        original, copy = _fetch(first["attachment_id"]), _fetch(second["attachment_id"])
+        assert copy["id"] != original["id"]
+        assert copy["filename"] == "b.txt"
+        assert copy["upload_path"] == second["path"]
+        assert copy["content"] == original["content"] == "parsed once"
+        assert copy["token_count"] == original["token_count"]
+        assert copy["content_hash"] == original["content_hash"]
+        assert copy["metadata"]["extraction"] == original["metadata"]["extraction"]
+        assert copy["metadata"]["reused_from"] == str(original["id"])
+        assert copy["metadata"]["storage_type"] == "local"
+        assert result["token_count"] == original["token_count"]
+
+    def test_other_users_uploads_are_never_reused(self, storage_dir, monkeypatch):
+        calls = _counting_reader(monkeypatch)
+        mine = _file_info(storage_dir, content=b"shared bytes")
+        theirs = _file_info(storage_dir, content=b"shared bytes")
+
+        _run_worker(theirs, user="another-user")
+        _run_worker(mine)
+
+        assert len(calls) == 2
+        assert "reused_from" not in _fetch(mine["attachment_id"])["metadata"]
+
+    def test_a_failed_parse_is_not_reused(self, storage_dir, monkeypatch):
+        first = _file_info(storage_dir, content=b"flaky bytes")
+        monkeypatch.setattr(
+            "docsgpt.worker.SimpleDirectoryReader",
+            lambda **kwargs: (_ for _ in ()).throw(DocumentParseError("boom")),
+        )
+        with pytest.raises(DocumentParseError):
+            _run_worker(first)
+
+        calls = _counting_reader(monkeypatch, text="second try")
+        second = _file_info(storage_dir, content=b"flaky bytes")
+        _run_worker(second)
+
+        assert len(calls) == 1
+        assert _fetch(second["attachment_id"])["content"] == "second try"

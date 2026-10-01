@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 
+from sqlalchemy import text
+
 from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
 
 
@@ -183,3 +185,42 @@ class TestListForPlanning:
 
     def test_empty(self, pg_conn):
         assert _repo(pg_conn).list_for_planning([], "u") == []
+
+
+class TestContentHash:
+    _HASH = "b" * 64
+
+    def test_create_and_update_store_the_column(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "a.pdf", "/a", content_hash=self._HASH)
+        assert doc["content_hash"] == self._HASH
+        assert repo.update(doc["id"], "u", {"content_hash": "c" * 64})
+        assert repo.get(doc["id"], "u")["content_hash"] == "c" * 64
+
+    def test_find_by_hash_returns_the_newest_parsed_row(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create("u", "old.pdf", "/old", content="old text", token_count=2, content_hash=self._HASH)
+        newest = repo.create("u", "new.pdf", "/new", content="new text", token_count=2, content_hash=self._HASH)
+        pg_conn.execute(
+            text("UPDATE attachments SET created_at = now() + interval '1 minute' WHERE id = CAST(:id AS uuid)"),
+            {"id": newest["id"]},
+        )
+
+        found = repo.find_by_hash("u", self._HASH)
+
+        assert found is not None and found["id"] == newest["id"]
+        assert found["content"] == "new text"
+
+    def test_find_by_hash_skips_failed_rows_other_users_and_excluded_handles(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create("u", "failed.pdf", "/f", content=None, content_hash=self._HASH)
+        repo.create("someone-else", "theirs.pdf", "/t", content="x", content_hash=self._HASH)
+        repo.create("u", "self.pdf", "/s", content="x", content_hash=self._HASH, legacy_mongo_id="handle-1")
+
+        assert repo.find_by_hash("u", self._HASH, exclude_legacy_id="handle-1") is None
+        assert repo.find_by_hash("u", "") is None
+
+    def test_list_for_planning_includes_the_hash(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "a.pdf", "/a", content_hash=self._HASH)
+        assert repo.list_for_planning([doc["id"]], "u")[0]["content_hash"] == self._HASH
