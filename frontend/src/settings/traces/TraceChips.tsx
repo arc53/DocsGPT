@@ -80,7 +80,6 @@ export default function TraceChips({ durationMs, counts }: TraceChipsProps) {
         <Badge
           key={chip.key}
           variant={chip.tone === 'danger' ? 'destructive' : 'neutral'}
-          // eslint-disable-next-line shadcn/no-restyle -- durations and counts use tabular figures so chips don't jitter between rows
           className="tabular-nums"
         >
           {chip.icon}

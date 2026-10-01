@@ -129,7 +129,7 @@ describe('PromptsModal', () => {
     ]);
     const [system] = triggers;
     expect(system.dataset.size).toBe('field');
-    expect(system.dataset.shape).toBe('pill');
+    expect(system.dataset.shape).toBe('default');
     expect(system.hasAttribute('data-placeholder')).toBe(true);
 
     const textarea = document.body.querySelector<HTMLTextAreaElement>(
@@ -240,5 +240,42 @@ describe('PromptsModal', () => {
     );
     expect(labels).toContain('modals.prompts.duplicate');
     expect(labels).toContain('common.close');
+  });
+
+  it('shows pending on Save while an async add runs, and ignores a second click', async () => {
+    let finish!: () => void;
+    const handleAddPrompt = vi.fn(
+      () => new Promise<void>((resolve) => (finish = resolve)),
+    );
+    await act(async () => {
+      root.render(
+        <PromptsModal
+          existingPrompts={[]}
+          modalState="ACTIVE"
+          setModalState={() => undefined}
+          type="ADD"
+          newPromptName="Support"
+          setNewPromptName={() => undefined}
+          newPromptContent="Hello"
+          setNewPromptContent={() => undefined}
+          editPromptName=""
+          setEditPromptName={() => undefined}
+          editPromptContent=""
+          setEditPromptContent={() => undefined}
+          currentPromptEdit={{ name: '', id: '', type: '' }}
+          handleAddPrompt={handleAddPrompt}
+        />,
+      );
+    });
+    const save = () =>
+      Array.from(document.body.querySelectorAll('button')).find(
+        (b) => b.textContent === 'modals.prompts.save',
+      )!;
+    await act(async () => save().click());
+    expect(save().getAttribute('aria-busy')).toBe('true');
+    await act(async () => save().click());
+    expect(handleAddPrompt).toHaveBeenCalledTimes(1);
+    await act(async () => finish());
+    expect(save().getAttribute('aria-busy')).toBeNull();
   });
 });

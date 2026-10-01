@@ -8,7 +8,11 @@ vi.mock('../../hooks', () => ({
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, opts?: Record<string, unknown>) =>
-      opts && 'teams' in opts ? `${key}:${opts.teams}` : key,
+      opts && 'teams' in opts
+        ? `${key}:${opts.teams}`
+        : opts && 'count' in opts
+          ? `${key}#${opts.count}`
+          : key,
     i18n: { language: 'en' },
   }),
 }));
@@ -20,7 +24,9 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const confirmation = (
   over: Partial<SponsorConfirmation['audience']> = {},
+  mode?: SponsorConfirmation['mode'],
 ): SponsorConfirmation => ({
+  ...(mode ? { mode } : {}),
   resources: [
     { key: 'tool:t1', type: 'tool', id: 't1', name: 'Jira' },
     { key: 'source:s1', type: 'source', id: 's1', name: null },
@@ -106,6 +112,38 @@ describe('SponsorConfirmModal', () => {
     expect(text).not.toContain('audienceTeams');
     expect(text).toContain('agents.form.sponsorConfirm.audienceApiKey');
     expect(text).toContain('agents.form.sponsorConfirm.audienceWebhook');
+  });
+
+  it('says what adding does, counted, and ends on one muted stop line', async () => {
+    await render(confirmation());
+    const dialog = document.querySelector('[data-slot="modal-content"]')!;
+    expect(dialog.textContent).toContain(
+      'agents.form.sponsorConfirm.description#2',
+    );
+    expect(dialog.querySelector('[data-slot="alert"]')).toBeNull();
+    const stop = Array.from(dialog.querySelectorAll('p')).find(
+      (p) => p.textContent === 'agents.form.sponsorConfirm.stopNote#2',
+    )!;
+    expect(stop).toBeDefined();
+    expect(stop.className).toContain('text-muted-foreground');
+    expect(stop.className).toContain('text-xs');
+    expect(button('agents.form.sponsorConfirm.confirm')).toBeDefined();
+  });
+
+  // Taking over an item already on the agent isn't adding it.
+  it('asks to run an attached item, not to add it, in take-over mode', async () => {
+    const one = confirmation({}, 'takeOver');
+    one.resources = one.resources.slice(0, 1);
+    const { onConfirm } = await render(one);
+    const text = dialogText();
+    expect(text).toContain('agents.form.sponsorConfirm.takeOverDescription#1');
+    expect(text).not.toContain('agents.form.sponsorConfirm.description');
+    expect(text).toContain('agents.form.sponsorConfirm.stopNote#1');
+    expect(button('agents.form.sponsorConfirm.confirm')).toBeUndefined();
+    await act(async () => {
+      button('agents.form.sponsorConfirm.takeOverConfirm').click();
+    });
+    expect(onConfirm).toHaveBeenCalledWith(['tool:t1']);
   });
 
   it('confirms with every resource key', async () => {

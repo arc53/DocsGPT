@@ -37,6 +37,7 @@ export default function AddToKnowledgeAction({
         type="button"
         variant="link"
         size="inline"
+        tone="current"
         loading={pending}
         onClick={async () => {
           if (await addToKnowledge(files)) {
@@ -44,8 +45,6 @@ export default function AddToKnowledgeAction({
             onAdded?.();
           }
         }}
-        // eslint-disable-next-line shadcn/no-restyle -- the link inherits its Alert's status colour
-        className="text-current"
       >
         {t('conversation.attachments.addToKnowledge')}
       </Button>

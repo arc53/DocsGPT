@@ -9,7 +9,7 @@ import { Card } from '../../components/ui/card';
 import { Spinner } from '../../components/ui/spinner';
 import { selectToken } from '../../preferences/preferenceSlice';
 import type { AppDispatch } from '../../store';
-import { formatDateTime } from '../../utils/dateTimeUtils';
+import { formatTimestamp } from '../../utils/dateTimeUtils';
 import { deleteSchedule, loadSchedulesForAgent } from './schedulesSlice';
 import ScheduleStatusBadge from './StatusBadge';
 
@@ -22,10 +22,6 @@ export type SchedulerToolCallCardProps = {
   status?: string;
   /** Agent id, for live-refresh of the cancel action. */
   agentId?: string;
-};
-
-const formatTimestamp = (value?: string | null): string => {
-  return value ? formatDateTime(value) : '—';
 };
 
 const parseResult = (result: unknown): Record<string, unknown> | null => {

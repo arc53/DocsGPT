@@ -1,29 +1,25 @@
 import type { TFunction } from 'i18next';
-import { Info, TriangleAlert, UserRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 
-import { can, isOwner } from '../../utils/accessUtils';
-import { intlLocale } from '../../utils/dateTimeUtils';
-import type {
-  Agent,
-  ResourceSponsor,
-  ResourceState,
-  ResourceStateReason,
-} from '../types';
+import { isOwner } from '../../utils/accessUtils';
+import { isReader, personLabel } from '../../utils/personLabel';
+import type { Agent, ResourceState } from '../types';
 
 /** What the notice needs to name an item. */
 export type NamedResource = Pick<ResourceState, 'type' | 'id' | 'name'>;
 
 type ResourceStatusNoticeProps = {
-  /** The agent the page edits: the reader's access, its link, its sponsors. */
+  /** The agent the page edits: the reader's access. */
   agent: Agent;
   /** Stopped items still attached in the form (`resource_states`). */
   stopped: ResourceState[];
   /** Display name of a tool, source or prompt. */
   resolveName: (item: NamedResource) => string;
+  /** The reader's user id, to say "you" where a reason is about them. */
+  readerId?: string;
   /** Keys of stopped items the reader chose to run with their access on save. */
   takeovers?: string[];
   /** Ask the reader to run one item with their access. */
@@ -34,40 +30,66 @@ type ResourceStatusNoticeProps = {
   onRemove?: (item: ResourceState) => void;
   /** Sign the item's connection in again. */
   onReconnect?: (item: ResourceState) => void;
-  /** Tell an editor that what they add runs with their access (the agent form). */
-  showAttachNote?: boolean;
+  /**
+   * Floating over a canvas: a close button inside the warning, and the list
+   * in its own scroller so a long one stays on screen.
+   */
+  onClose?: () => void;
 };
 
 /**
- * The message key that says why an item stopped. `sponsorNamed` is false
- * when the read doesn't name the sponsor, who is then "someone else".
+ * Why an item stopped, as the last part of its message key: the same under
+ * `agents.form.resourceStates.reason` (a sentence) and
+ * `settings.teams.share.uses.reasonShort` (a list row's meta).
+ *
+ * Args:
+ *   item: The stopped item.
+ *   options: `ownerReads` when the agent's owner reads it; `readerId` to
+ *     recognise the reader as the sponsor; `noService` when the message
+ *     shouldn't name the service (none known, or the item is named after it).
+ *
+ * Returns:
+ *   The key suffix: an unnamed sponsor is `…Other`, the reader `…You`.
  */
-export function reasonKey(
-  reason: ResourceStateReason | null,
-  ownerReads: boolean,
-  sponsorNamed = true,
-) {
-  const other = sponsorNamed ? '' : 'Other';
-  switch (reason) {
+export function stoppedReason(
+  item: Pick<ResourceState, 'reason' | 'sponsor'>,
+  {
+    ownerReads,
+    readerId,
+    noService = false,
+  }: { ownerReads: boolean; readerId?: string; noService?: boolean },
+): string {
+  const who = isReader(item.sponsor, readerId)
+    ? 'You'
+    : item.sponsor?.user_id
+      ? ''
+      : 'Other';
+  const service = noService ? 'NoService' : '';
+  switch (item.reason) {
     case 'deleted':
-      return 'agents.form.resourceStates.reason.deleted';
+      return 'deleted';
     case 'owner_lost_access':
-      return ownerReads
-        ? 'agents.form.resourceStates.reason.ownerLostAccessYou'
-        : 'agents.form.resourceStates.reason.ownerLostAccess';
+      return ownerReads ? 'ownerLostAccessYou' : 'ownerLostAccess';
     case 'sponsor_cannot_edit_agent':
-      return `agents.form.resourceStates.reason.sponsorCannotEditAgent${other}`;
+      // The reader can edit the agent, so they are never this sponsor.
+      return `sponsorCannotEditAgent${who === 'You' ? '' : who}`;
     case 'sponsor_cannot_edit_resource':
-      return `agents.form.resourceStates.reason.sponsorCannotEditItem${other}`;
+      return `sponsorCannotEditItem${who}`;
     case 'connection_needs_reconnect':
-      return 'agents.form.resourceStates.reason.connectionNeedsReconnect';
+      return `connectionNeedsReconnect${service}`;
     case 'connection_removed':
-      return 'agents.form.resourceStates.reason.connectionRemoved';
+      return `connectionRemoved${service}`;
     case 'connector_disabled':
-      return 'agents.form.resourceStates.reason.connectorDisabled';
+      return `connectorDisabled${service}`;
     default:
-      return 'agents.form.resourceStates.reason.unknown';
+      return 'unknown';
   }
+}
+
+/** Whether a message about `name` should leave its service out. */
+export function omitService(name: string, service?: string | null): boolean {
+  const trimmed = service?.trim();
+  return !trimmed || trimmed.toLowerCase() === name.trim().toLowerCase();
 }
 
 /** A name for an item the reader may not see: its kind and a short id. */
@@ -104,195 +126,144 @@ function askKey(item: ResourceState): string | null {
 }
 
 /**
- * Items grouped by the person who added them, in first-seen order; people
- * the reader doesn't know form one group.
- */
-function groupByPerson(sponsors: ResourceSponsor[]) {
-  const groups = new Map<string, ResourceSponsor[]>();
-  for (const sponsor of sponsors) {
-    const key = sponsor.label || sponsor.user_id || '';
-    groups.set(key, [...(groups.get(key) ?? []), sponsor]);
-  }
-  return Array.from(groups.values());
-}
-
-/**
- * One notice for what runs on the agent with someone else's access and what
- * stopped running.
- *
- * An editor sees up front that what they attach runs with their access for
- * everyone who uses the agent, and everyone who may edit it sees who added
- * what (`resource_sponsors`). Each attached tool, source or prompt that no
- * longer runs (`resource_states`) is listed with the reason in plain words and
- * what the reader can do: sign its account in again, run it with their own
- * access, take it off, or whom to ask.
+ * The warning for attached tools, sources and prompts that stopped running
+ * (`resource_states`): each with the reason in plain words and what the
+ * reader can do — sign its account in again, run it with their own access,
+ * take it off, or whom to ask. Who added what is in the pickers, and the
+ * sponsor confirmation asks before anything runs with the reader's access,
+ * so nothing shows while everything runs.
  */
 export default function ResourceStatusNotice({
   agent,
   stopped,
   resolveName,
+  readerId,
   takeovers = [],
   onTakeOver,
   onUndoTakeover,
   onRemove,
   onReconnect,
-  showAttachNote: attachNoteWanted = true,
+  onClose,
 }: ResourceStatusNoticeProps) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const ownerReads = isOwner(agent);
-  const showAttachNote = attachNoteWanted && !ownerReads && can(agent, 'edit');
-  const running = groupByPerson(
-    (agent.resource_sponsors ?? []).filter((s) => s.active),
-  );
 
-  if (!showAttachNote && running.length === 0 && stopped.length === 0)
-    return null;
+  if (stopped.length === 0) return null;
 
-  const listFormat = new Intl.ListFormat(intlLocale(i18n.language), {
-    type: 'conjunction',
-  });
   const plain = { interpolation: { escapeValue: false } };
 
-  return (
-    <div className="flex flex-col gap-3 sm:col-span-2">
-      {showAttachNote && (
-        <Alert role="note">
-          <Info />
-          <AlertDescription>
-            {t('agents.form.sponsors.attachNote')}
-            {agent.shared ? ` ${t('agents.form.sponsors.publicLinkNote')}` : ''}
-          </AlertDescription>
-        </Alert>
-      )}
-      {running.length > 0 && (
-        <Alert role="note">
-          <UserRound />
-          <AlertDescription>
-            {running.map((items) => (
-              <p key={items[0].key || `${items[0].type}:${items[0].id}`}>
-                {t(
-                  items[0].user_id
-                    ? 'agents.form.sponsors.addedBy'
-                    : 'agents.form.sponsors.addedByOther',
-                  {
-                    ...plain,
-                    person: items[0].label || items[0].user_id,
-                    names: listFormat.format(items.map(resolveName)),
-                  },
-                )}
-              </p>
-            ))}
-          </AlertDescription>
-        </Alert>
-      )}
-      {stopped.length > 0 && (
-        <Alert variant="warning">
-          <TriangleAlert />
-          <AlertTitle>{t('agents.form.resourceStates.title')}</AlertTitle>
-          <AlertDescription>
-            <ul className="flex flex-col gap-3">
-              {stopped.map((item) => {
-                const name = resolveName(item);
-                const service =
-                  item.connection?.name ||
-                  t('agents.form.resourceStates.serviceFallback');
-                const ask = askKey(item);
-                const pending = takeovers.includes(item.key);
-                return (
-                  <li key={item.key} className="flex flex-col gap-1.5">
-                    <p>
-                      {t(
-                        reasonKey(
-                          item.reason,
-                          ownerReads,
-                          Boolean(item.sponsor?.user_id),
-                        ),
-                        {
-                          ...plain,
-                          name,
-                          service,
-                          person: item.sponsor?.label || item.sponsor?.user_id,
-                        },
-                      )}
-                      {ask
-                        ? ` ${t(ask, { ...plain, person: item.contact?.label })}`
-                        : ''}
-                      {item.type === 'prompt'
-                        ? ` ${t('agents.form.resourceStates.promptFallback')}`
-                        : ''}
-                    </p>
-                    {pending ? (
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                        <span>
-                          {t('agents.form.sponsors.takeOverPending', {
-                            ...plain,
-                            name,
-                          })}
-                        </span>
-                        <Button
-                          type="button"
-                          variant="link"
-                          size="inline"
-                          onClick={() => onUndoTakeover?.(item.key)}
-                        >
-                          {t('agents.form.sponsors.undoTakeOver')}
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {item.can_reconnect && onReconnect && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            shape="pill"
-                            aria-label={t(
-                              'agents.form.resourceStates.reconnectLabel',
-                              { ...plain, name },
-                            )}
-                            onClick={() => onReconnect(item)}
-                          >
-                            {t('settings.connectors.status.reconnect')}
-                          </Button>
-                        )}
-                        {item.can_confirm && onTakeOver && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            shape="pill"
-                            onClick={() => onTakeOver(item)}
-                          >
-                            {t('agents.form.sponsors.takeOver', {
-                              ...plain,
-                              name,
-                            })}
-                          </Button>
-                        )}
-                        {onRemove && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            shape="pill"
-                            aria-label={t(
-                              'agents.form.resourceStates.removeLabel',
-                              { ...plain, name },
-                            )}
-                            onClick={() => onRemove(item)}
-                          >
-                            {t('agents.form.resourceStates.remove')}
-                          </Button>
-                        )}
-                      </div>
-                    )}
-                  </li>
-                );
+  const list = (
+    <ul className="flex flex-col gap-3">
+      {stopped.map((item) => {
+        const name = resolveName(item);
+        const service = item.connection?.name ?? '';
+        const ask = askKey(item);
+        const pending = takeovers.includes(item.key);
+        const reason = stoppedReason(item, {
+          ownerReads,
+          readerId,
+          noService: omitService(name, service),
+        });
+        return (
+          <li key={item.key} className="flex flex-col gap-1.5">
+            <p>
+              {t(`agents.form.resourceStates.reason.${reason}`, {
+                ...plain,
+                name,
+                service,
+                person: personLabel(item.sponsor),
               })}
-            </ul>
-          </AlertDescription>
-        </Alert>
-      )}
-    </div>
+              {ask
+                ? ` ${t(ask, { ...plain, person: personLabel(item.contact) })}`
+                : ''}
+              {item.type === 'prompt'
+                ? ` ${t('agents.form.resourceStates.promptFallback')}`
+                : ''}
+            </p>
+            {pending ? (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span>
+                  {t('agents.form.sponsors.takeOverPending', {
+                    ...plain,
+                    name,
+                  })}
+                </span>
+                <Button
+                  type="button"
+                  variant="link"
+                  size="text"
+                  onClick={() => onUndoTakeover?.(item.key)}
+                >
+                  {t('agents.form.sponsors.undoTakeOver')}
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {item.can_reconnect && onReconnect && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    shape="pill"
+                    aria-label={t('agents.form.resourceStates.reconnectLabel', {
+                      ...plain,
+                      name,
+                    })}
+                    onClick={() => onReconnect(item)}
+                  >
+                    {t('settings.connectors.status.reconnect')}
+                  </Button>
+                )}
+                {item.can_confirm && onTakeOver && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    shape="pill"
+                    aria-label={t('agents.form.sponsors.takeOverLabel', {
+                      ...plain,
+                      name,
+                    })}
+                    onClick={() => onTakeOver(item)}
+                  >
+                    {t('agents.form.sponsors.takeOver')}
+                  </Button>
+                )}
+                {onRemove && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    shape="pill"
+                    aria-label={t('agents.form.resourceStates.removeLabel', {
+                      ...plain,
+                      name,
+                    })}
+                    onClick={() => onRemove(item)}
+                  >
+                    {t('agents.form.resourceStates.remove')}
+                  </Button>
+                )}
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+
+  return (
+    <Alert variant="warning" className="sm:col-span-2" onClose={onClose}>
+      <AlertTitle>{t('agents.form.resourceStates.title')}</AlertTitle>
+      <AlertDescription>
+        {onClose ? (
+          <div className="scrollbar-overlay max-h-[45svh] overflow-y-auto">
+            {list}
+          </div>
+        ) : (
+          list
+        )}
+      </AlertDescription>
+    </Alert>
   );
 }

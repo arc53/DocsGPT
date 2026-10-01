@@ -1,11 +1,13 @@
-import { CircleAlert, TriangleAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import { Alert, AlertDescription } from '../components/ui/alert';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
+import { EmptyState } from '../components/ui/empty-state';
 import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
 import { cn } from '../lib/utils';
@@ -186,7 +188,6 @@ export default function TestRetrievalModal({
       }
       // xl, like PromptsModal, so the two large modals read as one family.
       size="xl"
-      mobileVariant="sheet"
     >
       <div className="flex flex-col">
         <div className="flex flex-col gap-4">
@@ -194,9 +195,7 @@ export default function TestRetrievalModal({
             <Input
               type="text"
               value={query}
-              autoFocus
               placeholder={tr('queryPlaceholder')}
-              shape="pill"
               className="flex-1"
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -208,7 +207,6 @@ export default function TestRetrievalModal({
               disabled={!canRun}
               onClick={handleRun}
               size="field"
-              shape="pill"
               loading={running}
               className="shrink-0"
             >
@@ -229,7 +227,6 @@ export default function TestRetrievalModal({
 
           {!prescreenValid && (
             <Alert variant="warning">
-              <TriangleAlert className="size-4" aria-hidden="true" />
               <AlertDescription>
                 {t('settings.sources.configModal.prescreenInvalidHint')}
               </AlertDescription>
@@ -238,7 +235,6 @@ export default function TestRetrievalModal({
 
           {error && (
             <Alert variant="destructive">
-              <CircleAlert className="size-4" aria-hidden="true" />
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
@@ -256,22 +252,21 @@ export default function TestRetrievalModal({
               </div>
 
               {result.chunks.length === 0 ? (
-                <div className="border-border text-muted-foreground rounded-xl border border-dashed p-6 text-center text-sm">
-                  {emptyMessage}
-                </div>
+                <EmptyState
+                  size="sm"
+                  illustration="none"
+                  title={emptyMessage}
+                />
               ) : (
                 result.chunks.map((chunk) => {
                   const isOpen = expanded.has(chunk.rank);
                   return (
-                    <div
-                      key={chunk.rank}
-                      className="border-border bg-muted rounded-xl border p-4"
-                    >
-                      <div className="mb-2 flex flex-row items-center justify-between gap-2">
+                    <Card key={chunk.rank} variant="outline" className="gap-2">
+                      <div className="flex flex-row items-center justify-between gap-2">
                         <div className="flex min-w-0 flex-row items-center gap-2">
-                          <span className="bg-muted text-muted-foreground shrink-0 rounded-md px-2 py-0.5 font-mono text-xs">
+                          <Badge variant="neutral" className="font-mono">
                             #{chunk.rank}
-                          </span>
+                          </Badge>
                           <span
                             className="text-foreground truncate text-sm font-medium"
                             title={chunk.source ?? undefined}
@@ -302,11 +297,11 @@ export default function TestRetrievalModal({
                         variant="link"
                         size="xs"
                         onClick={() => toggleExpanded(chunk.rank)}
-                        className="-ml-2"
+                        className="-ml-2 self-start"
                       >
                         {isOpen ? tr('showLess') : tr('showMore')}
                       </Button>
-                    </div>
+                    </Card>
                   );
                 })
               )}

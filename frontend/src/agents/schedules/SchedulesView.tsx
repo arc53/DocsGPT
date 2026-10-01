@@ -183,9 +183,11 @@ export default function SchedulesView() {
     setDeleteConfirmation('ACTIVE');
   };
 
-  const confirmDelete = () => {
+  // Returned to ConfirmationModal: it stays pending while the delete runs,
+  // closes on success and keeps a failure in the dialog.
+  const confirmDelete = async () => {
     if (!scheduleToDelete) return;
-    dispatch(deleteSchedule({ id: scheduleToDelete.id, token }));
+    await dispatch(deleteSchedule({ id: scheduleToDelete.id, token })).unwrap();
     setScheduleToDelete(null);
   };
 
@@ -350,12 +352,12 @@ export default function SchedulesView() {
               />
             </div>
             <Tabs defaultValue="recurring">
-              <TabsList variant="underline">
-                <TabsTrigger value="recurring" variant="underline">
+              <TabsList>
+                <TabsTrigger value="recurring">
                   {t('agents.schedules.recurring')}
                   <Badge variant="neutral">{recurring.length}</Badge>
                 </TabsTrigger>
-                <TabsTrigger value="once" variant="underline">
+                <TabsTrigger value="once">
                   {t('agents.schedules.oneTime')}
                   <Badge variant="neutral">{oneTime.length}</Badge>
                 </TabsTrigger>
@@ -383,11 +385,19 @@ export default function SchedulesView() {
               />
             )}
             <ConfirmationModal
-              message={t('agents.schedules.deleteConfirm')}
+              message={t('agents.schedules.deleteConfirm', {
+                interpolation: { escapeValue: false },
+                name:
+                  scheduleToDelete?.name ||
+                  scheduleToDelete?.instruction.slice(0, 80) ||
+                  '',
+              })}
+              description={t('agents.schedules.deleteConsequence')}
               modalState={deleteConfirmation}
               setModalState={setDeleteConfirmation}
               submitLabel={t('agents.schedules.delete')}
               handleSubmit={confirmDelete}
+              error={t('agents.schedules.deleteFailed')}
               handleCancel={() => setScheduleToDelete(null)}
               variant="destructive"
             />

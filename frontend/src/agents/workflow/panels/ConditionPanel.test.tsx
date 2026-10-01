@@ -59,10 +59,13 @@ describe('ConditionPanel', () => {
     return { onUpdate };
   };
 
-  it('picks the mode with a ToggleGroup in the muted track', () => {
+  it('picks the mode with a ToggleGroup that fills its row', () => {
     const { onUpdate } = render();
     const group = container.querySelector('[role="radiogroup"]')!;
-    expect(group.parentElement!.className).toContain('bg-muted');
+    // The group draws its own track; no hand-built wrapper around it.
+    expect(group.className).toContain('bg-muted');
+    expect(group.classList.contains('w-full')).toBe(true);
+    expect(group.parentElement!.className).not.toContain('bg-muted');
     const advanced = Array.from(group.querySelectorAll('button')).find(
       (b) => b.textContent === 'agents.workflow.builder.modeAdvanced',
     )!;

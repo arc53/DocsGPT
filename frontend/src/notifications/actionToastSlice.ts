@@ -13,9 +13,10 @@ type SliceState = { current: ActionToastState | null; nextId: number };
 const initialState: SliceState = { current: null, nextId: 1 };
 
 /**
- * One transient result card for an action a page just ran (the admin Users
- * actions today). A new result replaces the previous one; the fresh `id`
- * restarts the card's auto-dismiss timer.
+ * One transient result card for a result the screen can't show (a failed
+ * queued delete, an admin Force logout, a chunk saved from a closed drawer).
+ * A new result replaces the previous one; the fresh `id` restarts the card's
+ * auto-dismiss timer.
  */
 const actionToastSlice = createSlice({
   name: 'actionToast',

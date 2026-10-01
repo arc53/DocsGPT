@@ -6,6 +6,8 @@ import { useDispatch, useSelector } from 'react-redux';
 import customModelsService from '../api/services/customModelsService';
 import modelService from '../api/services/modelService';
 import PageToolbar from '../components/PageToolbar';
+import { Pagination, pageRangeParams } from '../components/ui/pagination';
+import { SHORT_LIST_PAGE_SIZE, useClientPage } from '../hooks/usePageState';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Badge } from '../components/ui/badge';
@@ -44,6 +46,8 @@ export default function CustomModels() {
   const [models, setModels] = React.useState<CustomModel[]>([]);
   const [searchTerm, setSearchTerm] = React.useState('');
   const [loading, setLoading] = useLoaderState(false);
+  // The load failed: an error with Retry, not "no models yet".
+  const [loadFailed, setLoadFailed] = React.useState(false);
   const [modalState, setModalState] = React.useState<ActiveState>('INACTIVE');
   const [editingModel, setEditingModel] = React.useState<CustomModel | null>(
     null,
@@ -61,9 +65,10 @@ export default function CustomModels() {
     try {
       const data = await customModelsService.listCustomModels(token);
       setModels(data);
+      setLoadFailed(false);
     } catch (err) {
       console.error('Failed to load custom models:', err);
-      setModels([]);
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -113,18 +118,15 @@ export default function CustomModels() {
     setDeleteState('ACTIVE');
   };
 
+  // Returns the request: ConfirmationModal closes on success and keeps a
+  // failure open with its error.
   const confirmDelete = async () => {
     if (!modelToDelete) return;
-    try {
-      await customModelsService.deleteCustomModel(modelToDelete.id, token);
-      setModels((prev) => prev.filter((m) => m.id !== modelToDelete.id));
-      refreshGlobalAvailableModels();
-    } catch (err) {
-      console.error('Failed to delete custom model:', err);
-    } finally {
-      setModelToDelete(null);
-      setDeleteState('INACTIVE');
-    }
+    const id = modelToDelete.id;
+    await customModelsService.deleteCustomModel(id, token);
+    setModels((prev) => prev.filter((m) => m.id !== id));
+    setModelToDelete(null);
+    refreshGlobalAvailableModels();
   };
 
   const getMenuOptions = (model: CustomModel): MenuOption[] => [
@@ -149,6 +151,12 @@ export default function CustomModels() {
       model.upstream_model_id.toLowerCase().includes(q)
     );
   });
+
+  const {
+    page: modelsPage,
+    setPage: setModelsPage,
+    pageItems: pageModels,
+  } = useClientPage(filteredModels, SHORT_LIST_PAGE_SIZE, searchTerm);
 
   const renderEmptyState = () => (
     <EmptyState title={t('settings.customModels.empty')} />
@@ -185,61 +193,81 @@ export default function CustomModels() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             <SkeletonLoader component="toolCards" count={3} />
           </div>
+        ) : loadFailed ? (
+          <EmptyState
+            tone="destructive"
+            illustration="none"
+            title={t('settings.customModels.loadError')}
+            onRetry={() => fetchModelsRef.current()}
+          />
         ) : filteredModels.length === 0 ? (
           renderEmptyState()
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {filteredModels.map((model) => (
-              <Card
-                key={model.id}
-                variant="filled"
-                padding="lg"
-                className="relative overflow-hidden"
-              >
-                <ActionMenu
-                  options={getMenuOptions(model)}
-                  triggerLabel={t('settings.customModels.actionsMenuAria', {
-                    modelName: model.display_name,
-                  })}
-                  className="absolute top-3 right-3 z-10"
-                />
-                <div className="w-full pr-7">
-                  <div className="flex items-center gap-2">
-                    <CardTitle
-                      as="h2"
-                      title={model.display_name}
-                      className="min-w-0 truncate"
+          <>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {pageModels.map((model) => (
+                <Card
+                  key={model.id}
+                  variant="filled"
+                  padding="lg"
+                  className="relative overflow-hidden"
+                >
+                  <ActionMenu
+                    options={getMenuOptions(model)}
+                    triggerLabel={t('settings.customModels.actionsMenuAria', {
+                      modelName: model.display_name,
+                    })}
+                    className="absolute top-3 right-3 z-10"
+                  />
+                  <div className="w-full pr-7">
+                    <div className="flex items-center gap-2">
+                      <CardTitle
+                        as="h2"
+                        title={model.display_name}
+                        className="min-w-0 truncate"
+                      >
+                        {model.display_name}
+                      </CardTitle>
+                      {!model.enabled && (
+                        <Badge variant="neutral">
+                          {t('settings.customModels.disabledBadge')}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <CardFooter className="flex-col items-stretch gap-1.5 pr-7">
+                    <div
+                      className="flex items-center gap-1.5 leading-relaxed"
+                      title={model.upstream_model_id}
                     >
-                      {model.display_name}
-                    </CardTitle>
-                    {!model.enabled && (
-                      <Badge variant="neutral">
-                        {t('settings.customModels.disabledBadge')}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-                <CardFooter className="flex-col items-stretch gap-1.5 pr-7">
-                  <div
-                    className="flex items-center gap-1.5 leading-relaxed"
-                    title={model.upstream_model_id}
-                  >
-                    <Tag className="size-3.5 shrink-0 opacity-70" />
-                    <span className="truncate">{model.upstream_model_id}</span>
-                  </div>
-                  <div
-                    className="flex items-center gap-1.5 leading-relaxed"
-                    title={model.base_url}
-                  >
-                    <Globe className="size-3.5 shrink-0 opacity-70" />
-                    <span className="truncate">
-                      {formatBaseUrlHost(model.base_url)}
-                    </span>
-                  </div>
-                </CardFooter>
-              </Card>
-            ))}
-          </div>
+                      <Tag className="size-3.5 shrink-0 opacity-70" />
+                      <span className="truncate">
+                        {model.upstream_model_id}
+                      </span>
+                    </div>
+                    <div
+                      className="flex items-center gap-1.5 leading-relaxed"
+                      title={model.base_url}
+                    >
+                      <Globe className="size-3.5 shrink-0 opacity-70" />
+                      <span className="truncate">
+                        {formatBaseUrlHost(model.base_url)}
+                      </span>
+                    </div>
+                  </CardFooter>
+                </Card>
+              ))}
+            </div>
+            <Pagination
+              page={modelsPage}
+              pageSize={SHORT_LIST_PAGE_SIZE}
+              total={filteredModels.length}
+              onPageChange={setModelsPage}
+              rangeLabel={(range) =>
+                t('settings.customModels.pageRange', pageRangeParams(range))
+              }
+            />
+          </>
         )}
       </div>
       <CustomModelModal
@@ -250,8 +278,10 @@ export default function CustomModels() {
       />
       <ConfirmationModal
         message={t('settings.customModels.deleteWarning', {
+          interpolation: { escapeValue: false },
           modelName: modelToDelete?.display_name || '',
         })}
+        description={t('common.cantUndo')}
         modalState={deleteState}
         setModalState={setDeleteState}
         handleSubmit={confirmDelete}

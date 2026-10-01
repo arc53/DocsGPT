@@ -30,7 +30,7 @@ export default function DetailBreadcrumb({
 }: DetailBreadcrumbProps) {
   return (
     <Breadcrumb className={cn('min-w-0', className)}>
-      <BreadcrumbList className="flex-nowrap">
+      <BreadcrumbList>
         <BreadcrumbItem>
           <BreadcrumbLink asChild>
             <button type="button" onClick={onParentClick}>
@@ -39,10 +39,8 @@ export default function DetailBreadcrumb({
           </BreadcrumbLink>
         </BreadcrumbItem>
         <BreadcrumbSeparator />
-        <BreadcrumbItem className="min-w-0">
-          <BreadcrumbPage title={currentLabel} className="max-w-[32ch]">
-            {currentLabel}
-          </BreadcrumbPage>
+        <BreadcrumbItem>
+          <BreadcrumbPage>{currentLabel}</BreadcrumbPage>
         </BreadcrumbItem>
       </BreadcrumbList>
     </Breadcrumb>

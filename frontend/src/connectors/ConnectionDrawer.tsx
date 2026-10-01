@@ -1,20 +1,20 @@
 import {
-  CircleAlert,
   Pencil,
   Plus,
   RefreshCw,
   RotateCw,
   Trash2,
-  TriangleAlert,
   Unplug,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import connectorsService from '../api/services/connectorsService';
 import userService from '../api/services/userService';
 import { Alert, AlertDescription } from '../components/ui/alert';
+import { Avatar } from '../components/ui/avatar';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
@@ -27,24 +27,13 @@ import { ListRow, ListRows } from '../components/ui/list-row';
 import { LoadingState } from '../components/ui/loading-state';
 import { Modal, ModalActions } from '../components/ui/modal';
 import { SectionHeader } from '../components/ui/section-header';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../components/ui/select';
+import { Separator } from '../components/ui/separator';
 import { SettingRow, SettingRows } from '../components/ui/setting-row';
 import { Switch } from '../components/ui/switch';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetTitle,
-} from '../components/ui/sheet';
+import { PanelBody, PanelHeader, SidePanel } from '../components/ui/side-panel';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
-import ConfirmationModal from '../modals/ConfirmationModal';
 import { showActionToast } from '../notifications/actionToastSlice';
+import ConfirmationModal from '../modals/ConfirmationModal';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
 import { formatCount, formatDateTime } from '../utils/dateTimeUtils';
@@ -56,10 +45,18 @@ import {
   connectionNeedsSignIn,
   loadConnectors,
   selectConnections,
+  selectConnectorsFailed,
+  selectConnectorsLoaded,
 } from './connectorsSlice';
-import { connectorDescription, connectorName, isKeyHint } from './i18n';
+import {
+  accountLine,
+  connectorDescription,
+  connectorName,
+  isKeyHint,
+} from './i18n';
 import ToolPermissions from './ToolPermissions';
 import type {
+  Capability,
   ConnectionDetail,
   ConnectionSource,
   ConnectionTool,
@@ -75,32 +72,75 @@ const STATUS_VARIANT: Record<
   connected: 'success',
   reconnect_needed: 'warning',
   disconnected: 'neutral',
-  error: 'destructive',
+  error: 'warning',
   pending: 'neutral',
 };
 
 /**
- * "Connected as …", or the key hint for pasted credentials (a GitHub token
- * is named after its account instead). A connection that is not working
- * names its account without claiming it is connected.
+ * An account's state: an expired or failing sign-in is one word, Reconnect,
+ * as on every other connector surface.
  */
-function useAccountTitle() {
+function StatusBadge({ detail }: { detail: ConnectionDetail }) {
   const { t } = useTranslation();
-  return (detail: ConnectionDetail) =>
-    detail.auth_kind === 'api_key' && isKeyHint(detail.account_label)
-      ? t('settings.connectors.detail.keyEnding', {
-          hint: detail.account_label,
-          interpolation: { escapeValue: false },
-        })
-      : t(
-          detail.status === 'connected'
-            ? 'settings.connectors.detail.connectedAs'
-            : 'settings.connectors.detail.account',
-          {
-            account: detail.account_label,
-            interpolation: { escapeValue: false },
-          },
-        );
+  return (
+    <Badge variant={STATUS_VARIANT[detail.status]}>
+      {connectionNeedsSignIn(detail)
+        ? t('settings.connectors.status.reconnect')
+        : t(`settings.connectors.connectionStatus.${detail.status}`)}
+    </Badge>
+  );
+}
+
+/**
+ * What identifies an account under the name it was given, as the Tools
+ * card's account line has it (the key hint for pasted credentials, else its
+ * label). The status Badge beside it says whether it works.
+ */
+const accountIdentity = (t: TFunction, detail: ConnectionDetail) =>
+  accountLine(t, { ...detail, account_name: null });
+
+/**
+ * The account a confirmation names: the name it was given, else its label;
+ * a bare key hint reads worse than the service, so that falls back to the
+ * account's own service (a part's, not its parent's).
+ */
+function confirmName(detail: ConnectionDetail, service: string) {
+  return (
+    detail.account_name ||
+    (isKeyHint(detail.account_label) ? '' : detail.account_label) ||
+    service
+  );
+}
+
+/**
+ * A tool's heading: the server adds " · account" to tell two accounts'
+ * tools apart in pickers; here the account row already says which, so the
+ * suffix goes (as on the Tools page's cards).
+ */
+function toolTitle(tool: ConnectionTool, detail: ConnectionDetail) {
+  return detail.name && tool.display_name.startsWith(`${detail.name} · `)
+    ? detail.name
+    : tool.display_name;
+}
+
+/**
+ * Whether the drawer can add a connection's tools back (skipped during setup,
+ * or deleted from the Tools page since). The setup call recreates built-in
+ * tool templates, GitHub's MCP tool and an MCP preset's (Notion, Linear…),
+ * rebuilt from its sign-in. A custom server's tool comes only from its own
+ * save, so it is not offered here.
+ */
+function recreatesTools(connector: ConnectorDefinition) {
+  const templates = connector.tool_templates ?? [];
+  if (connector.publisher === 'custom' || templates.length === 0) return false;
+  if (connector.setup.tools === 'ask') return true;
+  if (connector.publisher === 'preset') return templates.includes('mcp_tool');
+  return (
+    connector.setup.tools === 'auto' &&
+    templates.some(
+      (template) => template !== 'mcp_tool' && template !== 'api_tool',
+    )
+  );
 }
 
 /** What is wrong, in plain words rather than the provider's message. */
@@ -114,6 +154,63 @@ function useProblem() {
         : detail.last_error;
 }
 
+/**
+ * Forgets an account's sign-in and keeps the account, its knowledge and its
+ * tools, so Reconnect brings it back. Nothing is deleted, so the submit is
+ * the primary; it shows pending while the request runs and a failure stays
+ * in the modal.
+ */
+function DisconnectConnectionModal({
+  detail,
+  name,
+  onClose,
+  onDisconnected,
+}: {
+  detail: ConnectionDetail;
+  /** The account, as `confirmName` gives it. */
+  name: string;
+  onClose: () => void;
+  onDisconnected: () => void;
+}) {
+  const { t } = useTranslation();
+  const token = useSelector(selectToken);
+
+  const disconnect = () =>
+    connectorsService.disconnect(detail.id, token).then((data) => {
+      if (!data?.success) throw new Error('disconnect failed');
+      onDisconnected();
+    });
+
+  // Say only what this account has: a sync-only one has no tools to stop.
+  const sources = detail.sources.length;
+  const body =
+    sources > 0 && detail.tools.length > 0
+      ? 'bodyBoth'
+      : sources > 0
+        ? 'bodySources'
+        : detail.tools.length > 0
+          ? 'bodyTools'
+          : 'bodyNone';
+
+  return (
+    <ConfirmationModal
+      modalState="ACTIVE"
+      setModalState={(state) => state === 'INACTIVE' && onClose()}
+      message={t('settings.connectors.disconnect.title', {
+        name,
+        interpolation: { escapeValue: false },
+      })}
+      description={t(`settings.connectors.disconnect.${body}`, {
+        count: sources,
+        formatted: formatCount(sources),
+      })}
+      submitLabel={t('settings.connectors.detail.disconnect')}
+      handleSubmit={disconnect}
+      error={t('settings.connectors.disconnect.failed')}
+    />
+  );
+}
+
 function RemoveConnectionModal({
   detail,
   name,
@@ -121,6 +218,7 @@ function RemoveConnectionModal({
   onRemoved,
 }: {
   detail: ConnectionDetail;
+  /** The account, as `confirmName` gives it. */
   name: string;
   onClose: () => void;
   onRemoved: () => void;
@@ -129,51 +227,30 @@ function RemoveConnectionModal({
   const token = useSelector(selectToken);
   const [sources, setSources] = useState<'keep' | 'delete'>('keep');
   const [tools, setTools] = useState<'keep' | 'delete'>('delete');
-  const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
 
-  const remove = () => {
-    setPending(true);
-    setFailed(false);
+  const remove = () =>
     connectorsService
       .remove(detail.id, { sources, tools }, token)
       .then((data) => {
         if (!data?.success) throw new Error('remove failed');
         onRemoved();
-      })
-      .catch(() => setFailed(true))
-      .finally(() => setPending(false));
-  };
+      });
 
   return (
-    <Modal
-      open
-      onOpenChange={(open) => !open && onClose()}
-      title={t('settings.connectors.remove.title', {
+    <ConfirmationModal
+      modalState="ACTIVE"
+      setModalState={(state) => state === 'INACTIVE' && onClose()}
+      message={t('settings.connectors.remove.title', {
         name,
         interpolation: { escapeValue: false },
       })}
       description={t('settings.connectors.remove.description')}
-      footer={
-        <ModalActions
-          cancelLabel={t('cancel')}
-          onCancel={onClose}
-          submitLabel={t('settings.connectors.detail.remove')}
-          onSubmit={remove}
-          pending={pending}
-          destructive
-        />
-      }
+      submitLabel={t('settings.connectors.detail.remove')}
+      handleSubmit={remove}
+      error={t('settings.connectors.remove.failed')}
+      variant="destructive"
     >
       <div className="flex flex-col gap-6">
-        {failed && (
-          <Alert variant="destructive">
-            <CircleAlert />
-            <AlertDescription>
-              {t('settings.connectors.remove.failed')}
-            </AlertDescription>
-          </Alert>
-        )}
         {detail.sources.length > 0 && (
           <FormField
             float={false}
@@ -184,6 +261,7 @@ function RemoveConnectionModal({
           >
             <ToggleGroup
               type="single"
+              fill
               value={sources}
               onValueChange={(value) =>
                 value && setSources(value as 'keep' | 'delete')
@@ -208,22 +286,23 @@ function RemoveConnectionModal({
           >
             <ToggleGroup
               type="single"
+              fill
               value={tools}
               onValueChange={(value) =>
                 value && setTools(value as 'keep' | 'delete')
               }
             >
-              <ToggleGroupItem value="delete">
-                {t('settings.connectors.remove.deleteTools')}
-              </ToggleGroupItem>
               <ToggleGroupItem value="keep">
                 {t('settings.connectors.remove.keepTools')}
+              </ToggleGroupItem>
+              <ToggleGroupItem value="delete">
+                {t('settings.connectors.remove.deleteTools')}
               </ToggleGroupItem>
             </ToggleGroup>
           </FormField>
         )}
       </div>
-    </Modal>
+    </ConfirmationModal>
   );
 }
 
@@ -277,7 +356,6 @@ function RenameAccountModal({
       <div className="flex flex-col gap-5">
         {failed && (
           <Alert variant="destructive">
-            <CircleAlert />
             <AlertDescription>
               {t('settings.connectors.rename.failed')}
             </AlertDescription>
@@ -378,42 +456,6 @@ function WritesSwitch({
 }
 
 /**
- * Which of several accounts of a service the panel shows. The rest of the
- * panel is that one account: its knowledge and its tools.
- */
-function AccountPicker({
-  accounts,
-  value,
-  onChange,
-}: {
-  accounts: ConnectionDetail[];
-  value: string;
-  onChange: (id: string) => void;
-}) {
-  const { t } = useTranslation();
-  const accountTitle = useAccountTitle();
-  return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger
-        className="w-full"
-        aria-label={t('settings.connectors.detail.accountPicker')}
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {accounts.map((account) => (
-          <SelectItem key={account.id} value={account.id}>
-            {account.account_name || accountTitle(account)}
-            {connectionNeedsSignIn(account) &&
-              ` · ${t('settings.connectors.health.signInAgain')}`}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
-/**
  * The account to show from ``accounts``: the one picked, else one that needs
  * signing in again (so a problem is not hidden behind another account), else
  * the first.
@@ -429,22 +471,7 @@ function shownAccount(
   );
 }
 
-function AccountSection({
-  connector,
-  detail,
-  onReconnect,
-  onDisconnect,
-  onRemove,
-  onRename,
-  onSyncMore,
-  onRefreshTools,
-  onToggleTool,
-  onSyncNow,
-  onAddTools,
-  onSwitchWrites,
-}: {
-  connector: ConnectorDefinition;
-  detail: ConnectionDetail;
+type AccountHandlers = {
   onReconnect: (detail: ConnectionDetail) => void;
   onDisconnect: (detail: ConnectionDetail) => void;
   onRemove: (detail: ConnectionDetail) => void;
@@ -454,20 +481,145 @@ function AccountSection({
   /** Turns a tool of this connection on or off for agents and chat. */
   onToggleTool: (toolId: string, on: boolean) => Promise<boolean>;
   onSyncNow: (source: ConnectionSource) => void;
-  /** Creates the tools a connection skipped while it was set up (GitHub's). */
-  onAddTools: (detail: ConnectionDetail) => Promise<void>;
+  /** Creates the tools a connection lacks (skipped at setup, or deleted).
+   * Resolves to what went wrong, in plain words, or null. */
+  onAddTools: (detail: ConnectionDetail) => Promise<string | null>;
   /** Lets its tool make changes or only read (GitHub's). */
   onSwitchWrites: (detail: ConnectionDetail, allow: boolean) => Promise<void>;
-}) {
+};
+
+/**
+ * One account in a service's account list: its name, account line, status
+ * and ⋯. With several accounts the row picks which one's knowledge and tools
+ * show below: a stretched button covers the row and the ⋯ sits above it, so
+ * neither control is inside the other.
+ */
+function AccountRow({
+  detail,
+  selectable,
+  selected,
+  onSelect,
+  onReconnect,
+  onDisconnect,
+  onRemove,
+  onRename,
+}: {
+  detail: ConnectionDetail;
+  selectable: boolean;
+  selected: boolean;
+  onSelect: () => void;
+} & Pick<
+  AccountHandlers,
+  'onReconnect' | 'onDisconnect' | 'onRemove' | 'onRename'
+>) {
   const { t } = useTranslation();
-  const accountTitle = useAccountTitle();
-  const problem = useProblem();
+  const broken = connectionNeedsSignIn(detail);
+  const title = accountLine(t, detail);
+  const menu: MenuOption[] = [
+    {
+      icon: Pencil,
+      label: t('settings.connectors.detail.rename'),
+      onClick: () => onRename(detail),
+    },
+  ];
+  // Disconnect only forgets the sign-in (Reconnect undoes it), so it is an
+  // ordinary item; Remove deletes, after a rule.
+  if (detail.status !== 'disconnected') {
+    menu.push({
+      icon: Unplug,
+      label: t('settings.connectors.detail.disconnect'),
+      onClick: () => onDisconnect(detail),
+    });
+  }
+  menu.push({
+    icon: Trash2,
+    label: t('settings.connectors.detail.remove'),
+    onClick: () => onRemove(detail),
+    variant: 'destructive',
+    separatorBefore: true,
+  });
+
+  return (
+    <ListRow
+      interactive={selectable}
+      selected={selectable && selected}
+      asChild={selectable}
+      title={
+        selectable ? (
+          <button
+            type="button"
+            data-account-select=""
+            aria-current={selected ? 'true' : undefined}
+            className="block max-w-full cursor-pointer truncate text-left outline-none after:absolute after:inset-0"
+            onClick={onSelect}
+          >
+            {title}
+          </button>
+        ) : (
+          title
+        )
+      }
+      description={
+        detail.account_name ? (
+          accountIdentity(t, detail)
+        ) : !broken && detail.last_error ? (
+          <span title={detail.last_error}>{detail.last_error}</span>
+        ) : undefined
+      }
+      trailing={
+        <div className="relative z-10 flex shrink-0 items-center gap-2">
+          <StatusBadge detail={detail} />
+          {!broken && detail.status !== 'connected' && (
+            <Button
+              type="button"
+              size="sm"
+              shape="pill"
+              variant="outline"
+              onClick={() => onReconnect(detail)}
+            >
+              <RefreshCw />
+              {t('settings.connectors.status.reconnect')}
+            </Button>
+          )}
+          <ActionMenu
+            triggerLabel={t('settings.connectors.detail.accountMenu')}
+            options={menu}
+          />
+        </div>
+      }
+    >
+      {/* The row's box: it holds the stretched button, so it draws that
+          button's focus ring (DESIGN "A clickable card that holds a link"). */}
+      {selectable ? (
+        <div className="has-[[data-account-select]:focus-visible]:ring-ring/50 relative has-[[data-account-select]:focus-visible]:ring-3 has-[[data-account-select]:focus-visible]:ring-inset" />
+      ) : undefined}
+    </ListRow>
+  );
+}
+
+/** The shown account's knowledge and tools, under the service's account list. */
+function AccountContent({
+  connector,
+  detail,
+  onSyncMore,
+  onRefreshTools,
+  onToggleTool,
+  onSyncNow,
+  onAddTools,
+  onSwitchWrites,
+}: {
+  connector: ConnectorDefinition;
+  detail: ConnectionDetail;
+} & Omit<
+  AccountHandlers,
+  'onReconnect' | 'onDisconnect' | 'onRemove' | 'onRename'
+>) {
+  const { t } = useTranslation();
   const [refreshing, setRefreshing] = useState(false);
   const [addingTools, setAddingTools] = useState(false);
+  const [addToolsError, setAddToolsError] = useState<string | null>(null);
   const canAddTools =
-    connector.setup.tools === 'ask' &&
-    (connector.tool_templates?.length ?? 0) > 0 &&
-    connector.publisher !== 'custom' &&
+    recreatesTools(connector) &&
     detail.tools.length === 0 &&
     detail.status === 'connected';
   const canSync = connector.setup.sync !== 'off' && !!connector.sync_ingestor;
@@ -477,99 +629,13 @@ function AccountSection({
     !!connector.writes_allowed &&
     detail.writes !== null &&
     detail.writes !== undefined;
-  const menu: MenuOption[] = [
-    {
-      icon: Pencil,
-      label: t('settings.connectors.detail.rename'),
-      onClick: () => onRename(detail),
-    },
-  ];
-  if (detail.status !== 'disconnected') {
-    menu.push({
-      icon: Unplug,
-      label: t('settings.connectors.detail.disconnect'),
-      onClick: () => onDisconnect(detail),
-      variant: 'destructive',
-    });
-  }
-  menu.push({
-    icon: Trash2,
-    label: t('settings.connectors.detail.remove'),
-    onClick: () => onRemove(detail),
-    variant: 'destructive',
-  });
-
-  // An expired or failing sign-in gets its own box under the account, with
-  // room to say what happened at any width.
-  const broken =
-    detail.status === 'reconnect_needed' || detail.status === 'error';
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3">
-        <Card variant="subtle" padding="none">
-          <ListRows>
-            <ListRow
-              title={detail.account_name || accountTitle(detail)}
-              description={
-                detail.account_name ? (
-                  accountTitle(detail)
-                ) : !broken && detail.last_error ? (
-                  <span title={detail.last_error}>{detail.last_error}</span>
-                ) : undefined
-              }
-              trailing={
-                <div className="flex shrink-0 items-center gap-2">
-                  <Badge variant={STATUS_VARIANT[detail.status]}>
-                    {t(`settings.connectors.connectionStatus.${detail.status}`)}
-                  </Badge>
-                  {!broken && detail.status !== 'connected' && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      shape="pill"
-                      variant="outline"
-                      onClick={() => onReconnect(detail)}
-                    >
-                      <RefreshCw />
-                      {t('settings.connectors.status.reconnect')}
-                    </Button>
-                  )}
-                  <ActionMenu
-                    triggerLabel={t('settings.connectors.detail.accountMenu')}
-                    options={menu}
-                  />
-                </div>
-              }
-            />
-          </ListRows>
-        </Card>
-        {broken && (
-          <Alert variant="warning">
-            <TriangleAlert />
-            {/* The provider's own message stays on hover, for debugging. */}
-            <AlertDescription title={detail.last_error ?? undefined}>
-              {problem(detail)}
-            </AlertDescription>
-            <div className="mt-2">
-              <Button
-                type="button"
-                size="sm"
-                shape="pill"
-                variant="outline"
-                onClick={() => onReconnect(detail)}
-              >
-                <RefreshCw />
-                {t('settings.connectors.status.reconnect')}
-              </Button>
-            </div>
-          </Alert>
-        )}
-      </div>
+    <>
       {canSync && (
         <section className="flex flex-col gap-2">
           <SectionHeader
-            as="h3"
+            as="h4"
             size="xs"
             title={t('settings.connectors.detail.sources')}
             actions={
@@ -578,7 +644,7 @@ function AccountSection({
                   type="button"
                   variant="link"
                   size="sm"
-                  className="-mr-3"
+                  className="-mr-2.5"
                   onClick={() => onSyncMore(detail)}
                 >
                   <Plus />
@@ -594,7 +660,7 @@ function AccountSection({
               title={t('settings.connectors.detail.noSources')}
             />
           ) : (
-            <Card variant="subtle" padding="none">
+            <Card variant="subtle" padding="none" className="overflow-hidden">
               <ListRows>
                 {detail.sources.map((source) => (
                   <ListRow
@@ -639,7 +705,7 @@ function AccountSection({
       {canAddTools && (
         <section className="flex flex-col gap-2">
           <SectionHeader
-            as="h3"
+            as="h4"
             size="xs"
             title={t('settings.connectors.detail.tools')}
             actions={
@@ -647,11 +713,14 @@ function AccountSection({
                 type="button"
                 variant="link"
                 size="sm"
-                className="-mr-3"
+                className="-mr-2.5"
                 loading={addingTools}
                 onClick={() => {
                   setAddingTools(true);
-                  onAddTools(detail).finally(() => setAddingTools(false));
+                  setAddToolsError(null);
+                  onAddTools(detail)
+                    .then(setAddToolsError)
+                    .finally(() => setAddingTools(false));
                 }}
               >
                 <Plus />
@@ -664,21 +733,27 @@ function AccountSection({
             illustration="none"
             title={t('settings.connectors.detail.noTools')}
           />
+          {addToolsError && (
+            <Alert variant="destructive">
+              <AlertDescription>{addToolsError}</AlertDescription>
+            </Alert>
+          )}
         </section>
       )}
       {detail.tools.length > 0 && (
         <section className="flex flex-col gap-2">
           <SectionHeader
-            as="h3"
+            as="h4"
             size="xs"
             title={t('settings.connectors.detail.tools')}
+            description={t('settings.connectors.detail.toolsHint')}
             actions={
               isMcp && detail.status === 'connected' ? (
                 <Button
                   type="button"
                   variant="link"
                   size="sm"
-                  className="-mr-3"
+                  className="-mr-2.5"
                   loading={refreshing}
                   onClick={() => {
                     setRefreshing(true);
@@ -694,31 +769,168 @@ function AccountSection({
           {detail.tools.map((tool) => (
             <div key={tool.id} className="flex flex-col gap-2">
               <SectionHeader
-                as="h4"
+                as="h5"
                 size="xs"
-                title={tool.display_name}
+                title={toolTitle(tool, detail)}
                 actions={<ToolSwitch tool={tool} onToggle={onToggleTool} />}
               />
-              {canSwitchWrites && tool.name === 'mcp_tool' && (
-                <WritesSwitch detail={detail} onSwitch={onSwitchWrites} />
-              )}
               <ToolPermissions
                 connectionId={detail.id}
                 tool={tool}
+                groupHeadingAs="h6"
                 variant="subtle"
-              />
+              >
+                {canSwitchWrites && tool.name === 'mcp_tool' ? (
+                  <WritesSwitch detail={detail} onSwitch={onSwitchWrites} />
+                ) : null}
+              </ToolPermissions>
             </div>
           ))}
         </section>
       )}
-    </div>
+    </>
+  );
+}
+
+/**
+ * One service in the drawer (the connector, or a part of it such as Jira &
+ * Confluence under Confluence): a header row with "Connect another account",
+ * every account as a row, then the shown account's knowledge and tools.
+ * Each service is the same section, so a part never reads as a subsection
+ * of the parent's account.
+ */
+function ServiceSection({
+  service,
+  heading,
+  description,
+  accounts,
+  picked,
+  onPick,
+  onConnect,
+  ...handlers
+}: {
+  service: ConnectorDefinition;
+  heading: string;
+  /** A part's own description; the parent's is in the panel header. */
+  description?: string;
+  accounts: ConnectionDetail[];
+  picked: string | undefined;
+  onPick: (id: string) => void;
+  onConnect: () => void;
+} & AccountHandlers) {
+  const { t } = useTranslation();
+  const problem = useProblem();
+  const shown = shownAccount(accounts, picked);
+  const selectable = accounts.length > 1;
+
+  return (
+    <section className="flex flex-col gap-6">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1">
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={heading}
+            actions={
+              service.available && accounts.length > 0 ? (
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  className="-mr-2.5"
+                  onClick={onConnect}
+                >
+                  <Plus />
+                  {t('settings.connectors.detail.connectAnother')}
+                </Button>
+              ) : undefined
+            }
+          />
+          {description && (
+            <p className="text-muted-foreground text-sm">{description}</p>
+          )}
+        </div>
+        {accounts.length === 0 ? (
+          service.needs_setup ? (
+            <ConnectorSetupNotice connector={service} />
+          ) : (
+            <EmptyState
+              size="xs"
+              illustration="none"
+              title={t('settings.connectors.detail.noAccounts')}
+              action={
+                service.available ? (
+                  <Button type="button" shape="pill" onClick={onConnect}>
+                    {t('settings.connectors.status.connect')}
+                  </Button>
+                ) : undefined
+              }
+            />
+          )
+        ) : (
+          <Card variant="subtle" padding="none" className="overflow-hidden">
+            <ListRows>
+              {accounts.map((account) => (
+                <AccountRow
+                  key={account.id}
+                  detail={account}
+                  selectable={selectable}
+                  selected={account.id === shown?.id}
+                  onSelect={() => onPick(account.id)}
+                  onReconnect={handlers.onReconnect}
+                  onDisconnect={handlers.onDisconnect}
+                  onRemove={handlers.onRemove}
+                  onRename={handlers.onRename}
+                />
+              ))}
+            </ListRows>
+          </Card>
+        )}
+        {/* An expired or failing sign-in gets its own box under the list,
+            with room to say what happened at any width. */}
+        {shown && connectionNeedsSignIn(shown) && (
+          <Alert variant="warning">
+            {/* The provider's own message stays on hover, for debugging. */}
+            <AlertDescription title={shown.last_error ?? undefined}>
+              {problem(shown)}
+            </AlertDescription>
+            <div className="mt-2">
+              <Button
+                type="button"
+                size="sm"
+                shape="pill"
+                variant="outline"
+                onClick={() => handlers.onReconnect(shown)}
+              >
+                <RefreshCw />
+                {t('settings.connectors.status.reconnect')}
+              </Button>
+            </div>
+          </Alert>
+        )}
+      </div>
+      {shown && (
+        <AccountContent
+          key={shown.id}
+          connector={service}
+          detail={shown}
+          onSyncMore={handlers.onSyncMore}
+          onRefreshTools={handlers.onRefreshTools}
+          onToggleTool={handlers.onToggleTool}
+          onSyncNow={handlers.onSyncNow}
+          onAddTools={handlers.onAddTools}
+          onSwitchWrites={handlers.onSwitchWrites}
+        />
+      )}
+    </section>
   );
 }
 
 /**
  * Everything about one connector: its accounts, the sources each syncs and
  * the tools each provides, with their permissions. Opens from a Connectors
- * page card.
+ * page card; `/settings/connectors?connector=<key>&connection=<id>` opens it
+ * on one account.
  */
 export default function ConnectionDrawer({
   connector,
@@ -739,9 +951,15 @@ export default function ConnectionDrawer({
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
   const connections = useSelector(selectConnections);
-  const [details, setDetails] = useState<ConnectionDetail[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const listLoaded = useSelector(selectConnectorsLoaded);
+  const listFailed = useSelector(selectConnectorsFailed);
+  // The details belong to the connector they were loaded for, so opening
+  // another one never shows the last one's accounts (or none) meanwhile.
+  const [loaded, setLoaded] = useState<{
+    key: string;
+    details: ConnectionDetail[];
+  } | null>(null);
+  const [failedKey, setFailedKey] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [toDisconnect, setToDisconnect] = useState<ConnectionDetail | null>(
     null,
@@ -766,61 +984,45 @@ export default function ConnectionDrawer({
     .join(',');
 
   useEffect(() => {
-    if (!connector) return;
+    // Until the connections list is in, "no account" would be a guess.
+    if (!connector || !listLoaded) return;
+    const key = connector.key;
     const ids = accountIds
       ? accountIds.split(',').map((entry) => entry.split(':')[0])
       : [];
     let cancelled = false;
-    setLoading(true);
-    setFailed(false);
+    setFailedKey(null);
     Promise.all(ids.map((id) => connectorsService.getConnection(id, token)))
       .then((responses) => {
         if (cancelled) return;
         if (responses.some((response) => !response?.success)) {
-          setFailed(true);
+          setFailedKey(key);
           return;
         }
-        setDetails(responses.map((response) => response.connection));
+        setLoaded({
+          key,
+          details: responses.map((response) => response.connection),
+        });
       })
-      .catch(() => !cancelled && setFailed(true))
-      .finally(() => !cancelled && setLoading(false));
+      .catch(() => !cancelled && setFailedKey(key));
     return () => {
       cancelled = true;
     };
-  }, [connector, accountIds, token, reloadKey]);
+  }, [connector, listLoaded, accountIds, token, reloadKey]);
 
   const refresh = useCallback(() => {
     dispatch(loadConnectors({ token }));
     setReloadKey((key) => key + 1);
   }, [dispatch, token]);
 
-  const confirmDisconnect = () => {
-    if (!toDisconnect) return;
-    connectorsService
-      .disconnect(toDisconnect.id, token)
-      .then((data) => {
-        if (!data?.success) throw new Error('disconnect failed');
-      })
-      .catch(() =>
-        dispatch(
-          showActionToast({
-            variant: 'destructive',
-            message: t('settings.connectors.disconnect.failed'),
-          }),
-        ),
-      )
-      .finally(() => {
-        setToDisconnect(null);
-        refresh();
-      });
-  };
+  const serviceOf = (detail: ConnectionDetail) =>
+    parts.find((part) => part.key === detail.connector_key) ?? connector;
 
   const reconnect = (detail: ConnectionDetail) => {
     if (!connector) return;
     // A part's account (Jira & Confluence under Confluence) reconnects
     // through its own connector.
-    const target =
-      parts.find((part) => part.key === detail.connector_key) ?? connector;
+    const target = serviceOf(detail) ?? connector;
     const mcpTool = detail.tools.find((tool) => tool.name === 'mcp_tool');
     onConnect(target, {
       mode: 'reconnect',
@@ -884,25 +1086,24 @@ export default function ConnectionDrawer({
     }
   };
 
+  const serviceName = (detail: ConnectionDetail) => {
+    const service = serviceOf(detail);
+    return service ? connectorName(t, service) : detail.name;
+  };
+
   const addTools = async (detail: ConnectionDetail) => {
     const data = await connectorsService
       .setup(detail.id, { create_tools: true }, token)
       .catch(() => null);
-    if (!data?.success) {
-      dispatch(
-        showActionToast({
-          variant: 'destructive',
-          message:
-            data?.code === 'tools_unavailable'
-              ? t('settings.connectors.wizard.toolsUnavailable', {
-                  name: connector ? connectorName(t, connector) : detail.name,
-                  interpolation: { escapeValue: false },
-                })
-              : t('settings.connectors.detail.addToolsFailed'),
-        }),
-      );
-    }
+    // Reloaded either way: a rejected sign-in flags the account to reconnect.
     refresh();
+    if (data?.success) return null;
+    return data?.code === 'tools_unavailable'
+      ? t('settings.connectors.detail.toolsUnavailable', {
+          name: serviceName(detail),
+          interpolation: { escapeValue: false },
+        })
+      : t('settings.connectors.detail.addToolsFailed');
   };
 
   const switchWrites = async (detail: ConnectionDetail, allow: boolean) => {
@@ -918,7 +1119,7 @@ export default function ConnectionDrawer({
               ? t('settings.connectors.github.writesForbidden')
               : data?.code === 'tools_unavailable'
                 ? t('settings.connectors.wizard.toolsUnavailable', {
-                    name: connector ? connectorName(t, connector) : detail.name,
+                    name: serviceName(detail),
                     interpolation: { escapeValue: false },
                   })
                 : t('settings.connectors.github.writesFailed'),
@@ -951,239 +1152,126 @@ export default function ConnectionDrawer({
 
   if (!connector) return null;
   const name = connectorName(t, connector);
-  const ownDetails = details.filter(
-    (detail) => detail.connector_key === connector.key,
+  const ready = loaded?.key === connector.key;
+  const failed = failedKey === connector.key || (!listLoaded && listFailed);
+  const details = ready ? loaded.details : [];
+  // What the service does, all its parts included, once in the header.
+  const capabilities = Array.from(
+    new Set<Capability>(
+      [connector, ...parts].flatMap((service) => service.capabilities),
+    ),
   );
+
+  const handlers: AccountHandlers = {
+    onReconnect: reconnect,
+    onDisconnect: setToDisconnect,
+    onRemove: setToRemove,
+    onRename: setToRename,
+    onSyncMore: (detail) => {
+      const service = serviceOf(detail);
+      if (service)
+        onConnect(service, { mode: 'sync', connectionId: detail.id });
+    },
+    onRefreshTools: refreshTools,
+    onToggleTool: toggleTool,
+    onSyncNow: syncNow,
+    onAddTools: addTools,
+    onSwitchWrites: switchWrites,
+  };
+
+  const sections = [connector, ...parts]
+    .map((service) => ({
+      service,
+      accounts: details.filter(
+        (detail) => detail.connector_key === service.key,
+      ),
+    }))
+    // A service that still needs admin setup and has no account says so in
+    // its setup notice; an empty "Accounts" under it would be a dead end.
+    .filter(
+      ({ service, accounts }) =>
+        !(service === connector && service.needs_setup && !accounts.length),
+    )
+    .map(({ service, accounts }) => (
+      <ServiceSection
+        key={service.key}
+        service={service}
+        // With parts, each service is headed by its own name.
+        heading={
+          parts.length > 0
+            ? connectorName(t, service)
+            : t('settings.connectors.detail.accounts')
+        }
+        description={
+          service === connector ? undefined : connectorDescription(t, service)
+        }
+        accounts={accounts}
+        picked={pickedIn(service.key, accounts)}
+        onPick={(id) => setPicked((state) => ({ ...state, [service.key]: id }))}
+        onConnect={() => onConnect(service)}
+        {...handlers}
+      />
+    ));
 
   return (
     <>
-      <Sheet open onOpenChange={(open) => !open && onClose()}>
-        <SheetContent
-          side="right"
-          size="detail"
-          closeLabel={t('agents.close')}
-          className="overflow-y-auto"
+      <SidePanel open onOpenChange={(open) => !open && onClose()}>
+        <PanelHeader
+          title={name}
+          description={connectorDescription(t, connector)}
+          leading={
+            <Avatar size="xl" shape="square" variant="icon">
+              <ConnectorIcon icon={connector.icon} className="size-7" />
+            </Avatar>
+          }
         >
-          <div className="flex flex-col gap-6 p-6">
-            {/* pr-12 keeps the header clear of the close X. */}
-            <div className="flex items-center gap-4 pr-12">
-              <span className="bg-muted flex size-12 shrink-0 items-center justify-center rounded-xl">
-                <ConnectorIcon icon={connector.icon} className="size-7" />
-              </span>
-              <SheetTitle className="min-w-0 truncate">{name}</SheetTitle>
-            </div>
-            <SheetDescription>
-              {connectorDescription(t, connector)}
-            </SheetDescription>
-            <CapabilityBadges capabilities={connector.capabilities} />
+          {capabilities.length > 0 && (
+            <CapabilityBadges capabilities={capabilities} />
+          )}
+        </PanelHeader>
+        <PanelBody>
+          {connector.publisher === 'custom' && (
+            <Alert variant="warning" role="note">
+              <AlertDescription>
+                {t('settings.connectors.unverified')}
+              </AlertDescription>
+            </Alert>
+          )}
 
-            {connector.publisher === 'custom' && (
-              <Alert variant="warning" role="note">
-                <TriangleAlert />
-                <AlertDescription>
-                  {t('settings.connectors.unverified')}
-                </AlertDescription>
-              </Alert>
-            )}
+          {connector.needs_setup && (
+            <ConnectorSetupNotice connector={connector} />
+          )}
 
-            {connector.needs_setup && (
-              <ConnectorSetupNotice connector={connector} />
-            )}
-
-            <section className="flex flex-col gap-3">
-              <SectionHeader
-                as="h3"
-                size="xs"
-                title={t('settings.connectors.detail.accounts')}
-                actions={
-                  connector.available && ownDetails.length > 0 ? (
-                    <Button
-                      type="button"
-                      variant="link"
-                      size="sm"
-                      className="-mr-3"
-                      onClick={() => onConnect(connector)}
-                    >
-                      <Plus />
-                      {t('settings.connectors.detail.connectAnother')}
-                    </Button>
-                  ) : undefined
-                }
-              />
-              {loading && details.length === 0 ? (
-                <LoadingState fill="block" />
-              ) : failed ? (
-                <EmptyState
-                  tone="destructive"
-                  size="sm"
-                  illustration="none"
-                  title={t('settings.connectors.detail.failed')}
-                  action={
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      shape="pill"
-                      onClick={() => setReloadKey((key) => key + 1)}
-                    >
-                      {t('retry')}
-                    </Button>
-                  }
-                />
-              ) : ownDetails.length === 0 ? (
-                <EmptyState
-                  size="xs"
-                  illustration="none"
-                  title={t('settings.connectors.detail.noAccounts')}
-                  action={
-                    connector.available ? (
-                      <Button
-                        type="button"
-                        shape="pill"
-                        onClick={() => onConnect(connector)}
-                      >
-                        {t('settings.connectors.status.connect')}
-                      </Button>
-                    ) : undefined
-                  }
-                />
-              ) : (
-                <div className="flex flex-col gap-6">
-                  {ownDetails.length > 1 && (
-                    <AccountPicker
-                      accounts={ownDetails}
-                      value={
-                        shownAccount(
-                          ownDetails,
-                          pickedIn(connector.key, ownDetails),
-                        )!.id
-                      }
-                      onChange={(id) =>
-                        setPicked((state) => ({
-                          ...state,
-                          [connector.key]: id,
-                        }))
-                      }
-                    />
-                  )}
-                  {[
-                    shownAccount(
-                      ownDetails,
-                      pickedIn(connector.key, ownDetails),
-                    )!,
-                  ].map((detail) => (
-                    <AccountSection
-                      key={detail.id}
-                      connector={connector}
-                      detail={detail}
-                      onReconnect={reconnect}
-                      onDisconnect={setToDisconnect}
-                      onRemove={setToRemove}
-                      onRename={setToRename}
-                      onSyncMore={(d) =>
-                        onConnect(connector, {
-                          mode: 'sync',
-                          connectionId: d.id,
-                        })
-                      }
-                      onRefreshTools={refreshTools}
-                      onToggleTool={toggleTool}
-                      onSyncNow={syncNow}
-                      onAddTools={addTools}
-                      onSwitchWrites={switchWrites}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
-
-            {parts.map((part) => {
-              const partDetails = details.filter(
-                (detail) => detail.connector_key === part.key,
-              );
-              return (
-                <section key={part.key} className="flex flex-col gap-3">
-                  <SectionHeader
-                    as="h3"
-                    size="xs"
-                    title={connectorName(t, part)}
-                    description={connectorDescription(t, part)}
-                    actions={
-                      part.available && partDetails.length === 0 ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          shape="pill"
-                          onClick={() => onConnect(part)}
-                        >
-                          {t('settings.connectors.status.connect')}
-                        </Button>
-                      ) : undefined
-                    }
-                  />
-                  <CapabilityBadges capabilities={part.capabilities} />
-                  {partDetails.length > 1 && (
-                    <AccountPicker
-                      accounts={partDetails}
-                      value={
-                        shownAccount(
-                          partDetails,
-                          pickedIn(part.key, partDetails),
-                        )!.id
-                      }
-                      onChange={(id) =>
-                        setPicked((state) => ({ ...state, [part.key]: id }))
-                      }
-                    />
-                  )}
-                  {partDetails
-                    .filter(
-                      (detail) =>
-                        detail.id ===
-                        shownAccount(
-                          partDetails,
-                          pickedIn(part.key, partDetails),
-                        )?.id,
-                    )
-                    .map((detail) => (
-                      <AccountSection
-                        key={detail.id}
-                        connector={part}
-                        detail={detail}
-                        onReconnect={reconnect}
-                        onDisconnect={setToDisconnect}
-                        onRemove={setToRemove}
-                        onRename={setToRename}
-                        onSyncMore={(d) =>
-                          onConnect(part, { mode: 'sync', connectionId: d.id })
-                        }
-                        onRefreshTools={refreshTools}
-                        onToggleTool={toggleTool}
-                        onSyncNow={syncNow}
-                        onAddTools={addTools}
-                        onSwitchWrites={switchWrites}
-                      />
-                    ))}
-                </section>
-              );
-            })}
-          </div>
-        </SheetContent>
-      </Sheet>
-      <ConfirmationModal
-        message={t('settings.connectors.disconnect.title', {
-          name,
-          interpolation: { escapeValue: false },
-        })}
-        description={t('settings.connectors.disconnect.body', {
-          count: toDisconnect?.source_count ?? 0,
-          formatted: formatCount(toDisconnect?.source_count ?? 0),
-        })}
-        modalState={toDisconnect ? 'ACTIVE' : 'INACTIVE'}
-        setModalState={(state) => state === 'INACTIVE' && setToDisconnect(null)}
-        handleSubmit={confirmDisconnect}
-        submitLabel={t('settings.connectors.detail.disconnect')}
-        variant="destructive"
-      />
+          {failed ? (
+            <EmptyState
+              tone="destructive"
+              size="sm"
+              illustration="none"
+              title={t('settings.connectors.detail.failed')}
+              onRetry={refresh}
+            />
+          ) : !ready ? (
+            <LoadingState fill="block" />
+          ) : (
+            sections.flatMap((section, index) =>
+              index === 0
+                ? [section]
+                : [<Separator key={`rule-${section.key}`} />, section],
+            )
+          )}
+        </PanelBody>
+      </SidePanel>
+      {toDisconnect && (
+        <DisconnectConnectionModal
+          detail={toDisconnect}
+          name={confirmName(toDisconnect, serviceName(toDisconnect))}
+          onClose={() => setToDisconnect(null)}
+          onDisconnected={() => {
+            setToDisconnect(null);
+            refresh();
+          }}
+        />
+      )}
       {toRename && (
         <RenameAccountModal
           detail={toRename}
@@ -1197,7 +1285,7 @@ export default function ConnectionDrawer({
       {toRemove && (
         <RemoveConnectionModal
           detail={toRemove}
-          name={name}
+          name={confirmName(toRemove, serviceName(toRemove))}
           onClose={() => setToRemove(null)}
           onRemoved={() => {
             setToRemove(null);

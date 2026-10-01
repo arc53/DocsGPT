@@ -83,6 +83,20 @@ describe('WorkflowPreview execution sections', () => {
     expect(toggle.querySelector('p')).toBeNull();
   });
 
+  it('opens the steps in a Collapsible on the answer column', async () => {
+    await renderDetails(false);
+    const toggle = container.querySelector<HTMLButtonElement>('button')!;
+    const body = container.querySelector<HTMLElement>(
+      '[data-slot="collapsible"]',
+    )!;
+    expect(body).not.toBeNull();
+    expect(toggle.getAttribute('aria-controls')).toBe(body.id);
+    expect(body.dataset.state).toBe('closed');
+    expect(body.className).toContain('ml-6');
+    await renderDetails(true);
+    expect(body.dataset.state).toBe('open');
+  });
+
   it('draws each step as a subtle panel with its output in a filled well', async () => {
     await renderDetails();
     const step = container.querySelector<HTMLElement>(

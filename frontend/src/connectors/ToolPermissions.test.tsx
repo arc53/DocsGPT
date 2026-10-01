@@ -1,5 +1,5 @@
 import { configureStore } from '@reduxjs/toolkit';
-import { act } from 'react';
+import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Provider } from 'react-redux';
 
@@ -19,6 +19,12 @@ vi.mock('../api/services/connectorsService', () => ({ default: connectors }));
 import actionToastReducer from '../notifications/actionToastSlice';
 import ToolPermissions from './ToolPermissions';
 import type { ActionParameter, ConnectionTool } from './types';
+
+/** A heading as "title [count]": SectionHeader draws the count in its own span. */
+const titleWithCount = (h: Element | null | undefined) =>
+  h
+    ? `${h.firstChild?.textContent} [${h.querySelector('[data-slot="count"]')?.textContent}]`
+    : undefined;
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -83,12 +89,22 @@ describe('ToolPermissions', () => {
     container.remove();
   });
 
-  const render = async (value: ConnectionTool) => {
+  const render = async (
+    value: ConnectionTool,
+    children?: ReactNode,
+    groupHeadingAs?: 'h4' | 'h5' | 'h6',
+  ) => {
     const s = store();
     await act(async () => {
       root.render(
         <Provider store={s}>
-          <ToolPermissions connectionId="conn-1" tool={value} />
+          <ToolPermissions
+            connectionId="conn-1"
+            tool={value}
+            groupHeadingAs={groupHeadingAs}
+          >
+            {children}
+          </ToolPermissions>
         </Provider>,
       );
     });
@@ -100,6 +116,63 @@ describe('ToolPermissions', () => {
     group(access).querySelector<HTMLButtonElement>(
       `[data-permission="${permission}"]`,
     )!;
+  const customize = async (access: 'read' | 'write') =>
+    act(async () => choice(access, 'customize').click());
+  const rowSelect = (label: string) =>
+    Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="select-trigger"]'),
+    ).find(
+      (el) =>
+        el
+          .getAttribute('aria-label')
+          ?.startsWith('settings.connectors.permission.label') &&
+        el.closest('li')?.textContent?.includes(label),
+    );
+
+  it('titles each group with its count, not an eyebrow', async () => {
+    await render(
+      tool([
+        action('get_issue', 'read', 'always'),
+        action('b', 'write', 'ask'),
+      ]),
+    );
+    const titles = Array.from(container.querySelectorAll('h4')).map(
+      titleWithCount,
+    );
+    expect(titles).toEqual([
+      'settings.connectors.capabilityPlain.read [1]',
+      'settings.connectors.capabilityPlain.write [1]',
+    ]);
+    expect(container.querySelector('h4')?.className).not.toContain('uppercase');
+    expect(container.textContent).not.toContain(
+      'settings.connectors.permission.actionCount',
+    );
+  });
+
+  it('takes the heading level of the surface it sits in', async () => {
+    await render(tool([action('b', 'write', 'ask')]), undefined, 'h6');
+    expect(container.querySelector('h4')).toBeNull();
+    expect(titleWithCount(container.querySelector('h6'))).toBe(
+      'settings.connectors.capabilityPlain.write [1]',
+    );
+  });
+
+  it('opens the parameters with a toggle named for its action', async () => {
+    await render(
+      tool([
+        action('telegram_send_message', 'write', 'ask', [param('text', false)]),
+      ]),
+    );
+    await customize('write');
+    const toggle = button('settings.connectors.parameters.show');
+    expect(toggle.getAttribute('aria-label')).toBe(
+      'settings.connectors.parameters.showFor',
+    );
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    await act(async () => toggle.click());
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(container.querySelector('[data-parameter="text"]')).not.toBeNull();
+  });
 
   it('sets every read at once', async () => {
     await render(tool([...MANY_READS, action('create_issue', 'write', 'ask')]));
@@ -115,30 +188,96 @@ describe('ToolPermissions', () => {
     expect(choice('write', 'ask').getAttribute('data-state')).toBe('on');
   });
 
-  it('shows no group choice when its actions differ', async () => {
+  it('presses Customize and lists each action when they differ', async () => {
     await render(
-      tool([action('a', 'write', 'ask'), action('b', 'write', 'always')]),
+      tool([
+        action('a_one', 'write', 'ask'),
+        action('b_one', 'write', 'always'),
+      ]),
     );
     for (const permission of ['always', 'ask', 'off'])
       expect(choice('write', permission).getAttribute('data-state')).toBe(
         'off',
       );
+    expect(choice('write', 'customize').getAttribute('data-state')).toBe('on');
+    expect(rowSelect('A one')?.textContent).toBe(
+      'settings.connectors.permission.ask',
+    );
+    expect(rowSelect('B one')?.textContent).toBe(
+      'settings.connectors.permission.always',
+    );
   });
 
-  it('keeps a long list folded, then lists actions in words with what they do', async () => {
-    await render(tool(MANY_READS));
-    expect(container.textContent).not.toContain('Get issue 0');
-    const customize = Array.from(container.querySelectorAll('button')).find(
-      (b) =>
-        b.textContent?.startsWith('settings.connectors.permission.customize'),
-    )!;
-    await act(async () => customize.click());
-    expect(container.textContent).toContain('Get issue 0');
-    expect(container.textContent).toContain('Does get_issue_0.');
+  it('folds the actions until Customize, whatever the length', async () => {
+    await render(tool([action('get_issue', 'read', 'always')]));
+    expect(container.textContent).not.toContain('Get issue');
+    expect(choice('read', 'always').getAttribute('data-state')).toBe('on');
+    await customize('read');
+    expect(choice('read', 'customize').getAttribute('data-state')).toBe('on');
+    expect(choice('read', 'always').getAttribute('data-state')).toBe('off');
+    expect(container.textContent).toContain('Get issue');
+    expect(container.textContent).toContain('Does get_issue.');
+    // No separate fold link: the group choice folds them again.
+    expect(
+      Array.from(container.querySelectorAll('button')).some((b) =>
+        b.textContent?.includes('settings.connectors.permission.fold'),
+      ),
+    ).toBe(false);
+    await act(async () => choice('read', 'always').click());
+    expect(container.textContent).not.toContain('Get issue');
+    // It already was: nothing to save.
+    expect(connectors.setToolPermissions).not.toHaveBeenCalled();
+  });
+
+  it('keeps the actions open after one row changes', async () => {
+    await render(
+      tool([
+        action('a_one', 'write', 'ask'),
+        action('b_one', 'write', 'always'),
+      ]),
+    );
+    const trigger = rowSelect('B one')!;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          button: 0,
+          pointerType: 'mouse',
+        }),
+      );
+    });
+    const ask = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="option"]'),
+    ).find((o) => o.textContent === 'settings.connectors.permission.ask')!;
+    await act(async () => ask.click());
+    expect(connectors.setToolPermissions).toHaveBeenCalledWith(
+      'conn-1',
+      'tool-1',
+      { b_one: 'ask' },
+      null,
+    );
+    // Both agree now, but the rows the user is editing stay.
+    expect(choice('write', 'customize').getAttribute('data-state')).toBe('on');
+    expect(container.textContent).toContain('B one');
+  });
+
+  it('renders what it is given inside its card, above the groups', async () => {
+    await render(
+      tool([action('create_issue', 'write', 'ask')]),
+      <p data-testid="extra">Extra row</p>,
+    );
+    const extra = container.querySelector('[data-testid="extra"]')!;
+    const card = container.querySelector('[data-slot="card"]')!;
+    expect(card.contains(extra)).toBe(true);
+    expect(
+      extra.compareDocumentPosition(group('write')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('follows the tool when its actions change', async () => {
     await render(tool([action('old_one', 'read', 'always')]));
+    await customize('read');
     await render(tool([action('new_one', 'read', 'always')]));
     expect(container.textContent).toContain('New one');
     expect(container.textContent).not.toContain('Old one');
@@ -166,6 +305,7 @@ describe('ToolPermissions', () => {
         ]),
       ]),
     );
+    await customize('write');
     expect(container.textContent).toContain(
       'settings.connectors.parameters.fixedCount:1',
     );
@@ -186,6 +326,7 @@ describe('ToolPermissions', () => {
       ]),
     });
     await render(tool([send]));
+    await customize('write');
     await act(async () =>
       button('settings.connectors.parameters.show').click(),
     );
@@ -224,6 +365,7 @@ describe('ToolPermissions', () => {
         ]),
       ]),
     );
+    await customize('write');
     await act(async () =>
       button('settings.connectors.parameters.show').click(),
     );
@@ -251,6 +393,7 @@ describe('ToolPermissions', () => {
         ]),
       ]),
     );
+    await customize('write');
     await act(async () =>
       button('settings.connectors.parameters.show').click(),
     );
@@ -263,9 +406,9 @@ describe('ToolPermissions', () => {
     expect(row.querySelector('[data-mode]')).toBeNull();
   });
 
-  it('says what Ask first means outside chat', async () => {
+  it('leaves the explanation to the drawer: no footnote in the card', async () => {
     await render(tool([action('create_issue', 'write', 'ask')]));
-    expect(container.textContent).toContain(
+    expect(container.textContent).not.toContain(
       'settings.connectors.permission.hint',
     );
   });

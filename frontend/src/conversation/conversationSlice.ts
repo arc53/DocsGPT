@@ -6,13 +6,17 @@ import {
   PayloadAction,
 } from '@reduxjs/toolkit';
 
+import type { Agent } from '../agents/types';
 import conversationService from '../api/services/conversationService';
 import {
   sseEventReceived,
   type SSEEvent,
 } from '../notifications/notificationsSlice';
 import { getConversations } from '../preferences/preferenceApi';
-import { setConversations } from '../preferences/preferenceSlice';
+import {
+  receiveConversations,
+  setSelectedAgent,
+} from '../preferences/preferenceSlice';
 import type { RootState } from '../store';
 import {
   clearAttachments,
@@ -155,12 +159,29 @@ export type LoadConversationResult = {
   stale: boolean;
 };
 
+// The fields of a loaded chat that say which agent it belongs to.
+export type ConversationAgentFields = {
+  agent_id?: string | null;
+  is_shared_usage?: boolean;
+  shared_token?: string | null;
+};
+
+export type LoadConversationArgs = {
+  id: string;
+  force?: boolean;
+  // The chat's agent (null for none), awaited before anything is applied
+  // so its messages and agent card change in one render. Without it the
+  // selected agent is left alone.
+  resolveAgent?: (data: ConversationAgentFields) => Promise<Agent | null>;
+};
+
 let loadSeq = 0;
 
 export const loadConversation = createAsyncThunk<
   LoadConversationResult,
-  { id: string; force?: boolean }
->('loadConversation', async ({ id, force }, { dispatch, getState }) => {
+  LoadConversationArgs
+>('loadConversation', async (args, { dispatch, getState }) => {
+  const { id, force, resolveAgent } = args;
   const seq = ++loadSeq;
   const state = getState() as RootState;
   const token = state.preference.token;
@@ -173,6 +194,15 @@ export const loadConversation = createAsyncThunk<
   }
   const data = await response.json();
   if (!data) return { data: null, stale: false };
+  let agent: Agent | null | undefined;
+  try {
+    agent = resolveAgent ? await resolveAgent(data) : undefined;
+  } catch (error) {
+    // A superseded load must not reject: its caller would navigate away
+    // from the newer chat.
+    if (seq !== loadSeq) return { data: null, stale: true };
+    throw error;
+  }
 
   // A later loadConversation has been issued; drop our writes so its
   // result wins, and tell the caller not to navigate off our return.
@@ -181,6 +211,7 @@ export const loadConversation = createAsyncThunk<
   }
 
   const mappedQueries = (data.queries || []).map(mapServerQueryToClient);
+  if (agent !== undefined) dispatch(setSelectedAgent(agent));
   dispatch(conversationSlice.actions.setConversation(mappedQueries));
   dispatch(
     conversationSlice.actions.updateConversationId({
@@ -278,7 +309,7 @@ export const fetchAnswer = createAsyncThunk<
               dispatch(conversationSlice.actions.setStatus('idle'));
               getConversations(state.preference.token)
                 .then((fetchedConversations) => {
-                  dispatch(setConversations(fetchedConversations));
+                  dispatch(receiveConversations(fetchedConversations));
                 })
                 .catch((error) => {
                   console.error('Failed to fetch conversations: ', error);
@@ -423,7 +454,7 @@ export const fetchAnswer = createAsyncThunk<
               }
               getConversations(state.preference.token)
                 .then((fetchedConversations) => {
-                  dispatch(setConversations(fetchedConversations));
+                  dispatch(receiveConversations(fetchedConversations));
                 })
                 .catch((error) => {
                   console.error('Failed to fetch conversations: ', error);
@@ -625,7 +656,7 @@ export const fetchAnswer = createAsyncThunk<
         );
         getConversations(state.preference.token)
           .then((fetchedConversations) => {
-            dispatch(setConversations(fetchedConversations));
+            dispatch(receiveConversations(fetchedConversations));
           })
           .catch((error) => {
             console.error('Failed to fetch conversations: ', error);
@@ -757,7 +788,7 @@ export const submitToolActions = createAsyncThunk<
         dispatch(conversationSlice.actions.setStatus('idle'));
         getConversations(state.preference.token)
           .then((fetchedConversations) => {
-            dispatch(setConversations(fetchedConversations));
+            dispatch(receiveConversations(fetchedConversations));
           })
           .catch((error) => {
             console.error('Failed to fetch conversations: ', error);
@@ -1285,7 +1316,7 @@ conversationListenerMiddleware.startListening({
     // Refresh sidebar; server reorders by updated_at which just bumped.
     try {
       const fetched = await getConversations(token);
-      listenerApi.dispatch(setConversations(fetched));
+      listenerApi.dispatch(receiveConversations(fetched));
     } catch (error) {
       console.error(
         'schedule.message.appended: conversations refresh failed',

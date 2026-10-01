@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+const service = vi.hoisted(() => ({ remove: vi.fn() }));
+vi.mock('../../api/services/schedulesService', () => ({ default: service }));
 
 import {
   sseEventReceived,
@@ -7,6 +10,10 @@ import {
 import type { Schedule, ScheduleRun } from '../types/schedule';
 import reducer, {
   applyEvent,
+  deleteSchedule,
+  loadRunsForSchedule,
+  RUNS_PAGE_SIZE,
+  selectRunsEnd,
   selectRunsForSchedule,
   selectSchedulesForAgent,
   type SchedulesState,
@@ -276,5 +283,63 @@ describe('selectSchedulesForAgent', () => {
     expect(selectSchedulesForAgent(state, 'missing')).toBe(
       selectSchedulesForAgent(state, 'missing'),
     );
+  });
+});
+
+describe('loadRunsForSchedule paging', () => {
+  const wrap = (schedules: SchedulesState) => ({ schedules });
+  const fulfilled = (
+    runs: ScheduleRun[],
+    offset: number,
+    limit = RUNS_PAGE_SIZE,
+  ) => ({
+    type: loadRunsForSchedule.fulfilled.type,
+    payload: { scheduleId: 'sched-1', runs, offset, limit },
+  });
+  const runs = (from: number, n: number) =>
+    Array.from({ length: n }, (_, i) => sampleRun({ id: `run-${from + i}` }));
+
+  it('the first page replaces the list; a full page is not the end', () => {
+    const state = reducer(undefined, fulfilled(runs(0, RUNS_PAGE_SIZE), 0));
+    expect(state.runsBySchedule['sched-1']).toHaveLength(RUNS_PAGE_SIZE);
+    expect(selectRunsEnd(wrap(state), 'sched-1')).toBe(false);
+  });
+
+  it('an older page appends, skipping runs already listed', () => {
+    let state = reducer(undefined, fulfilled(runs(0, RUNS_PAGE_SIZE), 0));
+    // A run that arrived over SSE shifted the window by one.
+    state = reducer(
+      state,
+      fulfilled(runs(RUNS_PAGE_SIZE - 1, 10), RUNS_PAGE_SIZE),
+    );
+    const ids = state.runsBySchedule['sched-1'].map((r) => r.id);
+    expect(ids).toHaveLength(RUNS_PAGE_SIZE + 9);
+    expect(new Set(ids).size).toBe(ids.length);
+    // Shorter than a page: there are no older runs.
+    expect(selectRunsEnd(wrap(state), 'sched-1')).toBe(true);
+  });
+});
+
+// A refused delete rejects, so the row stays and the confirm shows the error.
+describe('deleteSchedule', () => {
+  const run = (result: unknown) => {
+    service.remove.mockResolvedValue(result);
+    const dispatch = vi.fn();
+    return deleteSchedule({ id: 'sched-1', token: null })(
+      dispatch,
+      () => ({}),
+      undefined,
+    );
+  };
+
+  it('fulfils with the id when the server deletes it', async () => {
+    const action = await run({ success: true });
+    expect(action.type).toBe(deleteSchedule.fulfilled.type);
+    expect(action.payload).toBe('sched-1');
+  });
+
+  it('rejects when the server refuses the delete', async () => {
+    const action = await run({ success: false, error: 'Not allowed' });
+    expect(action.type).toBe(deleteSchedule.rejected.type);
   });
 });

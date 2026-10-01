@@ -49,6 +49,7 @@ describe('LinearPicker', () => {
   const render = async (
     value: LinearSelection = EMPTY_LINEAR_SELECTION,
     onChange = vi.fn(),
+    onReconnect?: () => void,
   ) => {
     await act(async () => {
       root.render(
@@ -57,6 +58,7 @@ describe('LinearPicker', () => {
           token={null}
           value={value}
           onChange={onChange}
+          onReconnect={onReconnect}
         />,
       );
     });
@@ -80,6 +82,48 @@ describe('LinearPicker', () => {
     expect(container.textContent).toContain('ENG');
     expect(container.textContent).toContain('Launch');
     expect(checkboxes()).toHaveLength(3);
+  });
+
+  it('lists on the modal surface and counts what is picked', async () => {
+    service.linearWorkspace.mockResolvedValue({
+      ...WORKSPACE,
+      projects: [
+        {
+          id: 'p1',
+          name: 'Launch',
+          state: 'Started',
+          teams: ['Engineering', 'Design'],
+        },
+      ],
+    });
+    await render({
+      ...EMPTY_LINEAR_SELECTION,
+      teams: [{ id: 't1', key: 'ENG', name: 'Engineering' }],
+      projects: [{ id: 'p1', name: 'Launch' }],
+    });
+    const cards = Array.from(container.querySelectorAll('[data-slot="card"]'));
+    expect(cards).toHaveLength(2);
+    for (const card of cards) {
+      expect(card.getAttribute('data-variant')).toBe('outline');
+      expect(card.className).not.toMatch(/max-h-|overflow-y-auto/);
+    }
+    expect(container.textContent).toContain('filePicker.itemsSelected:2');
+    // The project's teams as a list in the UI language.
+    expect(container.textContent).toContain('Started · Engineering, Design');
+  });
+
+  it('puts the search label on the modal surface', async () => {
+    service.linearWorkspace.mockResolvedValue({
+      ...WORKSPACE,
+      teams: Array.from({ length: 9 }, (_, n) => ({
+        id: `t${n}`,
+        key: `T${n}`,
+        name: `Team ${n}`,
+      })),
+    });
+    await render();
+    const label = container.querySelector('label')!;
+    expect(label.className).toContain('bg-card');
   });
 
   it('picks a team with what the source needs to name it', async () => {
@@ -154,10 +198,16 @@ describe('LinearPicker', () => {
       success: false,
       code: 'reconnect',
     });
-    await render();
+    const onReconnect = vi.fn();
+    await render(EMPTY_LINEAR_SELECTION, vi.fn(), onReconnect);
     expect(container.textContent).toContain(
       'settings.connectors.detail.expired',
     );
+    const reconnect = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'settings.connectors.status.reconnect',
+    )!;
+    await act(async () => reconnect.click());
+    expect(onReconnect).toHaveBeenCalled();
   });
 
   it('offers a retry when Linear did not answer', async () => {

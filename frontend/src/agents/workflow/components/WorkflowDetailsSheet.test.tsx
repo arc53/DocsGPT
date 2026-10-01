@@ -79,6 +79,18 @@ describe('WorkflowDetailsSheet', () => {
     expect(document.querySelector('[role="switch"]')).not.toBeNull();
   });
 
+  // S8: square form controls; the footer actions stay pill chrome.
+  it('draws the name and description as square default-size fields', () => {
+    render();
+    expect(nameInput().getAttribute('data-shape')).toBe('default');
+    const description = document.querySelector('textarea');
+    expect(description?.getAttribute('data-size')).toBe('default');
+    expect(description?.className).toContain('h-32');
+    expect(button('agents.form.buttons.save').getAttribute('data-shape')).toBe(
+      'pill',
+    );
+  });
+
   it('keeps Save disabled until something changes, then saves the edits', () => {
     const { onSave } = render();
     const save = button('agents.form.buttons.save');
@@ -109,5 +121,24 @@ describe('WorkflowDetailsSheet', () => {
     const alert = document.querySelector('[role="alert"]');
     expect(alert?.textContent).toContain('agents.workflow.builder.unableSave');
     expect(alert?.textContent).toContain('Workflow must have an end node');
+  });
+
+  it('sits in a side panel: fixed header with the X, one scroller, a footer', () => {
+    const { onOpenChange } = render();
+    const header = document.querySelector('[data-slot="panel-header"]')!;
+    expect(header.querySelector('[data-slot="sheet-title"]')?.textContent).toBe(
+      'agents.workflow.builder.detailsTitle',
+    );
+    expect(
+      header.querySelector('[data-slot="sheet-description"]')?.textContent,
+    ).toBe('agents.workflow.builder.detailsDescription');
+    expect(document.querySelectorAll('.overflow-y-auto')).toHaveLength(1);
+    expect(document.querySelector('.pr-12')).toBeNull();
+    act(() =>
+      header
+        .querySelector<HTMLButtonElement>('[aria-label="sidePanel.close"]')!
+        .click(),
+    );
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });

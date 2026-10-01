@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 
 
 _ALLOWED_APPROVAL_MODES = {"ask", "full"}
+_AUDIT_DEFAULT_LIMIT = 100
+_AUDIT_MAX_LIMIT = 200
 
 
 def _authed_user_id():
@@ -230,16 +232,40 @@ def delete_auto_approve_pattern(device_id: str):
     return make_response(jsonify({"success": ok}), 200)
 
 
+def _audit_page() -> tuple[int, int]:
+    """Parse ``limit`` / ``offset`` for the device audit list.
+
+    ``limit`` defaults to 100 and is clamped to 1..200; ``offset`` defaults to
+    0, and negative or non-integer values fall back to the defaults.
+
+    Returns:
+        ``(limit, offset)``.
+    """
+    try:
+        limit = int(request.args.get("limit", _AUDIT_DEFAULT_LIMIT))
+    except (TypeError, ValueError):
+        limit = _AUDIT_DEFAULT_LIMIT
+    limit = max(1, min(_AUDIT_MAX_LIMIT, limit))
+    try:
+        offset = max(0, int(request.args.get("offset", 0)))
+    except (TypeError, ValueError):
+        offset = 0
+    return limit, offset
+
+
 def list_audit(device_id: str):
     user_id = _authed_user_id()
     if not user_id:
         return make_response(jsonify({"success": False, "error": "auth"}), 401)
+    limit, offset = _audit_page()
     with db_readonly() as conn:
         if DevicesRepository(conn).get(device_id, user_id=user_id) is None:
             return make_response(
                 jsonify({"success": False, "error": "not_found"}), 404
             )
-        rows = DeviceAuditLogRepository(conn).list_for_device(device_id, user_id)
+        rows = DeviceAuditLogRepository(conn).list_for_device(
+            device_id, user_id, limit=limit, offset=offset
+        )
     # Normalize datetimes to ISO strings.
     serialized = []
     for row in rows:

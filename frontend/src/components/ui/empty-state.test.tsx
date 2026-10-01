@@ -1,7 +1,15 @@
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
 
 import { EmptyState } from './empty-state';
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 describe('EmptyState', () => {
   it('renders both theme illustrations at 128px by default', () => {
@@ -51,5 +59,50 @@ describe('EmptyState', () => {
     const html = renderToStaticMarkup(<EmptyState title="t" description="d" />);
     expect(html).toContain('text-muted-foreground mt-1 max-w-sm text-sm');
     expect(html).not.toContain('/70');
+  });
+
+  it('onRetry draws the outline sm pill Retry in the action slot', () => {
+    const onRetry = vi.fn();
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    act(() => {
+      root.render(
+        <EmptyState tone="destructive" title="Failed" onRetry={onRetry} />,
+      );
+    });
+    const button = host.querySelector<HTMLButtonElement>('button')!;
+    expect(button.textContent).toBe('retry');
+    expect(button.type).toBe('button');
+    expect(button.dataset.variant).toBe('outline');
+    expect(button.dataset.size).toBe('sm');
+    expect(button.dataset.shape).toBe('pill');
+    expect(button.parentElement!.className).toContain('mt-4');
+    act(() => button.click());
+    expect(onRetry).toHaveBeenCalledOnce();
+    act(() => root.unmount());
+    host.remove();
+  });
+
+  it('renders an action and onRetry side by side', () => {
+    const html = renderToStaticMarkup(
+      <EmptyState
+        title="Failed"
+        action={<a href="/help">Help</a>}
+        onRetry={() => undefined}
+      />,
+    );
+    expect(html).toContain('Help');
+    expect(html).toContain('>retry</button>');
+    expect(html).toContain(
+      'mt-4 flex flex-wrap items-center justify-center gap-2',
+    );
+  });
+
+  it('keeps a lone action in the plain slot', () => {
+    const html = renderToStaticMarkup(
+      <EmptyState title="t" action={<button type="button">Add</button>} />,
+    );
+    expect(html).toContain('<div class="mt-4"><button');
   });
 });

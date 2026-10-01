@@ -1,4 +1,3 @@
-import { CircleAlert, CircleCheck } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -171,8 +170,7 @@ export default function ConvertToWikiModal({
           : undefined
       }
       footer={footer}
-      size="md"
-      mobileVariant="sheet"
+      mobileVariant="dialog"
       isPerformingTask={phase === 'converting'}
     >
       <div className="flex flex-col gap-5">
@@ -194,7 +192,6 @@ export default function ConvertToWikiModal({
         {phase === 'summary' && summary && (
           <>
             <Alert variant="success">
-              <CircleCheck className="size-4" aria-hidden="true" />
               <AlertDescription>
                 {[
                   t('settings.sources.wiki.convert.summaryPages', {
@@ -211,7 +208,7 @@ export default function ConvertToWikiModal({
                 <p className="text-foreground text-sm font-medium">
                   {t('settings.sources.wiki.convert.skippedHeading')}
                 </p>
-                <ul className="text-muted-foreground max-h-40 list-disc space-y-1 overflow-auto pl-5 text-xs">
+                <ul className="text-muted-foreground list-disc space-y-1 pl-5 text-xs">
                   {summary.skipped.map((s) => (
                     <li key={s.file} title={s.reason}>
                       {s.file}
@@ -226,7 +223,6 @@ export default function ConvertToWikiModal({
 
         {phase === 'error' && (
           <Alert variant="destructive">
-            <CircleAlert className="size-4" aria-hidden="true" />
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}

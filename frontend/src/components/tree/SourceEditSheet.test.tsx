@@ -109,4 +109,25 @@ describe('SourceEditSheet', () => {
     await render({ open: true });
     expect(document.body.querySelector('textarea')).not.toBeNull();
   });
+
+  it('keeps the title and path in a fixed header with the X', async () => {
+    const props = await render();
+    const header = document.body.querySelector('[data-slot="panel-header"]')!;
+    expect(header.querySelector('[data-slot="sheet-title"]')?.textContent).toBe(
+      'Edit page',
+    );
+    const description = header.querySelector(
+      '[data-slot="sheet-description"]',
+    )!;
+    expect(description.textContent).toBe('/a.md · v1');
+    expect(description.querySelector('.font-mono')).not.toBeNull();
+    expect(document.body.querySelectorAll('.overflow-y-auto')).toHaveLength(1);
+    expect(document.body.querySelector('.pr-12')).toBeNull();
+    await act(async () =>
+      header
+        .querySelector<HTMLButtonElement>('[aria-label="sidePanel.close"]')!
+        .click(),
+    );
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+  });
 });

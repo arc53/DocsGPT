@@ -1,29 +1,26 @@
-import {
-  ChevronRight,
-  Database,
-  ScrollText,
-  TriangleAlert,
-  Wrench,
-} from 'lucide-react';
-import { useState } from 'react';
+import { Database, ScrollText, Wrench } from 'lucide-react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { ListRow, ListRows } from '@/components/ui/list-row';
-import { cn } from '@/lib/utils';
 
+import ConnectorIcon from '../../connectors/ConnectorIcon';
+import { connectorIconKey } from '../../connectors/i18n';
 import { can, isOwner } from '../../utils/accessUtils';
-import type { ResourceState } from '../types';
+import { personLabel } from '../../utils/personLabel';
+import type { ResourcePerson, ResourceState } from '../types';
 import useAgentResourceStates from '../useAgentResourceStates';
-import { reasonKey } from './ResourceStatusNotice';
+import { stoppedReason } from './ResourceStatusNotice';
 
 type AgentUsesSectionProps = {
   /** The agent the share dialog is for. */
   agentId: string;
-  /** The reader's user id, to say "your" for what runs as them. */
+  /** The reader's user id, to say "you" for what runs as them. */
   readerId?: string;
   /**
    * Opens the agent's Access details, where its owner allows changes
@@ -52,19 +49,21 @@ function blockedWrites(item: ResourceState, allowlist: string[]): string[] {
 
 /**
  * "What this agent uses" in the agent's share dialog: each attached tool,
- * source and prompt (and a workflow agent's node tools and sources), with
- * whose access, account or saved credentials it runs with for the people
- * the agent is shared with.
+ * source and prompt (and a workflow agent's node tools and sources), in the
+ * same unboxed rows as People with access, with the service's logo where
+ * it has one.
  *
  * Built from `resource_states` on the agent read (and the workflow read),
  * which only owners and editors get; the section is hidden from anyone else,
- * and while it loads or when it fails. A stopped item says why. A tool with
- * writes on stored credentials that aren't in the API write allowlist is
- * marked (all or some of them), since API and widget users, and public-link
- * users on the owner's accounts, can't make those changes; so is a tool an
- * admin allows no changes through. That allowlist is not the connector's
- * Allow (the in-chat permission), so the note says so and, for the owner,
- * opens Access details where the list is set.
+ * and while it loads or when it fails. A row's meta says only what differs
+ * from the owner's own access — who else it runs as, or that each person
+ * uses their own account — and otherwise the kind of item; a stopped item
+ * says why in a few words (the agent form's notice has the full sentence).
+ * A tool with writes on stored credentials that aren't in the API write
+ * allowlist is marked (all or some of them), since API, widget and link
+ * users can't make those changes; so is a tool an admin allows no changes
+ * through. One line under the list says so and, for the owner, opens
+ * Access details where the list is set.
  */
 export default function AgentUsesSection({
   agentId,
@@ -76,6 +75,7 @@ export default function AgentUsesSection({
   // Like Access settings: open once by itself when something stopped, then
   // follow the reader's clicks.
   const [open, setOpen] = useState<boolean | null>(null);
+  const bodyId = useId();
 
   if (!loaded || !can(loaded.agent, 'edit') || loaded.items.length === 0)
     return null;
@@ -86,62 +86,75 @@ export default function AgentUsesSection({
   // Without a user id (authentication off) the one local user is everyone.
   const isYou = (userId: string) =>
     readerId ? userId === readerId : ownerReads;
-  // A tool each person connects runs on their own account (the notice's
-  // note), except for API and widget users.
-  const perUser = (item: ResourceState) => item.note === 'per_user_account';
   const allowlist = agent.config?.api_write_allowlist ?? [];
   const nameOf = (item: ResourceState) =>
     item.name || t('agents.form.sponsors.unknownItem');
 
-  // Whose account or saved credentials a tool acts with.
-  const credentialsLabel = (item: ResourceState): string | null => {
-    const service = item.connection?.name;
-    const suffix = service ? '' : 'NoService';
-    const named = service ? { ...plain, service } : plain;
-    if (perUser(item))
-      // API and widget callers run the agent as its owner, so they use the
-      // owner's own account.
-      return t(
-        `${K}.access.member${ownerReads ? '' : 'Shared'}${suffix}`,
-        named,
-      );
+  /** "Runs as …" the person: the reader, someone named, or someone else. */
+  const runsAs = (person: ResourcePerson): string => {
+    if (!person.user_id) return t(`${K}.access.runsAsOther`);
+    if (isYou(person.user_id)) return t(`${K}.access.runsAsYou`);
+    return t(`${K}.access.runsAs`, { ...plain, person: personLabel(person) });
+  };
+
+  // Whose access a running item uses, when it isn't the owner's own; null
+  // when it is.
+  const accessMeta = (item: ResourceState): string | null => {
+    // A tool each person connects runs on their own account (API and
+    // widget callers run the agent as its owner).
+    if (item.note === 'per_user_account') {
+      const service = item.connection?.name;
+      return service
+        ? t(`${K}.access.member`, { ...plain, service })
+        : t(`${K}.access.memberNoService`);
+    }
+    if (item.runs_as) return runsAs(item.runs_as);
+    // It runs as the owner, on the saved credentials or connected account
+    // of the tool's owner: the reader's own when they own the agent. An
+    // editor can't tell the agent owner's account from a third person's,
+    // so only theirs or an unknown one is named.
     const account = item.account;
     if (!account) return null;
-    // A connection names its service; saved credentials (an API key, an
-    // MCP sign-in) have none.
-    const connected = item.credential_mode === 'owner';
-    const key = connected ? `Account${suffix}` : 'Credentials';
-    const opts = connected ? named : plain;
-    if (!account.user_id) return t(`${K}.access.other${key}`, opts);
-    if (isYou(account.user_id)) return t(`${K}.access.your${key}`, opts);
-    return t(`${K}.access.person${key}`, {
-      ...opts,
-      person: account.label || account.user_id,
-    });
+    if (!account.user_id) return runsAs(account);
+    if (ownerReads) return isYou(account.user_id) ? null : runsAs(account);
+    return isYou(account.user_id) ? runsAs(account) : null;
   };
 
-  const accessLabel = (item: ResourceState): string => {
-    const credentials = credentialsLabel(item);
-    if (credentials) return credentials;
-    if (item.runs_as) {
-      const { user_id: userId, label } = item.runs_as;
-      if (!userId) return t(`${K}.access.other`);
-      return isYou(userId)
-        ? t(`${K}.access.you`)
-        : t(`${K}.access.person`, { ...plain, person: label || userId });
+  const metaFor = (item: ResourceState): string => {
+    if (item.state === 'stopped') {
+      const service = item.connection?.name ?? '';
+      const reason = stoppedReason(item, {
+        ownerReads,
+        readerId,
+        noService: !service.trim(),
+      });
+      return t(`${K}.reasonShort.${reason}`, {
+        ...plain,
+        service,
+        person: personLabel(item.sponsor),
+      });
     }
-    return ownerReads ? t(`${K}.access.you`) : t(`${K}.access.owner`);
+    return (
+      accessMeta(item) ?? t(`agents.form.sponsorConfirm.types.${item.type}`)
+    );
   };
 
-  const stoppedText = (item: ResourceState) =>
-    t(reasonKey(item.reason, ownerReads, Boolean(item.sponsor?.user_id)), {
-      ...plain,
-      name: nameOf(item),
-      service:
-        item.connection?.name ||
-        t('agents.form.resourceStates.serviceFallback'),
-      person: item.sponsor?.label || item.sponsor?.user_id,
-    });
+  const leadingFor = (item: ResourceState) => {
+    const Icon = TYPE_ICONS[item.type] ?? Wrench;
+    const connectorKey = item.connection?.connector_key;
+    return (
+      <Avatar size="sm" shape="square" variant="icon">
+        {connectorKey ? (
+          <ConnectorIcon
+            icon={connectorIconKey(connectorKey)}
+            className="size-4"
+          />
+        ) : (
+          <Icon className="size-4" aria-hidden="true" />
+        )}
+      </Avatar>
+    );
+  };
 
   const badgeFor = (item: ResourceState) => {
     if (item.state === 'stopped')
@@ -158,79 +171,46 @@ export default function AgentUsesSection({
     );
   };
 
-  // Public-link users act with their own account on a tool each person
-  // connects, so only API and widget users are held back there.
-  const blocked = items.filter(
+  const anyBlocked = items.some(
     (item) =>
       item.state === 'active' &&
       item.writes_allowed !== false &&
       blockedWrites(item, allowlist).length > 0,
   );
-  const blockedMember = blocked.some(perUser);
-  const blockedOwned = blocked.some((item) => !perUser(item));
-  const editor = ownerReads ? '' : 'Editor';
-  const writesNote = blockedOwned
-    ? [
-        t(`${K}.writesNote${editor}`),
-        blockedMember ? t(`${K}.writesNoteMemberTail`) : '',
-      ]
-        .filter(Boolean)
-        .join(' ')
-    : blockedMember
-      ? t(`${K}.writesNoteApi${editor}`)
-      : null;
 
   return (
-    <section className="flex flex-col gap-3">
-      {/* The same inline disclosure as Access settings. */}
-      <Button
-        type="button"
-        variant="link"
-        size="sm"
-        aria-expanded={expanded}
-        className="-ml-3 w-fit justify-start"
-        onClick={() => setOpen(!expanded)}
+    <section className="flex flex-col">
+      {/* The same inline disclosure as Access settings; the 12px gap sits
+          inside the body, so it folds away with it. */}
+      <CollapsibleTrigger
+        open={expanded}
+        onOpenChange={setOpen}
+        controls={bodyId}
       >
-        <ChevronRight
-          aria-hidden="true"
-          className={cn(
-            'transition-transform duration-200',
-            expanded && 'rotate-90',
-          )}
-        />
         {t(`${K}.title`)}
-      </Button>
-      {expanded && (
-        <>
+      </CollapsibleTrigger>
+      <Collapsible open={expanded} id={bodyId}>
+        <div className="flex flex-col gap-3 pt-3">
           <p className="text-muted-foreground text-xs">{t(`${K}.intro`)}</p>
-          <Card variant="outline" padding="none" className="overflow-hidden">
-            <ListRows>
-              {items.map((item) => {
-                const Icon = TYPE_ICONS[item.type] ?? Wrench;
-                const description =
-                  item.state === 'stopped'
-                    ? stoppedText(item)
-                    : accessLabel(item);
-                return (
-                  <ListRow
-                    key={item.key}
-                    leading={
-                      <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md">
-                        <Icon className="size-4" aria-hidden="true" />
-                      </span>
-                    }
-                    title={<span title={nameOf(item)}>{nameOf(item)}</span>}
-                    description={<span title={description}>{description}</span>}
-                    trailing={badgeFor(item)}
-                  />
-                );
-              })}
-            </ListRows>
-          </Card>
-          {writesNote && (
+          <ListRows>
+            {items.map((item) => {
+              const meta = metaFor(item);
+              return (
+                <ListRow
+                  key={item.key}
+                  leading={leadingFor(item)}
+                  title={<span title={nameOf(item)}>{nameOf(item)}</span>}
+                  description={<span title={meta}>{meta}</span>}
+                  trailing={badgeFor(item)}
+                />
+              );
+            })}
+          </ListRows>
+          {anyBlocked && (
             <Alert variant="warning">
-              <TriangleAlert />
-              <AlertDescription>{writesNote}</AlertDescription>
+              <AlertDescription>
+                {t(ownerReads ? `${K}.writesNote` : `${K}.writesNoteEditor`)}
+              </AlertDescription>
               {/* Only the owner sets the allowlist. */}
               {ownerReads && onOpenAccessDetails && (
                 <div className="mt-2 flex flex-col items-start gap-1.5">
@@ -252,8 +232,8 @@ export default function AgentUsesSection({
               )}
             </Alert>
           )}
-        </>
-      )}
+        </div>
+      </Collapsible>
     </section>
   );
 }

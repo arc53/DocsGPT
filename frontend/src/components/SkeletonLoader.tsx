@@ -13,14 +13,11 @@ interface SkeletonLoaderProps {
     | 'analysis'
     | 'logs'
     | 'fileTable'
-    | 'chatbot'
     | 'chunkCards'
     | 'sourceCards'
     | 'toolCards'
     | 'addToolCards'
-    | 'agentCards'
-    | 'connectedState'
-    | 'filesSection';
+    | 'agentCards';
 }
 
 const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
@@ -64,31 +61,10 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
     </>
   );
 
-  const renderChatbot = () => (
-    <>
-      {[...Array(4)].map((_, idx) => (
-        <tr key={idx}>
-          <td className="p-2">
-            <Skeleton className="mx-auto h-4 w-3/4" />
-          </td>
-          <td className="p-2">
-            <Skeleton className="mx-auto h-4 w-full" />
-          </td>
-          <td className="p-2">
-            <Skeleton className="mx-auto h-4 w-full" />
-          </td>
-          <td className="p-2">
-            <Skeleton className="mx-auto h-4 w-8" />
-          </td>
-        </tr>
-      ))}
-    </>
-  );
-
   const renderLogs = () => (
     <div className="flex w-full flex-col gap-px">
       {[...Array(8)].map((_, idx) => (
-        <div key={idx} className="hover:bg-accent flex w-full items-start p-2">
+        <div key={idx} className="flex w-full items-start p-2">
           <div className="flex w-full items-center gap-2">
             <Skeleton className="size-3" />
             <div className="flex w-full flex-row items-center gap-2">
@@ -304,37 +280,8 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
     </>
   );
 
-  // Stands in for ConnectorAuth's success Alert: a bordered row box, and
-  // only the bars pulse.
-  const renderConnectedState = () => (
-    <Card
-      variant="outline"
-      padding="sm"
-      className="mb-4 flex-row items-center justify-between"
-    >
-      <div className="flex items-center gap-3">
-        <Skeleton className="size-4" />
-        <Skeleton className="h-4 w-48" />
-      </div>
-      <Skeleton className="h-4 w-16" />
-    </Card>
-  );
-
-  const renderFilesSection = () => (
-    <div className="border-border rounded-lg border">
-      <div className="p-4">
-        <div className="mb-4 flex items-center justify-between">
-          <Skeleton className="h-5 w-24" />
-          <Skeleton className="h-8 w-24" />
-        </div>
-        <Skeleton className="h-4 w-40" />
-      </div>
-    </div>
-  );
-
   const componentMap = {
     fileTable: renderTable,
-    chatbot: renderChatbot,
     logs: renderLogs,
     default: renderDefault,
     analysis: renderAnalysis,
@@ -343,8 +290,6 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
     toolCards: renderToolCards,
     addToolCards: renderAddToolCards,
     agentCards: renderAgentCards,
-    connectedState: renderConnectedState,
-    filesSection: renderFilesSection,
   };
 
   const render = componentMap[component] || componentMap.default;

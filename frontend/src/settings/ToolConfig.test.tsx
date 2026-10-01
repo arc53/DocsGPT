@@ -13,8 +13,28 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('../hooks', () => ({ useDarkTheme: () => [false, () => {}] }));
-vi.mock('../navigation/DetailBreadcrumb', () => ({ default: () => null }));
-vi.mock('../modals/ConfirmationModal', () => ({ default: () => null }));
+vi.mock('../navigation/DetailBreadcrumb', () => ({
+  default: ({ onParentClick }: { onParentClick: () => void }) => (
+    <button type="button" onClick={onParentClick}>
+      back
+    </button>
+  ),
+}));
+const confirm = vi.hoisted(() => ({
+  props: null as null | {
+    handleSubmit: () => void | Promise<unknown>;
+    error?: string;
+  },
+}));
+vi.mock('../modals/ConfirmationModal', () => ({
+  default: (props: {
+    handleSubmit: () => void | Promise<unknown>;
+    error?: string;
+  }) => {
+    confirm.props = props;
+    return null;
+  },
+}));
 vi.mock('../modals/AddActionModal', () => ({ default: () => null }));
 vi.mock('../modals/ImportSpecModal', () => ({ default: () => null }));
 
@@ -30,6 +50,12 @@ vi.mock('../api/services/userService', () => ({
 
 import type { APIToolType, UserToolType } from './types';
 import ToolConfig from './ToolConfig';
+
+/** A heading as "title [count]": SectionHeader draws the count in its own span. */
+const titleWithCount = (h: Element | null | undefined) =>
+  h
+    ? `${h.firstChild?.textContent} [${h.querySelector('[data-slot="count"]')?.textContent}]`
+    : undefined;
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -150,7 +176,9 @@ describe('ToolConfig', () => {
     await render(userTool);
     await act(async () => {
       (
-        container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+        container.querySelector(
+          'button[aria-expanded][aria-controls]',
+        ) as HTMLElement
       ).click();
     });
     const tableInputs = Array.from(
@@ -183,6 +211,44 @@ describe('ToolConfig', () => {
     const alert = container.querySelector<HTMLElement>('[role="alert"]');
     expect(alert?.textContent).toBe('settings.tools.saveFailed');
     expect(alert?.className).toContain('text-destructive');
+  });
+
+  // ConfirmationModal stays pending on the returned promise; a failed save
+  // and leave rejects so the error stays in the dialog.
+  it('keeps a failed save-and-leave in the unsaved-changes dialog', async () => {
+    updateTool.mockRejectedValue(new Error('nope'));
+    const handleGoBack = vi.fn();
+    await act(async () => {
+      root.render(
+        <ToolConfig
+          tool={{ ...userTool, customName: '' }}
+          setTool={() => {}}
+          handleGoBack={handleGoBack}
+        />,
+      );
+    });
+    const name = container.querySelector<HTMLInputElement>(
+      'input[placeholder="settings.tools.customNamePlaceholder"]',
+    );
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set;
+      setter?.call(name, 'Renamed');
+      name?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    confirm.props = null;
+    await act(async () => buttonByText('back')?.click());
+    expect(confirm.props).not.toBeNull();
+    expect(confirm.props!.error).toBe('settings.tools.saveFailed');
+    let result: void | Promise<unknown>;
+    await act(async () => {
+      result = confirm.props!.handleSubmit();
+      if (result) result.catch(() => undefined);
+    });
+    await expect(result!).rejects.toThrow();
+    expect(handleGoBack).not.toHaveBeenCalled();
   });
 
   it('shows a save the server refused as failed', async () => {
@@ -300,24 +366,26 @@ describe('ToolConfig', () => {
     expect(buttonByText('settings.tools.importSpec')).toBeUndefined();
   });
 
-  it('renders the API action form as 42px pills with remove icons', async () => {
+  it('renders the API action form as square 42px fields with remove icons', async () => {
     await render(apiTool);
     const deleteAction = container.querySelector<HTMLElement>(
-      'button[aria-label="convTile.delete"]',
+      'button[aria-label="settings.tools.delete"]',
     );
     expect(deleteAction?.hasAttribute('title')).toBe(false);
-    expect(deleteAction?.dataset.variant).toBe('ghost-destructive');
+    expect(deleteAction?.dataset.variant).toBe('ghost-destructive-on-accent');
     expect(deleteAction?.dataset.size).toBe('icon-xs');
 
     await act(async () => {
       (
-        container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+        container.querySelector(
+          'button[aria-expanded][aria-controls]',
+        ) as HTMLElement
       ).click();
     });
     const urlField = container.querySelector<HTMLInputElement>(
       'input[value="https://example.com"]',
     );
-    expect(urlField?.dataset.shape).toBe('pill');
+    expect(urlField?.dataset.shape).not.toBe('pill');
     expect(urlField?.dataset.size).toBe('default');
     const triggers = Array.from(
       container.querySelectorAll<HTMLElement>('[data-slot="select-trigger"]'),
@@ -325,6 +393,7 @@ describe('ToolConfig', () => {
     expect(triggers).toHaveLength(2);
     triggers.forEach((trigger) => {
       expect(trigger.dataset.size).toBe('field');
+      expect(trigger.dataset.shape).not.toBe('pill');
       expect(trigger.className).not.toContain('rounded-3xl');
     });
     const addNew = buttonByText('settings.tools.addNew');
@@ -340,7 +409,9 @@ describe('ToolConfig', () => {
     await render(apiTool);
     await act(async () => {
       (
-        container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+        container.querySelector(
+          'button[aria-expanded][aria-controls]',
+        ) as HTMLElement
       ).click();
     });
     const hint = Array.from(container.querySelectorAll('p')).find(
@@ -383,7 +454,9 @@ describe('ToolConfig', () => {
     } as unknown as APIToolType);
     await act(async () => {
       (
-        container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+        container.querySelector(
+          'button[aria-expanded][aria-controls]',
+        ) as HTMLElement
       ).click();
     });
     expect(container.querySelector('select:not([aria-hidden])')).toBeNull();
@@ -395,29 +468,90 @@ describe('ToolConfig', () => {
     expect(typeTrigger?.textContent).toContain('integer');
   });
 
-  it('opens an action header from the keyboard', async () => {
+  it('opens an action with a real button whose body is a Collapsible', async () => {
     await render(apiTool);
-    const header = container.querySelector<HTMLElement>(
-      '[role="button"][aria-expanded]',
-    );
-    expect(header?.tabIndex).toBe(0);
-    expect(header?.getAttribute('aria-expanded')).toBe('false');
-    await act(async () => {
-      header?.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
-      );
-    });
-    expect(header?.getAttribute('aria-expanded')).toBe('true');
+    const toggle = container.querySelector<HTMLButtonElement>(
+      'button[aria-expanded][aria-controls]',
+    )!;
+    expect(toggle).not.toBeNull();
+    expect(container.querySelector('[role="button"]')).toBeNull();
+    expect(toggle.textContent).toContain('POST');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    // The row's other controls sit beside the toggle, not inside it.
+    expect(toggle.querySelector('button')).toBeNull();
+    const body = container.querySelector<HTMLElement>(
+      `#${CSS.escape(toggle.getAttribute('aria-controls')!)}`,
+    )!;
+    expect(body.dataset.slot).toBe('collapsible');
+    expect(body.dataset.state).toBe('closed');
+    await act(async () => toggle.click());
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(body.dataset.state).toBe('open');
     expect(
-      container.querySelector('input[value="https://example.com"]'),
+      body.querySelector('input[value="https://example.com"]'),
     ).not.toBeNull();
+  });
+
+  // O5: a framed action row follows Row states, like Logs' rows: no fill at
+  // rest, accent on hover, secondary while open.
+  it.each([
+    ['API', apiTool],
+    ['built-in', userTool],
+  ] as const)(
+    'draws the %s action header with the row-state recipe',
+    async (_, tool) => {
+      await render(tool);
+      const toggle = container.querySelector<HTMLButtonElement>(
+        'button[aria-expanded][aria-controls]',
+      )!;
+      const header = toggle.parentElement!;
+      expect(header.className).not.toContain('bg-muted');
+      expect(header.className).toContain('hover:bg-accent');
+      expect(header.className).not.toContain('bg-secondary');
+      await act(async () => toggle.click());
+      expect(header.className).toContain('bg-secondary');
+      expect(header.className).not.toContain('bg-muted');
+    },
+  );
+
+  it('uses the on-accent destructive trash on an API action header', async () => {
+    await render(apiTool);
+    const toggle = container.querySelector<HTMLButtonElement>(
+      'button[aria-expanded][aria-controls]',
+    )!;
+    const trash = toggle.parentElement!.querySelector<HTMLElement>(
+      'button[aria-label="settings.tools.delete"]',
+    )!;
+    expect(trash).not.toBeNull();
+    expect(trash.dataset.variant).toBe('ghost-destructive-on-accent');
+  });
+
+  it('draws the API action form fields square', async () => {
+    await render(apiTool);
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>(
+          'button[aria-expanded][aria-controls]',
+        )!
+        .click(),
+    );
+    const body = container.querySelector('[data-slot="collapsible"]')!;
+    // Form fields are square; the row buttons keep their pill.
+    expect(
+      body.querySelector(
+        'input[data-shape="pill"], [data-slot="select-trigger"][data-shape="pill"]',
+      ),
+    ).toBeNull();
+    expect(body.querySelectorAll('input').length).toBeGreaterThan(1);
   });
 
   it('renders the parameter table from the ui/table parts', async () => {
     await render(userTool);
     await act(async () => {
       (
-        container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+        container.querySelector(
+          'button[aria-expanded][aria-controls]',
+        ) as HTMLElement
       ).click();
     });
     expect(container.querySelector('.table-default')).toBeNull();
@@ -436,7 +570,9 @@ describe('ToolConfig', () => {
     await render(apiTool);
     await act(async () => {
       (
-        container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+        container.querySelector(
+          'button[aria-expanded][aria-controls]',
+        ) as HTMLElement
       ).click();
     });
     expect(container.querySelector('.table-default')).toBeNull();
@@ -459,11 +595,53 @@ describe('ToolConfig', () => {
     expect(deleteCell?.className).not.toMatch(/p-0|!/);
   });
 
+  it('fixes the Name column at 14rem so editing a key moves nothing', async () => {
+    await render(apiTool);
+    await act(async () => {
+      (
+        container.querySelector(
+          'button[aria-expanded][aria-controls]',
+        ) as HTMLElement
+      ).click();
+    });
+    const tables = Array.from(container.querySelectorAll('table'));
+    expect(tables).toHaveLength(3);
+    for (const table of tables) {
+      const name = table.querySelector<HTMLElement>('th')!;
+      expect(name.textContent).toBe('settings.tools.name');
+      expect(name.style.getPropertyValue('--cell-width')).toBe('14rem');
+    }
+    expect(container.innerHTML).not.toMatch(/min-w-\[(130|175)\.5px\]/);
+    const key = container.querySelector<HTMLInputElement>(
+      'input[readonly][value="Accept"]',
+    )!;
+    await act(async () => {
+      key.focus();
+      key.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    });
+    const save = container.querySelector<HTMLElement>(
+      'table button[aria-label="settings.tools.save"]',
+    )!;
+    const icons = save.parentElement!;
+    expect(icons.className).toContain('flex');
+    expect(icons.className).toContain('shrink-0');
+    expect(icons.className).toContain('gap-1');
+    const row = icons.parentElement!;
+    expect(row.className).toContain('flex');
+    expect(row.className).toContain('items-center');
+    expect(row.className).toContain('gap-2');
+    const input = row.querySelector('input')!;
+    expect(input.className).toContain('min-w-0');
+    expect(input.className).toContain('flex-1');
+  });
+
   it('renders the add-property Cancel as a ghost pill', async () => {
     await render(apiTool);
     await act(async () => {
       (
-        container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+        container.querySelector(
+          'button[aria-expanded][aria-controls]',
+        ) as HTMLElement
       ).click();
     });
     await act(async () => {
@@ -509,7 +687,9 @@ describe('ToolConfig', () => {
     const expandFirstAction = async () => {
       await act(async () => {
         (
-          container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+          container.querySelector(
+            'button[aria-expanded][aria-controls]',
+          ) as HTMLElement
         ).click();
       });
     };
@@ -577,11 +757,13 @@ describe('ToolConfig', () => {
       } as UserToolType);
       await act(async () => {
         (
-          container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+          container.querySelector(
+            'button[aria-expanded][aria-controls]',
+          ) as HTMLElement
         ).click();
       });
       const filled = container.querySelector(
-        '[aria-label="settings.tools.filledByLLM"]',
+        '[aria-label="settings.connectors.parameters.choiceLabel"]',
       );
       expect(filled?.hasAttribute('disabled')).toBe(true);
       const tableInputs = Array.from(
@@ -671,7 +853,9 @@ describe('ToolConfig', () => {
     await render(saved);
     await act(async () => {
       (
-        container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+        container.querySelector(
+          'button[aria-expanded][aria-controls]',
+        ) as HTMLElement
       ).click();
     });
     const masked = container.querySelector<HTMLInputElement>(
@@ -715,5 +899,155 @@ describe('ToolConfig', () => {
       container.querySelector<HTMLElement>('[role="alert"]')?.textContent,
     ).toBe('settings.tools.saveFailed');
     expect(goBack).not.toHaveBeenCalled();
+  });
+
+  describe('permissions', () => {
+    const P = 'settings.connectors.permission';
+    const memory = {
+      ...userTool,
+      name: 'memory',
+      actions: [
+        { ...userTool.actions[0], name: 'memory_view', access: 'read' },
+        {
+          ...userTool.actions[0],
+          name: 'memory_create',
+          access: 'write',
+          require_approval: true,
+        },
+        {
+          ...userTool.actions[0],
+          name: 'memory_delete',
+          access: 'write',
+          require_approval: true,
+        },
+      ],
+    } as unknown as UserToolType;
+    let current: UserToolType | APIToolType;
+    // ToolConfig is controlled: keep the tool it hands back.
+    const renderLive = async (tool: UserToolType | APIToolType) => {
+      current = tool;
+      const setTool = (next: UserToolType | APIToolType) => {
+        current = next;
+        root.render(
+          <ToolConfig tool={next} setTool={setTool} handleGoBack={() => {}} />,
+        );
+      };
+      await act(async () => {
+        root.render(
+          <ToolConfig tool={tool} setTool={setTool} handleGoBack={() => {}} />,
+        );
+      });
+    };
+    const group = (access: 'read' | 'write') =>
+      container.querySelector<HTMLElement>(`[data-access="${access}"]`)!;
+    const choice = (access: 'read' | 'write', permission: string) =>
+      group(access).querySelector<HTMLButtonElement>(
+        `[data-permission="${permission}"]`,
+      )!;
+    const rowSelects = (access: 'read' | 'write') =>
+      group(access).querySelectorAll(
+        `[data-slot="select-trigger"][aria-label="${P}.label"]`,
+      );
+
+    it('groups the actions as the drawer does, named in words', async () => {
+      await renderLive(memory);
+      expect(
+        Array.from(container.querySelectorAll('h4')).map(titleWithCount),
+      ).toEqual([
+        'settings.connectors.capabilityPlain.read [1]',
+        'settings.connectors.capabilityPlain.write [2]',
+      ]);
+      expect(group('read').textContent).toContain('Memory view');
+      expect(group('read').textContent).not.toContain('memory_view');
+      expect(group('write').textContent).toContain('Memory create');
+      // One vocabulary: no Approval or on/off switches.
+      expect(container.querySelector('[role="switch"]')).toBeNull();
+      expect(container.textContent).not.toContain('Approval');
+      expect(choice('read', 'always').getAttribute('data-state')).toBe('on');
+      expect(choice('write', 'ask').getAttribute('data-state')).toBe('on');
+    });
+
+    it('sets a whole group, stored as active and require_approval', async () => {
+      await renderLive(memory);
+      await act(async () => choice('write', 'off').click());
+      const actions = (current as UserToolType).actions;
+      expect(
+        actions.map((a) => [a.name, a.active, a.require_approval]),
+      ).toEqual([
+        ['memory_view', true, undefined],
+        ['memory_create', false, false],
+        ['memory_delete', false, false],
+      ]);
+      await act(async () => choice('read', 'ask').click());
+      expect((current as UserToolType).actions[0]).toMatchObject({
+        active: true,
+        require_approval: true,
+      });
+    });
+
+    it('shows each action its own choice only under Customize', async () => {
+      await renderLive(memory);
+      expect(rowSelects('write')).toHaveLength(0);
+      await act(async () => choice('write', 'customize').click());
+      expect(rowSelects('write')).toHaveLength(2);
+      expect(rowSelects('read')).toHaveLength(0);
+    });
+
+    it('opens on Customize when a group disagrees', async () => {
+      await renderLive({
+        ...memory,
+        actions: [
+          memory.actions[1],
+          { ...memory.actions[2], require_approval: false },
+        ],
+      } as UserToolType);
+      expect(choice('write', 'customize').getAttribute('data-state')).toBe(
+        'on',
+      );
+      expect(rowSelects('write')).toHaveLength(2);
+    });
+
+    it("classes an API tool's actions by method", async () => {
+      await renderLive(apiTool);
+      expect(container.querySelector('[data-access="read"]')).toBeNull();
+      expect(group('write').textContent).toContain('List');
+      await act(async () => choice('write', 'ask').click());
+      expect(
+        (current as APIToolType).config.actions.list.require_approval,
+      ).toBe(true);
+    });
+
+    it('says who fills a parameter in: Let AI decide or Always use', async () => {
+      await renderLive(userTool);
+      await act(async () => {
+        (
+          container.querySelector(
+            'button[aria-expanded][aria-controls]',
+          ) as HTMLElement
+        ).click();
+      });
+      expect(container.textContent).toContain('settings.tools.filledBy');
+      expect(container.textContent).not.toContain('settings.tools.filledByLLM');
+      const trigger = container.querySelector<HTMLElement>(
+        '[aria-label="settings.connectors.parameters.choiceLabel"]',
+      )!;
+      expect(trigger.textContent).toBe('settings.connectors.parameters.ai');
+      await act(async () => {
+        trigger.dispatchEvent(
+          new PointerEvent('pointerdown', {
+            bubbles: true,
+            button: 0,
+            pointerType: 'mouse',
+          }),
+        );
+      });
+      const fixed = Array.from(
+        document.body.querySelectorAll<HTMLElement>('[role="option"]'),
+      ).find((o) => o.textContent === 'settings.connectors.parameters.fixed')!;
+      await act(async () => fixed.click());
+      expect(
+        (current as UserToolType).actions[0].parameters.properties.q,
+      ).toMatchObject({ filled_by_llm: false, required: false });
+    });
   });
 });

@@ -24,11 +24,15 @@ const events = [
 }));
 
 // Flipped by the Retry test to make the next events fetch fail.
-const fetchState = vi.hoisted(() => ({ failNext: false }));
+const fetchState = vi.hoisted(() => ({
+  failNext: false,
+  calls: [] as unknown[][],
+}));
 
 vi.mock('../../api/services/userService', () => ({
   default: {
-    getGuardrailEvents: () => {
+    getGuardrailEvents: (...args: unknown[]) => {
+      fetchState.calls.push(args);
       if (fetchState.failNext) {
         fetchState.failNext = false;
         return Promise.reject(new Error('network'));
@@ -176,6 +180,7 @@ describe('GuardrailEvents load error', () => {
       (b) => b.textContent === 'retry',
     );
     expect(retry).toBeDefined();
+    expect(retry!.className).toContain('rounded-full');
 
     await act(async () => retry!.click());
 
@@ -190,5 +195,54 @@ describe('GuardrailEvents load error', () => {
 
     await act(async () => root.unmount());
     container.remove();
+  });
+});
+
+describe('GuardrailEvents paging', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(async () => {
+    fetchState.calls.length = 0;
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <Provider store={makeStore()}>
+          <GuardrailEvents agentId="a1" />
+        </Provider>,
+      );
+    });
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
+  // The server applies the window and filters, so every page is filtered.
+  it('asks the server for the first 50 decisions in the window', () => {
+    const [agentId, , limit, offset, filters] = fetchState.calls[0];
+    expect(agentId).toBe('a1');
+    expect(limit).toBe(50);
+    expect(offset).toBe(0);
+    expect(filters).toEqual({ days: 30, check: undefined, outcome: undefined });
+  });
+
+  it('drops the "most recent N" note: older decisions load as you scroll', () => {
+    expect(container.textContent).not.toContain(
+      'agents.guardrailEvents.truncated',
+    );
+  });
+
+  it("caps the table in the frame's inner overlay scroller", () => {
+    const scroller = container.querySelector('table')!.parentElement!;
+    expect(scroller.className).toContain('max-h-[45svh]');
+    expect(scroller.className).toContain('scrollbar-overlay');
+    // A short list has no status strip.
+    expect(
+      container.querySelector('[data-slot="load-more-status"]'),
+    ).toBeNull();
   });
 });

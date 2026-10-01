@@ -17,11 +17,11 @@ describe('Input variants', () => {
     expect(classes).not.toMatch(/\bh-9\.5\b/);
   });
 
-  it('shape="pill" with size="lg" is the chat-style field', () => {
-    const classes = inputVariants({ size: 'lg', shape: 'pill' });
-    expect(classes).toContain('rounded-full');
-    expect(classes).toContain('h-12');
-    expect(classes).toContain('px-5');
+  it('has only the default and sm sizes (lg and the field alias are gone)', () => {
+    // @ts-expect-error lg was deleted (no call sites)
+    expect(inputVariants({ size: 'lg' })).not.toContain('h-12');
+    // @ts-expect-error field was a byte-identical alias of default
+    expect(inputVariants({ size: 'field' })).not.toContain('h-9.5');
   });
 
   it('a default-size pill starts its text 20px in, like the Select pill', () => {
@@ -46,8 +46,8 @@ describe('Input variants', () => {
   it('moves the floating label to match the field height', () => {
     const small = renderToStaticMarkup(<Input size="sm" label="Name" />);
     expect(small).toContain('peer-placeholder-shown:top-1.5');
-    const large = renderToStaticMarkup(<Input size="lg" label="Name" />);
-    expect(large).toContain('peer-placeholder-shown:top-3.5');
+    const regular = renderToStaticMarkup(<Input label="Name" />);
+    expect(regular).toContain('peer-placeholder-shown:top-2');
   });
 
   it('does not leak the variant props onto the DOM element', () => {
@@ -128,18 +128,12 @@ describe('Input variants', () => {
   });
 });
 
-describe('Input field size and disabled state', () => {
-  it('size="field" is the 38px form-row height, like Button field', () => {
-    const classes = inputVariants({ size: 'field' });
-    expect(classes).toContain('h-9.5');
-    expect(classes).toBe(inputVariants({ size: 'default' }));
-  });
-
-  it('a field pill pads px-5 like the default pill', () => {
-    const html = renderToStaticMarkup(<Input size="field" shape="pill" />);
+describe('Input pill and disabled state', () => {
+  it('a default pill pads px-5 and reports data-size="default"', () => {
+    const html = renderToStaticMarkup(<Input shape="pill" />);
     const classes = (/class="([^"]*)"/.exec(html)?.[1] ?? '').split(' ');
     expect(classes).toContain('px-5');
-    expect(html).toContain('data-size="field"');
+    expect(html).toContain('data-size="default"');
   });
 
   it('shows the not-allowed cursor while disabled', () => {

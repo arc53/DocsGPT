@@ -67,10 +67,21 @@ vi.mock('../components/FilePicker', () => ({
 }));
 
 vi.mock('./RepoPicker', () => ({
-  default: ({ onChange }: { onChange: (name: string) => void }) => (
-    <button type="button" onClick={() => onChange('octocat/private')}>
-      pick-repo
-    </button>
+  default: ({
+    onChange,
+    onReconnect,
+  }: {
+    onChange: (name: string) => void;
+    onReconnect?: () => void;
+  }) => (
+    <>
+      <button type="button" onClick={() => onChange('octocat/private')}>
+        pick-repo
+      </button>
+      <button type="button" onClick={onReconnect}>
+        picker-reconnect
+      </button>
+    </>
   ),
 }));
 
@@ -100,9 +111,6 @@ vi.mock('./LinearPicker', async (importOriginal) => {
   };
 });
 
-import actionToastReducer, {
-  selectActionToast,
-} from '../notifications/actionToastSlice';
 import notificationsReducer, {
   sseEventReceived,
 } from '../notifications/notificationsSlice';
@@ -112,7 +120,7 @@ import {
 } from '../settings/components/RetrievalOptions';
 import connectorsReducer from './connectorsSlice';
 import ConnectWizard from './ConnectWizard';
-import type { ConnectorDefinition } from './types';
+import type { Connection, ConnectorDefinition } from './types';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -175,6 +183,7 @@ const github: ConnectorDefinition = {
       label: 'Personal access token',
       secret: true,
       required: true,
+      hint: 'Fine-grained. <link>Create a token on GitHub</link>',
     },
   ],
   setup_fields: [
@@ -229,14 +238,31 @@ describe('ConnectWizard', () => {
     connector: ConnectorDefinition,
     onClose = vi.fn(),
     props: Partial<Parameters<typeof ConnectWizard>[0]> = {},
+    connections: Connection[] = [],
   ) => {
+    if (connections.length)
+      service.listConnections.mockResolvedValue({
+        success: true,
+        connections,
+      });
     const store = configureStore({
       reducer: {
         connectors: connectorsReducer,
         notifications: notificationsReducer,
-        actionToast: actionToastReducer,
         preference: (state = { token: null, selectedDocs: [] }) => state,
         conversation: (state = {}) => state,
+      },
+      preloadedState: {
+        connectors: {
+          enabled: true,
+          catalog: [],
+          connections,
+          loading: false,
+          loaded: true,
+          failed: false,
+        },
+        preference: { token: null, selectedDocs: [] },
+        conversation: {},
       },
     });
     await act(async () => {
@@ -270,6 +296,19 @@ describe('ConnectWizard', () => {
     expect(button, `button ${text}`).toBeDefined();
     await act(async () => button!.click());
   };
+
+  const title = () =>
+    document.body.querySelector('[data-slot="modal-header"] h2')?.textContent;
+
+  const button = (text: string) =>
+    Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => b.textContent?.trim() === text);
+
+  const successAlert = () =>
+    document.body.querySelector<HTMLElement>(
+      '[role="status"][data-slot="alert"]',
+    );
 
   const knowledgeSwitch = () =>
     document.body.querySelector<HTMLButtonElement>('[id^="knowledge-"]');
@@ -317,6 +356,21 @@ describe('ConnectWizard', () => {
     expect(document.body.textContent).toContain(
       'settings.connectors.wizard.toolsHeading:1',
     );
+    // The tools open under a link toggle with the count, no frame: the cards
+    // line up with the success Alert above.
+    const toggle = button('settings.connectors.wizard.toolsHeading:1')!;
+    expect(toggle.dataset.variant).toBe('link');
+    expect(toggle.dataset.size).toBe('sm');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    const body = document.getElementById(
+      toggle.getAttribute('aria-controls')!,
+    )!;
+    expect(body.dataset.slot).toBe('collapsible');
+    expect(body.dataset.state).toBe('closed');
+    expect(toggle.closest('.rounded-xl')).toBeNull();
+    await act(async () => toggle.click());
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(body.dataset.state).toBe('open');
   });
 
   it('names the account when the user gives it a name', async () => {
@@ -389,17 +443,22 @@ describe('ConnectWizard', () => {
     );
   });
 
-  it('lets a content service skip choosing what to sync', async () => {
-    await render(drive, vi.fn(), { purpose: 'knowledge' });
+  it('finishes setting up without syncing once Sync is turned off', async () => {
+    const onClose = vi.fn();
+    await render(drive, onClose, { purpose: 'knowledge' });
     await click('settings.connectors.wizard.signIn');
-    expect(document.body.textContent).toContain(
-      'settings.connectors.wizard.chooseWhatToSync',
-    );
-    await click('settings.connectors.wizard.skip');
-    expect(document.body.textContent).toContain(
-      'settings.connectors.wizard.doneTitle',
-    );
+    expect(title()).toBe('settings.connectors.wizard.chooseWhatToSyncFrom');
+    // No Skip: the account exists, one submit says what it does.
+    expect(button('settings.connectors.wizard.skip')).toBeUndefined();
+    expect(button('modals.uploadDoc.train')).toBeDefined();
+    await act(async () => knowledgeSwitch()!.click());
+    // The title stays put while the switch changes.
+    expect(title()).toBe('settings.connectors.wizard.chooseWhatToSyncFrom');
+    await click('settings.connectors.wizard.finishSetup');
+    expect(title()).toBe('settings.connectors.wizard.doneTitle');
     expect(service.setup).not.toHaveBeenCalled();
+    await click('settings.connectors.wizard.done');
+    expect(onClose).toHaveBeenCalledWith(true);
   });
 
   it('syncs the picked folder named after it', async () => {
@@ -424,8 +483,9 @@ describe('ConnectWizard', () => {
       config: optionsToConfig(DEFAULT_RETRIEVAL_OPTIONS),
     });
     expect(typeof key).toBe('string');
-    expect(document.body.textContent).toContain(
-      'settings.connectors.wizard.doneSummary',
+    // The summary is a polite success notice.
+    expect(successAlert()?.textContent).toContain(
+      'settings.connectors.wizard.doneSources',
     );
   });
 
@@ -438,9 +498,7 @@ describe('ConnectWizard', () => {
     it('is off on a plain connect: the account is made, nothing syncs', async () => {
       await render(drive);
       await click('settings.connectors.wizard.signIn');
-      expect(document.body.textContent).toContain(
-        'settings.connectors.wizard.chooseWhatToSetUp',
-      );
+      expect(title()).toBe('settings.connectors.wizard.chooseWhatToSyncFrom');
       expect(document.body.textContent).toContain(
         'settings.connectors.wizard.syncToKnowledge',
       );
@@ -455,7 +513,7 @@ describe('ConnectWizard', () => {
       );
       // One way on: nothing to skip.
       expect(button('settings.connectors.wizard.skip')).toBeUndefined();
-      await click('settings.connectors.wizard.continue');
+      await click('settings.connectors.wizard.finishSetup');
       expect(service.setup).not.toHaveBeenCalled();
       expect(document.body.textContent).toContain(
         'settings.connectors.wizard.doneTitle',
@@ -475,9 +533,7 @@ describe('ConnectWizard', () => {
       await render(drive);
       await click('settings.connectors.wizard.signIn');
       await act(async () => knowledgeSwitch()!.click());
-      expect(document.body.textContent).toContain(
-        'settings.connectors.wizard.chooseWhatToSync',
-      );
+      expect(title()).toBe('settings.connectors.wizard.chooseWhatToSyncFrom');
       expect(button('modals.uploadDoc.train')?.disabled).toBe(true);
       await click('pick-folder');
       await click('modals.uploadDoc.train');
@@ -552,9 +608,7 @@ describe('ConnectWizard', () => {
       });
       expect(knowledgeSwitch()).toBeNull();
       expect(document.body.textContent).toContain('pick-folder');
-      expect(document.body.textContent).toContain(
-        'settings.connectors.wizard.chooseWhatToSync',
-      );
+      expect(title()).toBe('settings.connectors.wizard.chooseWhatToSyncFrom');
     });
 
     it('is not offered by a service that does not sync', async () => {
@@ -580,6 +634,183 @@ describe('ConnectWizard', () => {
         'settings.connectors.wizard.syncLater',
       );
     });
+  });
+
+  describe('header and ending', () => {
+    it('puts the service tile beside the title and its description under it', async () => {
+      await render(base);
+      const header = document.body.querySelector('[data-slot="modal-header"]')!;
+      expect(header.querySelector('.size-12')).not.toBeNull();
+      expect(header.textContent).toContain(
+        'settings.connectors.wizard.connectTitle',
+      );
+      expect(header.textContent).toContain(
+        'settings.connectors.descriptions.telegram',
+      );
+      // The body no longer repeats a tile row.
+      const body = document.body.querySelector('[role="dialog"]')!;
+      expect(body.querySelectorAll('.size-12')).toHaveLength(1);
+    });
+
+    it('keeps one width on every step', async () => {
+      await render(drive, vi.fn(), { purpose: 'knowledge' });
+      const width = () =>
+        document.body.querySelector('[role="dialog"]')!.className;
+      const signIn = width();
+      await click('settings.connectors.wizard.signIn');
+      expect(width()).toBe(signIn);
+    });
+
+    it('closes with nothing connected on a plain cancel', async () => {
+      const onClose = vi.fn();
+      await render(base, onClose);
+      await click('cancel');
+      expect(onClose).toHaveBeenCalledWith(false);
+    });
+
+    it('closes as connected once an account was made', async () => {
+      service.createConnection.mockResolvedValue({
+        success: true,
+        connection: { id: 'conn-1', account_label: 'Alerts bot' },
+      });
+      service.setup.mockResolvedValue({
+        success: true,
+        tools: [],
+        sources: [],
+      });
+      const onClose = vi.fn();
+      await render(base, onClose);
+      await typeInto(
+        document.body.querySelector<HTMLInputElement>(
+          'input[type="password"]',
+        )!,
+        't',
+      );
+      await click('settings.connectors.status.connect');
+      expect(successAlert()?.getAttribute('role')).toBe('status');
+      expect(successAlert()?.textContent).toContain(
+        'settings.connectors.wizard.doneSummaryNone',
+      );
+      await click('settings.connectors.wizard.done');
+      expect(onClose).toHaveBeenCalledWith(true);
+    });
+
+    it('never says who is connected before it knows', async () => {
+      service.setup.mockResolvedValue({
+        success: true,
+        tools: [],
+        sources: [],
+      });
+      await render(drive);
+      await click('settings.connectors.wizard.signIn');
+      await click('settings.connectors.wizard.finishSetup');
+      expect(document.body.textContent).not.toContain(
+        'settings.connectors.wizard.doneSummaryNone',
+      );
+      expect(successAlert()?.textContent).toContain(
+        'settings.connectors.wizard.syncLater',
+      );
+    });
+
+    it('offers Cancel and Add to Knowledge when syncing more', async () => {
+      const onClose = vi.fn();
+      await render(drive, onClose, {
+        mode: 'sync',
+        connectionId: 'conn-drive',
+      });
+      expect(button('settings.connectors.wizard.skip')).toBeUndefined();
+      expect(button('modals.uploadDoc.train')?.disabled).toBe(true);
+      await click('cancel');
+      expect(onClose).toHaveBeenCalledWith(false);
+    });
+  });
+
+  it('closes as done after syncing more from an account', async () => {
+    service.setup.mockResolvedValue({
+      success: true,
+      tools: [],
+      sources: [{ id: 'src-1', name: 'Handbook' }],
+    });
+    const onClose = vi.fn();
+    await render(drive, onClose, { mode: 'sync', connectionId: 'conn-drive' });
+    await click('pick-folder');
+    await click('modals.uploadDoc.train');
+    await click('settings.connectors.wizard.done');
+    expect(onClose).toHaveBeenCalledWith(true);
+  });
+
+  describe('which account', () => {
+    const account = (id: string, label: string) => ({
+      id,
+      connector_key: 'google_drive',
+      name: 'Google Drive',
+      display_name: null,
+      icon: 'drive',
+      account_label: label,
+      auth_kind: 'oauth' as const,
+      status: 'connected' as const,
+      server_url: null,
+      last_error: null,
+      created_at: null,
+      updated_at: null,
+      last_used_at: null,
+      source_count: 0,
+      tool_count: 0,
+    });
+
+    it('asks which account first when the service has several', async () => {
+      await render(drive, vi.fn(), { mode: 'sync', purpose: 'knowledge' }, [
+        account('a1', 'lena@meridian.example'),
+        account('a2', 'ops@meridian.example'),
+      ]);
+      const field = document.body.querySelector(
+        '[role="dialog"] [role="combobox"]',
+      );
+      expect(field?.textContent).toContain('lena@meridian.example');
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.account',
+      );
+      await click('pick-folder');
+      await click('modals.uploadDoc.train');
+      expect(service.setup.mock.calls[0][0]).toBe('a1');
+    });
+
+    it('names the one account in the description', async () => {
+      await render(drive, vi.fn(), { mode: 'sync' }, [
+        account('a1', 'lena@meridian.example'),
+      ]);
+      expect(document.body.textContent).not.toContain(
+        'settings.connectors.wizard.account',
+      );
+      const header = document.body.querySelector('[data-slot="modal-header"]')!;
+      expect(header.textContent).toContain('lena@meridian.example');
+    });
+  });
+
+  it('reconnects from a picker whose sign-in expired, then picks up again', async () => {
+    service.reconnect.mockResolvedValue({
+      success: true,
+      connection: { id: 'conn-gh' },
+    });
+    const onClose = vi.fn();
+    await render(github, onClose, { mode: 'sync', connectionId: 'conn-gh' });
+    await click('picker-reconnect');
+    expect(title()).toBe('settings.connectors.wizard.reconnectTitle');
+    await typeInto(
+      document.body.querySelector<HTMLInputElement>('input[type="password"]')!,
+      'github_pat_new',
+    );
+    await click('settings.connectors.status.reconnect');
+    expect(service.reconnect).toHaveBeenCalledWith(
+      'conn-gh',
+      { credentials: { access_token: 'github_pat_new' } },
+      null,
+    );
+    // Back on the picker it came from.
+    expect(title()).toBe('settings.connectors.wizard.chooseWhatToSyncFrom');
+    expect(document.body.textContent).toContain('pick-repo');
+    await click('cancel');
+    expect(onClose).toHaveBeenCalledWith(true);
   });
 
   it('opens a new chat from Try it in chat', async () => {
@@ -700,11 +931,16 @@ describe('ConnectWizard', () => {
 
     it('connects with a token when no GitHub App is set up', async () => {
       await render(github);
-      // One way in: no method switch, a token field and how to make one.
+      // One way in: no method switch, a token field and how to make one,
+      // as the field's own hint.
       expect(document.body.querySelector('[role="radiogroup"]')).toBeNull();
-      expect(document.body.textContent).toContain(
-        'settings.connectors.github.tokenHint',
-      );
+      const tokenField = document.body.querySelector<HTMLInputElement>(
+        'input[type="password"]',
+      )!;
+      expect(
+        document.getElementById(tokenField.getAttribute('aria-describedby')!)
+          ?.textContent,
+      ).toBe('settings.connectors.fieldHints.github_access_token');
       await connectWithToken();
       expect(service.createConnection).toHaveBeenCalledWith(
         {
@@ -715,9 +951,7 @@ describe('ConnectWizard', () => {
       );
       // Tools are asked about, not created on sign-in.
       expect(service.setup).not.toHaveBeenCalled();
-      expect(document.body.textContent).toContain(
-        'settings.connectors.wizard.chooseWhatToSetUp',
-      );
+      expect(title()).toBe('settings.connectors.wizard.chooseWhatToSetUpFor');
     });
 
     it('offers Sign in with GitHub first, and a token instead', async () => {
@@ -762,7 +996,7 @@ describe('ConnectWizard', () => {
       await render(github, vi.fn(), { purpose: 'knowledge' });
       await connectWithToken();
       await click('pick-repo');
-      await click('settings.connectors.wizard.continue');
+      await click('modals.uploadDoc.train');
       const [id, body] = service.setup.mock.calls[0];
       expect(id).toBe('conn-gh');
       expect(body).toEqual({
@@ -790,7 +1024,7 @@ describe('ConnectWizard', () => {
       });
       await render(github);
       await connectWithToken();
-      await click('settings.connectors.wizard.continue');
+      await click('settings.connectors.wizard.finishSetup');
       expect(service.setup.mock.calls[0][1]).toEqual({ create_tools: true });
     });
 
@@ -807,7 +1041,7 @@ describe('ConnectWizard', () => {
       expect(toolSwitch.getAttribute('aria-checked')).toBe('true');
       await act(async () => toolSwitch.click());
       await click('pick-repo');
-      await click('settings.connectors.wizard.continue');
+      await click('modals.uploadDoc.train');
       expect(service.setup.mock.calls[0][1].create_tools).toBe(false);
       expect(service.setup.mock.calls[0][1].sync.items).toEqual({
         repo_url: 'octocat/private',
@@ -830,7 +1064,7 @@ describe('ConnectWizard', () => {
       );
       expect(writesSwitch()!.getAttribute('aria-checked')).toBe('false');
       await act(async () => writesSwitch()!.click());
-      await click('settings.connectors.wizard.continue');
+      await click('settings.connectors.wizard.finishSetup');
       expect(service.setup.mock.calls[0][1]).toEqual({
         create_tools: true,
         allow_writes: true,
@@ -864,7 +1098,7 @@ describe('ConnectWizard', () => {
       });
       await render(github);
       await connectWithToken();
-      await click('settings.connectors.wizard.continue');
+      await click('settings.connectors.wizard.finishSetup');
       expect(document.body.textContent).toContain(
         'settings.connectors.wizard.toolsUnavailable',
       );
@@ -928,25 +1162,19 @@ describe('ConnectWizard', () => {
       return store;
     };
 
-    // The tools come first on the one screen after signing in.
-    const toolsFirst = () => {
-      const text = document.body.textContent ?? '';
-      const tools = text.indexOf('settings.connectors.wizard.toolsHeading:1');
-      const knowledge = text.indexOf(
-        'settings.connectors.wizard.syncToKnowledge',
-      );
-      return tools >= 0 && (knowledge < 0 || tools < knowledge);
-    };
-
-    it('signs in once, then shows its tools and picks teams to sync on one screen', async () => {
+    it('signs in once, picks teams to sync, then ends on the summary with its tools', async () => {
       service.setup.mockResolvedValue({
         success: true,
         tools: [],
         sources: [{ id: 'src-1', name: 'Linear · Engineering' }],
       });
       const onClose = vi.fn();
-      const store = await signIn({ purpose: 'knowledge' }, onClose);
-      expect(toolsFirst()).toBe(true);
+      await signIn({ purpose: 'knowledge' }, onClose);
+      // Nothing is set up yet, so the title doesn't say it is connected.
+      expect(title()).toBe('settings.connectors.wizard.chooseWhatToSyncFrom');
+      expect(document.body.textContent).not.toContain(
+        'settings.connectors.wizard.toolsHeading',
+      );
       await click('pick-team');
       await click('modals.uploadDoc.train');
       const [id, body] = service.setup.mock.calls[0];
@@ -965,37 +1193,33 @@ describe('ConnectWizard', () => {
           config: optionsToConfig(DEFAULT_RETRIEVAL_OPTIONS),
         },
       });
-      // Nothing more to show: the modal closes and says what syncs.
-      expect(onClose).toHaveBeenCalled();
-      expect(
-        selectActionToast(
-          store.getState() as Parameters<typeof selectActionToast>[0],
-        )?.variant,
-      ).toBe('success');
+      // Like every other path: the summary, with the tools from sign-in.
+      expect(onClose).not.toHaveBeenCalled();
+      expect(title()).toBe('settings.connectors.wizard.doneTitle');
+      expect(successAlert()?.textContent).toContain(
+        'settings.connectors.wizard.doneCounts',
+      );
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.toolsHeading:1',
+      );
+      await click('settings.connectors.wizard.done');
+      expect(onClose).toHaveBeenCalledWith(true);
     });
 
-    it('can skip syncing and keep only the tools', async () => {
+    it('ends on the summary when nothing is picked and Sync is off', async () => {
       const onClose = vi.fn();
       await signIn({ purpose: 'knowledge' }, onClose);
-      const train = Array.from(
-        document.body.querySelectorAll<HTMLButtonElement>('button'),
-      ).find((b) => b.textContent?.trim() === 'modals.uploadDoc.train');
-      // Nothing picked yet: nothing to sync.
-      expect(train?.disabled).toBe(true);
-      await click('settings.connectors.wizard.skip');
+      // Nothing picked yet: nothing to add.
+      expect(button('modals.uploadDoc.train')?.disabled).toBe(true);
+      expect(button('settings.connectors.wizard.skip')).toBeUndefined();
+      await act(async () => knowledgeSwitch()!.click());
+      await click('settings.connectors.wizard.finishSetup');
       expect(service.setup).not.toHaveBeenCalled();
-      expect(onClose).toHaveBeenCalled();
-    });
-
-    it('asks about Knowledge under its tools on a plain connect', async () => {
-      const onClose = vi.fn();
-      await signIn({}, onClose);
-      expect(toolsFirst()).toBe(true);
-      expect(knowledgeSwitch()!.getAttribute('aria-checked')).toBe('false');
-      expect(document.body.textContent).not.toContain('pick-team');
-      await click('settings.connectors.wizard.done');
-      expect(service.setup).not.toHaveBeenCalled();
-      expect(onClose).toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(title()).toBe('settings.connectors.wizard.doneTitle');
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.toolsHeading:1',
+      );
     });
 
     it('goes straight to the summary after signing in again', async () => {

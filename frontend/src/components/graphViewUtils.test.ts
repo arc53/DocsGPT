@@ -165,7 +165,7 @@ describe('readGraphPalette', () => {
   it('falls back to the light tokens, with grey (not chart-5 red) for Other', () => {
     expect(readGraphPalette()).toEqual({
       series: ['#7d54d1', '#2563eb', '#079455', '#ca8a04'],
-      other: '#737373',
+      other: '#6b6b6b',
       primary: '#7d54d1',
       hoverStroke: '#171717',
       link: '#d9d9d9',

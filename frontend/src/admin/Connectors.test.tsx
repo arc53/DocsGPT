@@ -188,6 +188,142 @@ describe('Admin Connectors', () => {
     expect(container.textContent).toContain('docsgpt connectors reencrypt');
   });
 
+  it('names env vars in mono like the command', async () => {
+    getAdmin.mockResolvedValue(payload({ default_encryption_key: true }));
+    await render();
+    const alert = container.querySelector('[data-slot="alert"]')!;
+    expect(alert.getAttribute('data-variant') ?? alert.className).toContain(
+      'destructive',
+    );
+    const codes = Array.from(alert.querySelectorAll('code')).map(
+      (c) => c.textContent,
+    );
+    expect(codes).toEqual(
+      expect.arrayContaining([
+        'ENCRYPTION_SECRET_KEY',
+        'ENCRYPTION_SECRET_KEY_PREVIOUS',
+        'docsgpt connectors reencrypt',
+      ]),
+    );
+  });
+
+  it('marks ready rows Blocked while connects are refused', async () => {
+    getAdmin.mockResolvedValue(
+      payload({ default_encryption_key: true, connections_blocked: true }),
+    );
+    await render();
+    expect(container.textContent).toContain(
+      "Members can't connect services until you set ENCRYPTION_SECRET_KEY.",
+    );
+    const [drive, notion] = Array.from(container.querySelectorAll('tbody tr'));
+    // Settings come first: a row that needs setup keeps saying so.
+    expect(drive.textContent).toContain('Needs setup');
+    expect(notion.textContent).not.toContain('Ready');
+    const badge = Array.from(
+      notion.querySelectorAll('[data-slot="badge"]'),
+    ).find((b) => b.textContent === 'Blocked')!;
+    expect(badge.getAttribute('data-variant')).toBe('destructive');
+  });
+
+  it('keeps rows Ready when connects still work', async () => {
+    getAdmin.mockResolvedValue(
+      payload({ default_encryption_key: true, connections_blocked: false }),
+    );
+    await render();
+    const notion = container.querySelectorAll('tbody tr')[1];
+    expect(notion.textContent).toContain('Ready');
+    expect(notion.textContent).not.toContain('Blocked');
+  });
+
+  it('uses short sharing labels', async () => {
+    getAdmin.mockResolvedValue(payload());
+    await render();
+    const notion = container.querySelectorAll('tbody tr')[1];
+    expect(notion.textContent).toContain('Sharer decides');
+    const trigger = notion.querySelector(
+      '[aria-label="Notion sharing policy"]',
+    )!;
+    expect(trigger.className.split(' ')).toContain('w-60');
+  });
+
+  it('puts the redirect URIs last, captioned from the catalog', async () => {
+    const GITHUB = connector({
+      key: 'github',
+      name: 'GitHub',
+      icon: 'github',
+      auth_kind: 'api_key',
+      capabilities: ['sync', 'read'],
+      configured: true,
+      required_settings: [],
+      oauth_settings: [{ name: 'GITHUB_CLIENT_ID', set: false }],
+      allow_writes: true,
+    });
+    getAdmin.mockResolvedValue(
+      payload({ connectors: [connector(), GITHUB, NOTION, MCP_ROW] }),
+    );
+    await render();
+    const headings = Array.from(container.querySelectorAll('h2, h3')).map(
+      (h) => h.textContent,
+    );
+    expect(headings.indexOf('Redirect URIs')).toBeGreaterThan(
+      headings.indexOf('Write access'),
+    );
+    expect(headings).toContain('Google Drive and GitHub');
+    expect(headings).toContain('MCP servers');
+  });
+
+  // V3: a redirect URI is a ui/code-block CopyField; py-2 puts the one-line
+  // URL on the copy button's centre.
+  it('shows each redirect URI as a CopyField', async () => {
+    getAdmin.mockResolvedValue(payload({ connectors: [connector()] }));
+    await render();
+    const value = Array.from(container.querySelectorAll('pre')).find(
+      (el) => el.textContent === 'https://docs.example/api/mcp_server/callback',
+    )!;
+    expect(value).toBeDefined();
+    expect(value.className.split(' ')).toEqual(
+      expect.arrayContaining(['py-2', 'select-all', 'wrap-anywhere']),
+    );
+    expect(value.parentElement!.dataset.slot).toBe('card');
+  });
+
+  it('labels the action column and sizes the Setup guide like Quotas', async () => {
+    getAdmin.mockResolvedValue(payload());
+    await render();
+    const headers = Array.from(container.querySelectorAll('thead th')).map(
+      (th) => th.textContent,
+    );
+    expect(headers[headers.length - 1]).toBe('Actions');
+    const guide = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('tbody button'),
+    ).find((b) => b.textContent === 'Setup guide')!;
+    expect(guide.dataset.variant).toBe('outline');
+    expect(guide.dataset.size).toBe('sm');
+    expect(container.textContent).toContain('The MCP server row decides');
+  });
+
+  it("opens the Setup guide on Done, not on the Copy button's tooltip", async () => {
+    getAdmin.mockResolvedValue(
+      payload({
+        connectors: [connector({ docs_url: 'https://docs.example' })],
+      }),
+    );
+    await render();
+    const guide = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('tbody button'),
+    ).find((b) => b.textContent === 'Setup guide')!;
+    await act(async () => guide.click());
+    await act(async () => new Promise((r) => setTimeout(r, 0)));
+    const dialog = document.body.querySelector('[role="dialog"]')!;
+    // One thing called "Setup guide": the external link has its own name.
+    const link = dialog.querySelector('a')!;
+    expect(link.textContent).not.toContain('Setup guide');
+    expect((document.activeElement as HTMLElement | null)?.textContent).toBe(
+      'Done',
+    );
+    expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+  });
+
   it('saves a connector toggle as a policy', async () => {
     getAdmin.mockResolvedValue(payload());
     updateAdmin.mockResolvedValue(
@@ -257,6 +393,22 @@ describe('Admin Connectors', () => {
       document.body.querySelector('[data-slot="sheet-content"]'),
     ).not.toBeNull();
     expect(document.body.textContent).toContain('Shared tools use');
+    const sheet = document.body.querySelector('[data-slot="sheet-content"]')!;
+    const trigger = sheet.querySelector(
+      '[aria-label="Notion sharing policy"]',
+    )!;
+    expect(trigger.getAttribute('data-size')).toBe('field');
+    const label = Array.from(sheet.querySelectorAll('label')).find(
+      (l) => l.textContent === 'Enabled',
+    )!;
+    const toggle = sheet.querySelector('[aria-label="Notion enabled"]')!;
+    expect(label.htmlFor).toBe(toggle.id);
+    expect(toggle.id).not.toBe('');
+    const guide = Array.from(sheet.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Setup guide',
+    );
+    // Notion has no setup guide; Drive's is outline sm, not a pill.
+    expect(guide).toBeUndefined();
   });
 
   it('reports a failed save in a toast and keeps the page', async () => {

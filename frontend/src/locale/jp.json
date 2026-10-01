@@ -76,7 +76,6 @@
       "prompt": "アクティブプロンプト",
       "promptDescription": "エージェントを使わないチャットのシステムプロンプト。エージェントは独自のものを使います。",
       "deleteAllLabel": "すべての会話を削除",
-      "deleteAllBtn": "すべて削除",
       "deleteAllDescription": "アカウント内のすべての会話を完全に削除します。この操作は元に戻せません。",
       "addNew": "新規追加",
       "convHistory": "会話履歴",
@@ -120,7 +119,7 @@
       "reingest": "再インデックス",
       "ingestFailed": "インデックス作成に失敗しました",
       "ingestProcessing": "インデックス作成中...",
-      "syncConfirmation": "\"{{sourceName}}\"を同期してもよろしいですか？これにより、コンテンツがクラウドストレージで更新され、個々のチャンクに加えた編集が上書きされる可能性があります。",
+      "syncConfirmation": "「{{sourceName}}」を同期しますか？",
       "syncFrequency": {
         "never": "なし",
         "daily": "毎日",
@@ -226,7 +225,6 @@
           "empty": "グラフはまだありません。抽出が実行中の可能性があります。",
           "selectNode": "ノードを選択すると詳細が表示されます。",
           "noChunks": "このエンティティにリンクされたチャンクはありません。",
-          "close": "閉じる",
           "tabs": {
             "graph": "グラフ",
             "entities": "エンティティ",
@@ -271,6 +269,8 @@
           "relationshipsCapped_one": "{{total}}件の関係のうち、強い順に{{shown}}件を表示しています。",
           "chunkCount_one": "{{formatted}}件のチャンク",
           "entityCount_one": "{{formatted}}件のエンティティ",
+          "entityRange_one": "エンティティ {{formatted}}件中 {{from}}–{{to}}件",
+          "entityRange_other": "エンティティ {{formatted}}件中 {{from}}–{{to}}件",
           "relationshipCount_one": "{{formatted}}件の関係"
         }
       },
@@ -301,8 +301,7 @@
       },
       "editConfig": "ソース設定",
       "shareWithTeam": "チームと共有",
-      "deleteWarning": "\"{{name}}\"を削除してもよろしいですか？",
-      "confirmDelete": "このファイルを削除してもよろしいですか？この操作は元に戻せません。",
+      "deleteWarning": "「{{name}}」を削除しますか？",
       "chunks": "チャンク",
       "noChunks": "チャンクが見つかりません",
       "noChunksAlt": "チャンクが見つかりません",
@@ -324,7 +323,6 @@
       "addFile": "ファイルを追加",
       "uploadingFilesTitle": "ファイルをアップロード中...",
       "deletingTitle": "削除中...",
-      "deleteDirectoryWarning": "ディレクトリ \"{{name}}\" とその内容をすべて削除してもよろしいですか？この操作は元に戻せません。",
       "searchAlt": "検索",
       "retrievalOptions": {
         "title": "詳細設定",
@@ -439,7 +437,6 @@
         "preview": "プレビュー",
         "previewEmpty": "プレビューする内容がまだありません。",
         "cancel": "キャンセル",
-        "close": "閉じる",
         "discardMessage": "保存されていない変更を破棄しますか?",
         "discard": "破棄"
       },
@@ -449,9 +446,12 @@
       "nextChunk": "次のチャンク",
       "paused": "同期を一時停止中です。再開するには {{name}} を再接続してください。",
       "emptyHint": "ファイルをアップロードするか、ウェブサイトを追加するか、サービスを接続してコンテンツを同期しましょう。",
-      "connectService": "サービスを接続",
       "filesByline_one": "{{files}} ファイル · {{tokens}} トークン",
       "chunkCount_one": "{{formatted}} 件のチャンク",
+      "chunkRange_one": "チャンク {{formatted}}件中 {{from}}–{{to}}件",
+      "chunkRange_other": "チャンク {{formatted}}件中 {{from}}–{{to}}件",
+      "pageRange_one": "ソース {{formatted}}件中 {{from}}–{{to}}件",
+      "pageRange_other": "ソース {{formatted}}件中 {{from}}–{{to}}件",
       "viewConfig": "ソース設定を表示",
       "errors": {
         "forbidden": "このソースでその操作を行う権限がありません。",
@@ -459,7 +459,15 @@
         "sync": "ソースを同期できませんでした。",
         "syncFrequency": "同期頻度を変更できませんでした。",
         "reingest": "再取り込みを開始できませんでした。"
-      }
+      },
+      "viaConnection": "{{name}} 経由",
+      "loadError": "ナレッジを読み込めませんでした。",
+      "delete": "削除",
+      "deleteConsequence": "ファイルとチャンクも削除されます。この操作は元に戻せません。",
+      "deleteFileConsequence": "チャンクも削除されます。この操作は元に戻せません。",
+      "deleteDirectoryConsequence": "中のものもすべて削除されます。この操作は元に戻せません。",
+      "syncConsequence": "クラウドストレージから内容が更新されるため、個々のチャンクに加えた編集が上書きされる場合があります。",
+      "deleteItemFailed": "「{{name}}」を削除できませんでした。"
     },
     "analytics": {
       "label": "分析",
@@ -665,7 +673,8 @@
           "retrievedChunks": "取得したチャンク",
           "allAttributes": "すべての属性"
         }
-      }
+      },
+      "loadError": "ログを読み込めませんでした。"
     },
     "teams": {
       "label": "チーム",
@@ -693,7 +702,7 @@
       "selectTeamTitle": "チームが選択されていません",
       "teamSubtitle": "このチームのメンバーと共有リソースを管理します。",
       "deleteTeam": "チームを削除",
-      "deleteTeamConfirmation": "「{{name}}」を削除してもよろしいですか？この操作は元に戻せません。",
+      "deleteTeamConfirmation": "「{{name}}」を削除しますか？",
       "members": "メンバー",
       "addMember": "メンバーを追加",
       "addMemberTitle": "メンバーを追加",
@@ -704,7 +713,7 @@
       "memberRoleLabel": "ロール",
       "add": "追加",
       "remove": "削除",
-      "removeMemberConfirmation": "このメンバーをチームから削除しますか？",
+      "removeMemberConfirmation": "「{{name}}」を {{team}} から削除しますか？",
       "addMemberError": "メンバーの追加に失敗しました（チーム管理者のみ可能です）。",
       "memberNotFound": "そのメールアドレスのユーザーが見つかりません。先に一度サインインしてもらう必要があります。",
       "noMembers": "メンバーはまだいません。「メンバーを追加」からメールアドレスで招待してください。",
@@ -752,7 +761,6 @@
         "showAll": "すべて表示（{{formatted}}）",
         "andMore_one": "ほか {{formatted}} 件",
         "andMore_other": "ほか {{formatted}} 件",
-        "back": "戻る",
         "allSummary": "{{name}} · チーム: {{teams}} · ユーザー: {{people}}",
         "searchAccess": "ユーザーとチームを検索…",
         "filterLabel": "アクセス権を持つユーザーを絞り込む",
@@ -767,35 +775,40 @@
           "intro": "このエージェントを使うすべての人が、表示されたアクセスでこれらを使います。",
           "stopped": "停止中",
           "writesOff": "API 経由は不可",
-          "writesNote": "コネクタの「許可」はチャットに適用されます。「API 経由は不可」と示された変更は、Access Details で許可するまで、API、ウィジェット、公開リンクの利用者には行えません。",
-          "writesNoteEditor": "コネクタの「許可」はチャットに適用されます。「API 経由は不可」と示された変更は、オーナーが Access Details で許可するまで、API、ウィジェット、公開リンクの利用者には行えません。",
+          "writesNote": "一部の変更は、API、ウィジェット、リンクの利用者には行えません。",
+          "writesNoteEditor": "一部の変更は、API、ウィジェット、リンクの利用者には行えません。アクセス詳細で許可するようオーナーに依頼してください。",
           "access": {
-            "you": "あなたのアクセス",
-            "person": "{{person}} のアクセス",
-            "other": "他の人のアクセス",
-            "owner": "オーナーのアクセス",
-            "member": "各自の {{service}} アカウント（API とウィジェット：あなたのもの）",
-            "memberNoService": "各自のアカウント（API とウィジェット：あなたのもの）",
-            "yourAccount": "あなたの {{service}} アカウント",
-            "yourAccountNoService": "あなたのアカウント",
-            "personAccount": "{{person}} の {{service}} アカウント",
-            "personAccountNoService": "{{person}} のアカウント",
-            "memberShared": "各自の {{service}} アカウント（API とウィジェット：オーナーのもの）",
-            "memberSharedNoService": "各自のアカウント（API とウィジェット：オーナーのもの）",
-            "otherAccount": "他の人の {{service}} アカウント",
-            "otherAccountNoService": "他の人のアカウント",
-            "yourCredentials": "あなたの保存済み認証情報",
-            "personCredentials": "{{person}} の保存済み認証情報",
-            "otherCredentials": "他の人の保存済み認証情報"
+            "member": "各自の {{service}} アカウント",
+            "memberNoService": "各自のアカウント",
+            "runsAs": "{{person}} として実行",
+            "runsAsYou": "あなたとして実行",
+            "runsAsOther": "他の人として実行"
           },
           "writesSomeOff": "一部は API 経由不可",
           "adminOff": "管理者が変更をオフにしています",
-          "writesNoteApi": "コネクタの「許可」はチャットに適用されます。「API 経由は不可」と示された変更は、Access Details で許可するまで、API とウィジェットの利用者には行えません。",
-          "writesNoteApiEditor": "コネクタの「許可」はチャットに適用されます。「API 経由は不可」と示された変更は、オーナーが Access Details で許可するまで、API とウィジェットの利用者には行えません。",
-          "writesNoteMemberTail": "各自のアカウントを使うツールでは、公開リンクの利用者は自分のアカウントで変更します。",
-          "openAccessDetails": "Access Details を開く",
-          "accessDetailsNeedsKey": "エージェントに API キーがあると、Access Details にこれらの変更が表示されます。"
-        }
+          "openAccessDetails": "アクセス詳細を開く",
+          "accessDetailsNeedsKey": "エージェントに API キーがあると、アクセス詳細にこれらの変更が表示されます。",
+          "reasonShort": {
+            "deleted": "削除済み",
+            "ownerLostAccessYou": "使用できなくなりました",
+            "ownerLostAccess": "オーナーが使用できなくなりました",
+            "sponsorCannotEditAgent": "{{person}} はエージェントを編集できなくなりました",
+            "sponsorCannotEditAgentOther": "追加した人がエージェントを編集できなくなりました",
+            "sponsorCannotEditItem": "{{person}} はこれを編集できなくなりました",
+            "sponsorCannotEditItemYou": "これを編集できなくなりました",
+            "sponsorCannotEditItemOther": "追加した人がこれを編集できなくなりました",
+            "connectionNeedsReconnect": "{{service}} からサインアウト済み",
+            "connectionNeedsReconnectNoService": "サインアウト済み",
+            "connectionRemoved": "{{service}} アカウントは削除済み",
+            "connectionRemovedNoService": "アカウントは削除済み",
+            "connectorDisabled": "管理者が {{service}} をオフにしました",
+            "connectorDisabledNoService": "管理者がオフにしました",
+            "unknown": "実行されていません"
+          }
+        },
+        "removeConfirm": "「{{name}}」のアクセス権を削除しますか？",
+        "removeConfirmTeam": "{{team}} の全員が「{{resource}}」にアクセスできなくなります。いつでも再度共有できます。",
+        "removeConfirmPerson": "{{name}} は {{team}} 経由での「{{resource}}」へのアクセス権を失います。いつでも再度共有できます。"
       },
       "memberCount_one": "{{formatted}}人のメンバー",
       "memberCount_other": "{{formatted}}人のメンバー",
@@ -942,10 +955,11 @@
           "prompt": "プロンプト"
         },
         "search": "共有を検索…",
-        "noMatches": "一致するものはありません。"
+        "noMatches": "一致するものはありません。",
+        "pageRange_one": "リソース {{formatted}}件中 {{from}}–{{to}}件",
+        "pageRange_other": "リソース {{formatted}}件中 {{from}}–{{to}}件"
       },
       "drawer": {
-        "close": "閉じる",
         "subtitle": "{{type}} · 所有者: {{owner}}",
         "open": "{{type}}を開く",
         "manageSharing": "共有を管理",
@@ -967,7 +981,16 @@
         "otherTeamsHint": "ほかのチームとも共有していますか？それらは「共有を管理」で管理します。",
         "whatPeopleCanDo": "ここでできること",
         "capabilitiesHint": "所有者のアクセス設定に基づきます。ここでは読み取り専用です。"
-      }
+      },
+      "pageRange_one": "チーム {{formatted}}件中 {{from}}–{{to}}件",
+      "pageRange_other": "チーム {{formatted}}件中 {{from}}–{{to}}件",
+      "searchMembers": "メンバーを検索…",
+      "membersRange_one": "メンバー {{formatted}}人中 {{from}}–{{to}}人",
+      "membersRange_other": "メンバー {{formatted}}人中 {{from}}–{{to}}人",
+      "membersLoadError": "メンバーを読み込めませんでした。",
+      "deleteTeamConsequence": "メンバーは、このチームと共有されたすべてにアクセスできなくなります。この操作は元に戻せません。",
+      "delete": "削除",
+      "removeMemberConsequence": "{{team}} と共有されたすべてにアクセスできなくなります。いつでも再度追加できます。"
     },
     "tools": {
       "label": "ツール",
@@ -978,19 +1001,12 @@
       "selectToolSetup": "ツールを追加",
       "settingsIconAlt": "設定アイコン",
       "configureToolAria": "{{toolName}}を設定",
-      "toggleToolAria": "{{toolName}}を切り替え",
       "manageTools": "ツールへ移動",
       "edit": "編集",
       "delete": "削除",
       "reconnect": "再接続",
       "shareWithTeam": "チームと共有",
-      "builtIn": "ビルトイン",
-      "authStatus": {
-        "connected": "接続済み",
-        "needsAuth": "再接続",
-        "configured": "接続済み"
-      },
-      "deleteWarning": "ツール \"{{toolName}}\" を削除してもよろしいですか？",
+      "deleteWarning": "「{{toolName}}」を削除しますか？",
       "unsavedChanges": "保存されていない変更があります。保存せずに離れると失われます。",
       "leaveWithoutSaving": "保存せずに離れる",
       "saveAndLeave": "保存して離れる",
@@ -1021,12 +1037,11 @@
       "headers": "ヘッダー",
       "queryParameters": "クエリパラメータ",
       "body": "ボディ",
-      "deleteActionWarning": "アクション \"{{name}}\" を削除してもよろしいですか？",
+      "deleteActionWarning": "「{{name}}」を削除しますか？",
       "save": "保存",
       "saveFailed": "ツール設定の保存に失敗しました",
       "fieldName": "フィールド名",
       "fieldType": "フィールドタイプ",
-      "filledByLLM": "LLMによる入力",
       "fieldDescription": "フィールドの説明",
       "value": "値",
       "addProperty": "プロパティを追加",
@@ -1037,53 +1052,49 @@
       "name": "名前",
       "type": "タイプ",
       "mcp": {
-        "addServer": "Add MCP Server",
-        "editServer": "Edit Server",
+        "addServer": "MCP サーバーを追加",
         "reconnectServer": "サーバーに再接続",
-        "serverName": "Server Name",
-        "serverUrl": "Server URL",
-        "headerName": "Header Name",
+        "serverName": "サーバー名",
+        "serverUrl": "サーバー URL",
+        "headerName": "ヘッダー名",
         "username": "ユーザー名",
         "password": "パスワード",
-        "timeout": "Timeout (seconds)",
-        "testConnection": "Test Connection",
-        "save": "Save",
-        "cancel": "Cancel",
-        "noAuth": "No Authentication",
-        "oauthInProgress": "Waiting for OAuth completion...",
-        "oauthCompleted": "OAuth completed successfully",
-        "oauthPopupBlocked": "ブラウザによってポップアップがブロックされました。以下をクリックして認証してください:",
+        "timeout": "タイムアウト（秒）",
+        "testConnection": "接続をテスト",
+        "save": "保存",
+        "cancel": "キャンセル",
+        "oauthInProgress": "OAuth サインインの完了を待っています…",
+        "oauthCompleted": "OAuth サインインが完了しました",
+        "oauthPopupBlocked": "ブラウザがサインインウィンドウをブロックしました。続行するには認証ページを開いてください。",
         "openAuthPage": "認証ページを開く",
-        "authType": "Authentication Type",
-        "defaultServerName": "My MCP Server",
+        "authType": "認証タイプ",
+        "defaultServerName": "マイ MCP サーバー",
         "authTypes": {
-          "none": "No Authentication",
-          "apiKey": "API Key",
-          "bearer": "Bearer Token",
+          "none": "認証なし",
+          "apiKey": "API キー",
+          "bearer": "ベアラートークン",
           "oauth": "OAuth",
-          "basic": "Basic Authentication"
+          "basic": "Basic 認証"
         },
         "placeholders": {
-          "serverUrl": "https://api.example.com",
-          "apiKey": "Your secret API key",
-          "bearerToken": "Your secret token",
-          "username": "Your username",
-          "password": "Your password",
-          "oauthScopes": "OAuth scopes (comma separated)"
+          "apiKey": "シークレット API キー",
+          "bearerToken": "シークレットトークン",
+          "username": "ユーザー名",
+          "password": "パスワード",
+          "oauthScopes": "OAuth スコープ（カンマ区切り）"
         },
         "errors": {
-          "nameRequired": "Server name is required",
-          "urlRequired": "Server URL is required",
-          "invalidUrl": "Please enter a valid URL",
-          "apiKeyRequired": "API key is required",
-          "tokenRequired": "Bearer token is required",
-          "usernameRequired": "Username is required",
-          "passwordRequired": "Password is required",
-          "testFailed": "Connection test failed",
-          "saveFailed": "Failed to save MCP server",
-          "oauthFailed": "OAuth process failed or was cancelled",
-          "oauthTimeout": "OAuth process timed out, please try again",
-          "timeoutRange": "Timeout must be between 1 and 300 seconds"
+          "nameRequired": "サーバー名は必須です",
+          "urlRequired": "サーバー URL は必須です",
+          "invalidUrl": "有効な URL を入力してください",
+          "apiKeyRequired": "API キーは必須です",
+          "tokenRequired": "ベアラートークンは必須です",
+          "usernameRequired": "ユーザー名は必須です",
+          "passwordRequired": "パスワードは必須です",
+          "testFailed": "接続テストに失敗しました",
+          "saveFailed": "MCP サーバーを保存できませんでした",
+          "oauthFailed": "OAuth サインインが失敗したか、キャンセルされました",
+          "timeoutRange": "タイムアウトは 1～300 秒の範囲で指定してください"
         },
         "sharedByEditor": "{{owner}} が共有 · あなたは編集者です",
         "aTeammate": "チームメンバー",
@@ -1095,7 +1106,11 @@
           "password": "パスワード"
         },
         "savedKeyHint": "キーが保存されています。空のままにすると保持されます（サーバーが変わらない場合のみ）。",
-        "sharedOAuthOwnerOnly": "このサーバーの接続を変更したり、サインインを再接続したりできるのはオーナーだけです。名前の変更とアクションの編集は引き続き行えます。"
+        "sharedOAuthOwnerOnly": "このサーバーの接続を変更したり、サインインを再接続したりできるのはオーナーだけです。名前の変更とアクションの編集は引き続き行えます。",
+        "advanced": "詳細設定",
+        "testBeforeSave": "保存する前に接続をテストしてください。",
+        "discoveredTools_one": "{{formatted}} 件のアクションが見つかりました",
+        "discoveredTools_other": "{{formatted}} 件のアクションが見つかりました"
       },
       "configErrors": {
         "required": "{{field}}は必須です",
@@ -1106,8 +1121,6 @@
       "toolIconTitle": "{{name}}のアイコン",
       "groupBuiltIn": "組み込み",
       "groupService": "サービスから",
-      "browseConnectors": "すべてのコネクタを見る",
-      "viaConnection": "{{name}} 経由",
       "off": "オフ",
       "view": "表示",
       "inMyChats": "自分のチャットで使用",
@@ -1115,7 +1128,17 @@
       "statusUpdateFailed": "このツールをチャットで使うかどうかを変更できませんでした。",
       "deleteFailed": "このツールを削除できませんでした。",
       "sharedBy": "{{team}} が共有",
-      "savedSecretPlaceholder": "保存済み · 置き換えるには新しい値を入力"
+      "savedSecretPlaceholder": "保存済み · 置き換えるには新しい値を入力",
+      "pageRange_one": "ツール {{formatted}}件中 {{from}}–{{to}}件",
+      "pageRange_other": "ツール {{formatted}}件中 {{from}}–{{to}}件",
+      "manageInConnectors": "コネクタで管理",
+      "defaultBadge": "デフォルト",
+      "noToolsYet": "ツールはまだありません",
+      "connectService": "サービスを接続",
+      "filledBy": "入力元",
+      "loadError": "ツールを読み込めませんでした。",
+      "deleteConsequence": "設定とアクションも削除されます。この操作は元に戻せません。",
+      "deleteActionConsequence": "ツールを保存すると削除されます。"
     },
     "devices": {
       "label": "デバイス",
@@ -1124,7 +1147,7 @@
       "empty": "ペアリング済みのデバイスはありません。",
       "revoke": "取り消し",
       "edit": "編集",
-      "revokeWarning": "{{name}}を取り消しますか？CLIは切断されます。",
+      "revokeWarning": "「{{name}}」を取り消しますか？",
       "approvalMode": "承認モード",
       "approvalAsk": "毎回確認",
       "approvalFull": "フルアクセス",
@@ -1132,7 +1155,6 @@
       "offline": "オフライン",
       "lastSeen": "最終接続: {{time}}",
       "lastSeenLabel": "最終接続",
-      "seenAgo": "{{time}}前に確認",
       "nameLabel": "デバイス名",
       "descriptionLabel": "説明（エージェントに表示されます）",
       "descriptionPlaceholder": "このマシンの用途は？",
@@ -1170,7 +1192,11 @@
         "cancel": "キャンセル"
       },
       "auditDurationValue": "{{value}} ミリ秒",
-      "fallbackName": "デバイス"
+      "fallbackName": "デバイス",
+      "auditShow": "最近のコマンドを表示",
+      "auditHide": "最近のコマンドを非表示",
+      "seen": "{{time}}に確認",
+      "revokeConsequence": "このデバイスの CLI は切断され、ペアリングが解除されます。再接続するには、もう一度ペアリングしてください。"
     },
     "customModels": {
       "label": "カスタムモデル",
@@ -1186,7 +1212,7 @@
       "testSuccess": "接続に成功しました。",
       "testHintNew": "接続テストを有効にするには、ベース URL、モデル ID、API キーを入力してください。",
       "disabledBadge": "無効",
-      "deleteWarning": "カスタムモデル「{{modelName}}」を削除してもよろしいですか?",
+      "deleteWarning": "「{{modelName}}」を削除しますか？",
       "actionsMenuAria": "{{modelName}} のアクション",
       "modelsGroup": {
         "builtin": "DocsGPT モデル",
@@ -1242,7 +1268,10 @@
         "contextWindowRange": "コンテキストウィンドウは 1,000 から 10,000,000 の範囲で指定してください",
         "saveFailed": "カスタムモデルの保存に失敗しました",
         "testFailed": "接続テストに失敗しました"
-      }
+      },
+      "pageRange_one": "モデル {{formatted}}件中 {{from}}–{{to}}件",
+      "pageRange_other": "モデル {{formatted}}件中 {{from}}–{{to}}件",
+      "loadError": "モデルを読み込めませんでした。"
     },
     "accessTokens": {
       "label": "アクセストークン",
@@ -1270,7 +1299,7 @@
       "showLess": "折りたたむ",
       "revoke": "取り消し",
       "revokeAria": "トークン{{name}}を取り消す",
-      "revokeWarning": "トークン「{{name}}」を取り消しますか？このトークンを使用しているものはすぐに動作しなくなります。この操作は元に戻せません。",
+      "revokeWarning": "「{{name}}」を取り消しますか？",
       "restrictionCount": {
         "agents_one": "エージェント{{count}}件",
         "agents_other": "エージェント{{count}}件",
@@ -1343,7 +1372,8 @@
           "title": "トークンを再生成しました",
           "subtitle": "「{{name}}」の新しいシークレットの準備ができました。以前のものは使用できません。"
         }
-      }
+      },
+      "revokeConsequence": "まだ使用しているものはすぐに動作しなくなります。この操作は元に戻せません。"
     },
     "connectors": {
       "label": "コネクタ",
@@ -1353,20 +1383,6 @@
       "custom": {
         "custom_mcp": "MCP サーバー",
         "custom_openapi": "OpenAPI / REST"
-      },
-      "categoriesLabel": "カテゴリでコネクタを絞り込む",
-      "categories": {
-        "all": "すべて",
-        "connected": "接続済み",
-        "files": "ファイルとストレージ",
-        "knowledge": "ドキュメントと Wiki",
-        "dev": "開発者ツール",
-        "messaging": "メッセージ",
-        "database": "データベース",
-        "search": "検索とウェブ",
-        "custom": "カスタム",
-        "projects": "プロジェクトと課題",
-        "business": "決済とビジネス"
       },
       "capability": {
         "sync": "同期",
@@ -1384,9 +1400,7 @@
       },
       "connectionStatus": {
         "connected": "接続済み",
-        "reconnect_needed": "再接続が必要",
         "disconnected": "切断済み",
-        "error": "エラー",
         "pending": "サインイン待ち"
       },
       "publisher": {
@@ -1423,7 +1437,6 @@
       "unverified": "このサーバーは DocsGPT による確認を受けていません。信頼できるサーバーにのみ接続してください。",
       "detail": {
         "accounts": "アカウント",
-        "connectedAs": "{{account}} として接続中",
         "connectAnother": "別のアカウントを接続",
         "sources": "この接続からのナレッジ",
         "tools": "この接続のツール",
@@ -1435,7 +1448,7 @@
         "toolOff": "オフ",
         "accountMenu": "アカウントの操作",
         "disconnect": "切断",
-        "keyEnding": "末尾が {{hint}} のキー",
+        "keyEnding": "キー {{hint}}",
         "syncMore": "さらに同期する",
         "refreshTools": "ツールを更新",
         "noSources": "この接続からはまだ何も同期されていません。",
@@ -1446,14 +1459,14 @@
         "syncStarted": "{{name}} を同期しています…",
         "syncFailed": "同期を開始できませんでした。もう一度お試しください。",
         "toolSwitchFailed": "ツールを変更できませんでした。もう一度お試しください。",
-        "account": "アカウント: {{account}}",
         "expired": "サインインの有効期限が切れました。この接続を使い続けるには再接続してください。",
         "broken": "この接続は動作しなくなりました。再接続してもう一度お試しください。",
         "addTools": "ツールを追加",
         "noTools": "この接続のツールはまだありません。",
         "addToolsFailed": "ツールを追加できませんでした。もう一度お試しください。",
         "rename": "名前を変更",
-        "accountPicker": "アカウントを選択"
+        "toolsHint": "「事前に確認」ではチャットで確認します。API、ウィジェット、リンクからの変更は、エージェントごとに Access details で許可します。",
+        "toolsUnavailable": "{{name}} のツールに接続できませんでした。もう一度お試しください。"
       },
       "permission": {
         "always": "許可",
@@ -1462,16 +1475,17 @@
         "label": "{{action}} の権限",
         "saveFailed": "権限を保存できませんでした。もう一度お試しください。",
         "groupLabel": "{{group}} すべての権限",
-        "fold": "アクションを隠す",
-        "hint": "「許可」と「事前に確認」はチャットに適用されます。「事前に確認」では、DocsGPT がアクションの実行前に確認します。エージェントの API、ウィジェット、公開リンクからの変更は、エージェントごとに Access Details で許可します。",
-        "actionCount_other": "{{formatted}} 件のアクション",
-        "customize_other": "{{formatted}} 件を個別に設定"
+        "customize": "カスタマイズ"
       },
       "disconnect": {
-        "title": "{{name}} を切断しますか？",
-        "body_zero": "この接続のツールは、再接続するまで使えなくなります。",
-        "body_other": "同期した {{formatted}} 件はナレッジに残りますが、更新されなくなります。この接続のツールは再接続するまで動作しません。",
-        "failed": "切断できませんでした。もう一度お試しください。"
+        "title": "「{{name}}」の接続を解除しますか？",
+        "failed": "切断できませんでした。もう一度お試しください。",
+        "bodyBoth_one": "同期した {{formatted}} 件はナレッジに残りますが、更新されなくなります。この接続のツールは再接続するまで動作しません。",
+        "bodyBoth_other": "同期した {{formatted}} 件はナレッジに残りますが、更新されなくなります。この接続のツールは再接続するまで動作しません。",
+        "bodyTools": "この接続のツールは、再接続するまで使えなくなります。",
+        "bodySources_one": "同期した {{formatted}} 件はナレッジに残りますが、再接続するまで更新されません。",
+        "bodySources_other": "同期した {{formatted}} 件はナレッジに残りますが、再接続するまで更新されません。",
+        "bodyNone": "サインイン情報は削除されます。このアカウントを再び使うには再接続してください。"
       },
       "fields": {
         "token": "API キー",
@@ -1498,11 +1512,8 @@
         "connectTitle": "{{name}} に接続",
         "reconnectTitle": "{{name}} に再接続",
         "signIn": "{{name}} にサインイン",
-        "chooseWhatToSync": "同期する内容を選択",
-        "skip": "今はスキップ",
         "syncFrequency": "同期",
         "doneTitle": "{{name}} に接続しました",
-        "doneSummary": "{{account}} として接続しました。{{sources}} をナレッジに同期中、{{tools}} が利用可能です。",
         "doneSummaryNone": "{{account}} として接続しました。",
         "sourcesCount_other": "{{formatted}} 件",
         "toolsCount_other": "{{formatted}} 個のツール",
@@ -1517,8 +1528,6 @@
         "doneTools": "{{tools}}を利用できます。",
         "waiting": "開いたウィンドウで {{name}} へのサインインを完了してください。",
         "openSignIn": "{{name}} のサインインを開く",
-        "chooseWhatToSetUp": "設定する内容を選択",
-        "continue": "続行",
         "methodLabel": "接続方法",
         "methodOauth": "{{name}} でサインイン",
         "methodToken": "アクセストークンを使用",
@@ -1530,14 +1539,21 @@
           "readWrite": "エージェントは情報の参照と変更ができます。変更にはあなたの承認が必要です。"
         },
         "accountName": "このアカウントの名前",
-        "accountNameHint": "任意。あなたと AI がアカウントを区別できるようにします。例: 通知ボット",
+        "accountNameHint": "あなたと AI がアカウントを区別できるように表示されます。例: 通知ボット",
         "syncToKnowledge": "ナレッジに同期",
         "syncToKnowledgeDescription": "{{name}} から回答で検索するコンテンツを選びます。オフのままなら接続のみ行い、後でコネクタから同期できます。",
         "syncLater": "まだナレッジには何も同期されていません。コンテンツを追加するには、コネクタで {{name}} を開き、「さらに同期する」を選択してください。",
-        "retrievalSettings": "検索の詳細設定"
+        "retrievalSettings": "検索の詳細設定",
+        "chooseWhatToSetUpFor": "{{name}} で設定する内容を選択",
+        "chooseWhatToSyncFrom": "{{name}} から同期する内容を選択",
+        "signedInAs": "{{account}} としてサインインしています。",
+        "finishSetup": "設定を完了",
+        "account": "アカウント",
+        "sourcesCount_one": "{{formatted}} 件",
+        "toolsCount_one": "{{formatted}} 個のツール"
       },
       "remove": {
-        "title": "{{name}} を削除しますか？",
+        "title": "「{{name}}」を削除しますか？",
         "description": "保存されたサインイン情報は削除されます。この接続から提供されているものをどうするか選んでください。",
         "sourcesLabel_other": "ナレッジに同期した {{formatted}} 件",
         "keepSources": "コンテンツを保持（同期を停止）",
@@ -1569,20 +1585,19 @@
       },
       "share": {
         "heading": "実行に使うアカウント",
-        "ownerWarning": "チームメンバーは {{name}} で {{account}} として操作します。",
+        "ownerWarning": "チームメンバーはあなたの {{name}} アカウント（{{account}}）で操作します。",
         "ownerWarningShared": "チームメンバーは所有者の {{name}} アカウントで操作します。",
         "confirmWrite": "チームメンバーが自分のアカウントで操作を行えることを理解しました。",
         "confirmWriteShared": "チームメンバーが所有者の {{name}} アカウントで操作を行えることを理解しました。",
         "memberNote": "各自が自分の {{name}} アカウントを使い、このツールを初めて使うときに接続します。エージェントの API キーやウィジェット経由では、エージェントのオーナーのアカウントが使われます。",
         "forced": "このコネクタのすべての共有に対して管理者が設定しています。",
         "ownerChooses": "これを変更できるのは所有者だけです。",
-        "saveFailed": "変更を保存できませんでした。もう一度お試しください。"
+        "saveFailed": "変更を保存できませんでした。もう一度お試しください。",
+        "ownerWarningNoAccount": "チームメンバーはあなたの {{name}} アカウントで操作します。"
       },
       "createFailed": "コネクタを追加できませんでした。もう一度お試しください。",
       "capabilityFilter": {
-        "sync": "ナレッジにコンテンツを同期するコネクタを表示しています。",
-        "tools": "エージェントにツールを提供するコネクタを表示しています。",
-        "showAll": "すべて表示"
+        "clear": "すべてのコネクタを表示"
       },
       "capabilityPlain": {
         "sync": "ナレッジに同期",
@@ -1590,12 +1605,10 @@
         "write": "操作を行う"
       },
       "github": {
-        "tokenHint": "使用するリポジトリに対して Contents と Metadata の読み取り権限を持つ fine-grained トークンを作成してください。エージェントに変更を許可する場合は、Issues と Pull requests の読み取りと書き込みの権限も付与してください。",
         "writes": "エージェントによる変更も許可する（Issue、コメント、プルリクエスト）",
         "writesDescription": "変更は既定で先にあなたの承認を求めます。トークンまたは GitHub App に Issues と Pull requests の読み取りと書き込みの権限が必要です。",
         "writesForbidden": "管理者が GitHub での変更をオフにしています。",
         "writesFailed": "GitHub でエージェントに許可する操作を変更できませんでした。",
-        "createToken": "GitHub でトークンを作成",
         "chooseRepositories": "GitHub でリポジトリを選択",
         "noAppRepositories": "DocsGPT からはまだリポジトリが見えません。読み取りを許可するリポジトリを GitHub で選択してください。",
         "noTokenRepositories": "このトークンで読み取れるリポジトリがありません。GitHub でアクセス権を付与してから再接続してください。",
@@ -1620,7 +1633,6 @@
       },
       "parameters": {
         "show": "パラメーター",
-        "hide": "パラメーターを隠す",
         "fixedCount_other": "{{formatted}} 件固定",
         "ai": "AI に任せる",
         "fixed": "常に使用",
@@ -1628,11 +1640,13 @@
         "valueLabel": "{{parameter}} の値",
         "save": "保存",
         "saveFailed": "値を保存できませんでした。もう一度お試しください。",
-        "hint": "「常に使用」の値は毎回の呼び出しで送信されます。AI はこの値を見ることも変更することもできません。",
-        "fromAccount": "このアカウントで設定済み: {{value}}"
+        "fromAccount": "このアカウントで設定済み: {{value}}",
+        "fixedHint": "毎回の呼び出しで送信されます。AI には表示されません。",
+        "showFor": "{{action}} のパラメーター"
       },
       "fieldHints": {
-        "telegram_chat_id": "任意。メッセージはこのチャットに送られ、AI は別のチャットを選べません。ボットをチャットに追加してメッセージを送り、https://api.telegram.org/bot<token>/getUpdates でチャットの id を確認してください。"
+        "telegram_chat_id": "メッセージはこのチャットにのみ送られます。ボットを追加してメッセージを送り、<link>getUpdates</link> でチャット ID を確認します。",
+        "github_access_token": "fine-grained トークンに Contents と Metadata の読み取り権限を付与します。エージェントに変更を許可する場合は、Issues と Pull requests の読み取りと書き込みも付与します。<link>GitHub でトークンを作成</link>"
       },
       "rename": {
         "title": "アカウント名を変更",
@@ -1640,6 +1654,17 @@
         "label": "アカウント名",
         "save": "保存",
         "failed": "アカウント名を変更できませんでした。もう一度お試しください。"
+      },
+      "browseAll": "すべてのコネクタを見る",
+      "filters": {
+        "all": "すべて",
+        "connected": "接続済み",
+        "disconnected": "切断済み"
+      },
+      "filterLabel": "コネクタを絞り込む",
+      "capabilityChip": {
+        "sync": "ナレッジに同期",
+        "tools": "エージェントにツールを提供"
       }
     }
   },
@@ -1651,7 +1676,6 @@
       "selectedFiles": "選択されたファイル",
       "noFilesSelected": "ファイルが選択されていません",
       "file": "デバイスからアップロード",
-      "back": "戻る",
       "wait": "お待ちください ...",
       "remote": "ウェブサイトから収集する",
       "start": "チャットを開始する",
@@ -1713,47 +1737,21 @@
       "connectors": {
         "auth": {
           "connectedUser": "接続されたユーザー",
-          "authFailed": "認証に失敗しました",
-          "authUrlFailed": "認証URLの取得に失敗しました",
-          "popupBlocked": "認証ウィンドウを開けませんでした。ポップアップを許可してください。",
-          "authCancelled": "認証がキャンセルされました",
+          "authFailed": "サインインに失敗しました。",
+          "authUrlFailed": "サインインを開始できませんでした",
+          "popupBlocked": "サインイン ウィンドウを開けませんでした。このサイトのポップアップを許可して、もう一度お試しください。",
+          "authCancelled": "サインインがキャンセルされました。",
           "connectedAs": "{{email}}として接続",
           "disconnect": "切断"
         },
         "googleDrive": {
           "connect": "Google Driveに接続",
-          "sessionExpired": "セッションが期限切れです。Google Driveに再接続してください。",
-          "sessionExpiredGeneric": "セッションが期限切れです。アカウントに再接続してください。",
-          "validateFailed": "セッションの検証に失敗しました。再接続してください。",
-          "noSession": "有効なセッションが見つかりません。Google Driveに再接続してください。",
-          "noAccessToken": "アクセストークンが利用できません。Google Driveに再接続してください。",
+          "validateFailed": "サインインを確認できませんでした。もう一度お試しください。",
           "pickerFailed": "ファイルピッカーを開けませんでした。もう一度お試しください。",
           "selectedFiles": "選択されたファイル",
           "selectFiles": "ファイルを選択",
-          "noFilesSelected": "ファイルまたはフォルダが選択されていません",
-          "folders": "フォルダ",
-          "files": "ファイル",
-          "remove": "削除",
-          "folderAlt": "フォルダ",
-          "fileAlt": "ファイル"
-        },
-        "sharePoint": {
-          "connect": "SharePointに接続",
-          "sessionExpired": "セッションが期限切れです。SharePointに再接続してください。",
-          "sessionExpiredGeneric": "セッションが期限切れです。アカウントに再接続してください。",
-          "validateFailed": "セッションの検証に失敗しました。再接続してください。",
-          "noSession": "有効なセッションが見つかりません。SharePointに再接続してください。",
-          "noAccessToken": "アクセストークンが利用できません。SharePointに再接続してください。",
-          "pickerFailed": "ファイルピッカーを開けませんでした。もう一度お試しください。",
-          "selectedFiles": "選択されたファイル",
-          "selectFiles": "ファイルを選択",
-          "loading": "読み込み中...",
-          "noFilesSelected": "ファイルまたはフォルダが選択されていません",
-          "folders": "フォルダ",
-          "files": "ファイル",
-          "remove": "削除",
-          "folderAlt": "フォルダ",
-          "fileAlt": "ファイル"
+          "noFilesSelected": "まだファイルやフォルダが選択されていません。",
+          "removeItem": "{{name}} を削除"
         }
       },
       "fields": {
@@ -1762,18 +1760,9 @@
       },
       "github": {
         "privateHint": "プライベートリポジトリですか？同期するには GitHub アカウントを接続してください。",
-        "connectedHint": "プライベートリポジトリは GitHub 接続（{{account}}）から同期されます。",
-        "connect": "GitHub を接続",
-        "pickRepository": "リポジトリを選択"
+        "connect": "GitHub を接続"
       },
-      "connectData": {
-        "title": "データを接続",
-        "description": "{{services}} を同期",
-        "more": "その他",
-        "intro": "サービスを選んでサインインし、ナレッジに同期する内容を選びます。",
-        "connectedAs": "{{account}} として接続中",
-        "browseAll": "すべてのコネクタを見る"
-      }
+      "fromService": "サービスから"
     },
     "createAPIKey": {
       "label": "新しいAPIキーを作成",
@@ -1792,8 +1781,9 @@
       "apiKeyLabel": "API Key"
     },
     "deleteConv": {
-      "confirm": "すべての会話を削除してもよろしいですか?",
-      "delete": "削除"
+      "confirm": "すべての会話を削除しますか？",
+      "delete": "削除",
+      "consequence": "アカウント内のすべての会話がメッセージごと削除されます。この操作は元に戻せません。"
     },
     "shareConv": {
       "label": "共有ページを作成して共有する",
@@ -1833,7 +1823,7 @@
       "save": "保存",
       "cancel": "キャンセル",
       "nameExists": "この名前はすでに存在します",
-      "deleteConfirmation": "プロンプト『{{name}}』を削除してもよろしいですか？",
+      "deleteConfirmation": "「{{name}}」を削除しますか？",
       "placeholderText": "ここにプロンプトのテキストを入力してください…",
       "addExamplePlaceholder": "このテキストを要約してください：",
       "variablesLabel": "変数",
@@ -1857,7 +1847,8 @@
       "learnAboutPrompts": "プロンプトについて学ぶ →",
       "publicPromptEditDisabled": "公開プロンプトは編集できません",
       "promptTypePublic": "公開",
-      "promptTypePrivate": "非公開"
+      "promptTypePrivate": "非公開",
+      "delete": "削除"
     },
     "chunk": {
       "add": "チャンクを追加",
@@ -1869,7 +1860,7 @@
       "save": "保存",
       "close": "閉じる",
       "delete": "削除",
-      "deleteConfirmation": "このチャンクを削除してもよろしいですか？"
+      "deleteConfirmation": "このチャンクを削除しますか？"
     },
     "addAction": {
       "title": "New Action",
@@ -1879,7 +1870,7 @@
       "addButton": "Add"
     },
     "agentDetails": {
-      "title": "Access Details",
+      "title": "アクセス詳細",
       "publicLink": "Public Link",
       "apiKey": "API Key",
       "webhookUrl": "Webhook URL",
@@ -1887,27 +1878,22 @@
       "test": "Test",
       "learnMore": "Learn more",
       "resetKey": "キーをリセット",
-      "resetKeyConfirm": "APIキーをリセットしてもよろしいですか？現在のキーは直ちに無効になり、この操作は元に戻せません。",
+      "resetKeyConfirm": "「{{name}}」の API キーをリセットしますか？",
       "apiWrites": {
         "title": "他の人があなたとして行える変更",
-        "description": "API キー、ウィジェット、エージェントの公開リンクでは誰もあなたの代わりに操作を承認できないため、接続済みアカウントや保存済みの認証情報を使う変更は、ここで許可しない限りブロックされます。",
+        "description": "API、ウィジェット、公開リンクでは誰もあなたの代わりにこれらを承認できません。ここで許可してください。",
         "saveFailed": "保存できませんでした。もう一度お試しください。",
         "summaryNone": "まだ何も許可されていません",
         "summaryTools_one": "{{tools}} は変更を実行できます",
         "summaryTools_other": "{{tools}} は変更を実行できます",
         "summaryCount": "{{formatted}} 件中 {{allowed}} 件を許可",
-        "toolCount": "API、ウィジェット、公開リンクからの変更 · {{formatted}} 件中 {{allowed}} 件を許可",
         "toolLabel": "{{tool}} で API、ウィジェット、公開リンクからの変更を許可",
-        "choice": {
-          "off": "オフ",
-          "all": "すべて"
-        },
-        "customize_one": "変更を個別に設定",
-        "customize_other": "{{formatted}} 件を個別に設定",
-        "fold": "変更を隠す"
+        "choose": "許可する内容を選ぶ"
       },
       "actionFailed": "うまくいきませんでした。もう一度お試しください。",
-      "apiKeyAfterPublish": "APIキーを作成するには、エージェントを公開してください。"
+      "apiKeyAfterPublish": "APIキーを作成するには、エージェントを公開してください。",
+      "resetKeyConsequence": "現在のキーはすぐに使えなくなるため、使用している箇所をすべて更新する必要があります。この操作は元に戻せません。",
+      "reset": "リセット"
     },
     "importSpec": {
       "title": "API仕様のインポート",
@@ -1975,16 +1961,22 @@
     "delete": "削除",
     "rename": "名前変更",
     "save": "保存",
-    "deleteWarning": "この会話を削除してもよろしいですか？"
+    "deleteWarning": "「{{name}}」を削除しますか？",
+    "deleteWarningUnnamed": "この会話を削除しますか？",
+    "deleteConsequence": "メッセージもすべて削除されます。この操作は元に戻せません。"
   },
   "pagination": {
-    "rowsPerPage": "1ページあたりの行数",
+    "label": "ページ送り",
+    "perPage": "表示件数",
+    "range": "{{total}}件中 {{from}}–{{to}}件",
     "pageOf": "ページ {{currentPage}} / {{totalPages}}",
-    "firstPage": "最初のページ",
+    "goToPage": "{{page}}ページ目",
     "previousPage": "前のページ",
     "nextPage": "次のページ",
-    "lastPage": "最後のページ",
-    "chunksPerPage": "1ページあたりのチャンク数"
+    "loadingOlder": "以前の項目を読み込み中…",
+    "noOlder": "これより古い項目はありません",
+    "olderFailed": "以前の項目を読み込めませんでした。",
+    "loadingMore": "さらに読み込み中…"
   },
   "conversation": {
     "copy": "コピー",
@@ -2008,7 +2000,8 @@
       "groupTeam": "チームと共有",
       "fromConnector": "{{name}} から",
       "fromConnectorTitle": "{{name}} から: {{title}}",
-      "knowledge": "ナレッジ"
+      "knowledge": "ナレッジ",
+      "forAnswer": "この回答のソース{{count}}件"
     },
     "attachments": {
       "attach": "添付",
@@ -2025,7 +2018,8 @@
       "knowledgeFailed": "ファイルをナレッジに追加できませんでした。もう一度お試しください。",
       "knowledgeName_other": "{{name}} ほか{{count}}件",
       "unsupportedType": "サポートされていないファイル形式です({{extension}})",
-      "waitingToSend_other": "{{count}}件のファイルの処理が終わると送信します…",
+      "waitingToSend_one": "{{count}} 件のファイルの処理が終わると送信されます…",
+      "waitingToSend_other": "{{count}} 件のファイルの処理が終わると送信されます…",
       "cancelQueuedSend": "キャンセル",
       "unreadableByModel": "{{model}} は {{name}} を読み取れません。画像や PDF に対応したモデルに切り替えてください"
     },
@@ -2069,8 +2063,8 @@
       "runningCode": "コードを実行中…",
       "creatingArtifact": "アーティファクトを作成中…",
       "usingTool": "{{tool}} を使用中…",
-      "searchingConnector": "{{name}} を検索中...",
-      "usingConnector": "{{name}} を使用中..."
+      "searchingConnector": "{{name}} を検索中…",
+      "usingConnector": "{{name}} を使用中…"
     },
     "toolChip": {
       "searchingWeb": "ウェブ検索済み · 「{{query}}」",
@@ -2139,7 +2133,17 @@
       "connect": "{{name}} に接続",
       "continue": "続行",
       "skip": "スキップ",
-      "thisService": "このサービス"
+      "title": "{{name}} · {{action}}",
+      "state": {
+        "approval": "承認が必要",
+        "notConnected": "未接続"
+      },
+      "connectTitleGeneric": "このツールを使うには、先にアカウントを接続する必要があります。",
+      "reconnectGeneric": "このツールのアカウントに再度サインインしてください。",
+      "ownerReconnect": "このツールは {{owner}} が共有した {{name}} アカウントで動作します。このアカウントには再度サインインが必要なため、{{owner}} に再接続を依頼してください。",
+      "ownerReconnectGeneric": "このツールは所有者のアカウントで動作しますが、そのアカウントには再度サインインが必要です。所有者に再接続を依頼してください。",
+      "connectedTitle": "{{name}} に接続しました。続行するとツールを実行します。",
+      "connectedGeneric": "アカウントに接続しました。続行するとツールを実行します。"
     },
     "research": {
       "title": "リサーチ",
@@ -2381,16 +2385,16 @@
         "published": "公開済み"
       },
       "sponsors": {
-        "attachNote": "オーナーが使用できないツール、ソース、プロンプトを追加すると、このエージェントを使うすべての人に対してあなたのアクセス権で実行されます。自分が所有しているか編集できるものに限られ、追加時に確認を求められます。",
-        "publicLinkNote": "このエージェントには公開リンクがあるため、リンクを知っている人は誰でもそれらから回答を得られます。",
-        "addedBy": "{{person}} が追加: {{names}}",
-        "addedByOther": "他の人が追加: {{names}}",
+        "addedBy": "{{person}} が追加",
+        "addedByOther": "他の人が追加",
         "unknownItem": "名前のない項目",
         "notAllowed": "{{names}} をこのエージェントに追加できません。オーナーはそれらを使用できず、共有できるのは自分が所有しているか編集できるものだけです。",
-        "takeOver": "{{name}} を自分のアクセス権で実行",
+        "takeOver": "自分のアクセス権で実行",
         "takeOverPending": "保存すると、{{name}} はあなたのアクセス権で実行されます。",
         "undoTakeOver": "元に戻す",
-        "confirmationOutdated": "あなたのアクセス権で実行するものを確認した後に、このエージェントが変更されました。通知を確認して、もう一度保存してください。"
+        "confirmationOutdated": "あなたのアクセス権で実行するものを確認した後に、このエージェントが変更されました。通知を確認して、もう一度保存してください。",
+        "takeOverLabel": "{{name}} を自分のアクセス権で実行",
+        "addedByYou": "あなたが追加"
       },
       "resourceStates": {
         "title": "一部のツール、ソース、プロンプトが実行されていません",
@@ -2405,7 +2409,11 @@
           "connectionNeedsReconnect": "{{name}} の {{service}} アカウントに再度サインインする必要があります。",
           "connectionRemoved": "{{name}} が使っていた {{service}} アカウントは削除されました。",
           "connectorDisabled": "管理者が {{service}} をオフにしたため、{{name}} は実行できません。",
-          "unknown": "{{name}} は実行されていません。"
+          "unknown": "{{name}} は実行されていません。",
+          "sponsorCannotEditItemYou": "{{name}} はあなたのアクセス権で実行されていましたが、あなたはそれを編集できなくなりました。",
+          "connectionNeedsReconnectNoService": "{{name}} に再度サインインする必要があります。",
+          "connectionRemovedNoService": "{{name}} が使っていたアカウントは削除されました。",
+          "connectorDisabledNoService": "管理者が {{name}} をオフにしました。"
         },
         "ask": {
           "shareAgain": "{{person}} に再度共有するよう依頼してください。",
@@ -2417,7 +2425,6 @@
           "connectAgainOwner": "所有者にアカウントを再接続するよう依頼してください。"
         },
         "promptFallback": "それまでエージェントはデフォルトのプロンプトを使用します。",
-        "serviceFallback": "サービス",
         "remove": "削除",
         "removeLabel": "{{name}} を削除",
         "reconnectLabel": "{{name}} を再接続",
@@ -2426,24 +2433,30 @@
           "source": "ソース {{id}}",
           "prompt": "プロンプト {{id}}"
         },
-        "chip": "実行されていません: {{count}}"
+        "chip": "実行されていません: {{formatted}}"
       },
       "sponsorConfirm": {
         "title": "あなたのアクセス権で実行しますか？",
-        "description": "エージェントのオーナーはこれらを使用できません。追加すると、このエージェントを使うすべての人に対してあなたのアクセス権で実行されます。",
-        "audienceTitle": "このエージェントを通じて使用できる人",
         "audienceTeams": "{{teams}} のメンバー",
         "audienceApiKey": "エージェントの API キーを持つすべての人（ウェブサイトウィジェットを含む）",
         "audiencePublicLink": "エージェントの公開リンクを知っているすべての人",
         "audienceWebhook": "エージェントの Webhook を呼び出すすべてのもの",
         "audienceEditors": "このエージェントを開けるすべての人",
-        "stopNote": "それらやこのエージェントの編集権限を失うと、実行されなくなります。その後は、編集できる人が引き継ぐか削除されるまで、追加されたまま何もしません。",
         "confirm": "自分のアクセス権で追加",
         "types": {
           "tool": "ツール",
           "source": "ソース",
           "prompt": "プロンプト"
-        }
+        },
+        "description_one": "エージェントのオーナーはこれを使用できません。追加すると、このエージェントを使うすべての人に対してあなたのアクセス権で実行されます。",
+        "description_other": "エージェントのオーナーはこれらを使用できません。追加すると、このエージェントを使うすべての人に対してあなたのアクセス権で実行されます。",
+        "takeOverDescription_one": "エージェントのオーナーはこれを使用できません。このエージェントを使うすべての人に対して、あなたのアクセス権で実行されます。",
+        "takeOverDescription_other": "エージェントのオーナーはこれらを使用できません。このエージェントを使うすべての人に対して、あなたのアクセス権で実行されます。",
+        "takeOverConfirm": "自分のアクセス権で実行",
+        "audienceTitle_one": "このエージェントを通じて使用できる人",
+        "audienceTitle_other": "このエージェントを通じて使用できる人",
+        "stopNote_one": "編集権限を失うと、実行されなくなります。",
+        "stopNote_other": "編集権限を失うと、実行されなくなります。"
       }
     },
     "logs": {
@@ -2465,7 +2478,7 @@
       "resume": "再開",
       "runNow": "今すぐ実行",
       "delete": "削除",
-      "deleteConfirm": "このスケジュールを削除しますか？実行履歴も削除されます。この操作は元に戻せません。",
+      "deleteConfirm": "「{{name}}」を削除しますか？",
       "cancel": "キャンセル",
       "showRuns": "実行履歴を表示",
       "hideRuns": "実行履歴を非表示",
@@ -2598,7 +2611,8 @@
         "when": "日時",
         "details": "詳細",
         "empty": "このスケジュールの実行記録はまだありません。",
-        "duration": "所要時間"
+        "duration": "所要時間",
+        "loadFailed": "実行履歴を読み込めませんでした。"
       },
       "actions": "スケジュールの操作",
       "cancelTask": "タスクをキャンセル",
@@ -2619,7 +2633,9 @@
         "paused_one": "{{count}}件一時停止中",
         "paused_other": "{{count}}件一時停止中",
         "overdue": "期限超過"
-      }
+      },
+      "deleteFailed": "このスケジュールを削除できませんでした。",
+      "deleteConsequence": "実行履歴も削除されます。この操作は元に戻せません。"
     },
     "shared": {
       "notFound": "エージェントが見つかりません。エージェントが共有されていることを確認してください。",
@@ -2627,20 +2643,21 @@
       "sharedBy": "共有者: {{name}}",
       "sharedOn": "共有日: {{date}}",
       "connectedTools": "接続済みツール",
-      "toolIconTitle": "{{name}} のアイコン"
+      "toolIconTitle": "{{name}} のアイコン",
+      "loadError": "このエージェントを読み込めませんでした。"
     },
     "preview": {
       "testMessage": "ここでエージェントをテストできます。公開されたエージェントは会話で使用できます。",
       "emptyTitle": "エージェントをテスト"
     },
-    "deleteConfirmation": "このエージェントを削除してもよろしいですか？",
+    "deleteConfirmation": "「{{name}}」を削除しますか？",
     "folders": {
       "newFolder": "新しいフォルダ",
       "createFolder": "フォルダを作成",
       "folderName": "フォルダ名",
       "rename": "名前を変更",
       "delete": "削除",
-      "deleteConfirm": "このフォルダを削除してもよろしいですか？フォルダ内のエージェントは移動されます。",
+      "deleteConfirm": "「{{name}}」を削除しますか？",
       "empty": "このフォルダは空です",
       "moveToFolder": "フォルダに移動",
       "moveTo": "移動",
@@ -2651,7 +2668,8 @@
       "noSubfolders": "サブフォルダなし",
       "openFolder": "フォルダーを開く",
       "noFolders": "フォルダがありません",
-      "menuAriaLabel": "{{folderName}} の操作"
+      "menuAriaLabel": "{{folderName}} の操作",
+      "deleteConsequence": "中のエージェントはフォルダーの外に移動され、削除されません。"
     },
     "guardrailEvents": {
       "heading": "Guardrail activity",
@@ -2673,7 +2691,6 @@
       "detail": "Detail",
       "empty": "No guardrail has fired on this agent yet.",
       "emptyForFilter": "No decisions match this filter.",
-      "truncated": "Showing the most recent {{count}} decisions.",
       "loadError": "Could not load guardrail activity"
     },
     "workflow": {
@@ -2775,13 +2792,11 @@
         "optional": "任意",
         "cannotDeleteStart": "開始ノードは削除できません",
         "deleteNode": "ノードを削除",
-        "deleteConfirm": "「{{name}}」を削除してもよろしいですか？",
-        "deleteConfirmUnnamed": "このワークフローエージェントを削除してもよろしいですか？",
+        "deleteConfirmUnnamed": "このワークフローエージェントを削除しますか？",
         "detailsTitle": "ワークフローの詳細",
         "detailsDescription": "エージェントカードに表示される名前、説明、画像です。",
         "unsavedChanges": "未保存の変更",
-        "editDetailsMenu": "詳細を編集",
-        "attachedOption": "{{name}}（他のユーザーが追加）"
+        "editDetailsMenu": "詳細を編集"
       },
       "validation": {
         "nameRequired": "ワークフロー名は必須です",
@@ -2888,7 +2903,12 @@
       "workflowDescription": "複数のモデル、条件ロジック、状態管理を使った複雑なマルチステップのワークフローを設計します"
     },
     "view": "表示",
-    "deleteFailed": "エージェントを削除できませんでした。もう一度お試しください。"
+    "deleteFailed": "エージェントを削除できませんでした。もう一度お試しください。",
+    "showAll_one": "すべて表示（{{formatted}}）",
+    "showAll_other": "すべて表示（{{formatted}}）",
+    "pageRange_one": "エージェント {{formatted}}件中 {{from}}–{{to}}件",
+    "pageRange_other": "エージェント {{formatted}}件中 {{from}}–{{to}}件",
+    "deleteConsequence": "スケジュールと実行履歴も削除されます。この操作は元に戻せません。"
   },
   "components": {
     "fileUpload": {
@@ -2942,22 +2962,23 @@
     "goHome": "Go Back Home"
   },
   "filePicker": {
-    "searchPlaceholder": "ファイルとフォルダを検索...",
-    "itemsSelected": "{{count}} 件選択済み",
-    "name": "名前",
-    "lastModified": "最終更新日",
-    "size": "サイズ",
+    "searchPlaceholder": "ファイルとフォルダを検索",
+    "itemsSelected": "{{formatted}} 件選択済み",
     "myFiles": "マイファイル",
     "sharedWithMe": "共有アイテム",
-    "loadingMore": "さらに読み込み中...",
     "myDrive": "マイドライブ",
     "spaces": "スペース",
     "root": "ルート",
     "shared": "共有",
     "connectTo": "{{provider}}に接続",
-    "sessionExpiredFor": "セッションが期限切れです。{{provider}}に再接続してください。",
-    "selectFilesFrom": "{{provider}}からファイルを選択",
-    "account": "アカウント"
+    "folder": "フォルダ",
+    "folderMeta": "フォルダ · {{date}} に更新",
+    "fileMeta": "{{date}} に更新 · {{size}}",
+    "updated": "{{date}} に更新",
+    "openFolder": "{{name}} を開く",
+    "emptyFolder": "このフォルダは空です。",
+    "noMatches": "検索に一致するファイルやフォルダはありません。",
+    "loadFailed": "ファイルを読み込めませんでした。"
   },
   "actionButtons": {
     "openNewChat": "新しいチャットを開く",
@@ -3018,12 +3039,22 @@
   },
   "connectHero": {
     "title": "データを接続",
-    "body": "{{names}} などとチャットできます。"
+    "body": "{{names}}とチャットできます。",
+    "more": "その他"
   },
   "common": {
     "close": "閉じる",
     "viewOnlyNotice": "表示はできますが、あなたのロールでは変更できません。",
     "credentialsLockedNotice": "このツールの認証情報を変更できるのはオーナーだけです。",
-    "savedSecretHint": "保存済みです。空のままにすると保持されます。"
-  }
+    "savedSecretHint": "保存済みです。空のままにすると保持されます。",
+    "actionFailed": "問題が発生しました。もう一度お試しください。",
+    "cantUndo": "この操作は元に戻せません。"
+  },
+  "sidePanel": {
+    "close": "閉じる",
+    "expand": "拡大",
+    "collapse": "縮小",
+    "back": "戻る"
+  },
+  "close": "閉じる"
 }

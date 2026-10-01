@@ -1,6 +1,5 @@
-import { CircleAlert, ExternalLink } from 'lucide-react';
 import { nanoid } from '@reduxjs/toolkit';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
@@ -12,18 +11,13 @@ import userService from '../api/services/userService';
 import { useConnectorAuth } from '../components/ConnectorAuth';
 import { FilePicker } from '../components/FilePicker';
 import GoogleDrivePicker from '../components/GoogleDrivePicker';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '../components/ui/accordion';
 import { Alert, AlertDescription } from '../components/ui/alert';
+import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
+import { Collapsible, CollapsibleTrigger } from '../components/ui/collapsible';
 import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
 import { Modal, ModalActions } from '../components/ui/modal';
-import { SectionHeader } from '../components/ui/section-header';
 import {
   Select,
   SelectContent,
@@ -50,7 +44,6 @@ import RetrievalOptions, {
   type RetrievalOptionsValue,
 } from '../settings/components/RetrievalOptions';
 import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
-import { showActionToast } from '../notifications/actionToastSlice';
 import type { AppDispatch } from '../store';
 import { formatCount } from '../utils/dateTimeUtils';
 import { ACCOUNT_NAME_MAX } from './accounts';
@@ -58,6 +51,7 @@ import ConnectorIcon from './ConnectorIcon';
 import CredentialForm, { credentialsComplete } from './CredentialForm';
 import { loadConnectors, selectConnections } from './connectorsSlice';
 import { connectorDescription, connectorName, isKeyHint } from './i18n';
+import { reconnectsInPlace } from './launchRules';
 import LinearPicker, {
   EMPTY_LINEAR_SELECTION,
   linearSourceName,
@@ -87,10 +81,6 @@ const PICKER_CONNECTORS = new Set([
   'share_point',
   'confluence',
 ]);
-// Where a GitHub user makes a fine-grained token (Contents and Metadata: read;
-// Issues and Pull requests: read and write when agents may make changes).
-const GITHUB_TOKEN_URL =
-  'https://github.com/settings/personal-access-tokens/new';
 
 type CreatedSource = { id: string; name: string };
 
@@ -100,11 +90,16 @@ type CreatedSource = { id: string; name: string };
  * sync into Knowledge (on when opened for Knowledge) and, if so, what to sync
  * and with which retrieval settings. Tool connectors create their tools on
  * sign-in, writes needing approval, so they go from the credentials straight
- * to the summary.
+ * to the summary. Every run that connects something ends on the summary.
+ *
+ * Args:
+ *   onClose: Called as the wizard closes, with whether this run created or
+ *     repaired a connection (a saved account, a reconnect, a sync set up);
+ *     false on a plain cancel.
  */
 export default function ConnectWizard({
   connector,
-  mode = 'connect',
+  mode: initialMode = 'connect',
   connectionId: initialConnectionId = null,
   mcpToolId,
   purpose,
@@ -118,7 +113,7 @@ export default function ConnectWizard({
   /** Reconnecting an MCP preset: the tool to update rather than add. */
   mcpToolId?: string;
   purpose?: LaunchPurpose;
-  onClose: () => void;
+  onClose: (connected: boolean) => void;
   onFinished?: () => void;
   /** The ids of the sources a sync just started, still ingesting. */
   onSynced?: (sourceIds: string[]) => void;
@@ -130,12 +125,28 @@ export default function ConnectWizard({
   const connections = useSelector(selectConnections);
   const name = connectorName(t, connector);
 
+  // A picker whose sign-in expired switches the wizard to reconnect, then
+  // back to the mode it came from (`resumeMode`).
+  const [mode, setMode] = useState<WizardMode>(initialMode);
+  const [resumeMode, setResumeMode] = useState<WizardMode | null>(null);
   const [step, setStep] = useState<'signin' | 'setup' | 'done'>(
-    mode === 'sync' ? 'setup' : mode === 'done' ? 'done' : 'signin',
+    initialMode === 'sync'
+      ? 'setup'
+      : initialMode === 'done'
+        ? 'done'
+        : 'signin',
   );
   const [connectionId, setConnectionId] = useState<string | null>(
     initialConnectionId,
   );
+  // Whether this run saved, repaired or set up a connection (onClose's
+  // argument). A finished MCP save opens the wizard on the summary.
+  const connectedRef = useRef(initialMode === 'done');
+  // The account as the sign-in reported it, before the connections reload.
+  const [accountLabel, setAccountLabel] = useState('');
+  // Bumped to remount the pickers after a reconnect or an account switch.
+  const [pickerKey, setPickerKey] = useState(0);
+  const [mcpReconnectToolId, setMcpReconnectToolId] = useState(mcpToolId);
   const [credentials, setCredentials] = useState<Record<string, string>>({});
   const [accountName, setAccountName] = useState('');
   const [setupValues, setSetupValues] = useState<Record<string, string>>({});
@@ -151,6 +162,8 @@ export default function ConnectWizard({
   );
   // A connector that asks about its tools (GitHub) offers them switched on.
   const [toolsOn, setToolsOn] = useState(true);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const toolsId = useId();
   // Changes (GitHub's issues, comments, pull requests) are an opt-in on top.
   const [writesOn, setWritesOn] = useState(false);
   const [chosenMethod, setChosenMethod] = useState<ConnectorAuthKind | null>(
@@ -164,7 +177,16 @@ export default function ConnectWizard({
   // One key per wizard: a double click on Add source queues one ingest.
   const [idempotencyKey] = useState(() => nanoid());
 
-  const connection = connections.find((c) => c.id === connectionId);
+  // Sync more from Add knowledge names no account when the service has
+  // several: the first setup field picks one (the first, until changed).
+  const serviceAccounts = connections.filter(
+    (c) => c.connector_key === connector.key && c.status === 'connected',
+  );
+  const pickingAccount = mode === 'sync' && !initialConnectionId;
+  const activeConnectionId =
+    connectionId ?? (pickingAccount ? (serviceAccounts[0]?.id ?? null) : null);
+  const chooseAccount = pickingAccount && serviceAccounts.length > 1;
+  const connection = connections.find((c) => c.id === activeConnectionId);
   const canSync = connector.setup.sync !== 'off' && !!connector.sync_ingestor;
   // A first connect asks whether to sync into Knowledge; Sync more is only
   // about syncing, so it never asks.
@@ -193,13 +215,26 @@ export default function ConnectWizard({
 
   // A finished MCP save or a reconnect lands here with only the connection id.
   useEffect(() => {
-    if (mode !== 'done' || !connectionId) return;
-    connectorsService.getConnection(connectionId, token).then((data) => {
+    if (initialMode !== 'done' || !initialConnectionId) return;
+    connectorsService.getConnection(initialConnectionId, token).then((data) => {
       if (data?.success) setTools(data.connection.tools ?? []);
     });
-  }, [mode, connectionId, token]);
+  }, [initialMode, initialConnectionId, token]);
 
   const refresh = () => dispatch(loadConnectors({ token }));
+
+  const close = () => onClose(connectedRef.current);
+
+  /** After a reconnect started from a picker: back to what it was doing. */
+  const resumeAfterReconnect = () => {
+    if (!resumeMode) return false;
+    setMode(resumeMode);
+    setResumeMode(null);
+    setPickerKey((key) => key + 1);
+    setError('');
+    setStep('setup');
+    return true;
+  };
 
   // A name tells two accounts of one service apart ("Alerts bot"). It is
   // set once the account exists, so it works the same for keys and sign-ins.
@@ -207,8 +242,10 @@ export default function ConnectWizard({
     mode === 'connect' &&
     (connector.auth_kind === 'api_key' || connector.auth_kind === 'oauth');
 
-  const afterSignIn = async (id: string) => {
+  const afterSignIn = async (id: string, label = '') => {
     setConnectionId(id);
+    connectedRef.current = true;
+    if (label) setAccountLabel(label);
     const name = accountName.trim();
     if (canName && name) {
       try {
@@ -217,9 +254,10 @@ export default function ConnectWizard({
         // The account works without a name; it can be named in the drawer.
       }
     }
-    refresh();
+    // The summary names the account: wait for it rather than show a gap.
+    await refresh();
     if (mode === 'reconnect') {
-      setStep('done');
+      if (!resumeAfterReconnect()) setStep('done');
       return;
     }
     if (connector.setup.tools === 'auto' && connector.tool_templates.length) {
@@ -235,13 +273,9 @@ export default function ConnectWizard({
 
   // MCP presets (Notion, Linear…) sign in over MCP OAuth: no URL or auth
   // form, just "Sign in to Notion". The tool is saved on success, and the
-  // done step shows what it can do.
+  // done step shows what it can do (for Linear, after choosing what to sync).
   const isMcpPreset =
     connector.auth_kind === 'mcp_oauth' && !!connector.mcp_url;
-  // An MCP preset that also syncs (Linear) has its tools from the sign-in:
-  // one screen shows them first, then asks about Knowledge, and finishing
-  // it closes the wizard with no separate summary.
-  const toolsFirst = isMcpPreset && mode === 'connect' && tools.length > 0;
   const mcp = useMcpOAuth();
   const mcpConfig = (): McpOAuthConfig => ({
     server_url: connector.mcp_url ?? '',
@@ -259,7 +293,7 @@ export default function ConnectWizard({
           displayName: name,
           config: { ...config, oauth_task_id: taskId ?? '' },
           status: true,
-          ...(mcpToolId && { id: mcpToolId }),
+          ...(mcpReconnectToolId && { id: mcpReconnectToolId }),
         },
         token,
       );
@@ -277,12 +311,18 @@ export default function ConnectWizard({
         .sort((a, b) =>
           (b.updated_at ?? '').localeCompare(a.updated_at ?? ''),
         )[0];
-      refresh();
+      connectedRef.current = true;
+      await refresh();
       if (saved) {
         setConnectionId(saved.id);
         const detail = await connectorsService.getConnection(saved.id, token);
-        if (detail?.success) setTools(detail.connection.tools ?? []);
+        if (detail?.success) {
+          setTools(detail.connection.tools ?? []);
+          if (detail.connection.account_label)
+            setAccountLabel(detail.connection.account_label);
+        }
       }
+      if (mode === 'reconnect' && resumeAfterReconnect()) return;
       // One sign-in also syncs (Linear): choosing what to sync comes next.
       setStep(canSync && saved && mode === 'connect' ? 'setup' : 'done');
     } catch (err) {
@@ -308,7 +348,7 @@ export default function ConnectWizard({
   const startSignIn = useConnectorAuth({
     provider: connector.key,
     connectionId:
-      mode === 'reconnect' ? (connectionId ?? undefined) : undefined,
+      mode === 'reconnect' ? (activeConnectionId ?? undefined) : undefined,
     onSuccess: (data) => afterSignIn(data.connection_id),
     onError: setError,
   });
@@ -318,9 +358,9 @@ export default function ConnectWizard({
     setError('');
     try {
       const data =
-        mode === 'reconnect' && connectionId
+        mode === 'reconnect' && activeConnectionId
           ? await connectorsService.reconnect(
-              connectionId,
+              activeConnectionId,
               { credentials },
               token,
             )
@@ -341,7 +381,10 @@ export default function ConnectWizard({
         );
         return;
       }
-      await afterSignIn(data.connection.id);
+      await afterSignIn(
+        data.connection.id,
+        data.connection.account_label ?? '',
+      );
     } catch {
       setError(t('settings.connectors.wizard.connectFailed'));
     } finally {
@@ -375,13 +418,12 @@ export default function ConnectWizard({
   const offerWrites = wantsTools && !!connector.writes_allowed;
   const wantsWrites = offerWrites && writesOn;
   const syncReady = syncing && hasSyncSelection;
-  // Off, there is nothing to pick: the button only finishes connecting.
-  // On, something must be picked (or the tools wanted), and an incoherent
-  // prescreen config blocks it as in Upload; the backend would refuse it.
+  // Off, there is nothing to pick: the button only finishes setting up.
+  // On, it reads Add to Knowledge, so something must be picked, and an
+  // incoherent prescreen config blocks it as in Upload; the backend would
+  // refuse it.
   const canAddSource =
-    !syncing ||
-    ((hasSyncSelection || wantsTools) &&
-      isPrescreenConfigValid(retrievalOptions));
+    !syncing || (hasSyncSelection && isPrescreenConfigValid(retrievalOptions));
 
   const toggleSync = (on: boolean) => {
     setSyncOn(on);
@@ -393,18 +435,17 @@ export default function ConnectWizard({
   };
 
   const addSource = async () => {
-    if (!connectionId) return;
+    if (!activeConnectionId) return;
     if (!wantsTools && !syncReady) {
       // Connected, nothing more to set up.
-      if (toolsFirst) finish();
-      else setStep('done');
+      setStep('done');
       return;
     }
     setPending(true);
     setError('');
     try {
       const data = await connectorsService.setup(
-        connectionId,
+        activeConnectionId,
         {
           create_tools: wantsTools,
           ...(wantsWrites && { allow_writes: true }),
@@ -433,6 +474,7 @@ export default function ConnectWizard({
         );
         return;
       }
+      connectedRef.current = true;
       if (wantsTools) setTools(data.tools ?? []);
       setSources(data.sources ?? []);
       const syncedIds = (data.sources ?? []).map(
@@ -440,22 +482,6 @@ export default function ConnectWizard({
       );
       if (syncedIds.length) onSynced?.(syncedIds);
       refresh();
-      if (toolsFirst) {
-        const count = (data.sources ?? []).length;
-        dispatch(
-          showActionToast({
-            variant: 'success',
-            message: t('settings.connectors.wizard.doneSources', {
-              sources: t('settings.connectors.wizard.sourcesCount', {
-                count,
-                formatted: formatCount(count),
-              }),
-            }),
-          }),
-        );
-        finish();
-        return;
-      }
       setStep('done');
     } catch {
       setError(t('settings.connectors.wizard.syncFailed'));
@@ -477,26 +503,74 @@ export default function ConnectWizard({
             date: new Date().toISOString(),
             model: '',
             type: 'connector:file',
-            connectionId,
+            connectionId: activeConnectionId,
           })),
         ),
       );
     }
     onFinished?.();
-    onClose();
+    close();
     navigate('/c/new');
   };
 
   const finish = () => {
     onFinished?.();
-    onClose();
+    close();
   };
+
+  /** A picker's sign-in expired: sign the same account in again. */
+  const reconnectFromPicker = async () => {
+    if (!activeConnectionId) return;
+    setConnectionId(activeConnectionId);
+    setResumeMode(mode);
+    setMode('reconnect');
+    setError('');
+    setStep('signin');
+    // An MCP preset's reconnect updates its saved tool rather than adding one.
+    if (isMcpPreset && !mcpReconnectToolId) {
+      const detail = await connectorsService.getConnection(
+        activeConnectionId,
+        token,
+      );
+      const tool = (
+        detail?.connection?.tools as ConnectionTool[] | undefined
+      )?.find((item) => item.name === 'mcp_tool');
+      if (tool) setMcpReconnectToolId(tool.id);
+    }
+  };
+  const onReconnect = reconnectsInPlace(connector)
+    ? reconnectFromPicker
+    : undefined;
+
+  const switchAccount = (id: string) => {
+    setConnectionId(id);
+    setSelectedFiles([]);
+    setSelectedFolders([]);
+    setSelectedRepo(null);
+    setLinearSelection(EMPTY_LINEAR_SELECTION);
+    setPickerKey((key) => key + 1);
+  };
+
+  // The account in words: its name, the key it was made with, or its label.
+  const account = connection?.account_label || accountLabel;
+  const accountText = (() => {
+    const named = connection?.account_name;
+    if (named) return named;
+    if (!account) return '';
+    return isKeyHint(account)
+      ? t('settings.connectors.detail.keyEnding', {
+          hint: account,
+          interpolation: { escapeValue: false },
+        })
+      : account;
+  })();
 
   const toolCount = tools.length;
   const summary = useMemo(() => {
-    const account = connection?.account_label ?? '';
-    const accountLine =
-      connection?.auth_kind === 'api_key' && isKeyHint(account)
+    // Never "Connected as ." while the account is unknown: say nothing.
+    const accountLine = !account
+      ? ''
+      : isKeyHint(account)
         ? t('settings.connectors.wizard.connectedWithKey', {
             hint: account,
             interpolation: { escapeValue: false },
@@ -535,21 +609,12 @@ export default function ConnectWizard({
           })
         : '';
     return [accountLine, countsLine, syncLine].filter(Boolean).join(' ');
-  }, [connection, sources, toolCount, mode, canSync, name, t]);
+  }, [account, sources, toolCount, mode, canSync, name, t]);
 
   const renderSignIn = () => (
     <div className="flex flex-col gap-5">
-      <div className="flex items-center gap-4">
-        <span className="bg-muted flex size-12 shrink-0 items-center justify-center rounded-xl">
-          <ConnectorIcon icon={connector.icon} className="size-7" />
-        </span>
-        <p className="text-muted-foreground text-sm">
-          {connectorDescription(t, connector)}
-        </p>
-      </div>
       {error && (
         <Alert variant="destructive">
-          <CircleAlert />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
@@ -574,6 +639,7 @@ export default function ConnectWizard({
       {mode !== 'reconnect' && methods.length > 1 && (
         <ToggleGroup
           type="single"
+          fill
           value={method}
           onValueChange={(value) =>
             value && setChosenMethod(value as ConnectorAuthKind)
@@ -593,32 +659,13 @@ export default function ConnectWizard({
         </ToggleGroup>
       )}
       {usesOAuth || isMcpPreset ? null : (
-        <>
-          {connector.key === 'github' && (
-            <div className="flex flex-col gap-1">
-              <p className="text-muted-foreground text-sm">
-                {t('settings.connectors.github.tokenHint')}
-              </p>
-              <Button variant="link" size="inline" asChild className="w-fit">
-                <a
-                  href={GITHUB_TOKEN_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {t('settings.connectors.github.createToken')}
-                  <ExternalLink />
-                </a>
-              </Button>
-            </div>
-          )}
-          <CredentialForm
-            connectorKey={connector.key}
-            idPrefix={`connect-${connector.key}`}
-            fields={connector.credential_fields}
-            values={credentials}
-            onChange={setCredentials}
-          />
-        </>
+        <CredentialForm
+          connectorKey={connector.key}
+          idPrefix={`connect-${connector.key}`}
+          fields={connector.credential_fields}
+          values={credentials}
+          onChange={setCredentials}
+        />
       )}
       {canName && (
         <FormField
@@ -641,28 +688,27 @@ export default function ConnectWizard({
     <div className="flex flex-col gap-5">
       {error && (
         <Alert variant="destructive">
-          <CircleAlert />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      {toolsFirst && connectionId && (
-        <section className="flex flex-col gap-3">
-          <SectionHeader
-            as="h3"
-            size="xs"
-            title={t('settings.connectors.wizard.toolsHeading', {
-              count: toolCount,
-              formatted: formatCount(toolCount),
-            })}
-          />
-          {tools.map((tool) => (
-            <ToolPermissions
-              key={tool.id}
-              connectionId={connectionId}
-              tool={tool}
-            />
-          ))}
-        </section>
+      {chooseAccount && (
+        <FormField label={t('settings.connectors.wizard.account')}>
+          <Select
+            value={activeConnectionId ?? undefined}
+            onValueChange={switchAccount}
+          >
+            <SelectTrigger size="field" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {serviceAccounts.map((item) => (
+                <SelectItem key={item.id} value={item.id}>
+                  {item.account_name || item.account_label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FormField>
       )}
       {(offerTools || askSync) && (
         <SettingRows>
@@ -724,48 +770,60 @@ export default function ConnectWizard({
       )}
       {syncing && (
         <>
-          {isRepoPicker && connectionId ? (
+          {isRepoPicker && activeConnectionId ? (
             <RepoPicker
-              connectionId={connectionId}
+              key={`${activeConnectionId}-${pickerKey}`}
+              connectionId={activeConnectionId}
               token={token}
               value={selectedRepo}
               onChange={(fullName) => {
                 setSelectedRepo(fullName);
                 if (!nameTouched) setSourceName(fullName);
               }}
+              onReconnect={onReconnect}
             />
-          ) : isLinearPicker && connectionId ? (
+          ) : isLinearPicker && activeConnectionId ? (
             <LinearPicker
-              connectionId={connectionId}
+              key={`${activeConnectionId}-${pickerKey}`}
+              connectionId={activeConnectionId}
               token={token}
               value={linearSelection}
               onChange={(selection) => {
                 setLinearSelection(selection);
                 if (!nameTouched) setSourceName(linearSourceName(selection));
               }}
+              onReconnect={onReconnect}
             />
           ) : connector.key === 'google_drive' &&
             envVar('VITE_GOOGLE_CLIENT_ID') ? (
-            <GoogleDrivePicker
-              token={token}
-              connectionId={connectionId}
-              onFirstPickName={prefillName}
-              onSelectionChange={(fileIds, folderIds = []) => {
-                setSelectedFiles(fileIds);
-                setSelectedFolders(folderIds);
-              }}
-            />
+            activeConnectionId ? (
+              <GoogleDrivePicker
+                key={`${activeConnectionId}-${pickerKey}`}
+                token={token}
+                connectionId={activeConnectionId}
+                onFirstPickName={prefillName}
+                onSelectionChange={(fileIds, folderIds = []) => {
+                  setSelectedFiles(fileIds);
+                  setSelectedFolders(folderIds);
+                }}
+                onReconnect={onReconnect}
+              />
+            ) : null
           ) : PICKER_CONNECTORS.has(connector.key) ? (
-            <FilePicker
-              provider={connector.key}
-              token={token}
-              connectionId={connectionId}
-              onFirstPickName={prefillName}
-              onSelectionChange={(fileIds, folderIds = []) => {
-                setSelectedFiles(fileIds);
-                setSelectedFolders(folderIds);
-              }}
-            />
+            activeConnectionId ? (
+              <FilePicker
+                key={`${activeConnectionId}-${pickerKey}`}
+                provider={connector.key}
+                token={token}
+                connectionId={activeConnectionId}
+                onFirstPickName={prefillName}
+                onSelectionChange={(fileIds, folderIds = []) => {
+                  setSelectedFiles(fileIds);
+                  setSelectedFolders(folderIds);
+                }}
+                onReconnect={onReconnect}
+              />
+            ) : null
           ) : (
             <CredentialForm
               connectorKey={connector.key}
@@ -818,69 +876,87 @@ export default function ConnectWizard({
 
   const renderDone = () => (
     <div className="flex flex-col gap-5">
-      <p className="text-muted-foreground text-sm">{summary}</p>
-      {toolCount > 0 && connectionId && (
-        <div className="border-border overflow-hidden rounded-xl border">
-          <Accordion type="single" collapsible>
-            <AccordionItem value="tools">
-              <AccordionTrigger>
-                {t('settings.connectors.wizard.toolsHeading', {
-                  count: toolCount,
-                  formatted: formatCount(toolCount),
-                })}
-              </AccordionTrigger>
-              <AccordionContent>
-                <div className="flex flex-col gap-3 px-4 pb-4">
-                  {tools.map((tool) => (
-                    <ToolPermissions
-                      key={tool.id}
-                      connectionId={connectionId}
-                      tool={tool}
-                    />
-                  ))}
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
+      {summary && (
+        <Alert variant="success">
+          <AlertDescription>{summary}</AlertDescription>
+        </Alert>
+      )}
+      {toolCount > 0 && activeConnectionId && (
+        <div className="flex flex-col gap-3">
+          <CollapsibleTrigger
+            open={toolsOpen}
+            onOpenChange={setToolsOpen}
+            controls={toolsId}
+          >
+            {t('settings.connectors.wizard.toolsHeading', {
+              count: toolCount,
+              formatted: formatCount(toolCount),
+            })}
+          </CollapsibleTrigger>
+          <Collapsible open={toolsOpen} id={toolsId}>
+            <div className="flex flex-col gap-3">
+              {tools.map((tool) => (
+                <ToolPermissions
+                  key={tool.id}
+                  connectionId={activeConnectionId}
+                  tool={tool}
+                />
+              ))}
+            </div>
+          </Collapsible>
         </div>
       )}
     </div>
   );
 
+  // The service is in every title, and the setup title stays put while the
+  // switches change.
   const title =
     step === 'signin'
-      ? mode === 'reconnect'
-        ? t('settings.connectors.wizard.reconnectTitle', {
-            name,
-            interpolation: { escapeValue: false },
-          })
-        : t('settings.connectors.wizard.connectTitle', {
-            name,
-            interpolation: { escapeValue: false },
-          })
+      ? t(
+          mode === 'reconnect'
+            ? 'settings.connectors.wizard.reconnectTitle'
+            : 'settings.connectors.wizard.connectTitle',
+          { name, interpolation: { escapeValue: false } },
+        )
       : step === 'setup'
-        ? toolsFirst
-          ? t('settings.connectors.wizard.doneTitle', {
-              name,
-              interpolation: { escapeValue: false },
-            })
-          : offerTools || !syncing
-            ? t('settings.connectors.wizard.chooseWhatToSetUp')
-            : t('settings.connectors.wizard.chooseWhatToSync')
+        ? t(
+            offerTools
+              ? 'settings.connectors.wizard.chooseWhatToSetUpFor'
+              : 'settings.connectors.wizard.chooseWhatToSyncFrom',
+            { name, interpolation: { escapeValue: false } },
+          )
         : t('settings.connectors.wizard.doneTitle', {
             name,
             interpolation: { escapeValue: false },
           });
+
+  // Sign-in says what the service does; setup names the account it sets up
+  // (unless the first field picks one).
+  const description =
+    step === 'signin'
+      ? connectorDescription(t, connector)
+      : step === 'setup' && !chooseAccount && accountText
+        ? mode === 'sync'
+          ? accountText
+          : t('settings.connectors.wizard.signedInAs', {
+              account: accountText,
+              interpolation: { escapeValue: false },
+            })
+        : undefined;
+
+  // Cancelling a reconnect a picker asked for goes back to the picker.
+  const cancelSignIn = () => {
+    mcp.cancel();
+    if (!resumeAfterReconnect()) close();
+  };
 
   const footer =
     step === 'signin' ? (
       usesOAuth || isMcpPreset ? (
         <ModalActions
           cancelLabel={t('cancel')}
-          onCancel={() => {
-            mcp.cancel();
-            onClose();
-          }}
+          onCancel={cancelSignIn}
           submitLabel={t('settings.connectors.wizard.signIn', {
             name,
             interpolation: { escapeValue: false },
@@ -891,7 +967,7 @@ export default function ConnectWizard({
       ) : (
         <ModalActions
           cancelLabel={t('cancel')}
-          onCancel={onClose}
+          onCancel={cancelSignIn}
           submitLabel={
             mode === 'reconnect'
               ? t('settings.connectors.status.reconnect')
@@ -904,28 +980,29 @@ export default function ConnectWizard({
           }
         />
       )
-    ) : step === 'setup' && !offerTools && !syncing ? (
-      // Only the Knowledge question, answered no: Skip would do the same.
-      <Button type="button" size="lg" shape="pill" onClick={addSource}>
-        {toolsFirst
-          ? t('settings.connectors.wizard.done')
-          : t('settings.connectors.wizard.continue')}
-      </Button>
-    ) : step === 'setup' ? (
+    ) : step === 'setup' && mode === 'sync' ? (
       <ModalActions
-        cancelLabel={t('settings.connectors.wizard.skip')}
-        onCancel={() =>
-          mode === 'sync' ? onClose() : toolsFirst ? finish() : setStep('done')
-        }
-        submitLabel={
-          offerTools
-            ? t('settings.connectors.wizard.continue')
-            : t('modals.uploadDoc.train')
-        }
+        cancelLabel={t('cancel')}
+        onCancel={close}
+        submitLabel={t('modals.uploadDoc.train')}
         onSubmit={addSource}
         pending={pending}
         disabled={!canAddSource}
       />
+    ) : step === 'setup' ? (
+      // The account exists: nothing to skip, one submit named by what it does.
+      <Button
+        type="button"
+        size="lg"
+        shape="pill"
+        onClick={addSource}
+        loading={pending}
+        disabled={!canAddSource}
+      >
+        {syncing
+          ? t('modals.uploadDoc.train')
+          : t('settings.connectors.wizard.finishSetup')}
+      </Button>
     ) : (
       <ModalActions
         cancelLabel={t('settings.connectors.wizard.done')}
@@ -938,10 +1015,15 @@ export default function ConnectWizard({
   return (
     <Modal
       open
-      onOpenChange={(open) => !open && (step === 'done' ? finish() : onClose())}
+      onOpenChange={(open) => !open && (step === 'done' ? finish() : close())}
       title={title}
-      size={step === 'setup' ? 'xl' : 'lg'}
-      mobileVariant="sheet"
+      description={description}
+      leading={
+        <Avatar size="xl" shape="square" variant="icon">
+          <ConnectorIcon icon={connector.icon} className="size-7" />
+        </Avatar>
+      }
+      size="lg"
       footer={footer}
     >
       {step === 'signin' && renderSignIn()}

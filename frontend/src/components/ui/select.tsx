@@ -30,19 +30,17 @@ const selectTriggerVariants = cva(
   {
     variants: {
       size: {
-        // default and field are 16px on phones like Input (iOS zooms on a
-        // smaller field), 14px from md; sm stays 14px like Input sm.
+        // sm (32px) stays 14px like Input sm.
         sm: 'h-8',
-        default: 'h-9 text-base md:text-sm',
         // The form-row height (38px), shared with Button field and Input
         // default, so a column of mixed fields has one name for one height.
+        // 16px on phones like Input (iOS zooms on a smaller field), 14px
+        // from md.
         field: 'h-9.5 text-base md:text-sm',
       },
       variant: {
         default:
           'bg-card hover:bg-accent data-placeholder:text-muted-foreground',
-        ghost:
-          'hover:bg-accent data-[state=open]:bg-muted data-placeholder:text-muted-foreground bg-transparent',
       },
       shape: {
         default: 'rounded-md',
@@ -51,10 +49,10 @@ const selectTriggerVariants = cva(
     },
     compoundVariants: [
       // Pills start their text 21px in, like the Input and Button field pills.
-      { shape: 'pill', size: ['default', 'field'], class: 'px-5' },
+      { shape: 'pill', size: 'field', class: 'px-5' },
     ],
     defaultVariants: {
-      size: 'default',
+      size: 'field',
       variant: 'default',
       shape: 'default',
     },
@@ -67,7 +65,7 @@ function SelectTrigger(
 ) {
   const {
     className,
-    size = 'default',
+    size = 'field',
     variant = 'default',
     shape = 'default',
     children,

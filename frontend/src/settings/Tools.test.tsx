@@ -61,7 +61,23 @@ vi.mock('./ToolConfig', () => ({
 }));
 vi.mock('./RemoteDeviceConfig', () => ({ default: () => null }));
 vi.mock('../modals/AddToolModal', () => ({ default: () => null }));
-vi.mock('../modals/ConfirmationModal', () => ({ default: () => null }));
+const confirm = vi.hoisted(() => ({
+  props: null as null | {
+    modalState: string;
+    handleSubmit: () => void | Promise<unknown>;
+    error?: string;
+  },
+}));
+vi.mock('../modals/ConfirmationModal', () => ({
+  default: (props: {
+    modalState: string;
+    handleSubmit: () => void | Promise<unknown>;
+    error?: string;
+  }) => {
+    confirm.props = props;
+    return null;
+  },
+}));
 const mcpModalProps = vi.fn();
 vi.mock('../modals/MCPServerModal', () => ({
   default: (props: unknown) => {
@@ -85,12 +101,18 @@ vi.mock('../connectors/SignInAgainNotice', () => ({
 
 const getUserTools = vi.fn();
 const updateToolStatus = vi.fn();
+const deleteTool = vi.fn();
+const mcpStatuses = vi.hoisted(() => ({ value: {} as Record<string, string> }));
 vi.mock('../api/services/userService', () => ({
   default: {
     getUserTools: (...args: unknown[]) => getUserTools(...args),
     getMCPAuthStatus: () =>
-      Promise.resolve({ json: () => Promise.resolve({ success: false }) }),
+      Promise.resolve({
+        json: () =>
+          Promise.resolve({ success: true, statuses: mcpStatuses.value }),
+      }),
     updateToolStatus: (...args: unknown[]) => updateToolStatus(...args),
+    deleteTool: (...args: unknown[]) => deleteTool(...args),
   },
 }));
 
@@ -175,6 +197,7 @@ describe('Tools', () => {
   beforeEach(() => {
     reduxState.connectors.catalog = [];
     reduxState.connectors.connections = [];
+    mcpStatuses.value = {};
     dispatch.mockReset();
     getUserTools.mockReset();
     updateToolStatus.mockReset();
@@ -198,13 +221,54 @@ describe('Tools', () => {
   const card = (name: string) =>
     Array.from(container.querySelectorAll<HTMLElement>('[data-slot="card"]'))
       .filter((c) => c.querySelector('[data-testid="menu"]'))
-      .find((c) => c.querySelector('h2')?.textContent === name)!;
+      .find(
+        (c) =>
+          c.querySelector('[data-slot="card-title"]')?.textContent === name,
+      )!;
   const menuLabels = (id: string) =>
     Array.from(card(id).querySelectorAll('[data-testid="menu"] button')).map(
       (b) => b.textContent,
     );
   const switchOf = (id: string) =>
     card(id).querySelector<HTMLButtonElement>('[role="switch"]')!;
+
+  // A safety net: 48 per page, so a usual list never splits.
+  it('pages past 48 tools, and a search starts on page 1', async () => {
+    const many = Array.from({ length: 50 }, (_, i) => ({
+      ...ownTool,
+      id: `t${i}`,
+      displayName: `tool ${i}`,
+    }));
+    await render(many);
+    const cards = () =>
+      container.querySelectorAll('[data-slot="card"] [data-testid="menu"]');
+    expect(cards()).toHaveLength(48);
+    const pager = container.querySelector('[data-slot="pagination-full"]')!;
+    expect(pager.textContent).toContain('settings.tools.pageRange');
+    await act(async () =>
+      pager
+        .querySelector<HTMLButtonElement>(
+          '[aria-label=\'pagination.goToPage:{"page":2}\']',
+        )!
+        .click(),
+    );
+    expect(cards()).toHaveLength(2);
+    const input =
+      container.querySelector<HTMLInputElement>('#tool-search-input')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!.call(input, 'tool');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(cards()).toHaveLength(48);
+  });
+
+  it('draws no pager for 48 tools or fewer', async () => {
+    await render([ownTool, editorTool, viewerTool]);
+    expect(container.querySelector('[data-slot="pagination"]')).toBeNull();
+  });
 
   it('shows Edit, Reconnect, Share and Delete to the owner', async () => {
     await render([ownTool]);
@@ -214,6 +278,47 @@ describe('Tools', () => {
       'settings.tools.shareWithTeam',
       'settings.tools.delete',
     ]);
+  });
+
+  // ConfirmationModal stays pending on the returned promise and keeps a
+  // failure in the dialog.
+  const confirmDelete = async () => {
+    await act(async () => {
+      Array.from(
+        card('own').querySelectorAll<HTMLButtonElement>(
+          '[data-testid="menu"] button',
+        ),
+      )
+        .find((b) => b.textContent === 'settings.tools.delete')!
+        .click();
+    });
+    expect(confirm.props!.modalState).toBe('ACTIVE');
+    let result: void | Promise<unknown>;
+    await act(async () => {
+      result = confirm.props!.handleSubmit();
+      if (result) result.catch(() => undefined);
+    });
+    expect(result!).toBeInstanceOf(Promise);
+    return result!;
+  };
+
+  it('keeps a refused delete in the dialog, not a toast', async () => {
+    deleteTool.mockResolvedValue({ ok: false, status: 403 });
+    await render([ownTool]);
+    await expect(confirmDelete()).rejects.toThrow();
+    expect(confirm.props!.error).toBe('settings.tools.deleteFailed');
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'actionToast/showActionToast' }),
+    );
+  });
+
+  it('returns the delete promise and reloads the tools on success', async () => {
+    deleteTool.mockResolvedValue({ ok: true });
+    await render([ownTool]);
+    const calls = getUserTools.mock.calls.length;
+    await expect(confirmDelete()).resolves.toBeUndefined();
+    expect(deleteTool).toHaveBeenCalledWith({ id: 'own' }, 'token');
+    expect(getUserTools.mock.calls.length).toBeGreaterThan(calls);
   });
 
   it('shows Edit and Reconnect to an editor', async () => {
@@ -327,6 +432,77 @@ describe('Tools', () => {
       badge('ed')?.querySelector('svg')?.getAttribute('class'),
     ).not.toContain('size-3');
   });
+
+  // "Configured" is not a health check: only a real state gets a badge.
+  it('badges a custom MCP server only when it is connected or needs reconnecting', async () => {
+    mcpStatuses.value = {
+      own: 'configured',
+      ed: 'needs_auth',
+      vw: 'connected',
+    };
+    await render([ownTool, editorTool, viewerTool]);
+    const state = (id: string) =>
+      card(id).querySelector<HTMLElement>('[data-slot="badge"]');
+    expect(state('own')).toBeNull();
+    expect(state('ed')?.textContent).toBe(
+      'settings.connectors.status.reconnect',
+    );
+    expect(state('ed')?.dataset.variant).toBe('warning');
+    expect(state('vw')?.textContent).toBe(
+      'settings.connectors.status.connected',
+    );
+    expect(state('vw')?.dataset.variant).toBe('success');
+  });
+
+  it('keeps names as typed and drops the fixed tile height', async () => {
+    await render([{ ...ownTool, displayName: 'ntfy' }]);
+    const tile = card('ntfy');
+    expect(tile.className).not.toMatch(/\bh-52\b/);
+    expect(
+      tile.querySelector('[data-slot="card-title"]')!.className,
+    ).not.toContain('capitalize');
+    expect(
+      tile
+        .querySelector('[data-slot="card-description"]')!
+        .hasAttribute('title'),
+    ).toBe(false);
+  });
+
+  it('says there are no tools yet and offers both ways to add one', async () => {
+    await render([]);
+    const empty = container.querySelector('[data-slot="empty-state"]')!;
+    expect(empty.textContent).toContain('settings.tools.noToolsYet');
+    const actions = Array.from(
+      empty.querySelectorAll<HTMLButtonElement>('button'),
+    );
+    expect(actions.map((b) => b.textContent)).toEqual([
+      'settings.tools.addTool',
+      'settings.tools.connectService',
+    ]);
+    await act(async () => actions[1].click());
+    expect(container.querySelector('[data-testid="where"]')?.textContent).toBe(
+      '/settings/connectors?capability=tools',
+    );
+  });
+
+  it('shows a small no-match line for a search with no results', async () => {
+    await render([ownTool]);
+    const input =
+      container.querySelector<HTMLInputElement>('#tool-search-input')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!.call(input, 'zzz');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const empty = container.querySelector<HTMLElement>(
+      '[data-slot="empty-state"]',
+    )!;
+    expect(empty.dataset.size).toBe('xs');
+    expect(empty.querySelector('img')).toBeNull();
+    expect(empty.textContent).toContain('settings.tools.noToolsFound');
+  });
 });
 
 describe('Tools page connections', () => {
@@ -421,7 +597,9 @@ describe('Tools page connections', () => {
   });
 
   const card = (title: string) =>
-    Array.from(container.querySelectorAll<HTMLElement>('h2'))
+    Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="card-title"]'),
+    )
       .find((h) => h.textContent === title)!
       .closest<HTMLElement>('[data-slot="card"]')!;
   const menuItem = (title: string, label: string) =>
@@ -433,16 +611,105 @@ describe('Tools page connections', () => {
 
   // A connected tool is managed on the Connectors page; its card keeps
   // what acts on the tool itself.
-  it('gives the owner of a connected tool Share and Delete, no connection item', async () => {
+  it('gives the owner of a connected tool Manage in Connectors first, then Share and Delete', async () => {
     await renderTools(root);
     expect(
       Array.from(
         card('Telegram').querySelectorAll('[data-testid="menu"] button'),
       ).map((b) => b.textContent),
-    ).toEqual(['settings.tools.shareWithTeam', 'settings.tools.delete']);
+    ).toEqual([
+      'settings.tools.manageInConnectors',
+      'settings.tools.shareWithTeam',
+      'settings.tools.delete',
+    ]);
+    await act(async () =>
+      menuItem('Telegram', 'settings.tools.manageInConnectors')!.click(),
+    );
+    expect(container.querySelector('[data-testid="where"]')?.textContent).toBe(
+      '/settings/connectors?connector=telegram&connection=conn-1',
+    );
+  });
+
+  it("offers no Manage in Connectors on a teammate's connected tool", async () => {
+    getUserTools.mockImplementation(() =>
+      jsonResponse({
+        tools: [
+          {
+            ...TOOLS[0],
+            customName: 'Telegram (shared)',
+            connection_id: 'owner-conn',
+            access: 'editor',
+            ownership: 'team',
+            allowed_actions: ['edit', 'use', 'use_in_own'],
+          },
+        ],
+      }),
+    );
+    await renderTools(root);
     expect(
-      menuItem('Telegram', 'settings.connectors.manageConnection'),
+      menuItem('Telegram (shared)', 'settings.tools.manageInConnectors'),
     ).toBeUndefined();
+  });
+
+  it('groups the tools like the composer: built in, each service, custom', async () => {
+    getUserTools.mockImplementation(() =>
+      jsonResponse({
+        tools: [
+          ...TOOLS,
+          {
+            id: 'mem',
+            name: 'memory',
+            displayName: 'Memory',
+            customName: '',
+            description: 'Remembers',
+            status: true,
+            config: {},
+            actions: [],
+            default: true,
+          },
+        ],
+      }),
+    );
+    await renderTools(root);
+    const headers = Array.from(
+      container.querySelectorAll('[data-slot="section-header"] h2'),
+    ).map((h) => h.textContent);
+    expect(headers).toEqual([
+      'settings.tools.groupBuiltIn',
+      'Telegram',
+      'Linear',
+      'agents.form.toolsPopup.groupCustom',
+    ]);
+    const section = (title: string) =>
+      Array.from(container.querySelectorAll('section')).find(
+        (s) => s.querySelector('h2')?.textContent === title,
+      )!;
+    expect(section('Telegram').textContent).toContain('Alerts bot');
+    expect(section('agents.form.toolsPopup.groupCustom').textContent).toContain(
+      'My API',
+    );
+    // The default copy is told apart by a neutral Default badge; the old
+    // "Built-in" badge is gone (the group says it).
+    const memory = section('settings.tools.groupBuiltIn');
+    const badge = memory.querySelector<HTMLElement>('[data-slot="badge"]')!;
+    expect(badge.textContent).toBe('settings.tools.defaultBadge');
+    expect(badge.dataset.variant).toBe('neutral');
+    expect(container.textContent).not.toContain('settings.tools.builtIn');
+  });
+
+  it("draws a connected tool with its service's logo and no icon in the footer", async () => {
+    await renderTools(root);
+    const header = card('Linear').querySelector('[data-slot="card-header"]')!;
+    // The service logo is decorative (the name is beside it); the generic
+    // MCP tool icon would carry an accessible name.
+    expect(header.querySelector('svg')).not.toBeNull();
+    expect(header.querySelector('[role="img"]')).toBeNull();
+    expect(
+      card('My API').querySelector('[data-slot="card-header"] [role="img"]'),
+    ).not.toBeNull();
+    expect(
+      card('Telegram').querySelector('[data-slot="card-footer"] svg'),
+    ).toBeNull();
   });
 
   it('shows each connected account as its own tool, the account on its footer', async () => {
@@ -494,9 +761,14 @@ describe('Tools page connections', () => {
     expect(footer.textContent).toBe('dartpain');
   });
 
-  it('says a connected tool needs signing in again, with no raw MCP reconnect', async () => {
+  it('says a connected tool needs reconnecting, with no raw MCP reconnect', async () => {
     await renderTools(root);
-    expect(card('Linear').textContent).toContain(
+    const badge = card('Linear').querySelector<HTMLElement>(
+      '[data-slot="badge"]',
+    )!;
+    expect(badge.textContent).toBe('settings.connectors.status.reconnect');
+    expect(badge.dataset.variant).toBe('warning');
+    expect(card('Linear').textContent).not.toContain(
       'settings.connectors.health.signInAgain',
     );
     expect(card('Linear').textContent).not.toContain('MCP Server:');
@@ -505,14 +777,14 @@ describe('Tools page connections', () => {
 
   // The owner signs in again right from the card; an MCP preset re-signs
   // its existing tool.
-  it('offers the owner Sign in again on a connected tool that needs it', async () => {
+  it('offers the owner Reconnect on a connected tool that needs it', async () => {
     reconnect.mockClear();
     await renderTools(root);
     expect(
-      menuItem('Telegram', 'settings.connectors.health.signInAgain'),
+      menuItem('Telegram', 'settings.connectors.status.reconnect'),
     ).toBeUndefined();
     await act(async () =>
-      menuItem('Linear', 'settings.connectors.health.signInAgain')!.click(),
+      menuItem('Linear', 'settings.connectors.status.reconnect')!.click(),
     );
     expect(reconnect).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'conn-2', connector_key: 'mcp:linear' }),
@@ -537,7 +809,7 @@ describe('Tools page connections', () => {
     );
     await renderTools(root);
     expect(
-      menuItem('Linear (shared)', 'settings.connectors.health.signInAgain'),
+      menuItem('Linear (shared)', 'settings.connectors.status.reconnect'),
     ).toBeUndefined();
   });
 
@@ -650,5 +922,29 @@ describe('Tools page connections', () => {
       menuItem('Linear (shared)', 'settings.tools.reconnect'),
     ).toBeUndefined();
     expect(menuItem('Linear (shared)', 'settings.tools.edit')).toBeDefined();
+  });
+
+  it('shows a failed load as an error with Retry, not "no tools yet"', async () => {
+    getUserTools.mockImplementation(() =>
+      jsonResponse({ success: false }, false, 500),
+    );
+    await renderTools(root);
+    const state = container.querySelector<HTMLElement>(
+      '[data-slot="empty-state"][data-tone="destructive"]',
+    )!;
+    expect(state).not.toBeNull();
+    expect(state.textContent).toContain('settings.tools.loadError');
+    expect(container.textContent).not.toContain('settings.tools.noToolsYet');
+    getUserTools.mockImplementation(() => jsonResponse({ tools: [ownTool] }));
+    const retry = Array.from(state.querySelectorAll('button')).find(
+      (b) => b.textContent === 'retry',
+    )!;
+    await act(async () => retry.click());
+    expect(
+      container.querySelector(
+        '[data-slot="empty-state"][data-tone="destructive"]',
+      ),
+    ).toBeNull();
+    expect(card('own')).toBeDefined();
   });
 });

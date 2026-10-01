@@ -31,9 +31,10 @@ const userService = {
     token: string | null,
     limit = 100,
     offset = 0,
+    filters: { days?: number; check?: string; outcome?: string } = {},
   ): Promise<any> =>
     throttledApiClient.get(
-      endpoints.USER.GUARDRAIL_EVENTS(agentId, limit, offset),
+      endpoints.USER.GUARDRAIL_EVENTS(agentId, limit, offset, filters),
       token,
     ),
   getGuardrailSummary: (

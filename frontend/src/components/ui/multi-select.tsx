@@ -1,4 +1,4 @@
-import { ChevronDown, X } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import * as React from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -24,6 +24,8 @@ import { cn } from '@/lib/utils';
 export interface MultiSelectOption {
   value: string;
   label: string;
+  /** A muted line under the label in the list; chips show the label only. */
+  description?: string;
 }
 
 interface MultiSelectProps {
@@ -45,6 +47,8 @@ interface MultiSelectProps {
   modal?: boolean;
   /** The trigger's id; inside a FormField it defaults to the field's. */
   id?: string;
+  /** `pill` in a page toolbar beside pill searches and filters. */
+  shape?: 'default' | 'pill';
 }
 
 export function MultiSelect({
@@ -57,6 +61,7 @@ export function MultiSelect({
   className,
   modal = false,
   id,
+  shape = 'default',
 }: MultiSelectProps) {
   const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
@@ -75,15 +80,11 @@ export function MultiSelect({
     onChange(newSelected);
   };
 
-  const handleRemove = (value: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    onChange(selected.filter((item) => item !== value));
-  };
-
-  const selectedLabels = options
-    .filter((option) => selected.includes(option.value))
-    .map((option) => option.label);
+  const selectedOptions = options.filter((option) =>
+    selected.includes(option.value),
+  );
+  // Pills show one chip and "+N more", so a toolbar stays one row.
+  const chipLimit = shape === 'pill' ? 1 : 2;
 
   return (
     <Popover open={open} onOpenChange={setOpen} modal={modal}>
@@ -91,8 +92,8 @@ export function MultiSelect({
         <Button
           variant="combobox"
           size="field"
+          shape={shape}
           role="combobox"
-          aria-expanded={open}
           data-slot="multi-select-trigger"
           data-placeholder={selected.length ? undefined : ''}
           {...control}
@@ -105,51 +106,33 @@ export function MultiSelect({
         >
           {/* flex-1 gives the chip row a definite width; without it, a lone
               chip's percentage max-width resolves against its own natural
-              width and shaves 1rem off the label (a short ref like "A1"
-              disappears entirely). */}
-          <div className="flex min-w-0 flex-1 flex-wrap gap-1">
+              width and truncates a short label. */}
+          <div
+            className={cn(
+              'flex min-w-0 flex-1 items-center gap-1',
+              // A pill sits in a toolbar row: one chip that truncates, then
+              // the count, never a second line.
+              shape === 'pill' ? 'flex-nowrap' : 'flex-wrap',
+            )}
+          >
             {selected.length === 0 ? (
               placeholder
             ) : (
               <>
-                {selectedLabels.slice(0, 2).map((label) => {
-                  const option = options.find((o) => o.label === label);
-                  return (
-                    <Badge
-                      key={option?.value || label}
-                      className="max-w-[calc(100%-1rem)] min-w-0"
-                    >
-                      <span className="truncate">{label}</span>
-                      {/* A span, not a button: the trigger is already a
-                          <button>, and buttons can't nest. */}
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        className="hover:text-primary/70 flex size-3 cursor-pointer items-center justify-center"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                        onClick={(e) => handleRemove(option?.value || '', e)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            handleRemove(
-                              option?.value || '',
-                              e as unknown as React.MouseEvent,
-                            );
-                          }
-                        }}
-                      >
-                        <X className="size-3" />
-                      </span>
-                    </Badge>
-                  );
-                })}
-                {selected.length > 2 && (
-                  <span className="text-muted-foreground text-xs">
+                {/* No X on the chips: the trigger is a <button>, so a remove
+                    control can't nest in it. Unselect in the list. */}
+                {selectedOptions.slice(0, chipLimit).map((option) => (
+                  <Badge
+                    key={option.value}
+                    className="max-w-full min-w-0 shrink"
+                  >
+                    <span className="truncate">{option.label}</span>
+                  </Badge>
+                ))}
+                {selected.length > chipLimit && (
+                  <span className="text-muted-foreground shrink-0 text-xs">
                     {t('components.multiSelect.more', {
-                      count: selected.length - 2,
+                      count: selected.length - chipLimit,
                     })}
                   </span>
                 )}
@@ -187,7 +170,16 @@ export function MultiSelect({
                       aria-hidden
                       className="pointer-events-none"
                     />
-                    {option.label}
+                    {option.description ? (
+                      <span className="flex min-w-0 flex-col">
+                        <span>{option.label}</span>
+                        <span className="text-muted-foreground text-xs">
+                          {option.description}
+                        </span>
+                      </span>
+                    ) : (
+                      option.label
+                    )}
                   </CommandItem>
                 );
               })}

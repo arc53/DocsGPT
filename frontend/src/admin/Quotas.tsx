@@ -1,22 +1,16 @@
-import { TriangleAlert } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import adminService, { type QuotaScope } from '../api/services/adminService';
-import teamsService from '../api/services/teamsService';
+import SearchInput from '../components/SearchInput';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
+import { Pagination } from '../components/ui/pagination';
 import { SectionHeader } from '../components/ui/section-header';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../components/ui/select';
+
 import {
   Table,
   TableBody,
@@ -26,10 +20,12 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
+import { useDebouncedValue } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 import { LoadingState } from '@/components/ui/loading-state';
 import { LoadError, fmtDate, fmtNumber, fmtRelative } from './AdminUI';
 import QuotaEditor from './QuotaEditor';
+import TeamPicker, { type PickedTeam } from './TeamPicker';
 import { describeBudget, type QuotaPolicy } from './quotaUtils';
 
 type TeamPolicy = QuotaPolicy & {
@@ -65,7 +61,10 @@ function PolicyCells({ policy }: { policy: QuotaPolicy }) {
       <TableCell className="tabular-nums">
         {describeBudget(policy.cost_limit_usd, policy.cost_unlimited, 'cost')}
       </TableCell>
-      <TableCell className="text-muted-foreground max-w-56 truncate">
+      <TableCell
+        className="text-muted-foreground max-w-56 truncate"
+        title={policy.note || undefined}
+      >
         {policy.note || '—'}
       </TableCell>
       <TableCell className="text-muted-foreground whitespace-nowrap">
@@ -75,30 +74,66 @@ function PolicyCells({ policy }: { policy: QuotaPolicy }) {
   );
 }
 
+/** Rows per table page; search and the pager appear past one page. */
+const QUOTA_PAGE_SIZE = 25;
+
 export default function Quotas() {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
   const [data, setData] = useState<any | null>(null);
-  const [teams, setTeams] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Editing | null>(null);
-  const [teamPick, setTeamPick] = useState('');
+  const [teamPick, setTeamPick] = useState<PickedTeam | null>(null);
+  // Each table pages and searches on the server, on its own.
+  const [teamsPage, setTeamsPage] = useState(1);
+  const [usersPage, setUsersPage] = useState(1);
+  const [teamsQuery, setTeamsQuery] = useState('');
+  const [usersQuery, setUsersQuery] = useState('');
+  const teamsQ = useDebouncedValue(teamsQuery.trim(), 300);
+  const usersQ = useDebouncedValue(usersQuery.trim(), 300);
+  // The unfiltered sizes, which decide whether a table gets search at all.
+  const [teamsAll, setTeamsAll] = useState(0);
+  const [usersAll, setUsersAll] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [quotasRes, teamsJson] = await Promise.all([
-        adminService.getQuotas(token),
-        teamsService.listAll(token).catch(() => ({})),
-      ]);
-      setData(await quotasRes.json().catch(() => ({ success: false })));
-      setTeams(teamsJson?.teams ?? []);
+      const res = await adminService.getQuotas(token, {
+        teamsPage,
+        usersPage,
+        pageSize: QUOTA_PAGE_SIZE,
+        teamsQ,
+        usersQ,
+      });
+      const body = await res.json().catch(() => ({ success: false }));
+      // Removing the last row on the last page: the reload of that page is
+      // empty, so step back to the new last page (which loads again).
+      const pastEnd = (rows: unknown, total: unknown, page: number) =>
+        page > 1 &&
+        Array.isArray(rows) &&
+        rows.length === 0 &&
+        typeof total === 'number' &&
+        total > 0;
+      if (body?.success) {
+        const teamsBack = pastEnd(body.teams, body.teams_total, teamsPage);
+        const usersBack = pastEnd(body.users, body.users_total, usersPage);
+        if (teamsBack)
+          setTeamsPage(Math.ceil(body.teams_total / QUOTA_PAGE_SIZE));
+        if (usersBack)
+          setUsersPage(Math.ceil(body.users_total / QUOTA_PAGE_SIZE));
+        if (teamsBack || usersBack) return;
+      }
+      setData(body);
+      if (body?.success) {
+        if (!teamsQ) setTeamsAll(body.teams_total ?? 0);
+        if (!usersQ) setUsersAll(body.users_total ?? 0);
+      }
     } catch {
       setData({ success: false });
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, teamsPage, usersPage, teamsQ, usersQ]);
 
   useEffect(() => {
     load();
@@ -110,12 +145,6 @@ export default function Quotas() {
     (data?.instance ?? []).find(isAll) ?? null;
   const teamPolicies: TeamPolicy[] = data?.teams ?? [];
   const userPolicies: QuotaPolicy[] = data?.users ?? [];
-  const teamsWithoutPolicy = useMemo(() => {
-    const covered = new Set(
-      teamPolicies.filter(isAll).map((p) => String(p.subject_id)),
-    );
-    return teams.filter((team) => !covered.has(String(team.id)));
-  }, [teams, teamPolicies]);
 
   if (data === null && loading) return <LoadingState fill="block" />;
   if (!data?.success)
@@ -140,7 +169,6 @@ export default function Quotas() {
 
       {(data.unpriced_models ?? []).length > 0 ? (
         <Alert variant="warning" role="note">
-          <TriangleAlert className="size-4" aria-hidden="true" />
           <AlertTitle>{t('admin.quotas.unpriced.title')}</AlertTitle>
           <AlertDescription>
             <p>
@@ -193,43 +221,45 @@ export default function Quotas() {
         <SectionHeader
           title="Team allowances"
           actions={
-            teamsWithoutPolicy.length > 0 ? (
-              <>
-                <Select value={teamPick} onValueChange={setTeamPick}>
-                  <SelectTrigger className="w-52" aria-label="Team">
-                    <SelectValue placeholder="Choose a team" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {teamsWithoutPolicy.map((team) => (
-                      <SelectItem key={team.id} value={String(team.id)}>
-                        {team.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!teamPick}
-                  onClick={() => {
-                    const team = teams.find((tm) => String(tm.id) === teamPick);
-                    setEditing({
-                      scope: 'team',
-                      subjectId: teamPick,
-                      title: team?.name ?? 'Team',
-                      policy: null,
-                    });
+            <div className="flex flex-wrap items-center gap-2">
+              {teamsAll > QUOTA_PAGE_SIZE && (
+                <SearchInput
+                  className="w-full sm:w-56"
+                  placeholder="Search teams"
+                  value={teamsQuery}
+                  onChange={(e) => {
+                    setTeamsQuery(e.target.value);
+                    setTeamsPage(1);
                   }}
-                >
-                  Add allowance
-                </Button>
-              </>
-            ) : null
+                />
+              )}
+              <TeamPicker
+                value={teamPick}
+                onChange={setTeamPick}
+                token={token}
+              />
+              <Button
+                variant="outline"
+                size="field"
+                disabled={!teamPick}
+                onClick={() => {
+                  if (!teamPick) return;
+                  setEditing({
+                    scope: 'team',
+                    subjectId: teamPick.id,
+                    title: teamPick.name,
+                    policy: null,
+                  });
+                }}
+              >
+                Add allowance
+              </Button>
+            </div>
           }
         />
         {teamPolicies.length === 0 ? (
           <p className="text-muted-foreground mt-1 text-sm">
-            No team has an allowance.
+            {teamsQ ? 'No team matches.' : 'No team has an allowance.'}
           </p>
         ) : (
           <TableContainer className="mt-3">
@@ -282,14 +312,39 @@ export default function Quotas() {
             </Table>
           </TableContainer>
         )}
+        <Pagination
+          page={teamsPage}
+          pageSize={QUOTA_PAGE_SIZE}
+          total={data.teams_total ?? teamPolicies.length}
+          onPageChange={setTeamsPage}
+          rangeLabel={({ from, to, total }) =>
+            `${fmtNumber(from)}–${fmtNumber(to)} of ${fmtNumber(total)} teams`
+          }
+        />
       </section>
 
       <section>
-        <SectionHeader title="User overrides" />
+        <SectionHeader
+          title="User overrides"
+          actions={
+            usersAll > QUOTA_PAGE_SIZE ? (
+              <SearchInput
+                className="w-full sm:w-56"
+                placeholder="Search users"
+                value={usersQuery}
+                onChange={(e) => {
+                  setUsersQuery(e.target.value);
+                  setUsersPage(1);
+                }}
+              />
+            ) : null
+          }
+        />
         {userPolicies.length === 0 ? (
           <p className="text-muted-foreground mt-1 text-sm">
-            No user has an override. Add one from a user&apos;s menu on the
-            Users tab.
+            {usersQ
+              ? 'No user matches.'
+              : "No user has an override. Add one from a user's menu on the Users tab."}
           </p>
         ) : (
           <TableContainer className="mt-3">
@@ -338,6 +393,15 @@ export default function Quotas() {
             </Table>
           </TableContainer>
         )}
+        <Pagination
+          page={usersPage}
+          pageSize={QUOTA_PAGE_SIZE}
+          total={data.users_total ?? userPolicies.length}
+          onPageChange={setUsersPage}
+          rangeLabel={({ from, to, total }) =>
+            `${fmtNumber(from)}–${fmtNumber(to)} of ${fmtNumber(total)} users`
+          }
+        />
       </section>
 
       <Modal
@@ -355,7 +419,7 @@ export default function Quotas() {
             inheritHint={HINTS[editing.scope]}
             onSaved={() => {
               setEditing(null);
-              setTeamPick('');
+              setTeamPick(null);
               load();
             }}
           />

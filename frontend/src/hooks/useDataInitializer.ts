@@ -16,7 +16,9 @@ import {
 import {
   selectConversations,
   selectToken,
+  receiveConversations,
   setConversations,
+  setConversationsLoading,
   setPrompts,
   setAttachmentBudgetShare,
   setSourceDocs,
@@ -127,10 +129,10 @@ export default function useDataInitializer(isAuthLoading: boolean) {
 
     const fetchConversationsData = async () => {
       if (!conversations?.data) {
-        dispatch(setConversations({ ...conversations, loading: true }));
+        dispatch(setConversationsLoading(true));
         try {
           const fetchedConversations = await getConversations(token);
-          dispatch(setConversations(fetchedConversations));
+          dispatch(receiveConversations(fetchedConversations));
         } catch (error) {
           console.error('Failed to fetch conversations:', error);
           dispatch(setConversations({ data: null, loading: false }));

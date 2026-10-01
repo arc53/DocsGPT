@@ -50,6 +50,19 @@ describe('SourceMarkdown', () => {
     expect(pre.className).toContain('overflow-x-auto');
     expect(pre.className).toContain('border');
     expect(pre.textContent).toContain('npm run build');
-    expect(host.querySelector('p code')!.className).toContain('bg-muted');
+    // The chip's line folding never reaches a fenced block's lines.
+    expect(pre.className).toContain('[&>code]:whitespace-pre');
+    expect(pre.querySelector('button')).toBeNull();
+    // The shared chat chip (lib/markdown markdownCode), not a source-only look.
+    expect(host.querySelector('p code')!.className).toContain('bg-accent');
+    expect(host.querySelector('p code')!.className).toContain('rounded-md');
+  });
+
+  it('renders links as text-size links that keep the paragraph type', () => {
+    const host = document.createElement('div');
+    host.innerHTML = render('See [the guide](https://example.com) now.');
+    const link = host.querySelector('a')!;
+    expect(link.dataset.size).toBe('text');
+    expect(link.className).not.toMatch(/\btext-sm\b|font-medium/);
   });
 });

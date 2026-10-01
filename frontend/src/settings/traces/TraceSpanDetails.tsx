@@ -1,12 +1,11 @@
 import { useTranslation } from 'react-i18next';
 
 import { Alert, AlertDescription } from '../../components/ui/alert';
-import { Card } from '../../components/ui/card';
+import { CodeBlock, CodePanel } from '../../components/ui/code-block';
 import {
   DescriptionItem,
   DescriptionList,
 } from '../../components/ui/description-list';
-import { ToolCallPanel } from '../../conversation/AnswerFlow';
 import { TraceSpan } from '../types';
 import { formatDurationMs, formatTokens } from './traceUtils';
 
@@ -130,91 +129,87 @@ export default function TraceSpanDetails({ span }: { span: TraceSpan }) {
         ))}
       </DescriptionList>
       {span.error && (
-        <Alert variant="destructive">
+        <Alert variant="destructive" icon={null}>
           <AlertDescription>
-            <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
+            <CodeBlock surface="bare" tone="destructive">
               {span.error}
-            </pre>
+            </CodeBlock>
           </AlertDescription>
         </Alert>
       )}
       {preview.query !== undefined && (
-        <ToolCallPanel title={f('query')} copyText={jsonText(preview.query)}>
-          <p className="max-h-60 overflow-y-auto wrap-break-word whitespace-pre-wrap">
+        <CodePanel title={f('query')} copyText={jsonText(preview.query)}>
+          <CodeBlock surface="bare" maxHeight="md" font="sans">
             {jsonText(preview.query)}
-          </p>
-        </ToolCallPanel>
+          </CodeBlock>
+        </CodePanel>
       )}
       {preview.arguments !== undefined && (
-        <ToolCallPanel
+        <CodePanel
           title={f('arguments')}
           copyText={jsonText(preview.arguments)}
         >
-          <pre className="max-h-60 overflow-y-auto font-mono text-xs wrap-break-word whitespace-pre-wrap">
+          <CodeBlock surface="bare" maxHeight="md">
             {jsonText(preview.arguments)}
-          </pre>
-        </ToolCallPanel>
+          </CodeBlock>
+        </CodePanel>
       )}
       {preview.result !== undefined && (
-        <ToolCallPanel title={f('result')} copyText={jsonText(preview.result)}>
-          <pre className="max-h-60 overflow-y-auto font-mono text-xs wrap-break-word whitespace-pre-wrap">
+        <CodePanel title={f('result')} copyText={jsonText(preview.result)}>
+          <CodeBlock surface="bare" maxHeight="md">
             {jsonText(preview.result)}
-          </pre>
-        </ToolCallPanel>
+          </CodeBlock>
+        </CodePanel>
       )}
       {preview.output !== undefined && (
-        <ToolCallPanel title={f('output')} copyText={jsonText(preview.output)}>
-          <p className="max-h-60 overflow-y-auto wrap-break-word whitespace-pre-wrap">
+        <CodePanel title={f('output')} copyText={jsonText(preview.output)}>
+          <CodeBlock surface="bare" maxHeight="md" font="sans">
             {jsonText(preview.output)}
-          </p>
-        </ToolCallPanel>
+          </CodeBlock>
+        </CodePanel>
       )}
       {chunks.length > 0 && (
-        <ToolCallPanel
+        <CodePanel
           title={f('retrievedChunks')}
           copyText={JSON.stringify(chunks, null, 2)}
         >
-          <ol className="flex max-h-72 flex-col gap-2 overflow-y-auto">
-            {chunks.map((chunk, index) => (
-              <li key={index} className="flex flex-col gap-0.5">
-                <span className="text-foreground font-medium">
-                  {index + 1}. {chunk.title || chunk.source || '—'}
-                  {typeof chunk.score === 'number' && (
-                    <span className="text-muted-foreground ml-2 font-normal tabular-nums">
-                      {chunk.score.toFixed(3)}
+          <div className="scrollbar-overlay max-h-80 overflow-y-auto">
+            <ol className="flex flex-col gap-2">
+              {chunks.map((chunk, index) => (
+                <li key={index} className="flex flex-col gap-0.5">
+                  <span className="text-foreground font-medium">
+                    {index + 1}. {chunk.title || chunk.source || '—'}
+                    {typeof chunk.score === 'number' && (
+                      <span className="text-muted-foreground ml-2 font-normal tabular-nums">
+                        {chunk.score.toFixed(3)}
+                      </span>
+                    )}
+                  </span>
+                  {chunk.text && (
+                    <span className="text-muted-foreground line-clamp-3">
+                      {chunk.text}
                     </span>
                   )}
-                </span>
-                {chunk.text && (
-                  <span className="text-muted-foreground line-clamp-3">
-                    {chunk.text}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ol>
-        </ToolCallPanel>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </CodePanel>
       )}
       {otherPreviews.map(([key, value]) => (
-        <ToolCallPanel key={key} title={key} copyText={jsonText(value)}>
-          <pre className="max-h-60 overflow-y-auto font-mono text-xs wrap-break-word whitespace-pre-wrap">
+        <CodePanel key={key} title={key} copyText={jsonText(value)}>
+          <CodeBlock surface="bare" maxHeight="md">
             {jsonText(value)}
-          </pre>
-        </ToolCallPanel>
+          </CodeBlock>
+        </CodePanel>
       ))}
       <details>
         <summary className="text-muted-foreground cursor-pointer select-none">
           {f('allAttributes')}
         </summary>
-        <Card
-          variant="filled"
-          padding="sm"
-          className="mt-1 max-h-60 overflow-y-auto"
-        >
-          <pre className="text-muted-foreground font-mono text-xs wrap-break-word whitespace-pre-wrap">
-            {JSON.stringify(a, null, 2)}
-          </pre>
-        </Card>
+        <CodeBlock maxHeight="md" className="mt-1">
+          {JSON.stringify(a, null, 2)}
+        </CodeBlock>
       </details>
     </div>
   );

@@ -154,16 +154,7 @@ export default function WorkflowRunArtifacts({
         size="sm"
         illustration="none"
         title={t(error)}
-        action={
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => loadList()}
-          >
-            {t('retry')}
-          </Button>
-        }
+        onRetry={() => loadList()}
       />
     );
   }
@@ -210,16 +201,7 @@ export default function WorkflowRunArtifacts({
               illustration="none"
               title={t(detailError)}
               className="h-full"
-              action={
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => fetchDetail(selectedId)}
-                >
-                  {t('retry')}
-                </Button>
-              }
+              onRetry={() => fetchDetail(selectedId)}
             />
           ) : detail ? (
             <DocumentArtifactView
@@ -244,7 +226,10 @@ export default function WorkflowRunArtifacts({
           >
             <FileBox className="text-muted-foreground shrink-0" />
             <div className="min-w-0 flex-1">
-              <div className="text-foreground truncate text-sm font-medium">
+              <div
+                className="text-foreground truncate text-sm font-medium"
+                title={artifact.title || undefined}
+              >
                 {artifact.title ||
                   t('agents.workflow.artifacts.untitled', {
                     id: artifact.id.slice(0, 8),

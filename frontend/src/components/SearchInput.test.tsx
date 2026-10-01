@@ -14,6 +14,12 @@ describe('SearchInput', () => {
     expect(html).toContain('lucide-search');
   });
 
+  it('has one size: the 38px field', () => {
+    // @ts-expect-error size="sm" is gone
+    const html = renderToStaticMarkup(<SearchInput size="sm" label="x" />);
+    expect(html).toContain('h-9.5');
+  });
+
   it('takes a placeholder with an accessible name instead of a label', () => {
     const html = renderToStaticMarkup(
       <SearchInput placeholder="Search logs..." />,

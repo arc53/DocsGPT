@@ -1,12 +1,12 @@
 import type { VariantProps } from 'class-variance-authority';
 
-import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import type { badgeVariants } from '../components/ui/badge';
 import {
+  EMPTY_VALUE,
   formatDateOnly,
-  formatDateTime,
   formatRelative,
+  formatTimestamp,
 } from '../utils/dateTimeUtils';
 
 /** A failed admin fetch: a red message with a Retry that re-runs the fetch. */
@@ -23,11 +23,7 @@ export function LoadError({
       size="sm"
       illustration="none"
       title={message}
-      action={
-        <Button variant="outline" size="sm" onClick={onRetry}>
-          Retry
-        </Button>
-      }
+      onRetry={onRetry}
     />
   );
 }
@@ -35,12 +31,11 @@ export function LoadError({
 // Audit-feed pills render as Badge; these helpers pick its variant.
 type Tone = NonNullable<VariantProps<typeof badgeVariants>['variant']>;
 
-export function fmtDate(value?: string | null): string {
-  return value ? formatDateTime(value) : '—';
-}
+/** Date and time, or the em dash: the app's shared `formatTimestamp`. */
+export const fmtDate = formatTimestamp;
 
 export function fmtDateShort(value?: string | null): string {
-  return value ? formatDateOnly(value) : '—';
+  return value ? formatDateOnly(value) : EMPTY_VALUE;
 }
 
 /** "3 minutes ago" in the UI language; `never` when there is no value. */
@@ -71,7 +66,7 @@ export function fmtUsd(n?: number | null): string {
 
 /** Milliseconds as ms or s, or an em dash when nothing was measured. */
 export function fmtMs(n?: number | null): string {
-  if (n === null || n === undefined) return '—';
+  if (n === null || n === undefined) return EMPTY_VALUE;
   return n < 1000 ? `${Math.round(n)}ms` : `${(n / 1000).toFixed(1)}s`;
 }
 

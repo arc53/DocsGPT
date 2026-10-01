@@ -21,7 +21,9 @@ import {
   selectConnectorsEnabled,
   selectConnectorsLoaded,
 } from './connectors/connectorsSlice';
+import { catalogCards } from './connectors/catalogCards';
 import { connectorName } from './connectors/i18n';
+import type { ConnectorDefinition } from './connectors/types';
 import { useDarkTheme } from './hooks';
 import {
   selectAvailableModels,
@@ -31,6 +33,7 @@ import {
   setModelsLoading,
   setSelectedModel,
 } from './preferences/preferenceSlice';
+import { intlLocale } from './utils/dateTimeUtils';
 
 import type { Model } from './models/types';
 
@@ -151,7 +154,7 @@ export default function Hero({
     isRetry?: boolean;
   }) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
   const navigate = useNavigate();
   const demos = t('demo', { returnObjects: true }) as Array<{
@@ -172,10 +175,23 @@ export default function Hero({
     connectorsLoaded &&
     connections.length === 0 &&
     connectable.length > 0;
-  const connectNames = connectable
-    .slice(0, 2)
-    .map((connector) => connectorName(t, connector))
-    .join(', ');
+  // Named after services whose data you chat with (files, docs, issues),
+  // not a web search or a bot that sends messages; one card per service.
+  const holdsData = (connector: ConnectorDefinition) =>
+    connector.category !== 'search' &&
+    (connector.capabilities ?? []).some((c) => c === 'sync' || c === 'read');
+  const dataServices = catalogCards(connectable).filter(holdsData);
+  const named = (dataServices.length > 0 ? dataServices : connectable).map(
+    (connector) => connectorName(t, connector),
+  );
+  const NAMED = 2;
+  const connectNames = new Intl.ListFormat(intlLocale(i18n.language), {
+    type: 'conjunction',
+  }).format(
+    named.length > NAMED
+      ? [...named.slice(0, NAMED), t('connectHero.more')]
+      : named,
+  );
   const cards = (demos ?? []).filter((demo) => demo.header && demo.query);
   const shown = offerConnect ? cards.slice(0, 3) : cards;
 

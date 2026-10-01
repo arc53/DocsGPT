@@ -1,12 +1,12 @@
-import { ArrowRight, Wrench } from 'lucide-react';
+import { Wrench } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
 
 import {
   MultiSelectPopover,
   type MultiSelectPopoverItem,
 } from '../MultiSelectPopover';
+import PickerFooter from '../PickerFooter';
 import { Button } from '../ui/button';
 
 type ToolsTriggerProps = {
@@ -18,6 +18,8 @@ type ToolsTriggerProps = {
   loading: boolean;
   /** Shown above the link, e.g. connections that need signing in again. */
   notice?: ReactNode;
+  /** Opens the add-tool modal; the picker closes first. */
+  onAddTool: () => void;
 };
 
 export default function ToolsTrigger({
@@ -28,6 +30,7 @@ export default function ToolsTrigger({
   onToggle,
   loading,
   notice,
+  onAddTool,
 }: ToolsTriggerProps) {
   const { t } = useTranslation();
 
@@ -45,12 +48,16 @@ export default function ToolsTrigger({
       footer={
         <div className="flex flex-col gap-3">
           {notice}
-          <Button variant="link" size="inline" asChild>
-            <Link to="/settings/tools">
-              {t('settings.tools.manageTools')}
-              <ArrowRight aria-hidden="true" className="size-3" />
-            </Link>
-          </Button>
+          <PickerFooter
+            to="/settings/tools"
+            linkLabel={t('settings.tools.manageTools')}
+            onNavigate={() => onOpenChange(false)}
+            actionLabel={t('settings.tools.addTool')}
+            onAction={() => {
+              onOpenChange(false);
+              onAddTool();
+            }}
+          />
         </div>
       }
       trigger={

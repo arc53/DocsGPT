@@ -96,6 +96,19 @@ def _policy_changes(before: dict, after: dict) -> dict:
     return changes
 
 
+def _connections_blocked() -> bool:
+    """Whether every new connection is refused (multi-user install on the default key).
+
+    Returns:
+        bool: True when ``service.ensure_can_store_credentials`` refuses.
+    """
+    try:
+        service.ensure_can_store_credentials()
+    except service.EncryptionKeyNotConfigured:
+        return True
+    return False
+
+
 def _mcp_redirect_uri() -> str:
     from docsgpt.agents.tools.mcp_tool import MCPTool
 
@@ -155,6 +168,8 @@ class AdminConnectorsResource(Resource):
                     "connectors": connectors,
                     "allow_custom_mcp": allow_custom,
                     "default_encryption_key": is_default_encryption_key(),
+                    # Members' connects are refused, so the rows say "Blocked".
+                    "connections_blocked": _connections_blocked(),
                     "oauth_redirect_uri": settings.CONNECTOR_REDIRECT_BASE_URI,
                     "mcp_redirect_uri": _mcp_redirect_uri(),
                 }

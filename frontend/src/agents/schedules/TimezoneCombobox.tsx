@@ -1,21 +1,6 @@
-import { Check, ChevronsUpDown } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { cn } from '@/lib/utils';
+import { Combobox } from '@/components/ui/combobox';
 
 export type TimezoneComboboxProps = {
   value: string;
@@ -30,17 +15,20 @@ export type TimezoneComboboxProps = {
 
 /**
  * Case-insensitive substring match against the tz string with separators
- * normalized to spaces — so typing "warsaw", "Warsaw", or "europe war" all
- * match ``Europe/Warsaw``.
+ * normalized to spaces on both sides — so typing "warsaw", "Warsaw",
+ * "europe war" or "Europe/W" all match ``Europe/Warsaw``.
  */
 export function matchesTimezone(option: string, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  const haystack = option.toLowerCase().replace(/[/_]/g, ' ');
+  const normalise = (text: string) => text.replace(/[/_]/g, ' ');
+  const haystack = normalise(option.toLowerCase());
+  // Split on typed spaces only; a separator inside a token ("asia/d",
+  // "los_ang") is normalised like the zone name, so it stays one phrase.
   return q
     .split(/\s+/)
     .filter(Boolean)
-    .every((token) => haystack.includes(token));
+    .every((token) => haystack.includes(normalise(token)));
 }
 
 // Process-lifetime cache. Offsets are DST-dependent so they're correct for
@@ -92,7 +80,7 @@ function computeTimezoneOffsetLabel(tz: string): string {
   );
 }
 
-/** Searchable IANA timezone picker (Popover + Command). */
+/** Searchable IANA timezone picker (a Combobox, offset as the hint). */
 export default function TimezoneCombobox({
   value,
   options,
@@ -103,92 +91,45 @@ export default function TimezoneCombobox({
   ariaLabel,
   className,
 }: TimezoneComboboxProps) {
-  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
 
   // Precompute (tz, offset) once per options array — ~400 zones is fast but
   // not free, and we re-render on every keystroke during filtering.
   const optionsWithOffset = useMemo(
-    () => options.map((tz) => ({ tz, offset: getTimezoneOffsetLabel(tz) })),
+    () =>
+      options.map((tz) => ({
+        value: tz,
+        label: tz,
+        hint: getTimezoneOffsetLabel(tz),
+      })),
     [options],
   );
 
   const filtered = useMemo(
-    () => optionsWithOffset.filter(({ tz }) => matchesTimezone(tz, query)),
+    () =>
+      optionsWithOffset.filter(({ value: tz }) => matchesTimezone(tz, query)),
     [optionsWithOffset, query],
   );
 
-  const selectedOffset = value ? getTimezoneOffsetLabel(value) : '';
-
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="combobox"
-          role="combobox"
-          aria-expanded={open}
-          aria-label={ariaLabel}
-          data-placeholder={value ? undefined : ''}
-          className={cn('w-full justify-between', className)}
-        >
-          {value ? (
-            <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
-              <span className="truncate">{value}</span>
-              <span className="text-muted-foreground shrink-0 text-xs">
-                {selectedOffset}
-              </span>
-            </span>
-          ) : (
-            <span className="truncate">{placeholder}</span>
-          )}
-          <ChevronsUpDown className="shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        className="w-[min(20rem,calc(100vw-2rem))] p-0"
-        align="start"
-      >
-        <Command shouldFilter={false}>
-          <CommandInput
-            placeholder={searchPlaceholder}
-            value={query}
-            onValueChange={setQuery}
-          />
-          <CommandList>
-            <CommandEmpty>{emptyText}</CommandEmpty>
-            <CommandGroup>
-              {filtered.map(({ tz, offset }) => {
-                const selected = tz === value;
-                return (
-                  <CommandItem
-                    key={tz}
-                    value={tz}
-                    onSelect={() => {
-                      onChange(tz);
-                      setOpen(false);
-                      setQuery('');
-                    }}
-                  >
-                    <Check
-                      className={cn(
-                        'size-4 shrink-0',
-                        selected ? 'opacity-100' : 'opacity-0',
-                      )}
-                    />
-                    <div className="flex w-full min-w-0 items-center justify-between gap-3">
-                      <span className="truncate">{tz}</span>
-                      <span className="text-muted-foreground shrink-0 text-xs">
-                        {offset}
-                      </span>
-                    </div>
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+    <Combobox
+      options={filtered}
+      value={value || null}
+      // The picked zone stays on the trigger while a search hides its row.
+      valueOption={
+        value
+          ? { value, label: value, hint: getTimezoneOffsetLabel(value) }
+          : undefined
+      }
+      onValueChange={(tz) => onChange(tz)}
+      shouldFilter={false}
+      search={query}
+      onSearchChange={setQuery}
+      placeholder={placeholder}
+      searchPlaceholder={searchPlaceholder}
+      emptyText={emptyText}
+      aria-label={ariaLabel}
+      className={className}
+    />
   );
 }

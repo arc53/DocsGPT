@@ -1,6 +1,8 @@
-import type { ChangeEvent } from 'react';
+import { ExternalLink } from 'lucide-react';
+import type { ChangeEvent, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Button } from '../components/ui/button';
 import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
 import type { CredentialField } from './types';
@@ -11,6 +13,7 @@ import type { CredentialField } from './types';
  * from `settings.connectors.fields.<connector>_<key>`, then
  * `settings.connectors.fields.<key>`, then the catalog label; a field's hint
  * from `settings.connectors.fieldHints.<connector>_<key>`, then the catalog.
+ * The words a hint wraps in `<link>…</link>` link to the field's `hint_url`.
  */
 export default function CredentialForm({
   connectorKey,
@@ -65,9 +68,11 @@ export default function CredentialForm({
             label={label}
             required={field.required}
             labelSurface={labelSurface}
-            hint={t(
-              `settings.connectors.fieldHints.${connectorKey}_${field.key}`,
-              { defaultValue: field.hint },
+            hint={renderHint(
+              t(`settings.connectors.fieldHints.${connectorKey}_${field.key}`, {
+                defaultValue: field.hint,
+              }),
+              field.hint_url,
             )}
           >
             <Input {...inputProps} />
@@ -75,6 +80,38 @@ export default function CredentialForm({
         );
       })}
     </div>
+  );
+}
+
+const LINK_PATTERN = /<link>(.*?)<\/link>/;
+
+/**
+ * A hint's text with its `<link>…</link>` words as an inline link.
+ *
+ * Args:
+ *   text: The translated hint.
+ *   url: Where the link goes; without one the words stay plain text.
+ *
+ * Returns:
+ *   The hint, ready for a FormField `hint`.
+ */
+function renderHint(text: string, url?: string | null): ReactNode {
+  const match = LINK_PATTERN.exec(text);
+  if (!match) return text;
+  const before = text.slice(0, match.index);
+  const after = text.slice(match.index + match[0].length);
+  if (!url) return `${before}${match[1]}${after}`;
+  return (
+    <>
+      {before}
+      <Button variant="link" size="text" asChild>
+        <a href={url} target="_blank" rel="noopener noreferrer">
+          {match[1]}
+          <ExternalLink />
+        </a>
+      </Button>
+      {after}
+    </>
   );
 }
 

@@ -1,8 +1,10 @@
 import * as React from 'react';
 import { CircleAlert } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import NoFilesDark from '@/assets/no-files-dark.svg?react';
 import NoFiles from '@/assets/no-files.svg?react';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 type EmptyStateSize = 'default' | 'sm' | 'xs';
@@ -21,8 +23,13 @@ const SIZE_CLASSES: Record<
 type EmptyStateProps = Omit<React.ComponentProps<'div'>, 'title'> & {
   title: React.ReactNode;
   description?: React.ReactNode;
-  /** A button under the text: create the first item, retry a failed load. */
+  /** A button under the text: create the first item. */
   action?: React.ReactNode;
+  /**
+   * Retry a failed load: draws the standard outline sm pill "Retry" in the
+   * action slot (after `action`, when both are set).
+   */
+  onRetry?: () => void;
   size?: EmptyStateSize;
   /** The "no files" drawing, or text only. */
   illustration?: 'no-files' | 'none';
@@ -39,13 +46,26 @@ function EmptyState({
   title,
   description,
   action,
+  onRetry,
   size = 'default',
   illustration = 'no-files',
   tone = 'neutral',
   className,
   ...props
 }: EmptyStateProps) {
+  const { t } = useTranslation();
   const sizes = SIZE_CLASSES[size];
+  const retry = onRetry ? (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      shape="pill"
+      onClick={onRetry}
+    >
+      {t('retry')}
+    </Button>
+  ) : null;
   const destructive = tone === 'destructive';
 
   return (
@@ -88,7 +108,14 @@ function EmptyState({
           {description}
         </p>
       ) : null}
-      {action ? <div className="mt-4">{action}</div> : null}
+      {action && retry ? (
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+          {action}
+          {retry}
+        </div>
+      ) : action || retry ? (
+        <div className="mt-4">{action || retry}</div>
+      ) : null}
     </div>
   );
 }

@@ -8,11 +8,11 @@ import {
   BreadcrumbItem,
   BreadcrumbLink,
   BreadcrumbList,
-  BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { NavTab } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 
 import { type AccessFields } from '../utils/accessUtils';
@@ -24,14 +24,11 @@ import {
   agentSchedulesPath,
 } from './paths';
 
-export type AgentPageTab = 'overview' | 'logs' | 'schedules';
-
 type AgentPageHeaderProps = {
   agentId?: string;
   agentName?: string;
   /** Route shape for the agent's own root page. Defaults to classic edit URL. */
   agentEditPath?: string;
-  currentPage: AgentPageTab;
   /** Optional className wrapper for layout tweaks per page. */
   className?: string;
   /**
@@ -43,10 +40,10 @@ type AgentPageHeaderProps = {
   /** The agent's avatar URL; the robot is drawn when it's empty. */
   agentImage?: string;
   /**
-   * Makes the current crumb a button (avatar, name, chevron) that opens the
-   * agent's details. Only with `currentPage="overview"`.
+   * The current crumb is a button (avatar, name, chevron) that opens the
+   * agent's details.
    */
-  onNameClick?: () => void;
+  onNameClick: () => void;
   /** A status Badge placed after the crumbs. */
   status?: ReactNode;
   /**
@@ -58,10 +55,10 @@ type AgentPageHeaderProps = {
 
 /**
  * The workflow builder's toolbar chrome: a Breadcrumb (`Agents > <agent
- * name> > <current page>`), an optional status Badge, and underline tab links
- * to the agent's Overview, Logs and Schedules (hidden until the agent has an
- * id). The builder is full-screen with no sidebar, so it needs its own way
- * between them. With `onNameClick` the current crumb is the agent's avatar,
+ * name>`), an optional status Badge, and NavTab links to the agent's
+ * Overview (the builder, always current), Logs and Schedules (hidden until
+ * the agent has an id). The builder is full-screen with no sidebar, so it
+ * needs its own way between them. The current crumb is the agent's avatar,
  * name and a chevron in a `ghost sm` Button that opens the details, like the
  * phone top bar's chat title. Section pages use
  * `components/AgentPageToolbar` and the sidebar instead.
@@ -70,7 +67,6 @@ export default function AgentPageHeader({
   agentId,
   agentName,
   agentEditPath,
-  currentPage,
   className,
   inline = false,
   agentImage,
@@ -109,9 +105,6 @@ export default function AgentPageHeader({
   const visibleTabs = tabs.filter(
     (tab) => !access || canAgent(access, tab.action),
   );
-
-  const currentTabLabel =
-    tabs.find((tab) => tab.id === currentPage)?.label ?? '';
   const displayName = agentName?.trim() || t('agents.pageHeader.fallbackName');
 
   return (
@@ -124,7 +117,7 @@ export default function AgentPageHeader({
     >
       <div className="flex min-w-0 items-center gap-2">
         <Breadcrumb className="min-w-0">
-          <BreadcrumbList className="flex-nowrap">
+          <BreadcrumbList>
             <BreadcrumbItem>
               <BreadcrumbLink asChild>
                 <Link to={AGENTS_MANAGE_ROOT}>
@@ -134,53 +127,33 @@ export default function AgentPageHeader({
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              {currentPage === 'overview' && onNameClick ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  aria-haspopup="dialog"
-                  onClick={onNameClick}
-                  // Button is shrink-0; shrink lets a long name truncate.
-                  className="min-w-0 shrink"
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-haspopup="dialog"
+                onClick={onNameClick}
+                // Button is shrink-0; shrink lets a long name truncate.
+                className="min-w-0 shrink"
+              >
+                <Avatar
+                  src={agentImage}
+                  alt=""
+                  shape="circle"
+                  className="shrink-0 overflow-hidden"
+                  imgClassName="size-5 object-contain"
+                />
+                {/* The list's muted colour would reach the name; the current
+                  crumb is foreground, like BreadcrumbPage, with its 32ch cap. */}
+                <span
+                  className="text-foreground max-w-[32ch] truncate"
+                  title={displayName}
                 >
-                  <Avatar
-                    src={agentImage}
-                    alt=""
-                    shape="circle"
-                    className="shrink-0 overflow-hidden"
-                    imgClassName="size-5 object-contain"
-                  />
-                  {/* The list's muted colour would reach the name; the current crumb
-                    is foreground, like BreadcrumbPage. */}
-                  <span
-                    className="text-foreground max-w-[24ch] truncate"
-                    title={displayName}
-                  >
-                    {displayName}
-                  </span>
-                  <ChevronDown className="text-muted-foreground" aria-hidden />
-                </Button>
-              ) : currentPage === 'overview' ? (
-                <BreadcrumbPage title={displayName} className="w-[16ch]">
                   {displayName}
-                </BreadcrumbPage>
-              ) : (
-                <BreadcrumbLink asChild>
-                  <Link to={editPath} className="max-w-[40ch] truncate">
-                    {displayName}
-                  </Link>
-                </BreadcrumbLink>
-              )}
+                </span>
+                <ChevronDown className="text-muted-foreground" aria-hidden />
+              </Button>
             </BreadcrumbItem>
-            {currentPage !== 'overview' && (
-              <>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>{currentTabLabel}</BreadcrumbPage>
-                </BreadcrumbItem>
-              </>
-            )}
           </BreadcrumbList>
         </Breadcrumb>
         {status}
@@ -190,41 +163,26 @@ export default function AgentPageHeader({
         <nav
           aria-label={t('agents.pageHeader.subnavAriaLabel')}
           className={cn(
-            'flex items-center gap-6',
+            'flex items-center',
             // 1px baseline rule under the whole row; the active tab's 2px
-            // primary underline sits on top of it for the GitHub-style look.
+            // primary underline sits on top of it.
             !inline && 'border-border border-b',
           )}
         >
-          {visibleTabs.map((tab) => {
-            const isActive = tab.id === currentPage;
+          {visibleTabs.map((tab) => (
             // -mb-px lays the tab's 2px underline over the nav's 1px baseline.
-            if (isActive) {
-              return (
-                <Button
-                  key={tab.id}
-                  asChild
-                  variant="tab"
-                  size="inline"
-                  data-active
-                  className="-mb-px"
-                >
-                  <span aria-current="page">{tab.label}</span>
-                </Button>
-              );
-            }
-            return (
-              <Button
-                key={tab.id}
-                asChild
-                variant="tab"
-                size="inline"
-                className="-mb-px"
-              >
+            <NavTab
+              key={tab.id}
+              current={tab.id === 'overview'}
+              className="-mb-px"
+            >
+              {tab.id === 'overview' ? (
+                <span>{tab.label}</span>
+              ) : (
                 <Link to={tab.href}>{tab.label}</Link>
-              </Button>
-            );
-          })}
+              )}
+            </NavTab>
+          ))}
         </nav>
       )}
     </div>

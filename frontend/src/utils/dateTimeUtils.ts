@@ -73,6 +73,22 @@ export function formatDateTime(dateString: string): string {
   return formatDateValue(dateString, 'dateTime');
 }
 
+/** The one placeholder for a missing value: a date, a count, an id. */
+export const EMPTY_VALUE = '—';
+
+/**
+ * A timestamp as date and time, or the em dash when there is none.
+ *
+ * Args:
+ *   value: an ISO timestamp, or nothing.
+ *
+ * Returns:
+ *   `formatDateTime(value)`, or `EMPTY_VALUE` for an empty value.
+ */
+export function formatTimestamp(value?: string | null): string {
+  return value ? formatDateTime(value) : EMPTY_VALUE;
+}
+
 // The app's language codes (locale/i18n.ts) that aren't BCP 47 tags.
 const INTL_LOCALES: Record<string, string> = { jp: 'ja', zhTW: 'zh-TW' };
 

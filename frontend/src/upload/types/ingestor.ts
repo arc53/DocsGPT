@@ -1,8 +1,4 @@
-import CrawlerIcon from '../../assets/crawler.svg';
-import FileUploadIcon from '../../assets/file_upload.svg';
-import UrlIcon from '../../assets/url.svg';
-import GithubIcon from '../../assets/github.svg';
-import BookIcon from '../../assets/book-mono.svg';
+import { BookOpen, Globe, Link, Upload, type LucideIcon } from 'lucide-react';
 
 export type IngestorType = 'crawler' | 'github' | 'url' | 'local_file' | 'wiki';
 
@@ -33,20 +29,24 @@ export interface FormField {
 export interface IngestorSchema {
   key: IngestorType;
   label: string;
-  icon: string;
+  /**
+   * The Add knowledge tile's icon. GitHub has none: it is listed with the
+   * services (under its connector logo), not among these tiles.
+   */
+  icon?: LucideIcon;
   heading: string;
   fields: FormField[];
 }
 
 /**
- * Add knowledge tiles: the source types that need no account. Services
- * that sync into Knowledge are connected through the connect wizard.
+ * Add knowledge tiles: the source types that need no account. GitHub (a
+ * public repository by URL) sits with the services that sync, which are
+ * connected through the connect wizard.
  */
 export const UPLOAD_AND_WEB_INGESTORS: IngestorType[] = [
   'local_file',
   'url',
   'crawler',
-  'github',
   'wiki',
 ];
 
@@ -54,7 +54,7 @@ export const IngestorFormSchemas: IngestorSchema[] = [
   {
     key: 'local_file',
     label: 'Upload File',
-    icon: FileUploadIcon,
+    icon: Upload,
     heading: 'Upload new document',
     fields: [
       {
@@ -68,7 +68,7 @@ export const IngestorFormSchemas: IngestorSchema[] = [
   {
     key: 'crawler',
     label: 'Crawler',
-    icon: CrawlerIcon,
+    icon: Globe,
     heading: 'Add content with Web Crawler',
     fields: [
       {
@@ -83,7 +83,7 @@ export const IngestorFormSchemas: IngestorSchema[] = [
   {
     key: 'url',
     label: 'Link',
-    icon: UrlIcon,
+    icon: Link,
     heading: 'Add content from URL',
     fields: [
       {
@@ -98,7 +98,6 @@ export const IngestorFormSchemas: IngestorSchema[] = [
   {
     key: 'github',
     label: 'GitHub',
-    icon: GithubIcon,
     heading: 'Add content from GitHub',
     fields: [
       {
@@ -113,7 +112,7 @@ export const IngestorFormSchemas: IngestorSchema[] = [
   {
     key: 'wiki',
     label: 'New wiki',
-    icon: BookIcon,
+    icon: BookOpen,
     heading: 'Create a living wiki',
     fields: [
       {
@@ -146,7 +145,7 @@ export const IngestorDefaultConfigs: Record<
 export interface IngestorOption {
   label: string;
   value: IngestorType;
-  icon: string;
+  icon?: LucideIcon;
   heading: string;
 }
 

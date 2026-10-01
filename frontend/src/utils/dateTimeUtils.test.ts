@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  EMPTY_VALUE,
   formatCount,
   formatDate,
   formatDateOnly,
   formatDateTime,
+  formatTimestamp,
 } from './dateTimeUtils';
 
 describe('dateTimeUtils', () => {
@@ -118,5 +120,20 @@ describe('formatCount', () => {
 
   it('leaves small numbers alone', () => {
     expect(formatCount(7, 'de')).toBe('7');
+  });
+});
+
+describe('formatTimestamp', () => {
+  it('formats a value as date and time', () => {
+    expect(formatTimestamp('2026-09-30 14:05')).toBe(
+      formatDateTime('2026-09-30 14:05'),
+    );
+  });
+
+  it('shows the one missing-value placeholder for an empty value', () => {
+    expect(EMPTY_VALUE).toBe('—');
+    expect(formatTimestamp(null)).toBe('—');
+    expect(formatTimestamp(undefined)).toBe('—');
+    expect(formatTimestamp('')).toBe('—');
   });
 });

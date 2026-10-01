@@ -31,8 +31,8 @@ describe('Pagination page size', () => {
         <TooltipProvider>
           <Pagination
             page={1}
-            pageCount={3}
-            pageSize={10}
+            pageSize={12}
+            total={100}
             onPageChange={vi.fn()}
             onPageSizeChange={onRowsPerPageChange}
           />
@@ -52,9 +52,9 @@ describe('Pagination page size', () => {
     const el = trigger();
     expect(el).not.toBeNull();
     expect(el!.getAttribute('role')).toBe('combobox');
-    expect(el!.getAttribute('aria-label')).toBe('pagination.rowsPerPage');
+    expect(el!.getAttribute('aria-label')).toBe('pagination.perPage');
     expect(el!.getAttribute('data-size')).toBe('sm');
-    expect(el!.textContent).toContain('10');
+    expect(el!.textContent).toContain('12');
   });
 
   it('calls onRowsPerPageChange with the chosen number', async () => {
@@ -71,10 +71,10 @@ describe('Pagination page size', () => {
     });
     const option = Array.from(
       document.body.querySelectorAll<HTMLElement>('[role="option"]'),
-    ).find((o) => o.textContent === '50');
+    ).find((o) => o.textContent === '48');
     expect(option).toBeDefined();
     await act(async () => option!.click());
-    expect(onChange).toHaveBeenCalledWith(50);
+    expect(onChange).toHaveBeenCalledWith(48);
   });
 
   it('labels the page buttons by their action', async () => {
@@ -84,10 +84,8 @@ describe('Pagination page size', () => {
     ).map((b) => b.getAttribute('aria-label'));
     expect(labels).toEqual(
       expect.arrayContaining([
-        'pagination.firstPage',
         'pagination.previousPage',
         'pagination.nextPage',
-        'pagination.lastPage',
       ]),
     );
     expect(container.querySelector('img')).toBeNull();

@@ -6,18 +6,32 @@ vi.mock('react-redux', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, opts?: { time?: string }) =>
+      opts?.time ? `${key}(${opts.time})` : key,
+  }),
 }));
 
 vi.mock('../components/ToolIcon', () => ({ default: () => null }));
 vi.mock('../components/CopyButton', () => ({ default: () => null }));
 vi.mock('../navigation/DetailBreadcrumb', () => ({ default: () => null }));
-vi.mock('../modals/ConfirmationModal', () => ({ default: () => null }));
+// The revoke confirm's props; the test calls its handleSubmit directly.
+const confirmProps: { current: Record<string, unknown> | null } = {
+  current: null,
+};
+vi.mock('../modals/ConfirmationModal', () => ({
+  default: (props: Record<string, unknown>) => {
+    confirmProps.current = props;
+    return null;
+  },
+}));
 
 const getDevice = vi.fn();
+const revokeDevice = vi.fn();
 vi.mock('../api/services/devicesService', () => ({
   default: {
     get: (...args: unknown[]) => getDevice(...args),
+    revoke: (...args: unknown[]) => revokeDevice(...args),
     listAudit: () => Promise.resolve({ entries: [] }),
   },
 }));
@@ -27,6 +41,8 @@ import type { UserToolType } from './types';
 import RemoteDeviceConfig from './RemoteDeviceConfig';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+const goBack = vi.fn();
 
 const tool = {
   id: 'tool-1',
@@ -50,6 +66,9 @@ describe('RemoteDeviceConfig', () => {
 
   beforeEach(() => {
     getDevice.mockReset();
+    revokeDevice.mockReset();
+    goBack.mockReset();
+    confirmProps.current = null;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -63,7 +82,7 @@ describe('RemoteDeviceConfig', () => {
   const render = async (d: Device) => {
     getDevice.mockResolvedValue(d);
     await act(async () => {
-      root.render(<RemoteDeviceConfig tool={tool} handleGoBack={() => {}} />);
+      root.render(<RemoteDeviceConfig tool={tool} handleGoBack={goBack} />);
     });
   };
 
@@ -76,6 +95,23 @@ describe('RemoteDeviceConfig', () => {
       el.textContent?.includes('settings.devices.online'),
     );
     expect(pill?.dataset.variant).toBe('success');
+  });
+
+  it('says when an offline device was last seen with the shared relative time', async () => {
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60_000).toISOString();
+    await render(device({ last_seen_at: fiveMinutesAgo }));
+    const pill = badges().find((el) =>
+      el.textContent?.includes('settings.devices.offline'),
+    )!;
+    expect(pill.textContent).toContain('settings.devices.seen(5 minutes ago)');
+  });
+
+  it('shows the em dash for a device never seen', async () => {
+    await render(device({}));
+    const lastSeen = Array.from(container.querySelectorAll('dt')).find(
+      (el) => el.textContent === 'settings.devices.lastSeenLabel',
+    )!;
+    expect(lastSeen.nextElementSibling?.textContent).toBe('—');
   });
 
   it('shows an offline device as a neutral badge', async () => {
@@ -109,6 +145,7 @@ describe('RemoteDeviceConfig', () => {
     ).find((el) => el.textContent === 'settings.devices.revoke');
     expect(revoke?.dataset.variant).toBe('destructive-outline');
     expect(revoke?.dataset.shape).toBe('pill');
+    expect(revoke?.dataset.size).toBe('field');
   });
 
   it('boxes the danger zone in a destructive Card', async () => {
@@ -118,6 +155,67 @@ describe('RemoteDeviceConfig', () => {
     ).find((el) => el.textContent === 'settings.devices.revoke');
     const box = revoke?.closest<HTMLElement>('[data-slot="card"]');
     expect(box?.dataset.tone).toBe('destructive');
-    expect(box?.dataset.padding).toBe('default');
+    expect(box?.dataset.padding).toBe('lg');
+    expect(box?.className).toContain('flex-row');
+    expect(box?.className).toContain('items-center');
+    // The header sits inside the card, at the section-title size, still an
+    // h3 in the outline; the consequence is its description.
+    const header = box?.querySelector('[data-slot="section-header"]');
+    const heading = header?.querySelector('h3');
+    expect(heading?.textContent).toBe('settings.devices.dangerZone');
+    expect(heading?.className).toContain('text-lg');
+    expect(heading?.className).toContain('text-destructive');
+    expect(header?.textContent).toContain(
+      'settings.devices.dangerZoneDescription',
+    );
+  });
+
+  it('opens Recent activity with a link toggle under its header, no frame', async () => {
+    await render(device({}));
+    const toggle = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((el) => el.textContent === 'settings.devices.auditShow')!;
+    expect(toggle).toBeDefined();
+    expect(toggle.dataset.variant).toBe('link');
+    expect(toggle.dataset.size).toBe('sm');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    const body = container.querySelector<HTMLElement>(
+      `#${CSS.escape(toggle.getAttribute('aria-controls')!)}`,
+    )!;
+    expect(body.dataset.slot).toBe('collapsible');
+    expect(body.dataset.state).toBe('closed');
+    const section = toggle.closest('section')!;
+    expect(section.querySelector('.rounded-xl.border')).toBeNull();
+    expect(section.querySelector('h3')?.textContent).toBe(
+      'settings.devices.auditTitle',
+    );
+    await act(async () => toggle.click());
+    expect(toggle.textContent).toBe('settings.devices.auditHide');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(body.dataset.state).toBe('open');
+  });
+
+  it('a failed revoke rejects so the confirm stays open on the device', async () => {
+    revokeDevice.mockRejectedValue(new Error('Request failed (500)'));
+    await render(device({}));
+    const submit = confirmProps.current!.handleSubmit as () => unknown;
+    let result: unknown;
+    await act(async () => {
+      result = submit();
+      await (result as Promise<unknown>).catch(() => undefined);
+    });
+    await expect(result as Promise<unknown>).rejects.toThrow();
+    expect(revokeDevice).toHaveBeenCalledWith('dev-1', 'token');
+    expect(goBack).not.toHaveBeenCalled();
+  });
+
+  it('a successful revoke resolves and goes back to the list', async () => {
+    revokeDevice.mockResolvedValue(undefined);
+    await render(device({}));
+    const submit = confirmProps.current!.handleSubmit as () => unknown;
+    await act(async () => {
+      await submit();
+    });
+    expect(goBack).toHaveBeenCalledTimes(1);
   });
 });

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
 import {
   Select,
   SelectContent,
@@ -149,29 +150,28 @@ export default function General() {
             />
           </SettingRows>
         </section>
-        <section className="flex flex-col gap-4">
+        <Card
+          tone="destructive"
+          padding="lg"
+          className="flex-row flex-wrap items-center justify-between"
+        >
           <SectionHeader
-            title={t('settings.general.sections.dangerZone')}
             tone="destructive"
+            title={t('settings.general.sections.dangerZone')}
+            description={t('settings.general.deleteAllDescription')}
+            className="min-w-0 flex-1"
           />
-          <SettingRows>
-            <SettingRow
-              label={t('settings.general.deleteAllLabel')}
-              description={t('settings.general.deleteAllDescription')}
-              as="h3"
-            >
-              <Button
-                type="button"
-                variant="destructive-outline"
-                size="field"
-                shape="pill"
-                onClick={() => dispatch(setModalStateDeleteConv('ACTIVE'))}
-              >
-                {t('settings.general.deleteAllBtn')}
-              </Button>
-            </SettingRow>
-          </SettingRows>
-        </section>
+          <Button
+            type="button"
+            variant="destructive-outline"
+            size="field"
+            shape="pill"
+            className="shrink-0"
+            onClick={() => dispatch(setModalStateDeleteConv('ACTIVE'))}
+          >
+            {t('settings.general.deleteAllLabel')}
+          </Button>
+        </Card>
       </div>
     </div>
   );

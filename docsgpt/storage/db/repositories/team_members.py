@@ -14,7 +14,7 @@ from typing import Optional
 
 from sqlalchemy import Connection, text
 
-from docsgpt.storage.db.base_repository import row_to_dict
+from docsgpt.storage.db.base_repository import like_escape, row_to_dict
 
 ROLE_TEAM_ADMIN = "team_admin"
 ROLE_TEAM_MEMBER = "team_member"
@@ -65,26 +65,93 @@ class TeamMembersRepository:
         )
         return [str(row[0]) for row in result.fetchall()]
 
-    def list_members(self, team_id: str) -> list[dict]:
+    @staticmethod
+    def _member_filter(team_id: str, q: Optional[str]) -> tuple[str, dict]:
+        """WHERE clause + params for the team's members, optionally searched.
+
+        Args:
+            team_id: Team UUID.
+            q: Literal, case-insensitive substring matched against the member's
+                email and user id; ``None``/blank means no search.
+
+        Returns:
+            The ``WHERE`` clause and its bind params.
+        """
+        where = "WHERE m.team_id = CAST(:team_id AS uuid)"
+        params: dict = {"team_id": team_id}
+        if q:
+            where += (
+                " AND (m.user_id ILIKE :q ESCAPE '\\'"
+                " OR COALESCE(u.email, '') ILIKE :q ESCAPE '\\')"
+            )
+            params["q"] = f"%{like_escape(q)}%"
+        return where, params
+
+    def list_members(
+        self,
+        team_id: str,
+        *,
+        q: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> list[dict]:
         """One row per (user, role, source) in the team, ordered by grant time.
 
         Left-joins ``users`` to surface each member's ``email`` (when on file)
         so the UI can show a human-readable identity instead of the raw sub.
+        Ties on ``granted_at`` break on the primary key so paging is stable.
+
+        Args:
+            team_id: Team UUID.
+            q: Optional case-insensitive substring over email and user id.
+            limit: Page size; ``None`` returns every matching row.
+            offset: Rows to skip (only applied with ``limit``).
+
+        Returns:
+            The member rows as dicts.
         """
+        where, params = self._member_filter(team_id, q)
+        page = ""
+        if limit is not None:
+            page = " LIMIT :limit OFFSET :offset"
+            params.update({"limit": int(limit), "offset": max(0, int(offset))})
         result = self._conn.execute(
             text(
-                """
+                f"""
                 SELECT m.user_id, m.role, m.source, m.granted_by, m.granted_at,
                        u.email
                 FROM team_members m
                 LEFT JOIN users u ON u.user_id = m.user_id
-                WHERE m.team_id = CAST(:team_id AS uuid)
-                ORDER BY m.granted_at
+                {where}
+                ORDER BY m.granted_at, m.user_id, m.role, m.source{page}
                 """
             ),
-            {"team_id": team_id},
+            params,
         )
         return [row_to_dict(r) for r in result.fetchall()]
+
+    def count_members(self, team_id: str, *, q: Optional[str] = None) -> int:
+        """Count the rows ``list_members`` would return with the same ``q``.
+
+        Args:
+            team_id: Team UUID.
+            q: Optional case-insensitive substring over email and user id.
+
+        Returns:
+            The number of matching (user, role, source) rows.
+        """
+        where, params = self._member_filter(team_id, q)
+        result = self._conn.execute(
+            text(
+                f"""
+                SELECT count(*) FROM team_members m
+                LEFT JOIN users u ON u.user_id = m.user_id
+                {where}
+                """
+            ),
+            params,
+        )
+        return int(result.scalar() or 0)
 
     def count_admins(self, team_id: str) -> int:
         """Distinct users holding ``team_admin`` — for the last-admin guard."""

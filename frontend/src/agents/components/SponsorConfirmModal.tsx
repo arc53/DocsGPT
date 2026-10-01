@@ -1,6 +1,5 @@
 import {
   Database,
-  Info,
   KeyRound,
   Link2,
   ScrollText,
@@ -10,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Avatar } from '@/components/ui/avatar';
 import { Card } from '@/components/ui/card';
 import { ListRow, ListRows } from '@/components/ui/list-row';
 import { Modal, ModalActions } from '@/components/ui/modal';
@@ -25,7 +24,6 @@ type SponsorConfirmModalProps = {
   /** Retry the save with these `confirm_sponsor` keys. */
   onConfirm: (keys: string[]) => void;
   onCancel: () => void;
-  pending?: boolean;
 };
 
 const TYPE_ICONS: Record<SponsorResource['type'], typeof Wrench> = {
@@ -34,29 +32,24 @@ const TYPE_ICONS: Record<SponsorResource['type'], typeof Wrench> = {
   prompt: ScrollText,
 };
 
-function IconSquare({ icon: Icon }: { icon: typeof Wrench }) {
-  return (
-    <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md">
-      <Icon className="size-4" />
-    </span>
-  );
-}
-
 /**
  * Asks an editor before a save makes tools, sources or prompts the agent's
  * owner can't use run with the editor's access, and says who will reach them
  * through the agent. Confirming retries the save with `confirm_sponsor`.
+ * In `takeOver` mode the items are already attached (stopped), so the copy
+ * says they will run with the editor's access rather than be added.
  */
 export default function SponsorConfirmModal({
   confirmation,
   onConfirm,
   onCancel,
-  pending = false,
 }: SponsorConfirmModalProps) {
   const { t, i18n } = useTranslation();
   if (!confirmation) return null;
 
   const { resources, audience } = confirmation;
+  const takeOver = confirmation.mode === 'takeOver';
+  const count = { count: resources.length };
   const listFormat = new Intl.ListFormat(intlLocale(i18n.language), {
     type: 'conjunction',
   });
@@ -102,41 +95,58 @@ export default function SponsorConfirmModal({
 
   return (
     <Modal
+      mobileVariant="dialog"
       open
       onOpenChange={(open) => {
         if (!open) onCancel();
       }}
-      isPerformingTask={pending}
       title={t('agents.form.sponsorConfirm.title')}
-      description={t('agents.form.sponsorConfirm.description')}
+      description={t(
+        takeOver
+          ? 'agents.form.sponsorConfirm.takeOverDescription'
+          : 'agents.form.sponsorConfirm.description',
+        count,
+      )}
       footer={
         <ModalActions
           cancelLabel={t('cancel')}
           onCancel={onCancel}
-          submitLabel={t('agents.form.sponsorConfirm.confirm')}
+          submitLabel={t(
+            takeOver
+              ? 'agents.form.sponsorConfirm.takeOverConfirm'
+              : 'agents.form.sponsorConfirm.confirm',
+          )}
           onSubmit={() => onConfirm(resources.map((item) => item.key))}
-          pending={pending}
         />
       }
     >
       <div className="flex flex-col gap-6">
         <Card variant="outline" padding="none" className="overflow-hidden">
           <ListRows>
-            {resources.map((item) => (
-              <ListRow
-                key={item.key}
-                leading={<IconSquare icon={TYPE_ICONS[item.type] ?? Wrench} />}
-                title={item.name || t('agents.form.sponsors.unknownItem')}
-                description={t(`agents.form.sponsorConfirm.types.${item.type}`)}
-              />
-            ))}
+            {resources.map((item) => {
+              const Icon = TYPE_ICONS[item.type] ?? Wrench;
+              return (
+                <ListRow
+                  key={item.key}
+                  leading={
+                    <Avatar size="sm" shape="square" variant="icon">
+                      <Icon className="size-4" />
+                    </Avatar>
+                  }
+                  title={item.name || t('agents.form.sponsors.unknownItem')}
+                  description={t(
+                    `agents.form.sponsorConfirm.types.${item.type}`,
+                  )}
+                />
+              );
+            })}
           </ListRows>
         </Card>
         <section className="flex flex-col gap-3">
           <SectionHeader
             as="h3"
             size="xs"
-            title={t('agents.form.sponsorConfirm.audienceTitle')}
+            title={t('agents.form.sponsorConfirm.audienceTitle', count)}
           />
           <ul className="flex flex-col gap-2">
             {audienceRows.map(({ key, icon: Icon, text }) => (
@@ -149,13 +159,10 @@ export default function SponsorConfirmModal({
               </li>
             ))}
           </ul>
+          <p className="text-muted-foreground text-xs">
+            {t('agents.form.sponsorConfirm.stopNote', count)}
+          </p>
         </section>
-        <Alert role="note">
-          <Info />
-          <AlertDescription>
-            {t('agents.form.sponsorConfirm.stopNote')}
-          </AlertDescription>
-        </Alert>
       </div>
     </Modal>
   );

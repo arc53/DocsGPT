@@ -62,7 +62,11 @@ describe('RepoPicker', () => {
     container.remove();
   });
 
-  const render = async (value: string | null, onChange = vi.fn()) => {
+  const render = async (
+    value: string | null,
+    onChange = vi.fn(),
+    onReconnect?: () => void,
+  ) => {
     await act(async () => {
       root.render(
         <RepoPicker
@@ -70,6 +74,7 @@ describe('RepoPicker', () => {
           token={null}
           value={value}
           onChange={onChange}
+          onReconnect={onReconnect}
         />,
       );
     });
@@ -104,6 +109,30 @@ describe('RepoPicker', () => {
     await render('octocat/private');
     expect(radios()[0].getAttribute('aria-checked')).toBe('true');
     expect(radios()[1].getAttribute('aria-checked')).toBe('false');
+    // The chosen row carries the selected tint as well as the check.
+    expect(radios()[0].getAttribute('aria-current')).toBe('true');
+    expect(radios()[1].getAttribute('aria-current')).toBeNull();
+  });
+
+  it('lists on the modal surface: an outline card with no scroll cap', async () => {
+    service.repositories.mockResolvedValue({
+      success: true,
+      repositories: REPOS,
+      install_url: 'https://github.com/apps/docsgpt/installations/new',
+    });
+    await render(null);
+    const card = container.querySelector('[data-slot="card"]')!;
+    expect(card.getAttribute('data-variant')).toBe('outline');
+    expect(card.className).not.toMatch(/max-h-|overflow-y-auto/);
+    // The search label rests on the modal's card surface.
+    const label = container.querySelector('label')!;
+    expect(label.className).toContain('bg-card');
+    expect(label.className).not.toContain('bg-background');
+    // The link icon trails its label.
+    const choose = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('settings.connectors.github.chooseRepositories'),
+    )!;
+    expect(choose.lastElementChild?.tagName.toLowerCase()).toBe('svg');
   });
 
   it('filters by the search text', async () => {
@@ -156,9 +185,15 @@ describe('RepoPicker', () => {
       success: false,
       code: 'reconnect',
     });
-    await render(null);
+    const onReconnect = vi.fn();
+    await render(null, vi.fn(), onReconnect);
     expect(container.textContent).toContain(
       'settings.connectors.detail.expired',
     );
+    const reconnect = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'settings.connectors.status.reconnect',
+    )!;
+    await act(async () => reconnect.click());
+    expect(onReconnect).toHaveBeenCalled();
   });
 });

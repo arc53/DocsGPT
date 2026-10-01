@@ -97,6 +97,8 @@ export type GetDocsResponse = {
   docs: Doc[];
   totalDocuments: number;
   totalPages: number;
+  /** The page served: the one asked for, clamped to the last. */
+  currentPage: number;
   nextCursor: string;
 };
 
@@ -121,5 +123,9 @@ export type PromptProps = {
 
 export type DocumentsProps = {
   paginatedDocuments: Doc[] | null;
-  handleDeleteDocument: (index: number, document: Doc) => void;
+  /** Return the request's promise: the confirm stays pending on it. */
+  handleDeleteDocument: (
+    index: number,
+    document: Doc,
+  ) => void | Promise<unknown>;
 };

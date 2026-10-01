@@ -2,6 +2,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import * as sheetModule from './sheet';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from './sheet';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -58,7 +59,6 @@ describe('SheetContent side="bottom"', () => {
         <SheetContent
           side="bottom"
           handle
-          showCloseButton={false}
           title="Tools"
           aria-describedby={undefined}
         >
@@ -104,7 +104,7 @@ describe('SheetContent side="bottom"', () => {
 });
 
 describe('SheetContent side="right" size', () => {
-  const widthClasses = async (size?: 'default' | 'detail' | 'wide') => {
+  const widthClasses = async (size?: 'default' | 'wide') => {
     await render(
       <Sheet open>
         <SheetContent
@@ -120,12 +120,8 @@ describe('SheetContent side="right" size', () => {
       .filter((c) => /^(sm:|md:|lg:)?(max-)?w-/.test(c));
   };
 
-  it('is a 384px companion drawer by default', async () => {
-    expect(await widthClasses()).toEqual(['w-3/4', 'sm:max-w-sm']);
-  });
-
-  it('is full width on a phone and 576px from sm at detail', async () => {
-    expect(await widthClasses('detail')).toEqual(['w-full', 'sm:max-w-xl']);
+  it('is full width on a phone and 480px from sm by default', async () => {
+    expect(await widthClasses()).toEqual(['w-full', 'sm:max-w-120']);
   });
 
   it('steps 600 / 700 / 800px at wide', async () => {
@@ -158,21 +154,14 @@ describe('SheetOverlay', () => {
     expect(classes).not.toContain('bg-black/50');
   });
 
-  it('hides the X on a handled bottom sheet by default', async () => {
+  it('draws no X of its own: the caller brings its close (PanelHeader, the scrim)', async () => {
     await render(
       <Sheet open>
-        <SheetContent
-          side="bottom"
-          handle
-          title="Tools"
-          aria-describedby={undefined}
-        />
+        <SheetContent side="right" title="Trace" aria-describedby={undefined} />
       </Sheet>,
     );
     expect(
-      document.querySelector(
-        '[data-slot="sheet-content"] [aria-label="Close"]',
-      ),
+      document.querySelector('[data-slot="sheet-content"] button'),
     ).toBeNull();
   });
 
@@ -292,5 +281,30 @@ describe('SheetContent bottom-bar reset', () => {
     await renderSheet(false, 'right');
     await wait(20);
     expect(strip()).toBeNull();
+  });
+});
+
+describe('ui/sheet surface', () => {
+  it('keeps only the parts app code uses', () => {
+    expect(Object.keys(sheetModule).sort()).toEqual([
+      'Sheet',
+      'SheetContent',
+      'SheetHandle',
+      'SheetTitle',
+      'SheetTrigger',
+      'sheetBottomShape',
+    ]);
+  });
+
+  it('offers only the right and bottom sides, with no built-in close', () => {
+    const props = { title: 'Tools', 'aria-describedby': undefined };
+    // @ts-expect-error left drawers were never used
+    void (<SheetContent side="left" {...props} />);
+    // @ts-expect-error top sheets were never used
+    void (<SheetContent side="top" {...props} />);
+    // @ts-expect-error the built-in X is gone, and its label with it
+    void (<SheetContent closeLabel="Close" {...props} />);
+    // @ts-expect-error the built-in X is gone
+    void (<SheetContent showCloseButton {...props} />);
   });
 });

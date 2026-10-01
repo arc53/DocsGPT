@@ -10,11 +10,10 @@ import React, {
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { selectToken } from '../../preferences/preferenceSlice';
-import { formatCount } from '../../utils/dateTimeUtils';
+import { EMPTY_VALUE, formatCount } from '../../utils/dateTimeUtils';
 import { formatBytes } from '../../utils/stringUtils';
 import userService from '../../api/services/userService';
 import { Eye, File, Folder } from 'lucide-react';
-import { Button } from '../ui/button';
 import { EmptyState } from '../ui/empty-state';
 import { useLoaderState } from '../../hooks';
 import Chunks, {
@@ -454,11 +453,11 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
   /**
    * Renders the size + tokens column pair in the right order for the
    * configured columnOrder. Sizes/tokens of 0 (or undefined) render as
-   * "-" — matches the pre-refactor behavior of both trees.
+   * the em dash, the app's missing-value placeholder.
    */
   const renderColumnPair = (sizeBytes: number, tokens: number) => {
-    const sizeDisplay = sizeBytes > 0 ? formatBytes(sizeBytes) : '-';
-    const tokensDisplay = tokens > 0 ? formatCount(tokens) : '-';
+    const sizeDisplay = sizeBytes > 0 ? formatBytes(sizeBytes) : EMPTY_VALUE;
+    const tokensDisplay = tokens > 0 ? formatCount(tokens) : EMPTY_VALUE;
 
     // Numbers read down a column: right-aligned, tabular figures.
     const size = (
@@ -518,7 +517,9 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
           <TableCell width="40%" align="left">
             <div className="flex min-w-0 items-center gap-2">
               <Folder className="text-primary size-4 shrink-0" />
-              <span className="truncate">{name}</span>
+              <span className="truncate" title={name}>
+                {name}
+              </span>
             </div>
           </TableCell>
           {renderColumnPair(dirStats.totalSize, dirStats.totalTokens)}
@@ -545,7 +546,9 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
           <TableCell width="40%" align="left">
             <div className="flex min-w-0 items-center gap-2">
               <File className="text-muted-foreground size-4 shrink-0" />
-              <span className="truncate">{displayName}</span>
+              <span className="truncate" title={displayName}>
+                {displayName}
+              </span>
             </div>
           </TableCell>
           {renderColumnPair(
@@ -749,17 +752,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
           tone="destructive"
           illustration="none"
           title={t('settings.sources.filesLoadError')}
-          action={
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              shape="pill"
-              onClick={() => setReloadKey((key) => key + 1)}
-            >
-              {t('retry')}
-            </Button>
-          }
+          onRetry={() => setReloadKey((key) => key + 1)}
         />
       );
     }

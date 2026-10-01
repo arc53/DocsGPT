@@ -125,7 +125,6 @@ export function MultiSelectPopover({
         }}
         checked={isSelected}
         className="justify-between"
-        aria-selected={isSelected}
       >
         <div className="mr-3 flex grow items-center gap-3 overflow-hidden">
           {renderIcon(item.icon)}
@@ -174,35 +173,33 @@ export function MultiSelectPopover({
         </div>
       )}
       {searchable && (
-        <div className="shrink-0 px-4 pt-4">
-          <CommandInput placeholder={effectivePlaceholder} className="h-10" />
+        <div className={cn('shrink-0', title && 'mt-3')}>
+          <CommandInput placeholder={effectivePlaceholder} />
         </div>
       )}
 
       {loading ? (
         <LoadingState fill="block" size="sm" />
       ) : (
-        <div className="border-border mx-4 my-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border">
-          <CommandList className="max-h-none min-h-0 flex-1 overflow-y-auto">
-            <CommandEmpty>{renderEmptyState()}</CommandEmpty>
-            {hasGroups ? (
-              grouped.groupOrder.map((groupKey) => {
-                const groupItems = grouped.map.get(groupKey) || [];
-                if (groupItems.length === 0) return null;
-                return (
-                  <CommandGroup
-                    key={`group-${groupKey || 'ungrouped'}`}
-                    heading={groupKey || undefined}
-                  >
-                    {groupItems.map(renderItem)}
-                  </CommandGroup>
-                );
-              })
-            ) : (
-              <CommandGroup>{orderedItems.map(renderItem)}</CommandGroup>
-            )}
-          </CommandList>
-        </div>
+        <CommandList className="max-h-none min-h-0 flex-1 overflow-y-auto">
+          <CommandEmpty>{renderEmptyState()}</CommandEmpty>
+          {hasGroups ? (
+            grouped.groupOrder.map((groupKey) => {
+              const groupItems = grouped.map.get(groupKey) || [];
+              if (groupItems.length === 0) return null;
+              return (
+                <CommandGroup
+                  key={`group-${groupKey || 'ungrouped'}`}
+                  heading={groupKey || undefined}
+                >
+                  {groupItems.map(renderItem)}
+                </CommandGroup>
+              );
+            })
+          ) : (
+            <CommandGroup>{orderedItems.map(renderItem)}</CommandGroup>
+          )}
+        </CommandList>
       )}
 
       {footer && (
@@ -220,7 +217,6 @@ export function MultiSelectPopover({
         <SheetContent
           side="bottom"
           handle
-          showCloseButton={false}
           onOpenAutoFocus={(e) => e.preventDefault()}
           className={cn('overflow-hidden', className)}
         >
@@ -240,7 +236,7 @@ export function MultiSelectPopover({
         align={align}
         side={side}
         className={cn(
-          'flex max-h-[min(600px,80dvh)] w-[min(462px,calc(100vw-20px))] flex-col overflow-hidden p-0',
+          'flex max-h-[min(600px,var(--radix-popover-content-available-height))] w-[min(462px,calc(100vw-20px))] flex-col overflow-hidden p-0',
           className,
         )}
       >

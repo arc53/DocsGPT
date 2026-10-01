@@ -3,13 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch } from 'react-redux';
 
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetTitle,
-} from '@/components/ui/sheet';
+import { PanelHeader, SidePanel } from '@/components/ui/side-panel';
 
 import { setPreviewOpen } from '../workflow/workflowPreviewSlice';
 
@@ -30,7 +24,7 @@ type AgentPreviewSheetProps = {
 
 /**
  * The drawer an agent is previewed in, for workflow and classic agents alike:
- * a right Sheet with a title row, a rule, then the preview filling the rest.
+ * a right SidePanel with a fixed header, then the preview filling the rest.
  *
  * Args:
  *   open: Whether the drawer is open.
@@ -64,30 +58,38 @@ export default function AgentPreviewSheet({
   }, [dispatch, open]);
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" size="wide" className="p-0">
-        <div className="flex min-h-0 flex-1 flex-col">
-          {/* pr-12 keeps the header clear of the close X at top-2 right-2. */}
-          <div className="flex items-center gap-3 px-6 pt-6 pr-12 pb-4">
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <SheetTitle>{title}</SheetTitle>
-              {description && (
-                <SheetDescription className="truncate" title={description}>
-                  {description}
-                </SheetDescription>
+    <SidePanel
+      open={open}
+      onOpenChange={onOpenChange}
+      size="wide"
+      // Radix warns about a dialog without a description; only opt out when
+      // there is none.
+      {...(description ? {} : { 'aria-describedby': undefined })}
+    >
+      <PanelHeader
+        title={title}
+        description={
+          description ? (
+            <span className="block truncate" title={description}>
+              {description}
+            </span>
+          ) : null
+        }
+        actions={
+          running || actions ? (
+            <>
+              {running && (
+                <Badge variant="info">
+                  {t('agents.schedules.status.running')}
+                </Badge>
               )}
-            </div>
-            {running && (
-              <Badge variant="info">
-                {t('agents.schedules.status.running')}
-              </Badge>
-            )}
-            {actions}
-          </div>
-          <Separator />
-          <div className="flex min-h-0 flex-1 flex-col">{children}</div>
-        </div>
-      </SheetContent>
-    </Sheet>
+              {actions}
+            </>
+          ) : null
+        }
+      />
+      {/* The preview owns its scroller and padding, so no PanelBody. */}
+      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+    </SidePanel>
   );
 }

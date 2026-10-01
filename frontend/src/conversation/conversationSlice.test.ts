@@ -9,12 +9,18 @@ vi.mock('./conversationHandlers', () => ({
 
 import { configureStore } from '@reduxjs/toolkit';
 
+import conversationService from '../api/services/conversationService';
+import type { Agent } from '../agents/types';
+import preferenceReducer, {
+  setSelectedAgent,
+} from '../preferences/preferenceSlice';
 import uploadReducer, { addAttachment } from '../upload/uploadSlice';
 import { handleFetchAnswer } from './conversationHandlers';
 import reducer, {
   addQuery,
   applyMessageTail,
   fetchAnswer,
+  loadConversation,
   mapServerQueryToClient,
   raiseError,
   raiseNotice,
@@ -511,5 +517,164 @@ describe('curated errors', () => {
       raiseError({ conversationId: null, index: 0, message: 'Oops' }),
     );
     expect(state.queries[0].errorCode).toBeUndefined();
+  });
+});
+
+describe('loadConversation with resolveAgent', () => {
+  const agentA = { id: 'agent-a', name: 'A' } as Agent;
+  const agentB = { id: 'agent-b', name: 'B' } as Agent;
+
+  const makeLoadStore = () => {
+    const store = configureStore({
+      reducer: {
+        conversation: reducer,
+        upload: uploadReducer,
+        preference: preferenceReducer,
+      },
+    });
+    store.dispatch(setConversation([{ prompt: 'old chat' }]));
+    store.dispatch(setSelectedAgent(agentA));
+    return store;
+  };
+
+  const serveConversation = (agentId: string | null) =>
+    vi.spyOn(conversationService, 'getConversation').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        queries: [{ prompt: 'new chat', response: 'hi' }],
+        agent_id: agentId,
+      }),
+    } as Response);
+
+  const shown = (store: ReturnType<typeof makeLoadStore>) => ({
+    prompt: store.getState().conversation.queries[0]?.prompt,
+    agent: store.getState().preference.selectedAgent?.id ?? null,
+  });
+
+  it('resolves the agent before anything changes, then applies both', async () => {
+    serveConversation('agent-b');
+    const store = makeLoadStore();
+    let duringResolve: ReturnType<typeof shown> | null = null;
+
+    const result = await store
+      .dispatch(
+        loadConversation({
+          id: 'c-2',
+          force: true,
+          resolveAgent: async () => {
+            duringResolve = shown(store);
+            return agentB;
+          },
+        }),
+      )
+      .unwrap();
+
+    // The old chat keeps its agent card while the new one resolves.
+    expect(duringResolve).toEqual({ prompt: 'old chat', agent: 'agent-a' });
+    expect(shown(store)).toEqual({ prompt: 'new chat', agent: 'agent-b' });
+    expect(store.getState().conversation.conversationId).toBe('c-2');
+    expect(result.stale).toBe(false);
+  });
+
+  it('clears the agent for a chat without one', async () => {
+    serveConversation(null);
+    const store = makeLoadStore();
+
+    await store.dispatch(
+      loadConversation({
+        id: 'c-2',
+        force: true,
+        resolveAgent: async () => null,
+      }),
+    );
+
+    expect(shown(store)).toEqual({ prompt: 'new chat', agent: null });
+  });
+
+  it('leaves the agent alone without a resolver', async () => {
+    serveConversation('agent-b');
+    const store = makeLoadStore();
+
+    await store.dispatch(loadConversation({ id: 'c-2', force: true }));
+
+    expect(shown(store)).toEqual({ prompt: 'new chat', agent: 'agent-a' });
+  });
+
+  it('reports a superseded load as stale even when its resolver fails', async () => {
+    serveConversation('agent-b');
+    const store = makeLoadStore();
+    let fail: ((error: Error) => void) | null = null;
+
+    const first = store.dispatch(
+      loadConversation({
+        id: 'c-2',
+        force: true,
+        resolveAgent: () => new Promise<Agent>((_, reject) => (fail = reject)),
+      }),
+    );
+    await vi.waitFor(() => expect(fail).not.toBeNull());
+    await store.dispatch(
+      loadConversation({
+        id: 'c-3',
+        force: true,
+        resolveAgent: async () => null,
+      }),
+    );
+    fail!(new TypeError('Failed to fetch'));
+
+    // A rejection would send the caller to /c/new over the newer chat.
+    await expect(first.unwrap()).resolves.toEqual({
+      data: null,
+      stale: true,
+    });
+    expect(store.getState().conversation.conversationId).toBe('c-3');
+  });
+
+  it('still fails the current load when its resolver fails', async () => {
+    serveConversation('agent-b');
+    const store = makeLoadStore();
+
+    await expect(
+      store
+        .dispatch(
+          loadConversation({
+            id: 'c-2',
+            force: true,
+            resolveAgent: async () => {
+              throw new TypeError('Failed to fetch');
+            },
+          }),
+        )
+        .unwrap(),
+    ).rejects.toThrow('Failed to fetch');
+    expect(shown(store)).toEqual({ prompt: 'old chat', agent: 'agent-a' });
+  });
+
+  it('applies nothing when a newer load superseded it', async () => {
+    serveConversation('agent-b');
+    const store = makeLoadStore();
+    let release: ((agent: Agent) => void) | null = null;
+
+    const first = store.dispatch(
+      loadConversation({
+        id: 'c-2',
+        force: true,
+        resolveAgent: () => new Promise<Agent>((r) => (release = r)),
+      }),
+    );
+    await vi.waitFor(() => expect(release).not.toBeNull());
+    await store.dispatch(
+      loadConversation({
+        id: 'c-3',
+        force: true,
+        resolveAgent: async () => null,
+      }),
+    );
+    release!(agentB);
+    const result = await first.unwrap();
+
+    expect(result.stale).toBe(true);
+    expect(store.getState().conversation.conversationId).toBe('c-3');
+    expect(store.getState().preference.selectedAgent).toBeNull();
   });
 });

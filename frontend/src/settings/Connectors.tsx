@@ -1,4 +1,4 @@
-import { ChevronDown, Plus } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -7,21 +7,10 @@ import { useSearchParams } from 'react-router-dom';
 import PageToolbar from '../components/PageToolbar';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../components/ui/dropdown-menu';
+import { ActionMenu } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import ConnectionDrawer from '../connectors/ConnectionDrawer';
 import ConnectorCard from '../connectors/ConnectorCard';
@@ -32,36 +21,40 @@ import {
   partsOf as partsOfCatalog,
 } from '../connectors/catalogCards';
 import {
+  connectionNeedsSignIn,
   loadConnectors,
+  selectConnections,
   selectConnectorCatalog,
   selectConnectorsFailed,
   selectConnectorsLoaded,
 } from '../connectors/connectorsSlice';
 import { connectorDescription, connectorName } from '../connectors/i18n';
-import type { ConnectorDefinition } from '../connectors/types';
+import type { Connection, ConnectorDefinition } from '../connectors/types';
 import useConnectorLauncher, {
   type LaunchOptions,
 } from '../connectors/useConnectorLauncher';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
 
-const FILTERS = [
-  'all',
-  'connected',
-  'files',
-  'knowledge',
-  'projects',
-  'dev',
-  'business',
-  'messaging',
-  'database',
-  'search',
-  'custom',
-] as const;
+// What people come here for is managing what they have, so the list filters
+// by state; search finds a service by name.
+const FILTERS = ['all', 'connected', 'disconnected'] as const;
 type Filter = (typeof FILTERS)[number];
 
-const isConnected = (connector: ConnectorDefinition) =>
-  connector.connection_count > 0;
+/** A card's own accounts: the service's and its parts'. */
+const accountsOf = (connections: Connection[], keys: string[]): Connection[] =>
+  connections.filter((c) => keys.includes(c.connector_key));
+
+/** At least one account works. */
+const hasWorking = (connector: ConnectorDefinition, accounts: Connection[]) =>
+  accounts.some((c) => c.status === 'connected') ||
+  connector.connected_count > 0;
+
+/** An account needs signing in again, or was disconnected. */
+const hasBroken = (connector: ConnectorDefinition, accounts: Connection[]) =>
+  accounts.some(
+    (c) => connectionNeedsSignIn(c) || c.status === 'disconnected',
+  ) || connector.state === 'reconnect';
 
 export default function Connectors() {
   const { t } = useTranslation();
@@ -72,10 +65,16 @@ export default function Connectors() {
   const failed = useSelector(selectConnectorsFailed);
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState('');
-  const initialFilter = searchParams.get('filter') as Filter | null;
-  const [filter, setFilter] = useState<Filter>(
-    initialFilter && FILTERS.includes(initialFilter) ? initialFilter : 'all',
-  );
+  const connections = useSelector(selectConnections);
+  const filterParam = searchParams.get('filter') as Filter | null;
+  // The address holds the filter, so Back and a reload keep it.
+  const filter: Filter =
+    filterParam && FILTERS.includes(filterParam) ? filterParam : 'all';
+  const setFilter = (value: Filter) => {
+    if (value === 'all') searchParams.delete('filter');
+    else searchParams.set('filter', value);
+    setSearchParams(searchParams, { replace: true });
+  };
   const connectorParam = searchParams.get('connector');
   const [openKey, setOpenKey] = useState<string | null>(connectorParam);
   // A `?connector=` link followed while this page is already open (the
@@ -85,6 +84,8 @@ export default function Connectors() {
     setSeenConnectorParam(connectorParam);
     if (connectorParam) setOpenKey(connectorParam);
   }
+  // The account to open the drawer on (a tool's "Manage in Connectors").
+  const connectionParam = searchParams.get('connection') ?? undefined;
   const { launch, modals } = useConnectorLauncher();
 
   useEffect(() => {
@@ -110,14 +111,11 @@ export default function Connectors() {
     searchParams.delete('capability');
     setSearchParams(searchParams, { replace: true });
   };
-  // Listed for syncing (Knowledge's Connect a service, Add knowledge's Browse
-  // all connectors): a connect starts with Sync into Knowledge on.
+  // Listed for syncing (Add knowledge's Browse all connectors): a connect
+  // starts with Sync into Knowledge on.
   const withPurpose = (options: LaunchOptions = {}): LaunchOptions =>
     capability === 'sync' ? { ...options, purpose: 'knowledge' } : options;
 
-  // Only categories that have something in them once the composer's
-  // capability filter applies (hidden connectors can empty one too), so no
-  // pill leads to an empty page.
   const cards = catalogCards(catalog);
   const withCapability = cards.filter((connector) =>
     capability === 'sync'
@@ -126,23 +124,32 @@ export default function Connectors() {
         ? connector.capabilities.some((c) => c !== 'sync')
         : true,
   );
+  const keysOf = (connector: ConnectorDefinition) => [
+    connector.key,
+    ...partsOf(connector.key).map((part) => part.key),
+  ];
+  const matches = (connector: ConnectorDefinition, key: Filter) => {
+    if (key === 'all') return true;
+    const accounts = accountsOf(connections, keysOf(connector));
+    return key === 'connected'
+      ? hasWorking(connector, accounts)
+      : hasBroken(connector, accounts);
+  };
+  const counts = Object.fromEntries(
+    FILTERS.map((key) => [
+      key,
+      withCapability.filter((connector) => matches(connector, key)).length,
+    ]),
+  ) as Record<Filter, number>;
+  // No pill leads to an empty list; with only All left there is no row.
   const filters = FILTERS.filter(
-    (key) =>
-      key === 'all' ||
-      key === filter ||
-      (key === 'connected'
-        ? withCapability.some(isConnected)
-        : withCapability.some((connector) => connector.category === key)),
+    (key) => key === 'all' || key === filter || counts[key] > 0,
   );
 
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
     return withCapability
-      .filter((connector) => {
-        if (filter === 'connected') return isConnected(connector);
-        if (filter !== 'all') return connector.category === filter;
-        return true;
-      })
+      .filter((connector) => matches(connector, filter))
       .filter(
         (connector) =>
           !query ||
@@ -153,7 +160,7 @@ export default function Connectors() {
           ),
       )
       .sort(byState);
-  }, [withCapability, filter, search, t]);
+  }, [withCapability, filter, search, t, connections]);
 
   const open = (connector: ConnectorDefinition) => {
     const hasParts = partsOf(connector.key).length > 0;
@@ -169,8 +176,9 @@ export default function Connectors() {
 
   const closeDrawer = () => {
     setOpenKey(null);
-    if (searchParams.has('connector')) {
+    if (searchParams.has('connector') || searchParams.has('connection')) {
       searchParams.delete('connector');
+      searchParams.delete('connection');
       setSearchParams(searchParams, { replace: true });
     }
   };
@@ -189,79 +197,51 @@ export default function Connectors() {
           />
         }
         action={
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+          <ActionMenu
+            trigger={
               <Button type="button" size="field" shape="pill">
-                <Plus />
                 {t('settings.connectors.addCustom')}
                 <ChevronDown />
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {custom.map((connector) => (
-                <DropdownMenuItem
-                  key={connector.key}
-                  onSelect={() => launch(connector)}
-                >
-                  <ConnectorIcon icon={connector.icon} className="size-4" />
-                  {connectorName(t, connector)}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+            }
+            menuWidth="sm"
+            options={custom.map((connector) => ({
+              label: connectorName(t, connector),
+              icon: <ConnectorIcon icon={connector.icon} className="size-4" />,
+              onClick: () => launch(connector),
+            }))}
+          />
         }
+        divider
       >
-        <div className="mb-6 flex flex-col gap-3">
-          {/* Nine pills wrap to four lines on a phone: a Select there. */}
-          <ToggleGroup
-            type="single"
-            value={filter}
-            onValueChange={(value) => value && setFilter(value as Filter)}
-            aria-label={t('settings.connectors.categoriesLabel')}
-            className="hidden sm:flex"
-          >
-            {filters.map((key) => (
-              <ToggleGroupItem key={key} value={key}>
-                {t(`settings.connectors.categories.${key}`)}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-          <div className="sm:hidden">
-            <Select
-              value={filter}
-              onValueChange={(value) => setFilter(value as Filter)}
-            >
-              <SelectTrigger
-                size="field"
-                shape="pill"
-                className="w-full"
-                aria-label={t('settings.connectors.categoriesLabel')}
+        {filters.length > 1 ||
+        capability === 'sync' ||
+        capability === 'tools' ? (
+          <div className="mb-6 flex flex-wrap items-center gap-3">
+            {filters.length > 1 ? (
+              <ToggleGroup
+                type="single"
+                value={filter}
+                onValueChange={(value) => value && setFilter(value as Filter)}
+                aria-label={t('settings.connectors.filterLabel')}
               >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
                 {filters.map((key) => (
-                  <SelectItem key={key} value={key}>
-                    {t(`settings.connectors.categories.${key}`)}
-                  </SelectItem>
+                  <ToggleGroupItem key={key} value={key} count={counts[key]}>
+                    {t(`settings.connectors.filters.${key}`)}
+                  </ToggleGroupItem>
                 ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {(capability === 'sync' || capability === 'tools') && (
-            <p className="text-muted-foreground text-sm">
-              {t(`settings.connectors.capabilityFilter.${capability}`)}{' '}
-              <Button
-                type="button"
-                variant="link"
-                size="inline"
-                onClick={clearCapability}
+              </ToggleGroup>
+            ) : null}
+            {capability === 'sync' || capability === 'tools' ? (
+              <Badge
+                onRemove={clearCapability}
+                removeLabel={t('settings.connectors.capabilityFilter.clear')}
               >
-                {t('settings.connectors.capabilityFilter.showAll')}
-              </Button>
-            </p>
-          )}
-        </div>
+                {t(`settings.connectors.capabilityChip.${capability}`)}
+              </Badge>
+            ) : null}
+          </div>
+        ) : null}
       </PageToolbar>
 
       {!loaded && !failed ? (
@@ -273,16 +253,7 @@ export default function Connectors() {
           tone="destructive"
           illustration="none"
           title={t('settings.connectors.loadFailed')}
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              shape="pill"
-              onClick={() => dispatch(loadConnectors({ token }))}
-            >
-              {t('retry')}
-            </Button>
-          }
+          onRetry={() => dispatch(loadConnectors({ token }))}
         />
       ) : visible.length === 0 ? (
         filter === 'connected' && !search ? (
@@ -309,6 +280,7 @@ export default function Connectors() {
       <ConnectionDrawer
         connector={openConnector}
         parts={openConnector ? partsOf(openConnector.key) : []}
+        initialConnectionId={connectionParam}
         onClose={closeDrawer}
         onConnect={(connector, options) => {
           closeDrawer();

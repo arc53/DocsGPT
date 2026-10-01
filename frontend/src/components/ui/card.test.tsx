@@ -44,7 +44,17 @@ describe('Card', () => {
 
   it('destructive tone turns muted text inside it to foreground', () => {
     const classes = cardVariants({ tone: 'destructive' });
-    expect(classes).toContain('[&_.text-muted-foreground]:text-foreground');
+    expect(classes).toContain(
+      '[&_.text-muted-foreground:not([data-slot=button]:hover)]:text-foreground',
+    );
+  });
+
+  it('destructive tone leaves a hovered button its own hover colour', () => {
+    // The muted-to-foreground rule used to beat a ghost-destructive button's
+    // hover:text-destructive on source order (the orphan guardrail Remove).
+    const classes = cardVariants({ tone: 'destructive' });
+    // A regex, so Tailwind's scanner doesn't emit the old rule from this file.
+    expect(classes).not.toMatch(/\[&_\.text-muted-foreground\]:/);
   });
 
   it('CardTitle renders the heading level passed in as', () => {
@@ -59,16 +69,54 @@ describe('Card', () => {
     expect(classes).not.toMatch(/(^|\s)border(\s|$)/);
   });
 
-  it('interactive cards get hover, focus and selected styles', () => {
+  it('filled variant turns muted text inside it to foreground, not icons or buttons', () => {
+    // Muted text is 4.39:1 on the fill (under AA); icons and buttons only need 3:1.
+    const classes = cardVariants({ variant: 'filled' });
+    expect(classes).toContain(
+      '[&_.text-muted-foreground:not(svg):not(button):not([data-slot=button])]:text-foreground',
+    );
+  });
+
+  it('outline and subtle leave muted text muted', () => {
+    for (const variant of ['outline', 'subtle'] as const) {
+      expect(cardVariants({ variant })).not.toMatch(
+        /\[&_\.text-muted-foreground:not\(svg\)/,
+      );
+    }
+  });
+
+  it('interactive cards get hover and focus styles', () => {
     const html = renderToStaticMarkup(
-      <Card interactive selected asChild>
+      <Card interactive asChild>
         <button type="button">Pick me</button>
       </Card>,
     );
     expect(html).toContain('<button');
     expect(html).toContain('cursor-pointer');
-    expect(html).toContain('data-selected="true"');
     expect(html).toContain('focus-visible:ring-3');
+    // The selected look belongs to OptionCard, its only user.
+    expect(html).not.toContain('data-[selected=true]');
+  });
+
+  it('has no selected prop', () => {
+    // @ts-expect-error selected moved into OptionCard
+    const html = renderToStaticMarkup(<Card selected />);
+    expect(html).not.toContain('data-selected');
+  });
+
+  it('interactive="within" draws a stretched inner button\'s hover and focus ring', () => {
+    const html = renderToStaticMarkup(
+      <Card variant="filled" interactive="within">
+        <button type="button">Open</button>
+      </Card>,
+    );
+    expect(html).toContain('relative');
+    expect(html).toContain('hover:bg-accent');
+    expect(html).toContain('has-[&gt;button:focus-visible]:ring-3');
+    expect(html).toContain('has-[&gt;button:focus-visible]:ring-ring/50');
+    // The card itself is not the target: no pointer, no own focus ring.
+    expect(html).not.toContain('cursor-pointer');
+    expect(html).toContain('data-interactive="within"');
   });
 
   it('header places the action in the trailing column', () => {
@@ -101,5 +149,40 @@ describe('Card', () => {
     );
     expect(xs).toContain('text-xs leading-relaxed');
     expect(xs).not.toContain('text-sm');
+  });
+
+  it('CardTitle titles its string text when it truncates; CardDescription never does', () => {
+    expect(
+      renderToStaticMarkup(
+        <CardTitle className="truncate">Meridian Freight Group</CardTitle>,
+      ),
+    ).toContain('title="Meridian Freight Group"');
+    expect(
+      renderToStaticMarkup(
+        <CardDescription className="line-clamp-2">
+          Carrier contracts
+        </CardDescription>,
+      ),
+    ).not.toContain('title=');
+  });
+
+  it('CardTitle adds no title when it does not truncate, or the text is a node', () => {
+    expect(renderToStaticMarkup(<CardTitle>Tools</CardTitle>)).not.toContain(
+      'title=',
+    );
+    expect(
+      renderToStaticMarkup(
+        <CardTitle className="truncate">
+          <span>Tools</span>
+        </CardTitle>,
+      ),
+    ).not.toContain(' title=');
+    expect(
+      renderToStaticMarkup(
+        <CardTitle className="truncate" title="Full name">
+          Full
+        </CardTitle>,
+      ),
+    ).toContain('title="Full name"');
   });
 });

@@ -197,7 +197,7 @@ describe('ApiWriteAllowlist', () => {
   const K = 'modals.agentDetails.apiWrites';
   const disclosure = () =>
     Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes(`${K}.title`),
+      b.textContent?.includes(`${K}.choose`),
     )!;
   const expand = async () => {
     if (disclosure().getAttribute('aria-expanded') === 'false')
@@ -206,23 +206,45 @@ describe('ApiWriteAllowlist', () => {
   const groups = () =>
     Array.from(container.querySelectorAll<HTMLElement>('[data-tool]'));
   const groupTitles = () =>
-    groups().map((g) => g.querySelector('h4')?.textContent);
+    groups().map((g) => {
+      const h = g.querySelector('h4');
+      return `${h?.firstChild?.textContent} [${h?.querySelector('[data-slot="count"]')?.textContent}]`;
+    });
   const group = (id: string) =>
     container.querySelector<HTMLElement>(`[data-tool="${id}"]`)!;
-  const choice = (id: string, value: 'off' | 'all') =>
-    group(id).querySelector<HTMLButtonElement>(`[data-choice="${value}"]`)!;
+  const choice = (id: string, value: 'off' | 'always' | 'customize') =>
+    group(id).querySelector<HTMLButtonElement>(`[data-permission="${value}"]`)!;
   const customize = async (id: string) => {
-    const button = Array.from(group(id).querySelectorAll('button')).find(
-      (b) => b.getAttribute('aria-expanded') === 'false',
+    if (choice(id, 'customize').getAttribute('data-state') !== 'on')
+      await act(async () => choice(id, 'customize').click());
+  };
+  const rowNames = (id: string) =>
+    Array.from(group(id).querySelectorAll('li p:first-child')).map(
+      (p) => p.textContent,
     );
-    if (button) await act(async () => button.click());
+  const rowSelect = (id: string, label: string) =>
+    Array.from(group(id).querySelectorAll<HTMLElement>('li'))
+      .find((li) => li.querySelector('p')?.textContent === label)!
+      .querySelector<HTMLElement>('[data-slot="select-trigger"]')!;
+  const pick = async (trigger: HTMLElement, text: string) => {
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          button: 0,
+          pointerType: 'mouse',
+        }),
+      );
+    });
+    const option = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="option"]'),
+    ).find((o) => o.textContent === text)!;
+    await act(async () => option.click());
   };
-  const actionSwitch = (id: string, label: string) => {
-    const row = Array.from(
-      group(id).querySelectorAll<HTMLElement>('[data-slot="setting-row"]'),
-    ).find((r) => r.querySelector('label')?.textContent === label)!;
-    return row.querySelector<HTMLButtonElement>('[role="switch"]')!;
-  };
+  const P = 'settings.connectors.permission';
+  // "Telegram" with the count "0 of 2 allowed" in SectionHeader's count span
+  const titled = (name: string, allowed: number, total: number) =>
+    `${name} [${K}.summaryCount(allowed=${allowed},formatted=${total})]`;
   const summary = () =>
     container.querySelector('[data-testid="api-writes-summary"]')?.textContent;
   const savedConfig = () =>
@@ -234,16 +256,49 @@ describe('ApiWriteAllowlist', () => {
     await render(agent());
     expect(disclosure().getAttribute('aria-expanded')).toBe('false');
     expect(summary()).toBe(`${K}.summaryNone`);
-    expect(groups()).toHaveLength(0);
+    // Folded: the groups wait in a closed, inert Collapsible.
+    const body = document.getElementById(
+      disclosure().getAttribute('aria-controls')!,
+    )!;
+    expect(body.dataset.state).toBe('closed');
+    expect(body.hasAttribute('inert')).toBe(true);
     await expand();
     expect(disclosure().getAttribute('aria-expanded')).toBe('true');
+    expect(body.dataset.state).toBe('open');
+    expect(groups().length).toBeGreaterThan(0);
     expect(choice('tg', 'off').getAttribute('data-state')).toBe('on');
+  });
+
+  it('heads the group with its title and summary, the disclosure below', async () => {
+    await render(agent());
+    const heading = container.querySelector('h3')!;
+    expect(heading.textContent).toBe(`${K}.title`);
+    expect(heading.closest('button')).toBeNull();
+    const header = heading.closest('[data-slot="section-header"]')!;
+    expect(header.textContent).toContain(`${K}.summaryNone`);
+    expect(
+      header.compareDocumentPosition(disclosure()) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('opens straight away when asked to', async () => {
     await render(agent(), { defaultOpen: true });
     expect(disclosure().getAttribute('aria-expanded')).toBe('true');
-    expect(groupTitles()).toEqual(['Telegram']);
+    expect(groupTitles()).toEqual([titled('Telegram', 0, 2)]);
+  });
+
+  it('offers Allow / Off / Customize in the connector words and order', async () => {
+    await render(agent(), { defaultOpen: true });
+    expect(
+      Array.from(group('tg').querySelectorAll('[data-permission]')).map(
+        (b) => b.textContent,
+      ),
+    ).toEqual([`${P}.always`, `${P}.off`, `${P}.customize`]);
+    // The count is in the title; no per-tool line under it.
+    expect(
+      group('tg').querySelector('[data-slot="section-header"] p'),
+    ).toBeNull();
   });
 
   it('names the tools that can make changes and counts what is allowed', async () => {
@@ -263,24 +318,24 @@ describe('ApiWriteAllowlist', () => {
   it("groups only writes on the owner's credentials by tool, each action under Customize", async () => {
     await render(agent());
     await expand();
-    expect(groupTitles()).toEqual(['Telegram']);
+    expect(groupTitles()).toEqual([titled('Telegram', 0, 2)]);
     expect(container.textContent).not.toContain('Telegram send message');
     await customize('tg');
-    const labels = Array.from(
-      group('tg').querySelectorAll('[data-slot="setting-row"] label'),
-    ).map((l) => l.textContent);
-    expect(labels).toEqual(['Telegram send message', 'Telegram pin message']);
+    expect(rowNames('tg')).toEqual([
+      'Telegram send message',
+      'Telegram pin message',
+    ]);
     expect(group('tg').textContent).toContain('Sends a message.');
-    expect(
-      actionSwitch('tg', 'Telegram send message').getAttribute('aria-checked'),
-    ).toBe('false');
+    expect(rowSelect('tg', 'Telegram send message').textContent).toBe(
+      `${P}.off`,
+    );
   });
 
   it("allows all of a tool's changes at once, without dropping the rest of the config", async () => {
     updateAgent.mockResolvedValue({ ok: true });
     const onConfigChange = await render(agent());
     await expand();
-    await act(async () => choice('tg', 'all').click());
+    await act(async () => choice('tg', 'always').click());
     const expected = {
       guardrails: { controls: [] },
       api_write_allowlist: [
@@ -291,7 +346,7 @@ describe('ApiWriteAllowlist', () => {
     expect(updateAgent).toHaveBeenCalledTimes(1);
     expect(savedConfig()).toEqual(expected);
     expect(onConfigChange).toHaveBeenCalledWith(expected);
-    expect(choice('tg', 'all').getAttribute('data-state')).toBe('on');
+    expect(choice('tg', 'always').getAttribute('data-state')).toBe('on');
     expect(summary()).toBe(
       `${K}.summaryTools(tools=Telegram) · ${K}.summaryCount(allowed=2,formatted=2)`,
     );
@@ -306,7 +361,7 @@ describe('ApiWriteAllowlist', () => {
     );
     await render(agent());
     await expand();
-    await act(async () => choice('tg', 'all').click());
+    await act(async () => choice('tg', 'always').click());
     expect(choice('tg', 'off').hasAttribute('disabled')).toBe(true);
     await act(async () => choice('tg', 'off').click());
     expect(updateAgent).toHaveBeenCalledTimes(1);
@@ -332,20 +387,17 @@ describe('ApiWriteAllowlist', () => {
     expect(savedConfig().api_write_allowlist).toEqual(['old:gone_action']);
   });
 
-  // Every tool has a Customize link; each names its tool to screen readers.
-  it('ties each Customize link to its tool', async () => {
+  it("names each tool's choice for screen readers", async () => {
     await render(agent({ tools: ['tg', 'crm'] }), { defaultOpen: true });
     for (const [id, name] of [
       ['tg', 'Telegram'],
       ['crm', 'CRM API'],
-    ]) {
-      const link = Array.from(group(id).querySelectorAll('button')).find(
-        (b) => b.getAttribute('aria-expanded') === 'false',
-      )!;
-      const describedBy = link.getAttribute('aria-describedby');
-      expect(describedBy).toBeTruthy();
-      expect(document.getElementById(describedBy!)?.textContent).toBe(name);
-    }
+    ])
+      expect(
+        group(id)
+          .querySelector('[role="radiogroup"], [role="group"]')
+          ?.getAttribute('aria-label'),
+      ).toBe(`${K}.toolLabel(tool=${name})`);
   });
 
   it('allows one action under Customize, leaving the tool choice mixed', async () => {
@@ -353,15 +405,16 @@ describe('ApiWriteAllowlist', () => {
     await render(agent());
     await expand();
     await customize('tg');
-    await act(async () => actionSwitch('tg', 'Telegram pin message').click());
+    await pick(rowSelect('tg', 'Telegram pin message'), `${P}.always`);
     expect(savedConfig().api_write_allowlist).toEqual([
       'tg:telegram_pin_message',
     ]);
-    expect(
-      actionSwitch('tg', 'Telegram pin message').getAttribute('aria-checked'),
-    ).toBe('true');
+    expect(rowSelect('tg', 'Telegram pin message').textContent).toBe(
+      `${P}.always`,
+    );
     expect(choice('tg', 'off').getAttribute('data-state')).toBe('off');
-    expect(choice('tg', 'all').getAttribute('data-state')).toBe('off');
+    expect(choice('tg', 'always').getAttribute('data-state')).toBe('off');
+    expect(choice('tg', 'customize').getAttribute('data-state')).toBe('on');
   });
 
   it('saves on top of the last saved config, not unsaved form edits', async () => {
@@ -376,7 +429,7 @@ describe('ApiWriteAllowlist', () => {
       getSavedConfig: () => saved,
     });
     await expand();
-    await act(async () => choice('tg', 'all').click());
+    await act(async () => choice('tg', 'always').click());
     const expected = {
       guardrails: { controls: [] },
       api_write_allowlist: [
@@ -392,7 +445,7 @@ describe('ApiWriteAllowlist', () => {
     updateAgent.mockResolvedValue({ ok: false });
     await render(agent());
     await expand();
-    await act(async () => choice('tg', 'all').click());
+    await act(async () => choice('tg', 'always').click());
     expect(choice('tg', 'off').getAttribute('data-state')).toBe('on');
     expect(summary()).toBe(`${K}.summaryNone`);
     expect(selectActionToast(store.getState())?.variant).toBe('destructive');
@@ -400,19 +453,16 @@ describe('ApiWriteAllowlist', () => {
 
   it('lists writes on stored credentials of tools without a connection', async () => {
     await render(agent({ tools: ['crm'] }), { defaultOpen: true });
-    expect(groupTitles()).toEqual(['CRM API']);
+    expect(groupTitles()).toEqual([titled('CRM API', 0, 1)]);
     await customize('crm');
-    expect(
-      group('crm').querySelector('[data-slot="setting-row"] label')
-        ?.textContent,
-    ).toBe('Create lead');
+    expect(rowNames('crm')).toEqual(['Create lead']);
   });
 
   it("lists a sponsor's tool the owner can't see, but not a stopped one", async () => {
     await render(agent({ tools: ['bob-jira', 'gone'] }), {
       defaultOpen: true,
     });
-    expect(groupTitles()).toEqual(['Bob Jira']);
+    expect(groupTitles()).toEqual([titled('Bob Jira', 0, 1)]);
   });
 
   it("lists writes of a workflow agent's node tools", async () => {
@@ -434,7 +484,7 @@ describe('ApiWriteAllowlist', () => {
       }),
     });
     await render(agent({ tools: [] }), { defaultOpen: true });
-    expect(groupTitles()).toEqual(['Node Slack']);
+    expect(groupTitles()).toEqual([titled('Node Slack', 0, 1)]);
   });
 
   it('renders nothing for an agent without connected tools', async () => {

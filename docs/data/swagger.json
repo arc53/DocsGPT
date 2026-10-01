@@ -1610,6 +1610,7 @@
     },
     "/api/admin/quotas": {
       "get": {
+        "description": "Query args (all optional; without them every row is returned):\n    teams_q: Case-insensitive substring of the team name or slug.\n    users_q: Case-insensitive substring of the user's subject id or email.\n    teams_page / users_page: 1-based page of that list; only a list whose\n        page arg is given is paginated.\n    page_size: Teams or users per page, clamped to 1-100 (default 20); a\n        page carries every bucket row of each of them.\n\n``teams_total`` and ``users_total`` count the teams and users after\nfiltering and before paging. Rows keep the repository order (subject,\nthen bucket).",
         "operationId": "get_admin_quotas_resource",
         "responses": {
           "200": {
@@ -1751,13 +1752,14 @@
     },
     "/api/admin/teams": {
       "get": {
+        "description": "With no query args every team is returned. Any of these switches to a\nbounded search (same row shape):\n    q: Case-insensitive substring of the team name or slug.\n    without_quota: ``1`` keeps only teams with no team ``all``-bucket\n        quota policy.\n    limit: The most rows to return, clamped to 1-100 (default 20).",
         "operationId": "get_all_teams",
         "responses": {
           "200": {
             "description": "Success"
           }
         },
-        "summary": "Global-admin oversight: every team with member counts",
+        "summary": "Global-admin oversight: every team with member counts, or a picker search",
         "tags": [
           "teams"
         ],
@@ -3388,8 +3390,28 @@
     },
     "/api/get_conversations": {
       "get": {
-        "description": "Retrieve a list of the latest 30 sidebar conversations (visibility = listed)",
+        "description": "Retrieve the user's sidebar conversations (visibility = listed), newest first, ordered by ``date`` DESC then ``id`` DESC. Each item carries ``date`` (ISO-8601). To page older conversations, pass the last item's ``date`` and ``id`` as ``before`` and ``before_id``. Invalid params are ignored.",
         "operationId": "get_get_conversations",
+        "parameters": [
+          {
+            "description": "Maximum number of results (default 30, clamped to 1-100)",
+            "in": "query",
+            "name": "limit",
+            "type": "string"
+          },
+          {
+            "description": "Keyset cursor: ISO-8601 ``date`` of the last item seen (needs before_id)",
+            "in": "query",
+            "name": "before",
+            "type": "string"
+          },
+          {
+            "description": "Keyset cursor: ``id`` of the last item seen (needs before)",
+            "in": "query",
+            "name": "before_id",
+            "type": "string"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"
@@ -3687,6 +3709,24 @@
             "description": "Row offset",
             "in": "query",
             "name": "offset",
+            "type": "string"
+          },
+          {
+            "description": "Trailing window in days, clamped to 1-365 (optional; invalid values are ignored)",
+            "in": "query",
+            "name": "days",
+            "type": "string"
+          },
+          {
+            "description": "Exact check name (optional)",
+            "in": "query",
+            "name": "check",
+            "type": "string"
+          },
+          {
+            "description": "One of block, redact, flag, not_evaluated (optional; unknown values are ignored)",
+            "in": "query",
+            "name": "outcome",
             "type": "string"
           }
         ],
@@ -5258,7 +5298,7 @@
     },
     "/api/teams/{team_id}/members": {
       "get": {
-        "description": "Requires membership.",
+        "description": "Requires membership.\n\nOptional query args: ``q`` (case-insensitive substring over email and\nuser id), ``page`` (1-based) and ``page_size`` (1..100; paginates only\nwhen given). ``total`` is the row count after the ``q`` filter.",
         "operationId": "get_team_members",
         "responses": {
           "200": {

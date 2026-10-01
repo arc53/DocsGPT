@@ -44,6 +44,43 @@ export type ToolActivity = { key: string; values?: Record<string, string> };
 const CONNECTOR_SEARCH_WORDS = /search|query|find|list/i;
 
 /**
+ * An action's name in words, without the service prefix it repeats:
+ * "linear_create_issue" and "notion-create-pages" drop "linear" / "notion";
+ * a bare verb ("search") keeps its whole name. Lower case.
+ *
+ * @param action - The action's name as the model called it.
+ * @param service - The service's name, whose prefix is dropped.
+ */
+export function readableAction(action: string, service?: string | null) {
+  return action
+    .replace(/^[a-z0-9]+[_-](?=[a-z])/i, (prefix) =>
+      service &&
+      service.toLowerCase().startsWith(prefix.slice(0, -1).toLowerCase())
+        ? ''
+        : prefix,
+    )
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * A call's card title: "GitHub · Create issue", or the tool's name when no
+ * connection backs it ("Remote Device · Run command").
+ */
+export function toolCallTitle(toolCall: ToolCallsType, t: TFunction): string {
+  const name = toolCall.connector_name || formatToolLabel(toolCall.tool_name);
+  const words = readableAction(
+    toolCall.action_name ?? '',
+    toolCall.connector_name,
+  );
+  const action = words.charAt(0).toUpperCase() + words.slice(1);
+  if (!name) return action;
+  if (!action) return name;
+  return t('conversation.toolApproval.title', { name, action, ...NO_ESCAPE });
+}
+
+/**
  * A call to a connection-backed tool, named after its service: "Searched
  * Notion", "Read from Google Drive", "Used Linear: create issue". Reads that
  * look up something search; other reads read; writes name their action.
@@ -53,18 +90,10 @@ function describeConnectorCall(toolCall: ToolCallsType): ToolActivity | null {
   if (!name) return null;
   const action = toolCall.action_name ?? '';
   if (toolCall.access === 'write') {
-    const readable = action
-      .replace(/^[a-z0-9]+[_-](?=[a-z])/i, (prefix) =>
-        // "linear_create_issue" and "notion-create-pages" drop the service
-        // prefix; a bare verb ("search") keeps its whole name.
-        name.toLowerCase().startsWith(prefix.slice(0, -1).toLowerCase())
-          ? ''
-          : prefix,
-      )
-      .replace(/[_-]+/g, ' ')
-      .trim()
-      .toLowerCase();
-    return { key: 'connectorWrite', values: { name, action: readable } };
+    return {
+      key: 'connectorWrite',
+      values: { name, action: readableAction(action, name) },
+    };
   }
   if (CONNECTOR_SEARCH_WORDS.test(action))
     return { key: 'connectorSearch', values: { name } };

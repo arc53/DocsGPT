@@ -1,5 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
+
+import { focusRing } from '@/lib/utils';
 import { IconButton } from './ui/icon-button';
 
 interface NotificationProps {
@@ -26,7 +28,7 @@ export default function Notification({
   const { t } = useTranslation();
   return (
     <a
-      className="notification-banner group absolute right-2 bottom-24 z-20 flex w-3/4 items-center justify-center gap-2 overflow-hidden rounded-lg px-2 py-4 sm:right-4 sm:bottom-6 md:w-2/5 lg:w-1/3 xl:w-1/4 2xl:w-1/5"
+      className={`${focusRing} notification-banner group absolute right-2 bottom-24 z-20 flex w-3/4 items-center justify-center gap-2 overflow-hidden rounded-lg px-2 py-4 outline-none sm:right-4 sm:bottom-6 md:w-2/5 lg:w-1/3 xl:w-1/4 2xl:w-1/5`}
       href={notificationLink}
       target="_blank"
       aria-label={t('notification.ariaLabel')}

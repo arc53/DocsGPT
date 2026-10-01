@@ -2,10 +2,14 @@ import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 
 import { cn } from '@/lib/utils';
+import { formatCount } from '@/utils/dateTimeUtils';
 
 const sectionTitleVariants = cva('', {
   variants: {
     size: {
+      // The title of a detail page or panel (a device, a team): the Modal and
+      // PanelHeader title role.
+      title: 'text-foreground text-xl leading-tight font-semibold',
       // A section title on a page or panel.
       default: 'text-foreground text-lg font-semibold',
       // An eyebrow: a label set in caps above a group.
@@ -25,17 +29,24 @@ const sectionTitleVariants = cva('', {
 type SectionHeaderProps = Omit<React.ComponentProps<'div'>, 'title'> &
   VariantProps<typeof sectionTitleVariants> & {
     title: React.ReactNode;
+    /**
+     * A tally after the title ("Members 7", "2 of 5 allowed"): muted,
+     * normal weight, tabular and never set in caps, at every size. A number
+     * is formatted with the UI language's digit grouping.
+     */
+    count?: React.ReactNode;
     /** One muted paragraph under the title. */
     description?: React.ReactNode;
     /** Buttons at the end of the title row. */
     actions?: React.ReactNode;
     /** The heading level in the page outline. */
-    as?: 'h2' | 'h3' | 'h4';
+    as?: 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
   };
 
 /** A section title with an optional description and trailing actions. */
 function SectionHeader({
   title,
+  count,
   description,
   actions,
   as: Heading = 'h2',
@@ -47,6 +58,14 @@ function SectionHeader({
   const heading = (
     <Heading className={cn(sectionTitleVariants({ size, tone }))}>
       {title}
+      {count != null && count !== false ? (
+        <span
+          data-slot="count"
+          className="text-muted-foreground ms-1.5 font-normal tracking-normal normal-case tabular-nums"
+        >
+          {typeof count === 'number' ? formatCount(count) : count}
+        </span>
+      ) : null}
     </Heading>
   );
   const text = description ? (

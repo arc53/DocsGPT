@@ -214,6 +214,14 @@ describe('TreeBrowser', () => {
     expect(container.textContent).not.toContain('settings.sources.searchFiles');
   });
 
+  it('titles the truncated folder and file names in the table', async () => {
+    await render(NESTED);
+    const titles = Array.from(
+      container.querySelectorAll('tbody td span.truncate'),
+    ).map((el) => el.getAttribute('title'));
+    expect(titles).toEqual(['legal', 'readme.md']);
+  });
+
   it('opens folders and files from the navigator', async () => {
     await render(NESTED);
     await act(async () => navItem('legal')!.click());

@@ -131,6 +131,13 @@ describe('ConnectionHealthToast', () => {
     expect(title()).toBe('settings.connectors.health.reconnectBoth:1');
   });
 
+  it('links to the account on the Connectors page as the fallback', async () => {
+    await render({ source_count: 1 });
+    expect(container.querySelector('a')?.getAttribute('href')).toBe(
+      '/settings/connectors?connector=google_drive&connection=conn-1',
+    );
+  });
+
   it('closes itself once the connection works again', async () => {
     await render({ source_count: 1 }, 'connected');
     expect(container.querySelector('[data-slot="toast"]')).toBeNull();

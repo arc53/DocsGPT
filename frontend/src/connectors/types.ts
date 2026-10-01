@@ -37,6 +37,8 @@ export type CredentialField = {
   parameter?: string | null;
   /** English help under the field; translated when the locale has it. */
   hint?: string | null;
+  /** Where the hint's `<link>…</link>` words point. */
+  hint_url?: string | null;
 };
 
 export type ConnectorDefinition = {

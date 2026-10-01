@@ -142,13 +142,7 @@ export const SharedConversation = () => {
           <h1 className="text-foreground text-4xl font-semibold">{title}</h1>
           <p className="text-muted-foreground text-sm">
             {t('sharedConv.subtitle')}{' '}
-            <Button
-              variant="link"
-              size="inline"
-              asChild
-              // eslint-disable-next-line shadcn/no-restyle -- a link inside a regular-weight subtitle
-              className="font-normal"
-            >
+            <Button variant="link" size="text" asChild>
               <a href="/">DocsGPT</a>
             </Button>
           </p>

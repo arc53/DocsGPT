@@ -255,6 +255,33 @@ class TestGuardrailEventsRepository:
         assert summary["totals"]["not_evaluated"] == 1
         assert summary["totals"]["flagged"] == 0
 
+    def test_pages_rows_with_one_timestamp_without_repeats(self, pg_engine):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.guardrail_events import (
+            GuardrailEventsRepository,
+        )
+
+        with pg_engine.begin() as conn:
+            agent_id = str(AgentsRepository(conn).create("u-tie", "a", "published")["id"])
+            repo = GuardrailEventsRepository(conn)
+            # One transaction: every row shares created_at = NOW().
+            repo.record_many(
+                [
+                    {"user_id": "u-tie", "agent_id": agent_id, "stage": "input",
+                     "check_name": "denylist", "detector_type": "DENYLIST",
+                     "action": "flag", "outcome": "triggered"}
+                    for _ in range(8)
+                ]
+            )
+            pages = [
+                [str(r["id"]) for r in repo.list_for_agent(agent_id, "u-tie", limit=3, offset=offset)]
+                for offset in (0, 3, 6)
+            ]
+
+        ids = [i for page in pages for i in page]
+        assert len(ids) == 8 and len(set(ids)) == 8
+        assert ids == sorted(ids, reverse=True)
+
     def test_empty_batch_is_a_noop(self, pg_engine):
         from docsgpt.storage.db.repositories.guardrail_events import (
             GuardrailEventsRepository,

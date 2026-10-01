@@ -1605,6 +1605,11 @@ class LLMHandler(ABC):
                 # approval card becomes a Connect card.
                 if pause_info.get("connection_required"):
                     pause_data["connection_required"] = pause_info["connection_required"]
+                # The service a connection-backed tool acts on, for the
+                # approval card's logo and name.
+                for key in ("connector_key", "connector_name", "access"):
+                    if pause_info.get(key):
+                        pause_data[key] = pause_info[key]
                 trace_unexecuted_tool_call(call, pause_data)
                 yield {"type": "tool_call", "data": pause_data}
                 pending_actions.append(pause_info)

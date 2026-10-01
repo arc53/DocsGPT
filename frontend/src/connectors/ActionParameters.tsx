@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { CollapsibleTrigger } from '../components/ui/collapsible';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
@@ -78,28 +79,26 @@ function ParameterRow({
             </p>
           )}
         </div>
-        <div className="bg-muted rounded-full p-1">
-          <ToggleGroup
-            type="single"
-            size="xs"
-            value={mode}
-            disabled={readOnly || saving}
-            aria-label={choiceLabel}
-            onValueChange={(value) => {
-              if (!value) return;
-              setMode(value as Mode);
-              // Releasing a fixed value saves at once; fixing one waits for it.
-              if (value === 'ai' && parameter.fixed) save(null);
-            }}
-          >
-            <ToggleGroupItem value="ai" data-mode="ai">
-              {t('settings.connectors.parameters.ai')}
-            </ToggleGroupItem>
-            <ToggleGroupItem value="fixed" data-mode="fixed">
-              {t('settings.connectors.parameters.fixed')}
-            </ToggleGroupItem>
-          </ToggleGroup>
-        </div>
+        <ToggleGroup
+          type="single"
+          size="xs"
+          value={mode}
+          disabled={readOnly || saving}
+          aria-label={choiceLabel}
+          onValueChange={(value) => {
+            if (!value) return;
+            setMode(value as Mode);
+            // Releasing a fixed value saves at once; fixing one waits for it.
+            if (value === 'ai' && parameter.fixed) save(null);
+          }}
+        >
+          <ToggleGroupItem value="ai" data-mode="ai">
+            {t('settings.connectors.parameters.ai')}
+          </ToggleGroupItem>
+          <ToggleGroupItem value="fixed" data-mode="fixed">
+            {t('settings.connectors.parameters.fixed')}
+          </ToggleGroupItem>
+        </ToggleGroup>
       </div>
       {mode === 'fixed' && (
         <form
@@ -132,7 +131,46 @@ function ParameterRow({
           </Button>
         </form>
       )}
+      {mode === 'fixed' && (
+        <p className="text-muted-foreground text-xs">
+          {t('settings.connectors.parameters.fixedHint')}
+        </p>
+      )}
     </li>
+  );
+}
+
+/**
+ * The "Parameters" disclosure under an action: the inline
+ * CollapsibleTrigger over the list's Collapsible. Its accessible name carries
+ * the action, so a list of them reads apart ("Parameters for Send message").
+ */
+export function ActionParametersToggle({
+  action,
+  open,
+  onToggle,
+  controls,
+}: {
+  /** The action's name in words (`actionTitle`). */
+  action: string;
+  open: boolean;
+  onToggle: () => void;
+  /** The parameter list's Collapsible `id`. */
+  controls: string;
+}) {
+  const { t } = useTranslation();
+  return (
+    <CollapsibleTrigger
+      open={open}
+      onOpenChange={onToggle}
+      controls={controls}
+      aria-label={t('settings.connectors.parameters.showFor', {
+        action,
+        interpolation: { escapeValue: false },
+      })}
+    >
+      {t('settings.connectors.parameters.show')}
+    </CollapsibleTrigger>
   );
 }
 
@@ -151,22 +189,16 @@ export default function ActionParameters({
   /** Saves `{name: value}`; resolves false when the save failed. */
   onSave: (changes: Record<string, ParameterValue>) => Promise<boolean>;
 }) {
-  const { t } = useTranslation();
   return (
-    <div className="flex flex-col gap-3">
-      <ul className="flex flex-col gap-4">
-        {parameters.map((parameter) => (
-          <ParameterRow
-            key={parameter.name}
-            parameter={parameter}
-            readOnly={readOnly}
-            onSave={(value) => onSave({ [parameter.name]: value })}
-          />
-        ))}
-      </ul>
-      <p className="text-muted-foreground text-xs">
-        {t('settings.connectors.parameters.hint')}
-      </p>
-    </div>
+    <ul className="flex flex-col gap-4">
+      {parameters.map((parameter) => (
+        <ParameterRow
+          key={parameter.name}
+          parameter={parameter}
+          readOnly={readOnly}
+          onSave={(value) => onSave({ [parameter.name]: value })}
+        />
+      ))}
+    </ul>
   );
 }

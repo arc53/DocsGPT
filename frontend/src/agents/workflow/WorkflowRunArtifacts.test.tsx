@@ -66,6 +66,7 @@ describe('WorkflowRunArtifacts', () => {
     );
     expect(listMock).toHaveBeenCalledTimes(1);
 
+    expect(buttonByText('retry')!.className).toContain('rounded-full');
     await act(async () => buttonByText('retry')!.click());
     expect(listMock).toHaveBeenCalledTimes(2);
   });
@@ -89,6 +90,7 @@ describe('WorkflowRunArtifacts', () => {
     );
     expect(detailMock).toHaveBeenCalledTimes(1);
 
+    expect(buttonByText('retry')!.className).toContain('rounded-full');
     await act(async () => buttonByText('retry')!.click());
     expect(detailMock).toHaveBeenCalledTimes(2);
   });

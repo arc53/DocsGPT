@@ -36,23 +36,11 @@ describe('SkeletonLoader analysis', () => {
   });
 });
 
-describe('SkeletonLoader connectedState', () => {
-  const html = renderToStaticMarkup(
-    <SkeletonLoader component="connectedState" />,
-  );
+describe('SkeletonLoader logs', () => {
+  const html = renderToStaticMarkup(<SkeletonLoader component="logs" />);
 
-  it('is an outline Card row with default-surface Skeleton bars', () => {
-    expect(html).toContain('data-slot="card"');
-    expect(html).toContain('data-variant="outline"');
-    expect(html).toContain('data-padding="sm"');
-    expect(html).toContain('mb-4');
-    expect(html).toContain('flex-row');
-    expect(html).toContain('items-center');
-    expect(html).toContain('justify-between');
-    expect(html.match(/data-slot="skeleton"/g)).toHaveLength(3);
-    expect(html.match(/data-surface="default"/g)).toHaveLength(3);
-    expect(html).not.toContain('bg-muted-foreground/20');
-    // The box does not pulse; only the three bars do.
-    expect(html.match(/animate-pulse/g)).toHaveLength(3);
+  it('renders eight rows that never take a hover fill', () => {
+    expect(html.match(/flex w-full items-start p-2/g)).toHaveLength(8);
+    expect(html).not.toContain('hover:');
   });
 });

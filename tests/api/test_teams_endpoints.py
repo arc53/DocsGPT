@@ -576,3 +576,71 @@ class TestTeamNotifications:
         args, _ = publish.call_args
         assert args[0] == "bob"
         assert args[1] == "resource.shared"
+
+
+@pytest.mark.unit
+class TestListMembersParams:
+    """``GET /teams/<id>/members``: ``q`` / ``page`` / ``page_size`` + ``total``."""
+
+    def _get(self, client, query="", team_role="team_member"):
+        members_repo = Mock()
+        members_repo.list_members.return_value = [{"user_id": "bob"}]
+        members_repo.count_members.return_value = 7
+        patches = _auth(sub="bob", team_role=team_role) + [
+            patch("docsgpt.api.user.teams.routes.db_readonly", lambda: _cm(Mock())),
+            patch(
+                "docsgpt.api.user.teams.routes.TeamMembersRepository",
+                return_value=members_repo,
+            ),
+        ]
+        _apply(patches)
+        try:
+            resp = client.get(f"/api/teams/team-1/members{query}")
+        finally:
+            _stop(patches)
+        return resp, members_repo
+
+    def test_defaults_return_everything_plus_total(self, client):
+        resp, repo = self._get(client)
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body == {"success": True, "members": [{"user_id": "bob"}], "total": 7}
+        repo.list_members.assert_called_once_with("team-1", q=None, limit=None, offset=0)
+        repo.count_members.assert_called_once_with("team-1", q=None)
+
+    def test_page_without_page_size_does_not_paginate(self, client):
+        _, repo = self._get(client, "?page=3")
+        repo.list_members.assert_called_once_with("team-1", q=None, limit=None, offset=0)
+
+    def test_page_and_page_size_become_limit_offset(self, client):
+        _, repo = self._get(client, "?page=3&page_size=10")
+        repo.list_members.assert_called_once_with("team-1", q=None, limit=10, offset=20)
+
+    @pytest.mark.parametrize(
+        "query,limit,offset",
+        [
+            ("?page_size=0", 1, 0),
+            ("?page_size=-5", 1, 0),
+            ("?page_size=500", 100, 0),
+            ("?page_size=10&page=0", 10, 0),
+            ("?page_size=10&page=abc", 10, 0),
+            ("?page_size=abc", None, 0),
+        ],
+    )
+    def test_clamping(self, client, query, limit, offset):
+        _, repo = self._get(client, query)
+        repo.list_members.assert_called_once_with("team-1", q=None, limit=limit, offset=offset)
+
+    def test_q_is_trimmed_and_passed_to_list_and_count(self, client):
+        _, repo = self._get(client, "?q=%20Carol%20")
+        repo.list_members.assert_called_once_with("team-1", q="Carol", limit=None, offset=0)
+        repo.count_members.assert_called_once_with("team-1", q="Carol")
+
+    def test_blank_q_is_no_filter(self, client):
+        _, repo = self._get(client, "?q=%20%20")
+        repo.count_members.assert_called_once_with("team-1", q=None)
+
+    def test_still_requires_membership(self, client):
+        resp, repo = self._get(client, "?page_size=10", team_role=None)
+        assert resp.status_code == 403
+        repo.list_members.assert_not_called()

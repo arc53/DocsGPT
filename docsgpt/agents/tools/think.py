@@ -48,6 +48,7 @@ class ThinkTool(Tool):
         return [
             {
                 "name": "reason",
+                "access": "read",
                 "description": (
                     "Use this tool to think through a complex step — analyze "
                     "tool results, weigh options, or plan multi-step work — "

@@ -98,13 +98,20 @@ export const selectConnectorCatalog = (state: RootLike) =>
   state.connectors.catalog;
 export const selectConnections = (state: RootLike) =>
   state.connectors.connections;
-/** Whether a connection needs the user to sign in again (expired or failing). */
+/**
+ * Whether a connection needs the user to sign in again: its sign-in expired
+ * (`reconnect_needed`) or keeps failing (`error`). The one rule for every
+ * surface that warns (Knowledge cards, Tools, the pickers, the nav dot, the
+ * drawer), and the backend's "reconnect" card state. `disconnected` is left
+ * out: the user chose it, the Connectors page shows it as a neutral state
+ * with its own Reconnect, and nothing else nags about it.
+ */
 export const connectionNeedsSignIn = (
   connection: { status: string } | null | undefined,
 ) =>
   connection?.status === 'reconnect_needed' || connection?.status === 'error';
 
-/** A connection that needs the user (signing in again, or failing). */
+/** Any connection that needs signing in again (`connectionNeedsSignIn`). */
 export const selectConnectionsNeedAttention = (state: RootLike) =>
   (state.connectors?.connections ?? []).some(connectionNeedsSignIn);
 export const selectConnectorsLoading = (state: RootLike) =>
