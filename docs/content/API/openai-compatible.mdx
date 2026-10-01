@@ -222,6 +222,8 @@ A request that does not fit the model's context window gets the error OpenAI ret
 }
 ```
 
+Text pasted into the last user message is never cut to fit. If that message alone (with the system prompt) is longer than the model can take for one message, the request fails with this error, the same as an oversized file. Earlier messages do not count toward it: they are summarized or dropped as usual. The limit reported is what one message may take, which is less than the full window: part of the window is kept for the answer and the conversation.
+
 When streaming, the size may only be known after the stream has started. The same `error` object then arrives as the last frame, followed by `data: [DONE]`. Retrying the same request fails the same way: send fewer or smaller files, shorten pasted text, or add large documents to the agent's sources.
 
 ## Reasoning

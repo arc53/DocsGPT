@@ -198,7 +198,8 @@ class TestFitBeforeCompression:
 
         compress.assert_not_called()
         assert info.value.needed_tokens > WINDOW
-        assert info.value.available_tokens == WINDOW
+        # What one message may take: the window less the answer's and history's share.
+        assert 0 < info.value.available_tokens < WINDOW
 
     def test_new_conversation_is_checked_too(self):
         oversized = [{"type": "text", "text": "clause " * (WINDOW + 5_000)}]
@@ -209,10 +210,32 @@ class TestFitBeforeCompression:
             with pytest.raises(ContextOverflowError):
                 sp._load_conversation_history()
 
-    def test_plain_text_question_is_not_refused(self):
-        # A plain question is middle-truncated by message building, so it
-        # always fits; only what cannot be shortened is checked here.
-        sp = _processor({"question": "word " * (WINDOW + 5_000)})
+    def test_plain_text_question_too_big_is_refused_not_truncated(self):
+        # Maintainer decision: oversized pasted text is an honest overflow,
+        # never a silent middle cut, and it fails before any compression call.
+        sp = _processor({"conversation_id": "c1", "question": "word " * (WINDOW + 5_000)})
+        sp.attachments = []
+        sp.conversation_service.get_conversation.return_value = {"queries": _history(10, 9_000)}
+        with patch.object(sp.compression_orchestrator, "compress_if_needed") as compress:
+            with pytest.raises(ContextOverflowError) as info:
+                sp._load_conversation_history()
+
+        compress.assert_not_called()
+        assert info.value.needed_tokens > WINDOW + 5_000
+        assert info.value.stage == "pre_compression"
+
+    def test_a_question_over_the_message_budget_is_refused(self):
+        # Under the window, but over what message building lets the turn's
+        # own message take: it would have been cut, so it is refused.
+        sp = _processor({"question": "word " * int(WINDOW * 0.8)})
         sp.conversation_id = None
         sp.attachments = []
-        sp._load_conversation_history()
+        with pytest.raises(ContextOverflowError) as info:
+            sp._load_conversation_history()
+        assert info.value.available_tokens < WINDOW
+
+    def test_history_does_not_count_toward_cannot_fit(self):
+        sp = _processor({"conversation_id": "c1", "question": "word " * 20_000})
+        sp.attachments = []
+        perform = _run(sp, {"queries": _history(10, 9_000)})
+        assert perform.called, "history is compressed, the turn is not refused"

@@ -37,6 +37,31 @@ class ContextOverflowError(ValueError):
         self.detail = detail
 
 
+# Share of the window held back for the answer and estimate error.
+SAFETY_SHARE = 0.1
+# Share of what is left after that which the turn's own message may take;
+# the rest is room for history.
+TURN_MESSAGE_SHARE = 0.8
+
+
+def turn_message_budget(window: int, fixed_tokens: int) -> int:
+    """Tokens the turn's own message may take, never cut to fit.
+
+    Message building and the pre-compression fit check share this rule, so
+    a message that passes the check is never middle-truncated later.
+
+    Args:
+        window: The model's context window.
+        fixed_tokens: What the message cannot displace (the system prompt,
+            plus the attachment manifest before building).
+
+    Returns:
+        The budget; zero or less when nothing is left.
+    """
+    available = int(window) - int(fixed_tokens) - int(int(window) * SAFETY_SHARE)
+    return int(available * TURN_MESSAGE_SHARE)
+
+
 # Phrases providers use when a request is longer than the model's window.
 _CONTEXT_LENGTH_PHRASES = (
     "context_length_exceeded",

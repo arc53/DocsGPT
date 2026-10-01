@@ -27,7 +27,7 @@ from docsgpt.agents.attachment_budget import (
     manifest_estimate,
     plan_attachments,
 )
-from docsgpt.agents.context_overflow import ContextOverflowError
+from docsgpt.agents.context_overflow import ContextOverflowError, turn_message_budget
 from docsgpt.agents.turn_capabilities import build_turn_capabilities
 from docsgpt.core.model_utils import (
     get_api_key_for_provider,
@@ -1029,12 +1029,15 @@ class StreamProcessor:
             return 500
 
     def _ensure_turn_fits(self) -> None:
-        """Refuse a turn that cannot fit the window even with no history.
+        """Refuse a turn whose own content cannot fit, before any compression.
 
-        Counts only what message building cannot shorten: the system prompt,
-        a multimodal content array sent as is, and the attachment manifest. A
-        plain question is middle-truncated later and files that do not fit
-        are left out, so neither can make a turn impossible.
+        Counts only the turn itself: the system prompt, the attachment
+        manifest and the turn's message (a multimodal content array, or the
+        plain question). History never counts, since it is compressed or
+        pruned. The message gets the budget message building gives it, so a
+        message that passes here is never cut later. Files that do not fit
+        are planned partial or left out, so they cannot make a turn
+        impossible.
 
         Raises:
             ContextOverflowError: Before any compression or provider call.
@@ -1043,19 +1046,19 @@ class StreamProcessor:
         file_count = len(getattr(self, "attachments", None) or []) + len(
             getattr(self, "earlier_attachments", None) or []
         )
-        needed = (
-            self._system_prompt_tokens()
-            + self._multimodal_tokens()
-            + manifest_estimate(file_count)
-        )
-        if needed >= window:
+        fixed = self._system_prompt_tokens() + manifest_estimate(file_count)
+        own = self._question_tokens()
+        budget = max(turn_message_budget(window, fixed), 0)
+        needed = fixed + own
+        if needed >= window or own > budget:
+            available = min(fixed + budget, window)
             raise ContextOverflowError(
                 f"This message needs about {needed:,} tokens, more than the "
-                f"model's context window ({window:,} tokens), even without any "
-                f"conversation history. Shorten the message or send fewer or "
-                f"smaller files.",
+                f"model can take for one message ({available:,} of its "
+                f"{window:,} tokens), even without any conversation history. "
+                f"Shorten the message or send fewer or smaller files.",
                 needed_tokens=needed,
-                available_tokens=window,
+                available_tokens=available,
                 stage="pre_compression",
             )
 

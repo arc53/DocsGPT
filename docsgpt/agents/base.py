@@ -13,7 +13,7 @@ from docsgpt.agents.attachment_budget import (
     plan_attachments,
 )
 from docsgpt.agents.attachment_dispatch import AttachmentDispatch
-from docsgpt.agents.context_overflow import ContextOverflowError
+from docsgpt.agents.context_overflow import SAFETY_SHARE, ContextOverflowError, turn_message_budget
 from docsgpt.agents.turn_capabilities import TurnCapabilities, build_turn_capabilities
 from docsgpt.agents.tool_executor import (
     ToolExecutor,
@@ -1324,10 +1324,10 @@ class BaseAgent(ABC):
         )
         system_tokens = num_tokens_from_string(system_prompt)
 
-        safety_buffer = int(context_limit * 0.1)
+        safety_buffer = int(context_limit * SAFETY_SHARE)
         available_after_system = context_limit - system_tokens - safety_buffer
 
-        max_query_tokens = int(available_after_system * 0.8)
+        max_query_tokens = turn_message_budget(context_limit, system_tokens)
 
         # An oversized system prompt (a long memory listing, a big custom
         # prompt) used to drive this negative, which made
@@ -1344,18 +1344,18 @@ class BaseAgent(ABC):
                 stage="build",
             )
 
-        # Cap the question first. Shedding runs against the *final* question,
-        # otherwise a question that alone exceeds the budget keeps the loop
-        # condition true and drains every document before the truncation below
-        # ever runs. Half the budget each leaves room for both.
-        # Split the budget only when documents are competing for it; a chat
-        # with no retrieval keeps the whole allowance for the question.
-        has_documents = bool(getattr(self, "retrieved_docs", None)) and not getattr(
-            self, "prompt_embeds_documents", False
-        )
-        query_budget = max(max_query_tokens // 2, 1) if has_documents else max_query_tokens
-        if num_tokens_from_string(query) > query_budget:
-            query = self._truncate_text_middle(query, query_budget)
+        # The question is never cut: a message the user wrote (or a /v1
+        # client pasted) either fits whole or the turn fails openly with the
+        # overflow error. Documents are shed around it below.
+        query_tokens = num_tokens_from_string(query)
+        if query_tokens > max_query_tokens:
+            raise ContextOverflowError(
+                f"This message ({query_tokens:,} tokens) is longer than the "
+                f"model can take for one message ({max_query_tokens:,} tokens).",
+                needed_tokens=system_tokens + query_tokens,
+                available_tokens=system_tokens + max_query_tokens,
+                stage="build",
+            )
 
         # Then shed whole documents, lowest-ranked first: a middle-truncated
         # document block would corrupt its XML, and retriever order is
