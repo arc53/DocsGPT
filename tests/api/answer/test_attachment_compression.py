@@ -175,6 +175,19 @@ class TestV1RequestFiles:
         assert sp.earlier_attachments == []
         assert sp._request_skipped_files() == []
 
+    def test_an_attachment_id_with_no_row_yet_is_named_as_processing(self):
+        sp = _processor({"question": "q"})
+        repo = MagicMock()
+        repo.get_any.side_effect = lambda att_id, user: {"id": att_id} if att_id == "ready" else None
+        repo.expand_archives.side_effect = lambda rows, user: rows
+        with patch(f"{SP}.db_readonly"), patch(f"{SP}.AttachmentsRepository", return_value=repo):
+            rows = sp._get_attachments_content(["ready", "still-parsing-0001"], "u")
+
+        assert [r["id"] for r in rows] == ["ready"]
+        assert sp._request_skipped_files() == [
+            {"filename": "attachment still-pa", "mime_type": "application/octet-stream", "reason": "processing"}
+        ]
+
     def test_skipped_files_are_read_from_a_v1_request(self):
         skipped = [{"filename": "clip.mp4", "mime_type": "video/mp4", "reason": "unsupported"}, "junk"]
         sp = _processor({"question": "q", "skipped_files": skipped})

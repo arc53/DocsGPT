@@ -250,6 +250,7 @@ _SKIP_REASONS = {
     "unsupported": "a file type that cannot be read",
     "not_stored": "could not be stored",
     "not_parsed": "could not be read in time",
+    "processing": "still being processed, or not found",
 }
 
 
@@ -259,9 +260,11 @@ def needs_manifest(plan: AttachmentPlan) -> bool:
 
 
 def _skipped_line(entry: dict) -> str:
-    reason = _SKIP_REASONS.get(str(entry.get("reason") or ""), _SKIP_REASONS["not_stored"])
+    code = str(entry.get("reason") or "")
+    reason = _SKIP_REASONS.get(code, _SKIP_REASONS["not_stored"])
     mime_type = sanitize_filename(entry.get("mime_type") or "application/octet-stream")
-    return f"- {sanitize_filename(entry.get('filename'))} | {mime_type} | not stored ({reason})"
+    state = "not included" if code == "processing" else "not stored"
+    return f"- {sanitize_filename(entry.get('filename'))} | {mime_type} | {state} ({reason})"
 
 
 def _size(planned: PlannedFile) -> str:

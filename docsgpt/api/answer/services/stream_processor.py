@@ -922,10 +922,24 @@ class StreamProcessor:
             return rows
 
     def _request_skipped_files(self) -> List[Dict[str, Any]]:
-        """Files a ``/v1`` request sent that never became attachment rows, with the reason."""
-        if not self._is_v1_request():
-            return []
-        return [s for s in (self.data or {}).get("skipped_files") or [] if isinstance(s, dict)]
+        """Files the request named that are not attachment rows, with the reason.
+
+        A ``/v1`` request lists the inline files it could not store; on any
+        surface, an attachment id with no row yet is a file still being
+        processed (named by the start of its id, the only name known).
+        """
+        skipped: List[Dict[str, Any]] = []
+        if self._is_v1_request():
+            skipped = [s for s in (self.data or {}).get("skipped_files") or [] if isinstance(s, dict)]
+        for attachment_id in getattr(self, "missing_attachment_ids", None) or []:
+            skipped.append(
+                {
+                    "filename": f"attachment {attachment_id[:8]}",
+                    "mime_type": "application/octet-stream",
+                    "reason": "processing",
+                }
+            )
+        return skipped
 
     def _fetch_attachment_rows(self, ids: List[str]) -> List[Dict[str, Any]]:
         """The caller's attachment rows for ``ids``, metadata only."""
@@ -1073,6 +1087,9 @@ class StreamProcessor:
         if not attachment_ids:
             return []
         attachments = []
+        # An id with no row yet is a file the worker has not finished (an API
+        # client that did not wait for its parse): the manifest names it.
+        self.missing_attachment_ids = []
         try:
             with db_readonly() as conn:
                 repo = AttachmentsRepository(conn)
@@ -1081,6 +1098,8 @@ class StreamProcessor:
                         attachment_doc = repo.get_any(str(attachment_id), user_id)
                         if attachment_doc:
                             attachments.append(attachment_doc)
+                        else:
+                            self.missing_attachment_ids.append(str(attachment_id))
                     except Exception as e:
                         logger.error(
                             f"Error retrieving attachment {attachment_id}: {e}",

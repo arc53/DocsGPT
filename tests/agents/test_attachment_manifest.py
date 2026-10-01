@@ -241,6 +241,12 @@ class TestFilesThatWereNotStored:
         assert "clip.mp4, huge.pdf" in manifest
         assert plan.reserved_tokens > plan.inline_tokens + 150 + 30
 
+    def test_a_file_still_processing_is_named_as_not_included(self):
+        plan = plan_attachments([att("a.txt", 300)], caps(), budget=50_000)
+        plan.skipped = [{"filename": "attachment 3f2a", "reason": "processing"}]
+        manifest = render_manifest(plan)
+        assert "- attachment 3f2a | application/octet-stream | not included (still being processed" in manifest
+
     def test_a_turn_with_only_such_files_still_says_so(self):
         plan = plan_attachments([], caps(), budget=50_000)
         plan.skipped = list(self.SKIPPED[:1])
