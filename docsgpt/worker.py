@@ -2414,6 +2414,11 @@ def _stamp_dispatched(archive: Dict[str, Any], members: List[Dict[str, Any]]) ->
     return {**archive, "dispatched_at": stamps}
 
 
+def _archive_member_task_key(handle: Any) -> str:
+    """A member task's idempotency key, which its lease is held under."""
+    return f"archive-member:{handle}"
+
+
 def _dispatch_archive_member(member_info: Dict[str, Any], user: str) -> None:
     """Queue one zip member's parse as its own Celery task.
 
@@ -2426,7 +2431,7 @@ def _dispatch_archive_member(member_info: Dict[str, Any], user: str) -> None:
 
     store_archive_member.apply_async(
         args=[member_info, user],
-        kwargs={"idempotency_key": f"archive-member:{member_info['attachment_id']}"},
+        kwargs={"idempotency_key": _archive_member_task_key(member_info["attachment_id"])},
     )
 
 
@@ -2536,7 +2541,9 @@ def sweep_stuck_archive_members(
 
     A member whose task was lost (a broker loss, a crash between the commit
     and the dispatch) would leave its zip processing forever. Each one past
-    ``timeout_seconds`` since its dispatch gets a failure row and a failed
+    ``timeout_seconds`` since its dispatch, whose task holds no live lease
+    (a running task heartbeats its lease, however long the parse takes),
+    gets a failure row and a failed
     outcome with the reason; that frees its slot for the next member, or
     completes the zip with honest counts. Runs in the reconciler's
     transaction; zips a member task holds right now are left to the next
@@ -2573,6 +2580,13 @@ def sweep_stuck_archive_members(
                 stale = True
             if stale:
                 stuck.append(member)
+        if stuck:
+            from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
+
+            running = IdempotencyRepository(conn).live_lease_keys(
+                [_archive_member_task_key(m["attachment_id"]) for m in stuck]
+            )
+            stuck = [m for m in stuck if _archive_member_task_key(m["attachment_id"]) not in running]
         if not stuck:
             continue
         user = row["user_id"]

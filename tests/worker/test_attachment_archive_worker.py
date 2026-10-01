@@ -468,6 +468,21 @@ def _backdate_dispatches(info, minutes):
         repo.update(str(row["id"]), USER, {"metadata": {**row["metadata"], "archive": archive}})
 
 
+# Just past the default ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT (90 minutes).
+_PAST_TIMEOUT_MINUTES = 91
+
+
+def _hold_lease(member_info):
+    """Make a member's task look like it is running right now (a live lease)."""
+    from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
+    from docsgpt.storage.db.session import db_session
+
+    with db_session() as conn:
+        IdempotencyRepository(conn).try_claim_lease(
+            f"archive-member:{member_info['attachment_id']}", "store_archive_member", "t-1", "owner-1"
+        )
+
+
 @pytest.fixture()
 def swept_events(monkeypatch):
     """Events the reconciler publishes after its sweeps commit."""
@@ -481,10 +496,14 @@ def swept_events(monkeypatch):
 
 @pytest.mark.usefixtures("wired_engine")
 class TestStuckZipMemberSweep:
-    def test_the_timeout_is_a_setting(self):
-        from docsgpt.core.settings import settings
+    def test_the_timeout_outlasts_the_brokers_redelivery(self):
+        # A member whose worker died is redelivered after the visibility
+        # timeout; failing it before then would fail a task about to rerun.
+        from docsgpt.core.settings.ingestion import IngestionSettings
+        from docsgpt.core.settings.workers import WorkerSettings
 
-        assert settings.ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT == 1800
+        timeout = IngestionSettings.model_fields["ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT"].default
+        assert timeout > WorkerSettings.model_fields["CELERY_VISIBILITY_TIMEOUT"].default
 
     def test_members_pending_past_the_timeout_fail_and_the_zip_completes(
         self, storage_dir, events, dispatched, swept_events
@@ -496,7 +515,7 @@ class TestStuckZipMemberSweep:
         first, _ = dispatched.pop(0)
         _run_member(first)
         dispatched.clear()  # the broker lost the other two
-        _backdate_dispatches(info, 31)
+        _backdate_dispatches(info, _PAST_TIMEOUT_MINUTES)
 
         summary = run_reconciliation()
 
@@ -506,7 +525,7 @@ class TestStuckZipMemberSweep:
         assert archive["status"] == "complete"
         assert archive["failed"] == 2
         assert [f["archive_path"] for f in archive["failed_members"]] == ["docs/readme.md", "nested.zip/inner.txt"]
-        assert all("30 minutes" in f["reason"] for f in archive["failed_members"])
+        assert all("90 minutes" in f["reason"] for f in archive["failed_members"])
         assert parent["metadata"]["extraction"]["status"] == "ok"
         assert swept_events[-1][0] == "attachment.completed"
         completed = swept_events[-1][1]
@@ -537,7 +556,7 @@ class TestStuckZipMemberSweep:
         info = _upload(storage_dir, _zip(ENTRIES))
         _run(info)
         dispatched.clear()  # notes.txt was lost
-        _backdate_dispatches(info, 31)
+        _backdate_dispatches(info, _PAST_TIMEOUT_MINUTES)
 
         assert run_reconciliation()["archive_members_failed"] == 1
 
@@ -548,3 +567,21 @@ class TestStuckZipMemberSweep:
         assert archive["failed"] == 1
         assert archive["failed_members"][0]["archive_path"] == "notes.txt"
         assert events[-1][0] == "attachment.completed"
+
+    def test_a_member_still_running_is_not_failed(self, storage_dir, events, dispatched, swept_events):
+        from docsgpt.api.user.reconciliation import run_reconciliation
+
+        info = _upload(storage_dir, _zip(ENTRIES))
+        _run(info)
+        running, _ = dispatched[0]
+        _hold_lease(running)
+        dispatched.clear()
+        _backdate_dispatches(info, _PAST_TIMEOUT_MINUTES)
+
+        assert run_reconciliation()["archive_members_failed"] == 2
+
+        archive = _parent(info)["metadata"]["archive"]
+        assert archive["status"] == "processing"
+        assert running["attachment_id"] not in archive["outcomes"]
+        assert [m["metadata"]["archive_path"] for m in archive["planned"]
+                if m["attachment_id"] in archive["outcomes"]] == ["docs/readme.md", "nested.zip/inner.txt"]

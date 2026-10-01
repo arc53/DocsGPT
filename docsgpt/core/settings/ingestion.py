@@ -76,11 +76,13 @@ class IngestionSettings(SettingsGroup):
         ),
     )
     ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT: int = Field(
-        default=1800,
+        default=5400,
         gt=0,
         description=(
             "Seconds a zip attachment's member may stay unparsed after it is queued (queue wait included) "
-            "before the reconciler marks it failed, so a lost task never leaves the zip processing forever."
+            "before the reconciler marks it failed, so a lost task never leaves the zip processing forever. "
+            "A member whose task is running (its lease heartbeat is live) is never failed. Keep it above "
+            "CELERY_VISIBILITY_TIMEOUT, after which the broker redelivers a task whose worker died."
         ),
     )
     PARSE_PDF_AS_IMAGE: bool = Field(default=False, description="Render PDF pages to images before parsing.")
