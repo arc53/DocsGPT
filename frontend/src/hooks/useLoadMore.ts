@@ -49,12 +49,17 @@ type UseLoadMoreOptions<T, C> = {
   load: (cursor: C | null) => Promise<LoadMorePage<T, C>>;
   /** The filters; a change starts over from the first page. */
   resetKey: string;
+  /**
+   * An item's identity. An offset feed shifts when items are added between
+   * loads, so a page can repeat items already shown; those are skipped.
+   */
+  getKey: (item: T) => string;
 };
 
 /**
  * A newest-first feed that loads older items as its end scrolls into view.
- * A response from before the last reset is dropped, and a failed page keeps
- * the rows already loaded.
+ * A response from before the last reset is dropped, a failed page keeps
+ * the rows already loaded, and an item already loaded is not added again.
  *
  * Returns:
  *   The loaded `items` (and `setItems` for local edits), `loading`, `error`,
@@ -63,6 +68,7 @@ type UseLoadMoreOptions<T, C> = {
 export function useLoadMore<T, C>({
   load,
   resetKey,
+  getKey,
 }: UseLoadMoreOptions<T, C>) {
   const [items, setItems] = useState<T[]>([]);
   const [next, setNext] = useState<C | null>(null);
@@ -73,6 +79,8 @@ export function useLoadMore<T, C>({
   const busy = useRef(false);
   const loadRef = useRef(load);
   loadRef.current = load;
+  const getKeyRef = useRef(getKey);
+  getKeyRef.current = getKey;
 
   const fetchPage = useCallback((cursor: C | null) => {
     const issued = generation.current;
@@ -83,9 +91,14 @@ export function useLoadMore<T, C>({
       .current(cursor)
       .then((page) => {
         if (issued !== generation.current) return;
-        setItems((prev) =>
-          cursor === null ? page.items : [...prev, ...page.items],
-        );
+        setItems((prev) => {
+          if (cursor === null) return page.items;
+          const seen = new Set(prev.map((item) => getKeyRef.current(item)));
+          const fresh = page.items.filter(
+            (item) => !seen.has(getKeyRef.current(item)),
+          );
+          return [...prev, ...fresh];
+        });
         setNext(page.next);
         setDone(page.next === null);
       })

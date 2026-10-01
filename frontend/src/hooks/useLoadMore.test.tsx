@@ -115,6 +115,7 @@ describe('useLoadMore', () => {
     state = useLoadMore<Row, number>({
       load: (cursor) => load(cursor, resetKey),
       resetKey,
+      getKey: (row) => String(row.id),
     });
     return (
       <>
@@ -177,6 +178,17 @@ describe('useLoadMore', () => {
     await flush();
     expect(state.items.map((r) => r.id)).toEqual([100, 101]);
     expect(state.done).toBe(true);
+  });
+
+  // An offset feed shifts when a row is added between loads: the next page
+  // starts with a row already shown, which is skipped, not repeated.
+  it('skips rows a shifted page repeats', async () => {
+    await act(async () => root.render(<Probe resetKey="a" />));
+    await flush();
+    pages.a = [[{ id: -1 }], rows(0, 7)];
+    await revealOnce();
+    await flush();
+    expect(state.items.map((r) => r.id)).toEqual([0, 1, 2, 3, 4]);
   });
 
   it('keeps the loaded rows on a failed page, and retry resumes', async () => {

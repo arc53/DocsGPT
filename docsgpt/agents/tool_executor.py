@@ -1036,13 +1036,13 @@ class ToolExecutor:
             self._connection_params[key] = params
         return self._connection_params[key]
 
-    @staticmethod
-    def _connection_payload(resolved) -> Dict:
+    def _connection_payload(self, resolved) -> Dict:
         """What the chat's Connect card needs; never an account or a secret.
 
         ``connection_id`` is only the caller's own connection, which the card
         reconnects in place; an owner's account (``owner_account``) is not
-        the caller's to reconnect.
+        the caller's to reconnect. ``owner_name`` (the owner's email) is
+        withheld from a public-link caller, who is a stranger to the owner.
         """
         payload = {
             "connector_key": resolved.connector_key,
@@ -1055,7 +1055,7 @@ class ToolExecutor:
         }
         if resolved.row is not None and not resolved.delegated:
             payload["connection_id"] = str(resolved.row["id"])
-        if resolved.row is not None and resolved.delegated:
+        if resolved.row is not None and resolved.delegated and not self.public_link_caller:
             owner_name = ToolExecutor._owner_name(resolved.row.get("user_id"))
             if owner_name:
                 payload["owner_name"] = owner_name

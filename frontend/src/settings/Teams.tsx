@@ -621,7 +621,7 @@ export default function Teams() {
   };
 
   // Returns the request so the confirm stays open on a failure and shows
-  // removeMemberError; the member is cleared only once it's gone, so the
+  // the server's reason (else removeMemberError); the member is cleared only once it's gone, so the
   // pending (or failed) dialog keeps its name.
   const confirmRemoveMember = async () => {
     if (!selected || !memberToRemove) return;
@@ -638,7 +638,7 @@ export default function Teams() {
   const confirmDeleteTeam = async () => {
     if (!teamToDelete) return;
     const team = teamToDelete;
-    // A rejection keeps the confirm open with deleteTeamError.
+    // A rejection keeps the confirm open with the server's reason.
     await dispatch(deleteTeam({ id: team.id, token })).unwrap();
     setTeamToDelete(null);
     if (selected?.id === team.id) setSelected(null);
@@ -1672,7 +1672,7 @@ export default function Teams() {
         submitLabel={t('settings.teams.delete')}
         handleSubmit={confirmDeleteTeam}
         handleCancel={() => setTeamToDelete(null)}
-        error={t('settings.teams.deleteTeamError')}
+        error={(e) => errorMessage(e, t('settings.teams.deleteTeamError'))}
         variant="destructive"
       />
       <ConfirmationModal
@@ -1690,7 +1690,7 @@ export default function Teams() {
         submitLabel={t('settings.teams.remove')}
         handleSubmit={confirmRemoveMember}
         handleCancel={() => setMemberToRemove(null)}
-        error={t('settings.teams.removeMemberError')}
+        error={(e) => errorMessage(e, t('settings.teams.removeMemberError'))}
         variant="destructive"
       />
     </SectionShell>

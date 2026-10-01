@@ -25,6 +25,7 @@ export default function DeviceAuditList({
 }: DeviceAuditListProps) {
   const { t } = useTranslation();
   const feed = useLoadMore<AuditEntry, number>({
+    getKey: (entry) => String(entry.id),
     resetKey: deviceId,
     load: async (offset) => {
       const from = offset ?? 0;

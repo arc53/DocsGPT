@@ -69,17 +69,17 @@ vi.mock('../modals/ConfirmationModal', async () => {
       description?: string;
       submitLabel: string;
       variant?: string;
-      error?: string;
+      error?: string | ((reason: unknown) => string);
       handleSubmit: () => unknown;
     }) {
-      const [failed, setFailed] = useState(false);
+      const [failed, setFailed] = useState<{ reason: unknown } | null>(null);
       if (props.modalState !== 'ACTIVE') return null;
       const submit = () => {
         const result = props.handleSubmit();
         if (result instanceof Promise) {
           result.then(
             () => props.setModalState('INACTIVE'),
-            () => setFailed(true),
+            (reason: unknown) => setFailed({ reason }),
           );
         } else props.setModalState('INACTIVE');
       };
@@ -88,7 +88,11 @@ vi.mock('../modals/ConfirmationModal', async () => {
           <h2>{props.message}</h2>
           {props.description && <p>{props.description}</p>}
           {failed && (
-            <p data-testid="confirm-error">{props.error ?? 'actionFailed'}</p>
+            <p data-testid="confirm-error">
+              {typeof props.error === 'function'
+                ? props.error(failed.reason)
+                : (props.error ?? 'actionFailed')}
+            </p>
           )}
           <button
             type="button"
@@ -882,6 +886,50 @@ describe('Teams page', () => {
     ).toBe('settings.teams.removeMemberError');
     expect(confirm.textContent).not.toContain('Request failed (500)');
     expect(toasts()).toHaveLength(0);
+  });
+
+  // What teamsService throws for a non-2xx: its message is the server's.
+  const serverError = (message: string) =>
+    Object.assign(new Error(message), { name: 'TeamsApiError' });
+
+  it("shows the server's reason when removing a member is refused", async () => {
+    listMembers.mockResolvedValue({
+      members: [{ user_id: 'priya', email: 'priya@x.io', role: 'team_admin' }],
+    });
+    removeMember.mockRejectedValue(serverError('Cannot remove the last admin'));
+    await render();
+    act(() =>
+      body()
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="settings.teams.remove"]',
+        )!
+        .click(),
+    );
+    await flush();
+    act(() => confirmSubmit('settings.teams.remove').click());
+    await flush();
+    expect(
+      body().querySelector('[data-testid="confirm-error"]')?.textContent,
+    ).toBe('Cannot remove the last admin');
+  });
+
+  it("shows the server's reason when deleting a team is refused", async () => {
+    await render();
+    mockUnwrap.mockImplementation(() =>
+      Promise.reject(serverError('Only the owner can delete a team')),
+    );
+    const menuItem = Array.from(
+      body().querySelectorAll<HTMLButtonElement>(
+        '[data-testid="team-menu"] button',
+      ),
+    ).find((b) => b.textContent === 'settings.teams.deleteTeam')!;
+    act(() => menuItem.click());
+    await flush();
+    act(() => confirmSubmit('settings.teams.delete').click());
+    await flush();
+    expect(
+      body().querySelector('[data-testid="confirm-error"]')?.textContent,
+    ).toBe('Only the owner can delete a team');
   });
 
   it('closes the remove member confirm once the request succeeds', async () => {

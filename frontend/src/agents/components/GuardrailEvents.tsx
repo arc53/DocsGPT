@@ -106,6 +106,7 @@ export default function GuardrailEvents({ agentId }: Props) {
   const check = checkFilter === 'all' ? undefined : checkFilter;
   const outcome = outcomeFilter === 'all' ? undefined : outcomeFilter;
   const feed = useLoadMore<GuardrailEvent, number>({
+    getKey: (event) => String(event.id),
     resetKey: [agentId, days, check, outcome, reloadKey].join('|'),
     load: async (offset): Promise<LoadMorePage<GuardrailEvent, number>> => {
       if (!agentId) return { items: [], next: null };

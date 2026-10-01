@@ -222,6 +222,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   );
 
   const feed = useLoadMore<CloudFile, string>({
+    getKey: (file) => String(file.id),
     load,
     resetKey: [
       activeConnectionId ?? '',

@@ -68,7 +68,10 @@ describe('ConfirmationModal async submit', () => {
   const renderModal = async (
     handleSubmit: () => void | Promise<unknown>,
     setModalState = vi.fn(),
-    extra: { error?: string; children?: React.ReactNode } = {},
+    extra: {
+      error?: string | ((reason: unknown) => string);
+      children?: React.ReactNode;
+    } = {},
   ) => {
     await act(async () =>
       root.render(
@@ -131,6 +134,67 @@ describe('ConfirmationModal async submit', () => {
     expect(
       document.querySelector('[data-slot="alert"]')?.textContent,
     ).toContain('common.actionFailed');
+  });
+
+  it('words the alert from the rejection when error is a function', async () => {
+    await renderModal(() => Promise.reject(new Error('Last admin')), vi.fn(), {
+      error: (reason) => `Failed: ${(reason as Error).message}`,
+    });
+    await act(async () => submitButton().click());
+    expect(
+      document.querySelector('[data-slot="alert"]')?.textContent,
+    ).toContain('Failed: Last admin');
+  });
+
+  // Closed mid-request, then opened again (for another item): the first
+  // request settling late must not touch the new dialog.
+  const closeAndReopen = async (
+    handleSubmit: () => Promise<unknown>,
+    setModalState: ReturnType<typeof vi.fn>,
+  ) => {
+    const cancel = Array.from(document.querySelectorAll('button')).find(
+      (b) => b.textContent === 'cancel',
+    )!;
+    await act(async () => cancel.click());
+    const rerender = (state: 'ACTIVE' | 'INACTIVE') =>
+      act(async () =>
+        root.render(
+          <ConfirmationModal
+            message="Delete this agent?"
+            modalState={state}
+            setModalState={setModalState as (state: string) => void}
+            submitLabel="Delete"
+            handleSubmit={handleSubmit}
+            error="Could not delete the agent."
+          />,
+        ),
+      );
+    await rerender('INACTIVE');
+    await rerender('ACTIVE');
+    setModalState.mockClear();
+  };
+
+  it('ignores a failure that settles after the dialog was closed', async () => {
+    const request = deferred();
+    const handleSubmit = () => request.promise;
+    const setModalState = await renderModal(handleSubmit, vi.fn(), {
+      error: 'Could not delete the agent.',
+    });
+    await act(async () => submitButton().click());
+    await closeAndReopen(handleSubmit, setModalState);
+    await act(async () => request.reject(new Error('boom')));
+    expect(document.querySelector('[data-slot="alert"]')).toBeNull();
+    expect(submitButton().disabled).toBe(false);
+  });
+
+  it('ignores a success that settles after the dialog was closed', async () => {
+    const request = deferred();
+    const handleSubmit = () => request.promise;
+    const setModalState = await renderModal(handleSubmit);
+    await act(async () => submitButton().click());
+    await closeAndReopen(handleSubmit, setModalState);
+    await act(async () => request.resolve());
+    expect(setModalState).not.toHaveBeenCalled();
   });
 
   it('renders children as the body', async () => {

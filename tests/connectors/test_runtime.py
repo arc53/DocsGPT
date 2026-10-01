@@ -54,10 +54,10 @@ def _call(action="telegram_send_message"):
     return SimpleNamespace(id="call-1", name=action, arguments="{}", thought_signature=None)
 
 
-def _executor(user="alice", headless=False):
+def _executor(user="alice", headless=False, public_link_caller=False):
     from docsgpt.agents.tool_executor import ToolExecutor
 
-    executor = ToolExecutor(user=user, headless=headless)
+    executor = ToolExecutor(user=user, headless=headless, public_link_caller=public_link_caller)
     return executor
 
 
@@ -197,6 +197,15 @@ class TestExecutor:
         with _service_db(pg_conn):
             pause = _pause(_executor(user="bob"), _tool(cid))
         assert pause["connection_required"]["owner_name"] == "lena@example.com"
+
+    def test_public_link_caller_is_not_told_the_owners_email(self, pg_conn):
+        pg_conn.execute(text("INSERT INTO users (user_id, email) VALUES ('alice', 'lena@example.com')"))
+        cid = _connection(pg_conn, status="reconnect_needed")
+        with _service_db(pg_conn):
+            pause = _pause(_executor(user="bob", public_link_caller=True), _tool(cid))
+        required = pause["connection_required"]
+        assert required["owner_account"] is True
+        assert "owner_name" not in required
 
     def test_own_broken_account_names_no_owner(self, pg_conn):
         pg_conn.execute(text("INSERT INTO users (user_id, email) VALUES ('alice', 'lena@example.com')"))

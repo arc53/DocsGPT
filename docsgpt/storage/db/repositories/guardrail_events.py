@@ -153,7 +153,7 @@ class GuardrailEventsRepository:
                 SELECT {self._PUBLIC_COLUMNS} FROM guardrail_events
                 WHERE agent_id = CAST(:agent_id AS uuid) AND user_id = :user_id
                   {clauses}
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id DESC
                 LIMIT :limit OFFSET :offset
                 """
             ),

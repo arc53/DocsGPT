@@ -106,6 +106,23 @@ export default function Quotas() {
         usersQ,
       });
       const body = await res.json().catch(() => ({ success: false }));
+      // Removing the last row on the last page: the reload of that page is
+      // empty, so step back to the new last page (which loads again).
+      const pastEnd = (rows: unknown, total: unknown, page: number) =>
+        page > 1 &&
+        Array.isArray(rows) &&
+        rows.length === 0 &&
+        typeof total === 'number' &&
+        total > 0;
+      if (body?.success) {
+        const teamsBack = pastEnd(body.teams, body.teams_total, teamsPage);
+        const usersBack = pastEnd(body.users, body.users_total, usersPage);
+        if (teamsBack)
+          setTeamsPage(Math.ceil(body.teams_total / QUOTA_PAGE_SIZE));
+        if (usersBack)
+          setUsersPage(Math.ceil(body.users_total / QUOTA_PAGE_SIZE));
+        if (teamsBack || usersBack) return;
+      }
       setData(body);
       if (body?.success) {
         if (!teamsQ) setTeamsAll(body.teams_total ?? 0);

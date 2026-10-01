@@ -132,6 +132,27 @@ describe('Quotas paging', () => {
     });
   });
 
+  // The last row on the last page was removed: the reload of that page
+  // comes back empty, so step back to the new last page.
+  it('steps back a page when its last row is gone', async () => {
+    getQuotas.mockResolvedValue(quotas(57, 64));
+    await render();
+    const emptyTeamsPage = quotas(25, 64);
+    getQuotas.mockResolvedValueOnce({
+      json: async () => ({ ...(await emptyTeamsPage.json()), teams: [] }),
+    });
+    await act(async () =>
+      pagers()[0]
+        .querySelector<HTMLButtonElement>(
+          '[aria-label="pagination.goToPage"]:not([aria-current])',
+        )!
+        .click(),
+    );
+    for (let i = 0; i < 5; i += 1) await act(async () => Promise.resolve());
+    expect(getQuotas.mock.lastCall![1]).toMatchObject({ teamsPage: 1 });
+    expect(container.textContent).not.toContain('No team has an allowance');
+  });
+
   it('picks a team without an allowance by searching the server', async () => {
     getQuotas.mockResolvedValue(quotas(2, 1));
     await render();

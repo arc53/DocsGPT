@@ -372,7 +372,6 @@ export default function Sources({
   } | null>(null);
   const [deleteModalState, setDeleteModalState] =
     useState<ActiveState>('INACTIVE');
-  const [deleteError, setDeleteError] = useState<string>();
 
   const handleDeleteConfirmation = (index: number, document: Doc) => {
     setDocumentToDelete({ index, document });
@@ -380,20 +379,17 @@ export default function Sources({
   };
 
   // Returned to ConfirmationModal: it stays pending while the delete runs
-  // and keeps a failure (its message) in the dialog.
+  // and keeps a failure (its message) in the dialog. A delete then refetches
+  // the page, so the total stays right and a page left empty steps back
+  // (the server clamps it; refreshDocs follows).
   const handleConfirmedDelete = async () => {
     if (!documentToDelete) return;
-    setDeleteError(undefined);
-    try {
-      await handleDeleteDocument(
-        documentToDelete.index,
-        documentToDelete.document,
-      );
-    } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : undefined);
-      throw error;
-    }
+    await handleDeleteDocument(
+      documentToDelete.index,
+      documentToDelete.document,
+    );
     setDocumentToDelete(null);
+    refreshDocs(undefined, currentPage, rowsPerPage);
   };
 
   const getActionOptions = (index: number, document: Doc): MenuOption[] => {
@@ -943,7 +939,11 @@ export default function Sources({
           modalState={deleteModalState}
           setModalState={setDeleteModalState}
           handleSubmit={handleConfirmedDelete}
-          error={deleteError}
+          error={(error) =>
+            error instanceof Error && error.message
+              ? error.message
+              : t('settings.sources.errors.delete')
+          }
           handleCancel={() => {
             setDeleteModalState('INACTIVE');
             setDocumentToDelete(null);

@@ -710,6 +710,50 @@ describe('Sources paging', () => {
     expect(where()).toBe('?page=7');
   });
 
+  // The last card on the last page: the page is fetched again after the
+  // delete, so the server's clamp moves the grid back a page (not an empty
+  // "no sources yet" while other sources exist).
+  it('refetches after a delete and follows the clamped page', async () => {
+    fetchPage.mockResolvedValue(response(8, 85));
+    const handleDeleteDocument = vi.fn(async () => undefined);
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/settings/sources?page=8']}>
+          <Sources
+            paginatedDocuments={[
+              doc({ access: 'owner', allowed_actions: [...OWNER, 'use'] }),
+            ]}
+            handleDeleteDocument={handleDeleteDocument}
+          />
+          <Where />
+        </MemoryRouter>,
+      );
+    });
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[data-testid="menu-button-src-1"]',
+    )!;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      trigger.click();
+    });
+    const item = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((el) => el.textContent === 'settings.sources.delete')!;
+    await act(async () => item.click());
+    fetchPage.mockClear();
+    fetchPage.mockResolvedValue(response(7, 84));
+    const submit = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ).find((b) => b.textContent === 'settings.sources.delete')!;
+    await act(async () => submit.click());
+    expect(handleDeleteDocument).toHaveBeenCalled();
+    expect(fetchPage).toHaveBeenCalled();
+    expect(fetchPage.mock.calls[0][2]).toBe(8);
+    expect(where()).toBe('?page=7');
+  });
+
   it('uses the remembered page size', async () => {
     localStorage.setItem('DocsGPTPageSize:sources', '48');
     fetchPage.mockResolvedValue(response(1));
