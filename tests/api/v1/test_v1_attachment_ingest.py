@@ -1,6 +1,8 @@
 """Storing /v1 inline files as the agent owner's attachment rows."""
 
 import hashlib
+import io
+import zipfile
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -51,7 +53,7 @@ class TestReuse:
             converted = ingest.ingest_inline_files([pdf], "owner")
 
         assert converted == {pdf.content_hash: "row-1"}
-        find.assert_called_once_with("owner", pdf.content_hash)
+        find.assert_called_once_with("owner", pdf.content_hash, archive=False)
         storage.save_file.assert_not_called()
         task.assert_not_called()
 
@@ -105,3 +107,55 @@ class TestNewFiles:
         with patch.object(ingest, "_find_parsed", side_effect=RuntimeError("db down")):
             converted = ingest.ingest_inline_files([pdf], "owner")
         assert pdf.content_hash in converted
+
+
+def _zip_file(name: str = "bundle.zip") -> InlineFile:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr("a.txt", "inside")
+    return _file(buffer.getvalue(), name=name, mime="application/zip")
+
+
+class TestZips:
+    @pytest.fixture(autouse=True)
+    def _no_poll_wait(self, monkeypatch):
+        monkeypatch.setattr(ingest, "_ARCHIVE_POLL_SECONDS", 0.001)
+
+    def test_a_zip_is_reused_only_from_an_earlier_zip(self, storage, task):
+        bundle = _zip_file()
+        with patch.object(ingest, "_find_parsed", return_value={"id": "zip-row"}) as find:
+            converted = ingest.ingest_inline_files([bundle], "owner")
+
+        find.assert_called_once_with("owner", bundle.content_hash, archive=True)
+        assert converted == {bundle.content_hash: "zip-row"}
+
+    def test_a_zip_counts_as_parsed_once_its_members_finish(self, storage, task):
+        bundle = _zip_file()
+        states = iter(["processing", "processing", "complete"])
+        with patch.object(ingest, "_find_parsed", return_value=None), patch.object(
+            ingest, "_archive_status", side_effect=lambda user, attachment_id: next(states)
+        ) as status:
+            converted = ingest.ingest_inline_files([bundle], "owner")
+
+        file_info = task.call_args.args[0]
+        assert converted == {bundle.content_hash: file_info["attachment_id"]}
+        assert status.call_count == 3
+        assert status.call_args.args == ("owner", file_info["attachment_id"])
+
+    def test_a_zip_still_unpacking_at_the_deadline_is_left_out(self, storage, task, monkeypatch):
+        monkeypatch.setattr(ingest, "_parse_timeout", lambda size: 0.05)
+        bundle, pdf = _zip_file(), _file(b"%PDF beside the zip", name="p.pdf")
+        with patch.object(ingest, "_find_parsed", return_value=None), patch.object(
+            ingest, "_archive_status", return_value="processing"
+        ):
+            converted = ingest.ingest_inline_files([bundle, pdf], "owner")
+
+        assert list(converted) == [pdf.content_hash]
+
+    def test_a_non_zip_never_waits_on_archive_state(self, storage, task):
+        with patch.object(ingest, "_find_parsed", return_value=None), patch.object(
+            ingest, "_archive_status"
+        ) as status:
+            ingest.ingest_inline_files([_file(b"%PDF plain")], "owner")
+
+        status.assert_not_called()
