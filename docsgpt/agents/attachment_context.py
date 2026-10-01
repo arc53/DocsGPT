@@ -325,12 +325,31 @@ def _status(planned: PlannedFile) -> str:
     return status.value
 
 
-def _manifest_line(planned: PlannedFile, *, sandbox: bool = False) -> str:
+def _upload_cut(planned: PlannedFile, read_action: Optional[str]) -> str:
+    """The manifest note for a file whose text was cut when it was stored."""
+    metadata = planned.attachment.get("metadata") or {}
+    extraction = metadata.get("extraction") if isinstance(metadata, dict) else None
+    if not isinstance(extraction, dict) or not extraction.get("truncated"):
+        return ""
+    stored, original = extraction.get("stored_tokens"), extraction.get("original_tokens")
+    if isinstance(stored, int) and isinstance(original, int) and original > stored:
+        note = f"stored text cut at {stored:,} of ~{original:,} tokens"
+    else:
+        note = "stored text cut at upload"
+    if read_action and planned.mime_type == "application/pdf" and planned.page_count:
+        note += f'; read the rest by page with {read_action}(ref="{planned.ref}", pages=...)'
+    return note
+
+
+def _manifest_line(planned: PlannedFile, *, sandbox: bool = False, read_action: Optional[str] = None) -> str:
     fields = [f"{planned.ref} {sanitize_filename(planned.filename)}", planned.mime_type]
     size = _size(planned)
     if size and planned.status not in (FileStatus.UNREADABLE, FileStatus.ARCHIVE):
         fields.append(size)
     fields.append(_status(planned))
+    cut = _upload_cut(planned, read_action)
+    if cut and planned.status != FileStatus.UNREADABLE:
+        fields.append(cut)
     if sandbox and not planned.sandbox_eligible:
         fields.append("too large for the sandbox")
     return "- " + " | ".join(fields)
@@ -427,7 +446,7 @@ def render_manifest(plan: AttachmentPlan) -> str:
     if not (plan.files or plan.skipped) or not needs_manifest(plan):
         return ""
     listing = "\n".join(
-        [_manifest_line(f, sandbox=plan.capabilities.sandbox) for f in plan.files]
+        [_manifest_line(f, sandbox=plan.capabilities.sandbox, read_action=_read_action(plan)) for f in plan.files]
         + [_skipped_line(s) for s in plan.skipped]
     )
     return "<attached_files>\n" + listing + "\n</attached_files>\n" + "\n".join(_instructions(plan))

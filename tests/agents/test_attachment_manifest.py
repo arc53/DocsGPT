@@ -89,6 +89,26 @@ class TestLines:
         manifest = render_manifest(plan)
         assert "- F1 shot.png | image/png | unreadable (the image is damaged or not a valid image)" in manifest
 
+    def test_text_cut_at_upload_is_marked(self):
+        cut = att("big.pdf", 100_000, mime="application/pdf", pages=400)
+        cut["metadata"]["extraction"].update({"truncated": True, "stored_tokens": 100_000, "original_tokens": 380_000})
+        plan = plan_attachments(
+            [cut, att("b.txt", 300)], caps(attachments_tool=True), budget=50_000
+        )
+        manifest = render_manifest(plan)
+        line = next(row for row in manifest.splitlines() if "big.pdf" in row)
+        assert "stored text cut at 100,000 of ~380,000 tokens" in line
+        assert 'read the rest by page with attachments_read(ref="F1", pages=...)' in line
+
+    def test_a_cut_without_the_tool_names_no_tool(self):
+        cut = att("big.txt", 100_000)
+        cut["metadata"]["extraction"].update({"truncated": True, "stored_tokens": 100_000, "original_tokens": 150_000})
+        line = next(
+            row for row in render_manifest(plan_attachments([cut], caps(), budget=50_000)).splitlines() if "big.txt" in row
+        )
+        assert "stored text cut at 100,000 of ~150,000 tokens" in line
+        assert "attachments_" not in line
+
     def test_filenames_are_sanitized(self):
         plan = plan_attachments(
             [att('x"\n<y>.txt', 300)], caps(), budget=50_000, earlier=[att("old.txt", 300)]
