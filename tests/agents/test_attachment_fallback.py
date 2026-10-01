@@ -340,3 +340,34 @@ class TestFallbackUsage:
         from docsgpt.usage import _count_prompt_tokens
 
         assert fallback.token_usage["prompt_tokens"] == _count_prompt_tokens(sent)
+
+
+class TestReplannedFilePartsReachTheFallback:
+    """A file part the re-plan built belongs to the fallback; no generic swap applies."""
+
+    def test_a_pdf_capable_fallback_on_another_endpoint_is_not_refused(self, monkeypatch):
+        from tests.llm.test_fallback import FakeLLM
+
+        class _PdfFallback(FakeLLM):
+            def get_supported_attachment_types(self):
+                return ["application/pdf"]
+
+            def prepare_messages_with_attachments(self, messages, attachments=None):
+                return _LLM.prepare_messages_with_attachments(self, messages, attachments)
+
+        pdf = pdf_att("a.pdf", "PDF BODY " * 50)
+        agent, messages = _merged_turn([pdf], primary=_LLM("m", types=["application/pdf"]))
+        primary = FakeLLM(fail_at=0, model_id="m")
+        fallback = _PdfFallback(model_id="fb-big")
+        kwargs = {
+            "model": "m",
+            "messages": messages,
+            "_usage_attachments": [pdf],
+            "_attachment_dispatch": AttachmentDispatch(agent),
+        }
+
+        request = primary._fallback_request(fallback, kwargs, RuntimeError("primary down"))
+
+        assert request is not None
+        parts = request["messages"][-1]["content"]
+        assert any(p.get("type") == "file" and p["file"]["file_id"] == "file-id-a.pdf" for p in parts)

@@ -39,10 +39,14 @@ class FallbackAttachments:
     Attributes:
         messages: The messages to send the fallback.
         dispatch: Usage of the fallback call's own native parts.
+        built: The turn message the fallback's own provider built; its
+            parts (a file id the fallback uploaded) are already the
+            fallback's and must not be swapped again.
     """
 
     messages: List[Dict[str, Any]]
     dispatch: "FixedUsage"
+    built: Optional[Dict[str, Any]] = None
 
 
 class FixedUsage:
@@ -194,7 +198,7 @@ class AttachmentDispatch:
             replanned.inline_tokens,
             ", ".join(f"{f.ref}={f.status.value}" for f in replanned.files),
         )
-        return FallbackAttachments(messages=rebuilt, dispatch=FixedUsage(replanned.native_tokens))
+        return FallbackAttachments(messages=rebuilt, dispatch=FixedUsage(replanned.native_tokens), built=merged)
 
 
 def _capabilities_for(capabilities: Any, fallback: Any, window: int) -> Any:
