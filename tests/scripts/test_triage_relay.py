@@ -284,6 +284,10 @@ class TestRateLimit:
         headers = {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1010"}
         assert relay.rate_limit_wait(403, headers) == 11
 
+    def test_secondary_limit_without_headers(self):
+        body = b'{"message": "You have exceeded a secondary rate limit. Please wait a few minutes"}'
+        assert relay.rate_limit_wait(403, {}, body) == relay.SECONDARY_LIMIT_WAIT
+
     def test_plain_forbidden_is_not_retried(self):
         assert relay.rate_limit_wait(403, {}) is None
         assert relay.rate_limit_wait(404, {"Retry-After": "5"}) is None

@@ -368,7 +368,10 @@ def route(event_name: str, event: dict[str, Any], bot: str, maintainers: Maintai
     return {"kind": None, "reason": f"unhandled event {event_name}.{action}"}
 
 
-def rate_limit_wait(status: int, headers: Any, cap: int = 65) -> Optional[int]:
+SECONDARY_LIMIT_WAIT = 60
+
+
+def rate_limit_wait(status: int, headers: Any, body: bytes = b"", cap: int = 65) -> Optional[int]:
     """Seconds to wait before retrying a rate-limited request, or None when it wasn't one."""
     if status not in (403, 429):
         return None
@@ -377,6 +380,9 @@ def rate_limit_wait(status: int, headers: Any, cap: int = 65) -> Optional[int]:
         return min(int(retry_after), cap)
     if headers.get("X-RateLimit-Remaining") == "0" and (headers.get("X-RateLimit-Reset") or "").isdigit():
         return max(1, min(int(headers["X-RateLimit-Reset"]) - int(time.time()) + 1, cap))
+    # A burst of searches trips the secondary limit, which sends neither header.
+    if b"secondary rate limit" in body.lower():
+        return min(SECONDARY_LIMIT_WAIT, cap)
     return None
 
 
@@ -401,7 +407,7 @@ class GitHub:
                 with urllib.request.urlopen(request, timeout=30) as response:
                     return json.loads(response.read().decode() or "null")
             except urllib.error.HTTPError as error:
-                wait = rate_limit_wait(error.code, error.headers)
+                wait = rate_limit_wait(error.code, error.headers, error.read())
                 if wait is None or attempt == 2:
                     raise
                 print(f"GitHub rate limit, retrying in {wait}s", file=sys.stderr)
@@ -723,7 +729,11 @@ def pr_facts(gh: GitHub, number: int, bot: str) -> dict[str, Any]:
 
 
 def prs_for_sha(gh: GitHub, sha: str) -> list[int]:
-    """Open PRs a search associates with ``sha``; callers check the head themselves."""
+    """Open PRs a search associates with ``sha``; callers check the head themselves.
+
+    Unlike the optional searches this one is not allowed to fail quietly: with no
+    PR found the review would be skipped unseen, so an error fails the run instead.
+    """
     items = gh.search(f"is:pr is:open {sha}", limit=5).get("items", [])
     return [item["number"] for item in items]
 
