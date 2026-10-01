@@ -25,7 +25,7 @@ _PLANNING_COLUMNS = (
 )
 
 
-def _is_archive(row: dict) -> bool:
+def is_archive_row(row: dict) -> bool:
     """A zip attachment unpacked into member rows (``metadata.archive``)."""
     metadata = row.get("metadata")
     return isinstance(metadata, dict) and isinstance(metadata.get("archive"), dict)
@@ -289,7 +289,7 @@ class AttachmentsRepository:
 
     def _with_archive_members(self, rows: list[dict], user_id: str, columns: str) -> list[dict]:
         """Insert each archive's member rows after it (owner-scoped, archive order, no repeats)."""
-        parent_ids = [str(r["id"]) for r in rows if _is_archive(r)]
+        parent_ids = [str(r["id"]) for r in rows if is_archive_row(r)]
         if not parent_ids:
             return rows
         result = self._conn.execute(
@@ -322,6 +322,7 @@ class AttachmentsRepository:
         content_hash: str,
         *,
         exclude_legacy_id: Optional[str] = None,
+        archive: Optional[bool] = None,
     ) -> Optional[dict]:
         """The user's newest successfully parsed upload of the same bytes.
 
@@ -333,19 +334,28 @@ class AttachmentsRepository:
             content_hash: sha256 hex of the original bytes.
             exclude_legacy_id: Upload handle to skip, so a retried task never
                 matches its own earlier attempt.
+            archive: True to match only zip indexes, False to match only
+                other files (a zip's row holds its index, not text a file
+                with the same bytes could reuse), None for either.
 
         Returns:
             The full row, or None when there is no parsed row with that hash
-            (failed parses store no content and are skipped).
+            (failed parses store no content and are skipped, and so is a zip
+            whose members are still being parsed).
         """
         if not content_hash:
             return None
         sql = (
             "SELECT * FROM attachments "
             "WHERE user_id = :user_id AND content_hash = :content_hash "
-            "AND content IS NOT NULL"
+            "AND content IS NOT NULL "
+            "AND (metadata->'archive' IS NULL OR metadata->'archive'->>'status' = 'complete')"
         )
         params: dict[str, Any] = {"user_id": user_id, "content_hash": content_hash}
+        if archive is True:
+            sql += " AND metadata->'archive' IS NOT NULL"
+        elif archive is False:
+            sql += " AND metadata->'archive' IS NULL"
         if exclude_legacy_id is not None:
             sql += " AND legacy_mongo_id IS DISTINCT FROM :exclude_legacy_id"
             params["exclude_legacy_id"] = str(exclude_legacy_id)

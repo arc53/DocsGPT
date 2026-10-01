@@ -4535,7 +4535,7 @@
     },
     "/api/sources/from_attachments": {
       "post": {
-        "description": "Creates a Knowledge source from chat attachments the caller already uploaded. The stored originals are copied into a new source and ingested like an upload (a zip contributes its files). Returns the source id and the ingest task id; progress arrives as ``source.ingest.*`` events for that source id. Honors an optional ``Idempotency-Key`` header: a repeat request with the same key within 24h returns the first request's source and task ids without copying the files or queueing a second ingest.",
+        "description": "Creates a Knowledge source from chat attachments the caller already uploaded. The stored originals are copied into a new source and ingested like an upload (a zip contributes its files); the files together may not exceed the upload request limit (413). Returns the source id and the ingest task id; progress arrives as ``source.ingest.*`` events for that source id. Honors an optional ``Idempotency-Key`` header: a repeat request with the same key within 24h returns the first request's source and task ids without copying the files or queueing a second ingest.",
         "operationId": "post_source_from_attachments",
         "parameters": [
           {

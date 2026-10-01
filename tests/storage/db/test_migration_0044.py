@@ -61,30 +61,45 @@ class TestMigration0044RoundTrip:
             assert _column_exists(conn)
             assert _index_exists(conn)
 
-    def test_upgrade_backfills_the_hash_from_metadata(self, pg_engine):
+    def test_upgrade_does_not_rewrite_existing_rows(self, pg_engine):
+        # Nothing before this column wrote metadata.content_hash, so the
+        # upgrade must not run a full-table UPDATE looking for it.
         url = pg_engine.url.render_as_string(hide_password=False)
         _run_alembic(url, "downgrade", _0043)
         with pg_engine.begin() as conn:
             conn.execute(
                 text(
                     "INSERT INTO attachments (user_id, filename, upload_path, metadata) VALUES "
-                    "('m44', 'hashed.pdf', '/a', CAST(:hashed AS jsonb)), "
-                    "('m44', 'bogus.pdf', '/b', '{\"content_hash\": \"not-a-sha256\"}'::jsonb), "
-                    "('m44', 'plain.pdf', '/c', '{}'::jsonb), "
-                    "('m44', 'none.pdf', '/d', NULL)"
+                    "('m44', 'hashed.pdf', '/a', CAST(:hashed AS jsonb))"
                 ),
                 {"hashed": f'{{"content_hash": "{_HASH}"}}'},
             )
         _run_alembic(url, "upgrade", "head")
         with pg_engine.connect() as conn:
-            rows = dict(
-                conn.execute(
-                    text("SELECT filename, content_hash FROM attachments WHERE user_id = 'm44'")
-                ).fetchall()
+            value = conn.execute(
+                text("SELECT content_hash FROM attachments WHERE user_id = 'm44'")
+            ).scalar()
+        assert value is None
+
+    def test_upgrade_rebuilds_an_index_a_failed_concurrent_build_left_invalid(self, pg_engine):
+        url = pg_engine.url.render_as_string(hide_password=False)
+        _run_alembic(url, "downgrade", _0043)
+        with pg_engine.begin() as conn:
+            conn.execute(text("ALTER TABLE attachments ADD COLUMN content_hash TEXT"))
+            conn.execute(text("CREATE INDEX attachments_user_content_hash_idx ON attachments (user_id)"))
+            conn.execute(
+                text(
+                    "UPDATE pg_index SET indisvalid = false "
+                    "WHERE indexrelid = 'attachments_user_content_hash_idx'::regclass"
+                )
             )
-        assert rows == {
-            "hashed.pdf": _HASH,
-            "bogus.pdf": None,
-            "plain.pdf": None,
-            "none.pdf": None,
-        }
+        _run_alembic(url, "upgrade", "head")
+        with pg_engine.connect() as conn:
+            valid = conn.execute(
+                text("SELECT indisvalid FROM pg_index WHERE indexrelid = 'attachments_user_content_hash_idx'::regclass")
+            ).scalar()
+            definition = conn.execute(
+                text("SELECT indexdef FROM pg_indexes WHERE indexname = 'attachments_user_content_hash_idx'")
+            ).scalar()
+        assert valid is True
+        assert "content_hash" in definition

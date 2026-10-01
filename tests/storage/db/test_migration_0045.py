@@ -48,3 +48,20 @@ class TestMigration0045RoundTrip:
         _run_alembic(url, "upgrade", "head")
         with pg_engine.connect() as conn:
             assert _index_def(conn) is not None
+
+    def test_upgrade_rebuilds_an_index_a_failed_concurrent_build_left_invalid(self, pg_engine):
+        url = pg_engine.url.render_as_string(hide_password=False)
+        _run_alembic(url, "downgrade", _0044)
+        with pg_engine.begin() as conn:
+            conn.execute(text(f"CREATE INDEX {_INDEX} ON attachments (id)"))
+            conn.execute(
+                text(f"UPDATE pg_index SET indisvalid = false WHERE indexrelid = '{_INDEX}'::regclass")
+            )
+        _run_alembic(url, "upgrade", "head")
+        with pg_engine.connect() as conn:
+            valid = conn.execute(
+                text(f"SELECT indisvalid FROM pg_index WHERE indexrelid = '{_INDEX}'::regclass")
+            ).scalar()
+            definition = _index_def(conn)
+        assert valid is True
+        assert "processing" in definition

@@ -201,6 +201,21 @@ class TestZipAttachment:
 
         assert len(_members(_parent(info)["id"])) == 3
 
+    def test_unsupported_members_do_not_use_up_the_file_limit(self, storage_dir, events, dispatched, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "ATTACHMENT_ARCHIVE_MAX_MEMBERS", 2)
+        objects = [(f".git/objects/{i:02x}/blob", bytes(range(256)) * 4) for i in range(5)]
+        info = _upload(storage_dir, _zip([*objects, ("notes.txt", b"notes"), ("readme.md", b"# readme")]))
+
+        _run_all(info, dispatched)
+
+        parent = _parent(info)
+        assert [m["metadata"]["archive_path"] for m in _members(parent["id"])] == ["notes.txt", "readme.md"]
+        archive = parent["metadata"]["archive"]
+        assert {s["reason"] for s in archive["skipped"]} == {"unsupported_type"}
+        assert archive["skipped_count"] == 5
+
     def test_a_zip_bomb_fails_the_upload(self, storage_dir, events):
         from docsgpt.worker import AttachmentRejectedError
 
@@ -213,7 +228,20 @@ class TestZipAttachment:
             _run(info)
 
         assert events[-1][0] == "attachment.failed"
+        assert events[-1][1]["code"] == "too_large"
+        assert "ratio" not in events[-1][1]["error"]
         assert _parent(info)["metadata"]["extraction"]["status"] == "failed"
+
+    def test_an_unreadable_zip_fails_with_its_code(self, storage_dir, events):
+        from docsgpt.worker import AttachmentRejectedError
+
+        info = _upload(storage_dir, b"PK\x03\x04 not really a zip")
+
+        with pytest.raises(AttachmentRejectedError):
+            _run(info)
+
+        assert events[-1][0] == "attachment.failed"
+        assert events[-1][1]["code"] == "archive_unreadable"
 
 
 def _member_names(queue):
@@ -370,6 +398,34 @@ class TestZipMemberFanOut:
         member = next(m for m in _members(parent["id"]) if m["metadata"]["archive_path"] == "notes.txt")
         assert member["metadata"]["extraction"]["status"] == "failed"
 
+    def test_a_poisoned_zip_task_keeps_its_members_bookkeeping(self, storage_dir, events, dispatched):
+        from docsgpt.api.user.tasks import _emit_attachment_poison_event
+
+        info = _upload(storage_dir, _zip(ENTRIES))
+        _run(info)
+
+        _emit_attachment_poison_event("store_attachment", {"user": USER, "file_info": info})
+
+        parent = _parent(info)
+        assert parent["metadata"]["extraction"]["status"] == "failed"
+        assert parent["metadata"]["archive"]["status"] == "processing"
+        assert len(parent["metadata"]["archive"]["planned"]) == 3
+        _drain(dispatched)
+        archive = _parent(info)["metadata"]["archive"]
+        assert archive["status"] == "complete"
+        assert archive["members"] == 3 and archive["failed"] == 0
+
+    def test_a_zip_poisoned_before_it_has_a_row_gets_a_failure_row(self, storage_dir, events):
+        from docsgpt.api.user.tasks import _emit_attachment_poison_event
+
+        info = _upload(storage_dir, _zip(ENTRIES))
+
+        _emit_attachment_poison_event("store_attachment", {"user": USER, "file_info": info})
+
+        extraction = _parent(info)["metadata"]["extraction"]
+        assert extraction["status"] == "failed"
+        assert extraction["parser"] == "archive"
+
     def test_a_retried_zip_keeps_the_members_that_finished(self, storage_dir, events, dispatched):
         info = _upload(storage_dir, _zip(ENTRIES))
         _run(info)
@@ -425,6 +481,21 @@ def _backdate_dispatches(info, minutes):
         repo.update(str(row["id"]), USER, {"metadata": {**row["metadata"], "archive": archive}})
 
 
+# Just past the default ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT (90 minutes).
+_PAST_TIMEOUT_MINUTES = 91
+
+
+def _hold_lease(member_info):
+    """Make a member's task look like it is running right now (a live lease)."""
+    from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
+    from docsgpt.storage.db.session import db_session
+
+    with db_session() as conn:
+        IdempotencyRepository(conn).try_claim_lease(
+            f"archive-member:{member_info['attachment_id']}", "store_archive_member", "t-1", "owner-1"
+        )
+
+
 @pytest.fixture()
 def swept_events(monkeypatch):
     """Events the reconciler publishes after its sweeps commit."""
@@ -438,10 +509,14 @@ def swept_events(monkeypatch):
 
 @pytest.mark.usefixtures("wired_engine")
 class TestStuckZipMemberSweep:
-    def test_the_timeout_is_a_setting(self):
-        from docsgpt.core.settings import settings
+    def test_the_timeout_outlasts_the_brokers_redelivery(self):
+        # A member whose worker died is redelivered after the visibility
+        # timeout; failing it before then would fail a task about to rerun.
+        from docsgpt.core.settings.ingestion import IngestionSettings
+        from docsgpt.core.settings.workers import WorkerSettings
 
-        assert settings.ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT == 1800
+        timeout = IngestionSettings.model_fields["ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT"].default
+        assert timeout > WorkerSettings.model_fields["CELERY_VISIBILITY_TIMEOUT"].default
 
     def test_members_pending_past_the_timeout_fail_and_the_zip_completes(
         self, storage_dir, events, dispatched, swept_events
@@ -453,7 +528,7 @@ class TestStuckZipMemberSweep:
         first, _ = dispatched.pop(0)
         _run_member(first)
         dispatched.clear()  # the broker lost the other two
-        _backdate_dispatches(info, 31)
+        _backdate_dispatches(info, _PAST_TIMEOUT_MINUTES)
 
         summary = run_reconciliation()
 
@@ -463,7 +538,7 @@ class TestStuckZipMemberSweep:
         assert archive["status"] == "complete"
         assert archive["failed"] == 2
         assert [f["archive_path"] for f in archive["failed_members"]] == ["docs/readme.md", "nested.zip/inner.txt"]
-        assert all("30 minutes" in f["reason"] for f in archive["failed_members"])
+        assert all("90 minutes" in f["reason"] for f in archive["failed_members"])
         assert parent["metadata"]["extraction"]["status"] == "ok"
         assert swept_events[-1][0] == "attachment.completed"
         completed = swept_events[-1][1]
@@ -494,7 +569,7 @@ class TestStuckZipMemberSweep:
         info = _upload(storage_dir, _zip(ENTRIES))
         _run(info)
         dispatched.clear()  # notes.txt was lost
-        _backdate_dispatches(info, 31)
+        _backdate_dispatches(info, _PAST_TIMEOUT_MINUTES)
 
         assert run_reconciliation()["archive_members_failed"] == 1
 
@@ -505,3 +580,81 @@ class TestStuckZipMemberSweep:
         assert archive["failed"] == 1
         assert archive["failed_members"][0]["archive_path"] == "notes.txt"
         assert events[-1][0] == "attachment.completed"
+
+    def test_a_member_still_running_is_not_failed(self, storage_dir, events, dispatched, swept_events):
+        from docsgpt.api.user.reconciliation import run_reconciliation
+
+        info = _upload(storage_dir, _zip(ENTRIES))
+        _run(info)
+        running, _ = dispatched[0]
+        _hold_lease(running)
+        dispatched.clear()
+        _backdate_dispatches(info, _PAST_TIMEOUT_MINUTES)
+
+        assert run_reconciliation()["archive_members_failed"] == 2
+
+        archive = _parent(info)["metadata"]["archive"]
+        assert archive["status"] == "processing"
+        assert running["attachment_id"] not in archive["outcomes"]
+        assert [m["metadata"]["archive_path"] for m in archive["planned"]
+                if m["attachment_id"] in archive["outcomes"]] == ["docs/readme.md", "nested.zip/inner.txt"]
+
+
+def _flaky_broker(monkeypatch, queue, failing_path, failures):
+    """Dispatch into ``queue``, but raise for ``failing_path`` ``failures`` times."""
+    left = {"n": failures}
+
+    def dispatch(member_info, user):
+        if member_info["metadata"]["archive_path"] == failing_path and left["n"]:
+            left["n"] -= 1
+            raise ConnectionError("broker unreachable")
+        queue.append((member_info, user))
+
+    monkeypatch.setattr("docsgpt.worker._dispatch_archive_member", dispatch)
+
+
+@pytest.mark.usefixtures("wired_engine")
+class TestZipMemberDispatchFailure:
+    def test_a_failed_dispatch_is_retried_once(self, storage_dir, events, monkeypatch):
+        queue = []
+        _flaky_broker(monkeypatch, queue, "docs/readme.md", failures=1)
+        info = _upload(storage_dir, _zip(ENTRIES))
+
+        _run_all(info, queue)
+
+        archive = _parent(info)["metadata"]["archive"]
+        assert archive["status"] == "complete"
+        assert archive["failed"] == 0
+
+    def test_a_member_that_cannot_be_queued_fails_with_a_reason(self, storage_dir, events, monkeypatch):
+        queue = []
+        _flaky_broker(monkeypatch, queue, "docs/readme.md", failures=99)
+        info = _upload(storage_dir, _zip(ENTRIES))
+
+        _run_all(info, queue)
+
+        parent = _parent(info)
+        archive = parent["metadata"]["archive"]
+        assert archive["status"] == "complete"
+        assert archive["failed"] == 1
+        assert archive["failed_members"][0]["archive_path"] == "docs/readme.md"
+        assert "broker unreachable" in archive["failed_members"][0]["reason"]
+        assert events[-1][0] == "attachment.completed"
+        member = next(m for m in _members(parent["id"]) if m["metadata"]["archive_path"] == "docs/readme.md")
+        assert member["metadata"]["extraction"]["status"] == "failed"
+
+    def test_a_member_freed_by_an_outcome_that_cannot_be_queued_fails_too(
+        self, storage_dir, events, monkeypatch
+    ):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "ATTACHMENT_ARCHIVE_PARALLELISM", 1)
+        queue = []
+        _flaky_broker(monkeypatch, queue, "docs/readme.md", failures=99)
+        info = _upload(storage_dir, _zip(ENTRIES))
+
+        _run_all(info, queue)
+
+        archive = _parent(info)["metadata"]["archive"]
+        assert archive["status"] == "complete"
+        assert [f["archive_path"] for f in archive["failed_members"]] == ["docs/readme.md"]

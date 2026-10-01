@@ -153,6 +153,7 @@ def ingest(
     config=None,
     idempotency_key=None,
     source_id=None,
+    copy_files=None,
 ):
     resp = ingest_worker(
         self,
@@ -166,6 +167,8 @@ def ingest(
         config=config,
         idempotency_key=idempotency_key,
         source_id=source_id,
+        # Only when given, so the worker's call shape is unchanged otherwise.
+        **({"copy_files": copy_files} if copy_files else {}),
     )
     return resp
 
@@ -309,18 +312,28 @@ def _emit_attachment_poison_event(task_name, bound):
     if not user or not attachment_id:
         return
     from docsgpt.events.publisher import publish_user_event
-    from docsgpt.worker import record_attachment_failure
-
-    record_attachment_failure(
-        user, file_info, "Attachment processing stopped after repeated failures."
+    from docsgpt.parser.file.constants import is_attachment_archive
+    from docsgpt.worker import (
+        ATTACHMENT_FAILURE_MESSAGES,
+        record_archive_task_failure,
+        record_attachment_failure,
     )
+
+    error = ATTACHMENT_FAILURE_MESSAGES["repeated_failures"]
+    if is_attachment_archive(file_info.get("filename")):
+        # Keeps the zip's member bookkeeping, which a plain failure row
+        # would overwrite.
+        record_archive_task_failure(user, file_info, error)
+    else:
+        record_attachment_failure(user, file_info, error)
     publish_user_event(
         user,
         "attachment.failed",
         {
             "attachment_id": str(attachment_id),
             "filename": file_info.get("filename") or "",
-            "error": "Attachment processing stopped after repeated failures.",
+            "code": "repeated_failures",
+            "error": error,
         },
         scope={"kind": "attachment", "id": str(attachment_id)},
     )

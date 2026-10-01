@@ -43,6 +43,15 @@ class IngestionSettings(SettingsGroup):
         gt=0,
         description="Files unpacked from one zip attachment (nested archives included); the rest are skipped.",
     )
+    ATTACHMENT_ARCHIVE_MAX_ENTRIES: int = Field(
+        default=5000,
+        gt=0,
+        description=(
+            "Entries looked at in one zip attachment, nested archives and skipped members included; the rest "
+            "are skipped unread. Bounds the work a zip of many tiny or unsupported entries can cause, "
+            "separately from the file limit."
+        ),
+    )
     ATTACHMENT_ARCHIVE_MAX_BYTES: int = Field(
         default=200 * 1024 * 1024,
         gt=0,
@@ -67,11 +76,13 @@ class IngestionSettings(SettingsGroup):
         ),
     )
     ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT: int = Field(
-        default=1800,
+        default=5400,
         gt=0,
         description=(
             "Seconds a zip attachment's member may stay unparsed after it is queued (queue wait included) "
-            "before the reconciler marks it failed, so a lost task never leaves the zip processing forever."
+            "before the reconciler marks it failed, so a lost task never leaves the zip processing forever. "
+            "A member whose task is running (its lease heartbeat is live) is never failed. Keep it above "
+            "CELERY_VISIBILITY_TIMEOUT, after which the broker redelivers a task whose worker died."
         ),
     )
     PARSE_PDF_AS_IMAGE: bool = Field(default=False, description="Render PDF pages to images before parsing.")

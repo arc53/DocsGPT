@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import os
+import random
 import zipfile
 
 import pytest
@@ -154,3 +155,143 @@ class TestLimits:
         assert ArchiveLimits.from_settings() == ArchiveLimits(
             max_members=7, max_total_bytes=8, max_depth=1, max_ratio=9
         )
+
+
+def _corrupt_member(data: bytes, name: str) -> bytes:
+    """``data`` with the start of ``name``'s compressed stream overwritten."""
+    archive = zipfile.ZipFile(io.BytesIO(data))
+    info = archive.getinfo(name)
+    offset = info.header_offset + 30 + len(info.filename.encode()) + len(info.extra)
+    damaged = bytearray(data)
+    for i in range(offset, offset + 10):
+        damaged[i] = 0xFF
+    return bytes(damaged)
+
+
+class TestDamagedMembers:
+    @pytest.mark.parametrize(
+        "compression", [zipfile.ZIP_DEFLATED, zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA], ids=["deflate", "bzip2", "lzma"]
+    )
+    def test_a_damaged_member_is_skipped_and_the_rest_unpacked(self, tmp_path, compression):
+        data = _zip_bytes([("good.txt", b"hello world " * 200), ("bad.txt", b"abcdefgh" * 500)], compression=compression)
+        path = tmp_path / "damaged.zip"
+        path.write_bytes(_corrupt_member(data, "bad.txt"))
+        dest = tmp_path / "out"
+        dest.mkdir()
+        result = expand_archive(str(path), str(dest), LIMITS)
+        assert [m.archive_path for m in result.members] == ["good.txt"]
+        assert [(s.archive_path, s.reason) for s in result.skipped] == [("bad.txt", "corrupt")]
+        assert len(os.listdir(dest)) == 1
+
+    def test_a_member_in_an_unsupported_compression_method_is_skipped(self, tmp_path):
+        data = bytearray(_zip_bytes([("odd.txt", b"o"), ("plain.txt", b"p")], compression=zipfile.ZIP_STORED))
+        # Compression method 9 (Deflate64) on the first member's local and central headers.
+        data[data.find(b"PK\x03\x04") + 8] = 9
+        data[data.find(b"PK\x01\x02") + 10] = 9
+        path = tmp_path / "method.zip"
+        path.write_bytes(bytes(data))
+        result = expand_archive(str(path), str(tmp_path), LIMITS)
+        assert [m.archive_path for m in result.members] == ["plain.txt"]
+        assert [(s.archive_path, s.reason) for s in result.skipped] == [("odd.txt", "corrupt")]
+
+    def test_a_damaged_member_inside_a_nested_zip_is_skipped(self, tmp_path):
+        noise = random.Random(1).randbytes(4000)  # incompressible, so the ratio check passes
+        inner = _corrupt_member(_zip_bytes([("bad.txt", noise), ("ok.txt", b"ok")]), "bad.txt")
+        result = _expand(tmp_path, [("a.txt", b"a"), ("inner.zip", inner)], compression=zipfile.ZIP_STORED)
+        assert [m.archive_path for m in result.members] == ["a.txt", "inner.zip/ok.txt"]
+        assert [(s.archive_path, s.reason) for s in result.skipped] == [("inner.zip/bad.txt", "corrupt")]
+
+
+def _txt_only(filename, read_head):
+    return filename.endswith(".txt")
+
+
+class TestEntryLimits:
+    def test_unsupported_members_do_not_use_up_the_member_limit(self, tmp_path):
+        limits = ArchiveLimits(max_members=2, max_total_bytes=10**6, max_depth=2, max_ratio=100)
+        objects = [(f".git/objects/{i:02x}/blob", b"\x00\x01binary") for i in range(5)]
+        result = expand_archive(
+            _write_zip(tmp_path, [*objects, ("a.txt", b"a"), ("b.txt", b"b")], compression=zipfile.ZIP_STORED),
+            str(tmp_path),
+            limits,
+            accept=_txt_only,
+        )
+        assert [m.archive_path for m in result.members] == ["a.txt", "b.txt"]
+        assert {s.reason for s in result.skipped} == {"unsupported_type"}
+        assert result.skipped_count == 5
+        assert result.total_bytes == 2
+
+    def test_the_acceptance_check_can_read_the_members_head(self, tmp_path):
+        seen = {}
+
+        def accept(filename, read_head):
+            seen[filename] = read_head()
+            return True
+
+        expand_archive(_write_zip(tmp_path, [("notes.log", b"plain text")]), str(tmp_path), LIMITS, accept=accept)
+        assert seen == {"notes.log": b"plain text"}
+
+    def test_entries_past_the_entry_limit_are_skipped_without_unpacking(self, tmp_path):
+        limits = ArchiveLimits(max_members=200, max_total_bytes=10**6, max_depth=2, max_ratio=100, max_entries=3)
+        result = _expand(tmp_path, [(f"f{i}.bin", b"\x00") for i in range(5)] + [("a.txt", b"a")],
+                         limits=limits, compression=zipfile.ZIP_STORED)
+        assert [m.archive_path for m in result.members] == ["f0.bin", "f1.bin", "f2.bin"]
+        assert [(s.archive_path, s.reason) for s in result.skipped] == [
+            ("f3.bin", "too_many_files"), ("f4.bin", "too_many_files"), ("a.txt", "too_many_files"),
+        ]
+
+    def test_empty_nested_zips_count_toward_the_entry_limit(self, tmp_path):
+        empty = _zip_bytes([])
+        limits = ArchiveLimits(max_members=200, max_total_bytes=10**6, max_depth=2, max_ratio=100, max_entries=10)
+        result = _expand(tmp_path, [(f"{i}.zip", empty) for i in range(50)], limits=limits,
+                         compression=zipfile.ZIP_STORED)
+        assert result.members == []
+        assert result.skipped_count == 40
+        assert {s.reason for s in result.skipped} == {"too_many_files"}
+
+    def test_the_entry_limit_spans_nested_archives(self, tmp_path):
+        inner = _zip_bytes([("x.txt", b"x"), ("y.txt", b"y")])
+        limits = ArchiveLimits(max_members=200, max_total_bytes=10**6, max_depth=2, max_ratio=100, max_entries=3)
+        result = _expand(tmp_path, [("a.txt", b"a"), ("inner.zip", inner), ("b.txt", b"b")], limits=limits,
+                         compression=zipfile.ZIP_STORED)
+        assert [m.archive_path for m in result.members] == ["a.txt", "inner.zip/x.txt"]
+        assert [(s.archive_path, s.reason) for s in result.skipped] == [
+            ("inner.zip/y.txt", "too_many_files"), ("b.txt", "too_many_files"),
+        ]
+
+    def test_a_member_over_the_per_file_limit_is_skipped(self, tmp_path):
+        limits = ArchiveLimits(max_members=200, max_total_bytes=10**6, max_depth=2, max_ratio=100,
+                               max_member_bytes=4)
+        result = _expand(tmp_path, [("big.txt", b"12345"), ("ok.txt", b"1234")], limits=limits,
+                         compression=zipfile.ZIP_STORED)
+        assert [m.archive_path for m in result.members] == ["ok.txt"]
+        assert [(s.archive_path, s.reason) for s in result.skipped] == [("big.txt", "file_too_large")]
+
+    def test_entry_and_file_limits_come_from_settings(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "ATTACHMENT_ARCHIVE_MAX_ENTRIES", 11)
+        monkeypatch.setattr(settings, "UPLOAD_MAX_FILE_BYTES", 12)
+        limits = ArchiveLimits.from_settings()
+        assert (limits.max_entries, limits.max_member_bytes) == (11, 12)
+
+
+class TestRejectionReason:
+    def test_a_zip_bomb_says_so(self, tmp_path):
+        with pytest.raises(ArchiveRejectedError) as raised:
+            _expand(tmp_path, [("zeros.txt", b"\0" * (5 * 1024 * 1024))])
+        assert raised.value.reason == "zip_bomb"
+        assert "could not be read" not in str(raised.value)
+
+    def test_a_zip_bomb_nested_inside_rejects_the_whole_zip(self, tmp_path):
+        bomb = _zip_bytes([("zeros.txt", b"\0" * (5 * 1024 * 1024))])
+        with pytest.raises(ArchiveRejectedError) as raised:
+            _expand(tmp_path, [("a.txt", b"a"), ("inner.zip", bomb)], compression=zipfile.ZIP_STORED)
+        assert raised.value.reason == "zip_bomb"
+
+    def test_an_unreadable_zip_says_so(self, tmp_path):
+        path = tmp_path / "fake.zip"
+        path.write_bytes(b"not a zip at all")
+        with pytest.raises(ArchiveRejectedError) as raised:
+            expand_archive(str(path), str(tmp_path), LIMITS)
+        assert raised.value.reason == "unreadable"

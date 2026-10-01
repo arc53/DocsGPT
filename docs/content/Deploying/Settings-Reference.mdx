@@ -785,6 +785,12 @@ Type `int`, default `200`, must be `> 0`.
 
 Files unpacked from one zip attachment (nested archives included); the rest are skipped.
 
+### `ATTACHMENT_ARCHIVE_MAX_ENTRIES`
+
+Type `int`, default `5000`, must be `> 0`.
+
+Entries looked at in one zip attachment, nested archives and skipped members included; the rest are skipped unread. Bounds the work a zip of many tiny or unsupported entries can cause, separately from the file limit.
+
 ### `ATTACHMENT_ARCHIVE_MAX_BYTES`
 
 Type `int`, default `209715200`, must be `> 0`.
@@ -811,9 +817,9 @@ Members of one zip attachment parsed at the same time, each as its own worker ta
 
 ### `ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT`
 
-Type `int`, default `1800`, must be `> 0`.
+Type `int`, default `5400`, must be `> 0`.
 
-Seconds a zip attachment's member may stay unparsed after it is queued (queue wait included) before the reconciler marks it failed, so a lost task never leaves the zip processing forever.
+Seconds a zip attachment's member may stay unparsed after it is queued (queue wait included) before the reconciler marks it failed, so a lost task never leaves the zip processing forever. A member whose task is running (its lease heartbeat is live) is never failed. Keep it above CELERY_VISIBILITY_TIMEOUT, after which the broker redelivers a task whose worker died.
 
 ### `PARSE_PDF_AS_IMAGE`
 

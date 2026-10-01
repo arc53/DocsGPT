@@ -256,9 +256,12 @@ class TestPoisonProvenance:
             },
         }
 
-        with patch("docsgpt.events.publisher.publish_user_event"):
+        with patch("docsgpt.events.publisher.publish_user_event") as publish:
             _emit_attachment_poison_event("store_attachment", bound)
 
+        payload = publish.call_args.args[2]
+        assert payload["code"] == "repeated_failures"
+        assert payload["error"] == "Processing stopped after repeated failures."
         row = _fetch(attachment_id)
         assert row is not None, "poison-guard trip must leave a queryable row"
         extraction = row["metadata"]["extraction"]
@@ -419,3 +422,23 @@ class TestContentHashReuse:
 
         assert len(calls) == 1
         assert _fetch(second["attachment_id"])["content"] == "second try"
+
+    def test_a_zips_index_is_never_reused_for_another_file(self, storage_dir, monkeypatch):
+        import hashlib
+
+        from docsgpt.storage.db.session import db_session
+
+        payload = b"bytes that were also sent as a zip"
+        with db_session() as conn:
+            AttachmentsRepository(conn).create(
+                "prov-user", "bundle.zip", "/z", content="Archive bundle.zip: 1 file(s) unpacked",
+                content_hash=hashlib.sha256(payload).hexdigest(),
+                metadata={"archive": {"status": "complete"}},
+            )
+        calls = _counting_reader(monkeypatch, text="parsed text")
+        info = _file_info(storage_dir, filename="bundle.txt", content=payload)
+
+        _run_worker(info)
+
+        assert len(calls) == 1
+        assert _fetch(info["attachment_id"])["content"] == "parsed text"

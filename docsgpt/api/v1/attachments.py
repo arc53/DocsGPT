@@ -14,8 +14,11 @@ dispatch-and-wait ``read_document`` uses). The API process never runs a
 parser: OCR and docling need gigabytes and belong on the worker, and the
 worker task already applies the size and zip limits and the parse reuse.
 
-A file that cannot be stored or parsed in time is left out of the mapping;
-its part then stays in the request as the client sent it.
+A zip's own task returns once it has unpacked and queued its members, so
+a zip counts as parsed only when its row says every member has finished
+(``metadata.archive.status``), within the same parse timeout. A file that
+cannot be stored or parsed in time is left out of the mapping; its part
+then stays in the request as the client sent it.
 """
 
 from __future__ import annotations
@@ -31,9 +34,13 @@ from werkzeug.datastructures import FileStorage
 
 from docsgpt.api.v1.translator import InlineFile
 from docsgpt.core.settings import settings
+from docsgpt.parser.file.constants import is_attachment_archive
 from docsgpt.utils import safe_filename
 
 logger = logging.getLogger(__name__)
+
+# How often a zip's row is checked while its members are parsed.
+_ARCHIVE_POLL_SECONDS = 0.5
 
 
 def _storage() -> Any:
@@ -42,13 +49,34 @@ def _storage() -> Any:
     return StorageCreator.get_storage()
 
 
-def _find_parsed(user: str, content_hash: str) -> Optional[Dict[str, Any]]:
-    """The user's newest parsed row for these bytes."""
+def _find_parsed(user: str, content_hash: str, *, archive: bool) -> Optional[Dict[str, Any]]:
+    """The user's newest parsed row for these bytes: a finished zip for a zip, else a non-zip."""
     from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
     from docsgpt.storage.db.session import db_readonly
 
     with db_readonly() as conn:
-        return AttachmentsRepository(conn).find_by_hash(user, content_hash)
+        return AttachmentsRepository(conn).find_by_hash(user, content_hash, archive=archive)
+
+
+def _archive_status(user: str, attachment_id: str) -> Optional[str]:
+    """A zip row's ``metadata.archive.status`` (``processing`` / ``complete``), if any."""
+    from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
+    from docsgpt.storage.db.session import db_readonly
+
+    with db_readonly() as conn:
+        row = AttachmentsRepository(conn).get_by_legacy_id(attachment_id, user)
+    archive = ((row or {}).get("metadata") or {}).get("archive")
+    return archive.get("status") if isinstance(archive, dict) else None
+
+
+def _wait_for_archive(user: str, attachment_id: str, deadline: float) -> bool:
+    """Wait until every member of a zip has finished, or the deadline passes."""
+    while True:
+        if _archive_status(user, attachment_id) == "complete":
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(_ARCHIVE_POLL_SECONDS)
 
 
 def _dispatch_parse(file_info: Dict[str, Any], user: str, timeout: float) -> Any:
@@ -112,7 +140,7 @@ def ingest_inline_files(files: List[InlineFile], user: str) -> Dict[str, str]:
             logger.warning("v1 file %s exceeds the upload limit; left in the request", inline.filename)
             continue
         try:
-            row = _find_parsed(user, inline.content_hash)
+            row = _find_parsed(user, inline.content_hash, archive=is_attachment_archive(inline.filename))
         except Exception:
             logger.warning("Could not look up an earlier parse of %s", inline.filename, exc_info=True)
             row = None
@@ -135,6 +163,15 @@ def ingest_inline_files(files: List[InlineFile], user: str) -> Dict[str, str]:
             except Exception as exc:
                 logger.warning("v1 file %s was not parsed: %s", inline.filename, exc)
                 continue
+            if is_attachment_archive(inline.filename):
+                try:
+                    finished = _wait_for_archive(user, attachment_id, deadline)
+                except Exception:
+                    logger.warning("Could not check zip %s", inline.filename, exc_info=True)
+                    finished = False
+                if not finished:
+                    logger.warning("v1 zip %s was not unpacked in time", inline.filename)
+                    continue
             converted[inline.content_hash] = attachment_id
     # Request order, whichever path each file took.
     order = {f.content_hash: i for i, f in enumerate(files)}
