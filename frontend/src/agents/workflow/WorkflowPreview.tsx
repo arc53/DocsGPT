@@ -2,7 +2,6 @@ import {
   Bot,
   ChevronDown,
   Circle,
-  CircleAlert,
   CircleCheck,
   CircleX,
   CodeXml,
@@ -266,7 +265,6 @@ export function ExecutionDetails({
               )}
               {step.error && (
                 <Alert variant="destructive" role="status">
-                  <CircleAlert />
                   <AlertDescription>
                     <span className="font-medium">
                       {t('agents.workflow.preview.errorLabel')}{' '}
@@ -280,7 +278,6 @@ export function ExecutionDetails({
               {stateVars.length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {stateVars.map(([key, value]) => (
-                    // eslint-disable-next-line shadcn/no-restyle -- state keys and values are serialised by the app, so the chip is set in mono
                     <Badge key={key} variant="neutral" className="font-mono">
                       <span className="max-w-[100px] truncate">{key}:</span>
                       <span
@@ -780,7 +777,6 @@ export default function WorkflowPreview({
           <div className="flex w-full flex-col gap-2 px-4 pt-2 pb-4">
             {sendBlockedMessage && (
               <Alert variant="destructive">
-                <CircleAlert />
                 <AlertDescription>{t(sendBlockedMessage)}</AlertDescription>
               </Alert>
             )}

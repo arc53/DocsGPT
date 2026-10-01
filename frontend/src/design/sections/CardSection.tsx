@@ -20,6 +20,12 @@ import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
+  CodeBlock,
+  CodeFrame,
+  CodePanel,
+  CopyField,
+} from '@/components/ui/code-block';
+import {
   DescriptionItem,
   DescriptionList,
 } from '@/components/ui/description-list';
@@ -38,9 +44,30 @@ import { ListRow, ListRows } from '@/components/ui/list-row';
 import { LoadingState } from '@/components/ui/loading-state';
 import { OptionCard } from '@/components/ui/option-card';
 import { Pagination } from '@/components/ui/pagination';
+import { SectionHeader } from '@/components/ui/section-header';
 import { formatCount } from '../../utils/dateTimeUtils';
 import { Switch } from '@/components/ui/switch';
 import { Example, Section } from '../shared';
+
+const RUN_OUTPUT = `{
+  "carrier": "Halvorsen Logistics",
+  "lane": "Rotterdam → Oslo",
+  "rate_eur_per_pallet": 41.5,
+  "insurance_certificate": "valid until 2027-03-31",
+  "sanctions_check": "clear"
+}`;
+
+const RUN_LOG = Array.from(
+  { length: 18 },
+  (_, index) =>
+    `09:30:${String(index * 3).padStart(2, '0')}  lookup_lane_rates  lane ${index + 1} of 18 priced`,
+).join('\n');
+
+const MCP_URL =
+  'https://mcp.meridianfreight.example/v1/servers/carrier-rates/sse?token=mfg_live_7f3a9c2e41b84d0f9e6a';
+
+const CURL_COMMAND = `curl -X POST https://docsgpt.meridianfreight.example/api/answer \\
+  -H "Authorization: Bearer $DOCSGPT_API_KEY" -d '{"question": "Renewal terms?"}'`;
 
 const SOURCE_TYPES = [
   ['Upload file', FileText],
@@ -277,6 +304,122 @@ export default function CardSection() {
         </div>
       </Example>
       <Example
+        title="Danger zone"
+        code='<Card tone="destructive" padding="lg"> + <SectionHeader tone="destructive" title description="the consequence"> + one <Button variant="destructive-outline" size="field" shape="pill"> named for the action'
+      >
+        <Card
+          tone="destructive"
+          padding="lg"
+          className="flex-row flex-wrap items-center justify-between"
+        >
+          <SectionHeader
+            as="h3"
+            tone="destructive"
+            title="Danger zone"
+            description="Deleting Vendor Due Diligence also deletes its schedules, run history and API keys."
+            className="min-w-0 flex-1"
+          />
+          <Button
+            type="button"
+            variant="destructive-outline"
+            size="field"
+            shape="pill"
+            className="shrink-0"
+          >
+            Delete agent
+          </Button>
+        </Card>
+      </Example>
+      <Example
+        title="Code blocks"
+        code='<CodeBlock surface="filled | subtle | bare | pane" maxHeight="sm | md | lg | parent" tone wrap font> · <CopyField value wrap size="display"> · <CodePanel title copyText> · <CodeFrame label copyText surface="answer | muted"> (every copy button is the icon-only CopyButton, drawn by the component)'
+      >
+        <div className="grid items-start gap-6 md:grid-cols-2">
+          <div className="flex flex-col gap-2">
+            <CodeBlock>{RUN_OUTPUT}</CodeBlock>
+            <span className="text-muted-foreground text-xs">
+              filled: on a card or the page
+            </span>
+          </div>
+          <div className="flex flex-col gap-2">
+            <div className="bg-muted rounded-2xl p-4">
+              <CodeBlock surface="subtle">{RUN_OUTPUT}</CodeBlock>
+            </div>
+            <span className="text-muted-foreground text-xs">
+              subtle: on a muted surface
+            </span>
+          </div>
+          <div className="flex flex-col gap-2">
+            <CodeBlock maxHeight="sm">{RUN_LOG}</CodeBlock>
+            <span className="text-muted-foreground text-xs">
+              maxHeight=&quot;sm&quot;: scrolls inside 160px
+            </span>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Card variant="subtle" padding="none" className="h-40">
+              <CodeBlock surface="pane">{RUN_LOG}</CodeBlock>
+            </Card>
+            <span className="text-muted-foreground text-xs">
+              pane: a full-pane file viewer, scrolls in the pane&apos;s height
+            </span>
+          </div>
+          <div className="flex flex-col gap-2">
+            <CodePanel
+              title="lookup_lane_rates · response"
+              copyText={RUN_OUTPUT}
+            >
+              <CodeBlock surface="bare" maxHeight="sm">
+                {RUN_OUTPUT}
+              </CodeBlock>
+            </CodePanel>
+            <span className="text-muted-foreground text-xs">
+              CodePanel with a bare CodeBlock: a labelled block in a trace
+            </span>
+          </div>
+          <div className="flex flex-col gap-3">
+            <CopyField value="DOCSGPT_API_KEY=mfg_live_7f3a9c2e" />
+            <CopyField value={MCP_URL} wrap="anywhere" />
+            <CopyField value={CURL_COMMAND} />
+            <CopyField value="K7Q-4XP" size="display" />
+            <span className="text-muted-foreground text-xs">
+              CopyField: one line, a wrapped URL (wrap=&quot;anywhere&quot;),
+              two lines, size=&quot;display&quot; for a pairing code
+            </span>
+          </div>
+          <div className="flex flex-col gap-2">
+            <CodeFrame
+              label="python"
+              copyText="rates = client.lanes(region='nordics')"
+            >
+              <div className="p-3">
+                <CodeBlock surface="bare">
+                  rates = client.lanes(region=&apos;nordics&apos;)
+                </CodeBlock>
+              </div>
+            </CodeFrame>
+            <span className="text-muted-foreground text-xs">
+              CodeFrame surface=&quot;answer&quot;: a fence in a chat answer
+            </span>
+          </div>
+          <div className="flex flex-col gap-2">
+            <CodeFrame
+              label="yaml"
+              copyText="schedule: '0 9 * * MON'"
+              surface="muted"
+            >
+              <div className="p-3">
+                <CodeBlock surface="bare">
+                  schedule: &apos;0 9 * * MON&apos;
+                </CodeBlock>
+              </div>
+            </CodeFrame>
+            <span className="text-muted-foreground text-xs">
+              CodeFrame surface=&quot;muted&quot;: a fence anywhere else
+            </span>
+          </div>
+        </div>
+      </Example>
+      <Example
         title="Picker tiles"
         code="<OptionCard icon title description? selected onClick>"
       >
@@ -440,10 +583,16 @@ export default function CardSection() {
       </Example>
       <Example
         title="Empty, loading and failed"
-        code="<EmptyState size tone illustration action onRetry> · <LoadingState fill label>"
+        code='<EmptyState size tone illustration action onRetry> · inline or in a card: size="sm" illustration="none" (never a hand-built <p>) · <LoadingState fill label>'
       >
-        <div className="grid items-center gap-6 md:grid-cols-3">
+        <div className="grid items-center gap-6 md:grid-cols-2">
           <EmptyState size="sm" title="No existing Sources" />
+          <EmptyState
+            size="sm"
+            illustration="none"
+            title="No runs yet"
+            description="Runs appear here after the first scheduled run on Monday."
+          />
           <EmptyState
             tone="destructive"
             size="sm"

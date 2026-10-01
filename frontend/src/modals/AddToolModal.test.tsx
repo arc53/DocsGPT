@@ -249,8 +249,10 @@ describe('AddToolModal', () => {
       (a) => a.textContent === 'settings.connectors.browseAll',
     )!;
     expect(link.getAttribute('href')).toBe('/settings/connectors');
-    expect(link.querySelector('svg')!.getAttribute('class')).toContain(
-      'size-3',
+    // A trailing link icon: 12px from Button's link size, not its own class.
+    expect(link.className).toContain("[&_svg:not([class*='size-'])]:size-3");
+    expect(link.querySelector('svg')!.getAttribute('class')).not.toContain(
+      'size-',
     );
     expect(dialog.textContent).not.toContain('settings.tools.browseConnectors');
   });

@@ -383,7 +383,7 @@
   --secondary: #7d54d11a; /* primary at 10%; static, so no color-mix fallback */
   --secondary-foreground: var(--primary);
   --muted: #f6f6f6;
-  --muted-foreground: #737373;
+  --muted-foreground: #6b6b6b; /* 4.93:1 on muted, 5.33:1 on white */
   --accent: #ececec;
   --accent-foreground: var(--foreground);
   --destructive: #ef4444;

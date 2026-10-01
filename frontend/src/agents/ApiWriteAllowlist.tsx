@@ -65,10 +65,11 @@ function ToolAllowlist({
   return (
     <PermissionGroup
       data-tool={tool.id}
-      title={`${tool.name} · ${t(`${K}.summaryCount`, {
+      title={tool.name}
+      count={t(`${K}.summaryCount`, {
         allowed: formatCount(allowedCount),
         formatted: formatCount(tool.actions.length),
-      })}`}
+      })}
       values={tool.actions.map(permissionOf)}
       options={ALLOW_OR_OFF}
       disabled={disabled}

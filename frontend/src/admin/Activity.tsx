@@ -27,6 +27,7 @@ import {
 } from '../components/ui/table';
 import { Pagination } from '../components/ui/pagination';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
+import { EmptyState } from '../components/ui/empty-state';
 import { selectToken } from '../preferences/preferenceSlice';
 import {
   LoadError,
@@ -347,7 +348,7 @@ export default function Activity() {
       ) : failed ? (
         <LoadError message="Failed to load activity." onRetry={load} />
       ) : rows.length === 0 ? (
-        <p className="text-muted-foreground mt-8 text-sm">No activity.</p>
+        <EmptyState size="sm" illustration="none" title="No activity." />
       ) : (
         <>
           <TableContainer>

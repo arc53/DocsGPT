@@ -240,14 +240,8 @@ function NodeDetailBody({
         <SectionHeader
           as="h4"
           size="xs"
-          title={
-            <>
-              {t('settings.sources.graphrag.view.relationships')}{' '}
-              <span className="text-muted-foreground font-normal tabular-nums">
-                {formatCount(relationshipsTotal)}
-              </span>
-            </>
-          }
+          title={t('settings.sources.graphrag.view.relationships')}
+          count={relationshipsTotal}
         />
         {rows.length === 0 ? (
           <p className="text-muted-foreground text-xs">
@@ -320,14 +314,8 @@ function NodeDetailBody({
         <SectionHeader
           as="h4"
           size="xs"
-          title={
-            <>
-              {t('settings.sources.graphrag.view.sourceChunks')}{' '}
-              <span className="text-muted-foreground font-normal tabular-nums">
-                {formatCount(detail.chunks.length)}
-              </span>
-            </>
-          }
+          title={t('settings.sources.graphrag.view.sourceChunks')}
+          count={detail.chunks.length}
         />
         {detail.chunks.length === 0 ? (
           <p className="text-muted-foreground text-xs">

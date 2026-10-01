@@ -47,7 +47,6 @@ import { getMethodBadgeVariant } from '../utils/httpMethodColors';
 import { can, isOwner } from '../utils/accessUtils';
 import { isSharedOAuthMcp } from '../utils/toolUtils';
 import { areObjectsEqual } from '../utils/objectUtils';
-import { formatCount } from '../utils/dateTimeUtils';
 import { cn, focusRing } from '@/lib/utils';
 import { APIActionType, APIToolType, UserToolType } from './types';
 
@@ -130,7 +129,8 @@ function groupProps(
   const name = t(`settings.connectors.capabilityPlain.${access}`);
   return {
     'data-access': access,
-    title: `${name} · ${formatCount(count)}`,
+    title: name,
+    count,
     groupLabel: t('settings.connectors.permission.groupLabel', { group: name }),
   };
 }
@@ -691,10 +691,10 @@ export default function ToolConfig({
                               >
                                 <div
                                   className={cn(
-                                    'border-border bg-muted flex flex-wrap items-center justify-between gap-3 px-4 py-3',
+                                    'border-border flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition-colors',
                                     isExpanded
-                                      ? 'rounded-t-xl border-b'
-                                      : 'rounded-xl',
+                                      ? 'bg-secondary rounded-t-xl border-b'
+                                      : 'hover:bg-accent rounded-xl',
                                   )}
                                 >
                                   <button
@@ -1164,8 +1164,10 @@ function APIToolConfig({
                     >
                       <div
                         className={cn(
-                          'border-border bg-muted flex flex-wrap items-center justify-between gap-3 px-4 py-3',
-                          isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl',
+                          'border-border flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition-colors',
+                          isExpanded
+                            ? 'bg-secondary rounded-t-xl border-b'
+                            : 'hover:bg-accent rounded-xl',
                         )}
                       >
                         <button
@@ -1205,9 +1207,9 @@ function APIToolConfig({
                         </button>
                         <div className="flex items-center gap-2">
                           <IconButton
-                            label={t('convTile.delete')}
+                            label={t('settings.tools.delete')}
                             icon={Trash2}
-                            variant="ghost-destructive"
+                            variant="ghost-destructive-on-accent"
                             size="icon-xs"
                             shape="pill"
                             disabled={!canEdit}
@@ -1434,8 +1436,10 @@ function APIToolConfig({
       {deleteModalState === 'ACTIVE' && actionToDelete && (
         <ConfirmationModal
           message={t('settings.tools.deleteActionWarning', {
+            interpolation: { escapeValue: false },
             name: actionToDelete,
           })}
+          description={t('settings.tools.deleteActionConsequence')}
           modalState={deleteModalState}
           setModalState={setDeleteModalState}
           handleSubmit={handleConfirmedDelete}
@@ -1443,7 +1447,7 @@ function APIToolConfig({
             setDeleteModalState('INACTIVE');
             setActionToDelete(null);
           }}
-          submitLabel={t('convTile.delete')}
+          submitLabel={t('settings.tools.delete')}
           variant="destructive"
         />
       )}
@@ -1650,11 +1654,11 @@ function APIActionTable({
               <TableCell className="relative">
                 {editingPropertyKey.section === section &&
                 editingPropertyKey.oldKey === key ? (
-                  <div className="flex flex-row items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
                     <Input
                       value={newPropertyKey}
                       size="sm"
-                      className="min-w-[130.5px]"
+                      className="min-w-0 flex-1"
                       onChange={(e) => setNewPropertyKey(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -1662,13 +1666,12 @@ function APIActionTable({
                         }
                       }}
                     />
-                    <div className="mt-1">
+                    <div className="flex shrink-0 gap-1">
                       <IconButton
                         label={t('settings.tools.save')}
                         variant="ghost"
                         size="icon-xs"
                         onClick={handleRenameProperty}
-                        className="mr-1"
                       >
                         <CircleCheck className="text-success" aria-hidden />
                       </IconButton>
@@ -1686,7 +1689,6 @@ function APIActionTable({
                   <Input
                     value={key}
                     size="sm"
-                    className="min-w-[175.5px]"
                     onFocus={() => handleRenamePropertyStart(section, key)}
                     readOnly
                   />
@@ -1760,7 +1762,7 @@ function APIActionTable({
               </TableCell>
               <TableCell width="40px" align="center">
                 <IconButton
-                  label={t('convTile.delete')}
+                  label={t('settings.tools.delete')}
                   icon={Trash2}
                   variant="ghost-destructive"
                   size="icon-xs"
@@ -1783,7 +1785,6 @@ function APIActionTable({
                 }}
                 placeholder={t('settings.tools.propertyName')}
                 size="sm"
-                className="min-w-[130.5px]"
               />
             </TableCell>
             <TableCell>
@@ -1854,11 +1855,11 @@ function APIActionTable({
               <TableCell className="relative">
                 {editingPropertyKey.section === 'headers' &&
                 editingPropertyKey.oldKey === key ? (
-                  <div className="flex flex-row items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
                     <Input
                       value={newPropertyKey}
                       size="sm"
-                      className="min-w-[130.5px]"
+                      className="min-w-0 flex-1"
                       onChange={(e) => setNewPropertyKey(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -1866,13 +1867,12 @@ function APIActionTable({
                         }
                       }}
                     />
-                    <div className="mt-1">
+                    <div className="flex shrink-0 gap-1">
                       <IconButton
                         label={t('settings.tools.save')}
                         variant="ghost"
                         size="icon-xs"
                         onClick={handleRenameProperty}
-                        className="mr-1"
                       >
                         <CircleCheck className="text-success" aria-hidden />
                       </IconButton>
@@ -1890,7 +1890,6 @@ function APIActionTable({
                   <Input
                     value={key}
                     size="sm"
-                    className="min-w-[175.5px]"
                     onFocus={() => handleRenamePropertyStart('headers', key)}
                     readOnly
                   />
@@ -1934,7 +1933,7 @@ function APIActionTable({
               </TableCell>
               <TableCell width="40px" align="center">
                 <IconButton
-                  label={t('convTile.delete')}
+                  label={t('settings.tools.delete')}
                   icon={Trash2}
                   variant="ghost-destructive"
                   size="icon-xs"
@@ -1957,7 +1956,6 @@ function APIActionTable({
                 }}
                 placeholder={t('settings.tools.propertyName')}
                 size="sm"
-                className="min-w-[130.5px]"
               />
             </TableCell>
             <TableCell colSpan={2} className="text-right">
@@ -2011,7 +2009,9 @@ function APIActionTable({
           <Table>
             <TableHead>
               <TableRow>
-                <TableHeader>{t('settings.tools.name')}</TableHeader>
+                <TableHeader width="14rem">
+                  {t('settings.tools.name')}
+                </TableHeader>
                 <TableHeader>{t('settings.tools.value')}</TableHeader>
                 <TableHeader>{t('settings.tools.description')}</TableHeader>
                 <TableHeader width="40px" align="center"></TableHeader>
@@ -2031,7 +2031,9 @@ function APIActionTable({
           <Table>
             <TableHead>
               <TableRow>
-                <TableHeader>{t('settings.tools.name')}</TableHeader>
+                <TableHeader width="14rem">
+                  {t('settings.tools.name')}
+                </TableHeader>
                 <TableHeader>{t('settings.tools.type')}</TableHeader>
                 <TableHeader>{t('settings.tools.filledBy')}</TableHeader>
                 <TableHeader>{t('settings.tools.description')}</TableHeader>
@@ -2049,7 +2051,9 @@ function APIActionTable({
           <Table>
             <TableHead>
               <TableRow>
-                <TableHeader>{t('settings.tools.name')}</TableHeader>
+                <TableHeader width="14rem">
+                  {t('settings.tools.name')}
+                </TableHeader>
                 <TableHeader>{t('settings.tools.type')}</TableHeader>
                 <TableHeader>{t('settings.tools.filledBy')}</TableHeader>
                 <TableHeader>{t('settings.tools.description')}</TableHeader>

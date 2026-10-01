@@ -272,6 +272,21 @@ describe('Admin Connectors', () => {
     expect(headings).toContain('MCP servers');
   });
 
+  // V3: a redirect URI is a ui/code-block CopyField; py-2 puts the one-line
+  // URL on the copy button's centre.
+  it('shows each redirect URI as a CopyField', async () => {
+    getAdmin.mockResolvedValue(payload({ connectors: [connector()] }));
+    await render();
+    const value = Array.from(container.querySelectorAll('pre')).find(
+      (el) => el.textContent === 'https://docs.example/api/mcp_server/callback',
+    )!;
+    expect(value).toBeDefined();
+    expect(value.className.split(' ')).toEqual(
+      expect.arrayContaining(['py-2', 'select-all', 'wrap-anywhere']),
+    );
+    expect(value.parentElement!.dataset.slot).toBe('card');
+  });
+
   it('labels the action column and sizes the Setup guide like Quotas', async () => {
     getAdmin.mockResolvedValue(payload());
     await render();

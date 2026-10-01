@@ -1,4 +1,3 @@
-import { TriangleAlert } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -64,7 +63,6 @@ export default function SignInAgainNotice({
     <div className="flex flex-col gap-2">
       {connections.map((connection) => (
         <Alert key={connection.id} variant="warning">
-          <TriangleAlert />
           <AlertDescription className="flex items-center justify-between">
             <span className="mr-3 min-w-0">
               {t('settings.connectors.health.pickerNotice', {

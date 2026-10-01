@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, FileText, Lock } from 'lucide-react';
+import { ArrowRight, FileText } from 'lucide-react';
 import { envVar } from '@/env';
 import { useCallback, useEffect, useState } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
@@ -875,7 +875,7 @@ function Upload({
           }}
         >
           {t('settings.connectors.browseAll')}
-          <ArrowRight className="size-3" />
+          <ArrowRight />
         </Button>
       )}
     </section>
@@ -911,7 +911,6 @@ function Upload({
   const renderGitHubHandOver = () =>
     githubConnector ? (
       <Alert variant="info" role="note">
-        <Lock />
         <AlertDescription>
           {t('modals.uploadDoc.github.privateHint')}
         </AlertDescription>
@@ -938,8 +937,12 @@ function Upload({
     <Modal
       open={true}
       onOpenChange={(o) => !o && handleClose()}
-      hideTitle
-      title={t('modals.uploadDoc.label')}
+      title={
+        ingestor.type
+          ? t(`modals.uploadDoc.ingestors.${ingestor.type}.heading`)
+          : t('modals.uploadDoc.selectSource')
+      }
+      onBack={ingestor.type ? () => handleIngestorTypeChange(null) : undefined}
       footer={
         activeTab && ingestor.type ? (
           <Button
@@ -958,12 +961,6 @@ function Upload({
       size="lg"
     >
       <div className="flex w-full flex-col gap-6">
-        {!ingestor.type && (
-          <h2 className="text-foreground text-xl leading-tight font-semibold">
-            {t('modals.uploadDoc.selectSource')}
-          </h2>
-        )}
-
         {activeTab && (
           <>
             {!ingestor.type && (
@@ -974,22 +971,6 @@ function Upload({
             )}
             {ingestor.type && (
               <div className="flex flex-col gap-5">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleIngestorTypeChange(null)}
-                  className="-ml-3 w-fit justify-start"
-                >
-                  <ArrowLeft aria-hidden />
-                  {t('modals.uploadDoc.back')}
-                </Button>
-
-                <h2 className="text-foreground text-xl leading-tight font-semibold">
-                  {ingestor.type &&
-                    t(`modals.uploadDoc.ingestors.${ingestor.type}.heading`)}
-                </h2>
-
                 <Input
                   type="text"
                   value={ingestor.name}

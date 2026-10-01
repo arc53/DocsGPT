@@ -5,7 +5,7 @@ import ReactMarkdown, {
 } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-import { markdownHeadings, markdownTables } from '@/lib/markdown';
+import { markdownCode, markdownHeadings, markdownTables } from '@/lib/markdown';
 
 import { Button } from './ui/button';
 
@@ -23,6 +23,8 @@ const TableFrame = (props: TableProps) => (
 const components: Components = {
   ...markdownHeadings,
   ...markdownTables,
+  // The shared inline chip; fenced code stays in the plain box below.
+  ...markdownCode({}),
   table: TableFrame,
   p: ({ children }) => <p className="mb-3">{children}</p>,
   ul: ({ children }) => (
@@ -39,16 +41,12 @@ const components: Components = {
     </Button>
   ),
   // Fenced and indented code keep their lines and scroll sideways in a
-  // bordered box; the inline pill below applies to inline code only.
+  // bordered box; the inline chip's fill, padding and line folding are reset
+  // inside it.
   pre: ({ children }) => (
-    <pre className="border-border mb-3 overflow-x-auto rounded-md border p-3 font-mono text-xs leading-5 [&>code]:bg-transparent [&>code]:p-0">
+    <pre className="border-border mb-3 overflow-x-auto rounded-md border p-3 font-mono text-xs leading-5 [&>code]:rounded-none [&>code]:bg-transparent [&>code]:p-0 [&>code]:whitespace-pre">
       {children}
     </pre>
-  ),
-  code: ({ children }) => (
-    <code className="bg-muted rounded-sm px-1 py-0.5 font-mono text-xs">
-      {children}
-    </code>
   ),
   mark: ({ children }) => (
     <mark className="bg-secondary text-foreground rounded-xs px-0.5">

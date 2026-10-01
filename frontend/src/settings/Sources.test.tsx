@@ -198,10 +198,16 @@ describe('Sources access', () => {
       );
     });
     await menuItems();
-    await clickItem('convTile.delete');
+    await clickItem('settings.sources.delete');
+    // The confirm copy: the question as the title, the consequence below.
+    expect(
+      document.querySelector('[role="dialog"] [data-slot="dialog-description"]')
+        ?.textContent,
+    ).toBe('settings.sources.deleteConsequence');
     const submit = Array.from(
       document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
-    ).find((b) => b.textContent === 'convTile.delete')!;
+    ).find((b) => b.textContent === 'settings.sources.delete')!;
+    expect(submit.getAttribute('data-variant')).toBe('destructive');
     await act(async () => submit.click());
     expect(handleDeleteDocument).toHaveBeenCalled();
     const dialog = document.querySelector('[role="dialog"]');
@@ -222,7 +228,7 @@ describe('Sources access', () => {
       'settings.sources.testRetrieval.action',
       'settings.sources.wiki.convert.action',
       'settings.sources.shareWithTeam',
-      'convTile.delete',
+      'settings.sources.delete',
     ]);
   });
 
@@ -250,7 +256,7 @@ describe('Sources access', () => {
     connectors.connections = [];
     expect(items).not.toContain('settings.connectors.manageConnection');
     expect(items).toContain('settings.sources.editConfig');
-    expect(items).toContain('convTile.delete');
+    expect(items).toContain('settings.sources.delete');
   });
 
   // A source whose connection needs signing in again says so on its tile
@@ -391,7 +397,7 @@ describe('Sources access', () => {
     await render(doc());
     const items = await menuItems();
     expect(items).toContain('settings.sources.shareWithTeam');
-    expect(items).toContain('convTile.delete');
+    expect(items).toContain('settings.sources.delete');
   });
 
   it('editor: edits but cannot share or delete', async () => {
@@ -422,7 +428,7 @@ describe('Sources access', () => {
     );
     const items = await menuItems();
     expect(items).toContain('settings.sources.shareWithTeam');
-    expect(items).toContain('convTile.delete');
+    expect(items).toContain('settings.sources.delete');
   });
 
   it('viewer: View config and Test retrieval only', async () => {

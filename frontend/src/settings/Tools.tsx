@@ -697,6 +697,7 @@ export default function Tools() {
               toolName:
                 toolToDelete?.customName || toolToDelete?.displayName || '',
             })}
+            description={t('settings.tools.deleteConsequence')}
             modalState={deleteModalState}
             setModalState={setDeleteModalState}
             handleSubmit={confirmDeleteTool}

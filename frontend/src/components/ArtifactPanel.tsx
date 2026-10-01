@@ -3,14 +3,9 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import ReactMarkdown from 'react-markdown';
 import { useSelector } from 'react-redux';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import {
-  oneLight,
-  vscDarkPlus,
-} from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import remarkGfm from 'remark-gfm';
 
-import { markdownHeadings, markdownTables } from '@/lib/markdown';
+import { markdownCode, markdownHeadings, markdownTables } from '@/lib/markdown';
 import { cn } from '@/lib/utils';
 
 import userService from '../api/services/userService';
@@ -23,7 +18,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { LoadingState } from '@/components/ui/loading-state';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
-import { Card } from './ui/card';
+import { CodeBlock } from './ui/code-block';
 import { PanelBody, PanelHeader } from './ui/side-panel';
 
 type TodoItem = {
@@ -189,54 +184,7 @@ function NoteView({ data }: { data: NoteArtifactData }) {
               components={{
                 ...markdownHeadings,
                 ...markdownTables,
-                code(props) {
-                  const {
-                    children,
-                    className,
-                    node: _node,
-                    ref: _ref,
-                    ...rest
-                  } = props;
-                  void _node;
-                  void _ref;
-                  const match = /language-(\w+)/.exec(className || '');
-                  const language = match ? match[1] : '';
-
-                  return match ? (
-                    <div className="group border-border relative my-2 overflow-hidden rounded-xl border">
-                      <div className="bg-muted flex items-center justify-between px-2 py-1">
-                        <span className="text-foreground text-xs font-medium">
-                          {language}
-                        </span>
-                        <CopyButton
-                          textToCopy={String(children).replace(/\n$/, '')}
-                          side="bottom"
-                        />
-                      </div>
-                      <SyntaxHighlighter
-                        {...rest}
-                        PreTag="div"
-                        language={language}
-                        /* eslint-disable-next-line shadcn/no-inline-styles -- SyntaxHighlighter's style prop is its Prism theme object (oneLight / vscDarkPlus), picked by theme at runtime; it is not CSS. See DESIGN.md, Approved exceptions. */
-                        style={isDarkTheme ? vscDarkPlus : oneLight}
-                        customStyle={{
-                          margin: 0,
-                          borderRadius: 0,
-                          scrollbarWidth: 'thin',
-                        }}
-                      >
-                        {String(children).replace(/\n$/, '')}
-                      </SyntaxHighlighter>
-                    </div>
-                  ) : (
-                    <code
-                      className="bg-accent rounded-md px-2 py-1 text-xs font-normal"
-                      {...rest}
-                    >
-                      {children}
-                    </code>
-                  );
-                },
+                ...markdownCode({ surface: 'muted', isDarkTheme }),
                 ul({ children }) {
                   return (
                     <ul className="list-inside list-disc pl-4 whitespace-normal">
@@ -481,15 +429,9 @@ export default function ArtifactPanel({
         return <NoteView data={artifact.data} />;
       default:
         return (
-          <Card
-            variant="filled"
-            padding="sm"
-            className="max-h-full overflow-auto"
-          >
-            <pre className="text-muted-foreground font-mono text-xs wrap-break-word whitespace-pre-wrap">
-              {JSON.stringify(artifact, null, 2)}
-            </pre>
-          </Card>
+          <CodeBlock maxHeight="parent" className="max-h-full">
+            {JSON.stringify(artifact, null, 2)}
+          </CodeBlock>
         );
     }
   };

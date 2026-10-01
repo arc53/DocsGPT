@@ -1,4 +1,3 @@
-import { CircleAlert, CircleCheck } from 'lucide-react';
 import { nanoid } from '@reduxjs/toolkit';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -609,7 +608,6 @@ export default function ConnectWizard({
     <div className="flex flex-col gap-5">
       {error && (
         <Alert variant="destructive">
-          <CircleAlert />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
@@ -683,7 +681,6 @@ export default function ConnectWizard({
     <div className="flex flex-col gap-5">
       {error && (
         <Alert variant="destructive">
-          <CircleAlert />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
@@ -874,7 +871,6 @@ export default function ConnectWizard({
     <div className="flex flex-col gap-5">
       {summary && (
         <Alert variant="success">
-          <CircleCheck />
           <AlertDescription>{summary}</AlertDescription>
         </Alert>
       )}

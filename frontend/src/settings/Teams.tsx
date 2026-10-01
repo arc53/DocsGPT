@@ -3,7 +3,6 @@ import {
   Bot,
   Check,
   ChevronRight,
-  CircleAlert,
   FileText,
   MessageSquare,
   Pencil,
@@ -236,6 +235,8 @@ export default function Teams() {
   const [removeMemberModalState, setRemoveMemberModalState] =
     useState<ActiveState>('INACTIVE');
   const [memberToRemove, setMemberToRemove] = useState<string | null>(null);
+  // The grant waiting on its remove confirm (it takes access away).
+  const [grantToRemove, setGrantToRemove] = useState<Grant | null>(null);
 
   // The caller's role in the selected team, as the grants endpoint reports it.
   const [teamRole, setTeamRole] = useState<TeamRole | null>(null);
@@ -607,21 +608,26 @@ export default function Teams() {
     }
   };
 
+  // The member's label for the remove confirm (the id when off this page).
+  const memberToRemoveLabel = (() => {
+    if (!memberToRemove) return '';
+    const m = members.find((x) => x.user_id === memberToRemove);
+    return m ? memberLabel(m) : truncateSub(memberToRemove);
+  })();
+
   const requestRemoveMember = (memberId: string) => {
     setMemberToRemove(memberId);
     setRemoveMemberModalState('ACTIVE');
   };
 
+  // Returns the request so the confirm stays open on a failure and shows
+  // removeMemberError; the member is cleared only once it's gone, so the
+  // pending (or failed) dialog keeps its name.
   const confirmRemoveMember = async () => {
     if (!selected || !memberToRemove) return;
-    const memberId = memberToRemove;
+    await teamsService.removeMember(selected.id, memberToRemove, token);
     setMemberToRemove(null);
-    try {
-      await teamsService.removeMember(selected.id, memberId, token);
-      openTeam(selected);
-    } catch (error) {
-      reportError(errorMessage(error, t('settings.teams.removeMemberError')));
-    }
+    openTeam(selected);
   };
 
   const requestDeleteTeam = (team: Team) => {
@@ -632,13 +638,10 @@ export default function Teams() {
   const confirmDeleteTeam = async () => {
     if (!teamToDelete) return;
     const team = teamToDelete;
+    // A rejection keeps the confirm open with deleteTeamError.
+    await dispatch(deleteTeam({ id: team.id, token })).unwrap();
     setTeamToDelete(null);
-    try {
-      await dispatch(deleteTeam({ id: team.id, token })).unwrap();
-      if (selected?.id === team.id) setSelected(null);
-    } catch (error) {
-      reportError(errorMessage(error, t('settings.teams.deleteTeamError')));
-    }
+    if (selected?.id === team.id) setSelected(null);
   };
 
   // Re-read the team's grants after a change (the drawer follows them).
@@ -663,6 +666,7 @@ export default function Teams() {
 
   // Remove one grant: the whole-team grant, or one member's (which needs
   // its target_user_id, or the server would drop the team grant instead).
+  // A failure rethrows, so the confirm stays open with unshareError.
   const handleUnshare = async (grant: Grant) => {
     if (!selected) return;
     const key = grantKey(grant);
@@ -677,8 +681,6 @@ export default function Teams() {
         },
         token,
       );
-    } catch (error) {
-      reportError(errorMessage(error, t('settings.teams.unshareError')));
     } finally {
       setGrantBusy(key, false);
       await refreshGrants();
@@ -1029,7 +1031,8 @@ export default function Teams() {
             <SectionHeader
               as="h4"
               size="sm"
-              title={`${t('settings.teams.members')} · ${formatCount(membersAll)}`}
+              title={t('settings.teams.members')}
+              count={membersAll}
               actions={
                 (membersAll > MEMBERS_PAGE_SIZE || isAdmin) && (
                   <div className="flex flex-wrap items-center gap-2">
@@ -1149,7 +1152,8 @@ export default function Teams() {
             <SectionHeader
               as="h4"
               size="sm"
-              title={`${t('settings.teams.sharedResources')} · ${formatCount(sharedResources.length)}`}
+              title={t('settings.teams.sharedResources')}
+              count={sharedResources.length}
             />
             {sharedResources.length === 0 ? (
               <EmptyState size="sm" title={t('settings.teams.nothingShared')} />
@@ -1166,9 +1170,12 @@ export default function Teams() {
                   >
                     {(['all', ...FILTER_TYPES] as ResourceFilter[]).map(
                       (value) => (
-                        <ToggleGroupItem key={value} value={value}>
-                          {t(`settings.teams.sharedList.filter.${value}`)}{' '}
-                          {formatCount(resourceCounts[value])}
+                        <ToggleGroupItem
+                          key={value}
+                          value={value}
+                          count={resourceCounts[value]}
+                        >
+                          {t(`settings.teams.sharedList.filter.${value}`)}
                         </ToggleGroupItem>
                       ),
                     )}
@@ -1416,7 +1423,7 @@ export default function Teams() {
                                   disabled={busy}
                                   label={t('settings.teams.drawer.removeGrant')}
                                   icon={Trash2}
-                                  onClick={() => handleUnshare(g)}
+                                  onClick={() => setGrantToRemove(g)}
                                 />
                               )}
                             </>
@@ -1471,6 +1478,41 @@ export default function Teams() {
                 </p>
               </section>
             </PanelBody>
+            {grantToRemove && (
+              <ConfirmationModal
+                message={t('settings.teams.share.removeConfirm', {
+                  interpolation: { escapeValue: false },
+                  name: grantToRemove.target_user_id
+                    ? grantToRemove.target_user_label ||
+                      truncateSub(grantToRemove.target_user_id)
+                    : selected.name,
+                })}
+                description={
+                  grantToRemove.target_user_id
+                    ? t('settings.teams.share.removeConfirmPerson', {
+                        interpolation: { escapeValue: false },
+                        name:
+                          grantToRemove.target_user_label ||
+                          truncateSub(grantToRemove.target_user_id),
+                        resource: resourceName(openResource),
+                        team: selected.name,
+                      })
+                    : t('settings.teams.share.removeConfirmTeam', {
+                        interpolation: { escapeValue: false },
+                        team: selected.name,
+                        resource: resourceName(openResource),
+                      })
+                }
+                modalState="ACTIVE"
+                setModalState={(state) =>
+                  state === 'INACTIVE' && setGrantToRemove(null)
+                }
+                submitLabel={t('settings.teams.remove')}
+                handleSubmit={() => handleUnshare(grantToRemove)}
+                error={t('settings.teams.unshareError')}
+                variant="destructive"
+              />
+            )}
           </>
         )}
       </SidePanel>
@@ -1518,7 +1560,6 @@ export default function Teams() {
         </FormField>
         {createError && (
           <Alert variant="destructive" className="mt-3">
-            <CircleAlert className="size-4" aria-hidden="true" />
             <AlertDescription>{createError}</AlertDescription>
           </Alert>
         )}
@@ -1560,7 +1601,6 @@ export default function Teams() {
         </div>
         {editError && (
           <Alert variant="destructive" className="mt-3">
-            <CircleAlert className="size-4" aria-hidden="true" />
             <AlertDescription>{editError}</AlertDescription>
           </Alert>
         )}
@@ -1616,7 +1656,6 @@ export default function Teams() {
         </div>
         {addMemberError && (
           <Alert variant="destructive" className="mt-3">
-            <CircleAlert className="size-4" aria-hidden="true" />
             <AlertDescription>{addMemberError}</AlertDescription>
           </Alert>
         )}
@@ -1627,20 +1666,31 @@ export default function Teams() {
           interpolation: { escapeValue: false },
           name: teamToDelete?.name ?? '',
         })}
+        description={t('settings.teams.deleteTeamConsequence')}
         modalState={deleteTeamModalState}
         setModalState={setDeleteTeamModalState}
-        submitLabel={t('settings.teams.deleteTeam')}
+        submitLabel={t('settings.teams.delete')}
         handleSubmit={confirmDeleteTeam}
         handleCancel={() => setTeamToDelete(null)}
+        error={t('settings.teams.deleteTeamError')}
         variant="destructive"
       />
       <ConfirmationModal
-        message={t('settings.teams.removeMemberConfirmation')}
+        message={t('settings.teams.removeMemberConfirmation', {
+          interpolation: { escapeValue: false },
+          name: memberToRemoveLabel,
+          team: selected?.name ?? '',
+        })}
+        description={t('settings.teams.removeMemberConsequence', {
+          interpolation: { escapeValue: false },
+          team: selected?.name ?? '',
+        })}
         modalState={removeMemberModalState}
         setModalState={setRemoveMemberModalState}
         submitLabel={t('settings.teams.remove')}
         handleSubmit={confirmRemoveMember}
         handleCancel={() => setMemberToRemove(null)}
+        error={t('settings.teams.removeMemberError')}
         variant="destructive"
       />
     </SectionShell>

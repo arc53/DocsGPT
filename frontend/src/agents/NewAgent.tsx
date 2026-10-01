@@ -1,12 +1,5 @@
 import isEqual from 'lodash/isEqual';
-import {
-  CircleCheck,
-  CircleX,
-  Database,
-  Info,
-  Play,
-  SquarePen,
-} from 'lucide-react';
+import { CircleCheck, CircleX, Database, Play, SquarePen } from 'lucide-react';
 import React, {
   useCallback,
   useEffect,
@@ -1315,7 +1308,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       >
         {submitError && (
           <Alert variant="destructive" className="mb-6">
-            <CircleX aria-hidden="true" />
             <AlertDescription>{submitError}</AlertDescription>
           </Alert>
         )}
@@ -1868,7 +1860,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             <Card
               tone="destructive"
               padding="lg"
-              className="flex-row flex-wrap items-start justify-between"
+              className="flex-row flex-wrap items-center justify-between"
             >
               <SectionHeader
                 tone="destructive"
@@ -1879,7 +1871,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               <Button
                 type="button"
                 variant="destructive-outline"
-                size="sm"
+                size="field"
+                shape="pill"
                 onClick={() => setDeleteConfirmation('ACTIVE')}
                 className="shrink-0"
               >
@@ -1890,7 +1883,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       </div>
       {sponsorPrompt.modal}
       <ConfirmationModal
-        message={t('agents.deleteConfirmation')}
+        message={t('agents.deleteConfirmation', {
+          interpolation: { escapeValue: false },
+          name: agent.name,
+        })}
+        description={t('agents.deleteConsequence')}
         modalState={deleteConfirmation}
         setModalState={setDeleteConfirmation}
         submitLabel={t('agents.form.buttons.delete')}
@@ -1992,8 +1989,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           <div className="flex min-h-0 flex-1 flex-col">
             {effectiveMode === 'edit' && hasChanges && (
               <div className="px-4 pt-4">
-                <Alert role="note">
-                  <Info />
+                <Alert variant="info" role="note">
                   <AlertDescription>
                     {t('agents.form.preview.unsavedChanges')}
                   </AlertDescription>

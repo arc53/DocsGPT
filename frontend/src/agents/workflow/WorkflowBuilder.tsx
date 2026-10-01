@@ -1,6 +1,6 @@
 import 'reactflow/dist/style.css';
 
-import { CircleAlert, Link, Pencil, Play, Trash2, Users } from 'lucide-react';
+import { Link, Pencil, Play, Trash2, Users } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -267,6 +267,8 @@ function WorkflowBuilderInner() {
   const [detailsOnApiWrites, setDetailsOnApiWrites] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [isDeletingAgent, setIsDeletingAgent] = useState(false);
+  // The delete confirm's Alert text after a failed delete.
+  const [deleteError, setDeleteError] = useState<string>();
   const [currentAgent, setCurrentAgent] = useState<Agent>(
     createEmptyWorkflowAgent(),
   );
@@ -737,12 +739,12 @@ function WorkflowBuilderInner() {
       }
       navigateBackToAgents();
     } catch (error) {
-      setPublishErrors([
-        error instanceof Error
-          ? error.message
-          : t('agents.workflow.builder.deleteFailed'),
-      ]);
-      setErrorContext('publish');
+      // Rethrown so the confirm stays open and shows deleteError.
+      setDeleteError(
+        (error instanceof Error && error.message) ||
+          t('agents.workflow.builder.deleteFailed'),
+      );
+      throw error;
     } finally {
       setIsDeletingAgent(false);
     }
@@ -1957,7 +1959,6 @@ function WorkflowBuilderInner() {
           <div className="pointer-events-none absolute top-20 right-0 left-0 z-20 flex justify-center px-4">
             <div className="bg-card pointer-events-auto w-full max-w-md rounded-xl shadow-md">
               <Alert variant="destructive" onClose={() => setPublishErrors([])}>
-                <CircleAlert className="size-4" />
                 <AlertTitle>
                   {errorContext === 'preview'
                     ? t('agents.workflow.builder.unablePreview')
@@ -2163,16 +2164,18 @@ function WorkflowBuilderInner() {
         <ConfirmationModal
           message={
             workflowName
-              ? t('agents.workflow.builder.deleteConfirm', {
+              ? t('agents.deleteConfirmation', {
                   ...NO_ESCAPE,
                   name: workflowName,
                 })
               : t('agents.workflow.builder.deleteConfirmUnnamed')
           }
+          description={t('agents.deleteConsequence')}
           modalState={deleteConfirmation}
           setModalState={setDeleteConfirmation}
           submitLabel={t('agents.form.buttons.delete')}
           handleSubmit={handleDeleteAgent}
+          error={deleteError}
           cancelLabel={t('agents.form.buttons.cancel')}
           variant="destructive"
         />

@@ -6,7 +6,12 @@ import { useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
 import { Checkbox } from '../components/ui/checkbox';
+import {
+  DescriptionItem,
+  DescriptionList,
+} from '../components/ui/description-list';
 import { Dropzone } from '../components/ui/dropzone';
 import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
@@ -215,32 +220,34 @@ export default function ImportSpecModal({
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            <div className="bg-muted rounded-xl p-4">
-              <SectionHeader
-                as="h3"
-                size="xs"
-                title={parsedResult.metadata.title}
-              />
-              {parsedResult.metadata.description && (
-                <p
-                  className="text-muted-foreground mt-1 line-clamp-2 text-sm"
-                  title={parsedResult.metadata.description}
-                >
-                  {parsedResult.metadata.description}
-                </p>
-              )}
-              <p className="text-muted-foreground mt-2 text-xs">
-                {t('modals.importSpec.version')}:{' '}
-                {parsedResult.metadata.version}
-              </p>
+            <Card variant="outline">
+              <div>
+                <SectionHeader
+                  as="h3"
+                  size="xs"
+                  title={parsedResult.metadata.title}
+                />
+                {parsedResult.metadata.description && (
+                  <p
+                    className="text-muted-foreground mt-1 line-clamp-2 text-sm"
+                    title={parsedResult.metadata.description}
+                  >
+                    {parsedResult.metadata.description}
+                  </p>
+                )}
+              </div>
+              <DescriptionList size="xs">
+                <DescriptionItem label={t('modals.importSpec.version')} mono>
+                  {parsedResult.metadata.version}
+                </DescriptionItem>
+              </DescriptionList>
               <FormField
                 label={t('modals.importSpec.baseUrl')}
-                labelSurface="muted"
-                className="mt-5"
+                labelSurface="card"
+                className="mt-2"
               >
                 <Input
                   type="text"
-                  variant="filled"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
                   placeholder={
@@ -248,7 +255,7 @@ export default function ImportSpecModal({
                   }
                 />
               </FormField>
-            </div>
+            </Card>
 
             <div className="flex items-center justify-between px-1">
               <p className="text-foreground text-sm font-medium">
@@ -274,7 +281,7 @@ export default function ImportSpecModal({
                 <label
                   key={index}
                   htmlFor={`import-spec-action-${index}`}
-                  className="border-border hover:bg-muted flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors"
+                  className="border-border hover:bg-accent has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5 flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors"
                 >
                   <Checkbox
                     id={`import-spec-action-${index}`}

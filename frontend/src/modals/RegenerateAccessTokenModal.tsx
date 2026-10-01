@@ -1,4 +1,3 @@
-import { CircleAlert, TriangleAlert } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -141,7 +140,6 @@ export default function RegenerateAccessTokenModal({
           </Select>
           {expiry === NO_EXPIRY ? (
             <Alert variant="warning">
-              <TriangleAlert className="size-4" aria-hidden="true" />
               <AlertDescription>
                 {t('settings.accessTokens.create.noExpirationHint')}
               </AlertDescription>
@@ -151,7 +149,6 @@ export default function RegenerateAccessTokenModal({
 
         {error && (
           <Alert variant="destructive">
-            <CircleAlert className="size-4" aria-hidden="true" />
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}

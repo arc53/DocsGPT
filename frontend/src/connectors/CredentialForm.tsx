@@ -107,7 +107,7 @@ function renderHint(text: string, url?: string | null): ReactNode {
       <Button variant="link" size="text" asChild>
         <a href={url} target="_blank" rel="noopener noreferrer">
           {match[1]}
-          <ExternalLink className="size-3" />
+          <ExternalLink />
         </a>
       </Button>
       {after}

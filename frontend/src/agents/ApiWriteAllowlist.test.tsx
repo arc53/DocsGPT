@@ -206,7 +206,10 @@ describe('ApiWriteAllowlist', () => {
   const groups = () =>
     Array.from(container.querySelectorAll<HTMLElement>('[data-tool]'));
   const groupTitles = () =>
-    groups().map((g) => g.querySelector('h4')?.textContent);
+    groups().map((g) => {
+      const h = g.querySelector('h4');
+      return `${h?.firstChild?.textContent} [${h?.querySelector('[data-slot="count"]')?.textContent}]`;
+    });
   const group = (id: string) =>
     container.querySelector<HTMLElement>(`[data-tool="${id}"]`)!;
   const choice = (id: string, value: 'off' | 'always' | 'customize') =>
@@ -239,9 +242,9 @@ describe('ApiWriteAllowlist', () => {
     await act(async () => option.click());
   };
   const P = 'settings.connectors.permission';
-  // "Telegram · 0 of 2 allowed"
+  // "Telegram" with the count "0 of 2 allowed" in SectionHeader's count span
   const titled = (name: string, allowed: number, total: number) =>
-    `${name} · ${K}.summaryCount(allowed=${allowed},formatted=${total})`;
+    `${name} [${K}.summaryCount(allowed=${allowed},formatted=${total})]`;
   const summary = () =>
     container.querySelector('[data-testid="api-writes-summary"]')?.textContent;
   const savedConfig = () =>

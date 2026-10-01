@@ -1,5 +1,4 @@
 import type { TFunction } from 'i18next';
-import { TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -255,7 +254,6 @@ export default function ResourceStatusNotice({
 
   return (
     <Alert variant="warning" className="sm:col-span-2" onClose={onClose}>
-      <TriangleAlert />
       <AlertTitle>{t('agents.form.resourceStates.title')}</AlertTitle>
       <AlertDescription>
         {onClose ? (

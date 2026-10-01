@@ -1,4 +1,3 @@
-import { ShieldAlert } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -131,16 +130,11 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
     }
   };
 
+  // Returns the request: a failure keeps the confirm open with its error.
   const handleRevoke = async () => {
     if (!deviceId) return;
-    try {
-      await devicesService.revoke(deviceId, token);
-      setRevokeState('INACTIVE');
-      handleGoBack();
-    } catch (err) {
-      console.error('revoke failed', err);
-      setRevokeState('INACTIVE');
-    }
+    await devicesService.revoke(deviceId, token);
+    handleGoBack();
   };
 
   const online = isOnline(device);
@@ -189,12 +183,15 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
           title={t('settings.tools.toolIconTitle', { name: tool.displayName })}
           className="size-7"
         />
-        <h2 className="text-foreground text-xl leading-tight font-semibold">
-          {device?.name ||
+        <SectionHeader
+          size="title"
+          title={
+            device?.name ||
             tool.customName ||
             tool.displayName ||
-            t('settings.devices.fallbackName')}
-        </h2>
+            t('settings.devices.fallbackName')
+          }
+        />
         <Badge variant={online ? 'success' : 'neutral'}>{pillText}</Badge>
         {approvalMode === 'full' && (
           <Badge variant="destructive">
@@ -267,7 +264,6 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
           </FormField>
           {approvalMode === 'full' && (
             <Alert variant="destructive">
-              <ShieldAlert className="size-4" aria-hidden="true" />
               <AlertDescription>
                 {t('settings.devices.fullAccessWarning')}
               </AlertDescription>
@@ -340,38 +336,40 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
       </section>
 
       {/* Danger zone */}
-      <section className="flex flex-col gap-3">
+      <Card
+        tone="destructive"
+        padding="lg"
+        className="flex-row flex-wrap items-center justify-between"
+      >
         <SectionHeader
           as="h3"
-          size="xs"
           tone="destructive"
           title={t('settings.devices.dangerZone')}
+          description={t('settings.devices.dangerZoneDescription')}
+          className="min-w-0 flex-1"
         />
-        <Card
-          tone="destructive"
-          className="sm:flex-row sm:items-center sm:justify-between"
+        <Button
+          type="button"
+          variant="destructive-outline"
+          size="field"
+          shape="pill"
+          className="shrink-0"
+          onClick={() => setRevokeState('ACTIVE')}
         >
-          <p className="text-muted-foreground text-sm">
-            {t('settings.devices.dangerZoneDescription')}
-          </p>
-          <Button
-            type="button"
-            variant="destructive-outline"
-            shape="pill"
-            className="shrink-0"
-            onClick={() => setRevokeState('ACTIVE')}
-          >
-            {t('settings.devices.revoke')}
-          </Button>
-        </Card>
-      </section>
+          {t('settings.devices.revoke')}
+        </Button>
+      </Card>
 
       <ConfirmationModal
         message={
           device
-            ? t('settings.devices.revokeWarning', { name: device.name })
+            ? t('settings.devices.revokeWarning', {
+                interpolation: { escapeValue: false },
+                name: device.name,
+              })
             : ''
         }
+        description={t('settings.devices.revokeConsequence')}
         modalState={revokeState}
         setModalState={setRevokeState}
         handleSubmit={handleRevoke}

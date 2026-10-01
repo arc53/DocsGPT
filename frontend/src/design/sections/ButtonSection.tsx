@@ -1,7 +1,8 @@
 import {
+  ArrowRight,
   Check,
-  TriangleAlert,
   Copy,
+  ExternalLink,
   Mic,
   MoreHorizontal,
   Pencil,
@@ -11,7 +12,6 @@ import {
   Settings,
   SquarePen,
   ChevronDown,
-  ChevronsUpDown,
   Book,
   MessageSquare,
   Trash2,
@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Combobox } from '@/components/ui/combobox';
 import { ActionMenu } from '@/components/ui/dropdown-menu';
 import { IconButton } from '@/components/ui/icon-button';
 import { Input } from '@/components/ui/input';
@@ -37,6 +38,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { NavTab } from '@/components/ui/tabs';
+import { ToggleChip } from '@/components/ui/toggle-chip';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Example, Section } from '../shared';
 
@@ -48,6 +50,13 @@ const LINK_SIZES = new Set<string>(['inline', 'text']);
 const BUTTON_SIZES = buttonSizeNames.filter(
   (size) => !size.startsWith('icon') && !LINK_SIZES.has(size),
 );
+
+// Options for the Combobox trigger demo (the full picker is under Pickers).
+const TRIGGER_TIMEZONES = [
+  { value: 'Europe/London', label: 'Europe/London', hint: 'UTC+01:00' },
+  { value: 'Europe/Berlin', label: 'Europe/Berlin', hint: 'UTC+02:00' },
+  { value: 'America/Chicago', label: 'America/Chicago', hint: 'UTC−05:00' },
+];
 
 const ICON_SIZES = buttonSizeNames.filter(
   (size): size is Extract<typeof size, `icon${string}`> =>
@@ -61,6 +70,9 @@ export default function ButtonSection() {
   const [trackRange, setTrackRange] = useState('7d');
   const [days, setDays] = useState<string[]>(['mon', 'wed', 'fri']);
   const [agentFilter, setAgentFilter] = useState('all');
+  const [runFilter, setRunFilter] = useState('all');
+  const [stages, setStages] = useState<string[]>(['input', 'output']);
+  const [capabilities, setCapabilities] = useState<string[]>(['tools']);
   return (
     <Section
       id="buttons"
@@ -180,35 +192,27 @@ export default function ButtonSection() {
       </Example>
       <Example
         title="Combobox trigger"
-        code='<Button variant="combobox" size="field" role="combobox" data-placeholder={value ? undefined : ""}>'
+        code='<Combobox> draws it: <Button variant="combobox" size="field" role="combobox"> + the rotating ChevronDown (MultiSelect shares it) · never hand-build the trigger'
       >
         <div className="flex max-w-md flex-col gap-3">
-          <Button
-            variant="combobox"
-            size="field"
-            role="combobox"
-            aria-expanded={false}
-            data-placeholder=""
-            className="w-full justify-between"
-          >
-            <span className="truncate">Select a timezone…</span>
-            <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
-          </Button>
-          <Button
-            variant="combobox"
-            size="field"
-            role="combobox"
-            aria-expanded={false}
-            className="w-full justify-between"
-          >
-            <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
-              <span className="truncate">Europe/Berlin</span>
-              <span className="text-muted-foreground shrink-0 text-xs">
-                UTC+02:00
-              </span>
-            </span>
-            <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
-          </Button>
+          <Combobox
+            aria-label="Timezone"
+            placeholder="Select a timezone…"
+            searchPlaceholder="Search timezones"
+            emptyText="No timezone found."
+            options={TRIGGER_TIMEZONES}
+            value={null}
+            onValueChange={() => undefined}
+          />
+          <Combobox
+            aria-label="Timezone"
+            placeholder="Select a timezone…"
+            searchPlaceholder="Search timezones"
+            emptyText="No timezone found."
+            options={TRIGGER_TIMEZONES}
+            value="Europe/Berlin"
+            onValueChange={() => undefined}
+          />
         </div>
       </Example>
       <Example
@@ -243,8 +247,8 @@ export default function ButtonSection() {
         </div>
       </Example>
       <Example
-        title="Links: in running text, standalone, in a status Alert"
-        code='size="text" (inherits size, weight, line-height; keeps primary) · size="inline" (14px medium) · tone="current" (context colour)'
+        title="Links: in running text, standalone, with an icon, in a status Alert"
+        code='size="text" (inherits size, weight, line-height; keeps primary) · size="inline" (14px medium) · a trailing ArrowRight / ExternalLink is 12px, set by the size (no size-3) · a leading icon sets size-4 · tone="current" (context colour)'
       >
         <div className="flex max-w-md flex-col gap-4">
           <p className="text-foreground text-base">
@@ -257,16 +261,26 @@ export default function ButtonSection() {
           <p className="text-muted-foreground text-xs">
             Fine-grained, with read access to Contents.{' '}
             <Button variant="link" size="text" asChild>
-              <a href="#buttons">Create a token on GitHub</a>
+              <a href="#buttons">
+                Create a token on GitHub
+                <ExternalLink />
+              </a>
             </Button>
           </p>
-          <div>
+          <div className="flex flex-wrap items-center gap-6">
             <Button variant="link" size="inline">
               Browse all connectors
             </Button>
+            <Button variant="link" size="inline">
+              View all runs
+              <ArrowRight />
+            </Button>
+            <Button variant="link" size="inline">
+              <Plus className="size-4" />
+              Add a carrier
+            </Button>
           </div>
           <Alert variant="warning">
-            <TriangleAlert />
             <AlertDescription>
               This connector needs setup before agents can use it.{' '}
               <Button variant="link" size="text" tone="current" asChild>
@@ -389,8 +403,94 @@ export default function ButtonSection() {
         </div>
       </Example>
       <Example
+        title="Toggle chips"
+        code='<ToggleChip pressed onPressedChange size="xs | sm" locked? disabled?> (any of N in a wrapping row; aria-pressed; locked = on + Lock + aria-disabled, reason in title) · ToggleGroup for one of N'
+      >
+        <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-2">
+            <div
+              role="group"
+              aria-label="Guardrail stages"
+              className="flex flex-wrap items-center gap-2"
+            >
+              {(
+                [
+                  ['input', 'Input'],
+                  ['output', 'Output'],
+                  ['tool', 'Tool calls'],
+                ] as const
+              ).map(([id, label]) => (
+                <ToggleChip
+                  key={id}
+                  pressed={stages.includes(id)}
+                  onPressedChange={(on) =>
+                    setStages((current) =>
+                      on
+                        ? [...current, id]
+                        : current.filter((stage) => stage !== id),
+                    )
+                  }
+                >
+                  {label}
+                </ToggleChip>
+              ))}
+              <ToggleChip
+                pressed
+                locked
+                title="Required by your administrator for every agent"
+              >
+                PII redaction
+              </ToggleChip>
+              <ToggleChip pressed={false} disabled>
+                Retrieval
+              </ToggleChip>
+            </div>
+            <span className="text-muted-foreground text-xs">
+              xs (dense panels): on, off, locked, disabled
+            </span>
+          </div>
+          <div className="flex flex-col gap-2">
+            <div
+              role="group"
+              aria-label="Model capabilities"
+              className="flex flex-wrap items-center gap-2"
+            >
+              {(
+                [
+                  ['tools', 'Tool use'],
+                  ['vision', 'Images'],
+                  ['json', 'Structured output'],
+                ] as const
+              ).map(([id, label]) => {
+                const on = capabilities.includes(id);
+                return (
+                  <ToggleChip
+                    key={id}
+                    size="sm"
+                    pressed={on}
+                    onPressedChange={(next) =>
+                      setCapabilities((current) =>
+                        next
+                          ? [...current, id]
+                          : current.filter((cap) => cap !== id),
+                      )
+                    }
+                  >
+                    {on && <Check />}
+                    {label}
+                  </ToggleChip>
+                );
+              })}
+            </div>
+            <span className="text-muted-foreground text-xs">
+              sm (forms), a leading Check on the pressed chips
+            </span>
+          </div>
+        </div>
+      </Example>
+      <Example
         title="Segmented control"
-        code='<ToggleGroup type="single" value onValueChange={(v) => v && set(v)}> · the track is built in · sm 38px (forms, page toolbars) · size="xs" 36px (dense panels) · fill when it is the only control on its row · type="multiple"'
+        code='<ToggleGroup type="single" value onValueChange={(v) => v && set(v)}> · the track is built in · sm 38px (forms, page toolbars) · size="xs" 36px (dense panels) · fill when it is the only control on its row · type="multiple" · <ToggleGroupItem count>'
       >
         <div className="flex flex-col gap-6">
           <div className="flex flex-wrap items-center gap-2">
@@ -422,6 +522,27 @@ export default function ButtonSection() {
             </ToggleGroup>
             <span className="text-muted-foreground text-xs">
               xs, hugs (dense panel)
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <ToggleGroup
+              type="single"
+              aria-label="Run status"
+              value={runFilter}
+              onValueChange={(v) => v && setRunFilter(v)}
+            >
+              <ToggleGroupItem value="all" count={1204}>
+                All
+              </ToggleGroupItem>
+              <ToggleGroupItem value="failed" count={12}>
+                Failed
+              </ToggleGroupItem>
+              <ToggleGroupItem value="flagged" count={3}>
+                Flagged
+              </ToggleGroupItem>
+            </ToggleGroup>
+            <span className="text-muted-foreground text-xs">
+              sm, item count (muted on the selected item too)
             </span>
           </div>
           <div className="flex max-w-md flex-col gap-2">

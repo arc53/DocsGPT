@@ -29,6 +29,11 @@ const MULTI_OPTIONS = [
 export default function FormSection() {
   const [switchOn, setSwitchOn] = useState(true);
   const [formats, setFormats] = useState<string[]>(['pdf', 'md']);
+  const [toolbarFormats, setToolbarFormats] = useState<string[]>([
+    'pdf',
+    'docx',
+    'md',
+  ]);
   const [scopes, setScopes] = useState<string[]>(['agents:read']);
   const [tokenLimit, setTokenLimit] = useState(true);
   return (
@@ -311,7 +316,7 @@ export default function FormSection() {
       </Example>
       <Example
         title="Switch and multi-select"
-        code='<Switch> · <MultiSelect shape="default | pill">'
+        code='<Switch> · <MultiSelect shape="default | pill"> (the first two picks, one on a pill, then "+N more"; no X in the trigger: unselect in the list)'
       >
         <div className="grid items-start gap-6 md:grid-cols-2">
           <div className="flex flex-col gap-4">
@@ -342,8 +347,8 @@ export default function FormSection() {
             />
             <MultiSelect
               options={MULTI_OPTIONS}
-              selected={formats}
-              onChange={setFormats}
+              selected={toolbarFormats}
+              onChange={setToolbarFormats}
               placeholder="Allowed formats"
               shape="pill"
             />

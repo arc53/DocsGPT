@@ -1,21 +1,7 @@
-import { ChevronsUpDown } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import teamsService from '../api/services/teamsService';
-import { Button } from '../components/ui/button';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '../components/ui/command';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '../components/ui/popover';
+import { Combobox } from '../components/ui/combobox';
 import { useDebouncedValue } from '../hooks';
 
 /** Matches per search; the admin types to narrow a long team list. */
@@ -30,8 +16,8 @@ type TeamPickerProps = {
 };
 
 /**
- * A searchable picker of teams that have no allowance yet (Popover +
- * Command, like the timezone picker). The server does the search, so it
+ * A searchable picker of teams that have no allowance yet (a Combobox,
+ * like the timezone picker). The server does the search, so it
  * works however many teams the instance has.
  */
 export default function TeamPicker({
@@ -76,63 +62,28 @@ export default function TeamPicker({
   }, [open, debounced, token]);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="combobox"
-          size="field"
-          role="combobox"
-          aria-expanded={open}
-          aria-label="Team"
-          data-placeholder={value ? undefined : ''}
-          className="w-52 justify-between"
-        >
-          <span className="truncate" title={value?.name}>
-            {value ? value.name : 'Choose a team'}
-          </span>
-          <ChevronsUpDown className="shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        className="w-[min(18rem,calc(100vw-2rem))] p-0"
-        align="end"
-      >
-        <Command shouldFilter={false}>
-          <CommandInput
-            placeholder="Search teams…"
-            value={query}
-            onValueChange={setQuery}
-          />
-          <CommandList>
-            <CommandEmpty>
-              {loading
-                ? 'Searching…'
-                : debounced
-                  ? 'No team without an allowance matches.'
-                  : 'Every team has an allowance.'}
-            </CommandEmpty>
-            <CommandGroup>
-              {teams.map((team) => (
-                <CommandItem
-                  key={team.id}
-                  value={team.id}
-                  checked={value?.id === team.id}
-                  onSelect={() => {
-                    onChange(team);
-                    setOpen(false);
-                    setQuery('');
-                  }}
-                >
-                  <span className="truncate" title={team.name}>
-                    {team.name}
-                  </span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+    <Combobox
+      options={teams.map((team) => ({ value: team.id, label: team.name }))}
+      value={value?.id ?? null}
+      valueOption={value ? { value: value.id, label: value.name } : undefined}
+      onValueChange={(id, option) => onChange({ id, name: option.label })}
+      open={open}
+      onOpenChange={setOpen}
+      shouldFilter={false}
+      search={query}
+      onSearchChange={setQuery}
+      placeholder="Choose a team"
+      searchPlaceholder="Search teams…"
+      emptyText={
+        loading
+          ? 'Searching…'
+          : debounced
+            ? 'No team without an allowance matches.'
+            : 'Every team has an allowance.'
+      }
+      align="end"
+      aria-label="Team"
+      className="w-52"
+    />
   );
 }

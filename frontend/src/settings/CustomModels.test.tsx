@@ -17,15 +17,42 @@ vi.mock('../hooks', async (importOriginal) => ({
 }));
 
 vi.mock('../modals/CustomModelModal', () => ({ default: () => null }));
-vi.mock('../modals/ConfirmationModal', () => ({ default: () => null }));
+// The open confirm's submit; the test reads what handleSubmit returns.
+const confirmProps: { current: Record<string, unknown> | null } = {
+  current: null,
+};
+vi.mock('../modals/ConfirmationModal', () => ({
+  default: (props: Record<string, unknown>) => {
+    confirmProps.current = props;
+    return null;
+  },
+}));
+// Render the ⋯ menu's options inline so tests can click them.
+vi.mock('../components/ui/dropdown-menu', () => ({
+  ActionMenu: ({
+    options,
+  }: {
+    options: Array<{ label: string; onClick: () => void }>;
+  }) => (
+    <div data-testid="model-menu">
+      {options.map((o) => (
+        <button key={o.label} type="button" onClick={o.onClick}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  ),
+}));
 vi.mock('../api/services/modelService', () => ({
   default: { getModels: vi.fn(), transformModels: vi.fn(() => []) },
 }));
 
 const listCustomModels = vi.fn();
+const deleteCustomModel = vi.fn();
 vi.mock('../api/services/customModelsService', () => ({
   default: {
     listCustomModels: (...args: unknown[]) => listCustomModels(...args),
+    deleteCustomModel: (...args: unknown[]) => deleteCustomModel(...args),
   },
 }));
 
@@ -39,6 +66,8 @@ describe('CustomModels', () => {
 
   beforeEach(() => {
     listCustomModels.mockReset();
+    deleteCustomModel.mockReset();
+    confirmProps.current = null;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -79,5 +108,52 @@ describe('CustomModels', () => {
     expect(listCustomModels).toHaveBeenCalledTimes(2);
     expect(errorState()).toBeNull();
     expect(container.textContent).toContain('settings.customModels.empty');
+  });
+
+  const MODEL = {
+    id: 'm1',
+    display_name: 'Llama 3.3 70B',
+    upstream_model_id: 'llama-3.3-70b',
+    base_url: 'https://api.together.xyz/v1',
+    enabled: true,
+  };
+
+  const openDelete = async () => {
+    listCustomModels.mockResolvedValue([MODEL]);
+    await render();
+    const del = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        '[data-testid="model-menu"] button',
+      ),
+    ).find((b) => b.textContent === 'settings.customModels.actions.delete')!;
+    await act(async () => del.click());
+    expect(confirmProps.current?.modalState).toBe('ACTIVE');
+  };
+
+  it('a failed delete rejects so the confirm stays open, and keeps the card', async () => {
+    deleteCustomModel.mockRejectedValue(new Error('Request failed (500)'));
+    await openDelete();
+    const submit = confirmProps.current!.handleSubmit as () => unknown;
+    let result: unknown;
+    await act(async () => {
+      result = submit();
+      await (result as Promise<unknown>).catch(() => undefined);
+    });
+    expect(result).toBeInstanceOf(Promise);
+    await expect(result as Promise<unknown>).rejects.toThrow();
+    expect(deleteCustomModel).toHaveBeenCalledWith('m1', 'token');
+    // The dialog is left to ConfirmationModal: still open, still named.
+    expect(confirmProps.current?.modalState).toBe('ACTIVE');
+    expect(container.textContent).toContain('Llama 3.3 70B');
+  });
+
+  it('a successful delete resolves and drops the card', async () => {
+    deleteCustomModel.mockResolvedValue(undefined);
+    await openDelete();
+    const submit = confirmProps.current!.handleSubmit as () => unknown;
+    await act(async () => {
+      await submit();
+    });
+    expect(container.textContent).not.toContain('Llama 3.3 70B');
   });
 });

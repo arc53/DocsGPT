@@ -104,6 +104,10 @@ const flush = async () => {
 
 const body = () => document.body;
 const text = () => body().textContent ?? '';
+const stepBack = () =>
+  body().querySelector<HTMLButtonElement>(
+    '[data-slot="modal-header"] button[aria-label="sidePanel.back"]',
+  );
 const buttonByText = (label: string) =>
   Array.from(body().querySelectorAll('button')).find((b) =>
     b.textContent?.trim().startsWith(label),
@@ -177,6 +181,46 @@ describe('ShareToTeamModal', () => {
     expect(
       body().querySelector('[role="dialog"]')?.getAttribute('aria-hidden'),
     ).toBe('true');
+  });
+
+  it('builds the add row on Combobox mode="add": chevron, groups, no mark', async () => {
+    await render();
+    const picker = body().querySelector<HTMLButtonElement>(
+      'button[role="combobox"]',
+    )!;
+    expect(picker.dataset.slot).toBe('combobox-trigger');
+    expect(picker.hasAttribute('data-placeholder')).toBe(true);
+    expect(picker.textContent).toBe('settings.teams.share.addPlaceholder');
+    expect(picker.querySelector('.lucide-chevron-down')).not.toBeNull();
+    await act(async () => {
+      picker.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      picker.click();
+    });
+    expect(
+      body().querySelector('[data-slot="popover-content"]')?.className,
+    ).toContain('min-w-(--radix-popover-trigger-width)');
+    expect(
+      Array.from(body().querySelectorAll('[cmdk-group-heading]')).map(
+        (h) => h.textContent,
+      ),
+    ).toEqual(['settings.teams.share.teamsGroup']);
+    const items = Array.from(
+      body().querySelectorAll<HTMLElement>('[data-slot="command-item"]'),
+    );
+    expect(items.map((i) => i.textContent)).toEqual([
+      'LLogistics',
+      'SSales Ops',
+    ]);
+    expect(items.some((i) => i.dataset.checked)).toBe(false);
+    await act(async () => items[0].click());
+    await flush();
+    expect(share).toHaveBeenCalledWith(
+      't1',
+      expect.objectContaining({ resource_id: 'a1', access_level: 'viewer' }),
+      'tok',
+    );
   });
 
   describe('access settings', () => {
@@ -328,15 +372,24 @@ describe('ShareToTeamModal', () => {
       listResourceShares.mockResolvedValue({ shares: manyShares(8) });
       await render();
       act(() => buttonByText('settings.teams.share.showAll')!.click());
-      expect(text()).toContain(
+      // The step's title and summary are the dialog's own title and
+      // description, beside the header Back arrow.
+      expect(
+        body().querySelector('[data-slot="dialog-title"]')?.textContent,
+      ).toBe('settings.teams.share.peopleWithAccess');
+      expect(
+        body().querySelector('[data-slot="dialog-description"]')?.textContent,
+      ).toBe(
         'settings.teams.share.allSummary(name=QBR Report Builder,teams=#2,people=#6)',
       );
-      expect(buttonByText('settings.teams.share.back')).toBeDefined();
+      expect(stepBack()).not.toBeNull();
+      expect(buttonByText('settings.teams.share.back')).toBeUndefined();
       // You + all 8.
       expect(body().querySelectorAll('[data-slot="list-row"]')).toHaveLength(9);
       expect(
         Array.from(body().querySelectorAll('[role="radio"]')).map(
-          (p) => p.textContent,
+          (p) =>
+            `${p.firstChild?.textContent} ${p.querySelector('[data-slot="count"]')?.textContent}`,
         ),
       ).toEqual([
         'settings.teams.share.filter.all #8',
@@ -387,12 +440,12 @@ describe('ShareToTeamModal', () => {
       expect(empty?.querySelector('img')).toBeNull();
       expect(empty?.textContent).toContain('settings.teams.share.noMatches');
 
-      act(() => buttonByText('settings.teams.share.back')!.click());
+      act(() => stepBack()!.click());
       expect(buttonByText('settings.teams.share.showAll')).toBeDefined();
     });
   });
 
-  it('shows the server message when a share fails', async () => {
+  it('shows the server message when a remove fails', async () => {
     listResourceShares.mockResolvedValue({
       shares: [
         {
@@ -410,9 +463,125 @@ describe('ShareToTeamModal', () => {
     );
     act(() => remove!.click());
     await flush();
-    expect(body().querySelector('[role="alert"]')?.textContent).toContain(
-      'Not allowed',
+    act(() => buttonByText('settings.teams.remove')!.click());
+    await flush();
+    // In the confirm, which stays open over the share modal.
+    const dialogs = body().querySelectorAll('[role="dialog"]');
+    expect(
+      dialogs[dialogs.length - 1].querySelector('[role="alert"]')?.textContent,
+    ).toContain('Not allowed');
+    expect(body().querySelectorAll('[role="alert"]')).toHaveLength(1);
+  });
+
+  it('asks before removing a team grant', async () => {
+    listResourceShares.mockResolvedValue({
+      shares: [
+        {
+          team_id: 't1',
+          team_name: 'Legal',
+          access_level: 'editor',
+          target_user_id: null,
+        },
+      ],
+    });
+    await render();
+    const remove = body().querySelector<HTMLButtonElement>(
+      'button[aria-label="settings.teams.share.removeAccess"]',
     );
+    act(() => remove!.click());
+    await flush();
+    expect(unshare).not.toHaveBeenCalled();
+    const dialogs = body().querySelectorAll('[role="dialog"]');
+    const confirm = dialogs[dialogs.length - 1];
+    expect(confirm.textContent).toContain(
+      'settings.teams.share.removeConfirm(name=Legal)',
+    );
+    expect(confirm.textContent).toContain(
+      'settings.teams.share.removeConfirmTeam(team=Legal,resource=QBR Report Builder)',
+    );
+    const submit = buttonByText('settings.teams.remove')!;
+    expect(submit.getAttribute('data-variant')).toBe('destructive');
+    act(() => submit.click());
+    await flush();
+    expect(unshare).toHaveBeenCalledWith(
+      't1',
+      { resource_type: 'agent', resource_id: 'a1', target_user_id: undefined },
+      'tok',
+    );
+  });
+
+  it('keeps a failed remove in the confirm with the domain error', async () => {
+    listResourceShares.mockResolvedValue({
+      shares: [
+        {
+          team_id: 't1',
+          team_name: 'Legal',
+          access_level: 'editor',
+          target_user_id: null,
+        },
+      ],
+    });
+    // Not a TeamsApiError (a network failure): the domain fallback.
+    unshare.mockRejectedValue(new TypeError('Failed to fetch'));
+    await render();
+    act(() =>
+      body()
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="settings.teams.share.removeAccess"]',
+        )!
+        .click(),
+    );
+    await flush();
+    act(() => buttonByText('settings.teams.remove')!.click());
+    await flush();
+    expect(unshare).toHaveBeenCalledTimes(1);
+    const dialogs = body().querySelectorAll('[role="dialog"]');
+    const confirm = dialogs[dialogs.length - 1];
+    expect(confirm.textContent).toContain(
+      'settings.teams.share.removeConfirm(name=Legal)',
+    );
+    const alert = confirm.querySelector('[data-slot="alert"]');
+    expect(alert?.textContent).toBe('settings.teams.share.unshareError');
+    // Said once, in the dialog: no Alert in the share modal underneath.
+    expect(body().querySelectorAll('[data-slot="alert"]')).toHaveLength(1);
+    expect(text()).not.toContain('Failed to fetch');
+    // The grant row is back once the list is re-read.
+    expect(
+      body().querySelector(
+        'button[aria-label="settings.teams.share.removeAccess"]',
+      ),
+    ).not.toBeNull();
+  });
+
+  it('keeps the grant when the remove is cancelled', async () => {
+    listResourceShares.mockResolvedValue({
+      shares: [
+        {
+          team_id: 't1',
+          team_name: 'Legal',
+          access_level: 'viewer',
+          target_user_id: 'lena',
+        },
+      ],
+    });
+    await render();
+    act(() =>
+      body()
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="settings.teams.share.removeAccess"]',
+        )!
+        .click(),
+    );
+    await flush();
+    expect(text()).toContain('settings.teams.share.removeConfirmPerson(');
+    act(() => buttonByText('cancel')!.click());
+    await flush();
+    expect(unshare).not.toHaveBeenCalled();
+    expect(
+      body().querySelector(
+        'button[aria-label="settings.teams.share.removeAccess"]',
+      ),
+    ).not.toBeNull();
   });
 });
 

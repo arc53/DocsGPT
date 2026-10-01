@@ -1,4 +1,3 @@
-import { CircleAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 
@@ -228,7 +227,6 @@ export default function QuotaEditor({
       </div>
       {error ? (
         <Alert variant="destructive">
-          <CircleAlert className="size-4" aria-hidden="true" />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}

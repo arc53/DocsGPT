@@ -1,12 +1,11 @@
 import { useTranslation } from 'react-i18next';
 
 import { Alert, AlertDescription } from '../../components/ui/alert';
-import { Card } from '../../components/ui/card';
+import { CodeBlock, CodePanel } from '../../components/ui/code-block';
 import {
   DescriptionItem,
   DescriptionList,
 } from '../../components/ui/description-list';
-import { ToolCallPanel } from '../../conversation/AnswerFlow';
 import { TraceSpan } from '../types';
 import { formatDurationMs, formatTokens } from './traceUtils';
 
@@ -130,59 +129,51 @@ export default function TraceSpanDetails({ span }: { span: TraceSpan }) {
         ))}
       </DescriptionList>
       {span.error && (
-        <Alert variant="destructive">
+        <Alert variant="destructive" icon={null}>
           <AlertDescription>
-            <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
+            <CodeBlock surface="bare" tone="destructive">
               {span.error}
-            </pre>
+            </CodeBlock>
           </AlertDescription>
         </Alert>
       )}
       {preview.query !== undefined && (
-        <ToolCallPanel title={f('query')} copyText={jsonText(preview.query)}>
-          <div className="scrollbar-overlay max-h-60 overflow-y-auto">
-            <p className="wrap-break-word whitespace-pre-wrap">
-              {jsonText(preview.query)}
-            </p>
-          </div>
-        </ToolCallPanel>
+        <CodePanel title={f('query')} copyText={jsonText(preview.query)}>
+          <CodeBlock surface="bare" maxHeight="md" font="sans">
+            {jsonText(preview.query)}
+          </CodeBlock>
+        </CodePanel>
       )}
       {preview.arguments !== undefined && (
-        <ToolCallPanel
+        <CodePanel
           title={f('arguments')}
           copyText={jsonText(preview.arguments)}
         >
-          <div className="scrollbar-overlay max-h-60 overflow-y-auto">
-            <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
-              {jsonText(preview.arguments)}
-            </pre>
-          </div>
-        </ToolCallPanel>
+          <CodeBlock surface="bare" maxHeight="md">
+            {jsonText(preview.arguments)}
+          </CodeBlock>
+        </CodePanel>
       )}
       {preview.result !== undefined && (
-        <ToolCallPanel title={f('result')} copyText={jsonText(preview.result)}>
-          <div className="scrollbar-overlay max-h-60 overflow-y-auto">
-            <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
-              {jsonText(preview.result)}
-            </pre>
-          </div>
-        </ToolCallPanel>
+        <CodePanel title={f('result')} copyText={jsonText(preview.result)}>
+          <CodeBlock surface="bare" maxHeight="md">
+            {jsonText(preview.result)}
+          </CodeBlock>
+        </CodePanel>
       )}
       {preview.output !== undefined && (
-        <ToolCallPanel title={f('output')} copyText={jsonText(preview.output)}>
-          <div className="scrollbar-overlay max-h-60 overflow-y-auto">
-            <p className="wrap-break-word whitespace-pre-wrap">
-              {jsonText(preview.output)}
-            </p>
-          </div>
-        </ToolCallPanel>
+        <CodePanel title={f('output')} copyText={jsonText(preview.output)}>
+          <CodeBlock surface="bare" maxHeight="md" font="sans">
+            {jsonText(preview.output)}
+          </CodeBlock>
+        </CodePanel>
       )}
       {chunks.length > 0 && (
-        <ToolCallPanel
+        <CodePanel
           title={f('retrievedChunks')}
           copyText={JSON.stringify(chunks, null, 2)}
         >
-          <div className="scrollbar-overlay max-h-72 overflow-y-auto">
+          <div className="scrollbar-overlay max-h-80 overflow-y-auto">
             <ol className="flex flex-col gap-2">
               {chunks.map((chunk, index) => (
                 <li key={index} className="flex flex-col gap-0.5">
@@ -203,28 +194,22 @@ export default function TraceSpanDetails({ span }: { span: TraceSpan }) {
               ))}
             </ol>
           </div>
-        </ToolCallPanel>
+        </CodePanel>
       )}
       {otherPreviews.map(([key, value]) => (
-        <ToolCallPanel key={key} title={key} copyText={jsonText(value)}>
-          <div className="scrollbar-overlay max-h-60 overflow-y-auto">
-            <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
-              {jsonText(value)}
-            </pre>
-          </div>
-        </ToolCallPanel>
+        <CodePanel key={key} title={key} copyText={jsonText(value)}>
+          <CodeBlock surface="bare" maxHeight="md">
+            {jsonText(value)}
+          </CodeBlock>
+        </CodePanel>
       ))}
       <details>
         <summary className="text-muted-foreground cursor-pointer select-none">
           {f('allAttributes')}
         </summary>
-        <Card variant="filled" padding="sm" className="mt-1">
-          <div className="scrollbar-overlay max-h-60 overflow-y-auto">
-            <pre className="text-muted-foreground font-mono text-xs wrap-break-word whitespace-pre-wrap">
-              {JSON.stringify(a, null, 2)}
-            </pre>
-          </div>
-        </Card>
+        <CodeBlock maxHeight="md" className="mt-1">
+          {JSON.stringify(a, null, 2)}
+        </CodeBlock>
       </details>
     </div>
   );

@@ -46,16 +46,29 @@ export default function TypographySection() {
       </Example>
       <Example
         title="Roles"
-        code='<SectionHeader size="default | sm | xs" tone="destructive"> · CardTitle + CardDescription size="xs"'
+        code='<SectionHeader size="title | default | sm | xs" tone="destructive" count> (a count is muted, tabular, never in caps; never "· N" in the title) · CardTitle + CardDescription size="xs"'
       >
         <div className="flex max-w-md flex-col gap-6">
+          <SectionHeader
+            as="h3"
+            size="title"
+            title="Lena's MacBook Pro"
+            description="Paired 24/09/2026 · last seen 3 minutes ago"
+          />
           <SectionHeader
             title="Prompts"
             description="System prompts your agents can use."
           />
           <div className="flex flex-col gap-3">
             <SectionHeader as="h3" size="sm" title="Recurring" />
+            <SectionHeader as="h3" size="sm" title="Members" count={7} />
             <SectionHeader as="h3" size="xs" title="Connection" />
+            <SectionHeader
+              as="h3"
+              size="xs"
+              title="Allowed domains"
+              count="2 of 5 allowed"
+            />
             <SectionHeader
               as="h3"
               size="xs"

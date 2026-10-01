@@ -118,18 +118,15 @@ export default function CustomModels() {
     setDeleteState('ACTIVE');
   };
 
+  // Returns the request: ConfirmationModal closes on success and keeps a
+  // failure open with its error.
   const confirmDelete = async () => {
     if (!modelToDelete) return;
-    try {
-      await customModelsService.deleteCustomModel(modelToDelete.id, token);
-      setModels((prev) => prev.filter((m) => m.id !== modelToDelete.id));
-      refreshGlobalAvailableModels();
-    } catch (err) {
-      console.error('Failed to delete custom model:', err);
-    } finally {
-      setModelToDelete(null);
-      setDeleteState('INACTIVE');
-    }
+    const id = modelToDelete.id;
+    await customModelsService.deleteCustomModel(id, token);
+    setModels((prev) => prev.filter((m) => m.id !== id));
+    setModelToDelete(null);
+    refreshGlobalAvailableModels();
   };
 
   const getMenuOptions = (model: CustomModel): MenuOption[] => [
@@ -281,8 +278,10 @@ export default function CustomModels() {
       />
       <ConfirmationModal
         message={t('settings.customModels.deleteWarning', {
+          interpolation: { escapeValue: false },
           modelName: modelToDelete?.display_name || '',
         })}
+        description={t('common.cantUndo')}
         modalState={deleteState}
         setModalState={setDeleteState}
         handleSubmit={confirmDelete}

@@ -1,4 +1,3 @@
-import { CircleAlert, CircleCheck } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -193,7 +192,6 @@ export default function ConvertToWikiModal({
         {phase === 'summary' && summary && (
           <>
             <Alert variant="success">
-              <CircleCheck className="size-4" aria-hidden="true" />
               <AlertDescription>
                 {[
                   t('settings.sources.wiki.convert.summaryPages', {
@@ -225,7 +223,6 @@ export default function ConvertToWikiModal({
 
         {phase === 'error' && (
           <Alert variant="destructive">
-            <CircleAlert className="size-4" aria-hidden="true" />
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}

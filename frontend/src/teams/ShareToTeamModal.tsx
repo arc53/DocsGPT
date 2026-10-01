@@ -1,11 +1,4 @@
-import {
-  ArrowLeft,
-  ArrowRight,
-  CircleAlert,
-  Trash2,
-  UserRound,
-  UsersRound,
-} from 'lucide-react';
+import { ArrowRight, Trash2, UserRound, UsersRound } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -28,26 +21,15 @@ import { Avatar } from '../components/ui/avatar';
 import { Collapsible, CollapsibleTrigger } from '../components/ui/collapsible';
 import { Button } from '../components/ui/button';
 import { EmptyState } from '../components/ui/empty-state';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '../components/ui/command';
+import { Combobox, type ComboboxOption } from '../components/ui/combobox';
 import { IconButton } from '../components/ui/icon-button';
 import { ListRow, ListRows } from '../components/ui/list-row';
 import { Modal } from '../components/ui/modal';
+import ConfirmationModal from '../modals/ConfirmationModal';
 import { SectionHeader } from '../components/ui/section-header';
 import { SettingRow, SettingRows } from '../components/ui/setting-row';
 import { Switch } from '../components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '../components/ui/popover';
 import {
   Select,
   SelectContent,
@@ -136,6 +118,26 @@ type Suggestion =
       label: string;
     };
 
+// A suggestion as a Combobox row: an initial Avatar, square for a team.
+const suggestionOption = (suggestion: Suggestion): ComboboxOption => {
+  const label =
+    suggestion.kind === 'team' ? suggestion.teamName : suggestion.label;
+  return {
+    value: suggestion.key,
+    label,
+    leading: (
+      <Avatar
+        alt=""
+        variant="primary"
+        size="xs"
+        shape={suggestion.kind === 'team' ? 'square' : 'circle'}
+      >
+        {initialOf(label)}
+      </Avatar>
+    ),
+  };
+};
+
 export default function ShareToTeamModal({
   resourceType,
   resourceId,
@@ -155,6 +157,12 @@ export default function ShareToTeamModal({
   const [shares, setShares] = useState<ResourceShare[]>([]);
   const [loadError, setLoadError] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  // The remove confirm's Alert text after a failed remove.
+  const [removeError, setRemoveError] = useState<string>();
+  // The grant waiting on its remove confirm (it takes access away).
+  const [shareToRemove, setShareToRemove] = useState<ResourceShare | null>(
+    null,
+  );
 
   const savedCredentialMode =
     credentials?.forcedMode ?? credentials?.mode ?? 'owner';
@@ -450,9 +458,6 @@ export default function ShareToTeamModal({
     return out;
   }, [teams, membersByTeam, grantedKeys, query, currentUserId]);
 
-  const hasSuggestions =
-    teamSuggestions.length > 0 || memberSuggestions.length > 0;
-
   // Mutations update `shares` optimistically for instant feedback, then
   // reconcile against the server once the request settles: refreshShares() runs
   // on BOTH success and failure so server state is authoritative. This avoids
@@ -541,7 +546,9 @@ export default function ShareToTeamModal({
     }
   };
 
-  // Optimistically remove a grant, then reconcile with the server.
+  // Optimistically remove a grant, then reconcile with the server. A
+  // failure rethrows, so the confirm stays open with removeError (the
+  // server's message, else unshareError).
   const removeAccess = async (share: ResourceShare) => {
     const key = shareKey(share);
     setActionError(null);
@@ -558,14 +565,58 @@ export default function ShareToTeamModal({
         token,
       );
     } catch (error) {
-      setActionError(
+      setRemoveError(
         errorMessage(error, t('settings.teams.share.unshareError')),
       );
+      throw error;
     } finally {
       setRowBusy(key, false);
       await refreshShares();
     }
   };
+
+  // The remove confirm: the title names who loses access, the body what
+  // and through which team. Rendered inside the Modal so it stacks on it.
+  const removeConfirm = (() => {
+    if (!shareToRemove) return null;
+    const team = shareToRemove.team_name ?? teamName(shareToRemove.team_id);
+    const person = shareToRemove.target_user_id
+      ? memberDisplay(shareToRemove.team_id, shareToRemove.target_user_id)
+      : null;
+    const resource =
+      resourceName || t(`settings.teams.resourceType.${resourceType}`);
+    const noEscape = { interpolation: { escapeValue: false } };
+    return (
+      <ConfirmationModal
+        message={t('settings.teams.share.removeConfirm', {
+          ...noEscape,
+          name: person ?? team,
+        })}
+        description={
+          person
+            ? t('settings.teams.share.removeConfirmPerson', {
+                ...noEscape,
+                name: person,
+                resource,
+                team,
+              })
+            : t('settings.teams.share.removeConfirmTeam', {
+                ...noEscape,
+                team,
+                resource,
+              })
+        }
+        modalState="ACTIVE"
+        setModalState={(state) =>
+          state === 'INACTIVE' && setShareToRemove(null)
+        }
+        submitLabel={t('settings.teams.remove')}
+        handleSubmit={() => removeAccess(shareToRemove)}
+        error={removeError}
+        variant="destructive"
+      />
+    );
+  })();
 
   const title = resourceName
     ? t('settings.teams.share.titleNamed', {
@@ -608,7 +659,7 @@ export default function ShareToTeamModal({
           icon={Trash2}
           disabled={rowBusy}
           label={t('settings.teams.share.removeAccess')}
-          onClick={() => removeAccess(share)}
+          onClick={() => setShareToRemove(share)}
         />
       </>
     );
@@ -717,7 +768,6 @@ export default function ShareToTeamModal({
     <>
       {loadError && (
         <Alert variant="destructive">
-          <CircleAlert className="size-4" aria-hidden="true" />
           <AlertDescription>
             {t('settings.teams.share.loadError')}
           </AlertDescription>
@@ -725,7 +775,6 @@ export default function ShareToTeamModal({
       )}
       {actionError && (
         <Alert variant="destructive">
-          <CircleAlert className="size-4" aria-hidden="true" />
           <AlertDescription>{actionError}</AlertDescription>
         </Alert>
       )}
@@ -741,29 +790,6 @@ export default function ShareToTeamModal({
 
   const allStep = (
     <div className="flex flex-col gap-4">
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="-ml-3 w-fit justify-start"
-        onClick={() => setStep('main')}
-      >
-        <ArrowLeft aria-hidden />
-        {t('settings.teams.share.back')}
-      </Button>
-      <div>
-        <h2 className="text-foreground text-xl leading-tight font-semibold">
-          {t('settings.teams.share.peopleWithAccess')}
-        </h2>
-        <p className="text-muted-foreground mt-2 text-sm">
-          {t('settings.teams.share.allSummary', {
-            interpolation: { escapeValue: false },
-            name: resourceName ?? '',
-            teams: formatCount(teamGrantCount),
-            people: formatCount(personGrantCount),
-          })}
-        </p>
-      </div>
       {errors}
       <SearchInput
         placeholder={t('settings.teams.share.searchAccess')}
@@ -781,9 +807,12 @@ export default function ShareToTeamModal({
         aria-label={t('settings.teams.share.filterLabel')}
       >
         {filterOptions.map((option) => (
-          <ToggleGroupItem key={option.value} value={option.value}>
-            {t(`settings.teams.share.filter.${option.value}`)}{' '}
-            {formatCount(option.count)}
+          <ToggleGroupItem
+            key={option.value}
+            value={option.value}
+            count={option.count}
+          >
+            {t(`settings.teams.share.filter.${option.value}`)}
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
@@ -966,109 +995,69 @@ export default function ShareToTeamModal({
           <div>
             {/* Add row: type-ahead combobox + access level select. */}
             <div className="flex items-center gap-2">
-              {/* `modal`: a non-modal popover can't scroll or close on an
-                  outside click inside the Modal (multi-select.tsx). */}
-              <Popover open={pickerOpen} onOpenChange={setPickerOpen} modal>
-                <PopoverTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="combobox"
-                    size="field"
-                    role="combobox"
-                    aria-expanded={pickerOpen}
-                    disabled={
-                      committing || (needsWriteConfirm && !writesConfirmed)
-                    }
-                    data-placeholder=""
-                    className="min-w-0 flex-1 justify-start"
-                  >
-                    <span className="truncate">
-                      {t('settings.teams.share.addPlaceholder')}
-                    </span>
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent
-                  className="w-[min(22rem,calc(100vw-2rem))] p-0"
-                  align="start"
-                >
-                  <Command shouldFilter={false}>
-                    <CommandInput
-                      placeholder={t('settings.teams.share.searchPlaceholder')}
-                      value={query}
-                      onValueChange={setQuery}
-                    />
-                    <CommandList>
-                      {!hasSuggestions && (
-                        <CommandEmpty>
-                          {t('settings.teams.share.noMatches')}
-                        </CommandEmpty>
-                      )}
-                      {teamSuggestions.length > 0 && (
-                        <CommandGroup
-                          heading={t('settings.teams.share.teamsGroup')}
+              <Combobox
+                mode="add"
+                groups={[
+                  {
+                    heading: t('settings.teams.share.teamsGroup'),
+                    options: teamSuggestions.map(suggestionOption),
+                  },
+                  {
+                    heading: t('settings.teams.share.peopleGroup'),
+                    options: memberSuggestions.map(suggestionOption),
+                  },
+                ]}
+                onValueChange={(key) => {
+                  const suggestion = [
+                    ...teamSuggestions,
+                    ...memberSuggestions,
+                  ].find((s) => s.key === key);
+                  if (suggestion) commitSuggestion(suggestion);
+                }}
+                renderItem={(option) => {
+                  const suggestion = memberSuggestions.find(
+                    (s) => s.key === option.value,
+                  );
+                  if (suggestion?.kind !== 'member') {
+                    return (
+                      <>
+                        {option.leading}
+                        <span
+                          className="min-w-0 flex-1 truncate"
+                          title={option.label}
                         >
-                          {teamSuggestions.map((suggestion) => (
-                            <CommandItem
-                              key={suggestion.key}
-                              value={suggestion.key}
-                              onSelect={() => commitSuggestion(suggestion)}
-                            >
-                              <Avatar
-                                alt=""
-                                variant="primary"
-                                size="xs"
-                                shape="square"
-                              >
-                                {initialOf(suggestion.teamName)}
-                              </Avatar>
-                              <span
-                                className="min-w-0 flex-1 truncate"
-                                title={suggestion.teamName}
-                              >
-                                {suggestion.teamName}
-                              </span>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      )}
-                      {memberSuggestions.length > 0 && (
-                        <CommandGroup
-                          heading={t('settings.teams.share.peopleGroup')}
-                        >
-                          {memberSuggestions.map((suggestion) =>
-                            suggestion.kind === 'member' ? (
-                              <CommandItem
-                                key={suggestion.key}
-                                value={`${suggestion.key} ${suggestion.label} ${suggestion.teamName}`}
-                                onSelect={() => commitSuggestion(suggestion)}
-                              >
-                                <Avatar
-                                  alt=""
-                                  variant="primary"
-                                  size="xs"
-                                  shape="circle"
-                                >
-                                  {initialOf(suggestion.label)}
-                                </Avatar>
-                                <span
-                                  className="min-w-0 flex-1 truncate"
-                                  title={`${suggestion.label} · ${suggestion.teamName}`}
-                                >
-                                  {suggestion.label}
-                                  <span className="text-muted-foreground">
-                                    {' · '}
-                                    {suggestion.teamName}
-                                  </span>
-                                </span>
-                              </CommandItem>
-                            ) : null,
-                          )}
-                        </CommandGroup>
-                      )}
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
+                          {option.label}
+                        </span>
+                      </>
+                    );
+                  }
+                  return (
+                    <>
+                      {option.leading}
+                      <span
+                        className="min-w-0 flex-1 truncate"
+                        title={`${suggestion.label} · ${suggestion.teamName}`}
+                      >
+                        {suggestion.label}
+                        <span className="text-muted-foreground">
+                          {' · '}
+                          {suggestion.teamName}
+                        </span>
+                      </span>
+                    </>
+                  );
+                }}
+                open={pickerOpen}
+                onOpenChange={setPickerOpen}
+                shouldFilter={false}
+                search={query}
+                onSearchChange={setQuery}
+                placeholder={t('settings.teams.share.addPlaceholder')}
+                searchPlaceholder={t('settings.teams.share.searchPlaceholder')}
+                emptyText={t('settings.teams.share.noMatches')}
+                disabled={committing || (needsWriteConfirm && !writesConfirmed)}
+                className="min-w-0 flex-1"
+              />
 
               <Select
                 value={accessLevel}
@@ -1116,7 +1105,7 @@ export default function ShareToTeamModal({
                     {t('settings.teams.share.showAll', {
                       formatted: formatCount(shares.length),
                     })}
-                    <ArrowRight className="size-3" aria-hidden />
+                    <ArrowRight aria-hidden />
                   </Button>
                 )
               }
@@ -1160,12 +1149,22 @@ export default function ShareToTeamModal({
         if (!open && !inFlight) onClose();
       }}
       isPerformingTask={inFlight}
-      // The "all" step draws its own heading under a Back button (Upload's
-      // step pattern); the dialog keeps an accessible title either way.
+      // The "all" step is a second level: a Back arrow beside its title,
+      // the share counts as the dialog's description.
       title={
         step === 'all' ? t('settings.teams.share.peopleWithAccess') : title
       }
-      hideTitle={step === 'all'}
+      description={
+        step === 'all'
+          ? t('settings.teams.share.allSummary', {
+              interpolation: { escapeValue: false },
+              name: resourceName ?? '',
+              teams: formatCount(teamGrantCount),
+              people: formatCount(personGrantCount),
+            })
+          : undefined
+      }
+      onBack={step === 'all' ? () => setStep('main') : undefined}
       footer={
         <Button size="lg" shape="pill" disabled={inFlight} onClick={onClose}>
           {t('settings.teams.share.done')}
@@ -1173,6 +1172,7 @@ export default function ShareToTeamModal({
       }
     >
       {step === 'all' ? allStep : mainStep}
+      {removeConfirm}
     </Modal>
   );
 }

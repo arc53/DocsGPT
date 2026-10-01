@@ -259,7 +259,15 @@ export default function MobileTopBar({
       </div>
       {conversationId && (
         <ConfirmationModal
-          message={t('convTile.deleteWarning')}
+          message={
+            title
+              ? t('convTile.deleteWarning', {
+                  interpolation: { escapeValue: false },
+                  name: title,
+                })
+              : t('convTile.deleteWarningUnnamed')
+          }
+          description={t('convTile.deleteConsequence')}
           modalState={deleteModalState}
           setModalState={setDeleteModalState}
           handleSubmit={() => onDelete?.(conversationId)}

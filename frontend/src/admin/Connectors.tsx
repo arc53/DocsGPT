@@ -1,13 +1,13 @@
-import { ExternalLink, Info, TriangleAlert } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
 import connectorsService from '../api/services/connectorsService';
-import CopyButton from '../components/CopyButton';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
+import { CopyField } from '../components/ui/code-block';
 import { FormField } from '../components/ui/form-field';
 import { ListRow, ListRows } from '../components/ui/list-row';
 import { PanelBody, PanelHeader, SidePanel } from '../components/ui/side-panel';
@@ -129,17 +129,6 @@ function SettingsList({
   );
 }
 
-function CodeRow({ value }: { value: string }) {
-  return (
-    <Card variant="filled" padding="sm" className="flex-row items-start gap-2">
-      <pre className="min-w-0 flex-1 font-mono text-xs wrap-anywhere whitespace-pre-wrap">
-        {value}
-      </pre>
-      <CopyButton textToCopy={value} />
-    </Card>
-  );
-}
-
 function SetupGuide({
   connector,
   redirectUri,
@@ -192,7 +181,7 @@ function SetupGuide({
                 : 'Redirect URI to register'
             }
           />
-          <CodeRow value={redirectUri} />
+          <CopyField value={redirectUri} wrap="anywhere" />
         </section>
         {connector.required_settings.length > 0 && (
           <section className="flex flex-col gap-2">
@@ -212,7 +201,6 @@ function SetupGuide({
         )}
         {connector.key === 'github' && (
           <Alert variant="info" role="note">
-            <Info />
             <AlertDescription>
               In the GitHub App, give repository permissions Contents and
               Metadata read-only access, and turn on Request user authorization
@@ -226,7 +214,6 @@ function SetupGuide({
         )}
         {connector.key === 'google_drive' && (
           <Alert variant="info" role="note">
-            <Info />
             <AlertDescription>
               Publish the Google OAuth app (or use an internal Workspace app).
               Apps left in Testing get refresh tokens that expire after seven
@@ -428,7 +415,6 @@ export default function Connectors() {
 
       {data.default_encryption_key && (
         <Alert variant="destructive">
-          <TriangleAlert />
           <AlertTitle>
             {blocked ? (
               <>
@@ -602,11 +588,11 @@ export default function Connectors() {
               size="xs"
               title={callbackCaption(data.connectors)}
             />
-            <CodeRow value={data.oauth_redirect_uri} />
+            <CopyField value={data.oauth_redirect_uri} wrap="anywhere" />
           </section>
           <section className="flex flex-col gap-2">
             <SectionHeader as="h3" size="xs" title="MCP servers" />
-            <CodeRow value={data.mcp_redirect_uri} />
+            <CopyField value={data.mcp_redirect_uri} wrap="anywhere" />
           </section>
         </div>
       </section>

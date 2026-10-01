@@ -74,8 +74,45 @@ describe('Logs rows', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(body.dataset.state).toBe('open');
     expect(body.textContent).toContain('Three carriers.');
+    // Open reads as current: header and body on secondary, not muted.
+    expect(toggle.className).toContain('bg-secondary');
+    expect(toggle.className).not.toContain('bg-muted');
+    expect(body.querySelector('.bg-muted.rounded-b-xl')).toBeNull();
+    expect(body.querySelector('.bg-secondary.rounded-b-xl')).not.toBeNull();
+    // The hover fill is for closed rows only: under an open row it would show
+    // through the secondary tint and drop the meta text to 3.99:1.
+    const row = toggle.parentElement!;
+    expect(row.className.split(' ')).not.toContain('hover:bg-accent');
     await act(async () => toggle.click());
+    expect(row.className.split(' ')).toContain('hover:bg-accent');
     expect(body.dataset.state).toBe('closed');
+  });
+
+  // O4 (c): the header strip reads like TableHead on its bg-muted strip.
+  it('draws the header strip text in foreground', () => {
+    const header = Array.from(container.querySelectorAll('p')).find(
+      (p) => p.textContent === 'settings.logs.tableHeader',
+    )!;
+    expect(header).toBeDefined();
+    expect(header.className).toContain('text-foreground');
+    expect(header.className).not.toContain('text-muted-foreground');
+  });
+
+  // V3: the text and JSON blocks of an open row are ui/code-block CodeBlocks
+  // (subtle on the open row), one 16px line-height, no leading-relaxed.
+  it('shows the open row blocks as subtle CodeBlocks', async () => {
+    const toggle = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button[aria-expanded]'),
+    ).find((el) => el.textContent?.includes('[stream_answer]'))!;
+    await act(async () => toggle.click());
+    const blocks = Array.from(
+      container.querySelectorAll<HTMLElement>('pre[data-slot="code-block"]'),
+    );
+    const response = blocks.find((b) => b.textContent === 'Three carriers.')!;
+    expect(response).toBeDefined();
+    expect(response.className).not.toContain('leading-relaxed');
+    const card = response.closest('[data-slot="card"]')!;
+    expect(card.getAttribute('data-variant')).toBe('subtle');
   });
 });
 

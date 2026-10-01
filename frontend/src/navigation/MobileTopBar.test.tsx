@@ -243,9 +243,18 @@ describe('MobileTopBar', () => {
     render({ title: 'Router drops', conversationId: 'c1', onDelete });
     openMenu(container.querySelector('[data-testid="mobile-title"]')!);
     act(() => menuItem('convTile.delete')!.click());
+    // The conversation is named in the title; the consequence is below.
+    const header = document.querySelector('[role="dialog"]')!;
+    expect(header.querySelector('h2')?.textContent).toBe(
+      'convTile.deleteWarning',
+    );
+    expect(
+      header.querySelector('[data-slot="dialog-description"]')?.textContent,
+    ).toBe('convTile.deleteConsequence');
     const submit = Array.from(
       document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
     ).find((b) => b.textContent?.includes('convTile.delete'))!;
+    expect(submit.getAttribute('data-variant')).toBe('destructive');
     await act(async () => submit.click());
     expect(onDelete).toHaveBeenCalledWith('c1');
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();

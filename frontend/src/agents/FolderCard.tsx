@@ -82,10 +82,14 @@ export default function FolderCard({
         </div>
       </Card>
       <ConfirmationModal
-        message={t('agents.folders.deleteConfirm')}
+        message={t('agents.folders.deleteConfirm', {
+          interpolation: { escapeValue: false },
+          name: folder.name,
+        })}
+        description={t('agents.folders.deleteConsequence')}
         modalState={deleteConfirmation}
         setModalState={setDeleteConfirmation}
-        submitLabel={t('convTile.delete')}
+        submitLabel={t('agents.folders.delete')}
         handleSubmit={async () => {
           if (!(await onDelete(folder.id))) {
             throw new Error('Failed to delete folder');

@@ -32,6 +32,7 @@ import {
 } from '../components/ui/description-list';
 import { LoadingState } from '../components/ui/loading-state';
 import { Pagination } from '../components/ui/pagination';
+import { EmptyState } from '../components/ui/empty-state';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { showActionToast } from '../notifications/actionToastSlice';
@@ -81,6 +82,7 @@ export default function Users() {
   const [quotaUserId, setQuotaUserId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{
     message: string;
+    description: string;
     submitLabel: string;
     run: () => Promise<void>;
   } | null>(null);
@@ -117,8 +119,9 @@ export default function Users() {
     load();
   }, [load]);
 
-  // The result shows as a toast in the app's shared ToastViewport
-  // (ActionToast), which auto-dismisses it.
+  // A result the row can't show (a failure, Force logout) is a toast in the
+  // app's shared ToastViewport (ActionToast), which auto-dismisses it. A
+  // success the reloaded row shows (a badge) gets none.
   const setFeedback = (feedback: { ok: boolean; message: string }) =>
     dispatch(
       showActionToast({
@@ -128,11 +131,12 @@ export default function Users() {
     );
 
   // Runs an action and throws its failure message; `run` toasts it, a
-  // confirm keeps it in the dialog.
+  // confirm keeps it in the dialog. `successMsg` only for a result the
+  // reloaded row doesn't show.
   const attempt = async (
     fn: () => Promise<Response>,
     userId: string,
-    successMsg: string,
+    successMsg?: string,
   ) => {
     setBusy(userId);
     try {
@@ -146,7 +150,7 @@ export default function Users() {
       if (!res.ok || json.success === false) {
         throw new Error(json.message || `Action failed for ${userId}`);
       }
-      setFeedback({ ok: true, message: successMsg });
+      if (successMsg) setFeedback({ ok: true, message: successMsg });
       await load();
     } finally {
       setBusy(null);
@@ -154,7 +158,7 @@ export default function Users() {
   };
 
   const run =
-    (fn: () => Promise<Response>, userId: string, successMsg: string) =>
+    (fn: () => Promise<Response>, userId: string, successMsg?: string) =>
     async () => {
       try {
         await attempt(fn, userId, successMsg);
@@ -166,11 +170,10 @@ export default function Users() {
   // A confirmed action returns its promise to ConfirmationModal, which stays
   // pending while it runs and shows a failure in the dialog.
   const confirmed =
-    (fn: () => Promise<Response>, userId: string, successMsg: string) =>
-    async () => {
+    (fn: () => Promise<Response>, userId: string) => async () => {
       setConfirmError(undefined);
       try {
-        await attempt(fn, userId, successMsg);
+        await attempt(fn, userId);
       } catch (error) {
         setConfirmError((error as Error).message);
         throw error;
@@ -179,11 +182,12 @@ export default function Users() {
 
   const askConfirm = (
     message: string,
+    description: string,
     submitLabel: string,
     action: () => Promise<void>,
   ) => {
     setConfirmError(undefined);
-    setConfirm({ message, submitLabel, run: action });
+    setConfirm({ message, description, submitLabel, run: action });
     setConfirmState('ACTIVE');
   };
 
@@ -214,13 +218,10 @@ export default function Users() {
         destructive: true,
         perform: () =>
           askConfirm(
-            `Revoke admin from ${userId}?`,
+            `Revoke admin from "${userId}"?`,
+            'They lose access to the admin console. You can make them an admin again at any time.',
             'Revoke',
-            confirmed(
-              () => adminService.revokeAdmin(userId, token),
-              userId,
-              `Removed admin from ${userId}`,
-            ),
+            confirmed(() => adminService.revokeAdmin(userId, token), userId),
           ),
       });
     } else {
@@ -228,11 +229,7 @@ export default function Users() {
         key: 'grant',
         label: 'Make admin',
         icon: ShieldCheck,
-        perform: run(
-          () => adminService.grantAdmin(userId, token),
-          userId,
-          `${userId} is now an admin`,
-        ),
+        perform: run(() => adminService.grantAdmin(userId, token), userId),
       });
     }
     if (active) {
@@ -243,12 +240,12 @@ export default function Users() {
         destructive: true,
         perform: () =>
           askConfirm(
-            `Deactivate ${userId}? This revokes their live sessions.`,
+            `Deactivate "${userId}"?`,
+            'Their live sessions are revoked. You can activate them again at any time.',
             'Deactivate',
             confirmed(
               () => adminService.setUserActive(userId, false, token),
               userId,
-              `${userId} deactivated`,
             ),
           ),
       });
@@ -260,7 +257,6 @@ export default function Users() {
         perform: run(
           () => adminService.setUserActive(userId, true, token),
           userId,
-          `${userId} reactivated`,
         ),
       });
     }
@@ -318,7 +314,7 @@ export default function Users() {
       ) : failed ? (
         <LoadError message="Failed to load users." onRetry={load} />
       ) : users.length === 0 ? (
-        <p className="text-muted-foreground mt-8 text-sm">No users found.</p>
+        <EmptyState size="sm" illustration="none" title="No users found." />
       ) : (
         <>
           <TableContainer>
@@ -422,6 +418,7 @@ export default function Users() {
       {confirm ? (
         <ConfirmationModal
           message={confirm.message}
+          description={confirm.description}
           modalState={confirmState}
           setModalState={setConfirmState}
           submitLabel={confirm.submitLabel}

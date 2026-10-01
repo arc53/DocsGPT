@@ -71,6 +71,7 @@ export default function OverlaySection() {
   const [modalOpen, setModalOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(true);
   const [modalDemo, setModalDemo] = useState<string | null>(null);
+  const [connectStep, setConnectStep] = useState<'pick' | 'folders'>('pick');
   const [confirmDemo, setConfirmDemo] = useState<'succeeds' | 'fails' | null>(
     null,
   );
@@ -146,7 +147,7 @@ export default function OverlaySection() {
       </Example>
       <Example
         title="Modal sizes and footers"
-        code='size="sm | md | lg | xl" (md is the default) · phones: a sheet by default, mobileVariant="dialog" for a yes/no · hideTitle · <ModalActions destructive | pending | footerStart> · no submitLabel = Cancel only'
+        code='size="sm | md | lg | xl" (md is the default) · onBack (a second step: Back beside the real title) · phones: a sheet by default, mobileVariant="dialog" for a yes/no · hideTitle · <ModalActions destructive | pending | footerStart> · no submitLabel = Cancel only'
       >
         <div className="flex flex-wrap items-center gap-3">
           {(
@@ -157,13 +158,17 @@ export default function OverlaySection() {
               ['pending', 'md, pending'],
               ['sheet', 'Sheet on phones (default)'],
               ['hidden', 'hideTitle'],
+              ['step', 'onBack, a second step'],
             ] as const
           ).map(([id, label]) => (
             <Button
               key={id}
               variant="outline"
               size="sm"
-              onClick={() => setModalDemo(id)}
+              onClick={() => {
+                setConnectStep('pick');
+                setModalDemo(id);
+              }}
             >
               {label}
             </Button>
@@ -173,8 +178,8 @@ export default function OverlaySection() {
             mobileVariant="dialog"
             open={modalDemo === 'sm'}
             onOpenChange={(open) => !open && setModalDemo(null)}
-            title="Delete source?"
-            description="Carrier contracts and its 1,204 chunks will be removed. Agents using it lose the source."
+            title='Delete "Carrier contracts"?'
+            description="Its 1,204 chunks are deleted too, and agents using it lose the source. This can't be undone."
             footer={
               <ModalActions
                 cancelLabel="Cancel"
@@ -185,9 +190,7 @@ export default function OverlaySection() {
               />
             }
           >
-            <p className="text-muted-foreground text-sm">
-              This can&apos;t be undone.
-            </p>
+            {null}
           </Modal>
           <Modal
             size="lg"
@@ -267,6 +270,50 @@ export default function OverlaySection() {
             <Input label="Add people" />
           </Modal>
           <Modal
+            open={modalDemo === 'step'}
+            onOpenChange={(open) => !open && setModalDemo(null)}
+            onBack={
+              connectStep === 'folders'
+                ? () => setConnectStep('pick')
+                : undefined
+            }
+            title={connectStep === 'pick' ? 'Add a source' : 'Choose folders'}
+            description={
+              connectStep === 'pick'
+                ? 'Pick where the documents come from.'
+                : 'Google Drive · lena.fischer@meridianfreight.com'
+            }
+            footer={
+              connectStep === 'pick' ? (
+                <ModalActions
+                  cancelLabel="Cancel"
+                  onCancel={() => setModalDemo(null)}
+                  submitLabel="Continue"
+                  onSubmit={() => setConnectStep('folders')}
+                />
+              ) : (
+                <ModalActions
+                  cancelLabel="Cancel"
+                  onCancel={() => setModalDemo(null)}
+                  submitLabel="Add source"
+                  onSubmit={() => setModalDemo(null)}
+                />
+              )
+            }
+          >
+            {connectStep === 'pick' ? (
+              <p className="text-muted-foreground text-sm">
+                Google Drive is selected. Continue to pick its folders.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2 text-sm">
+                <span>Carrier contracts 2026</span>
+                <span>Customs declarations</span>
+                <span>Insurance certificates</span>
+              </div>
+            )}
+          </Modal>
+          <Modal
             hideTitle
             open={modalDemo === 'hidden'}
             onOpenChange={(open) => !open && setModalDemo(null)}
@@ -301,15 +348,15 @@ export default function OverlaySection() {
             Delete, fails
           </Button>
           <ConfirmationModal
-            message="Delete this schedule?"
-            description="Its run history goes too. This can't be undone."
+            message='Delete "HR Policy Bot"?'
+            description="Its schedules and run history are deleted too. This can't be undone."
             modalState={confirmDemo ? 'ACTIVE' : 'INACTIVE'}
             setModalState={(state) => {
               if (state === 'INACTIVE') setConfirmDemo(null);
             }}
             submitLabel="Delete"
             variant="destructive"
-            error="Couldn't delete this schedule."
+            error="Couldn't delete HR Policy Bot. Try again."
             handleSubmit={() =>
               new Promise<void>((resolve, reject) =>
                 window.setTimeout(

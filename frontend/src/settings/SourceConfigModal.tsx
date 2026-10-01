@@ -1,4 +1,3 @@
-import { CircleAlert, TriangleAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -183,7 +182,6 @@ export default function SourceConfigModal({
         {reingestPrompt ? (
           <div className="flex flex-col gap-4">
             <Alert variant="warning">
-              <TriangleAlert className="size-4" aria-hidden="true" />
               <AlertDescription>
                 {t('settings.sources.configModal.reingestRequired')}
               </AlertDescription>
@@ -203,7 +201,6 @@ export default function SourceConfigModal({
             />
             {willRequireReingest && !isReadOnly && (
               <Alert variant="warning">
-                <TriangleAlert className="size-4" aria-hidden="true" />
                 <AlertDescription>
                   {t('settings.sources.configModal.chunkingChangeHint')}
                 </AlertDescription>
@@ -211,7 +208,6 @@ export default function SourceConfigModal({
             )}
             {!prescreenValid && !isReadOnly && (
               <Alert variant="warning">
-                <TriangleAlert className="size-4" aria-hidden="true" />
                 <AlertDescription>
                   {t('settings.sources.configModal.prescreenInvalidHint')}
                 </AlertDescription>
@@ -219,7 +215,6 @@ export default function SourceConfigModal({
             )}
             {error && (
               <Alert variant="destructive">
-                <CircleAlert className="size-4" aria-hidden="true" />
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}

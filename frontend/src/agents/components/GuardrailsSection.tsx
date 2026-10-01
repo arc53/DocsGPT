@@ -1,5 +1,4 @@
 import React from 'react';
-import { Info, TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import ViewOnlyNotice from '@/components/ViewOnlyNotice';
@@ -22,7 +21,7 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { SettingRow } from '@/components/ui/setting-row';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
+import { ToggleChip } from '@/components/ui/toggle-chip';
 
 import userService from '../../api/services/userService';
 import {
@@ -280,7 +279,6 @@ export default function GuardrailsSection({
                 variant="warning"
                 data-testid="guardrails-instance-disabled"
               >
-                <TriangleAlert aria-hidden="true" className="size-4" />
                 <AlertDescription>
                   {t('agents.form.guardrails.instanceDisabled')}
                 </AlertDescription>
@@ -289,7 +287,6 @@ export default function GuardrailsSection({
 
             {floorControls.size > 0 && (
               <Alert variant="info" role="status">
-                <Info aria-hidden="true" className="size-4" />
                 <AlertDescription>
                   {t('agents.form.guardrails.floorNotice', {
                     count: floorControls.size,
@@ -466,6 +463,7 @@ function NumberField({
   fallback,
   disabled,
   testId,
+  variant = 'filled',
   onCommit,
 }: {
   value: number;
@@ -475,6 +473,8 @@ function NumberField({
   fallback: number;
   disabled?: boolean;
   testId?: string;
+  /** `default` inside a guardrail stage panel (transparent, on the page). */
+  variant?: 'default' | 'filled';
   onCommit: (next: number) => void;
 }) {
   const [draft, setDraft] = React.useState(String(value));
@@ -499,7 +499,7 @@ function NumberField({
         setDraft(String(next));
         onCommit(next);
       }}
-      variant="filled"
+      variant={variant}
     />
   );
 }
@@ -606,34 +606,22 @@ function CheckCard({
           // out a credential strands a control that can never be cleared.
           const canToggle =
             !disabled && !locked && (Boolean(control) || !unavailable);
-          const chip = (
-            <Button
+          // A locked chip is aria-disabled, not disabled, so it keeps full
+          // colour and its hint shows on hover.
+          return (
+            <ToggleChip
               key={stage}
-              type="button"
-              variant={on ? 'secondary' : 'ghost-muted'}
-              size="xs"
-              shape="pill"
-              disabled={!canToggle}
-              aria-pressed={on}
+              pressed={on}
+              locked={locked}
+              disabled={!locked && !canToggle}
+              title={
+                locked ? t('agents.form.guardrails.lockedByFloor') : undefined
+              }
               data-testid={`guardrail-stage-${info.name}-${stage}`}
-              onClick={() => toggleControl(info, stage, !control)}
+              onPressedChange={() => toggleControl(info, stage, !control)}
             >
               {t(STAGE_KEYS[stage] ?? stage)}
-              {locked ? ' 🔒' : ''}
-            </Button>
-          );
-          // A disabled Button takes no pointer events, so the locked chip's
-          // hint lives on a wrapper that can still be hovered.
-          return locked ? (
-            <span
-              key={stage}
-              className="inline-flex"
-              title={t('agents.form.guardrails.lockedByFloor')}
-            >
-              {chip}
-            </span>
-          ) : (
-            chip
+            </ToggleChip>
           );
         })}
       </div>
@@ -645,7 +633,6 @@ function CheckCard({
           role="note"
           data-testid={`guardrail-floor-${k}`}
         >
-          <Info aria-hidden="true" className="size-4" />
           <AlertDescription>
             {t('agents.form.guardrails.floorControl', {
               stage: t(STAGE_KEYS[k.split(':')[1] as GuardrailStage] ?? ''),
@@ -659,14 +646,12 @@ function CheckCard({
         const needsSetup = controlNeedsSetup(control);
         const panelKey = key(control.check, control.stage);
         return (
-          <div
+          <Card
             key={panelKey}
-            className={cn(
-              'rounded-lg px-3 py-2',
-              needsSetup
-                ? 'border-destructive/50 bg-destructive/10 border'
-                : 'bg-muted',
-            )}
+            variant="subtle"
+            padding="sm"
+            tone={needsSetup ? 'destructive' : 'default'}
+            className="gap-0"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-medium">
@@ -740,6 +725,7 @@ function CheckCard({
             {openSettings === panelKey && (
               <CheckSettings
                 control={control}
+                onTint={needsSetup}
                 catalog={catalog}
                 disabled={disabled}
                 onChange={(settings) =>
@@ -747,7 +733,7 @@ function CheckCard({
                 }
               />
             )}
-          </div>
+          </Card>
         );
       })}
     </Card>
@@ -760,11 +746,17 @@ function hasSettings(check: string): boolean {
 
 function CheckSettings({
   control,
+  onTint,
   catalog,
   disabled,
   onChange,
 }: {
   control: GuardrailControl;
+  /**
+   * On the needs-setup panel's red soft fill, which no label surface matches:
+   * labels sit above the fields instead of floating on a notch.
+   */
+  onTint: boolean;
   catalog: GuardrailCatalog | null;
   disabled: boolean;
   onChange: (settings: Record<string, any>) => void;
@@ -774,7 +766,12 @@ function CheckSettings({
   const set = (next: Record<string, any>) => onChange({ ...s, ...next });
 
   const listField = (fieldKey: string, label: string, placeholder: string) => (
-    <FormField label={label} labelSurface="muted" disabled={disabled}>
+    <FormField
+      label={label}
+      labelSurface="background"
+      float={!onTint}
+      disabled={disabled}
+    >
       <Textarea
         rows={2}
         size="sm"
@@ -789,7 +786,6 @@ function CheckSettings({
               .filter(Boolean),
           })
         }
-        variant="filled"
       />
     </FormField>
   );
@@ -801,16 +797,12 @@ function CheckSettings({
           {(catalog?.pii_entities ?? []).map((entity) => {
             const on = (s.entities ?? []).includes(entity);
             return (
-              <Button
+              <ToggleChip
                 key={entity}
-                type="button"
-                variant={on ? 'secondary' : 'ghost-muted'}
-                size="xs"
-                shape="pill"
+                pressed={on}
                 disabled={disabled}
-                aria-pressed={on}
                 data-testid={`guardrail-pii-${entity}`}
-                onClick={() =>
+                onPressedChange={() =>
                   set({
                     entities: on
                       ? (s.entities ?? []).filter((e: string) => e !== entity)
@@ -819,7 +811,7 @@ function CheckSettings({
                 }
               >
                 {entity}
-              </Button>
+              </ToggleChip>
             );
           })}
           {(s.entities ?? []).length === 0 && (
@@ -855,7 +847,8 @@ function CheckSettings({
       {control.check === 'policy' && (
         <FormField
           label={t('agents.form.guardrails.policyText')}
-          labelSurface="muted"
+          labelSurface="background"
+          float={!onTint}
           disabled={disabled}
         >
           <Textarea
@@ -864,7 +857,6 @@ function CheckSettings({
             value={s.policy ?? ''}
             data-testid="guardrail-policy-text"
             onChange={(e) => set({ policy: e.target.value })}
-            variant="filled"
           />
         </FormField>
       )}
@@ -873,7 +865,8 @@ function CheckSettings({
         <div className="grid grid-cols-2 gap-2">
           <FormField
             label={t('agents.form.guardrails.minOverlap')}
-            labelSurface="muted"
+            labelSurface="background"
+            float={!onTint}
             disabled={disabled}
           >
             <NumberField
@@ -883,12 +876,14 @@ function CheckSettings({
               step={0.1}
               fallback={0.3}
               disabled={disabled}
+              variant="default"
               onCommit={(min_overlap) => set({ min_overlap })}
             />
           </FormField>
           <FormField
             label={t('agents.form.guardrails.minWords')}
-            labelSurface="muted"
+            labelSurface="background"
+            float={!onTint}
             disabled={disabled}
           >
             <NumberField
@@ -898,6 +893,7 @@ function CheckSettings({
               step={1}
               fallback={25}
               disabled={disabled}
+              variant="default"
               onCommit={(min_words) => set({ min_words })}
             />
           </FormField>
@@ -908,7 +904,8 @@ function CheckSettings({
         <FormField
           label={t('agents.form.guardrails.confidence')}
           hint={t('agents.form.guardrails.confidenceHint')}
-          labelSurface="muted"
+          labelSurface="background"
+          float={!onTint}
           disabled={disabled}
         >
           <NumberField
@@ -918,6 +915,7 @@ function CheckSettings({
             step={0.1}
             fallback={0.7}
             disabled={disabled}
+            variant="default"
             onCommit={(confidence_threshold) => set({ confidence_threshold })}
           />
         </FormField>

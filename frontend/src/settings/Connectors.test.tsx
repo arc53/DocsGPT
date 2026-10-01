@@ -284,16 +284,19 @@ describe('Connectors page', () => {
         '[data-slot="toggle-group-item"]',
       ),
     );
+  // "label count": ToggleGroupItem draws the count in its own span.
+  const pillText = (item: Element) =>
+    `${item.firstChild?.textContent} ${item.querySelector('[data-slot="count"]')?.textContent}`;
   const pill = (key: string) =>
     pills().find((item) =>
-      item.textContent?.startsWith(`settings.connectors.filters.${key} `),
+      pillText(item).startsWith(`settings.connectors.filters.${key} `),
     );
   const location = () =>
     container.querySelector('[data-testid="location"]')!.textContent ?? '';
 
   it('filters by state, not category: All, Connected, Disconnected with counts', async () => {
     await render();
-    expect(pills().map((item) => item.textContent)).toEqual([
+    expect(pills().map(pillText)).toEqual([
       expect.stringMatching(/^settings\.connectors\.filters\.all \d+$/),
       'settings.connectors.filters.connected 1',
       'settings.connectors.filters.disconnected 1',
@@ -374,6 +377,9 @@ describe('Connectors page', () => {
     const clear = container.querySelector<HTMLButtonElement>(
       'button[aria-label="settings.connectors.capabilityFilter.clear"]',
     )!;
+    // Badge onRemove's X: a 24px target, not a hand-built 12px button.
+    expect(clear.dataset.slot).toBe('badge-remove');
+    expect(clear.closest('[data-slot="badge"]')).not.toBeNull();
     await act(async () => clear.click());
     expect(container.textContent).not.toContain(
       'settings.connectors.capabilityChip.sync',

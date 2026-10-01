@@ -120,6 +120,71 @@ describe('Modal leading', () => {
   });
 });
 
+describe('Modal onBack', () => {
+  it('draws an icon Back beside the real title and description', async () => {
+    const onBack = vi.fn();
+    await render(
+      <Modal
+        open
+        onOpenChange={() => undefined}
+        title="People with access"
+        description="HR Policy Bot · Teams: 6"
+        onBack={onBack}
+      >
+        Body
+      </Modal>,
+    );
+    const header = document.querySelector('[data-slot="modal-header"]')!;
+    const back = header.firstElementChild as HTMLButtonElement;
+    expect(back.tagName).toBe('BUTTON');
+    expect(back.getAttribute('aria-label')).toBe('t:sidePanel.back');
+    expect(back.className).toContain('-ml-2');
+    expect(header.className).toContain('flex');
+    expect(header.className).toContain('gap-3');
+    const title = document.querySelector('[data-slot="dialog-title"]')!;
+    const description = document.querySelector(
+      '[data-slot="dialog-description"]',
+    )!;
+    expect(title.textContent).toBe('People with access');
+    expect(description.textContent).toBe('HR Policy Bot · Teams: 6');
+    expect(title.parentElement).toBe(description.parentElement);
+    expect(title.closest('[data-slot="modal-header"]')).toBe(header);
+    await act(async () => back.click());
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('takes a backLabel and keeps a leading tile after the arrow', async () => {
+    await render(
+      <Modal
+        open
+        onOpenChange={() => undefined}
+        title="Upload new document"
+        onBack={() => undefined}
+        backLabel="Back to sources"
+        leading={<span data-testid="tile">G</span>}
+      >
+        Body
+      </Modal>,
+    );
+    const header = document.querySelector('[data-slot="modal-header"]')!;
+    const back = header.firstElementChild as HTMLButtonElement;
+    expect(back.getAttribute('aria-label')).toBe('Back to sources');
+    expect(back.nextElementSibling).toBe(
+      document.querySelector('[data-testid="tile"]'),
+    );
+  });
+
+  it('renders no Back without onBack', async () => {
+    await render(
+      <Modal open onOpenChange={() => undefined} title="Create a team">
+        Body
+      </Modal>,
+    );
+    const header = document.querySelector('[data-slot="modal-header"]')!;
+    expect(header.querySelector('button')).toBeNull();
+  });
+});
+
 describe('Modal footer', () => {
   it('stacks on phones and sits in a right-aligned row from sm up', async () => {
     await render(

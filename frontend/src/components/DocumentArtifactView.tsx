@@ -1,10 +1,4 @@
-import {
-  CircleAlert,
-  Download,
-  FileText,
-  History,
-  RotateCcw,
-} from 'lucide-react';
+import { Download, FileText, History, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -30,6 +24,7 @@ import {
 } from './artifactViewUtils';
 import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
+import { CodeBlock } from './ui/code-block';
 import { useArtifactBytes } from './useArtifactBytes';
 import {
   Select,
@@ -95,9 +90,9 @@ function FramePreview({
 
   if (renderError) {
     return (
-      <pre className="text-muted-foreground overflow-auto p-4 font-mono text-xs wrap-break-word whitespace-pre-wrap">
+      <CodeBlock surface="pane" tone="muted">
         {source}
-      </pre>
+      </CodeBlock>
     );
   }
   if (rendered === null) {
@@ -215,11 +210,7 @@ function BytesPreview({
   if (mode === 'text-markdown') {
     return <MarkdownPreview content={state.text} />;
   }
-  return (
-    <pre className="text-foreground h-full overflow-auto p-4 font-mono text-xs wrap-break-word whitespace-pre-wrap">
-      {state.text}
-    </pre>
-  );
+  return <CodeBlock surface="pane">{state.text}</CodeBlock>;
 }
 
 export default function DocumentArtifactView({
@@ -341,11 +332,7 @@ export default function DocumentArtifactView({
         ? asPreviewString(artifact.spec) || (selectedRow?.preview_text ?? '')
         : (selectedRow?.preview_text ?? '');
       if (text) {
-        return (
-          <pre className="text-foreground h-full overflow-auto p-4 font-mono text-xs wrap-break-word whitespace-pre-wrap">
-            {text}
-          </pre>
-        );
+        return <CodeBlock surface="pane">{text}</CodeBlock>;
       }
       // No inline text: try fetching the bytes below.
     }
@@ -425,7 +412,6 @@ export default function DocumentArtifactView({
 
       {actionError && (
         <Alert variant="destructive">
-          <CircleAlert className="size-4" aria-hidden="true" />
           <AlertDescription>{actionError}</AlertDescription>
         </Alert>
       )}

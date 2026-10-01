@@ -1,4 +1,3 @@
-import { CircleAlert } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -112,7 +111,6 @@ export default function WikiSettingsModal({
         {!canManage && <ViewOnlyNotice />}
         {saveFailed && (
           <Alert variant="destructive">
-            <CircleAlert />
             <AlertDescription>
               {t('settings.sources.wiki.settings.saveError')}
             </AlertDescription>

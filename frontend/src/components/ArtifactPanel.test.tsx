@@ -127,7 +127,9 @@ describe('ArtifactPanel', () => {
         'wrap-break-word',
       ]),
     );
-    const card = pre.parentElement!;
+    // ui/code-block CodeBlock: the scroller sits inside the Card's padding.
+    expect(pre.parentElement!.className).toContain('overflow-auto');
+    const card = pre.parentElement!.parentElement!;
     expect(card.getAttribute('data-slot')).toBe('card');
     expect(card.getAttribute('data-variant')).toBe('filled');
     expect(card.getAttribute('data-padding')).toBe('sm');

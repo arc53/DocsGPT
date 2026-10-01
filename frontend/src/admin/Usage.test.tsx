@@ -53,4 +53,23 @@ describe('Usage toolbar', () => {
     expect(trigger).not.toBeNull();
     expect(trigger?.dataset.shape).toBe('pill');
   });
+
+  it('shows no top users as a small text-only EmptyState', async () => {
+    const store = configureStore({
+      reducer: { preference: prefSlice.reducer },
+    });
+    await act(async () =>
+      root.render(
+        <Provider store={store}>
+          <Usage />
+        </Provider>,
+      ),
+    );
+    for (let i = 0; i < 5; i += 1) await act(async () => Promise.resolve());
+    const empty = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="empty-state"]'),
+    ).find((el) => el.textContent === 'No usage.');
+    expect(empty?.dataset.size).toBe('sm');
+    expect(empty?.querySelector('svg')).toBeNull();
+  });
 });

@@ -76,7 +76,6 @@
       "prompt": "使用中的提示",
       "promptDescription": "不使用代理的聊天所用的系統提示詞。代理會使用各自的提示詞。",
       "deleteAllLabel": "刪除所有對話",
-      "deleteAllBtn": "全部刪除",
       "deleteAllDescription": "永久刪除您帳戶中的所有對話。此操作無法復原。",
       "addNew": "新增",
       "convHistory": "對話歷史記錄",
@@ -120,7 +119,7 @@
       "reingest": "重新索引",
       "ingestFailed": "索引失敗",
       "ingestProcessing": "索引中...",
-      "syncConfirmation": "您確定要同步 \"{{sourceName}}\" 嗎？這將使用您的雲端儲存更新內容，並可能覆蓋您對個別文本塊所做的任何編輯。",
+      "syncConfirmation": "要同步「{{sourceName}}」嗎？",
       "syncFrequency": {
         "never": "從不",
         "daily": "每天",
@@ -302,8 +301,7 @@
       },
       "editConfig": "來源設定",
       "shareWithTeam": "與團隊分享",
-      "deleteWarning": "您確定要刪除 \"{{name}}\" 嗎？",
-      "confirmDelete": "您確定要刪除此檔案嗎？此操作無法復原。",
+      "deleteWarning": "要刪除「{{name}}」嗎？",
       "chunks": "文本塊",
       "noChunks": "未找到文本塊",
       "noChunksAlt": "未找到文本塊",
@@ -325,7 +323,6 @@
       "addFile": "新增檔案",
       "uploadingFilesTitle": "正在上傳檔案...",
       "deletingTitle": "正在刪除...",
-      "deleteDirectoryWarning": "您確定要刪除目錄 \"{{name}}\" 及其所有內容嗎？此操作無法復原。",
       "searchAlt": "搜尋",
       "retrievalOptions": {
         "title": "進階設定",
@@ -464,7 +461,13 @@
         "reingest": "無法開始重新匯入。"
       },
       "viaConnection": "透過 {{name}}",
-      "loadError": "無法載入你的知識庫。"
+      "loadError": "無法載入你的知識庫。",
+      "delete": "刪除",
+      "deleteConsequence": "其檔案與區塊也會一併刪除。此操作無法復原。",
+      "deleteFileConsequence": "其區塊也會一併刪除。此操作無法復原。",
+      "deleteDirectoryConsequence": "其中的所有內容也會一併刪除。此操作無法復原。",
+      "syncConsequence": "其內容會從您的雲端儲存空間更新，可能會覆寫您對個別區塊所做的編輯。",
+      "deleteItemFailed": "無法刪除「{{name}}」。"
     },
     "analytics": {
       "label": "分析",
@@ -699,7 +702,7 @@
       "selectTeamTitle": "未選擇團隊",
       "teamSubtitle": "管理成員以及與此團隊分享的資源。",
       "deleteTeam": "刪除團隊",
-      "deleteTeamConfirmation": "您確定要刪除「{{name}}」嗎？此操作無法復原。",
+      "deleteTeamConfirmation": "要刪除「{{name}}」嗎？",
       "members": "成員",
       "addMember": "新增成員",
       "addMemberTitle": "新增成員",
@@ -710,7 +713,7 @@
       "memberRoleLabel": "角色",
       "add": "新增",
       "remove": "移除",
-      "removeMemberConfirmation": "要將此成員從團隊中移除嗎？",
+      "removeMemberConfirmation": "要將「{{name}}」從 {{team}} 移除嗎？",
       "addMemberError": "新增成員失敗（僅限團隊管理員）。",
       "memberNotFound": "找不到使用該電子郵件的使用者——對方必須先登入一次。",
       "noMembers": "尚無成員。使用「新增成員」以電子郵件邀請。",
@@ -758,7 +761,6 @@
         "showAll": "顯示全部 {{formatted}} 個",
         "andMore_one": "還有 {{formatted}} 個",
         "andMore_other": "還有 {{formatted}} 個",
-        "back": "返回",
         "allSummary": "{{name}} · 團隊：{{teams}} · 人員：{{people}}",
         "searchAccess": "搜尋人員和團隊…",
         "filterLabel": "篩選具有存取權的人員",
@@ -803,7 +805,10 @@
             "connectorDisabledNoService": "已被管理員關閉",
             "unknown": "未在執行"
           }
-        }
+        },
+        "removeConfirm": "要移除「{{name}}」的存取權嗎？",
+        "removeConfirmTeam": "{{team}} 的所有人都將無法存取「{{resource}}」。您可以隨時再次分享。",
+        "removeConfirmPerson": "{{name}} 將無法再透過 {{team}} 存取「{{resource}}」。您可以隨時再次分享。"
       },
       "memberCount_one": "{{formatted}} 位成員",
       "memberCount_other": "{{formatted}} 位成員",
@@ -982,7 +987,10 @@
       "searchMembers": "搜尋成員…",
       "membersRange_one": "第 {{from}}–{{to}} 位，共 {{formatted}} 位成員",
       "membersRange_other": "第 {{from}}–{{to}} 位，共 {{formatted}} 位成員",
-      "membersLoadError": "無法載入成員。"
+      "membersLoadError": "無法載入成員。",
+      "deleteTeamConsequence": "其成員將無法再存取與此團隊共用的所有內容。此操作無法復原。",
+      "delete": "刪除",
+      "removeMemberConsequence": "對方將無法再存取與 {{team}} 共用的所有內容。您可以隨時重新加入。"
     },
     "tools": {
       "label": "工具",
@@ -998,7 +1006,7 @@
       "delete": "刪除",
       "reconnect": "重新連線",
       "shareWithTeam": "與團隊分享",
-      "deleteWarning": "您確定要刪除工具 \"{{toolName}}\" 嗎？",
+      "deleteWarning": "要刪除「{{toolName}}」嗎？",
       "unsavedChanges": "您有未儲存的變更，如果不儲存就離開將會遺失。",
       "leaveWithoutSaving": "不儲存離開",
       "saveAndLeave": "儲存並離開",
@@ -1029,7 +1037,7 @@
       "headers": "標頭",
       "queryParameters": "查詢參數",
       "body": "主體",
-      "deleteActionWarning": "您確定要刪除操作 \"{{name}}\" 嗎？",
+      "deleteActionWarning": "要刪除「{{name}}」嗎？",
       "save": "儲存",
       "saveFailed": "儲存工具設定失敗",
       "fieldName": "欄位名稱",
@@ -1128,7 +1136,9 @@
       "noToolsYet": "還沒有工具",
       "connectService": "連接服務",
       "filledBy": "填寫方式",
-      "loadError": "無法載入你的工具。"
+      "loadError": "無法載入你的工具。",
+      "deleteConsequence": "其設定與動作也會一併刪除。此操作無法復原。",
+      "deleteActionConsequence": "儲存工具後即會移除。"
     },
     "devices": {
       "label": "裝置",
@@ -1137,7 +1147,7 @@
       "empty": "沒有已配對的裝置。",
       "revoke": "撤銷",
       "edit": "編輯",
-      "revokeWarning": "要撤銷 {{name}} 嗎？CLI 將會中斷連線。",
+      "revokeWarning": "要撤銷「{{name}}」嗎？",
       "approvalMode": "核准模式",
       "approvalAsk": "詢問",
       "approvalFull": "完整存取",
@@ -1185,7 +1195,8 @@
       "fallbackName": "裝置",
       "auditShow": "顯示最近的指令",
       "auditHide": "隱藏最近的指令",
-      "seen": "{{time}}上線"
+      "seen": "{{time}}上線",
+      "revokeConsequence": "此裝置上的 CLI 會中斷連線，配對也會被移除。重新配對即可再次連線。"
     },
     "customModels": {
       "label": "自訂模型",
@@ -1201,7 +1212,7 @@
       "testSuccess": "連線成功。",
       "testHintNew": "請填寫 Base URL、模型 ID 與 API 金鑰以啟用連線測試。",
       "disabledBadge": "已停用",
-      "deleteWarning": "確定要刪除自訂模型「{{modelName}}」嗎?",
+      "deleteWarning": "要刪除「{{modelName}}」嗎？",
       "actionsMenuAria": "{{modelName}} 的操作",
       "modelsGroup": {
         "builtin": "DocsGPT 模型",
@@ -1288,7 +1299,7 @@
       "showLess": "收合",
       "revoke": "撤銷",
       "revokeAria": "撤銷權杖 {{name}}",
-      "revokeWarning": "確定要撤銷權杖「{{name}}」嗎？所有仍在使用它的程式將立即失效，且此操作無法復原。",
+      "revokeWarning": "要撤銷「{{name}}」嗎？",
       "restrictionCount": {
         "agents_one": "{{count}} 個代理",
         "agents_other": "{{count}} 個代理",
@@ -1361,7 +1372,8 @@
           "title": "權杖已重新產生",
           "subtitle": "「{{name}}」的新密鑰已就緒，舊密鑰已失效。"
         }
-      }
+      },
+      "revokeConsequence": "仍在使用它的任何項目都會立即停止運作。此操作無法復原。"
     },
     "connectors": {
       "label": "連接器",
@@ -1466,7 +1478,7 @@
         "customize": "自訂"
       },
       "disconnect": {
-        "title": "要中斷 {{name}} 的連線嗎？",
+        "title": "要中斷「{{name}}」的連線嗎？",
         "failed": "無法中斷連線。請再試一次。",
         "bodyBoth_one": "已同步的 {{formatted}} 項會保留在知識庫中，但不再更新。此連線的工具在重新連線前無法使用。",
         "bodyBoth_other": "已同步的 {{formatted}} 項會保留在知識庫中，但不再更新。此連線的工具在重新連線前無法使用。",
@@ -1541,7 +1553,7 @@
         "toolsCount_one": "{{formatted}} 個工具"
       },
       "remove": {
-        "title": "要移除 {{name}} 嗎？",
+        "title": "要移除「{{name}}」嗎？",
         "description": "儲存的登入資訊將被刪除。請選擇如何處理此連線提供的內容。",
         "sourcesLabel_other": "它同步到知識庫的 {{formatted}} 項",
         "keepSources": "保留內容（停止同步）",
@@ -1664,7 +1676,6 @@
       "selectedFiles": "已選擇的檔案",
       "noFilesSelected": "未選擇檔案",
       "file": "從檔案",
-      "back": "返回",
       "wait": "請稍候...",
       "remote": "遠端",
       "start": "開始對話",
@@ -1770,8 +1781,9 @@
       "apiKeyLabel": "API Key"
     },
     "deleteConv": {
-      "confirm": "您確定要刪除所有對話嗎？",
-      "delete": "刪除"
+      "confirm": "要刪除所有對話嗎？",
+      "delete": "刪除",
+      "consequence": "您帳戶中的所有對話及其訊息都會被刪除。此操作無法復原。"
     },
     "shareConv": {
       "label": "建立公開頁面以分享",
@@ -1811,7 +1823,7 @@
       "save": "儲存",
       "cancel": "取消",
       "nameExists": "名稱已存在",
-      "deleteConfirmation": "您確定要刪除提示「{{name}}」嗎？",
+      "deleteConfirmation": "要刪除「{{name}}」嗎？",
       "placeholderText": "在此輸入提示內容...",
       "addExamplePlaceholder": "請總結此文本：",
       "variablesLabel": "變數",
@@ -1835,7 +1847,8 @@
       "learnAboutPrompts": "了解提示 →",
       "publicPromptEditDisabled": "公共提示無法編輯",
       "promptTypePublic": "公共",
-      "promptTypePrivate": "私人"
+      "promptTypePrivate": "私人",
+      "delete": "刪除"
     },
     "chunk": {
       "add": "新增區塊",
@@ -1847,7 +1860,7 @@
       "save": "儲存",
       "close": "關閉",
       "delete": "刪除",
-      "deleteConfirmation": "您確定要刪除此區塊嗎？"
+      "deleteConfirmation": "要刪除此區塊嗎？"
     },
     "addAction": {
       "title": "New Action",
@@ -1865,7 +1878,7 @@
       "test": "Test",
       "learnMore": "Learn more",
       "resetKey": "重設金鑰",
-      "resetKeyConfirm": "確定要重設 API 金鑰嗎？目前的金鑰將立即停止運作，此操作無法復原。",
+      "resetKeyConfirm": "要重設「{{name}}」的 API 金鑰嗎？",
       "apiWrites": {
         "title": "他人以你的身分進行的變更",
         "description": "透過 API、小工具或公開連結，無人能替你核准這些變更。請在此允許。",
@@ -1878,7 +1891,9 @@
         "choose": "選擇允許的內容"
       },
       "actionFailed": "操作未成功，請再試一次。",
-      "apiKeyAfterPublish": "發布此代理後即可建立其 API 金鑰。"
+      "apiKeyAfterPublish": "發布此代理後即可建立其 API 金鑰。",
+      "resetKeyConsequence": "目前的金鑰會立即失效，所有使用它的地方都需要更新。此操作無法復原。",
+      "reset": "重設"
     },
     "importSpec": {
       "title": "匯入 API 規格",
@@ -1946,7 +1961,9 @@
     "delete": "刪除",
     "rename": "重新命名",
     "save": "儲存",
-    "deleteWarning": "您確定要刪除這個對話嗎？"
+    "deleteWarning": "要刪除「{{name}}」嗎？",
+    "deleteWarningUnnamed": "要刪除此對話嗎？",
+    "deleteConsequence": "其訊息也會一併刪除。此操作無法復原。"
   },
   "pagination": {
     "label": "分頁",
@@ -2443,7 +2460,7 @@
       "resume": "繼續",
       "runNow": "立即執行",
       "delete": "刪除",
-      "deleteConfirm": "要刪除此排程嗎？其執行歷史也會一併刪除。此操作無法復原。",
+      "deleteConfirm": "要刪除「{{name}}」嗎？",
       "cancel": "取消",
       "showRuns": "顯示執行記錄",
       "hideRuns": "隱藏執行記錄",
@@ -2593,7 +2610,8 @@
         "paused_other": "{{count}} 個已暫停",
         "overdue": "已逾期"
       },
-      "deleteFailed": "無法刪除此排程。"
+      "deleteFailed": "無法刪除此排程。",
+      "deleteConsequence": "其執行紀錄也會一併刪除。此操作無法復原。"
     },
     "shared": {
       "notFound": "未找到代理。請確保代理已共享。",
@@ -2608,14 +2626,14 @@
       "testMessage": "在此測試您的代理。已發佈的代理可以在對話中使用。",
       "emptyTitle": "測試你的代理"
     },
-    "deleteConfirmation": "您確定要刪除此代理嗎？",
+    "deleteConfirmation": "要刪除「{{name}}」嗎？",
     "folders": {
       "newFolder": "新建資料夾",
       "createFolder": "建立資料夾",
       "folderName": "資料夾名稱",
       "rename": "重新命名",
       "delete": "刪除",
-      "deleteConfirm": "確定要刪除此資料夾嗎？資料夾中的代理將被移出。",
+      "deleteConfirm": "要刪除「{{name}}」嗎？",
       "empty": "此資料夾為空",
       "moveToFolder": "移動到資料夾",
       "moveTo": "移動",
@@ -2626,7 +2644,8 @@
       "noSubfolders": "沒有子資料夾",
       "openFolder": "開啟資料夾",
       "noFolders": "暫無資料夾",
-      "menuAriaLabel": "{{folderName}} 的操作"
+      "menuAriaLabel": "{{folderName}} 的操作",
+      "deleteConsequence": "其中的代理會移出資料夾，不會被刪除。"
     },
     "guardrailEvents": {
       "heading": "Guardrail activity",
@@ -2749,8 +2768,7 @@
         "optional": "選填",
         "cannotDeleteStart": "無法刪除開始節點",
         "deleteNode": "刪除節點",
-        "deleteConfirm": "確定要刪除「{{name}}」嗎？",
-        "deleteConfirmUnnamed": "確定要刪除此工作流程代理嗎？",
+        "deleteConfirmUnnamed": "要刪除此工作流程代理嗎？",
         "detailsTitle": "工作流程詳細資料",
         "detailsDescription": "顯示在代理卡片上的名稱、說明和圖片。",
         "unsavedChanges": "未儲存的變更",
@@ -2865,7 +2883,8 @@
     "showAll_one": "查看全部 {{formatted}} 個",
     "showAll_other": "查看全部 {{formatted}} 個",
     "pageRange_one": "第 {{from}}–{{to}} 個，共 {{formatted}} 個代理",
-    "pageRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個代理"
+    "pageRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個代理",
+    "deleteConsequence": "其排程與執行紀錄也會一併刪除。此操作無法復原。"
   },
   "components": {
     "fileUpload": {
@@ -3004,7 +3023,8 @@
     "viewOnlyNotice": "你可以檢視此內容，但你的角色無法變更它。",
     "credentialsLockedNotice": "只有擁有者可以變更此工具的憑證。",
     "savedSecretHint": "已儲存。留空即可保留。",
-    "actionFailed": "發生錯誤，請再試一次。"
+    "actionFailed": "發生錯誤，請再試一次。",
+    "cantUndo": "此操作無法復原。"
   },
   "sidePanel": {
     "close": "關閉",

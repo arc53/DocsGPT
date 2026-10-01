@@ -1,4 +1,4 @@
-import { ExternalLink, TriangleAlert } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
@@ -18,7 +18,6 @@ export default function ConnectorSetupNotice({
   const { t } = useTranslation();
   return (
     <Alert variant="warning">
-      <TriangleAlert />
       <AlertTitle>{t('settings.connectors.status.needsAdminSetup')}</AlertTitle>
       <AlertDescription>
         <div className="flex flex-col gap-2">

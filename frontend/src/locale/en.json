@@ -80,7 +80,6 @@
       "prompt": "Active prompt",
       "promptDescription": "The system prompt for chats without an agent. Agents use their own.",
       "deleteAllLabel": "Delete all conversations",
-      "deleteAllBtn": "Delete all",
       "deleteAllDescription": "Permanently deletes every conversation in your account. This can't be undone.",
       "addNew": "Add New",
       "convHistory": "Conversation History",
@@ -124,7 +123,7 @@
       "reingest": "Reingest",
       "ingestFailed": "Indexing failed",
       "ingestProcessing": "Indexing…",
-      "syncConfirmation": "Are you sure you want to sync \"{{sourceName}}\"? This will update the content with your cloud storage and may override any edits you made to individual chunks.",
+      "syncConfirmation": "Sync \"{{sourceName}}\"?",
       "syncFrequency": {
         "never": "Never",
         "daily": "Daily",
@@ -308,8 +307,7 @@
       },
       "editConfig": "Source settings",
       "shareWithTeam": "Share with team",
-      "deleteWarning": "Are you sure you want to delete \"{{name}}\"?",
-      "confirmDelete": "Are you sure you want to delete this file? This action cannot be undone.",
+      "deleteWarning": "Delete \"{{name}}\"?",
       "chunks": "Chunks",
       "noChunks": "No chunks found",
       "noChunksAlt": "No chunks found",
@@ -331,7 +329,6 @@
       "addFile": "Add file",
       "uploadingFilesTitle": "Uploading files...",
       "deletingTitle": "Deleting...",
-      "deleteDirectoryWarning": "Are you sure you want to delete the directory \"{{name}}\" and all its contents? This action cannot be undone.",
       "searchAlt": "Search",
       "retrievalOptions": {
         "title": "Advanced settings",
@@ -470,7 +467,13 @@
         "reingest": "Couldn't start the reingest."
       },
       "viaConnection": "via {{name}}",
-      "loadError": "Could not load your knowledge."
+      "loadError": "Could not load your knowledge.",
+      "delete": "Delete",
+      "deleteConsequence": "Its files and chunks are deleted too. This can't be undone.",
+      "deleteFileConsequence": "Its chunks are deleted too. This can't be undone.",
+      "deleteDirectoryConsequence": "Everything inside it is deleted too. This can't be undone.",
+      "syncConsequence": "Its content is updated from your cloud storage, which may overwrite edits you made to individual chunks.",
+      "deleteItemFailed": "Could not delete \"{{name}}\"."
     },
     "analytics": {
       "label": "Analytics",
@@ -706,7 +709,7 @@
       "selectTeamTitle": "No team selected",
       "teamSubtitle": "Manage members and the resources shared with this team.",
       "deleteTeam": "Delete team",
-      "deleteTeamConfirmation": "Are you sure you want to delete \"{{name}}\"? This cannot be undone.",
+      "deleteTeamConfirmation": "Delete \"{{name}}\"?",
       "members": "Members",
       "addMember": "Add member",
       "addMemberTitle": "Add a member",
@@ -717,7 +720,7 @@
       "memberRoleLabel": "Role",
       "add": "Add",
       "remove": "Remove",
-      "removeMemberConfirmation": "Remove this member from the team?",
+      "removeMemberConfirmation": "Remove \"{{name}}\" from {{team}}?",
       "addMemberError": "Failed to add member (team admins only).",
       "memberNotFound": "No user with that email — they must sign in once first.",
       "noMembers": "No members yet. Use “Add member” to invite someone by email.",
@@ -765,7 +768,6 @@
         "showAll": "Show all {{formatted}}",
         "andMore_one": "and {{formatted}} more",
         "andMore_other": "and {{formatted}} more",
-        "back": "Back",
         "allSummary": "{{name}} · Teams: {{teams}} · People: {{people}}",
         "searchAccess": "Search people and teams…",
         "filterLabel": "Filter people with access",
@@ -810,7 +812,10 @@
             "connectorDisabledNoService": "Turned off by an admin",
             "unknown": "Not running"
           }
-        }
+        },
+        "removeConfirm": "Remove access for \"{{name}}\"?",
+        "removeConfirmTeam": "Everyone in {{team}} loses access to \"{{resource}}\". You can share it again at any time.",
+        "removeConfirmPerson": "{{name}} loses access to \"{{resource}}\" through {{team}}. You can share it again at any time."
       },
       "memberCount_one": "{{formatted}} member",
       "memberCount_other": "{{formatted}} members",
@@ -989,7 +994,10 @@
       "searchMembers": "Search members…",
       "membersRange_one": "{{from}}–{{to}} of {{formatted}} member",
       "membersRange_other": "{{from}}–{{to}} of {{formatted}} members",
-      "membersLoadError": "Could not load the members."
+      "membersLoadError": "Could not load the members.",
+      "deleteTeamConsequence": "Its members lose access to everything shared with it. This can't be undone.",
+      "delete": "Delete",
+      "removeMemberConsequence": "They lose access to everything shared with {{team}}. You can add them again at any time."
     },
     "tools": {
       "label": "Tools",
@@ -1005,7 +1013,7 @@
       "delete": "Delete",
       "reconnect": "Reconnect",
       "shareWithTeam": "Share with team",
-      "deleteWarning": "Are you sure you want to delete the tool \"{{toolName}}\"?",
+      "deleteWarning": "Delete \"{{toolName}}\"?",
       "unsavedChanges": "You have unsaved changes that will be lost if you leave without saving.",
       "leaveWithoutSaving": "Leave without Saving",
       "saveAndLeave": "Save and Leave",
@@ -1036,7 +1044,7 @@
       "headers": "Headers",
       "queryParameters": "Query Parameters",
       "body": "Body",
-      "deleteActionWarning": "Are you sure you want to delete the action \"{{name}}\"?",
+      "deleteActionWarning": "Delete \"{{name}}\"?",
       "save": "Save",
       "saveFailed": "Failed to save tool configuration",
       "fieldName": "Field Name",
@@ -1135,7 +1143,9 @@
       "noToolsYet": "No tools yet",
       "connectService": "Connect a service",
       "filledBy": "Filled in by",
-      "loadError": "Could not load your tools."
+      "loadError": "Could not load your tools.",
+      "deleteConsequence": "Its settings and actions are deleted too. This can't be undone.",
+      "deleteActionConsequence": "It's removed when you save the tool."
     },
     "devices": {
       "label": "Devices",
@@ -1144,7 +1154,7 @@
       "empty": "No paired devices.",
       "revoke": "Revoke",
       "edit": "Edit",
-      "revokeWarning": "Revoke {{name}}? The CLI will be disconnected.",
+      "revokeWarning": "Revoke \"{{name}}\"?",
       "approvalMode": "Approval mode",
       "approvalAsk": "Ask",
       "approvalFull": "Full access",
@@ -1192,7 +1202,8 @@
       "fallbackName": "device",
       "auditShow": "Show recent commands",
       "auditHide": "Hide recent commands",
-      "seen": "seen {{time}}"
+      "seen": "seen {{time}}",
+      "revokeConsequence": "The CLI on this device is disconnected and the pairing removed. Pair it again to reconnect."
     },
     "customModels": {
       "label": "Custom Models",
@@ -1208,7 +1219,7 @@
       "testSuccess": "Connection successful.",
       "testHintNew": "Fill in Base URL, Model ID, and API key to enable connection tests.",
       "disabledBadge": "Disabled",
-      "deleteWarning": "Are you sure you want to delete the custom model \"{{modelName}}\"?",
+      "deleteWarning": "Delete \"{{modelName}}\"?",
       "actionsMenuAria": "Actions for {{modelName}}",
       "modelsGroup": {
         "builtin": "DocsGPT Models",
@@ -1295,7 +1306,7 @@
       "showLess": "Show less",
       "revoke": "Revoke",
       "revokeAria": "Revoke token {{name}}",
-      "revokeWarning": "Revoke the token \"{{name}}\"? Anything still using it will stop working immediately. This cannot be undone.",
+      "revokeWarning": "Revoke \"{{name}}\"?",
       "restrictionCount": {
         "agents_one": "{{count}} agent",
         "agents_other": "{{count}} agents",
@@ -1368,7 +1379,8 @@
           "title": "Token regenerated",
           "subtitle": "The new secret for \"{{name}}\" is ready. The old one no longer works."
         }
-      }
+      },
+      "revokeConsequence": "Anything still using it stops working immediately. This can't be undone."
     },
     "connectors": {
       "label": "Connectors",
@@ -1473,7 +1485,7 @@
         "customize": "Customize"
       },
       "disconnect": {
-        "title": "Disconnect {{name}}?",
+        "title": "Disconnect \"{{name}}\"?",
         "failed": "Could not disconnect. Try again.",
         "bodyBoth_one": "The item it synced stays in Knowledge but stops updating. Tools from this connection stop working until you reconnect.",
         "bodyBoth_other": "The {{formatted}} items it synced stay in Knowledge but stop updating. Tools from this connection stop working until you reconnect.",
@@ -1548,7 +1560,7 @@
         "account": "Account"
       },
       "remove": {
-        "title": "Remove {{name}}?",
+        "title": "Remove \"{{name}}\"?",
         "description": "The stored sign-in is deleted. Choose what happens to what this connection feeds.",
         "sourcesLabel_one": "The item it synced into Knowledge",
         "sourcesLabel_other": "The {{formatted}} items it synced into Knowledge",
@@ -1676,7 +1688,6 @@
       "selectedFiles": "Selected Files",
       "noFilesSelected": "No files selected",
       "file": "Upload from device",
-      "back": "Back",
       "wait": "Please wait ...",
       "remote": "Collect from website",
       "start": "Start Chatting",
@@ -1782,8 +1793,9 @@
       "apiKeyLabel": "API Key"
     },
     "deleteConv": {
-      "confirm": "Are you sure you want to delete all the conversations?",
-      "delete": "Delete"
+      "confirm": "Delete all conversations?",
+      "delete": "Delete",
+      "consequence": "Every conversation in your account is deleted, with its messages. This can't be undone."
     },
     "shareConv": {
       "label": "Create a public page to share",
@@ -1823,7 +1835,7 @@
       "save": "Save",
       "cancel": "Cancel",
       "nameExists": "Name already exists",
-      "deleteConfirmation": "Are you sure you want to delete the prompt '{{name}}'?",
+      "deleteConfirmation": "Delete \"{{name}}\"?",
       "placeholderText": "Type your prompt text here...",
       "addExamplePlaceholder": "Please summarize this text:",
       "variablesLabel": "Variables",
@@ -1847,7 +1859,8 @@
       "learnAboutPrompts": "Learn about Prompts →",
       "publicPromptEditDisabled": "Public prompts cannot be edited",
       "promptTypePublic": "public",
-      "promptTypePrivate": "private"
+      "promptTypePrivate": "private",
+      "delete": "Delete"
     },
     "chunk": {
       "add": "Add Chunk",
@@ -1859,7 +1872,7 @@
       "save": "Save",
       "close": "Close",
       "delete": "Delete",
-      "deleteConfirmation": "Are you sure you want to delete this chunk?"
+      "deleteConfirmation": "Delete this chunk?"
     },
     "addAction": {
       "title": "New Action",
@@ -1877,7 +1890,7 @@
       "test": "Test",
       "learnMore": "Learn more",
       "resetKey": "Reset key",
-      "resetKeyConfirm": "Are you sure you want to reset the API key? The current key will stop working immediately and this action cannot be undone.",
+      "resetKeyConfirm": "Reset the API key for \"{{name}}\"?",
       "apiWrites": {
         "title": "Changes others can make as you",
         "description": "Nobody can approve these for you through the API, the widget or a public link. Allow them here.",
@@ -1890,7 +1903,9 @@
         "choose": "Choose what's allowed"
       },
       "actionFailed": "That didn't work. Please try again.",
-      "apiKeyAfterPublish": "Publish the agent to create its API key."
+      "apiKeyAfterPublish": "Publish the agent to create its API key.",
+      "resetKeyConsequence": "The current key stops working immediately, so anything using it must be updated. This can't be undone.",
+      "reset": "Reset"
     },
     "importSpec": {
       "title": "Import API Specification",
@@ -1959,7 +1974,9 @@
     "delete": "Delete",
     "rename": "Rename",
     "save": "Save",
-    "deleteWarning": "Are you sure you want to delete this conversation?"
+    "deleteWarning": "Delete \"{{name}}\"?",
+    "deleteWarningUnnamed": "Delete this conversation?",
+    "deleteConsequence": "Its messages are deleted too. This can't be undone."
   },
   "pagination": {
     "label": "Pagination",
@@ -2470,7 +2487,7 @@
       "resume": "Resume",
       "runNow": "Run now",
       "delete": "Delete",
-      "deleteConfirm": "Delete this schedule? This will also delete its run history. This action cannot be undone.",
+      "deleteConfirm": "Delete \"{{name}}\"?",
       "cancel": "Cancel",
       "showRuns": "Show runs",
       "hideRuns": "Hide runs",
@@ -2622,7 +2639,8 @@
         "paused_other": "{{count}} paused",
         "overdue": "Overdue"
       },
-      "deleteFailed": "Couldn't delete this schedule."
+      "deleteFailed": "Couldn't delete this schedule.",
+      "deleteConsequence": "Its run history is deleted too. This can't be undone."
     },
     "shared": {
       "notFound": "No agent found. Please ensure the agent is shared.",
@@ -2637,14 +2655,14 @@
       "testMessage": "Test your agent here. Published agents can be used in conversations.",
       "emptyTitle": "Test your agent"
     },
-    "deleteConfirmation": "Are you sure you want to delete this agent?",
+    "deleteConfirmation": "Delete \"{{name}}\"?",
     "folders": {
       "newFolder": "New Folder",
       "createFolder": "Create Folder",
       "folderName": "Folder name",
       "rename": "Rename",
       "delete": "Delete",
-      "deleteConfirm": "Are you sure you want to delete this folder? Agents inside will be moved out of the folder.",
+      "deleteConfirm": "Delete \"{{name}}\"?",
       "empty": "This folder is empty",
       "moveToFolder": "Move to folder",
       "moveTo": "Move",
@@ -2656,7 +2674,8 @@
       "openFolder": "Open folder",
       "noFolders": "No folders yet",
       "moveTitle": "Move \"{{name}}\" to",
-      "menuAriaLabel": "Actions for {{folderName}}"
+      "menuAriaLabel": "Actions for {{folderName}}",
+      "deleteConsequence": "The agents inside move out of the folder; they aren't deleted."
     },
     "guardrailEvents": {
       "heading": "Guardrail activity",
@@ -2793,8 +2812,7 @@
         "optional": "Optional",
         "cannotDeleteStart": "Cannot Delete Start Node",
         "deleteNode": "Delete node",
-        "deleteConfirm": "Are you sure you want to delete \"{{name}}\"?",
-        "deleteConfirmUnnamed": "Are you sure you want to delete \"this workflow agent\"?",
+        "deleteConfirmUnnamed": "Delete this workflow agent?",
         "detailsTitle": "Workflow details",
         "detailsDescription": "Name, description and image shown on the agent card.",
         "unsavedChanges": "Unsaved changes",
@@ -2906,7 +2924,8 @@
     "showAll_one": "Show all {{formatted}}",
     "showAll_other": "Show all {{formatted}}",
     "pageRange_one": "{{from}}–{{to}} of {{formatted}} agent",
-    "pageRange_other": "{{from}}–{{to}} of {{formatted}} agents"
+    "pageRange_other": "{{from}}–{{to}} of {{formatted}} agents",
+    "deleteConsequence": "Its schedules and run history are deleted too. This can't be undone."
   },
   "components": {
     "fileUpload": {
@@ -3064,7 +3083,8 @@
     "viewOnlyNotice": "You can view this, but your role can't change it.",
     "credentialsLockedNotice": "Only the owner can change this tool's credentials.",
     "savedSecretHint": "Saved. Leave empty to keep it.",
-    "actionFailed": "Something went wrong. Please try again."
+    "actionFailed": "Something went wrong. Please try again.",
+    "cantUndo": "This can't be undone."
   },
   "sidePanel": {
     "close": "Close",

@@ -15,6 +15,7 @@ import SkeletonLoader from '../components/SkeletonLoader';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
 import {
   DescriptionItem,
   DescriptionList,
@@ -59,7 +60,6 @@ function ScopeChips({ scopes }: { scopes: string[] }) {
   return (
     <div className="flex flex-wrap items-center gap-1">
       {visible.map((scope) => (
-        // eslint-disable-next-line shadcn/no-restyle -- scope names are identifiers, set in mono (item 37)
         <Badge key={scope} variant="neutral" className="font-mono">
           {scope}
         </Badge>
@@ -102,6 +102,8 @@ export default function PersonalAccessTokens() {
   const [revokeState, setRevokeState] = React.useState<ActiveState>('INACTIVE');
   const [tokenToRevoke, setTokenToRevoke] =
     React.useState<PersonalAccessToken | null>(null);
+  // The revoke confirm's Alert text after a failed revoke.
+  const [revokeFailure, setRevokeFailure] = React.useState<string>();
 
   const loadTokens = React.useCallback(
     async (showLoader: boolean) => {
@@ -149,29 +151,28 @@ export default function PersonalAccessTokens() {
     setRevokeState('ACTIVE');
   };
 
+  // Returns the request: ConfirmationModal closes on success and keeps a
+  // failure open with revokeFailure (the server's message when it sends one).
   const confirmRevoke = async () => {
     if (!tokenToRevoke) return;
     const target = tokenToRevoke;
+    const dropRow = () =>
+      setTokens((prev) => prev.filter((item) => item.id !== target.id));
     try {
       await patService.revoke(target.id, token);
-      setTokens((prev) => prev.filter((item) => item.id !== target.id));
-      setError(null);
     } catch (err) {
-      if (err instanceof AccessTokenApiError && err.status === 404) {
-        // Already revoked elsewhere (another tab, an admin): it is gone, so
-        // drop the stale row instead of reporting a failure.
-        setTokens((prev) => prev.filter((item) => item.id !== target.id));
-        setError(null);
-        return;
+      if (!(err instanceof AccessTokenApiError && err.status === 404)) {
+        setRevokeFailure(
+          (err instanceof Error && err.message) ||
+            t('settings.accessTokens.revokeError'),
+        );
+        throw err;
       }
-      console.error('Failed to revoke access token:', err);
-      setError(
-        (err instanceof Error && err.message) ||
-          t('settings.accessTokens.revokeError'),
-      );
-    } finally {
-      setTokenToRevoke(null);
+      // Already revoked elsewhere (another tab, an admin): it is gone, so
+      // drop the stale row instead of reporting a failure.
     }
+    dropRow();
+    setTokenToRevoke(null);
   };
 
   const limitReached =
@@ -294,7 +295,7 @@ export default function PersonalAccessTokens() {
           {hasNotices && (
             <div className="mb-6 flex flex-col gap-2">
               {showDisabledNotice && (
-                <Alert>
+                <Alert variant="info" role="note">
                   <AlertDescription>
                     {t('settings.accessTokens.disabledNotice')}
                   </AlertDescription>
@@ -394,49 +395,50 @@ export default function PersonalAccessTokens() {
             {/* Mobile / tablet: cards */}
             <ul className="flex flex-col gap-4 lg:hidden">
               {tokens.map((item) => (
-                <li
-                  key={item.id}
-                  className="bg-muted flex flex-col gap-3 rounded-2xl p-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p
-                        className="text-foreground truncate text-sm font-medium"
-                        title={item.name}
-                      >
-                        {item.name}
-                      </p>
-                      {renderPrefix(item)}
+                <Card key={item.id} variant="filled" asChild>
+                  <li>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p
+                          className="text-foreground truncate text-sm font-medium"
+                          title={item.name}
+                        >
+                          {item.name}
+                        </p>
+                        {renderPrefix(item)}
+                      </div>
                     </div>
-                  </div>
-                  <ScopeChips scopes={item.scopes} />
-                  <DescriptionList layout="justified" size="sm">
-                    <DescriptionItem
-                      label={t('settings.accessTokens.resources')}
-                    >
-                      {renderRestrictions(item)}
-                    </DescriptionItem>
-                    <DescriptionItem
-                      label={t('settings.accessTokens.createdAt')}
-                    >
-                      {item.created_at
-                        ? formatDateOnly(item.created_at)
-                        : EMPTY_VALUE}
-                    </DescriptionItem>
-                    <DescriptionItem
-                      label={t('settings.accessTokens.lastUsed')}
-                    >
-                      {renderLastUsed(item)}
-                    </DescriptionItem>
-                    <DescriptionItem label={t('settings.accessTokens.expires')}>
-                      {renderExpiry(item)}
-                    </DescriptionItem>
-                  </DescriptionList>
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    {renderRegenerateButton(item)}
-                    {renderRevokeButton(item)}
-                  </div>
-                </li>
+                    <ScopeChips scopes={item.scopes} />
+                    <DescriptionList layout="justified" size="sm">
+                      <DescriptionItem
+                        label={t('settings.accessTokens.resources')}
+                      >
+                        {renderRestrictions(item)}
+                      </DescriptionItem>
+                      <DescriptionItem
+                        label={t('settings.accessTokens.createdAt')}
+                      >
+                        {item.created_at
+                          ? formatDateOnly(item.created_at)
+                          : EMPTY_VALUE}
+                      </DescriptionItem>
+                      <DescriptionItem
+                        label={t('settings.accessTokens.lastUsed')}
+                      >
+                        {renderLastUsed(item)}
+                      </DescriptionItem>
+                      <DescriptionItem
+                        label={t('settings.accessTokens.expires')}
+                      >
+                        {renderExpiry(item)}
+                      </DescriptionItem>
+                    </DescriptionList>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {renderRegenerateButton(item)}
+                      {renderRevokeButton(item)}
+                    </div>
+                  </li>
+                </Card>
               ))}
             </ul>
           </>
@@ -471,9 +473,11 @@ export default function PersonalAccessTokens() {
           name: tokenToRevoke?.name ?? '',
           ...NO_ESCAPE,
         })}
+        description={t('settings.accessTokens.revokeConsequence')}
         modalState={revokeState}
         setModalState={setRevokeState}
         handleSubmit={confirmRevoke}
+        error={revokeFailure}
         submitLabel={t('settings.accessTokens.revoke')}
         variant="destructive"
       />

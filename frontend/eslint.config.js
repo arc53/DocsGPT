@@ -159,7 +159,7 @@ export default [
               ],
               message: {
                 default:
-                  '"{{className}}" is not allowed on <Input>: use size (default, sm, lg, field), shape (default, pill) and variant (default, bare, filled); alignment classes and font-mono are allowed. Add a variant in {{file}} only if the design explicitly calls for one.',
+                  '"{{className}}" is not allowed on <Input>: use size (default, sm), shape (default, pill) and variant (default, bare, filled); alignment classes and font-mono are allowed. Add a variant in {{file}} only if the design explicitly calls for one.',
               },
             },
             {
@@ -167,7 +167,7 @@ export default [
               allow: ['layout'],
               message: {
                 default:
-                  '"{{className}}" is not allowed on <SelectTrigger>: use size (sm, default, field), variant (default, ghost) and shape (default, pill) from {{file}}.',
+                  '"{{className}}" is not allowed on <SelectTrigger>: use size (sm, field), variant (default) and shape (default, pill) from {{file}}.',
               },
             },
             {
@@ -175,7 +175,7 @@ export default [
               allow: ['layout'],
               message: {
                 default:
-                  '"{{className}}" is not allowed on <Avatar>: use size (xs, sm, default, lg), shape (circle, square) and variant (primary, muted) from {{file}}.',
+                  '"{{className}}" is not allowed on <Avatar>: use size (xs, sm, default, lg, xl), shape (circle, square) and variant (primary, muted, icon) from {{file}}.',
               },
             },
             {
@@ -183,7 +183,7 @@ export default [
               allow: ['layout', 'gap-*'],
               message: {
                 default:
-                  '"{{className}}" is not allowed on <Card>: use variant (outline, filled, subtle), tone (destructive), padding (none, sm, default, lg) and interactive/selected from {{file}}.',
+                  '"{{className}}" is not allowed on <Card>: use variant (outline, filled, subtle), tone (destructive), padding (none, sm, default, lg) and interactive (true, within) from {{file}}.',
               },
             },
             {
@@ -204,10 +204,12 @@ export default [
             },
             {
               pattern: '^Badge$',
-              allow: ['layout'],
+              // font-mono: chips that show identifiers (token scopes, workflow
+              // state keys). tabular-nums: stat chips (durations, counts).
+              allow: ['layout', 'font-mono', 'tabular-nums'],
               message: {
                 default:
-                  '"{{className}}" is not allowed on <Badge>: use a variant ({{variants}}) from {{file}}.',
+                  '"{{className}}" is not allowed on <Badge>: use a variant (default, neutral, success, warning, destructive, info, outline) from {{file}}; font-mono and tabular-nums are allowed.',
               },
             },
             {
@@ -215,7 +217,7 @@ export default [
               allow: ['layout'],
               message: {
                 default:
-                  '"{{className}}" is not allowed on <{{component}}>: use Alert variant (default, neutral, success, warning, info, destructive) from {{file}}.',
+                  '"{{className}}" is not allowed on <{{component}}>: use Alert variant (success, warning, info, destructive) from {{file}}.',
               },
             },
             {

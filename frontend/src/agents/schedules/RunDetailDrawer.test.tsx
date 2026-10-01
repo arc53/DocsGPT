@@ -89,8 +89,14 @@ describe('RunDetailDrawer', () => {
     // so the scrollbar stays clear of the rounded corners.
     const scroller = pre.parentElement!;
     expect(scroller.className.split(' ')).toEqual(
-      expect.arrayContaining(['scrollbar-overlay', 'overflow-y-auto']),
+      expect.arrayContaining([
+        'scrollbar-overlay',
+        'overflow-y-auto',
+        'max-h-40',
+      ]),
     );
+    // ui/code-block CodeBlock maxHeight="sm" (160px).
+    expect(pre.dataset.slot).toBe('code-block');
     const card = scroller.parentElement!;
     expect(card.getAttribute('data-slot')).toBe('card');
     expect(card.getAttribute('data-variant')).toBe('filled');

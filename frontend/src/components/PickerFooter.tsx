@@ -31,7 +31,7 @@ export default function PickerFooter({
       <Button variant="link" size="inline" asChild>
         <Link to={to} onClick={onNavigate}>
           {linkLabel}
-          <ArrowRight aria-hidden="true" className="size-3" />
+          <ArrowRight aria-hidden="true" />
         </Link>
       </Button>
       <Button

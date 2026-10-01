@@ -22,10 +22,15 @@ const mockState = {
 
 // What a dispatched thunk's unwrap() resolves to (createTeam in tests).
 const mockUnwrap = vi.fn(() => Promise.resolve());
+// Every dispatched action, so a test can see a toast that shouldn't be there.
+const mockDispatch = vi.fn((action: unknown) => {
+  void action;
+  return { unwrap: () => mockUnwrap() };
+});
 
 vi.mock('react-redux', () => ({
   useSelector: (selector: (s: unknown) => unknown) => selector(mockState),
-  useDispatch: () => () => ({ unwrap: () => mockUnwrap() }),
+  useDispatch: () => mockDispatch,
 }));
 
 vi.mock('react-i18next', () => ({
@@ -51,16 +56,67 @@ vi.mock('../components/PageToolbar', () => ({
     <div data-slot="page-toolbar">{action}</div>
   ),
 }));
-vi.mock('../modals/ConfirmationModal', () => ({ default: () => null }));
+// A light stand-in for the promise-aware confirm: the open dialog's title,
+// description and submit; a resolved submit closes it, a rejected one keeps
+// it open with `error`.
+vi.mock('../modals/ConfirmationModal', async () => {
+  const { useState } = await import('react');
+  return {
+    default: function MockConfirm(props: {
+      modalState: string;
+      setModalState: (s: string) => void;
+      message: string;
+      description?: string;
+      submitLabel: string;
+      variant?: string;
+      error?: string;
+      handleSubmit: () => unknown;
+    }) {
+      const [failed, setFailed] = useState(false);
+      if (props.modalState !== 'ACTIVE') return null;
+      const submit = () => {
+        const result = props.handleSubmit();
+        if (result instanceof Promise) {
+          result.then(
+            () => props.setModalState('INACTIVE'),
+            () => setFailed(true),
+          );
+        } else props.setModalState('INACTIVE');
+      };
+      return (
+        <div role="dialog" data-testid="confirm">
+          <h2>{props.message}</h2>
+          {props.description && <p>{props.description}</p>}
+          {failed && (
+            <p data-testid="confirm-error">{props.error ?? 'actionFailed'}</p>
+          )}
+          <button
+            type="button"
+            data-variant={props.variant ?? 'default'}
+            onClick={submit}
+          >
+            {props.submitLabel}
+          </button>
+        </div>
+      );
+    },
+  };
+});
 vi.mock('../teams/ShareToTeamModal', () => ({
   default: () => <div data-testid="share-modal" />,
 }));
 // Render the ⋯ menu's options inline so tests can see them.
 vi.mock('../components/ui/dropdown-menu', () => ({
-  ActionMenu: ({ options }: { options: Array<{ label: string }> }) => (
+  ActionMenu: ({
+    options,
+  }: {
+    options: Array<{ label: string; onClick: () => void }>;
+  }) => (
     <div data-testid="team-menu">
       {options.map((o) => (
-        <span key={o.label}>{o.label}</span>
+        <button key={o.label} type="button" onClick={o.onClick}>
+          {o.label}
+        </button>
       ))}
     </div>
   ),
@@ -79,6 +135,7 @@ const unshare = vi.fn();
 const share = vi.fn();
 const getResourceSettings = vi.fn();
 const addMember = vi.fn();
+const removeMember = vi.fn();
 
 vi.mock('../api/services/teamsService', () => ({
   default: {
@@ -88,6 +145,7 @@ vi.mock('../api/services/teamsService', () => ({
     share: (...a: unknown[]) => share(...a),
     getResourceSettings: (...a: unknown[]) => getResourceSettings(...a),
     addMember: (...a: unknown[]) => addMember(...a),
+    removeMember: (...a: unknown[]) => removeMember(...a),
   },
 }));
 
@@ -166,6 +224,8 @@ describe('Teams page', () => {
     setTeam();
     listMembers.mockReset().mockResolvedValue({ members: [] });
     addMember.mockReset().mockResolvedValue({ success: true });
+    removeMember.mockReset().mockResolvedValue({ success: true });
+    mockDispatch.mockClear();
     mockUnwrap.mockReset().mockImplementation(() => Promise.resolve());
     listGrants
       .mockReset()
@@ -255,7 +315,13 @@ describe('Teams page', () => {
       }),
     );
     await render();
-    expect(body().textContent).toContain('settings.teams.members · #312');
+    // The count is SectionHeader's muted count, not part of the title text.
+    const membersHeading = Array.from(body().querySelectorAll('h4')).find(
+      (h) => h.firstChild?.textContent === 'settings.teams.members',
+    );
+    expect(
+      membersHeading?.querySelector('[data-slot="count"]')?.textContent,
+    ).toBe('#312');
     expect(
       body().querySelector('input[placeholder="settings.teams.searchMembers"]'),
     ).not.toBeNull();
@@ -366,14 +432,24 @@ describe('Teams page', () => {
     );
     // Filter pills with counts.
     const pills = Array.from(body().querySelectorAll('[role="radio"]'));
-    expect(pills.map((p) => p.textContent)).toEqual([
-      'settings.teams.sharedList.filter.all #2',
-      'settings.teams.sharedList.filter.agent #0',
-      'settings.teams.sharedList.filter.source #1',
-      'settings.teams.sharedList.filter.tool #0',
-      'settings.teams.sharedList.filter.prompt #1',
+    expect(
+      pills.map((p) => [
+        p.firstChild?.textContent,
+        p.querySelector('[data-slot="count"]')?.textContent,
+      ]),
+    ).toEqual([
+      ['settings.teams.sharedList.filter.all', '#2'],
+      ['settings.teams.sharedList.filter.agent', '#0'],
+      ['settings.teams.sharedList.filter.source', '#1'],
+      ['settings.teams.sharedList.filter.tool', '#0'],
+      ['settings.teams.sharedList.filter.prompt', '#1'],
     ]);
-    expect(body().textContent).toContain('settings.teams.sharedResources · #2');
+    const sharedHeading = Array.from(body().querySelectorAll('h4')).find(
+      (h) => h.firstChild?.textContent === 'settings.teams.sharedResources',
+    );
+    expect(
+      sharedHeading?.querySelector('[data-slot="count"]')?.textContent,
+    ).toBe('#2');
   });
 
   it('shows the no-results line when the search matches nothing', async () => {
@@ -536,6 +612,21 @@ describe('Teams page', () => {
       'button[aria-label="settings.teams.drawer.removeGrant"]',
     );
     act(() => remove!.click());
+    await flush();
+    // Removing someone's access asks first, in the confirm copy pattern.
+    expect(unshare).not.toHaveBeenCalled();
+    const confirm = body().querySelector('[data-testid="confirm"]')!;
+    expect(confirm.textContent).toContain(
+      'settings.teams.share.removeConfirm(name=Dana Whitfield)',
+    );
+    expect(confirm.textContent).toContain(
+      'settings.teams.share.removeConfirmPerson(name=Dana Whitfield,resource=Key Accounts,team=Revenue Ops)',
+    );
+    const submit = Array.from(
+      confirm.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => b.textContent === 'settings.teams.remove')!;
+    expect(submit.getAttribute('data-variant')).toBe('destructive');
+    act(() => submit.click());
     await flush();
     expect(unshare).toHaveBeenCalledWith(
       't1',
@@ -753,5 +844,114 @@ describe('Teams page', () => {
     expect(addMember).toHaveBeenCalledTimes(1);
     await act(async () => finish({ success: true }));
     await flush();
+  });
+
+  // A dispatched destructive toast (the page's old failure path).
+  const toasts = () =>
+    mockDispatch.mock.calls
+      .map(([action]) => action as { payload?: { variant?: string } })
+      .filter((a) => a?.payload?.variant === 'destructive');
+
+  const confirmSubmit = (label: string) =>
+    Array.from(
+      body().querySelectorAll<HTMLButtonElement>(
+        '[data-testid="confirm"] button',
+      ),
+    ).find((b) => b.textContent === label)!;
+
+  it('keeps a failed remove member open with the domain error, no toast', async () => {
+    listMembers.mockResolvedValue({
+      members: [{ user_id: 'priya', email: 'priya@x.io', role: 'team_member' }],
+    });
+    removeMember.mockRejectedValue(new Error('Request failed (500)'));
+    await render();
+    const trash = body().querySelector<HTMLButtonElement>(
+      'button[aria-label="settings.teams.remove"]',
+    )!;
+    act(() => trash.click());
+    await flush();
+    act(() => confirmSubmit('settings.teams.remove').click());
+    await flush();
+    expect(removeMember).toHaveBeenCalledWith('t1', 'priya', TOKEN);
+    const confirm = body().querySelector('[data-testid="confirm"]')!;
+    expect(confirm).not.toBeNull();
+    // The dialog still names the member it failed to remove.
+    expect(confirm.textContent).toContain('name=priya@x.io');
+    expect(
+      body().querySelector('[data-testid="confirm-error"]')?.textContent,
+    ).toBe('settings.teams.removeMemberError');
+    expect(confirm.textContent).not.toContain('Request failed (500)');
+    expect(toasts()).toHaveLength(0);
+  });
+
+  it('closes the remove member confirm once the request succeeds', async () => {
+    listMembers.mockResolvedValue({
+      members: [{ user_id: 'priya', email: 'priya@x.io', role: 'team_member' }],
+    });
+    await render();
+    act(() =>
+      body()
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="settings.teams.remove"]',
+        )!
+        .click(),
+    );
+    await flush();
+    act(() => confirmSubmit('settings.teams.remove').click());
+    await flush();
+    expect(body().querySelector('[data-testid="confirm"]')).toBeNull();
+  });
+
+  it('keeps a failed delete team open with the domain error, no toast', async () => {
+    await render();
+    mockUnwrap.mockImplementation(() =>
+      Promise.reject(new Error('Request failed (500)')),
+    );
+    const menuItem = Array.from(
+      body().querySelectorAll<HTMLButtonElement>(
+        '[data-testid="team-menu"] button',
+      ),
+    ).find((b) => b.textContent === 'settings.teams.deleteTeam')!;
+    act(() => menuItem.click());
+    await flush();
+    act(() => confirmSubmit('settings.teams.delete').click());
+    await flush();
+    expect(body().querySelector('[data-testid="confirm"]')).not.toBeNull();
+    expect(
+      body().querySelector('[data-testid="confirm-error"]')?.textContent,
+    ).toBe('settings.teams.deleteTeamError');
+    expect(toasts()).toHaveLength(0);
+  });
+
+  it('keeps a failed unshare open with the domain error, no toast', async () => {
+    listGrants.mockResolvedValue({
+      team_role: 'team_admin',
+      grants: [grant()],
+    });
+    unshare.mockRejectedValue(new Error('Request failed (500)'));
+    await render();
+    await openDrawer();
+    act(() =>
+      body()
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="settings.teams.drawer.removeGrant"]',
+        )!
+        .click(),
+    );
+    await flush();
+    act(() => confirmSubmit('settings.teams.remove').click());
+    await flush();
+    expect(unshare).toHaveBeenCalled();
+    expect(body().querySelector('[data-testid="confirm"]')).not.toBeNull();
+    expect(
+      body().querySelector('[data-testid="confirm-error"]')?.textContent,
+    ).toBe('settings.teams.unshareError');
+    expect(toasts()).toHaveLength(0);
+    // The grant row is still there and no longer busy.
+    expect(
+      body().querySelector<HTMLButtonElement>(
+        'button[aria-label="settings.teams.drawer.removeGrant"]',
+      )!.disabled,
+    ).toBe(false);
   });
 });

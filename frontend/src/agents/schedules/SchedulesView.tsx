@@ -361,7 +361,14 @@ export default function SchedulesView() {
               />
             )}
             <ConfirmationModal
-              message={t('agents.schedules.deleteConfirm')}
+              message={t('agents.schedules.deleteConfirm', {
+                interpolation: { escapeValue: false },
+                name:
+                  scheduleToDelete?.name ||
+                  scheduleToDelete?.instruction.slice(0, 80) ||
+                  '',
+              })}
+              description={t('agents.schedules.deleteConsequence')}
               modalState={deleteConfirmation}
               setModalState={setDeleteConfirmation}
               submitLabel={t('agents.schedules.delete')}

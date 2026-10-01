@@ -100,8 +100,12 @@ Cards (the recipes by role in DESIGN.md › Card surfaces, applied here):
   DESIGN.md › Disclosure), its status badges beside the `<h2>`. The toggle
   and its Collapsible share a plain `<div>`, and the body opens with `pt-5`
   (its rows in a `flex flex-col gap-5` column, no `mt-*`), so every section
-  has 20px under its title and none under a closed toggle. The destructive
-  danger-zone Card follows them.
+  has 20px under its title and none under a closed toggle. The danger zone
+  follows them (see DESIGN.md › Card, Danger zone).
+- Guardrails' stage panels (one per active check and stage) are `Card
+variant="subtle" padding="sm"`, `tone="destructive"` while the control
+  needs setup; their fields use `float={false}` on that fill (see DESIGN.md ›
+  FormField).
 - A schedule is `agents/schedules/ScheduleRow`: `subtle`, `padding="none"`,
   with its run log flush under it; a chevron `IconButton ghost-muted
 icon-xs` toggles the runs.
@@ -151,12 +155,13 @@ default), never `items-start` / `self-start` with `max-w-full`: a
 shrink-to-fit box sizes to its longest code line, and `max-w-full` caps it at
 100% before its margins are added, so it still spills past a phone screen.
 Wide markdown blocks scroll inside their own frame, not the page: fenced code
-scrolls sideways in its bordered box with the language and copy row fixed
-above it, and tables do the same (`overflow-x-auto` on their bordered
+scrolls sideways in its bordered `CodeFrame` with the language and copy row
+fixed above it (see DESIGN.md › Code blocks), and tables do the same (`overflow-x-auto` on their bordered
 wrapper).
 
 A failed chat answer is an `Alert variant="destructive"` on the answer's
-`mr-5 ml-6` column: `CircleAlert`, the fixed title `conversation.failedTitle`,
+`mr-5 ml-6` column (its `CircleAlert` drawn by the variant): the fixed title
+`conversation.failedTitle`,
 and the backend's error (often a raw provider exception) as `font-mono text-xs`
 detail in `AlertDescription`. Its action row is Retry (`RotateCcw`) and Copy,
 both `ghost-muted icon-sm pill` like every other answer action.
@@ -245,7 +250,9 @@ pill`) and Save (`default lg pill`, off until the draft or a field changes, and 
   Files tab's Add file or Sync, portalled through `TreeBrowser`'s
   `actionsTarget`), as on the agent pages; the embedded tree draws no row of
   its own. The Graph tab's toolbar holds the
-  entity search (a Popover + Command over the server's `/graph/nodes?q=`),
+  entity search (`graph/GraphEntitySearch`: a `SearchInput` whose results
+  over the server's `/graph/nodes?q=` open in a Command anchored under it,
+  the field keeping focus and driving the list with the arrows and Enter),
   the phrase "Show top [50 | 100 | 250] by connections" (muted `text-sm`
   words around a `ToggleGroup xs`, its track holding only the numbers) and the
   legend, which is the type filter (`ToggleGroup type="multiple" xs`,
@@ -359,10 +366,10 @@ state. On a page the tile is `filled lg`; in a modal it is
 The Connectors page filters by state, not by category: All, Connected (a
 working account) and Disconnected (an account that needs signing in again or
 was disconnected), DESIGN.md's (ToggleGroup) filter-by-kind track (`sm`, the
-page size) with counts, kept in the
+page size) with each state's `count`, kept in the
 address (`?filter=`). A state with nothing in it isn't offered; with only All
-left there is no row. A narrowed list (`?capability=sync|tools`) is a `default`
-Badge beside the track whose X button clears it. Search finds a service by
+left there is no row. A narrowed list (`?capability=sync|tools`) is a removable
+`default` Badge beside the track (`onRemove` clears it; see DESIGN.md › Badge). Search finds a service by
 name.
 
 One broken connection has one word everywhere: **Reconnect**
@@ -376,7 +383,10 @@ The Tools page groups its grid like the composer's picker
 per connected service with its icon, then Custom; a group may continue onto
 the next page under a repeated header. Add a tool lists "From a service", then
 a Custom section (MCP server, OpenAPI / REST) whose tiles launch in place, and
-its footer is Cancel only. Add knowledge is one view: the upload and web
+its footer is Cancel only. A tool's config tables (`settings/ToolConfig`:
+headers, query parameters, an action's properties) fix the Name column with
+`TableHeader width="14rem"`; their edit rows size the fields with flex and
+the column widths, never `min-w-[…]` pins (see DESIGN.md › Table). Add knowledge is one view: the upload and web
 tiles, then "From a service" (see DESIGN.md › OptionCard) and "Browse all connectors"
 (`settings.connectors.browseAll`, 12px `ArrowRight`) under the tiles.
 
@@ -395,7 +405,8 @@ Remove is destructive. "In my chats" stays as in DESIGN.md › Switch.
 
 Per-action permissions are `connectors/PermissionGroup` everywhere (the
 drawer's ToolPermissions, an agent's API write allowlist, the Tools page
-editor): a `SectionHeader size="xs"` "{group} · {n}" whose `actions` hold one
+editor): a `SectionHeader size="xs"`, the group's name with its action tally as
+`count` (the API write allowlist's "2 of 5 allowed"), whose `actions` hold one
 `ToggleGroup xs`, Allow / Ask first / Off / **Customize**
 (Allow / Off / Customize where nobody can approve: the API, the widget, a
 public link). Customize is pressed while the rows disagree and is the fold:

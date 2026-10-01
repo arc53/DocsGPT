@@ -24,12 +24,15 @@ describe('ViewOnlyNotice', () => {
     container.remove();
   });
 
-  it('is a quiet default Alert (role="note") with the shared sentence', async () => {
+  it('is an info Alert note (role="note") with the shared sentence and the variant icon', async () => {
     await act(async () => root.render(<ViewOnlyNotice />));
     const alert = container.querySelector('[data-slot="alert"]');
     expect(alert?.getAttribute('role')).toBe('note');
-    expect(alert?.getAttribute('data-variant')).toBe('default');
-    expect(alert?.querySelector('svg')).not.toBeNull();
+    expect(alert?.getAttribute('data-variant')).toBe('info');
+    // One icon, the info variant's default.
+    const icons = alert?.querySelectorAll(':scope > svg');
+    expect(icons).toHaveLength(1);
+    expect(icons?.[0].getAttribute('class')).toContain('lucide-info');
     expect(alert?.textContent).toBe('common.viewOnlyNotice');
   });
 });

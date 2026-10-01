@@ -9,7 +9,7 @@ import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { useScrollSentinel } from '../hooks/useLoadMore';
 import { Button } from '../components/ui/button';
-import { Card } from '../components/ui/card';
+import { CodeBlock } from '../components/ui/code-block';
 import { Collapsible } from '../components/ui/collapsible';
 import {
   DescriptionItem,
@@ -252,7 +252,7 @@ function LogsTable({
   return (
     <div className="border-border bg-card h-[55svh] w-full overflow-hidden rounded-xl border font-mono">
       <div className="bg-muted flex h-8 flex-col items-start justify-center">
-        <p className="text-muted-foreground px-3 text-xs">
+        <p className="text-foreground px-3 text-xs">
           {tableHeader ? tableHeader : t('settings.logs.tableHeader')}
         </p>
       </div>
@@ -443,7 +443,12 @@ function Log({
     });
 
   return (
-    <div className="group hover:bg-accent w-full rounded-xl bg-transparent">
+    <div
+      className={cn(
+        'group w-full rounded-xl bg-transparent',
+        !isOpen && 'hover:bg-accent',
+      )}
+    >
       <button
         type="button"
         aria-expanded={isOpen}
@@ -451,7 +456,7 @@ function Log({
         onClick={() => onToggle(log.id)}
         className={cn(
           'text-foreground focus-visible:ring-ring/50 flex w-full cursor-pointer flex-row items-start gap-2 rounded-xl p-2 px-4 py-3 text-left outline-none focus-visible:ring-3 focus-visible:ring-inset',
-          isOpen && 'bg-muted rounded-b-none',
+          isOpen && 'bg-secondary rounded-b-none',
         )}
       >
         <ChevronRight
@@ -488,7 +493,7 @@ function Log({
       </button>
       <Collapsible open={isOpen} id={bodyId}>
         {opened && (
-          <div className="bg-muted rounded-b-xl px-4 py-3">
+          <div className="bg-secondary rounded-b-xl px-4 py-3">
             {log.trace && (
               <div className="flex flex-wrap items-center gap-2 px-2 pb-3">
                 <Button
@@ -521,28 +526,20 @@ function Log({
             {textBlocks.map((block) => (
               <div key={block.label} className="flex flex-col gap-1 px-2 pb-2">
                 <p className="text-muted-foreground text-xs">{block.label}</p>
-                <Card variant="subtle" padding="sm">
-                  <pre
-                    className={cn(
-                      'font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap',
-                      block.isError ? 'text-destructive' : 'text-foreground',
-                    )}
-                  >
-                    {block.text}
-                  </pre>
-                </Card>
+                <CodeBlock
+                  surface="subtle"
+                  tone={block.isError ? 'destructive' : 'default'}
+                >
+                  {block.text}
+                </CodeBlock>
               </div>
             ))}
             {jsonBlocks.map((block) => (
               <div key={block.label} className="flex flex-col gap-1 px-2 pb-2">
                 <p className="text-muted-foreground text-xs">{block.label}</p>
-                <Card variant="subtle" padding="sm">
-                  <div className="scrollbar-overlay max-h-60 overflow-y-auto">
-                    <pre className="text-foreground font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
-                      {JSON.stringify(block.value, null, 2)}
-                    </pre>
-                  </div>
-                </Card>
+                <CodeBlock surface="subtle" maxHeight="md">
+                  {JSON.stringify(block.value, null, 2)}
+                </CodeBlock>
               </div>
             ))}
             <div className="my-px w-fit">

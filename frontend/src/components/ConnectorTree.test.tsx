@@ -191,7 +191,7 @@ describe('ConnectorTree and FileTree headers', () => {
     );
     expect(container.textContent).toContain('retrieval');
     expect(container.textContent).not.toContain('settings.sources.addFile');
-    expect(await openFirstRowMenu()).not.toContain('convTile.delete');
+    expect(await openFirstRowMenu()).not.toContain('settings.sources.delete');
   });
 
   it('an editable FileTree keeps Add file and the row Delete', async () => {
@@ -204,7 +204,7 @@ describe('ConnectorTree and FileTree headers', () => {
       />,
     );
     expect(container.textContent).toContain('settings.sources.addFile');
-    expect(await openFirstRowMenu()).toContain('convTile.delete');
+    expect(await openFirstRowMenu()).toContain('settings.sources.delete');
   });
 
   it('a read-only one-file FileTree has no header menu and no Add chunk', async () => {

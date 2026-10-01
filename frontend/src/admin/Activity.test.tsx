@@ -67,4 +67,13 @@ describe('Activity toolbar', () => {
       expect(button.getAttribute('data-shape')).toBe('pill');
     }
   });
+
+  it('says "No activity." in a small text-only EmptyState', () => {
+    const empty = container.querySelector<HTMLElement>(
+      '[data-slot="empty-state"]',
+    );
+    expect(empty?.dataset.size).toBe('sm');
+    expect(empty?.querySelector('svg')).toBeNull();
+    expect(empty?.textContent).toBe('No activity.');
+  });
 });

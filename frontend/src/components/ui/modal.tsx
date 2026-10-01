@@ -1,4 +1,4 @@
-import { XIcon } from 'lucide-react';
+import { ArrowLeft, XIcon } from 'lucide-react';
 import { Dialog as DialogPrimitive, VisuallyHidden } from 'radix-ui';
 import * as React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -13,6 +13,7 @@ import {
   DialogPortal,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { IconButton } from '@/components/ui/icon-button';
 import { SheetHandle, sheetBottomShape } from '@/components/ui/sheet';
 import { useFocusReturn } from '@/components/ui/use-focus-return';
 import { useMediaQuery } from '@/hooks';
@@ -35,6 +36,14 @@ export type ModalProps = {
   description?: React.ReactNode;
   /** Before the title and description: a connector icon tile. */
   leading?: React.ReactNode;
+  /**
+   * Adds a Back arrow first in the header, for a second step inside the
+   * modal (as PanelHeader's `onBack`). The step's title and summary go in
+   * `title` and `description`.
+   */
+  onBack?: () => void;
+  /** The Back arrow's name and tooltip; defaults to "Back". */
+  backLabel?: string;
   hideTitle?: boolean;
   children: React.ReactNode;
   footer?: React.ReactNode;
@@ -58,6 +67,8 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
     title,
     description,
     leading,
+    onBack,
+    backLabel,
     hideTitle = false,
     children,
     footer,
@@ -104,10 +115,24 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
 
   // A visible title and its description share one flex item, so the
   // description sits 8px under the title rather than the column's 16px.
-  // A `leading` tile sits beside that pair, as in PanelHeader.
+  // A Back arrow and a `leading` tile sit beside that pair, as in
+  // PanelHeader.
+  const backNode = onBack ? (
+    <IconButton
+      variant="ghost-muted"
+      size="icon-sm"
+      side="bottom"
+      className="-mt-1 -ml-2 shrink-0"
+      label={backLabel ?? t('sidePanel.back')}
+      icon={ArrowLeft}
+      onClick={onBack}
+    />
+  ) : null;
+
   const headerNode = showTitle ? (
-    leading ? (
+    backNode || leading ? (
       <div data-slot="modal-header" className="flex shrink-0 items-start gap-3">
+        {backNode}
         {leading}
         <div className="min-w-0 flex-1">
           <DialogTitle>{title}</DialogTitle>

@@ -992,7 +992,7 @@ describe('NewAgent form', () => {
     // ui/alert's destructive variant.
     expect(alert.className).toContain('border-destructive/50');
     expect(alert.className).toContain('bg-destructive/10');
-    expect(alert.querySelector('svg.lucide-circle-x')).not.toBeNull();
+    expect(alert.querySelector('svg.lucide-circle-alert')).not.toBeNull();
     // Decision 69 (b): the notice sits above the form panel, not in the
     // header's button row.
     expect(draft.parentElement?.contains(alert)).toBe(false);
@@ -1167,6 +1167,18 @@ describe('NewAgent gating by role', () => {
       'agents.form.buttons.accessDetails',
       'agents.shareWithTeam',
     ]);
+  });
+
+  it('draws the danger zone as the one tinted card with a field pill', async () => {
+    await renderEdit('owner', OWNER);
+    const del = buttonByText('agents.form.dangerZone.deleteButton')!;
+    expect(del.dataset.variant).toBe('destructive-outline');
+    expect(del.dataset.size).toBe('field');
+    expect(del.dataset.shape).toBe('pill');
+    const card = del.closest<HTMLElement>('[data-slot="card"]')!;
+    expect(card.dataset.tone).toBe('destructive');
+    expect(card.dataset.padding).toBe('lg');
+    expect(card.className).toContain('items-center');
   });
 
   it('hides Share and Delete from an editor but keeps Access details', async () => {

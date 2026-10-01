@@ -69,6 +69,22 @@ describe('Card', () => {
     expect(classes).not.toMatch(/(^|\s)border(\s|$)/);
   });
 
+  it('filled variant turns muted text inside it to foreground, not icons or buttons', () => {
+    // Muted text is 4.39:1 on the fill (under AA); icons and buttons only need 3:1.
+    const classes = cardVariants({ variant: 'filled' });
+    expect(classes).toContain(
+      '[&_.text-muted-foreground:not(svg):not(button):not([data-slot=button])]:text-foreground',
+    );
+  });
+
+  it('outline and subtle leave muted text muted', () => {
+    for (const variant of ['outline', 'subtle'] as const) {
+      expect(cardVariants({ variant })).not.toMatch(
+        /\[&_\.text-muted-foreground:not\(svg\)/,
+      );
+    }
+  });
+
   it('interactive cards get hover and focus styles', () => {
     const html = renderToStaticMarkup(
       <Card interactive asChild>

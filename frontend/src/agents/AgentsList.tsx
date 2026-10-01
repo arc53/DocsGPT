@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -14,6 +14,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import userService from '../api/services/userService';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Button } from '../components/ui/button';
+import { EmptyState } from '../components/ui/empty-state';
 import { Input } from '../components/ui/input';
 import {
   setConversation,
@@ -222,12 +223,7 @@ export default function AgentsList() {
         />
       ))}
 
-      {showSearchEmptyState && (
-        <div className="text-muted-foreground mt-12 flex flex-col items-center justify-center gap-2">
-          <p className="text-lg">{t('agents.noSearchResults')}</p>
-          <p className="text-sm">{t('agents.tryDifferentSearch')}</p>
-        </div>
-      )}
+      {showSearchEmptyState && <NoSearchResults />}
 
       <AgentTypeModal
         isOpen={showAgentTypeModal}
@@ -235,6 +231,19 @@ export default function AgentsList() {
         folderId={modalFolderId}
       />
     </SectionShell>
+  );
+}
+
+/** No agent matches the search: one block for the page and a filtered view. */
+function NoSearchResults() {
+  const { t } = useTranslation();
+  return (
+    <EmptyState
+      size="sm"
+      illustration="none"
+      title={t('agents.noSearchResults')}
+      description={t('agents.tryDifferentSearch')}
+    />
   );
 }
 
@@ -429,31 +438,30 @@ function AgentSection({
     !isLoading && searchQuery && filteredAgents.length === 0 && totalAgents > 0;
 
   if (isFilteredView && isSearchingWithNoResults) {
-    return (
-      <div className="text-muted-foreground mt-12 flex flex-col items-center justify-center gap-2">
-        <p className="text-lg">{t('agents.noSearchResults')}</p>
-        <p className="text-sm">{t('agents.tryDifferentSearch')}</p>
-      </div>
-    );
+    return <NoSearchResults />;
   }
 
   if (isFilteredView && hasNoAgentsAtAll) {
     return (
-      <div className="text-muted-foreground mt-12 flex flex-col items-center justify-center gap-3">
-        <p>{t(`agents.sections.${config.id}.emptyState`)}</p>
-        {config.showNewAgentButton && (
-          <Button
-            type="button"
-            shape="pill"
-            onClick={() => {
-              setModalFolderId(null);
-              setShowAgentTypeModal(true);
-            }}
-          >
-            {t('agents.newAgent')}
-          </Button>
-        )}
-      </div>
+      <EmptyState
+        size="sm"
+        illustration="none"
+        title={t(`agents.sections.${config.id}.emptyState`)}
+        action={
+          config.showNewAgentButton ? (
+            <Button
+              type="button"
+              shape="pill"
+              onClick={() => {
+                setModalFolderId(null);
+                setShowAgentTypeModal(true);
+              }}
+            >
+              {t('agents.newAgent')}
+            </Button>
+          ) : undefined
+        }
+      />
     );
   }
 
@@ -516,7 +524,7 @@ function AgentSection({
                     count: unfolderedAgents.length,
                     formatted: formatCount(unfolderedAgents.length),
                   })}
-                  <ChevronRight aria-hidden className="size-4" />
+                  <ArrowRight aria-hidden />
                 </Button>
               )}
             </div>
@@ -648,26 +656,29 @@ function AgentSection({
                 )}
               </>
             ) : hasNoAgentsAtAll && currentLevelFolders.length === 0 ? (
-              <div className="text-muted-foreground flex h-40 w-full flex-col items-center justify-center gap-3">
-                <p>
-                  {currentFolderId
+              <EmptyState
+                size="sm"
+                illustration="none"
+                title={
+                  currentFolderId
                     ? t('agents.folders.empty')
-                    : t(`agents.sections.${config.id}.emptyState`)}
-                </p>
-                {config.showNewAgentButton && !currentFolderId && (
-                  <Button
-                    type="button"
-                    shape="pill"
-                    className="ml-2"
-                    onClick={() => {
-                      setModalFolderId(currentFolderId);
-                      setShowAgentTypeModal(true);
-                    }}
-                  >
-                    {t('agents.newAgent')}
-                  </Button>
-                )}
-              </div>
+                    : t(`agents.sections.${config.id}.emptyState`)
+                }
+                action={
+                  config.showNewAgentButton && !currentFolderId ? (
+                    <Button
+                      type="button"
+                      shape="pill"
+                      onClick={() => {
+                        setModalFolderId(currentFolderId);
+                        setShowAgentTypeModal(true);
+                      }}
+                    >
+                      {t('agents.newAgent')}
+                    </Button>
+                  ) : undefined
+                }
+              />
             ) : null}
           </>
         )}

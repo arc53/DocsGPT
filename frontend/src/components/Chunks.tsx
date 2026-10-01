@@ -817,6 +817,7 @@ const Chunks: React.FC<ChunksProps> = ({
 
       <ConfirmationModal
         message={t('modals.chunk.deleteConfirmation')}
+        description={t('common.cantUndo')}
         modalState={deleteModalState}
         setModalState={setDeleteModalState}
         handleSubmit={handleConfirmedDelete}

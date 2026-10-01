@@ -1,5 +1,5 @@
 import { envVar } from '@/env';
-import { File, Folder, TriangleAlert, X } from 'lucide-react';
+import { File, Folder, X } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import drivePickerImport from 'react-google-drive-picker';
@@ -288,7 +288,6 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
 
       {error && (
         <Alert variant="destructive">
-          <TriangleAlert />
           <AlertDescription>
             {error === 'expired'
               ? t('settings.connectors.detail.expired')

@@ -282,7 +282,7 @@ export default function AddToolModal({
           <Button variant="link" size="inline" className="self-start" asChild>
             <Link to="/settings/connectors" onClick={close}>
               {t('settings.connectors.browseAll')}
-              <ArrowRight className="size-3" />
+              <ArrowRight />
             </Link>
           </Button>
         </div>

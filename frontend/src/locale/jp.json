@@ -76,7 +76,6 @@
       "prompt": "アクティブプロンプト",
       "promptDescription": "エージェントを使わないチャットのシステムプロンプト。エージェントは独自のものを使います。",
       "deleteAllLabel": "すべての会話を削除",
-      "deleteAllBtn": "すべて削除",
       "deleteAllDescription": "アカウント内のすべての会話を完全に削除します。この操作は元に戻せません。",
       "addNew": "新規追加",
       "convHistory": "会話履歴",
@@ -120,7 +119,7 @@
       "reingest": "再インデックス",
       "ingestFailed": "インデックス作成に失敗しました",
       "ingestProcessing": "インデックス作成中...",
-      "syncConfirmation": "\"{{sourceName}}\"を同期してもよろしいですか？これにより、コンテンツがクラウドストレージで更新され、個々のチャンクに加えた編集が上書きされる可能性があります。",
+      "syncConfirmation": "「{{sourceName}}」を同期しますか？",
       "syncFrequency": {
         "never": "なし",
         "daily": "毎日",
@@ -302,8 +301,7 @@
       },
       "editConfig": "ソース設定",
       "shareWithTeam": "チームと共有",
-      "deleteWarning": "\"{{name}}\"を削除してもよろしいですか？",
-      "confirmDelete": "このファイルを削除してもよろしいですか？この操作は元に戻せません。",
+      "deleteWarning": "「{{name}}」を削除しますか？",
       "chunks": "チャンク",
       "noChunks": "チャンクが見つかりません",
       "noChunksAlt": "チャンクが見つかりません",
@@ -325,7 +323,6 @@
       "addFile": "ファイルを追加",
       "uploadingFilesTitle": "ファイルをアップロード中...",
       "deletingTitle": "削除中...",
-      "deleteDirectoryWarning": "ディレクトリ \"{{name}}\" とその内容をすべて削除してもよろしいですか？この操作は元に戻せません。",
       "searchAlt": "検索",
       "retrievalOptions": {
         "title": "詳細設定",
@@ -464,7 +461,13 @@
         "reingest": "再取り込みを開始できませんでした。"
       },
       "viaConnection": "{{name}} 経由",
-      "loadError": "ナレッジを読み込めませんでした。"
+      "loadError": "ナレッジを読み込めませんでした。",
+      "delete": "削除",
+      "deleteConsequence": "ファイルとチャンクも削除されます。この操作は元に戻せません。",
+      "deleteFileConsequence": "チャンクも削除されます。この操作は元に戻せません。",
+      "deleteDirectoryConsequence": "中のものもすべて削除されます。この操作は元に戻せません。",
+      "syncConsequence": "クラウドストレージから内容が更新されるため、個々のチャンクに加えた編集が上書きされる場合があります。",
+      "deleteItemFailed": "「{{name}}」を削除できませんでした。"
     },
     "analytics": {
       "label": "分析",
@@ -699,7 +702,7 @@
       "selectTeamTitle": "チームが選択されていません",
       "teamSubtitle": "このチームのメンバーと共有リソースを管理します。",
       "deleteTeam": "チームを削除",
-      "deleteTeamConfirmation": "「{{name}}」を削除してもよろしいですか？この操作は元に戻せません。",
+      "deleteTeamConfirmation": "「{{name}}」を削除しますか？",
       "members": "メンバー",
       "addMember": "メンバーを追加",
       "addMemberTitle": "メンバーを追加",
@@ -710,7 +713,7 @@
       "memberRoleLabel": "ロール",
       "add": "追加",
       "remove": "削除",
-      "removeMemberConfirmation": "このメンバーをチームから削除しますか？",
+      "removeMemberConfirmation": "「{{name}}」を {{team}} から削除しますか？",
       "addMemberError": "メンバーの追加に失敗しました（チーム管理者のみ可能です）。",
       "memberNotFound": "そのメールアドレスのユーザーが見つかりません。先に一度サインインしてもらう必要があります。",
       "noMembers": "メンバーはまだいません。「メンバーを追加」からメールアドレスで招待してください。",
@@ -758,7 +761,6 @@
         "showAll": "すべて表示（{{formatted}}）",
         "andMore_one": "ほか {{formatted}} 件",
         "andMore_other": "ほか {{formatted}} 件",
-        "back": "戻る",
         "allSummary": "{{name}} · チーム: {{teams}} · ユーザー: {{people}}",
         "searchAccess": "ユーザーとチームを検索…",
         "filterLabel": "アクセス権を持つユーザーを絞り込む",
@@ -803,7 +805,10 @@
             "connectorDisabledNoService": "管理者がオフにしました",
             "unknown": "実行されていません"
           }
-        }
+        },
+        "removeConfirm": "「{{name}}」のアクセス権を削除しますか？",
+        "removeConfirmTeam": "{{team}} の全員が「{{resource}}」にアクセスできなくなります。いつでも再度共有できます。",
+        "removeConfirmPerson": "{{name}} は {{team}} 経由での「{{resource}}」へのアクセス権を失います。いつでも再度共有できます。"
       },
       "memberCount_one": "{{formatted}}人のメンバー",
       "memberCount_other": "{{formatted}}人のメンバー",
@@ -982,7 +987,10 @@
       "searchMembers": "メンバーを検索…",
       "membersRange_one": "メンバー {{formatted}}人中 {{from}}–{{to}}人",
       "membersRange_other": "メンバー {{formatted}}人中 {{from}}–{{to}}人",
-      "membersLoadError": "メンバーを読み込めませんでした。"
+      "membersLoadError": "メンバーを読み込めませんでした。",
+      "deleteTeamConsequence": "メンバーは、このチームと共有されたすべてにアクセスできなくなります。この操作は元に戻せません。",
+      "delete": "削除",
+      "removeMemberConsequence": "{{team}} と共有されたすべてにアクセスできなくなります。いつでも再度追加できます。"
     },
     "tools": {
       "label": "ツール",
@@ -998,7 +1006,7 @@
       "delete": "削除",
       "reconnect": "再接続",
       "shareWithTeam": "チームと共有",
-      "deleteWarning": "ツール \"{{toolName}}\" を削除してもよろしいですか？",
+      "deleteWarning": "「{{toolName}}」を削除しますか？",
       "unsavedChanges": "保存されていない変更があります。保存せずに離れると失われます。",
       "leaveWithoutSaving": "保存せずに離れる",
       "saveAndLeave": "保存して離れる",
@@ -1029,7 +1037,7 @@
       "headers": "ヘッダー",
       "queryParameters": "クエリパラメータ",
       "body": "ボディ",
-      "deleteActionWarning": "アクション \"{{name}}\" を削除してもよろしいですか？",
+      "deleteActionWarning": "「{{name}}」を削除しますか？",
       "save": "保存",
       "saveFailed": "ツール設定の保存に失敗しました",
       "fieldName": "フィールド名",
@@ -1128,7 +1136,9 @@
       "noToolsYet": "ツールはまだありません",
       "connectService": "サービスを接続",
       "filledBy": "入力元",
-      "loadError": "ツールを読み込めませんでした。"
+      "loadError": "ツールを読み込めませんでした。",
+      "deleteConsequence": "設定とアクションも削除されます。この操作は元に戻せません。",
+      "deleteActionConsequence": "ツールを保存すると削除されます。"
     },
     "devices": {
       "label": "デバイス",
@@ -1137,7 +1147,7 @@
       "empty": "ペアリング済みのデバイスはありません。",
       "revoke": "取り消し",
       "edit": "編集",
-      "revokeWarning": "{{name}}を取り消しますか？CLIは切断されます。",
+      "revokeWarning": "「{{name}}」を取り消しますか？",
       "approvalMode": "承認モード",
       "approvalAsk": "毎回確認",
       "approvalFull": "フルアクセス",
@@ -1185,7 +1195,8 @@
       "fallbackName": "デバイス",
       "auditShow": "最近のコマンドを表示",
       "auditHide": "最近のコマンドを非表示",
-      "seen": "{{time}}に確認"
+      "seen": "{{time}}に確認",
+      "revokeConsequence": "このデバイスの CLI は切断され、ペアリングが解除されます。再接続するには、もう一度ペアリングしてください。"
     },
     "customModels": {
       "label": "カスタムモデル",
@@ -1201,7 +1212,7 @@
       "testSuccess": "接続に成功しました。",
       "testHintNew": "接続テストを有効にするには、ベース URL、モデル ID、API キーを入力してください。",
       "disabledBadge": "無効",
-      "deleteWarning": "カスタムモデル「{{modelName}}」を削除してもよろしいですか?",
+      "deleteWarning": "「{{modelName}}」を削除しますか？",
       "actionsMenuAria": "{{modelName}} のアクション",
       "modelsGroup": {
         "builtin": "DocsGPT モデル",
@@ -1288,7 +1299,7 @@
       "showLess": "折りたたむ",
       "revoke": "取り消し",
       "revokeAria": "トークン{{name}}を取り消す",
-      "revokeWarning": "トークン「{{name}}」を取り消しますか？このトークンを使用しているものはすぐに動作しなくなります。この操作は元に戻せません。",
+      "revokeWarning": "「{{name}}」を取り消しますか？",
       "restrictionCount": {
         "agents_one": "エージェント{{count}}件",
         "agents_other": "エージェント{{count}}件",
@@ -1361,7 +1372,8 @@
           "title": "トークンを再生成しました",
           "subtitle": "「{{name}}」の新しいシークレットの準備ができました。以前のものは使用できません。"
         }
-      }
+      },
+      "revokeConsequence": "まだ使用しているものはすぐに動作しなくなります。この操作は元に戻せません。"
     },
     "connectors": {
       "label": "コネクタ",
@@ -1466,7 +1478,7 @@
         "customize": "カスタマイズ"
       },
       "disconnect": {
-        "title": "{{name}} を切断しますか？",
+        "title": "「{{name}}」の接続を解除しますか？",
         "failed": "切断できませんでした。もう一度お試しください。",
         "bodyBoth_one": "同期した {{formatted}} 件はナレッジに残りますが、更新されなくなります。この接続のツールは再接続するまで動作しません。",
         "bodyBoth_other": "同期した {{formatted}} 件はナレッジに残りますが、更新されなくなります。この接続のツールは再接続するまで動作しません。",
@@ -1541,7 +1553,7 @@
         "toolsCount_one": "{{formatted}} 個のツール"
       },
       "remove": {
-        "title": "{{name}} を削除しますか？",
+        "title": "「{{name}}」を削除しますか？",
         "description": "保存されたサインイン情報は削除されます。この接続から提供されているものをどうするか選んでください。",
         "sourcesLabel_other": "ナレッジに同期した {{formatted}} 件",
         "keepSources": "コンテンツを保持（同期を停止）",
@@ -1664,7 +1676,6 @@
       "selectedFiles": "選択されたファイル",
       "noFilesSelected": "ファイルが選択されていません",
       "file": "デバイスからアップロード",
-      "back": "戻る",
       "wait": "お待ちください ...",
       "remote": "ウェブサイトから収集する",
       "start": "チャットを開始する",
@@ -1770,8 +1781,9 @@
       "apiKeyLabel": "API Key"
     },
     "deleteConv": {
-      "confirm": "すべての会話を削除してもよろしいですか?",
-      "delete": "削除"
+      "confirm": "すべての会話を削除しますか？",
+      "delete": "削除",
+      "consequence": "アカウント内のすべての会話がメッセージごと削除されます。この操作は元に戻せません。"
     },
     "shareConv": {
       "label": "共有ページを作成して共有する",
@@ -1811,7 +1823,7 @@
       "save": "保存",
       "cancel": "キャンセル",
       "nameExists": "この名前はすでに存在します",
-      "deleteConfirmation": "プロンプト『{{name}}』を削除してもよろしいですか？",
+      "deleteConfirmation": "「{{name}}」を削除しますか？",
       "placeholderText": "ここにプロンプトのテキストを入力してください…",
       "addExamplePlaceholder": "このテキストを要約してください：",
       "variablesLabel": "変数",
@@ -1835,7 +1847,8 @@
       "learnAboutPrompts": "プロンプトについて学ぶ →",
       "publicPromptEditDisabled": "公開プロンプトは編集できません",
       "promptTypePublic": "公開",
-      "promptTypePrivate": "非公開"
+      "promptTypePrivate": "非公開",
+      "delete": "削除"
     },
     "chunk": {
       "add": "チャンクを追加",
@@ -1847,7 +1860,7 @@
       "save": "保存",
       "close": "閉じる",
       "delete": "削除",
-      "deleteConfirmation": "このチャンクを削除してもよろしいですか？"
+      "deleteConfirmation": "このチャンクを削除しますか？"
     },
     "addAction": {
       "title": "New Action",
@@ -1865,7 +1878,7 @@
       "test": "Test",
       "learnMore": "Learn more",
       "resetKey": "キーをリセット",
-      "resetKeyConfirm": "APIキーをリセットしてもよろしいですか？現在のキーは直ちに無効になり、この操作は元に戻せません。",
+      "resetKeyConfirm": "「{{name}}」の API キーをリセットしますか？",
       "apiWrites": {
         "title": "他の人があなたとして行える変更",
         "description": "API、ウィジェット、公開リンクでは誰もあなたの代わりにこれらを承認できません。ここで許可してください。",
@@ -1878,7 +1891,9 @@
         "choose": "許可する内容を選ぶ"
       },
       "actionFailed": "うまくいきませんでした。もう一度お試しください。",
-      "apiKeyAfterPublish": "APIキーを作成するには、エージェントを公開してください。"
+      "apiKeyAfterPublish": "APIキーを作成するには、エージェントを公開してください。",
+      "resetKeyConsequence": "現在のキーはすぐに使えなくなるため、使用している箇所をすべて更新する必要があります。この操作は元に戻せません。",
+      "reset": "リセット"
     },
     "importSpec": {
       "title": "API仕様のインポート",
@@ -1946,7 +1961,9 @@
     "delete": "削除",
     "rename": "名前変更",
     "save": "保存",
-    "deleteWarning": "この会話を削除してもよろしいですか？"
+    "deleteWarning": "「{{name}}」を削除しますか？",
+    "deleteWarningUnnamed": "この会話を削除しますか？",
+    "deleteConsequence": "メッセージもすべて削除されます。この操作は元に戻せません。"
   },
   "pagination": {
     "label": "ページ送り",
@@ -2443,7 +2460,7 @@
       "resume": "再開",
       "runNow": "今すぐ実行",
       "delete": "削除",
-      "deleteConfirm": "このスケジュールを削除しますか？実行履歴も削除されます。この操作は元に戻せません。",
+      "deleteConfirm": "「{{name}}」を削除しますか？",
       "cancel": "キャンセル",
       "showRuns": "実行履歴を表示",
       "hideRuns": "実行履歴を非表示",
@@ -2593,7 +2610,8 @@
         "paused_other": "{{count}}件一時停止中",
         "overdue": "期限超過"
       },
-      "deleteFailed": "このスケジュールを削除できませんでした。"
+      "deleteFailed": "このスケジュールを削除できませんでした。",
+      "deleteConsequence": "実行履歴も削除されます。この操作は元に戻せません。"
     },
     "shared": {
       "notFound": "エージェントが見つかりません。エージェントが共有されていることを確認してください。",
@@ -2608,14 +2626,14 @@
       "testMessage": "ここでエージェントをテストできます。公開されたエージェントは会話で使用できます。",
       "emptyTitle": "エージェントをテスト"
     },
-    "deleteConfirmation": "このエージェントを削除してもよろしいですか？",
+    "deleteConfirmation": "「{{name}}」を削除しますか？",
     "folders": {
       "newFolder": "新しいフォルダ",
       "createFolder": "フォルダを作成",
       "folderName": "フォルダ名",
       "rename": "名前を変更",
       "delete": "削除",
-      "deleteConfirm": "このフォルダを削除してもよろしいですか？フォルダ内のエージェントは移動されます。",
+      "deleteConfirm": "「{{name}}」を削除しますか？",
       "empty": "このフォルダは空です",
       "moveToFolder": "フォルダに移動",
       "moveTo": "移動",
@@ -2626,7 +2644,8 @@
       "noSubfolders": "サブフォルダなし",
       "openFolder": "フォルダーを開く",
       "noFolders": "フォルダがありません",
-      "menuAriaLabel": "{{folderName}} の操作"
+      "menuAriaLabel": "{{folderName}} の操作",
+      "deleteConsequence": "中のエージェントはフォルダーの外に移動され、削除されません。"
     },
     "guardrailEvents": {
       "heading": "Guardrail activity",
@@ -2749,8 +2768,7 @@
         "optional": "任意",
         "cannotDeleteStart": "開始ノードは削除できません",
         "deleteNode": "ノードを削除",
-        "deleteConfirm": "「{{name}}」を削除してもよろしいですか？",
-        "deleteConfirmUnnamed": "このワークフローエージェントを削除してもよろしいですか？",
+        "deleteConfirmUnnamed": "このワークフローエージェントを削除しますか？",
         "detailsTitle": "ワークフローの詳細",
         "detailsDescription": "エージェントカードに表示される名前、説明、画像です。",
         "unsavedChanges": "未保存の変更",
@@ -2865,7 +2883,8 @@
     "showAll_one": "すべて表示（{{formatted}}）",
     "showAll_other": "すべて表示（{{formatted}}）",
     "pageRange_one": "エージェント {{formatted}}件中 {{from}}–{{to}}件",
-    "pageRange_other": "エージェント {{formatted}}件中 {{from}}–{{to}}件"
+    "pageRange_other": "エージェント {{formatted}}件中 {{from}}–{{to}}件",
+    "deleteConsequence": "スケジュールと実行履歴も削除されます。この操作は元に戻せません。"
   },
   "components": {
     "fileUpload": {
@@ -3004,7 +3023,8 @@
     "viewOnlyNotice": "表示はできますが、あなたのロールでは変更できません。",
     "credentialsLockedNotice": "このツールの認証情報を変更できるのはオーナーだけです。",
     "savedSecretHint": "保存済みです。空のままにすると保持されます。",
-    "actionFailed": "問題が発生しました。もう一度お試しください。"
+    "actionFailed": "問題が発生しました。もう一度お試しください。",
+    "cantUndo": "この操作は元に戻せません。"
   },
   "sidePanel": {
     "close": "閉じる",

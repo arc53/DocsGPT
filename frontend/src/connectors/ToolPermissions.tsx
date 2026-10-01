@@ -204,7 +204,8 @@ export default function ToolPermissions({
             key={group.access}
             data-access={group.access}
             headingAs={groupHeadingAs}
-            title={`${name} · ${formatCount(group.actions.length)}`}
+            title={name}
+            count={group.actions.length}
             values={group.actions.map((action) => action.permission)}
             disabled={readOnly}
             groupLabel={t('settings.connectors.permission.groupLabel', {

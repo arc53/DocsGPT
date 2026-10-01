@@ -111,6 +111,34 @@ describe('Prompts', () => {
     expect(trigger?.className).not.toMatch(/(^|\s)h-10\.5(\s|$)/);
   });
 
+  it('is the shared Combobox, its popover at least 18rem wide', () => {
+    renderPrompts();
+    const trigger = container.querySelector<HTMLButtonElement>(
+      'button[role="combobox"]',
+    )!;
+    expect(trigger.dataset.slot).toBe('combobox-trigger');
+    // One chevron, a direct child (SelectTrigger's recipe).
+    const icons = trigger.querySelectorAll('svg');
+    expect(icons).toHaveLength(1);
+    expect(icons[0].parentElement).toBe(trigger);
+    expect(icons[0].getAttribute('class')).toContain('lucide-chevron-down');
+    act(() => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      trigger.click();
+    });
+    const content = document.body.querySelector<HTMLElement>(
+      '[data-slot="popover-content"]',
+    )!;
+    expect(content.className.split(' ')).toEqual(
+      expect.arrayContaining(['w-72', 'min-w-(--radix-popover-trigger-width)']),
+    );
+    expect(content.className).not.toContain(
+      ' w-(--radix-popover-trigger-width)',
+    );
+  });
+
   it('puts the edit pencil beside the picker, not inside it', () => {
     renderPrompts();
     const trigger = container.querySelector<HTMLButtonElement>(

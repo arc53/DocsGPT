@@ -30,15 +30,19 @@ describe('CapabilityChip', () => {
         <CapabilityChip label="Tools" active={active} onClick={onClick} />,
       );
     });
-    return container.querySelector<HTMLButtonElement>('[role="switch"]')!;
+    return container.querySelector<HTMLButtonElement>('button')!;
   };
 
-  it('uses the secondary variant with a check when on', () => {
+  it('is a pressed toggle chip, secondary with a check when on', () => {
     const chip = render(true);
+    // A toggle button named by its capability ("Tools, pressed"), not a
+    // switch: the chip row reads as a set of on/off choices.
+    expect(chip.dataset.slot).toBe('toggle-chip');
+    expect(chip.hasAttribute('role')).toBe(false);
+    expect(chip.getAttribute('aria-pressed')).toBe('true');
     expect(chip.dataset.variant).toBe('secondary');
     expect(chip.dataset.size).toBe('sm');
     expect(chip.dataset.shape).toBe('pill');
-    expect(chip.getAttribute('aria-checked')).toBe('true');
     expect(chip.querySelector('svg')).not.toBeNull();
     expect(chip.className).not.toMatch(/success/);
   });
@@ -47,7 +51,7 @@ describe('CapabilityChip', () => {
     const onClick = vi.fn();
     const chip = render(false, onClick);
     expect(chip.dataset.variant).toBe('ghost-muted');
-    expect(chip.getAttribute('aria-checked')).toBe('false');
+    expect(chip.getAttribute('aria-pressed')).toBe('false');
     expect(chip.querySelector('svg')).toBeNull();
     expect(chip.textContent).toBe('Tools');
     act(() => chip.click());

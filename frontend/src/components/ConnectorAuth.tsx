@@ -1,4 +1,3 @@
-import { CircleCheck, TriangleAlert } from 'lucide-react';
 import React, { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -248,14 +247,12 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
     <div className="flex flex-col gap-4">
       {errorMessage && (
         <Alert variant="destructive">
-          <TriangleAlert aria-hidden="true" />
           <AlertDescription>{errorMessage}</AlertDescription>
         </Alert>
       )}
 
       {isConnected ? (
         <Alert variant="success">
-          <CircleCheck aria-hidden="true" />
           <AlertDescription className="flex items-center justify-between">
             <span className="min-w-0">
               {t('modals.uploadDoc.connectors.auth.connectedAs', {

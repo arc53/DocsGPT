@@ -5,7 +5,6 @@ import 'katex/dist/katex.min.css';
 import {
   ChevronDown,
   ChevronRight,
-  CircleAlert,
   Database,
   Download,
   Eye,
@@ -32,7 +31,7 @@ import CopyButton from '../components/CopyButton';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import { Card } from '../components/ui/card';
+import { CodeBlock } from '../components/ui/code-block';
 import { IconButton } from '../components/ui/icon-button';
 import { Input } from '../components/ui/input';
 import { SidePanel } from '../components/ui/side-panel';
@@ -391,7 +390,7 @@ const ConversationBubble = forwardRef<
                                     className="text-muted-foreground size-4 shrink-0"
                                   />
                                 ) : (
-                                  <FileText className="text-muted-foreground shrink-0" />
+                                  <FileText className="text-muted-foreground size-4 shrink-0" />
                                 )}
                                 <p
                                   className="mt-0.5 truncate text-xs"
@@ -490,7 +489,6 @@ const ConversationBubble = forwardRef<
             // raw provider exception, so it is the detail under a readable title.
             <div className="animate-in fade-in slide-in-from-bottom-1.5 mr-5 ml-6 self-stretch duration-260 ease-out motion-reduce:animate-none">
               <Alert variant="destructive">
-                <CircleAlert />
                 <AlertTitle>{t('conversation.failedTitle')}</AlertTitle>
                 <AlertDescription>
                   <p className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
@@ -836,13 +834,9 @@ function ToolCallApprovalBar({
           <p className="text-muted-foreground text-xs font-medium">
             {t('conversation.inlineSteps.arguments')}
           </p>
-          <Card variant="subtle" padding="sm">
-            <div className="scrollbar-overlay max-h-40 overflow-y-auto">
-              <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
-                {JSON.stringify(shownArguments(toolCall), null, 2)}
-              </pre>
-            </div>
-          </Card>
+          <CodeBlock surface="subtle" maxHeight="sm">
+            {JSON.stringify(shownArguments(toolCall), null, 2)}
+          </CodeBlock>
           <Input
             type="text"
             placeholder={t('conversation.toolApproval.denyReasonPlaceholder')}

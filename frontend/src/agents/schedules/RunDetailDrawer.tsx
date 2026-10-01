@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
-import { Card } from '@/components/ui/card';
+import { CodeBlock } from '@/components/ui/code-block';
 import {
   DescriptionItem,
   DescriptionList,
@@ -72,13 +72,7 @@ export default function RunDetailDrawer({
                   : t('agents.schedules.runDetails.error')
               }
             />
-            <Card variant="filled" padding="sm">
-              <div className="scrollbar-overlay max-h-48 overflow-y-auto">
-                <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
-                  {run.error}
-                </pre>
-              </div>
-            </Card>
+            <CodeBlock maxHeight="sm">{run.error}</CodeBlock>
           </section>
         )}
         {run.output && (
@@ -97,15 +91,9 @@ export default function RunDetailDrawer({
                 </>
               }
             />
-            <Card
-              variant="filled"
-              padding="sm"
-              className="min-h-0 flex-1 overflow-y-auto"
-            >
-              <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
-                {run.output}
-              </pre>
-            </Card>
+            <CodeBlock maxHeight="parent" className="min-h-0 flex-1">
+              {run.output}
+            </CodeBlock>
           </section>
         )}
       </PanelBody>

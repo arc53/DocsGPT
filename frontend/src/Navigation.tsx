@@ -936,6 +936,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       />
       <ConfirmationModal
         message={t('modals.deleteConv.confirm')}
+        description={t('modals.deleteConv.consequence')}
         modalState={modalStateDeleteConv}
         setModalState={(state) => dispatch(setModalStateDeleteConv(state))}
         submitLabel={t('modals.deleteConv.delete')}

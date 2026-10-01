@@ -76,7 +76,6 @@
       "prompt": "提示",
       "promptDescription": "不使用智能体的聊天所用的系统提示词。智能体使用各自的提示词。",
       "deleteAllLabel": "删除所有对话",
-      "deleteAllBtn": "删除所有",
       "deleteAllDescription": "永久删除您账户中的所有对话。此操作无法撤销。",
       "addNew": "添加新的",
       "convHistory": "对话历史",
@@ -120,7 +119,7 @@
       "reingest": "重新索引",
       "ingestFailed": "索引失败",
       "ingestProcessing": "索引中...",
-      "syncConfirmation": "您确定要同步 \"{{sourceName}}\" 吗？这将使用您的云存储更新内容，并可能覆盖您对单个文本块所做的任何编辑。",
+      "syncConfirmation": "同步“{{sourceName}}”？",
       "syncFrequency": {
         "never": "从不",
         "daily": "每天",
@@ -302,8 +301,7 @@
       },
       "editConfig": "来源设置",
       "shareWithTeam": "与团队共享",
-      "deleteWarning": "您确定要删除 \"{{name}}\" 吗？",
-      "confirmDelete": "您确定要删除此文件吗？此操作无法撤销。",
+      "deleteWarning": "删除“{{name}}”？",
       "chunks": "文本块",
       "noChunks": "未找到文本块",
       "noChunksAlt": "未找到文本块",
@@ -325,7 +323,6 @@
       "addFile": "添加文件",
       "uploadingFilesTitle": "正在上传文件...",
       "deletingTitle": "正在删除...",
-      "deleteDirectoryWarning": "确定要删除目录 \"{{name}}\" 及其所有内容吗？此操作无法撤销。",
       "searchAlt": "搜索",
       "retrievalOptions": {
         "title": "高级设置",
@@ -464,7 +461,13 @@
         "reingest": "无法开始重新导入。"
       },
       "viaConnection": "通过 {{name}}",
-      "loadError": "无法加载你的知识库。"
+      "loadError": "无法加载你的知识库。",
+      "delete": "删除",
+      "deleteConsequence": "其文件和分块也会一并删除。此操作无法撤销。",
+      "deleteFileConsequence": "其分块也会一并删除。此操作无法撤销。",
+      "deleteDirectoryConsequence": "其中的所有内容也会一并删除。此操作无法撤销。",
+      "syncConsequence": "其内容会从您的云存储更新，可能会覆盖您对单个分块所做的编辑。",
+      "deleteItemFailed": "无法删除“{{name}}”。"
     },
     "analytics": {
       "label": "分析",
@@ -699,7 +702,7 @@
       "selectTeamTitle": "未选择团队",
       "teamSubtitle": "管理成员以及与此团队共享的资源。",
       "deleteTeam": "删除团队",
-      "deleteTeamConfirmation": "您确定要删除“{{name}}”吗？此操作无法撤销。",
+      "deleteTeamConfirmation": "删除“{{name}}”？",
       "members": "成员",
       "addMember": "添加成员",
       "addMemberTitle": "添加成员",
@@ -710,7 +713,7 @@
       "memberRoleLabel": "角色",
       "add": "添加",
       "remove": "移除",
-      "removeMemberConfirmation": "将此成员从团队中移除？",
+      "removeMemberConfirmation": "将“{{name}}”从 {{team}} 移除？",
       "addMemberError": "添加成员失败（仅限团队管理员）。",
       "memberNotFound": "未找到使用该邮箱的用户——对方需要先登录一次。",
       "noMembers": "暂无成员。使用“添加成员”通过邮箱邀请他人。",
@@ -758,7 +761,6 @@
         "showAll": "显示全部 {{formatted}} 个",
         "andMore_one": "还有 {{formatted}} 个",
         "andMore_other": "还有 {{formatted}} 个",
-        "back": "返回",
         "allSummary": "{{name}} · 团队：{{teams}} · 人员：{{people}}",
         "searchAccess": "搜索人员和团队…",
         "filterLabel": "筛选有权访问的人员",
@@ -803,7 +805,10 @@
             "connectorDisabledNoService": "已被管理员关闭",
             "unknown": "未在运行"
           }
-        }
+        },
+        "removeConfirm": "移除“{{name}}”的访问权限？",
+        "removeConfirmTeam": "{{team}} 的所有人都将无法访问“{{resource}}”。您可以随时再次共享。",
+        "removeConfirmPerson": "{{name}} 将无法再通过 {{team}} 访问“{{resource}}”。您可以随时再次共享。"
       },
       "memberCount_one": "{{formatted}} 名成员",
       "memberCount_other": "{{formatted}} 名成员",
@@ -982,7 +987,10 @@
       "searchMembers": "搜索成员…",
       "membersRange_one": "第 {{from}}–{{to}} 名，共 {{formatted}} 名成员",
       "membersRange_other": "第 {{from}}–{{to}} 名，共 {{formatted}} 名成员",
-      "membersLoadError": "无法加载成员。"
+      "membersLoadError": "无法加载成员。",
+      "deleteTeamConsequence": "其成员将无法再访问与该团队共享的所有内容。此操作无法撤销。",
+      "delete": "删除",
+      "removeMemberConsequence": "对方将无法再访问与 {{team}} 共享的所有内容。您可以随时重新添加。"
     },
     "tools": {
       "label": "工具",
@@ -998,7 +1006,7 @@
       "delete": "删除",
       "reconnect": "重新连接",
       "shareWithTeam": "与团队共享",
-      "deleteWarning": "您确定要删除工具 \"{{toolName}}\" 吗？",
+      "deleteWarning": "删除“{{toolName}}”？",
       "unsavedChanges": "您有未保存的更改，如果不保存就离开将会丢失。",
       "leaveWithoutSaving": "不保存离开",
       "saveAndLeave": "保存并离开",
@@ -1029,7 +1037,7 @@
       "headers": "请求头",
       "queryParameters": "查询参数",
       "body": "请求体",
-      "deleteActionWarning": "您确定要删除操作 \"{{name}}\" 吗？",
+      "deleteActionWarning": "删除“{{name}}”？",
       "save": "保存",
       "saveFailed": "保存工具配置失败",
       "fieldName": "字段名称",
@@ -1128,7 +1136,9 @@
       "noToolsYet": "还没有工具",
       "connectService": "连接服务",
       "filledBy": "填写方式",
-      "loadError": "无法加载你的工具。"
+      "loadError": "无法加载你的工具。",
+      "deleteConsequence": "其设置和操作也会一并删除。此操作无法撤销。",
+      "deleteActionConsequence": "保存工具后即会移除。"
     },
     "devices": {
       "label": "设备",
@@ -1137,7 +1147,7 @@
       "empty": "暂无已配对的设备。",
       "revoke": "撤销",
       "edit": "编辑",
-      "revokeWarning": "撤销 {{name}}？CLI 将被断开连接。",
+      "revokeWarning": "撤销“{{name}}”？",
       "approvalMode": "审批模式",
       "approvalAsk": "询问",
       "approvalFull": "完全访问",
@@ -1185,7 +1195,8 @@
       "fallbackName": "设备",
       "auditShow": "显示最近的命令",
       "auditHide": "隐藏最近的命令",
-      "seen": "{{time}}在线"
+      "seen": "{{time}}在线",
+      "revokeConsequence": "此设备上的 CLI 会断开连接，配对也会被移除。重新配对即可再次连接。"
     },
     "customModels": {
       "label": "自定义模型",
@@ -1201,7 +1212,7 @@
       "testSuccess": "连接成功。",
       "testHintNew": "请填写 Base URL、模型 ID 和 API 密钥以启用连接测试。",
       "disabledBadge": "已禁用",
-      "deleteWarning": "确定要删除自定义模型「{{modelName}}」吗?",
+      "deleteWarning": "删除“{{modelName}}”？",
       "actionsMenuAria": "{{modelName}} 的操作",
       "modelsGroup": {
         "builtin": "DocsGPT 模型",
@@ -1288,7 +1299,7 @@
       "showLess": "收起",
       "revoke": "撤销",
       "revokeAria": "撤销令牌 {{name}}",
-      "revokeWarning": "确定要撤销令牌“{{name}}”吗？所有仍在使用它的程序将立即失效，且此操作无法撤回。",
+      "revokeWarning": "撤销“{{name}}”？",
       "restrictionCount": {
         "agents_one": "{{count}} 个代理",
         "agents_other": "{{count}} 个代理",
@@ -1361,7 +1372,8 @@
           "title": "令牌已重新生成",
           "subtitle": "“{{name}}”的新密钥已就绪，旧密钥已失效。"
         }
-      }
+      },
+      "revokeConsequence": "仍在使用它的任何内容都会立即停止工作。此操作无法撤销。"
     },
     "connectors": {
       "label": "连接器",
@@ -1466,7 +1478,7 @@
         "customize": "自定义"
       },
       "disconnect": {
-        "title": "断开 {{name}}？",
+        "title": "断开“{{name}}”？",
         "failed": "无法断开连接。请重试。",
         "bodyBoth_one": "已同步的 {{formatted}} 项会保留在知识库中，但不再更新。此连接的工具在重新连接前无法使用。",
         "bodyBoth_other": "已同步的 {{formatted}} 项会保留在知识库中，但不再更新。此连接的工具在重新连接前无法使用。",
@@ -1541,7 +1553,7 @@
         "toolsCount_one": "{{formatted}} 个工具"
       },
       "remove": {
-        "title": "移除 {{name}}？",
+        "title": "移除“{{name}}”？",
         "description": "保存的登录信息将被删除。请选择如何处理此连接提供的内容。",
         "sourcesLabel_other": "它同步到知识库的 {{formatted}} 项",
         "keepSources": "保留内容（停止同步）",
@@ -1664,7 +1676,6 @@
       "selectedFiles": "已选择的文件",
       "noFilesSelected": "未选择文件",
       "file": "从设备上传",
-      "back": "后退",
       "wait": "请稍等 ...",
       "remote": "从网站收集",
       "start": "开始聊天",
@@ -1770,8 +1781,9 @@
       "apiKeyLabel": "API Key"
     },
     "deleteConv": {
-      "confirm": "您确定要删除所有对话吗？",
-      "delete": "删除"
+      "confirm": "删除所有对话？",
+      "delete": "删除",
+      "consequence": "您账户中的所有对话及其消息都会被删除。此操作无法撤销。"
     },
     "shareConv": {
       "label": "创建用于分享的公共页面",
@@ -1811,7 +1823,7 @@
       "save": "保存",
       "cancel": "取消",
       "nameExists": "名称已存在",
-      "deleteConfirmation": "您确定要删除提示'{{name}}'吗？",
+      "deleteConfirmation": "删除“{{name}}”？",
       "placeholderText": "在此輸入提示內容...",
       "addExamplePlaceholder": "請總結此文本：",
       "variablesLabel": "變數",
@@ -1835,7 +1847,8 @@
       "learnAboutPrompts": "了解提示 →",
       "publicPromptEditDisabled": "公共提示無法編輯",
       "promptTypePublic": "公共",
-      "promptTypePrivate": "私人"
+      "promptTypePrivate": "私人",
+      "delete": "删除"
     },
     "chunk": {
       "add": "添加块",
@@ -1847,7 +1860,7 @@
       "save": "保存",
       "close": "关闭",
       "delete": "删除",
-      "deleteConfirmation": "您确定要删除此块吗？"
+      "deleteConfirmation": "删除此分块？"
     },
     "addAction": {
       "title": "New Action",
@@ -1865,7 +1878,7 @@
       "test": "Test",
       "learnMore": "Learn more",
       "resetKey": "重置密钥",
-      "resetKeyConfirm": "确定要重置 API 密钥吗？当前密钥将立即停止工作，此操作无法撤销。",
+      "resetKeyConfirm": "重置“{{name}}”的 API 密钥？",
       "apiWrites": {
         "title": "他人以你的身份进行的更改",
         "description": "通过 API、小组件或公开链接，无人能替你批准这些更改。请在此允许。",
@@ -1877,7 +1890,9 @@
         "choose": "选择允许的内容"
       },
       "actionFailed": "操作未成功，请重试。",
-      "apiKeyAfterPublish": "发布该代理后即可创建其 API 密钥。"
+      "apiKeyAfterPublish": "发布该代理后即可创建其 API 密钥。",
+      "resetKeyConsequence": "当前密钥会立即失效，所有使用它的地方都需要更新。此操作无法撤销。",
+      "reset": "重置"
     },
     "importSpec": {
       "title": "导入 API 规范",
@@ -1945,7 +1960,9 @@
     "delete": "删除",
     "rename": "重命名",
     "save": "保存",
-    "deleteWarning": "您确定要删除此对话吗？"
+    "deleteWarning": "删除“{{name}}”？",
+    "deleteWarningUnnamed": "删除此对话？",
+    "deleteConsequence": "其消息也会一并删除。此操作无法撤销。"
   },
   "pagination": {
     "label": "分页",
@@ -2442,7 +2459,7 @@
       "resume": "恢复",
       "runNow": "立即运行",
       "delete": "删除",
-      "deleteConfirm": "删除此计划？其运行历史也将一并删除。此操作无法撤销。",
+      "deleteConfirm": "删除“{{name}}”？",
       "cancel": "取消",
       "showRuns": "显示运行记录",
       "hideRuns": "隐藏运行记录",
@@ -2592,7 +2609,8 @@
         "paused_other": "{{count}} 个已暂停",
         "overdue": "已逾期"
       },
-      "deleteFailed": "无法删除此计划。"
+      "deleteFailed": "无法删除此计划。",
+      "deleteConsequence": "其运行历史也会一并删除。此操作无法撤销。"
     },
     "shared": {
       "notFound": "未找到代理。请确保代理已共享。",
@@ -2607,14 +2625,14 @@
       "testMessage": "在此测试您的代理。已发布的代理可以在对话中使用。",
       "emptyTitle": "测试你的智能体"
     },
-    "deleteConfirmation": "您确定要删除此代理吗？",
+    "deleteConfirmation": "删除“{{name}}”？",
     "folders": {
       "newFolder": "新建文件夹",
       "createFolder": "创建文件夹",
       "folderName": "文件夹名称",
       "rename": "重命名",
       "delete": "删除",
-      "deleteConfirm": "确定要删除此文件夹吗？文件夹中的代理将被移出。",
+      "deleteConfirm": "删除“{{name}}”？",
       "empty": "此文件夹为空",
       "moveToFolder": "移动到文件夹",
       "moveTo": "移动",
@@ -2625,7 +2643,8 @@
       "noSubfolders": "没有子文件夹",
       "openFolder": "打开文件夹",
       "noFolders": "暂无文件夹",
-      "menuAriaLabel": "{{folderName}} 的操作"
+      "menuAriaLabel": "{{folderName}} 的操作",
+      "deleteConsequence": "其中的智能体会移出文件夹，不会被删除。"
     },
     "guardrailEvents": {
       "heading": "Guardrail activity",
@@ -2748,8 +2767,7 @@
         "optional": "可选",
         "cannotDeleteStart": "无法删除开始节点",
         "deleteNode": "删除节点",
-        "deleteConfirm": "确定要删除“{{name}}”吗？",
-        "deleteConfirmUnnamed": "确定要删除此工作流智能体吗？",
+        "deleteConfirmUnnamed": "删除此工作流智能体？",
         "detailsTitle": "工作流详情",
         "detailsDescription": "显示在代理卡片上的名称、描述和图片。",
         "unsavedChanges": "未保存的更改",
@@ -2864,7 +2882,8 @@
     "showAll_one": "查看全部 {{formatted}} 个",
     "showAll_other": "查看全部 {{formatted}} 个",
     "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个代理",
-    "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个代理"
+    "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个代理",
+    "deleteConsequence": "其计划任务和运行历史也会一并删除。此操作无法撤销。"
   },
   "components": {
     "fileUpload": {
@@ -3003,7 +3022,8 @@
     "viewOnlyNotice": "你可以查看此内容，但你的角色无法更改它。",
     "credentialsLockedNotice": "只有所有者可以更改此工具的凭据。",
     "savedSecretHint": "已保存。留空即可保留。",
-    "actionFailed": "出了点问题，请重试。"
+    "actionFailed": "出了点问题，请重试。",
+    "cantUndo": "此操作无法撤销。"
   },
   "sidePanel": {
     "close": "关闭",

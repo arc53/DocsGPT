@@ -78,7 +78,7 @@ export function readChartPalette(): ChartPalette {
     warning: readCssVar('--warning', '#ca8a04'),
     destructive: readCssVar('--destructive', '#ef4444'),
     border: readCssVar('--border', '#d9d9d9'),
-    mutedForeground: readCssVar('--muted-foreground', '#737373'),
+    mutedForeground: readCssVar('--muted-foreground', '#6b6b6b'),
   };
 }
 

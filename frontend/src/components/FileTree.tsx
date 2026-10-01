@@ -1,10 +1,11 @@
 import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import { Trash2 } from 'lucide-react';
 import { SOURCE_FILE_TREE_ACCEPT_ATTR } from '../constants/fileUpload';
 import ConfirmationModal from '../modals/ConfirmationModal';
+import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { Crumb } from './tree/PathHeader';
 import TreeBrowser from './tree/TreeBrowser';
@@ -58,6 +59,7 @@ const FileTree: React.FC<FileTreeProps> = ({
 }) => {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
+  const dispatch = useDispatch();
 
   const controllerRef = useRef<TreeBrowserController | null>(null);
   const currentPathRef = useRef<string[]>([]);
@@ -88,6 +90,20 @@ const FileTree: React.FC<FileTreeProps> = ({
     parentDirPath?: string,
   ) => {
     currentOpRef.current = operation;
+    // A delete runs after its confirm has closed, so its failure is a toast.
+    const reportDeleteFailure = () => {
+      const path = operation === 'remove' ? filePath : directoryPath;
+      if (operation === 'add' || !path) return;
+      dispatch(
+        showActionToast({
+          variant: 'destructive',
+          message: t('settings.sources.deleteItemFailed', {
+            interpolation: { escapeValue: false },
+            name: path.split('/').pop(),
+          }),
+        }),
+      );
+    };
 
     try {
       const formData = new FormData();
@@ -126,6 +142,7 @@ const FileTree: React.FC<FileTreeProps> = ({
           }
         } else if (terminal === 'failed') {
           console.error('Reingest task failed (per SSE)');
+          reportDeleteFailure();
         } else if (terminal === 'unmounted') {
           return false;
         } else {
@@ -144,6 +161,7 @@ const FileTree: React.FC<FileTreeProps> = ({
             ? 'deleting directory'
             : 'deleting file(s)';
       console.error(`Error ${actionText}:`, error);
+      reportDeleteFailure();
     } finally {
       currentOpRef.current = null;
     }
@@ -238,7 +256,7 @@ const FileTree: React.FC<FileTreeProps> = ({
       defaultViewOption,
       {
         icon: Trash2,
-        label: t('convTile.delete'),
+        label: t('settings.sources.delete'),
         onClick: () => confirmDeleteItem(name, isFile),
         variant: 'destructive',
       },
@@ -266,18 +284,20 @@ const FileTree: React.FC<FileTreeProps> = ({
 
   const extraContent = (
     <ConfirmationModal
-      message={
+      message={t('settings.sources.deleteWarning', {
+        interpolation: { escapeValue: false },
+        name: itemToDelete?.name ?? '',
+      })}
+      description={
         itemToDelete?.isFile
-          ? t('settings.sources.confirmDelete')
-          : t('settings.sources.deleteDirectoryWarning', {
-              name: itemToDelete?.name,
-            })
+          ? t('settings.sources.deleteFileConsequence')
+          : t('settings.sources.deleteDirectoryConsequence')
       }
       modalState={deleteModalState}
       setModalState={setDeleteModalState}
       handleSubmit={handleConfirmedDelete}
       handleCancel={handleCancelDelete}
-      submitLabel={t('convTile.delete')}
+      submitLabel={t('settings.sources.delete')}
       variant="destructive"
     />
   );

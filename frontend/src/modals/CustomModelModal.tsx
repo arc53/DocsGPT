@@ -1,4 +1,4 @@
-import { Check, CircleAlert, CircleCheck } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -9,6 +9,7 @@ import { Button } from '../components/ui/button';
 import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
 import { SectionHeader } from '../components/ui/section-header';
+import { ToggleChip } from '../components/ui/toggle-chip';
 import {
   Select,
   SelectContent,
@@ -567,18 +568,12 @@ export default function CustomModelModal({
 
         {testResult && (
           <Alert variant={testResult.ok ? 'success' : 'destructive'}>
-            {testResult.ok ? (
-              <CircleCheck className="size-4" aria-hidden="true" />
-            ) : (
-              <CircleAlert className="size-4" aria-hidden="true" />
-            )}
             <AlertDescription>{testResult.message}</AlertDescription>
           </Alert>
         )}
 
         {errors.general && (
           <Alert variant="destructive">
-            <CircleAlert className="size-4" aria-hidden="true" />
             <AlertDescription>{errors.general}</AlertDescription>
           </Alert>
         )}
@@ -599,17 +594,11 @@ export function CapabilityChip({
   onClick,
 }: CapabilityChipProps) {
   return (
-    <Button
-      type="button"
-      variant={active ? 'secondary' : 'ghost-muted'}
-      size="sm"
-      shape="pill"
-      role="switch"
-      aria-checked={active}
-      onClick={onClick}
-    >
-      {active && <Check className="size-3.5" strokeWidth={2.5} />}
+    <ToggleChip size="sm" pressed={active} onPressedChange={onClick}>
+      {active && (
+        <Check aria-hidden="true" className="size-3.5" strokeWidth={2.5} />
+      )}
       {label}
-    </Button>
+    </ToggleChip>
   );
 }

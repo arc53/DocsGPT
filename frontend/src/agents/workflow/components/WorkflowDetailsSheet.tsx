@@ -1,4 +1,3 @@
-import { CircleX } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -96,7 +95,6 @@ export default function WorkflowDetailsSheet({
       <PanelBody>
         {errors.length > 0 && (
           <Alert variant="destructive">
-            <CircleX />
             <AlertTitle>{t('agents.workflow.builder.unableSave')}</AlertTitle>
             <AlertDescription>
               <ul className="flex list-inside list-disc flex-col gap-1 wrap-break-word">

@@ -253,7 +253,15 @@ export default function ConversationTile({
         )}
       </div>
       <ConfirmationModal
-        message={t('convTile.deleteWarning')}
+        message={
+          conversation.name
+            ? t('convTile.deleteWarning', {
+                interpolation: { escapeValue: false },
+                name: conversation.name,
+              })
+            : t('convTile.deleteWarningUnnamed')
+        }
+        description={t('convTile.deleteConsequence')}
         modalState={deleteModalState}
         setModalState={setDeleteModalState}
         handleSubmit={() => onDeleteConversation(conversation.id)}

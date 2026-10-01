@@ -1,10 +1,3 @@
-import {
-  CircleAlert,
-  CircleCheck,
-  Info,
-  Lock,
-  TriangleAlert,
-} from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -673,21 +666,18 @@ export default function MCPServerModal({
       <div className="flex flex-col gap-5">
         {errors.general && (
           <Alert variant="destructive">
-            <CircleAlert aria-hidden="true" />
             <AlertDescription>{errors.general}</AlertDescription>
           </Alert>
         )}
         {!server?.preset && (
           <Alert variant="warning" role="note">
-            <TriangleAlert aria-hidden="true" />
             <AlertDescription>
               {t('settings.connectors.unverified')}
             </AlertDescription>
           </Alert>
         )}
         {isShared && (
-          <Alert role="note">
-            <Lock />
+          <Alert variant="info" role="note">
             <AlertDescription>
               {t('settings.tools.mcp.sharedCredentialsNotice')}
               {oauthOwnerOnly &&
@@ -722,7 +712,6 @@ export default function MCPServerModal({
         </FormField>
         {serverChanged && (
           <Alert variant="warning">
-            <TriangleAlert aria-hidden="true" />
             <AlertDescription>
               {t('settings.tools.mcp.serverChangedNotice', {
                 interpolation: { escapeValue: false },
@@ -820,15 +809,6 @@ export default function MCPServerModal({
                   : 'destructive'
             }
           >
-            {testResult.notice === 'waiting' ? (
-              <Info aria-hidden="true" />
-            ) : testResult.notice === 'popupBlocked' ? (
-              <TriangleAlert aria-hidden="true" />
-            ) : testResult.success ? (
-              <CircleCheck aria-hidden="true" />
-            ) : (
-              <CircleAlert aria-hidden="true" />
-            )}
             <AlertDescription>
               <p>{testResult.message}</p>
               {testResult.authorization_url && (

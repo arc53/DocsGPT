@@ -236,10 +236,10 @@ describe('GuardrailsSection', () => {
 
   it('shows the section notices as polite or warning alerts', async () => {
     await render({ disabled: true });
-    // View-only: the shared quiet note, not an announced status.
+    // View-only: the shared info note, not an announced status.
     const readOnly = q('guardrails-read-only');
     expect(readOnly?.getAttribute('role')).toBe('note');
-    expect(readOnly?.dataset.variant).toBe('default');
+    expect(readOnly?.dataset.variant).toBe('info');
     expect(readOnly?.textContent).toBe('common.viewOnlyNotice');
     const instance = q('guardrails-instance-disabled');
     expect(instance?.getAttribute('role')).toBe('alert');
@@ -295,12 +295,16 @@ describe('GuardrailsSection', () => {
     expect(q('guardrail-stage-pii-input')?.dataset.variant).toBe('secondary');
     const locked = q('guardrail-stage-pii-output');
     expect(locked?.dataset.variant).toBe('secondary');
-    expect((locked as HTMLButtonElement).disabled).toBe(true);
-    // The hint lives on the hoverable wrapper; the named button has no title.
-    expect(locked?.hasAttribute('title')).toBe(false);
-    expect(locked?.parentElement?.title).toBe(
-      'agents.form.guardrails.lockedByFloor',
-    );
+    // Locked by the floor: on at full colour (aria-disabled, not disabled)
+    // with a trailing lucide Lock instead of an emoji, hint on the chip.
+    expect(locked?.dataset.slot).toBe('toggle-chip');
+    expect((locked as HTMLButtonElement).disabled).toBe(false);
+    expect(locked?.getAttribute('aria-disabled')).toBe('true');
+    expect(locked?.getAttribute('aria-pressed')).toBe('true');
+    expect(locked?.textContent).not.toContain('🔒');
+    expect(locked?.querySelector('svg.lucide-lock')).not.toBeNull();
+    expect(locked?.title).toBe('agents.form.guardrails.lockedByFloor');
+    expect(locked?.parentElement?.hasAttribute('title')).toBe(false);
     expect(q('guardrail-stage-policy-input')?.dataset.variant).toBe(
       'secondary',
     );
@@ -319,6 +323,28 @@ describe('GuardrailsSection', () => {
         String(chip.dataset.variant === 'secondary'),
       );
     }
+  });
+
+  it('toggles stage and PII chips, but never a locked one', async () => {
+    const onChange = vi.fn();
+    await render({ onChange });
+    await act(async () => q('guardrail-stage-pii-output')?.click());
+    expect(onChange).not.toHaveBeenCalled();
+    await act(async () => q('guardrail-stage-pii-input')?.click());
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const next = onChange.mock.calls[0][0] as GuardrailsConfig;
+    expect(
+      next.controls.some((c) => c.check === 'pii' && c.stage === 'input'),
+    ).toBe(false);
+    onChange.mockClear();
+    await act(async () => {
+      q('guardrail-configure-pii-input')?.click();
+    });
+    await act(async () => q('guardrail-pii-PHONE')?.click());
+    const pii = (onChange.mock.calls[0][0] as GuardrailsConfig).controls.find(
+      (c) => c.check === 'pii' && c.stage === 'input',
+    );
+    expect(pii?.settings.entities).toEqual(['EMAIL', 'PHONE']);
   });
 
   it('renders remove actions as ghost-destructive xs buttons', async () => {
@@ -397,6 +423,73 @@ describe('GuardrailsSection', () => {
     expect(card?.dataset.padding).toBe('sm');
   });
 
+  // O5: a stage panel is a small subtle Card inside the check Card, not a
+  // bg-muted box; needs-setup is the destructive tone.
+  it('draws each stage panel as a small subtle Card', async () => {
+    await render();
+    const panel = q('guardrail-remove-pii-input')!.closest<HTMLElement>(
+      '[data-slot="card"]',
+    )!;
+    expect(panel.dataset.testid).not.toBe('guardrail-check-pii');
+    expect(panel.dataset.variant).toBe('subtle');
+    expect(panel.dataset.padding).toBe('sm');
+    expect(panel.dataset.tone).toBeUndefined();
+    expect(panel.className).not.toContain('bg-muted');
+    const setup = q('guardrail-remove-policy-input')!.closest<HTMLElement>(
+      '[data-slot="card"]',
+    )!;
+    expect(setup.dataset.variant).toBe('subtle');
+    expect(setup.dataset.tone).toBe('destructive');
+  });
+
+  it('puts the stage settings fields on the background surface', async () => {
+    await render({
+      value: {
+        ...config,
+        controls: config.controls.map((c) =>
+          c.check === 'policy'
+            ? { ...c, settings: { policy: 'No pricing talk.' } }
+            : c,
+        ),
+      },
+    });
+    await act(async () => {
+      q('guardrail-configure-policy-input')?.click();
+    });
+    const text = q('guardrail-policy-text')!;
+    expect(text.dataset.variant).toBe('default');
+    const panel = text.closest<HTMLElement>('[data-slot="card"]')!;
+    expect(panel.dataset.tone).toBeUndefined();
+    const labels = Array.from(
+      panel.querySelectorAll<HTMLElement>('[data-slot="form-field-label"]'),
+    );
+    expect(labels.length).toBeGreaterThan(1);
+    for (const label of labels) {
+      expect(label.className).toContain('bg-background');
+      expect(label.className).not.toContain('bg-muted');
+    }
+    const numbers = Array.from(
+      panel.querySelectorAll<HTMLInputElement>('input[type="number"]'),
+    );
+    expect(numbers.length).toBeGreaterThan(0);
+    for (const input of numbers) expect(input.dataset.variant).toBe('default');
+  });
+
+  // No label surface matches the red soft fill, so a floating label's notch
+  // would show as a box; on a needs-setup panel the labels sit above.
+  it('sets the labels above the fields on a needs-setup panel', async () => {
+    await render();
+    await act(async () => {
+      q('guardrail-configure-policy-input')?.click();
+    });
+    const panel = q('guardrail-policy-text')!.closest<HTMLElement>(
+      '[data-slot="card"]',
+    )!;
+    expect(panel.dataset.tone).toBe('destructive');
+    expect(panel.querySelector('[data-slot="form-field-label"]')).toBeNull();
+    expect(panel.querySelectorAll('label').length).toBeGreaterThan(1);
+  });
+
   it('shows PII entities as toggle chips', async () => {
     await render();
     await act(async () => {
@@ -408,6 +501,8 @@ describe('GuardrailsSection', () => {
     expect(q('guardrail-pii-PHONE')?.getAttribute('aria-pressed')).toBe(
       'false',
     );
+    expect(q('guardrail-pii-EMAIL')?.dataset.slot).toBe('toggle-chip');
+    expect(q('guardrail-pii-EMAIL')?.dataset.size).toBe('xs');
   });
 
   it('shows a failed catalog load as a destructive empty state with Retry', async () => {

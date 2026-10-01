@@ -114,4 +114,91 @@ describe('TestRetrievalModal notices', () => {
     expect(error?.className).toContain('text-destructive');
     expect(error?.querySelector('svg')).not.toBeNull();
   });
+
+  it('says no chunks in a small text-only EmptyState, not a dashed box', async () => {
+    testSourceRetrieval.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        chunks: [],
+        total: 0,
+        retriever: 'classic',
+        latency_ms: 84,
+      }),
+    });
+    render(doc(undefined));
+    const input =
+      document.body.querySelector<HTMLInputElement>('input[type="text"]');
+    const setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )?.set;
+    act(() => {
+      setValue?.call(input, 'fuel surcharge');
+      input?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      input?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+    const empty = document.body.querySelector<HTMLElement>(
+      '[data-slot="empty-state"]',
+    );
+    expect(empty?.dataset.size).toBe('sm');
+    expect(empty?.querySelector('svg')).toBeNull();
+    expect(document.body.querySelector('.border-dashed')).toBeNull();
+  });
+
+  // O5: a result is a place on the modal's card surface (outline Card), and
+  // its rank a neutral Badge rather than a fill on a fill.
+  it('draws each result as an outline Card with a neutral rank Badge', async () => {
+    testSourceRetrieval.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        chunks: [
+          {
+            rank: 1,
+            text: '7.2 Insurance.',
+            title: 'Nordhaven',
+            filename: 'nordhaven.pdf',
+            source: 'nordhaven.pdf',
+            tokens: 412,
+            score: 0.84,
+            score_kind: 'cosine_similarity',
+          },
+        ],
+        total: 1,
+        retriever: 'classic',
+        latency_ms: 84,
+      }),
+    });
+    render(doc(undefined));
+    const input =
+      document.body.querySelector<HTMLInputElement>('input[type="text"]');
+    const setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )?.set;
+    act(() => {
+      setValue?.call(input, 'insurance');
+      input?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      input?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+    const rank = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[data-slot="badge"]'),
+    ).find((el) => el.textContent === '#1')!;
+    expect(rank).toBeDefined();
+    expect(rank.dataset.variant).toBe('neutral');
+    expect(rank.className).toContain('font-mono');
+    const card = rank.closest<HTMLElement>('[data-slot="card"]')!;
+    expect(card).not.toBeNull();
+    expect(card.dataset.variant).toBe('outline');
+    expect(card.className).not.toContain('bg-muted');
+  });
 });

@@ -357,7 +357,11 @@ export default function AgentCard({
           (right-11 clears the 28px trigger at right-3) so the two align. */}
       <RoleBadge item={agent} className="absolute top-4 right-11 z-10" />
       <ConfirmationModal
-        message={t('agents.deleteConfirmation')}
+        message={t('agents.deleteConfirmation', {
+          interpolation: { escapeValue: false },
+          name: agent.name,
+        })}
+        description={t('agents.deleteConsequence')}
         modalState={deleteConfirmation}
         setModalState={setDeleteConfirmation}
         submitLabel={t('agents.form.buttons.delete')}

@@ -22,8 +22,11 @@ const cardVariants = cva(
         outline: 'border-border bg-card border',
         // A thing: a tile you open, move, share or delete as a whole
         // (agents, sources, tools, teams, chunks). Also a well (code,
-        // output) inside a panel.
-        filled: 'bg-muted',
+        // output) inside a panel. Muted text fails AA on the fill, so it
+        // reads as foreground inside; icons and buttons (3:1) stay muted.
+        // `button` too: a menu trigger's data-slot replaces Button's.
+        filled:
+          'bg-muted [&_.text-muted-foreground:not(svg):not(button):not([data-slot=button])]:text-foreground',
         // A place on the page: form sections, charts, tables, logs.
         subtle: 'border-border bg-background border',
       },

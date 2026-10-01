@@ -1,4 +1,3 @@
-import { CircleAlert } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -82,7 +81,6 @@ export default function ConfirmationModal({
 
   const alert = failed ? (
     <Alert variant="destructive">
-      <CircleAlert />
       <AlertDescription>{error ?? t('common.actionFailed')}</AlertDescription>
     </Alert>
   ) : null;

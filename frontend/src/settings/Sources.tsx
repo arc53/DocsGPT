@@ -523,7 +523,7 @@ export default function Sources({
     if (can(document, 'delete')) {
       actions.push({
         icon: Trash2,
-        label: t('convTile.delete'),
+        label: t('settings.sources.delete'),
         onClick: () => {
           handleDeleteConfirmation(index, document);
         },
@@ -936,8 +936,10 @@ export default function Sources({
       {deleteModalState === 'ACTIVE' && documentToDelete && (
         <ConfirmationModal
           message={t('settings.sources.deleteWarning', {
+            interpolation: { escapeValue: false },
             name: documentToDelete.document.name,
           })}
+          description={t('settings.sources.deleteConsequence')}
           modalState={deleteModalState}
           setModalState={setDeleteModalState}
           handleSubmit={handleConfirmedDelete}
@@ -946,7 +948,7 @@ export default function Sources({
             setDeleteModalState('INACTIVE');
             setDocumentToDelete(null);
           }}
-          submitLabel={t('convTile.delete')}
+          submitLabel={t('settings.sources.delete')}
           variant="destructive"
         />
       )}

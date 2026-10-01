@@ -1,21 +1,6 @@
-import { Check, ChevronsUpDown } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { cn } from '@/lib/utils';
+import { Combobox } from '@/components/ui/combobox';
 
 export type TimezoneComboboxProps = {
   value: string;
@@ -95,7 +80,7 @@ function computeTimezoneOffsetLabel(tz: string): string {
   );
 }
 
-/** Searchable IANA timezone picker (Popover + Command). */
+/** Searchable IANA timezone picker (a Combobox, offset as the hint). */
 export default function TimezoneCombobox({
   value,
   options,
@@ -106,95 +91,45 @@ export default function TimezoneCombobox({
   ariaLabel,
   className,
 }: TimezoneComboboxProps) {
-  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
 
   // Precompute (tz, offset) once per options array — ~400 zones is fast but
   // not free, and we re-render on every keystroke during filtering.
   const optionsWithOffset = useMemo(
-    () => options.map((tz) => ({ tz, offset: getTimezoneOffsetLabel(tz) })),
+    () =>
+      options.map((tz) => ({
+        value: tz,
+        label: tz,
+        hint: getTimezoneOffsetLabel(tz),
+      })),
     [options],
   );
 
   const filtered = useMemo(
-    () => optionsWithOffset.filter(({ tz }) => matchesTimezone(tz, query)),
+    () =>
+      optionsWithOffset.filter(({ value: tz }) => matchesTimezone(tz, query)),
     [optionsWithOffset, query],
   );
 
-  const selectedOffset = value ? getTimezoneOffsetLabel(value) : '';
-
   return (
-    // `modal`: it opens inside the schedule Modal, where a non-modal popover
-    // can't scroll or close on an outside click (see multi-select.tsx).
-    <Popover open={open} onOpenChange={setOpen} modal>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="combobox"
-          size="field"
-          role="combobox"
-          aria-expanded={open}
-          aria-label={ariaLabel}
-          data-placeholder={value ? undefined : ''}
-          className={cn('w-full justify-between', className)}
-        >
-          {value ? (
-            <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
-              <span className="truncate">{value}</span>
-              <span className="text-muted-foreground shrink-0 text-xs">
-                {selectedOffset}
-              </span>
-            </span>
-          ) : (
-            <span className="truncate">{placeholder}</span>
-          )}
-          <ChevronsUpDown className="shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        className="w-[min(20rem,calc(100vw-2rem))] p-0"
-        align="start"
-      >
-        <Command shouldFilter={false}>
-          <CommandInput
-            placeholder={searchPlaceholder}
-            value={query}
-            onValueChange={setQuery}
-          />
-          <CommandList>
-            <CommandEmpty>{emptyText}</CommandEmpty>
-            <CommandGroup>
-              {filtered.map(({ tz, offset }) => {
-                const selected = tz === value;
-                return (
-                  <CommandItem
-                    key={tz}
-                    value={tz}
-                    onSelect={() => {
-                      onChange(tz);
-                      setOpen(false);
-                      setQuery('');
-                    }}
-                  >
-                    <Check
-                      className={cn(
-                        'size-4 shrink-0',
-                        selected ? 'opacity-100' : 'opacity-0',
-                      )}
-                    />
-                    <div className="flex w-full min-w-0 items-center justify-between gap-3">
-                      <span className="truncate">{tz}</span>
-                      <span className="text-muted-foreground shrink-0 text-xs">
-                        {offset}
-                      </span>
-                    </div>
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+    <Combobox
+      options={filtered}
+      value={value || null}
+      // The picked zone stays on the trigger while a search hides its row.
+      valueOption={
+        value
+          ? { value, label: value, hint: getTimezoneOffsetLabel(value) }
+          : undefined
+      }
+      onValueChange={(tz) => onChange(tz)}
+      shouldFilter={false}
+      search={query}
+      onSearchChange={setQuery}
+      placeholder={placeholder}
+      searchPlaceholder={searchPlaceholder}
+      emptyText={emptyText}
+      aria-label={ariaLabel}
+      className={className}
+    />
   );
 }

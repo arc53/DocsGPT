@@ -1,4 +1,3 @@
-import { TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -153,7 +152,6 @@ export default function Quotas() {
 
       {(data.unpriced_models ?? []).length > 0 ? (
         <Alert variant="warning" role="note">
-          <TriangleAlert className="size-4" aria-hidden="true" />
           <AlertTitle>{t('admin.quotas.unpriced.title')}</AlertTitle>
           <AlertDescription>
             <p>

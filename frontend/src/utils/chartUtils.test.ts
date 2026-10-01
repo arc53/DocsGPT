@@ -54,7 +54,7 @@ describe('readChartPalette', () => {
       '#ef4444',
     ]);
     expect(palette.border).toBe('#d9d9d9');
-    expect(palette.mutedForeground).toBe('#737373');
+    expect(palette.mutedForeground).toBe('#6b6b6b');
   });
 });
 

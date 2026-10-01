@@ -3,6 +3,7 @@ import { ToggleGroup as ToggleGroupPrimitive } from 'radix-ui';
 
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { formatCount } from '@/utils/dateTimeUtils';
 
 type ToggleSize = 'xs' | 'sm';
 
@@ -19,8 +20,9 @@ const trackPadding: Record<ToggleSize, string> = {
 
 /**
  * The segmented "one of N" (or "any of N") control: pill items in a muted
- * pill track, the on item drawn as `outline` (bg-background, border,
- * shadow-xs) and the rest as `ghost-muted`. `size="sm"` (38px) sits level
+ * pill track, the on item drawn as `outline` (bg-background, shadow-xs)
+ * with a `muted-foreground` border, so it stands out from the track at 3:1
+ * in both themes, and the rest as `ghost-muted`. `size="sm"` (38px) sits level
  * with `field` controls in forms and page toolbars; `xs` (36px) is for dense
  * panels. The track hugs its items (scrolling sideways, never wrapping, when
  * they outgrow the row) unless `fill` is set, which spans the row with even
@@ -59,22 +61,44 @@ function ToggleGroup({
   );
 }
 
+/**
+ * One item of a ToggleGroup.
+ *
+ * Args:
+ *   count: A tally after the label ("All 12", "2 of 5 allowed"): muted,
+ *     normal weight and tabular, on the on item too. A number is formatted
+ *     with the UI language's digit grouping; a node is drawn as given.
+ */
 function ToggleGroupItem({
   className,
+  count,
+  children,
   ...props
-}: React.ComponentProps<typeof ToggleGroupPrimitive.Item>) {
+}: React.ComponentProps<typeof ToggleGroupPrimitive.Item> & {
+  count?: React.ReactNode;
+}) {
   const { size, fill } = React.useContext(ToggleGroupContext);
   return (
     <ToggleGroupPrimitive.Item
       data-slot="toggle-group-item"
       className={cn(
         buttonVariants({ variant: 'ghost-muted', size, shape: 'pill' }),
-        'data-[state=on]:border-border data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:dark:border-input data-[state=on]:dark:bg-input/30 data-[state=on]:dark:hover:bg-input/50 border border-transparent data-[state=on]:shadow-xs',
+        'data-[state=on]:border-muted-foreground data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:dark:bg-input/30 data-[state=on]:dark:hover:bg-input/50 border border-transparent data-[state=on]:shadow-xs',
         fill && 'min-w-0 flex-1 px-1',
         className,
       )}
       {...props}
-    />
+    >
+      {children}
+      {count != null && count !== false ? (
+        <span
+          data-slot="count"
+          className="text-muted-foreground font-normal tabular-nums"
+        >
+          {typeof count === 'number' ? formatCount(count) : count}
+        </span>
+      ) : null}
+    </ToggleGroupPrimitive.Item>
   );
 }
 

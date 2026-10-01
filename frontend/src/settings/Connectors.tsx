@@ -1,4 +1,4 @@
-import { ChevronDown, X } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -9,7 +9,6 @@ import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import { focusRing } from '../lib/utils';
 import { ActionMenu } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
@@ -36,7 +35,6 @@ import useConnectorLauncher, {
 } from '../connectors/useConnectorLauncher';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
-import { formatCount } from '../utils/dateTimeUtils';
 
 // What people come here for is managing what they have, so the list filters
 // by state; search finds a service by name.
@@ -228,24 +226,18 @@ export default function Connectors() {
                 aria-label={t('settings.connectors.filterLabel')}
               >
                 {filters.map((key) => (
-                  <ToggleGroupItem key={key} value={key}>
-                    {t(`settings.connectors.filters.${key}`)}{' '}
-                    {formatCount(counts[key])}
+                  <ToggleGroupItem key={key} value={key} count={counts[key]}>
+                    {t(`settings.connectors.filters.${key}`)}
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
             ) : null}
             {capability === 'sync' || capability === 'tools' ? (
-              <Badge>
+              <Badge
+                onRemove={clearCapability}
+                removeLabel={t('settings.connectors.capabilityFilter.clear')}
+              >
                 {t(`settings.connectors.capabilityChip.${capability}`)}
-                <button
-                  type="button"
-                  aria-label={t('settings.connectors.capabilityFilter.clear')}
-                  className={`${focusRing} hover:text-primary/70 flex size-3 cursor-pointer items-center justify-center rounded-full outline-none`}
-                  onClick={clearCapability}
-                >
-                  <X className="size-3" aria-hidden="true" />
-                </button>
               </Badge>
             ) : null}
           </div>

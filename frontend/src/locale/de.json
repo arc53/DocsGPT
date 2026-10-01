@@ -76,7 +76,6 @@
       "prompt": "Aktiver Prompt",
       "promptDescription": "Der System-Prompt für Chats ohne Agent. Agenten verwenden ihren eigenen.",
       "deleteAllLabel": "Alle Konversationen löschen",
-      "deleteAllBtn": "Alle löschen",
       "deleteAllDescription": "Löscht alle Unterhaltungen in Ihrem Konto dauerhaft. Dies kann nicht rückgängig gemacht werden.",
       "addNew": "Neu hinzufügen",
       "convHistory": "Konversationsverlauf",
@@ -120,7 +119,7 @@
       "reingest": "Erneut indexieren",
       "ingestFailed": "Indexierung fehlgeschlagen",
       "ingestProcessing": "Indexierung...",
-      "syncConfirmation": "Bist du sicher, dass du \"{{sourceName}}\" synchronisieren möchtest? Dies aktualisiert den Inhalt mit deinem Cloud-Speicher und kann Änderungen an einzelnen Chunks überschreiben.",
+      "syncConfirmation": "\"{{sourceName}}\" synchronisieren?",
       "syncFrequency": {
         "never": "Nie",
         "daily": "Täglich",
@@ -303,8 +302,7 @@
       },
       "editConfig": "Quelleneinstellungen",
       "shareWithTeam": "Mit Team teilen",
-      "deleteWarning": "Bist du sicher, dass du \"{{name}}\" löschen möchtest?",
-      "confirmDelete": "Bist du sicher, dass du diese Datei löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
+      "deleteWarning": "\"{{name}}\" löschen?",
       "chunks": "Chunks",
       "noChunks": "Keine Chunks gefunden",
       "noChunksAlt": "Keine Chunks gefunden",
@@ -326,7 +324,6 @@
       "addFile": "Datei hinzufügen",
       "uploadingFilesTitle": "Dateien werden hochgeladen...",
       "deletingTitle": "Wird gelöscht...",
-      "deleteDirectoryWarning": "Bist du sicher, dass du das Verzeichnis \"{{name}}\" und seinen gesamten Inhalt löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
       "searchAlt": "Suchen",
       "retrievalOptions": {
         "title": "Erweiterte Einstellungen",
@@ -465,7 +462,13 @@
         "reingest": "Die Neuaufnahme konnte nicht gestartet werden."
       },
       "viaConnection": "über {{name}}",
-      "loadError": "Dein Wissen konnte nicht geladen werden."
+      "loadError": "Dein Wissen konnte nicht geladen werden.",
+      "delete": "Löschen",
+      "deleteConsequence": "Seine Dateien und Abschnitte werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "deleteFileConsequence": "Ihre Abschnitte werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "deleteDirectoryConsequence": "Alles darin wird ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "syncConsequence": "Der Inhalt wird aus deinem Cloud-Speicher aktualisiert. Dabei können Änderungen an einzelnen Abschnitten überschrieben werden.",
+      "deleteItemFailed": "„{{name}}“ konnte nicht gelöscht werden."
     },
     "analytics": {
       "label": "Analytik",
@@ -700,7 +703,7 @@
       "selectTeamTitle": "Kein Team ausgewählt",
       "teamSubtitle": "Verwalte Mitglieder und die mit diesem Team geteilten Ressourcen.",
       "deleteTeam": "Team löschen",
-      "deleteTeamConfirmation": "Bist du sicher, dass du \"{{name}}\" löschen möchtest? Dies kann nicht rückgängig gemacht werden.",
+      "deleteTeamConfirmation": "\"{{name}}\" löschen?",
       "members": "Mitglieder",
       "addMember": "Mitglied hinzufügen",
       "addMemberTitle": "Mitglied hinzufügen",
@@ -711,7 +714,7 @@
       "memberRoleLabel": "Rolle",
       "add": "Hinzufügen",
       "remove": "Entfernen",
-      "removeMemberConfirmation": "Dieses Mitglied aus dem Team entfernen?",
+      "removeMemberConfirmation": "\"{{name}}\" aus {{team}} entfernen?",
       "addMemberError": "Mitglied konnte nicht hinzugefügt werden (nur Team-Admins).",
       "memberNotFound": "Kein Benutzer mit dieser E-Mail – die Person muss sich zuerst einmal anmelden.",
       "noMembers": "Noch keine Mitglieder. Nutze „Mitglied hinzufügen“, um jemanden per E-Mail einzuladen.",
@@ -759,7 +762,6 @@
         "showAll": "Alle {{formatted}} anzeigen",
         "andMore_one": "und {{formatted}} weitere",
         "andMore_other": "und {{formatted}} weitere",
-        "back": "Zurück",
         "allSummary": "{{name}} · Teams: {{teams}} · Personen: {{people}}",
         "searchAccess": "Personen und Teams suchen…",
         "filterLabel": "Personen mit Zugriff filtern",
@@ -804,7 +806,10 @@
             "connectorDisabledNoService": "Von einem Admin deaktiviert",
             "unknown": "Läuft nicht"
           }
-        }
+        },
+        "removeConfirm": "Zugriff für \"{{name}}\" entfernen?",
+        "removeConfirmTeam": "Alle in {{team}} verlieren den Zugriff auf \"{{resource}}\". Du kannst es jederzeit wieder teilen.",
+        "removeConfirmPerson": "{{name}} verliert den Zugriff auf \"{{resource}}\" über {{team}}. Du kannst es jederzeit wieder teilen."
       },
       "memberCount_one": "{{formatted}} Mitglied",
       "memberCount_other": "{{formatted}} Mitglieder",
@@ -983,7 +988,10 @@
       "searchMembers": "Mitglieder suchen…",
       "membersRange_one": "{{from}}–{{to}} von {{formatted}} Mitglied",
       "membersRange_other": "{{from}}–{{to}} von {{formatted}} Mitgliedern",
-      "membersLoadError": "Die Mitglieder konnten nicht geladen werden."
+      "membersLoadError": "Die Mitglieder konnten nicht geladen werden.",
+      "deleteTeamConsequence": "Seine Mitglieder verlieren den Zugriff auf alles, was mit ihm geteilt wurde. Dies kann nicht rückgängig gemacht werden.",
+      "delete": "Löschen",
+      "removeMemberConsequence": "Die Person verliert den Zugriff auf alles, was mit {{team}} geteilt wurde. Du kannst sie jederzeit wieder hinzufügen."
     },
     "tools": {
       "label": "Werkzeuge",
@@ -999,7 +1007,7 @@
       "delete": "Löschen",
       "reconnect": "Erneut verbinden",
       "shareWithTeam": "Mit Team teilen",
-      "deleteWarning": "Bist du sicher, dass du das Werkzeug \"{{toolName}}\" löschen möchtest?",
+      "deleteWarning": "\"{{toolName}}\" löschen?",
       "unsavedChanges": "Du hast ungespeicherte Änderungen, die verloren gehen, wenn du ohne Speichern verlässt.",
       "leaveWithoutSaving": "Ohne Speichern verlassen",
       "saveAndLeave": "Speichern und verlassen",
@@ -1030,7 +1038,7 @@
       "headers": "Header",
       "queryParameters": "Abfrageparameter",
       "body": "Body",
-      "deleteActionWarning": "Bist du sicher, dass du die Aktion \"{{name}}\" löschen möchtest?",
+      "deleteActionWarning": "\"{{name}}\" löschen?",
       "save": "Speichern",
       "saveFailed": "Werkzeug-Konfiguration konnte nicht gespeichert werden",
       "fieldName": "Feldname",
@@ -1129,7 +1137,9 @@
       "noToolsYet": "Noch keine Werkzeuge",
       "connectService": "Dienst verbinden",
       "filledBy": "Ausgefüllt von",
-      "loadError": "Deine Werkzeuge konnten nicht geladen werden."
+      "loadError": "Deine Werkzeuge konnten nicht geladen werden.",
+      "deleteConsequence": "Seine Einstellungen und Aktionen werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "deleteActionConsequence": "Sie wird entfernt, wenn du das Tool speicherst."
     },
     "devices": {
       "label": "Geräte",
@@ -1138,7 +1148,7 @@
       "empty": "Keine gekoppelten Geräte.",
       "revoke": "Widerrufen",
       "edit": "Bearbeiten",
-      "revokeWarning": "{{name}} widerrufen? Die CLI wird getrennt.",
+      "revokeWarning": "\"{{name}}\" widerrufen?",
       "approvalMode": "Genehmigungsmodus",
       "approvalAsk": "Nachfragen",
       "approvalFull": "Vollzugriff",
@@ -1186,7 +1196,8 @@
       "fallbackName": "Gerät",
       "auditShow": "Letzte Befehle anzeigen",
       "auditHide": "Letzte Befehle ausblenden",
-      "seen": "zuletzt gesehen {{time}}"
+      "seen": "zuletzt gesehen {{time}}",
+      "revokeConsequence": "Die CLI auf diesem Gerät wird getrennt und die Kopplung entfernt. Koppel es erneut, um es wieder zu verbinden."
     },
     "customModels": {
       "label": "Eigene Modelle",
@@ -1202,7 +1213,7 @@
       "testSuccess": "Verbindung erfolgreich.",
       "testHintNew": "Fülle Basis-URL, Modell-ID und API-Schlüssel aus, um Verbindungstests zu aktivieren.",
       "disabledBadge": "Deaktiviert",
-      "deleteWarning": "Möchtest du das eigene Modell \"{{modelName}}\" wirklich löschen?",
+      "deleteWarning": "\"{{modelName}}\" löschen?",
       "actionsMenuAria": "Aktionen für {{modelName}}",
       "modelsGroup": {
         "builtin": "DocsGPT-Modelle",
@@ -1289,7 +1300,7 @@
       "showLess": "Weniger anzeigen",
       "revoke": "Widerrufen",
       "revokeAria": "Token {{name}} widerrufen",
-      "revokeWarning": "Token „{{name}}“ widerrufen? Alles, was es noch verwendet, funktioniert sofort nicht mehr. Das kann nicht rückgängig gemacht werden.",
+      "revokeWarning": "\"{{name}}\" widerrufen?",
       "restrictionCount": {
         "agents_one": "{{count}} Agent",
         "agents_other": "{{count}} Agenten",
@@ -1362,7 +1373,8 @@
           "title": "Token neu generiert",
           "subtitle": "Das neue Geheimnis für \"{{name}}\" ist bereit. Das alte funktioniert nicht mehr."
         }
-      }
+      },
+      "revokeConsequence": "Alles, was es noch verwendet, funktioniert sofort nicht mehr. Dies kann nicht rückgängig gemacht werden."
     },
     "connectors": {
       "label": "Konnektoren",
@@ -1467,7 +1479,7 @@
         "customize": "Anpassen"
       },
       "disconnect": {
-        "title": "{{name}} trennen?",
+        "title": "\"{{name}}\" trennen?",
         "failed": "Trennen fehlgeschlagen. Versuche es erneut.",
         "bodyBoth_one": "Das synchronisierte Element bleibt im Wissen, wird aber nicht mehr aktualisiert. Werkzeuge dieser Verbindung funktionieren erst nach dem Neuverbinden wieder.",
         "bodyBoth_other": "Die {{formatted}} synchronisierten Elemente bleiben im Wissen, werden aber nicht mehr aktualisiert. Werkzeuge dieser Verbindung funktionieren erst nach dem Neuverbinden wieder.",
@@ -1542,7 +1554,7 @@
         "account": "Konto"
       },
       "remove": {
-        "title": "{{name}} entfernen?",
+        "title": "\"{{name}}\" entfernen?",
         "description": "Die gespeicherte Anmeldung wird gelöscht. Wähle, was mit den Inhalten dieser Verbindung passiert.",
         "sourcesLabel_one": "Das Element, das sie ins Wissen synchronisiert hat",
         "sourcesLabel_other": "Die {{formatted}} Elemente, die sie ins Wissen synchronisiert hat",
@@ -1670,7 +1682,6 @@
       "selectedFiles": "Ausgewählte Dateien",
       "noFilesSelected": "Keine Dateien ausgewählt",
       "file": "Vom Gerät hochladen",
-      "back": "Zurück",
       "wait": "Bitte warten ...",
       "remote": "Von Website sammeln",
       "start": "Chat starten",
@@ -1776,8 +1787,9 @@
       "apiKeyLabel": "API-Schlüssel"
     },
     "deleteConv": {
-      "confirm": "Bist du sicher, dass du alle Konversationen löschen möchtest?",
-      "delete": "Löschen"
+      "confirm": "Alle Unterhaltungen löschen?",
+      "delete": "Löschen",
+      "consequence": "Alle Unterhaltungen in deinem Konto werden mitsamt ihren Nachrichten gelöscht. Dies kann nicht rückgängig gemacht werden."
     },
     "shareConv": {
       "label": "Öffentliche Seite zum Teilen erstellen",
@@ -1817,7 +1829,7 @@
       "save": "Speichern",
       "cancel": "Abbrechen",
       "nameExists": "Name existiert bereits",
-      "deleteConfirmation": "Bist du sicher, dass du den Prompt '{{name}}' löschen möchtest?",
+      "deleteConfirmation": "\"{{name}}\" löschen?",
       "placeholderText": "Gib hier deinen Prompt-Text ein...",
       "addExamplePlaceholder": "Bitte fasse diesen Text zusammen:",
       "variablesLabel": "Variablen",
@@ -1841,7 +1853,8 @@
       "learnAboutPrompts": "Mehr über Prompts erfahren →",
       "publicPromptEditDisabled": "Öffentliche Prompts können nicht bearbeitet werden",
       "promptTypePublic": "öffentlich",
-      "promptTypePrivate": "privat"
+      "promptTypePrivate": "privat",
+      "delete": "Löschen"
     },
     "chunk": {
       "add": "Chunk hinzufügen",
@@ -1853,7 +1866,7 @@
       "save": "Speichern",
       "close": "Schließen",
       "delete": "Löschen",
-      "deleteConfirmation": "Bist du sicher, dass du diesen Chunk löschen möchtest?"
+      "deleteConfirmation": "Diesen Abschnitt löschen?"
     },
     "addAction": {
       "title": "Neue Aktion",
@@ -1871,7 +1884,7 @@
       "test": "Testen",
       "learnMore": "Mehr erfahren",
       "resetKey": "Schlüssel zurücksetzen",
-      "resetKeyConfirm": "Möchten Sie den API-Schlüssel wirklich zurücksetzen? Der aktuelle Schlüssel funktioniert sofort nicht mehr und diese Aktion kann nicht rückgängig gemacht werden.",
+      "resetKeyConfirm": "API-Schlüssel für \"{{name}}\" zurücksetzen?",
       "apiWrites": {
         "title": "Änderungen anderer in deinem Namen",
         "description": "Über die API, das Widget oder einen öffentlichen Link kann niemand diese für dich bestätigen. Erlaube sie hier.",
@@ -1884,7 +1897,9 @@
         "choose": "Erlaubtes auswählen"
       },
       "actionFailed": "Das hat nicht funktioniert. Bitte versuche es erneut.",
-      "apiKeyAfterPublish": "Veröffentliche den Agenten, um seinen API-Schlüssel zu erstellen."
+      "apiKeyAfterPublish": "Veröffentliche den Agenten, um seinen API-Schlüssel zu erstellen.",
+      "resetKeyConsequence": "Der aktuelle Schlüssel funktioniert sofort nicht mehr, alles, was ihn verwendet, muss aktualisiert werden. Dies kann nicht rückgängig gemacht werden.",
+      "reset": "Zurücksetzen"
     },
     "importSpec": {
       "title": "API-Spezifikation importieren",
@@ -1953,7 +1968,9 @@
     "delete": "Löschen",
     "rename": "Umbenennen",
     "save": "Speichern",
-    "deleteWarning": "Bist du sicher, dass du diese Konversation löschen möchtest?"
+    "deleteWarning": "\"{{name}}\" löschen?",
+    "deleteWarningUnnamed": "Diese Unterhaltung löschen?",
+    "deleteConsequence": "Ihre Nachrichten werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden."
   },
   "pagination": {
     "label": "Seitennavigation",
@@ -2454,7 +2471,7 @@
       "resume": "Fortsetzen",
       "runNow": "Jetzt ausführen",
       "delete": "Löschen",
-      "deleteConfirm": "Diesen Zeitplan löschen? Damit wird auch sein Ausführungsverlauf gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
+      "deleteConfirm": "\"{{name}}\" löschen?",
       "cancel": "Abbrechen",
       "showRuns": "Ausführungen anzeigen",
       "hideRuns": "Ausführungen ausblenden",
@@ -2604,7 +2621,8 @@
         "paused_other": "{{count}} pausiert",
         "overdue": "Überfällig"
       },
-      "deleteFailed": "Dieser Zeitplan konnte nicht gelöscht werden."
+      "deleteFailed": "Dieser Zeitplan konnte nicht gelöscht werden.",
+      "deleteConsequence": "Der Ausführungsverlauf wird ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden."
     },
     "shared": {
       "notFound": "Kein Agent gefunden. Bitte stelle sicher, dass der Agent geteilt ist.",
@@ -2619,14 +2637,14 @@
       "testMessage": "Teste deinen Agenten hier. Veröffentlichte Agenten können in Konversationen verwendet werden.",
       "emptyTitle": "Teste deinen Agenten"
     },
-    "deleteConfirmation": "Bist du sicher, dass du diesen Agenten löschen möchtest?",
+    "deleteConfirmation": "\"{{name}}\" löschen?",
     "folders": {
       "newFolder": "Neuer Ordner",
       "createFolder": "Ordner erstellen",
       "folderName": "Ordnername",
       "rename": "Umbenennen",
       "delete": "Löschen",
-      "deleteConfirm": "Bist du sicher, dass du diesen Ordner löschen möchtest? Agenten im Ordner werden verschoben.",
+      "deleteConfirm": "\"{{name}}\" löschen?",
       "empty": "Dieser Ordner ist leer",
       "moveToFolder": "In Ordner verschieben",
       "moveTo": "Verschieben",
@@ -2637,7 +2655,8 @@
       "noSubfolders": "Keine Unterordner",
       "openFolder": "Ordner öffnen",
       "noFolders": "Noch keine Ordner",
-      "menuAriaLabel": "Aktionen für {{folderName}}"
+      "menuAriaLabel": "Aktionen für {{folderName}}",
+      "deleteConsequence": "Die Agenten darin werden aus dem Ordner verschoben, nicht gelöscht."
     },
     "guardrailEvents": {
       "heading": "Guardrail activity",
@@ -2760,8 +2779,7 @@
         "optional": "Optional",
         "cannotDeleteStart": "Startknoten kann nicht gelöscht werden",
         "deleteNode": "Knoten löschen",
-        "deleteConfirm": "Möchtest du „{{name}}“ wirklich löschen?",
-        "deleteConfirmUnnamed": "Möchtest du diesen Workflow-Agenten wirklich löschen?",
+        "deleteConfirmUnnamed": "Diesen Workflow-Agenten löschen?",
         "detailsTitle": "Workflow-Details",
         "detailsDescription": "Name, Beschreibung und Bild, die auf der Agentenkarte angezeigt werden.",
         "unsavedChanges": "Nicht gespeicherte Änderungen",
@@ -2876,7 +2894,8 @@
     "showAll_one": "Alle {{formatted}} anzeigen",
     "showAll_other": "Alle {{formatted}} anzeigen",
     "pageRange_one": "{{from}}–{{to}} von {{formatted}} Agent",
-    "pageRange_other": "{{from}}–{{to}} von {{formatted}} Agenten"
+    "pageRange_other": "{{from}}–{{to}} von {{formatted}} Agenten",
+    "deleteConsequence": "Seine Zeitpläne und der Ausführungsverlauf werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden."
   },
   "components": {
     "fileUpload": {
@@ -3015,7 +3034,8 @@
     "viewOnlyNotice": "Du kannst dies ansehen, aber deine Rolle kann es nicht ändern.",
     "credentialsLockedNotice": "Nur der Eigentümer kann die Zugangsdaten dieses Tools ändern.",
     "savedSecretHint": "Gespeichert. Leer lassen, um es zu behalten.",
-    "actionFailed": "Etwas ist schiefgelaufen. Bitte versuche es erneut."
+    "actionFailed": "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+    "cantUndo": "Dies kann nicht rückgängig gemacht werden."
   },
   "sidePanel": {
     "close": "Schließen",

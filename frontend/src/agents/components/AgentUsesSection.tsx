@@ -1,4 +1,4 @@
-import { Database, ScrollText, TriangleAlert, Wrench } from 'lucide-react';
+import { Database, ScrollText, Wrench } from 'lucide-react';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -208,7 +208,6 @@ export default function AgentUsesSection({
           </ListRows>
           {anyBlocked && (
             <Alert variant="warning">
-              <TriangleAlert />
               <AlertDescription>
                 {t(ownerReads ? `${K}.writesNote` : `${K}.writesNoteEditor`)}
               </AlertDescription>

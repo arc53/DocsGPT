@@ -589,7 +589,7 @@ export default function PromptsModal({
         target="_blank"
         rel="noopener noreferrer"
       >
-        <Book />
+        <Book className="size-4" />
         <span className="font-bold">
           {t('modals.prompts.learnAboutPrompts')}
         </span>

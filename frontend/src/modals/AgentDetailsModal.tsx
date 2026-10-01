@@ -1,6 +1,6 @@
 import { envVar } from '@/env';
 import { focusRing } from '@/lib/utils';
-import { CircleAlert, ExternalLink } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -68,8 +68,10 @@ export default function AgentDetailsModal({
   const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
   const [resetKeyConfirmState, setResetKeyConfirmState] =
     useState<ActiveState>('INACTIVE');
-  // A failed generate or reset, shown in the modal until the next attempt.
+  // A failed generate, shown in the modal until the next attempt.
   const [error, setError] = useState<string | null>(null);
+  // A failed key reset, shown in its confirm.
+  const [resetKeyError, setResetKeyError] = useState<string>();
   const [loadingStates, setLoadingStates] = useState({
     publicLink: false,
     apiKey: false,
@@ -84,34 +86,35 @@ export default function AgentDetailsModal({
   };
 
   /**
-   * Runs one of the modal's calls, showing its failure in the Alert.
+   * Runs one of the modal's calls and reports its failure.
    *
    * @param key Which button shows the spinner.
    * @param request The call; resolves to the response.
    * @param onSuccess Receives the parsed body of a successful response.
+   * @param onFailure Receives the failure message; the modal's Alert by default.
    */
   const run = async (
     key: 'publicLink' | 'apiKey' | 'webhook',
     request: () => Promise<Response>,
     onSuccess: (data: Record<string, string>) => void,
+    onFailure: (message: string) => void = setError,
   ) => {
     setLoading(key, true);
     setError(null);
+    let failure: string | null = null;
     try {
       const response = await request();
-      if (!response.ok) {
-        setError(
+      if (response.ok) onSuccess(await response.json());
+      else
+        failure =
           (await errorMessage(response)) ??
-            t('modals.agentDetails.actionFailed'),
-        );
-        return;
-      }
-      onSuccess(await response.json());
+          t('modals.agentDetails.actionFailed');
     } catch {
-      setError(t('modals.agentDetails.actionFailed'));
+      failure = t('modals.agentDetails.actionFailed');
     } finally {
       setLoading(key, false);
     }
+    if (failure !== null) onFailure(failure);
   };
 
   const handleGeneratePublicLink = () =>
@@ -136,6 +139,11 @@ export default function AgentDetailsModal({
         setApiKey(data.key);
         onKeyRegenerated?.(data.key);
       },
+      // The reset confirm stays open and shows the failure itself.
+      (message) => {
+        setResetKeyError(message);
+        throw new Error(message);
+      },
     );
 
   useEffect(() => {
@@ -153,7 +161,6 @@ export default function AgentDetailsModal({
         <div>
           {error && (
             <Alert variant="destructive" className="mt-6">
-              <CircleAlert />
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
@@ -195,7 +202,7 @@ export default function AgentDetailsModal({
                       rel="noopener noreferrer"
                     >
                       {t('modals.agentDetails.learnMore')}
-                      <ExternalLink className="size-3" />
+                      <ExternalLink />
                     </a>
                   </Button>
                 </div>
@@ -319,7 +326,7 @@ export default function AgentDetailsModal({
                       rel="noopener noreferrer"
                     >
                       {t('modals.agentDetails.learnMore')}
-                      <ExternalLink className="size-3" />
+                      <ExternalLink />
                     </a>
                   </Button>
                 </div>
@@ -352,11 +359,16 @@ export default function AgentDetailsModal({
         </div>
       </Modal>
       <ConfirmationModal
-        message={t('modals.agentDetails.resetKeyConfirm')}
+        message={t('modals.agentDetails.resetKeyConfirm', {
+          interpolation: { escapeValue: false },
+          name: agent.name,
+        })}
+        description={t('modals.agentDetails.resetKeyConsequence')}
         modalState={resetKeyConfirmState}
         setModalState={setResetKeyConfirmState}
-        submitLabel={t('modals.agentDetails.resetKey')}
+        submitLabel={t('modals.agentDetails.reset')}
         handleSubmit={handleRegenerateKey}
+        error={resetKeyError}
         variant="destructive"
       />
     </>

@@ -1,11 +1,9 @@
 import {
-  CircleAlert,
   Pencil,
   Plus,
   RefreshCw,
   RotateCw,
   Trash2,
-  TriangleAlert,
   Unplug,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -358,7 +356,6 @@ function RenameAccountModal({
       <div className="flex flex-col gap-5">
         {failed && (
           <Alert variant="destructive">
-            <CircleAlert />
             <AlertDescription>
               {t('settings.connectors.rename.failed')}
             </AlertDescription>
@@ -738,7 +735,6 @@ function AccountContent({
           />
           {addToolsError && (
             <Alert variant="destructive">
-              <CircleAlert />
               <AlertDescription>{addToolsError}</AlertDescription>
             </Alert>
           )}
@@ -894,7 +890,6 @@ function ServiceSection({
             with room to say what happened at any width. */}
         {shown && connectionNeedsSignIn(shown) && (
           <Alert variant="warning">
-            <TriangleAlert />
             {/* The provider's own message stays on hover, for debugging. */}
             <AlertDescription title={shown.last_error ?? undefined}>
               {problem(shown)}
@@ -1237,7 +1232,6 @@ export default function ConnectionDrawer({
         <PanelBody>
           {connector.publisher === 'custom' && (
             <Alert variant="warning" role="note">
-              <TriangleAlert />
               <AlertDescription>
                 {t('settings.connectors.unverified')}
               </AlertDescription>

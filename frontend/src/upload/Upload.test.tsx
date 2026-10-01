@@ -120,14 +120,16 @@ describe('Upload source-type tiles', () => {
     );
   });
 
-  it('titles the first step with a heading, like the later steps', async () => {
+  const dialogTitle = () =>
+    document.body.querySelector('[data-slot="dialog-title"]');
+
+  it('titles the first step in the modal header', async () => {
     await render();
-    // Beside the dialog's hidden title, as on the later steps.
-    const heading = Array.from(document.body.querySelectorAll('h2')).find(
-      (h) => h.textContent === 'modals.uploadDoc.selectSource',
-    );
-    expect(heading).toBeDefined();
-    expect(heading?.className).toContain('text-xl');
+    expect(dialogTitle()?.textContent).toBe('modals.uploadDoc.selectSource');
+    expect(dialogTitle()?.closest('[data-slot="modal-header"]')).not.toBeNull();
+    // No second, hand-drawn heading in the body.
+    expect(document.body.querySelectorAll('h2')).toHaveLength(1);
+    expect(backButton()).toBeUndefined();
   });
 
   it('selects the clicked source type', async () => {
@@ -137,28 +139,28 @@ describe('Upload source-type tiles', () => {
     )!;
     await act(async () => crawler.click());
     expect(tiles()).toHaveLength(0);
-    expect(document.body.textContent).toContain(
+    expect(dialogTitle()?.textContent).toBe(
       'modals.uploadDoc.ingestors.crawler.heading',
     );
   });
 
   const backButton = () =>
-    Array.from(document.body.querySelectorAll('button')).find(
-      (b) => b.textContent === 'modals.uploadDoc.back',
-    );
+    document.body.querySelector<HTMLButtonElement>(
+      '[data-slot="modal-header"] button[aria-label="sidePanel.back"]',
+    ) ?? undefined;
 
-  it('goes back with the ghost Back and its arrow', async () => {
+  it('goes back with the header Back arrow', async () => {
     await render();
     const crawler = tiles().find((tile) =>
       tile.textContent?.includes('modals.uploadDoc.ingestors.crawler.label'),
     )!;
     await act(async () => crawler.click());
     const back = backButton()!;
-    expect(back.getAttribute('data-variant')).toBe('ghost');
-    expect(back.getAttribute('data-size')).toBe('sm');
+    expect(back.getAttribute('data-variant')).toBe('ghost-muted');
     expect(back.querySelector('svg')?.getAttribute('class')).toContain(
       'lucide-arrow-left',
     );
+    expect(document.body.textContent).not.toContain('modals.uploadDoc.back');
     await act(async () => back.click());
     expect(tiles().length).toBeGreaterThan(0);
   });
@@ -427,8 +429,10 @@ describe('Upload source-type tiles', () => {
     await render(browse);
     const link = browseLink()!;
     expect(section()!.contains(link)).toBe(true);
-    expect(link.querySelector('svg')?.getAttribute('class')).toContain(
-      'size-3',
+    // A trailing link icon: 12px from Button's link size, not its own class.
+    expect(link.className).toContain("[&_svg:not([class*='size-'])]:size-3");
+    expect(link.querySelector('svg')?.getAttribute('class')).not.toContain(
+      'size-',
     );
     await act(async () => link.click());
     expect(close).toHaveBeenCalled();

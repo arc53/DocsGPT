@@ -20,6 +20,12 @@ import actionToastReducer from '../notifications/actionToastSlice';
 import ToolPermissions from './ToolPermissions';
 import type { ActionParameter, ConnectionTool } from './types';
 
+/** A heading as "title [count]": SectionHeader draws the count in its own span. */
+const titleWithCount = (h: Element | null | undefined) =>
+  h
+    ? `${h.firstChild?.textContent} [${h.querySelector('[data-slot="count"]')?.textContent}]`
+    : undefined;
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const action = (
@@ -131,11 +137,11 @@ describe('ToolPermissions', () => {
       ]),
     );
     const titles = Array.from(container.querySelectorAll('h4')).map(
-      (h) => h.textContent,
+      titleWithCount,
     );
     expect(titles).toEqual([
-      'settings.connectors.capabilityPlain.read · 1',
-      'settings.connectors.capabilityPlain.write · 1',
+      'settings.connectors.capabilityPlain.read [1]',
+      'settings.connectors.capabilityPlain.write [1]',
     ]);
     expect(container.querySelector('h4')?.className).not.toContain('uppercase');
     expect(container.textContent).not.toContain(
@@ -146,8 +152,8 @@ describe('ToolPermissions', () => {
   it('takes the heading level of the surface it sits in', async () => {
     await render(tool([action('b', 'write', 'ask')]), undefined, 'h6');
     expect(container.querySelector('h4')).toBeNull();
-    expect(container.querySelector('h6')?.textContent).toBe(
-      'settings.connectors.capabilityPlain.write · 1',
+    expect(titleWithCount(container.querySelector('h6'))).toBe(
+      'settings.connectors.capabilityPlain.write [1]',
     );
   });
 

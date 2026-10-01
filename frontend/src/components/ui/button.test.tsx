@@ -2,6 +2,8 @@ import type React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
+import { cn } from '@/lib/utils';
+
 import { Button, buttonVariants } from './button';
 
 /** The class attribute of the rendered root element. */
@@ -133,6 +135,16 @@ describe('Button variants', () => {
       classes.filter((c) => /^(text-(xs|sm|base|lg)|font-|leading-)/.test(c)),
     ).toEqual([]);
   });
+
+  it.each(['inline', 'text'] as const)(
+    'size="%s" draws an unsized icon at 12px (a trailing link icon)',
+    (size) => {
+      // cn() resolves the size's size-3 against the base's size-4.
+      const classes = cn(buttonVariants({ variant: 'link', size })).split(' ');
+      expect(classes).toContain("[&_svg:not([class*='size-'])]:size-3");
+      expect(classes).not.toContain("[&_svg:not([class*='size-'])]:size-4");
+    },
+  );
 
   it('size="inline" keeps the 14px medium standalone link look', () => {
     const classes = renderedClasses(

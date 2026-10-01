@@ -51,6 +51,12 @@ vi.mock('../api/services/userService', () => ({
 import type { APIToolType, UserToolType } from './types';
 import ToolConfig from './ToolConfig';
 
+/** A heading as "title [count]": SectionHeader draws the count in its own span. */
+const titleWithCount = (h: Element | null | undefined) =>
+  h
+    ? `${h.firstChild?.textContent} [${h.querySelector('[data-slot="count"]')?.textContent}]`
+    : undefined;
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const userTool = {
@@ -363,10 +369,10 @@ describe('ToolConfig', () => {
   it('renders the API action form as square 42px fields with remove icons', async () => {
     await render(apiTool);
     const deleteAction = container.querySelector<HTMLElement>(
-      'button[aria-label="convTile.delete"]',
+      'button[aria-label="settings.tools.delete"]',
     );
     expect(deleteAction?.hasAttribute('title')).toBe(false);
-    expect(deleteAction?.dataset.variant).toBe('ghost-destructive');
+    expect(deleteAction?.dataset.variant).toBe('ghost-destructive-on-accent');
     expect(deleteAction?.dataset.size).toBe('icon-xs');
 
     await act(async () => {
@@ -486,6 +492,40 @@ describe('ToolConfig', () => {
     ).not.toBeNull();
   });
 
+  // O5: a framed action row follows Row states, like Logs' rows: no fill at
+  // rest, accent on hover, secondary while open.
+  it.each([
+    ['API', apiTool],
+    ['built-in', userTool],
+  ] as const)(
+    'draws the %s action header with the row-state recipe',
+    async (_, tool) => {
+      await render(tool);
+      const toggle = container.querySelector<HTMLButtonElement>(
+        'button[aria-expanded][aria-controls]',
+      )!;
+      const header = toggle.parentElement!;
+      expect(header.className).not.toContain('bg-muted');
+      expect(header.className).toContain('hover:bg-accent');
+      expect(header.className).not.toContain('bg-secondary');
+      await act(async () => toggle.click());
+      expect(header.className).toContain('bg-secondary');
+      expect(header.className).not.toContain('bg-muted');
+    },
+  );
+
+  it('uses the on-accent destructive trash on an API action header', async () => {
+    await render(apiTool);
+    const toggle = container.querySelector<HTMLButtonElement>(
+      'button[aria-expanded][aria-controls]',
+    )!;
+    const trash = toggle.parentElement!.querySelector<HTMLElement>(
+      'button[aria-label="settings.tools.delete"]',
+    )!;
+    expect(trash).not.toBeNull();
+    expect(trash.dataset.variant).toBe('ghost-destructive-on-accent');
+  });
+
   it('draws the API action form fields square', async () => {
     await render(apiTool);
     await act(async () =>
@@ -553,6 +593,46 @@ describe('ToolConfig', () => {
     expect(deleteCell?.style.getPropertyValue('--cell-width')).toBe('40px');
     expect(deleteCell?.className).toContain('text-center');
     expect(deleteCell?.className).not.toMatch(/p-0|!/);
+  });
+
+  it('fixes the Name column at 14rem so editing a key moves nothing', async () => {
+    await render(apiTool);
+    await act(async () => {
+      (
+        container.querySelector(
+          'button[aria-expanded][aria-controls]',
+        ) as HTMLElement
+      ).click();
+    });
+    const tables = Array.from(container.querySelectorAll('table'));
+    expect(tables).toHaveLength(3);
+    for (const table of tables) {
+      const name = table.querySelector<HTMLElement>('th')!;
+      expect(name.textContent).toBe('settings.tools.name');
+      expect(name.style.getPropertyValue('--cell-width')).toBe('14rem');
+    }
+    expect(container.innerHTML).not.toMatch(/min-w-\[(130|175)\.5px\]/);
+    const key = container.querySelector<HTMLInputElement>(
+      'input[readonly][value="Accept"]',
+    )!;
+    await act(async () => {
+      key.focus();
+      key.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    });
+    const save = container.querySelector<HTMLElement>(
+      'table button[aria-label="settings.tools.save"]',
+    )!;
+    const icons = save.parentElement!;
+    expect(icons.className).toContain('flex');
+    expect(icons.className).toContain('shrink-0');
+    expect(icons.className).toContain('gap-1');
+    const row = icons.parentElement!;
+    expect(row.className).toContain('flex');
+    expect(row.className).toContain('items-center');
+    expect(row.className).toContain('gap-2');
+    const input = row.querySelector('input')!;
+    expect(input.className).toContain('min-w-0');
+    expect(input.className).toContain('flex-1');
   });
 
   it('renders the add-property Cancel as a ghost pill', async () => {
@@ -872,10 +952,10 @@ describe('ToolConfig', () => {
     it('groups the actions as the drawer does, named in words', async () => {
       await renderLive(memory);
       expect(
-        Array.from(container.querySelectorAll('h4')).map((h) => h.textContent),
+        Array.from(container.querySelectorAll('h4')).map(titleWithCount),
       ).toEqual([
-        'settings.connectors.capabilityPlain.read · 1',
-        'settings.connectors.capabilityPlain.write · 2',
+        'settings.connectors.capabilityPlain.read [1]',
+        'settings.connectors.capabilityPlain.write [2]',
       ]);
       expect(group('read').textContent).toContain('Memory view');
       expect(group('read').textContent).not.toContain('memory_view');

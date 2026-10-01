@@ -120,6 +120,7 @@ export function PermissionRow({
  */
 export default function PermissionGroup({
   title,
+  count,
   values,
   options = PERMISSIONS,
   onChoose,
@@ -130,6 +131,8 @@ export default function PermissionGroup({
   ...rest
 }: {
   title: ReactNode;
+  /** SectionHeader's muted count after the title (a number or "2 of 5 allowed"). */
+  count?: ReactNode;
   /** The title's heading level (h4 by default). */
   headingAs?: 'h3' | 'h4' | 'h5' | 'h6';
   /** Every action's current permission. */
@@ -159,6 +162,7 @@ export default function PermissionGroup({
         as={headingAs}
         size="xs"
         title={title}
+        count={count}
         actions={
           <ToggleGroup
             type="single"

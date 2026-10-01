@@ -25,18 +25,42 @@ vi.mock('../agents/ApiWriteAllowlist', () => ({
   ),
 }));
 
-vi.mock('./ConfirmationModal', () => ({
-  default: ({
-    modalState,
-    handleSubmit,
-  }: {
-    modalState: string;
-    handleSubmit: () => void;
-  }) =>
-    modalState === 'ACTIVE' ? (
-      <button type="button" data-testid="confirm-key" onClick={handleSubmit} />
-    ) : null,
-}));
+// A light stand-in for the promise-aware confirm: a resolved submit closes
+// it, a rejected one keeps it open with `error`.
+vi.mock('./ConfirmationModal', async () => {
+  const { useState } = await import('react');
+  return {
+    default: function MockConfirm({
+      modalState,
+      setModalState,
+      handleSubmit,
+      error,
+    }: {
+      modalState: string;
+      setModalState: (s: string) => void;
+      handleSubmit: () => unknown;
+      error?: string;
+    }) {
+      const [failed, setFailed] = useState(false);
+      if (modalState !== 'ACTIVE') return null;
+      const submit = () => {
+        const result = handleSubmit();
+        if (result instanceof Promise) {
+          result.then(
+            () => setModalState('INACTIVE'),
+            () => setFailed(true),
+          );
+        } else setModalState('INACTIVE');
+      };
+      return (
+        <div data-testid="confirm">
+          {failed && <p data-testid="confirm-error">{error}</p>}
+          <button type="button" data-testid="confirm-key" onClick={submit} />
+        </div>
+      );
+    },
+  };
+});
 
 import type { Agent } from '../agents/types';
 import AgentDetailsModal from './AgentDetailsModal';
@@ -179,5 +203,46 @@ describe('AgentDetailsModal', () => {
     await act(async () => buttons[buttons.length - 1].click());
     const alert = document.querySelector('[role="alert"]');
     expect(alert?.textContent).toContain('modals.agentDetails.actionFailed');
+  });
+
+  const resetKey = async () => {
+    await render({ status: 'published' });
+    const [, apiKey] = generateButtons();
+    await act(async () => apiKey.click());
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>('[data-testid="confirm-key"]')!
+        .click(),
+    );
+  };
+
+  it('keeps a refused key reset in the confirm with the server message', async () => {
+    mocks.regenerateAgentKey.mockReturnValue(
+      respond({ success: false, message: 'Key locked' }, false),
+    );
+    await resetKey();
+    expect(document.querySelector('[data-testid="confirm"]')).not.toBeNull();
+    expect(
+      document.querySelector('[data-testid="confirm-error"]')?.textContent,
+    ).toBe('Key locked');
+    // Said once, in the dialog: no Alert in the modal underneath.
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('falls back to actionFailed when the reset request throws', async () => {
+    mocks.regenerateAgentKey.mockImplementation(() =>
+      Promise.reject(new Error('x')),
+    );
+    await resetKey();
+    expect(
+      document.querySelector('[data-testid="confirm-error"]')?.textContent,
+    ).toBe('modals.agentDetails.actionFailed');
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('closes the confirm once the key is reset', async () => {
+    mocks.regenerateAgentKey.mockReturnValue(respond({ key: 'new-key' }));
+    await resetKey();
+    expect(document.querySelector('[data-testid="confirm"]')).toBeNull();
   });
 });

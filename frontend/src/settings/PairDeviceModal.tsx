@@ -1,4 +1,3 @@
-import { ShieldAlert } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -8,10 +7,9 @@ import devicesService, {
   ApprovalMode,
   PairingResponse,
 } from '../api/services/devicesService';
-import CopyButton from '../components/CopyButton';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
-import { Card } from '../components/ui/card';
+import { CopyField } from '../components/ui/code-block';
 import { Input } from '../components/ui/input';
 import { Modal, ModalActions } from '../components/ui/modal';
 import {
@@ -177,7 +175,6 @@ export default function PairDeviceModal({
         </Select>
         {approvalMode === 'full' && (
           <Alert variant="destructive">
-            <ShieldAlert className="size-4" aria-hidden="true" />
             <AlertDescription>
               {t('settings.devices.pairing.fullAccessWarning')}
             </AlertDescription>
@@ -201,16 +198,7 @@ export default function PairDeviceModal({
         <span className="text-muted-foreground text-xs">
           {t('settings.devices.pairing.stepOne')}
         </span>
-        <Card
-          variant="filled"
-          padding="sm"
-          className="flex-row items-start gap-2"
-        >
-          <pre className="min-w-0 flex-1 font-mono text-xs wrap-break-word whitespace-pre-wrap select-all">
-            {installCommand}
-          </pre>
-          <CopyButton textToCopy={installCommand} />
-        </Card>
+        <CopyField value={installCommand} />
         {/* A 12px hint line, so the link takes the hint's size and weight. */}
         <p className="text-xs">
           <Button variant="link" size="text" asChild>
@@ -228,12 +216,9 @@ export default function PairDeviceModal({
         <span className="text-muted-foreground text-xs">
           {t('settings.devices.pairing.stepTwo')}
         </span>
-        <div className="bg-muted flex items-center gap-2 rounded-md p-3">
-          <div className="grow text-center font-mono text-3xl tracking-widest select-all">
-            {userCode || '...'}
-          </div>
-          {userCode && <CopyButton textToCopy={userCode} />}
-        </div>
+        <CopyField value={userCode} size="display">
+          {userCode || '…'}
+        </CopyField>
       </div>
       <p className="text-muted-foreground text-xs">
         {t('settings.devices.pairing.waitingForCli')}

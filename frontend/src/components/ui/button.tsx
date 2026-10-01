@@ -26,11 +26,14 @@ const buttonVariantOptions = {
     icon: "size-9 text-sm font-medium [&_svg:not([class*='size-'])]:size-5",
     // A standalone link (Show all, a picker footer): no height or
     // padding, but 14px medium, so it still reads as a control.
-    inline: 'h-auto p-0 text-sm font-medium',
+    // Both link sizes draw an unsized icon at 12px: a trailing link icon
+    // (ArrowRight, ExternalLink) is 12px. A leading icon sets its own size-4.
+    inline:
+      "h-auto p-0 text-sm font-medium [&_svg:not([class*='size-'])]:size-3",
     // A link in running text: no height or padding and no type of its
     // own, so it takes the sentence's size, weight and line-height and
     // wraps with the text. The variant's colour stays (primary for link).
-    text: 'h-auto p-0',
+    text: "h-auto p-0 [&_svg:not([class*='size-'])]:size-3",
   },
   variant: {
     default: 'bg-primary text-primary-foreground hover:bg-primary/90',

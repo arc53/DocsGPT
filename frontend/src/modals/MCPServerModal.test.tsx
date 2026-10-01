@@ -114,14 +114,14 @@ describe('MCPServerModal', () => {
     expect(text()).toContain(
       'settings.tools.mcp.sharedByEditor:{"owner":"Lena Fischer"}',
     );
-    // Informative, not announced: a quiet default Alert with role="note".
+    // Informative, not announced: an info Alert with role="note".
     const note = Array.from(
       document.body.querySelectorAll<HTMLElement>('[data-slot="alert"]'),
     ).find((a) =>
       a.textContent?.includes('settings.tools.mcp.sharedCredentialsNotice'),
     );
     expect(note?.getAttribute('role')).toBe('note');
-    expect(note?.dataset.variant).toBe('default');
+    expect(note?.dataset.variant).toBe('info');
   });
 
   it('masks the API key and bearer token fields', async () => {

@@ -1,4 +1,4 @@
-import { CalendarIcon, CircleAlert } from 'lucide-react';
+import { CalendarIcon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -304,7 +304,6 @@ export default function ScheduleFormModal({
 
         {runAtError && (
           <Alert variant="destructive">
-            <CircleAlert aria-hidden="true" className="size-4" />
             <AlertDescription>{runAtError}</AlertDescription>
           </Alert>
         )}

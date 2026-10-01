@@ -48,7 +48,6 @@ describe('ToggleGroup', () => {
     const on = itemClasses(html, '30d');
     const off = itemClasses(html, '7d');
     expect(on).toContain('data-[state=on]:bg-background');
-    expect(on).toContain('data-[state=on]:border-border');
     expect(off).toContain('text-muted-foreground');
     expect(html).toMatch(/aria-checked="true"[^>]*>30d</);
   });
@@ -90,5 +89,44 @@ describe('ToggleGroup', () => {
     expect(item).toEqual(expect.arrayContaining(['flex-1', 'min-w-0', 'px-1']));
     expect(item).not.toContain('px-3');
     expect(html).not.toContain('fill=');
+  });
+
+  it('outlines the on item in muted-foreground, one token in both themes', () => {
+    const on = itemClasses(range('30'), '30d').split(' ');
+    expect(on).toContain('data-[state=on]:border-muted-foreground');
+    // No opacity modifier and no dark override for the border.
+    expect(on.filter((c) => c.includes('border-') && c.includes('/'))).toEqual(
+      [],
+    );
+    expect(on).not.toContain('data-[state=on]:border-border');
+    expect(on).not.toContain('data-[state=on]:dark:border-input');
+  });
+
+  it('draws a count after the label: muted, normal weight, tabular', () => {
+    const html = renderToStaticMarkup(
+      <ToggleGroup type="single" value="all" aria-label="Filter">
+        <ToggleGroupItem value="all" count={1234}>
+          All
+        </ToggleGroupItem>
+        <ToggleGroupItem value="some" count="2 of 5">
+          Some
+        </ToggleGroupItem>
+        <ToggleGroupItem value="none">None</ToggleGroupItem>
+      </ToggleGroup>,
+    );
+    const counts = [
+      ...html.matchAll(/<span data-slot="count" class="([^"]*)">([^<]*)</g),
+    ];
+    expect(counts.map((m) => m[2])).toEqual(['1,234', '2 of 5']);
+    // Muted on the on item too (the item's own on-colour is foreground).
+    expect(counts[0][1].split(' ')).toEqual(
+      expect.arrayContaining([
+        'text-muted-foreground',
+        'font-normal',
+        'tabular-nums',
+      ]),
+    );
+    expect(html).toMatch(/aria-checked="true"[^>]*>All<span data-slot="count"/);
+    expect(html).toContain('>None</button>');
   });
 });
