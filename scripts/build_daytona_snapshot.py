@@ -1,26 +1,31 @@
-"""Build a Daytona snapshot preloaded with the artifact-render libraries.
+"""Build a Daytona snapshot preloaded with the render and spreadsheet libraries.
 
 The Daytona managed sandbox backend (``SANDBOX_BACKEND=daytona``) creates each
 session from a snapshot. The default snapshot is a plain Python image, so the
 ``artifact`` tool's renderers — which ``import`` ``python-pptx`` / ``python-docx``
 / ``openpyxl`` / ``reportlab`` inside the sandbox — fail with
-``render failed: ExecutionError``. This script bakes those libraries into a
-snapshot once; point ``DAYTONA_SNAPSHOT`` at its name to fix rendering on Daytona.
+``render failed: ExecutionError``, and spreadsheets a chat hands to
+``code_executor`` cannot be opened with ``pandas``. This script bakes those
+libraries into a snapshot once; point ``DAYTONA_SNAPSHOT`` at its name.
 
 Usage::
 
     # Reads DAYTONA_API_KEY / DAYTONA_API_URL / DAYTONA_TARGET from .env (settings):
     python scripts/build_daytona_snapshot.py
-    python scripts/build_daytona_snapshot.py --name docsgpt-artifacts-py312 --python 3.12
+    python scripts/build_daytona_snapshot.py --name docsgpt-sandbox-py312 --python 3.12
 
 Then set in .env::
 
-    DAYTONA_SNAPSHOT=docsgpt-artifacts-py312
+    DAYTONA_SNAPSHOT=docsgpt-sandbox-py312
 
-Keep the render-library pins in sync with the self-hosted runner image
-(deployment/sandbox/Dockerfile) so the Daytona render output matches the
-Jupyter-backend output. lxml and pillow are not pinned in the runner (pip
-resolves them there); they are pinned here only to keep the snapshot
+A snapshot's contents are fixed once built, so a snapshot made by an older
+version of this script (``docsgpt-artifacts-py312``) lacks pandas; build the
+new name and switch ``DAYTONA_SNAPSHOT`` to it.
+
+Keep the library pins in sync with the self-hosted runner image
+(deployment/sandbox/Dockerfile) so the Daytona output matches the
+Jupyter-backend output. lxml, pillow and numpy are not pinned in the runner
+(pip resolves them there); they are pinned here only to keep the snapshot
 reproducible.
 """
 
@@ -29,18 +34,21 @@ from __future__ import annotations
 import argparse
 import sys
 
-# Render libraries imported by the artifact tool's renderers, pinned to the
-# same versions as deployment/sandbox/Dockerfile.
-RENDER_PINS = [
+# Libraries imported by the artifact tool's renderers and by code reading the
+# spreadsheets a chat stages into the sandbox, pinned to the same versions as
+# deployment/sandbox/Dockerfile.
+SNAPSHOT_PINS = [
     "python-pptx==1.0.2",
     "python-docx==1.1.2",
     "openpyxl==3.1.5",
     "reportlab==4.2.5",
+    "pandas==2.2.3",
+    "numpy==2.1.3",
     "lxml==6.0.2",
     "pillow==11.3.0",
 ]
 
-DEFAULT_NAME = "docsgpt-artifacts-py312"
+DEFAULT_NAME = "docsgpt-sandbox-py312"
 DEFAULT_PYTHON = "3.12"
 
 
@@ -90,8 +98,8 @@ def main(argv: list[str]) -> int:
             if type(exc).__name__ != "DaytonaNotFoundError" and "not found" not in str(exc).lower():
                 print(f"warning: get({args.name!r}) probe: {type(exc).__name__}: {exc}", file=sys.stderr)
 
-    image = Image.debian_slim(args.python).pip_install(RENDER_PINS)
-    print(f"building snapshot {args.name!r} (python {args.python}) with: {', '.join(RENDER_PINS)}")
+    image = Image.debian_slim(args.python).pip_install(SNAPSHOT_PINS)
+    print(f"building snapshot {args.name!r} (python {args.python}) with: {', '.join(SNAPSHOT_PINS)}")
     print("--- build logs ---")
     try:
         snap = client.snapshot.create(

@@ -185,10 +185,15 @@ at it:
 
 ```bash
 # Reads DAYTONA_API_KEY / DAYTONA_API_URL / DAYTONA_TARGET from .env:
-python scripts/build_daytona_snapshot.py        # builds "docsgpt-artifacts-py312"
+python scripts/build_daytona_snapshot.py        # builds "docsgpt-sandbox-py312"
 # then in .env:
-#   DAYTONA_SNAPSHOT=docsgpt-artifacts-py312
+#   DAYTONA_SNAPSHOT=docsgpt-sandbox-py312
 ```
+
+The snapshot also carries `pandas` and `openpyxl`, so spreadsheets a chat
+hands to `code_executor` can be opened there. A snapshot built by an earlier
+version of the script (`docsgpt-artifacts-py312`) has no pandas: build the
+new name and switch `DAYTONA_SNAPSHOT` to it.
 
 The snapshot lives in **your** Daytona account, so each deployment builds its
 own — the script is idempotent and skips if the name already exists. Keep the

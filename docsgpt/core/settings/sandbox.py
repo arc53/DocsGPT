@@ -77,7 +77,7 @@ class SandboxSettings(SettingsGroup):
     DAYTONA_TARGET: Optional[str] = Field(default=None, description='Daytona region/target, e.g. "us".')
     DAYTONA_SNAPSHOT: Optional[str] = Field(
         default=None,
-        description="Image for new sandboxes; render libs via scripts/build_daytona_snapshot.py.",
+        description="Image for new sandboxes; build one with the render and spreadsheet libs via scripts/build_daytona_snapshot.py.",
     )
     DAYTONA_LANGUAGE: str = Field(default="python", description="Default runtime language for created sandboxes.")
     DAYTONA_AUTO_STOP_INTERVAL: int = Field(

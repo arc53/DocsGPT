@@ -536,9 +536,27 @@ def test_description_lists_daytona_snapshot_packages(monkeypatch):
 
     monkeypatch.setattr(settings_module.settings, "SANDBOX_BACKEND", "daytona", raising=False)
     monkeypatch.setattr(
-        settings_module.settings, "DAYTONA_SNAPSHOT", "docsgpt-artifacts-py312", raising=False
+        settings_module.settings, "DAYTONA_SNAPSHOT", "docsgpt-sandbox-py312", raising=False
     )
     desc = _tool().get_actions_metadata()[0]["description"]
-    assert "python-pptx" in desc
-    # The snapshot bakes render libs only, not pandas.
-    assert "pandas" not in desc
+    for pkg in ("python-pptx", "pandas", "openpyxl"):
+        assert pkg in desc
+    # A snapshot built before pandas was added still works: the model is told to pip install on import failure.
+    assert "pip install" in desc
+
+
+def test_daytona_snapshot_bakes_the_spreadsheet_libraries():
+    """Spreadsheets reach the sandbox by ref; the snapshot must be able to open them."""
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "build_daytona_snapshot.py"
+    spec = importlib.util.spec_from_file_location("build_daytona_snapshot", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    names = {pin.split("==")[0] for pin in module.SNAPSHOT_PINS}
+    assert {"pandas", "openpyxl"} <= names
+    dockerfile = (Path(__file__).resolve().parents[1] / "deployment" / "sandbox" / "Dockerfile").read_text()
+    for pin in module.SNAPSHOT_PINS:
+        if pin.split("==")[0] in ("pandas", "openpyxl", "python-pptx", "python-docx", "reportlab"):
+            assert pin in dockerfile, f"{pin} drifted from the runner image"
