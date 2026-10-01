@@ -70,10 +70,12 @@ def seed_fixture_file(conn, sdir: Path, entry: dict, *, user=USER) -> str:
     )
 
 
-def tool_for(current=(), earlier=(), **config):
-    return AttachmentsTool(
-        build_attachments_tool_config(user=USER, current_ids=list(current), earlier_ids=list(earlier), **config)
-    )
+def tool_for(current=(), earlier=(), conversation_id=None, **config):
+    built = build_attachments_tool_config(user=USER, current_ids=list(current), earlier_ids=list(earlier), **config)
+    if conversation_id:
+        # The executor stamps the conversation onto every tool's config.
+        built["conversation_id"] = conversation_id
+    return AttachmentsTool(built)
 
 
 def body_of(result: str) -> str:
@@ -334,3 +336,175 @@ class TestReadPdfPages:
         monkeypatch.setattr("docsgpt.agents.tools.attachments._storage", lambda: _Gone())
         result = tool_for(current=[row_id]).execute_action("attachments_read", ref="F1", pages="2")
         assert "original file" in result and "offset" in result
+
+
+@pytest.fixture(scope="module")
+def rc02(tmp_path_factory):
+    out = tmp_path_factory.mktemp("ma")
+    manifest = gen.generate_scenario("RC-02", out, "small", groups=["shots"])
+    return out / "RC-02", manifest
+
+
+@pytest.fixture(scope="module")
+def rc12(tmp_path_factory):
+    out = tmp_path_factory.mktemp("ma")
+    manifest = gen.generate_scenario("RC-12", out, "small", groups=["scanned_books"])
+    return out / "RC-12", manifest
+
+
+needs_poppler = pytest.mark.skipif(
+    __import__("shutil").which("pdftoppm") is None, reason="pdf2image needs poppler"
+)
+
+
+def seed_shot(db, rc02, index=0, *, ocr=""):
+    sdir, manifest = rc02
+    entry = [f for f in manifest["files"] if f["group"] == "shots"][index]
+    return seed(
+        db, entry["name"], ocr, mime=entry["mime"], path=str(sdir / entry["path"]),
+        content_hash=entry["sha256"], status="ok" if ocr else "no_text",
+    ), entry
+
+
+def seed_scan(db, rc12, index=0):
+    sdir, manifest = rc12
+    entry = [f for f in manifest["files"] if f["group"] == "scanned_books"][index]
+    return seed(
+        db, entry["name"], "", mime="application/pdf", path=str(sdir / entry["path"]),
+        content_hash=entry["sha256"], status="no_text", page_count=entry["pages"],
+    ), entry
+
+
+@pytest.mark.unit
+class TestNativeImages:
+    """RC-02: screenshots are looked at, not read, when the model has vision."""
+
+    def test_with_vision_the_image_is_queued_for_a_follow_up_message(self, db, rc02):
+        shot, entry = seed_shot(db, rc02)
+        tool = tool_for(current=[shot], vision=True, max_native_parts=10)
+
+        result = tool.execute_action("attachments_read", ref="F1")
+
+        assert "F1" in result and "attached" in result and "below" in result
+        parts = tool.drain_native_parts()
+        assert len(parts) == 1
+        attachment = parts[0]["attachment"]
+        assert attachment["mime_type"] == entry["mime"]
+        assert attachment["path"] == str(rc02[0] / entry["path"])
+        assert "F1" in parts[0]["label"] and entry["name"] in parts[0]["label"]
+        assert tool.drain_native_parts() == []
+
+    def test_without_vision_it_says_it_cannot_see_the_image(self, db, rc02):
+        shot, _entry = seed_shot(db, rc02)
+        tool = tool_for(current=[shot], vision=False, max_native_parts=10)
+        result = tool.execute_action("attachments_read", ref="F1")
+        assert "cannot be read by this model" in result
+        assert tool.drain_native_parts() == []
+
+    def test_without_vision_stored_ocr_text_is_returned(self, db, rc02):
+        shot, _entry = seed_shot(db, rc02, ocr="Quote: the early bird")
+        tool = tool_for(current=[shot], vision=False)
+        result = tool.execute_action("attachments_read", ref="F1")
+        assert "the early bird" in result and "untrusted data" in result
+
+    def test_the_turns_image_budget_is_respected(self, db, rc02):
+        first, _ = seed_shot(db, rc02, 0)
+        second, _ = seed_shot(db, rc02, 1)
+        tool = tool_for(current=[first, second], vision=True, max_native_parts=1)
+        tool.execute_action("attachments_read", ref="F1")
+        result = tool.execute_action("attachments_read", ref="F2")
+        assert "limit" in result
+        assert len(tool.drain_native_parts()) == 1
+
+    def test_listing_says_images_can_be_viewed(self, db, rc02):
+        shot, _entry = seed_shot(db, rc02)
+        listing = tool_for(current=[shot], vision=True, max_native_parts=5).execute_action("attachments_list")
+        assert "view" in [line for line in listing.splitlines() if "F1" in line][0]
+
+
+@pytest.mark.unit
+class TestScannedPages:
+    """RC-12: scanned books have no text; pages are rendered for a vision model."""
+
+    @needs_poppler
+    def test_scanned_pdf_pages_are_rendered(self, db, storage, rc12):
+        scan, entry = seed_scan(db, rc12)
+        tool = tool_for(current=[scan], vision=True, max_native_parts=10)
+
+        result = tool.execute_action("attachments_read", ref="F1")
+
+        parts = tool.drain_native_parts()
+        assert [p["attachment"]["page"] for p in parts] == list(range(1, entry["pages"] + 1))
+        assert all(p["attachment"]["mime_type"] == "image/png" and p["attachment"]["data"] for p in parts)
+        assert "page" in parts[0]["label"] and "F1" in parts[0]["label"]
+        assert "attached" in result and "below" in result
+
+    @needs_poppler
+    def test_requested_page_only(self, db, storage, rc12):
+        scan, _entry = seed_scan(db, rc12)
+        tool = tool_for(current=[scan], vision=True, max_native_parts=10)
+        tool.execute_action("attachments_read", ref="F1", pages="2")
+        assert [p["attachment"]["page"] for p in tool.drain_native_parts()] == [2]
+
+    def test_page_cap_per_call(self, db, storage, rc12, monkeypatch):
+        scan, _entry = seed_scan(db, rc12)
+        rendered = []
+
+        def _render(path, pages):
+            rendered.extend(pages)
+            return [{"data": "aGk=", "mime_type": "image/png", "page": p} for p in pages]
+
+        monkeypatch.setattr("docsgpt.agents.tools.attachments._render_pages", _render)
+        monkeypatch.setattr(
+            "docsgpt.agents.tools.attachments._pdf_page_texts",
+            lambda data, pages: (400, {p: "" for p in pages}),
+        )
+        tool = tool_for(current=[scan], vision=True, max_native_parts=40)
+        result = tool.execute_action("attachments_read", ref="F1", pages="1-12")
+        assert rendered == [1, 2, 3, 4, 5]
+        assert 'pages="6-' in result
+
+    def test_without_vision_a_scan_cannot_be_read(self, db, storage, rc12):
+        scan, _entry = seed_scan(db, rc12)
+        tool = tool_for(current=[scan], vision=False)
+        assert "cannot be read by this model" in tool.execute_action("attachments_read", ref="F1")
+        assert "cannot be read by this model" in tool.execute_action("attachments_read", ref="F1", pages="1")
+        assert tool.drain_native_parts() == []
+
+
+@pytest.mark.unit
+class TestImageArtifacts:
+    def test_an_image_artifact_is_viewed_by_its_a_ref(self, db):
+        from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+        conversation = ConversationsRepository(db).create(USER, "c")
+        ArtifactsRepository(db).create_artifact(
+            USER, "file", conversation_id=str(conversation["id"]), title="chart",
+            mime_type="image/png", filename="chart.png", storage_path="artifacts/x/chart.png",
+        )
+        a = seed(db, "a.txt", "alpha")
+        tool = tool_for(current=[a], vision=True, max_native_parts=5, conversation_id=str(conversation["id"]))
+
+        result = tool.execute_action("attachments_read", ref="A1")
+
+        assert "A1" in result and "below" in result
+        parts = tool.drain_native_parts()
+        assert parts[0]["attachment"] == {
+            "path": "artifacts/x/chart.png", "mime_type": "image/png", "filename": "chart.png",
+        }
+
+    def test_artifacts_of_other_conversations_are_not_reachable(self, db):
+        from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+        mine = ConversationsRepository(db).create(USER, "mine")
+        other = ConversationsRepository(db).create("someone-else", "theirs")
+        ArtifactsRepository(db).create_artifact(
+            "someone-else", "file", conversation_id=str(other["id"]),
+            mime_type="image/png", filename="secret.png", storage_path="artifacts/s.png",
+        )
+        a = seed(db, "a.txt", "alpha")
+        tool = tool_for(current=[a], vision=True, max_native_parts=5, conversation_id=str(mine["id"]))
+        assert "not found" in tool.execute_action("attachments_read", ref="A1")
+        assert tool.drain_native_parts() == []

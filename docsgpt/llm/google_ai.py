@@ -1,3 +1,4 @@
+import base64
 import logging
 
 from google import genai
@@ -194,6 +195,9 @@ class GoogleLLM(BaseLLM):
         Returns:
             bytes: Raw file bytes.
         """
+        if attachment.get("data"):
+            # A rendered page (PDF to image) carries its bytes as base64.
+            return base64.b64decode(attachment["data"])
         file_path = attachment.get("path")
         if not file_path:
             raise ValueError("No file path provided in attachment")

@@ -421,6 +421,7 @@ def convert_pdf_to_images(
     max_pages: int = 20,
     dpi: int = 150,
     image_format: str = "PNG",
+    first_page: int = 1,
 ) -> List[dict]:
     """
     Convert PDF pages to images for LLMs that support images but not PDFs.
@@ -434,6 +435,7 @@ def convert_pdf_to_images(
         max_pages: Maximum number of pages to convert (default 20 to avoid context overflow)
         dpi: Resolution for rendering (default 150 for balance of quality/size)
         image_format: Output format (PNG recommended for quality)
+        first_page: 1-based page to start at; ``max_pages`` pages are rendered from it
 
     Returns:
         List of dicts with keys:
@@ -457,6 +459,8 @@ def convert_pdf_to_images(
 
     images_data = []
     mime_type = f"image/{image_format.lower()}"
+    first_page = max(int(first_page or 1), 1)
+    last_page = first_page + max(int(max_pages), 1) - 1
 
     try:
         # Get PDF content either from storage or direct file path
@@ -467,19 +471,19 @@ def convert_pdf_to_images(
                     pdf_bytes,
                     dpi=dpi,
                     fmt=image_format.lower(),
-                    first_page=1,
-                    last_page=max_pages,
+                    first_page=first_page,
+                    last_page=last_page,
                 )
         else:
             pil_images = convert_from_path(
                 file_path,
                 dpi=dpi,
                 fmt=image_format.lower(),
-                first_page=1,
-                last_page=max_pages,
+                first_page=first_page,
+                last_page=last_page,
             )
 
-        for page_num, pil_image in enumerate(pil_images, start=1):
+        for page_num, pil_image in enumerate(pil_images, start=first_page):
             # Convert PIL image to base64
             buffer = io.BytesIO()
             pil_image.save(buffer, format=image_format)

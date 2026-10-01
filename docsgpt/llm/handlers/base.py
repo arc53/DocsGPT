@@ -1572,7 +1572,59 @@ class LLMHandler(ABC):
                         "status": "error",
                     },
                 }
+        updated_messages = self.append_native_reads(agent, updated_messages, paused=bool(pending_actions))
         return updated_messages, pending_actions if pending_actions else None
+
+    def append_native_reads(
+        self, agent, messages: List[Dict], executor: Any = None, *, paused: bool = False
+    ) -> List[Dict]:
+        """Show the model the images its tool calls asked for.
+
+        ``attachments_read`` on an image or a scanned page queues the image
+        on the executor. Chat Completions takes no images inside ``tool``
+        messages, so they go in a user message after the tool results, built
+        by the provider's own ``prepare_messages_with_attachments`` (image
+        parts for OpenAI and the Responses API, image blocks merged into the
+        tool-result turn for Anthropic, inline bytes for Google).
+
+        Args:
+            agent: The agent; its LLM formats the parts.
+            messages: The messages after the tool results.
+            executor: Executor holding the queue; the agent's by default.
+            paused: The batch paused for the client or an approval. The
+                images are dropped: the paused state is saved and resumed
+                with the messages, and base64 images do not belong there.
+
+        Returns:
+            The messages, with the follow-up message when there were images.
+        """
+        executor = executor if executor is not None else getattr(agent, "tool_executor", None)
+        parts = getattr(executor, "pending_native_parts", None)
+        if not isinstance(parts, list) or not parts:
+            return messages
+        executor.pending_native_parts = []
+        if paused:
+            logger.info("Dropping %d requested image(s): the tool batch paused", len(parts))
+            return messages
+        from docsgpt.agents.tools.attachments import native_reads_note
+
+        labels = [str(p.get("label") or "image") for p in parts]
+        attachments = [p.get("attachment") for p in parts if isinstance(p.get("attachment"), dict)]
+        note = {"role": "user", "content": [{"type": "text", "text": native_reads_note(labels)}]}
+        try:
+            return agent.llm.prepare_messages_with_attachments([*messages, note], attachments)
+        except Exception as e:
+            logger.error(f"Could not attach requested images: {e}", exc_info=True)
+            return [
+                *messages,
+                {
+                    "role": "user",
+                    "content": (
+                        f"[The images requested with attachments_read ({'; '.join(labels)}) could not be "
+                        "attached. Tell the user they could not be viewed; do not guess what they show.]"
+                    ),
+                },
+            ]
 
     def handle_non_streaming(
         self, agent, response: Any, tools_dict: Dict, messages: List[Dict]
