@@ -759,3 +759,28 @@ class TestHonestStreamErrors:
         assert "QUJDQUJD" not in kwargs["metadata"]["error"]
         assert kwargs["metadata"]["error_code"] == "server_error"
         assert errors[-1]["code"] == "server_error"
+
+    def test_a_v1_turn_gets_the_api_wording(self, mock_mongo_db, flask_app):
+        from docsgpt.agents.context_overflow import ContextOverflowError
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            agent = MagicMock()
+            agent.is_v1 = True
+            agent.gen.side_effect = ContextOverflowError(
+                "raw", needed_tokens=300_000, available_tokens=200_000, stage="dispatch"
+            )
+            stream = list(
+                resource.complete_stream(
+                    question="Test?",
+                    agent=agent,
+                    conversation_id=None,
+                    user_api_key=None,
+                    decoded_token={"sub": "user123"},
+                    should_persist=False,
+                )
+            )
+        error = [json.loads(s.split("data: ", 1)[1]) for s in stream if '"type": "error"' in s][-1]
+        assert error["code"] == "context_length_exceeded"
+        assert "Add as Knowledge" not in error["error"]

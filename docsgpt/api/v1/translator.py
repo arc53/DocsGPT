@@ -877,7 +877,18 @@ def translate_stream_event(
                 "type": "server_error",
             }
         }
-        chunks.append(f"data: {json.dumps(error_data)}\n\n")
+        if event_data.get("code") == "context_length_exceeded":
+            # What OpenAI answers before a stream, sent as the stream's last
+            # frame: the turn is over, so the stream is closed with [DONE].
+            error_data["error"].update(
+                {"type": "invalid_request_error", "param": "messages", "code": "context_length_exceeded"}
+            )
+            chunks.append(f"data: {json.dumps(error_data)}\n\n")
+            if not state.done:
+                chunks.append("data: [DONE]\n\n")
+                state.done = True
+        else:
+            chunks.append(f"data: {json.dumps(error_data)}\n\n")
 
     elif event_type == "structured_answer":
         raw = event_data.get("answer", "")

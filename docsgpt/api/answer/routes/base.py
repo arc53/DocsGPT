@@ -1627,7 +1627,9 @@ class BaseAnswerResource:
             # What the user is told and what the failed row keeps: curated
             # text with a code, never the exception (a provider error can echo
             # the request, base64 file parts included).
-            public_error = user_facing_error(e)
+            public_error = user_facing_error(
+                e, surface="v1" if getattr(agent, "is_v1", False) is True else "chat"
+            )
             trace = tracing.current_trace()
             if trace is not None:
                 trace.outcome = tracing.STATUS_ERROR

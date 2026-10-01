@@ -26,6 +26,7 @@ from docsgpt.api.answer.services.stream_processor import (
     StreamProcessor,
     flush_trace_after_request,
 )
+from docsgpt.agents.context_overflow import ContextOverflowError
 from docsgpt.api.v1 import idempotency as v1_idempotency
 from docsgpt.api.v1.attachments import ingest_inline_files
 from docsgpt.api.v1.session_store import (
@@ -45,6 +46,7 @@ from docsgpt.api.v1.translator import (
 )
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+from docsgpt.error import CONTEXT_LENGTH_EXCEEDED, user_facing_error
 from docsgpt.storage.db.session import db_readonly
 from docsgpt.streaming.sse_keepalive import with_sse_keepalive
 
@@ -90,6 +92,24 @@ def _invalid_request(message: str, code: Optional[str] = None) -> Response:
         }),
         400,
     )
+
+
+def _context_length_error(message: str) -> Dict[str, Any]:
+    """The OpenAI error object for a request that does not fit the model."""
+    return {
+        "error": {
+            "message": message,
+            "type": "invalid_request_error",
+            "param": "messages",
+            "code": CONTEXT_LENGTH_EXCEEDED,
+        }
+    }
+
+
+def _context_length_response(error: BaseException) -> Response:
+    """HTTP 400 ``context_length_exceeded``, as OpenAI answers an oversized request."""
+    message = user_facing_error(error, surface="v1").message
+    return make_response(jsonify(_context_length_error(message)), 400)
 
 
 def _convert_inline_files(internal_data: Dict[str, Any], user: str) -> None:
@@ -482,6 +502,11 @@ def chat_completions():
             }),
             409,
         )
+    except ContextOverflowError as e:
+        if idem_key:
+            v1_idempotency.release(idem_key)
+        logger.info(f"/v1/chat/completions request does not fit the model: {e}")
+        return _context_length_response(e)
     except ValueError as e:
         if idem_key:
             v1_idempotency.release(idem_key)
@@ -625,6 +650,8 @@ def _non_stream_response(
 
     result = helper.process_response_stream(stream)
 
+    if result["error"] and result.get("error_code") == CONTEXT_LENGTH_EXCEEDED:
+        return make_response(jsonify(_context_length_error(result["error"])), 400)
     if result["error"]:
         return make_response(
             jsonify({"error": {"message": result["error"], "type": "server_error"}}),
