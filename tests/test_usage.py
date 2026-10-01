@@ -190,9 +190,10 @@ def test_stream_token_usage_matches_whole_text_token_count(monkeypatch):
     BPE merges across a split point, so summing each chunk's token count on
     its own can only be greater than or equal to tokenizing the joined text
     once; splitting mid-word is the simplest way to force that. ``generated_tokens``
-    feeds billing and quota, so a provider that streams in small deltas (every
-    provider except OpenAI and Anthropic, which report their own usage) must
-    not be charged more than one that returns the identical text unstreamed.
+    feeds billing and quota, so a provider that streams in small deltas and does
+    not report its own usage (Gemini, or an OpenAI-compatible server that ignores
+    ``stream_options``) must not be charged more than one that returns the
+    identical text unstreamed.
     """
     _install_fake_token_repo(monkeypatch)
     text = "The quick brown fox jumps over the lazy dog repeatedly until it gets tired."
