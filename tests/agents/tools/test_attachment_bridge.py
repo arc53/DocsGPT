@@ -561,15 +561,15 @@ def test_an_existing_bridge_is_not_reused_past_the_cap(monkeypatch):
 
 @pytest.mark.unit
 def test_code_executor_refuses_an_oversize_attachment_with_a_clear_message(monkeypatch):
-    import docsgpt.agents.tools.code_executor as ce_mod
+    from docsgpt.agents.tools.code_executor import CodeExecutorTool
     from docsgpt.core import settings as settings_module
 
     storage, calls = _patch_bridge(monkeypatch)
     monkeypatch.setattr(settings_module.settings, "SANDBOX_MAX_INPUT_BYTES", 1024 * 1024)
     big = {**_attachment(filename="ledger.xlsx"), "size": 3 * 1024 * 1024}
     _FakeAttachmentsRepo.rows = {big["id"]: big}
-    monkeypatch.setattr(ce_mod, "match_attachment", bridge_mod.match_attachment)
-    tool = ce_mod.CodeExecutorTool({"conversation_id": CONV, "attachments": [big]}, user_id=USER)
+    monkeypatch.setattr("docsgpt.agents.tools.code_executor.match_attachment", bridge_mod.match_attachment)
+    tool = CodeExecutorTool({"conversation_id": CONV, "attachments": [big]}, user_id=USER)
 
     out = tool._bridge_chat_attachment("F1")
 
