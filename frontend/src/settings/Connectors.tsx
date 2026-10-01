@@ -111,8 +111,8 @@ export default function Connectors() {
     searchParams.delete('capability');
     setSearchParams(searchParams, { replace: true });
   };
-  // Listed for syncing (Knowledge's Connect a service, Add knowledge's Browse
-  // all connectors): a connect starts with Sync into Knowledge on.
+  // Listed for syncing (Add knowledge's Browse all connectors): a connect
+  // starts with Sync into Knowledge on.
   const withPurpose = (options: LaunchOptions = {}): LaunchOptions =>
     capability === 'sync' ? { ...options, purpose: 'knowledge' } : options;
 
