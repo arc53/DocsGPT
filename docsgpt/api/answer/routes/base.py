@@ -5,6 +5,7 @@ import json
 import logging
 import threading
 import time
+import traceback
 import uuid
 from typing import Any, Callable, Dict, Generator, List, Optional
 
@@ -1627,7 +1628,14 @@ class BaseAnswerResource:
             tracing.discard(tracing.current_trace())
             return
         except Exception as e:
-            logger.error(f"Error in stream: {str(e)}", exc_info=True)
+            # Bounded and without the exception attached: a provider error can
+            # echo the request, base64 file parts included. The frames still
+            # say where it failed.
+            logger.error(
+                "Error in stream: %s\n%s",
+                bounded_error_text(e),
+                "".join(traceback.format_tb(e.__traceback__)),
+            )
             # What the user is told and what the failed row keeps: curated
             # text with a code, never the exception (a provider error can echo
             # the request, base64 file parts included).

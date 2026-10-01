@@ -215,6 +215,8 @@ class InlineFile:
         content_hash: sha256 hex of ``data``; the key attachment rows are
             deduplicated by.
         kind: ``file`` or ``image``.
+        earlier: Also sent in a user message before the last one: a
+            stateless client re-sending a file of an earlier turn.
     """
 
     data: bytes = field(repr=False)
@@ -222,6 +224,7 @@ class InlineFile:
     mime_type: str
     content_hash: str
     kind: str
+    earlier: bool = False
 
 
 def _split_data_url(value: Any) -> Optional[tuple]:
@@ -286,7 +289,8 @@ def collect_inline_files(messages: List[Dict[str, Any]]) -> List[InlineFile]:
     """The files sent inline in any user message, once each, in order.
 
     Clients re-send every earlier file on every turn and in every tool
-    round; identical bytes are collected once. ``file_id`` parts (the
+    round; identical bytes are collected once, marked ``earlier`` when they
+    were first sent before the last user message. ``file_id`` parts (the
     client's own Files-API ids) and remote image URLs are not inline and
     are left alone.
 
@@ -297,14 +301,19 @@ def collect_inline_files(messages: List[Dict[str, Any]]) -> List[InlineFile]:
         One entry per distinct file, in the order first seen.
     """
     files: List[InlineFile] = []
-    seen: set = set()
+    seen: Dict[str, int] = {}
     counters = {"file": 0, "image": 0}
-    for message in messages or []:
+    user_indexes = [
+        i for i, m in enumerate(messages or []) if isinstance(m, dict) and m.get("role") == "user"
+    ]
+    last_user = user_indexes[-1] if user_indexes else -1
+    for index, message in enumerate(messages or []):
         if not isinstance(message, dict) or message.get("role") != "user":
             continue
         content = message.get("content")
         if not isinstance(content, list):
             continue
+        earlier = index != last_user
         for part in content:
             if not isinstance(part, dict) or part.get("type") not in INLINE_PART_TYPES:
                 continue
@@ -318,7 +327,7 @@ def collect_inline_files(messages: List[Dict[str, Any]]) -> List[InlineFile]:
             digest = hashlib.sha256(data).hexdigest()
             if digest in seen:
                 continue
-            seen.add(digest)
+            seen[digest] = len(files)
             counters[kind] += 1
             if not mime_type and filename:
                 mime_type = mimetypes.guess_type(str(filename).lower())[0]
@@ -332,6 +341,7 @@ def collect_inline_files(messages: List[Dict[str, Any]]) -> List[InlineFile]:
                     mime_type=mime_type or mimetypes.guess_type(name)[0] or "application/octet-stream",
                     content_hash=digest,
                     kind=kind,
+                    earlier=earlier,
                 )
             )
     return files
@@ -353,7 +363,10 @@ def _strip_parts(content: Any, converted: Mapping[str, str]) -> Any:
 
 
 def apply_converted_files(
-    internal: Dict[str, Any], files: List[InlineFile], converted: Mapping[str, str]
+    internal: Dict[str, Any],
+    files: List[InlineFile],
+    converted: Mapping[str, str],
+    skipped: Optional[Mapping[str, str]] = None,
 ) -> None:
     """Point the request at the attachment rows its inline files became.
 
@@ -367,12 +380,32 @@ def apply_converted_files(
         internal: The translated request; edited in place.
         files: The inline files, in order.
         converted: ``content_hash`` to attachment id, for the files stored.
+        skipped: ``content_hash`` to why a file was not stored; a file in
+            neither mapping was not stored (``not_stored``).
     """
+    left_out = [
+        {
+            "filename": f.filename,
+            "mime_type": f.mime_type,
+            "reason": (skipped or {}).get(f.content_hash) or "not_stored",
+        }
+        for f in files
+        if f.content_hash not in converted
+    ]
+    if left_out:
+        # Named in the turn's manifest with the reason, so the model can say
+        # which file it could not read instead of answering without it.
+        internal["skipped_files"] = left_out
     if not converted:
         return
     ids = [converted[f.content_hash] for f in files if f.content_hash in converted]
     explicit = [a for a in internal.get("attachments") or [] if a]
     internal["attachments"] = list(dict.fromkeys([*ids, *explicit]))
+    # Files a stateless client re-sent from earlier messages: the planner
+    # lists them as earlier rather than inlining them again every turn.
+    earlier = [converted[f.content_hash] for f in files if f.earlier and f.content_hash in converted]
+    if earlier:
+        internal["earlier_attachments"] = list(dict.fromkeys(earlier))
 
     multimodal = internal.get("multimodal_content")
     if isinstance(multimodal, list):

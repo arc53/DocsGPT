@@ -762,6 +762,19 @@ class TestHonestStreamErrors:
         assert kwargs["metadata"]["error_code"] == "server_error"
         assert errors[-1]["code"] == "server_error"
 
+    def test_a_raw_provider_error_never_reaches_the_logs(self, mock_mongo_db, flask_app, caplog):
+        import logging
+
+        payload = "data:application/pdf;base64," + "QUJD" * 50_000
+        with caplog.at_level(logging.DEBUG, logger="docsgpt.api.answer.routes.base"):
+            self._run(flask_app, RuntimeError(f"422 Input should be a valid string {payload}"), True)
+
+        records = [r for r in caplog.records if r.name == "docsgpt.api.answer.routes.base"]
+        assert records
+        for record in records:
+            assert "QUJDQUJD" not in record.getMessage()
+            assert record.exc_info is None or "QUJDQUJD" not in str(record.exc_info[1])
+
     def test_a_v1_turn_gets_the_api_wording(self, mock_mongo_db, flask_app):
         from docsgpt.agents.context_overflow import ContextOverflowError
         from docsgpt.api.answer.routes.base import BaseAnswerResource

@@ -39,10 +39,14 @@ class FallbackAttachments:
     Attributes:
         messages: The messages to send the fallback.
         dispatch: Usage of the fallback call's own native parts.
+        built: The turn message the fallback's own provider built; its
+            parts (a file id the fallback uploaded) are already the
+            fallback's and must not be swapped again.
     """
 
     messages: List[Dict[str, Any]]
     dispatch: "FixedUsage"
+    built: Optional[Dict[str, Any]] = None
 
 
 class FixedUsage:
@@ -70,6 +74,10 @@ class FixedUsage:
     def for_fallback(self, fallback: Any, messages: List[Dict[str, Any]]) -> None:
         """A fallback's fallback is never re-planned."""
         return None
+
+    def native_reads_for(self, fallback: Any, messages: List[Dict[str, Any]]) -> tuple:
+        """A fallback's fallback keeps the messages it was given."""
+        return messages, []
 
 
 class AttachmentDispatch:
@@ -133,6 +141,44 @@ class AttachmentDispatch:
 
     # ---- fallback ----
 
+    def native_reads_for(self, fallback: Any, messages: List[Dict[str, Any]]) -> tuple:
+        """The turn's requested images, formatted for ``fallback``.
+
+        The follow-up messages that show the images ``attachments_read``
+        queued were built by the primary's provider (image parts, image
+        blocks or inline bytes). Each is rebuilt from the images it carries
+        with the fallback's own provider, or as a note when it reads no
+        images. ``messages`` is not changed.
+
+        Args:
+            fallback: The fallback LLM.
+            messages: The primary call's messages.
+
+        Returns:
+            The messages for the fallback, and the messages rebuilt for it.
+        """
+        from docsgpt.llm.handlers.base import render_native_reads
+
+        registry = getattr(self._agent, "_native_read_messages", None)
+        if not isinstance(registry, list) or not registry:
+            return messages, []
+        rebuilt: List[Dict[str, Any]] = []
+        result = list(messages or [])
+        for entry in registry:
+            index = next((i for i, m in enumerate(result) if m is entry.get("message")), None)
+            if index is None:
+                continue
+            _, note = render_native_reads(
+                fallback,
+                [],
+                list(entry.get("labels") or []),
+                list(entry.get("attachments") or []),
+                check_vision=True,
+            )
+            result[index] = note
+            rebuilt.append(note)
+        return (result, rebuilt) if rebuilt else (messages, [])
+
     def for_fallback(self, fallback: Any, messages: List[Dict[str, Any]]) -> Optional[FallbackAttachments]:
         """The turn's files re-planned for ``fallback``.
 
@@ -180,6 +226,7 @@ class AttachmentDispatch:
             earlier=earlier,
             max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
         )
+        replanned.skipped = list(plan.skipped)
         _, merged, _ = agent.llm_handler.merge_attachment_plan(fallback, [fresh], fresh, replanned)
         rebuilt[index] = merged
         # The attachments tool lists each file's status and reads images by
@@ -194,7 +241,7 @@ class AttachmentDispatch:
             replanned.inline_tokens,
             ", ".join(f"{f.ref}={f.status.value}" for f in replanned.files),
         )
-        return FallbackAttachments(messages=rebuilt, dispatch=FixedUsage(replanned.native_tokens))
+        return FallbackAttachments(messages=rebuilt, dispatch=FixedUsage(replanned.native_tokens), built=merged)
 
 
 def _capabilities_for(capabilities: Any, fallback: Any, window: int) -> Any:

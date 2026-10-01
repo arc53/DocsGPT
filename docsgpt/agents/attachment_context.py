@@ -48,9 +48,14 @@ def sanitize_filename(name: str) -> str:
     return cleaned[:255] or "attachment"
 
 
+# Any spelling of a fence tag a model might read as one: any case, with
+# whitespace around the slash.
+_FENCE_TAG_RE = re.compile(r"<(\s*/?\s*attached_file)", re.IGNORECASE)
+
+
 def _neutralize(content: str) -> str:
     """Keep file text from closing or opening a fence of its own."""
-    return content.replace(_FENCE_CLOSE, "<\\/attached_file>").replace(_FENCE_OPEN, "<\\attached_file")
+    return _FENCE_TAG_RE.sub(r"<\\\1", content)
 
 
 def _head(content: str, tokens: int) -> str:
@@ -96,9 +101,19 @@ def partial_marker(planned: PlannedFile, plan: AttachmentPlan) -> str:
         The marker text.
     """
     name = sanitize_filename(planned.filename)
+    read_action = _read_action(plan)
+    if planned.native and planned.shown_pages:
+        from docsgpt.agents.tools.attachments import MAX_IMAGE_PAGES_PER_CALL
+
+        shown = planned.shown_pages
+        count = planned.page_count or shown
+        head = f"[{planned.ref} {name}: showing pages 1–{shown:,} of {count:,} as images."
+        if read_action and shown < count:
+            following = f"{shown + 1}-{min(shown + MAX_IMAGE_PAGES_PER_CALL, count)}"
+            return f'{head} Read the rest with {read_action}(ref="{planned.ref}", pages="{following}")]'
+        return f"{head} The rest is not available in this turn; do not guess what it says.]"
     shown = planned.shown_tokens
     head = f"[{planned.ref} {name}: showing tokens 1–{shown:,} of {planned.text_tokens:,}."
-    read_action = _read_action(plan)
     if read_action:
         return f'{head} Read the rest with {read_action}(ref="{planned.ref}", offset={shown})]'
     return f"{head} The rest is not available in this turn; do not guess what it says.]"
@@ -195,6 +210,22 @@ def unreadable_note(plan: AttachmentPlan) -> str:
     )
 
 
+def page_image_markers(plan: AttachmentPlan) -> List[str]:
+    """Markers for scanned PDFs sent as only their first page images.
+
+    Args:
+        plan: The turn's plan.
+
+    Returns:
+        One marker per such file, in ref order.
+    """
+    return [
+        partial_marker(f, plan)
+        for f in plan.files
+        if f.native and f.status == FileStatus.PARTIAL and f.shown_pages
+    ]
+
+
 def native_note(plan: AttachmentPlan) -> str:
     """Name the native parts that follow the message, in order."""
     natives = [f for f in plan.files if f.native and f.in_context]
@@ -212,9 +243,24 @@ _REASONS = {
 }
 
 
+# Why a file sent with the request never became an attachment.
+_SKIP_REASONS = {
+    "too_large": "larger than the upload limit",
+    "unsupported": "a file type that cannot be read",
+    "not_stored": "could not be stored",
+    "not_parsed": "could not be read in time",
+}
+
+
 def needs_manifest(plan: AttachmentPlan) -> bool:
     """A manifest is shown unless every file is simply inlined whole this turn."""
-    return any(f.status != FileStatus.INLINE or not f.current for f in plan.files)
+    return bool(plan.skipped) or any(f.status != FileStatus.INLINE or not f.current for f in plan.files)
+
+
+def _skipped_line(entry: dict) -> str:
+    reason = _SKIP_REASONS.get(str(entry.get("reason") or ""), _SKIP_REASONS["not_stored"])
+    mime_type = sanitize_filename(entry.get("mime_type") or "application/octet-stream")
+    return f"- {sanitize_filename(entry.get('filename'))} | {mime_type} | not stored ({reason})"
 
 
 def _size(planned: PlannedFile) -> str:
@@ -264,6 +310,8 @@ def _status(planned: PlannedFile) -> str:
     status = planned.status
     if status == FileStatus.ARCHIVE:
         return _archive_status(planned)
+    if status == FileStatus.PARTIAL and planned.native and planned.shown_pages:
+        return f"partial (pages 1–{planned.shown_pages:,} of {planned.page_count or planned.shown_pages:,} sent as images)"
     if status == FileStatus.PARTIAL:
         return f"partial (tokens 1–{planned.shown_tokens:,} of {planned.text_tokens:,})"
     if status == FileStatus.INLINE and planned.native:
@@ -353,6 +401,13 @@ def _instructions(plan: AttachmentPlan) -> List[str]:
         lines.append("Tell the user which files could not be read.")
     if _archive_skips(plan):
         lines.append("Tell the user which files in an archive were skipped, and why.")
+    if plan.skipped:
+        names = ", ".join(sanitize_filename(s.get("filename")) for s in plan.skipped)
+        lines.append(
+            f"Files marked not stored ({names}) could not be turned into attachments, for the reason "
+            "shown. Unless their content reached you with the message itself, tell the user they "
+            "could not be read."
+        )
     return lines
 
 
@@ -365,9 +420,12 @@ def render_manifest(plan: AttachmentPlan) -> str:
     Returns:
         The ``<attached_files>`` list followed by its instructions.
     """
-    if not plan.files or not needs_manifest(plan):
+    if not (plan.files or plan.skipped) or not needs_manifest(plan):
         return ""
-    listing = "\n".join(_manifest_line(f, sandbox=plan.capabilities.sandbox) for f in plan.files)
+    listing = "\n".join(
+        [_manifest_line(f, sandbox=plan.capabilities.sandbox) for f in plan.files]
+        + [_skipped_line(s) for s in plan.skipped]
+    )
     return "<attached_files>\n" + listing + "\n</attached_files>\n" + "\n".join(_instructions(plan))
 
 
@@ -388,6 +446,7 @@ def render_attachment_block(plan: AttachmentPlan) -> str:
     if sections:
         parts.append(UNTRUSTED_NOTE)
         parts.extend(sections)
+    parts.extend(page_image_markers(plan))
     for note in (native_note(plan), unreadable_note(plan)):
         if note:
             parts.append(note)

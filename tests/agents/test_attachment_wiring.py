@@ -115,6 +115,19 @@ class TestBudgetAgainstTheTurn:
         # Whatever was planned fits next to the summary and the kept history.
         assert compressed.attachment_plan.reserved_tokens <= compressed.attachment_plan.budget
 
+    def test_a_full_attach_turn_does_not_trigger_tool_loop_compression(self):
+        # History alone sits well under the compression threshold; a turn
+        # that fills its attachment budget must not cross it before the
+        # first tool call.
+        files = [text_att(f"r{i}.txt", 9_000) for i in range(8)]
+        history = [{"prompt": "earlier " * 18_000, "response": "answer " * 18_000}]
+        agent = _agent(attachments=files, chat_history=history)
+        agent._prepare_tools({})
+        messages = agent._build_messages("system prompt", "q")
+
+        assert agent.attachment_plan.inline_tokens > 0
+        assert agent._check_context_limit(messages) is False
+
     def test_documents_shed_before_attachments(self):
         docs = [{"title": f"d{i}", "text": "doc text " * 1500, "source": "s"} for i in range(20)]
         agent = _agent(attachments=[text_att("a.txt", 30_000)], retrieved_docs=list(docs))
@@ -204,3 +217,18 @@ class TestSandboxToolsSeeTheConversationFiles:
         agent._execute_tool_action({}, Mock())
 
         assert [a["id"] for a in agent.tool_executor.attachments] == ["new"]
+
+
+class TestFilesThatWereNotStored:
+    def test_a_turn_names_them_even_without_any_attachment(self):
+        skipped = [{"filename": "clip.mp4", "mime_type": "video/mp4", "reason": "unsupported"}]
+        agent = _agent(attachments=[], skipped_attachments=skipped)
+        agent._build_messages("system prompt", "q")
+        plan = agent.attachment_plan
+        assert plan is not None and plan.skipped == skipped
+
+    def test_names_are_kept_with_the_turns_files(self):
+        skipped = [{"filename": "clip.mp4", "mime_type": "video/mp4", "reason": "unsupported"}]
+        agent = _agent(attachments=[text_att("a.txt", 300)], skipped_attachments=skipped)
+        agent._build_messages("system prompt", "q")
+        assert agent.attachment_plan.skipped == skipped

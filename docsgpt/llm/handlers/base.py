@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Generator, List, Optional, Union
 
 from docsgpt.agents.tool_executor import trace_unexecuted_tool_call
+from docsgpt.error import bounded_error_text
 from docsgpt.logging import build_stack_data
 
 logger = logging.getLogger(__name__)
@@ -133,6 +134,59 @@ def _is_restated_payload(existing: str, incoming: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+def render_native_reads(
+    llm, messages: List[Dict], labels: List[str], attachments: List[Dict], *, check_vision: bool = False
+) -> tuple:
+    """Append the follow-up user message that shows ``llm`` the requested images.
+
+    Args:
+        llm: The model the images are sent to; its provider formats them.
+        messages: The messages to append to.
+        labels: One label per image, in order.
+        attachments: The images (a stored path or rendered ``data``).
+        check_vision: Check that ``llm`` reads the images (a fallback; the
+            tool only queued them because the primary does).
+
+    Returns:
+        The messages with the follow-up message, and that message. A model
+        that reads none of the images, or a provider that fails to format
+        them, gets a note saying they cannot be shown instead.
+    """
+    from docsgpt.agents.tools.attachments import native_reads_note
+
+    listed = "; ".join(labels)
+    supported: List[str] = []
+    if check_vision:
+        try:
+            supported = [str(t) for t in llm.get_supported_attachment_types() or []]
+        except Exception:
+            supported = []
+    if check_vision and attachments and not any(str(a.get("mime_type") or "") in supported for a in attachments):
+        note = {
+            "role": "user",
+            "content": (
+                f"[The images requested with attachments_read ({listed}) cannot be shown: the responding "
+                "model does not read images. Tell the user they could not be viewed; do not guess what they show.]"
+            ),
+        }
+        return [*messages, note], note
+    note = {"role": "user", "content": [{"type": "text", "text": native_reads_note(labels)}]}
+    try:
+        prepared = llm.prepare_messages_with_attachments([*messages, note], [dict(a) for a in attachments])
+    except Exception as e:
+        logger.error("Could not attach requested images: %s", bounded_error_text(e))
+        note = {
+            "role": "user",
+            "content": (
+                f"[The images requested with attachments_read ({listed}) could not be "
+                "attached. Tell the user they could not be viewed; do not guess what they show.]"
+            ),
+        }
+        return [*messages, note], note
+    built = next((m for m in reversed(prepared) if isinstance(m, dict) and m.get("role") == "user"), note)
+    return prepared, built
 
 
 class LLMHandler(ABC):
@@ -384,22 +438,19 @@ class LLMHandler(ABC):
 
         natives = []
         for planned in plan.files:
-            if not (planned.native and planned.status == FileStatus.INLINE):
+            if not (planned.native and planned.status in (FileStatus.INLINE, FileStatus.PARTIAL)):
                 continue
             attachment = planned.attachment
             if attachment.get("mime_type") == "application/pdf" and plan.capabilities.synthetic_pdf:
                 try:
                     natives.extend(self._convert_pdf_to_images(attachment))
                 except Exception as e:
-                    logger.error(f"Failed to convert PDF {planned.ref} to images, sending its text: {e}")
-                    # Its extracted text, when there is any, stands in.
-                    planned.native = False
-                    planned.native_parts = 0
-                    planned.shown_tokens = planned.text_tokens if attachment.get("content") else 0
-                    if not planned.shown_tokens:
-                        planned.inline_tokens = 0
-                        planned.status = FileStatus.UNREADABLE
-                        planned.reason = "conversion_failed"
+                    logger.error(
+                        "Failed to convert PDF %s to images, sending its text: %s",
+                        planned.ref,
+                        bounded_error_text(e),
+                    )
+                    self._use_text_instead(planned)
                 continue
             natives.append(attachment)
 
@@ -424,6 +475,47 @@ class LLMHandler(ABC):
                 carrier["content"] = f"{block}\n\n{text}" if text else block
 
         return prepared, carrier, self._native_part_estimate(carrier) - before
+
+    @staticmethod
+    def _use_text_instead(planned) -> None:
+        """Switch a PDF whose page images could not be made to its extracted text.
+
+        The text is charged for what it is, within what the plan budgeted
+        for the page images: a text longer than that is sent as a partial
+        head with its marker. With no text the file is unreadable.
+
+        Args:
+            planned: The plan entry; edited in place.
+        """
+        from docsgpt.agents.attachment_budget import (
+            MIN_PARTIAL_TOKENS,
+            PARTIAL_MARKER_TOKENS,
+            PER_FILE_OVERHEAD_TOKENS,
+            FileStatus,
+        )
+
+        budgeted = planned.inline_tokens
+        planned.native = False
+        planned.native_parts = 0
+        planned.shown_pages = 0
+        has_text = bool(str(planned.attachment.get("content") or "").strip()) and planned.text_tokens > 0
+        whole = planned.text_tokens + PER_FILE_OVERHEAD_TOKENS
+        head = budgeted - PER_FILE_OVERHEAD_TOKENS - PARTIAL_MARKER_TOKENS
+        if has_text and whole <= budgeted:
+            planned.status = FileStatus.INLINE
+            planned.shown_tokens = planned.text_tokens
+            planned.inline_tokens = whole
+        elif has_text and head >= min(MIN_PARTIAL_TOKENS, planned.text_tokens):
+            planned.status = FileStatus.PARTIAL
+            planned.shown_tokens = head
+            planned.inline_tokens = budgeted
+        else:
+            planned.status = FileStatus.UNREADABLE
+            planned.shown_tokens = 0
+            planned.inline_tokens = 0
+            planned.reason = "conversion_failed"
+            return
+        planned.reason = None
 
     @staticmethod
     def _native_part_estimate(message: Dict) -> int:
@@ -1633,25 +1725,18 @@ class LLMHandler(ABC):
             kept = getattr(executor, "paused_native_parts", None)
             executor.paused_native_parts = [*(kept if isinstance(kept, list) else []), *parts]
             return messages
-        from docsgpt.agents.tools.attachments import native_reads_note
 
         labels = [str(p.get("label") or "image") for p in parts]
         attachments = [p.get("attachment") for p in parts if isinstance(p.get("attachment"), dict)]
-        note = {"role": "user", "content": [{"type": "text", "text": native_reads_note(labels)}]}
-        try:
-            return agent.llm.prepare_messages_with_attachments([*messages, note], attachments)
-        except Exception as e:
-            logger.error(f"Could not attach requested images: {e}", exc_info=True)
-            return [
-                *messages,
-                {
-                    "role": "user",
-                    "content": (
-                        f"[The images requested with attachments_read ({'; '.join(labels)}) could not be "
-                        "attached. Tell the user they could not be viewed; do not guess what they show.]"
-                    ),
-                },
-            ]
+        prepared, note = render_native_reads(agent.llm, messages, labels, attachments)
+        # The images as the tool queued them, not as this provider formats
+        # them: a fallback model renders the same note in its own format.
+        registry = getattr(agent, "_native_read_messages", None)
+        if not isinstance(registry, list):
+            registry = []
+            agent._native_read_messages = registry
+        registry.append({"message": note, "labels": labels, "attachments": attachments})
+        return prepared
 
     @staticmethod
     def _paused_native_reads(agent) -> List[Dict]:

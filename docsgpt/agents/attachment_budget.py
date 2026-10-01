@@ -57,6 +57,11 @@ SPREADSHEET_PREVIEW_TOKENS = 1000
 DOCS_RESERVE_SHARE = 0.15
 # Share of the window kept free for the answer.
 OUTPUT_RESERVE_SHARE = 0.1
+# Share of the window kept below the compression threshold, so a turn that
+# fills its attachment budget still has room for its first tool round before
+# the tool loop compresses.
+COMPRESSION_MARGIN_SHARE = 0.05
+_SETTING = object()
 
 SPREADSHEET_EXTENSIONS = frozenset({".csv", ".tsv", ".xlsx", ".xlsm", ".xls", ".ods"})
 SPREADSHEET_MIME_TYPES = frozenset(
@@ -104,6 +109,9 @@ class PlannedFile:
         shown_tokens: Text tokens shown inline (the ``N`` of a partial,
             the preview of a sandbox file).
         native_parts: Native parts the file is sent as.
+        shown_pages: Pages sent as images when a scanned PDF is longer than
+            the page images a vision model without PDF support gets (the
+            native counterpart of a partial head).
         reason: Why the file was left out, when it was.
         sandbox_eligible: The code sandbox is in the turn and can take the
             file (its size is within ``SANDBOX_MAX_INPUT_BYTES`` or unknown).
@@ -123,6 +131,7 @@ class PlannedFile:
     inline_tokens: int = 0
     shown_tokens: int = 0
     native_parts: int = 0
+    shown_pages: int = 0
     reason: Optional[str] = None
     sandbox_eligible: bool = False
 
@@ -140,11 +149,15 @@ class AttachmentPlan:
         files: One entry per ref, in upload order.
         capabilities: The capabilities the plan was made for.
         budget: Tokens the plan was allowed to spend.
+        skipped: Files sent with the request that never became attachment
+            rows (``filename``, ``mime_type``, ``reason``): listed in the
+            manifest with the reason, never inlined.
     """
 
     files: List[PlannedFile]
     capabilities: TurnCapabilities
     budget: int
+    skipped: List[Dict[str, Any]] = field(default_factory=list)
     _by_id: Dict[str, PlannedFile] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
@@ -170,12 +183,12 @@ class AttachmentPlan:
     @property
     def manifest_tokens(self) -> int:
         """Estimated size of the manifest; zero when there is nothing to list."""
-        return manifest_estimate(len(self.files))
+        return manifest_estimate(len(self.files) + len(self.skipped))
 
     @property
     def reserved_tokens(self) -> int:
         """Everything the plan adds to the turn: content plus manifest."""
-        return self.inline_tokens + self.manifest_tokens if self.files else 0
+        return self.inline_tokens + self.manifest_tokens if (self.files or self.skipped) else 0
 
     @property
     def current_files(self) -> List[PlannedFile]:
@@ -213,13 +226,17 @@ def compute_attachment_budget(
     history_tokens: int = 0,
     query_tokens: int = 0,
     docs_tokens: int = 0,
+    compression_threshold: Any = _SETTING,
 ) -> int:
     """Tokens this turn's attachments may take.
 
     The smaller of ``share`` of the window and the free space left after the
     system prompt (compressed summary included), the post-compression
     history, a bounded reserve for retrieved documents, the answer's reserve
-    and the query.
+    and the query. Free space ends below the compression threshold (less
+    ``COMPRESSION_MARGIN_SHARE``) when that comes first: the tool loop
+    compresses once the context crosses it, and a turn that filled its
+    budget would otherwise compress before its first tool call.
 
     Args:
         window: The model's context window.
@@ -228,16 +245,24 @@ def compute_attachment_budget(
         history_tokens: The history replayed this turn, after compression.
         query_tokens: The user's message.
         docs_tokens: Retrieved documents for this turn.
+        compression_threshold: Fraction of the window at which the tool
+            loop compresses; ``COMPRESSION_THRESHOLD_PERCENTAGE`` when not
+            given, None for no threshold.
 
     Returns:
         The budget in tokens, never negative.
     """
+    if compression_threshold is _SETTING:
+        from docsgpt.core.settings import settings
+
+        compression_threshold = settings.COMPRESSION_THRESHOLD_PERCENTAGE
     window = max(int(window or 0), 0)
-    output_reserve = int(window * OUTPUT_RESERVE_SHARE)
+    usable = window - int(window * OUTPUT_RESERVE_SHARE)
+    if compression_threshold:
+        usable = min(usable, int(window * (float(compression_threshold) - COMPRESSION_MARGIN_SHARE)))
     docs_reserve = min(max(int(docs_tokens), 0), int(window * DOCS_RESERVE_SHARE))
     free = (
-        window
-        - output_reserve
+        usable
         - max(int(system_tokens), 0)
         - max(int(history_tokens), 0)
         - max(int(query_tokens), 0)
@@ -377,6 +402,11 @@ def plan_attachments(
         row = planned.attachment
         has_text = _has_text(row)
         native_ok = capabilities.reads_natively(planned.mime_type) and _native_readable(row)
+        # Page images stop at SYNTHETIC_PDF_MAX_PAGES: a longer PDF with a
+        # text layer is sent as text instead, so no page is silently lost.
+        pages_capped = _pages_capped(planned, capabilities)
+        if native_ok and pages_capped and has_text:
+            native_ok = False
 
         if is_archive(row):
             # A zip's members follow it as files of their own; its stored
@@ -409,6 +439,11 @@ def plan_attachments(
                 planned.native = True
                 planned.native_parts = parts
                 planned.inline_tokens = cost
+                if pages_capped:
+                    # A scan longer than the page images: the first pages
+                    # go, marked as partial so the model reads on or says so.
+                    planned.status = FileStatus.PARTIAL
+                    planned.shown_pages = parts
                 native_used += parts
                 remaining -= cost
                 continue
@@ -535,6 +570,15 @@ def _unreadable_reason(row: Dict[str, Any], capabilities: TurnCapabilities) -> s
     if mime_type == "application/pdf" and status == "no_text":
         return "needs_vision"
     return "no_text"
+
+
+def _pages_capped(planned: PlannedFile, capabilities: TurnCapabilities) -> bool:
+    """The PDF has more pages than a vision model without PDF support is sent."""
+    return (
+        planned.mime_type == "application/pdf"
+        and capabilities.synthetic_pdf
+        and (planned.page_count or 0) > SYNTHETIC_PDF_MAX_PAGES
+    )
 
 
 def _native_parts(planned: PlannedFile, capabilities: TurnCapabilities) -> int:

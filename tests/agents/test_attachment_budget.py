@@ -94,10 +94,27 @@ class TestComputeBudget:
 
     def test_free_space_caps_the_budget(self):
         budget = compute_attachment_budget(
-            window=100_000, share=0.9, system_tokens=10_000, query_tokens=5_000
+            window=100_000, share=0.9, system_tokens=10_000, query_tokens=5_000, compression_threshold=None
         )
         # 10% of the window is kept for the answer.
         assert budget == 100_000 - 10_000 - 10_000 - 5_000
+
+    def test_the_turn_stays_under_the_compression_threshold(self):
+        from docsgpt.agents.attachment_budget import COMPRESSION_MARGIN_SHARE
+
+        budget = compute_attachment_budget(
+            window=100_000, share=0.9, system_tokens=10_000, history_tokens=20_000, compression_threshold=0.8
+        )
+        # A margin below the threshold is left for the first tool round.
+        assert budget == int(100_000 * (0.8 - COMPRESSION_MARGIN_SHARE)) - 10_000 - 20_000
+
+    def test_the_compression_threshold_defaults_to_the_setting(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "COMPRESSION_THRESHOLD_PERCENTAGE", 0.6)
+        assert compute_attachment_budget(window=100_000, share=0.9) == compute_attachment_budget(
+            window=100_000, share=0.9, compression_threshold=0.6
+        )
 
     def test_post_compression_history_is_budgeted_against(self):
         without = compute_attachment_budget(window=100_000, share=0.9)
@@ -430,3 +447,34 @@ class TestArchives:
     def test_an_earlier_zip_stays_earlier(self):
         plan = plan_attachments([], caps(), budget=50_000, earlier=[zip_parent(), att("a.txt", 10)])
         assert [f.status for f in plan.files] == [FileStatus.EARLIER, FileStatus.EARLIER]
+
+
+class TestSyntheticPdfPageCap:
+    """A vision model without native PDF sees at most SYNTHETIC_PDF_MAX_PAGES page images."""
+
+    def test_long_pdf_with_text_goes_as_text_not_capped_page_images(self):
+        from docsgpt.agents.attachment_budget import SYNTHETIC_PDF_MAX_PAGES
+
+        pdf = att("report.pdf", 9_000, mime="application/pdf", pages=SYNTHETIC_PDF_MAX_PAGES + 10)
+        plan = plan_attachments([pdf], caps(vision=True), budget=100_000)
+        file = plan.files[0]
+        assert file.native is False
+        assert file.status == FileStatus.INLINE
+        assert file.shown_tokens == 9_000
+
+    def test_short_pdf_with_text_still_goes_as_page_images(self):
+        pdf = att("deck.pdf", 900, mime="application/pdf", pages=5)
+        plan = plan_attachments([pdf], caps(vision=True), budget=100_000)
+        assert plan.files[0].native is True
+        assert plan.files[0].status == FileStatus.INLINE
+
+    def test_long_scan_is_partial_with_the_pages_it_shows(self):
+        from docsgpt.agents.attachment_budget import SYNTHETIC_PDF_MAX_PAGES
+
+        scan = att("scan.pdf", 0, mime="application/pdf", status="no_text", content="", pages=57)
+        plan = plan_attachments([scan], caps(vision=True, attachments_tool=True), budget=100_000)
+        file = plan.files[0]
+        assert file.status == FileStatus.PARTIAL
+        assert file.native is True
+        assert file.native_parts == SYNTHETIC_PDF_MAX_PAGES
+        assert file.shown_pages == SYNTHETIC_PDF_MAX_PAGES

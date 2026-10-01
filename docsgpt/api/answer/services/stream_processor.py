@@ -14,6 +14,7 @@ from docsgpt.api.answer.services.compression import CompressionOrchestrator
 from docsgpt.api.answer.services.compression.token_counter import TokenCounter
 from docsgpt.api.answer.services.compression.types import is_compression_summary_row
 from docsgpt.api.answer.services.conversation_service import ConversationService
+from docsgpt.error import bounded_error_text
 from docsgpt.prompts.composer import compose_preset, is_composed_preset
 from docsgpt.api.answer.services.prompt_renderer import (
     PromptRenderer,
@@ -104,6 +105,12 @@ def multimodal_reaches_model(model_id: Optional[str], user_id: Optional[str]) ->
         return isinstance(llm_class, type) and issubclass(llm_class, OpenAILLM)
     except Exception:
         return False
+
+
+def _position(query: Dict[str, Any], fallback: int) -> int:
+    """A conversation message's position, else its index in the loaded list."""
+    position = query.get("position")
+    return position if isinstance(position, int) and not isinstance(position, bool) else fallback
 
 
 def _clamp_chunks(value: int) -> int:
@@ -711,7 +718,9 @@ class StreamProcessor:
             if not conversation:
                 raise ValueError("Conversation not found or unauthorized")
 
-            self.earlier_attachments = self._load_earlier_attachments(conversation)
+            self.earlier_attachments = self._with_request_earlier_attachments(
+                self._load_earlier_attachments(conversation)
+            )
             # Decide fit before compressing: a turn that cannot fit even with
             # no history fails here, without a compression call.
             self._ensure_turn_fits()
@@ -749,6 +758,7 @@ class StreamProcessor:
                     if not is_compression_summary_row(query)
                 ]
         else:
+            self.earlier_attachments = self._with_request_earlier_attachments([])
             self._ensure_turn_fits()
             # model_user_id keeps history trim aligned with the BYOM's
             # actual context window instead of the default 128k.
@@ -851,6 +861,9 @@ class StreamProcessor:
     def _load_earlier_attachments(self, conversation: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Rows of the files attached on the conversation's earlier turns.
 
+        On a retry or an edit (``index`` in the request), only the turns
+        before the replaced one count.
+
         Args:
             conversation: The conversation, with its ``queries``.
 
@@ -859,8 +872,14 @@ class StreamProcessor:
             order; an id seen twice is listed once.
         """
         ids: List[str] = []
-        for query in conversation.get("queries") or []:
+        # A retry or an edit at ``index`` replaces that turn and drops every
+        # later one: their files are not this conversation's earlier files.
+        index = (getattr(self, "data", None) or {}).get("index")
+        replaced_from = index if isinstance(index, int) and not isinstance(index, bool) and index >= 0 else None
+        for position, query in enumerate(conversation.get("queries") or []):
             if not isinstance(query, dict) or is_compression_summary_row(query):
+                continue
+            if replaced_from is not None and _position(query, position) >= replaced_from:
                 continue
             for attachment_id in query.get("attachments") or []:
                 if attachment_id:
@@ -872,6 +891,41 @@ class StreamProcessor:
         except Exception as e:
             logger.error(f"Error loading earlier attachments: {e}", exc_info=True)
             return []
+
+    def _is_v1_request(self) -> bool:
+        return getattr(self, "trace_source", None) == "v1"
+
+    def _with_request_earlier_attachments(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """``rows`` plus the files a stateless ``/v1`` client re-sent from earlier messages.
+
+        The route marks the attachment ids of files that first appeared in
+        a user message before the last one; the planner then lists them as
+        earlier instead of inlining every re-sent file again each turn.
+
+        Args:
+            rows: The conversation's own earlier attachment rows.
+
+        Returns:
+            The rows, then the request's, each id once.
+        """
+        if not self._is_v1_request():
+            return rows
+        requested = [str(i) for i in (self.data or {}).get("earlier_attachments") or [] if i]
+        known = {str(r.get("id")) for r in rows if isinstance(r, dict)}
+        missing = [i for i in dict.fromkeys(requested) if i not in known]
+        if not missing:
+            return rows
+        try:
+            return [*rows, *self._fetch_attachment_rows(missing)]
+        except Exception as e:
+            logger.error("Error loading the request's earlier attachments: %s", bounded_error_text(e))
+            return rows
+
+    def _request_skipped_files(self) -> List[Dict[str, Any]]:
+        """Files a ``/v1`` request sent that never became attachment rows, with the reason."""
+        if not self._is_v1_request():
+            return []
+        return [s for s in (self.data or {}).get("skipped_files") or [] if isinstance(s, dict)]
 
     def _fetch_attachment_rows(self, ids: List[str]) -> List[Dict[str, Any]]:
         """The caller's attachment rows for ``ids``, metadata only."""
@@ -2407,6 +2461,7 @@ class StreamProcessor:
             # turns' files are listed, never inlined again.
             "attachment_planning": True,
             "earlier_attachments": self.earlier_attachments,
+            "skipped_attachments": self._request_skipped_files(),
         }
 
         # Wiki tool injection + authz: only for agent types that build a

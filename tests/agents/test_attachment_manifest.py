@@ -198,3 +198,45 @@ class TestArchives:
     def test_the_index_text_is_never_inlined(self):
         block = render_attachment_block(self._plan())
         assert "Archive index" not in block
+
+
+class TestPartialPageImages:
+    def test_a_capped_scan_says_which_pages_were_sent_and_how_to_read_on(self):
+        scan = att("scan.pdf", 0, mime="application/pdf", status="no_text", content="", pages=57)
+        plan = plan_attachments([scan], caps(vision=True, attachments_tool=True), budget=90_000)
+        block = render_attachment_block(plan)
+        assert "pages 1–20 of 57" in block
+        assert 'attachments_read(ref="F1", pages="21-' in block
+
+    def test_without_the_tool_the_rest_is_said_to_be_unavailable(self):
+        scan = att("scan.pdf", 0, mime="application/pdf", status="no_text", content="", pages=57)
+        plan = plan_attachments([scan], caps(vision=True), budget=90_000)
+        block = render_attachment_block(plan)
+        assert "pages 1–20 of 57" in block
+        assert "attachments_read" not in block
+        assert "not available in this turn" in block
+
+
+class TestFilesThatWereNotStored:
+    """/v1 files that never became attachment rows are named with the reason."""
+
+    SKIPPED = [
+        {"filename": "clip.mp4", "mime_type": "video/mp4", "reason": "unsupported"},
+        {"filename": "huge.pdf", "mime_type": "application/pdf", "reason": "too_large"},
+    ]
+
+    def test_they_are_listed_after_the_files_with_their_reason(self):
+        plan = plan_attachments([att("a.txt", 300)], caps(), budget=50_000)
+        plan.skipped = list(self.SKIPPED)
+        manifest = render_manifest(plan)
+        assert "- clip.mp4 | video/mp4 | not stored (a file type that cannot be read)" in manifest
+        assert "- huge.pdf | application/pdf | not stored (larger than the upload limit)" in manifest
+        assert "clip.mp4, huge.pdf" in manifest
+        assert plan.reserved_tokens > plan.inline_tokens + 150 + 30
+
+    def test_a_turn_with_only_such_files_still_says_so(self):
+        plan = plan_attachments([], caps(), budget=50_000)
+        plan.skipped = list(self.SKIPPED[:1])
+        block = render_attachment_block(plan)
+        assert "clip.mp4" in block
+        assert plan.reserved_tokens > 0

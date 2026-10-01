@@ -148,9 +148,23 @@ class TestZips:
         with patch.object(ingest, "_find_parsed", return_value=None), patch.object(
             ingest, "_archive_status", return_value="processing"
         ):
-            converted = ingest.ingest_inline_files([bundle, pdf], "owner")
+            skipped = {}
+            converted = ingest.ingest_inline_files([bundle, pdf], "owner", skipped=skipped)
 
         assert list(converted) == [pdf.content_hash]
+        assert skipped == {bundle.content_hash: "not_parsed"}
+
+    def test_the_streaming_ingest_waits_on_the_zip_too(self, storage, task):
+        bundle = _zip_file()
+        states = iter(["processing", "complete"])
+        with patch.object(ingest, "_find_parsed", return_value=None), patch.object(
+            ingest, "_archive_status", side_effect=lambda user, attachment_id: next(states)
+        ):
+            started = ingest.start_inline_files([bundle], "owner")
+            converted = started.wait()
+
+        assert converted == {bundle.content_hash: task.call_args.args[0]["attachment_id"]}
+        assert started.skipped == {}
 
     def test_a_non_zip_never_waits_on_archive_state(self, storage, task):
         with patch.object(ingest, "_find_parsed", return_value=None), patch.object(
@@ -159,3 +173,48 @@ class TestZips:
             ingest.ingest_inline_files([_file(b"%PDF plain")], "owner")
 
         status.assert_not_called()
+
+
+class TestWhyAFileWasLeftOut:
+    """Every file that did not become an attachment is reported with a reason."""
+
+    def test_reasons_are_collected(self, storage, task, monkeypatch):
+        monkeypatch.setattr(ingest.settings, "UPLOAD_MAX_FILE_BYTES", 100)
+        big = _file(b"%PDF" + b"x" * 200, name="big.pdf")
+        blob = _file(b"\x00\x01binary", name="clip.mp4", mime="video/mp4")
+        slow = _file(b"%PDF slow", name="slow.pdf")
+        task.side_effect = [_Result(TimeoutError("slow"))]
+        skipped = {}
+        with patch.object(ingest, "_find_parsed", return_value=None):
+            converted = ingest.ingest_inline_files([big, blob, slow], "owner", skipped=skipped)
+
+        assert converted == {}
+        assert skipped == {
+            big.content_hash: "too_large",
+            blob.content_hash: "unsupported",
+            slow.content_hash: "not_parsed",
+        }
+
+    def test_a_storage_failure_is_not_stored(self, storage, task):
+        storage.save_file.side_effect = OSError("disk full")
+        pdf = _file(b"%PDF cannot store")
+        skipped = {}
+        with patch.object(ingest, "_find_parsed", return_value=None):
+            ingest.ingest_inline_files([pdf], "owner", skipped=skipped)
+        assert skipped == {pdf.content_hash: "not_stored"}
+
+
+class TestTheParseWindow:
+    def test_late_results_are_not_each_given_another_second(self, storage, task, monkeypatch):
+        files = [_file(f"%PDF {i}".encode(), name=f"f{i}.pdf") for i in range(3)]
+        results = [_Result(), _Result(), _Result()]
+        for result in results:
+            result.ready = lambda: False
+        task.side_effect = results
+        monkeypatch.setattr(ingest, "_parse_timeout", lambda size: 0.0)
+        skipped = {}
+        with patch.object(ingest, "_find_parsed", return_value=None):
+            ingest.ingest_inline_files(files, "owner", skipped=skipped)
+
+        assert set(skipped.values()) == {"not_parsed"}
+        assert all(not r.timeouts for r in results)

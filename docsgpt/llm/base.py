@@ -9,6 +9,7 @@ import openai
 from docsgpt.cache import gen_cache, stream_cache
 
 from docsgpt.core.settings import settings
+from docsgpt.error import bounded_error_text
 from docsgpt.usage import gen_token_usage, stream_token_usage
 
 logger = logging.getLogger(__name__)
@@ -281,7 +282,7 @@ class BaseLLM(ABC):
         attachment_id = owners.get(file_id) if file_id else None
         return file_texts.get(attachment_id) if attachment_id else None
 
-    def _prepare_fallback_messages(self, fallback, messages, attachments=None, dropped=None):
+    def _prepare_fallback_messages(self, fallback, messages, attachments=None, dropped=None, keep=None):
         """Rebuild primary-prepared messages so the fallback can accept them.
 
         ``prepare_messages_with_attachments`` ran against the *primary*
@@ -301,6 +302,8 @@ class BaseLLM(ABC):
             attachments: The turn's attachment rows (their text is swapped in).
             dropped: Collects the names of files whose part had no text to
                 stand in for it.
+            keep: Messages the fallback's own provider built (a re-planned
+                turn); passed through as they are.
 
         Returns:
             Messages the fallback can accept.
@@ -329,9 +332,10 @@ class BaseLLM(ABC):
                 keeps_files = False
         file_texts = self._fallback_attachment_texts(attachments)
         prepared = []
+        kept = [k for k in keep or () if k is not None]
         for message in messages:
             content = message.get("content") if isinstance(message, dict) else None
-            if not isinstance(content, list):
+            if not isinstance(content, list) or any(message is k for k in kept):
                 prepared.append(message)
                 continue
             parts = []
@@ -425,11 +429,20 @@ class BaseLLM(ABC):
         if messages:
             dispatch = kwargs.get("_attachment_dispatch")
             replanned = None
+            rebuilt_reads: list = []
+            native_reads_for = getattr(dispatch, "native_reads_for", None)
+            if callable(native_reads_for):
+                try:
+                    messages, rebuilt_reads = native_reads_for(fallback, messages)
+                except Exception as exc:
+                    logger.warning(
+                        "Could not rebuild the requested images for the fallback: %s", bounded_error_text(exc)
+                    )
             if dispatch is not None:
                 try:
                     replanned = dispatch.for_fallback(fallback, messages)
-                except Exception:
-                    logger.warning("Could not re-plan attachments for the fallback", exc_info=True)
+                except Exception as exc:
+                    logger.warning("Could not re-plan attachments for the fallback: %s", bounded_error_text(exc))
             if replanned is not None:
                 messages = replanned.messages
                 fallback_kwargs["_attachment_dispatch"] = replanned.dispatch
@@ -439,6 +452,7 @@ class BaseLLM(ABC):
                 messages,
                 kwargs.get("_usage_attachments") or kwargs.get("attachments"),
                 dropped=dropped,
+                keep=[getattr(replanned, "built", None), *rebuilt_reads],
             )
             if dropped:
                 logger.warning(

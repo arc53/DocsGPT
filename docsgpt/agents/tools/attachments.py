@@ -54,9 +54,14 @@ MAX_READ_TOKENS = 16000
 MIN_READ_TOKENS = 200
 # Pages one read returns as text at most.
 MAX_TEXT_PAGES_PER_CALL = 20
+# Pages one ``pages`` spec may name; a longer range is cut here.
+MAX_PAGES_IN_SPEC = 10_000
 # Page images one read renders at most (scanned pages, for a vision model).
 MAX_IMAGE_PAGES_PER_CALL = 5
 RENDER_DPI = 150
+# Longest side of a rendered page image, in pixels: a poster or a drawing is
+# rendered at a lower resolution instead of as a huge image.
+MAX_RENDER_SIDE = 2000
 
 # Lexical search: passages of the stored text, ranked with BM25.
 SEARCH_CHUNK_TOKENS = 300
@@ -105,7 +110,8 @@ def build_attachments_tool_config(
         current_ids: This turn's attachment ids, in upload order.
         earlier_ids: Earlier turns' attachment ids, in upload order.
         actions: Our action names as the model sees them, by base name.
-        plan: This turn's plan per ref (``status``, ``shown_tokens``, ``reason``).
+        plan: This turn's plan per ref (``status``, ``shown_tokens``,
+            ``shown_pages``, ``reason``).
         vision: The model reads images.
         image_types: Image MIME types the model takes; None means any.
         max_native_parts: Images the tool may still add this turn.
@@ -211,6 +217,7 @@ def sync_attachments_tool(
             planned.ref: {
                 "status": planned.status.value,
                 "shown_tokens": int(planned.shown_tokens or 0),
+                "shown_pages": int(planned.shown_pages or 0),
                 "native": bool(planned.native),
                 "reason": planned.reason,
             }
@@ -303,8 +310,13 @@ def _parse_pages(spec: Any, count: Optional[int]) -> Optional[List[int]]:
         first, last = bounds
         if last is None:
             last = count if count else first + MAX_TEXT_PAGES_PER_CALL - 1
+        # "1-30000000" must not build that list. The stored page count may
+        # be stale, so the cap, not the count, bounds an explicit range; the
+        # reader checks every page against the file itself.
+        last = min(last, first + MAX_PAGES_IN_SPEC - len(pages) - 1)
+        # A page past the end is kept so the reader can say how long the file is.
         pages.extend(range(first, max(last, first) + 1))
-        if len(pages) > 10_000:
+        if len(pages) >= MAX_PAGES_IN_SPEC:
             break
     return sorted(set(pages)) or None
 
@@ -463,7 +475,12 @@ def _render_pages(data: bytes, pages: Sequence[int]) -> List[Dict[str, Any]]:
         if run and (number is None or number != run[-1] + 1):
             rendered.extend(
                 convert_pdf_to_images(
-                    "original.pdf", storage=storage, first_page=run[0], max_pages=len(run), dpi=RENDER_DPI
+                    "original.pdf",
+                    storage=storage,
+                    first_page=run[0],
+                    max_pages=len(run),
+                    dpi=RENDER_DPI,
+                    max_side=MAX_RENDER_SIDE,
                 )
             )
             run = []
@@ -760,8 +777,11 @@ class AttachmentsTool(Tool):
     def files(self) -> List[PlannedFile]:
         """The conversation's files under their refs, loaded once per tool."""
         if self._files is None:
+            # The planner's own lists, as is: an id both earlier and current
+            # (a re-sent file) is registered first among the earlier ones,
+            # exactly as ``plan_attachments`` does.
             current_ids = [str(i) for i in self.config.get("current_ids") or []]
-            earlier_ids = [str(i) for i in self.config.get("earlier_ids") or [] if str(i) not in current_ids]
+            earlier_ids = [str(i) for i in self.config.get("earlier_ids") or []]
             rows = {_attachment_id(r): r for r in _load_rows(list(dict.fromkeys(earlier_ids + current_ids)), self.user)}
             self._files = assign_refs(
                 [rows[i] for i in current_ids if i in rows],
@@ -818,6 +838,9 @@ class AttachmentsTool(Tool):
     def _status(self, planned: PlannedFile) -> str:
         info = self._plan_info(planned)
         status = info.get("status") or ("available" if planned.current else "earlier")
+        if status == "partial" and int(info.get("shown_pages") or 0):
+            pages = int(info["shown_pages"])
+            return f"partial (pages 1–{pages:,} are in your context as images)"
         if status == "partial":
             return f"partial (tokens 1–{int(info.get('shown_tokens') or 0):,} are in your context)"
         if status == "inline":

@@ -214,6 +214,72 @@ class TestNative:
         assert agent._calculate_current_context_tokens(prepared) >= 30_000
 
 
+class TestSyntheticPdf:
+    """A vision model without native PDF gets PDFs as page images."""
+
+    def test_a_long_scan_sends_its_first_page_images_with_a_marker(self):
+        scan = {
+            "id": "s1",
+            "filename": "scan.pdf",
+            "mime_type": "application/pdf",
+            "path": "u/scan.pdf",
+            "content": "",
+            "token_count": 0,
+            "metadata": {"page_count": 57, "extraction": {"status": "no_text"}},
+        }
+        agent = _agent([scan], types=["image/png"])
+        pages = [{"data": "b64", "mime_type": "image/png", "page": n} for n in range(1, 21)]
+        with patch.object(_Handler, "_convert_pdf_to_images", return_value=pages):
+            prepared = _prepare(agent)
+        sent = agent.llm.prepare_messages_with_attachments.call_args[0][1]
+        assert len(sent) == 20
+        assert "pages 1–20 of 57" in _user_text(prepared[-1])
+
+    def test_a_failed_conversion_is_charged_for_its_text_not_page_images(self):
+        body = "page text " * 300
+        pdf = {
+            "id": "p1",
+            "filename": "deck.pdf",
+            "mime_type": "application/pdf",
+            "path": "u/deck.pdf",
+            "content": body,
+            "token_count": num_tokens_from_string(body),
+            "metadata": {"page_count": 10, "extraction": {"status": "ok"}},
+        }
+        agent = _agent([pdf], types=["image/png"])
+        messages = agent._build_messages("SYSTEM", "q")
+        assert agent.attachment_plan.files[0].native is True
+        with patch.object(_Handler, "_convert_pdf_to_images", side_effect=RuntimeError("no renderer")):
+            prepared = _Handler().prepare_messages(agent, messages, agent.attachments)
+        planned = agent.attachment_plan.files[0]
+        assert planned.native is False
+        assert body.strip()[:40] in _user_text(prepared[-1])
+        assert planned.inline_tokens < 10 * 1500
+        assert planned.inline_tokens >= planned.text_tokens
+
+    def test_a_failed_conversion_never_inlines_more_than_was_budgeted(self):
+        body = "dense " * 40_000
+        pdf = {
+            "id": "p1",
+            "filename": "dense.pdf",
+            "mime_type": "application/pdf",
+            "path": "u/dense.pdf",
+            "content": body,
+            "token_count": num_tokens_from_string(body),
+            "metadata": {"page_count": 5, "extraction": {"status": "ok"}},
+        }
+        agent = _agent([pdf], types=["image/png"])
+        messages = agent._build_messages("SYSTEM", "q")
+        planned = agent.attachment_plan.files[0]
+        assert planned.native is True
+        budgeted = planned.inline_tokens
+        with patch.object(_Handler, "_convert_pdf_to_images", side_effect=RuntimeError("no renderer")):
+            prepared = _Handler().prepare_messages(agent, messages, agent.attachments)
+        assert planned.inline_tokens <= budgeted
+        assert planned.status.value == "partial"
+        assert "showing tokens 1–" in _user_text(prepared[-1])
+
+
 class TestUnreadable:
     def test_scans_on_a_text_only_model_are_named(self):
         scan = {
