@@ -25,7 +25,7 @@ _PLANNING_COLUMNS = (
 )
 
 
-def _is_archive(row: dict) -> bool:
+def is_archive_row(row: dict) -> bool:
     """A zip attachment unpacked into member rows (``metadata.archive``)."""
     metadata = row.get("metadata")
     return isinstance(metadata, dict) and isinstance(metadata.get("archive"), dict)
@@ -289,7 +289,7 @@ class AttachmentsRepository:
 
     def _with_archive_members(self, rows: list[dict], user_id: str, columns: str) -> list[dict]:
         """Insert each archive's member rows after it (owner-scoped, archive order, no repeats)."""
-        parent_ids = [str(r["id"]) for r in rows if _is_archive(r)]
+        parent_ids = [str(r["id"]) for r in rows if is_archive_row(r)]
         if not parent_ids:
             return rows
         result = self._conn.execute(

@@ -27,7 +27,7 @@ from docsgpt.api.user.tasks import ingest
 from docsgpt.core.settings import settings
 from docsgpt.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
 from docsgpt.storage.db.base_repository import looks_like_uuid
-from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
+from docsgpt.storage.db.repositories.attachments import AttachmentsRepository, is_archive_row
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_ids import derive_source_id
 from docsgpt.storage.storage_creator import StorageCreator
@@ -52,12 +52,6 @@ def default_source_name(filenames: list[str]) -> str:
     first = filenames[0]
     rest = len(filenames) - 1
     return f"{first} and {rest} more" if rest > 0 else first
-
-
-def _is_archive(row: dict) -> bool:
-    """Whether a row is a zip index whose members are rows of their own."""
-    metadata = row.get("metadata")
-    return isinstance(metadata, dict) and isinstance(metadata.get("archive"), dict)
 
 
 def _unique_name(name: str, taken: set[str]) -> str:
@@ -175,7 +169,7 @@ class SourceFromAttachments(Resource):
             return _error(404, "Attachment not found")
 
         chips = [row for row in rows if str(row["id"]) in set(wanted)]
-        files = [row for row in rows if not _is_archive(row) and row.get("upload_path")]
+        files = [row for row in rows if not is_archive_row(row) and row.get("upload_path")]
         if not files:
             return _error(400, "These attachments have no stored files to add")
 
