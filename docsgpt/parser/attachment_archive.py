@@ -76,7 +76,15 @@ _MEMBER_READ_ERRORS = (
 
 
 class ArchiveRejectedError(ValueError):
-    """The archive as a whole is unreadable or a zip bomb."""
+    """The archive as a whole is unreadable or a zip bomb.
+
+    Attributes:
+        reason: ``unreadable`` (not a readable zip) or ``zip_bomb``.
+    """
+
+    def __init__(self, message: str, reason: str = "unreadable") -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 @dataclass(frozen=True)
@@ -201,6 +209,8 @@ def expand_archive(
     expansion = ArchiveExpansion()
     try:
         _expand_into(path, "", 1, os.path.realpath(dest_dir), limits, expansion, accept)
+    except ArchiveRejectedError:
+        raise
     except (zipfile.LargeZipFile, *_MEMBER_READ_ERRORS) as exc:
         raise ArchiveRejectedError(f"The zip file could not be read: {exc}") from exc
     return expansion
@@ -249,7 +259,8 @@ def _check_ratio(archive: zipfile.ZipFile, limits: ArchiveLimits, label: str) ->
     compressed = sum(int(info.compress_size) for info in files)
     if declared and (compressed <= 0 or declared / compressed > limits.max_ratio):
         raise ArchiveRejectedError(
-            f"{label} exceeds the {limits.max_ratio}:1 compression ratio limit and looks like a zip bomb."
+            f"{label} exceeds the {limits.max_ratio}:1 compression ratio limit and looks like a zip bomb.",
+            reason="zip_bomb",
         )
 
 
@@ -341,6 +352,9 @@ def _expand_into(
             if is_nested:
                 try:
                     _expand_into(target, archive_path + "/", depth + 1, dest_dir, limits, expansion, accept)
+                except ArchiveRejectedError:
+                    # A zip bomb anywhere in the tree rejects the whole upload.
+                    raise
                 except (zipfile.LargeZipFile, *_MEMBER_READ_ERRORS):
                     expansion.skip(archive_path, "nested_archive_invalid")
                 finally:

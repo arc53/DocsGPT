@@ -274,3 +274,24 @@ class TestEntryLimits:
         monkeypatch.setattr(settings, "UPLOAD_MAX_FILE_BYTES", 12)
         limits = ArchiveLimits.from_settings()
         assert (limits.max_entries, limits.max_member_bytes) == (11, 12)
+
+
+class TestRejectionReason:
+    def test_a_zip_bomb_says_so(self, tmp_path):
+        with pytest.raises(ArchiveRejectedError) as raised:
+            _expand(tmp_path, [("zeros.txt", b"\0" * (5 * 1024 * 1024))])
+        assert raised.value.reason == "zip_bomb"
+        assert "could not be read" not in str(raised.value)
+
+    def test_a_zip_bomb_nested_inside_rejects_the_whole_zip(self, tmp_path):
+        bomb = _zip_bytes([("zeros.txt", b"\0" * (5 * 1024 * 1024))])
+        with pytest.raises(ArchiveRejectedError) as raised:
+            _expand(tmp_path, [("a.txt", b"a"), ("inner.zip", bomb)], compression=zipfile.ZIP_STORED)
+        assert raised.value.reason == "zip_bomb"
+
+    def test_an_unreadable_zip_says_so(self, tmp_path):
+        path = tmp_path / "fake.zip"
+        path.write_bytes(b"not a zip at all")
+        with pytest.raises(ArchiveRejectedError) as raised:
+            expand_archive(str(path), str(tmp_path), LIMITS)
+        assert raised.value.reason == "unreadable"
