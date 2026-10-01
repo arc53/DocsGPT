@@ -159,6 +159,15 @@ class IngestionSettings(SettingsGroup):
         ),
     )
     ATTACHMENT_TEXT_MAX_BYTES: int = Field(default=5_000_000, description="Cap on extracted attachment text.")
+    ATTACHMENT_FULL_TEXT_MAX_BYTES: int = Field(
+        default=8_000_000,
+        ge=0,
+        description=(
+            "An attachment's stored text is cut at 100k tokens for the prompt; when it is, the worker also keeps "
+            "up to this many bytes of the whole extracted text next to the original file, so the attachments "
+            "tool can search and read past the cut. The tool never loads a larger side copy. 0 keeps none."
+        ),
+    )
     AGENT_IMAGE_MAX_BYTES: int = Field(default=5_000_000, description="Cap on an image passed to an agent.")
     AGENT_IMAGE_MAX_PIXELS: int = Field(
         default=16_777_216, description="Cap on the pixel count of an image passed to an agent."

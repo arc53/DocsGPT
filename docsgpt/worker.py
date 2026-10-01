@@ -20,6 +20,7 @@ from urllib.parse import urljoin, urlsplit
 import requests
 
 from docsgpt import tracing
+from docsgpt.attachment_full_text import copy_full_text, store_full_text
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
 from docsgpt.parser.chunking_creator import ChunkerCreator
@@ -2285,6 +2286,12 @@ def _single_attachment_worker(self, file_info, user, *, emit_events: bool = True
             # Same bytes, already parsed for this user: copy the stored text
             # and its extraction record instead of parsing again.
             reused_metadata = _reused_parse_metadata(reused)
+            if isinstance(reused_metadata.get("extraction"), dict):
+                # The earlier row's side copy belongs to that row: this one
+                # gets its own, beside its own original.
+                reused_metadata["extraction"] = copy_full_text(
+                    storage, reused_metadata["extraction"], relative_path
+                )
             extraction_status = (reused_metadata.get("extraction") or {}).get("status") or "ok"
             token_count = reused.get("token_count") or 0
             metadata = {
@@ -2304,11 +2311,16 @@ def _single_attachment_worker(self, file_info, user, *, emit_events: bool = True
             tokens = encoding.encode_ordinary(content)
             original_tokens = len(tokens)
             truncated = original_tokens > ATTACHMENT_MAX_TOKENS
+            full_text: Dict[str, Any] = {}
             if truncated:
+                # The prompt gets the head; the attachments tool searches and
+                # reads the whole text from a side copy.
+                full_text = store_full_text(storage, relative_path, content, encoding, original_tokens)
                 content = encoding.decode(tokens[:ATTACHMENT_MAX_TOKENS])
                 token_count = ATTACHMENT_MAX_TOKENS
             else:
                 token_count = original_tokens
+            del tokens
 
             metadata = {
                 **metadata,
@@ -2319,6 +2331,7 @@ def _single_attachment_worker(self, file_info, user, *, emit_events: bool = True
                     "truncated": truncated,
                     "original_tokens": original_tokens,
                     "stored_tokens": token_count,
+                    **full_text,
                     **({"reason": no_text_reason} if no_text_reason else {}),
                 },
             }
