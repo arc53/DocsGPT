@@ -660,6 +660,8 @@ class AttachmentsTool(Tool):
         self._room_tokens: Optional[int] = None
         self._epoch = 0
         self._reads_seen: set = set()
+        # Bumped each time a read hands the model file content (text or images).
+        self._deliveries = 0
 
     def set_context_hint(self, *, room_tokens: Optional[int], epoch: int) -> None:
         """Tell the tool how much context a result may still take.
@@ -878,6 +880,12 @@ class AttachmentsTool(Tool):
     def _queue_image(self, attachment: Dict[str, Any], label: str) -> None:
         self._native_queue.append({"attachment": attachment, "label": label})
         self._native_used += 1
+        self._deliveries += 1
+
+    def _delivered(self, result: str) -> str:
+        """Count a read result that carries file text, and return it."""
+        self._deliveries += 1
+        return result
 
     def _viewable(self, planned: PlannedFile) -> bool:
         if planned.mime_type.startswith("image/"):
@@ -997,7 +1005,18 @@ class AttachmentsTool(Tool):
                 "in this turn; its text is in an earlier tool result. Do not read it again: read a different "
                 "part, or answer from what you have."
             )
-        self._reads_seen.add(key)
+        # Only a read that returned content counts as seen: a failed, refused
+        # or empty one may be retried.
+        before = self._deliveries
+        result = self._read_file(planned, offset=offset, max_tokens=max_tokens, rows=rows, pages=pages)
+        if self._deliveries > before:
+            self._reads_seen.add(key)
+        return result
+
+    def _read_file(
+        self, planned: PlannedFile, *, offset: Any, max_tokens: Any, rows: Any, pages: Any
+    ) -> str:
+        """Read one planned file: its text, rows, pages or image."""
         row = self._content(planned)
         if row is None:
             return f"{planned.ref} is no longer available."
@@ -1262,7 +1281,8 @@ class AttachmentsTool(Tool):
         else:
             footer += " End of file.]"
         body = "\n\n".join(sections)
-        return "\n".join([UNTRUSTED_NOTE, fence_file(planned.ref, planned.filename, body, range=label), footer])
+        fenced = fence_file(planned.ref, planned.filename, body, range=label)
+        return self._delivered("\n".join([UNTRUSTED_NOTE, fenced, footer]))
 
     def _read_tokens(
         self, planned: PlannedFile, row: Dict[str, Any], text: str, offset: Any, budget: int
@@ -1289,7 +1309,8 @@ class AttachmentsTool(Tool):
             footer += f" End of the stored text. {cut}]"
         else:
             footer += " End of file.]"
-        return "\n".join([UNTRUSTED_NOTE, fence_file(planned.ref, planned.filename, body, range=shown), footer])
+        fenced = fence_file(planned.ref, planned.filename, body, range=shown)
+        return self._delivered("\n".join([UNTRUSTED_NOTE, fenced, footer]))
 
     def _read_rows(
         self, planned: PlannedFile, row: Dict[str, Any], text: str, rows: Any, budget: int
@@ -1327,5 +1348,6 @@ class AttachmentsTool(Tool):
             cut = self._cut_note(planned, row, len(encoding.encode_ordinary(text)))
             footer += f". End of the stored text. {cut}]" if cut else ". End of file.]"
         body = "\n".join(picked)
-        return "\n".join([UNTRUSTED_NOTE, fence_file(planned.ref, planned.filename, body, range=shown), footer])
+        fenced = fence_file(planned.ref, planned.filename, body, range=shown)
+        return self._delivered("\n".join([UNTRUSTED_NOTE, fenced, footer]))
 

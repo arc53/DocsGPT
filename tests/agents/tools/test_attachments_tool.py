@@ -733,6 +733,49 @@ class TestSmallWindows:
         # A different range is a new read.
         assert "<attached_file" in tool.execute_action("attachments_read", ref="F1", offset=500, max_tokens=500)
 
+    def test_a_read_that_failed_can_be_retried(self, db, monkeypatch):
+        a = seed(db, "long.txt", " ".join(f"w{i}" for i in range(3000)))
+        tool = tool_for(current=[a])
+        real = AttachmentsTool._content
+        calls = {"n": 0}
+
+        def flaky(self, planned):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("db blip")
+            return real(self, planned)
+
+        monkeypatch.setattr(AttachmentsTool, "_content", flaky)
+
+        first = tool.execute_action("attachments_read", ref="F1", max_tokens=500)
+        again = tool.execute_action("attachments_read", ref="F1", max_tokens=500)
+        assert "could not be read right now" in first
+        assert "<attached_file" in again
+
+    def test_a_read_of_a_missing_row_can_be_retried(self, db, monkeypatch):
+        a = seed(db, "long.txt", " ".join(f"w{i}" for i in range(3000)))
+        tool = tool_for(current=[a])
+        real = AttachmentsTool._content
+        calls = {"n": 0}
+
+        def gone_once(self, planned):
+            calls["n"] += 1
+            return None if calls["n"] == 1 else real(self, planned)
+
+        monkeypatch.setattr(AttachmentsTool, "_content", gone_once)
+
+        assert "no longer available" in tool.execute_action("attachments_read", ref="F1")
+        assert "<attached_file" in tool.execute_action("attachments_read", ref="F1")
+
+    def test_a_refused_read_is_not_reported_as_already_read(self, db):
+        a = seed(db, "notes.txt", "alpha beta gamma")
+        tool = tool_for(current=[a])
+
+        first = tool.execute_action("attachments_read", ref="F1", pages="1-2")
+        again = tool.execute_action("attachments_read", ref="F1", pages="1-2")
+        assert "not a PDF" in first
+        assert "already read" not in again
+
     def test_a_read_after_compression_is_allowed_again(self, db):
         a = seed(db, "long.txt", " ".join(f"w{i}" for i in range(3000)))
         tool = tool_for(current=[a])
