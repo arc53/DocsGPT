@@ -2784,6 +2784,30 @@ def _record_archive_failure(user: str, file_info: Dict[str, Any], parent_id: Opt
         )
 
 
+def record_archive_task_failure(user: str, file_info: Dict[str, Any], error: Any) -> None:
+    """Fail a zip whose own task never got to (the poison guard), keeping its members.
+
+    A zip that already has its row keeps ``metadata.archive``, so members
+    still in flight are counted and can complete it; only
+    ``metadata.extraction`` is marked failed. Never raises.
+
+    Args:
+        user: The uploader.
+        file_info: The zip's task payload.
+        error: Why it failed.
+    """
+    parent_id: Optional[str] = None
+    try:
+        with db_readonly() as conn:
+            row = AttachmentsRepository(conn).get_by_legacy_id(str(file_info.get("attachment_id")), user)
+        parent_id = str(row["id"]) if row else None
+    except Exception:
+        logging.error(
+            f"Failed to look up archive {file_info.get('attachment_id')}", extra={"user": user}, exc_info=True
+        )
+    _record_archive_failure(user, file_info, parent_id, error)
+
+
 def _archive_attachment_worker(self, file_info, user):
     """Unpack a zip attachment and fan its members out to their own tasks.
 

@@ -385,6 +385,34 @@ class TestZipMemberFanOut:
         member = next(m for m in _members(parent["id"]) if m["metadata"]["archive_path"] == "notes.txt")
         assert member["metadata"]["extraction"]["status"] == "failed"
 
+    def test_a_poisoned_zip_task_keeps_its_members_bookkeeping(self, storage_dir, events, dispatched):
+        from docsgpt.api.user.tasks import _emit_attachment_poison_event
+
+        info = _upload(storage_dir, _zip(ENTRIES))
+        _run(info)
+
+        _emit_attachment_poison_event("store_attachment", {"user": USER, "file_info": info})
+
+        parent = _parent(info)
+        assert parent["metadata"]["extraction"]["status"] == "failed"
+        assert parent["metadata"]["archive"]["status"] == "processing"
+        assert len(parent["metadata"]["archive"]["planned"]) == 3
+        _drain(dispatched)
+        archive = _parent(info)["metadata"]["archive"]
+        assert archive["status"] == "complete"
+        assert archive["members"] == 3 and archive["failed"] == 0
+
+    def test_a_zip_poisoned_before_it_has_a_row_gets_a_failure_row(self, storage_dir, events):
+        from docsgpt.api.user.tasks import _emit_attachment_poison_event
+
+        info = _upload(storage_dir, _zip(ENTRIES))
+
+        _emit_attachment_poison_event("store_attachment", {"user": USER, "file_info": info})
+
+        extraction = _parent(info)["metadata"]["extraction"]
+        assert extraction["status"] == "failed"
+        assert extraction["parser"] == "archive"
+
     def test_a_retried_zip_keeps_the_members_that_finished(self, storage_dir, events, dispatched):
         info = _upload(storage_dir, _zip(ENTRIES))
         _run(info)
