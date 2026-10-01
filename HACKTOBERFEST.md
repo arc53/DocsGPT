@@ -13,6 +13,25 @@ pick up; those are suggestions, not a requirement. The team also reviews the pul
 **The T-shirt design and the claim form will be announced later**, on our [Discord](https://discord.gg/vN7YFfdMpj)
 and in the [README](README.md). Keep a link to your merged PR so you can claim once the form is out.
 
+Here are the T-shirts from previous years:
+
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <img src="docs/public/hacktoberfest-tee-2023.jpg" alt="The 2023 DocsGPT T-shirt: black, a small white dinosaur on the front and a purple dinosaur at a computer on the back" width="100%">
+      <p align="center"><b>2023</b></p>
+    </td>
+    <td width="33%" valign="top">
+      <img src="docs/public/hacktoberfest-tee-2024.jpg" alt="The 2024 DocsGPT T-shirt: white, with a print of a purple dinosaur toy at a tiny computer" width="100%">
+      <p align="center"><b>2024</b>: designed by Cardboard, winner of #DocsGPTDesignQuest</p>
+    </td>
+    <td width="33%" valign="top">
+      <img src="docs/public/hacktoberfest-tee-2025.jpg" alt="The 2025 DocsGPT T-shirt: black, a small purple dinosaur on the front and a row of pastel dinosaurs on the back" width="100%">
+      <p align="center"><b>2025</b></p>
+    </td>
+  </tr>
+</table>
+
 If you're in doubt, don't hesitate to ask on Discord or ping me, Alex (dartpain).
 
 ## 📜 How to contribute
