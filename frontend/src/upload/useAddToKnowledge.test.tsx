@@ -25,7 +25,10 @@ import preferenceReducer, {
   setSelectedDocs,
 } from '../preferences/preferenceSlice';
 import uploadReducer from './uploadSlice';
-import { useAddToKnowledge } from './useAddToKnowledge';
+import {
+  knowledgeIdempotencyKey,
+  useAddToKnowledge,
+} from './useAddToKnowledge';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -218,5 +221,38 @@ describe('useAddToKnowledge', () => {
     expect(hook.error).toBe('conversation.attachments.knowledgeFailed');
     expect(store.getState().upload.tasks).toEqual([]);
     expect(hook.pending).toBe(false);
+  });
+});
+
+describe('knowledgeIdempotencyKey', () => {
+  // sha256("att-a\natt-b")
+  const SHA256_OF_A_B =
+    '88dd9c3c846f0c98f4d080d7e14e0b8dc02a8240dc7a2e73f5222263a25af65c';
+
+  it('derives the key from the sorted ids, so a reload sends the same one', async () => {
+    // Nothing kept in memory: the same files give the same key on any page.
+    await expect(knowledgeIdempotencyKey(['att-b', 'att-a'])).resolves.toBe(
+      `attachments-knowledge:${SHA256_OF_A_B}`,
+    );
+    await expect(
+      knowledgeIdempotencyKey(['att-a', 'att-b', 'att-a']),
+    ).resolves.toBe(await knowledgeIdempotencyKey(['att-b', 'att-a']));
+  });
+
+  it('still derives a stable key where Web Crypto is unavailable', async () => {
+    // crypto.subtle exists only in secure contexts (not plain-HTTP hosts).
+    const subtle = vi
+      .spyOn(globalThis.crypto, 'subtle', 'get')
+      .mockReturnValue(undefined as unknown as SubtleCrypto);
+    try {
+      const ids = Array.from({ length: 60 }, (_, i) => `att-${i}`);
+      const key = await knowledgeIdempotencyKey(ids);
+      expect(key).toMatch(/^attachments-knowledge:h:[0-9a-f]{56}$/);
+      expect(key.length).toBeLessThanOrEqual(256);
+      expect(await knowledgeIdempotencyKey([...ids].reverse())).toBe(key);
+      expect(await knowledgeIdempotencyKey(ids.slice(1))).not.toBe(key);
+    } finally {
+      subtle.mockRestore();
+    }
   });
 });
