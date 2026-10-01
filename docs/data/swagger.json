@@ -962,6 +962,25 @@
       },
       "type": "object"
     },
+    "SourceFromAttachmentsModel": {
+      "properties": {
+        "attachment_ids": {
+          "description": "Ids of the caller's chat attachments, in the order to list them",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "name": {
+          "description": "Name of the new source; defaults to the first file's name and a count",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attachment_ids"
+      ],
+      "type": "object"
+    },
     "SourceSearchModel": {
       "properties": {
         "query": {
@@ -4512,6 +4531,31 @@
         "x-pat-scopes": [
           "sources:read"
         ]
+      }
+    },
+    "/api/sources/from_attachments": {
+      "post": {
+        "description": "Creates a Knowledge source from chat attachments the caller already uploaded. The stored originals are copied into a new source and ingested like an upload (a zip contributes its files). Returns the source id and the ingest task id; progress arrives as ``source.ingest.*`` events for that source id.",
+        "operationId": "post_source_from_attachments",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/SourceFromAttachmentsModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-denied": true
       }
     },
     "/api/sources/paginated": {
