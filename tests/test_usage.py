@@ -765,3 +765,67 @@ def test_persist_keeps_the_row_when_pricing_fails(monkeypatch):
     row = _persist_with_cost(monkeypatch, _CostLLM(), boom)
 
     assert row["cost"] == 0.0
+
+
+# ── Attachments are counted once ────────────────────────────────────────────
+
+
+class _Usage:
+    """Stands in for the agent's attachment dispatch."""
+
+    def __init__(self, tokens):
+        self.tokens = tokens
+
+    def usage_tokens(self, messages):
+        return self.tokens
+
+
+class _UsageLLM:
+    decoded_token = {"sub": "user_123"}
+    user_api_key = None
+    agent_id = None
+
+    def __init__(self):
+        self.token_usage = {"prompt_tokens": 0, "generated_tokens": 0}
+
+
+_INLINED = [{"role": "user", "content": "the file text is already here"}]
+_ROW = [{"id": "a1", "mime_type": "text/plain", "content": "word " * 5_000, "metadata": {}}]
+
+
+@pytest.mark.unit
+class TestAttachmentsCountedOnce:
+    def _stream(self, monkeypatch, **kwargs):
+        _install_fake_token_repo(monkeypatch)
+
+        @stream_token_usage
+        def wrapped(self, model, messages, stream, tools, **kw):
+            assert "_attachment_dispatch" not in kw
+            yield "ok"
+
+        llm = _UsageLLM()
+        list(wrapped(llm, "m", _INLINED, True, None, **kwargs))
+        return llm.token_usage["prompt_tokens"]
+
+    def test_text_already_in_the_messages_is_not_counted_again(self, monkeypatch):
+        bare = self._stream(monkeypatch)
+        counted = self._stream(monkeypatch, _usage_attachments=_ROW, _attachment_dispatch=_Usage(0))
+        assert counted == bare
+
+    def test_native_parts_are_counted_at_the_plans_size(self, monkeypatch):
+        bare = self._stream(monkeypatch)
+        counted = self._stream(monkeypatch, _usage_attachments=_ROW, _attachment_dispatch=_Usage(3_000))
+        assert counted == bare + 3_000
+
+    def test_non_streaming_counts_the_same_way(self, monkeypatch):
+        _install_fake_token_repo(monkeypatch)
+
+        @gen_token_usage
+        def wrapped(self, model, messages, stream, tools, **kw):
+            assert "_attachment_dispatch" not in kw
+            return "ok"
+
+        bare_llm, llm = _UsageLLM(), _UsageLLM()
+        wrapped(bare_llm, "m", _INLINED, False, None)
+        wrapped(llm, "m", _INLINED, False, None, _usage_attachments=_ROW, _attachment_dispatch=_Usage(700))
+        assert llm.token_usage["prompt_tokens"] == bare_llm.token_usage["prompt_tokens"] + 700

@@ -94,6 +94,37 @@ def _count_prompt_tokens(messages, tools=None, usage_attachments=None, **kwargs)
     return prompt_tokens
 
 
+def _count_call_prompt(messages, tools, usage_attachments, dispatch, kwargs) -> int:
+    """Prompt tokens of one call, each attachment counted once.
+
+    An agent call carries an attachment dispatch: the files' text is already
+    in ``messages``, and the dispatch adds only what the token counter
+    cannot see there, the native parts (Files-API ids, images) at the size
+    the attachment plan gave them. Without one, ``usage_attachments`` is
+    counted as before.
+
+    Args:
+        messages: The messages sent.
+        tools: The tool schemas sent.
+        usage_attachments: Usage-only attachment rows (``_usage_attachments``).
+        dispatch: The agent's attachment dispatch (``_attachment_dispatch``).
+        kwargs: The remaining gen kwargs (structured-output payloads).
+
+    Returns:
+        The estimated prompt tokens.
+    """
+    if dispatch is None:
+        return _count_prompt_tokens(
+            messages, tools=tools, usage_attachments=usage_attachments, **kwargs
+        )
+    tokens = _count_prompt_tokens(messages, tools=tools, **kwargs)
+    try:
+        tokens += int(dispatch.usage_tokens(messages) or 0)
+    except Exception:
+        logger.debug("Could not size the call's native attachment parts", exc_info=True)
+    return tokens
+
+
 def _persist_call_usage(llm, call_usage, *, duration_ms=None, ttft_ms=None):
     """Write one ``token_usage`` row per LLM call. Always-on; no flag.
 
@@ -255,13 +286,10 @@ def gen_token_usage(func):
     """
     def wrapper(self, model, messages, stream, tools, **kwargs):
         usage_attachments = kwargs.pop("_usage_attachments", None)
-        kwargs.pop("_attachment_dispatch", None)
+        dispatch = kwargs.pop("_attachment_dispatch", None)
         call_usage = {"prompt_tokens": 0, "generated_tokens": 0}
-        call_usage["prompt_tokens"] += _count_prompt_tokens(
-            messages,
-            tools=tools,
-            usage_attachments=usage_attachments,
-            **kwargs,
+        call_usage["prompt_tokens"] += _count_call_prompt(
+            messages, tools, usage_attachments, dispatch, kwargs
         )
         span = start_llm_span(self, model, stream=False, tools=tools)
         started_at = time.monotonic()
@@ -315,13 +343,10 @@ def stream_token_usage(func):
     """Stream variant of ``gen_token_usage``. Same persistence contract."""
     def wrapper(self, model, messages, stream, tools, **kwargs):
         usage_attachments = kwargs.pop("_usage_attachments", None)
-        kwargs.pop("_attachment_dispatch", None)
+        dispatch = kwargs.pop("_attachment_dispatch", None)
         call_usage = {"prompt_tokens": 0, "generated_tokens": 0}
-        call_usage["prompt_tokens"] += _count_prompt_tokens(
-            messages,
-            tools=tools,
-            usage_attachments=usage_attachments,
-            **kwargs,
+        call_usage["prompt_tokens"] += _count_call_prompt(
+            messages, tools, usage_attachments, dispatch, kwargs
         )
         batch = []
         started_at = time.monotonic()

@@ -189,3 +189,75 @@ class TestTheAgentHandsItsDispatchToTheLLM:
         dispatch = llm.gen_stream.call_args.kwargs["_attachment_dispatch"]
         assert isinstance(dispatch, AttachmentDispatch)
         assert isinstance(agent.attachment_plan, (AttachmentPlan, type(None)))
+
+
+class TestUsageOfNativeParts:
+    def test_text_inlined_by_the_plan_adds_nothing(self):
+        agent, messages = _merged_turn([text_att("a.txt", 2_000)])
+        assert AttachmentDispatch(agent).usage_tokens(messages) == 0
+
+    def test_a_native_pdf_counts_at_the_plans_size(self):
+        pdf = pdf_att("a.pdf", "PDF BODY " * 500)
+        agent, messages = _merged_turn([pdf], primary=_LLM("m", types=["application/pdf"]))
+
+        tokens = AttachmentDispatch(agent).usage_tokens(messages)
+
+        assert tokens == agent.attachment_plan.native_tokens > 0
+
+    def test_nothing_before_the_plan_is_merged(self):
+        pdf = pdf_att("a.pdf", "PDF BODY " * 500)
+        agent = _Agent(
+            endpoint="stream",
+            llm_name="openai",
+            model_id="m",
+            api_key="k",
+            llm=_LLM("m", types=["application/pdf"]),
+            llm_handler=LLMHandlerCreator.create_handler("openai"),
+            decoded_token={"sub": "u"},
+            attachments=[pdf],
+            attachment_planning=True,
+        )
+        messages = agent._build_messages("system prompt", "q")
+        assert AttachmentDispatch(agent).usage_tokens(messages) == 0
+
+    def test_an_unplanned_turn_counts_only_what_the_provider_sends_natively(self):
+        image = {"id": "img", "mime_type": "image/png", "token_count": 0}
+        text = text_att("a.txt", 3_000)
+        agent = _Agent(
+            endpoint="stream",
+            llm_name="openai",
+            model_id="m",
+            api_key="k",
+            llm=_LLM("m", types=["image/png"]),
+            llm_handler=LLMHandlerCreator.create_handler("openai"),
+            decoded_token={"sub": "u"},
+            attachments=[image, text],
+        )
+        assert AttachmentDispatch(agent).usage_tokens([]) == 1500
+
+
+class TestFallbackUsage:
+    def test_the_fallback_row_counts_its_own_prompt_once(self, monkeypatch):
+        from tests.test_usage import _install_fake_token_repo
+        from tests.llm.test_fallback import FakeLLM
+
+        _install_fake_token_repo(monkeypatch)
+        files = [text_att(f"r{i}.txt", 12_000) for i in range(3)]
+        agent, messages = _merged_turn(files)
+        primary = FakeLLM(fail_at=0, model_id="m")
+        fallback = FakeLLM(stream_chunks=["fb"], model_id="fb-small")
+        primary._fallback_llm = fallback
+
+        list(
+            primary.gen_stream(
+                model="m",
+                messages=messages,
+                _usage_attachments=files,
+                _attachment_dispatch=AttachmentDispatch(agent),
+            )
+        )
+
+        sent = fallback.last_messages_received
+        from docsgpt.usage import _count_prompt_tokens
+
+        assert fallback.token_usage["prompt_tokens"] == _count_prompt_tokens(sent)
