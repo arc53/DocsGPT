@@ -255,6 +255,7 @@ def gen_token_usage(func):
     """
     def wrapper(self, model, messages, stream, tools, **kwargs):
         usage_attachments = kwargs.pop("_usage_attachments", None)
+        kwargs.pop("_attachment_dispatch", None)
         call_usage = {"prompt_tokens": 0, "generated_tokens": 0}
         call_usage["prompt_tokens"] += _count_prompt_tokens(
             messages,
@@ -314,6 +315,7 @@ def stream_token_usage(func):
     """Stream variant of ``gen_token_usage``. Same persistence contract."""
     def wrapper(self, model, messages, stream, tools, **kwargs):
         usage_attachments = kwargs.pop("_usage_attachments", None)
+        kwargs.pop("_attachment_dispatch", None)
         call_usage = {"prompt_tokens": 0, "generated_tokens": 0}
         call_usage["prompt_tokens"] += _count_prompt_tokens(
             messages,

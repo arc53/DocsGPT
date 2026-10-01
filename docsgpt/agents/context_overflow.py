@@ -35,3 +35,38 @@ class ContextOverflowError(ValueError):
         self.available_tokens = int(available_tokens)
         self.stage = stage
         self.detail = detail
+
+
+# Phrases providers use when a request is longer than the model's window.
+_CONTEXT_LENGTH_PHRASES = (
+    "context_length_exceeded",
+    "maximum context length",
+    "context length exceeded",
+    "context window",
+    "prompt is too long",
+    "input is too long",
+    "too many input tokens",
+    "reduce the length of the messages",
+)
+
+
+def is_context_length_error(error: BaseException) -> bool:
+    """Whether ``error`` says the request did not fit the model's window.
+
+    Covers :class:`ContextOverflowError` and the providers' own rejections
+    (an error ``code`` of ``context_length_exceeded``, or the wording OpenAI,
+    Anthropic, Google and OpenAI-compatible servers use).
+
+    Args:
+        error: Any exception from a model call.
+
+    Returns:
+        True for a context-length failure.
+    """
+    if isinstance(error, ContextOverflowError):
+        return True
+    code = getattr(error, "code", None)
+    if isinstance(code, str) and code == "context_length_exceeded":
+        return True
+    text = str(error).lower()
+    return any(phrase in text for phrase in _CONTEXT_LENGTH_PHRASES)

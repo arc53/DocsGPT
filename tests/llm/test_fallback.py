@@ -1273,6 +1273,8 @@ class SharedEndpointPdfFakeLLM(FakeLLM):
 class TestFallbackMessageReshaping:
 
     def _run_stream(self, primary, messages, attachments):
+        # The provider recorded which attachment it built the file part from.
+        primary._file_part_attachments = {"assistant-abc123": "att-1"}
         return list(
             primary.gen_stream(
                 model="test-model",
@@ -1331,17 +1333,17 @@ class TestFallbackMessageReshaping:
         assert isinstance(user_content, list)
         assert {"type": "file", "file": {"file_id": "assistant-abc123"}} in user_content
 
-    def test_stream_file_part_without_extracted_content_becomes_note(self):
+    def test_stream_file_part_without_extracted_content_skips_the_fallback(self):
+        # The fallback would answer without the document the user sent; the
+        # primary's error is reported instead.
         fallback = FakeLLM(stream_chunks=["fb"])
         primary = FakeLLM(fail_at=0)
         primary._fallback_llm = fallback
 
-        self._run_stream(primary, _parts_messages(), attachments=None)
+        with pytest.raises(RuntimeError):
+            self._run_stream(primary, _parts_messages(), attachments=None)
 
-        user_content = fallback.last_messages_received[1]["content"]
-        assert isinstance(user_content, str)
-        assert "could not be included" in user_content
-        assert "assistant-abc123" not in user_content
+        assert fallback.gen_stream_called is False
 
     def test_stream_string_messages_pass_through_unchanged(self):
         fallback = FakeLLM(stream_chunks=["fb"])
@@ -1357,6 +1359,7 @@ class TestFallbackMessageReshaping:
         fallback = FakeLLM(responses=["fb answer"])
         primary = FakeLLM(fail_at=0)
         primary._fallback_llm = fallback
+        primary._file_part_attachments = {"assistant-abc123": "att-1"}
 
         result = primary.gen(
             model="test-model",

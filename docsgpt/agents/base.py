@@ -12,6 +12,7 @@ from docsgpt.agents.attachment_budget import (
     compute_attachment_budget,
     plan_attachments,
 )
+from docsgpt.agents.attachment_dispatch import AttachmentDispatch
 from docsgpt.agents.context_overflow import ContextOverflowError
 from docsgpt.agents.turn_capabilities import TurnCapabilities, build_turn_capabilities
 from docsgpt.agents.tool_executor import (
@@ -1660,6 +1661,9 @@ class BaseAgent(ABC):
         gen_kwargs = {"model": self.upstream_model_id, "messages": messages}
         if self.attachments:
             gen_kwargs["_usage_attachments"] = self.attachments
+        if self.attachments or isinstance(getattr(self, "attachment_plan", None), AttachmentPlan):
+            # Native-part usage and a fallback's re-plan of the turn's files.
+            gen_kwargs["_attachment_dispatch"] = AttachmentDispatch(self)
 
         if self.tools and self._llm_supports_tools():
             gen_kwargs["tools"] = self.tools

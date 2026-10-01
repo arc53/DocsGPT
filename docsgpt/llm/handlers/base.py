@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 import uuid
@@ -349,14 +350,37 @@ class LLMHandler(ABC):
         Returns:
             The prepared messages.
         """
-        from docsgpt.agents.attachment_budget import FileStatus
-        from docsgpt.agents.attachment_context import render_attachment_block
-
         if getattr(agent, "_attachments_merged", False):
             return messages
         carrier = self._turn_message(agent, messages)
         if carrier is None:
             return messages
+
+        # The turn's message as the user sent it, so a fallback model can
+        # get the files re-planned for its own window.
+        agent._turn_content_before_merge = copy.deepcopy(carrier.get("content"))
+        prepared, carrier, native_estimate = self.merge_attachment_plan(agent.llm, messages, carrier, plan)
+        note = getattr(agent, "note_attachments_merged", None)
+        if callable(note):
+            note(carrier, native_estimate=native_estimate)
+        return prepared
+
+    def merge_attachment_plan(self, llm, messages: List[Dict], carrier: Dict, plan) -> tuple:
+        """Put a plan's native parts and text into ``carrier``, in place.
+
+        Args:
+            llm: The LLM whose provider formats the native parts.
+            messages: Messages ending with (or containing) ``carrier``.
+            carrier: The message the plan's files belong to.
+            plan: The ``AttachmentPlan`` to merge. A native file that fails to
+                convert is switched to its text on the plan.
+
+        Returns:
+            The prepared messages, the merged carrier, and what the token
+            counter charges for the native parts the merge added.
+        """
+        from docsgpt.agents.attachment_budget import FileStatus
+        from docsgpt.agents.attachment_context import render_attachment_block
 
         natives = []
         for planned in plan.files:
@@ -383,8 +407,12 @@ class LLMHandler(ABC):
         prepared = messages
         if natives:
             logger.info(f"Sending {len(natives)} planned attachment(s) natively")
-            prepared = agent.llm.prepare_messages_with_attachments(messages, natives)
-            carrier = self._turn_message(agent, prepared) or carrier
+            prepared = llm.prepare_messages_with_attachments(messages, natives)
+            if not any(message is carrier for message in prepared):
+                for message in reversed(prepared):
+                    if message.get("role") == "user":
+                        carrier = message
+                        break
 
         block = render_attachment_block(plan)
         if block:
@@ -395,11 +423,7 @@ class LLMHandler(ABC):
                 text = content if isinstance(content, str) else ""
                 carrier["content"] = f"{block}\n\n{text}" if text else block
 
-        native_estimate = self._native_part_estimate(carrier) - before
-        note = getattr(agent, "note_attachments_merged", None)
-        if callable(note):
-            note(carrier, native_estimate=native_estimate)
-        return prepared
+        return prepared, carrier, self._native_part_estimate(carrier) - before
 
     @staticmethod
     def _native_part_estimate(message: Dict) -> int:

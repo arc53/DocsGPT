@@ -118,6 +118,10 @@ class BaseLLM(ABC):
         # handler layer reads this to parse chunks with the right provider's
         # handler instead of the primary's.
         self._responding_provider = self.provider_name
+        # Files-API id of each ``file`` part this instance built from an
+        # attachment, mapped to that attachment's id, so a fallback swaps
+        # each part for its own file's text.
+        self._file_part_attachments: Dict[str, str] = {}
 
     @property
     def fallback_llm(self):
@@ -235,6 +239,10 @@ class BaseLLM(ABC):
             from docsgpt.usage import _count_prompt_tokens
 
             estimated = _count_prompt_tokens(messages, tools=kwargs.get("tools"))
+            dispatch = kwargs.get("_attachment_dispatch")
+            if dispatch is not None:
+                # Native parts the token counter cannot see (file ids, images).
+                estimated += int(dispatch.usage_tokens(messages) or 0)
             limit = get_token_limit(
                 fallback.model_id,
                 user_id=getattr(fallback, "model_user_id", None),
@@ -255,17 +263,25 @@ class BaseLLM(ABC):
         return True
 
     @staticmethod
-    def _fallback_attachment_texts(attachments):
-        """Extracted attachment texts, in upload order, for file-part swaps."""
-        texts = []
+    def _fallback_attachment_texts(attachments) -> Dict[str, str]:
+        """Extracted attachment texts by attachment id, for file-part swaps."""
+        texts: Dict[str, str] = {}
         for attachment in attachments or []:
             if not isinstance(attachment, dict):
                 continue
-            if attachment.get("content"):
-                texts.append(attachment["content"])
+            attachment_id = attachment.get("id") or attachment.get("_id")
+            if attachment_id and attachment.get("content"):
+                texts[str(attachment_id)] = attachment["content"]
         return texts
 
-    def _prepare_fallback_messages(self, fallback, messages, attachments=None):
+    def _file_part_text(self, part, file_texts) -> Optional[str]:
+        """The extracted text of the attachment a ``file`` part was built from."""
+        file_id = (part.get("file") or {}).get("file_id")
+        owners = getattr(self, "_file_part_attachments", None) or {}
+        attachment_id = owners.get(file_id) if file_id else None
+        return file_texts.get(attachment_id) if attachment_id else None
+
+    def _prepare_fallback_messages(self, fallback, messages, attachments=None, dropped=None):
         """Rebuild primary-prepared messages so the fallback can accept them.
 
         ``prepare_messages_with_attachments`` ran against the *primary*
@@ -275,9 +291,19 @@ class BaseLLM(ABC):
         ``image_url`` parts 4xx on non-vision models. Handing them over
         unchanged makes the fallback die exactly like the primary did
         ("Fallback LLM also failed"). Swap what the fallback can't accept
-        for text — the attachment's extracted content when available — and
-        collapse all-text parts arrays to plain string content, the one
-        shape every chat endpoint accepts.
+        for text — the extracted content of the attachment the part was built
+        from, matched by attachment id — and collapse all-text parts arrays to
+        plain string content, the one shape every chat endpoint accepts.
+
+        Args:
+            fallback: The fallback LLM.
+            messages: The primary's messages.
+            attachments: The turn's attachment rows (their text is swapped in).
+            dropped: Collects the names of files whose part had no text to
+                stand in for it.
+
+        Returns:
+            Messages the fallback can accept.
         """
         if not messages:
             return messages
@@ -313,17 +339,20 @@ class BaseLLM(ABC):
             for part in content:
                 part_type = part.get("type") if isinstance(part, dict) else None
                 if part_type == "file" and not keeps_files:
-                    if file_texts:
+                    text = self._file_part_text(part, file_texts)
+                    if text:
                         parts.append(
                             {
                                 "type": "text",
-                                "text": f"File content:\n\n{file_texts.pop(0)}",
+                                "text": f"File content:\n\n{text}",
                             }
                         )
                     else:
                         filename = (part.get("file") or {}).get(
                             "filename"
                         ) or "attachment"
+                        if dropped is not None:
+                            dropped.append(filename)
                         parts.append(
                             {
                                 "type": "text",
@@ -350,6 +379,76 @@ class BaseLLM(ABC):
             else:
                 prepared.append({**message, "content": parts})
         return prepared
+
+    def _model_window(self, llm) -> Optional[int]:
+        """The context window of ``llm``'s model, or None when unknown."""
+        try:
+            from docsgpt.core.model_utils import get_token_limit
+
+            return int(get_token_limit(llm.model_id, user_id=getattr(llm, "model_user_id", None)))
+        except Exception:
+            return None
+
+    def _fallback_request(self, fallback, kwargs: Dict, error: BaseException) -> Optional[Dict]:
+        """The kwargs for the fallback call, or None when it must not be tried.
+
+        The fallback is skipped when the primary hit its context window and
+        the fallback's window is no larger, when a document would reach it
+        with nothing to stand in for it (it would answer without the file the
+        user sent), and when the payload it would really receive — the
+        turn's attachments re-planned for its window, file parts swapped for
+        text — cannot fit that window.
+
+        Args:
+            fallback: The fallback LLM.
+            kwargs: The primary call's kwargs.
+            error: What the primary raised.
+
+        Returns:
+            The fallback's kwargs, or None.
+        """
+        from docsgpt.agents.context_overflow import is_context_length_error
+
+        if is_context_length_error(error):
+            primary_window = self._model_window(self)
+            fallback_window = self._model_window(fallback)
+            if primary_window and fallback_window and fallback_window <= primary_window:
+                logger.warning(
+                    f"Not falling back to {fallback.model_id}: the request did not fit "
+                    f"{self.model_id} ({primary_window} tokens) and the fallback's window "
+                    f"({fallback_window} tokens) is no larger."
+                )
+                return None
+        fallback_kwargs = {**kwargs, "model": fallback.model_id}
+        fallback_kwargs = self._adapt_structured_output_kwargs(fallback, fallback_kwargs)
+        messages = fallback_kwargs.get("messages")
+        if messages:
+            dispatch = kwargs.get("_attachment_dispatch")
+            replanned = None
+            if dispatch is not None:
+                try:
+                    replanned = dispatch.for_fallback(fallback, messages)
+                except Exception:
+                    logger.warning("Could not re-plan attachments for the fallback", exc_info=True)
+            if replanned is not None:
+                messages = replanned.messages
+                fallback_kwargs["_attachment_dispatch"] = replanned.dispatch
+            dropped: list = []
+            fallback_kwargs["messages"] = self._prepare_fallback_messages(
+                fallback,
+                messages,
+                kwargs.get("_usage_attachments") or kwargs.get("attachments"),
+                dropped=dropped,
+            )
+            if dropped:
+                logger.warning(
+                    f"Not falling back to {fallback.model_id}: {len(dropped)} attached "
+                    f"file(s) have no text it could read instead."
+                )
+                return None
+        if not self._fallback_payload_fits(fallback, fallback_kwargs):
+            return None
+        return fallback_kwargs
 
     @staticmethod
     def _fallback_enforces_structured_output(fallback) -> bool:
@@ -521,7 +620,8 @@ class BaseLLM(ABC):
                 logger.error(f"Primary LLM failed and no fallback configured: {str(e)}")
                 raise
             fallback = self.fallback_llm
-            if not self._fallback_payload_fits(fallback, kwargs):
+            fallback_kwargs = self._fallback_request(fallback, kwargs, e)
+            if fallback_kwargs is None:
                 raise
             self._responding_provider = fallback.provider_name
             logger.warning(
@@ -547,16 +647,6 @@ class BaseLLM(ABC):
             fallback_method = getattr(fallback, method_name)
             for decorator in decorators:
                 fallback_method = decorator(fallback_method)
-            fallback_kwargs = {**kwargs, "model": fallback.model_id}
-            fallback_kwargs = self._adapt_structured_output_kwargs(
-                fallback, fallback_kwargs
-            )
-            if fallback_kwargs.get("messages"):
-                fallback_kwargs["messages"] = self._prepare_fallback_messages(
-                    fallback,
-                    fallback_kwargs["messages"],
-                    kwargs.get("_usage_attachments") or kwargs.get("attachments"),
-                )
             try:
                 return fallback_method(fallback, *args, **fallback_kwargs)
             except Exception as e2:
@@ -657,7 +747,8 @@ class BaseLLM(ABC):
                 )
                 raise
             fallback = self.fallback_llm
-            if not self._fallback_payload_fits(fallback, kwargs):
+            fallback_kwargs = self._fallback_request(fallback, kwargs, e)
+            if fallback_kwargs is None:
                 raise
             self._responding_provider = fallback.provider_name
             logger.warning(
@@ -681,16 +772,6 @@ class BaseLLM(ABC):
             fallback_method = getattr(fallback, method_name)
             for decorator in decorators:
                 fallback_method = decorator(fallback_method)
-            fallback_kwargs = {**kwargs, "model": fallback.model_id}
-            fallback_kwargs = self._adapt_structured_output_kwargs(
-                fallback, fallback_kwargs
-            )
-            if fallback_kwargs.get("messages"):
-                fallback_kwargs["messages"] = self._prepare_fallback_messages(
-                    fallback,
-                    fallback_kwargs["messages"],
-                    kwargs.get("_usage_attachments") or kwargs.get("attachments"),
-                )
             try:
                 yield from fallback_method(fallback, *args, **fallback_kwargs)
             except Exception as e2:

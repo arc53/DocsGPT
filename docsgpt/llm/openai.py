@@ -1945,6 +1945,11 @@ class OpenAILLM(BaseLLM):
                     prepared_messages[user_message_index]["content"].append(
                         {"type": "file", "file": {"file_id": file_id}}
                     )
+                    attachment_id = attachment.get("id") or attachment.get("_id")
+                    if attachment_id:
+                        # A fallback that cannot take the part swaps in this
+                        # attachment's own text.
+                        self.__dict__.setdefault("_file_part_attachments", {})[file_id] = str(attachment_id)
                 except Exception as e:
                     logging.error(f"Error uploading PDF to OpenAI: {e}", exc_info=True)
                     # Truthy, not membership — ``content`` is always a key on a

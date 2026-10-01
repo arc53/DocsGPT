@@ -34,7 +34,7 @@ def _cache_default(value):
 # params, ...) is part of the request and therefore part of the key —
 # otherwise a workflow node that changed its JSON schema replays the old
 # schema's cached answer for the whole TTL.
-_CACHE_KEY_IGNORED_KWARGS = frozenset({"_usage_attachments", "attachments"})
+_CACHE_KEY_IGNORED_KWARGS = frozenset({"_usage_attachments", "_attachment_dispatch", "attachments"})
 
 # Kwargs that make the answer depend on provider-held state no key can
 # capture. ``previous_response_id`` chains a Responses API turn server
