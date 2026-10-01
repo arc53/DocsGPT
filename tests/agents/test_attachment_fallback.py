@@ -170,6 +170,85 @@ class TestReplanForTheFallback:
         assert AttachmentDispatch(agent).for_fallback(_LLM("fb-big"), other) is None
 
 
+def _merged_turn_with_tool(attachments, primary=None, loaded_tool=False):
+    """A merged turn whose attachments tool was synced with the primary's plan."""
+    from docsgpt.agents.tools.attachments import AttachmentsTool, build_attachments_tool_config
+
+    agent = _Agent(
+        endpoint="stream",
+        llm_name="openai",
+        model_id="m",
+        api_key="k",
+        llm=primary or _LLM("m"),
+        llm_handler=LLMHandlerCreator.create_handler("openai"),
+        decoded_token={"sub": "u"},
+        attachments=attachments,
+        attachment_planning=True,
+    )
+    agent.tool_executor = Mock()
+    agent.tool_executor._loaded_tools = {}
+    agent._attachments_tool_config = build_attachments_tool_config(
+        user="u", current_ids=[a["id"] for a in attachments], earlier_ids=[]
+    )
+    messages = agent._build_messages("system prompt", "compare the files")
+    messages = agent.llm_handler.prepare_messages(agent, messages, attachments)
+    tool = None
+    if loaded_tool:
+        # The executor loads the tool from a copy of the config on its first call.
+        tool = AttachmentsTool(config=dict(agent._attachments_tool_config))
+        agent.tool_executor._loaded_tools["attachments:attachments:u"] = tool
+    return agent, messages, tool
+
+
+def _statuses(config):
+    return {ref: info["status"] for ref, info in config["plan"].items()}
+
+
+class TestTheToolFollowsTheFallbacksPlan:
+    def test_the_tool_lists_the_fallbacks_statuses(self):
+        files = [text_att(f"r{i}.txt", 12_000, body_word=f"w{i}") for i in range(3)]
+        agent, messages, _ = _merged_turn_with_tool(files)
+        config = agent._attachments_tool_config
+        assert set(_statuses(config).values()) == {"inline"}
+
+        replanned = AttachmentDispatch(agent).for_fallback(_LLM("fb-small"), messages)
+
+        assert replanned is not None
+        statuses = _statuses(config)
+        # Not everything fits the small window, and the tool says so.
+        assert set(statuses) == {"F1", "F2", "F3"}
+        assert set(statuses.values()) != {"inline"}
+
+    def test_the_tool_takes_the_fallbacks_vision(self):
+        image = {
+            "id": "id-img",
+            "filename": "photo.png",
+            "mime_type": "image/png",
+            "content": "",
+            "token_count": 0,
+            "path": "inputs/photo.png",
+            "metadata": {"extraction": {"status": "no_text"}},
+        }
+        agent, messages, _ = _merged_turn_with_tool([image, text_att("a.txt", 500)])
+        config = agent._attachments_tool_config
+        assert config["vision"] is False
+
+        AttachmentDispatch(agent).for_fallback(_LLM("fb-big", types=["image/png"]), messages)
+
+        assert config["vision"] is True
+        assert config["image_types"] == ["image/png"]
+
+    def test_an_already_loaded_tool_is_refreshed_too(self):
+        files = [text_att(f"r{i}.txt", 12_000, body_word=f"w{i}") for i in range(3)]
+        agent, messages, tool = _merged_turn_with_tool(files, loaded_tool=True)
+        assert set(_statuses(tool.config).values()) == {"inline"}
+
+        AttachmentDispatch(agent).for_fallback(_LLM("fb-small"), messages)
+
+        assert _statuses(tool.config) == _statuses(agent._attachments_tool_config)
+        assert set(_statuses(tool.config).values()) != {"inline"}
+
+
 class TestTheAgentHandsItsDispatchToTheLLM:
     def test_llm_gen_passes_the_dispatch(self):
         llm = Mock()

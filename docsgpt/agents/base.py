@@ -794,22 +794,47 @@ class BaseAgent(ABC):
             tools_dict, user=owner, current_ids=current, earlier_ids=earlier
         )
 
-    def _sync_attachments_tool(self) -> None:
-        """Copy the turn's capabilities and plan into the attachments tool."""
+    def _sync_attachments_tool(
+        self,
+        plan: Optional[AttachmentPlan] = None,
+        capabilities: Optional[TurnCapabilities] = None,
+    ) -> None:
+        """Copy the turn's capabilities and plan into the attachments tool.
+
+        A tool the executor already loaded holds a copy of the config, so it
+        is updated too: a fallback that re-plans after a tool round must
+        reach the tool the model keeps calling.
+
+        Args:
+            plan: The plan to show; the turn's own when omitted (a fallback
+                passes its re-plan).
+            capabilities: The capabilities to apply; the turn's own when
+                omitted (a fallback passes its own vision and window).
+        """
         config = getattr(self, "_attachments_tool_config", None)
         if not isinstance(config, dict):
             return
-        from docsgpt.agents.tools.attachments import sync_attachments_tool
+        from docsgpt.agents.tools.attachments import AttachmentsTool, sync_attachments_tool
 
-        plan = getattr(self, "attachment_plan", None)
+        if plan is None:
+            plan = getattr(self, "attachment_plan", None)
         plan = plan if isinstance(plan, AttachmentPlan) else None
         used = plan.native_parts if plan is not None else 0
-        sync_attachments_tool(
-            config,
-            capabilities=self.turn_capabilities,
-            plan=plan,
-            max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS) - used,
-        )
+        configs = [config]
+        loaded = getattr(getattr(self, "tool_executor", None), "_loaded_tools", None)
+        if isinstance(loaded, dict):
+            configs.extend(
+                tool.config
+                for tool in loaded.values()
+                if isinstance(tool, AttachmentsTool) and isinstance(tool.config, dict) and tool.config is not config
+            )
+        for target in configs:
+            sync_attachments_tool(
+                target,
+                capabilities=capabilities or self.turn_capabilities,
+                plan=plan,
+                max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS) - used,
+            )
 
     def _server_tool_actions(self, tools_dict: Dict) -> Dict[str, List[str]]:
         """LLM-visible action names of this turn's server-side tools, by tool name.

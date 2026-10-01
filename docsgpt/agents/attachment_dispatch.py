@@ -9,7 +9,9 @@ The agent hands an :class:`AttachmentDispatch` to every ``gen_stream`` call
 * ``for_fallback(fallback, messages)``: the turn's files re-planned for a
   fallback model's window and capabilities, so a fallback gets the documents
   in a form it can read and at a size it can take, instead of the primary's
-  payload with file parts swapped for whole texts.
+  payload with file parts swapped for whole texts. The attachments tool is
+  re-synced with that plan, so the statuses it lists match what the fallback
+  was sent.
 """
 
 from __future__ import annotations
@@ -180,6 +182,11 @@ class AttachmentDispatch:
         )
         _, merged, _ = agent.llm_handler.merge_attachment_plan(fallback, [fresh], fresh, replanned)
         rebuilt[index] = merged
+        # The attachments tool lists each file's status and reads images by
+        # the model's vision; it must describe what the fallback was sent.
+        sync_tool = getattr(agent, "_sync_attachments_tool", None)
+        if callable(sync_tool):
+            sync_tool(plan=replanned, capabilities=capabilities)
         logger.info(
             "Attachments re-planned for fallback %s: budget %d, inline %d tokens (%s)",
             getattr(fallback, "model_id", None),
