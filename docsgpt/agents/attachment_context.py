@@ -114,11 +114,30 @@ def _read_action(plan: AttachmentPlan) -> Optional[str]:
     return None
 
 
-def _fenced(planned: PlannedFile, body: str) -> str:
+def fence_file(ref: str, filename: str, body: str, **attributes: str) -> str:
+    """Fence a file's text as untrusted data under its ref and name.
+
+    The same fence the turn's inlined files use, so tool results read the
+    same way and compression stubs them alike.
+
+    Args:
+        ref: The file's ref (``F3``).
+        filename: The file's name; sanitized here.
+        body: The text to fence; a fence inside it is neutralized.
+        **attributes: Extra label attributes (``range="tokens 1–500 of 9,000"``).
+
+    Returns:
+        The fenced text.
+    """
+    extra = "".join(f' {key}="{sanitize_filename(value)}"' for key, value in attributes.items() if value)
     return (
-        f'<attached_file ref="{planned.ref}" name="{sanitize_filename(planned.filename)}">\n'
+        f'<attached_file ref="{ref}" name="{sanitize_filename(filename)}"{extra}>\n'
         f"{_neutralize(body)}\n{_FENCE_CLOSE}"
     )
+
+
+def _fenced(planned: PlannedFile, body: str) -> str:
+    return fence_file(planned.ref, planned.filename, body)
 
 
 def render_file_sections(plan: AttachmentPlan) -> List[str]:

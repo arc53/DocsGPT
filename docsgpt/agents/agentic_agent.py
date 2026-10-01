@@ -37,6 +37,7 @@ class AgenticAgent(BaseAgent):
         add_graph_search_tool(tools_dict, self.retriever_config)
         if self.wiki_config:
             add_wiki_tool(tools_dict, self.wiki_config)
+        self._add_attachments_tool(tools_dict)
         self._prepare_tools(tools_dict)
 
         # 4. Build messages (prompt has NO pre-fetched docs)

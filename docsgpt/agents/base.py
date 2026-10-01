@@ -8,6 +8,7 @@ from typing import Any, Dict, Generator, List, Optional
 
 from docsgpt.agents.attachment_budget import (
     AttachmentPlan,
+    _attachment_id,
     compute_attachment_budget,
     plan_attachments,
 )
@@ -107,6 +108,7 @@ class BaseAgent(ABC):
     _current_turn_message: Optional[Dict] = None
     _attachments_merged = False
     _attachment_token_correction = 0
+    _attachments_tool_config: Optional[Dict] = None
 
     def __init__(
         self,
@@ -261,6 +263,9 @@ class BaseAgent(ABC):
         self._current_turn_message = None
         self._attachments_merged = False
         self._attachment_token_correction = 0
+        # Config of this turn's attachments tool, when one was added; the
+        # turn's capabilities and plan are copied into it once known.
+        self._attachments_tool_config = None
         self.guardrails_config = resolve_guardrails_config(agent_config)
         self._guardrail_engine = None
         self._guardrail_engine_built = False
@@ -754,6 +759,50 @@ class BaseAgent(ABC):
         self.tool_executor.guardrail_engine = self.guardrails
         self.tools = self.tool_executor.prepare_tools_for_llm(tools_dict)
         self.turn_capabilities = self._compute_turn_capabilities(tools_dict)
+        self._sync_attachments_tool()
+
+    def _add_attachments_tool(self, tools_dict: Dict) -> None:
+        """Add the server-side attachments tool when the conversation has files.
+
+        Only for chat turns that plan their attachments, on a model that takes
+        tools. Call it after the executor merged any client tools and before
+        ``_prepare_tools``, so the turn's capabilities see the tool.
+
+        Args:
+            tools_dict: The turn's tools; mutated in place.
+        """
+        from docsgpt.agents.tools.attachments import add_attachments_tool
+
+        self._attachments_tool_config = None
+        if not getattr(self, "attachment_planning", False):
+            return
+        current = [_attachment_id(a) for a in (self.attachments or []) if isinstance(a, dict)]
+        earlier = [
+            _attachment_id(a) for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)
+        ]
+        if not (current or earlier) or not self._llm_supports_tools():
+            return
+        owner = getattr(self, "initial_user_id", None) or self.user
+        self._attachments_tool_config = add_attachments_tool(
+            tools_dict, user=owner, current_ids=current, earlier_ids=earlier
+        )
+
+    def _sync_attachments_tool(self) -> None:
+        """Copy the turn's capabilities and plan into the attachments tool."""
+        config = getattr(self, "_attachments_tool_config", None)
+        if not isinstance(config, dict):
+            return
+        from docsgpt.agents.tools.attachments import sync_attachments_tool
+
+        plan = getattr(self, "attachment_plan", None)
+        plan = plan if isinstance(plan, AttachmentPlan) else None
+        used = plan.native_parts if plan is not None else 0
+        sync_attachments_tool(
+            config,
+            capabilities=self.turn_capabilities,
+            plan=plan,
+            max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS) - used,
+        )
 
     def _server_tool_actions(self, tools_dict: Dict) -> Dict[str, List[str]]:
         """LLM-visible action names of this turn's server-side tools, by tool name.
@@ -1284,6 +1333,7 @@ class BaseAgent(ABC):
             docs_tokens=num_tokens_from_string(document_block) if document_block else 0,
         )
         reserved = self.attachment_plan.reserved_tokens if self.attachment_plan else 0
+        self._sync_attachments_tool()
 
         while (
             document_block

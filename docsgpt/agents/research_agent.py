@@ -301,6 +301,7 @@ class ResearchAgent(BaseAgent):
         think_entry["config"] = {}
         tools_dict[THINK_TOOL_ID] = think_entry
 
+        self._add_attachments_tool(tools_dict)
         self._prepare_tools(tools_dict)
         return tools_dict
 
