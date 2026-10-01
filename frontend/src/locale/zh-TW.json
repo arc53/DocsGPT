@@ -2021,7 +2021,10 @@
       "waitingToSend_one": "{{count}} 個檔案處理完成後傳送…",
       "waitingToSend_other": "{{count}} 個檔案處理完成後傳送…",
       "cancelQueuedSend": "取消",
-      "unreadableByModel": "{{model}} 無法讀取 {{name}}，請切換到支援圖片或 PDF 的模型"
+      "unreadableByModel": "{{model}} 無法讀取 {{name}}，請切換到支援圖片或 PDF 的模型",
+      "queued": "等待上傳",
+      "uploading": "正在上傳",
+      "processing": "正在處理"
     },
     "retry": "重試",
     "failedTitle": "無法產生回覆",

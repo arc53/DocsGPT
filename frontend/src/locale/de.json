@@ -2031,7 +2031,10 @@
       "waitingToSend_one": "Wird gesendet, sobald {{count}} Datei verarbeitet ist…",
       "waitingToSend_other": "Wird gesendet, sobald {{count}} Dateien verarbeitet sind…",
       "cancelQueuedSend": "Abbrechen",
-      "unreadableByModel": "{{model}} kann {{name}} nicht lesen – wechsle zu einem Modell, das Bilder oder PDFs unterstützt"
+      "unreadableByModel": "{{model}} kann {{name}} nicht lesen – wechsle zu einem Modell, das Bilder oder PDFs unterstützt",
+      "queued": "Wartet auf Upload",
+      "uploading": "Wird hochgeladen",
+      "processing": "Wird verarbeitet"
     },
     "retry": "Erneut versuchen",
     "failedTitle": "Antwort konnte nicht erstellt werden",

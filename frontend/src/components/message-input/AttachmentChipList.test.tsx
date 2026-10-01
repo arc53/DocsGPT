@@ -120,3 +120,113 @@ describe('AttachmentChipList failed chip', () => {
     ).toBeNull();
   });
 });
+
+describe('AttachmentChipList states', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.useRealTimers();
+  });
+
+  const render = async (attachments: Attachment[]) => {
+    await act(async () => {
+      root.render(
+        <AttachmentChipList
+          attachments={attachments}
+          draggingId={null}
+          onRemove={() => {}}
+          onDragStart={() => {}}
+          onDragOver={() => {}}
+          onDropOn={() => {}}
+        />,
+      );
+    });
+  };
+
+  const chipOf = (name: string) =>
+    [...container.querySelectorAll<HTMLElement>('[draggable="true"]')].find(
+      (chip) => chip.textContent?.includes(name),
+    )!;
+
+  it('marks a file still waiting for an upload slot as queued', async () => {
+    await render([
+      att({ id: 'q', fileName: 'queued.pdf', status: 'uploading' }),
+      att({
+        id: 'u',
+        fileName: 'moving.pdf',
+        status: 'uploading',
+        progress: 40,
+      }),
+      att({
+        id: 'p',
+        fileName: 'parsing.pdf',
+        status: 'processing',
+        progress: 10,
+      }),
+    ]);
+
+    expect(
+      chipOf('queued.pdf').querySelector(
+        'svg[aria-label="conversation.attachments.queued"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      chipOf('moving.pdf').querySelector(
+        '[aria-label="conversation.attachments.uploading"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      chipOf('parsing.pdf').querySelector(
+        '[aria-label="conversation.attachments.processing"]',
+      ),
+    ).not.toBeNull();
+  });
+
+  it('caps the chip area and scrolls it, so many files keep the page in view', async () => {
+    await render([att({ status: 'completed', errorMessage: undefined })]);
+    const list = container.querySelector('[data-slot="attachment-chips"]')!;
+    expect(list.className).toMatch(/(^|\s)max-h-\S+/);
+    expect(list.className).toContain('overflow-y-auto');
+  });
+
+  it('draws a failed chip in the destructive tone, not faded', async () => {
+    await render([
+      att({ id: 'f', fileName: 'bad.mov' }),
+      att({ id: 'ok', fileName: 'good.pdf', status: 'completed' }),
+    ]);
+    const failed = chipOf('bad.mov');
+    expect(failed.getAttribute('data-status')).toBe('failed');
+    expect(failed.className).toContain('border-destructive/50');
+    expect(failed.className).toContain('bg-destructive/10');
+    expect(failed.className).not.toContain('opacity-70');
+    const tile = failed.querySelector('[data-slot="attachment-tile"]')!;
+    expect(tile.className).toContain('bg-destructive');
+    expect(tile.className).not.toContain('bg-primary');
+
+    const good = chipOf('good.pdf');
+    expect(good.className).not.toContain('destructive');
+  });
+
+  it('opens the failure reason on keyboard focus too', async () => {
+    await render([att()]);
+    const chip = chipOf('scan.pdf');
+    expect(chip.tabIndex).toBe(0);
+    await act(async () => {
+      chip.focus();
+      vi.advanceTimersByTime(500);
+    });
+    expect(
+      document.body.querySelector('[data-slot="tooltip-content"]')?.textContent,
+    ).toContain('Upload failed. The file could not be read.');
+  });
+});

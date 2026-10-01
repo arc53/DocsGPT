@@ -2037,7 +2037,10 @@
       "knowledgeAdded": "Adding these files to Knowledge. Ask again when they're ready.",
       "knowledgeFailed": "Couldn't add these files to Knowledge. Try again.",
       "knowledgeName_one": "{{name}} and {{count}} more",
-      "knowledgeName_other": "{{name}} and {{count}} more"
+      "knowledgeName_other": "{{name}} and {{count}} more",
+      "queued": "Waiting to upload",
+      "uploading": "Uploading",
+      "processing": "Processing"
     },
     "retry": "Retry",
     "failedTitle": "Couldn't generate a response",

@@ -146,6 +146,17 @@ a chat".
   Sources) are `outline sm pill`. Their icons are `size-3.5 sm:size-4`
   with no margin; the size's `gap-1.5` spaces them, and the label span keeps
   `text-xs sm:text-sm` so the row still fits on a phone.
+- The attachment chips above the field (`message-input/AttachmentChipList`)
+  sit in one `scrollbar-overlay` area capped at `max-h-32 sm:max-h-48` (about
+  two and a half rows on a phone, three and a half wider, so the cut row
+  shows there is more), so many files never push the composer over the page;
+  its `p-1` keeps focus and drag rings clear of the scroll clip. A chip's brand tile shows its state: `Clock` while it waits
+  for an upload slot, a progress ring while it uploads or the worker parses
+  it (both faded), `Paperclip` once attached. A failed chip is the status
+  look: `border-destructive/50 bg-destructive/10` at full opacity, a solid
+  `bg-destructive` tile with `CircleAlert`, and the reason in a tooltip that
+  opens on hover and on focus (the failed chip is a tab stop), also tied to
+  the chip and its remove button with `aria-describedby`.
 
 ## Chat answer column
 

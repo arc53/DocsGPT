@@ -2021,7 +2021,10 @@
       "waitingToSend_one": "{{count}} 件のファイルの処理が終わると送信されます…",
       "waitingToSend_other": "{{count}} 件のファイルの処理が終わると送信されます…",
       "cancelQueuedSend": "キャンセル",
-      "unreadableByModel": "{{model}} は {{name}} を読み取れません。画像や PDF に対応したモデルに切り替えてください"
+      "unreadableByModel": "{{model}} は {{name}} を読み取れません。画像や PDF に対応したモデルに切り替えてください",
+      "queued": "アップロード待ち",
+      "uploading": "アップロード中",
+      "processing": "処理中"
     },
     "retry": "再試行",
     "failedTitle": "応答を生成できませんでした",

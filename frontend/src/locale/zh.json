@@ -2020,7 +2020,10 @@
       "waitingToSend_one": "{{count}} 个文件处理完成后发送…",
       "waitingToSend_other": "{{count}} 个文件处理完成后发送…",
       "cancelQueuedSend": "取消",
-      "unreadableByModel": "{{model}} 无法读取 {{name}}，请切换到支持图片或 PDF 的模型"
+      "unreadableByModel": "{{model}} 无法读取 {{name}}，请切换到支持图片或 PDF 的模型",
+      "queued": "等待上传",
+      "uploading": "正在上传",
+      "processing": "正在处理"
     },
     "retry": "重试",
     "failedTitle": "无法生成回复",

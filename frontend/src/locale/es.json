@@ -2031,7 +2031,10 @@
       "waitingToSend_one": "Se enviará cuando termine de procesarse {{count}} archivo…",
       "waitingToSend_other": "Se enviará cuando terminen de procesarse {{count}} archivos…",
       "cancelQueuedSend": "Cancelar",
-      "unreadableByModel": "{{model}} no puede leer {{name}}: cambia a un modelo compatible con imágenes o PDF"
+      "unreadableByModel": "{{model}} no puede leer {{name}}: cambia a un modelo compatible con imágenes o PDF",
+      "queued": "En espera para subir",
+      "uploading": "Subiendo",
+      "processing": "Procesando"
     },
     "retry": "Reintentar",
     "failedTitle": "No se pudo generar una respuesta",

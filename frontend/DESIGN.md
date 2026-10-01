@@ -783,7 +783,9 @@ cover the button above; the default `top` everywhere else (under an answer,
 in the composer, in rows). Toast close and collapse buttons are plain `Button`s with
 an `aria-label` and no tooltip.
 
-Tooltips open after 400ms. One `TooltipProvider` is mounted in `main.tsx`,
+Tooltip text is 12px in a box at most 320px wide (`max-w-xs`) that wraps
+with `text-pretty`, so a two-line tooltip fills its box; `text-balance` would
+even the lines out and leave half the box empty. Tooltips open after 400ms. One `TooltipProvider` is mounted in `main.tsx`,
 so moving along a row of icon buttons opens each at once after the first
 (Radix's skip-delay); a `Tooltip` outside it (tests, a portal root) adds its
 own provider. For a hint on something that is not an icon button, compose
