@@ -537,6 +537,20 @@ class TestSearch:
         offset = int(first_hit.split("offset=")[1].split(")")[0])
         assert number in tool.execute_action("attachments_read", ref="F8", offset=offset, max_tokens=400)
 
+    def test_more_matches_than_shown_are_counted_and_pageable(self, db):
+        texts = [" ".join(["filler"] * 400 + ["needle"] + ["filler"] * 400) for _ in range(30)]
+        ids = [seed(db, f"part_{i}.txt", t) for i, t in enumerate(texts)]
+        tool = tool_for(current=ids)
+
+        first = tool.execute_action("attachments_search", query="needle", k=20)
+        assert first.count("<attached_file") == 20
+        assert "10 more matching passage(s)" in first
+        assert "offset=20" in first
+
+        rest = tool.execute_action("attachments_search", query="needle", k=20, offset=20)
+        assert rest.count("<attached_file") == 10
+        assert "more matching" not in rest
+
     def test_slovenian_with_diacritics(self, db):
         import random
 

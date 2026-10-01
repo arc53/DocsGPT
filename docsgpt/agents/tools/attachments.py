@@ -566,10 +566,24 @@ class _Index:
                 break
             start += SEARCH_CHUNK_STRIDE
 
-    def search(self, query: str, refs: Optional[set], k: int) -> List[Tuple[float, _Passage]]:
+    def search(
+        self, query: str, refs: Optional[set], k: int, offset: int = 0
+    ) -> Tuple[List[Tuple[float, _Passage]], int]:
+        """The ``k`` best passages after the first ``offset``, and how many match in all.
+
+        Args:
+            query: Keywords.
+            refs: Only passages of these refs; None for all.
+            k: Passages to return.
+            offset: Matching passages to skip (paging).
+
+        Returns:
+            The page of ``(score, passage)``, best first, and the number of
+            distinct matching passages.
+        """
         terms = list(dict.fromkeys(search_tokens(query)))
         if not terms or not self.passages:
-            return []
+            return [], 0
         n = len(self.passages)
         average = self.total_length / n if n else 1.0
         scores: Dict[int, float] = {}
@@ -585,19 +599,24 @@ class _Index:
                 norm = tf * (BM25_K1 + 1) / (tf + BM25_K1 * (1 - BM25_B + BM25_B * passage.length / average))
                 scores[index] = scores.get(index, 0.0) + idf * norm
         ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
-        hits: List[Tuple[float, _Passage]] = []
+        matches: List[Tuple[float, _Passage]] = []
+        # Kept starts by (file, start // chunk): an overlap can only sit in
+        # the same bucket or a neighbour, so counting every match stays cheap.
+        kept: Dict[Tuple[int, int], List[int]] = {}
         for index, score in ranked:
             passage = self.passages[index]
+            owner, bucket = id(passage.planned), passage.start // SEARCH_CHUNK_TOKENS
             # Overlapping windows of one file would repeat the same text.
             if any(
-                kept.planned is passage.planned and abs(kept.start - passage.start) < SEARCH_CHUNK_TOKENS
-                for _, kept in hits
+                abs(start - passage.start) < SEARCH_CHUNK_TOKENS
+                for near in (bucket - 1, bucket, bucket + 1)
+                for start in kept.get((owner, near), ())
             ):
                 continue
-            hits.append((score, passage))
-            if len(hits) >= k:
-                break
-        return hits
+            kept.setdefault((owner, bucket), []).append(passage.start)
+            matches.append((score, passage))
+        offset = max(int(offset or 0), 0)
+        return matches[offset : offset + k], len(matches)
 
 
 def _snippet(text: str, query: str) -> str:
@@ -708,7 +727,9 @@ class AttachmentsTool(Tool):
                     pages=kwargs.get("pages"),
                 )
             if action == SEARCH:
-                return self._search(kwargs.get("query"), refs=kwargs.get("refs"), k=kwargs.get("k"))
+                return self._search(
+                    kwargs.get("query"), refs=kwargs.get("refs"), k=kwargs.get("k"), offset=kwargs.get("offset")
+                )
         except Exception:
             logger.exception("attachments tool: %s failed", action)
             return "Error: the attachments could not be read right now."
@@ -790,6 +811,12 @@ class AttachmentsTool(Tool):
                         "k": {
                             "type": "integer",
                             "description": f"Passages to return (default {DEFAULT_SEARCH_K}, max {MAX_SEARCH_K}).",
+                            "filled_by_llm": True,
+                            "required": False,
+                        },
+                        "offset": {
+                            "type": "integer",
+                            "description": "Matching passages to skip, to see the next ones (default 0).",
                             "filled_by_llm": True,
                             "required": False,
                         },
@@ -1070,7 +1097,7 @@ class AttachmentsTool(Tool):
             self._index, self._unsearchable = index, unsearchable
         return self._index
 
-    def _search(self, query: Any, *, refs: Any = None, k: Any = None) -> str:
+    def _search(self, query: Any, *, refs: Any = None, k: Any = None, offset: Any = None) -> str:
         query = str(query or "").strip()
         if not query:
             return "Error: a query is required."
@@ -1079,6 +1106,10 @@ class AttachmentsTool(Tool):
         except (TypeError, ValueError):
             limit = DEFAULT_SEARCH_K
         limit = max(min(limit, MAX_SEARCH_K), 1)
+        try:
+            skip = max(int(offset), 0) if offset not in (None, "") else 0
+        except (TypeError, ValueError):
+            skip = 0
         wanted: Optional[set] = None
         if refs not in (None, "", []):
             items = refs if isinstance(refs, (list, tuple)) else str(refs).split(",")
@@ -1087,7 +1118,7 @@ class AttachmentsTool(Tool):
                 planned, label = self._find(item)
                 wanted.add(planned.ref if planned is not None else label)
         index = self._search_index()
-        hits = index.search(query, wanted, limit)
+        hits, total = index.search(query, wanted, limit, skip)
         skipped = [p for p in self._unsearchable if wanted is None or p.ref in wanted]
         skipped_note = (
             "Files with no text to search: "
@@ -1097,6 +1128,8 @@ class AttachmentsTool(Tool):
             else ""
         )
         if not hits:
+            if total:
+                return f'Only {total} passage(s) match "{sanitize_filename(query)}"; offset {skip} is past them.'
             message = f'No matches for "{sanitize_filename(query)}" in the attached files.'
             return f"{message} {skipped_note}".strip()
         lines = [f'{len(hits)} passage(s) for "{sanitize_filename(query)}", best first. {UNTRUSTED_NOTE}']
@@ -1108,6 +1141,12 @@ class AttachmentsTool(Tool):
                 f'{self._action(READ)}(ref="{planned.ref}", offset={passage.start}))'
             )
             lines.append(fence_file(planned.ref, planned.filename, _snippet(passage.text, query), range=span))
+        more = total - skip - len(hits)
+        if more > 0:
+            lines.append(
+                f"{more} more matching passage(s) not shown. Refine the query or the refs, or see the next "
+                f'ones with {self._action(SEARCH)}(query="{sanitize_filename(query)}", offset={skip + len(hits)}).'
+            )
         if skipped_note:
             lines.append(skipped_note)
         return "\n".join(lines)
