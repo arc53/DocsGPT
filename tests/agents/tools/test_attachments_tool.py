@@ -41,7 +41,7 @@ def rc01(tmp_path_factory):
 
 
 def seed(conn, filename, content, *, user=USER, mime="text/plain", path=None, content_hash=None,
-         status="ok", truncated=False, original_tokens=None, page_count=None):
+         status="ok", truncated=False, original_tokens=None, page_count=None, extraction=None):
     tokens = num_tokens_from_string(content or "")
     metadata = {
         "content_hash": content_hash or hashlib.sha256(f"{filename}:{content}".encode()).hexdigest(),
@@ -50,6 +50,7 @@ def seed(conn, filename, content, *, user=USER, mime="text/plain", path=None, co
             "truncated": truncated,
             "original_tokens": original_tokens or tokens,
             "stored_tokens": tokens,
+            **(extraction or {}),
         },
     }
     if page_count:
@@ -773,7 +774,7 @@ class TestSmallWindows:
 
         first = tool.execute_action("attachments_read", ref="F1", pages="1-2")
         again = tool.execute_action("attachments_read", ref="F1", pages="1-2")
-        assert "not a PDF" in first
+        assert "no page markers" in first
         assert "already read" not in again
 
     def test_a_read_after_compression_is_allowed_again(self, db):
@@ -784,3 +785,182 @@ class TestSmallWindows:
 
         tool.set_context_hint(room_tokens=None, epoch=1)
         assert "<attached_file" in tool.execute_action("attachments_read", ref="F1", max_tokens=500)
+
+
+STORED_CUT = 100_000
+
+
+@pytest.fixture(scope="module")
+def ordinance(tmp_path_factory):
+    """A 203-page ordinance as plain text with ``--- stran N ---`` markers.
+
+    The fact sits on page 150, well past the 100k-token cut of the stored text.
+    """
+    import random
+
+    from tests.fixtures.many_attachments import corpus
+
+    rng = random.Random(150)
+    pages = []
+    for number in range(1, 204):
+        body = corpus.sl_ordinance(rng, f"Odlok, stran {number} (fiktivni)", 1100)
+        if number == 150:
+            body += "\n\n150. člen\nZnačilnost VZ-150: višina slemena je največ 9,5 m."
+        pages.append(f"--- stran {number} ---\n{body}")
+    text = "\n".join(pages)
+    out = tmp_path_factory.mktemp("full") / "ordinance.txt"
+    out.write_text("original upload", encoding="utf-8")
+    side = Path(str(out) + ".extracted.txt")
+    side.write_text(text, encoding="utf-8")
+    return out, side, text
+
+
+def seed_cut(db, ordinance, *, side_path=None):
+    from docsgpt.utils import get_encoding
+
+    path, side, text = ordinance
+    encoding = get_encoding()
+    ids = encoding.encode_ordinary(text)
+    head = encoding.decode(ids[:STORED_CUT])
+    return seed(
+        db, "ordinance.txt", head, path=str(path), truncated=True, original_tokens=len(ids),
+        extraction={"full_text_path": str(side_path or side), "full_text_tokens": len(ids)},
+    ), len(ids)
+
+
+@pytest.mark.unit
+class TestFullText:
+    """A file cut at upload is searched and read whole from its side copy."""
+
+    def test_search_finds_a_passage_past_the_stored_cut(self, db, storage, ordinance):
+        row_id, _total = seed_cut(db, ordinance)
+        tool = tool_for(current=[row_id])
+
+        result = tool.execute_action("attachments_search", query="VZ-150 višina slemena")
+
+        first_hit = result.split("\n- ", 1)[1].splitlines()[0]
+        assert first_hit.startswith("F1 ")
+        offset = int(first_hit.split("offset=")[1].split(")")[0])
+        assert offset > STORED_CUT
+        assert "VZ-150" in result
+        assert "VZ-150" in tool.execute_action("attachments_read", ref="F1", offset=offset, max_tokens=600)
+
+    def test_reading_past_the_cut_returns_the_tail(self, db, storage, ordinance):
+        row_id, total = seed_cut(db, ordinance)
+
+        result = tool_for(current=[row_id]).execute_action(
+            "attachments_read", ref="F1", offset=STORED_CUT + 10, max_tokens=500
+        )
+
+        assert f"of {total:,}" in result
+        assert "not available" not in result and "cut at upload" not in result
+        assert num_tokens_from_string(body_of(result)) > 400
+
+    def test_the_last_slice_ends_the_file(self, db, storage, ordinance):
+        row_id, total = seed_cut(db, ordinance)
+
+        result = tool_for(current=[row_id]).execute_action("attachments_read", ref="F1", offset=total - 50)
+
+        assert "End of file" in result
+
+    def test_pages_of_a_text_file_follow_its_page_markers(self, db, storage, ordinance):
+        row_id, _total = seed_cut(db, ordinance)
+
+        result = tool_for(current=[row_id]).execute_action("attachments_read", ref="F1", pages="150")
+
+        assert "VZ-150" in result
+        assert "page 150 of 203" in result
+        assert 'pages="151' in result
+
+    def test_a_page_range_is_cut_to_the_read_budget(self, db, storage, ordinance):
+        row_id, _total = seed_cut(db, ordinance)
+
+        result = tool_for(current=[row_id]).execute_action(
+            "attachments_read", ref="F1", pages="10-20", max_tokens=1500
+        )
+
+        assert num_tokens_from_string(body_of(result)) <= 1700
+        assert "Continue with" in result
+
+    def test_the_listing_reports_the_whole_size(self, db, storage, ordinance):
+        row_id, total = seed_cut(db, ordinance)
+
+        listing = tool_for(current=[row_id]).execute_action("attachments_list")
+
+        line = [line for line in listing.splitlines() if "ordinance.txt" in line][0]
+        assert f"{total:,} tokens" in line
+        assert "cut at upload" not in line
+
+    def test_a_missing_side_copy_falls_back_to_the_stored_text(self, db, storage, ordinance, tmp_path):
+        row_id, _total = seed_cut(db, ordinance, side_path=Path(str(ordinance[0]) + ".gone.extracted.txt"))
+        tool = tool_for(current=[row_id])
+
+        past = tool.execute_action("attachments_read", ref="F1", offset=STORED_CUT + 10)
+
+        assert "cut at upload" in past and "not available" in past
+        assert "No matches" in tool.execute_action("attachments_search", query="VZ-150")
+
+    def test_a_side_copy_outside_the_files_folder_is_ignored(self, db, storage, ordinance, tmp_path):
+        stray = tmp_path / "elsewhere.extracted.txt"
+        stray.write_text(ordinance[2], encoding="utf-8")
+        row_id, _total = seed_cut(db, ordinance, side_path=stray)
+
+        past = tool_for(current=[row_id]).execute_action("attachments_read", ref="F1", offset=STORED_CUT + 10)
+
+        assert "not available" in past
+
+    def test_a_side_copy_over_the_size_cap_is_not_loaded(self, db, storage, ordinance, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "ATTACHMENT_FULL_TEXT_MAX_BYTES", 10_000)
+        row_id, _total = seed_cut(db, ordinance)
+
+        past = tool_for(current=[row_id]).execute_action("attachments_read", ref="F1", offset=STORED_CUT + 10)
+
+        assert "not available" in past
+
+    def test_search_indexes_a_bounded_amount_of_text_per_turn(self, db, storage, ordinance, monkeypatch):
+        monkeypatch.setattr("docsgpt.agents.tools.attachments.SEARCH_MAX_INDEX_TOKENS", 50_000)
+        row_id, _total = seed_cut(db, ordinance)
+
+        result = tool_for(current=[row_id]).execute_action("attachments_search", query="VZ-150")
+
+        assert "No matches" in result
+        assert "first 50,000 tokens of F1" in result
+
+
+@pytest.mark.unit
+class TestTextPages:
+    def test_form_feeds_separate_pages(self, db):
+        a = seed(db, "letters.txt", "first page text\fsecond page text\fthird page text")
+
+        result = tool_for(current=[a]).execute_action("attachments_read", ref="F1", pages="2")
+
+        assert "second page text" in result
+        assert "first page" not in body_of(result)
+        assert "page 2 of 3" in result
+
+    def test_english_page_markers(self, db):
+        text = "\n".join(f"--- Page {n} ---\nbody of page {n}" for n in range(1, 6))
+        a = seed(db, "report.txt", text)
+
+        result = tool_for(current=[a]).execute_action("attachments_read", ref="F1", pages="4-5")
+
+        assert "body of page 4" in result and "body of page 5" in result
+        assert "body of page 3" not in result
+        assert "End of file" in result
+
+    def test_a_text_file_without_page_markers_says_so(self, db):
+        a = seed(db, "notes.txt", "alpha beta")
+
+        result = tool_for(current=[a]).execute_action("attachments_read", ref="F1", pages="1")
+
+        assert "no page markers" in result
+        assert "offset" in result
+
+    def test_a_page_past_the_end(self, db):
+        a = seed(db, "letters.txt", "one\ftwo")
+
+        result = tool_for(current=[a]).execute_action("attachments_read", ref="F1", pages="9")
+
+        assert "2 pages" in result

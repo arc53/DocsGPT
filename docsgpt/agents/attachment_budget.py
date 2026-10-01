@@ -31,6 +31,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from docsgpt.agents.turn_capabilities import TurnCapabilities
+from docsgpt.attachment_full_text import full_text_tokens
 
 # Context the provider charges for one image part. Matches the compression
 # token counter's per-image estimate; real cost varies by provider and size.
@@ -131,6 +132,9 @@ class PlannedFile:
         reason: Why the file was left out, when it was.
         sandbox_eligible: The code sandbox is in the turn and can take the
             file (its size is within ``SANDBOX_MAX_INPUT_BYTES`` or unknown).
+        full_tokens: Tokens of the whole extracted text the attachments tool
+            can read past the stored cut (``docsgpt.attachment_full_text``);
+            None when the stored text is all there is.
     """
 
     ref: str
@@ -150,11 +154,17 @@ class PlannedFile:
     shown_pages: int = 0
     reason: Optional[str] = None
     sandbox_eligible: bool = False
+    full_tokens: Optional[int] = None
 
     @property
     def in_context(self) -> bool:
         """Some of the file's content is in this turn's context."""
         return self.inline_tokens > 0
+
+    @property
+    def readable_tokens(self) -> int:
+        """Tokens the attachments tool can read: the whole text when it was kept."""
+        return max(self.full_tokens or 0, self.text_tokens)
 
 
 @dataclass(eq=False)
@@ -559,6 +569,7 @@ def _new_planned(row: Dict[str, Any], ref: str, attachment_id: str, is_current: 
         text_tokens=text_tokens,
         original_tokens=original,
         page_count=page_count if isinstance(page_count, int) and page_count > 0 else None,
+        full_tokens=full_text_tokens(row),
     )
 
 

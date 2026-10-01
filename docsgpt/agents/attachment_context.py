@@ -69,8 +69,22 @@ def _head(content: str, tokens: int) -> str:
     return encoding.decode(ids[: max(tokens, 0)])
 
 
-def _extraction_note(planned: PlannedFile) -> str:
+def _reads_past_cut(planned: PlannedFile, read_action: Optional[str]) -> bool:
+    """The file was cut at upload, but the tool in this turn can read its whole text."""
+    return bool(read_action) and planned.readable_tokens > planned.text_tokens
+
+
+def _extraction_note(planned: PlannedFile, read_action: Optional[str] = None) -> str:
     """The disclosure for text the parser stored only in part."""
+    if _reads_past_cut(planned, read_action):
+        if planned.status == FileStatus.PARTIAL:
+            # The marker after the head says how much is shown and where to read on.
+            return ""
+        return (
+            f'[NOTE: "{sanitize_filename(planned.filename)}" is longer than what is included here: tokens '
+            f"1–{planned.text_tokens:,} of {planned.readable_tokens:,}. Read on with "
+            f'{read_action}(ref="{planned.ref}", offset={planned.text_tokens}).]\n\n'
+        )
     metadata = planned.attachment.get("metadata") or {}
     extraction = metadata.get("extraction") if isinstance(metadata, dict) else None
     if not isinstance(extraction, dict) or not extraction.get("truncated"):
@@ -115,7 +129,8 @@ def partial_marker(planned: PlannedFile, plan: AttachmentPlan) -> str:
             return f'{head} Read the rest with {read_action}(ref="{planned.ref}", pages="{shown + 1}-{last}")]'
         return f"{head} The rest is not available in this turn; do not guess what it says.]"
     shown = planned.shown_tokens
-    head = f"[{planned.ref} {name}: showing tokens 1–{shown:,} of {planned.text_tokens:,}."
+    total = planned.readable_tokens if read_action else planned.text_tokens
+    head = f"[{planned.ref} {name}: showing tokens 1–{shown:,} of {total:,}."
     if read_action:
         return f'{head} Read the rest with {read_action}(ref="{planned.ref}", offset={shown})]'
     return f"{head} The rest is not available in this turn; do not guess what it says.]"
@@ -178,10 +193,11 @@ def render_file_sections(plan: AttachmentPlan) -> List[str]:
         if not planned.in_context or planned.native:
             continue
         content = str(planned.attachment.get("content") or "")
+        read_action = _read_action(plan)
         if planned.status == FileStatus.INLINE:
-            sections.append(_fenced(planned, _extraction_note(planned) + content))
+            sections.append(_fenced(planned, _extraction_note(planned, read_action) + content))
         elif planned.status == FileStatus.PARTIAL:
-            body = _extraction_note(planned) + _head(content, planned.shown_tokens)
+            body = _extraction_note(planned, read_action) + _head(content, planned.shown_tokens)
             sections.append(f"{_fenced(planned, body)}\n{partial_marker(planned, plan)}")
         elif planned.status == FileStatus.SANDBOX:
             body = _head(content, planned.shown_tokens)
@@ -280,9 +296,11 @@ def _skipped_line(entry: dict) -> str:
     return f"- {sanitize_filename(entry.get('filename'))} | {mime_type} | {state} ({reason})"
 
 
-def _size(planned: PlannedFile) -> str:
+def _size(planned: PlannedFile, read_action: Optional[str] = None) -> str:
     parts = []
-    if planned.text_tokens:
+    if _reads_past_cut(planned, read_action):
+        parts.append(f"{planned.readable_tokens:,} tokens")
+    elif planned.text_tokens:
         parts.append(f"{planned.text_tokens:,} tokens")
     if planned.page_count:
         parts.append(f"{planned.page_count:,} pages")
@@ -323,7 +341,7 @@ def _archive_skips(plan: AttachmentPlan) -> bool:
     return False
 
 
-def _status(planned: PlannedFile) -> str:
+def _status(planned: PlannedFile, read_action: Optional[str] = None) -> str:
     status = planned.status
     if status == FileStatus.ARCHIVE:
         return _archive_status(planned)
@@ -331,7 +349,8 @@ def _status(planned: PlannedFile) -> str:
         more = "" if planned.page_count else "; the PDF has more pages"
         return f"partial ({_pages_shown(planned.shown_pages, planned.page_count)} sent as images{more})"
     if status == FileStatus.PARTIAL:
-        return f"partial (tokens 1–{planned.shown_tokens:,} of {planned.text_tokens:,})"
+        total = planned.readable_tokens if _reads_past_cut(planned, read_action) else planned.text_tokens
+        return f"partial (tokens 1–{planned.shown_tokens:,} of {total:,})"
     if status == FileStatus.INLINE and planned.native:
         return "inline (sent as a file)"
     if status == FileStatus.UNREADABLE and planned.reason in _REASONS:
@@ -346,6 +365,11 @@ def _upload_cut(planned: PlannedFile, read_action: Optional[str]) -> str:
     if not isinstance(extraction, dict) or not extraction.get("truncated"):
         return ""
     stored, original = extraction.get("stored_tokens"), extraction.get("original_tokens")
+    if _reads_past_cut(planned, read_action):
+        note = f"text past the first {planned.text_tokens:,} tokens is readable and searchable with {read_action}"
+        if isinstance(original, int) and original > planned.readable_tokens:
+            note += f" up to {planned.readable_tokens:,} of ~{original:,} tokens (cut at upload)"
+        return note
     if isinstance(stored, int) and isinstance(original, int) and original > stored:
         note = f"stored text cut at {stored:,} of ~{original:,} tokens"
     else:
@@ -357,10 +381,10 @@ def _upload_cut(planned: PlannedFile, read_action: Optional[str]) -> str:
 
 def _manifest_line(planned: PlannedFile, *, sandbox: bool = False, read_action: Optional[str] = None) -> str:
     fields = [f"{planned.ref} {sanitize_filename(planned.filename)}", planned.mime_type]
-    size = _size(planned)
+    size = _size(planned, read_action)
     if size and planned.status not in (FileStatus.UNREADABLE, FileStatus.ARCHIVE):
         fields.append(size)
-    fields.append(_status(planned))
+    fields.append(_status(planned, read_action))
     cut = _upload_cut(planned, read_action)
     if cut and planned.status != FileStatus.UNREADABLE:
         fields.append(cut)
