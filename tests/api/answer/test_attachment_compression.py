@@ -252,3 +252,49 @@ class TestFitBeforeCompression:
         sp.attachments = []
         perform = _run(sp, {"queries": _history(10, 9_000)})
         assert perform.called, "history is compressed, the turn is not refused"
+
+
+class TestEarlierFilesByUploadHandle:
+    """A /v1 file stored this request is named by its upload handle, not its PG id."""
+
+    @pytest.fixture
+    def rows(self, pg_conn):
+        import uuid
+        from contextlib import contextmanager
+
+        from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
+
+        repo = AttachmentsRepository(pg_conn)
+        handle = str(uuid.uuid4())
+        new = repo.create("u", "new.txt", "u/new.txt", mime_type="text/plain", legacy_mongo_id=handle)
+        old = repo.create("u", "old.txt", "u/old.txt", mime_type="text/plain")
+
+        @contextmanager
+        def _conn():
+            yield pg_conn
+
+        with patch(f"{SP}.db_readonly", _conn):
+            yield handle, str(new["id"]), str(old["id"])
+
+    def test_a_handle_finds_its_row(self, rows):
+        handle, new_id, _ = rows
+        sp = _processor({"question": "next", "earlier_attachments": [handle]})
+
+        assert [str(r["id"]) for r in sp._fetch_attachment_rows([handle])] == [new_id]
+
+    def test_a_handle_joins_the_earlier_files_once(self, rows):
+        handle, new_id, old_id = rows
+        sp = _processor({"question": "next", "earlier_attachments": [handle, old_id]})
+        sp.trace_source = "v1"
+
+        # The conversation already lists the handle's row by its PG id.
+        earlier = sp._with_request_earlier_attachments([{"id": new_id}])
+
+        assert [str(r["id"]) for r in earlier] == [new_id, old_id]
+
+    def test_a_file_first_sent_in_an_earlier_message_is_listed_as_earlier(self, rows):
+        handle, new_id, _ = rows
+        sp = _processor({"question": "next", "earlier_attachments": [handle]})
+        sp.trace_source = "v1"
+
+        assert [str(r["id"]) for r in sp._with_request_earlier_attachments([])] == [new_id]

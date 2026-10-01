@@ -916,10 +916,12 @@ class StreamProcessor:
         if not missing:
             return rows
         try:
-            return [*rows, *self._fetch_attachment_rows(missing)]
+            fetched = self._fetch_attachment_rows(missing)
         except Exception as e:
             logger.error("Error loading the request's earlier attachments: %s", bounded_error_text(e))
             return rows
+        # A handle can name a row the conversation already lists by its PG id.
+        return [*rows, *(r for r in fetched if str(r.get("id")) not in known)]
 
     def _request_skipped_files(self) -> List[Dict[str, Any]]:
         """Files the request named that are not attachment rows, with the reason.
@@ -942,9 +944,16 @@ class StreamProcessor:
         return skipped
 
     def _fetch_attachment_rows(self, ids: List[str]) -> List[Dict[str, Any]]:
-        """The caller's attachment rows for ``ids``, metadata only."""
+        """The caller's attachment rows for ``ids``, metadata only.
+
+        An id may be a PG id or an upload handle (``legacy_mongo_id``): a
+        ``/v1`` file stored this request is named by its handle.
+        """
         with db_readonly() as conn:
-            return AttachmentsRepository(conn).list_for_planning(ids, self.initial_user_id)
+            repo = AttachmentsRepository(conn)
+            resolved = repo.resolve_ids(ids)
+            pg_ids = list(dict.fromkeys(resolved.get(str(i), str(i)) for i in ids))
+            return repo.list_for_planning(pg_ids, self.initial_user_id)
 
     def _window(self) -> int:
         """The turn's model window."""
