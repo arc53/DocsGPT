@@ -2501,6 +2501,73 @@ def _apply_archive_outcomes(
     return to_dispatch, [("attachment.progress", _archive_progress_event(row, current, "processing"))]
 
 
+def _count_archive_member_outcome(
+    user: str, member_info: Dict[str, Any], outcome: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    """Count one member's final outcome on its zip and report the zip's progress.
+
+    Args:
+        user: The uploader.
+        member_info: The member's task payload.
+        outcome: ``{"status": "ok", "token_count": n}`` or
+            ``{"status": "failed", "reason": text}``.
+
+    Returns:
+        The members whose slots this freed, stamped as dispatched, for the
+        caller to dispatch.
+    """
+    parent_id = (member_info.get("metadata") or {}).get("parent_attachment_id")
+    with db_session() as conn:
+        repo = AttachmentsRepository(conn)
+        row = repo.get_for_update(str(parent_id), user) if parent_id else None
+        if row is None:
+            return []
+        to_dispatch, events = _apply_archive_outcomes(repo, row, {str(member_info["attachment_id"]): outcome})
+    _publish_archive_events(user, row, events)
+    return to_dispatch
+
+
+def _dispatch_archive_members(members: List[Dict[str, Any]], user: str) -> None:
+    """Dispatch members already stamped as dispatched, failing any that cannot be queued.
+
+    A member is stamped before its dispatch (the stamp commits with the
+    zip's bookkeeping), so a dispatch that raises would otherwise leave it
+    stamped with no task behind it until the reconciler's timeout. Each
+    dispatch is tried twice; a member that still cannot be queued is
+    failed with the reason, which frees its slot for the next member (also
+    dispatched here) or completes the zip.
+
+    Args:
+        members: The members' task payloads.
+        user: The uploader.
+    """
+    pending = list(members)
+    while pending:
+        member = pending.pop(0)
+        error: Optional[Exception] = None
+        for _attempt in range(2):
+            try:
+                _dispatch_archive_member(member, user)
+                error = None
+                break
+            except Exception as exc:
+                error = exc
+        if error is None:
+            continue
+        logging.error(
+            f"Could not queue archive member {member.get('metadata', {}).get('archive_path')}",
+            extra={"user": user},
+            exc_info=error,
+        )
+        reason = f"Could not be queued for processing: {_member_failure_reason(error)}"
+        record_attachment_failure(user, member, reason)
+        pending.extend(
+            _count_archive_member_outcome(
+                user, member, {"status": "failed", "reason": reason[:_ARCHIVE_FAILURE_REASON_CHARS]}
+            )
+        )
+
+
 def _record_archive_member_outcome(user: str, member_info: Dict[str, Any], outcome: Dict[str, Any]) -> None:
     """Count one member's final outcome on its zip, then dispatch and report.
 
@@ -2510,16 +2577,7 @@ def _record_archive_member_outcome(user: str, member_info: Dict[str, Any], outco
         outcome: ``{"status": "ok", "token_count": n}`` or
             ``{"status": "failed", "reason": text}``.
     """
-    parent_id = (member_info.get("metadata") or {}).get("parent_attachment_id")
-    with db_session() as conn:
-        repo = AttachmentsRepository(conn)
-        row = repo.get_for_update(str(parent_id), user) if parent_id else None
-        if row is None:
-            return
-        to_dispatch, events = _apply_archive_outcomes(repo, row, {str(member_info["attachment_id"]): outcome})
-    for member in to_dispatch:
-        _dispatch_archive_member(member, user)
-    _publish_archive_events(user, row, events)
+    _dispatch_archive_members(_count_archive_member_outcome(user, member_info, outcome), user)
 
 
 def _archive_event_scope(row: Dict[str, Any]) -> Dict[str, str]:
@@ -2759,8 +2817,7 @@ def _start_archive_members(
             to_dispatch = _members_to_dispatch(archive, resume=True)
             archive = _stamp_dispatched(archive, to_dispatch)
             repo.update(parent_id, user, {"metadata": {**row["metadata"], "archive": archive}})
-    for member in to_dispatch:
-        _dispatch_archive_member(member, user)
+    _dispatch_archive_members(to_dispatch, user)
     if completed is not None:
         _publish_archive_events(
             user,

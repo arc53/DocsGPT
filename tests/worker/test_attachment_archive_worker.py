@@ -585,3 +585,63 @@ class TestStuckZipMemberSweep:
         assert running["attachment_id"] not in archive["outcomes"]
         assert [m["metadata"]["archive_path"] for m in archive["planned"]
                 if m["attachment_id"] in archive["outcomes"]] == ["docs/readme.md", "nested.zip/inner.txt"]
+
+
+def _flaky_broker(monkeypatch, queue, failing_path, failures):
+    """Dispatch into ``queue``, but raise for ``failing_path`` ``failures`` times."""
+    left = {"n": failures}
+
+    def dispatch(member_info, user):
+        if member_info["metadata"]["archive_path"] == failing_path and left["n"]:
+            left["n"] -= 1
+            raise ConnectionError("broker unreachable")
+        queue.append((member_info, user))
+
+    monkeypatch.setattr("docsgpt.worker._dispatch_archive_member", dispatch)
+
+
+@pytest.mark.usefixtures("wired_engine")
+class TestZipMemberDispatchFailure:
+    def test_a_failed_dispatch_is_retried_once(self, storage_dir, events, monkeypatch):
+        queue = []
+        _flaky_broker(monkeypatch, queue, "docs/readme.md", failures=1)
+        info = _upload(storage_dir, _zip(ENTRIES))
+
+        _run_all(info, queue)
+
+        archive = _parent(info)["metadata"]["archive"]
+        assert archive["status"] == "complete"
+        assert archive["failed"] == 0
+
+    def test_a_member_that_cannot_be_queued_fails_with_a_reason(self, storage_dir, events, monkeypatch):
+        queue = []
+        _flaky_broker(monkeypatch, queue, "docs/readme.md", failures=99)
+        info = _upload(storage_dir, _zip(ENTRIES))
+
+        _run_all(info, queue)
+
+        parent = _parent(info)
+        archive = parent["metadata"]["archive"]
+        assert archive["status"] == "complete"
+        assert archive["failed"] == 1
+        assert archive["failed_members"][0]["archive_path"] == "docs/readme.md"
+        assert "broker unreachable" in archive["failed_members"][0]["reason"]
+        assert events[-1][0] == "attachment.completed"
+        member = next(m for m in _members(parent["id"]) if m["metadata"]["archive_path"] == "docs/readme.md")
+        assert member["metadata"]["extraction"]["status"] == "failed"
+
+    def test_a_member_freed_by_an_outcome_that_cannot_be_queued_fails_too(
+        self, storage_dir, events, monkeypatch
+    ):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "ATTACHMENT_ARCHIVE_PARALLELISM", 1)
+        queue = []
+        _flaky_broker(monkeypatch, queue, "docs/readme.md", failures=99)
+        info = _upload(storage_dir, _zip(ENTRIES))
+
+        _run_all(info, queue)
+
+        archive = _parent(info)["metadata"]["archive"]
+        assert archive["status"] == "complete"
+        assert [f["archive_path"] for f in archive["failed_members"]] == ["docs/readme.md"]

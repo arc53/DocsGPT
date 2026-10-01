@@ -416,10 +416,11 @@ def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) ->
             )
     for member_info, user_id in member_dispatches:
         try:
-            _worker._dispatch_archive_member(member_info, user_id)
+            # A member that cannot be queued is failed with the reason there.
+            _worker._dispatch_archive_members([member_info], user_id)
         except Exception:
-            # Stamped as dispatched: a member that never reaches the broker
-            # times out on a later tick instead of stalling the zip.
+            # Stamped as dispatched: a member left without a task times out
+            # on a later tick instead of stalling the zip.
             logger.exception("reconciler: failed to dispatch zip member %s", member_info.get("attachment_id"))
 
     return summary
