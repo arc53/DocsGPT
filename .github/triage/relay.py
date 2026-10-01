@@ -442,19 +442,38 @@ class GitHub:
         return self._request(f"{API}/graphql", data=body)
 
 
+def count_or_none(gh: GitHub, query: str) -> Optional[int]:
+    """A search count, or None when GitHub refuses the query or rate-limits it."""
+    try:
+        return gh.count(query)
+    except urllib.error.HTTPError as error:
+        print(f"Search refused ({error.code}): {query}", file=sys.stderr)
+        return None
+
+
+def search_items(gh: GitHub, query: str, limit: int) -> list[dict[str, Any]]:
+    """Search results for optional facts; empty when GitHub refuses or rate-limits the search."""
+    try:
+        return gh.search(query, limit=limit).get("items", [])
+    except urllib.error.HTTPError as error:
+        print(f"Search refused ({error.code}): {query}", file=sys.stderr)
+        return []
+
+
 def author_facts(gh: GitHub, login: str, association: Optional[str]) -> dict[str, Any]:
     """Account age and history in this repo, for spam and experience signals."""
     user = gh.get(f"users/{login}")
     return {
         "login": login,
         "association": association,
+        "type": user.get("type"),
         "account_age_days": days_since(user.get("created_at")),
         "public_repos": user.get("public_repos"),
         "followers": user.get("followers"),
-        "prs_merged_here": gh.count(f"is:pr is:merged author:{login}"),
-        "prs_open_here": gh.count(f"is:pr is:open author:{login}"),
-        "issues_opened_here": gh.count(f"is:issue author:{login}"),
-        "issues_assigned_open_here": gh.count(f"is:issue is:open assignee:{login}"),
+        "prs_merged_here": count_or_none(gh, f"is:pr is:merged author:{login}"),
+        "prs_open_here": count_or_none(gh, f"is:pr is:open author:{login}"),
+        "issues_opened_here": count_or_none(gh, f"is:issue author:{login}"),
+        "issues_assigned_open_here": count_or_none(gh, f"is:issue is:open assignee:{login}"),
     }
 
 
@@ -474,9 +493,9 @@ def similar_items(gh: GitHub, number: int, title: str, qualifier: str = "is:issu
     keywords = title_keywords(title)[:4]
     if not keywords:
         return []
-    found = gh.search(f"{qualifier} in:title {' '.join(keywords[:3])}", limit=6).get("items", [])
+    found = search_items(gh, f"{qualifier} in:title {' '.join(keywords[:3])}", 6)
     if len(found) < 3 and len(keywords) > 1:
-        found += gh.search(f"{qualifier} in:title {' OR '.join(keywords)}", limit=6).get("items", [])
+        found += search_items(gh, f"{qualifier} in:title {' OR '.join(keywords)}", 6)
     seen: set[int] = set()
     similar = []
     for item in found:
@@ -650,7 +669,7 @@ def pr_facts(gh: GitHub, number: int, bot: str) -> dict[str, Any]:
             continue
         competing = [
             item["number"]
-            for item in gh.search(f'is:pr is:open "#{issue_number}"', limit=10).get("items", [])
+            for item in search_items(gh, f'is:pr is:open "#{issue_number}"', 10)
             if item["number"] != number
         ]
         linked.append(
@@ -745,8 +764,10 @@ def write_job(out_dir: str, index: int, kind: str, number: int, payload: dict[st
 def review_is_due(facts: dict[str, Any], maintainers: Maintainers, bot: str) -> Optional[str]:
     """Why an automatic ``pr_review`` should wait or be skipped, or None when it is due."""
     author = facts["author"]
-    if facts["draft"] or maintainers.includes(author["login"], author["association"]) or author["login"] == bot:
-        return "draft, or authored by a maintainer or the bot"
+    if author.get("type") == "Bot" or author["login"] == bot:
+        return "authored by a bot"
+    if facts["draft"] or maintainers.includes(author["login"], author["association"]):
+        return "draft, or authored by a maintainer"
     if facts["ci"]["state"] == "pending" or facts["coderabbit"]["status"] == "pending":
         return "checks still running, a later event will review it"
     last = facts["last_bot_review"] or {}
@@ -792,6 +813,11 @@ def jobs_for(
         numbers = decision.get("numbers") or prs_for_sha(gh, decision["sha"])
     jobs = []
     for number in numbers:
+        if not manual:
+            author = gh.get(f"/pulls/{number}").get("user") or {}
+            if author.get("type") == "Bot" or author.get("login") == bot:
+                print(f"PR #{number}: authored by a bot")
+                continue
         facts = pr_facts(gh, number, bot)
         mark_maintainer(facts["author"], maintainers)
         if "sha" in decision and facts["head_sha"] != decision["sha"]:

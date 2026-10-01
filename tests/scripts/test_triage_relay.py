@@ -27,6 +27,17 @@ def _comment(body, login="someone", association="NONE"):
     return {"id": 99, "body": body, "author_association": association, "user": {"login": login, "type": "User"}}
 
 
+class _FakeGitHub:
+    """Answers ``GET /pulls/<n>`` with the given author; nothing else is called."""
+
+    def __init__(self, user: dict) -> None:
+        self.user = user
+
+    def get(self, path: str, **params) -> dict:
+        assert path.startswith("/pulls/")
+        return {"user": self.user}
+
+
 def _sender(login="someone", kind="User"):
     return {"login": login, "type": kind}
 
@@ -349,7 +360,8 @@ class TestShaEvents:
 
         monkeypatch.setattr(relay, "pr_facts", facts)
         monkeypatch.setattr(relay, "prs_for_sha", lambda gh, sha: [5, 6])
-        jobs = relay.jobs_for(None, {"kind": "pr_review", "sha": "def"}, {}, BOT, SKIP)
+        human = _FakeGitHub({"login": "dev", "type": "User"})
+        jobs = relay.jobs_for(human, {"kind": "pr_review", "sha": "def"}, {}, BOT, SKIP)
         assert [job[1]["number"] for job in jobs] == [5]
 
 
@@ -401,3 +413,56 @@ class TestMaintainers:
     def test_mark_maintainer(self):
         assert relay.mark_maintainer({"login": "dartpain", "association": "CONTRIBUTOR"}, SKIP)["is_maintainer"]
         assert not relay.mark_maintainer({"login": "dev", "association": "NONE"}, SKIP)["is_maintainer"]
+
+
+class TestBotAuthoredPullRequests:
+    def test_ci_finishing_on_a_dependabot_pr_is_not_reviewed(self, monkeypatch):
+        def facts(gh, number, bot):
+            return {
+                "number": number,
+                "head_sha": "def",
+                "draft": False,
+                "author": {"association": "NONE", "login": "dependabot[bot]", "type": "Bot"},
+                "ci": {"state": "success"},
+                "coderabbit": {"status": "success"},
+                "last_bot_review": None,
+            }
+
+        monkeypatch.setattr(relay, "pr_facts", facts)
+        decision = {"kind": "pr_review", "sha": "def", "numbers": [9]}
+        bot_author = _FakeGitHub({"login": "dependabot[bot]", "type": "Bot"})
+        assert relay.jobs_for(bot_author, decision, {}, BOT, SKIP) == []
+        # Facts already collected (a manual run) still keep a bot's PR out of automatic review.
+        assert relay.review_is_due(facts(None, 9, BOT), SKIP, BOT) == "authored by a bot"
+
+    def test_a_human_pr_from_the_same_event_is_reviewed(self, monkeypatch):
+        def facts(gh, number, bot):
+            return {
+                "number": number,
+                "head_sha": "def",
+                "draft": False,
+                "author": {"association": "NONE", "login": "dev", "type": "User"},
+                "ci": {"state": "success"},
+                "coderabbit": {"status": "success"},
+                "last_bot_review": None,
+            }
+
+        monkeypatch.setattr(relay, "pr_facts", facts)
+        decision = {"kind": "pr_review", "sha": "def", "numbers": [9]}
+        human = _FakeGitHub({"login": "dev", "type": "User"})
+        assert [job[1]["number"] for job in relay.jobs_for(human, decision, {}, BOT, SKIP)] == [9]
+
+    def test_a_refused_search_counts_as_unknown(self):
+        class Refusing:
+            def count(self, query: str) -> int:
+                raise relay.urllib.error.HTTPError("u", 422, "refused", {}, None)
+
+        assert relay.count_or_none(Refusing(), "is:pr author:dependabot[bot]") is None
+
+    def test_a_refused_optional_search_gives_no_items(self):
+        class Refusing:
+            def search(self, query: str, limit: int = 5) -> dict:
+                raise relay.urllib.error.HTTPError("u", 403, "rate limited", {}, None)
+
+        assert relay.search_items(Refusing(), "is:pr is:open bump", 6) == []
+        assert relay.similar_items(Refusing(), 1, "Bump the uv group across directories") == []
