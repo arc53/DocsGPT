@@ -11,9 +11,9 @@ spec:
   retriever: classic
   chunks: 4
   model:
-    default: gpt-6-sol
+    default: gpt-6.1-sol
     available:
-    - gpt-6-sol
+    - gpt-6.1-sol
   sources:
   - name: docsgpt-triage-manual
     type: wiki
