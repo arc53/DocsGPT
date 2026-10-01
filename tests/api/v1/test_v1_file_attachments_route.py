@@ -1,6 +1,7 @@
 """/v1: file parts become attachment rows the turn and its history refer to."""
 
 import base64
+import json
 import threading
 from unittest.mock import MagicMock, patch
 
@@ -249,3 +250,49 @@ class TestParsesWaitInsideTheStream:
 
         assert response.status_code == 200
         assert data["attachments"] == ["att-0"]
+
+
+class TestQuotaIsCheckedBeforeFilesAreStored:
+    """An exhausted quota refuses the request before its files cost storage or a parse."""
+
+    @staticmethod
+    def _refusal():
+        from flask import Response
+
+        body = {"error": {"message": "Quota exhausted", "type": "quota_exceeded"}}
+        return Response(json.dumps(body), status=429, mimetype="application/json")
+
+    @pytest.mark.parametrize("stream", [False, True])
+    def test_an_over_quota_request_stores_and_queues_nothing(self, pg_conn, stream):
+        processor, helper = _processor(), _helper(['data: {"type": "end"}'])
+        helper.check_usage.return_value = self._refusal()
+
+        response, raw, _, ingested = _post(pg_conn, {**BODY, "stream": stream}, processor, helper, pending=True)
+
+        ingested.assert_not_called()
+        assert response.status_code == 429
+        assert response.get_json() == {"error": {"message": "Quota exhausted", "type": "quota_exceeded"}}
+        processor.build_agent.assert_not_called()
+
+    def test_the_pre_check_bills_the_agent_owner_through_the_agent(self, pg_conn):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        processor, helper = _processor(), _helper(['data: {"type": "end"}'])
+        helper.check_usage.return_value = self._refusal()
+
+        _post(pg_conn, BODY, processor, helper)
+
+        agent = AgentsRepository(pg_conn).find_by_key("x")
+        config, token = helper.check_usage.call_args.args
+        assert config["user_api_key"] == "x"
+        assert token == {"sub": "u-test"}
+        assert helper.check_usage.call_args.kwargs["agent_id"] == str(agent["id"])
+
+    def test_a_request_within_quota_is_still_checked_when_it_runs(self, pg_conn):
+        processor, helper = _processor(), _helper(['data: {"type": "end"}'])
+
+        response, _, _, ingested = _post(pg_conn, BODY, processor, helper)
+
+        assert response.status_code == 200
+        ingested.assert_called_once()
+        assert helper.check_usage.call_count == 2

@@ -380,6 +380,17 @@ def chat_completions():
     if internal_data.get("tool_actions") and internal_data.get("conversation_id"):
         internal_data["persist"] = True
 
+    # Storing inline files and queueing their parses costs storage and worker
+    # time, so an exhausted quota refuses the request before either happens.
+    # ``_serve`` checks again once the agent is built.
+    if internal_data.get("inline_files"):
+        usage_error = _V1AnswerHelper().check_usage(
+            {"user_api_key": api_key}, decoded_token, agent_id=agent_id_value or None
+        )
+        if usage_error:
+            # Nothing is claimed or stored yet: the idempotency claim is taken in ``_serve``.
+            return usage_error
+
     # Files and images sent inline become the owner's attachment rows, so the
     # attachment planner, manifest and attachments tool handle them. A
     # streamed request waits for the parses inside its stream.
