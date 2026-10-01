@@ -13,6 +13,7 @@ import {
   setSourceDocs,
 } from '../preferences/preferenceSlice';
 import type { RootState } from '../store';
+import { newIdempotencyKey } from '../utils/idempotency';
 import {
   addUploadTask,
   removeUploadTask,
@@ -23,6 +24,21 @@ import {
 export interface KnowledgeFile {
   id: string;
   fileName: string;
+}
+
+// One Idempotency-Key per file set for the page's life. A repeat for the same
+// files (a second click, the composer hint and the error action, a retry after
+// a lost response) gets the source the first request made, not a duplicate.
+const knowledgeKeys = new Map<string, string>();
+
+function knowledgeKey(ids: string[]): string {
+  const set = [...new Set(ids)].sort().join('\n');
+  let key = knowledgeKeys.get(set);
+  if (!key) {
+    key = newIdempotencyKey();
+    knowledgeKeys.set(set, key);
+  }
+  return key;
 }
 
 // An ingest of many large files can take a while; the wait is only a store
@@ -140,9 +156,11 @@ export function useAddToKnowledge() {
         }),
       );
       try {
+        const ids = files.map((file) => file.id);
         const response = await userService.createSourceFromAttachments(
-          { attachment_ids: files.map((file) => file.id), name },
+          { attachment_ids: ids, name },
           token,
+          knowledgeKey(ids),
         );
         const data = await response.json().catch(() => null);
         if (!response.ok || !data?.success || !data.source_id) {

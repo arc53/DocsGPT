@@ -128,8 +128,14 @@ const userService = {
   createSourceFromAttachments: (
     data: { attachment_ids: string[]; name?: string },
     token: string | null,
+    idempotencyKey?: string,
   ): Promise<Response> =>
-    apiClient.post(endpoints.USER.SOURCE_FROM_ATTACHMENTS, data, token),
+    apiClient.post(
+      endpoints.USER.SOURCE_FROM_ATTACHMENTS,
+      data,
+      token,
+      idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {},
+    ),
   updateSourceConfig: (
     sourceId: string,
     config: any,

@@ -101,6 +101,7 @@ describe('useAddToKnowledge', () => {
         name: 'conversation.attachments.knowledgeName:{"name":"report.pdf","count":2}',
       },
       null,
+      expect.any(String),
     );
     const task = store.getState().upload.tasks[0];
     expect(task).toMatchObject({
@@ -109,6 +110,27 @@ describe('useAddToKnowledge', () => {
       status: 'training',
     });
     expect(hook.error).toBeNull();
+  });
+
+  it('sends one Idempotency-Key per file set, so a repeat gets the first source', async () => {
+    createSourceFromAttachments.mockResolvedValue(
+      okResponse({ success: true, task_id: 't', source_id: 's' }),
+    );
+    const set = [
+      { id: 'key-a', fileName: 'a.pdf' },
+      { id: 'key-b', fileName: 'b.pdf' },
+    ];
+    await act(async () => {
+      await hook.addToKnowledge(set);
+      await hook.addToKnowledge([...set].reverse());
+      await hook.addToKnowledge([set[0]]);
+    });
+    const keys = createSourceFromAttachments.mock.calls.map((call) => call[2]);
+    expect(keys[0]).toEqual(expect.any(String));
+    expect(keys[0]).not.toBe('');
+    // The same files in another order are the same set.
+    expect(keys[1]).toBe(keys[0]);
+    expect(keys[2]).not.toBe(keys[0]);
   });
 
   it('names a single file after itself', async () => {

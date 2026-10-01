@@ -15,13 +15,21 @@ from flask_restx import fields, Resource
 from sqlalchemy import Connection, text
 
 from docsgpt.api import api
-from docsgpt.api.user.sources.upload import _audit_source_created, sources_upload_ns
+from docsgpt.api.user.sources.upload import (
+    _audit_source_created,
+    _claim_task_or_get_cached,
+    _read_idempotency_key,
+    _release_claim,
+    _scoped_idempotency_key,
+    sources_upload_ns,
+)
 from docsgpt.api.user.tasks import ingest
 from docsgpt.core.settings import settings
 from docsgpt.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.storage.db.source_ids import derive_source_id
 from docsgpt.storage.storage_creator import StorageCreator
 from docsgpt.utils import safe_filename
 
@@ -138,7 +146,10 @@ class SourceFromAttachments(Resource):
             "uploaded. The stored originals are copied into a new source and "
             "ingested like an upload (a zip contributes its files). Returns the "
             "source id and the ingest task id; progress arrives as "
-            "``source.ingest.*`` events for that source id."
+            "``source.ingest.*`` events for that source id. Honors an optional "
+            "``Idempotency-Key`` header: a repeat request with the same key "
+            "within 24h returns the first request's source and task ids "
+            "without copying the files or queueing a second ingest."
         ),
     )
     def post(self):
@@ -146,6 +157,9 @@ class SourceFromAttachments(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
+        idempotency_key, key_error = _read_idempotency_key()
+        if key_error is not None:
+            return key_error
 
         ids, name, error = _read_request()
         if error is not None:
@@ -165,8 +179,19 @@ class SourceFromAttachments(Resource):
         if not files:
             return _error(400, "These attachments have no stored files to add")
 
+        # Claimed only once the request is known to be valid, so a refused
+        # request leaves the key free. A repeat gets the first one's ids.
+        scoped_key = _scoped_idempotency_key(idempotency_key, user)
+        predetermined_task_id = None
+        if scoped_key:
+            predetermined_task_id, cached = _claim_task_or_get_cached(scoped_key, "ingest")
+            if cached is not None:
+                return make_response(jsonify(cached), 200)
+
         job_name = name or default_source_name([row["filename"] for row in chips])
-        source_uuid = uuid.uuid4()
+        # With a key, the source id is derived from it as /api/upload does, so
+        # a repeat (and a retried worker task) lands on the same source.
+        source_uuid = derive_source_id(scoped_key) if scoped_key else uuid.uuid4()
         dir_name = f"{safe_filename(job_name)}-{source_uuid.hex[:8]}"
         base_path = f"{settings.UPLOAD_FOLDER}/{safe_filename(user)}/{dir_name}"
         file_name_map: dict[str, str] = {}
@@ -181,38 +206,45 @@ class SourceFromAttachments(Resource):
                     storage.save_file(original, f"{base_path}/{stored_name}")
                 finally:
                     original.close()
-            task = ingest.apply_async(
-                args=(
+            ingest_kwargs: dict = {
+                "args": (
                     settings.UPLOAD_FOLDER,
                     list(SUPPORTED_SOURCE_EXTENSIONS),
                     job_name,
                     user,
                 ),
-                kwargs={
+                "kwargs": {
                     "file_path": base_path,
                     "filename": dir_name,
                     "file_name_map": file_name_map,
                     "config": None,
-                    "idempotency_key": None,
+                    # Scoped, so the worker's dedup row is the one claimed here.
+                    "idempotency_key": scoped_key,
                     "source_id": str(source_uuid),
                 },
-            )
+            }
+            if predetermined_task_id is not None:
+                ingest_kwargs["task_id"] = predetermined_task_id
+            task = ingest.apply_async(**ingest_kwargs)
         except Exception as err:
             current_app.logger.error(
                 "Could not make a source from attachments: %s", err, exc_info=True
             )
+            if scoped_key:
+                _release_claim(scoped_key)
             try:
                 storage.remove_directory(base_path)
             except Exception:
                 current_app.logger.warning("Could not clean up %s", base_path, exc_info=True)
             return _error(500, "Could not copy the attached files")
 
+        task_id = predetermined_task_id or task.id
         _audit_source_created(
             source_id=str(source_uuid),
             user=user,
             name=job_name,
             source_type="local",
-            task_id=task.id,
+            task_id=task_id,
         )
         try:
             with db_session() as conn:
@@ -230,7 +262,7 @@ class SourceFromAttachments(Resource):
             jsonify(
                 {
                     "success": True,
-                    "task_id": task.id,
+                    "task_id": task_id,
                     "source_id": str(source_uuid),
                     "name": job_name,
                 }

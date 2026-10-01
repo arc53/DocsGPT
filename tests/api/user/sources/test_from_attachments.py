@@ -12,6 +12,8 @@ from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
 
 
 MODULE = "docsgpt.api.user.sources.from_attachments"
+# The Idempotency-Key claim helpers are shared with the upload route.
+UPLOAD_MODULE = "docsgpt.api.user.sources.upload"
 
 
 @pytest.fixture
@@ -51,6 +53,8 @@ def _patched(conn, storage, task_id="task-1"):
     apply_async = MagicMock(return_value=MagicMock(id=task_id))
     with patch(f"{MODULE}.db_session", _yield), patch(
         f"{MODULE}.db_readonly", _yield
+    ), patch(f"{UPLOAD_MODULE}.db_session", _yield), patch(
+        f"{UPLOAD_MODULE}.db_readonly", _yield
     ), patch(
         f"{MODULE}.StorageCreator.get_storage", return_value=storage
     ), patch(f"{MODULE}.ingest.apply_async", apply_async), patch(
@@ -73,11 +77,11 @@ def _attachment(conn, user, filename, *, content=b"hello", metadata=None, legacy
     return row, path, content
 
 
-def _post(app, body, user="alice"):
+def _post(app, body, user="alice", headers=None):
     from docsgpt.api.user.sources.from_attachments import SourceFromAttachments
 
     with app.test_request_context(
-        "/api/sources/from_attachments", method="POST", json=body
+        "/api/sources/from_attachments", method="POST", json=body, headers=headers or {}
     ):
         from flask import request
 
@@ -228,3 +232,83 @@ class TestSourceFromAttachments:
         assert response.json["success"] is False
         apply_async.assert_not_called()
         assert storage.removed
+
+
+class TestIdempotencyKey:
+    """A repeat with the same Idempotency-Key returns the first source."""
+
+    def _dedup_row(self, conn, key):
+        from sqlalchemy import text
+
+        return conn.execute(
+            text("SELECT task_id, task_name, status FROM task_dedup WHERE idempotency_key = :k"),
+            {"k": key},
+        ).fetchone()
+
+    def test_a_repeat_returns_the_first_source_without_a_second_ingest(self, app, pg_conn):
+        from docsgpt.storage.db.source_ids import derive_source_id
+
+        a, a_path, a_bytes = _attachment(pg_conn, "alice", "report.pdf")
+        storage = FakeStorage({a_path: a_bytes})
+        body = {"attachment_ids": [str(a["id"])]}
+        headers = {"Idempotency-Key": "k-1"}
+
+        with _patched(pg_conn, storage) as apply_async:
+            first = _post(app, body, "alice", headers)
+            copied = dict(storage.files)
+            second = _post(app, body, "alice", headers)
+
+        assert first.status_code == 200, first.json
+        assert second.status_code == 200, second.json
+        apply_async.assert_called_once()
+        assert storage.files == copied
+        assert second.json["source_id"] == first.json["source_id"]
+        assert second.json["task_id"] == first.json["task_id"]
+        # The same id scheme as /api/upload: the worker lands on that source.
+        assert first.json["source_id"] == str(derive_source_id("alice:k-1"))
+        call = apply_async.call_args.kwargs
+        assert call["task_id"] == first.json["task_id"]
+        assert call["kwargs"]["idempotency_key"] == "alice:k-1"
+        assert call["kwargs"]["source_id"] == first.json["source_id"]
+        assert self._dedup_row(pg_conn, "alice:k-1")[1] == "ingest"
+
+    def test_the_key_is_scoped_to_the_user(self, app, pg_conn):
+        a, a_path, a_bytes = _attachment(pg_conn, "alice", "a.pdf")
+        b, b_path, b_bytes = _attachment(pg_conn, "bob", "b.pdf")
+        storage = FakeStorage({a_path: a_bytes, b_path: b_bytes})
+        headers = {"Idempotency-Key": "same"}
+
+        with _patched(pg_conn, storage) as apply_async:
+            first = _post(app, {"attachment_ids": [str(a["id"])]}, "alice", headers)
+            second = _post(app, {"attachment_ids": [str(b["id"])]}, "bob", headers)
+
+        assert apply_async.call_count == 2
+        assert first.json["source_id"] != second.json["source_id"]
+
+    def test_a_failed_request_releases_the_key_for_a_retry(self, app, pg_conn):
+        a, a_path, a_bytes = _attachment(pg_conn, "alice", "gone.pdf")
+        storage = FakeStorage()
+        headers = {"Idempotency-Key": "k-2"}
+
+        with _patched(pg_conn, storage) as apply_async:
+            failed = _post(app, {"attachment_ids": [str(a["id"])]}, "alice", headers)
+            assert failed.status_code == 500
+            assert self._dedup_row(pg_conn, "alice:k-2") is None
+
+            storage.files[a_path] = a_bytes
+            retried = _post(app, {"attachment_ids": [str(a["id"])]}, "alice", headers)
+
+        assert retried.status_code == 200, retried.json
+        apply_async.assert_called_once()
+
+    def test_a_rejected_request_does_not_claim_the_key(self, app, pg_conn):
+        with _patched(pg_conn, FakeStorage()):
+            response = _post(app, {"attachment_ids": [str(uuid.uuid4())]}, "alice", {"Idempotency-Key": "k-3"})
+        assert response.status_code == 404
+        assert self._dedup_row(pg_conn, "alice:k-3") is None
+
+    def test_an_oversized_key_is_refused(self, app, pg_conn):
+        with _patched(pg_conn, FakeStorage()) as apply_async:
+            response = _post(app, {"attachment_ids": ["x"]}, "alice", {"Idempotency-Key": "k" * 300})
+        assert response.status_code == 400
+        apply_async.assert_not_called()
