@@ -699,3 +699,40 @@ class TestImageValidation:
         row = AttachmentsRepository(pg_conn).get_by_legacy_id(file_info["attachment_id"], "user1")
         assert row["metadata"]["extraction"]["status"] == "failed"
         assert row["metadata"]["extraction"]["code"] == "image_unreadable"
+
+
+@pytest.mark.unit
+class TestMultiSectionFiles:
+    def test_every_section_of_a_markdown_file_is_stored(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, tmp_path
+    ):
+        """A parser that returns one document per section (markdown headers)
+        used to have all but the first section dropped (``load_data()[0]``)."""
+        from docsgpt import worker
+        from docsgpt.parser.file.markdown_parser import MarkdownParser
+
+        local_path = tmp_path / "guide.md"
+        local_path.write_text(
+            "# Intro\nFirst section words.\n\n# Setup\nSecond section words.\n\n# Usage\nThird section words.\n"
+        )
+        fake_storage = MagicMock(name="storage")
+        fake_storage.process_file.side_effect = lambda path, callback: callback(str(local_path))
+        monkeypatch.setattr(worker.StorageCreator, "get_storage", lambda: fake_storage)
+        monkeypatch.setattr(
+            worker,
+            "get_default_file_extractor",
+            lambda ocr_enabled=False, pdf_text_fast_path=False: {".md": MarkdownParser()},
+        )
+        file_info = {
+            "filename": "guide.md",
+            "attachment_id": "507f1f77bcf86cd799439041",
+            "path": "uploads/user1/attachments/guide.md",
+            "metadata": {"source": "chat"},
+        }
+
+        result = worker.attachment_worker(task_self, file_info, "user1")
+
+        row = AttachmentsRepository(pg_conn).get_by_legacy_id(file_info["attachment_id"], "user1")
+        for words in ("First section", "Second section", "Third section"):
+            assert words in row["content"]
+        assert result["token_count"] > 10

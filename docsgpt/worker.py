@@ -1812,6 +1812,32 @@ def _check_attachment_image(local_path: str, filename: str) -> Optional[Dict[str
     return {"width": int(width), "height": int(height)}
 
 
+def _one_document(documents: List[Document]) -> Document:
+    """One attachment's parsed documents as a single document.
+
+    Some parsers return one document per section (markdown headers, pages
+    of some formats); an attachment is one file, so every section is kept,
+    in order. The first document's metadata leads; later documents only add
+    keys it lacks.
+
+    Args:
+        documents: What the reader returned for the one file.
+
+    Returns:
+        The joined document (empty when there were none).
+    """
+    if not documents:
+        return Document(text="", extra_info={})
+    if len(documents) == 1:
+        return documents[0]
+    extra: Dict[str, Any] = {}
+    for document in reversed(documents):
+        extra.update(document.extra_info or {})
+    extra.update(documents[0].extra_info or {})
+    text = "\n\n".join(d.text.strip("\n") for d in documents if d.text and d.text.strip())
+    return Document(text=text, extra_info=extra)
+
+
 def _readable_without_text(filename: str) -> bool:
     """Whether a model can read an attachment from its original file alone.
 
@@ -2209,13 +2235,15 @@ def _single_attachment_worker(self, file_info, user, *, emit_events: bool = True
                 return Document(text=earlier.get("content") or "", extra_info={})
             parse_path, is_temp_copy = _bounded_attachment_copy(local_path)
             try:
-                return SimpleDirectoryReader(
-                    input_files=[parse_path],
-                    exclude_hidden=True,
-                    errors="ignore",
-                    file_extractor=file_extractor,
-                    file_metadata=metadata_from_filename,
-                ).load_data()[0]
+                return _one_document(
+                    SimpleDirectoryReader(
+                        input_files=[parse_path],
+                        exclude_hidden=True,
+                        errors="ignore",
+                        file_extractor=file_extractor,
+                        file_metadata=metadata_from_filename,
+                    ).load_data()
+                )
             finally:
                 if is_temp_copy:
                     try:
