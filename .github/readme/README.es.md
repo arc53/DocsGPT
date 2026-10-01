@@ -1,4 +1,4 @@
-<!-- Translated from README.md at commit c345cddb3ac33b44a077cfb5599f6adb2fc6604f by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
+<!-- Translated from README.md at commit 7974998b8f162961478a95eff9cb7ac62286c8f8 by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
 <h1 align="center">
   DocsGPT 🦖
 </h1>
@@ -44,7 +44,7 @@
 
 <p align="center">
   <a href="https://docs.docsgpt.cloud/">
-    <img src="https://pub.arc53.com/docsgpt/readme-reel.webp?v=2" alt="DocsGPT en 30 segundos: carga de documentos, sincronización con GitHub, respuestas con fuentes, investigación profunda, flujos de trabajo visuales, herramientas, el widget de chat, la API compatible con OpenAI, el servidor MCP y autoalojamiento con docsgpt up" width="100%">
+    <img width="1100" height="688" src="https://pub.arc53.com/readme-reel.webp" alt="Vista general de DocsGPT: respuestas con citas, conocimiento, agentes, flujos de trabajo visuales, herramientas y conectores, observabilidad">
   </a>
 </p>
 
@@ -76,6 +76,8 @@ ejecuta `docsgpt up`, que pregunta quién debe acceder a DocsGPT y qué modelo u
 - 🧠 **Cualquier modelo:** OpenAI, Anthropic, Google, Groq, OpenRouter o modelos locales mediante Ollama, vLLM y otros servidores compatibles con OpenAI.
 - 🛡️ **Barreras de seguridad:** detecta, censura o bloquea PII, secretos, inyección de prompts y respuestas sin fundamento.
 - ⏰ **Programaciones y webhooks:** ejecuta agentes mediante un temporizador o desde cualquier sistema que pueda enviar una solicitud HTTP.
+
+https://github.com/user-attachments/assets/d36bbd7d-c23c-4ab8-8777-b432632d6882
 
 <table>
   <tr>
@@ -203,3 +205,4 @@ DocsGPT cuenta con [licencia MIT](../../LICENSE).
     <img width="201" alt="Neon" src="https://github.com/user-attachments/assets/7d9813b7-0e6d-403f-b5af-68af066b326f" />
   </a>
 </p>
+

@@ -1,7 +1,7 @@
 ---
 title: App Configuration
 description: Configure your DocsGPT application by understanding the basic settings.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-08
 ---
 
 import { Callout } from 'nextra/components'
@@ -84,7 +84,7 @@ Here are some of the most fundamental settings you'll likely want to configure:
 
 - **`STT_PROVIDER`**: Selects the speech-to-text provider used for microphone transcription in chat and for audio file ingestion through the parser pipeline. Set it to `none` to switch speech-to-text off: the microphone button is hidden, and audio files fail to ingest with a message naming the setting.
 
-- **`TTS_PROVIDER`**: Selects the text-to-speech provider behind the Speak button on answers: `google_tts` (default) or `elevenlabs`. Both are hosted services. Set it to `none` to switch text-to-speech off and hide the button. With `elevenlabs`, set `ELEVENLABS_API_KEY`; `ELEVENLABS_VOICE_ID` picks the voice (an ID from your ElevenLabs voice library).
+- **`TTS_PROVIDER`**: Selects the text-to-speech provider behind the Speak button on answers: `google_tts` (default) or `elevenlabs`. Both are hosted services. Set it to `none` to switch text-to-speech off and hide the button. With `elevenlabs`, set `ELEVENLABS_API_KEY`; `ELEVENLABS_VOICE_ID` picks the voice (an ID from your ElevenLabs voice library). When an auth mode is on, only signed-in users (or requests with an agent API key) can use it. `TTS_MAX_CHARS` (default `10000`) caps how much text one request may speak, counted after markdown is stripped.
 
 - **`SERVE_UI`**: Whether the API process serves the web UI shipped in the Python package (`pip install docsgpt`). Defaults to `true`; the backend Docker image ships the same build, so it serves the UI on port 7091 too. Set `false` when a separate frontend, such as the `arc53/docsgpt-fe` image in `docker-compose-hub.yaml` or the frontend that `docker-compose.yaml` builds, serves the UI.
 

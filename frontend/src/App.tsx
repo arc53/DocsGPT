@@ -27,6 +27,7 @@ import { EventStreamProvider } from './events/EventStreamProvider';
 import { useDarkTheme, useMediaQuery } from './hooks';
 import useDataInitializer from './hooks/useDataInitializer';
 import useTokenAuth from './hooks/useTokenAuth';
+import ConnectorCallback from './connectors/ConnectorCallback';
 import ApprovalPage from './monitors/ApprovalPage';
 import Navigation from './Navigation';
 import { outletBoundaryKey } from './navigation/outletBoundaryKey';
@@ -155,11 +156,13 @@ export default function App() {
   const notificationText = envVar('VITE_NOTIFICATION_TEXT');
   const notificationLink = envVar('VITE_NOTIFICATION_LINK');
   // Hide the changelog banner on public share routes — those pages are
-  // embedded / shared externally and shouldn't carry product chrome.
+  // embedded / shared externally and shouldn't carry product chrome — and in
+  // the connector sign-in pop-up.
   const isPublicShareRoute =
     location.pathname.startsWith('/share/') ||
     location.pathname.startsWith('/shared/') ||
-    location.pathname.startsWith('/approve/');
+    location.pathname.startsWith('/approve/') ||
+    location.pathname.startsWith('/connectors/callback');
   if (!componentMounted) {
     return <div />;
   }
@@ -208,6 +211,15 @@ export default function App() {
         </Route>
         <Route path="/share/:identifier" element={<SharedConversation />} />
         <Route path="/shared/agent/:agentId" element={<SharedAgentGate />} />
+        {/* Where connector OAuth sign-ins return; finished with the user's login. */}
+        <Route
+          path="/connectors/callback"
+          element={
+            <AuthWrapper>
+              <ConnectorCallback />
+            </AuthWrapper>
+          }
+        />
         {/* Public: a human approval link (the token is the credential). */}
         <Route path="/approve/:token" element={<ApprovalPage />} />
         {DesignSystem && (

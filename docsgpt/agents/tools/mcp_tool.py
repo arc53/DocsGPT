@@ -26,7 +26,7 @@ from mcp.client.auth.utils import (
     issuers_match,
     validate_metadata_issuer,
 )
-from mcp.shared._httpx_utils import create_mcp_http_client
+from mcp.shared._httpx_utils import MCP_DEFAULT_SSE_READ_TIMEOUT, MCP_DEFAULT_TIMEOUT
 from mcp.shared.inbound import (
     MCP_PARAM_HEADER_PREFIX,
     decode_header_value,
@@ -50,13 +50,24 @@ from docsgpt.llm.tool_images import image_ref
 from docsgpt.api.user.tasks import mcp_oauth_task
 from docsgpt.cache import get_redis_instance
 from docsgpt.core.settings import settings
-from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.events.keys import stream_key
 from docsgpt.security.encryption import decrypt_credentials
+from docsgpt.security.safe_url import UnsafeUserUrlError, guarded_async_client, validate_user_base_url
 
 logger = logging.getLogger(__name__)
 
 _mcp_clients_cache = {}
+
+
+def _mcp_http_client(
+    headers: Optional[Dict[str, str]] = None,
+    timeout: Optional[httpx2.Timeout] = None,
+    auth: Optional[httpx2.Auth] = None,
+) -> httpx2.AsyncClient:
+    """The MCP SDK's HTTP client, with every host it is sent to SSRF-checked and pinned to the checked IP."""
+    if timeout is None:
+        timeout = httpx2.Timeout(MCP_DEFAULT_TIMEOUT, read=MCP_DEFAULT_SSE_READ_TIMEOUT)
+    return guarded_async_client(headers=headers, timeout=timeout, auth=auth)
 
 
 def forget_cached_clients(*identities: str) -> None:
@@ -253,9 +264,10 @@ class MCPTool(Tool):
             ValueError: If the URL points to a private/internal address.
         """
         try:
-            return validate_url(server_url)
-        except SSRFError as exc:
+            validate_user_base_url(server_url)
+        except UnsafeUserUrlError as exc:
             raise ValueError(f"Invalid MCP server URL: {exc}") from exc
+        return server_url
 
     def _resolve_redirect_uri(self, configured_redirect_uri: Optional[str]) -> str:
         # The operator's setting wins over the page's own origin: a page opened
@@ -411,7 +423,7 @@ class MCPTool(Tool):
             auth: Any = None,
             **_kwargs: Any,
         ):
-            client = create_mcp_http_client(headers=headers, timeout=timeout, auth=auth)
+            client = _mcp_http_client(headers=headers, timeout=timeout, auth=auth)
             client.event_hooks.setdefault("request", []).append(_param_header_hook(header_maps))
             return client
 
@@ -675,6 +687,11 @@ class MCPTool(Tool):
                 content_list.append({"type": "audio", "mimeType": mime_type, "note": "audio, not shown"})
             else:
                 content_list.append({"type": "unknown", "content": str(item)})
+        if not content_list:
+            # Some servers (Airtable) answer only in structured content and leave ``content`` empty.
+            structured = getattr(result, "structured_content", None) or getattr(result, "structuredContent", None)
+            if structured:
+                content_list.append({"type": "text", "text": json.dumps(structured, default=str)})
         # FastMCP's client result names it ``is_error``; the MCP type ``isError``.
         is_error = getattr(result, "is_error", None)
         if not isinstance(is_error, bool):
@@ -1092,7 +1109,7 @@ class DocsGPTOAuth(OAuthClientProvider):
         """
         server_url = self.context.server_url
         try:
-            async with create_mcp_http_client(timeout=httpx2.Timeout(10.0)) as client:
+            async with _mcp_http_client(timeout=httpx2.Timeout(10.0)) as client:
                 auth_server_url = None
                 for url in build_protected_resource_metadata_discovery_urls(None, server_url):
                     prm = await handle_protected_resource_response(

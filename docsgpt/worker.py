@@ -1855,12 +1855,17 @@ def _readable_without_text(filename: str) -> bool:
     return mime_type == "application/pdf" or mime_type.startswith("image/")
 
 
+#: Fingerprint keys an attachment row keeps in its metadata (``size`` has a column of its own).
+_FINGERPRINT_METADATA_KEYS = ("content_hash", "page_count", "image_page_count", "image")
+
+
 def _attachment_fingerprint(local_path: str, filename: str) -> Dict[str, Any]:
     """Fingerprint an upload's original bytes while they are local.
 
     The chat budget planner dedupes re-sent files by ``content_hash`` and
-    sizes native PDF parts by ``page_count``; both are only cheap here, where
-    the bytes already sit on disk.
+    sizes native PDF parts by ``page_count`` and ``image_page_count`` (a page
+    carrying a raster image is read by the provider as a page image too);
+    all are only cheap here, where the bytes already sit on disk.
 
     Args:
         local_path: Path of the original upload.
@@ -1868,8 +1873,8 @@ def _attachment_fingerprint(local_path: str, filename: str) -> Dict[str, Any]:
 
     Returns:
         Dict with ``content_hash`` (sha256 hex) and ``size`` (bytes), plus
-        ``page_count`` for a PDF pypdfium2 can open. Empty when the file
-        cannot be read; a fingerprint never fails the upload.
+        ``page_count`` and ``image_page_count`` for a PDF pypdfium2 can open.
+        Empty when the file cannot be read; a fingerprint never fails the upload.
     """
     digest = hashlib.sha256()
     size = 0
@@ -1888,11 +1893,43 @@ def _attachment_fingerprint(local_path: str, filename: str) -> Dict[str, Any]:
             pdf = pdfium.PdfDocument(local_path)
             try:
                 fingerprint["page_count"] = len(pdf)
+                image_pages = _count_image_pages(pdf)
+                if image_pages is not None:
+                    fingerprint["image_page_count"] = image_pages
             finally:
                 pdf.close()
         except Exception:  # noqa: BLE001 - an unreadable PDF just has no page count
             pass
     return fingerprint
+
+
+def _count_image_pages(pdf: Any) -> Optional[int]:
+    """Count the pages of a PDF that carry a raster image (a scan's page, a photo, a logo).
+
+    Providers read such a page as a page image on top of its text, so an
+    OCR'd scan costs several times its text when sent natively.
+
+    Args:
+        pdf: An open ``pypdfium2.PdfDocument``.
+
+    Returns:
+        The count, or None when a page cannot be read.
+    """
+    import pypdfium2.raw as pdfium_c
+
+    count = 0
+    try:
+        for index in range(len(pdf)):
+            page = pdf[index]
+            try:
+                images = page.get_objects(filter=(pdfium_c.FPDF_PAGEOBJ_IMAGE,), max_depth=3)
+                if next(images, None) is not None:
+                    count += 1
+            finally:
+                page.close()
+    except Exception:  # noqa: BLE001 - the planner falls back to an estimate
+        return None
+    return count
 
 
 def _store_png_copy(storage, relative_path: str, mime_type: str) -> tuple[str, dict]:
@@ -2313,7 +2350,7 @@ def _single_attachment_worker(self, file_info, user, *, emit_events: bool = True
             token_count = reused.get("token_count") or 0
             metadata = {
                 **metadata,
-                **{k: v for k, v in fingerprint.items() if k in ("content_hash", "page_count", "image")},
+                **{k: v for k, v in fingerprint.items() if k in _FINGERPRINT_METADATA_KEYS},
                 **reused_metadata,
             }
             logging.info(
@@ -2341,7 +2378,7 @@ def _single_attachment_worker(self, file_info, user, *, emit_events: bool = True
 
             metadata = {
                 **metadata,
-                **{k: v for k, v in fingerprint.items() if k in ("content_hash", "page_count", "image")},
+                **{k: v for k, v in fingerprint.items() if k in _FINGERPRINT_METADATA_KEYS},
                 "extraction": {
                     "status": extraction_status,
                     "parser": parser_name,

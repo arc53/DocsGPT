@@ -66,15 +66,17 @@
   capabilities: [read, write]
   docs_url: https://docs.stripe.com/mcp
 
-- key: mcp:vercel
-  name: Vercel
-  description: Manage Vercel projects, deployments and build logs.
-  icon: vercel
-  category: dev
-  mcp_url: https://mcp.vercel.com
-  auth_kind: mcp_oauth
-  capabilities: [read, write]
-  docs_url: https://vercel.com/docs/agent-resources/vercel-mcp
+# draw.io as a connector
+- key: mcp:drawio
+  name: draw.io
+  description: Create editable flowcharts and other diagrams with draw.io.
+  icon: drawio
+  category: projects
+  mcp_url: https://mcp.draw.io/mcp
+  auth_kind: mcp
+  capabilities: [read]
+  docs_url: https://github.com/jgraph/drawio-mcp
+
 - key: mcp:clickup
   name: ClickUp
   description: Search, read and update ClickUp tasks, docs and lists, and add comments.
@@ -134,3 +136,12 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://cal.com/docs/mcp-server
+- key: mcp:vercel
+  name: Vercel
+  description: Manage Vercel projects, deployments and build logs.
+  icon: vercel
+  category: dev
+  mcp_url: https://mcp.vercel.com
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://vercel.com/docs/agent-resources/vercel-mcp

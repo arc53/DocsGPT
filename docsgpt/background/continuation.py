@@ -235,6 +235,37 @@ def _history(messages: List[Dict[str, Any]], model_id: Optional[str], user_id: s
     return limit_chat_history(history, model_id=model_id, user_id=user_id)
 
 
+def _replay(
+    conversation: Dict[str, Any], messages: List[Dict[str, Any]], model_id: Optional[str], user_id: str
+) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+    """The compressed summary and the history a chat turn would replay.
+
+    A conversation with a saved compression point replays its summary (in the
+    system prompt) and only the turns after the point, as ``/stream`` does;
+    replaying the raw history instead sent a continuation several times the
+    context of the chat turns around it. No compression is run here.
+
+    Args:
+        conversation: The conversation row (its ``compression_metadata``).
+        messages: Its messages, in order.
+        model_id: The model the turn runs on.
+        user_id: The conversation's owner.
+
+    Returns:
+        ``(summary, history)``: ``summary`` is None when no usable point exists.
+    """
+    from docsgpt.api.answer.services.compression.service import CompressionService
+    from docsgpt.api.answer.services.compression.types import latest_usable_compression_point
+
+    metadata = conversation.get("compression_metadata") or {}
+    if not (metadata.get("is_compressed") and latest_usable_compression_point(metadata.get("compression_points"))):
+        return None, _history(messages, model_id, user_id)
+    summary, recent = CompressionService(llm=None, model_id=model_id or "").get_compressed_context(
+        {**conversation, "queries": messages}
+    )
+    return summary or None, _history(recent, model_id, user_id)
+
+
 def _last_model(messages: List[Dict[str, Any]]) -> Optional[str]:
     """The model the conversation last used: the continuation answers with the same one."""
     for message in reversed(messages):
@@ -387,6 +418,7 @@ def _run_turn(
     if agent_config is None:
         raise LookupError("the conversation's agent no longer exists")
     query = wake.render_events(wakes)
+    summary, history = _replay(conversation, messages, model_id, user_id)
     agent_id = agent_config.get("id")
     background = BackgroundContext(
         user_id=str(user_id),
@@ -401,7 +433,8 @@ def _run_turn(
         tool_allowlist=[],
         model_id_override=model_id,
         endpoint="continuation",
-        chat_history=_history(messages, model_id, user_id),
+        chat_history=history,
+        compressed_summary=summary,
         conversation_id=str(conversation["id"]),
         request_id=str(uuid.uuid4()),
         trace_user_id=user_id,
@@ -498,6 +531,18 @@ def _wake_metadata(wakes: List[Dict[str, Any]]) -> Dict[str, Any]:
     return metadata
 
 
+#: Keys of a turn's agent metadata a continuation message keeps (as a chat turn stores them).
+_RESPONSES_METADATA_KEYS = ("response_id", "response_chain_key", "responses_state", "usage", "compression_epoch")
+
+
+def _responses_metadata(outcome: Dict[str, Any]) -> Dict[str, Any]:
+    """The Responses continuity a headless turn reported, for its message's metadata."""
+    reported = outcome.get("metadata")
+    if not isinstance(reported, dict):
+        return {}
+    return {key: reported[key] for key in _RESPONSES_METADATA_KEYS if reported.get(key) is not None}
+
+
 def _append(
     conversation: Dict[str, Any], wakes: List[Dict[str, Any]], outcome: Dict[str, Any], *, message_id: str
 ) -> Dict[str, Any]:
@@ -513,7 +558,10 @@ def _append(
                 "sources": outcome.get("sources") or [],
                 "tool_calls": outcome.get("tool_calls") or [],
                 "model_id": outcome.get("model_id"),
-                "metadata": _wake_metadata(wakes),
+                # The turn's Responses state (response id, reasoning) beside
+                # the wake: without it the user's next turn cannot chain onto
+                # this one and resends the whole history.
+                "metadata": {**_responses_metadata(outcome), **_wake_metadata(wakes)},
             },
         )
 

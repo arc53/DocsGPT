@@ -1,7 +1,7 @@
 # Pre-built images from Docker Hub (mirrored at ghcr.io/arc53). setup.sh and
 # setup.ps1 run this file. Run it from the repository root:
 #   docker compose --env-file .env -f deployment/docker-compose-hub.yaml up -d
-#   DOCSGPT_IMAGE_TAG      develop (default, follows main) or a release, e.g. 0.21.0;
+#   DOCSGPT_IMAGE_TAG      develop (default, follows main) or a release, e.g. 1.0.0;
 #                          pin a release for anything beyond trying it out
 #   DOCSGPT_IMAGE_VARIANT  empty (default, slim) or -docling: docling parser engine,
 #                          its models, and tesseract baked in (OCR-ready)

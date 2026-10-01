@@ -892,6 +892,18 @@ class TestSSRFValidation:
             )
         mock_boto3.client.assert_not_called()
 
+    def test_init_client_rejects_backslash_host_split(self, s3_loader, mock_boto3):
+        # botocore validates the host after the backslash; urllib3 dials the one before it.
+        with pytest.raises(ValueError, match="Invalid S3 endpoint_url"):
+            s3_loader._init_client(
+                aws_access_key_id="k",
+                aws_secret_access_key="s",
+                region_name="us-east-1",
+                endpoint_url="http://127.0.0.1:9000\\@1.1.1.1",
+                bucket="b",
+            )
+        mock_boto3.client.assert_not_called()
+
     def test_load_data_rejects_ssrf_endpoint(self, s3_loader, mock_boto3):
         """load_data should surface a ValueError without hitting boto3 for blocked endpoints."""
         input_data = {

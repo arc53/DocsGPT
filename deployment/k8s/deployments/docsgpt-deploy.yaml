@@ -27,7 +27,7 @@ spec:
       initContainers:
       # Refuse to start while docsgpt-secrets is not filled in.
       - name: check-secrets
-        image: arc53/docsgpt:0.21.0
+        image: arc53/docsgpt:1.0.0
         envFrom:
         - secretRef:
             name: docsgpt-secrets
@@ -72,7 +72,7 @@ spec:
       # to the schema this image needs. On an upgrade, the old pods keep
       # serving until then.
       - name: wait-for-migrations
-        image: arc53/docsgpt:0.21.0
+        image: arc53/docsgpt:1.0.0
         envFrom:
         - secretRef:
             name: docsgpt-secrets
@@ -113,7 +113,7 @@ spec:
                 time.sleep(5)
       containers:
       - name: docsgpt-api
-        image: arc53/docsgpt:0.21.0
+        image: arc53/docsgpt:1.0.0
         ports:
         - containerPort: 7091
         readinessProbe:
@@ -158,7 +158,7 @@ spec:
       initContainers:
       # Refuse to start while docsgpt-secrets is not filled in.
       - name: check-secrets
-        image: arc53/docsgpt:0.21.0
+        image: arc53/docsgpt:1.0.0
         envFrom:
         - secretRef:
             name: docsgpt-secrets
@@ -203,7 +203,7 @@ spec:
       # to the schema this image needs. On an upgrade, the old pods keep
       # serving until then.
       - name: wait-for-migrations
-        image: arc53/docsgpt:0.21.0
+        image: arc53/docsgpt:1.0.0
         envFrom:
         - secretRef:
             name: docsgpt-secrets
@@ -244,7 +244,7 @@ spec:
                 time.sleep(5)
       containers:
       - name: docsgpt-worker
-        image: arc53/docsgpt:0.21.0
+        image: arc53/docsgpt:1.0.0
         # -B embeds the beat scheduler, which fires scheduled agent runs, source
         # syncs, reconciliation and cleanups. It is safe on every replica: the
         # RedBeat lock in Redis lets only one of them schedule at a time.

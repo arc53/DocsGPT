@@ -1,7 +1,7 @@
 ---
 title: 'Changelog'
 description: What changed in each DocsGPT release, with links to the upgrade steps an existing deployment needs.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-08
 ---
 
 import { Callout } from 'nextra/components'
@@ -13,7 +13,7 @@ The notable changes in each release. Every release on GitHub also carries
 request, and [Upgrading](/upgrading) covers the steps an existing deployment has to take.
 Entries start at 0.17.0; see GitHub for earlier releases.
 
-## Unreleased
+## 1.0.0
 
 <Callout type="warning">
   **Upgrade actions.** Some of these changes stop an install from starting, or change answers,
@@ -42,6 +42,10 @@ Entries start at 0.17.0; see GitHub for earlier releases.
     `VECTOR_STORE=lancedb` could never start and is gone from the setup scripts.
   - The checkout Compose files publish on `127.0.0.1` only. A server others reach needs
     `DOCSGPT_BIND=0.0.0.0` (see below).
+  - A connector sign-in started from a frontend origin that is not allowed now fails with
+    `origin_not_allowed`. Allowed origins come only from configuration (`CONNECTOR_REDIRECT_BASE_URI`,
+    `OIDC_FRONTEND_URL`, `CONNECTOR_ALLOWED_ORIGINS`); list any other frontend origin or host name there.
+    See [Connector sign-ins finish in the app](/upgrading#connector-sign-ins-finish-in-the-app).
   - `LLM_PATH`, `HUGGINGFACE_API_KEY`, `LANCEDB_*`, `RETRIEVERS_ENABLED` and `DEFAULT_MAX_HISTORY`
     are no longer read; delete them from `.env`. `SAGEMAKER_*` still works as the S3 credentials
     fallback but is deprecated in favour of `S3_*`.
@@ -241,6 +245,11 @@ stored secrets and upload its documents again: see
 
 ### Secrets and security defaults
 
+- Connector OAuth sign-ins finish in the app, on its `/connectors/callback` page, with the signed-in
+  user's own login, and only the user who started a sign-in can finish it. The OAuth `state` is a
+  one-time random value kept on the server. The API callback (`/api/connectors/callback`) forwards to
+  that page, so redirect URIs registered with providers keep working; registering the app page directly
+  also works.
 - `docsgpt up`, `setup.sh` and `setup.ps1` generate `ENCRYPTION_SECRET_KEY` on a fresh install, so a
   networked install can create connections and no longer seals tool, MCP and custom-model secrets
   with the public default key. An existing value is never replaced, and an existing Docker install

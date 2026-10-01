@@ -563,7 +563,7 @@
         "total": "Gesamt",
         "model": "Nach Modell",
         "agent": "Nach Agent",
-        "source": "Nach Quelle"
+        "source": "Nach Ablauf"
       },
       "includeSideChannel": "Hintergrund-Tokens",
       "promptTokens": "Prompt-Tokens",
@@ -1502,13 +1502,14 @@
         "mcp_atlassian": "Jira-Issues und Confluence-Seiten durchsuchen und aktualisieren.",
         "mcp_sentry": "Sentry-Issues, -Events und -Releases nachschlagen.",
         "mcp_stripe": "Kunden, Zahlungen und Abonnements in Stripe nachschlagen.",
-"mcp_vercel": "Vercel-Projekte, Deployments und Build-Logs verwalten.",
+        "mcp_drawio": "Bearbeitbare Flussdiagramme und andere Diagramme mit draw.io erstellen.",
         "mcp_clickup": "ClickUp-Aufgaben, Dokumente und Listen suchen, lesen und aktualisieren sowie Kommentare hinzufügen.",
         "mcp_zapier": "Mit den in deinem Zapier-MCP-Konto aktivierten Aktionen verbundene Apps lesen oder aktualisieren.",
         "mcp_trello": "Trello-Boards und -Karten finden sowie Karten erstellen und aktualisieren.",
         "mcp_miro": "Miro-Boards finden, Inhalte und Kommentare lesen, Diagramme erstellen und auf Kommentare antworten.",
         "mcp_resend": "E-Mails senden sowie Kontakte, Zielgruppen und Domains verwalten.",
         "mcp_calcom": "Cal.com-Buchungen, Eventtypen, Verfügbarkeit und Zeitpläne lesen und verwalten.",
+"mcp_vercel": "Vercel-Projekte, Deployments und Build-Logs verwalten.",
         "github": "Repositorys in Wissen synchronisieren und Agenten Code, Issues und Pull Requests lesen lassen."
       },
       "empty": "Noch nichts verbunden. Verbinde einen Dienst, um seine Inhalte zu synchronisieren oder Agenten neue Werkzeuge zu geben.",
@@ -1831,6 +1832,11 @@
           "authCancelled": "Die Anmeldung wurde abgebrochen.",
           "connectedAs": "Verbunden als {{email}}",
           "disconnect": "Trennen"
+        },
+        "callback": {
+          "failed": "Die Anmeldung konnte nicht abgeschlossen werden. Starte sie in DocsGPT erneut.",
+          "closeWindow": "Du kannst dieses Fenster schließen.",
+          "backToApp": "Zurück zu DocsGPT"
         },
         "googleDrive": {
           "connect": "Mit Google Drive verbinden",

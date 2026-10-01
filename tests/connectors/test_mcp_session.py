@@ -189,7 +189,7 @@ class TestRunConnectionSession:
 
         import docsgpt.agents.tools.mcp_tool as mcp_tool
 
-        monkeypatch.setattr(mcp_tool, "validate_url", lambda url, **kw: url)
+        monkeypatch.setattr(mcp_tool, "validate_user_base_url", lambda url: None)
         client = mcp._client_for(_connection(), LINEAR, 30)
         assert isinstance(client, Client)
         auth = client.transport.auth

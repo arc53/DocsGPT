@@ -1,7 +1,7 @@
 # DocsGPT E2E Tests
 
 End-to-end tests for DocsGPT, driven by Playwright against the full native
-dev stack (Flask + Celery + Vite + a mock LLM stub), backed by a disposable
+dev stack (the ASGI API under uvicorn + Celery + Vite + a mock LLM stub), backed by a disposable
 `docsgpt_e2e` Postgres database.
 
 This is an isolated Node workspace. It has its own `package.json` so
@@ -28,7 +28,7 @@ npm run e2e
 When iterating on a spec you want the services up across many runs:
 
 ```bash
-npm run e2e:up    # boot Flask + Celery + Vite + mock LLM, leave them running
+npm run e2e:up    # boot the API + Celery + Vite + mock LLM, leave them running
 npm run e2e:ui    # open Playwright UI against the running stack
 npm run e2e:down  # tear down when done
 ```

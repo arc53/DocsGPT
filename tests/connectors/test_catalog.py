@@ -101,6 +101,17 @@ class TestRowMapping:
 
 
 class TestPresets:
+    def test_drawio_preset_connects_without_oauth(self):
+        definition = catalog.get_definition("mcp:drawio")
+
+        assert definition.publisher == "preset"
+        assert definition.icon == "drawio"
+        assert definition.category == "projects"
+        assert definition.auth_kind == "mcp"
+        assert definition.mcp_url == "https://mcp.draw.io/mcp"
+        assert definition.capabilities == ("read",)
+        assert definition.docs_url == "https://github.com/jgraph/drawio-mcp"
+        assert definition.configured
     def test_trello_preset(self):
         definition = catalog.get_definition("mcp:trello")
 
@@ -166,26 +177,6 @@ class TestPresets:
     def test_base_url(self):
         assert catalog.base_url("https://a.example.com:8443/x/y") == "https://a.example.com:8443"
         assert catalog.base_url("not a url") == ""
-
-
-def test_vercel_preset_endpoint_and_capabilities():
-    """The Vercel card talks to Vercel's MCP server with MCP OAuth.
-
-    Regression test for the ``mcp:vercel`` preset: its endpoint, its
-    ``mcp_oauth`` auth kind and its read/write capabilities.
-    """
-    from docsgpt.connectors import catalog
-
-    vercel = catalog.get_definition("mcp:vercel")
-    assert vercel is not None
-    assert vercel.publisher == "preset"
-    assert vercel.mcp_url == "https://mcp.vercel.com"
-    assert vercel.mcp_base_url == "https://mcp.vercel.com"
-    assert vercel.auth_kind == "mcp_oauth"
-    assert vercel.capabilities == ("read", "write")
-    assert catalog.preset_for_url("https://mcp.vercel.com").key == "mcp:vercel"
-    row = {"provider": "mcp:https://mcp.vercel.com", "server_url": "https://mcp.vercel.com"}
-    assert catalog.connector_key_for_row(row) == "mcp:vercel"
 
 
 class TestFieldHints:

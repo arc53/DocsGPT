@@ -1,7 +1,7 @@
 ---
 title: Upgrading DocsGPT
 description: Upgrade DocsGPT installed with the installer, pip, Docker Compose or Kubernetes, and what changes in each release.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-08
 ---
 
 import { Callout } from 'nextra/components'
@@ -14,7 +14,7 @@ import { Callout } from 'nextra/components'
 
 To upgrade:
 
-1. **Back up.** `docsgpt backup` for an installer or `docsgpt up` Docker install whose `docsgpt` has that command (releases after 0.21.0; on 0.21.0 [back up by hand](#back-up-and-restore-by-hand-0210)). Otherwise dump Postgres (`pg_dump`) and copy your uploads and indexes.
+1. **Back up.** `docsgpt backup` for an installer or `docsgpt up` Docker install whose `docsgpt` has that command (1.0.0 and later; on 0.21.0 [back up by hand](#back-up-and-restore-by-hand-0210)). Otherwise dump Postgres (`pg_dump`) and copy your uploads and indexes.
 2. **Read the [upgrade notes](#upgrade-notes)** for every release after the one you run, and the [changelog](/changelog).
 3. **Follow the steps for your install**, below.
 
@@ -31,7 +31,7 @@ Release notes: [changelog](/changelog). Tags: [GitHub releases](https://github.c
 ## Installer or `docsgpt up`
 
 ```bash
-docsgpt backup                     # releases after 0.21.0; see below for 0.21.0
+docsgpt backup                     # 1.0.0 and later; see below for 0.21.0
 docsgpt upgrade                    # the latest release; --version <version> for another
 docsgpt status
 ```
@@ -42,7 +42,7 @@ A `docsgpt up --native` install has nothing for `docsgpt backup` to archive: dum
 
 ### Back up and restore by hand (0.21.0)
 
-`docsgpt backup` and `docsgpt restore` are new after 0.21.0 (`docsgpt --help` shows whether yours has them). On 0.21.0, take the same backup by hand from the stack directory. It holds a dump of the database and a tar of each data volume (`docsgpt_indexes`, `docsgpt_inputs`, `docsgpt_vectors`). Keep a copy of `.env` too: it holds the install's secrets.
+`docsgpt backup` and `docsgpt restore` are new in 1.0.0 (`docsgpt --help` shows whether yours has them). On 0.21.0, take the same backup by hand from the stack directory. It holds a dump of the database and a tar of each data volume (`docsgpt_indexes`, `docsgpt_inputs`, `docsgpt_vectors`). Keep a copy of `.env` too: it holds the install's secrets.
 
 ```bash
 cd ~/.docsgpt/server               # /opt/docsgpt when installed as root on Linux
@@ -163,15 +163,15 @@ docker compose stop backend worker
 docker compose run --rm backend alembic -c docsgpt/alembic.ini downgrade <revision>
 ```
 
-`<revision>` is the newest file in `docsgpt/alembic/versions` at the older release's tag. Then set the older tag and start the stack. For example, 0.21.0 ends at `0031_token_usage_cache_tokens`; downgrading to it from the next release drops personal access tokens, usage quotas, request traces, team sharing settings, tool preferences and resource sponsors, so restore the backup instead.
+`<revision>` is the newest file in `docsgpt/alembic/versions` at the older release's tag. Then set the older tag and start the stack. For example, 0.21.0 ends at `0031_token_usage_cache_tokens`; downgrading to it from 1.0.0 drops personal access tokens, usage quotas, request traces, team sharing settings, tool preferences and resource sponsors, so restore the backup instead.
 
 ## Upgrade notes
 
 Newest first. Each note says what an existing deployment has to do.
 
-### Next release (unreleased)
+### Upgrading to 1.0.0
 
-These apply to the release after 0.21.0. The [changelog](/changelog#unreleased) lists the other changes that need action: `SCIM_TOKEN` with `SCIM_ENABLED`, six retrieved chunks by default, and the removed providers and settings.
+These apply to 1.0.0. The [changelog](/changelog#100) lists the other changes that need action: `SCIM_TOKEN` with `SCIM_ENABLED`, six retrieved chunks by default, and the removed providers and settings.
 
 #### Connectors: set ENCRYPTION_SECRET_KEY first
 
@@ -189,6 +189,14 @@ Other changes:
 - `VITE_GOOGLE_CLIENT_ID` is optional now; without it, members pick Drive files in DocsGPT's own picker.
 - Synced sources run as their connection, without a browser session. Keep Celery beat running for scheduled syncs.
 - To undo only this change, for example on a `develop` build that already had the migrations before it, downgrade to `0039_resource_sponsors`, the revision just before `0040_connections`, the way [Rollback](#rollback) describes. Alembic undoes `0043` to `0041` first, then decrypts the tokens and gives each tool its key again. This does not take you back to 0.21.0, which ends at `0031_token_usage_cache_tokens`: going that far drops more data, so restore your pre-upgrade backup instead.
+
+#### Connector sign-ins finish in the app
+
+Google Drive, SharePoint, Confluence and GitHub sign-ins now end on the app's `/connectors/callback` page, which finishes them with the signed-in user's own login. The API callback forwards there, so the redirect URIs registered with providers keep working. Migration `0052_connector_oauth_flows` runs on startup.
+
+- If the frontend runs on an origin other than that of `CONNECTOR_REDIRECT_BASE_URI` or `OIDC_FRONTEND_URL`, or users reach DocsGPT through a second host name, list it in `CONNECTOR_ALLOWED_ORIGINS`. Without it, starting a sign-in fails with `origin_not_allowed`.
+- Sign-ins in progress during the upgrade fail; start them again. Reload open DocsGPT tabs so they use the new sign-in page.
+- Optional: register `<app origin>/connectors/callback` as the redirect URI instead and set `CONNECTOR_REDIRECT_BASE_URI` to it, so the browser never passes through the API. See [Redirect URIs](/Sources/Connectors#redirect-uris).
 
 #### Checkout Compose files: bound to this machine
 

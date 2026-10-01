@@ -108,6 +108,7 @@ def run_agent_headless(
     model_id_override: Optional[str] = None,
     endpoint: str = "headless",
     chat_history: Optional[List[Dict[str, Any]]] = None,
+    compressed_summary: Optional[str] = None,
     conversation_id: Optional[str] = None,
     external_caller: bool = False,
     public_link_caller: bool = False,
@@ -137,6 +138,9 @@ def run_agent_headless(
     them, and wiki edits only when the wiki's owner allows outside edits (as
     for a webhook run).
 
+    ``compressed_summary`` is the summary of a compressed conversation whose
+    tail ``chat_history`` holds; it goes into the system prompt as in a chat turn.
+
     A continuation turn passes ``message_id``, the id its message will be
     stored with (tool calls are journaled and files attached under it), and
     ``background``, its :class:`~docsgpt.background.context.BackgroundContext`:
@@ -164,6 +168,7 @@ def run_agent_headless(
                 model_id_override=model_id_override,
                 endpoint=endpoint,
                 chat_history=chat_history,
+                compressed_summary=compressed_summary,
                 conversation_id=conversation_id,
                 external_caller=external_caller,
                 public_link_caller=public_link_caller,
@@ -189,6 +194,7 @@ def _run_agent_headless(
     model_id_override: Optional[str] = None,
     endpoint: str = "headless",
     chat_history: Optional[List[Dict[str, Any]]] = None,
+    compressed_summary: Optional[str] = None,
     conversation_id: Optional[str] = None,
     external_caller: bool = False,
     public_link_caller: bool = False,
@@ -368,6 +374,10 @@ def _run_agent_headless(
         # agent, so it carries the same guardrails an interactive turn would.
         "agent_config": agent_config.get("config") or {},
     }
+    if compressed_summary:
+        # ``chat_history`` is then the tail after a saved compression point;
+        # the summary of what it replaced rides in the system prompt.
+        agent_kwargs["compressed_summary"] = compressed_summary
     if wiki_config:
         agent_kwargs["wiki_config"] = wiki_config
     if agent_type == "workflow":
@@ -401,6 +411,9 @@ def _run_agent_headless(
     sources_log: List[Dict[str, Any]] = []
     tool_calls: List[Dict[str, Any]] = []
     stream_error: Optional[str] = None
+    # Responses continuity (response id, reasoning state, usage) the agent
+    # reports for the turn; a continuation stores it like a chat turn does.
+    message_metadata: Dict[str, Any] = {}
     steps_completed = 0
     # Text after a tool call starts a new paragraph, as in a chat turn's stored answer.
     tool_since_text = False
@@ -444,6 +457,8 @@ def _run_agent_headless(
             tool_calls.extend(event["tool_calls"])
         elif "thought" in event:
             thought += str(event["thought"])
+        elif isinstance(event.get("metadata"), dict):
+            message_metadata.update(event["metadata"])
 
     denied = list(getattr(tool_executor, "headless_denials", []))
     error: Optional[str] = None
@@ -488,4 +503,5 @@ def _run_agent_headless(
         "error": error,
         "steps_completed": steps_completed,
         "model_id": model_id,
+        "metadata": message_metadata,
     }

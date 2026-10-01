@@ -65,7 +65,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: docsgpt-sandbox
-          image: arc53/docsgpt-sandbox:0.21.0
+          image: arc53/docsgpt-sandbox:1.0.0
           ports:
             - containerPort: 8888
           securityContext:

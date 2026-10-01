@@ -57,6 +57,7 @@ def att(
     content_hash=None,
     size=None,
     pages=None,
+    image_pages=None,
     content="x",
 ):
     _counter["n"] += 1
@@ -72,6 +73,8 @@ def att(
         metadata["content_hash"] = content_hash
     if pages is not None:
         metadata["page_count"] = pages
+    if image_pages is not None:
+        metadata["image_page_count"] = image_pages
     return {
         "id": f"att-{_counter['n']}",
         "filename": name,
@@ -541,6 +544,73 @@ class TestNativeScanCost:
         entry = plan.files[0]
         assert entry.native is True
         assert entry.inline_tokens == 29_215 + 30 * NATIVE_PDF_PAGE_TOKENS + PER_FILE_OVERHEAD_TOKENS
+
+    def test_an_ocr_scan_is_priced_per_page_image_on_top_of_its_text(self):
+        from docsgpt.agents.attachment_budget import NATIVE_SCAN_PAGE_TOKENS, PER_FILE_OVERHEAD_TOKENS
+
+        # A scan the worker OCR'd has text, but the provider still reads every
+        # page as an image: measured on Azure, 10 such pages cost the text plus
+        # ~2,850 a page, against 500 a page planned.
+        pdf = att("acta.pdf", 8_744, mime="application/pdf", pages=10, image_pages=10)
+        plan = plan_attachments([pdf], caps(native_pdf=True), budget=200_000)
+
+        entry = plan.files[0]
+        assert entry.native is True
+        assert entry.inline_tokens == 8_744 + 10 * NATIVE_SCAN_PAGE_TOKENS + PER_FILE_OVERHEAD_TOKENS
+
+    def test_only_the_pages_carrying_an_image_are_priced_as_images(self):
+        from docsgpt.agents.attachment_budget import (
+            NATIVE_PDF_PAGE_TOKENS,
+            NATIVE_SCAN_PAGE_TOKENS,
+            PER_FILE_OVERHEAD_TOKENS,
+        )
+
+        pdf = att("mixed.pdf", 5_000, mime="application/pdf", pages=6, image_pages=2)
+        plan = plan_attachments([pdf], caps(native_pdf=True), budget=200_000)
+
+        assert plan.files[0].inline_tokens == (
+            5_000 + 2 * NATIVE_SCAN_PAGE_TOKENS + 4 * NATIVE_PDF_PAGE_TOKENS + PER_FILE_OVERHEAD_TOKENS
+        )
+
+    def test_a_pdf_with_no_image_pages_keeps_the_text_based_estimate(self):
+        from docsgpt.agents.attachment_budget import NATIVE_PDF_PAGE_TOKENS, PER_FILE_OVERHEAD_TOKENS
+
+        pdf = att("act.pdf", 29_215, mime="application/pdf", pages=30, image_pages=0, size=900_000_000)
+        plan = plan_attachments([pdf], caps(native_pdf=True), budget=200_000)
+
+        assert plan.files[0].inline_tokens == 29_215 + 30 * NATIVE_PDF_PAGE_TOKENS + PER_FILE_OVERHEAD_TOKENS
+
+    def test_an_older_row_is_judged_by_its_bytes_per_page(self):
+        from docsgpt.agents.attachment_budget import NATIVE_SCAN_PAGE_TOKENS, PER_FILE_OVERHEAD_TOKENS
+
+        # Rows stored before the worker counted image pages: a 45-page, 5.4 MB
+        # PDF is pages of images, whatever its text layer says.
+        pdf = att("acta.pdf", 27_297, mime="application/pdf", pages=45, size=5_436_181)
+        plan = plan_attachments([pdf], caps(native_pdf=True), budget=400_000)
+
+        assert plan.files[0].inline_tokens == 27_297 + 45 * NATIVE_SCAN_PAGE_TOKENS + PER_FILE_OVERHEAD_TOKENS
+
+    def test_an_older_light_pdf_is_still_priced_as_born_digital(self):
+        from docsgpt.agents.attachment_budget import NATIVE_PDF_PAGE_TOKENS, PER_FILE_OVERHEAD_TOKENS
+
+        pdf = att("act.pdf", 8_592, mime="application/pdf", pages=10, size=16_425)
+        plan = plan_attachments([pdf], caps(native_pdf=True), budget=200_000)
+
+        assert plan.files[0].inline_tokens == 8_592 + 10 * NATIVE_PDF_PAGE_TOKENS + PER_FILE_OVERHEAD_TOKENS
+
+    def test_ocr_scans_that_would_overflow_go_as_text_instead(self):
+        # Production turn: six OCR'd scans (103 pages, 56k text tokens) were
+        # planned at ~108k natively and billed ~313k. Priced per page image
+        # they no longer fit natively, and their text does.
+        shapes = [(27_297, 45, 5_436_181), (2_897, 5, 2_242_632), (1_737, 2, 2_713_908),
+                  (18_832, 39, 5_170_009), (4_504, 9, 2_078_214), (1_127, 3, 337_932)]
+        pdfs = [att(f"scan-{i}.pdf", t, mime="application/pdf", pages=p, size=b) for i, (t, p, b) in enumerate(shapes)]
+        plan = plan_attachments(pdfs, caps(native_pdf=True, attachments_tool=True), budget=131_072)
+
+        assert plan.inline_tokens <= 131_072
+        native = [f for f in plan.files if f.native]
+        assert sum(f.inline_tokens for f in native) <= 131_072
+        assert sum(f.page_count for f in native) < 103
 
     def test_scans_that_do_not_fit_the_budget_are_left_for_the_tool(self):
         # 14 scans of 31 pages took ~81k tokens natively; planned at 500 a page

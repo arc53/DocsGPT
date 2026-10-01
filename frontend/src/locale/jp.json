@@ -562,7 +562,7 @@
         "total": "合計",
         "model": "モデル別",
         "agent": "エージェント別",
-        "source": "ソース別"
+        "source": "フロー別"
       },
       "includeSideChannel": "バックグラウンドトークン",
       "promptTokens": "プロンプトトークン",
@@ -1501,13 +1501,14 @@
         "mcp_atlassian": "Jira の課題と Confluence のページを検索、更新します。",
         "mcp_sentry": "Sentry の課題、イベント、リリースを調べます。",
         "mcp_stripe": "Stripe の顧客、支払い、サブスクリプションを調べます。",
-"mcp_vercel": "Vercel のプロジェクト、デプロイ、ビルドログを管理します。",
+        "mcp_drawio": "draw.io で編集可能なフローチャートやその他の図を作成します。",
         "mcp_clickup": "ClickUp のタスク、ドキュメント、リストを検索、閲覧、更新し、コメントを追加します。",
         "mcp_zapier": "Zapier MCP アカウントで有効にしたアクションを使って、接続済みアプリの情報を読み取ったり更新したりします。",
         "mcp_trello": "Trello のボードやカードを検索し、カードを作成・更新します。",
         "mcp_miro": "Miro のボードを検索し、内容やコメントを読み、図を作成してコメントに返信します。",
         "mcp_resend": "メールを送信し、連絡先、オーディエンス、ドメインを管理します。",
         "mcp_calcom": "Cal.com の予約、イベントタイプ、空き状況、スケジュールを読み取り・管理します。",
+"mcp_vercel": "Vercel のプロジェクト、デプロイ、ビルドログを管理します。",
         "github": "リポジトリをナレッジに同期し、エージェントがコード、Issue、プルリクエストを読めるようにします。"
       },
       "empty": "まだ何も接続されていません。サービスを接続すると、コンテンツを同期したり、エージェントに新しいツールを提供したりできます。",
@@ -1825,6 +1826,11 @@
           "authCancelled": "サインインがキャンセルされました。",
           "connectedAs": "{{email}}として接続",
           "disconnect": "切断"
+        },
+        "callback": {
+          "failed": "サインインを完了できませんでした。DocsGPT からもう一度開始してください。",
+          "closeWindow": "このウィンドウは閉じてかまいません。",
+          "backToApp": "DocsGPT に戻る"
         },
         "googleDrive": {
           "connect": "Google Driveに接続",

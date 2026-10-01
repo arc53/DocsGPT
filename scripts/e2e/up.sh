@@ -8,7 +8,7 @@
 #   1. Preflight shared services (Postgres, Redis). Fail loud if down.
 #   2. Reset state: Postgres template clone, Redis FLUSHDB 11/12/13, wipe .e2e-tmp.
 #   3. Export env.
-#   4. Start mock LLM (7899) → Flask (7099) → Celery → Vite (5179), each in
+#   4. Start mock LLM (7899) → API (7099, uvicorn) → Celery → Vite (5179), each in
 #      background, each with its own pidfile + log + readiness probe.
 #   5. Exit 0, leaving services running. Playwright (or the user) invokes
 #      down.sh separately when done.
@@ -43,7 +43,7 @@ BOOT_LOG="$LOGDIR/up.log"
 SVC_LOGDIR="$PIDDIR"   # per-service logs live with the pidfiles per the brief
 
 MOCK_LLM_PORT=7899
-FLASK_PORT=7099
+API_PORT=7099
 VITE_PORT=5179
 
 # -----------------------------------------------------------------------------
@@ -210,16 +210,7 @@ source "$SCRIPT_DIR/env.sh"
 # 4. Start services
 # -----------------------------------------------------------------------------
 
-# Pick Flask / python binaries from the repo venv when present.
-if [[ -x "$REPO_ROOT/.venv/bin/flask" ]]; then
-    FLASK_BIN="$REPO_ROOT/.venv/bin/flask"
-else
-    FLASK_BIN="$(command -v flask || true)"
-fi
-if [[ -z "$FLASK_BIN" ]]; then
-    die "flask binary not found (.venv/bin/flask missing and no 'flask' on PATH)"
-fi
-
+# Pick the python binary from the repo venv when present.
 if [[ -x "$REPO_ROOT/.venv/bin/python" ]]; then
     PY_BIN="$REPO_ROOT/.venv/bin/python"
 else
@@ -228,8 +219,7 @@ fi
 if [[ -z "$PY_BIN" ]]; then
     die "python binary not found (.venv/bin/python missing and no 'python3' on PATH)"
 fi
-
-log "using flask=$FLASK_BIN python=$PY_BIN"
+log "using python=$PY_BIN"
 
 # ---- 4a. Mock LLM ------------------------------------------------------------
 MOCK_LLM_LOG="$SVC_LOGDIR/mock-llm.log"
@@ -249,22 +239,26 @@ if ! wait_for "mock-llm /healthz" 10 \
     boot_fail "mock-llm" "$MOCK_LLM_LOG" "healthz did not respond within 10s"
 fi
 
-# ---- 4b. Flask ---------------------------------------------------------------
-FLASK_LOG="$SVC_LOGDIR/flask.log"
-FLASK_PID="$PIDDIR/flask.pid"
-log "starting Flask on 127.0.0.1:$FLASK_PORT"
+# ---- 4b. API (ASGI) ----------------------------------------------------------
+# The ASGI app, as `docsgpt api` and production serve it. `flask run` would
+# serve only the WSGI Flask app and 404 the routes mounted on the ASGI shell
+# (docsgpt/asgi.py): the notification stream /api/events, the chat reconnect
+# reader, device command streams and artifact downloads.
+API_LOG="$SVC_LOGDIR/api.log"
+API_PID="$PIDDIR/api.pid"
+log "starting API (uvicorn, ASGI) on 127.0.0.1:$API_PORT"
 (
     cd "$E2E_TMP"
-    PYTHONUNBUFFERED=1 nohup "$FLASK_BIN" --app ../docsgpt/app.py run \
-        --host 127.0.0.1 --port "$FLASK_PORT" \
-        >"$FLASK_LOG" 2>&1 &
-    echo $! > "$FLASK_PID"
+    PYTHONUNBUFFERED=1 nohup "$PY_BIN" -m uvicorn docsgpt.asgi:asgi_app \
+        --host 127.0.0.1 --port "$API_PORT" \
+        >"$API_LOG" 2>&1 &
+    echo $! > "$API_PID"
 )
-STARTED_SERVICES+=("flask")
+STARTED_SERVICES+=("api")
 
-if ! wait_for "flask /api/config" 30 \
-        curl -sf "http://127.0.0.1:${FLASK_PORT}/api/config"; then
-    boot_fail "flask" "$FLASK_LOG" "/api/config did not respond within 30s"
+if ! wait_for "api /api/config" 30 \
+        curl -sf "http://127.0.0.1:${API_PORT}/api/config"; then
+    boot_fail "api" "$API_LOG" "/api/config did not respond within 30s"
 fi
 
 # ---- 4c. Celery --------------------------------------------------------------
@@ -320,7 +314,7 @@ VITE_PID="$PIDDIR/vite.pid"
 log "starting Vite dev server on 127.0.0.1:$VITE_PORT"
 (
     cd "$REPO_ROOT/frontend"
-    VITE_API_HOST="http://127.0.0.1:${FLASK_PORT}" nohup npm run dev -- \
+    VITE_API_HOST="http://127.0.0.1:${API_PORT}" nohup npm run dev -- \
         --host 127.0.0.1 --port "$VITE_PORT" --strictPort \
         >"$VITE_LOG" 2>&1 &
     echo $! > "$VITE_PID"
@@ -347,7 +341,7 @@ fi
 # -----------------------------------------------------------------------------
 log "all services up:"
 log "  mock-llm  pid=$(cat "$MOCK_LLM_PID") log=$MOCK_LLM_LOG"
-log "  flask     pid=$(cat "$FLASK_PID")    log=$FLASK_LOG"
+log "  api       pid=$(cat "$API_PID")    log=$API_LOG"
 log "  celery    pid=$(cat "$CELERY_PID")   log=$CELERY_LOG"
 log "  vite      pid=$(cat "$VITE_PID")     log=$VITE_LOG"
 log "handoff complete — exiting 0, services remain running. Run scripts/e2e/down.sh to stop."

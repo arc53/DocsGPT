@@ -1,7 +1,7 @@
 ---
 title: Docker Deployment of DocsGPT
 description: Deploy DocsGPT using Docker and Docker Compose for easy setup and management.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-08
 ---
 
 import { Callout } from 'nextra/components'
@@ -92,7 +92,7 @@ The [docsgpt CLI reference](/Deploying/cli) lists every command, including
 ### Backups
 
 `docsgpt backup` writes one archive holding a dump of the database and a tar of
-each data volume (`indexes`, `inputs`, `vectors`). It is new after 0.21.0; on
+each data volume (`indexes`, `inputs`, `vectors`). It is new in 1.0.0; on
 0.21.0, [back up by hand](/upgrading#back-up-and-restore-by-hand-0210).
 
 ```bash
@@ -183,12 +183,12 @@ run them:
     keeps it and `down -v` removes it.
 
 **Tags and variants.** `DOCSGPT_IMAGE_TAG` picks the version: a release such
-as `0.21.0`, `latest` (the newest release, the default here) or `develop`
+as `1.0.0`, `latest` (the newest release, the default here) or `develop`
 (follows the `main` branch). `DOCSGPT_IMAGE_VARIANT` picks the flavour: empty for the
 slim default image, or `-docling` for the image with the docling parser
 engine, its models and tesseract baked in (needed for OCR of scanned
 documents, see the [OCR guide](/Sources/ocr)). Both are read from `.env` or
-the shell, e.g. `DOCSGPT_IMAGE_TAG=0.21.0 DOCSGPT_IMAGE_VARIANT=-docling`.
+the shell, e.g. `DOCSGPT_IMAGE_TAG=1.0.0 DOCSGPT_IMAGE_VARIANT=-docling`.
 The same two variables drive `deployment/docker-compose-hub.yaml` in a
 checkout, but there the default tag is `develop`; see
 [Using the Source Checkout](#using-the-source-checkout).
@@ -303,7 +303,7 @@ defaults to the `develop` images, built from the `main` branch, not to the
 latest release. For anything beyond trying DocsGPT out, pin a release in `.env`:
 
 ```bash
-DOCSGPT_IMAGE_TAG=0.21.0
+DOCSGPT_IMAGE_TAG=1.0.0
 ```
 
 Pin it through the variable, not by editing `image:` in the file: the variable

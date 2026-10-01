@@ -261,8 +261,7 @@ def test_init_containers_have_resources() -> None:
 def test_migration_job_runs_the_packaged_migrate_command() -> None:
     job = _named("Job", "postgres-init")
     container = next(c for c in _pod_spec(job)["containers"] if c["name"] == "postgres-init")
-    # docsgpt.cli, not the package: the 0.21.0 image predates docsgpt/__main__.py.
-    assert container["command"] == ["python", "-m", "docsgpt.cli", "migrate", "--no-create"]
+    assert container["command"] == ["python", "-m", "docsgpt", "migrate", "--no-create"]
 
 
 @pytest.mark.parametrize("name", ["docsgpt-api", "docsgpt-worker"])

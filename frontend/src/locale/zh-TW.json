@@ -562,7 +562,7 @@
         "total": "總計",
         "model": "依模型",
         "agent": "依代理",
-        "source": "依來源"
+        "source": "依流程"
       },
       "includeSideChannel": "背景 Token",
       "promptTokens": "提示 Token",
@@ -1501,13 +1501,14 @@
         "mcp_atlassian": "搜尋和更新 Jira 議題與 Confluence 頁面。",
         "mcp_sentry": "查看 Sentry 問題、事件和發行版本。",
         "mcp_stripe": "查看 Stripe 中的客戶、付款和訂閱。",
-"mcp_vercel": "管理 Vercel 專案、部署和建構日誌。",
+        "mcp_drawio": "使用 draw.io 建立可編輯的流程圖和其他圖表。",
         "mcp_clickup": "搜尋、讀取和更新 ClickUp 任務、文件與清單，並新增留言。",
         "mcp_zapier": "使用 Zapier MCP 帳戶中啟用的動作讀取或更新已連線的應用程式。",
         "mcp_trello": "尋找 Trello 看板與卡片，並建立及更新卡片。",
         "mcp_miro": "尋找 Miro 白板、閱讀內容和留言、建立圖表並回覆留言。",
         "mcp_resend": "傳送電子郵件並管理聯絡人、受眾和網域。",
         "mcp_calcom": "讀取並管理您的 Cal.com 預約、活動類型、空閒時間和排程。",
+"mcp_vercel": "管理 Vercel 專案、部署和建構日誌。",
         "github": "將儲存庫同步到知識庫，並讓代理讀取程式碼、Issue 和提取要求。"
       },
       "empty": "尚未連線任何服務。連線一個服務以同步其內容，或為代理提供新工具。",
@@ -1825,6 +1826,11 @@
           "authCancelled": "登入已取消。",
           "connectedAs": "已連接為 {{email}}",
           "disconnect": "中斷連接"
+        },
+        "callback": {
+          "failed": "無法完成登入。請在 DocsGPT 中重新開始。",
+          "closeWindow": "你可以關閉此視窗。",
+          "backToApp": "返回 DocsGPT"
         },
         "googleDrive": {
           "connect": "連接到 Google Drive",

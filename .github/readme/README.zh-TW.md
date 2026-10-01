@@ -1,4 +1,4 @@
-<!-- Translated from README.md at commit c345cddb3ac33b44a077cfb5599f6adb2fc6604f by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
+<!-- Translated from README.md at commit 7974998b8f162961478a95eff9cb7ac62286c8f8 by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
 <h1 align="center">
   DocsGPT 🦖
 </h1>
@@ -44,7 +44,7 @@
 
 <p align="center">
   <a href="https://docs.docsgpt.cloud/">
-    <img src="https://pub.arc53.com/docsgpt/readme-reel.webp?v=2" alt="30 秒認識 DocsGPT：上傳文件、同步 GitHub、附來源的回答、深度研究、視覺化 workflow、工具、聊天 widget、相容 OpenAI 的 API、MCP server，以及使用 docsgpt up 自行代管" width="100%">
+    <img width="1100" height="688" src="https://pub.arc53.com/readme-reel.webp" alt="DocsGPT 概覽：附來源引用的回答、知識、agent、視覺化 workflow、工具與連接器、可觀測性">
   </a>
 </p>
 
@@ -76,6 +76,8 @@ MCP server 將其導入您的產品。它完全在您的環境中運行，可選
 - 🧠 **任何模型**：OpenAI、Anthropic、Google、Groq、OpenRouter，或透過 Ollama、vLLM 與其他相容 OpenAI 的 server 使用本機模型。
 - 🛡️ **防護機制**：標記、遮蔽或封鎖 PII、機密資訊、prompt injection 與缺乏依據的回答。
 - ⏰ **排程與 webhook**：依計時器執行 agent，或從任何可傳送 HTTP 請求的系統執行。
+
+https://github.com/user-attachments/assets/d36bbd7d-c23c-4ab8-8777-b432632d6882
 
 <table>
   <tr>
@@ -203,3 +205,4 @@ DocsGPT 採用 [MIT 授權條款](../../LICENSE)。
     <img width="201" alt="Neon" src="https://github.com/user-attachments/assets/7d9813b7-0e6d-403f-b5af-68af066b326f" />
   </a>
 </p>
+
