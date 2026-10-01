@@ -106,6 +106,43 @@ class TestThresholdCountsPlannedAttachments:
         assert [a["id"] for a in sp.earlier_attachments] == ["e1", "e2"]
 
 
+class TestRegenerateExcludesTheReplacedTurns:
+    """A retry or an edit at ``index`` replaces that turn and drops the later ones."""
+
+    def _conversation(self):
+        history = _history(4, 100)
+        for position, entry in enumerate(history):
+            entry["position"] = position
+            entry["attachments"] = [f"e{position}"]
+        return {"queries": history}
+
+    def _rows(self, ids):
+        return [_att(f"{i}.txt", 100, i) for i in ids]
+
+    def test_files_of_the_replaced_and_later_turns_are_not_earlier(self):
+        sp = _processor({"conversation_id": "c1", "question": "again", "index": 2})
+        sp.attachments = []
+        with patch.object(type(sp), "_fetch_attachment_rows", side_effect=self._rows) as fetch:
+            _run(sp, self._conversation())
+        fetch.assert_called_once_with(["e0", "e1"])
+        assert [a["id"] for a in sp.earlier_attachments] == ["e0", "e1"]
+
+    def test_regenerating_the_first_turn_has_no_earlier_files(self):
+        sp = _processor({"conversation_id": "c1", "question": "again", "index": 0})
+        sp.attachments = []
+        with patch.object(type(sp), "_fetch_attachment_rows", side_effect=self._rows) as fetch:
+            _run(sp, self._conversation())
+        fetch.assert_not_called()
+        assert sp.earlier_attachments == []
+
+    def test_a_new_turn_sees_every_earlier_file(self):
+        sp = _processor({"conversation_id": "c1", "question": "next"})
+        sp.attachments = []
+        with patch.object(type(sp), "_fetch_attachment_rows", side_effect=self._rows):
+            _run(sp, self._conversation())
+        assert [a["id"] for a in sp.earlier_attachments] == ["e0", "e1", "e2", "e3"]
+
+
 class TestFitBeforeCompression:
     def test_a_turn_that_cannot_fit_fails_before_any_compression_call(self):
         oversized = [{"type": "text", "text": "clause " * (WINDOW + 5_000)}]

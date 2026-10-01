@@ -288,3 +288,20 @@ class TestFollowUpTurnScenario:
         assert "attachments_read" in block and "attachments_search" in block
         scans_line = "shows it to you"
         assert (scans_line in block) is vision
+
+
+def test_tool_refs_match_the_planner_when_an_earlier_file_is_resent():
+    """The tool keeps an id that is both earlier and current where the planner does."""
+    from docsgpt.agents.attachment_budget import assign_refs
+    from docsgpt.agents.tools import attachments as tool
+
+    def row(i, content_hash):
+        return {"id": f"00000000-0000-0000-0000-00000000000{i}", "filename": f"f{i}.txt",
+                "mime_type": "text/plain", "content_hash": content_hash, "token_count": 10, "metadata": {}}
+
+    x, a = row(1, "hx"), row(2, "ha")
+    planner = {p.ref: p.attachment["id"] for p in assign_refs([x], [x, a])}
+    config = tool.build_attachments_tool_config(user="u", current_ids=[x["id"]], earlier_ids=[x["id"], a["id"]])
+    with patch.object(tool, "_load_rows", return_value=[x, a]):
+        mine = {p.ref: p.attachment["id"] for p in tool.AttachmentsTool(config).files()}
+    assert mine == planner

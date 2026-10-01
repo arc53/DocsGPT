@@ -769,8 +769,11 @@ class AttachmentsTool(Tool):
     def files(self) -> List[PlannedFile]:
         """The conversation's files under their refs, loaded once per tool."""
         if self._files is None:
+            # The planner's own lists, as is: an id both earlier and current
+            # (a re-sent file) is registered first among the earlier ones,
+            # exactly as ``plan_attachments`` does.
             current_ids = [str(i) for i in self.config.get("current_ids") or []]
-            earlier_ids = [str(i) for i in self.config.get("earlier_ids") or [] if str(i) not in current_ids]
+            earlier_ids = [str(i) for i in self.config.get("earlier_ids") or []]
             rows = {_attachment_id(r): r for r in _load_rows(list(dict.fromkeys(earlier_ids + current_ids)), self.user)}
             self._files = assign_refs(
                 [rows[i] for i in current_ids if i in rows],

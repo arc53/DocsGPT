@@ -106,6 +106,12 @@ def multimodal_reaches_model(model_id: Optional[str], user_id: Optional[str]) ->
         return False
 
 
+def _position(query: Dict[str, Any], fallback: int) -> int:
+    """A conversation message's position, else its index in the loaded list."""
+    position = query.get("position")
+    return position if isinstance(position, int) and not isinstance(position, bool) else fallback
+
+
 def _clamp_chunks(value: int) -> int:
     """Bound top-k to the range ``RetrievalConfig`` enforces, keeping 0.
 
@@ -851,6 +857,9 @@ class StreamProcessor:
     def _load_earlier_attachments(self, conversation: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Rows of the files attached on the conversation's earlier turns.
 
+        On a retry or an edit (``index`` in the request), only the turns
+        before the replaced one count.
+
         Args:
             conversation: The conversation, with its ``queries``.
 
@@ -859,8 +868,14 @@ class StreamProcessor:
             order; an id seen twice is listed once.
         """
         ids: List[str] = []
-        for query in conversation.get("queries") or []:
+        # A retry or an edit at ``index`` replaces that turn and drops every
+        # later one: their files are not this conversation's earlier files.
+        index = (getattr(self, "data", None) or {}).get("index")
+        replaced_from = index if isinstance(index, int) and not isinstance(index, bool) and index >= 0 else None
+        for position, query in enumerate(conversation.get("queries") or []):
             if not isinstance(query, dict) or is_compression_summary_row(query):
+                continue
+            if replaced_from is not None and _position(query, position) >= replaced_from:
                 continue
             for attachment_id in query.get("attachments") or []:
                 if attachment_id:
