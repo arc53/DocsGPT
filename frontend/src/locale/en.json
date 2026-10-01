@@ -2083,7 +2083,16 @@
       "creatingArtifact": "Creating an artifact…",
       "usingTool": "Using {{tool}}…",
       "searchingConnector": "Searching {{name}}…",
-      "usingConnector": "Using {{name}}…"
+      "usingConnector": "Using {{name}}…",
+      "attachmentsSearch": "Searching files for “{{query}}”…",
+      "attachmentsSearchGeneric": "Searching files…",
+      "attachmentsRead": "Reading {{ref}}…",
+      "attachmentsReadPage": "Reading {{ref}} (page {{pages}})…",
+      "attachmentsReadPages": "Reading {{ref}} (pages {{pages}})…",
+      "attachmentsReadRows": "Reading {{ref}} (rows {{rows}})…",
+      "attachmentsReadGeneric": "Reading a file…",
+      "attachmentsImage": "Viewing image {{ref}}…",
+      "attachmentsList": "Listing files…"
     },
     "toolChip": {
       "searchingWeb": "Searched the web · “{{query}}”",
@@ -2097,7 +2106,16 @@
       "usingTool": "Used {{tool}}",
       "searchedConnector": "Searched {{name}}",
       "readConnector": "Read from {{name}}",
-      "usedConnector": "Used {{name}}: {{action}}"
+      "usedConnector": "Used {{name}}: {{action}}",
+      "attachmentsSearch": "Searched files for “{{query}}”",
+      "attachmentsSearchGeneric": "Searched files",
+      "attachmentsRead": "Read {{ref}}",
+      "attachmentsReadPage": "Read {{ref}} (page {{pages}})",
+      "attachmentsReadPages": "Read {{ref}} (pages {{pages}})",
+      "attachmentsReadRows": "Read {{ref}} (rows {{rows}})",
+      "attachmentsReadGeneric": "Read a file",
+      "attachmentsImage": "Viewed image {{ref}}",
+      "attachmentsList": "Listed files"
     },
     "inlineSteps": {
       "arguments": "Arguments",

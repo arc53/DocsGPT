@@ -117,6 +117,69 @@ const CONNECTOR_KEYS: Record<
   },
 };
 
+// The server-side tool that reads a turn's attached files. Its actions take a
+// ``docsgpt_`` prefix when a client tool already uses the plain name.
+const ATTACHMENTS_TOOL = 'attachments';
+const ATTACHMENTS_PREFIX = /^docsgpt_/;
+// A read of an image says so in its first words (attachments.py _show_image).
+const IMAGE_READ_RESULT = /^Image [AF]\d+\b/;
+// A# refs name the conversation's image artifacts.
+const ARTIFACT_REF = /^A\d+$/;
+
+/** A range as the model wrote it ("2-4"), with an en dash for display. */
+function displayRange(range: string): string {
+  return range.trim().replace(/\s*-\s*/g, '–');
+}
+
+/**
+ * A call to the attachments tool, named by what it did with the files:
+ * "Searched files for “enzymes”", "Read F3 (pages 2–4)", "Listed files",
+ * "Viewed image F7".
+ */
+function describeAttachmentsCall(toolCall: ToolCallsType): ToolActivity | null {
+  if (toolCall.tool_name !== ATTACHMENTS_TOOL) return null;
+  const action = (toolCall.action_name ?? '').replace(ATTACHMENTS_PREFIX, '');
+  const args = toolCall.arguments ?? {};
+  const text = (value: unknown) =>
+    typeof value === 'string' || typeof value === 'number'
+      ? String(value).trim()
+      : '';
+
+  if (action === 'attachments_list') return { key: 'attachmentsList' };
+  if (action === 'attachments_search') {
+    const query = text(args.query);
+    return query
+      ? { key: 'attachmentsSearch', values: { query } }
+      : { key: 'attachmentsSearchGeneric' };
+  }
+  if (action === 'attachments_read') {
+    const ref = text(args.ref).toUpperCase();
+    if (!ref) return { key: 'attachmentsReadGeneric' };
+    const result: unknown = toolCall.result;
+    if (
+      ARTIFACT_REF.test(ref) ||
+      (typeof result === 'string' && IMAGE_READ_RESULT.test(result))
+    )
+      return { key: 'attachmentsImage', values: { ref } };
+    const pages = text(args.pages);
+    if (pages)
+      return /[-,]/.test(pages)
+        ? {
+            key: 'attachmentsReadPages',
+            values: { ref, pages: displayRange(pages) },
+          }
+        : { key: 'attachmentsReadPage', values: { ref, pages } };
+    const rows = text(args.rows);
+    if (rows)
+      return {
+        key: 'attachmentsReadRows',
+        values: { ref, rows: displayRange(rows) },
+      };
+    return { key: 'attachmentsRead', values: { ref } };
+  }
+  return null;
+}
+
 export function describeToolCall(toolCall: ToolCallsType): ToolActivity {
   const { tool_name, action_name, arguments: args } = toolCall;
   const query = typeof args?.query === 'string' ? args.query : undefined;
@@ -139,6 +202,8 @@ export function describeToolCall(toolCall: ToolCallsType): ToolActivity {
       return { key: 'readingPage', values: { target } };
     }
   }
+  const attachments = describeAttachmentsCall(toolCall);
+  if (attachments) return attachments;
   const connector = describeConnectorCall(toolCall);
   if (connector) return connector;
   if (action_name === 'run_code') return { key: 'runningCode' };

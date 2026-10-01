@@ -2077,7 +2077,16 @@
       "creatingArtifact": "Erstelle ein Artefakt…",
       "usingTool": "Verwende {{tool}}…",
       "searchingConnector": "Durchsuche {{name}}…",
-      "usingConnector": "Nutze {{name}}…"
+      "usingConnector": "Nutze {{name}}…",
+      "attachmentsSearch": "Durchsuche Dateien nach „{{query}}“…",
+      "attachmentsSearchGeneric": "Durchsuche Dateien…",
+      "attachmentsRead": "Lese {{ref}}…",
+      "attachmentsReadPage": "Lese {{ref}} (Seite {{pages}})…",
+      "attachmentsReadPages": "Lese {{ref}} (Seiten {{pages}})…",
+      "attachmentsReadRows": "Lese {{ref}} (Zeilen {{rows}})…",
+      "attachmentsReadGeneric": "Lese eine Datei…",
+      "attachmentsImage": "Betrachte Bild {{ref}}…",
+      "attachmentsList": "Liste Dateien auf…"
     },
     "toolChip": {
       "searchingWeb": "Im Web gesucht · „{{query}}“",
@@ -2091,7 +2100,16 @@
       "usingTool": "{{tool}} verwendet",
       "searchedConnector": "{{name}} durchsucht",
       "readConnector": "Aus {{name}} gelesen",
-      "usedConnector": "{{name}} genutzt: {{action}}"
+      "usedConnector": "{{name}} genutzt: {{action}}",
+      "attachmentsSearch": "Dateien nach „{{query}}“ durchsucht",
+      "attachmentsSearchGeneric": "Dateien durchsucht",
+      "attachmentsRead": "{{ref}} gelesen",
+      "attachmentsReadPage": "{{ref}} gelesen (Seite {{pages}})",
+      "attachmentsReadPages": "{{ref}} gelesen (Seiten {{pages}})",
+      "attachmentsReadRows": "{{ref}} gelesen (Zeilen {{rows}})",
+      "attachmentsReadGeneric": "Eine Datei gelesen",
+      "attachmentsImage": "Bild {{ref}} angesehen",
+      "attachmentsList": "Dateien aufgelistet"
     },
     "inlineSteps": {
       "arguments": "Argumente",

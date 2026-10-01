@@ -2067,7 +2067,16 @@
       "creatingArtifact": "正在建立 Artifact…",
       "usingTool": "正在使用 {{tool}}…",
       "searchingConnector": "正在搜尋 {{name}}…",
-      "usingConnector": "正在使用 {{name}}…"
+      "usingConnector": "正在使用 {{name}}…",
+      "attachmentsSearch": "正在檔案中搜尋「{{query}}」…",
+      "attachmentsSearchGeneric": "正在搜尋檔案…",
+      "attachmentsRead": "正在讀取 {{ref}}…",
+      "attachmentsReadPage": "正在讀取 {{ref}}（第 {{pages}} 頁）…",
+      "attachmentsReadPages": "正在讀取 {{ref}}（第 {{pages}} 頁）…",
+      "attachmentsReadRows": "正在讀取 {{ref}}（第 {{rows}} 列）…",
+      "attachmentsReadGeneric": "正在讀取檔案…",
+      "attachmentsImage": "正在檢視圖片 {{ref}}…",
+      "attachmentsList": "正在列出檔案…"
     },
     "toolChip": {
       "searchingWeb": "已搜尋網路 · 「{{query}}」",
@@ -2081,7 +2090,16 @@
       "usingTool": "已使用 {{tool}}",
       "searchedConnector": "已搜尋 {{name}}",
       "readConnector": "已從 {{name}} 讀取",
-      "usedConnector": "已使用 {{name}}：{{action}}"
+      "usedConnector": "已使用 {{name}}：{{action}}",
+      "attachmentsSearch": "已在檔案中搜尋「{{query}}」",
+      "attachmentsSearchGeneric": "已搜尋檔案",
+      "attachmentsRead": "已讀取 {{ref}}",
+      "attachmentsReadPage": "已讀取 {{ref}}（第 {{pages}} 頁）",
+      "attachmentsReadPages": "已讀取 {{ref}}（第 {{pages}} 頁）",
+      "attachmentsReadRows": "已讀取 {{ref}}（第 {{rows}} 列）",
+      "attachmentsReadGeneric": "已讀取檔案",
+      "attachmentsImage": "已檢視圖片 {{ref}}",
+      "attachmentsList": "已列出檔案"
     },
     "inlineSteps": {
       "arguments": "參數",

@@ -2067,7 +2067,16 @@
       "creatingArtifact": "アーティファクトを作成中…",
       "usingTool": "{{tool}} を使用中…",
       "searchingConnector": "{{name}} を検索中…",
-      "usingConnector": "{{name}} を使用中…"
+      "usingConnector": "{{name}} を使用中…",
+      "attachmentsSearch": "ファイルで「{{query}}」を検索中…",
+      "attachmentsSearchGeneric": "ファイルを検索中…",
+      "attachmentsRead": "{{ref}} を読み込み中…",
+      "attachmentsReadPage": "{{ref}}（{{pages}} ページ）を読み込み中…",
+      "attachmentsReadPages": "{{ref}}（{{pages}} ページ）を読み込み中…",
+      "attachmentsReadRows": "{{ref}}（{{rows}} 行）を読み込み中…",
+      "attachmentsReadGeneric": "ファイルを読み込み中…",
+      "attachmentsImage": "画像 {{ref}} を表示中…",
+      "attachmentsList": "ファイルを一覧表示中…"
     },
     "toolChip": {
       "searchingWeb": "ウェブ検索済み · 「{{query}}」",
@@ -2081,7 +2090,16 @@
       "usingTool": "{{tool}} を使用済み",
       "searchedConnector": "{{name}} を検索しました",
       "readConnector": "{{name}} から読み取りました",
-      "usedConnector": "{{name}} を使用: {{action}}"
+      "usedConnector": "{{name}} を使用: {{action}}",
+      "attachmentsSearch": "ファイルで「{{query}}」を検索しました",
+      "attachmentsSearchGeneric": "ファイルを検索しました",
+      "attachmentsRead": "{{ref}} を読み込みました",
+      "attachmentsReadPage": "{{ref}}（{{pages}} ページ）を読み込みました",
+      "attachmentsReadPages": "{{ref}}（{{pages}} ページ）を読み込みました",
+      "attachmentsReadRows": "{{ref}}（{{rows}} 行）を読み込みました",
+      "attachmentsReadGeneric": "ファイルを読み込みました",
+      "attachmentsImage": "画像 {{ref}} を表示しました",
+      "attachmentsList": "ファイルを一覧表示しました"
     },
     "inlineSteps": {
       "arguments": "引数",

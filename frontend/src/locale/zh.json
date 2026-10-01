@@ -2066,7 +2066,16 @@
       "creatingArtifact": "正在创建工件…",
       "usingTool": "正在使用 {{tool}}…",
       "searchingConnector": "正在搜索 {{name}}…",
-      "usingConnector": "正在使用 {{name}}…"
+      "usingConnector": "正在使用 {{name}}…",
+      "attachmentsSearch": "正在文件中搜索“{{query}}”…",
+      "attachmentsSearchGeneric": "正在搜索文件…",
+      "attachmentsRead": "正在读取 {{ref}}…",
+      "attachmentsReadPage": "正在读取 {{ref}}（第 {{pages}} 页）…",
+      "attachmentsReadPages": "正在读取 {{ref}}（第 {{pages}} 页）…",
+      "attachmentsReadRows": "正在读取 {{ref}}（第 {{rows}} 行）…",
+      "attachmentsReadGeneric": "正在读取文件…",
+      "attachmentsImage": "正在查看图片 {{ref}}…",
+      "attachmentsList": "正在列出文件…"
     },
     "toolChip": {
       "searchingWeb": "已搜索网络 · “{{query}}”",
@@ -2080,7 +2089,16 @@
       "usingTool": "已使用 {{tool}}",
       "searchedConnector": "已搜索 {{name}}",
       "readConnector": "已从 {{name}} 读取",
-      "usedConnector": "已使用 {{name}}：{{action}}"
+      "usedConnector": "已使用 {{name}}：{{action}}",
+      "attachmentsSearch": "已在文件中搜索“{{query}}”",
+      "attachmentsSearchGeneric": "已搜索文件",
+      "attachmentsRead": "已读取 {{ref}}",
+      "attachmentsReadPage": "已读取 {{ref}}（第 {{pages}} 页）",
+      "attachmentsReadPages": "已读取 {{ref}}（第 {{pages}} 页）",
+      "attachmentsReadRows": "已读取 {{ref}}（第 {{rows}} 行）",
+      "attachmentsReadGeneric": "已读取文件",
+      "attachmentsImage": "已查看图片 {{ref}}",
+      "attachmentsList": "已列出文件"
     },
     "inlineSteps": {
       "arguments": "参数",

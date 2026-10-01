@@ -2077,7 +2077,16 @@
       "creatingArtifact": "Creando un artefacto…",
       "usingTool": "Usando {{tool}}…",
       "searchingConnector": "Buscando en {{name}}…",
-      "usingConnector": "Usando {{name}}…"
+      "usingConnector": "Usando {{name}}…",
+      "attachmentsSearch": "Buscando «{{query}}» en los archivos…",
+      "attachmentsSearchGeneric": "Buscando en los archivos…",
+      "attachmentsRead": "Leyendo {{ref}}…",
+      "attachmentsReadPage": "Leyendo {{ref}} (página {{pages}})…",
+      "attachmentsReadPages": "Leyendo {{ref}} (páginas {{pages}})…",
+      "attachmentsReadRows": "Leyendo {{ref}} (filas {{rows}})…",
+      "attachmentsReadGeneric": "Leyendo un archivo…",
+      "attachmentsImage": "Viendo la imagen {{ref}}…",
+      "attachmentsList": "Listando archivos…"
     },
     "toolChip": {
       "searchingWeb": "Buscado en la web · “{{query}}”",
@@ -2091,7 +2100,16 @@
       "usingTool": "Usado {{tool}}",
       "searchedConnector": "Buscó en {{name}}",
       "readConnector": "Leyó de {{name}}",
-      "usedConnector": "Usó {{name}}: {{action}}"
+      "usedConnector": "Usó {{name}}: {{action}}",
+      "attachmentsSearch": "Buscó «{{query}}» en los archivos",
+      "attachmentsSearchGeneric": "Buscó en los archivos",
+      "attachmentsRead": "Leyó {{ref}}",
+      "attachmentsReadPage": "Leyó {{ref}} (página {{pages}})",
+      "attachmentsReadPages": "Leyó {{ref}} (páginas {{pages}})",
+      "attachmentsReadRows": "Leyó {{ref}} (filas {{rows}})",
+      "attachmentsReadGeneric": "Leyó un archivo",
+      "attachmentsImage": "Vio la imagen {{ref}}",
+      "attachmentsList": "Listó los archivos"
     },
     "inlineSteps": {
       "arguments": "Argumentos",
