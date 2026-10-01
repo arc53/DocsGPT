@@ -7,6 +7,7 @@ follow the widely-adopted chat completions protocol so external tools
 
 import json
 import logging
+import threading
 import time
 import traceback
 from datetime import datetime
@@ -386,6 +387,10 @@ def chat_completions():
     if not parse_in_stream:
         _finish_inline_files(internal_data, ingest)
 
+    # Set when a streaming client goes away: an OpenAI-style client cannot
+    # rejoin a stream, so the agent stops instead of running on unseen.
+    client_gone = threading.Event()
+
     def _serve(processor: StreamProcessor, keepalive: bool = True) -> Response:
         """Run the request once its files are attachment rows."""
         # Set when this request took the resume claim, so a refusal can release it.
@@ -469,6 +474,7 @@ def chat_completions():
                 jsonify({"error": {"message": "Unauthorized", "type": "auth_error"}}),
                 401,
             )
+        agent.client_disconnected = client_gone
 
         helper = _V1AnswerHelper()
         if claimed_conversation_id:
@@ -519,7 +525,7 @@ def chat_completions():
                 attachment_ids=internal_data.get("attachments") or None,
             )
             return Response(
-                with_sse_keepalive(frames) if keepalive else frames,
+                with_sse_keepalive(frames, on_disconnect=client_gone.set) if keepalive else frames,
                 mimetype="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
@@ -626,7 +632,8 @@ def chat_completions():
                         processor,
                         _serve,
                         _error_response,
-                    )
+                    ),
+                    on_disconnect=client_gone.set,
                 ),
                 mimetype="text/event-stream",
                 headers={

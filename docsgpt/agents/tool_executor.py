@@ -581,6 +581,11 @@ class ToolExecutor:
         # image or a scanned page). The LLM handler adds them in a user
         # message after the tool results and empties this list.
         self.pending_native_parts: List[Dict] = []
+        # Context a tool result may still take (tokens below the compression
+        # threshold), set by the LLM handler before each call, and the
+        # compression epoch: tools that size or dedupe their results read both.
+        self.context_room_tokens: Optional[int] = None
+        self.context_epoch = 0
         self.client_tools: Optional[List[Dict]] = None
         self._name_to_tool: Dict[str, Tuple[str, str]] = {}
         # Per-NAME failure counts for invented tool names this turn. After
@@ -1732,6 +1737,10 @@ class ToolExecutor:
             )
         except ConnectionUnavailable as exc:
             tool, connection_error = None, str(exc)
+
+        hint = getattr(tool, "set_context_hint", None) if tool is not None else None
+        if callable(hint):
+            hint(room_tokens=self.context_room_tokens, epoch=self.context_epoch)
 
         if tool is None:
             error_message = connection_error and (

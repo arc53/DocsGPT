@@ -874,3 +874,38 @@ class TestCuratedStreamErrorCode:
         event = _json.loads(chunk.split("data: ", 1)[1].strip())
         assert event["code"] == "context_length_exceeded"
         assert event["params"] == {"needed_tokens": 2, "available_tokens": 1}
+
+
+@pytest.mark.unit
+class TestClientDisconnect:
+    def test_the_agent_loop_stops_once_the_client_is_gone(self, mock_mongo_db, flask_app):
+        import threading
+
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        gone = threading.Event()
+        produced = []
+
+        def _gen(*args, **kwargs):
+            for i in range(50):
+                produced.append(i)
+                if i == 3:
+                    gone.set()
+                yield {"answer": f"chunk{i} "}
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            agent = MagicMock()
+            agent.client_disconnected = gone
+            agent.gen.side_effect = _gen
+            list(
+                resource.complete_stream(
+                    question="Test?",
+                    agent=agent,
+                    conversation_id=None,
+                    user_api_key=None,
+                    decoded_token={"sub": "user123"},
+                    should_persist=False,
+                )
+            )
+        assert len(produced) < 10

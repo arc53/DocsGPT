@@ -90,3 +90,31 @@ def test_pump_runs_in_callers_contextvars_context():
 
     assert list(with_sse_keepalive(inner(), 5.0)) == ["data: x\n\n"]
     assert seen["value"] == "bound"
+
+
+@pytest.mark.unit
+def test_a_client_disconnect_is_reported():
+    import threading
+
+    gone = threading.Event()
+    release = threading.Event()
+
+    def _inner():
+        yield "data: 1\n\n"
+        release.wait(5)
+        yield "data: 2\n\n"
+
+    stream = with_sse_keepalive(_inner(), interval_seconds=0.05, on_disconnect=gone.set)
+    assert next(stream) == "data: 1\n\n"
+    stream.close()
+    release.set()
+    assert gone.is_set()
+
+
+@pytest.mark.unit
+def test_a_finished_stream_is_not_a_disconnect():
+    import threading
+
+    gone = threading.Event()
+    assert list(with_sse_keepalive(iter(["a"]), interval_seconds=0.05, on_disconnect=gone.set)) == ["a"]
+    assert not gone.is_set()

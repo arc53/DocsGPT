@@ -1605,7 +1605,7 @@ class TestPerformMidExecutionCompression:
         assert messages is not None
         assert agent.compressed_summary == "summary"
 
-    def test_failure_falls_back_to_pruning(self):
+    def test_failure_ends_the_tool_loop(self):
         handler = ConcreteHandler()
         agent = Mock()
         agent.conversation_id = "conv1"
@@ -1642,8 +1642,8 @@ class TestPerformMidExecutionCompression:
                 agent, [{"role": "system", "content": "sys"}, {"role": "user", "content": "hi"}]
             )
 
-        assert success is True
-        assert messages is not None
+        assert success is False  # the tool loop ends; no pruning
+        assert messages is None
 
     def test_exception_returns_false(self):
         handler = ConcreteHandler()
@@ -1685,7 +1685,7 @@ class TestPerformInMemoryCompression:
         assert success is False
         assert messages is None
 
-    def test_compression_doesnt_reduce_falls_back_to_prune(self):
+    def test_compression_doesnt_reduce_ends_the_tool_loop(self):
         handler = ConcreteHandler()
         agent = Mock()
         agent.model_id = "gpt-4"
@@ -1730,7 +1730,7 @@ class TestPerformInMemoryCompression:
                 agent, [{"role": "user", "content": "hi"}]
             )
 
-        assert success is True
+        assert success is False  # the tool loop ends; no pruning
 
     def test_exception_returns_false(self):
         handler = ConcreteHandler()
@@ -2071,7 +2071,7 @@ class TestPerformMidExecutionCompressionEdgeCases:
                 agent, [{"role": "system", "content": "sys"}, {"role": "user", "content": "hi"}]
             )
 
-        assert success is True
+        assert success is False  # the tool loop ends; no pruning
 
     def test_rebuild_returns_none(self):
         handler = ConcreteHandler()

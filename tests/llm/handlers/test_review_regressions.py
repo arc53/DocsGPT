@@ -220,9 +220,10 @@ class TestTrailingFrameFailures:
 
 @pytest.mark.unit
 class TestInMemoryCompressionNegativeSavings:
-    def test_value_error_falls_back_to_minimal_pruning(self):
-        """The negative-savings ValueError from compress_conversation must
-        route to _prune_messages_minimal, not kill the tool loop."""
+    def test_value_error_ends_the_tool_loop_without_raising(self):
+        """The negative-savings ValueError from compress_conversation must not
+        raise; it ends the tool loop (pruning back to the question made small
+        windows re-read the same files forever)."""
         handler = ScriptedHandler()
         agent = _agent()
         agent.model_id = "gpt-4o"
@@ -258,6 +259,6 @@ class TestInMemoryCompressionNegativeSavings:
         ):
             ok, rebuilt = handler._perform_in_memory_compression(agent, messages)
 
-        assert ok is True
-        assert rebuilt == pruned
-        assert agent.context_limit_reached is False
+        assert ok is False
+        assert rebuilt is None
+        assert agent._compression_exhausted is True

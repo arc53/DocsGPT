@@ -1025,6 +1025,26 @@ class LLMHandler(ABC):
         if timestamp is not None:
             agent.last_compression_at = timestamp
 
+    @staticmethod
+    def _end_compression_for_turn(agent) -> tuple[bool, None]:
+        """Record that this turn's context cannot be compressed any further.
+
+        Pruning back to the question used to stand in for a compression
+        that could not shrink the turn. It dropped the turn's own tool
+        results, so the model read the same files again, crossed the
+        threshold again and paid for another failed compression call, round
+        after round. The tool loop ends instead: the model answers from what
+        it has, and no further compression is tried this turn.
+
+        Args:
+            agent: The agent running the turn.
+
+        Returns:
+            ``(False, None)``: no rebuilt messages.
+        """
+        agent._compression_exhausted = True
+        return False, None
+
     def _perform_mid_execution_compression(
         self, agent, messages: List[Dict]
     ) -> tuple[bool, Optional[List[Dict]]]:
@@ -1103,13 +1123,7 @@ class LLMHandler(ABC):
 
             if not result.success:
                 logger.warning(f"Mid-execution compression failed: {result.error}")
-                # Try minimal pruning as fallback
-                pruned = self._prune_messages_minimal(messages, keep=turn)
-                if pruned:
-                    agent.context_limit_reached = False
-                    agent.current_token_count = 0
-                    return True, pruned
-                return False, None
+                return self._end_compression_for_turn(agent)
 
             if not result.compression_performed:
                 logger.warning("Compression not performed")
@@ -1126,14 +1140,9 @@ class LLMHandler(ABC):
                 ):
                     logger.warning(
                         "Compression did not reduce token count (or produced an "
-                        "empty summary); falling back to minimal pruning"
+                        "empty summary); ending the tool loop"
                     )
-                    pruned = self._prune_messages_minimal(messages, keep=turn)
-                    if pruned:
-                        agent.context_limit_reached = False
-                        agent.current_token_count = 0
-                        return True, pruned
-                    return False, None
+                    return self._end_compression_for_turn(agent)
 
                 logger.info(
                     f"Mid-execution compression successful - ratio: {result.metadata.compression_ratio:.1f}x, "
@@ -1282,14 +1291,9 @@ class LLMHandler(ABC):
                 >= metadata.original_token_count
             ):
                 logger.warning(
-                    "In-memory compression did not reduce token count; falling back to minimal pruning"
+                    "In-memory compression did not reduce token count; ending the tool loop"
                 )
-                pruned = self._prune_messages_minimal(messages, keep=turn)
-                if pruned:
-                    agent.context_limit_reached = False
-                    agent.current_token_count = 0
-                    return True, pruned
-                return False, None
+                return self._end_compression_for_turn(agent)
 
             # Attach metadata to a copy of the synthetic conversation (the
             # one handed to the compressor keeps its carried point).
@@ -1335,6 +1339,29 @@ class LLMHandler(ABC):
                 f"Error performing in-memory compression: {str(e)}", exc_info=True
             )
             return False, None
+
+    @staticmethod
+    def _set_context_room(agent, messages: List[Dict]) -> None:
+        """Hand the executor the context left below the compression threshold."""
+        executor = getattr(agent, "tool_executor", None)
+        room_of = getattr(agent, "_context_room_tokens", None)
+        if executor is None or not callable(room_of):
+            return
+        try:
+            executor.context_room_tokens = room_of(messages)
+        except Exception:
+            logger.debug("Could not size the context room for tools", exc_info=True)
+
+    @staticmethod
+    def _next_context_epoch(agent) -> None:
+        """Start a new read epoch on the executor after a compression."""
+        executor = getattr(agent, "tool_executor", None)
+        if executor is None:
+            return
+        try:
+            executor.context_epoch = int(getattr(executor, "context_epoch", 0) or 0) + 1
+        except Exception:
+            logger.debug("Could not advance the context epoch", exc_info=True)
 
     def handle_tool_calls(
         self,
@@ -1413,6 +1440,10 @@ class LLMHandler(ABC):
                     compression_enabled = settings.ENABLE_CONVERSATION_COMPRESSION
                 except Exception:
                     compression_enabled = False
+                # A compression that could not reduce this turn will not do
+                # better a round later; each try is another LLM call.
+                if getattr(agent, "_compression_exhausted", False) is True:
+                    compression_enabled = False
 
                 if compression_enabled:
                     compression_attempted = True
@@ -1430,6 +1461,9 @@ class LLMHandler(ABC):
                         if compression_successful and rebuilt_messages is not None:
                             # Update the messages list with rebuilt compressed version
                             updated_messages = rebuilt_messages
+                            # Earlier tool results are folded into the summary
+                            # now, so a repeated read is a real read again.
+                            self._next_context_epoch(agent)
                             # The rebuilt list no longer contains the batch
                             # message we were appending to, so mutating it
                             # would be a silent no-op. Start a fresh one for
@@ -1515,6 +1549,9 @@ class LLMHandler(ABC):
                     # Set flag on agent
                     agent.context_limit_reached = True
                     break
+
+            # Tell the tools how much context a result may still take.
+            self._set_context_room(agent, updated_messages)
 
             # ---- Pause check: approval / client-side execution ----
             llm_class = agent.llm.__class__.__name__

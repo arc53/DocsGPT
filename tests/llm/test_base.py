@@ -1199,10 +1199,14 @@ class TestPerformMidExecutionCompressionAdditional:
         ]
         handler._prune_messages_minimal = MagicMock(return_value=pruned)
 
+        # Pruning back to the question drops this turn's tool work and the
+        # model re-reads it forever on a small window: a failed compression
+        # ends the tool loop instead.
         success, msgs = handler._perform_mid_execution_compression(agent, [])
-        assert success is True
-        assert msgs == pruned
-        assert agent.context_limit_reached is False
+        assert success is False
+        assert msgs is None
+        assert agent._compression_exhausted is True
+        handler._prune_messages_minimal.assert_not_called()
 
     def test_compression_failed_prune_also_fails(self, monkeypatch):
         """Cover line 472: compression failed, prune returns None."""
@@ -1280,8 +1284,9 @@ class TestPerformMidExecutionCompressionAdditional:
         handler._prune_messages_minimal = MagicMock(return_value=pruned)
 
         success, msgs = handler._perform_mid_execution_compression(agent, [])
-        assert success is True
-        assert msgs == pruned
+        assert success is False
+        assert msgs is None
+        assert agent._compression_exhausted is True
 
     def test_rebuild_returns_none(self, monkeypatch):
         """Cover lines 520-521: rebuilt_messages is None."""
@@ -1501,8 +1506,9 @@ class TestPerformInMemoryCompressionAdditional:
         ]
 
         success, msgs = handler._perform_in_memory_compression(agent, messages)
-        assert success is True
-        assert msgs == pruned
+        assert success is False
+        assert msgs is None
+        assert agent._compression_exhausted is True
 
     def test_in_memory_compression_no_reduction_prune_fails(self, monkeypatch):
         """Cover line 605: prune returns None after no-reduction."""

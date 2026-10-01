@@ -168,9 +168,9 @@ class TestScope:
 
     def test_ref_is_case_and_format_tolerant(self, db):
         a = seed(db, "a.txt", "alpha text")
-        tool = tool_for(current=[a])
-        assert "alpha text" in tool.execute_action("attachments_read", ref=" f1 ")
-        assert "alpha text" in tool.execute_action("attachments_read", ref="1")
+        # A tool per read: one tool refuses the same read twice in a turn.
+        assert "alpha text" in tool_for(current=[a]).execute_action("attachments_read", ref=" f1 ")
+        assert "alpha text" in tool_for(current=[a]).execute_action("attachments_read", ref="1")
 
 
 @pytest.mark.unit
@@ -680,3 +680,50 @@ class TestRenderedPageSize:
         images = _render_pages(_blank_pdf(612, 792), [1])
         width, height = _image_size(images[0])
         assert abs(height - 792 / 72 * RENDER_DPI) <= 2
+
+
+@pytest.mark.unit
+class TestSmallWindows:
+    """A read never returns more than the context has room for, and never repeats."""
+
+    def test_a_read_is_cut_to_the_room_left(self, db):
+        from docsgpt.agents.tools.attachments import RESULT_OVERHEAD_TOKENS
+
+        text = " ".join(f"w{i}" for i in range(20_000))
+        a = seed(db, "long.txt", text)
+        tool = tool_for(current=[a])
+        tool.set_context_hint(room_tokens=RESULT_OVERHEAD_TOKENS + 900, epoch=0)
+
+        result = tool.execute_action("attachments_read", ref="F1")
+        assert num_tokens_from_string(body_of(result)) <= 905
+        assert "offset=" in result
+
+    def test_no_room_says_so_instead_of_reading(self, db):
+        a = seed(db, "long.txt", "alpha " * 5_000)
+        tool = tool_for(current=[a])
+        tool.set_context_hint(room_tokens=100, epoch=0)
+
+        result = tool.execute_action("attachments_read", ref="F1")
+        assert "<attached_file" not in result
+        assert "no room" in result.lower()
+
+    def test_an_identical_read_in_the_same_turn_is_not_repeated(self, db):
+        a = seed(db, "long.txt", " ".join(f"w{i}" for i in range(3000)))
+        tool = tool_for(current=[a])
+
+        first = tool.execute_action("attachments_read", ref="F1", max_tokens=500)
+        again = tool.execute_action("attachments_read", ref="f1", max_tokens=500)
+        assert "<attached_file" in first
+        assert "<attached_file" not in again
+        assert "already read" in again
+        # A different range is a new read.
+        assert "<attached_file" in tool.execute_action("attachments_read", ref="F1", offset=500, max_tokens=500)
+
+    def test_a_read_after_compression_is_allowed_again(self, db):
+        a = seed(db, "long.txt", " ".join(f"w{i}" for i in range(3000)))
+        tool = tool_for(current=[a])
+        tool.set_context_hint(room_tokens=None, epoch=0)
+        tool.execute_action("attachments_read", ref="F1", max_tokens=500)
+
+        tool.set_context_hint(room_tokens=None, epoch=1)
+        assert "<attached_file" in tool.execute_action("attachments_read", ref="F1", max_tokens=500)

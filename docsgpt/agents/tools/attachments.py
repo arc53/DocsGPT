@@ -23,6 +23,8 @@ from collections import Counter
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from docsgpt.agents.attachment_budget import (
+    IMAGE_PART_TOKENS,
+    PAGE_IMAGE_TOKENS,
     SPREADSHEET_EXTENSIONS,
     SPREADSHEET_MIME_TYPES,
     PlannedFile,
@@ -634,6 +636,36 @@ class AttachmentsTool(Tool):
         self._native_used = 0
         self._index: Optional[_Index] = None
         self._unsearchable: List[PlannedFile] = []
+        # Context left for a result, set before each call by the executor
+        # (None: unknown), and the compression epoch the reads below belong to.
+        self._room_tokens: Optional[int] = None
+        self._epoch = 0
+        self._reads_seen: set = set()
+
+    def set_context_hint(self, *, room_tokens: Optional[int], epoch: int) -> None:
+        """Tell the tool how much context a result may still take.
+
+        Args:
+            room_tokens: Tokens left below the compression threshold, or None
+                when unknown. A read is cut to fit; with no room it says so.
+            epoch: Bumped by each mid-turn compression, which drops earlier
+                tool results from the context, so a repeated read is
+                allowed again after one.
+        """
+        self._room_tokens = None if room_tokens is None else int(room_tokens)
+        if epoch != self._epoch:
+            self._epoch = epoch
+            self._reads_seen = set()
+
+    def _no_room(self, needed: int) -> bool:
+        return self._room_tokens is not None and self._room_tokens < needed
+
+    def _no_room_note(self) -> str:
+        return (
+            "There is no room left in the context to read more this turn. Do not call "
+            f"{self._action(READ)} again: answer from what you have read, and tell the user "
+            "which files or parts you could not read."
+        )
 
     def drain_native_parts(self) -> List[Dict[str, Any]]:
         """Images this tool's reads asked to show, emptied as they are taken.
@@ -910,6 +942,10 @@ class AttachmentsTool(Tool):
         result_cap = int(getattr(settings, "TOOL_RESULT_MAX_TOKENS", 0) or 0)
         if result_cap > 0:
             cap = min(cap, max(result_cap - RESULT_OVERHEAD_TOKENS, MIN_READ_TOKENS))
+        if self._room_tokens is not None:
+            # Never more than the context has room for: a result past the
+            # threshold sets off a compression that cannot shrink this turn.
+            cap = min(cap, max(self._room_tokens - RESULT_OVERHEAD_TOKENS, MIN_READ_TOKENS))
         return max(min(wanted, cap), MIN_READ_TOKENS)
 
     def _content(self, planned: PlannedFile) -> Optional[Dict[str, Any]]:
@@ -923,6 +959,18 @@ class AttachmentsTool(Tool):
         planned, wanted = self._find(ref)
         if planned is None:
             return self._unknown(wanted)
+        if self._no_room(RESULT_OVERHEAD_TOKENS + MIN_READ_TOKENS):
+            return self._no_room_note()
+        # The same read twice in a turn only re-adds what the context holds;
+        # small windows used to loop on it.
+        key = (planned.ref, str(offset), str(max_tokens), str(rows), str(pages))
+        if key in self._reads_seen:
+            return (
+                f"{planned.ref} {sanitize_filename(planned.filename)} was already read with these arguments "
+                "in this turn; its text is in an earlier tool result. Do not read it again: read a different "
+                "part, or answer from what you have."
+            )
+        self._reads_seen.add(key)
         row = self._content(planned)
         if row is None:
             return f"{planned.ref} is no longer available."
@@ -957,6 +1005,8 @@ class AttachmentsTool(Tool):
         name = sanitize_filename(planned.filename)
         if self._native_left() <= 0:
             return f"{planned.ref} {name}: {self._limit_note()}"
+        if self._no_room(IMAGE_PART_TOKENS):
+            return f"{planned.ref} {name}: {self._no_room_note()}"
         path = row.get("path") or row.get("upload_path")
         if not path:
             return f"{planned.ref} {name}: the image file is not available."
@@ -1108,6 +1158,8 @@ class AttachmentsTool(Tool):
         notes: List[str] = []
         to_render: List[int] = []
         image_room = min(MAX_IMAGE_PAGES_PER_CALL, self._native_left()) if self._vision_for("image/png") else 0
+        if self._room_tokens is not None:
+            image_room = min(image_room, max(self._room_tokens // PAGE_IMAGE_TOKENS, 0))
         limited = False
         used = 0
         for number in wanted[:MAX_TEXT_PAGES_PER_CALL]:

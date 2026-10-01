@@ -58,6 +58,15 @@ STREAM_HEARTBEAT_INTERVAL = 30
 STREAM_HEARTBEAT_MAX_SECONDS = 3600
 
 
+class ClientDisconnected(GeneratorExit):
+    """Raised inside a stream whose client the route saw go away.
+
+    Handled exactly as the generator being closed by a disconnect (the
+    partial answer is saved, the row marked aborted), except that the
+    stream then ends instead of re-raising: nobody closed it.
+    """
+
+
 class StreamSuperseded(Exception):
     """Raised to unwind a stream whose message row was deleted mid-flight.
 
@@ -118,6 +127,12 @@ def _traced_stream(
     return wrapper
 
 
+
+
+def _client_gone(agent: Any) -> bool:
+    """Whether the route flagged the agent's client as disconnected."""
+    event = getattr(agent, "client_disconnected", None)
+    return isinstance(event, threading.Event) and event.is_set()
 
 def _native_image_names(agent: Any) -> List[str]:
     """Files the turn sent to the model as images, for a provider's image refusal."""
@@ -842,6 +857,10 @@ class BaseAnswerResource:
                 # nothing and is only cancelled when that call returns.
                 if stream_cancelled.is_set():
                     raise StreamSuperseded(reserved_message_id or "")
+                # A client that cannot rejoin the stream went away (``/v1``):
+                # stop the agent here and save what there is, as an abort.
+                if _client_gone(agent):
+                    raise ClientDisconnected()
                 if "metadata" in line:
                     query_metadata.update(line["metadata"])
                 elif "answer" in line:
@@ -1443,7 +1462,7 @@ class BaseAnswerResource:
             # sitting in memory.
             if journal_writer is not None:
                 journal_writer.close()
-        except GeneratorExit:
+        except GeneratorExit as stream_exit:
             logger.info(f"Stream aborted by client for question: {question[:50]}... ")
             # Drain any buffered events before the terminal one-shot
             # ``record_event`` below — keeps the journal's seq order
@@ -1629,6 +1648,9 @@ class BaseAnswerResource:
                         f"Failed to journal terminal event on abort: {journal_err}",
                         exc_info=True,
                     )
+            if isinstance(stream_exit, ClientDisconnected):
+                # Raised here, not by a close(): the generator ends normally.
+                return
             raise
         except StreamSuperseded as e:
             # Deliberately ahead of the generic handler below: this is not a
