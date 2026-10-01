@@ -345,30 +345,3 @@ export function parseUploadErrorMessage(body: string): string | undefined {
     return undefined;
   }
 }
-
-/**
- * Per-file reasons from an error body, keyed by `upload_index`. A rejected
- * batch carries one `errors` entry per file, so each chip can say why it
- * failed instead of every chip repeating the first file's reason.
- */
-export function parseUploadErrorsByIndex(body: string): Map<number, string> {
-  const byIndex = new Map<number, string>();
-  if (!body) return byIndex;
-  try {
-    const parsed = JSON.parse(body) as { errors?: unknown };
-    if (!Array.isArray(parsed?.errors)) return byIndex;
-    for (const entry of parsed.errors as {
-      upload_index?: unknown;
-      error?: unknown;
-    }[]) {
-      if (
-        typeof entry?.upload_index === 'number' &&
-        typeof entry.error === 'string'
-      )
-        byIndex.set(entry.upload_index, entry.error);
-    }
-  } catch {
-    // Not JSON (a proxy's HTML 502, say) — the caller falls back.
-  }
-  return byIndex;
-}
