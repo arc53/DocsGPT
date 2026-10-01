@@ -357,6 +357,71 @@ def _storage():
     return StorageCreator.get_storage()
 
 
+def serialize_native_reads(parts: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Queued images in a form a paused turn's saved state can hold.
+
+    A stored image is kept by its storage path; a rendered PDF page by its
+    source file and page number, to be rendered again on resume. Image bytes
+    are never kept: base64 does not belong in the saved state.
+
+    Args:
+        parts: The executor's queued ``{"attachment", "label"}`` entries.
+
+    Returns:
+        JSON-safe entries, in order; a page whose source is unknown is left out.
+    """
+    saved: List[Dict[str, Any]] = []
+    for part in parts or []:
+        attachment = part.get("attachment") if isinstance(part, dict) else None
+        if not isinstance(attachment, dict):
+            continue
+        label = str(part.get("label") or "image")
+        if attachment.get("path") and not attachment.get("data"):
+            saved.append(
+                {
+                    "label": label,
+                    "attachment": {
+                        key: attachment[key] for key in ("path", "mime_type", "filename") if key in attachment
+                    },
+                }
+            )
+        elif attachment.get("source_path") and attachment.get("page"):
+            saved.append({"label": label, "render": {"path": attachment["source_path"], "page": int(attachment["page"])}})
+        else:
+            logger.info("attachments tool: image %s cannot be kept across the pause", label)
+    return saved
+
+
+def restore_native_reads(saved: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Queued images back from a paused turn's saved state.
+
+    Args:
+        saved: Entries from :func:`serialize_native_reads`.
+
+    Returns:
+        ``{"attachment", "label"}`` entries for the executor's queue; a page
+        that can no longer be rendered is left out.
+    """
+    parts: List[Dict[str, Any]] = []
+    for entry in saved or []:
+        if not isinstance(entry, dict):
+            continue
+        label = str(entry.get("label") or "image")
+        if isinstance(entry.get("attachment"), dict):
+            parts.append({"attachment": dict(entry["attachment"]), "label": label})
+            continue
+        render = entry.get("render")
+        if not isinstance(render, dict) or not render.get("path"):
+            continue
+        try:
+            images = _render_pages(_read_original(render["path"]), [int(render.get("page") or 1)])
+        except Exception as exc:
+            logger.warning("attachments tool: could not render %s again after the pause: %s", label, exc)
+            continue
+        parts.extend({"attachment": image, "label": label} for image in images)
+    return parts
+
+
 def _read_original(path: str) -> bytes:
     """The stored original file's bytes."""
     handle = _storage().get_file(path)
@@ -1088,6 +1153,8 @@ class AttachmentsTool(Tool):
                 logger.warning("attachments tool: rendering %s failed: %s", planned.ref, exc)
                 images = []
             for image in images:
+                # Where the page came from, so a pause can render it again.
+                image["source_path"] = path
                 self._queue_image(image, f"{planned.ref} {name} page {image.get('page')}")
             if len(images) < len(to_render):
                 notes.extend(str(p) for p in to_render[len(images):])

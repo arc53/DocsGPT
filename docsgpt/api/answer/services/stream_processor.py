@@ -2215,6 +2215,14 @@ class StreamProcessor:
             agent_kwargs["agent_config"] = {"guardrails": saved_guardrails}
         agent_kwargs["request_id"] = agent_config.get("request_id")
 
+        # Images an attachments read queued in the paused round: shown after
+        # the tool results once the turn resumes.
+        saved_reads = agent_config.get("native_reads")
+        if saved_reads:
+            from docsgpt.agents.tools.attachments import restore_native_reads
+
+            tool_executor.pending_native_parts = restore_native_reads(saved_reads)
+
         agent = AgentCreator.create_agent(agent_key, **agent_kwargs)
         agent.conversation_id = conversation_id
         agent.initial_user_id = self.initial_user_id

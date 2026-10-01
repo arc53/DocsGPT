@@ -1070,6 +1070,10 @@ class BaseAnswerResource:
                                     ),
                                     "agent_id": agent_id,
                                     "agent_type": agent.__class__.__name__,
+                                    # Images an attachments read queued in the
+                                    # paused round, by reference; the resume
+                                    # shows them after the tool results.
+                                    "native_reads": continuation.get("native_reads") or [],
                                     "prompt": getattr(agent, "prompt", ""),
                                     "json_schema": getattr(agent, "json_schema", None),
                                     "retriever_config": getattr(agent, "retriever_config", None),

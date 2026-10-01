@@ -726,6 +726,12 @@ class BaseAgent(ABC):
                 trace_unexecuted_tool_call(tc, client_data, **{"docsgpt.client_executed": True})
                 yield {"type": "tool_call", "data": client_data}
 
+        # Images an attachments read queued before the pause (restored with
+        # the state) or during the approved calls above follow the results.
+        queued = getattr(self.tool_executor, "pending_native_parts", None)
+        if isinstance(queued, list) and queued:
+            messages = self.llm_handler.append_native_reads(self, messages)
+
         # Resume the LLM loop with the updated messages
         llm_response = self._llm_gen(messages, preserve_responses_state=True)
         yield from self._handle_response(

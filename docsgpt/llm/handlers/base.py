@@ -1616,8 +1616,9 @@ class LLMHandler(ABC):
             messages: The messages after the tool results.
             executor: Executor holding the queue; the agent's by default.
             paused: The batch paused for the client or an approval. The
-                images are dropped: the paused state is saved and resumed
-                with the messages, and base64 images do not belong there.
+                images wait on the executor (``paused_native_parts``); the
+                pause saves them by reference and the resume shows them after
+                the tool results.
 
         Returns:
             The messages, with the follow-up message when there were images.
@@ -1628,7 +1629,9 @@ class LLMHandler(ABC):
             return messages
         executor.pending_native_parts = []
         if paused:
-            logger.info("Dropping %d requested image(s): the tool batch paused", len(parts))
+            logger.info("Keeping %d requested image(s) for the resumed turn", len(parts))
+            kept = getattr(executor, "paused_native_parts", None)
+            executor.paused_native_parts = [*(kept if isinstance(kept, list) else []), *parts]
             return messages
         from docsgpt.agents.tools.attachments import native_reads_note
 
@@ -1649,6 +1652,18 @@ class LLMHandler(ABC):
                     ),
                 },
             ]
+
+    @staticmethod
+    def _paused_native_reads(agent) -> List[Dict]:
+        """The images a paused batch queued, ready for the saved pause state."""
+        from docsgpt.agents.tools.attachments import serialize_native_reads
+
+        executor = getattr(agent, "tool_executor", None)
+        parts = getattr(executor, "paused_native_parts", None)
+        if not isinstance(parts, list) or not parts:
+            return []
+        executor.paused_native_parts = []
+        return serialize_native_reads(parts)
 
     def handle_non_streaming(
         self, agent, response: Any, tools_dict: Dict, messages: List[Dict]
@@ -1692,6 +1707,7 @@ class LLMHandler(ABC):
                     "messages": messages,
                     "pending_tool_calls": pending_actions,
                     "tools_dict": tools_dict,
+                    "native_reads": self._paused_native_reads(agent),
                     "reasoning_content": reasoning_for_round,
                 }
                 yield {
@@ -1994,6 +2010,7 @@ class LLMHandler(ABC):
                 "messages": messages,
                 "pending_tool_calls": pending_actions,
                 "tools_dict": tools_dict,
+                "native_reads": self._paused_native_reads(agent),
                 "reasoning_content": pause_reasoning,
             }
             yield {
