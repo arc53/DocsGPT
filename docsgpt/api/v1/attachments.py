@@ -18,8 +18,10 @@ A zip's own task returns once it has unpacked and queued its members, so
 a zip counts as parsed only when its row says every member has finished
 (``metadata.archive.status``), within the same parse timeout. A file that
 cannot be stored or parsed in time is left out of the mapping, with the
-reason; its part then stays in the request as the client sent it, and the
-turn's manifest names it with that reason.
+reason, and the turn's manifest names it with that reason. A file known to
+be unreadable (a damaged image, a type no parser reads, over the size
+limit) is also removed from the request the model gets; any other file
+left out (not stored, or not parsed in time) stays as the client sent it.
 """
 
 from __future__ import annotations
@@ -83,6 +85,18 @@ def _wait_for_archive(user: str, attachment_id: str, deadline: float) -> bool:
         time.sleep(_ARCHIVE_POLL_SECONDS)
 
 
+def _failure_code(user: str, attachment_id: str) -> Optional[str]:
+    """The worker's rejection code on a failed parse's row (``image_unreadable``, say), if any."""
+    from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
+    from docsgpt.storage.db.session import db_readonly
+
+    with db_readonly() as conn:
+        row = AttachmentsRepository(conn).get_by_legacy_id(attachment_id, user)
+    extraction = ((row or {}).get("metadata") or {}).get("extraction")
+    code = extraction.get("code") if isinstance(extraction, dict) else None
+    return code if isinstance(code, str) else None
+
+
 def _dispatch_parse(file_info: Dict[str, Any], user: str) -> Any:
     """Queue the worker's ``store_attachment`` task for one stored file."""
     from docsgpt.api.user.tasks import store_attachment
@@ -130,6 +144,15 @@ TOO_LARGE = "too_large"
 UNSUPPORTED = "unsupported"
 NOT_STORED = "not_stored"
 NOT_PARSED = "not_parsed"
+IMAGE_UNREADABLE = "image_unreadable"
+
+# The worker's rejection codes that say a file can never be read, as the
+# manifest names them; any other failed parse is ``not_parsed``.
+_REJECTION_REASONS = {
+    "image_unreadable": IMAGE_UNREADABLE,
+    "unsupported_type": UNSUPPORTED,
+    "too_large": TOO_LARGE,
+}
 
 
 @dataclass
@@ -178,7 +201,7 @@ class InlineIngest:
                     result.get(timeout=max(remaining, 0.01), disable_sync_subtasks=False)
                 except Exception as exc:
                     logger.warning("v1 file %s was not parsed: %s", inline.filename, bounded_error_text(exc))
-                    self.skipped[inline.content_hash] = NOT_PARSED
+                    self.skipped[inline.content_hash] = self._failure_reason(inline, attachment_id)
                     continue
                 if is_attachment_archive(inline.filename):
                     zips.append((inline, attachment_id))
@@ -194,6 +217,15 @@ class InlineIngest:
         order = {f.content_hash: i for i, f in enumerate(self.files)}
         self.converted = dict(sorted(self.converted.items(), key=lambda item: order.get(item[0], 0)))
         return self.converted
+
+    def _failure_reason(self, inline: InlineFile, attachment_id: str) -> str:
+        """Why a parse failed: the worker's rejection, else ``not_parsed`` (slow or failed)."""
+        try:
+            code = _failure_code(self.user, attachment_id)
+        except Exception as exc:
+            logger.warning("Could not read why %s failed: %s", inline.filename, bounded_error_text(exc))
+            return NOT_PARSED
+        return _REJECTION_REASONS.get(code or "", NOT_PARSED)
 
     def _archive_finished(self, inline: InlineFile, attachment_id: str, deadline: float) -> bool:
         """Whether every member of a queued zip finished before the deadline."""
@@ -254,7 +286,8 @@ def ingest_inline_files(
         files: Distinct inline files, in request order.
         user: The owner of the rows (the agent's owner on ``/v1``).
         skipped: Filled with ``content_hash`` to the reason a file was left
-            out (``too_large``, ``unsupported``, ``not_stored``, ``not_parsed``).
+            out (``too_large``, ``unsupported``, ``image_unreadable``,
+            ``not_stored``, ``not_parsed``).
 
     Returns:
         ``content_hash`` to attachment id, in request order, for every file

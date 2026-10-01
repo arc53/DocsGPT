@@ -248,6 +248,7 @@ _REASONS = {
 _SKIP_REASONS = {
     "too_large": "larger than the upload limit",
     "unsupported": "a file type that cannot be read",
+    "image_unreadable": "the image is damaged or not a valid image",
     "not_stored": "could not be stored",
     "not_parsed": "could not be read in time",
     "processing": "still being processed, or not found",
@@ -263,7 +264,12 @@ def _skipped_line(entry: dict) -> str:
     code = str(entry.get("reason") or "")
     reason = _SKIP_REASONS.get(code, _SKIP_REASONS["not_stored"])
     mime_type = sanitize_filename(entry.get("mime_type") or "application/octet-stream")
-    state = "not included" if code == "processing" else "not stored"
+    if entry.get("removed"):
+        state = "not readable"
+    elif code == "processing":
+        state = "not included"
+    else:
+        state = "not stored"
     return f"- {sanitize_filename(entry.get('filename'))} | {mime_type} | {state} ({reason})"
 
 
@@ -424,8 +430,16 @@ def _instructions(plan: AttachmentPlan) -> List[str]:
         lines.append("Tell the user which files could not be read.")
     if _archive_skips(plan):
         lines.append("Tell the user which files in an archive were skipped, and why.")
-    if plan.skipped:
-        names = ", ".join(sanitize_filename(s.get("filename")) for s in plan.skipped)
+    removed = [s for s in plan.skipped if s.get("removed")]
+    kept = [s for s in plan.skipped if not s.get("removed")]
+    if removed:
+        names = ", ".join(sanitize_filename(s.get("filename")) for s in removed)
+        lines.append(
+            f"Files marked not readable ({names}) were removed from the request, for the reason shown; "
+            "tell the user they could not be read."
+        )
+    if kept:
+        names = ", ".join(sanitize_filename(s.get("filename")) for s in kept)
         lines.append(
             f"Files marked not stored ({names}) could not be turned into attachments, for the reason "
             "shown. Unless their content reached you with the message itself, tell the user they "

@@ -14,7 +14,7 @@ import mimetypes
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Collection, Dict, List, Mapping, Optional, Set
 
 from docsgpt.attachment_names import normalize_attachment_filename
 
@@ -347,8 +347,14 @@ def collect_inline_files(messages: List[Dict[str, Any]]) -> List[InlineFile]:
     return files
 
 
-def _strip_parts(content: Any, converted: Mapping[str, str]) -> Any:
-    """``content`` without the inline parts whose bytes became attachments."""
+# Why a file left out is known to be unreadable: its part is removed from
+# the request too, since a provider would only reject the turn or ignore it.
+# A file that was not stored or not parsed in time stays as the client sent it.
+UNREADABLE_SKIP_REASONS = frozenset({"image_unreadable", "unsupported", "too_large"})
+
+
+def _strip_parts(content: Any, removed: Collection[str]) -> Any:
+    """``content`` without the inline parts whose bytes hash into ``removed``."""
     if not isinstance(content, list):
         return content
     return [
@@ -357,7 +363,7 @@ def _strip_parts(content: Any, converted: Mapping[str, str]) -> Any:
         if not (
             isinstance(part, dict)
             and part.get("type") in INLINE_PART_TYPES
-            and _part_hash(part) in converted
+            and _part_hash(part) in removed
         )
     ]
 
@@ -373,7 +379,9 @@ def apply_converted_files(
     The converted parts are removed from what the agent sees (the turn's
     multimodal content, or the replayed messages of a continuation), so the
     attachment planner decides what is inlined and what the attachments
-    tool reads. Parts that were not converted stay as they were. Copies are
+    tool reads. Parts of files known to be unreadable
+    (``UNREADABLE_SKIP_REASONS``) are removed too and listed as removed;
+    other parts that were not converted stay as they were. Copies are
     edited; the client's own message objects are never changed.
 
     Args:
@@ -383,19 +391,23 @@ def apply_converted_files(
         skipped: ``content_hash`` to why a file was not stored; a file in
             neither mapping was not stored (``not_stored``).
     """
-    left_out = [
-        {
-            "filename": f.filename,
-            "mime_type": f.mime_type,
-            "reason": (skipped or {}).get(f.content_hash) or "not_stored",
-        }
-        for f in files
-        if f.content_hash not in converted
-    ]
+    left_out: List[Dict[str, Any]] = []
+    unreadable: Set[str] = set()
+    for f in files:
+        if f.content_hash in converted:
+            continue
+        reason = (skipped or {}).get(f.content_hash) or "not_stored"
+        entry: Dict[str, Any] = {"filename": f.filename, "mime_type": f.mime_type, "reason": reason}
+        if reason in UNREADABLE_SKIP_REASONS:
+            entry["removed"] = True
+            unreadable.add(f.content_hash)
+        left_out.append(entry)
     if left_out:
         # Named in the turn's manifest with the reason, so the model can say
         # which file it could not read instead of answering without it.
         internal["skipped_files"] = left_out
+    removed = set(converted) | unreadable
+    _strip_request_parts(internal, removed)
     if not converted:
         return
     ids = [converted[f.content_hash] for f in files if f.content_hash in converted]
@@ -407,9 +419,14 @@ def apply_converted_files(
     if earlier:
         internal["earlier_attachments"] = list(dict.fromkeys(earlier))
 
+
+def _strip_request_parts(internal: Dict[str, Any], removed: Collection[str]) -> None:
+    """Drop the inline parts hashing into ``removed`` from the turn and replayed messages."""
+    if not removed:
+        return
     multimodal = internal.get("multimodal_content")
     if isinstance(multimodal, list):
-        remaining = _strip_parts(multimodal, converted)
+        remaining = _strip_parts(multimodal, removed)
         if any(isinstance(p, dict) and p.get("type") != "text" for p in remaining):
             internal["multimodal_content"] = remaining
         else:
@@ -424,7 +441,7 @@ def apply_converted_files(
                 and message.get("role") == "user"
                 and isinstance(message.get("content"), list)
             ):
-                message = {**message, "content": _strip_parts(message["content"], converted)}
+                message = {**message, "content": _strip_parts(message["content"], removed)}
             rebuilt.append(message)
         internal["messages"] = rebuilt
 

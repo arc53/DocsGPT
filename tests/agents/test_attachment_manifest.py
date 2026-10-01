@@ -261,6 +261,18 @@ class TestFilesThatWereNotStored:
         assert "clip.mp4, huge.pdf" in manifest
         assert plan.reserved_tokens > plan.inline_tokens + 150 + 30
 
+    def test_files_removed_as_unreadable_are_named_as_such(self):
+        plan = plan_attachments([att("a.txt", 300)], caps(), budget=50_000)
+        plan.skipped = [
+            {"filename": "broken.png", "mime_type": "image/png", "reason": "image_unreadable", "removed": True},
+            {"filename": "slow.pdf", "mime_type": "application/pdf", "reason": "not_parsed"},
+        ]
+        manifest = render_manifest(plan)
+        assert "- broken.png | image/png | not readable (the image is damaged or not a valid image)" in manifest
+        assert "- slow.pdf | application/pdf | not stored (could not be read in time)" in manifest
+        assert "Files marked not readable (broken.png) were removed from the request" in manifest
+        assert "Files marked not stored (slow.pdf)" in manifest
+
     def test_a_file_still_processing_is_named_as_not_included(self):
         plan = plan_attachments([att("a.txt", 300)], caps(), budget=50_000)
         plan.skipped = [{"filename": "attachment 3f2a", "reason": "processing"}]

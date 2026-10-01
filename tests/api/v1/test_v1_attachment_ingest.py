@@ -195,6 +195,39 @@ class TestWhyAFileWasLeftOut:
             slow.content_hash: "not_parsed",
         }
 
+    @pytest.mark.parametrize(
+        "code, reason",
+        [
+            ("image_unreadable", "image_unreadable"),
+            ("unsupported_type", "unsupported"),
+            ("too_large", "too_large"),
+            ("parse_failed", "not_parsed"),
+            (None, "not_parsed"),
+        ],
+    )
+    def test_a_parse_the_worker_rejected_keeps_the_worker_reason(self, storage, task, code, reason):
+        png = _file(b"\x89PNG broken", name="shot.png", mime="image/png")
+        task.side_effect = [_Result(RuntimeError("rejected"))]
+        skipped = {}
+        with patch.object(ingest, "_find_parsed", return_value=None), patch.object(
+            ingest, "_failure_code", return_value=code
+        ) as failure:
+            assert ingest.ingest_inline_files([png], "owner", skipped=skipped) == {}
+
+        assert skipped == {png.content_hash: reason}
+        assert failure.call_args.args == ("owner", task.call_args.args[0]["attachment_id"])
+
+    def test_a_failure_lookup_error_leaves_the_file_not_parsed(self, storage, task):
+        png = _file(b"\x89PNG lookup fails", name="shot.png", mime="image/png")
+        task.side_effect = [_Result(RuntimeError("rejected"))]
+        skipped = {}
+        with patch.object(ingest, "_find_parsed", return_value=None), patch.object(
+            ingest, "_failure_code", side_effect=RuntimeError("db down")
+        ):
+            ingest.ingest_inline_files([png], "owner", skipped=skipped)
+
+        assert skipped == {png.content_hash: "not_parsed"}
+
     def test_a_storage_failure_is_not_stored(self, storage, task):
         storage.save_file.side_effect = OSError("disk full")
         pdf = _file(b"%PDF cannot store")

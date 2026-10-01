@@ -139,8 +139,9 @@ def _start_inline_files(internal_data: Dict[str, Any], user: str) -> Optional[In
 def _finish_inline_files(internal_data: Dict[str, Any], ingest: Optional[InlineIngest]) -> None:
     """Wait for the parses and point the request at the attachment rows.
 
-    The parts that became attachment rows leave the request the agent sees;
-    the rest stay as sent and are named, with the reason, in the turn's
+    The parts that became attachment rows leave the request the agent sees,
+    and so do the parts of files known to be unreadable; the rest stay as
+    sent. Every file left out is named, with the reason, in the turn's
     manifest. Never fails the request.
 
     Args:

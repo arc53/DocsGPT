@@ -147,8 +147,22 @@ class TestFilePartsBecomeAttachments:
         _, _, data, _ = _post(pg_conn, BODY, processor, helper, ingest=_ingest)
 
         assert data["skipped_files"] == [
-            {"filename": "PRILOGA_1.pdf", "mime_type": "application/pdf", "reason": "unsupported"}
+            {"filename": "PRILOGA_1.pdf", "mime_type": "application/pdf", "reason": "unsupported", "removed": True}
         ]
+        # A file known to be unreadable is not sent on to the model.
+        assert "multimodal_content" not in data
+
+    def test_a_file_whose_parse_timed_out_stays_in_the_request(self, pg_conn):
+        processor, helper = _processor(), _helper(['data: {"type": "end"}'])
+
+        def _ingest(files, user, skipped=None):
+            skipped.update({f.content_hash: "not_parsed" for f in files})
+            return {}
+
+        _, _, data, _ = _post(pg_conn, BODY, processor, helper, ingest=_ingest)
+
+        assert [s["reason"] for s in data["skipped_files"]] == ["not_parsed"]
+        assert any(p.get("type") == "file" for p in data["multimodal_content"])
 
     def test_a_failed_conversion_still_names_the_files(self, pg_conn):
         processor, helper = _processor(), _helper(['data: {"type": "end"}'])

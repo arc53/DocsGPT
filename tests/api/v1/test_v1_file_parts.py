@@ -190,10 +190,12 @@ class TestLeftOutFiles:
         apply_converted_files(internal, files, converted, skipped)
 
         assert internal["skipped_files"] == [
-            {"filename": files[1].filename, "mime_type": "application/pdf", "reason": "too_large"},
+            {"filename": files[1].filename, "mime_type": "application/pdf", "reason": "too_large", "removed": True},
             {"filename": files[2].filename, "mime_type": "application/pdf", "reason": "not_stored"},
             {"filename": files[3].filename, "mime_type": "application/pdf", "reason": "not_stored"},
         ]
+        kept = [p for p in internal["multimodal_content"] if p.get("type") == "file"]
+        assert len(kept) == 2
 
     def test_files_are_listed_even_when_none_was_converted(self, scenario_dir: Path):
         internal = self._internal(scenario_dir)
@@ -203,6 +205,50 @@ class TestLeftOutFiles:
 
         assert [s["reason"] for s in internal["skipped_files"]] == ["not_parsed"] * 4
         assert not internal.get("attachments")
+
+    def test_files_known_to_be_unreadable_leave_the_request(self, scenario_dir: Path):
+        internal = self._internal(scenario_dir)
+        files = internal.pop("inline_files")
+        skipped = {
+            files[0].content_hash: "image_unreadable",
+            files[1].content_hash: "unsupported",
+            files[2].content_hash: "too_large",
+            files[3].content_hash: "not_parsed",
+        }
+
+        apply_converted_files(internal, files, {}, skipped)
+
+        kept = [p for p in internal["multimodal_content"] if p.get("type") == "file"]
+        assert [p["file"]["filename"].lower() for p in kept] == [files[3].filename.lower()]
+        assert [(s["reason"], s.get("removed", False)) for s in internal["skipped_files"]] == [
+            ("image_unreadable", True),
+            ("unsupported", True),
+            ("too_large", True),
+            ("not_parsed", False),
+        ]
+
+    def test_a_request_left_with_only_unreadable_files_is_a_plain_question(self, scenario_dir: Path):
+        internal = self._internal(scenario_dir)
+        files = internal.pop("inline_files")
+
+        apply_converted_files(internal, files, {}, {f.content_hash: "image_unreadable" for f in files})
+
+        assert "multimodal_content" not in internal
+        assert internal["question"]
+
+    def test_a_continuation_replays_without_the_unreadable_parts(self, scenario_dir: Path):
+        body = v1.build_requests("V1-03", scenario_dir, payload="file_parts")[-1]["body"]
+        snapshot = copy.deepcopy(body)
+        internal = translate_request(body, "key")
+        files = internal.pop("inline_files")
+        skipped = {f.content_hash: "image_unreadable" for f in files[:2]}
+        skipped.update({f.content_hash: "not_parsed" for f in files[2:]})
+
+        apply_converted_files(internal, files, {}, skipped)
+
+        user = internal["messages"][1]
+        assert len([p for p in user["content"] if p.get("type") == "file"]) == 2
+        assert body == snapshot
 
 
 class TestEarlierMessages:
