@@ -132,11 +132,48 @@ class TestSandboxConfigured:
     def test_jupyter_needs_a_gateway_url(self, monkeypatch):
         from docsgpt.sandbox import sandbox_configured
 
-        monkeypatch.setattr("docsgpt.core.settings.settings.SANDBOX_BACKEND", "jupyter")
-        monkeypatch.setattr("docsgpt.core.settings.settings.SANDBOX_GATEWAY_URL", "")
+        monkeypatch.setattr("docsgpt.core.settings.settings", _fresh_settings(
+            monkeypatch, SANDBOX_BACKEND="jupyter", SANDBOX_GATEWAY_URL="",
+        ))
         assert sandbox_configured() is False
-        monkeypatch.setattr("docsgpt.core.settings.settings.SANDBOX_GATEWAY_URL", "http://runner:8888")
+        monkeypatch.setattr("docsgpt.core.settings.settings", _fresh_settings(
+            monkeypatch, SANDBOX_BACKEND="jupyter", SANDBOX_GATEWAY_URL="http://runner:8888",
+        ))
         assert sandbox_configured() is True
+
+    def test_jupyter_default_gateway_url_does_not_count(self, monkeypatch):
+        """The built-in localhost default is not a deployment that runs a sandbox."""
+        from docsgpt.sandbox import sandbox_configured
+
+        monkeypatch.setattr("docsgpt.core.settings.settings", _fresh_settings(
+            monkeypatch, SANDBOX_BACKEND="jupyter",
+        ))
+        assert sandbox_configured() is False
+
+    def test_jupyter_url_equal_to_the_default_counts_when_set_explicitly(self, monkeypatch):
+        from docsgpt.sandbox import sandbox_configured
+
+        monkeypatch.setattr("docsgpt.core.settings.settings", _fresh_settings(
+            monkeypatch, SANDBOX_BACKEND="jupyter", SANDBOX_GATEWAY_URL="http://localhost:8888",
+        ))
+        assert sandbox_configured() is True
+
+    def test_unknown_backend_is_not_configured(self, monkeypatch):
+        from docsgpt.sandbox import sandbox_configured
+
+        monkeypatch.setattr("docsgpt.core.settings.settings.SANDBOX_BACKEND", "other")
+        assert sandbox_configured() is False
+
+
+def _fresh_settings(monkeypatch, **env):
+    """A Settings instance built only from ``env`` (no .env file, no ambient sandbox vars)."""
+    from docsgpt.core.settings import Settings
+
+    for name in ("SANDBOX_BACKEND", "SANDBOX_GATEWAY_URL", "DAYTONA_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    return Settings(_env_file=None)
 
 
 @pytest.mark.unit

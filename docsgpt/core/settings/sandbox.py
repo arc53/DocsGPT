@@ -17,7 +17,10 @@ class SandboxSettings(SettingsGroup):
     )
     SANDBOX_GATEWAY_URL: str = Field(
         default="http://localhost:8888",
-        description="URL of the Jupyter Kernel Gateway runner (the docsgpt-sandbox service).",
+        description=(
+            "URL of the Jupyter Kernel Gateway runner (the docsgpt-sandbox service). Chat offers attached files "
+            "to the code execution tool only when this is set explicitly; the default alone does not count."
+        ),
     )
     SANDBOX_GATEWAY_AUTH_TOKEN: Optional[str] = Field(default=None, description="Gateway auth token, if set.")
     SANDBOX_KERNEL_NAME: str = Field(
