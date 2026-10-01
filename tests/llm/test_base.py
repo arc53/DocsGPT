@@ -784,48 +784,6 @@ class TestConvertPdfToImages:
 
 
 @pytest.mark.unit
-class TestPruneMessagesMinimal:
-    """Cover line 252 (_prune_messages_minimal)."""
-
-    def test_no_system_message_returns_none(self):
-        handler = ConcreteHandler()
-        result = handler._prune_messages_minimal(
-            [{"role": "user", "content": "hi"}]
-        )
-        assert result is None
-
-    def test_no_user_message_returns_none(self):
-        handler = ConcreteHandler()
-        result = handler._prune_messages_minimal(
-            [{"role": "system", "content": "sys"}]
-        )
-        assert result is None
-
-    def test_returns_system_and_user(self):
-        handler = ConcreteHandler()
-        msgs = [
-            {"role": "system", "content": "sys"},
-            {"role": "assistant", "content": "resp"},
-            {"role": "user", "content": "question"},
-        ]
-        result = handler._prune_messages_minimal(msgs)
-        assert len(result) == 2
-        assert result[0]["role"] == "system"
-        assert result[1]["role"] == "user"
-
-    def test_falls_back_to_non_system_non_user(self):
-        """Cover line 258: no user, but has assistant as last non-system."""
-        handler = ConcreteHandler()
-        msgs = [
-            {"role": "system", "content": "sys"},
-            {"role": "assistant", "content": "resp"},
-        ]
-        result = handler._prune_messages_minimal(msgs)
-        assert len(result) == 2
-        assert result[1]["role"] == "assistant"
-
-
-@pytest.mark.unit
 class TestPerformMidExecutionCompression:
     """Cover lines 499, 506, 525-527 (_perform_mid_execution_compression)."""
 
@@ -1037,35 +995,6 @@ class TestConvertPdfToImagesAdditional:
 
 
 # ---------------------------------------------------------------------------
-# Additional coverage: _prune_messages_minimal (line 252)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestPruneMessagesMinimalAdditional:
-    """Cover line 252: no system message returns None."""
-
-    def test_no_system_only_user(self):
-        """Cover line 252: missing system message returns None."""
-        handler = ConcreteHandler()
-        msgs = [
-            {"role": "user", "content": "hello"},
-            {"role": "assistant", "content": "hi"},
-        ]
-        result = handler._prune_messages_minimal(msgs)
-        assert result is None
-
-    def test_system_only_no_others(self):
-        """Cover line 260-262: system present but no non-system messages."""
-        handler = ConcreteHandler()
-        msgs = [
-            {"role": "system", "content": "sys"},
-        ]
-        result = handler._prune_messages_minimal(msgs)
-        assert result is None
-
-
-# ---------------------------------------------------------------------------
 # Additional coverage: _perform_mid_execution_compression (lines 499, 506, 525-527)
 # ---------------------------------------------------------------------------
 
@@ -1164,8 +1093,8 @@ class TestPerformMidExecutionCompressionAdditional:
         assert success is False
         assert msgs is None
 
-    def test_compression_failed_with_prune_fallback(self, monkeypatch):
-        """Cover lines 464-472: compression failed, falls back to prune."""
+    def test_compression_failed_ends_the_tool_loop(self, monkeypatch):
+        """A failed compression ends the tool loop rather than pruning."""
         handler = ConcreteHandler()
         agent = MagicMock()
         agent.conversation_id = "conv1"
@@ -1193,12 +1122,6 @@ class TestPerformMidExecutionCompressionAdditional:
         )
         handler._build_conversation_from_messages = MagicMock(return_value=None)
 
-        pruned = [
-            {"role": "system", "content": "sys"},
-            {"role": "user", "content": "q"},
-        ]
-        handler._prune_messages_minimal = MagicMock(return_value=pruned)
-
         # Pruning back to the question drops this turn's tool work and the
         # model re-reads it forever on a small window: a failed compression
         # ends the tool loop instead.
@@ -1206,44 +1129,9 @@ class TestPerformMidExecutionCompressionAdditional:
         assert success is False
         assert msgs is None
         assert agent._compression_exhausted is True
-        handler._prune_messages_minimal.assert_not_called()
 
-    def test_compression_failed_prune_also_fails(self, monkeypatch):
-        """Cover line 472: compression failed, prune returns None."""
-        handler = ConcreteHandler()
-        agent = MagicMock()
-        agent.conversation_id = "conv1"
-        agent.initial_user_id = "user1"
-
-        mock_conv_service = MagicMock()
-        mock_conv_service.get_conversation.return_value = {
-            "queries": [{"prompt": "Q", "response": "A"}]
-        }
-
-        mock_result = MagicMock()
-        mock_result.success = False
-        mock_result.error = "err"
-
-        mock_orchestrator = MagicMock()
-        mock_orchestrator.compress_mid_execution.return_value = mock_result
-
-        monkeypatch.setattr(
-            "docsgpt.api.answer.services.conversation_service.ConversationService",
-            MagicMock(return_value=mock_conv_service),
-        )
-        monkeypatch.setattr(
-            "docsgpt.api.answer.services.compression.CompressionOrchestrator",
-            MagicMock(return_value=mock_orchestrator),
-        )
-        handler._build_conversation_from_messages = MagicMock(return_value=None)
-        handler._prune_messages_minimal = MagicMock(return_value=None)
-
-        success, msgs = handler._perform_mid_execution_compression(agent, [])
-        assert success is False
-        assert msgs is None
-
-    def test_compression_didnt_reduce_tokens_falls_back_to_prune(self, monkeypatch):
-        """Cover lines 480-489: compression ratio not reduced, falls back to prune."""
+    def test_compression_didnt_reduce_tokens_ends_the_tool_loop(self, monkeypatch):
+        """A compression that did not reduce the tokens ends the tool loop."""
         handler = ConcreteHandler()
         agent = MagicMock()
         agent.conversation_id = "conv1"
@@ -1276,12 +1164,6 @@ class TestPerformMidExecutionCompressionAdditional:
             MagicMock(return_value=mock_orchestrator),
         )
         handler._build_conversation_from_messages = MagicMock(return_value=None)
-
-        pruned = [
-            {"role": "system", "content": "sys"},
-            {"role": "user", "content": "q"},
-        ]
-        handler._prune_messages_minimal = MagicMock(return_value=pruned)
 
         success, msgs = handler._perform_mid_execution_compression(agent, [])
         assert success is False
@@ -1456,8 +1338,8 @@ class TestPerformInMemoryCompressionAdditional:
         assert success is False
         assert msgs is None
 
-    def test_in_memory_compression_no_reduction_prunes(self, monkeypatch):
-        """Cover lines 593-605: compression doesn't reduce, falls back to prune."""
+    def test_in_memory_compression_no_reduction_ends_the_tool_loop(self, monkeypatch):
+        """An in-memory compression that did not reduce the tokens ends the tool loop."""
         handler = ConcreteHandler()
         agent = MagicMock()
         agent.model_id = "m"
@@ -1494,12 +1376,6 @@ class TestPerformInMemoryCompressionAdditional:
             MagicMock(return_value=mock_compression_service),
         )
 
-        pruned = [
-            {"role": "system", "content": "sys"},
-            {"role": "user", "content": "q"},
-        ]
-        handler._prune_messages_minimal = MagicMock(return_value=pruned)
-
         messages = [
             {"role": "system", "content": "sys"},
             {"role": "user", "content": "q"},
@@ -1509,50 +1385,6 @@ class TestPerformInMemoryCompressionAdditional:
         assert success is False
         assert msgs is None
         assert agent._compression_exhausted is True
-
-    def test_in_memory_compression_no_reduction_prune_fails(self, monkeypatch):
-        """Cover line 605: prune returns None after no-reduction."""
-        handler = ConcreteHandler()
-        agent = MagicMock()
-        agent.model_id = "m"
-
-        handler._build_conversation_from_messages = MagicMock(
-            return_value={"queries": [{"prompt": "Q", "response": "A"}]}
-        )
-
-        mock_metadata = MagicMock()
-        mock_metadata.compressed_token_count = 300
-        mock_metadata.original_token_count = 200
-
-        mock_compression_service = MagicMock()
-        mock_compression_service.compress_conversation.return_value = mock_metadata
-
-        monkeypatch.setattr(
-            "docsgpt.core.settings.settings.COMPRESSION_MODEL_OVERRIDE",
-            None,
-        )
-        monkeypatch.setattr(
-            "docsgpt.core.model_utils.get_provider_from_model_id",
-            MagicMock(return_value="openai"),
-        )
-        monkeypatch.setattr(
-            "docsgpt.core.model_utils.get_api_key_for_provider",
-            MagicMock(return_value="key"),
-        )
-        monkeypatch.setattr(
-            "docsgpt.llm.llm_creator.LLMCreator.create_llm",
-            MagicMock(return_value=MagicMock()),
-        )
-        monkeypatch.setattr(
-            "docsgpt.api.answer.services.compression.service.CompressionService",
-            MagicMock(return_value=mock_compression_service),
-        )
-
-        handler._prune_messages_minimal = MagicMock(return_value=None)
-
-        success, msgs = handler._perform_in_memory_compression(agent, [])
-        assert success is False
-        assert msgs is None
 
     def test_in_memory_rebuild_returns_none(self, monkeypatch):
         """Cover lines 630-631: rebuilt_messages is None."""
@@ -1798,25 +1630,6 @@ class TestConvertPdfDpiArg:
         handler._convert_pdf_to_images({"path": "/tmp/doc.pdf"})
         assert call_args["dpi"] == 150
         assert call_args["max_pages"] == 21  # one past the cap signals a longer PDF
-
-
-# ---------------------------------------------------------------------------
-# Additional coverage: _prune_messages_minimal line 252
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestPruneMinimalMissingSystem:
-    """Cover line 252: returns None when no system message."""
-
-    def test_only_tool_messages(self):
-        handler = ConcreteHandler()
-        msgs = [
-            {"role": "tool", "content": "result"},
-            {"role": "user", "content": "hi"},
-        ]
-        result = handler._prune_messages_minimal(msgs)
-        assert result is None
 
 
 # ---------------------------------------------------------------------------

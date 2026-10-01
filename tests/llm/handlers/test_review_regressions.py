@@ -232,8 +232,6 @@ class TestInMemoryCompressionNegativeSavings:
             {"role": "user", "content": "q1"},
             {"role": "assistant", "content": "a1"},
         ]
-        pruned = [{"role": "system", "content": "pruned"}]
-
         with patch.object(
             handler,
             "_build_conversation_from_messages",
@@ -254,8 +252,6 @@ class TestInMemoryCompressionNegativeSavings:
                 "Compression did not reduce token count (10 → 20); "
                 "keeping original history"
             ),
-        ), patch.object(
-            handler, "_prune_messages_minimal", return_value=pruned
         ):
             ok, rebuilt = handler._perform_in_memory_compression(agent, messages)
 

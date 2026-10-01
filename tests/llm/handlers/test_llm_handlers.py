@@ -501,51 +501,6 @@ class TestAppendUnsupportedAttachments:
 
 
 # ---------------------------------------------------------------------------
-# _prune_messages_minimal
-# ---------------------------------------------------------------------------
-
-
-class TestPruneMessagesMinimal:
-
-    def test_normal_case(self):
-        handler = ConcreteHandler()
-        messages = [
-            {"role": "system", "content": "sys prompt"},
-            {"role": "user", "content": "first question"},
-            {"role": "assistant", "content": "first answer"},
-            {"role": "user", "content": "second question"},
-        ]
-        result = handler._prune_messages_minimal(messages)
-        assert result is not None
-        assert len(result) == 2
-        assert result[0]["role"] == "system"
-        assert result[1]["role"] == "user"
-        assert result[1]["content"] == "second question"
-
-    def test_no_system_message(self):
-        handler = ConcreteHandler()
-        messages = [{"role": "user", "content": "hi"}]
-        result = handler._prune_messages_minimal(messages)
-        assert result is None
-
-    def test_no_user_message(self):
-        handler = ConcreteHandler()
-        messages = [{"role": "system", "content": "sys"}]
-        result = handler._prune_messages_minimal(messages)
-        assert result is None
-
-    def test_falls_back_to_non_user_role(self):
-        handler = ConcreteHandler()
-        messages = [
-            {"role": "system", "content": "sys"},
-            {"role": "assistant", "content": "response"},
-        ]
-        result = handler._prune_messages_minimal(messages)
-        assert result is not None
-        assert result[1]["role"] == "assistant"
-
-
-# ---------------------------------------------------------------------------
 # _extract_text_from_content
 # ---------------------------------------------------------------------------
 
@@ -1633,10 +1588,6 @@ class TestPerformMidExecutionCompression:
             return_value=mock_conv_service,
         ), patch.object(
             handler, "_build_conversation_from_messages", return_value={"queries": []}
-        ), patch.object(
-            handler,
-            "_prune_messages_minimal",
-            return_value=[{"role": "system", "content": "pruned"}],
         ):
             success, messages = handler._perform_mid_execution_compression(
                 agent, [{"role": "system", "content": "sys"}, {"role": "user", "content": "hi"}]
@@ -1718,10 +1669,6 @@ class TestPerformInMemoryCompression:
         ), patch(
             "docsgpt.api.answer.services.compression.service.CompressionService",
             return_value=mock_service,
-        ), patch.object(
-            handler,
-            "_prune_messages_minimal",
-            return_value=[{"role": "system", "content": "pruned"}],
         ), patch(
             "docsgpt.core.settings.settings",
             MagicMock(COMPRESSION_MODEL_OVERRIDE=None),
@@ -2062,10 +2009,6 @@ class TestPerformMidExecutionCompressionEdgeCases:
             return_value=mock_conv_service,
         ), patch.object(
             handler, "_build_conversation_from_messages", return_value={"queries": []}
-        ), patch.object(
-            handler,
-            "_prune_messages_minimal",
-            return_value=[{"role": "system", "content": "pruned"}],
         ):
             success, messages = handler._perform_mid_execution_compression(
                 agent, [{"role": "system", "content": "sys"}, {"role": "user", "content": "hi"}]

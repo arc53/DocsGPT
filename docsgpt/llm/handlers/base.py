@@ -679,36 +679,6 @@ class LLMHandler(ABC):
             system_msg["content"] += f"\n\n{combined_text}"
         return prepared_messages
 
-    def _prune_messages_minimal(
-        self, messages: List[Dict], keep: Optional[Dict] = None
-    ) -> Optional[List[Dict]]:
-        """
-        Build a minimal context: system prompt + latest user message only.
-        Drops all tool/function messages to shrink context aggressively.
-
-        ``keep`` is the current turn's message; when it is in ``messages`` it
-        is the one kept, so the turn's question and files survive.
-        """
-        system_message = next((m for m in messages if m.get("role") == "system"), None)
-        if not system_message:
-            logger.warning("Cannot prune messages minimally: missing system message.")
-            return None
-        if keep is not None and any(m is keep for m in messages):
-            logger.info("Pruning context to system + the current turn's message to proceed.")
-            return [system_message, keep]
-        last_non_system = None
-        for m in reversed(messages):
-            if m.get("role") == "user":
-                last_non_system = m
-                break
-            if not last_non_system and m.get("role") not in ("system", None):
-                last_non_system = m
-        if not last_non_system:
-            logger.warning("Cannot prune messages minimally: missing user/assistant messages.")
-            return None
-        logger.info("Pruning context to system + latest user/assistant message to proceed.")
-        return [system_message, last_non_system]
-
     def _extract_text_from_content(self, content: Any) -> str:
         """
         Convert message content (str or list of parts) to plain text for compression.
