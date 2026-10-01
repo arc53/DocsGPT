@@ -1,12 +1,13 @@
-"""Build a Daytona snapshot preloaded with the render and spreadsheet libraries.
+"""Build a Daytona snapshot preloaded with the render, spreadsheet and chart libraries.
 
 The Daytona managed sandbox backend (``SANDBOX_BACKEND=daytona``) creates each
 session from a snapshot. The default snapshot is a plain Python image, so the
 ``artifact`` tool's renderers — which ``import`` ``python-pptx`` / ``python-docx``
 / ``openpyxl`` / ``reportlab`` inside the sandbox — fail with
 ``render failed: ExecutionError``, and spreadsheets a chat hands to
-``code_executor`` cannot be opened with ``pandas``. This script bakes those
-libraries into a snapshot once; point ``DAYTONA_SNAPSHOT`` at its name.
+``code_executor`` cannot be opened with ``pandas`` or charted with
+``matplotlib``. This script bakes those libraries into a snapshot once; point
+``DAYTONA_SNAPSHOT`` at its name.
 
 Usage::
 
@@ -19,8 +20,8 @@ Then set in .env::
     DAYTONA_SNAPSHOT=docsgpt-sandbox-py312
 
 A snapshot's contents are fixed once built, so a snapshot made by an older
-version of this script (``docsgpt-artifacts-py312``) lacks pandas; build the
-new name and switch ``DAYTONA_SNAPSHOT`` to it.
+version of this script (``docsgpt-artifacts-py312``) lacks pandas and
+matplotlib; build the new name and switch ``DAYTONA_SNAPSHOT`` to it.
 
 Keep the library pins in sync with the self-hosted runner image
 (deployment/sandbox/Dockerfile) so the Daytona output matches the
@@ -34,15 +35,16 @@ from __future__ import annotations
 import argparse
 import sys
 
-# Libraries imported by the artifact tool's renderers and by code reading the
-# spreadsheets a chat stages into the sandbox, pinned to the same versions as
-# deployment/sandbox/Dockerfile.
+# Libraries imported by the artifact tool's renderers and by code reading and
+# charting the spreadsheets a chat stages into the sandbox, pinned to the same
+# versions as deployment/sandbox/Dockerfile.
 SNAPSHOT_PINS = [
     "python-pptx==1.0.2",
     "python-docx==1.1.2",
     "openpyxl==3.1.5",
     "reportlab==4.2.5",
     "pandas==2.2.3",
+    "matplotlib==3.9.2",
     "numpy==2.1.3",
     "lxml==6.0.2",
     "pillow==11.3.0",

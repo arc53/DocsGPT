@@ -92,8 +92,8 @@ class CodeExecutorTool(Tool):
         if backend == "daytona":
             if settings.DAYTONA_SNAPSHOT:
                 return (
-                    "Preinstalled beyond the stdlib: pandas, openpyxl, python-pptx, python-docx, "
-                    "reportlab, lxml, pillow. If an import fails, pip install the package from "
+                    "Preinstalled beyond the stdlib: pandas, matplotlib, openpyxl, python-pptx, "
+                    "python-docx, reportlab, lxml, pillow. If an import fails, pip install the package from "
                     "within the code; pip install anything else the same way before importing it."
                 )
             return (
