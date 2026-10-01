@@ -2036,7 +2036,12 @@
       "addToKnowledge": "Zum Wissen hinzufügen",
       "knowledgeFailed": "Die Dateien konnten nicht zum Wissen hinzugefügt werden. Versuche es erneut.",
       "knowledgeName_one": "{{name}} und {{count}} weitere",
-      "knowledgeName_other": "{{name}} und {{count}} weitere"
+      "knowledgeName_other": "{{name}} und {{count}} weitere",
+      "unsupportedType": "Kein unterstützter Dateityp ({{extension}})",
+      "waitingToSend_one": "Wird gesendet, sobald {{count}} Datei verarbeitet ist…",
+      "waitingToSend_other": "Wird gesendet, sobald {{count}} Dateien verarbeitet sind…",
+      "cancelQueuedSend": "Abbrechen",
+      "unreadableByModel": "{{model}} kann {{name}} nicht lesen – wechsle zu einem Modell, das Bilder oder PDFs unterstützt"
     },
     "retry": "Erneut versuchen",
     "failedTitle": "Antwort konnte nicht erstellt werden",

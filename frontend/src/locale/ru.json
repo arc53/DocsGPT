@@ -2130,7 +2130,14 @@
       "knowledgeName_one": "{{name}} и ещё {{count}}",
       "knowledgeName_few": "{{name}} и ещё {{count}}",
       "knowledgeName_many": "{{name}} и ещё {{count}}",
-      "knowledgeName_other": "{{name}} и ещё {{count}}"
+      "knowledgeName_other": "{{name}} и ещё {{count}}",
+      "unsupportedType": "Неподдерживаемый тип файла ({{extension}})",
+      "waitingToSend_one": "Отправится, когда обработается {{count}} файл…",
+      "waitingToSend_few": "Отправится, когда обработаются {{count}} файла…",
+      "waitingToSend_many": "Отправится, когда обработаются {{count}} файлов…",
+      "waitingToSend_other": "Отправится, когда обработаются {{count}} файла…",
+      "cancelQueuedSend": "Отмена",
+      "unreadableByModel": "{{model}} не может прочитать {{name}} — выберите модель, которая поддерживает изображения или PDF"
     },
     "retry": "Повторить",
     "failedTitle": "Не удалось сгенерировать ответ",

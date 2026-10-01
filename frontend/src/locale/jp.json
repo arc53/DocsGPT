@@ -2022,7 +2022,11 @@
       "knowledgeHintNoTools": "これらのファイルはモデルが一度に読める量を超えています。一部は含まれません。",
       "addToKnowledge": "ナレッジに追加",
       "knowledgeFailed": "ファイルをナレッジに追加できませんでした。もう一度お試しください。",
-      "knowledgeName_other": "{{name}} ほか{{count}}件"
+      "knowledgeName_other": "{{name}} ほか{{count}}件",
+      "unsupportedType": "サポートされていないファイル形式です({{extension}})",
+      "waitingToSend_other": "{{count}}件のファイルの処理が終わると送信します…",
+      "cancelQueuedSend": "キャンセル",
+      "unreadableByModel": "{{model}} は {{name}} を読み取れません。画像や PDF に対応したモデルに切り替えてください"
     },
     "retry": "再試行",
     "failedTitle": "応答を生成できませんでした",

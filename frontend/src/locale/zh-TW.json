@@ -2022,7 +2022,11 @@
       "knowledgeHintNoTools": "這些檔案超出模型一次能讀取的範圍。部分檔案將被略過。",
       "addToKnowledge": "新增到知識庫",
       "knowledgeFailed": "無法將這些檔案新增到知識庫。請再試一次。",
-      "knowledgeName_other": "{{name}} 及另外 {{count}} 個檔案"
+      "knowledgeName_other": "{{name}} 及另外 {{count}} 個檔案",
+      "unsupportedType": "不支援的檔案類型({{extension}})",
+      "waitingToSend_other": "{{count}} 個檔案處理完成後傳送…",
+      "cancelQueuedSend": "取消",
+      "unreadableByModel": "{{model}} 無法讀取 {{name}}，請切換到支援圖片或 PDF 的模型"
     },
     "retry": "重試",
     "failedTitle": "無法產生回覆",

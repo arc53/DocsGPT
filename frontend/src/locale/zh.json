@@ -2020,7 +2020,11 @@
       "knowledgeHintNoTools": "这些文件超出了模型一次能读取的范围。部分文件将被略过。",
       "addToKnowledge": "添加到知识库",
       "knowledgeFailed": "无法将这些文件添加到知识库。请重试。",
-      "knowledgeName_other": "{{name}} 及另外 {{count}} 个文件"
+      "knowledgeName_other": "{{name}} 及另外 {{count}} 个文件",
+      "unsupportedType": "不支持的文件类型({{extension}})",
+      "waitingToSend_other": "{{count}} 个文件处理完成后发送…",
+      "cancelQueuedSend": "取消",
+      "unreadableByModel": "{{model}} 无法读取 {{name}}，请切换到支持图片或 PDF 的模型"
     },
     "retry": "重试",
     "failedTitle": "无法生成回复",

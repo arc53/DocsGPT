@@ -2036,7 +2036,12 @@
       "addToKnowledge": "Añadir al conocimiento",
       "knowledgeFailed": "No se pudieron añadir estos archivos al conocimiento. Inténtalo de nuevo.",
       "knowledgeName_one": "{{name}} y {{count}} más",
-      "knowledgeName_other": "{{name}} y {{count}} más"
+      "knowledgeName_other": "{{name}} y {{count}} más",
+      "unsupportedType": "Tipo de archivo no compatible ({{extension}})",
+      "waitingToSend_one": "Se enviará cuando termine de procesarse {{count}} archivo…",
+      "waitingToSend_other": "Se enviará cuando terminen de procesarse {{count}} archivos…",
+      "cancelQueuedSend": "Cancelar",
+      "unreadableByModel": "{{model}} no puede leer {{name}}: cambia a un modelo compatible con imágenes o PDF"
     },
     "retry": "Reintentar",
     "failedTitle": "No se pudo generar una respuesta",

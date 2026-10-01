@@ -131,10 +131,11 @@ export const SOURCE_FILE_TREE_ACCEPT_ATTR = [
 ].join(',');
 
 /**
- * Chat-attachment suffixes with a dedicated parser. Mirrors the backend's
- * `ATTACHMENT_PARSER_EXTENSIONS` (application/parser/file/constants.py) —
- * update both together. Zip is absent: source ingestion extracts archives,
- * the attachment path does not.
+ * Chat-attachment suffixes the backend reads by name. Mirrors the backend's
+ * `ATTACHMENT_PARSER_EXTENSIONS` plus `ATTACHMENT_ARCHIVE_EXTENSIONS`
+ * (docsgpt/parser/file/constants.py) — update both together. A zip is
+ * unpacked by the worker into one attachment per member; the composer keeps
+ * one chip for it.
  *
  * Not the whole allow-list, and `.txt` is deliberately not here: a suffix
  * that isn't listed (.txt, .py, .log, .yaml) is read by the backend's
@@ -187,6 +188,7 @@ export const ATTACHMENT_PARSER_EXTENSIONS: readonly string[] = [
   '.m4a',
   '.ogg',
   '.webm',
+  '.zip',
 ];
 
 /**
