@@ -2046,6 +2046,14 @@
     },
     "retry": "Erneut versuchen",
     "failedTitle": "Antwort konnte nicht erstellt werden",
+    "errors": {
+      "contextLength": "Diese Nachricht und ihre angehängten Dateien sind zu groß für das Kontextfenster des Modells. Sende weniger oder kleinere Dateien.",
+      "contextLengthKnowledge": "Diese Nachricht und ihre angehängten Dateien sind zu groß für das Kontextfenster des Modells. Sende weniger oder kleinere Dateien oder nutze „Zum Wissen hinzufügen“, um sie zu durchsuchen, statt sie vollständig zu senden.",
+      "contextLengthSized": "Diese Nachricht und ihre angehängten Dateien brauchen etwa {{needed, number}} Tokens, mehr als das Modell aufnehmen kann ({{available, number}} Tokens). Sende weniger oder kleinere Dateien.",
+      "contextLengthSizedKnowledge": "Diese Nachricht und ihre angehängten Dateien brauchen etwa {{needed, number}} Tokens, mehr als das Modell aufnehmen kann ({{available, number}} Tokens). Sende weniger oder kleinere Dateien oder nutze „Zum Wissen hinzufügen“, um sie zu durchsuchen, statt sie vollständig zu senden.",
+      "serverError": "Bitte versuche es später erneut. Wir entschuldigen uns für die Unannehmlichkeiten.",
+      "clientDisconnect": "Die Antwort brach ab, bevor etwas erzeugt wurde. Versuche es erneut."
+    },
     "reasoning": "Begründung",
     "wikiWrite": {
       "edited": "Wiki bearbeitet",

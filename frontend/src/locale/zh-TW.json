@@ -2031,6 +2031,14 @@
     },
     "retry": "重試",
     "failedTitle": "無法產生回覆",
+    "errors": {
+      "contextLength": "此訊息及其附件太大，超出模型的上下文視窗。請傳送更少或更小的檔案。",
+      "contextLengthKnowledge": "此訊息及其附件太大，超出模型的上下文視窗。請傳送更少或更小的檔案，或使用「新增到知識庫」來搜尋它們，而不是整個傳送。",
+      "contextLengthSized": "此訊息及其附件大約需要 {{needed, number}} 個 token，超出模型可接受的上限（{{available, number}} 個 token）。請傳送更少或更小的檔案。",
+      "contextLengthSizedKnowledge": "此訊息及其附件大約需要 {{needed, number}} 個 token，超出模型可接受的上限（{{available, number}} 個 token）。請傳送更少或更小的檔案，或使用「新增到知識庫」來搜尋它們，而不是整個傳送。",
+      "serverError": "請稍後再試。造成不便，敬請見諒。",
+      "clientDisconnect": "回覆在產生任何內容之前就中斷了。請重試。"
+    },
     "reasoning": "推理",
     "wikiWrite": {
       "edited": "已編輯 Wiki",

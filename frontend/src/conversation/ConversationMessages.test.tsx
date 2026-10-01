@@ -85,7 +85,9 @@ describe('ConversationMessages', () => {
 
   it('offers Add to Knowledge under an overflow error of a turn with files', () => {
     render([overflow], true);
-    expect(container.textContent).toContain(overflow.error);
+    expect(container.textContent).toContain(
+      'conversation.errors.contextLengthKnowledge',
+    );
     expect(
       container.querySelector('[data-error-code="context_length_exceeded"]'),
     ).not.toBeNull();
@@ -106,6 +108,20 @@ describe('ConversationMessages', () => {
   it('does not offer it where the chat cannot change Knowledge', () => {
     render([overflow], false);
     expect(action()).toBeNull();
+    // Nor does the error point at an action that is not there.
+    expect(container.textContent).toContain(
+      'conversation.errors.contextLength',
+    );
+    expect(container.textContent).not.toContain('Knowledge');
+  });
+
+  it("shows the server's text for an error it has no wording for", () => {
+    render([
+      { prompt: 'q', error: 'Blocked by policy.', errorCode: 'guardrail' },
+      { prompt: 'q', error: 'raw provider error' },
+    ]);
+    expect(container.textContent).toContain('Blocked by policy.');
+    expect(container.textContent).toContain('raw provider error');
   });
 
   it('shows a non-fatal notice as a polite warning alert with an icon', () => {

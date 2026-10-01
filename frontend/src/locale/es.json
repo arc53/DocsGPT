@@ -2046,6 +2046,14 @@
     },
     "retry": "Reintentar",
     "failedTitle": "No se pudo generar una respuesta",
+    "errors": {
+      "contextLength": "Este mensaje y sus archivos adjuntos son demasiado grandes para la ventana de contexto del modelo. Envía menos archivos o archivos más pequeños.",
+      "contextLengthKnowledge": "Este mensaje y sus archivos adjuntos son demasiado grandes para la ventana de contexto del modelo. Envía menos archivos o archivos más pequeños, o usa «Añadir al conocimiento» para buscar en ellos en lugar de enviarlos completos.",
+      "contextLengthSized": "Este mensaje y sus archivos adjuntos necesitan unos {{needed, number}} tokens, más de los que admite el modelo ({{available, number}} tokens). Envía menos archivos o archivos más pequeños.",
+      "contextLengthSizedKnowledge": "Este mensaje y sus archivos adjuntos necesitan unos {{needed, number}} tokens, más de los que admite el modelo ({{available, number}} tokens). Envía menos archivos o archivos más pequeños, o usa «Añadir al conocimiento» para buscar en ellos en lugar de enviarlos completos.",
+      "serverError": "Inténtalo de nuevo más tarde. Disculpa las molestias.",
+      "clientDisconnect": "La respuesta se detuvo antes de producir nada. Inténtalo de nuevo."
+    },
     "reasoning": "Razonamiento",
     "wikiWrite": {
       "edited": "Wiki editada",

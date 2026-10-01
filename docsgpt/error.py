@@ -1,5 +1,6 @@
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any, Dict
 
 from flask import jsonify
 from werkzeug.http import HTTP_STATUS_CODES
@@ -59,10 +60,14 @@ class UserFacingError:
         code: Machine-readable reason, ``context_length_exceeded`` or
             ``server_error``.
         message: Curated text; never the raw exception.
+        params: The values ``message`` is built from (``needed_tokens``,
+            ``available_tokens``), so a client can word it in the user's
+            language. Empty when the message has none.
     """
 
     code: str
     message: str
+    params: Dict[str, Any] = field(default_factory=dict)
 
 
 def user_facing_error(error: BaseException, *, surface: str = "chat") -> UserFacingError:
@@ -85,7 +90,9 @@ def user_facing_error(error: BaseException, *, surface: str = "chat") -> UserFac
 
     if not is_context_length_error(error):
         return UserFacingError(SERVER_ERROR, GENERIC_ERROR_MESSAGE)
+    params: Dict[str, Any] = {}
     if isinstance(error, ContextOverflowError) and error.needed_tokens and error.available_tokens:
+        params = {"needed_tokens": error.needed_tokens, "available_tokens": error.available_tokens}
         size = (
             f"This message and its attached files need about {error.needed_tokens:,} tokens, "
             f"more than the model can take ({error.available_tokens:,} tokens)."
@@ -96,7 +103,7 @@ def user_facing_error(error: BaseException, *, surface: str = "chat") -> UserFac
         advice = "Send fewer or smaller files, or add large documents to the agent's sources instead."
     else:
         advice = "Send fewer or smaller files, or use Add to Knowledge to search them instead of sending them whole."
-    return UserFacingError(CONTEXT_LENGTH_EXCEEDED, f"{size} {advice}")
+    return UserFacingError(CONTEXT_LENGTH_EXCEEDED, f"{size} {advice}", params)
 
 
 def bounded_error_text(error: BaseException) -> str:

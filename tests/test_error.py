@@ -109,6 +109,14 @@ class TestUserFacingError:
         assert "fewer or smaller files" in public.message
         assert "Add to Knowledge" in public.message
         assert "raw detail" not in public.message
+        # The sizes travel on their own too, so a client can word the error
+        # in the user's language.
+        assert public.params == {"needed_tokens": 262_790, "available_tokens": 200_000}
+
+    def test_an_overflow_without_sizes_has_no_params(self):
+        public = user_facing_error(RuntimeError("maximum context length is 128000 tokens"))
+        assert public.code == "context_length_exceeded"
+        assert public.params == {}
 
     def test_a_provider_context_length_error_maps_without_echoing_it(self):
         error = RuntimeError(

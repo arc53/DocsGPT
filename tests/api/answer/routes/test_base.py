@@ -739,6 +739,7 @@ class TestHonestStreamErrors:
         assert errors[-1]["code"] == "context_length_exceeded"
         assert "300,000" in errors[-1]["error"]
         assert "Please try again later" not in errors[-1]["error"]
+        assert errors[-1]["params"] == {"needed_tokens": 300_000, "available_tokens": 200_000}
 
     def test_the_failed_row_stores_the_curated_text(self, mock_mongo_db, flask_app):
         from docsgpt.agents.context_overflow import ContextOverflowError
@@ -750,6 +751,7 @@ class TestHonestStreamErrors:
         assert kwargs["status"] == "failed"
         assert kwargs["metadata"]["error"] == errors[-1]["error"]
         assert kwargs["metadata"]["error_code"] == "context_length_exceeded"
+        assert kwargs["metadata"]["error_params"] == {"needed_tokens": 300_000, "available_tokens": 200_000}
 
     def test_a_raw_provider_error_never_reaches_the_row(self, mock_mongo_db, flask_app):
         payload = "data:application/pdf;base64," + "QUJD" * 50_000

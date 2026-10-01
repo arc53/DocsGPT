@@ -25,6 +25,7 @@ import AddToKnowledgeAction from './AddToKnowledgeAction';
 import { deriveArtifactChips } from './artifactChips';
 import ConversationBubble from './ConversationBubble';
 import { FEEDBACK, Query, Status } from './conversationModels';
+import { curatedErrorText } from './curatedError';
 import StreamingStatusLine from './StreamingStatusLine';
 import { cn } from '@/lib/utils';
 
@@ -199,7 +200,13 @@ export default function ConversationMessages({
         <ConversationBubble
           className={bubbleMargin}
           key={`${index}-ERROR`}
-          message={query.error}
+          message={curatedErrorText(
+            t,
+            query.error,
+            query.errorCode,
+            query.errorParams,
+            { offersKnowledge: Boolean(knowledgeFiles) },
+          )}
           type="ERROR"
           retryBtn={retryButton}
           errorCode={query.errorCode}

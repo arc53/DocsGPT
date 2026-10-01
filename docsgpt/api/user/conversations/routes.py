@@ -502,6 +502,9 @@ class GetMessageTail(Resource):
                     # Curated failures carry a code (context_length_exceeded)
                     # the chat acts on; older rows have none.
                     "error_code": metadata.get("error_code"),
+                    # The values the curated text is built from, so the
+                    # chat can word it in the user's language.
+                    "error_params": metadata.get("error_params"),
                 }
             ),
             200,

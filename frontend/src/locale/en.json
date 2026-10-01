@@ -2052,6 +2052,14 @@
     },
     "retry": "Retry",
     "failedTitle": "Couldn't generate a response",
+    "errors": {
+      "contextLength": "This message and its attached files are too large for the model's context window. Send fewer or smaller files.",
+      "contextLengthKnowledge": "This message and its attached files are too large for the model's context window. Send fewer or smaller files, or use Add to Knowledge to search them instead of sending them whole.",
+      "contextLengthSized": "This message and its attached files need about {{needed, number}} tokens, more than the model can take ({{available, number}} tokens). Send fewer or smaller files.",
+      "contextLengthSizedKnowledge": "This message and its attached files need about {{needed, number}} tokens, more than the model can take ({{available, number}} tokens). Send fewer or smaller files, or use Add to Knowledge to search them instead of sending them whole.",
+      "serverError": "Please try again later. We apologize for any inconvenience.",
+      "clientDisconnect": "The response stopped before anything was produced. Try again."
+    },
     "reasoning": "Reasoning",
     "wikiWrite": {
       "edited": "Edited wiki",

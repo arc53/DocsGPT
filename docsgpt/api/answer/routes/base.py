@@ -1674,6 +1674,8 @@ class BaseAnswerResource:
                 failure_metadata = dict(query_metadata or {})
                 failure_metadata["error"] = public_error.message
                 failure_metadata["error_code"] = public_error.code
+                if public_error.params:
+                    failure_metadata["error_params"] = public_error.params
                 if claim_released:
                     failure_metadata["resume_retryable"] = True
                 try:
@@ -1714,6 +1716,7 @@ class BaseAnswerResource:
                     "type": "error",
                     "error": public_error.message,
                     "code": public_error.code,
+                    **({"params": public_error.params} if public_error.params else {}),
                 }
             )
             # Drain the terminal ``error`` event we just yielded so a

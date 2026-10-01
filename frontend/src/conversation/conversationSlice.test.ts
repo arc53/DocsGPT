@@ -450,6 +450,52 @@ describe('curated errors', () => {
     expect(next.queries[0].errorCode).toBe('context_length_exceeded');
   });
 
+  it('keeps the params an overflow was worded from', () => {
+    const params = { needed_tokens: 300000, available_tokens: 200000 };
+    const stored = mapServerQueryToClient({
+      prompt: 'q',
+      status: 'failed',
+      metadata: {
+        error: 'Too large.',
+        error_code: 'context_length_exceeded',
+        error_params: params,
+      },
+    });
+    expect(stored.errorParams).toEqual(params);
+
+    const tailed = reducer(
+      seedSlice(),
+      applyMessageTail({
+        index: 0,
+        tail: {
+          message_id: 'm-1',
+          status: 'failed',
+          error: 'Too large.',
+          error_code: 'context_length_exceeded',
+          error_params: params,
+        },
+      }),
+    );
+    expect(tailed.queries[0].errorParams).toEqual(params);
+
+    let live = reducer(
+      seedSlice(),
+      raiseError({
+        conversationId: null,
+        index: 0,
+        message: 'Too large.',
+        code: 'context_length_exceeded',
+        params,
+      }),
+    );
+    expect(live.queries[0].errorParams).toEqual(params);
+    live = reducer(
+      live,
+      raiseError({ conversationId: null, index: 0, message: 'Oops' }),
+    );
+    expect(live.queries[0].errorParams).toBeUndefined();
+  });
+
   it('drops a stale code when a later error has none', () => {
     let state = reducer(
       seedSlice(),

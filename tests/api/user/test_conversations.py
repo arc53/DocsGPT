@@ -476,6 +476,7 @@ class TestGetMessageTail:
                 "metadata": {
                     "error": "This message is too large for the model.",
                     "error_code": "context_length_exceeded",
+                    "error_params": {"needed_tokens": 300000, "available_tokens": 200000},
                 },
             },
         )
@@ -492,6 +493,7 @@ class TestGetMessageTail:
         assert response.json["status"] == "failed"
         assert response.json["error"] == "This message is too large for the model."
         assert response.json["error_code"] == "context_length_exceeded"
+        assert response.json["error_params"] == {"needed_tokens": 300000, "available_tokens": 200000}
 
     def test_shared_user_can_tail(self, app, pg_conn):
         """A user in ``conversations.shared_with`` must be able to tail

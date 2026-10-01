@@ -81,6 +81,9 @@ export interface Query {
   // Why the turn failed, when the backend says (``context_length_exceeded``);
   // its presence also marks ``error`` as curated text rather than a raw error.
   errorCode?: string;
+  // The values a curated error was worded from (``needed_tokens``…), so the
+  // chat can word it in the user's language.
+  errorParams?: Record<string, unknown>;
   // Non-fatal notice (e.g. some workflow input documents were dropped). Shown
   // alongside the answer; unlike ``error`` it does not fail the turn or end the stream.
   notice?: string;
