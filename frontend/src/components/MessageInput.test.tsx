@@ -432,6 +432,62 @@ describe('MessageInput send with a failed attachment', () => {
     expect(FakeXHR.instances).toHaveLength(0);
   });
 
+  const attachmentProgress = (id: string, current: number, n: number) =>
+    sseEventReceived({
+      id: `${id}-progress-${n}`,
+      type: 'attachment.progress',
+      scope: { kind: 'attachment', id },
+      payload: { current },
+    });
+
+  const storeSlow = async () => {
+    await render();
+    await attachFile('bundle.zip');
+    await act(async () =>
+      FakeXHR.instances[0].respond(200, {
+        success: true,
+        task_id: 'celery-slow',
+        attachment_id: 'srv-slow',
+      }),
+    );
+    expect(store.getState().upload.attachments[0].status).toBe('processing');
+  };
+
+  it('keeps a slow file processing while its progress keeps arriving', async () => {
+    vi.useFakeTimers();
+    await storeSlow();
+
+    // Twenty minutes of work, a sign of life every four: never cut off,
+    // even when an event does not move the bar.
+    for (let n = 0; n < 5; n++) {
+      await act(async () => {
+        vi.advanceTimersByTime(4 * 60_000);
+      });
+      await act(async () => {
+        store.dispatch(attachmentProgress('srv-slow', 50, n));
+      });
+    }
+    expect(store.getState().upload.attachments[0].status).toBe('processing');
+  });
+
+  it('fails a processing file after five minutes without progress', async () => {
+    vi.useFakeTimers();
+    await storeSlow();
+    await act(async () => {
+      store.dispatch(attachmentProgress('srv-slow', 40, 1));
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(5 * 60_000 - 1);
+    });
+    expect(store.getState().upload.attachments[0].status).toBe('processing');
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(store.getState().upload.attachments[0].status).toBe('failed');
+  });
+
   it('keeps a queued question while another answer is streaming', async () => {
     store.dispatch(addAttachment(att({ status: 'processing', progress: 30 })));
     await render();

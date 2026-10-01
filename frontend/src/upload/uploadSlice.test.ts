@@ -841,3 +841,75 @@ describe('attachment events that arrive before the upload response', () => {
     }
   });
 });
+
+describe('processing activity', () => {
+  const event = (
+    type: string,
+    attachmentId: string,
+    payload: Record<string, unknown>,
+    n: number,
+  ): SSEEvent => ({
+    id: `${attachmentId}-${n}`,
+    type,
+    scope: { kind: 'attachment', id: attachmentId },
+    payload,
+  });
+
+  const processing: Attachment = {
+    id: 'ui-1',
+    fileName: 'bundle.zip',
+    progress: 10,
+    status: 'processing',
+    taskId: 'celery-1',
+    attachmentId: 'srv-1',
+  };
+
+  it('counts every queued or progress event, even one that does not move the bar', () => {
+    let state = reducer(undefined, addAttachment(processing));
+    const before = state.attachments[0].activity ?? 0;
+    state = reducer(
+      state,
+      sseEventReceived(event('attachment.queued', 'srv-1', {}, 1)),
+    );
+    state = reducer(
+      state,
+      sseEventReceived(
+        event('attachment.progress', 'srv-1', { current: 40 }, 2),
+      ),
+    );
+    state = reducer(
+      state,
+      sseEventReceived(
+        event('attachment.progress', 'srv-1', { current: 40 }, 3),
+      ),
+    );
+    expect(state.attachments[0].progress).toBe(40);
+    expect(state.attachments[0].activity).toBe(before + 3);
+  });
+
+  it('counts progress replayed when the row learns its id', () => {
+    let state = reducer(
+      undefined,
+      addAttachment({
+        ...processing,
+        status: 'uploading',
+        attachmentId: undefined,
+      }),
+    );
+    state = reducer(
+      state,
+      sseEventReceived(
+        event('attachment.progress', 'srv-1', { current: 30 }, 1),
+      ),
+    );
+    expect(state.attachments[0].activity ?? 0).toBe(0);
+    state = reducer(
+      state,
+      updateAttachment({
+        id: 'ui-1',
+        updates: { attachmentId: 'srv-1', status: 'processing' },
+      }),
+    );
+    expect(state.attachments[0].activity).toBe(1);
+  });
+});

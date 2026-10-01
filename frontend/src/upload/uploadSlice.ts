@@ -56,6 +56,12 @@ export interface Attachment {
   extractionStatus?: string;
   /** Why a ``failed`` attachment failed, when known (server or client gate). */
   errorMessage?: string;
+  /**
+   * How many ``attachment.queued`` / ``attachment.progress`` events the row
+   * has taken, live or replayed. The composer's processing watchdog reads a
+   * change as a sign of life, so it fails only a file that went silent.
+   */
+  activity?: number;
 }
 
 export type UploadTaskStatus =
@@ -185,6 +191,7 @@ function applyAttachmentEvent(
         break;
       }
       attachment.status = 'processing';
+      attachment.activity = (attachment.activity ?? 0) + 1;
       const current = Number(payload.current);
       if (Number.isFinite(current)) {
         const clamped = Math.max(0, Math.min(100, current));

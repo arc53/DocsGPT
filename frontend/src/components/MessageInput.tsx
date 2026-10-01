@@ -535,14 +535,20 @@ export default function MessageInput({
       };
 
       if (check()) return;
-      const MAX_WAIT_MS = 5 * 60_000;
+      // An idle window, not a total cap: a big zip (one task per member) or a
+      // slow scan keeps reporting progress, and each report restarts it.
+      const IDLE_MS = 5 * 60_000;
+      const activityOf = () =>
+        store.getState().upload.attachments.find((a) => a.id === clientId)
+          ?.activity ?? 0;
+      let lastActivity = activityOf();
       let unsubscribe: (() => void) | null = null;
-      const timer = window.setTimeout(() => {
+      const onIdle = () => {
         unsubscribe?.();
         if (!handled) {
           handled = true;
           console.warn(
-            'trackAttachment: timed out waiting for terminal SSE',
+            'trackAttachment: no progress from the worker',
             clientId,
             attachmentId,
           );
@@ -553,11 +559,19 @@ export default function MessageInput({
             }),
           );
         }
-      }, MAX_WAIT_MS);
+      };
+      let timer = window.setTimeout(onIdle, IDLE_MS);
       unsubscribe = store.subscribe(() => {
         if (check()) {
           window.clearTimeout(timer);
           unsubscribe?.();
+          return;
+        }
+        const activity = activityOf();
+        if (activity !== lastActivity) {
+          lastActivity = activity;
+          window.clearTimeout(timer);
+          timer = window.setTimeout(onIdle, IDLE_MS);
         }
       });
     },
