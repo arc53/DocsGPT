@@ -54,6 +54,8 @@ MAX_READ_TOKENS = 16000
 MIN_READ_TOKENS = 200
 # Pages one read returns as text at most.
 MAX_TEXT_PAGES_PER_CALL = 20
+# Pages one ``pages`` spec may name; a longer range is cut here.
+MAX_PAGES_IN_SPEC = 10_000
 # Page images one read renders at most (scanned pages, for a vision model).
 MAX_IMAGE_PAGES_PER_CALL = 5
 RENDER_DPI = 150
@@ -305,8 +307,13 @@ def _parse_pages(spec: Any, count: Optional[int]) -> Optional[List[int]]:
         first, last = bounds
         if last is None:
             last = count if count else first + MAX_TEXT_PAGES_PER_CALL - 1
+        # "1-30000000" must not build that list. The stored page count may
+        # be stale, so the cap, not the count, bounds an explicit range; the
+        # reader checks every page against the file itself.
+        last = min(last, first + MAX_PAGES_IN_SPEC - len(pages) - 1)
+        # A page past the end is kept so the reader can say how long the file is.
         pages.extend(range(first, max(last, first) + 1))
-        if len(pages) > 10_000:
+        if len(pages) >= MAX_PAGES_IN_SPEC:
             break
     return sorted(set(pages)) or None
 

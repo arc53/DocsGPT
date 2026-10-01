@@ -48,9 +48,14 @@ def sanitize_filename(name: str) -> str:
     return cleaned[:255] or "attachment"
 
 
+# Any spelling of a fence tag a model might read as one: any case, with
+# whitespace around the slash.
+_FENCE_TAG_RE = re.compile(r"<(\s*/?\s*attached_file)", re.IGNORECASE)
+
+
 def _neutralize(content: str) -> str:
     """Keep file text from closing or opening a fence of its own."""
-    return content.replace(_FENCE_CLOSE, "<\\/attached_file>").replace(_FENCE_OPEN, "<\\attached_file")
+    return _FENCE_TAG_RE.sub(r"<\\\1", content)
 
 
 def _head(content: str, tokens: int) -> str:
