@@ -6,11 +6,17 @@ This module handles:
 - Streaming event translation (DocsGPT SSE -> standard SSE chunks)
 """
 
+import base64
+import binascii
+import hashlib
 import json
+import mimetypes
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
+
+from docsgpt.attachment_names import normalize_attachment_filename
 
 # Some upstream models/proxies echo their reasoning into ``content`` as
 # stringified ``{'type': 'thought', 'thought': '...'}`` event reprs (instead of
@@ -188,6 +194,208 @@ def convert_history(messages: List[Dict]) -> List[Dict]:
     return history
 
 
+# ---------------------------------------------------------------------------
+# Inline file and image parts
+# ---------------------------------------------------------------------------
+
+# Content parts that can carry a file's bytes inline (as a data URL or bare
+# base64): Chat Completions ``file`` / ``image_url`` and their Responses-API
+# spellings ``input_file`` / ``input_image``.
+INLINE_PART_TYPES = ("file", "input_file", "image_url", "input_image")
+
+
+@dataclass(frozen=True)
+class InlineFile:
+    """A file a client sent inline in a user message.
+
+    Attributes:
+        data: The decoded bytes.
+        filename: Normalized name (lower-case extension).
+        mime_type: The MIME type from the data URL, else guessed from the name.
+        content_hash: sha256 hex of ``data``; the key attachment rows are
+            deduplicated by.
+        kind: ``file`` or ``image``.
+    """
+
+    data: bytes = field(repr=False)
+    filename: str
+    mime_type: str
+    content_hash: str
+    kind: str
+
+
+def _split_data_url(value: Any) -> Optional[tuple]:
+    """``(mime_type, payload)`` of a data URL or bare base64, else None."""
+    if not isinstance(value, str) or not value:
+        return None
+    if value.startswith("data:"):
+        header, sep, payload = value.partition(",")
+        if not sep or ";base64" not in header:
+            return None
+        mime_type = header[len("data:"):].split(";", 1)[0].strip().lower() or None
+        return mime_type, payload
+    if value.startswith(("http://", "https://")):
+        return None
+    return None, value
+
+
+def _part_payload(part: Dict[str, Any]) -> Optional[tuple]:
+    """``(kind, filename, mime_type, base64 payload)`` of an inline part."""
+    part_type = part.get("type")
+    if part_type == "file":
+        file_obj = part.get("file") if isinstance(part.get("file"), dict) else {}
+        if file_obj.get("file_id") or not file_obj.get("file_data"):
+            return None
+        split = _split_data_url(file_obj["file_data"])
+        return ("file", file_obj.get("filename"), *split) if split else None
+    if part_type == "input_file":
+        if part.get("file_id") or not part.get("file_data"):
+            return None
+        split = _split_data_url(part["file_data"])
+        return ("file", part.get("filename"), *split) if split else None
+    if part_type in ("image_url", "input_image"):
+        image = part.get("image_url")
+        url = image.get("url") if isinstance(image, dict) else image
+        if not (isinstance(url, str) and url.startswith("data:")):
+            return None
+        split = _split_data_url(url)
+        return ("image", None, *split) if split else None
+    return None
+
+
+def _decode(payload: str) -> Optional[bytes]:
+    try:
+        data = base64.b64decode("".join(payload.split()), validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    return data or None
+
+
+def _part_hash(part: Any) -> Optional[str]:
+    """sha256 of an inline part's bytes, or None when it carries none."""
+    if not isinstance(part, dict):
+        return None
+    payload = _part_payload(part)
+    if payload is None:
+        return None
+    data = _decode(payload[3])
+    return hashlib.sha256(data).hexdigest() if data else None
+
+
+def collect_inline_files(messages: List[Dict[str, Any]]) -> List[InlineFile]:
+    """The files sent inline in any user message, once each, in order.
+
+    Clients re-send every earlier file on every turn and in every tool
+    round; identical bytes are collected once. ``file_id`` parts (the
+    client's own Files-API ids) and remote image URLs are not inline and
+    are left alone.
+
+    Args:
+        messages: The request's ``messages``.
+
+    Returns:
+        One entry per distinct file, in the order first seen.
+    """
+    files: List[InlineFile] = []
+    seen: set = set()
+    counters = {"file": 0, "image": 0}
+    for message in messages or []:
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if not isinstance(part, dict) or part.get("type") not in INLINE_PART_TYPES:
+                continue
+            payload = _part_payload(part)
+            if payload is None:
+                continue
+            kind, filename, mime_type, encoded = payload
+            data = _decode(encoded)
+            if data is None:
+                continue
+            digest = hashlib.sha256(data).hexdigest()
+            if digest in seen:
+                continue
+            seen.add(digest)
+            counters[kind] += 1
+            if not mime_type and filename:
+                mime_type = mimetypes.guess_type(str(filename).lower())[0]
+            name = normalize_attachment_filename(
+                filename, mime_type, stem=f"{kind}-{counters[kind]}"
+            )
+            files.append(
+                InlineFile(
+                    data=data,
+                    filename=name,
+                    mime_type=mime_type or mimetypes.guess_type(name)[0] or "application/octet-stream",
+                    content_hash=digest,
+                    kind=kind,
+                )
+            )
+    return files
+
+
+def _strip_parts(content: Any, converted: Mapping[str, str]) -> Any:
+    """``content`` without the inline parts whose bytes became attachments."""
+    if not isinstance(content, list):
+        return content
+    return [
+        part
+        for part in content
+        if not (
+            isinstance(part, dict)
+            and part.get("type") in INLINE_PART_TYPES
+            and _part_hash(part) in converted
+        )
+    ]
+
+
+def apply_converted_files(
+    internal: Dict[str, Any], files: List[InlineFile], converted: Mapping[str, str]
+) -> None:
+    """Point the request at the attachment rows its inline files became.
+
+    The converted parts are removed from what the agent sees (the turn's
+    multimodal content, or the replayed messages of a continuation), so the
+    attachment planner decides what is inlined and what the attachments
+    tool reads. Parts that were not converted stay as they were. Copies are
+    edited; the client's own message objects are never changed.
+
+    Args:
+        internal: The translated request; edited in place.
+        files: The inline files, in order.
+        converted: ``content_hash`` to attachment id, for the files stored.
+    """
+    if not converted:
+        return
+    ids = [converted[f.content_hash] for f in files if f.content_hash in converted]
+    explicit = [a for a in internal.get("attachments") or [] if a]
+    internal["attachments"] = list(dict.fromkeys([*ids, *explicit]))
+
+    multimodal = internal.get("multimodal_content")
+    if isinstance(multimodal, list):
+        remaining = _strip_parts(multimodal, converted)
+        if any(isinstance(p, dict) and p.get("type") != "text" for p in remaining):
+            internal["multimodal_content"] = remaining
+        else:
+            internal.pop("multimodal_content", None)
+
+    messages = internal.get("messages")
+    if isinstance(messages, list):
+        rebuilt = []
+        for message in messages:
+            if (
+                isinstance(message, dict)
+                and message.get("role") == "user"
+                and isinstance(message.get("content"), list)
+            ):
+                message = {**message, "content": _strip_parts(message["content"], converted)}
+            rebuilt.append(message)
+        internal["messages"] = rebuilt
+
+
 def extract_response_schema(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Extract a JSON schema for structured output from a chat-completions request.
 
@@ -294,6 +502,11 @@ def translate_request(
             result["json_object"] = True
         if sampling_params:
             result["llm_params"] = sampling_params
+        inline_files = collect_inline_files(messages)
+        if inline_files:
+            result["inline_files"] = inline_files
+        if (data.get("docsgpt") or {}).get("attachments"):
+            result["attachments"] = data["docsgpt"]["attachments"]
         return result
 
     # Normal request — extract the question (text) from the last user message,
@@ -344,6 +557,11 @@ def translate_request(
         result["llm_params"] = sampling_params
     if multimodal_content is not None:
         result["multimodal_content"] = multimodal_content
+    # Files sent inline in any user message; the route stores them as the
+    # user's attachments and drops the parts it converted.
+    inline_files = collect_inline_files(messages)
+    if inline_files:
+        result["inline_files"] = inline_files
 
     return result
 

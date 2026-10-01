@@ -10,7 +10,7 @@ import logging
 import time
 import traceback
 from datetime import datetime
-from typing import Any, Dict, Generator, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 from flask import Blueprint, jsonify, make_response, request, Response
 
@@ -27,6 +27,7 @@ from docsgpt.api.answer.services.stream_processor import (
     flush_trace_after_request,
 )
 from docsgpt.api.v1 import idempotency as v1_idempotency
+from docsgpt.api.v1.attachments import ingest_inline_files
 from docsgpt.api.v1.session_store import (
     V1Session,
     delete_conversation,
@@ -36,6 +37,7 @@ from docsgpt.api.v1.session_store import (
 )
 from docsgpt.api.v1.translator import (
     StreamTranslationState,
+    apply_converted_files,
     make_usage_chunk,
     translate_request,
     translate_response,
@@ -88,6 +90,27 @@ def _invalid_request(message: str, code: Optional[str] = None) -> Response:
         }),
         400,
     )
+
+
+def _convert_inline_files(internal_data: Dict[str, Any], user: str) -> None:
+    """Store the request's inline files as ``user``'s attachments.
+
+    The parts that became attachment rows leave the request the agent sees;
+    the rest stay as sent. Never fails the request.
+
+    Args:
+        internal_data: The translated request; edited in place.
+        user: The owner of the rows.
+    """
+    files = internal_data.pop("inline_files", None)
+    if not files:
+        return
+    try:
+        converted = ingest_inline_files(files, user)
+    except Exception:
+        logger.warning("Could not store the request's inline files", exc_info=True)
+        return
+    apply_converted_files(internal_data, files, converted)
 
 
 def _validate_request_options(data: Dict[str, Any], agent: Dict[str, Any]) -> Optional[Response]:
@@ -260,6 +283,10 @@ def chat_completions():
     if internal_data.get("tool_actions") and internal_data.get("conversation_id"):
         internal_data["persist"] = True
 
+    # Files and images sent inline become the owner's attachment rows, so the
+    # attachment planner, manifest and attachments tool handle them.
+    _convert_inline_files(internal_data, decoded_token["sub"])
+
     try:
         # The token is the owner's, so tell the processor the caller is a key
         # holder: their writes on the owner's accounts need the allowlist.
@@ -395,6 +422,7 @@ def chat_completions():
                         bool((data.get("stream_options") or {}).get("include_usage")),
                         client_session,
                         finalize_stateless_tool_pause,
+                        attachment_ids=internal_data.get("attachments") or None,
                     ),
                 ),
                 mimetype="text/event-stream",
@@ -432,6 +460,7 @@ def chat_completions():
             strip_reasoning_leak,
             client_session,
             finalize_stateless_tool_pause,
+            attachment_ids=internal_data.get("attachments") or None,
         )
 
         # Cache only successful (2xx) responses; ``finalize`` releases the
@@ -490,6 +519,7 @@ def _stream_response(
     include_usage: bool = False,
     client_session: Optional[V1Session] = None,
     finalize_stateless_tool_pause: bool = False,
+    attachment_ids: Optional[List[str]] = None,
 ) -> Generator[str, None, None]:
     """Generate translated SSE chunks for streaming response."""
     completion_id = f"chatcmpl-{int(time.time())}"
@@ -505,6 +535,7 @@ def _stream_response(
         model_user_id=processor.model_user_id,
         should_persist=should_persist,
         visibility=visibility,
+        attachment_ids=attachment_ids,
         _continuation=continuation,
         finalize_tool_pause_as_complete=finalize_stateless_tool_pause,
         request_id=processor.request_id,
@@ -571,6 +602,7 @@ def _non_stream_response(
     strip_reasoning_leak: bool = False,
     client_session: Optional[V1Session] = None,
     finalize_stateless_tool_pause: bool = False,
+    attachment_ids: Optional[List[str]] = None,
 ) -> Response:
     """Collect full response and return as single JSON."""
     stream = helper.complete_stream(
@@ -584,6 +616,7 @@ def _non_stream_response(
         model_user_id=processor.model_user_id,
         should_persist=should_persist,
         visibility=visibility,
+        attachment_ids=attachment_ids,
         _continuation=continuation,
         finalize_tool_pause_as_complete=finalize_stateless_tool_pause,
         request_id=processor.request_id,

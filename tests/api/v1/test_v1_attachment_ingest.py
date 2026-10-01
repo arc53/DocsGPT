@@ -1,0 +1,107 @@
+"""Storing /v1 inline files as the agent owner's attachment rows."""
+
+import hashlib
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from docsgpt.api.v1 import attachments as ingest
+from docsgpt.api.v1.translator import InlineFile
+
+pytestmark = pytest.mark.unit
+
+
+def _file(data: bytes, name: str = "a.pdf", mime: str = "application/pdf") -> InlineFile:
+    return InlineFile(
+        data=data, filename=name, mime_type=mime, content_hash=hashlib.sha256(data).hexdigest(), kind="file"
+    )
+
+
+class _Result:
+    def __init__(self, outcome=None):
+        self.outcome = outcome
+        self.timeouts = []
+
+    def get(self, timeout=None, disable_sync_subtasks=True):
+        self.timeouts.append(timeout)
+        if isinstance(self.outcome, Exception):
+            raise self.outcome
+        return {"ok": True}
+
+
+@pytest.fixture
+def storage():
+    store = MagicMock()
+    store.save_file.return_value = {"storage_type": "local"}
+    with patch.object(ingest, "_storage", return_value=store):
+        yield store
+
+
+@pytest.fixture
+def task():
+    with patch.object(ingest, "_dispatch_parse") as dispatch:
+        dispatch.return_value = _Result()
+        yield dispatch
+
+
+class TestReuse:
+    def test_bytes_the_user_already_sent_reuse_that_row(self, storage, task):
+        pdf = _file(b"%PDF-1.4 same bytes")
+        with patch.object(ingest, "_find_parsed", return_value={"id": "row-1"}) as find:
+            converted = ingest.ingest_inline_files([pdf], "owner")
+
+        assert converted == {pdf.content_hash: "row-1"}
+        find.assert_called_once_with("owner", pdf.content_hash)
+        storage.save_file.assert_not_called()
+        task.assert_not_called()
+
+
+class TestNewFiles:
+    def test_new_bytes_are_stored_and_parsed_by_the_worker(self, storage, task):
+        pdf = _file(b"%PDF-1.4 new bytes", name="PRILOGA_1.pdf")
+        with patch.object(ingest, "_find_parsed", return_value=None):
+            converted = ingest.ingest_inline_files([pdf], "owner")
+
+        file_info, user = task.call_args.args[:2]
+        assert user == "owner"
+        assert converted == {pdf.content_hash: file_info["attachment_id"]}
+        assert file_info["filename"] == "PRILOGA_1.pdf"
+        assert file_info["path"].endswith(f"/attachments/{file_info['attachment_id']}/PRILOGA_1.pdf")
+        saved = storage.save_file.call_args.args[0]
+        assert saved.filename == "PRILOGA_1.pdf"
+
+    def test_files_are_dispatched_together_then_awaited(self, storage, task):
+        files = [_file(f"%PDF-1.4 {i}".encode(), name=f"f{i}.pdf") for i in range(3)]
+        results = [_Result(), _Result(), _Result()]
+        task.side_effect = results
+        with patch.object(ingest, "_find_parsed", return_value=None):
+            converted = ingest.ingest_inline_files(files, "owner")
+
+        assert len(converted) == 3
+        assert all(r.timeouts for r in results)
+
+    def test_a_failed_or_slow_parse_is_left_out(self, storage, task):
+        good, bad = _file(b"%PDF good", name="g.pdf"), _file(b"%PDF bad", name="b.pdf")
+        task.side_effect = [_Result(), _Result(TimeoutError("slow"))]
+        with patch.object(ingest, "_find_parsed", return_value=None):
+            converted = ingest.ingest_inline_files([good, bad], "owner")
+
+        assert list(converted) == [good.content_hash]
+
+    def test_an_oversized_file_is_left_out(self, storage, task, monkeypatch):
+        monkeypatch.setattr(ingest.settings, "UPLOAD_MAX_FILE_BYTES", 10)
+        with patch.object(ingest, "_find_parsed", return_value=None):
+            assert ingest.ingest_inline_files([_file(b"x" * 11)], "owner") == {}
+        task.assert_not_called()
+
+    def test_binary_without_a_parser_is_left_out(self, storage, task):
+        blob = _file(b"\x00\x01\x02binary" * 50, name="clip.mp4", mime="video/mp4")
+        with patch.object(ingest, "_find_parsed", return_value=None):
+            assert ingest.ingest_inline_files([blob], "owner") == {}
+        task.assert_not_called()
+
+    def test_a_lookup_failure_does_not_block_the_upload(self, storage, task):
+        pdf = _file(b"%PDF lookup fails")
+        with patch.object(ingest, "_find_parsed", side_effect=RuntimeError("db down")):
+            converted = ingest.ingest_inline_files([pdf], "owner")
+        assert pdf.content_hash in converted

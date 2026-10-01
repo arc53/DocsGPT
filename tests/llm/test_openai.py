@@ -2397,3 +2397,33 @@ class TestToolCallingFallback:
         assert "supports_tools: false" in message
         assert "local-model" in message
         assert "--enable-auto-tool-choice" in message
+
+
+@pytest.mark.unit
+class TestUploadedFilenamesAreNormalized:
+    """The Files API refused ``.PDF`` ("Expected context stuffing file type")."""
+
+    def test_an_inline_part_named_in_upper_case_uploads_lower_case(self, llm):
+        files = _CountingFiles()
+        llm.client.files = files
+        llm._clean_messages_openai(
+            TestInlineFilePartResolution()._msg(
+                {"filename": "PRILOGA_1.PDF", "file_data": f"data:application/pdf;base64,{_TINY_PDF_B64}"}
+            )
+        )
+        ((uploaded, _),) = files.calls
+        assert uploaded[0] == "PRILOGA_1.pdf"
+
+    def test_a_stored_attachment_uploads_under_its_normalized_name(self, llm, tmp_path):
+        stored = tmp_path / "PRILOGA_2.PDF"
+        stored.write_bytes(_TINY_PDF_BYTES)
+        files = _CountingFiles()
+        llm.client.files = files
+
+        llm._upload_file_to_openai(
+            {"id": None, "filename": "PRILOGA_2.PDF", "path": str(stored), "mime_type": "application/pdf"}
+        )
+
+        ((uploaded, _),) = files.calls
+        assert uploaded[0] == "PRILOGA_2.pdf"
+        assert uploaded[1].name == str(stored)
