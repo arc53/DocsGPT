@@ -26,6 +26,7 @@ import uploadReducer, {
   type Attachment,
 } from '../upload/uploadSlice';
 import MessageInput from './MessageInput';
+import { ATTACHMENT_MAX_BYTES } from './message-input/attachmentUpload';
 import { UPLOAD_STALL_TIMEOUT_MS } from './message-input/uploadStallGuard';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -369,6 +370,66 @@ describe('MessageInput send with a failed attachment', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(FakeXHR.instances).toHaveLength(4);
+  });
+
+  const oversized = (name: string) => {
+    const file = new File(['%PDF-1.4'], name, { type: 'application/pdf' });
+    Object.defineProperty(file, 'size', { value: ATTACHMENT_MAX_BYTES + 1 });
+    return file;
+  };
+
+  const expectRefusedAsTooLarge = (name: string) => {
+    const row = store
+      .getState()
+      .upload.attachments.find((a) => a.fileName === name)!;
+    expect(row.status).toBe('failed');
+    expect(row.errorMessage).toBe('conversation.attachments.tooLarge');
+  };
+
+  it('refuses a picked file over the size limit with a failed chip', async () => {
+    await render();
+    const input = container.querySelector<HTMLInputElement>(
+      'label input[type="file"]',
+    )!;
+    Object.defineProperty(input, 'files', {
+      value: [
+        oversized('huge.pdf'),
+        new File(['%PDF-1.4'], 'ok.pdf', { type: 'application/pdf' }),
+      ],
+      configurable: true,
+    });
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(FakeXHR.instances).toHaveLength(1));
+    });
+
+    expectRefusedAsTooLarge('huge.pdf');
+    expect(sentFileName(FakeXHR.instances[0])).toEqual(['ok.pdf']);
+  });
+
+  it('refuses a dropped file over the size limit instead of ignoring it', async () => {
+    await render();
+    const file = oversized('dropped.pdf');
+    const dataTransfer = {
+      files: [file],
+      items: [{ kind: 'file', type: file.type, getAsFile: () => file }],
+      types: ['Files'],
+    };
+    const drop = new Event('drop', { bubbles: true });
+    Object.defineProperty(drop, 'dataTransfer', { value: dataTransfer });
+    await act(async () => {
+      container.querySelector('#message-input')!.dispatchEvent(drop);
+    });
+    await act(async () => {
+      await vi.waitFor(() =>
+        expect(store.getState().upload.attachments).toHaveLength(1),
+      );
+    });
+
+    expectRefusedAsTooLarge('dropped.pdf');
+    expect(FakeXHR.instances).toHaveLength(0);
   });
 
   it('keeps a queued question while another answer is streaming', async () => {

@@ -8,6 +8,13 @@ import { guardUploadStall } from './uploadStallGuard';
  */
 export const ATTACHMENT_UPLOAD_CONCURRENCY = 4;
 
+/**
+ * Largest file the composer will upload. Mirrors the server's default
+ * ``UPLOAD_MAX_FILE_BYTES``; the server stays the authority and reports its
+ * own limit per file when a deployment sets a lower one.
+ */
+export const ATTACHMENT_MAX_BYTES = 100 * 1024 * 1024;
+
 /** What the server returns for a file it stored and queued for parsing. */
 export interface StoredAttachment {
   /** Celery task id. */

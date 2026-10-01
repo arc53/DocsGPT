@@ -2027,6 +2027,7 @@
       "attach": "Anhängen",
       "remove": "Anhang entfernen",
       "uploadFailed": "Upload fehlgeschlagen. Die Datei konnte nicht gelesen werden oder die Verbindung wurde unterbrochen.",
+      "tooLarge": "Zu groß zum Anhängen (Limit {{size}} MB)",
       "attached": "Anhang",
       "failed": "Fehlgeschlagen",
       "attachment": "Anhang"

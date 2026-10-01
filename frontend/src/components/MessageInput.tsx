@@ -63,6 +63,7 @@ import {
 } from './message-input';
 import { useArmedSend } from './message-input/armedSend';
 import {
+  ATTACHMENT_MAX_BYTES,
   ATTACHMENT_UPLOAD_CONCURRENCY,
   createTaskQueue,
   uploadAttachmentFile,
@@ -557,12 +558,32 @@ export default function MessageInput({
     async (incomingFiles: File[]) => {
       if (!incomingFiles || incomingFiles.length === 0) return;
 
+      // The size limit applies the same way to picked, dropped and pasted
+      // files, and a refused file shows as a failed chip that says why.
+      const withinLimit = incomingFiles.filter((file) => {
+        if (file.size <= ATTACHMENT_MAX_BYTES) return true;
+        dispatch(
+          addAttachment({
+            id: generateId(),
+            fileName: file.name,
+            progress: 0,
+            status: 'failed' as const,
+            taskId: '',
+            errorMessage: t('conversation.attachments.tooLarge', {
+              size: Math.round(ATTACHMENT_MAX_BYTES / (1024 * 1024)),
+            }),
+          }),
+        );
+        return false;
+      });
+      if (withinLimit.length === 0) return;
+
       // Run the server's own rule here, not just the input's `accept`:
       // mobile pickers ignore `accept`, and a file the server will refuse
       // should say so before it costs an upload. Surface the refusal as a
       // failed chip so the user sees why instead of a silent drop.
       const { supported, unsupported } =
-        await partitionAttachmentFiles(incomingFiles);
+        await partitionAttachmentFiles(withinLimit);
       unsupported.forEach((file) => {
         dispatch(
           addAttachment({
@@ -677,11 +698,11 @@ export default function MessageInput({
     onDragLeave: () => {
       setHandleDragActive(false);
     },
-    maxSize: 25000000,
-    // No `accept`: react-dropzone would drop a rejected file on the floor
-    // with no feedback, and its mime matching disagrees with the server for
-    // text files that have no parser (.py, .log). uploadFiles applies the
-    // server's rule and reports what it refuses.
+    // No `accept` and no `maxSize`: react-dropzone would drop a rejected
+    // file on the floor with no feedback, and its mime matching disagrees
+    // with the server for text files that have no parser (.py, .log).
+    // uploadFiles applies the type and size rules to every path (picker,
+    // drop, paste) and reports what it refuses.
   });
 
   const handleInput = useCallback(() => {
