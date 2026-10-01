@@ -71,7 +71,9 @@ def _patched(conn, storage, task_id="task-1"):
         yield apply_async
 
 
-def _attachment(conn, user, filename, *, content=b"hello", metadata=None, legacy=None, size=-1):
+def _attachment(
+    conn, user, filename, *, content=b"hello", metadata=None, legacy=None, size=-1, content_hash=None
+):
     path = f"inputs/{user}/attachments/{uuid.uuid4()}/{filename}"
     row = AttachmentsRepository(conn).create(
         user,
@@ -82,6 +84,7 @@ def _attachment(conn, user, filename, *, content=b"hello", metadata=None, legacy
         token_count=10,
         metadata=metadata or {},
         legacy_mongo_id=legacy,
+        content_hash=content_hash,
     )
     return row, path, content
 
@@ -157,6 +160,20 @@ class TestSourceFromAttachments:
             "report.pdf": "report.pdf",
             "data.csv": "data.csv",
         }
+
+    def test_byte_identical_files_are_copied_once(self, app, pg_conn):
+        user = "alice"
+        a, a_path, a_bytes = _attachment(pg_conn, user, "invoice.pdf", content=b"%PDF same", content_hash="h1")
+        b, b_path, b_bytes = _attachment(pg_conn, user, "invoice (1).pdf", content=b"%PDF same", content_hash="h1")
+        c, c_path, c_bytes = _attachment(pg_conn, user, "other.pdf", content=b"%PDF other", content_hash="h2")
+        storage = FakeStorage({a_path: a_bytes, b_path: b_bytes, c_path: c_bytes})
+
+        with _patched(pg_conn, storage) as apply_async:
+            response = _post(app, {"attachment_ids": [str(a["id"]), str(b["id"]), str(c["id"])]}, user)
+
+        assert response.status_code == 200, response.json
+        copies = apply_async.call_args.kwargs["kwargs"]["copy_files"]
+        assert [c["from"] for c in copies] == [a_path, c_path]
 
     def test_uses_the_name_given(self, app, pg_conn):
         a, a_path, a_bytes = _attachment(pg_conn, "alice", "report.pdf")
@@ -301,6 +318,7 @@ class TestIdempotencyKey:
         assert storage.files == copied
         assert second.json["source_id"] == first.json["source_id"]
         assert second.json["task_id"] == first.json["task_id"]
+        assert second.json["name"] == first.json["name"] == "report.pdf"
         # The same id scheme as /api/upload: the worker lands on that source.
         assert first.json["source_id"] == str(derive_source_id("alice:k-1"))
         call = apply_async.call_args.kwargs

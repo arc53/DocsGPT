@@ -122,6 +122,51 @@ def _stored_bytes(storage: BaseStorage, rows: list[dict]) -> Optional[int]:
     return total
 
 
+def _content_hash(row: dict) -> Optional[str]:
+    """The sha256 of a row's original bytes, when it was recorded."""
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    value = row.get("content_hash") or metadata.get("content_hash")
+    return str(value) if value else None
+
+
+def _distinct_files(rows: list[dict]) -> list[dict]:
+    """The rows with byte-identical originals kept once, first one wins.
+
+    The same file attached twice (or re-sent by an API client) would
+    otherwise be ingested twice and answer every search twice.
+
+    Args:
+        rows: Attachment rows, in composer order.
+
+    Returns:
+        The rows, without later rows whose ``content_hash`` was seen.
+    """
+    seen: set[str] = set()
+    kept = []
+    for row in rows:
+        digest = _content_hash(row)
+        if digest is not None:
+            if digest in seen:
+                continue
+            seen.add(digest)
+        kept.append(row)
+    return kept
+
+
+def _source_name(source_id: Optional[str], user: str) -> Optional[str]:
+    """The stored name of a source, if its row exists yet."""
+    if not source_id:
+        return None
+    try:
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        with db_readonly() as conn:
+            row = SourcesRepository(conn).get_any(str(source_id), user)
+    except Exception:
+        return None
+    return (row or {}).get("name") or None
+
+
 def _error(status: int, message: str):
     return make_response(jsonify({"success": False, "message": message}), status)
 
@@ -198,7 +243,9 @@ class SourceFromAttachments(Resource):
             return _error(404, "Attachment not found")
 
         chips = [row for row in rows if str(row["id"]) in set(wanted)]
-        files = [row for row in rows if not is_archive_row(row) and row.get("upload_path")]
+        files = _distinct_files(
+            [row for row in rows if not is_archive_row(row) and row.get("upload_path")]
+        )
         if not files:
             return _error(400, "These attachments have no stored files to add")
 
@@ -215,12 +262,14 @@ class SourceFromAttachments(Resource):
         # request leaves the key free. A repeat gets the first one's ids.
         scoped_key = _scoped_idempotency_key(idempotency_key, user)
         predetermined_task_id = None
+        job_name = name or default_source_name([row["filename"] for row in chips])
         if scoped_key:
             predetermined_task_id, cached = _claim_task_or_get_cached(scoped_key, "ingest")
             if cached is not None:
+                # The same shape as the first response, name included.
+                cached["name"] = _source_name(cached.get("source_id"), user) or job_name
                 return make_response(jsonify(cached), 200)
 
-        job_name = name or default_source_name([row["filename"] for row in chips])
         # With a key, the source id is derived from it as /api/upload does, so
         # a repeat (and a retried worker task) lands on the same source.
         source_uuid = derive_source_id(scoped_key) if scoped_key else uuid.uuid4()
