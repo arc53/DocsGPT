@@ -40,10 +40,10 @@ export default function KnowledgeHint({
         loading={pending}
         onClick={onAdd}
         /* eslint-disable-next-line shadcn/no-restyle --
-           The Add to Knowledge action sits inline in the composer's 12px hint line; link inline keeps the base text-sm, so it takes the line's size. */
+           The Add as Knowledge action sits inline in the composer's 12px hint line; link inline keeps the base text-sm, so it takes the line's size. */
         className="text-xs"
       >
-        {t('conversation.attachments.addToKnowledge')}
+        {t('conversation.attachments.addAsKnowledge')}
       </Button>
       {error && (
         <span className="text-destructive" role="alert">

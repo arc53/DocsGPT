@@ -21,6 +21,7 @@ import {
   MessageScrollerViewport,
 } from '../components/ui/message-scroller';
 import Hero from '../Hero';
+import AddAsKnowledgeAction from './AddAsKnowledgeAction';
 import { deriveArtifactChips } from './artifactChips';
 import ConversationBubble from './ConversationBubble';
 import { FEEDBACK, Query, Status } from './conversationModels';
@@ -52,7 +53,15 @@ type ConversationMessagesProps = {
   isSplitView?: boolean;
   /** Active agent id; threaded into SchedulerToolCallCard. */
   agentId?: string;
+  /**
+   * Whether a turn whose files did not fit may offer Add as Knowledge. Only
+   * the main chat, where the user picks the Knowledge the chat searches.
+   */
+  canAddToKnowledge?: boolean;
 };
+
+// The backend's code for a turn that did not fit the model's window.
+const CONTEXT_LENGTH_EXCEEDED = 'context_length_exceeded';
 
 const MS_VIEWPORT_SELECTOR = '[data-slot="message-scroller-viewport"]';
 const STICK_THRESHOLD_PX = 48;
@@ -74,6 +83,7 @@ export default function ConversationMessages({
   onToolAction,
   isSplitView = false,
   agentId,
+  canAddToKnowledge = false,
 }: ConversationMessagesProps) {
   const { t } = useTranslation();
 
@@ -177,6 +187,14 @@ export default function ConversationMessages({
           <RotateCcw aria-hidden="true" />
         </IconButton>
       );
+      // Files that overflowed the window are better searched than sent:
+      // offer to make them Knowledge, then the question can be asked again.
+      const knowledgeFiles =
+        canAddToKnowledge &&
+        query.errorCode === CONTEXT_LENGTH_EXCEEDED &&
+        query.attachments?.length
+          ? query.attachments
+          : null;
       return (
         <ConversationBubble
           className={bubbleMargin}
@@ -184,6 +202,12 @@ export default function ConversationMessages({
           message={query.error}
           type="ERROR"
           retryBtn={retryButton}
+          errorCode={query.errorCode}
+          errorAction={
+            knowledgeFiles ? (
+              <AddAsKnowledgeAction files={knowledgeFiles} />
+            ) : undefined
+          }
         />
       );
     }

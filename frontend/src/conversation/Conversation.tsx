@@ -396,6 +396,9 @@ export default function Conversation() {
               onToolAction={handleToolAction}
               isSplitView={isSplitArtifactOpen}
               agentId={selectedAgent?.id}
+              // Same rule as the composer's Knowledge picker: an agent's
+              // sources are its own.
+              canAddToKnowledge={!selectedAgent}
               headerContent={
                 selectedAgent ? (
                   <div className="flex w-full items-center justify-center py-4">

@@ -78,6 +78,9 @@ export interface Query {
   // the run's produced artifacts via WorkflowRunArtifacts.
   workflow_run_id?: string;
   error?: string;
+  // Why the turn failed, when the backend says (``context_length_exceeded``);
+  // its presence also marks ``error`` as curated text rather than a raw error.
+  errorCode?: string;
   // Non-fatal notice (e.g. some workflow input documents were dropped). Shown
   // alongside the answer; unlike ``error`` it does not fail the turn or end the stream.
   notice?: string;

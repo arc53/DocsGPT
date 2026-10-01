@@ -49,6 +49,28 @@ function toClientFeedback(value: unknown): FEEDBACK | undefined {
   return upper === 'LIKE' || upper === 'DISLIKE' ? upper : undefined;
 }
 
+const FAILED_FALLBACK = 'Generation failed before completing.';
+
+/**
+ * A failed turn's stored error as ``{message, code}``. The backend stores
+ * curated text in ``error`` and its reason in ``error_code``
+ * (``context_length_exceeded``); an ``error`` object with ``message`` and
+ * ``code`` is read too. Older rows carry only the text.
+ */
+export function readStoredError(
+  error: unknown,
+  code: unknown,
+): { message: string; code?: string } {
+  if (error && typeof error === 'object') {
+    const obj = error as { message?: unknown; code?: unknown };
+    return readStoredError(obj.message, obj.code ?? code);
+  }
+  return {
+    message: (typeof error === 'string' && error) || FAILED_FALLBACK,
+    code: typeof code === 'string' && code ? code : undefined,
+  };
+}
+
 export function mapServerQueryToClient(raw: any): Query {
   const status = raw?.status as MessageStatus | undefined;
   const isTerminalComplete = status === 'complete';
@@ -78,9 +100,9 @@ export function mapServerQueryToClient(raw: any): Query {
     query.response = raw?.response ?? '';
   }
   if (isFailed) {
-    query.error =
-      (typeof metadata.error === 'string' && metadata.error) ||
-      'Generation failed before completing.';
+    const stored = readStoredError(metadata.error, metadata.error_code);
+    query.error = stored.message;
+    if (stored.code) query.errorCode = stored.code;
   }
   return query;
 }
@@ -340,6 +362,7 @@ export const fetchAnswer = createAsyncThunk<
                   conversationId: currentConversationId,
                   index: targetIndex,
                   message: data.error,
+                  code: typeof data.code === 'string' ? data.code : undefined,
                 }),
               );
             } else {
@@ -510,6 +533,7 @@ export const fetchAnswer = createAsyncThunk<
                   conversationId: currentConversationId,
                   index: targetIndex,
                   message: data.error,
+                  code: typeof data.code === 'string' ? data.code : undefined,
                 }),
               );
             } else if (data.type === 'structured_answer') {
@@ -790,6 +814,7 @@ export const submitToolActions = createAsyncThunk<
             conversationId,
             index: targetIndex,
             message: data.error,
+            code: typeof data.code === 'string' ? data.code : undefined,
           }),
         );
       } else if (data.type === 'answer') {
@@ -835,6 +860,7 @@ export const conversationSlice = createSlice({
       delete state.queries[index].tool_calls;
       delete state.queries[index].segments;
       delete state.queries[index].error;
+      delete state.queries[index].errorCode;
       delete state.queries[index].structured;
       delete state.queries[index].schema;
       delete state.queries[index].feedback;
@@ -1070,9 +1096,10 @@ export const conversationSlice = createSlice({
       query.lastHeartbeatAt = tail?.last_heartbeat_at ?? query.lastHeartbeatAt;
       if (status === 'failed') {
         // Surface as error so the placeholder text never renders.
-        query.error =
-          (typeof tail?.error === 'string' && tail.error) ||
-          'Generation failed before completing.';
+        const stored = readStoredError(tail?.error, tail?.error_code);
+        query.error = stored.message;
+        if (stored.code) query.errorCode = stored.code;
+        else delete query.errorCode;
         delete query.response;
         return;
       }
@@ -1095,6 +1122,7 @@ export const conversationSlice = createSlice({
       }
       if (status === 'complete') {
         delete query.error;
+        delete query.errorCode;
       }
     },
     raiseError(
@@ -1103,12 +1131,16 @@ export const conversationSlice = createSlice({
         conversationId: string | null;
         index: number;
         message: string;
+        /** Why the turn failed (``context_length_exceeded``), when known. */
+        code?: string;
       }>,
     ) {
-      const { conversationId, index, message } = action.payload;
+      const { conversationId, index, message, code } = action.payload;
       if (state.conversationId !== conversationId) return;
 
       state.queries[index].error = message;
+      if (code) state.queries[index].errorCode = code;
+      else delete state.queries[index].errorCode;
     },
 
     // Non-fatal counterpart to ``raiseError``: records a notice on the query

@@ -9,14 +9,27 @@ vi.mock('./ConversationBubble', () => ({
   default: ({
     message,
     retryBtn,
+    errorCode,
+    errorAction,
   }: {
     message?: string;
     retryBtn?: React.ReactNode;
+    errorCode?: string;
+    errorAction?: React.ReactNode;
   }) => (
-    <div>
+    <div data-error-code={errorCode}>
       {message}
       {retryBtn}
+      {errorAction}
     </div>
+  ),
+}));
+
+vi.mock('./AddAsKnowledgeAction', () => ({
+  default: ({ files }: { files: { id: string }[] }) => (
+    <span data-testid="add-as-knowledge">
+      {files.map((f) => f.id).join(',')}
+    </span>
   ),
 }));
 
@@ -44,7 +57,7 @@ describe('ConversationMessages', () => {
     container.remove();
   });
 
-  const render = (queries: Query[]) =>
+  const render = (queries: Query[], canAddToKnowledge = false) =>
     act(() => {
       root.render(
         <ConversationMessages
@@ -52,9 +65,48 @@ describe('ConversationMessages', () => {
           handleQuestionSubmission={() => undefined}
           queries={queries}
           status="idle"
+          canAddToKnowledge={canAddToKnowledge}
         />,
       );
     });
+
+  const overflow: Query = {
+    prompt: 'summarise these',
+    error: 'This message and its attached files are too large.',
+    errorCode: 'context_length_exceeded',
+    attachments: [
+      { id: 'a1', fileName: 'one.pdf' },
+      { id: 'a2', fileName: 'two.pdf' },
+    ],
+  };
+
+  const action = () =>
+    container.querySelector('[data-testid="add-as-knowledge"]');
+
+  it('offers Add as Knowledge under an overflow error of a turn with files', () => {
+    render([overflow], true);
+    expect(container.textContent).toContain(overflow.error);
+    expect(
+      container.querySelector('[data-error-code="context_length_exceeded"]'),
+    ).not.toBeNull();
+    expect(action()?.textContent).toBe('a1,a2');
+  });
+
+  it('does not offer it for a turn without files or another error', () => {
+    render(
+      [
+        { ...overflow, attachments: undefined },
+        { ...overflow, errorCode: 'server_error' },
+      ],
+      true,
+    );
+    expect(action()).toBeNull();
+  });
+
+  it('does not offer it where the chat cannot change Knowledge', () => {
+    render([overflow], false);
+    expect(action()).toBeNull();
+  });
 
   it('shows a non-fatal notice as a polite warning alert with an icon', () => {
     render([

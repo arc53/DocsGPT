@@ -499,6 +499,9 @@ class GetMessageTail(Resource):
                     "request_id": msg.get("request_id"),
                     "last_heartbeat_at": metadata.get("last_heartbeat_at"),
                     "error": metadata.get("error"),
+                    # Curated failures carry a code (context_length_exceeded)
+                    # the chat acts on; older rows have none.
+                    "error_code": metadata.get("error_code"),
                 }
             ),
             200,

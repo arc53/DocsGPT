@@ -2044,7 +2044,8 @@
       "attachment": "Attachment",
       "knowledgeHint": "These files are larger than the model can read at once. It will read the rest as needed.",
       "knowledgeHintNoTools": "These files are larger than the model can read at once. Some will be left out.",
-      "addToKnowledge": "Add to Knowledge",
+      "addAsKnowledge": "Add as Knowledge",
+      "knowledgeAdded": "Adding these files to Knowledge. Ask again when they're ready.",
       "knowledgeFailed": "Couldn't add these files to Knowledge. Try again.",
       "knowledgeName_one": "{{name}} and {{count}} more",
       "knowledgeName_other": "{{name}} and {{count}} more"

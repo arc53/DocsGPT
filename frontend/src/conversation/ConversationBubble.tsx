@@ -83,6 +83,13 @@ const ConversationBubble = forwardRef<
     workflowRunId?: string;
     research?: ResearchState;
     retryBtn?: React.ReactElement;
+    /**
+     * Why an ERROR turn failed, when the backend says. Its presence marks
+     * ``message`` as curated text for the user rather than a raw exception.
+     */
+    errorCode?: string;
+    /** An action offered under a failed turn's error (Add as Knowledge). */
+    errorAction?: React.ReactNode;
     questionNumber?: number;
     isStreaming?: boolean;
     handleUpdatedQuestionSubmission?: (
@@ -120,6 +127,8 @@ const ConversationBubble = forwardRef<
     workflowRunId,
     research,
     retryBtn,
+    errorCode,
+    errorAction,
     questionNumber,
     isStreaming,
     handleUpdatedQuestionSubmission,
@@ -462,16 +471,24 @@ const ConversationBubble = forwardRef<
         )}
         {type === 'ERROR' ? (
           message && (
-            // On the answer's ml-6 text column. The backend's error is often a
-            // raw provider exception, so it is the detail under a readable title.
+            // On the answer's ml-6 text column. Without a code the backend's
+            // error is often a raw provider exception, so it is mono detail
+            // under a readable title; a curated error (it has a code) is
+            // written for the user and reads as prose.
             <div className="animate-in fade-in slide-in-from-bottom-1.5 mr-5 ml-6 self-stretch duration-260 ease-out motion-reduce:animate-none">
               <Alert variant="destructive">
                 <CircleAlert />
                 <AlertTitle>{t('conversation.failedTitle')}</AlertTitle>
                 <AlertDescription>
-                  <p className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
+                  <p
+                    className={cn(
+                      'wrap-break-word whitespace-pre-wrap',
+                      !errorCode && 'font-mono text-xs',
+                    )}
+                  >
                     {message}
                   </p>
+                  {errorAction}
                 </AlertDescription>
               </Alert>
             </div>

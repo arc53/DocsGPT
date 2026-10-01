@@ -16,6 +16,7 @@ import reducer, {
   applyMessageTail,
   fetchAnswer,
   mapServerQueryToClient,
+  raiseError,
   raiseNotice,
   resendQuery,
   setConversation,
@@ -376,5 +377,93 @@ describe('mapServerQueryToClient feedback', () => {
       });
       expect(query.feedback).toBeUndefined();
     }
+  });
+});
+
+describe('curated errors', () => {
+  it('keeps the code a failed row stored with its message', () => {
+    const query = mapServerQueryToClient({
+      prompt: 'q',
+      status: 'failed',
+      attachments: [{ id: 'a1', fileName: 'big.pdf' }],
+      metadata: {
+        error: 'This message and its attached files are too large.',
+        error_code: 'context_length_exceeded',
+      },
+    });
+    expect(query.error).toBe(
+      'This message and its attached files are too large.',
+    );
+    expect(query.errorCode).toBe('context_length_exceeded');
+  });
+
+  it('reads an error stored as {message, code}', () => {
+    const query = mapServerQueryToClient({
+      prompt: 'q',
+      status: 'failed',
+      metadata: {
+        error: { message: 'Too large.', code: 'context_length_exceeded' },
+      },
+    });
+    expect(query.error).toBe('Too large.');
+    expect(query.errorCode).toBe('context_length_exceeded');
+  });
+
+  it('leaves an older failed row without a code', () => {
+    const query = mapServerQueryToClient({
+      prompt: 'q',
+      status: 'failed',
+      metadata: { error: 'worker died' },
+    });
+    expect(query.error).toBe('worker died');
+    expect(query.errorCode).toBeUndefined();
+  });
+
+  it('keeps the code from a failed tail', () => {
+    const next = reducer(
+      seedSlice(),
+      applyMessageTail({
+        index: 0,
+        tail: {
+          message_id: 'm-1',
+          status: 'failed',
+          error: 'Too large.',
+          error_code: 'context_length_exceeded',
+        },
+      }),
+    );
+    expect(next.queries[0].error).toBe('Too large.');
+    expect(next.queries[0].errorCode).toBe('context_length_exceeded');
+  });
+
+  it('records the code a live error event carries', () => {
+    const next = reducer(
+      seedSlice(),
+      raiseError({
+        conversationId: null,
+        index: 0,
+        message: 'Too large.',
+        code: 'context_length_exceeded',
+      }),
+    );
+    expect(next.queries[0].error).toBe('Too large.');
+    expect(next.queries[0].errorCode).toBe('context_length_exceeded');
+  });
+
+  it('drops a stale code when a later error has none', () => {
+    let state = reducer(
+      seedSlice(),
+      raiseError({
+        conversationId: null,
+        index: 0,
+        message: 'Too large.',
+        code: 'context_length_exceeded',
+      }),
+    );
+    state = reducer(
+      state,
+      raiseError({ conversationId: null, index: 0, message: 'Oops' }),
+    );
+    expect(state.queries[0].errorCode).toBeUndefined();
   });
 });
