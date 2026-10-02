@@ -2,6 +2,7 @@ import { envVar } from '@/env';
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 import {
+  appendAnswerText,
   appendThoughtText,
   recordToolCall,
 } from '../conversation/answerSegments';
@@ -235,6 +236,8 @@ export const agentPreviewSlice = createSlice({
       if (query.response != undefined) {
         state.queries[index].response =
           (state.queries[index].response || '') + query.response;
+        if (!state.queries[index].segments) state.queries[index].segments = [];
+        appendAnswerText(state.queries[index].segments, query.response);
       }
 
       if (query.structured !== undefined) {

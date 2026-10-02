@@ -1102,6 +1102,16 @@ class TestToolExecutorExecute:
         assert result_status({"error": None, "status": "ok"}) == "completed"
         assert result_status("plain text result") == "completed"
 
+    def test_result_status_reads_http_status_codes(self):
+        from docsgpt.agents.tool_executor import result_status
+
+        assert result_status({"status_code": 401, "message": "Failed to retrieve price."}) == "error"
+        assert result_status({"status_code": 500, "results": []}) == "error"
+        assert result_status({"status_code": 200, "results": []}) == "completed"
+        assert result_status({"status_code": 302, "message": "moved"}) == "completed"
+        assert result_status({"status_code": None, "message": "no response"}) == "completed"
+        assert result_status({"status_code": "401"}) == "completed"
+
     def test_tool_caching(self, mock_tool_manager, monkeypatch):
         executor = ToolExecutor(user="test_user")
 

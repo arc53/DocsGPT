@@ -555,3 +555,49 @@ class TestGenContinuationApproval:
             and e.get("data", {}).get("status") == "denied"
         ]
         assert len(denied) == 1
+
+    def test_resolved_calls_join_the_turns_tool_calls(self):
+        """Denied and client-executed calls are saved with the turn, not only streamed."""
+        agent, mock_executor, mock_handler = self._make_agent()
+        mock_executor.get_truncated_tool_calls = Mock(
+            side_effect=lambda: list(mock_executor.tool_calls)
+        )
+
+        messages = [{"role": "system", "content": "test"}]
+        pending = [
+            {
+                "call_id": "c1",
+                "name": "act_0",
+                "tool_name": "tool",
+                "tool_id": "0",
+                "action_name": "act",
+                "arguments": {},
+                "pause_type": "awaiting_approval",
+                "thought_signature": None,
+            },
+            {
+                "call_id": "c2",
+                "name": "lookup_0",
+                "tool_name": "client",
+                "tool_id": "0",
+                "action_name": "lookup",
+                "arguments": {},
+                "pause_type": "requires_client_execution",
+                "thought_signature": None,
+            },
+        ]
+        tool_actions = [
+            {"call_id": "c1", "decision": "denied", "comment": "not now"},
+            {"call_id": "c2", "result": {"ok": True}},
+        ]
+
+        events = list(agent.gen_continuation(
+            messages, {"0": {"name": "tool"}}, pending, tool_actions
+        ))
+
+        recorded = {call["call_id"]: call["status"] for call in mock_executor.tool_calls}
+        assert recorded == {"c1": "denied", "c2": "completed"}
+        # A later turn replays the stored result, so the denial and its reason go with it.
+        assert mock_executor.tool_calls[0]["result"] == "Tool execution denied by user. Reason: not now"
+        final = next(e["tool_calls"] for e in events if isinstance(e, dict) and "tool_calls" in e)
+        assert [call["call_id"] for call in final] == ["c1", "c2"]

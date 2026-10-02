@@ -312,6 +312,9 @@ class GetSingleConversation(Resource):
                         # Surfaced from metadata so the chat can render a
                         # workflow run's produced artifacts on reload.
                         "workflow_run_id": metadata.get("workflow_run_id"),
+                        # The order the answer's parts streamed in, so a
+                        # reload lays out text, reasoning and tool calls as live.
+                        "segments": metadata.get("segments"),
                     }
                     if metadata:
                         query["metadata"] = metadata

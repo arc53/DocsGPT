@@ -2109,7 +2109,30 @@
       "attachmentsReadRows": "Reading {{ref}} (rows {{rows}})…",
       "attachmentsReadGeneric": "Reading a file…",
       "attachmentsImage": "Viewing image {{ref}}…",
-      "attachmentsList": "Listing files…"
+      "attachmentsList": "Listing files…",
+      "wikiList": "Listing wiki pages…",
+      "wikiRead": "Reading wiki page {{path}}…",
+      "todoAdd": "Adding todo “{{title}}”…",
+      "todoList": "Listing todos…",
+      "todoGet": "Reading todo #{{id}}…",
+      "todoUpdate": "Updating todo #{{id}}…",
+      "todoComplete": "Completing todo #{{id}}…",
+      "todoDelete": "Deleting todo #{{id}}…",
+      "noteRead": "Reading the note…",
+      "noteUpdate": "Updating the note…",
+      "noteDelete": "Deleting the note…",
+      "memoryList": "Listing memory…",
+      "memoryRead": "Reading {{path}} from memory…",
+      "memorySave": "Saving {{path}} to memory…",
+      "memoryDelete": "Deleting {{path}} from memory…",
+      "memoryRename": "Renaming {{path}} in memory…",
+      "cryptoPrice": "Checking the {{symbol}} price in {{currency}}…",
+      "sentNotification": "Sending a notification…",
+      "telegramMessage": "Sending a Telegram message…",
+      "telegramImage": "Sending an image to Telegram…",
+      "sqlQuery": "Running an SQL query…",
+      "dbSchema": "Reading the database schema…",
+      "usedToolAction": "Using {{tool}}: {{action}}…"
     },
     "toolChip": {
       "searchingWeb": "Searched the web · “{{query}}”",
@@ -2132,7 +2155,30 @@
       "attachmentsReadRows": "Read {{ref}} (rows {{rows}})",
       "attachmentsReadGeneric": "Read a file",
       "attachmentsImage": "Viewed image {{ref}}",
-      "attachmentsList": "Listed files"
+      "attachmentsList": "Listed files",
+      "wikiList": "Listed wiki pages",
+      "wikiRead": "Read wiki page {{path}}",
+      "todoAdd": "Added todo “{{title}}”",
+      "todoList": "Listed todos",
+      "todoGet": "Read todo #{{id}}",
+      "todoUpdate": "Updated todo #{{id}}",
+      "todoComplete": "Completed todo #{{id}}",
+      "todoDelete": "Deleted todo #{{id}}",
+      "noteRead": "Read the note",
+      "noteUpdate": "Updated the note",
+      "noteDelete": "Deleted the note",
+      "memoryList": "Listed memory",
+      "memoryRead": "Read {{path}} from memory",
+      "memorySave": "Saved {{path}} to memory",
+      "memoryDelete": "Deleted {{path}} from memory",
+      "memoryRename": "Renamed {{path}} in memory",
+      "cryptoPrice": "Checked the {{symbol}} price in {{currency}}",
+      "sentNotification": "Sent a notification",
+      "telegramMessage": "Sent a Telegram message",
+      "telegramImage": "Sent an image to Telegram",
+      "sqlQuery": "Ran an SQL query",
+      "dbSchema": "Read the database schema",
+      "usedToolAction": "Used {{tool}}: {{action}}"
     },
     "inlineSteps": {
       "arguments": "Arguments",
@@ -2212,7 +2258,11 @@
       "researched_one": "Researched {{count}} topic",
       "researched_other": "Researched {{count}} topics"
     },
-    "openFile": "Open file"
+    "openFile": "Open file",
+    "stepGroup": {
+      "title": "Tools",
+      "failed": "{{count}} failed"
+    }
   },
   "agents": {
     "title": "Agents",
@@ -3101,7 +3151,7 @@
       "personalSubtitle": "Personal workspace",
       "roleAdmin": "Admin",
       "roleMember": "Member",
-      "manageTeam": "Manage team",
+      "manageTeams": "Manage teams",
       "createTeam": "Create team",
       "logoAlt": "DocsGPT logo"
     }

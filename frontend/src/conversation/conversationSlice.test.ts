@@ -25,6 +25,7 @@ import reducer, {
   raiseError,
   raiseNotice,
   resendQuery,
+  retractResponse,
   setConversation,
 } from './conversationSlice';
 
@@ -172,6 +173,43 @@ describe('applyMessageTail — streaming partial', () => {
     expect(next.queries[0].messageStatus).toBe('failed');
     expect(next.queries[0].error).toBe('worker died');
     expect(next.queries[0].response).toBeUndefined();
+  });
+});
+
+describe('retractResponse — guardrail trip', () => {
+  it('drops the blocked text and its recorded order but keeps the tool calls', () => {
+    const toolCall = {
+      tool_name: 'search',
+      call_id: 'c1',
+      action_name: 'search',
+      arguments: {},
+      status: 'completed' as const,
+    };
+    const state = reducer(
+      undefined,
+      setConversation([
+        {
+          ...baseQuery,
+          response: 'blocked text',
+          thought: 'blocked plan',
+          tool_calls: [toolCall],
+          segments: [
+            { kind: 'thought', text: 'blocked plan' },
+            { kind: 'tool', call_id: 'c1' },
+            { kind: 'text', text: 'blocked text' },
+          ],
+        },
+      ]),
+    );
+    const next = reducer(
+      state,
+      retractResponse({ conversationId: null, index: 0 }),
+    );
+    expect(next.queries[0].response).toBe('');
+    expect(next.queries[0].thought).toBe('');
+    expect(next.queries[0].segments).toBeUndefined();
+    // The backend keeps the calls on the saved turn, so the live view does too.
+    expect(next.queries[0].tool_calls).toEqual([toolCall]);
   });
 });
 

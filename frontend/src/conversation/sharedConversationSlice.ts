@@ -2,6 +2,7 @@ import { envVar } from '@/env';
 import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
 import store from '../store';
+import { hydrateSegments } from './answerSegments';
 import { Query, Status, Answer } from '../conversation/conversationModels';
 import {
   type ErrorParams,
@@ -181,7 +182,16 @@ export const sharedConversationSlice = createSlice({
       const localySavedQueries: Query[] = previousQueriesStr
         ? JSON.parse(previousQueriesStr)
         : [];
-      state.queries = [...queries, ...localySavedQueries];
+      // A share carries the saved order as lengths; the bubble needs the text.
+      const fetched = queries.map((query) => ({
+        ...query,
+        segments: hydrateSegments(
+          query.segments,
+          query.response,
+          query.thought,
+        ),
+      }));
+      state.queries = [...fetched, ...localySavedQueries];
       state.title = title;
       state.date = date;
       state.identifier = identifier;

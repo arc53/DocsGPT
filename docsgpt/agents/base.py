@@ -732,9 +732,12 @@ class BaseAgent(ABC):
                     "call_id": call_id,
                     "action_name": pending.get("llm_name", pending["name"]),
                     "arguments": args,
+                    # Replayed to the model on later turns, so it keeps the decision.
+                    "result": truncate_tool_result(denial),
                     "status": "denied",
                 }
                 trace_unexecuted_tool_call(tc, {**denied_data, "error": comment or None})
+                self.tool_calls.append(denied_data)
                 yield {"type": "tool_call", "data": denied_data}
 
             elif "result" in action:
@@ -768,6 +771,7 @@ class BaseAgent(ABC):
                     "status": result_status(result),
                 }
                 trace_unexecuted_tool_call(tc, client_data, **{"docsgpt.client_executed": True})
+                self.tool_calls.append(client_data)
                 yield {"type": "tool_call", "data": client_data}
 
         # Images an attachments read queued before the pause (restored with

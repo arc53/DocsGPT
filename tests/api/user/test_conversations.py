@@ -369,6 +369,37 @@ class TestGetSingleConversationHappy:
         assert data["queries"][0]["prompt"] == "hi"
         assert data["queries"][0]["response"] == "hello"
 
+    def test_returns_the_saved_segment_order(self, app, pg_conn):
+        from docsgpt.api.user.conversations.routes import (
+            GetSingleConversation,
+        )
+        from docsgpt.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "user-seg"
+        conv_id = _seed_conversation(pg_conn, user, name="seg")
+        order = [
+            {"kind": "text", "length": 3},
+            {"kind": "tool", "call_id": "c1"},
+            {"kind": "text", "length": 2},
+        ]
+        repo = ConversationsRepository(pg_conn)
+        repo.append_message(conv_id, {"prompt": "p", "response": "abcde", "metadata": {"segments": order}})
+        repo.append_message(conv_id, {"prompt": "p2", "response": "r"})
+
+        with _patch_conversations_db(pg_conn), app.test_request_context(
+            f"/api/get_single_conversation?id={conv_id}"
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            response = GetSingleConversation().get()
+
+        queries = response.json["queries"]
+        assert queries[0]["segments"] == order
+        assert queries[1]["segments"] is None
+
     def test_returns_message_with_dict_feedback(self, app, pg_conn):
         from docsgpt.api.user.conversations.routes import (
             GetSingleConversation,

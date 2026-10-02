@@ -50,7 +50,8 @@ type TeamSwitcherProps = {
  * The whole row is the dropdown trigger and morphs its identity: in a
  * personal context it shows the DocsGPT logo + wordmark; inside a team it
  * shows an initial avatar + the team name. The dropdown lets the user
- * quick-switch teams, jump to team management, or create a new team.
+ * quick-switch teams and ends in "Manage teams" (or "Create team" while the
+ * user has none).
  * Switching is a UX-only selection persisted in the teams slice via
  * setCurrentTeam; it does not scope app data.
  */
@@ -131,9 +132,9 @@ export default function TeamSwitcher({
     />
   );
 
-  // Open the active team's detail directly (not just the list).
+  // The teams list, where "New team" also lives.
   const goToManage = () => {
-    navigate('/teams', { state: { openTeamId: currentTeam?.id } });
+    navigate('/teams');
     onNavigate?.();
   };
 
@@ -150,6 +151,7 @@ export default function TeamSwitcher({
 
   // Teams other than the currently active one, for the "switch to" list.
   const otherTeams = safeTeams.filter((team) => team.id !== currentTeamId);
+  const hasTeams = safeTeams.length > 0;
 
   return (
     <DropdownMenu>
@@ -200,13 +202,6 @@ export default function TeamSwitcher({
           </div>
         </DropdownMenuLabel>
 
-        {currentTeam && (
-          <DropdownMenuItem onSelect={goToManage}>
-            <Settings className="size-4" />
-            <span>{t('teams.switcher.manageTeam')}</span>
-          </DropdownMenuItem>
-        )}
-
         <DropdownMenuSeparator />
 
         {/* Personal account entry */}
@@ -230,12 +225,21 @@ export default function TeamSwitcher({
           </DropdownMenuItem>
         ))}
 
-        <DropdownMenuSeparator />
+        {hasTeams && <DropdownMenuSeparator />}
 
-        <DropdownMenuItem onSelect={goToCreate}>
-          <Plus className="size-4" />
-          <span>{t('teams.switcher.createTeam')}</span>
-        </DropdownMenuItem>
+        {/* With no teams there is nothing to manage yet, so offer creation;
+            once one exists, the teams page covers both. */}
+        {hasTeams ? (
+          <DropdownMenuItem onSelect={goToManage}>
+            <Settings className="size-4" />
+            <span>{t('teams.switcher.manageTeams')}</span>
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onSelect={goToCreate}>
+            <Plus className="size-4" />
+            <span>{t('teams.switcher.createTeam')}</span>
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

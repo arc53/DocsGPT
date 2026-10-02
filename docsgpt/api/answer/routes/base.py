@@ -13,6 +13,7 @@ from flask import jsonify, make_response, Response
 from flask_restx import Namespace
 
 from docsgpt import tracing
+from docsgpt.api.answer.segments import AnswerSegments
 from docsgpt.api.answer.services.continuation_service import ContinuationService
 from docsgpt.api.answer.services.conversation_service import (
     ConversationService,
@@ -501,6 +502,9 @@ class BaseAnswerResource:
         schema_info = None
         structured_chunks = []
         query_metadata: Dict[str, Any] = {}
+        # The order text, thought and tool calls arrived in, saved under
+        # ``query_metadata["segments"]`` so a reload renders the turn as it streamed.
+        segments = AnswerSegments(query_metadata)
         paused = False
         # Set when the agent *yields* a terminal ``error`` event instead of
         # raising. Workflow node failures take that route (the engine catches
@@ -887,6 +891,7 @@ class BaseAnswerResource:
                 elif "answer" in line:
                     _mark_streaming_once()
                     response_full += str(line["answer"])
+                    segments.answer(line["answer"])
                     if line.get("structured"):
                         is_structured = True
                         schema_info = line.get("schema")
@@ -917,6 +922,7 @@ class BaseAnswerResource:
                     yield _emit({"type": "tool_calls", "tool_calls": tool_calls})
                 elif "thought" in line:
                     thought += line["thought"]
+                    segments.thought(line["thought"])
                     yield _emit({"type": "thought", "thought": line["thought"]})
                 elif "type" in line:
                     if line.get("type") == "tool_calls_pending":
@@ -959,6 +965,7 @@ class BaseAnswerResource:
                             # it only on reload.
                             response_full = error_text
                             thought = ""
+                            segments.reset()
                             structured_chunks.clear()
                             is_structured = False
                             query_metadata["guardrail"] = guardrail_meta
@@ -970,6 +977,9 @@ class BaseAnswerResource:
                                 }
                             )
                         yield _emit({"type": "error", "error": error_text, **error_extra})
+                    elif line.get("type") == "tool_call":
+                        segments.tool_call(line.get("data"))
+                        yield _emit(line)
                     elif line.get("type") == "notice":
                         # Non-fatal, non-terminal notice (e.g. some workflow input
                         # documents were dropped). Forwarded verbatim so the client can

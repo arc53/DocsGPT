@@ -3,21 +3,19 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import SchedulerToolCallCard from '../agents/schedules/SchedulerToolCallCard';
-import ConnectorIcon from '../connectors/ConnectorIcon';
-import { connectorIconKey } from '../connectors/i18n';
-import ToolIcon from '../components/ToolIcon';
 import { Button } from '../components/ui/button';
-import { CodeBlock, CodePanel } from '../components/ui/code-block';
 import { usePacedText } from '../hooks';
 import {
   getToolChipLabel,
   isToolCallRunning,
 } from '../utils/streamingStatusUtils';
+import { layoutAnswer } from './answerLayout';
 import { AnswerSegment, getAnswerSegments } from './answerSegments';
 import MarkdownAnswer from './MarkdownAnswer';
 import { type SandboxArtifact } from './sandboxLinks';
+import StepGroup, { StepIcon, ToolCallDetail } from './StepGroup';
 import StreamingStatusLine from './StreamingStatusLine';
-import { shownArguments, ToolCallsType } from './types';
+import { ToolCallsType } from './types';
 import { isWikiWriteCall } from './wikiToolCall';
 import { cn } from '@/lib/utils';
 
@@ -48,8 +46,11 @@ type AnswerFlowProps = {
 };
 
 /**
- * Never splits the answer with a step, which is what keeps a streaming answer and
- * the same answer fetched back rendering identically.
+ * The answer column in the order its parts streamed: answer text, reasoning,
+ * single steps, and step groups for runs of three or more calls (see
+ * ``layoutAnswer``). The order is saved with the message, so a streaming answer
+ * and the same answer fetched back render identically; without a saved order
+ * the steps come first and the answer after them.
  */
 export default function AnswerFlow({
   message,
@@ -67,38 +68,81 @@ export default function AnswerFlow({
   renderApproval,
   renderWikiWrite,
 }: AnswerFlowProps) {
-  const steps = getAnswerSegments({ thought, tool_calls: toolCalls, segments });
+  const steps = getAnswerSegments({
+    thought,
+    tool_calls: toolCalls,
+    segments,
+    response: message,
+  });
   const callById = new Map((toolCalls ?? []).map((c) => [c.call_id, c]));
-  const lastIndex = steps.length - 1;
+  const items = layoutAnswer(steps, callById);
+  const lastStep = steps.length - 1;
+  const lastItem = items.length - 1;
 
   // One derivation of "something here is already announcing activity": every
   // chip shimmers off this, and the status line below fills only the gaps it
   // leaves. Deriving it a second time from the flat fields let the two disagree,
   // which showed up as no indicator at all between a settled step and the answer.
-  const liveSteps = steps.map((step, index) => {
-    if (!isStreaming) return false;
-    if (step.kind === 'thought') return index === lastIndex && !message;
+  const isLiveThought = (index: number) =>
+    Boolean(isStreaming) && index === lastStep;
+  const isLiveCall = (call: ToolCallsType) =>
+    Boolean(isStreaming) && isToolCallRunning(call);
+  const hasLiveStep = steps.some((step, index) => {
+    if (step.kind === 'thought') return isLiveThought(index);
+    if (step.kind !== 'tool') return false;
     const call = callById.get(step.call_id);
-    return Boolean(call && isToolCallRunning(call));
+    return Boolean(call && isLiveCall(call));
   });
-  const hasLiveStep = liveSteps.some(Boolean);
 
   return (
     <>
-      {steps.map((step, index) => {
-        if (step.kind === 'thought') {
+      {items.map((item, position) => {
+        if (item.kind === 'thought')
           return (
             <InlineThoughtChip
-              key={`thought-${index}`}
-              thought={step.text}
-              isActive={liveSteps[index]}
+              key={`thought-${item.index}`}
+              thought={item.text}
+              isActive={isLiveThought(item.index)}
             />
           );
-        }
 
-        const call = callById.get(step.call_id);
-        if (!call) return null;
+        if (item.kind === 'group')
+          return (
+            <StepGroup
+              key={`group-${item.index}`}
+              entries={item.entries}
+              isLive={Boolean(isStreaming) && position === lastItem}
+              isStreaming={Boolean(isStreaming)}
+            />
+          );
 
+        if (item.kind === 'text')
+          return (
+            <div
+              key={`text-${item.index}`}
+              className="flex w-full min-w-0 flex-col"
+            >
+              {/* ``ml-6`` is the answer's text column: step labels sit at the
+                  same offset, with their icons in the gutter to its left.
+                  Stretched, not ``self-start max-w-full``: a shrink-to-fit box
+                  sizes to its longest code line, and ``max-w-full`` caps it at
+                  100% before the margins land on top, so the chat scrolled
+                  sideways on a phone. */}
+              <div className="animate-in fade-in slide-in-from-bottom-1.5 my-2 mr-5 ml-6 flex min-w-0 flex-col duration-260 ease-out motion-reduce:animate-none">
+                <MarkdownAnswer
+                  content={item.text}
+                  isStreaming={Boolean(isStreaming) && position === lastItem}
+                  sourceCount={sourceCount}
+                  onOpenSource={onOpenSource}
+                  artifacts={artifacts}
+                  turnArtifacts={turnArtifacts}
+                  onOpenArtifact={onOpenArtifact}
+                />
+              </div>
+            </div>
+          );
+
+        const call = item.call;
         if (call.status === 'awaiting_approval')
           return (
             <Fragment key={`approval-${call.call_id}`}>
@@ -109,7 +153,7 @@ export default function AnswerFlow({
         if (isWikiWriteCall(call))
           return (
             <Fragment key={`wiki-${call.call_id}`}>
-              {renderWikiWrite(call, liveSteps[index])}
+              {renderWikiWrite(call, isLiveCall(call))}
             </Fragment>
           );
 
@@ -129,30 +173,10 @@ export default function AnswerFlow({
           <InlineToolCallChip
             key={`tool-${call.call_id}`}
             toolCall={call}
-            isLive={liveSteps[index]}
+            isLive={isLiveCall(call)}
           />
         );
       })}
-      {message && (
-        <div className="flex w-full min-w-0 flex-col">
-          {/* ``ml-6`` is the answer's text column: step labels sit at the same
-              offset, with their icons in the gutter to its left. Stretched,
-              not ``self-start max-w-full``: a shrink-to-fit box sizes to its
-              longest code line, and ``max-w-full`` caps it at 100% before the
-              margins land on top, so the chat scrolled sideways on a phone. */}
-          <div className="animate-in fade-in slide-in-from-bottom-1.5 my-2 mr-5 ml-6 flex min-w-0 flex-col duration-260 ease-out motion-reduce:animate-none">
-            <MarkdownAnswer
-              content={message}
-              isStreaming={isStreaming}
-              sourceCount={sourceCount}
-              onOpenSource={onOpenSource}
-              artifacts={artifacts}
-              turnArtifacts={turnArtifacts}
-              onOpenArtifact={onOpenArtifact}
-            />
-          </div>
-        </div>
-      )}
       {isStreaming && !hasLiveStep && !suppressStatusLine && (
         <StreamingStatusLine
           hasAnswerText={Boolean(message)}
@@ -198,7 +222,7 @@ function InlineThoughtChip({
         // svg child) puts the icon on the answer's ml-6 text column.
         className="ml-3.5 w-fit max-w-full justify-start"
       >
-        <Cloud aria-hidden />
+        <Cloud className="text-muted-foreground" aria-hidden />
         <span
           className={cn(
             'min-w-0 truncate text-left',
@@ -248,9 +272,8 @@ function InlineToolCallChip({
 }) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
-  // Liveness is what animates; running is what the call's own status means, so
-  // a call left pending by a dropped stream still reads in the present tense.
-  const isRunning = isToolCallRunning(toolCall);
+  // Liveness is what animates; the label's tense follows the call's own
+  // status, so a call left pending by a dropped stream still reads as running.
   const label = getToolChipLabel(toolCall, t);
 
   return (
@@ -265,28 +288,9 @@ function InlineToolCallChip({
         // svg child) puts the icon on the answer's ml-6 text column.
         className="ml-3.5 w-fit max-w-full justify-start"
       >
-        {/* ToolIcon renders nothing for a tool with no bundled icon, so the
-            dot below stands in via ``only:block`` to keep the row aligned. */}
+        <StepIcon call={toolCall} pulse={isLive} />
         <span
-          className={cn(
-            'flex size-4 shrink-0 items-center justify-center',
-            isLive ? 'animate-pulse' : '',
-          )}
-        >
-          {toolCall.connector_key ? (
-            <ConnectorIcon
-              icon={connectorIconKey(toolCall.connector_key)}
-              className="text-muted-foreground size-4"
-            />
-          ) : (
-            <ToolIcon
-              name={toolCall.tool_name}
-              className="text-muted-foreground size-4"
-            />
-          )}
-          <span className="bg-muted-foreground/50 hidden size-1.5 rounded-full only:block" />
-        </span>
-        <span
+          title={label}
           className={cn(
             'min-w-0 truncate text-left',
             isLive ? 'shimmer-text' : 'text-muted-foreground',
@@ -308,52 +312,11 @@ function InlineToolCallChip({
         />
       </Button>
       {isOpen && (
-        <div className="animate-in fade-in mt-2 mr-5 ml-6 flex flex-col gap-2 duration-160 ease-out motion-reduce:animate-none">
-          <CodePanel
-            title={t('conversation.inlineSteps.arguments')}
-            copyText={JSON.stringify(shownArguments(toolCall), null, 2)}
-          >
-            <CodeBlock surface="bare" maxHeight="lg">
-              {JSON.stringify(shownArguments(toolCall), null, 2)}
-            </CodeBlock>
-          </CodePanel>
-          <CodePanel
-            title={t('conversation.inlineSteps.response')}
-            copyText={
-              toolCall.status === 'error'
-                ? (toolCall.error ?? '')
-                : JSON.stringify(toolCall.result ?? {}, null, 2)
-            }
-          >
-            {isRunning && (
-              <p
-                className={cn(
-                  'text-xs',
-                  isLive ? 'shimmer-text' : 'text-muted-foreground',
-                )}
-              >
-                {t('conversation.inlineSteps.running')}
-              </p>
-            )}
-            {toolCall.status === 'error' && (
-              <CodeBlock surface="bare" tone="destructive">
-                {toolCall.error}
-              </CodeBlock>
-            )}
-            {toolCall.status === 'denied' && (
-              <p className="text-muted-foreground text-xs">
-                {t('conversation.inlineSteps.denied')}
-              </p>
-            )}
-            {!isRunning &&
-              toolCall.status !== 'error' &&
-              toolCall.status !== 'denied' && (
-                <CodeBlock surface="bare" maxHeight="lg">
-                  {JSON.stringify(toolCall.result ?? {}, null, 2)}
-                </CodeBlock>
-              )}
-          </CodePanel>
-        </div>
+        <ToolCallDetail
+          toolCall={toolCall}
+          isLive={isLive}
+          className="mt-2 mr-5 ml-6"
+        />
       )}
     </div>
   );
