@@ -909,3 +909,52 @@ class TestClientDisconnect:
                 )
             )
         assert len(produced) < 10
+
+
+@pytest.mark.unit
+class TestAnsweredByMetadata:
+    """A turn a fallback model answered records which models answered it."""
+
+    PRIMARY = {"model": "gpt-6.1-sol", "provider": "azure_openai", "fallback": False}
+    FALLBACK = {"model": "kimi-k3", "provider": "openai_compatible", "fallback": True, "reason": "InternalServerError/500"}
+
+    def _run(self, flask_app, answered):
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        agent = MagicMock()
+        agent.llm.answered_by = []
+
+        def _gen(*_args, **_kwargs):
+            for entry in answered:
+                agent.llm.answered_by.append(entry)
+                yield {"answer": f"from {entry['model']} "}
+
+        agent.gen.side_effect = _gen
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            resource.conversation_service = MagicMock()
+            resource.conversation_service.save_user_question.return_value = {
+                "conversation_id": "c1",
+                "message_id": "m1",
+            }
+            list(
+                resource.complete_stream(
+                    question="Test?",
+                    agent=agent,
+                    conversation_id=None,
+                    user_api_key=None,
+                    decoded_token={"sub": "user123"},
+                    should_persist=True,
+                )
+            )
+        return resource.conversation_service.finalize_message.call_args.kwargs
+
+    def test_a_fallback_answer_is_recorded_on_the_message(self, mock_mongo_db, flask_app):
+        kwargs = self._run(flask_app, [self.PRIMARY, self.FALLBACK])
+
+        assert kwargs["metadata"]["answered_by"] == [self.PRIMARY, self.FALLBACK]
+
+    def test_a_primary_only_answer_adds_nothing(self, mock_mongo_db, flask_app):
+        kwargs = self._run(flask_app, [self.PRIMARY])
+
+        assert "answered_by" not in (kwargs.get("metadata") or {})

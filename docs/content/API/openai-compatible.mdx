@@ -301,8 +301,26 @@ DocsGPT adds an optional `docsgpt` object to both requests and responses for fea
 | `conversation_id` | Server-side conversation ID for this exchange. |
 | `sources` | RAG sources used to answer. |
 | `tool_calls` | Completed tool-call results from the run. |
+| `model`, `provider` | The model that produced the final answer, and its provider. |
+| `fallback` | `true` when that model is a fallback, not the agent's own model. |
+| `reason` | Why the fallback ran: the error class of the failed call, with its HTTP status when it had one (`InternalServerError/500`). Only on a fallback. |
+| `models` | Every model that answered part of the turn, in order, one entry per switch (each with `model`, `provider`, `fallback` and, for a fallback, `reason`). |
 
 When streaming, these arrive on otherwise-empty chunks that carry a top-level `docsgpt` key, so strict OpenAI clients still validate each frame.
+
+### Which model answered
+
+The standard `model` field always echoes the agent, so OpenAI clients see no change. When the agent's model fails (an upstream 5xx, a rate limit, a rejected request) and a backup model takes over, the answer comes from that backup: `docsgpt.model`, `docsgpt.fallback` and `docsgpt.reason` say so. A tool loop can switch models from one round to the next, so `docsgpt.models` lists each switch.
+
+When streaming, a frame names the answering model as soon as it starts producing output, and again each time a different model takes over, before the text that model wrote:
+
+```json
+{"id": "chatcmpl-...", "object": "chat.completion.chunk", "model": "my-agent",
+ "choices": [{"index": 0, "delta": {}, "finish_reason": null}],
+ "docsgpt": {"type": "model", "model": "kimi-k3", "provider": "openai_compatible", "fallback": true, "reason": "InternalServerError/500"}}
+```
+
+A fallback that takes over in the middle of a stream starts its answer over, so text streamed before its `model` frame came from the model named earlier. When a fallback answered any part of a turn, the same list is also stored with the message, as `metadata.answered_by`.
 
 ## When to Use Native Endpoints Instead
 

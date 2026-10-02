@@ -1858,3 +1858,94 @@ class TestRealOpenAIFallbackRejectsForeignKwargs:
         sent = fallback.client.chat.completions.last_kwargs
         assert "response_schema" not in sent
         assert sent["response_format"]["type"] == "json_schema"
+
+
+# Tests — which model answered
+
+
+class _AzureServerError(Exception):
+    """An upstream 5xx, as the OpenAI SDK raises it."""
+
+    status_code = 500
+
+
+def _pair(primary_kwargs=None, backup_kwargs=None):
+    primary = FakeLLM(model_id="gpt-6.1-sol", **(primary_kwargs or {}))
+    primary._provider_plugin = "azure_openai"
+    backup = FakeLLM(model_id="kimi-k3", stream_chunks=["fb1", "fb2"], **(backup_kwargs or {}))
+    backup._provider_plugin = "openai_compatible"
+    primary._fallback_llm = backup
+    return primary, backup
+
+
+# The model the primary is called with, as the agent passes it.
+ROUND = dict(CALL_ARGS, model="gpt-6.1-sol")
+
+
+@pytest.mark.unit
+class TestAnsweringModel:
+    def test_the_primary_answering_is_recorded_once(self):
+        primary, _backup = _pair()
+
+        assert list(primary.gen_stream(**ROUND)) == ["chunk1", "chunk2"]
+        list(primary.gen_stream(**ROUND))
+
+        assert primary.answered_by == [
+            {"model": "gpt-6.1-sol", "provider": "azure_openai", "fallback": False}
+        ]
+
+    def test_a_fallback_before_the_first_chunk(self):
+        primary, _backup = _pair({"fail_at": 0, "error_class": _AzureServerError})
+
+        assert list(primary.gen_stream(**ROUND)) == ["fb1", "fb2"]
+
+        assert primary.answered_by == [
+            {
+                "model": "kimi-k3",
+                "provider": "openai_compatible",
+                "fallback": True,
+                "reason": "_AzureServerError/500",
+            }
+        ]
+
+    def test_a_fallback_mid_stream_reports_both(self):
+        primary, _backup = _pair({"fail_at": 1, "error_class": _AzureServerError})
+
+        assert list(primary.gen_stream(**ROUND)) == ["chunk1", "fb1", "fb2"]
+
+        assert [(e["model"], e["fallback"]) for e in primary.answered_by] == [
+            ("gpt-6.1-sol", False),
+            ("kimi-k3", True),
+        ]
+        assert primary.answered_by[1]["reason"] == "_AzureServerError/500"
+
+    def test_tool_rounds_answered_by_different_models_report_each_change(self):
+        # Round 1 falls back, round 2 is the primary again, round 3 falls back.
+        primary, _backup = _pair({"fail_schedule": [0, None, 0]})
+
+        for _round in range(3):
+            list(primary.gen_stream(**ROUND))
+
+        assert [(e["model"], e["fallback"]) for e in primary.answered_by] == [
+            ("kimi-k3", True),
+            ("gpt-6.1-sol", False),
+            ("kimi-k3", True),
+        ]
+        assert primary.answered_by[0]["reason"] == "RuntimeError"
+
+    def test_a_failed_fallback_answered_nothing(self):
+        primary, _backup = _pair({"fail_at": 0}, {"fail_at": 0})
+
+        with pytest.raises(RuntimeError):
+            list(primary.gen_stream(**ROUND))
+
+        assert primary.answered_by == []
+
+    def test_non_streaming_fallback_is_recorded(self):
+        primary, _backup = _pair({"fail_at": 0})
+        primary._fallback_llm.responses = ["backup ok"]
+
+        assert primary.gen(**ROUND) == "backup ok"
+
+        assert primary.answered_by[-1]["model"] == "kimi-k3"
+        assert primary.answered_by[-1]["fallback"] is True

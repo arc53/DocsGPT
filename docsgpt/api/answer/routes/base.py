@@ -134,6 +134,26 @@ def _client_gone(agent: Any) -> bool:
     event = getattr(agent, "client_disconnected", None)
     return isinstance(event, threading.Event) and event.is_set()
 
+def _record_answered_by(agent: Any, query_metadata: Dict[str, Any]) -> None:
+    """Keep the models that answered on the message, once a fallback answered.
+
+    ``BaseLLM.answered_by`` lists every switch of answering model in the
+    turn. A turn the configured model answered alone adds nothing (the
+    message's ``model_id`` already says it); one a fallback answered any part
+    of stores the list as ``metadata.answered_by``.
+
+    Args:
+        agent: The agent running the turn.
+        query_metadata: The message metadata being collected; updated in place.
+    """
+    entries = getattr(getattr(agent, "llm", None), "answered_by", None)
+    if not isinstance(entries, list):
+        return
+    entries = [dict(e) for e in entries if isinstance(e, dict)]
+    if any(e.get("fallback") for e in entries):
+        query_metadata["answered_by"] = entries
+
+
 def _native_image_names(agent: Any) -> List[str]:
     """Files the turn sent to the model as images, for a provider's image refusal."""
     plan = getattr(agent, "attachment_plan", None)
@@ -861,6 +881,7 @@ class BaseAnswerResource:
                 # stop the agent here and save what there is, as an abort.
                 if _client_gone(agent):
                     raise ClientDisconnected()
+                _record_answered_by(agent, query_metadata)
                 if "metadata" in line:
                     query_metadata.update(line["metadata"])
                 elif "answer" in line:
@@ -965,6 +986,7 @@ class BaseAnswerResource:
                         yield _emit(line)
                     else:
                         yield _emit(line)
+            _record_answered_by(agent, query_metadata)
             if is_structured and structured_chunks:
                 yield _emit(
                     {
