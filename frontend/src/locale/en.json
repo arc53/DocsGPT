@@ -1504,6 +1504,7 @@
         "mcp_stripe": "Look up customers, payments and subscriptions in Stripe.",
         "mcp_clickup": "Search, read and update ClickUp tasks, docs and lists, and add comments.",
         "mcp_zapier": "Use the actions enabled in your Zapier MCP account to read or update connected apps.",
+        "mcp_trello": "Find Trello boards and cards, and create and update cards.",
         "github": "Sync repositories into Knowledge and let agents read code, issues and pull requests."
       },
       "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",
