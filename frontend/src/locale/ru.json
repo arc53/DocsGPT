@@ -3270,7 +3270,7 @@
       "personalSubtitle": "Личное рабочее пространство",
       "roleAdmin": "Администратор",
       "roleMember": "Участник",
-      "manageTeam": "Управление командой",
+      "manageTeams": "Управление командами",
       "createTeam": "Создать команду",
       "logoAlt": "Логотип DocsGPT"
     }

@@ -3126,7 +3126,7 @@
       "personalSubtitle": "Espacio de trabajo personal",
       "roleAdmin": "Admin",
       "roleMember": "Miembro",
-      "manageTeam": "Gestionar equipo",
+      "manageTeams": "Gestionar equipos",
       "createTeam": "Crear equipo",
       "logoAlt": "Logotipo de DocsGPT"
     }

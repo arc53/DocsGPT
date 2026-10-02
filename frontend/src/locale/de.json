@@ -3126,7 +3126,7 @@
       "personalSubtitle": "Persönlicher Workspace",
       "roleAdmin": "Admin",
       "roleMember": "Mitglied",
-      "manageTeam": "Team verwalten",
+      "manageTeams": "Teams verwalten",
       "createTeam": "Team erstellen",
       "logoAlt": "DocsGPT-Logo"
     }

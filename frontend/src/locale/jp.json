@@ -3114,7 +3114,7 @@
       "personalSubtitle": "個人ワークスペース",
       "roleAdmin": "管理者",
       "roleMember": "メンバー",
-      "manageTeam": "チームを管理",
+      "manageTeams": "チームを管理",
       "createTeam": "チームを作成",
       "logoAlt": "DocsGPT ロゴ"
     }

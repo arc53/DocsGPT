@@ -3113,7 +3113,7 @@
       "personalSubtitle": "个人工作区",
       "roleAdmin": "管理员",
       "roleMember": "成员",
-      "manageTeam": "管理团队",
+      "manageTeams": "管理团队",
       "createTeam": "创建团队",
       "logoAlt": "DocsGPT 标志"
     }

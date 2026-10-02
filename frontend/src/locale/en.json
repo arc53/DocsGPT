@@ -3152,7 +3152,7 @@
       "personalSubtitle": "Personal workspace",
       "roleAdmin": "Admin",
       "roleMember": "Member",
-      "manageTeam": "Manage team",
+      "manageTeams": "Manage teams",
       "createTeam": "Create team",
       "logoAlt": "DocsGPT logo"
     }
