@@ -461,29 +461,72 @@ class TestFormatResult:
         assert result["content"][0]["text"] == "Hello"
         assert result["isError"] is False
 
-    def test_format_result_with_data_content(self, mcp_config):
-        tool = _make_tool(mcp_config)
-        mock_result = MagicMock()
-        data_item = MagicMock()
-        del data_item.text
-        data_item.data = {"key": "value"}
-        mock_result.content = [data_item]
-        mock_result.isError = False
+    def test_an_image_is_shown_to_the_model_not_inlined(self, mcp_config):
+        import base64
+        import io
+        from types import SimpleNamespace
 
-        result = tool._format_result(mock_result)
-        assert result["content"][0]["type"] == "data"
-        assert result["content"][0]["data"] == {"key": "value"}
+        from mcp.types import ImageContent
+        from PIL import Image
+
+        out = io.BytesIO()
+        Image.new("RGB", (8, 8), "blue").save(out, "PNG")
+        data = base64.b64encode(out.getvalue()).decode()
+        tool = _make_tool(mcp_config)
+        result = tool._format_result(
+            SimpleNamespace(content=[ImageContent(type="image", data=data, mimeType="image/png")], isError=False),
+            "screenshot",
+        )
+
+        assert result["content"] == [{"type": "image", "note": "shown to you as screenshot image 1"}]
+        assert data not in str(result)
+        parts = tool.drain_native_parts()
+        assert parts == [{"label": "screenshot image 1", "mime_type": "image/png", "data": data}]
+        assert tool.drain_native_parts() == []
+
+    def test_resources_and_other_content(self, mcp_config):
+        from types import SimpleNamespace
+
+        from mcp.types import (
+            AudioContent,
+            BlobResourceContents,
+            EmbeddedResource,
+            ResourceLink,
+            TextResourceContents,
+        )
+
+        tool = _make_tool(mcp_config)
+        result = tool._format_result(
+            SimpleNamespace(
+                content=[
+                    EmbeddedResource(type="resource", resource=TextResourceContents(
+                        uri="file:///a.txt", mimeType="text/plain", text="hi")),
+                    EmbeddedResource(type="resource", resource=BlobResourceContents(
+                        uri="file:///a.bin", mimeType="application/zip", blob="UEsDBA==")),
+                    EmbeddedResource(type="resource", resource=BlobResourceContents(
+                        uri="file:///a.png", mimeType="image/png", blob="bm90IGFuIGltYWdl")),
+                    ResourceLink(type="resource_link", uri="https://x.test/r", name="r", mimeType="text/html"),
+                    AudioContent(type="audio", data="AAAA", mimeType="audio/wav"),
+                ],
+                is_error=True,
+            ),
+            "fetch",
+        )
+
+        text, blob, image, link, audio = result["content"]
+        assert text == {"type": "resource", "uri": "file:///a.txt", "mimeType": "text/plain", "text": "hi"}
+        assert blob["note"] == "binary content, not shown" and "UEsDBA" not in str(blob)
+        assert image == {"type": "image", "note": "an image that could not be read"}
+        assert link == {"type": "resource_link", "uri": "https://x.test/r", "name": "r", "mimeType": "text/html"}
+        assert audio == {"type": "audio", "mimeType": "audio/wav", "note": "audio, not shown"}
+        assert result["isError"] is True
+        assert tool.drain_native_parts() == []
 
     def test_format_result_unknown_content_type(self, mcp_config):
-        tool = _make_tool(mcp_config)
-        mock_result = MagicMock()
-        unknown_item = MagicMock()
-        del unknown_item.text
-        del unknown_item.data
-        mock_result.content = [unknown_item]
-        mock_result.isError = False
+        from types import SimpleNamespace
 
-        result = tool._format_result(mock_result)
+        tool = _make_tool(mcp_config)
+        result = tool._format_result(SimpleNamespace(content=[SimpleNamespace(type="video")], isError=False))
         assert result["content"][0]["type"] == "unknown"
 
     def test_format_raw_result(self, mcp_config):

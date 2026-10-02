@@ -46,6 +46,7 @@ from pydantic import AnyHttpUrl, ValidationError
 from redis import Redis
 
 from docsgpt.agents.tools.base import Tool
+from docsgpt.llm.tool_images import image_ref
 from docsgpt.api.user.tasks import mcp_oauth_task
 from docsgpt.cache import get_redis_instance
 from docsgpt.core.settings import settings
@@ -238,6 +239,8 @@ class MCPTool(Tool):
         self._cache_key = self._generate_cache_key()
         self._client = None
         self.query_mode = config.get("query_mode", False)
+        # Images the last call returned, for the model to see (``drain_native_parts``).
+        self._native_queue: List[Dict] = []
 
         if self.server_url and self.auth_type != "oauth":
             self._setup_client()
@@ -556,7 +559,7 @@ class MCPTool(Tool):
             result = self._run_async_operation(
                 "call_tool", action_name, **cleaned_kwargs
             )
-            return self._format_result(result)
+            return self._format_result(result, action_name)
         except Exception as e:
             error_msg = str(e)
             if _is_header_mismatch(e):
@@ -582,7 +585,7 @@ class MCPTool(Tool):
                     result = self._run_async_operation(
                         "call_tool", action_name, **cleaned_kwargs
                     )
-                    return self._format_result(result)
+                    return self._format_result(result, action_name)
                 except Exception as retry_e:
                     raise Exception(
                         f"Action '{action_name}' failed after re-auth attempt: {retry_e}. "
@@ -606,7 +609,7 @@ class MCPTool(Tool):
             result = self._run_async_operation("call_tool", action_name, **arguments)
         except Exception as retry_e:
             raise Exception(f"Failed to execute action '{action_name}': {retry_e}") from error
-        return self._format_result(result)
+        return self._format_result(result, action_name)
 
     def _pinned_param_conflict(self, action_name: str, arguments: Dict) -> Optional[str]:
         """Why a call can't be sent: an argument disagrees with a ``Mcp-Param-*`` header set on the tool.
@@ -636,25 +639,57 @@ class MCPTool(Tool):
                 )
         return None
 
-    def _format_result(self, result) -> Dict:
-        """Format FastMCP result to match expected format."""
-        if hasattr(result, "content"):
-            content_list = []
-            for content_item in result.content:
-                if hasattr(content_item, "text"):
-                    content_list.append({"type": "text", "text": content_item.text})
-                elif hasattr(content_item, "data"):
-                    content_list.append({"type": "data", "data": content_item.data})
-                else:
-                    content_list.append(
-                        {"type": "unknown", "content": str(content_item)}
-                    )
-            return {
-                "content": content_list,
-                "isError": getattr(result, "isError", False),
-            }
-        else:
+    def _format_result(self, result, action_name: str = "") -> Dict:
+        """Format a FastMCP result for the model.
+
+        Images (inline, or an embedded image resource) are queued to be shown
+        to the model as images rather than handed over as base64 text; other
+        binary content is described, not inlined.
+        """
+        if not hasattr(result, "content"):
             return result
+        content_list = []
+        for item in result.content:
+            kind = getattr(item, "type", None)
+            resource = getattr(item, "resource", None)
+            mime_type = str(getattr(resource or item, "mimeType", None) or "")
+            image_blob = resource is not None and mime_type.startswith("image/") and hasattr(resource, "blob")
+            if hasattr(item, "text"):
+                content_list.append({"type": "text", "text": item.text})
+            elif kind == "image" or image_blob:
+                content_list.append(self._queue_image(item.data if kind == "image" else resource.blob, action_name))
+            elif resource is not None:
+                entry = {"type": "resource", "uri": str(getattr(resource, "uri", "")), "mimeType": mime_type}
+                text = getattr(resource, "text", None)
+                entry.update({"text": text} if text is not None else {"note": "binary content, not shown"})
+                content_list.append(entry)
+            elif kind == "resource_link":
+                content_list.append(
+                    {"type": "resource_link", "uri": str(item.uri), "name": item.name, "mimeType": mime_type}
+                )
+            elif kind == "audio":
+                content_list.append({"type": "audio", "mimeType": mime_type, "note": "audio, not shown"})
+            else:
+                content_list.append({"type": "unknown", "content": str(item)})
+        # FastMCP's client result names it ``is_error``; the MCP type ``isError``.
+        is_error = getattr(result, "is_error", None)
+        if not isinstance(is_error, bool):
+            is_error = bool(getattr(result, "isError", False))
+        return {"content": content_list, "isError": is_error}
+
+    def _queue_image(self, data: str, action_name: str) -> Dict:
+        """Queue a base64 image the server returned; the entry that stands for it in the result."""
+        label = f"{action_name or 'mcp'} image {len(self._native_queue) + 1}"
+        try:
+            self._native_queue.append(image_ref(base64.b64decode(data), label))
+        except (ValueError, TypeError):
+            return {"type": "image", "note": "an image that could not be read"}
+        return {"type": "image", "note": f"shown to you as {label}"}
+
+    def drain_native_parts(self) -> List[Dict]:
+        """Images the last call returned, emptied as they are taken."""
+        parts, self._native_queue = self._native_queue, []
+        return parts
 
     def test_connection(self) -> Dict:
         if not self.server_url:
