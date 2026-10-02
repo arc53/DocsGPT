@@ -4,7 +4,7 @@ import logging
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from docsgpt.agents.attachment_budget import (
     AttachmentPlan,
@@ -429,6 +429,13 @@ class BaseAgent(ABC):
     def _previous_response_id(self) -> Optional[str]:
         """Return the preceding turn's Responses id when chaining onto it is safe.
 
+        See :meth:`_previous_response_choice`, which also says why not.
+        """
+        return self._previous_response_choice()[0]
+
+    def _previous_response_choice(self) -> Tuple[Optional[str], Optional[str]]:
+        """The preceding turn's Responses id to chain onto, or why there is none.
+
         Chaining keeps the provider's stored transcript (and its prompt cache)
         warm across turns, but that transcript is invisible to every local
         guard, so it is bounded. No chaining across turns when the operator
@@ -436,45 +443,53 @@ class BaseAgent(ABC):
         reached the chain budget (default: the model's context window), or
         when the conversation was compressed after that turn was produced —
         the compressed local history is the context then, not the server's.
+
+        Returns:
+            ``(response_id, None)`` to chain, else ``(None, reason)``:
+            ``disabled``, ``first_turn``, ``no_previous_response`` (the last
+            turn stored no response: it failed, or came from another API),
+            ``fallback_answered`` (a fallback model answered the last turn),
+            ``chain_key_mismatch`` (another model, endpoint or credential),
+            ``native_parts_cap``, ``compression`` or ``chain_budget``.
         """
         if not settings.OPENAI_RESPONSES_CHAIN_ACROSS_TURNS:
-            return None
+            return None, "disabled"
         if not self.chat_history:
-            return None
+            return None, "first_turn"
         turn = self.chat_history[-1]
-        if not isinstance(turn, dict):
-            return None
-        meta = turn.get("metadata")
+        meta = turn.get("metadata") if isinstance(turn, dict) else None
         if not isinstance(meta, dict):
-            return None
+            return None, "no_previous_response"
+        if not meta.get("response_id"):
+            answered_by = meta.get("answered_by")
+            if (
+                isinstance(answered_by, list)
+                and answered_by
+                and isinstance(answered_by[-1], dict)
+                and answered_by[-1].get("fallback")
+            ):
+                return None, "fallback_answered"
+            return None, "no_previous_response"
         chain_key_factory = getattr(self.llm, "responses_chain_key", None)
         current_chain_key = (
             chain_key_factory() if callable(chain_key_factory) else None
         )
-        if not (
-            current_chain_key
-            and meta.get("response_chain_key") == current_chain_key
-            and meta.get("response_id")
-        ):
-            return None
+        if not (current_chain_key and meta.get("response_chain_key") == current_chain_key):
+            return None, "chain_key_mismatch"
 
+        # The stored transcript would replay more attached images and PDFs
+        # than the per-turn cap: start from the local history, which lists
+        # earlier files instead.
         if self._replayed_native_parts() > int(settings.ATTACHMENT_MAX_NATIVE_PARTS):
-            logger.info(
-                "Responses chain reset: the stored transcript would replay more "
-                "attached images and PDFs than the per-turn cap; starting from the "
-                "local history, which lists earlier files instead"
-            )
-            return None
+            return None, "native_parts_cap"
 
         current_epoch = _parse_epoch(getattr(self, "last_compression_at", None))
         if current_epoch is not None:
             turn_epoch = _parse_epoch(meta.get("compression_epoch"))
             if turn_epoch is None or turn_epoch < current_epoch:
-                logger.info(
-                    "Responses chain reset: the conversation was compressed after "
-                    "the previous turn; starting from the compressed local history"
-                )
-                return None
+                # Compressed after the previous turn: the compressed local
+                # history is the context now.
+                return None, "compression"
 
         usage = meta.get("usage") if isinstance(meta.get("usage"), dict) else {}
         try:
@@ -484,7 +499,7 @@ class BaseAgent(ABC):
         if not prompt_tokens:
             # No provider-reported usage on the previous turn (older rows,
             # estimate-only providers): nothing to bound against.
-            return meta["response_id"]
+            return meta["response_id"], None
         budget = settings.OPENAI_RESPONSES_CHAIN_BUDGET_TOKENS
         if not budget:
             from docsgpt.core.model_utils import get_token_limit
@@ -494,14 +509,13 @@ class BaseAgent(ABC):
                 user_id=getattr(self, "model_user_id", None) or getattr(self, "user", None),
             )
         if budget and prompt_tokens >= int(budget):
-            logger.info(
-                "Responses chain budget reached (%s >= %s prompt tokens on the "
-                "previous turn); starting this turn from the local history",
+            logger.debug(
+                "Responses chain budget reached (%s >= %s prompt tokens on the previous turn)",
                 prompt_tokens,
                 budget,
             )
-            return None
-        return meta["response_id"]
+            return None, "chain_budget"
+        return meta["response_id"], None
 
     def _replayed_native_parts(self) -> int:
         """Native files a chained request would make the provider see.
@@ -1790,12 +1804,16 @@ class BaseAgent(ABC):
         ):
             # OpenAI json_object mode: guarantee valid JSON, no schema enforcement.
             gen_kwargs["response_format"] = {"type": "json_object"}
-        if (
-            settings.OPENAI_RESPONSES_STORE
-            and hasattr(self.llm, "_uses_responses_api")
-            and self.llm._uses_responses_api()
-        ):
-            previous_response_id = self._previous_response_id()
+        uses_responses = getattr(self.llm, "_uses_responses_api", None)
+        if callable(uses_responses) and uses_responses():
+            previous_response_id, chain_reset = None, "disabled"
+            if settings.OPENAI_RESPONSES_STORE:
+                previous_response_id, chain_reset = self._previous_response_choice()
+            # The LLM logs the reason when this turn's first call goes out
+            # unchained (it alone knows whether the request really chained).
+            note_chain_turn = getattr(self.llm, "note_chain_turn", None)
+            if callable(note_chain_turn):
+                note_chain_turn(chain_reset, new_turn=not preserve_responses_state)
             if previous_response_id:
                 gen_kwargs["previous_response_id"] = previous_response_id
                 if not preserve_responses_state and hasattr(

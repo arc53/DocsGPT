@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 import pytest
 from docsgpt.agents.classic_agent import ClassicAgent
@@ -1137,6 +1137,30 @@ class TestBuildMessagesAdvanced:
 
 @pytest.mark.unit
 class TestLLMGenAdvanced:
+
+    def test_llm_gen_tells_the_llm_why_the_turn_does_not_chain(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+        monkeypatch,
+    ):
+        from docsgpt.agents import base as base_mod
+
+        monkeypatch.setattr(base_mod.settings, "OPENAI_RESPONSES_STORE", True)
+        mock_llm._uses_responses_api = Mock(return_value=True)
+        mock_llm.responses_chain_key = Mock(return_value="key")
+        agent = ClassicAgent(**agent_base_params)
+        agent.chat_history = []
+
+        agent._llm_gen([{"role": "user", "content": "test"}])
+        mock_llm.note_chain_turn.assert_called_once_with("first_turn", new_turn=True)
+        assert "previous_response_id" not in mock_llm.gen_stream.call_args[1]
+
+        agent._llm_gen([{"role": "user", "content": "test"}], preserve_responses_state=True)
+        assert mock_llm.note_chain_turn.call_args == call("first_turn", new_turn=False)
+
 
     def test_llm_gen_with_attachments(
         self,
