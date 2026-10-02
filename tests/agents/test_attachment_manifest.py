@@ -314,7 +314,7 @@ class TestTextKeptPastTheCut:
         )
         line = self._line(plan)
         assert "240,258 tokens" in line
-        assert "readable and searchable with attachments_read" in line
+        assert "can be read with attachments_read and searched" in line
         assert "cut at" not in line
 
     def test_a_partial_head_counts_against_the_whole_text(self):

@@ -366,7 +366,7 @@ def _upload_cut(planned: PlannedFile, read_action: Optional[str]) -> str:
         return ""
     stored, original = extraction.get("stored_tokens"), extraction.get("original_tokens")
     if _reads_past_cut(planned, read_action):
-        note = f"text past the first {planned.text_tokens:,} tokens is readable and searchable with {read_action}"
+        note = f"text past the first {planned.text_tokens:,} tokens can be read with {read_action} and searched"
         if isinstance(original, int) and original > planned.readable_tokens:
             note += f" up to {planned.readable_tokens:,} of ~{original:,} tokens (cut at upload)"
         return note
