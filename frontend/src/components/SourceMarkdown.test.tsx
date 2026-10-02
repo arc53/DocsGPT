@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 
-import SourceMarkdown from './SourceMarkdown';
+import SourceMarkdown, { type SourceLink } from './SourceMarkdown';
 
 const render = (content: string, highlight?: string) =>
   renderToStaticMarkup(
@@ -64,5 +65,45 @@ describe('SourceMarkdown', () => {
     const link = host.querySelector('a')!;
     expect(link.dataset.size).toBe('text');
     expect(link.className).not.toMatch(/\btext-sm\b|font-medium/);
+  });
+
+  describe('resolveLink', () => {
+    const page =
+      'See [leave](/people/leave.md) and [our site](https://arc53.com).';
+    const withLinks = (resolve: (href: string) => SourceLink | null) =>
+      renderToStaticMarkup(
+        <MemoryRouter>
+          <SourceMarkdown
+            content={page}
+            resolveLink={(href) =>
+              href.startsWith('/') ? resolve(href) : null
+            }
+          />
+        </MemoryRouter>,
+      );
+
+    it('opens an internal link in place as a button', () => {
+      const html = withLinks(() => ({ onOpen: () => undefined }));
+      expect(html).toMatch(/<button[^>]*type="button"[^>]*>leave<\/button>/);
+      expect(html).not.toContain('href="/people/leave.md"');
+    });
+
+    it('routes an internal link inside the app, in the same tab', () => {
+      const html = withLinks(() => ({ to: '/settings/knowledge?source=s1' }));
+      const anchor = html.match(/<a[^>]*>leave<\/a>/)?.[0] ?? '';
+      expect(anchor).toContain('href="/settings/knowledge?source=s1"');
+      expect(anchor).not.toContain('target=');
+    });
+
+    it('reads a dead internal link as text', () => {
+      const html = withLinks(() => 'text');
+      expect(html).toContain('See leave and');
+      expect(html).not.toContain('/people/leave.md');
+    });
+
+    it('keeps a web link a new-tab link', () => {
+      const html = withLinks(() => 'text');
+      expect(html).toContain('href="https://arc53.com" target="_blank"');
+    });
   });
 });

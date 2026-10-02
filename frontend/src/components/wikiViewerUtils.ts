@@ -142,3 +142,57 @@ export function buildWikiNavigator(
     });
   return [...roots, ...folders];
 }
+
+/** A page path without its leading slashes: the API writes `/a.md`, links may not. */
+const barePath = (path: string) => path.replace(/^\/+/, '');
+
+/**
+ * The wiki page a link inside a page points at, as a path without its
+ * leading slash: `/a/b.md` from the wiki's root, `b.md`, `./b.md` or
+ * `../b.md` from the linking page's folder.
+ *
+ * @param href The link as written.
+ * @param fromPath The path of the page the link is on.
+ * @returns The target path, or null for a link that leaves the wiki (a web
+ *   address, mail, an in-page `#anchor`).
+ */
+export function wikiLinkTarget(href: string, fromPath: string): string | null {
+  const raw = href.trim();
+  if (!raw || raw.startsWith('#') || raw.startsWith('//')) return null;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) return null;
+  let path = raw.split(/[?#]/)[0];
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    // A stray % stays as written.
+  }
+  const base = path.startsWith('/')
+    ? []
+    : barePath(fromPath).split('/').slice(0, -1);
+  const segments: string[] = [];
+  for (const part of [...base, ...path.split('/')]) {
+    if (!part || part === '.') continue;
+    if (part === '..') segments.pop();
+    else segments.push(part);
+  }
+  return segments.length ? segments.join('/') : null;
+}
+
+/**
+ * The page of `pages` at `path`, ignoring leading slashes; a link may also
+ * leave off the `.md`.
+ *
+ * @param pages The wiki's pages.
+ * @param path A page path, as `wikiLinkTarget` or a citation names it.
+ * @returns The page, or undefined when the wiki has none there.
+ */
+export function findWikiPage(
+  pages: WikiPageNode[],
+  path: string,
+): WikiPageNode | undefined {
+  const wanted = barePath(path);
+  return (
+    pages.find((page) => barePath(page.path) === wanted) ??
+    pages.find((page) => barePath(page.path) === `${wanted}.md`)
+  );
+}

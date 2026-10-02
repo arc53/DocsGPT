@@ -1,6 +1,12 @@
 import copy from 'copy-to-clipboard';
 import { BookOpen, Copy, FileText, Pencil } from 'lucide-react';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import userService from '../api/services/userService';
@@ -22,8 +28,10 @@ import { Skeleton } from './ui/skeleton';
 import {
   WikiPageNode,
   buildWikiNavigator,
+  findWikiPage,
   provenanceKey,
   saveWikiPage,
+  wikiLinkTarget,
 } from './wikiViewerUtils';
 
 interface WikiViewerProps {
@@ -102,15 +110,14 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
         if (cancelled) return;
         const list: WikiPageNode[] = data?.pages ?? [];
         setPages(list);
-        // The cited page opens first; a chunk's page path may carry a
-        // leading slash the page list does not.
-        const wanted = initialPath?.replace(/^\/+/, '');
+        // The cited page opens first, else the first page.
+        const wanted = initialPath
+          ? findWikiPage(list, initialPath)
+          : undefined;
         setSelectedPath((prev) =>
           prev && list.some((p) => p.path === prev)
             ? prev
-            : (list.find((p) => p.path === wanted)?.path ??
-              list[0]?.path ??
-              null),
+            : ((wanted ?? list[0])?.path ?? null),
         );
       })
       .catch((error) => {
@@ -330,6 +337,18 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
     </>
   ) : null;
 
+  // A link to another page of this wiki opens it here; one to a page the
+  // wiki does not have reads as text. Web links open in a new tab.
+  const resolveLink = useCallback(
+    (href: string) => {
+      const target = wikiLinkTarget(href, selectedPath ?? '');
+      if (target === null) return null;
+      const linked = findWikiPage(pages, target);
+      return linked ? { onOpen: () => setSelectedPath(linked.path) } : 'text';
+    },
+    [pages, selectedPath],
+  );
+
   const readerBody = () => {
     if (loadingContent) return <ReaderBars />;
     if (contentFailed) {
@@ -343,7 +362,7 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
         />
       );
     }
-    return <SourceMarkdown content={content} />;
+    return <SourceMarkdown content={content} resolveLink={resolveLink} />;
   };
 
   const renderBody = () => {

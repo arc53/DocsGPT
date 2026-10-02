@@ -1,5 +1,5 @@
 import { ExternalLink } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
@@ -10,7 +10,7 @@ import {
   formatChunkTokens,
 } from '../components/chunkUtils';
 import { chunkFilePath } from '../components/graph/graphCanvasUtils';
-import SourceMarkdown from '../components/SourceMarkdown';
+import SourceMarkdown, { type SourceLink } from '../components/SourceMarkdown';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -25,6 +25,7 @@ import {
   PanelFooter,
   PanelHeader,
 } from '../components/ui/side-panel';
+import { wikiLinkTarget } from '../components/wikiViewerUtils';
 import { selectSourceDocs, selectToken } from '../preferences/preferenceSlice';
 import { knowledgeLink } from '../settings/knowledgeLink';
 import { formatDateOnly } from '../utils/dateTimeUtils';
@@ -170,20 +171,22 @@ export default function CitationReader({
   const tokens = formatChunkTokens(
     metadata as Parameters<typeof formatChunkTokens>[0],
   );
-  // The passage in Knowledge, for a source the reader could reach: the API
-  // answered for it, or the app's knowledge list has it.
+  // The source is one the viewer can open in Knowledge: the API answered for
+  // it, or the app's knowledge list has it.
+  const reachable = Boolean(sourceId && (ready?.source || listed));
+  // A wiki chunk's page: where its links to other pages are read from.
+  const wikiPage =
+    kind === 'wiki'
+      ? (ready?.pagePath ??
+        (typeof metadata.source === 'string' ? metadata.source : undefined) ??
+        source.source)
+      : undefined;
+  // The passage in Knowledge: the cited chunk, or a wiki chunk's page.
   const inKnowledge =
-    ready && sourceId && (ready.source || listed)
+    ready && sourceId && reachable
       ? knowledgeLink(
           kind === 'wiki'
-            ? {
-                sourceId,
-                wikiPage:
-                  ready.pagePath ??
-                  (typeof metadata.source === 'string'
-                    ? metadata.source
-                    : undefined),
-              }
+            ? { sourceId, wikiPage }
             : {
                 sourceId,
                 chunk: {
@@ -194,6 +197,20 @@ export default function CitationReader({
               },
         )
       : null;
+  // A wiki passage links other pages by their wiki path; those open in
+  // Knowledge at that page. Any other link that is not a web address (a page
+  // of a source out of reach, a relative link in a document) leads nowhere
+  // from the chat, so it reads as text rather than a dead route of this app.
+  const resolveLink = useCallback(
+    (href: string): SourceLink | null => {
+      const target = wikiLinkTarget(href, wikiPage ?? '');
+      if (target === null) return null;
+      return sourceId && wikiPage && reachable
+        ? { to: knowledgeLink({ sourceId, wikiPage: target }) }
+        : 'text';
+    },
+    [sourceId, wikiPage, reachable],
+  );
 
   const renderBody = () => {
     if (state.status === 'loading') return <LoadingState />;
@@ -220,7 +237,13 @@ export default function CitationReader({
         <DescriptionList size="xs">
           {knowledgeName ? (
             <DescriptionItem label={t('conversation.sources.reader.knowledge')}>
-              {knowledgeName}
+              {reachable && sourceId ? (
+                <Button variant="link" size="text" asChild>
+                  <Link to={knowledgeLink({ sourceId })}>{knowledgeName}</Link>
+                </Button>
+              ) : (
+                knowledgeName
+              )}
             </DescriptionItem>
           ) : null}
           {href ? (
@@ -251,7 +274,10 @@ export default function CitationReader({
             </DescriptionItem>
           ) : null}
         </DescriptionList>
-        <SourceMarkdown content={ready ? ready.chunk.text : excerpt} />
+        <SourceMarkdown
+          content={ready ? ready.chunk.text : excerpt}
+          resolveLink={resolveLink}
+        />
       </>
     );
   };

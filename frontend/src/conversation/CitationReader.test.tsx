@@ -343,6 +343,58 @@ describe('CitationReader › Open in Knowledge', () => {
     expect(knowledgeLink()?.searchParams.get('chunk')).toBe('9');
   });
 
+  const anchorByText = (text: string) =>
+    [...container.querySelectorAll<HTMLAnchorElement>('a')].find(
+      (a) => a.textContent === text,
+    );
+
+  it('links the knowledge name back to the source', async () => {
+    service.getSourceChunk.mockReturnValue(json(200, CHUNK));
+    await render(FILE);
+    const url = new URL(
+      anchorByText('HR handbook')!.getAttribute('href')!,
+      'http://x',
+    );
+    expect(url.pathname).toBe('/settings/knowledge');
+    expect([...url.searchParams.keys()]).toEqual(['source']);
+    expect(url.searchParams.get('source')).toBe('src-1');
+  });
+
+  it("opens a wiki passage's page links in Knowledge, web links in a new tab", async () => {
+    service.getSourceChunk.mockReturnValue(
+      json(200, {
+        ...CHUNK,
+        source: { ...CHUNK.source, kind: 'wiki' },
+        chunk: {
+          ...CHUNK.chunk,
+          text: 'See [runbook](../engineering/runbook.md) and [site](https://arc53.com).',
+          metadata: { source: '/people/leave.md' },
+        },
+        page_path: '/people/leave.md',
+      }),
+    );
+    await render(FILE);
+    const runbook = new URL(
+      anchorByText('runbook')!.getAttribute('href')!,
+      'http://x',
+    );
+    expect(runbook.searchParams.get('wikiPage')).toBe('engineering/runbook.md');
+    expect(anchorByText('runbook')!.getAttribute('target')).toBeNull();
+    expect(anchorByText('site')!.getAttribute('target')).toBe('_blank');
+  });
+
+  it("leaves a wiki excerpt's links and the name as text when the source is out of reach", async () => {
+    service.getSourceChunk.mockReturnValue(json(403, {}));
+    await render({
+      ...FILE,
+      source_id: 'other',
+      source: '/people/leave.md',
+      text: 'See [runbook](/engineering/runbook.md)...',
+    });
+    expect(anchorByText('runbook')).toBeUndefined();
+    expect(container.textContent).toContain('See runbook');
+  });
+
   it('offers no link when only the excerpt is shown', async () => {
     service.getSourceChunk.mockReturnValue(json(403, {}));
     await render(FILE);
