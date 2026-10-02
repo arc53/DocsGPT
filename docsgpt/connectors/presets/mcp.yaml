@@ -65,3 +65,13 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://docs.stripe.com/mcp
+
+- key: mcp:huggingface
+  name: Hugging Face
+  description: Search Hugging Face models, datasets, Spaces and papers, and use configured Hub tools.
+  icon: huggingface
+  category: dev
+  mcp_url: https://huggingface.co/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://huggingface.co/docs/hub/hf-mcp-server
