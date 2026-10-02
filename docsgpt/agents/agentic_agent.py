@@ -42,6 +42,7 @@ class AgenticAgent(BaseAgent):
 
         # 4. Build messages (prompt has NO pre-fetched docs)
         messages = self._build_messages(self.prompt, query)
+        self._attach_citation_registry()
 
         # 5. Call LLM — the handler manages the tool loop
         llm_response = self._llm_gen(messages, log_context)

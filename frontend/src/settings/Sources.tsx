@@ -14,7 +14,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import userService from '../api/services/userService';
 import modelService from '../api/services/modelService';
@@ -43,11 +43,17 @@ import { showActionToast } from '../notifications/actionToastSlice';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
 import {
+  selectSourceDocs,
   selectToken,
   setPaginatedDocuments,
   setSourceDocs,
 } from '../preferences/preferenceSlice';
 import Upload from '../upload/Upload';
+import {
+  KNOWLEDGE_LINK_PARAMS,
+  type KnowledgeLink,
+  readKnowledgeLink,
+} from './knowledgeLink';
 import {
   addUploadTask,
   removeUploadTask,
@@ -149,6 +155,41 @@ export default function Sources({
     { label: t('settings.sources.syncFrequency.monthly'), value: 'monthly' },
   ];
   const [documentToView, setDocumentToView] = useState<Doc>();
+  // A citation's "Open in Knowledge" (see knowledgeLink.ts): the source opens
+  // on the cited chunk or wiki page, once. The source comes from this page
+  // or the app's knowledge list, so the view gets the caller's real access;
+  // one in neither is out of reach and just leaves the list showing.
+  const knowledge = useSelector(selectSourceDocs);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [viewLink, setViewLink] = useState<KnowledgeLink | null>(null);
+  useEffect(() => {
+    const link = readKnowledgeLink(searchParams);
+    if (!link) return;
+    const listed =
+      paginatedDocuments?.find((d) => d.id === link.sourceId) ??
+      knowledge?.find((d) => d.id === link.sourceId);
+    if (!listed && knowledge == null) return; // the list is still loading
+    setSearchParams(
+      (params) => {
+        const next = new URLSearchParams(params);
+        KNOWLEDGE_LINK_PARAMS.forEach((key) => next.delete(key));
+        return next;
+      },
+      { replace: true },
+    );
+    if (!listed) return;
+    // The app-wide list names the folder flag `is_nested`.
+    const raw = listed as Doc & { is_nested?: boolean };
+    setDocumentToView({
+      ...listed,
+      isNested: listed.isNested ?? raw.is_nested,
+    });
+    setViewLink(link);
+  }, [searchParams, knowledge, paginatedDocuments]);
+  const closeDocument = () => {
+    setDocumentToView(undefined);
+    setViewLink(null);
+  };
   const [documentToShare, setDocumentToShare] = useState<Doc | null>(null);
   const [documentForWikiSettings, setDocumentForWikiSettings] =
     useState<Doc | null>(null);
@@ -604,6 +645,9 @@ export default function Sources({
 
   // Chunk, file, wiki and graph writes follow the source's `edit` action.
   const viewCanEdit = documentToView ? can(documentToView, 'edit') : false;
+  // The link only applies to the source it opened.
+  const link =
+    viewLink && viewLink.sourceId === documentToView?.id ? viewLink : null;
 
   return documentToView ? (
     <div className="flex flex-col">
@@ -613,8 +657,9 @@ export default function Sources({
           docId={documentToView.id || ''}
           sourceName={documentToView.name}
           canEdit={viewCanEdit}
-          onBackToDocuments={() => setDocumentToView(undefined)}
+          onBackToDocuments={closeDocument}
           headerAction={testRetrievalAction}
+          initialPath={link?.wikiPage}
         />
       ) : documentToView.config?.kind === 'graphrag' ? (
         <GraphSourceView
@@ -623,8 +668,9 @@ export default function Sources({
           sourceType={documentToView.type}
           isNested={!!documentToView.isNested}
           canEdit={viewCanEdit}
-          onBackToDocuments={() => setDocumentToView(undefined)}
+          onBackToDocuments={closeDocument}
           headerAction={testRetrievalAction}
+          linkedChunk={link?.chunk}
         />
       ) : documentToView.isNested ? (
         documentToView.type === 'connector:file' ? (
@@ -632,16 +678,20 @@ export default function Sources({
             docId={documentToView.id || ''}
             canEdit={viewCanEdit}
             sourceName={documentToView.name}
-            onBackToDocuments={() => setDocumentToView(undefined)}
+            onBackToDocuments={closeDocument}
             headerAction={testRetrievalAction}
+            initialPath={link?.chunk?.path}
+            linkedChunk={link?.chunk}
           />
         ) : (
           <FileTree
             docId={documentToView.id || ''}
             canEdit={viewCanEdit}
             sourceName={documentToView.name}
-            onBackToDocuments={() => setDocumentToView(undefined)}
+            onBackToDocuments={closeDocument}
             headerAction={testRetrievalAction}
+            initialPath={link?.chunk?.path}
+            linkedChunk={link?.chunk}
           />
         )
       ) : (
@@ -649,8 +699,9 @@ export default function Sources({
           documentId={documentToView.id || ''}
           documentName={documentToView.name}
           canEdit={viewCanEdit}
-          handleGoBack={() => setDocumentToView(undefined)}
+          handleGoBack={closeDocument}
           headerAction={testRetrievalAction}
+          linkedChunk={link?.chunk}
         />
       )}
       <TestRetrievalModal

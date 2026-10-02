@@ -20,6 +20,7 @@ import Chunks, {
   type ChunksController,
   type OpenChunkPosition,
 } from '../Chunks';
+import type { LinkedChunk } from '../chunkUtils';
 import PathHeader, { type Crumb } from './PathHeader';
 import SourceNavigator from './SourceNavigator';
 import SkeletonLoader from '../SkeletonLoader';
@@ -114,6 +115,11 @@ export interface TreeBrowserProps {
    */
   initialPath?: string;
   /**
+   * The cited chunk to open in `initialPath`'s chunk list, once (a citation
+   * opened in Knowledge; see `LinkedChunk`).
+   */
+  linkedChunk?: LinkedChunk;
+  /**
    * Whether the caller may change the source (`can(source, 'edit')`).
    * False hides the chunk list's Add, Edit and Delete; browsing stays.
    */
@@ -197,6 +203,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
   embedded = false,
   actionsTarget,
   initialPath,
+  linkedChunk,
   onCrumbsChange,
   canEdit = true,
 }) => {
@@ -389,6 +396,11 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
     }
   };
 
+  // The file the linked chunk belongs to; leaving it drops the link, so the
+  // file opened again later lists from the start.
+  const [linkedFile, setLinkedFile] = useState<string | null>(null);
+  if (linkedFile && selectedFile?.id !== linkedFile) setLinkedFile(null);
+
   // Open the file the caller asked for, once per new initialPath; a path not
   // found yet is tried again when the structure reloads.
   const appliedInitialPath = useRef<string | null>(null);
@@ -400,6 +412,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
     appliedInitialPath.current = initialPath;
     setCurrentPath(file.path.split('/').slice(0, -1));
     setSelectedFile({ id: file.path, name: file.label });
+    if (linkedChunk) setLinkedFile(file.path);
   }, [initialPath, directoryStructure, navigatorNodes]);
 
   const buildDefaultViewOption = (
@@ -698,6 +711,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
       controllerRef={chunksControllerRef}
       onOpenChunkChange={setOpenChunkPosition}
       canEdit={canEdit}
+      linkedChunk={file.id === linkedFile ? linkedChunk : undefined}
     />
   );
 

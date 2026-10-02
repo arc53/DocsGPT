@@ -1844,6 +1844,7 @@
         "sourceSummaries": "Alias del contenido (compatibilidad retroactiva)",
         "sourceDocuments": "Lista de objetos de documentos",
         "sourceCount": "Número de documentos recuperados",
+        "citationRules": "Reglas de citas ([n])",
         "systemDate": "Fecha actual (YYYY-MM-DD)",
         "systemTime": "Hora actual (HH:MM:SS)",
         "systemTimestamp": "Marca de tiempo ISO 8601",
@@ -2011,7 +2012,24 @@
       "fromConnectorTitle": "De {{name}}: {{title}}",
       "knowledge": "Conocimiento",
       "forAnswer_one": "{{count}} fuente para esta respuesta",
-      "forAnswer_other": "{{count}} fuentes para esta respuesta"
+      "forAnswer_other": "{{count}} fuentes para esta respuesta",
+      "open": "Abrir fuente {{num}}",
+      "reader": {
+        "back": "Todas las fuentes",
+        "knowledge": "Conocimiento",
+        "file": "Archivo",
+        "page": "Página",
+        "link": "Enlace",
+        "added": "Añadido",
+        "length": "Longitud",
+        "tokens": "{{tokens}} tokens",
+        "excerptOnly": "Para esta respuesta solo está disponible el extracto guardado.",
+        "missing": "Este pasaje ya no está en la fuente; puede que se haya editado o reindexado. Se muestra el extracto guardado con la respuesta.",
+        "forbidden": "Esta fuente se eliminó o ya no tienes acceso a ella. Se muestra el extracto guardado con la respuesta.",
+        "loadFailed": "No se pudo cargar el pasaje.",
+        "openLink": "Abrir enlace",
+        "openInKnowledge": "Abrir en Conocimiento"
+      }
     },
     "attachments": {
       "attach": "Adjuntar",

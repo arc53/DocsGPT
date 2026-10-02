@@ -2,27 +2,60 @@ import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 
-const { dispatch, service, view, connectors, uploadProps, reconnect } =
-  vi.hoisted(() => ({
-    reconnect: vi.fn(),
-    uploadProps: vi.fn(),
-    connectors: { connections: [] as Record<string, unknown>[] },
-    // The heavy children: each view reports the canEdit it was given.
-    view:
-      (testId: string) =>
-      ({ canEdit }: { canEdit?: boolean }) => (
-        <div data-testid={testId} data-can-edit={String(canEdit)} />
-      ),
-    dispatch: vi.fn(),
-    service: {
-      getConfig: vi.fn(),
-      manageSync: vi.fn(),
-      syncSource: vi.fn(),
-      syncConnector: vi.fn(),
-      reingestSource: vi.fn(),
-      getDirectoryStructure: vi.fn(),
-    },
-  }));
+const {
+  dispatch,
+  service,
+  view,
+  connectors,
+  uploadProps,
+  reconnect,
+  knowledge,
+} = vi.hoisted(() => ({
+  // The app-wide knowledge list (`preference.sourceDocs`); null is unloaded.
+  knowledge: { docs: undefined as unknown },
+  reconnect: vi.fn(),
+  uploadProps: vi.fn(),
+  connectors: { connections: [] as Record<string, unknown>[] },
+  // The heavy children: each view reports the canEdit and the citation
+  // link it was given, and its Back leaves it.
+  view:
+    (testId: string) =>
+    ({
+      canEdit,
+      linkedChunk,
+      initialPath,
+      handleGoBack,
+      onBackToDocuments,
+    }: {
+      canEdit?: boolean;
+      linkedChunk?: { id?: string; search: string };
+      initialPath?: string;
+      handleGoBack?: () => void;
+      onBackToDocuments?: () => void;
+    }) => (
+      <div
+        data-testid={testId}
+        data-can-edit={String(canEdit)}
+        data-linked={
+          linkedChunk ? `${linkedChunk.id}|${linkedChunk.search}` : ''
+        }
+        data-initial-path={initialPath ?? ''}
+      >
+        <button type="button" onClick={handleGoBack ?? onBackToDocuments}>
+          VIEW BACK
+        </button>
+      </div>
+    ),
+  dispatch: vi.fn(),
+  service: {
+    getConfig: vi.fn(),
+    manageSync: vi.fn(),
+    syncSource: vi.fn(),
+    syncConnector: vi.fn(),
+    reingestSource: vi.fn(),
+    getDirectoryStructure: vi.fn(),
+  },
+}));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -32,7 +65,7 @@ vi.mock('react-redux', () => ({
   useDispatch: () => dispatch,
   useSelector: (selector: (state: unknown) => unknown) =>
     selector({
-      preference: { token: null },
+      preference: { token: null, sourceDocs: knowledge.docs },
       upload: { tasks: [] },
       graphBuild: { builds: {} },
       connectors: { connections: connectors.connections, loaded: true },
@@ -821,5 +854,124 @@ describe('Sources paging', () => {
     expect(empty.textContent).toContain('settings.sources.noResults');
     expect(empty.getAttribute('data-size')).toBe('xs');
     expect(empty.querySelector('svg')).toBeNull();
+  });
+});
+
+describe('Sources citation link', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    service.getConfig.mockResolvedValue({ json: async () => ({}) });
+    vi.mocked(getDocsWithPagination).mockResolvedValue({
+      docs: [],
+      totalDocuments: 1,
+      totalPages: 1,
+      currentPage: 1,
+      nextCursor: '',
+    } as never);
+    knowledge.docs = [];
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+    knowledge.docs = undefined;
+  });
+
+  function Where() {
+    const location = useLocation();
+    return <div data-testid="where">{location.search}</div>;
+  }
+
+  const render = async (entry: string, listed: Doc[] = []) => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={[entry]}>
+          <Sources paginatedDocuments={listed} handleDeleteDocument={vi.fn()} />
+          <Where />
+        </MemoryRouter>,
+      );
+    });
+  };
+
+  const viewOf = (testId: string) =>
+    container.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+  const where = () =>
+    container.querySelector('[data-testid="where"]')?.textContent;
+
+  it('opens the linked chunk of a source on the page, then drops the link from the URL', async () => {
+    // A list on page 2 of 3, so the page stays in the URL.
+    vi.mocked(getDocsWithPagination).mockResolvedValue({
+      docs: [],
+      totalDocuments: 30,
+      totalPages: 3,
+      currentPage: 2,
+      nextCursor: '',
+    } as never);
+    await render(
+      '/settings/knowledge?page=2&source=src-1&chunk=c7&q=Late%20pickup',
+      [doc({ access: 'viewer', allowed_actions: VIEWER })],
+    );
+    const chunks = viewOf('chunks');
+    expect(chunks?.dataset.linked).toBe('c7|Late pickup');
+    // The source's own access, not a guess from the link.
+    expect(chunks?.dataset.canEdit).toBe('false');
+    expect(where()).toBe('?page=2');
+  });
+
+  it('finds a source off this page in the knowledge list, folders included', async () => {
+    knowledge.docs = [
+      { ...doc({ id: 'src-9', name: 'Handbook' }), is_nested: true },
+    ];
+    await render(
+      '/settings/knowledge?source=src-9&chunk=c1&q=Leave&path=hr%2Fleave.md',
+    );
+    const tree = viewOf('file-tree');
+    expect(tree?.dataset.initialPath).toBe('hr/leave.md');
+    expect(tree?.dataset.linked).toBe('c1|Leave');
+  });
+
+  it('opens a wiki at the cited page', async () => {
+    await render('/settings/knowledge?source=src-1&wikiPage=guide%2Fleave.md', [
+      doc({ type: 'wiki' }),
+    ]);
+    expect(viewOf('wiki')?.dataset.initialPath).toBe('guide/leave.md');
+  });
+
+  it('opens a graph source on the cited chunk', async () => {
+    await render('/settings/knowledge?source=src-1&chunk=c3&q=Nordhaven', [
+      doc({ config: { kind: 'graphrag' } as Doc['config'] }),
+    ]);
+    expect(viewOf('graph')?.dataset.linked).toBe('c3|Nordhaven');
+  });
+
+  it('waits for the knowledge list before giving up on a source', async () => {
+    knowledge.docs = null;
+    await render('/settings/knowledge?source=src-9&chunk=c1&q=x');
+    expect(where()).toBe('?source=src-9&chunk=c1&q=x');
+    expect(viewOf('chunks')).toBeNull();
+  });
+
+  it('shows the list for a source the caller cannot see', async () => {
+    await render('/settings/knowledge?source=gone&chunk=c1&q=x');
+    expect(viewOf('chunks')).toBeNull();
+    expect(where()).toBe('');
+  });
+
+  it('Back drops the link: the source opened again lists from the start', async () => {
+    await render('/settings/knowledge?source=src-1&chunk=c7&q=Late', [doc()]);
+    const back = viewOf('chunks')!.querySelector('button')!;
+    await act(async () => back.click());
+    const open = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="settings.sources.viewSource"], [data-slot="card"] > button',
+    );
+    expect(open).not.toBeNull();
+    await act(async () => open!.click());
+    expect(viewOf('chunks')?.dataset.linked).toBe('');
   });
 });

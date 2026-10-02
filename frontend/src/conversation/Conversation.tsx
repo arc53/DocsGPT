@@ -50,7 +50,8 @@ import { cn } from '@/lib/utils';
 /** What the chat's one docked side panel shows (DESIGN.md "Side panels"). */
 type ChatCompanion =
   | { kind: 'artifact'; id: string; toolName: string }
-  | { kind: 'sources'; sources: AnswerSource[] };
+  // `index` is the source whose reader shows; null shows the list.
+  | { kind: 'sources'; sources: AnswerSource[]; index: number | null };
 
 export default function Conversation() {
   const { t } = useTranslation();
@@ -420,8 +421,8 @@ export default function Conversation() {
 
   const companionContext = useMemo(
     () => ({
-      openSources: (sources: AnswerSource[]) =>
-        setCompanion({ kind: 'sources', sources }),
+      openSources: (sources: AnswerSource[], index?: number) =>
+        setCompanion({ kind: 'sources', sources, index: index ?? null }),
     }),
     [],
   );
@@ -436,7 +437,15 @@ export default function Conversation() {
         conversationId={conversationId}
       />
     ) : shownCompanion?.kind === 'sources' ? (
-      <SourcesPanel sources={shownCompanion.sources} />
+      <SourcesPanel
+        sources={shownCompanion.sources}
+        openIndex={shownCompanion.index}
+        onOpenIndexChange={(index) =>
+          setCompanion((current) =>
+            current?.kind === 'sources' ? { ...current, index } : current,
+          )
+        }
+      />
     ) : null;
 
   return (

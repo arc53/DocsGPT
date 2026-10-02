@@ -187,27 +187,31 @@ class MongoDBVectorStore(BaseVectorStore):
 
     def get_chunks(self):
         try:
-            chunks = []
-            cursor = self._collection.find({"source_id": self._source_id})
-            for doc in cursor:
-                doc_id = str(doc.get("_id"))
-                text = doc.get(self._text_key)
-                metadata = {
-                    k: v
-                    for k, v in doc.items()
-                    if k
-                    not in ["_id", self._text_key, self._embedding_key, "source_id"]
-                }
-
-                if text:
-                    chunks.append(
-                        {"doc_id": doc_id, "text": text, "metadata": metadata}
-                    )
-
-            return chunks
+            return self._scan_chunks()
         except Exception as e:
             logging.error(f"Error getting chunks: {e}", exc_info=True)
             return []
+
+    def _scan_chunks(self):
+        """Every chunk of this source; a store error raises."""
+        chunks = []
+        cursor = self._collection.find({"source_id": self._source_id})
+        for doc in cursor:
+            doc_id = str(doc.get("_id"))
+            text = doc.get(self._text_key)
+            metadata = {
+                k: v
+                for k, v in doc.items()
+                if k
+                not in ["_id", self._text_key, self._embedding_key, "source_id"]
+            }
+
+            if text:
+                chunks.append(
+                    {"doc_id": doc_id, "text": text, "metadata": metadata}
+                )
+
+        return chunks
 
     def add_chunk(self, text, metadata=None):
         metadata = metadata or {}

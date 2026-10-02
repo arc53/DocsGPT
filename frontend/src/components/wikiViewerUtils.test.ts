@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   buildWikiNavigator,
+  findWikiPage,
   provenanceKey,
   saveWikiPage,
+  wikiLinkTarget,
   wikiPageLabel,
 } from './wikiViewerUtils';
 import { filterNavigatorLeaves } from './tree/navigatorUtils';
@@ -177,5 +179,58 @@ describe('buildWikiNavigator', () => {
       filterNavigatorLeaves(nodes, 'hamburg').map((m) => m.parentPath),
     ).toEqual(['/contracts/europe/2026', '/playbooks']);
     expect(filterNavigatorLeaves(nodes, 'index')[0].parentPath).toBe('');
+  });
+});
+
+describe('wikiLinkTarget', () => {
+  it.each([
+    [
+      '/engineering/incident-response.md',
+      '/index.md',
+      'engineering/incident-response.md',
+    ],
+    [
+      'data-classification.md',
+      '/security/overview.md',
+      'security/data-classification.md',
+    ],
+    [
+      './data-classification.md',
+      'security/overview.md',
+      'security/data-classification.md',
+    ],
+    ['../people/leave.md', '/engineering/runbook.md', 'people/leave.md'],
+    ['/a/b.md#section', '/index.md', 'a/b.md'],
+    ['/Leave%20policy.md', '/index.md', 'Leave policy.md'],
+  ])('resolves %s from %s', (href, from, expected) => {
+    expect(wikiLinkTarget(href, from)).toBe(expected);
+  });
+
+  it.each(['https://www.arc53.com/', 'mailto:a@b.c', '#top', '//cdn.x/y', ''])(
+    'leaves %s to the browser',
+    (href) => {
+      expect(wikiLinkTarget(href, '/index.md')).toBeNull();
+    },
+  );
+});
+
+describe('findWikiPage', () => {
+  const pages = [
+    { path: '/index.md', title: null, token_count: 1 },
+    { path: '/people/leave.md', title: null, token_count: 1 },
+  ];
+
+  it('matches with or without the leading slash, and without .md', () => {
+    expect(findWikiPage(pages, 'people/leave.md')?.path).toBe(
+      '/people/leave.md',
+    );
+    expect(findWikiPage(pages, '/people/leave.md')?.path).toBe(
+      '/people/leave.md',
+    );
+    expect(findWikiPage(pages, 'people/leave')?.path).toBe('/people/leave.md');
+  });
+
+  it('finds nothing for a page that does not exist', () => {
+    expect(findWikiPage(pages, 'people/gone.md')).toBeUndefined();
   });
 });

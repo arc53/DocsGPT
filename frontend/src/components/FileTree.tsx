@@ -13,6 +13,7 @@ import { Button } from './ui/button';
 import type { MenuOption } from './ui/dropdown-menu';
 import type { RowMenuContext, TreeBrowserController } from './tree/types';
 import { useReingestSseWaiter } from './tree/useReingestWait';
+import type { LinkedChunk } from './chunkUtils';
 
 type QueuedOperation = {
   operation: 'add' | 'remove' | 'remove_directory';
@@ -37,6 +38,8 @@ interface FileTreeProps {
   actionsTarget?: HTMLElement | null;
   /** A file to open once the structure loads (path, file name or display name). */
   initialPath?: string;
+  /** The cited chunk to open in `initialPath`'s chunk list (see `LinkedChunk`). */
+  linkedChunk?: LinkedChunk;
   /** Embedded only: the tree's crumbs, for the host's header (see TreeBrowser). */
   onCrumbsChange?: (crumbs: Crumb[]) => void;
   /**
@@ -54,6 +57,7 @@ const FileTree: React.FC<FileTreeProps> = ({
   embedded = false,
   actionsTarget,
   initialPath,
+  linkedChunk,
   onCrumbsChange,
   canEdit = true,
 }) => {
@@ -312,6 +316,7 @@ const FileTree: React.FC<FileTreeProps> = ({
       canEdit={canEdit}
       actionsTarget={actionsTarget}
       initialPath={initialPath}
+      linkedChunk={linkedChunk}
       columnOrder="size-first"
       sortEntries={false}
       controllerRef={controllerRef}

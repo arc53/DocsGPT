@@ -12,6 +12,15 @@ vi.mock('../hooks', () => ({
   useMediaQuery: () => ({ isMobile: false, isDesktop: true }),
 }));
 
+// The reader is covered on its own; here it only has to be the second level.
+vi.mock('./CitationReader', () => ({
+  default: ({ number, onBack }: { number: number; onBack: () => void }) => (
+    <button type="button" data-testid="reader" onClick={onBack}>
+      {`reader ${number}`}
+    </button>
+  ),
+}));
+
 import { SidePanel } from '../components/ui/side-panel';
 import SourcesPanel from './SourcesPanel';
 
@@ -33,24 +42,32 @@ describe('SourcesPanel', () => {
   });
 
   const sources = [
-    { title: 'Guide', text: 'Guide text', link: 'https://example.com/guide' },
+    { title: 'Guide', text: 'Guide text', source: 'https://example.com/guide' },
     {
       title: 'Notes',
       text: 'Notes text',
-      link: 'local',
+      source: 'notes.md',
       connector_key: 'google_drive',
       connector_name: 'Google Drive',
     },
   ];
 
-  const render = async () => {
+  const render = async (
+    openIndex: number | null = null,
+    onOpenIndexChange = vi.fn(),
+  ) => {
     await act(async () => {
       root.render(
         <SidePanel variant="docked" open onOpenChange={vi.fn()}>
-          <SourcesPanel sources={sources} />
+          <SourcesPanel
+            sources={sources}
+            openIndex={openIndex}
+            onOpenIndexChange={onOpenIndexChange}
+          />
         </SidePanel>,
       );
     });
+    return onOpenIndexChange;
   };
 
   it('heads the panel with the title and the count for this answer', async () => {
@@ -62,26 +79,46 @@ describe('SourcesPanel', () => {
     expect(header.textContent).toContain('conversation.sources.forAnswer:2');
   });
 
-  it('lists each source as a filled tile, an external one as a new-tab link', async () => {
-    await render();
+  it('lists each source as a filled tile that opens its reader', async () => {
+    const onOpenIndexChange = await render();
     const tiles = Array.from(
       container.querySelectorAll<HTMLElement>(
         '[data-slot="panel-body"] [data-slot="card"]',
       ),
     );
-    expect(tiles).toHaveLength(2);
     expect(tiles.map((tile) => tile.dataset.variant)).toEqual([
       'filled',
       'filled',
     ]);
-    const [external, local] = tiles;
-    expect(external.tagName).toBe('A');
-    expect(external.getAttribute('href')).toBe('https://example.com/guide');
-    expect(external.getAttribute('target')).toBe('_blank');
-    expect(external.getAttribute('rel')).toBe('noopener noreferrer');
-    expect(external.textContent).toContain('1. Guide');
-    expect(local.tagName).toBe('DIV');
-    expect(local.textContent).toContain('2. Notes');
-    expect(local.textContent).toContain('conversation.sources.fromConnector');
+    // A native button, so the web link waits in the reader instead of
+    // nesting inside a clickable card.
+    expect(tiles.map((tile) => tile.tagName)).toEqual(['BUTTON', 'BUTTON']);
+    expect(container.querySelector('[data-slot="panel-body"] a')).toBeNull();
+    expect(tiles[0].textContent).toContain('1. Guide');
+    expect(tiles[1].textContent).toContain('2. Notes');
+    expect(tiles[1].textContent).toContain(
+      'conversation.sources.fromConnector',
+    );
+
+    await act(async () => tiles[1].click());
+    expect(onOpenIndexChange).toHaveBeenCalledWith(1);
+  });
+
+  it('shows the open source as the second level, and Back returns to the list', async () => {
+    const onOpenIndexChange = await render(0);
+    const reader = container.querySelector<HTMLElement>(
+      '[data-testid="reader"]',
+    );
+    expect(reader?.textContent).toBe('reader 1');
+    expect(container.querySelector('[data-slot="card"]')).toBeNull();
+
+    await act(async () => reader!.click());
+    expect(onOpenIndexChange).toHaveBeenCalledWith(null);
+  });
+
+  it('shows the list for an index past the sources', async () => {
+    await render(5);
+    expect(container.querySelector('[data-testid="reader"]')).toBeNull();
+    expect(container.querySelectorAll('[data-slot="card"]')).toHaveLength(2);
   });
 });

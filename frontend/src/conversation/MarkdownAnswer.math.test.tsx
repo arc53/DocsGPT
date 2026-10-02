@@ -54,7 +54,7 @@ afterEach(() => {
 type RenderOptions = {
   isStreaming?: boolean;
   sourceCount?: number;
-  onOpenSources?: () => void;
+  onOpenSource?: (index: number) => void;
 };
 
 function render(content: string, options: RenderOptions = {}) {
@@ -415,6 +415,27 @@ describe('citations', () => {
     expect(container.textContent).toContain('[0] and [7]');
   });
 
+  it.each([
+    ['Both agree [1, 2].', ['1', '2']],
+    ['Tight [3,4]', ['3', '4']],
+    ['See [1][2].', ['1', '2']],
+    ['Not a list [a, b]', []],
+  ])('links each number of a grouped citation: %s', (source, expected) => {
+    render(source);
+    expect(citations()).toEqual(expected);
+  });
+
+  it('keeps a grouped number beyond the sources as text', () => {
+    render('Per [1, 9].', { sourceCount: 2 });
+    expect(citations()).toEqual(['1']);
+    expect(container.textContent).toContain('[9]');
+  });
+
+  it('leaves an escaped grouped citation alone', () => {
+    render('arr\\[1, 2\\] here');
+    expect(citations()).toEqual([]);
+  });
+
   it('links no citation when the answer has no sources', () => {
     render('Per [1].', { sourceCount: 0 });
     expect(citations()).toEqual([]);
@@ -430,28 +451,19 @@ describe('citation pills', () => {
     act(() => pill?.click());
   }
 
-  it('scrolls to the source card when it is shown', () => {
-    const card = document.createElement('div');
-    card.id = 'source-1';
-    card.scrollIntoView = vi.fn();
-    document.body.appendChild(card);
-    const onOpenSources = vi.fn();
-    try {
-      render('Per [2].', { sourceCount: 5, onOpenSources });
-      click('2');
-      expect(card.scrollIntoView).toHaveBeenCalled();
-      expect(onOpenSources).not.toHaveBeenCalled();
-    } finally {
-      card.remove();
-    }
+  it('opens the cited source by its index', () => {
+    const onOpenSource = vi.fn();
+    render('Per [2] and [5].', { sourceCount: 5, onOpenSource });
+    click('2');
+    click('5');
+    expect(onOpenSource.mock.calls).toEqual([[1], [4]]);
   });
 
-  it('opens the sources list for a source with no card', () => {
-    // Only the first three sources get a card; `[5]` has none to scroll to.
-    const onOpenSources = vi.fn();
-    render('Per [5].', { sourceCount: 5, onOpenSources });
-    click('5');
-    expect(onOpenSources).toHaveBeenCalledTimes(1);
+  it('opens each number of a grouped citation on its own', () => {
+    const onOpenSource = vi.fn();
+    render('Both [1, 3].', { sourceCount: 3, onOpenSource });
+    click('3');
+    expect(onOpenSource).toHaveBeenCalledWith(2);
   });
 });
 

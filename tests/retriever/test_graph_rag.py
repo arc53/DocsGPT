@@ -223,7 +223,7 @@ class TestGraphRAGHappyPath:
         texts = [d["text"] for d in docs]
         assert texts[-1] == "far"
         assert texts.index("near") < texts.index("far")
-        assert docs[0].keys() == {"title", "text", "source", "filename"}
+        assert docs[0].keys() == {"title", "text", "source", "filename", "source_id", "chunk_key"}
 
     @patch("docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=10)
     @patch("docsgpt.retriever.graph_rag.GraphStore")

@@ -188,22 +188,26 @@ class MilvusStore(BaseVectorStore):
     def get_chunks(self) -> List[Dict[str, Any]]:
         """Return every chunk stored for this source."""
         try:
-            rows = self._client.query(
-                collection_name=self._collection,
-                filter=self._filter,
-                output_fields=["id", "text", "metadata"],
-            )
-            return [
-                {
-                    "doc_id": row.get("id"),
-                    "text": row.get("text"),
-                    "metadata": row.get("metadata") or {},
-                }
-                for row in rows
-            ]
+            return self._scan_chunks()
         except Exception as e:
             logging.error("Error getting chunks: %s", e, exc_info=True)
             return []
+
+    def _scan_chunks(self) -> List[Dict[str, Any]]:
+        """Every chunk of this source; a client error raises."""
+        rows = self._client.query(
+            collection_name=self._collection,
+            filter=self._filter,
+            output_fields=["id", "text", "metadata"],
+        )
+        return [
+            {
+                "doc_id": row.get("id"),
+                "text": row.get("text"),
+                "metadata": row.get("metadata") or {},
+            }
+            for row in rows
+        ]
 
     def add_chunk(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> str:
         """Add one chunk and return its id."""

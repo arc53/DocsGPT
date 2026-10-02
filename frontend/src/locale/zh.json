@@ -1838,6 +1838,7 @@
         "sourceSummaries": "內容別名（向後相容）",
         "sourceDocuments": "文件物件列表",
         "sourceCount": "擷取的文件數量",
+        "citationRules": "引用规则（[n] 格式）",
         "systemDate": "目前日期 (YYYY-MM-DD)",
         "systemTime": "目前時間 (HH:MM:SS)",
         "systemTimestamp": "ISO 8601 時間戳記",
@@ -2001,7 +2002,24 @@
       "fromConnector": "来自 {{name}}",
       "fromConnectorTitle": "来自 {{name}}：{{title}}",
       "knowledge": "知识库",
-      "forAnswer": "此回答的{{count}}个来源"
+      "forAnswer": "此回答的{{count}}个来源",
+      "open": "打开来源 {{num}}",
+      "reader": {
+        "back": "全部来源",
+        "knowledge": "知识库",
+        "file": "文件",
+        "page": "页面",
+        "link": "链接",
+        "added": "添加时间",
+        "length": "长度",
+        "tokens": "{{tokens}} 个令牌",
+        "excerptOnly": "此回答仅保留了摘录。",
+        "missing": "来源中已不再包含这段内容，可能已被编辑或重新索引。下面显示的是随回答保存的摘录。",
+        "forbidden": "此来源已被删除，或你已无权访问。下面显示的是随回答保存的摘录。",
+        "loadFailed": "无法加载这段内容。",
+        "openLink": "打开链接",
+        "openInKnowledge": "在知识库中打开"
+      }
     },
     "attachments": {
       "attach": "附件",

@@ -1850,6 +1850,7 @@
         "sourceSummaries": "Alias for content (backward compatible)",
         "sourceDocuments": "Document objects list",
         "sourceCount": "Number of retrieved documents",
+        "citationRules": "Citation rules ([n] citations)",
         "systemDate": "Current date (YYYY-MM-DD)",
         "systemTime": "Current time (HH:MM:SS)",
         "systemTimestamp": "ISO 8601 timestamp",
@@ -2017,7 +2018,24 @@
       "fromConnectorTitle": "From {{name}}: {{title}}",
       "knowledge": "Knowledge",
       "forAnswer_one": "{{count}} source for this answer",
-      "forAnswer_other": "{{count}} sources for this answer"
+      "forAnswer_other": "{{count}} sources for this answer",
+      "open": "Open source {{num}}",
+      "reader": {
+        "back": "All sources",
+        "knowledge": "Knowledge",
+        "file": "File",
+        "page": "Page",
+        "link": "Link",
+        "added": "Added",
+        "length": "Length",
+        "tokens": "{{tokens}} tokens",
+        "excerptOnly": "Only the excerpt saved with this answer is available.",
+        "missing": "This passage is no longer in the source; it may have been edited or re-indexed. Showing the excerpt saved with the answer.",
+        "forbidden": "This source was removed, or you no longer have access to it. Showing the excerpt saved with the answer.",
+        "loadFailed": "Couldn't load this passage.",
+        "openLink": "Open link",
+        "openInKnowledge": "Open in Knowledge"
+      }
     },
     "attachments": {
       "attach": "Attach",
@@ -2131,7 +2149,6 @@
     },
     "send": "Send",
     "viewArtifact": "View artifact",
-    "jumpToSource": "Jump to source {{num}}",
     "stopSpeaking": "Stop speaking",
     "loadingAudio": "Loading audio",
     "voice": {

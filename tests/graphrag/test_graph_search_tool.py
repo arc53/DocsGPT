@@ -156,7 +156,7 @@ class TestActions:
 
         expected = labels_from_metadata(metadata, text, "src-1")
         doc = tool.retrieved_docs[0]
-        assert {k: doc[k] for k in ("title", "source", "filename")} == expected
+        assert {k: doc[k] for k in expected} == expected
         # The full chunk text, so the doc dedupes against the retriever's copy;
         # only what the model reads is truncated.
         assert doc["text"] == text

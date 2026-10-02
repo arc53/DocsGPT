@@ -16,6 +16,7 @@ import {
   abbreviateCount,
   chunkPreviewText,
   formatChunkTokens,
+  type LinkedChunk,
 } from './chunkUtils';
 import SearchInput from './SearchInput';
 import SkeletonLoader from './SkeletonLoader';
@@ -35,6 +36,9 @@ import { Pagination, pageRangeParams } from './ui/pagination';
 
 /** Chunks per page: divisible by 2, 3 and 4 columns, so a page fills the grid. */
 const PAGE_SIZE_OPTIONS = [12, 24, 48];
+// How many pages of a linked chunk's search to look through for its id; each
+// page is a scan of the whole source on the server.
+const LINKED_SEARCH_PAGES = 10;
 
 /**
  * Where the open chunk is, as reported to an embedding host: its 1-based
@@ -95,6 +99,13 @@ interface ChunksProps {
    * hides Add chunk, Edit and Delete; reading, copying and paging stay.
    */
   canEdit?: boolean;
+  /**
+   * A chunk to open in the reader once it is listed (a citation opened in
+   * Knowledge): the list starts on its search, and the hit with its id opens
+   * (paging on to find it), else the first hit. Applied once; after that the
+   * list behaves as usual.
+   */
+  linkedChunk?: Pick<LinkedChunk, 'id' | 'search'>;
 }
 
 type SheetMode = 'edit' | 'add';
@@ -110,6 +121,7 @@ const Chunks: React.FC<ChunksProps> = ({
   onOpenChunkChange,
   controllerRef,
   canEdit = true,
+  linkedChunk,
 }) => {
   const { t } = useTranslation();
   const dispatch = useDispatch();
@@ -123,7 +135,12 @@ const Chunks: React.FC<ChunksProps> = ({
   const [totalChunks, setTotalChunks] = useState(0);
   const [loading, setLoading] = useLoaderState(true);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [searchTerm, setSearchTerm] = useState<string>(
+    linkedChunk?.search ?? '',
+  );
+  const linkedOpenedRef = useRef(!linkedChunk);
+  // The linked search's first hit, opened when no page holds the id.
+  const linkedFirstHitRef = useRef<ChunkType | null>(null);
   const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
   const [openChunk, setOpenChunk] = useState<ChunkType | null>(null);
   // The open chunk's position in the whole filtered list (1-based).
@@ -182,6 +199,30 @@ const Chunks: React.FC<ChunksProps> = ({
       setTotalChunks(data.total);
       setPaginatedChunks(data.chunks);
       setLoadFailed(false);
+      if (!linkedOpenedRef.current) {
+        const hits: ChunkType[] = data.chunks ?? [];
+        const index = hits.findIndex(
+          (chunk) => chunk.doc_id === linkedChunk?.id,
+        );
+        if (data.page === 1) linkedFirstHitRef.current = hits[0] ?? null;
+        const lastPage = Math.min(
+          Math.ceil(data.total / data.per_page),
+          LINKED_SEARCH_PAGES,
+        );
+        // Chunks sharing the excerpt's start (a repeated header) can push the
+        // cited one past the first page: look on before settling for another.
+        if (index === -1 && linkedChunk?.id && data.page < lastPage) {
+          setPage(data.page + 1);
+          return;
+        }
+        linkedOpenedRef.current = true;
+        if (index !== -1) {
+          showChunk(hits[index], (data.page - 1) * data.per_page + index + 1);
+        } else if (linkedFirstHitRef.current) {
+          // The id moved (a re-chunked source): the search's first hit.
+          showChunk(linkedFirstHitRef.current, 1);
+        }
+      }
     } catch (error) {
       console.error(error);
       if (request !== fetchRef.current) return;
@@ -484,7 +525,12 @@ const Chunks: React.FC<ChunksProps> = ({
     fetchChunks();
   }, [page, perPage, path, debouncedSearchTerm]);
 
+  // Another file starts unsearched on page 1; the first render keeps the
+  // linked chunk's search.
+  const listedPathRef = useRef(path);
   useEffect(() => {
+    if (listedPathRef.current === path) return;
+    listedPathRef.current = path;
     setSearchTerm('');
     setPage(1);
   }, [path]);

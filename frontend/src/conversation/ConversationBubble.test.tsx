@@ -379,8 +379,12 @@ describe('ConversationBubble', () => {
 
   describe('source cards', () => {
     const sources = [
-      { title: 'Guide', text: 'Guide text', link: 'https://example.com/guide' },
-      { title: 'Notes', text: 'Notes text', link: 'local' },
+      {
+        title: 'Guide',
+        text: 'Guide text',
+        source: 'https://example.com/guide',
+      },
+      { title: 'Notes', text: 'Notes text', source: 'local' },
     ];
     const sheet = () => document.body.querySelector('[role="dialog"]');
     const cards = () =>
@@ -390,13 +394,22 @@ describe('ConversationBubble', () => {
     const cardButton = (i: number) =>
       cards()[i].querySelector<HTMLButtonElement>(':scope > button')!;
 
-    it('opens the sources sheet when a card is clicked', async () => {
+    it("opens that card's source in the sheet when a card is clicked", async () => {
       await render(
         <ConversationBubble type="ANSWER" message="Hi" sources={sources} />,
       );
       expect(sheet()).toBeNull();
       await act(async () => cardButton(1).click());
       expect(sheet()).not.toBeNull();
+      // The reader's second level: Back to the list, the source's own title.
+      expect(
+        sheet()!.querySelector(
+          `button[aria-label="${tr('conversation.sources.reader.back')}"]`,
+        ),
+      ).not.toBeNull();
+      expect(
+        sheet()!.querySelector('h2, [data-slot="sheet-title"]')?.textContent,
+      ).toBe('Notes');
     });
 
     it('is a native stretched button with the focus ring on the card', async () => {
@@ -445,7 +458,7 @@ describe('ConversationBubble', () => {
             {
               title: 'Plan',
               text: 'Plan text',
-              link: 'https://drive.google.com/file/d/1',
+              source: 'https://drive.google.com/file/d/1',
               connector_key: 'google_drive',
               connector_name: 'Google Drive',
             },
@@ -495,7 +508,7 @@ describe('ConversationBubble', () => {
       const many = [1, 2, 3, 4, 5].map((n) => ({
         title: `S${n}`,
         text: `Text ${n}`,
-        link: 'local',
+        source: 'local',
       }));
       await render(
         <ConversationBubble type="ANSWER" message="Hi" sources={many} />,
@@ -563,7 +576,7 @@ describe('ConversationBubble', () => {
     const sources = [1, 2, 3, 4].map((n) => ({
       title: `Doc ${n}`,
       text: `Excerpt ${n}`,
-      link: `doc-${n}.pdf`,
+      source: `doc-${n}.pdf`,
     }));
     await render(
       <ConversationBubble type="ANSWER" message="Answer" sources={sources} />,
@@ -585,7 +598,7 @@ describe('ConversationBubble', () => {
     const sources = [1, 2, 3, 4].map((n) => ({
       title: `Doc ${n}`,
       text: `Excerpt ${n}`,
-      link: `doc-${n}.pdf`,
+      source: `doc-${n}.pdf`,
     }));
     const openSources = vi.fn();
     await render(
@@ -600,8 +613,15 @@ describe('ConversationBubble', () => {
     ).find((b) => b.textContent?.includes(tr('conversation.sources.title')))!;
     expect(header.hasAttribute('aria-haspopup')).toBe(false);
     await act(async () => header.click());
-    expect(openSources).toHaveBeenCalledWith(sources);
+    expect(openSources).toHaveBeenLastCalledWith(sources, undefined);
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+
+    // A card opens its own source's reader in the same slot.
+    const card = container.querySelector<HTMLButtonElement>(
+      '#source-2 > div > button',
+    )!;
+    await act(async () => card.click());
+    expect(openSources).toHaveBeenLastCalledWith(sources, 2);
   });
 
   // S1: every panel under an answer shares the answer surface.

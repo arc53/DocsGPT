@@ -83,7 +83,7 @@ describe('WikiViewer', () => {
     document.body.innerHTML = '';
   });
 
-  const render = async (canEdit = false) => {
+  const render = async (canEdit = false, initialPath?: string) => {
     await act(async () => {
       root.render(
         <TooltipProvider>
@@ -92,6 +92,7 @@ describe('WikiViewer', () => {
             sourceName="Handbook"
             canEdit={canEdit}
             onBackToDocuments={vi.fn()}
+            initialPath={initialPath}
           />
         </TooltipProvider>,
       );
@@ -180,6 +181,62 @@ describe('WikiViewer', () => {
       null,
     );
     expect(container.textContent).toContain('Body text');
+  });
+
+  it('opens the page a citation names instead of the first one', async () => {
+    await render(false, '/company/async_by-default.md');
+    expect(service.getWikiPage).toHaveBeenLastCalledWith(
+      'doc',
+      'company/async_by-default.md',
+      null,
+    );
+  });
+
+  it("matches the cited page against the API's slash-prefixed paths", async () => {
+    service.getWikiPages.mockResolvedValue(
+      ok({ pages: PAGES.map((p) => ({ ...p, path: `/${p.path}` })) }),
+    );
+    await render(false, 'company/async_by-default.md');
+    expect(service.getWikiPage.mock.calls.at(-1)?.[1]).toBe(
+      '/company/async_by-default.md',
+    );
+  });
+
+  it('opens a page another page links to, in place', async () => {
+    service.getWikiPage.mockImplementation(async (_id: string, path: string) =>
+      ok({
+        page: {
+          path,
+          content:
+            'See [async](async_by-default.md), [gone](/company/gone.md) and [web](https://arc53.com).',
+          version: 1,
+        },
+      }),
+    );
+    await render(false, 'company/meeting-types.md');
+    const body = container.querySelector('[data-slot="card"]') ?? container;
+    // A missing page reads as text; a web link stays a new-tab link.
+    expect(body.textContent).toContain('gone');
+    expect(
+      [...container.querySelectorAll('a')].find(
+        (a) => a.textContent === 'gone',
+      ),
+    ).toBeUndefined();
+    expect(
+      container
+        .querySelector('a[href="https://arc53.com"]')
+        ?.getAttribute('target'),
+    ).toBe('_blank');
+
+    await act(async () => buttonByText('async')!.click());
+    expect(service.getWikiPage.mock.calls.at(-1)?.[1]).toBe(
+      'company/async_by-default.md',
+    );
+  });
+
+  it('opens the first page when the cited one is gone', async () => {
+    await render(false, 'company/removed.md');
+    expect(service.getWikiPage.mock.calls.at(-1)?.[1]).toBe(PAGES[0].path);
   });
 
   it('hides Edit without canEdit', async () => {

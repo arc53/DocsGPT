@@ -187,6 +187,30 @@ one recipe: `Button variant="ghost" size="sm"` at `ml-3.5 w-fit`, which puts a
 Sources adds its count and a right chevron, and opens the answer's sources in
 the chat's side panel (see DESIGN.md › Side panels).
 
+A cited source opens in that panel as its second level, `CitationReader`:
+a source card under the answer, a tile in the list and an inline `[n]` pill
+all open the source they name, with Back to the list. The reader fetches the
+full passage by the chunk key retrieval labelled it with (`source_id` +
+`chunk_key`; the endpoint searches the excerpt's start in the same call for a
+re-chunked source), renders it with `SourceMarkdown`, and lists what is known in a
+`DescriptionList`. When the passage can't be fetched (an answer saved before
+chunk keys, a re-chunked source, a source out of reach) it shows the answer's
+excerpt under an `info` note saying why; a failed load is the destructive
+`EmptyState` with Retry. A web source's link sits in the reader's footer, never
+inside the clickable tile, beside "Open in Knowledge": a `Link` built by
+`settings/knowledgeLink.ts` that opens the source's view on the cited chunk
+(`linkedChunk`, its file for a folder source) or wiki page (`initialPath`).
+Knowledge reads the link once and drops it from the URL; the source comes from
+the caller's own lists, so its view gets their real access. The reader's
+Knowledge row links the source itself (no chunk), one level above "Open in
+Knowledge".
+
+Wiki pages link each other by wiki path (`/engineering/runbook.md`, or
+relative to the page). `SourceMarkdown`'s `resolveLink` sends those somewhere
+real: `WikiViewer` opens the page in place, the citation reader opens it in
+Knowledge, and a link to a page that does not exist, or one the reader can't
+reach, reads as text. Only web addresses open in a new tab.
+
 ## Source views (`components/tree/`, `WikiViewer`, `components/graph/`, `GraphView`)
 
 Every source view (a file or connector tree, a one-document chunk list, a

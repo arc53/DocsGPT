@@ -46,6 +46,7 @@ class ClassicAgent(BaseAgent):
         self._prepare_tools(tools_dict)
 
         messages = self._build_messages(self.prompt, query)
+        self._attach_citation_registry()
         llm_response = self._llm_gen(messages, log_context)
 
         yield from self._handle_response(

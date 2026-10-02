@@ -747,3 +747,74 @@ class TestBaseUpdateChunkFallback:
         from docsgpt.vectorstore.milvus import MilvusStore
 
         assert MilvusStore.update_chunk is BaseVectorStore.update_chunk
+
+
+class _ChunkListStore(ConcreteVectorStore):
+    def __init__(self, chunks):
+        super().__init__()
+        self._chunks = chunks
+
+    def get_chunks(self, *args, **kwargs):
+        return self._chunks
+
+
+@pytest.mark.unit
+class TestBaseGetChunkByKey:
+    """The default lookup hashes the source's chunks until one matches."""
+
+    def test_returns_the_chunk_whose_text_hashes_to_the_key(self):
+        from docsgpt.retriever.labels import chunk_key
+
+        store = _ChunkListStore([
+            {"doc_id": "1", "text": "first", "metadata": {}},
+            {"doc_id": "2", "text": "second", "metadata": {"title": "b"}},
+        ])
+        found = store.get_chunk_by_key(chunk_key("second"))
+        assert found == {"doc_id": "2", "text": "second", "metadata": {"title": "b"}}
+
+    def test_first_copy_wins_for_duplicate_text(self):
+        from docsgpt.retriever.labels import chunk_key
+
+        store = _ChunkListStore([
+            {"doc_id": "1", "text": "boilerplate", "metadata": {}},
+            {"doc_id": "2", "text": "boilerplate", "metadata": {}},
+        ])
+        assert store.get_chunk_by_key(chunk_key("boilerplate"))["doc_id"] == "1"
+
+    def test_no_match_is_none(self):
+        assert _ChunkListStore([{"doc_id": "1", "text": "x"}]).get_chunk_by_key("0" * 32) is None
+
+    def test_a_store_without_get_chunks_cannot_look_up(self):
+        # Elasticsearch has no ``get_chunks``; the base one returns None,
+        # which must not read as "the chunk is gone".
+        with pytest.raises(NotImplementedError):
+            ConcreteVectorStore().get_chunk_by_key("0" * 32)
+
+    def test_a_scan_error_propagates(self):
+        class _Down(ConcreteVectorStore):
+            def _scan_chunks(self):
+                raise RuntimeError("down")
+
+        with pytest.raises(RuntimeError):
+            _Down().get_chunk_by_key("0" * 32)
+
+    def test_a_key_miss_falls_back_to_the_excerpt_in_the_same_scan(self):
+        store = _ChunkListStore([
+            {"doc_id": "1", "text": "Other clause", "metadata": {}},
+            {"doc_id": "2", "text": "Late Pickup fees apply after 6pm", "metadata": {}},
+        ])
+        found = store.get_chunk_by_key("0" * 32, excerpt="late pickup fees")
+        assert found["doc_id"] == "2"
+
+    def test_the_key_wins_over_an_earlier_excerpt_match(self):
+        from docsgpt.retriever.labels import chunk_key
+
+        store = _ChunkListStore([
+            {"doc_id": "1", "text": "Late pickup, older copy", "metadata": {}},
+            {"doc_id": "2", "text": "Late pickup", "metadata": {}},
+        ])
+        assert store.get_chunk_by_key(chunk_key("Late pickup"), excerpt="Late pickup")["doc_id"] == "2"
+
+    def test_a_blank_excerpt_matches_nothing(self):
+        store = _ChunkListStore([{"doc_id": "1", "text": "x", "metadata": {}}])
+        assert store.get_chunk_by_key("0" * 32, excerpt="   ") is None

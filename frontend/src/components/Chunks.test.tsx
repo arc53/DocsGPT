@@ -321,6 +321,115 @@ describe('Chunks', () => {
     expect(onOpenChunkChange).toHaveBeenLastCalledWith(null);
   });
 
+  describe('a linked chunk (a citation opened in Knowledge)', () => {
+    const twoHits = () =>
+      chunksResponse({
+        page: 1,
+        per_page: 12,
+        total: 2,
+        chunks: [
+          { doc_id: 'c1', text: 'Other clause', metadata: {} },
+          { doc_id: 'c7', text: 'Late pickup clause', metadata: {} },
+        ],
+      });
+
+    it('starts on its search and opens it in the reader', async () => {
+      service.getDocumentChunks.mockImplementation(async () => twoHits());
+      await render({ linkedChunk: { id: 'c7', search: 'Late pickup' } });
+
+      expect(service.getDocumentChunks).toHaveBeenCalledTimes(1);
+      expect(service.getDocumentChunks.mock.calls[0][5]).toBe('Late pickup');
+      expect(tile()).toBeNull();
+      expect(container.textContent).toContain('Late pickup clause');
+      expect(container.textContent).not.toContain('Other clause');
+      expect(container.textContent).toContain(
+        'settings.sources.chunkPosition {"n":2,"total":2,"tokens":"-"}',
+      );
+    });
+
+    it('opens the first hit when the id moved (a re-chunked source)', async () => {
+      service.getDocumentChunks.mockImplementation(async () => twoHits());
+      await render({ linkedChunk: { id: 'gone', search: 'clause' } });
+      expect(tile()).toBeNull();
+      expect(container.textContent).toContain('Other clause');
+      expect(container.textContent).not.toContain('Late pickup clause');
+    });
+
+    // Boilerplate shared by many chunks: the search's first page holds others.
+    const pagedHits = async (_id: string, page: number) =>
+      chunksResponse({
+        page,
+        per_page: 12,
+        total: 25,
+        chunks:
+          page === 1
+            ? [
+                { doc_id: 'c1', text: 'Header one', metadata: {} },
+                { doc_id: 'c2', text: 'Header two', metadata: {} },
+              ]
+            : page === 2
+              ? [
+                  { doc_id: 'c3', text: 'Header three', metadata: {} },
+                  { doc_id: 'c4', text: 'Header cited', metadata: {} },
+                ]
+              : [{ doc_id: 'c5', text: 'Header five', metadata: {} }],
+      });
+
+    it('pages on to the linked chunk when the first page holds other hits', async () => {
+      service.getDocumentChunks.mockImplementation(pagedHits);
+      await render({ linkedChunk: { id: 'c4', search: 'Header' } });
+      expect(service.getDocumentChunks.mock.calls.map((c) => c[1])).toEqual([
+        1, 2,
+      ]);
+      expect(container.textContent).toContain('Header cited');
+      expect(container.textContent).not.toContain('Header one');
+      expect(container.textContent).toContain(
+        'settings.sources.chunkPosition {"n":14,"total":25,"tokens":"-"}',
+      );
+    });
+
+    it('opens the first hit when no page holds the id', async () => {
+      service.getDocumentChunks.mockImplementation(pagedHits);
+      await render({ linkedChunk: { id: 'gone', search: 'Header' } });
+      expect(service.getDocumentChunks.mock.calls.map((c) => c[1])).toEqual([
+        1, 2, 3,
+      ]);
+      // The first page's first hit, as for a single page of hits.
+      expect(container.textContent).toContain('Header one');
+      expect(container.textContent).not.toContain('Header five');
+      expect(container.textContent).toContain(
+        'settings.sources.chunkPosition {"n":1,"total":25,"tokens":"-"}',
+      );
+    });
+
+    it('opens once: back to the list stays on the list', async () => {
+      service.getDocumentChunks.mockImplementation(async () => twoHits());
+      const controllerRef: React.ComponentProps<
+        typeof Chunks
+      >['controllerRef'] = { current: null };
+      await render({
+        embedded: true,
+        controllerRef,
+        linkedChunk: { id: 'c7', search: 'Late pickup' },
+      });
+      await act(async () => controllerRef.current!.closeChunk());
+      expect(tile()).not.toBeNull();
+      // The search it was found by stays, so the list shows its neighbours.
+      expect(container.querySelector('input')?.value).toBe('Late pickup');
+    });
+
+    it('shows the list when the search finds nothing', async () => {
+      service.getDocumentChunks.mockImplementation(async () =>
+        chunksResponse({ total: 0, chunks: [] }),
+      );
+      await render({ linkedChunk: { id: 'c7', search: 'nowhere' } });
+      expect(container.querySelector('input')?.value).toBe('nowhere');
+      expect(container.textContent).not.toContain(
+        'settings.sources.chunkPosition',
+      );
+    });
+  });
+
   it('renders a markdown heading as an h1', async () => {
     service.getDocumentChunks.mockImplementation(async () =>
       chunksResponse({
