@@ -23,6 +23,7 @@ from mcp.client.auth.utils import (
     create_oauth_metadata_request,
     handle_auth_metadata_response,
     handle_protected_resource_response,
+    issuers_match,
     validate_metadata_issuer,
 )
 from mcp.shared._httpx_utils import create_mcp_http_client
@@ -1071,6 +1072,10 @@ class DocsGPTOAuth(OAuthClientProvider):
                     if not ok:
                         break
                     if metadata:
+                        # On the legacy path a root issuer written with its
+                        # trailing slash names the same server, as in the SDK.
+                        if auth_server_url is None and issuers_match(str(metadata.issuer), expected_issuer):
+                            expected_issuer = str(metadata.issuer)
                         validate_metadata_issuer(metadata, expected_issuer)
                         self.context.oauth_metadata = metadata
                         return

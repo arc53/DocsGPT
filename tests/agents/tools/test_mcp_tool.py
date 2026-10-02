@@ -1320,8 +1320,12 @@ class TestStoredSignInRenewal:
         assert oauth.context.is_token_valid() is True
 
     @staticmethod
-    def _metadata_server(monkeypatch, status=200):
-        """Serve Sentry-shaped OAuth metadata: the token endpoint is not at ``/token``."""
+    def _metadata_server(monkeypatch, status=200, protected_resource=True, issuer=None):
+        """Serve Sentry-shaped OAuth metadata: the token endpoint is not at ``/token``.
+
+        ``protected_resource=False`` is a legacy server without protected-resource
+        metadata, whose authorization server is its own origin.
+        """
         import httpx2
 
         seen = []
@@ -1331,13 +1335,17 @@ class TestStoredSignInRenewal:
             if status != 200:
                 return httpx2.Response(status)
             if request.url.path.startswith("/.well-known/oauth-protected-resource"):
+                if not protected_resource:
+                    return httpx2.Response(404)
                 return httpx2.Response(200, json={
                     "resource": "https://mcp.example.com/mcp",
                     "authorization_servers": ["https://mcp.example.com"],
                 })
             if request.url.path == "/.well-known/oauth-authorization-server":
                 return httpx2.Response(200, json={
-                    "issuer": "https://mcp.example.com",
+                    # A legacy server may write its root issuer with the slash.
+                    "issuer": issuer
+                    or ("https://mcp.example.com" if protected_resource else "https://mcp.example.com/"),
                     "authorization_endpoint": "https://mcp.example.com/oauth/authorize",
                     "token_endpoint": "https://mcp.example.com/oauth/token",
                     "response_types_supported": ["code"],
@@ -1371,6 +1379,35 @@ class TestStoredSignInRenewal:
         asyncio.run(oauth._initialize())
         request = asyncio.run(oauth._refresh_token())
         assert str(request.url) == "https://mcp.example.com/oauth/token"
+
+    def test_legacy_server_with_a_root_issuer_is_accepted(self, monkeypatch):
+        # Without protected-resource metadata the expected issuer is the bare
+        # origin; a server that publishes it with a trailing slash names the
+        # same server (the SDK's sign-in accepts it), and so must the renewal.
+        import time
+
+        self._metadata_server(monkeypatch, protected_resource=False)
+        oauth = self._oauth(_StoredTokens(
+            self._token(refresh_token="rt", expires_in=3600), time.time() - 5, client_info=self._client_info(),
+        ))
+        asyncio.run(oauth._initialize())
+        request = asyncio.run(oauth._refresh_token())
+        assert str(request.url) == "https://mcp.example.com/oauth/token"
+
+    def test_metadata_for_another_issuer_is_not_used(self, monkeypatch, caplog):
+        # The refresh token must never go to a token endpoint vouched for by a
+        # server other than the one the resource names.
+        import logging
+        import time
+
+        self._metadata_server(monkeypatch, issuer="https://evil.example.com")
+        oauth = self._oauth(_StoredTokens(
+            self._token(refresh_token="rt", expires_in=3600), time.time() - 5, client_info=self._client_info(),
+        ))
+        with caplog.at_level(logging.WARNING, logger="docsgpt.agents.tools.mcp_tool"):
+            asyncio.run(oauth._initialize())
+        assert oauth.context.oauth_metadata is None
+        assert "Could not read OAuth metadata" in caplog.text
 
     def test_a_valid_token_needs_no_discovery(self, monkeypatch):
         import time
