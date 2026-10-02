@@ -200,7 +200,9 @@ def test_rst_to_tups_ignores_mismatched_underline_length():
 
 def test_rst_to_tups_header_at_document_start():
     """A header on the very first line (i == 1) must still be detected;
-    this exercises the lines[i - 2] index boundary directly."""
+    this exercises the lines[i - 2] index boundary directly. There must
+    be no spurious (None, "") tuple ahead of it, since there is no real
+    preamble in this document."""
     parser = RstParser()
     rst_content = "Title\n=====\nContent.\n"
 
@@ -208,6 +210,22 @@ def test_rst_to_tups_header_at_document_start():
 
     headers = [header for header, _ in tups if header is not None]
     assert "Title" in headers
+    assert (None, "") not in tups
+
+
+def test_rst_to_tups_allows_underline_longer_than_title():
+    """Per the RST spec, a section underline only needs to be at least
+    as long as its title, not an exact-length match. An underline longer
+    than its title is valid RST and must still be detected as a header.
+    """
+    parser = RstParser()
+    rst_content = "Title\n=======\nContent.\n"
+
+    tups = parser.rst_to_tups(rst_content)
+
+    headers = [header for header, _ in tups if header is not None]
+    assert "Title" in headers
+    assert (None, "") not in tups
 
 
 def test_rst_to_tups_preserves_preamble_before_first_header():
