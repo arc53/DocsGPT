@@ -14,6 +14,7 @@ import type { Crumb } from './tree/PathHeader';
 import TreeBrowser from './tree/TreeBrowser';
 import type { TreeBrowserController } from './tree/types';
 import { useReingestSseWaiter } from './tree/useReingestWait';
+import type { LinkedChunk } from './chunkUtils';
 
 interface ConnectorTreeProps {
   docId: string;
@@ -30,6 +31,8 @@ interface ConnectorTreeProps {
   actionsTarget?: HTMLElement | null;
   /** A file to open once the structure loads (path, file name or display name). */
   initialPath?: string;
+  /** The cited chunk to open in `initialPath`'s chunk list (see `LinkedChunk`). */
+  linkedChunk?: LinkedChunk;
   /** Embedded only: the tree's crumbs, for the host's header (see TreeBrowser). */
   onCrumbsChange?: (crumbs: Crumb[]) => void;
   /**
@@ -68,6 +71,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
   embedded = false,
   actionsTarget,
   initialPath,
+  linkedChunk,
   onCrumbsChange,
   canEdit = true,
 }) => {
@@ -207,6 +211,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
       canEdit={canEdit}
       actionsTarget={actionsTarget}
       initialPath={initialPath}
+      linkedChunk={linkedChunk}
       badge={
         sourceProvider ? (
           <Badge variant="neutral">

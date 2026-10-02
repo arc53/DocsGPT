@@ -196,7 +196,11 @@ full passage by the chunk key retrieval labelled it with (`source_id` +
 chunk keys, a re-chunked source, a source out of reach) it shows the answer's
 excerpt under an `info` note saying why; a failed load is the destructive
 `EmptyState` with Retry. A web source's link sits in the reader's footer, never
-inside the clickable tile.
+inside the clickable tile, beside "Open in Knowledge": a `Link` built by
+`settings/knowledgeLink.ts` that opens the source's view on the cited chunk
+(`linkedChunk`, its file for a folder source) or wiki page (`initialPath`).
+Knowledge reads the link once and drops it from the URL; the source comes from
+the caller's own lists, so its view gets their real access.
 
 ## Source views (`components/tree/`, `WikiViewer`, `components/graph/`, `GraphView`)
 

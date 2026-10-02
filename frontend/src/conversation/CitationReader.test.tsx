@@ -1,5 +1,6 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -94,9 +95,11 @@ describe('CitationReader', () => {
   const render = async (source: AnswerSource, onBack = vi.fn()) => {
     await act(async () => {
       root.render(
-        <SidePanel variant="docked" open onOpenChange={vi.fn()}>
-          <CitationReader source={source} number={2} onBack={onBack} />
-        </SidePanel>,
+        <MemoryRouter>
+          <SidePanel variant="docked" open onOpenChange={vi.fn()}>
+            <CitationReader source={source} number={2} onBack={onBack} />
+          </SidePanel>
+        </MemoryRouter>,
       );
     });
     return onBack;
@@ -259,5 +262,91 @@ describe('CitationReader', () => {
     const rows = [...body().querySelectorAll('dt')].map((dt) => dt.textContent);
     expect(rows).toContain('conversation.sources.reader.page');
     expect(body().textContent).toContain('/guide/leave.md');
+  });
+});
+
+describe('CitationReader › Open in Knowledge', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    service.getSourceChunk.mockReset();
+    service.getDocumentChunks.mockReset();
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
+  const render = async (source: AnswerSource) => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <SidePanel variant="docked" open onOpenChange={vi.fn()}>
+            <CitationReader source={source} number={1} onBack={vi.fn()} />
+          </SidePanel>
+        </MemoryRouter>,
+      );
+    });
+  };
+
+  const knowledgeLink = () => {
+    const anchor = [
+      ...container.querySelectorAll<HTMLAnchorElement>(
+        '[data-slot="panel-footer"] a',
+      ),
+    ].find(
+      (a) => a.textContent === 'conversation.sources.reader.openInKnowledge',
+    );
+    return anchor ? new URL(anchor.getAttribute('href')!, 'http://x') : null;
+  };
+
+  it('links the chunk, found by its excerpt, in its file', async () => {
+    service.getSourceChunk.mockReturnValue(json(200, CHUNK));
+    await render(FILE);
+    const url = knowledgeLink()!;
+    expect(url.pathname).toBe('/settings/knowledge');
+    expect(url.searchParams.get('source')).toBe('src-1');
+    expect(url.searchParams.get('chunk')).toBe('7');
+    expect(url.searchParams.get('q')).toBe('Staff accrue 25 days');
+    expect(url.searchParams.get('path')).toBe('hr/Leave_policy.docx');
+  });
+
+  it('links a wiki chunk by its page', async () => {
+    service.getSourceChunk.mockReturnValue(
+      json(200, {
+        ...CHUNK,
+        source: { ...CHUNK.source, kind: 'wiki' },
+        page_path: 'guide/leave.md',
+      }),
+    );
+    await render(FILE);
+    const url = knowledgeLink()!;
+    expect(url.searchParams.get('wikiPage')).toBe('guide/leave.md');
+    expect(url.searchParams.get('chunk')).toBeNull();
+  });
+
+  it('links a re-chunked passage of a source in the knowledge list', async () => {
+    service.getSourceChunk.mockReturnValue(
+      json(404, { message: 'Chunk not found' }),
+    );
+    service.getDocumentChunks.mockReturnValue(
+      json(200, {
+        chunks: [{ doc_id: '9', text: 'Staff accrue 25 days.', metadata: {} }],
+      }),
+    );
+    await render(FILE);
+    expect(knowledgeLink()?.searchParams.get('chunk')).toBe('9');
+  });
+
+  it('offers no link when only the excerpt is shown', async () => {
+    service.getSourceChunk.mockReturnValue(json(403, {}));
+    await render(FILE);
+    expect(knowledgeLink()).toBeNull();
+    expect(container.querySelector('[data-slot="panel-footer"]')).toBeNull();
   });
 });

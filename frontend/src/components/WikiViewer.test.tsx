@@ -83,7 +83,7 @@ describe('WikiViewer', () => {
     document.body.innerHTML = '';
   });
 
-  const render = async (canEdit = false) => {
+  const render = async (canEdit = false, initialPath?: string) => {
     await act(async () => {
       root.render(
         <TooltipProvider>
@@ -92,6 +92,7 @@ describe('WikiViewer', () => {
             sourceName="Handbook"
             canEdit={canEdit}
             onBackToDocuments={vi.fn()}
+            initialPath={initialPath}
           />
         </TooltipProvider>,
       );
@@ -180,6 +181,20 @@ describe('WikiViewer', () => {
       null,
     );
     expect(container.textContent).toContain('Body text');
+  });
+
+  it('opens the page a citation names instead of the first one', async () => {
+    await render(false, '/company/async_by-default.md');
+    expect(service.getWikiPage).toHaveBeenLastCalledWith(
+      'doc',
+      'company/async_by-default.md',
+      null,
+    );
+  });
+
+  it('opens the first page when the cited one is gone', async () => {
+    await render(false, 'company/removed.md');
+    expect(service.getWikiPage.mock.calls.at(-1)?.[1]).toBe(PAGES[0].path);
   });
 
   it('hides Edit without canEdit', async () => {

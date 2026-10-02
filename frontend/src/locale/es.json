@@ -2025,7 +2025,8 @@
         "missing": "Este pasaje ya no está en la fuente; puede que se haya editado o reindexado. Se muestra el extracto guardado con la respuesta.",
         "forbidden": "Ya no tienes acceso a esta fuente. Se muestra el extracto guardado con la respuesta.",
         "loadFailed": "No se pudo cargar el pasaje.",
-        "openLink": "Abrir enlace"
+        "openLink": "Abrir enlace",
+        "openInKnowledge": "Abrir en Conocimiento"
       }
     },
     "attachments": {

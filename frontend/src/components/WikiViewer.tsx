@@ -33,6 +33,8 @@ interface WikiViewerProps {
   onBackToDocuments: () => void;
   /** Extra header control, right-aligned in the title row. */
   headerAction?: React.ReactNode;
+  /** The page to open first, when it exists (a citation opened in Knowledge). */
+  initialPath?: string;
 }
 
 type EditError = { kind: 'conflict' | 'forbidden' | 'failed' } | null;
@@ -55,6 +57,7 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
   canEdit = false,
   onBackToDocuments,
   headerAction,
+  initialPath,
 }) => {
   const { t } = useTranslation();
   const dispatch = useDispatch();
@@ -99,10 +102,15 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
         if (cancelled) return;
         const list: WikiPageNode[] = data?.pages ?? [];
         setPages(list);
+        // The cited page opens first; a chunk's page path may carry a
+        // leading slash the page list does not.
+        const wanted = initialPath?.replace(/^\/+/, '');
         setSelectedPath((prev) =>
           prev && list.some((p) => p.path === prev)
             ? prev
-            : (list[0]?.path ?? null),
+            : (list.find((p) => p.path === wanted)?.path ??
+              list[0]?.path ??
+              null),
         );
       })
       .catch((error) => {

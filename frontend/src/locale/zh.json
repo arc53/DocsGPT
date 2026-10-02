@@ -2015,7 +2015,8 @@
         "missing": "来源中已不再包含这段内容，可能已被编辑或重新索引。下面显示的是随回答保存的摘录。",
         "forbidden": "你已无权访问此来源。下面显示的是随回答保存的摘录。",
         "loadFailed": "无法加载这段内容。",
-        "openLink": "打开链接"
+        "openLink": "打开链接",
+        "openInKnowledge": "在知识库中打开"
       }
     },
     "attachments": {

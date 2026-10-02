@@ -2031,7 +2031,8 @@
         "missing": "This passage is no longer in the source; it may have been edited or re-indexed. Showing the excerpt saved with the answer.",
         "forbidden": "You no longer have access to this source. Showing the excerpt saved with the answer.",
         "loadFailed": "Couldn't load this passage.",
-        "openLink": "Open link"
+        "openLink": "Open link",
+        "openInKnowledge": "Open in Knowledge"
       }
     },
     "attachments": {

@@ -13,6 +13,7 @@ import { useSelector } from 'react-redux';
 import userService from '../../api/services/userService';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { formatCount } from '../../utils/dateTimeUtils';
+import type { LinkedChunk } from '../chunkUtils';
 import Chunks, {
   type ChunksController,
   type OpenChunkPosition,
@@ -55,6 +56,11 @@ interface GraphSourceViewProps {
    * hides the Files tab's writes and the graph chunk drawer's Edit.
    */
   canEdit?: boolean;
+  /**
+   * A cited chunk to show (a citation opened in Knowledge): the view opens
+   * on the Files tab at its file, with the chunk open.
+   */
+  linkedChunk?: LinkedChunk;
 }
 
 /**
@@ -72,11 +78,12 @@ export default function GraphSourceView({
   onBackToDocuments,
   headerAction,
   canEdit = true,
+  linkedChunk,
 }: GraphSourceViewProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
 
-  const [tab, setTab] = useState<GraphTab>('graph');
+  const [tab, setTab] = useState<GraphTab>(linkedChunk ? 'files' : 'graph');
   const [limit, setLimit] = useState(DEFAULT_LIMIT);
   const [data, setData] = useState<ForceGraphData>({ nodes: [], links: [] });
   const [stats, setStats] = useState<GraphStats | null>(null);
@@ -84,7 +91,11 @@ export default function GraphSourceView({
   const [attempt, setAttempt] = useState(0);
   const [selected, setSelected] = useState<GraphNodeRef | null>(null);
   // The file a chunk drawer's "Open in Files" asked the Files tab to open.
-  const [filesPath, setFilesPath] = useState<string | undefined>(undefined);
+  const [filesPath, setFilesPath] = useState<string | undefined>(
+    linkedChunk?.path,
+  );
+  // The cited chunk, until the Files tab is left (as "Open in Files" is).
+  const [linked, setLinked] = useState(linkedChunk);
   // Where the Files tab's tree is (the source, folders, file, chunk); the
   // header shows it while that tab is open.
   const [filesCrumbs, setFilesCrumbs] = useState<Crumb[]>([]);
@@ -127,7 +138,10 @@ export default function GraphSourceView({
   // a later visit opens the tree at its root rather than on that file again.
   const changeTab = useCallback(
     (next: GraphTab) => {
-      if (tab === 'files' && next !== 'files') setFilesPath(undefined);
+      if (tab === 'files' && next !== 'files') {
+        setFilesPath(undefined);
+        setLinked(undefined);
+      }
       setTab(next);
     },
     [tab],
@@ -146,6 +160,8 @@ export default function GraphSourceView({
   // A flat source has no file to open: "Open in Files" just shows the tab.
   const openInFiles = useCallback(
     (path: string) => {
+      // Another file than the cited one: the citation no longer applies.
+      setLinked(undefined);
       if (isNested) setFilesPath(path);
       setTab('files');
     },
@@ -184,6 +200,7 @@ export default function GraphSourceView({
       handleGoBack={onBackToDocuments}
       controllerRef={chunksControllerRef}
       onOpenChunkChange={setOpenChunkPosition}
+      linkedChunk={linked}
     />
   ) : sourceType === 'connector:file' ? (
     <ConnectorTree
@@ -193,6 +210,7 @@ export default function GraphSourceView({
       sourceName={sourceName}
       onBackToDocuments={onBackToDocuments}
       initialPath={filesPath}
+      linkedChunk={linked}
       actionsTarget={filesActions}
       onCrumbsChange={setFilesCrumbs}
     />
@@ -204,6 +222,7 @@ export default function GraphSourceView({
       sourceName={sourceName}
       onBackToDocuments={onBackToDocuments}
       initialPath={filesPath}
+      linkedChunk={linked}
       actionsTarget={filesActions}
       onCrumbsChange={setFilesCrumbs}
     />

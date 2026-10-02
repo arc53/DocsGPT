@@ -2016,7 +2016,8 @@
         "missing": "來源中已不再包含這段內容，可能已被編輯或重新索引。以下顯示的是隨回答儲存的摘錄。",
         "forbidden": "你已無權存取此來源。以下顯示的是隨回答儲存的摘錄。",
         "loadFailed": "無法載入這段內容。",
-        "openLink": "開啟連結"
+        "openLink": "開啟連結",
+        "openInKnowledge": "在知識庫中開啟"
       }
     },
     "attachments": {

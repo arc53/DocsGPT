@@ -2,12 +2,14 @@ import { ExternalLink } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
+import { Link } from 'react-router-dom';
 
 import userService from '../api/services/userService';
 import {
   UNKNOWN_TOKEN_COUNT,
   formatChunkTokens,
 } from '../components/chunkUtils';
+import { chunkFilePath } from '../components/graph/graphCanvasUtils';
 import SourceMarkdown from '../components/SourceMarkdown';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
@@ -24,6 +26,7 @@ import {
   PanelHeader,
 } from '../components/ui/side-panel';
 import { selectSourceDocs, selectToken } from '../preferences/preferenceSlice';
+import { knowledgeLink } from '../settings/knowledgeLink';
 import { formatDateOnly } from '../utils/dateTimeUtils';
 import { type AnswerSource, sourceExcerpt, sourceHref } from './chatCompanion';
 
@@ -47,7 +50,13 @@ type ExcerptReason = 'excerptOnly' | 'missing' | 'forbidden';
 
 type ReaderState =
   | { status: 'loading' }
-  | { status: 'ready'; chunk: Chunk; source: ChunkSource | null }
+  | {
+      status: 'ready';
+      chunk: Chunk;
+      source: ChunkSource | null;
+      /** A wiki chunk's page, which Knowledge opens. */
+      pagePath?: string | null;
+    }
   | { status: 'excerpt'; reason: ExcerptReason }
   | { status: 'error' };
 
@@ -124,6 +133,7 @@ export default function CitationReader({
             status: 'ready',
             chunk: body.chunk,
             source: body.source,
+            pagePath: body.page_path,
           });
         }
         if (response.status === 404) {
@@ -149,15 +159,41 @@ export default function CitationReader({
 
   const href = sourceHref(source);
   const ready = state.status === 'ready' ? state : null;
-  const knowledgeName =
-    ready?.source?.name ||
-    knowledge?.find((doc) => doc.id && doc.id === sourceId)?.name;
+  const listed = knowledge?.find((doc) => doc.id && doc.id === sourceId);
+  const knowledgeName = ready?.source?.name || listed?.name;
+  const kind =
+    ready?.source?.kind ??
+    (listed?.type === 'wiki' ? 'wiki' : listed?.config?.kind);
   const metadata = ready?.chunk.metadata ?? {};
   const path =
     typeof metadata.source === 'string' ? metadata.source : source.source;
   const tokens = formatChunkTokens(
     metadata as Parameters<typeof formatChunkTokens>[0],
   );
+  // The passage in Knowledge, for a source the reader could reach: the API
+  // answered for it, or the app's knowledge list has it.
+  const inKnowledge =
+    ready && sourceId && (ready.source || listed)
+      ? knowledgeLink(
+          kind === 'wiki'
+            ? {
+                sourceId,
+                wikiPage:
+                  ready.pagePath ??
+                  (typeof metadata.source === 'string'
+                    ? metadata.source
+                    : undefined),
+              }
+            : {
+                sourceId,
+                chunk: {
+                  id: ready.chunk.doc_id,
+                  search: excerpt || ready.chunk.text,
+                  path: chunkFilePath(metadata) || undefined,
+                },
+              },
+        )
+      : null;
 
   const renderBody = () => {
     if (state.status === 'loading') return <LoadingState />;
@@ -194,7 +230,7 @@ export default function CitationReader({
           ) : path ? (
             <DescriptionItem
               label={t(
-                ready?.source?.kind === 'wiki'
+                kind === 'wiki'
                   ? 'conversation.sources.reader.page'
                   : 'conversation.sources.reader.file',
               )}
@@ -230,14 +266,23 @@ export default function CitationReader({
         backLabel={t('conversation.sources.reader.back')}
       />
       <PanelBody>{renderBody()}</PanelBody>
-      {href ? (
+      {href || inKnowledge ? (
         <PanelFooter>
-          <Button variant="outline" size="lg" shape="pill" asChild>
-            <a href={href} target="_blank" rel="noopener noreferrer">
-              <ExternalLink />
-              {t('conversation.sources.reader.openLink')}
-            </a>
-          </Button>
+          {href ? (
+            <Button variant="outline" size="lg" shape="pill" asChild>
+              <a href={href} target="_blank" rel="noopener noreferrer">
+                <ExternalLink />
+                {t('conversation.sources.reader.openLink')}
+              </a>
+            </Button>
+          ) : null}
+          {inKnowledge ? (
+            <Button size="lg" shape="pill" asChild>
+              <Link to={inKnowledge}>
+                {t('conversation.sources.reader.openInKnowledge')}
+              </Link>
+            </Button>
+          ) : null}
         </PanelFooter>
       ) : null}
     </>
