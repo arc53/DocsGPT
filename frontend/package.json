@@ -87,7 +87,7 @@
     "globals": "^17.12.0",
     "happy-dom": "^20.14.5",
     "husky": "^9.1.7",
-    "lint-staged": "^17.5.1",
+    "lint-staged": "^17.6.0",
     "micromark-util-types": "^2.0.3",
     "postcss": "^8.5.28",
     "prettier": "^3.9.9",
