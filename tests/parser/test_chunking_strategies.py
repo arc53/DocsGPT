@@ -78,27 +78,34 @@ class TestRecursive:
         assert out[0].text.strip() == "short text here"
 
     def test_chunk_overlap_creates_overlapping_chunks(self):
-        """Ensure chunk_overlap causes adjacent chunks to share token overlap."""
-        # 4 sentences, 2 chunks with overlap
+        """Ensure chunk_overlap creates ordered suffix/prefix overlap with full coverage."""
         sentences = [
-            "Alpha sentence one is here.",
-            "Beta sentence two is here.",
-            "Gamma sentence three is here.",
-            "Delta sentence four is here.",
+            "antelope baboon cheetah dingo",
+            "elephant falcon giraffe hyena",
+            "iguana jaguar kangaroo lemur",
+            "mongoose narwhal ocelot penguin",
         ]
-        text = " ".join(sentences)
-        chunker = RecursiveChunker(max_tokens=20, min_tokens=5, chunk_overlap=8)
+        text = ". ".join(sentences) + "."
+        chunker = RecursiveChunker(max_tokens=15, min_tokens=3, chunk_overlap=8)
         out = chunker.chunk([Document(text=text, doc_id="d")])
         assert len(out) >= 2
         for c in out:
-            assert _tok(c.text) <= 20
+            assert _tok(c.text) <= 15
 
-        # Verify second chunk shares trailing content of first chunk
-        first_chunk = out[0].text
-        second_chunk = out[1].text
-        # Common text must exist
-        shared = set(first_chunk.split()) & set(second_chunk.split())
-        assert len(shared) > 0
+        # Assert ordered suffix/prefix overlap between adjacent chunks
+        for k in range(len(out) - 1):
+            words_a = [w.strip(".,") for w in out[k].text.split() if w.strip(".,")]
+            words_b = [w.strip(".,") for w in out[k + 1].text.split() if w.strip(".,")]
+            common = [w for w in words_a if w in words_b]
+            assert len(common) > 0, f"Expected overlap between chunk {k} and {k+1}"
+            assert words_a[-len(common):] == common
+            assert words_b[:len(common)] == common
+
+        # Full source coverage: all original distinct words present in output
+        all_chunk_words = {w.strip(".,") for c in out for w in c.text.split()}
+        for sentence in sentences:
+            for word in sentence.split():
+                assert word in all_chunk_words, f"Missing source word: {word}"
 
     def test_chunk_overlap_zero_produces_disjoint_chunks(self):
         """Ensure chunk_overlap=0 produces disjoint chunks without repeated content."""
@@ -124,13 +131,39 @@ class TestRecursive:
             for w in chunk_words:
                 assert w in words, f"Word '{w}' was sliced mid-word!"
 
+    def test_multi_token_word_intact_with_small_positive_overlap(self):
+        """Ensure multi-token words exceeding small chunk_overlap remain intact if <= max_tokens."""
+        long_word = "antidisestablishmentarianism"
+        assert _tok(long_word) > 3
+        text = f"prefix intro words. {long_word}. trailing conclusion words."
+        chunker = RecursiveChunker(max_tokens=15, min_tokens=1, chunk_overlap=3)
+        out = chunker.chunk([Document(text=text, doc_id="d")])
+        combined = " ".join(c.text for c in out)
+        assert long_word in combined
+        for c in out:
+            if "anti" in c.text:
+                assert long_word in c.text
+
+    def test_forward_progress_near_overlap_limit(self):
+        """Ensure chunker makes forward progress without looping when overlap is max_tokens - 1."""
+        sentences = [f"item_{i}" for i in range(20)]
+        text = " ".join(sentences)
+        chunker = RecursiveChunker(max_tokens=6, min_tokens=1, chunk_overlap=5)
+        out = chunker.chunk([Document(text=text, doc_id="d")])
+        assert len(out) > 1
+        for k in range(len(out) - 1):
+            curr_words = out[k].text.split()
+            next_words = out[k + 1].text.split()
+            assert next_words != curr_words
+        assert "item_19" in out[-1].text
+
     def test_recursive_chunk_alias_is_registered(self):
         """Ensure recursive_chunk alias resolves to RecursiveChunker."""
         chunker = ChunkerCreator.create_chunker("recursive_chunk")
         assert isinstance(chunker, RecursiveChunker)
 
-    def test_overlap_honors_min_tokens_when_restart_cannot_fit_next_fragment(self):
-        """Ensure overlap below min_tokens is skipped if it cannot combine with next fragment."""
+    def test_regression_max_10_min_5_overlap_9_avoids_undersized_chunk(self):
+        """Regression: max_tokens=10, min_tokens=5, chunk_overlap=9 avoids undersized overlap chunk."""
         chunker = RecursiveChunker(max_tokens=10, min_tokens=5, chunk_overlap=9)
         token_map = {"f1": 6, "f2": 4, "f3": 9, "f1f2": 10, "f2f3": 13, "f1f2f3": 19}
         chunker._token_count = lambda text: token_map.get(text, len(text))
@@ -141,6 +174,8 @@ class TestRecursive:
         # f2 + f3 = 13 tokens > max_tokens 10
         # Undersized overlap f2 is skipped so chunk 2 starts at f3
         assert chunks == ["f1f2", "f3"]
+        for c in chunks:
+            assert chunker._token_count(c) >= 5
 
 
 @pytest.mark.unit
@@ -324,6 +359,24 @@ class TestClassicByteIdentical:
         assert [(c.doc_id, c.text, c.extra_info) for c in via] == [
             (c.doc_id, c.text, c.extra_info) for c in direct
         ]
+
+    def test_explicit_classic_chunk_config_preserves_output(self):
+        """Explicitly selecting classic_chunk preserves historical output."""
+        from docsgpt.storage.db.source_config import ChunkingConfig
+
+        cfg = ChunkingConfig(strategy="classic_chunk")
+        chunker = ChunkerCreator.create_chunker(
+            cfg.strategy,
+            max_tokens=cfg.max_tokens,
+            min_tokens=cfg.min_tokens,
+            duplicate_headers=cfg.duplicate_headers,
+        )
+        assert isinstance(chunker, Chunker)
+
+        docs = [Document(text="word " * 3000, doc_id="large")]
+        direct = Chunker(max_tokens=1250, min_tokens=150).chunk(docs)
+        via = chunker.chunk([Document(text="word " * 3000, doc_id="large")])
+        assert [c.text for c in via] == [c.text for c in direct]
 
 
 @pytest.mark.unit

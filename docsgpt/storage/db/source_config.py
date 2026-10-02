@@ -5,9 +5,12 @@ input), lenient on read (``SourceConfig.parse`` falls back to all-defaults for
 ``{}``/``None`` and tolerates partial/legacy dicts so a malformed row never
 crashes ingest or retrieval).
 
-The defaults mirror the ingest pipeline's current behavior: ``max_tokens`` /
-``min_tokens`` match ``docsgpt/worker.py`` (1250 / 150), so an empty config
-reproduces today's chunking byte-for-byte.
+The defaults mirror the ingest pipeline's behavior: ``strategy`` defaults
+to ``recursive`` with ``chunk_overlap=200``, and ``max_tokens`` /
+``min_tokens`` match ``docsgpt/worker.py`` (1250 / 150). These defaults also
+apply to existing sources with empty or partial configs upon re-ingest.
+Explicitly setting ``strategy: "classic_chunk"`` preserves the historical
+token-window chunking byte-for-byte.
 """
 
 from __future__ import annotations

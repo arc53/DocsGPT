@@ -69,7 +69,12 @@ Chunking decides how a document is split into the pieces that get embedded and s
 | `semantic` | Embeds sentences and splits where meaning shifts (at the 95th-percentile cosine-distance gap between adjacent sentences), falling back to `recursive` on failure. Produces topically coherent chunks at the cost of extra embedding calls during ingest. |
 
 <Callout type="warning" emoji="⚠️">
-Chunking is bake-time. After changing `strategy`, `max_tokens`, `min_tokens`, or `duplicate_headers`, re-ingest the source so existing chunks are rebuilt.
+Chunking is bake-time. After changing `strategy`, `max_tokens`, `min_tokens`, `chunk_overlap`,
+or `duplicate_headers`, re-ingest the source so existing chunks are rebuilt.
+
+Note that the new defaults (`recursive` with `chunk_overlap: 200`) also take effect on existing
+sources with empty or partial configs upon re-ingest. To preserve the historical token-window
+chunking on an existing or new source, explicitly set `strategy: "classic_chunk"`.
 </Callout>
 
 ## Retrieval configuration
