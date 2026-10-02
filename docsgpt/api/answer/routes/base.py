@@ -1143,6 +1143,9 @@ class BaseAnswerResource:
                                     "native_reads": continuation.get("native_reads") or [],
                                     "prompt": getattr(agent, "prompt", ""),
                                     "json_schema": getattr(agent, "json_schema", None),
+                                    # Kept with the schema: a resume that sends
+                                    # no response_format reuses both.
+                                    "json_schema_strict": getattr(agent, "json_schema_strict", True),
                                     "retriever_config": getattr(agent, "retriever_config", None),
                                     # Guardrails must survive the pause: a
                                     # resumed turn is still the same turn.
