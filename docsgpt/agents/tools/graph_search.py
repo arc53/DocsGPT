@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+from docsgpt.agents.citations import register_citation
 from docsgpt.agents.tools.base import Tool
 from docsgpt.graphrag import graphrag_available
 from docsgpt.retriever.labels import labels_from_metadata
@@ -170,7 +171,11 @@ class GraphSearchTool(Tool):
                 if doc not in self.retrieved_docs:
                     self.retrieved_docs.append(doc)
                 header = labels["filename"] or labels["title"]
-                parts.append(f"--- {header} ---\n{text[:MAX_PAGE_CHARS]}")
+                # Numbered from the answer's registry so a ``[n]`` the model
+                # writes for this page opens it.
+                number = register_citation(self.config.get("citation_registry"), doc)
+                label = f"[{number}] {header}" if number else header
+                parts.append(f"--- {label} ---\n{text[:MAX_PAGE_CHARS]}")
         if not parts:
             return f"No documents mention {entity!r}."
         return "\n\n".join(parts)

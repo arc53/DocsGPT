@@ -1,6 +1,7 @@
 """Source document management chunk management."""
 
 import math
+import re
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
@@ -10,6 +11,7 @@ from docsgpt.api.user.base import get_vector_store
 from docsgpt.api.user.resource_access import AccessDenied
 from docsgpt.api.user.sources.access import denied_response, load_source
 from docsgpt.storage.db.session import db_readonly
+from docsgpt.storage.db.source_config import SourceConfig
 from docsgpt.utils import check_required_fields, num_tokens_from_string
 from docsgpt.vectorstore.base import InvalidChunkMetadataError
 
@@ -228,6 +230,88 @@ class GetChunks(Resource):
         except Exception as e:
             current_app.logger.error(f"Error getting chunks: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
+
+
+_CHUNK_KEY = re.compile(r"[0-9a-f]{32}")
+
+
+def _citation_source(doc: dict, access: dict) -> dict:
+    """What a citation reader needs about the chunk's source.
+
+    Enough to name it, pick its view in Knowledge (``kind``, ``isNested``)
+    and gate its actions, without the behaviour config a viewer may not see.
+
+    Args:
+        doc: The source row.
+        access: ``ResourceAccess.payload()`` for the caller.
+
+    Returns:
+        dict: ``id``, ``name``, ``type``, ``kind``, ``date``, ``retriever``,
+        ``isNested``, ``access`` and ``allowed_actions``.
+    """
+    kind = "wiki" if doc.get("type") == "wiki" else SourceConfig.parse(doc.get("config")).kind
+    return {
+        "id": str(doc["id"]),
+        "name": doc.get("name", ""),
+        "type": doc.get("type") or "file",
+        "kind": kind,
+        "date": doc.get("date", ""),
+        "retriever": doc.get("retriever") or "classic",
+        "isNested": bool(doc.get("directory_structure")),
+        **access,
+    }
+
+
+@sources_chunks_ns.route("/sources/<string:source_id>/chunk")
+class ChunkByKey(Resource):
+    @api.doc(
+        description=(
+            "The chunk behind a citation, found by its content key, with what the "
+            "reader needs about its source. 404 when the caller cannot see the "
+            "source or the chunk is gone (the source was re-chunked or edited)."
+        ),
+        params={"chunk_key": "The citation's ``chunk_key``: the MD5 of the chunk text"},
+    )
+    def get(self, source_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        key = (request.args.get("chunk_key") or "").strip().lower()
+        if not _CHUNK_KEY.fullmatch(key):
+            return make_response(
+                jsonify({"success": False, "message": "chunk_key must be 32 hex characters"}), 400
+            )
+        try:
+            with db_readonly() as conn:
+                doc, ra = load_source(conn, source_id, user, "use")
+        except AccessDenied as err:
+            return denied_response(err)
+        except Exception as e:
+            current_app.logger.error(f"Error resolving source: {e}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+        try:
+            chunk = get_vector_store(str(doc["id"])).get_chunk_by_key(key)
+        except Exception as e:
+            current_app.logger.error(f"Error finding chunk {key} in {doc['id']}: {e}", exc_info=True)
+            return make_response(jsonify({"success": False}), 500)
+        if chunk is None:
+            return make_response(jsonify({"success": False, "message": "Chunk not found"}), 404)
+        source = _citation_source(doc, ra.payload())
+        metadata = chunk.get("metadata") or {}
+        return make_response(
+            jsonify(
+                {
+                    "success": True,
+                    "chunk": _with_token_counts([chunk])[0],
+                    "source": source,
+                    # A wiki chunk is cut from a page, and its ``source`` is that
+                    # page's path, which the wiki viewer opens directly.
+                    "page_path": metadata.get("source") if source["kind"] == "wiki" else None,
+                }
+            ),
+            200,
+        )
 
 
 @sources_chunks_ns.route("/add_chunk")

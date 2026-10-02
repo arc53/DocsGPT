@@ -2328,6 +2328,12 @@ class StreamProcessor:
         if retriever_config and agent_key in ("classic", "agentic", "research"):
             agent_kwargs["retriever_config"] = retriever_config
 
+        # The paused turn's sources, so the resumed one lists them too and a
+        # later search hit continues their ``[n]`` numbering.
+        saved_docs = agent_config.get("retrieved_docs")
+        if saved_docs:
+            agent_kwargs["retrieved_docs"] = saved_docs
+
         # A resumed turn is still the same turn: rebuild it with the guardrails
         # config captured at pause, floor already applied.
         saved_guardrails = agent_config.get("guardrails")

@@ -747,3 +747,43 @@ class TestBaseUpdateChunkFallback:
         from docsgpt.vectorstore.milvus import MilvusStore
 
         assert MilvusStore.update_chunk is BaseVectorStore.update_chunk
+
+
+class _ChunkListStore(ConcreteVectorStore):
+    def __init__(self, chunks):
+        super().__init__()
+        self._chunks = chunks
+
+    def get_chunks(self, *args, **kwargs):
+        return self._chunks
+
+
+@pytest.mark.unit
+class TestBaseGetChunkByKey:
+    """The default lookup hashes the source's chunks until one matches."""
+
+    def test_returns_the_chunk_whose_text_hashes_to_the_key(self):
+        from docsgpt.retriever.labels import chunk_key
+
+        store = _ChunkListStore([
+            {"doc_id": "1", "text": "first", "metadata": {}},
+            {"doc_id": "2", "text": "second", "metadata": {"title": "b"}},
+        ])
+        found = store.get_chunk_by_key(chunk_key("second"))
+        assert found == {"doc_id": "2", "text": "second", "metadata": {"title": "b"}}
+
+    def test_first_copy_wins_for_duplicate_text(self):
+        from docsgpt.retriever.labels import chunk_key
+
+        store = _ChunkListStore([
+            {"doc_id": "1", "text": "boilerplate", "metadata": {}},
+            {"doc_id": "2", "text": "boilerplate", "metadata": {}},
+        ])
+        assert store.get_chunk_by_key(chunk_key("boilerplate"))["doc_id"] == "1"
+
+    def test_no_match_is_none(self):
+        assert _ChunkListStore([{"doc_id": "1", "text": "x"}]).get_chunk_by_key("0" * 32) is None
+
+    def test_a_store_without_get_chunks_is_none(self):
+        # Elasticsearch has no ``get_chunks``; the base one returns None.
+        assert ConcreteVectorStore().get_chunk_by_key("0" * 32) is None

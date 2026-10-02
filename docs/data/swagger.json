@@ -4671,6 +4671,39 @@
         ]
       }
     },
+    "/api/sources/{source_id}/chunk": {
+      "get": {
+        "description": "The chunk behind a citation, found by its content key, with what the reader needs about its source. 404 when the caller cannot see the source or the chunk is gone (the source was re-chunked or edited).",
+        "operationId": "get_chunk_by_key",
+        "parameters": [
+          {
+            "description": "The citation's ``chunk_key``: the MD5 of the chunk text",
+            "in": "query",
+            "name": "chunk_key",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "source_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
     "/api/sources/{source_id}/config": {
       "parameters": [
         {

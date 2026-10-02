@@ -145,6 +145,14 @@ class ResearchAgent(BaseAgent):
     # Budget & timeout helpers
     # ------------------------------------------------------------------
 
+    def _attach_citation_registry(self) -> None:
+        """Keep the search tools' per-call labels.
+
+        Research numbers its sources itself (:class:`CitationManager`), per
+        step and in the final report, so a shared registry would only make
+        the tools' labels disagree with it.
+        """
+
     def _is_timed_out(self) -> bool:
         return (time.monotonic() - self._start_time) >= self.timeout_seconds
 

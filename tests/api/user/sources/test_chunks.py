@@ -848,3 +848,119 @@ class TestUpdateChunkGraphLinks:
         assert response.status_code == 500
         assert store.deleted == ["chunk-old", "chunk-new"]
         graph_store.remap_chunk.assert_not_called()
+
+
+KEY = "0123456789abcdef" * 2
+
+
+def _get_by_key(app, pg_conn, source_id, user, key=KEY, store=None):
+    from docsgpt.api.user.sources.chunks import ChunkByKey
+
+    with _patch_db(pg_conn), patch(
+        "docsgpt.api.user.sources.chunks.get_vector_store",
+        return_value=store or MagicMock(),
+    ) as get_store, app.test_request_context(
+        f"/api/sources/{source_id}/chunk?chunk_key={key}"
+    ):
+        from flask import request
+        request.decoded_token = {"sub": user} if user else None
+        response = ChunkByKey().get(str(source_id))
+    return response, get_store
+
+
+class TestChunkByKey:
+    """The chunk behind a citation, found again by its content key."""
+
+    def test_returns_401_unauthenticated(self, app, pg_conn):
+        response, _ = _get_by_key(app, pg_conn, "s", None)
+        assert response.status_code == 401
+
+    @pytest.mark.parametrize("key", ["", "nothex" * 6, "ABC", KEY + "0"])
+    def test_rejects_a_malformed_key(self, app, pg_conn, key):
+        response, get_store = _get_by_key(app, pg_conn, "s", "u", key=key)
+        assert response.status_code == 400
+        get_store.assert_not_called()
+
+    def test_accepts_an_uppercase_key(self, app, pg_conn):
+        src = _seed_source(pg_conn, user="u-key")
+        store = MagicMock()
+        store.get_chunk_by_key.return_value = {"doc_id": "7", "text": "t", "metadata": {}}
+        response, _ = _get_by_key(app, pg_conn, src["id"], "u-key", key=KEY.upper(), store=store)
+        assert response.status_code == 200
+        store.get_chunk_by_key.assert_called_once_with(KEY)
+
+    def test_a_source_the_caller_cannot_see_is_404_and_never_queried(self, app, pg_conn):
+        src = _seed_source(pg_conn, user="u-owner")
+        response, get_store = _get_by_key(app, pg_conn, src["id"], "u-stranger")
+        assert response.status_code == 404
+        get_store.assert_not_called()
+
+    def test_a_chunk_that_is_gone_is_404(self, app, pg_conn):
+        src = _seed_source(pg_conn, user="u-key")
+        store = MagicMock()
+        store.get_chunk_by_key.return_value = None
+        response, _ = _get_by_key(app, pg_conn, src["id"], "u-key", store=store)
+        assert response.status_code == 404
+        assert response.json["message"] == "Chunk not found"
+
+    def test_a_store_failure_is_500_not_gone(self, app, pg_conn):
+        src = _seed_source(pg_conn, user="u-key")
+        store = MagicMock()
+        store.get_chunk_by_key.side_effect = RuntimeError("down")
+        response, _ = _get_by_key(app, pg_conn, src["id"], "u-key", store=store)
+        assert response.status_code == 500
+
+    def test_returns_the_chunk_and_what_the_reader_needs_about_its_source(self, app, pg_conn):
+        src = _seed_source(pg_conn, user="u-key", name="Occupancy survey")
+        store = MagicMock()
+        store.get_chunk_by_key.return_value = {
+            "doc_id": "7", "text": "full passage", "metadata": {"source": "a.pdf"},
+        }
+        response, get_store = _get_by_key(app, pg_conn, src["id"], "u-key", store=store)
+
+        assert response.status_code == 200
+        body = response.json
+        get_store.assert_called_once_with(str(src["id"]))
+        assert body["chunk"]["doc_id"] == "7"
+        assert body["chunk"]["text"] == "full passage"
+        # Filled in for the reader's length row, as the chunk browser does.
+        assert body["chunk"]["metadata"]["token_count"] > 0
+        assert body["source"]["id"] == str(src["id"])
+        assert body["source"]["name"] == "Occupancy survey"
+        assert body["source"]["kind"] == "classic"
+        assert body["source"]["isNested"] is False
+        assert body["source"]["access"] == "owner"
+        assert "edit" in body["source"]["allowed_actions"]
+        assert body["page_path"] is None
+
+    def test_wiki_chunks_carry_their_page_path(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        src = SourcesRepository(pg_conn).create("Guide", user_id="u-wiki", type="wiki", config={"kind": "wiki"})
+        store = MagicMock()
+        store.get_chunk_by_key.return_value = {
+            "doc_id": "7", "text": "p", "metadata": {"source": "/guide/levy.md"},
+        }
+        response, _ = _get_by_key(app, pg_conn, src["id"], "u-wiki", store=store)
+        assert response.json["source"]["kind"] == "wiki"
+        assert response.json["page_path"] == "/guide/levy.md"
+
+    def test_a_team_viewer_can_read_but_not_edit(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+        owner, viewer = "u-key-owner", "u-key-viewer"
+        src = _seed_source(pg_conn, user=owner)
+        team = TeamsRepository(pg_conn).create("Acme", "acme-cite", owner)
+        TeamMembersRepository(pg_conn).add_member(team["id"], viewer, role="team_member")
+        TeamResourceGrantsRepository(pg_conn).grant(
+            team["id"], "source", str(src["id"]), owner_id=owner, granted_by=owner,
+            access_level="viewer",
+        )
+        store = MagicMock()
+        store.get_chunk_by_key.return_value = {"doc_id": "7", "text": "t", "metadata": {}}
+        response, _ = _get_by_key(app, pg_conn, src["id"], viewer, store=store)
+        assert response.status_code == 200
+        assert response.json["source"]["access"] == "viewer"
+        assert "edit" not in response.json["source"]["allowed_actions"]

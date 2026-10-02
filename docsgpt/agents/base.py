@@ -618,6 +618,9 @@ class BaseAgent(ABC):
         reasoning_content: str = "",
     ) -> Generator[Dict, None, None]:
         self._prepare_tools(tools_dict)
+        # The paused turn's sources were restored as ``retrieved_docs``, so a
+        # hit found after the resume continues their numbering.
+        self._attach_citation_registry()
 
         actions_by_id = {a["call_id"]: a for a in tool_actions}
 
@@ -757,6 +760,8 @@ class BaseAgent(ABC):
             llm_response, tools_dict, messages, None
         )
 
+        # Hits from the resumed tool calls join the restored sources.
+        self._refresh_sources_before_output()
         yield {"sources": self.retrieved_docs}
         yield {"tool_calls": self._get_truncated_tool_calls()}
         yield from self._emit_responses_metadata()
@@ -1288,23 +1293,42 @@ class BaseAgent(ABC):
             docs.extend(getattr(tool, "retrieved_docs", None) or [])
         return docs
 
+    def _attach_citation_registry(self) -> None:
+        """Hand the search tools this answer's source list to number hits from.
+
+        Called once the documents are final: ``_build_messages`` may shed
+        ``retrieved_docs`` to fit the budget, and the registry has to start
+        from the list the model saw as ``<document index>``, or a tool hit's
+        ``[n]`` would be off. See ``docsgpt.agents.citations``.
+        """
+        executor = getattr(self, "tool_executor", None)
+        if executor is None:
+            return
+        executor.citation_registry = list(self.retrieved_docs or [])
+
     def _collect_internal_sources(self) -> None:
         """Merge the search tools' docs into ``retrieved_docs``, deduped,
         preserving any pre-fetched docs so a mixed-exposure agent cites both
-        pre-fetched and tool-retrieved sources (not just the tools')."""
-        tool_docs = self._search_tool_docs()
+        pre-fetched and tool-retrieved sources (not just the tools').
+
+        The citation registry goes first: it holds the hits in the order the
+        tools numbered them, so the n-th source is the one the model cited as
+        ``[n]`` even when the graph tool ran before internal search.
+        """
+        from docsgpt.agents.citations import citation_key
+
+        executor = getattr(self, "tool_executor", None)
+        registry = getattr(executor, "citation_registry", None)
+        if not isinstance(registry, list):
+            registry = []
+        tool_docs = [*registry, *self._search_tool_docs()]
         if not tool_docs:
             return
 
-        def _key(d):
-            if isinstance(d, dict):
-                return (d.get("source"), d.get("title"), d.get("text"))
-            return id(d)
-
         merged = list(self.retrieved_docs or [])
-        seen = {_key(d) for d in merged}
+        seen = {citation_key(d) for d in merged}
         for doc in tool_docs:
-            k = _key(doc)
+            k = citation_key(doc)
             if k not in seen:
                 seen.add(k)
                 merged.append(doc)

@@ -664,6 +664,46 @@ class PGVectorStore(BaseVectorStore):
         finally:
             cursor.close()
 
+    def get_chunk_by_key(self, key: str) -> Optional[Dict[str, Any]]:
+        """Find this source's chunk by its text's MD5 in one query.
+
+        The source_id index narrows the scan to one source and Postgres's own
+        ``md5()`` does the hashing, so no column or index is added. Errors are
+        raised, not read as "no chunk": a citation that is merely unreachable
+        must not tell the reader the passage is gone.
+
+        Args:
+            key: The chunk key, 32 lowercase hex characters.
+
+        Returns:
+            dict | None: ``{"doc_id", "text", "metadata"}``; the lowest id wins
+            for duplicate texts.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                f"SELECT id, {self._text_column}, {self._metadata_column} "
+                f"FROM {self._table_name} "
+                f"WHERE source_id = %s AND md5({self._text_column}) = %s ORDER BY id LIMIT 1;",
+                (self._source_id, key),
+            )
+            row = cursor.fetchone()
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                # Connection already gone; nothing left to roll back.
+                pass
+            raise
+        finally:
+            cursor.close()
+        if not row:
+            return None
+        doc_id, text, metadata = row
+        return {"doc_id": str(doc_id), "text": text, "metadata": metadata or {}}
+
     def add_chunk(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> str:
         """Add a single chunk to the vector store"""
         metadata = metadata or {}

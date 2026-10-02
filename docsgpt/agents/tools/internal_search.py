@@ -2,6 +2,7 @@ import json
 import logging
 from typing import Dict, List, Optional
 
+from docsgpt.agents.citations import register_citation
 from docsgpt.agents.tools.base import Tool
 from docsgpt.core.settings import settings
 from docsgpt.retriever.dispatcher import build_dispatcher
@@ -167,7 +168,10 @@ class InternalSearchTool(Tool):
             if doc not in self.retrieved_docs:
                 self.retrieved_docs.append(doc)
 
-        # Format results for the LLM
+        # Format results for the LLM. Inside an agent the labels come from
+        # the answer's shared registry, so ``[n]`` is the n-th source the
+        # client shows, not the n-th hit of this call.
+        registry = self.config.get("citation_registry")
         formatted = []
         for i, doc in enumerate(docs, 1):
             title = doc.get("title", "Untitled")
@@ -175,7 +179,8 @@ class InternalSearchTool(Tool):
             source = doc.get("source", "Unknown")
             filename = doc.get("filename", "")
             header = filename or title
-            formatted.append(f"[{i}] {header} (source: {source})\n{text}")
+            number = register_citation(registry, doc) or i
+            formatted.append(f"[{number}] {header} (source: {source})\n{text}")
 
         return "\n\n---\n\n".join(formatted)
 
@@ -259,9 +264,9 @@ class InternalSearchTool(Tool):
                 "description": (
                     "Search the user's uploaded documents and knowledge base. "
                     "Use this before answering questions about their content. "
-                    "Results include each document's source title — cite those "
-                    "titles in your answer. You can call this multiple times "
-                    "with different phrasings to improve coverage."
+                    "Each result is labelled [n] and names its source document; "
+                    "cite a result in your answer as [n]. You can call this "
+                    "multiple times with different phrasings to improve coverage."
                 ),
                 "parameters": {
                     "properties": {
@@ -342,6 +347,7 @@ def build_internal_tool_entry(has_directory_structure: bool = False) -> Dict:
             "description": (
                 "Search the user's uploaded documents and knowledge base. "
                 "Use this to find relevant information before answering questions. "
+                "Each result is labelled [n]; cite a result in your answer as [n]. "
                 "You can call this multiple times with different queries."
             ),
             "active": True,

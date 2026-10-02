@@ -222,6 +222,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/sources/paginated", "GET"): _rule("sources:read"),
     ("/api/directory_structure", "GET"): _rule("sources:read", (QUERY, "id")),
     ("/api/get_chunks", "GET"): _rule("sources:read", (QUERY, "id")),
+    # The chunk behind a citation; scoped to its source like get_chunks.
+    ("/api/sources/<string:source_id>/chunk", "GET"): _rule("sources:read", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/wiki/pages", "GET"): _rule("sources:read", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/wiki/page", "GET"): _rule("sources:read", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/wiki/settings", "GET"): _rule("sources:read", (VIEW, "source_id")),

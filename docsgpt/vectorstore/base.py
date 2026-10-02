@@ -494,6 +494,32 @@ class BaseVectorStore(ABC):
                     deleted += 1
         return deleted
 
+    def get_chunk_by_key(self, key: str) -> Optional[dict]:
+        """Return the chunk whose text hashes to ``key``, or ``None``.
+
+        ``key`` is a citation's ``chunk_key`` (the MD5 of the chunk text, see
+        ``docsgpt.retriever.labels.chunk_key``). Default implementation hashes
+        ``get_chunks()`` until one matches, the same scan the chunk browser
+        pages through; override with a single query where the store can hash
+        server-side. Duplicate texts share a key, and the first copy wins.
+
+        Args:
+            key: The chunk key, 32 lowercase hex characters.
+
+        Returns:
+            dict | None: ``{"doc_id", "text", "metadata"}`` for the chunk.
+        """
+        from docsgpt.retriever.labels import chunk_key
+
+        for chunk in self.get_chunks() or []:
+            if chunk_key(chunk.get("text")) == key:
+                return {
+                    "doc_id": str(chunk.get("doc_id", "")),
+                    "text": chunk.get("text", ""),
+                    "metadata": chunk.get("metadata") or {},
+                }
+        return None
+
     def is_azure_configured(self):
         """Kept for compatibility; delegates to the module-level check."""
         return _azure_configured()
