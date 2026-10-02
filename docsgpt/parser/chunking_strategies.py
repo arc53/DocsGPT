@@ -193,7 +193,6 @@ class RecursiveChunker(_BaseStrategyChunker):
                         break
                 if (
                     overlap_text
-                    and self._token_count(overlap_text) < self.min_tokens
                     and self._token_count(overlap_text + fragments[j]) > self.max_tokens
                 ):
                     i = j

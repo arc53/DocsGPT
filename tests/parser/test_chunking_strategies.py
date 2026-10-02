@@ -177,6 +177,18 @@ class TestRecursive:
         for c in chunks:
             assert chunker._token_count(c) >= 5
 
+    def test_overlap_skipped_when_overlap_cannot_fit_next_fragment(self):
+        """Ensure overlap-only chunks are avoided even when overlap meets min_tokens."""
+        chunker = RecursiveChunker(max_tokens=10, min_tokens=5, chunk_overlap=9)
+        # Fragment sequence [4, 6, 9]: f2 (6) meets min_tokens (5), but f2 + f3 (15) > max_tokens (10)
+        token_map = {"f1": 4, "f2": 6, "f3": 9, "f1f2": 10, "f2f3": 15, "f1f2f3": 19}
+        chunker._token_count = lambda text: token_map.get(text, len(text))
+
+        chunks = chunker._merge_fragments(["f1", "f2", "f3"])
+        # Chunk 1: "f1f2" (10). Overlap "f2" (6) cannot combine with "f3" (9).
+        # Must advance directly to "f3" rather than emitting redundant ["f1f2", "f2", "f3"].
+        assert chunks == ["f1f2", "f3"]
+
 
 @pytest.mark.unit
 class TestMarkdown:
