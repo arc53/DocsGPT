@@ -65,3 +65,13 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://docs.stripe.com/mcp
+
+- key: mcp:calcom
+  name: Cal.com
+  description: Check availability, event types and bookings in Cal.com.
+  icon: calcom
+  category: business
+  mcp_url: https://mcp.cal.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://cal.com/docs/mcp-server
