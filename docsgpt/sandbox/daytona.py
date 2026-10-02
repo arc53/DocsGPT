@@ -29,17 +29,32 @@ _SESSION_LABEL = "docsgpt_session_id"
 # open figure as a PNG between chart markers and closes it. Daytona's own chart
 # extraction (behind the backend's show) drops bar charts and fails every run
 # that shows a chart on matplotlib < 3.10; this replaces it.
-_CHART_PRELUDE = """\
+# A run returns at most ``MAX_CHARTS`` charts of at most ``MAX_CHART_PIXELS``
+# and ``MAX_CHART_BYTES`` each; the rest are closed without being rendered or printed.
+MAX_CHARTS = 4
+MAX_CHART_PIXELS = 16_000_000
+MAX_CHART_BYTES = 2_000_000
+_CHART_PRELUDE = f"""\
 import sys as _dg_sys
+
+_dg_left = [{MAX_CHARTS}]
 
 
 def _dg_show(*args, **kwargs):
     import base64, io
     plt = _dg_sys.modules["matplotlib.pyplot"]
     for number in plt.get_fignums():
+        if _dg_left[0] <= 0:
+            break
+        figure = plt.figure(number)
+        width, height = figure.get_size_inches() * figure.dpi
+        if width * height > {MAX_CHART_PIXELS}:
+            continue
         buffer = io.BytesIO()
-        plt.figure(number).savefig(buffer, format="png", bbox_inches="tight")
-        print("<<docsgpt-chart:" + base64.b64encode(buffer.getvalue()).decode() + ">>")
+        figure.savefig(buffer, format="png", bbox_inches="tight")
+        if buffer.tell() <= {MAX_CHART_BYTES}:
+            _dg_left[0] -= 1
+            print("<<docsgpt-chart:" + base64.b64encode(buffer.getvalue()).decode() + ">>")
     plt.close("all")
 
 
