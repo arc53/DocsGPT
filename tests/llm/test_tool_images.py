@@ -233,15 +233,17 @@ class TestGoogle:
         contents, _ = llm._clean_messages_google(messages, "gemini-3.5-flash")
         assert [p.function_response.name for p in contents[-1].parts] == ["view_image", "read_webpage"]
 
-    def test_earlier_models_get_them_in_a_user_turn_after_the_responses(self):
+    def test_earlier_models_get_them_after_the_responses_in_the_same_turn(self):
         llm = self._llm()
         contents, _ = llm._clean_messages_google([*_conversation(SHOT), {"role": "user", "content": "next"}],
                                                  "gemini-2.5-flash")
-        responses, follow_up, question = contents[-3:]
-        assert responses.parts[0].function_response.parts is None
-        assert "A1 chart.png" in follow_up.parts[0].text
-        assert follow_up.parts[1].inline_data.data == base64.b64decode(PNG_B64)
-        assert question.parts[0].text == "next"
+        turn = contents[-1]
+        assert turn.role == "user" and contents[-2].role == "model"
+        response, note, image, question = turn.parts
+        assert response.function_response.parts is None
+        assert "A1 chart.png" in note.text
+        assert image.inline_data.data == base64.b64decode(PNG_B64)
+        assert question.text == "next"
 
 
 class _Handler(LLMHandler):

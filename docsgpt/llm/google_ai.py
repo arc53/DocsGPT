@@ -421,7 +421,16 @@ class GoogleLLM(BaseLLM):
         system_instruction = (
             "\n\n".join(system_instructions) if system_instructions else None
         )
-        return cleaned_messages, system_instruction
+        # Gemini reads turns by position, alternating user and model: a run of
+        # same-role turns (function responses followed by their images or by
+        # a user message) goes in as one turn.
+        merged = []
+        for content in cleaned_messages:
+            if merged and merged[-1].role == content.role:
+                merged[-1] = types.Content(role=content.role, parts=[*merged[-1].parts, *content.parts])
+            else:
+                merged.append(content)
+        return merged, system_instruction
 
     @staticmethod
     def _takes_function_response_images(model):
