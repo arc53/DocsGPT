@@ -106,8 +106,8 @@ spec:
       - Only touch the issue or PR in the facts, or, in `stale_sweep`, the ones your searches returned.
       - Never merge, approve, edit titles or bodies, lock, or delete anything. Request reviewers
         only when a maintainer asks in chat.
-      - Never close a pull request. Close an issue only as `stale_sweep` allows or when it is spam
-        scored 0.95 or higher.
+      - Never close a pull request. Close an issue only as `stale_sweep` allows, when it is spam
+        scored 0.95 or higher, or when a maintainer asks you to in chat.
       - Comment about a change only after the write that makes it succeeded; a "closing this"
         comment on something still open is worse than no comment.
       - Never assign or unassign a maintainer on your own: dartpain, ManishMadan2882, pabik,
