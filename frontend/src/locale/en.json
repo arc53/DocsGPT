@@ -1849,6 +1849,7 @@
         "sourceSummaries": "Alias for content (backward compatible)",
         "sourceDocuments": "Document objects list",
         "sourceCount": "Number of retrieved documents",
+        "citationRules": "Citation rules ([n] citations)",
         "systemDate": "Current date (YYYY-MM-DD)",
         "systemTime": "Current time (HH:MM:SS)",
         "systemTimestamp": "ISO 8601 timestamp",

@@ -1843,6 +1843,7 @@
         "sourceSummaries": "Alias für Inhalte (abwärtskompatibel)",
         "sourceDocuments": "Dokumentenobjekte-Liste",
         "sourceCount": "Anzahl der abgerufenen Dokumente",
+        "citationRules": "Zitierregeln ([n]-Zitate)",
         "systemDate": "Aktuelles Datum (JJJJ-MM-TT)",
         "systemTime": "Aktuelle Uhrzeit (HH:MM:SS)",
         "systemTimestamp": "ISO 8601 Zeitstempel",

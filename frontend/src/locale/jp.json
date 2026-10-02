@@ -1837,6 +1837,7 @@
         "sourceSummaries": "Alias for content (backward compatible)",
         "sourceDocuments": "Document objects list",
         "sourceCount": "Number of retrieved documents",
+        "citationRules": "引用ルール（[n] 形式）",
         "systemDate": "Current date (YYYY-MM-DD)",
         "systemTime": "Current time (HH:MM:SS)",
         "systemTimestamp": "ISO 8601 timestamp",

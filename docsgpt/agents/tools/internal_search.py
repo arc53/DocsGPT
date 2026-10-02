@@ -264,8 +264,8 @@ class InternalSearchTool(Tool):
                 "description": (
                     "Search the user's uploaded documents and knowledge base. "
                     "Use this before answering questions about their content. "
-                    "Each result is labelled [n] and names its source document; "
-                    "cite a result in your answer as [n]. You can call this "
+                    "Each result is labelled [n], its number among the answer's "
+                    "sources, and names its source document. You can call this "
                     "multiple times with different phrasings to improve coverage."
                 ),
                 "parameters": {
@@ -347,7 +347,7 @@ def build_internal_tool_entry(has_directory_structure: bool = False) -> Dict:
             "description": (
                 "Search the user's uploaded documents and knowledge base. "
                 "Use this to find relevant information before answering questions. "
-                "Each result is labelled [n]; cite a result in your answer as [n]. "
+                "Each result is labelled [n], its number among the answer's sources. "
                 "You can call this multiple times with different queries."
             ),
             "active": True,

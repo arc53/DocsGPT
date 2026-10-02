@@ -20,6 +20,7 @@ from docsgpt.api.answer.services.prompt_renderer import (
     PromptRenderer,
     format_docs_for_prompt,
     prompt_embeds_documents,
+    prompt_requests_citations,
     resolve_prompt_skeleton,
 )
 from docsgpt.agents.attachment_budget import (
@@ -2433,6 +2434,7 @@ class StreamProcessor:
                 enabled_tools=self._enabled_tool_names(),
                 persona=self._persona,
                 artifact_parent={"conversation_id": self.conversation_id},
+                sources_attached=self._has_active_docs(),
             )
 
         # Use the user_id that resolved the model so owner-scoped BYOM
@@ -2512,6 +2514,11 @@ class StreamProcessor:
             "retrieved_docs": self.retrieved_docs,
             "prompt_embeds_documents": (
                 False if override_used else prompt_embeds_documents(raw_prompt)
+            ),
+            # An override is the caller's own text, so it never carries the
+            # Citations section.
+            "prompt_cites_sources": (
+                False if override_used else prompt_requests_citations(raw_prompt)
             ),
             "sources_were_searched": self._has_active_docs(),
             "decoded_token": self.decoded_token,

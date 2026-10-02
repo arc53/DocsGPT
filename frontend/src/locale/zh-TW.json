@@ -1837,6 +1837,7 @@
         "sourceSummaries": "內容別名（向後相容）",
         "sourceDocuments": "文件物件列表",
         "sourceCount": "擷取的文件數量",
+        "citationRules": "引用規則（[n] 格式）",
         "systemDate": "目前日期 (YYYY-MM-DD)",
         "systemTime": "目前時間 (HH:MM:SS)",
         "systemTimestamp": "ISO 8601 時間戳記",

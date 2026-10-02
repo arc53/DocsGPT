@@ -20,7 +20,13 @@ def _source(source_id: str, exposure: str = "prefetch") -> dict:
     return {"id": source_id, "config": {"retrieval": {"exposure": exposure}}}
 
 
-def _run(monkeypatch, agent_type: str, sources: list, prompt_id: str = "default") -> dict:
+def _run(
+    monkeypatch,
+    agent_type: str,
+    sources: list,
+    prompt_id: str = "default",
+    prompt_text: str = "system prompt",
+) -> dict:
     """Run a headless agent over ``sources``; return what the run was built with."""
     from docsgpt.agents import headless_runner as hr
 
@@ -44,7 +50,7 @@ def _run(monkeypatch, agent_type: str, sources: list, prompt_id: str = "default"
 
     def _get_prompt(pid):
         seen["prompts"].append(pid)
-        return "system prompt"
+        return prompt_text
 
     @contextmanager
     def _conn():
@@ -125,3 +131,53 @@ class TestHeadlessClassicSources:
         assert seen["searches"] == [QUERY]
         assert _ids(seen["dispatchers"][-1]["sources"]) == ["s1"]
         assert _ids(seen["agent_kwargs"]["retriever_config"]["sources"]) == ["s2"]
+
+
+@pytest.mark.unit
+class TestHeadlessCitations:
+    """A scheduled or webhook run cites the way a chat turn of its prompt does."""
+
+    def test_the_built_in_prompt_with_sources_cites(self, monkeypatch):
+        from docsgpt.prompts.composer import compose_preset
+
+        seen = _run(
+            monkeypatch, "classic", [_source("s1")], prompt_text=compose_preset("default")
+        )
+        kwargs = seen["agent_kwargs"]
+        assert "## Citations" in kwargs["prompt"]
+        assert kwargs["prompt_cites_sources"] is True
+
+    def test_a_plain_text_prompt_with_sources_cites(self, monkeypatch):
+        monkeypatch.setattr(
+            "docsgpt.agents.headless_runner.authorized_prompt_id", lambda pid, *_a: pid
+        )
+        seen = _run(
+            monkeypatch,
+            "classic",
+            [_source("s1")],
+            prompt_id="custom-1",
+            prompt_text="You are Vicky, a terse support assistant.",
+        )
+        kwargs = seen["agent_kwargs"]
+        assert "You are Vicky" in kwargs["prompt"]
+        assert "## Citations" in kwargs["prompt"]
+        assert kwargs["prompt_cites_sources"] is True
+
+    def test_a_template_prompt_gets_nothing_added(self, monkeypatch):
+        seen = _run(
+            monkeypatch, "classic", [_source("s1")], prompt_text="Today is {{ system.date }}."
+        )
+        kwargs = seen["agent_kwargs"]
+        assert "## Citations" not in kwargs["prompt"]
+        assert kwargs["prompt_cites_sources"] is False
+
+    def test_a_template_prompt_opts_in(self, monkeypatch):
+        seen = _run(
+            monkeypatch,
+            "agentic",
+            [_source("s1", "agentic_tool")],
+            prompt_text="Acme.\n\n{{ source.citation_rules }}",
+        )
+        kwargs = seen["agent_kwargs"]
+        assert "## Citations" in kwargs["prompt"]
+        assert kwargs["prompt_cites_sources"] is True
