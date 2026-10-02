@@ -1161,6 +1161,32 @@ class TestLLMGenAdvanced:
         agent._llm_gen([{"role": "user", "content": "test"}], preserve_responses_state=True)
         assert mock_llm.note_chain_turn.call_args == call("first_turn", new_turn=False)
 
+    def test_llm_gen_restores_the_chains_head_and_tools_hashes(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+        monkeypatch,
+    ):
+        from docsgpt.agents import base as base_mod
+
+        monkeypatch.setattr(base_mod.settings, "OPENAI_RESPONSES_STORE", True)
+        mock_llm._uses_responses_api = Mock(return_value=True)
+        mock_llm._chain_system_hash = None
+        mock_llm._chain_tools_hash = None
+        agent = ClassicAgent(**agent_base_params)
+        monkeypatch.setattr(agent, "_previous_response_choice", lambda: ("resp_1", None))
+        monkeypatch.setattr(
+            agent, "_previous_responses_state", lambda: {"system_hash": "sys-h", "tools_hash": "tools-h"},
+        )
+
+        agent._llm_gen([{"role": "user", "content": "test"}])
+
+        assert mock_llm.gen_stream.call_args[1]["previous_response_id"] == "resp_1"
+        assert mock_llm._chain_system_hash == "sys-h"
+        assert mock_llm._chain_tools_hash == "tools-h"
+
 
     def test_llm_gen_with_attachments(
         self,

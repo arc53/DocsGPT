@@ -2115,6 +2115,33 @@ class StreamProcessor:
             self._required_tool_actions = {}
             return self._required_tool_actions
 
+    def _resume_output_format(self, agent_config: Dict[str, Any]) -> Tuple[Optional[Dict], bool, bool]:
+        """Pick the structured-output settings for a resumed turn.
+
+        The resuming request decides when it says anything, as on a fresh
+        turn: its ``json_schema`` (with its ``strict`` flag) replaces the
+        paused schema, and ``json_object`` drops any schema. A request that
+        sends no ``response_format`` keeps the paused schema and strictness,
+        since that schema may be the agent's own configured one.
+
+        Args:
+            agent_config: The ``agent_config`` saved with the paused state.
+
+        Returns:
+            ``(json_schema, json_schema_strict, json_object)`` for the agent.
+        """
+        json_schema = agent_config.get("json_schema")
+        json_schema_strict = agent_config.get("json_schema_strict")
+        request_schema = self.data.get("json_schema")
+        if request_schema is not None:
+            json_schema = request_schema
+            json_schema_strict = self.data.get("json_schema_strict")
+        json_object = bool(self.data.get("json_object"))
+        if json_object:
+            json_schema = None
+        strict = True if json_schema_strict is None else bool(json_schema_strict)
+        return json_schema, strict, json_object
+
     @_traced_setup
     def resume_from_tool_actions(
         self,
@@ -2218,7 +2245,7 @@ class StreamProcessor:
         user_api_key = agent_config.get("user_api_key")
         agent_id = agent_config.get("agent_id")
         prompt = agent_config.get("prompt", "")
-        json_schema = agent_config.get("json_schema")
+        json_schema, json_schema_strict, json_object = self._resume_output_format(agent_config)
         retriever_config = agent_config.get("retriever_config")
 
         # Recreate dependencies
@@ -2281,6 +2308,14 @@ class StreamProcessor:
             "chat_history": [],
             "decoded_token": self.decoded_token,
             "json_schema": json_schema,
+            "json_schema_strict": json_schema_strict,
+            "json_object": json_object,
+            # The resuming request's own sampling and tool-call controls
+            # (``tool_choice``, ``max_tokens``, ...), never the paused ones:
+            # each OpenAI-style request states its params in full, and a
+            # client forces a final answer by resuming with
+            # ``tool_choice: "none"``.
+            "llm_params": self.data.get("llm_params") or {},
             "llm": llm,
             "llm_handler": llm_handler,
             "tool_executor": tool_executor,

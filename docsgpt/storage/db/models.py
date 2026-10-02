@@ -16,6 +16,7 @@ declarations to keep this file readable; the DB is the authority.
 """
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     CHAR,
@@ -813,12 +814,15 @@ pending_tool_state_table = Table(
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
     Column("conversation_id", UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False),
     Column("user_id", Text, nullable=False),
-    Column("messages", JSONB, nullable=False),
-    Column("pending_tool_calls", JSONB, nullable=False),
-    Column("tools_dict", JSONB, nullable=False),
-    Column("tool_schemas", JSONB, nullable=False),
-    Column("agent_config", JSONB, nullable=False),
-    Column("client_tools", JSONB),
+    # ``json``, not ``jsonb`` (``0046_pending_tool_state_json``): these are
+    # replayed to the model on resume, and ``jsonb`` re-sorts object keys,
+    # which changed the tools block and broke the provider prompt cache.
+    Column("messages", JSON, nullable=False),
+    Column("pending_tool_calls", JSON, nullable=False),
+    Column("tools_dict", JSON, nullable=False),
+    Column("tool_schemas", JSON, nullable=False),
+    Column("agent_config", JSON, nullable=False),
+    Column("client_tools", JSON),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("expires_at", DateTime(timezone=True), nullable=False),
     # Added in ``0004_durability_foundation``. ``status`` is the

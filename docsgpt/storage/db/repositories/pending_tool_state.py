@@ -49,7 +49,10 @@ class PendingToolStateRepository:
     ) -> dict:
         """Upsert pending tool state.
 
-        Mirrors Mongo's ``replace_one(..., upsert=True)``.
+        Mirrors Mongo's ``replace_one(..., upsert=True)``. The payloads are
+        written as ``json``, which keeps their key order: a resumed turn
+        replays them to the model, and a re-sorted tools block or tool call
+        misses the provider prompt cache.
         """
         now = datetime.now(timezone.utc)
         expires = datetime.fromtimestamp(
@@ -65,9 +68,9 @@ class PendingToolStateRepository:
                      created_at, expires_at)
                 VALUES
                     (CAST(:conv_id AS uuid), :user_id,
-                     CAST(:messages AS jsonb), CAST(:pending AS jsonb),
-                     CAST(:tools_dict AS jsonb), CAST(:schemas AS jsonb),
-                     CAST(:agent_config AS jsonb), CAST(:client_tools AS jsonb),
+                     CAST(:messages AS json), CAST(:pending AS json),
+                     CAST(:tools_dict AS json), CAST(:schemas AS json),
+                     CAST(:agent_config AS json), CAST(:client_tools AS json),
                      :created_at, :expires_at)
                 ON CONFLICT (conversation_id, user_id) DO UPDATE SET
                     messages = EXCLUDED.messages,
