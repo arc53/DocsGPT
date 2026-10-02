@@ -360,18 +360,53 @@ def text_pages(text: str) -> Optional[Dict[int, str]]:
     Returns:
         Page number to page text, or None when the text has no page markers.
     """
+    spans = _text_page_spans(text)
+    if spans is None:
+        return None
+    return {number: "\n".join(text[start:end] for start, end in parts) for number, parts in spans.items()}
+
+
+def _text_page_spans(text: str) -> Optional[Dict[int, List[Tuple[int, int]]]]:
+    """Where each page's text sits in ``text``: the spans ``text_pages`` joins.
+
+    Args:
+        text: Extracted text.
+
+    Returns:
+        Page number to its ``(start, end)`` character spans, in order, or None
+        when the text has no page markers.
+    """
+
+    def _trimmed(start: int, end: int) -> Tuple[int, int]:
+        while start < end and text[start] == "\n":
+            start += 1
+        while end > start and text[end - 1] == "\n":
+            end -= 1
+        return start, end
+
     markers = list(_PAGE_MARKER_RE.finditer(text or ""))
     if markers:
-        pages: Dict[int, str] = {}
+        pages: Dict[int, List[Tuple[int, int]]] = {}
         for index, marker in enumerate(markers):
             end = markers[index + 1].start() if index + 1 < len(markers) else len(text)
-            body = text[marker.end():end].strip("\n")
-            number = int(marker.group(1))
-            pages[number] = f"{pages[number]}\n{body}" if number in pages else body
+            pages.setdefault(int(marker.group(1)), []).append(_trimmed(marker.end(), end))
         return pages
     if "\f" in (text or ""):
-        return {number: body.strip("\n") for number, body in enumerate(text.split("\f"), start=1)}
+        pages, start = {}, 0
+        for number, body in enumerate(text.split("\f"), start=1):
+            pages[number] = [_trimmed(start, start + len(body))]
+            start += len(body) + 1
+        return pages
     return None
+
+
+def _page_char_position(spans: List[Tuple[int, int]], index: int) -> int:
+    """Position in the whole text of character ``index`` of a page's joined text."""
+    for start, end in spans:
+        if index <= end - start:
+            return start + index
+        index -= end - start + 1
+    return spans[-1][1]
 
 
 def _storage():
@@ -1428,6 +1463,7 @@ class AttachmentsTool(Tool):
         sections: List[str] = []
         shown: List[int] = []
         used = 0
+        rest_offset: Optional[int] = None
         for number in wanted[:MAX_TEXT_PAGES_PER_CALL]:
             body = pages.get(number)
             if body is None:
@@ -1440,12 +1476,19 @@ class AttachmentsTool(Tool):
                     break
                 sections.append(f"--- page {number} (first {budget:,} tokens) ---\n{encoding.decode(ids[:budget])}")
                 shown.append(number)
+                rest_offset = self._page_rest_offset(text, number, encoding.decode_bytes(ids[:budget]))
                 break
             sections.append(f"--- page {number} ---\n{body}")
             shown.append(number)
             used += len(ids)
         label = f"{_page_label(shown)} of {count}"
         footer = f"[{planned.ref} {name}: showing {label}."
+        if rest_offset is not None:
+            # A page longer than the budget: its rest comes before any later page.
+            footer += (
+                f" Page {shown[-1]} continues: {self._action(READ)}(ref=\"{planned.ref}\", "
+                f"offset={rest_offset})."
+            )
         remaining = [p for p in wanted if p > shown[-1]]
         if remaining:
             footer += f' Continue with {self._action(READ)}(ref="{planned.ref}", pages="{_range_spec(remaining)}").]'
@@ -1455,10 +1498,33 @@ class AttachmentsTool(Tool):
                 f' Next pages: {self._action(READ)}(ref="{planned.ref}", '
                 f'pages="{shown[-1] + 1}-{min(shown[-1] + step, count)}").]'
             )
+        elif rest_offset is not None:
+            footer += "]"
         else:
             footer += " End of file.]"
         fenced = fence_file(planned.ref, planned.filename, "\n\n".join(sections), range=label)
         return self._delivered("\n".join([UNTRUSTED_NOTE, fenced, footer]))
+
+    @staticmethod
+    def _page_rest_offset(text: str, number: int, shown: bytes) -> int:
+        """Token offset in ``text`` where the unread rest of page ``number`` starts.
+
+        It is the offset ``attachments_read(offset=...)`` takes, counted over
+        the whole text as that read counts it.
+
+        Args:
+            text: The file's text.
+            number: The page cut short.
+            shown: The bytes of the page's text that were returned.
+
+        Returns:
+            The token offset.
+        """
+        spans = (_text_page_spans(text) or {}).get(number)
+        if not spans:
+            return 0
+        chars = len(shown.decode("utf-8", errors="ignore"))
+        return len(_encoding().encode_ordinary(text[: _page_char_position(spans, chars)]))
 
     def _read_tokens(
         self, planned: PlannedFile, row: Dict[str, Any], text: str, offset: Any, budget: int

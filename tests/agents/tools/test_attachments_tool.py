@@ -1010,6 +1010,59 @@ class TestTextPages:
         assert "no page markers" in result
         assert "offset" in result
 
+    @staticmethod
+    def _long_page_text(long_page, pages=3):
+        return "\n".join(
+            f"--- page {n} ---\n"
+            + (" ".join(f"w{n}x{i}" for i in range(1500)) if n == long_page else f"body of page {n}")
+            for n in range(1, pages + 1)
+        )
+
+    @staticmethod
+    def _offset_in(result, ref="F1"):
+        import re
+
+        match = re.search(rf'continues: attachments_read\(ref="{ref}", offset=(\d+)\)', result)
+        assert match, result.split("</attached_file>", 1)[-1]
+        return int(match.group(1))
+
+    def test_an_oversized_last_page_says_where_it_continues(self, db):
+        a = seed(db, "report.txt", self._long_page_text(3))
+        tool = tool_for(current=[a])
+
+        result = tool.execute_action("attachments_read", ref="F1", pages="3", max_tokens=300)
+        footer = result.split("</attached_file>", 1)[1]
+        last_word = body_of(result).split()[-1]
+
+        assert "End of file" not in footer
+        rest = tool.execute_action("attachments_read", ref="F1", offset=self._offset_in(footer), max_tokens=300)
+        first_word = body_of(rest).split()[0]
+        assert first_word.startswith("w3x")
+        assert int(first_word[3:]) in (int(last_word[3:]), int(last_word[3:]) + 1)
+
+    def test_an_oversized_middle_page_continues_before_the_next_page(self, db):
+        a = seed(db, "report.txt", self._long_page_text(2))
+        tool = tool_for(current=[a])
+
+        result = tool.execute_action("attachments_read", ref="F1", pages="2", max_tokens=300)
+        footer = result.split("</attached_file>", 1)[1]
+        last_word = body_of(result).split()[-1]
+
+        offset = self._offset_in(footer)
+        assert footer.index("continues:") < footer.index('pages="3')
+        rest = tool.execute_action("attachments_read", ref="F1", offset=offset, max_tokens=300)
+        first_word = body_of(rest).split()[0]
+        assert int(first_word[3:]) in (int(last_word[3:]), int(last_word[3:]) + 1)
+
+    def test_an_oversized_page_in_a_range_continues_before_the_rest_of_the_range(self, db):
+        a = seed(db, "report.txt", self._long_page_text(2, pages=4))
+
+        result = tool_for(current=[a]).execute_action("attachments_read", ref="F1", pages="2-4", max_tokens=300)
+        footer = result.split("</attached_file>", 1)[1]
+
+        self._offset_in(footer)
+        assert footer.index("continues:") < footer.index('pages="3-4"')
+
     def test_a_page_past_the_end(self, db):
         a = seed(db, "letters.txt", "one\ftwo")
 
