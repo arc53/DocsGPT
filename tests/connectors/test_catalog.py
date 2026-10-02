@@ -243,3 +243,45 @@ def test_vercel_preset_endpoint_and_capabilities():
     assert catalog.preset_for_url("https://mcp.vercel.com").key == "mcp:vercel"
     row = {"provider": "mcp:https://mcp.vercel.com", "server_url": "https://mcp.vercel.com"}
     assert catalog.connector_key_for_row(row) == "mcp:vercel"
+
+
+class TestFieldHints:
+    """Hints are short, carry no "Optional" (the form stars required fields) and link inline."""
+
+    @staticmethod
+    def _field(connector: str, key: str) -> catalog.CredentialField:
+        return {f.key: f for f in catalog.get_definition(connector).credential_fields}[key]
+
+    def test_telegram_chat_hint_links_get_updates(self):
+        chat = self._field("telegram", "chat_id")
+        assert "<link>getUpdates</link>" in chat.hint
+        assert chat.hint_url == "https://core.telegram.org/bots/api#getupdates"
+        assert "https://" not in chat.hint
+        assert len(chat.hint) <= 120
+        assert chat.to_dict()["hint_url"] == chat.hint_url
+
+    def test_github_token_hint_links_the_token_page(self):
+        token = self._field("github", "access_token")
+        assert "<link>Create a token on GitHub</link>" in token.hint
+        assert token.hint_url == "https://github.com/settings/personal-access-tokens/new"
+
+    def test_no_hint_says_optional(self):
+        for definition in catalog.all_definitions():
+            for field in (*definition.credential_fields, *definition.setup_fields):
+                if field.hint:
+                    assert "optional" not in field.hint.lower(), (definition.key, field.key)
+                    # A link needs somewhere to go.
+                    assert ("<link>" in field.hint) == bool(field.hint_url), (definition.key, field.key)
+
+    def test_a_field_without_a_link_sends_none(self):
+        assert self._field("telegram", "token").to_dict()["hint_url"] is None
+
+
+def test_atlassian_preset_is_part_of_confluence():
+    """One Confluence card: syncing pages and the Jira/Confluence agent actions."""
+    from docsgpt.connectors import catalog
+
+    atlassian = catalog.get_definition("mcp:atlassian")
+    assert atlassian.part_of == "confluence"
+    assert atlassian.to_dict()["part_of"] == "confluence"
+    assert catalog.get_definition("confluence").to_dict()["part_of"] is None
