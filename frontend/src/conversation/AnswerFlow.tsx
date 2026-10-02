@@ -222,7 +222,7 @@ function InlineThoughtChip({
         // svg child) puts the icon on the answer's ml-6 text column.
         className="ml-3.5 w-fit max-w-full justify-start"
       >
-        <Cloud aria-hidden />
+        <Cloud className="text-muted-foreground" aria-hidden />
         <span
           className={cn(
             'min-w-0 truncate text-left',

@@ -124,6 +124,11 @@ describe('AnswerFlow', () => {
     );
   });
 
+  it('draws the reasoning icon muted, like the Sources and Tools rows', () => {
+    const html = render({ thought: 'my reasoning' });
+    expect(html).toMatch(/class="[^"]*lucide-cloud[^"]*text-muted-foreground/);
+  });
+
   it('ignores a step whose call is missing from tool_calls', () => {
     const html = render({
       toolCalls: [],
