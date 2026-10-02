@@ -715,6 +715,8 @@ class BaseAgent(ABC):
                     "call_id": call_id,
                     "action_name": pending.get("llm_name", pending["name"]),
                     "arguments": args,
+                    # Replayed to the model on later turns, so it keeps the decision.
+                    "result": truncate_tool_result(denial),
                     "status": "denied",
                 }
                 trace_unexecuted_tool_call(tc, {**denied_data, "error": comment or None})

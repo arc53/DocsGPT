@@ -587,7 +587,7 @@ class TestGenContinuationApproval:
             },
         ]
         tool_actions = [
-            {"call_id": "c1", "decision": "denied"},
+            {"call_id": "c1", "decision": "denied", "comment": "not now"},
             {"call_id": "c2", "result": {"ok": True}},
         ]
 
@@ -597,5 +597,7 @@ class TestGenContinuationApproval:
 
         recorded = {call["call_id"]: call["status"] for call in mock_executor.tool_calls}
         assert recorded == {"c1": "denied", "c2": "completed"}
+        # A later turn replays the stored result, so the denial and its reason go with it.
+        assert mock_executor.tool_calls[0]["result"] == "Tool execution denied by user. Reason: not now"
         final = next(e["tool_calls"] for e in events if isinstance(e, dict) and "tool_calls" in e)
         assert [call["call_id"] for call in final] == ["c1", "c2"]
