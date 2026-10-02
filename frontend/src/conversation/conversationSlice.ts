@@ -1235,6 +1235,9 @@ export const conversationSlice = createSlice({
 
       state.queries[index].response = '';
       state.queries[index].thought = '';
+      // The recorded order still holds the blocked text; the backend resets it
+      // too. The tool calls stay, as they do on the saved turn.
+      delete state.queries[index].segments;
     },
 
     resetConversation: (state) => {

@@ -15,9 +15,10 @@ def utf16_length(text: str) -> int:
         text: Any string.
 
     Returns:
-        The number of UTF-16 code units (an astral character counts twice).
+        The number of UTF-16 code units (an astral character counts twice, a lone
+        surrogate once).
     """
-    return len(text.encode("utf-16-le")) // 2
+    return len(text.encode("utf-16-le", "surrogatepass")) // 2
 
 
 class AnswerSegments:

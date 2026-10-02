@@ -38,6 +38,13 @@ class TestAnswerSegments:
         AnswerSegments(metadata).answer("😀 hi")
         assert metadata["segments"] == [{"kind": "text", "length": 5}]
 
+    def test_a_lone_surrogate_counts_as_one_unit(self):
+        # JSON can decode "\ud800" into a str; the browser counts it as one unit.
+        assert utf16_length("a\ud800b") == 3
+        metadata: dict = {}
+        AnswerSegments(metadata).answer("\udfff")
+        assert metadata["segments"] == [{"kind": "text", "length": 1}]
+
     def test_ignores_empty_chunks_and_calls_without_id(self):
         metadata: dict = {}
         segments = AnswerSegments(metadata)
