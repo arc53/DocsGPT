@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
 from typing import Any, Dict
 
@@ -73,8 +72,9 @@ def chunk_key(text: Any) -> str:
     Returns:
         str: 32 lowercase hex characters.
     """
-    data = str(text or "").encode("utf-8")
-    return hashlib.md5(data, usedforsecurity=False).hexdigest()
+    from docsgpt.utils import get_hash
+
+    return get_hash(str(text or ""))
 
 
 def normalize_source_id(source_id: Any) -> str:

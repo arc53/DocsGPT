@@ -13,23 +13,29 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from docsgpt.retriever.labels import chunk_key
+
 
 def citation_key(doc: Any) -> Tuple[Any, Any, Any]:
     """Identity of a retrieved chunk across retrievers and tools.
 
     The same chunk reached through the vector store and through the graph
     carries different extras (score, connector labels), so whole-dict
-    equality would give one passage two numbers.
+    equality would give one passage two numbers. The text is compared by its
+    ``chunk_key``, taken at retrieval, because a copy's text may have changed
+    since: a retrieval guardrail redacts it, and a paused turn's sources come
+    back trimmed. A document without a key (saved before keys) hashes its text.
 
     Args:
         doc: A retrieved document dict.
 
     Returns:
-        tuple: ``(source, title, text)``.
+        tuple: ``(source, title, chunk_key)``; ``(None, None, id(doc))`` for
+        anything but a dict.
     """
     if isinstance(doc, dict):
-        return (doc.get("source"), doc.get("title"), doc.get("text"))
-    return (None, None, doc)
+        return (doc.get("source"), doc.get("title"), doc.get("chunk_key") or chunk_key(doc.get("text")))
+    return (None, None, id(doc))
 
 
 def register_citation(registry: Optional[List[Dict]], doc: Dict) -> Optional[int]:

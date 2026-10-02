@@ -17,6 +17,7 @@ from docsgpt.agents.tool_executor import ToolExecutor
 from docsgpt.agents.tools.graph_search import GRAPH_TOOL_ID, GraphSearchTool
 from docsgpt.agents.tools.internal_search import INTERNAL_TOOL_ID, InternalSearchTool
 from docsgpt.core.settings import settings
+from docsgpt.retriever.labels import chunk_key
 
 
 def _doc(n, **extra):
@@ -47,6 +48,33 @@ class TestRegisterCitation:
 
     def test_key_of_a_non_dict_is_stable(self):
         assert citation_key("raw") == citation_key("raw")
+
+    def test_key_of_an_unhashable_non_dict_is_hashable(self):
+        # The merge puts every key in a set.
+        hash(citation_key(["raw"]))
+
+    def test_a_trimmed_copy_keeps_its_number(self):
+        # A paused turn's sources come back cut to 1000 characters.
+        full = "x" * 1500
+        registry = [_doc(1), _doc(2, text=full[:1000], chunk_key=chunk_key(full))]
+        assert register_citation(registry, _doc(2, text=full, chunk_key=chunk_key(full))) == 2
+        assert len(registry) == 2
+
+    def test_a_redacted_copy_keeps_its_number(self):
+        # A retrieval guardrail rewrote the pre-fetched text; the tool hit has the original.
+        registry = [_doc(1, text="[REDACTED]", chunk_key=chunk_key("text 1"))]
+        assert register_citation(registry, _doc(1, chunk_key=chunk_key("text 1"))) == 1
+        assert registry[0]["text"] == "[REDACTED]"
+
+    def test_a_doc_without_a_key_matches_one_with_it(self):
+        # A source saved before chunk keys meets a fresh hit on the same chunk.
+        registry = [_doc(1)]
+        assert register_citation(registry, _doc(1, chunk_key=chunk_key("text 1"))) == 1
+
+    def test_same_text_in_another_source_is_another_citation(self):
+        registry = [_doc(1, chunk_key=chunk_key("same"))]
+        other = {**_doc(2), "chunk_key": chunk_key("same")}
+        assert register_citation(registry, other) == 2
 
 
 def _internal_tool(hits, registry):
@@ -188,6 +216,16 @@ class TestAgentRegistry:
         BaseAgent._collect_internal_sources(agent)
 
         assert [d["title"] for d in agent.retrieved_docs] == ["doc1.pdf", "doc2.pdf", "doc3.pdf"]
+
+    def test_a_redacted_prefetched_doc_is_not_listed_again_unredacted(self):
+        redacted = _doc(1, text="[REDACTED]", chunk_key=chunk_key("text 1"))
+        internal = SimpleNamespace(retrieved_docs=[_doc(1, chunk_key=chunk_key("text 1"))])
+        agent = _agent([redacted], {f"internal_search:{INTERNAL_TOOL_ID}:u": internal})
+        agent._search_tool_docs = lambda: BaseAgent._search_tool_docs(agent)
+
+        BaseAgent._collect_internal_sources(agent)
+
+        assert agent.retrieved_docs == [redacted]
 
     def test_without_a_registry_the_merge_is_unchanged(self):
         internal = SimpleNamespace(retrieved_docs=[_doc(1), _doc(2)])

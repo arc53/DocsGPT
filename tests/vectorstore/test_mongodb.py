@@ -229,6 +229,14 @@ class TestMongoDBVectorStoreGetChunks:
 
         assert store.get_chunks() == []
 
+    def test_chunk_lookup_raises_on_error(self):
+        # A citation that is only unreachable must not read as "gone".
+        store, mock_collection, _ = _make_mongodb_store()
+        mock_collection.find.side_effect = Exception("connection error")
+
+        with pytest.raises(Exception, match="connection error"):
+            store.get_chunk_by_key("0" * 32)
+
 
 @pytest.mark.unit
 class TestMongoDBVectorStoreAddChunk:

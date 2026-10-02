@@ -2029,7 +2029,7 @@
         "tokens": "{{tokens}} tokens",
         "excerptOnly": "Only the excerpt saved with this answer is available.",
         "missing": "This passage is no longer in the source; it may have been edited or re-indexed. Showing the excerpt saved with the answer.",
-        "forbidden": "You no longer have access to this source. Showing the excerpt saved with the answer.",
+        "forbidden": "This source was removed, or you no longer have access to it. Showing the excerpt saved with the answer.",
         "loadFailed": "Couldn't load this passage.",
         "openLink": "Open link",
         "openInKnowledge": "Open in Knowledge"

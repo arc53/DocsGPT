@@ -1053,6 +1053,12 @@ class BaseAnswerResource:
                     return
 
                 if continuation:
+                    # The sources the resumed turn starts from, copied before
+                    # ``save_conversation`` below trims their text in place.
+                    paused_sources = [
+                        dict(doc) if isinstance(doc, dict) else doc
+                        for doc in source_log_docs
+                    ]
                     # First-turn pause needs a conversation row to attach to.
                     if not conversation_id and should_persist:
                         try:
@@ -1145,7 +1151,7 @@ class BaseAnswerResource:
                                     # citation order: the resumed agent
                                     # starts from them, so a hit after the
                                     # resume continues their ``[n]`` numbers.
-                                    "retrieved_docs": source_log_docs,
+                                    "retrieved_docs": paused_sources,
                                     "prompt": getattr(agent, "prompt", ""),
                                     "json_schema": getattr(agent, "json_schema", None),
                                     # Kept with the schema: a resume that sends

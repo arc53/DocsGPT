@@ -853,14 +853,17 @@ class TestUpdateChunkGraphLinks:
 KEY = "0123456789abcdef" * 2
 
 
-def _get_by_key(app, pg_conn, source_id, user, key=KEY, store=None):
+def _get_by_key(app, pg_conn, source_id, user, key=KEY, store=None, excerpt=None):
     from docsgpt.api.user.sources.chunks import ChunkByKey
 
+    query = {"chunk_key": key}
+    if excerpt is not None:
+        query["excerpt"] = excerpt
     with _patch_db(pg_conn), patch(
         "docsgpt.api.user.sources.chunks.get_vector_store",
         return_value=store or MagicMock(),
     ) as get_store, app.test_request_context(
-        f"/api/sources/{source_id}/chunk?chunk_key={key}"
+        f"/api/sources/{source_id}/chunk", query_string=query
     ):
         from flask import request
         request.decoded_token = {"sub": user} if user else None
@@ -887,7 +890,21 @@ class TestChunkByKey:
         store.get_chunk_by_key.return_value = {"doc_id": "7", "text": "t", "metadata": {}}
         response, _ = _get_by_key(app, pg_conn, src["id"], "u-key", key=KEY.upper(), store=store)
         assert response.status_code == 200
-        store.get_chunk_by_key.assert_called_once_with(KEY)
+        store.get_chunk_by_key.assert_called_once_with(KEY, excerpt=None)
+
+    def test_hands_the_store_the_excerpt_to_fall_back_on(self, app, pg_conn):
+        src = _seed_source(pg_conn, user="u-key")
+        store = MagicMock()
+        store.get_chunk_by_key.return_value = {"doc_id": "7", "text": "t", "metadata": {}}
+        _get_by_key(app, pg_conn, src["id"], "u-key", store=store, excerpt="  Late pickup ")
+        store.get_chunk_by_key.assert_called_once_with(KEY, excerpt="Late pickup")
+
+    def test_caps_the_excerpt(self, app, pg_conn):
+        src = _seed_source(pg_conn, user="u-key")
+        store = MagicMock()
+        store.get_chunk_by_key.return_value = None
+        _get_by_key(app, pg_conn, src["id"], "u-key", store=store, excerpt="x" * 5000)
+        assert len(store.get_chunk_by_key.call_args.kwargs["excerpt"]) == 200
 
     def test_a_source_the_caller_cannot_see_is_404_and_never_queried(self, app, pg_conn):
         src = _seed_source(pg_conn, user="u-owner")
@@ -902,6 +919,22 @@ class TestChunkByKey:
         response, _ = _get_by_key(app, pg_conn, src["id"], "u-key", store=store)
         assert response.status_code == 404
         assert response.json["message"] == "Chunk not found"
+        # The reader tells this apart from a source out of reach by ``reason``.
+        assert response.json["reason"] == "chunk_missing"
+
+    def test_a_source_out_of_reach_carries_no_chunk_reason(self, app, pg_conn):
+        src = _seed_source(pg_conn, user="u-owner")
+        response, _ = _get_by_key(app, pg_conn, src["id"], "u-stranger")
+        assert response.status_code == 404
+        assert response.json.get("reason") != "chunk_missing"
+
+    def test_a_store_that_cannot_look_up_is_501(self, app, pg_conn):
+        src = _seed_source(pg_conn, user="u-key")
+        store = MagicMock()
+        store.get_chunk_by_key.side_effect = NotImplementedError
+        response, _ = _get_by_key(app, pg_conn, src["id"], "u-key", store=store)
+        assert response.status_code == 501
+        assert response.json["reason"] == "unsupported"
 
     def test_a_store_failure_is_500_not_gone(self, app, pg_conn):
         src = _seed_source(pg_conn, user="u-key")

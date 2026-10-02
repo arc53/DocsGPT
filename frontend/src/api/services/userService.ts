@@ -293,9 +293,10 @@ const userService = {
     sourceId: string,
     chunkKey: string,
     token: string | null,
+    excerpt?: string,
   ): Promise<Response> =>
     throttledApiClient.get(
-      endpoints.USER.SOURCE_CHUNK(sourceId, chunkKey),
+      endpoints.USER.SOURCE_CHUNK(sourceId, chunkKey, excerpt),
       token,
     ),
   addChunk: (data: any, token: string | null): Promise<any> =>

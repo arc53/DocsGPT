@@ -233,6 +233,8 @@ class GetChunks(Resource):
 
 
 _CHUNK_KEY = re.compile(r"[0-9a-f]{32}")
+# The start of a passage is enough to find it; a cap keeps the scan's needle small.
+_EXCERPT_MAX = 200
 
 
 def _citation_source(doc: dict, access: dict) -> dict:
@@ -266,13 +268,28 @@ def _citation_source(doc: dict, access: dict) -> dict:
 class ChunkByKey(Resource):
     @api.doc(
         description=(
-            "The chunk behind a citation, found by its content key, with what the "
-            "reader needs about its source. 404 when the caller cannot see the "
-            "source or the chunk is gone (the source was re-chunked or edited)."
+            "The chunk behind a citation, found by its content key, else by its "
+            "excerpt, with what the reader needs about its source. 404 when the "
+            "caller cannot see the source, or with reason chunk_missing when "
+            "neither finds the chunk (the source was edited); 501 with reason "
+            "unsupported when the vector store cannot look chunks up."
         ),
-        params={"chunk_key": "The citation's ``chunk_key``: the MD5 of the chunk text"},
+        params={
+            "chunk_key": "The citation's ``chunk_key``: the MD5 of the chunk text",
+            "excerpt": "Optional: the start of the cited passage, searched when the key misses",
+        },
     )
-    def get(self, source_id):
+    def get(self, source_id: str):
+        """Return the cited chunk and its source.
+
+        Args:
+            source_id: The source the citation names.
+
+        Returns:
+            Response: ``{"success", "chunk", "source", "page_path"}``, or an
+            error with ``reason`` ``chunk_missing`` (404) or ``unsupported``
+            (501) the reader tells apart from a source out of reach.
+        """
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
@@ -282,6 +299,7 @@ class ChunkByKey(Resource):
             return make_response(
                 jsonify({"success": False, "message": "chunk_key must be 32 hex characters"}), 400
             )
+        excerpt = (request.args.get("excerpt") or "").strip()[:_EXCERPT_MAX] or None
         try:
             with db_readonly() as conn:
                 doc, ra = load_source(conn, source_id, user, "use")
@@ -291,12 +309,19 @@ class ChunkByKey(Resource):
             current_app.logger.error(f"Error resolving source: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
         try:
-            chunk = get_vector_store(str(doc["id"])).get_chunk_by_key(key)
+            chunk = get_vector_store(str(doc["id"])).get_chunk_by_key(key, excerpt=excerpt)
+        except NotImplementedError:
+            return make_response(
+                jsonify({"success": False, "message": "Chunk lookup not supported", "reason": "unsupported"}),
+                501,
+            )
         except Exception as e:
             current_app.logger.error(f"Error finding chunk {key} in {doc['id']}: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
         if chunk is None:
-            return make_response(jsonify({"success": False, "message": "Chunk not found"}), 404)
+            return make_response(
+                jsonify({"success": False, "message": "Chunk not found", "reason": "chunk_missing"}), 404
+            )
         source = _citation_source(doc, ra.payload())
         metadata = chunk.get("metadata") or {}
         return make_response(

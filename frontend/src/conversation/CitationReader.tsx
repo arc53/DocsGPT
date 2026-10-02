@@ -27,7 +27,7 @@ import {
 } from '../components/ui/side-panel';
 import { wikiLinkTarget } from '../components/wikiViewerUtils';
 import { selectSourceDocs, selectToken } from '../preferences/preferenceSlice';
-import { knowledgeLink } from '../settings/knowledgeLink';
+import { SEARCH_LENGTH, knowledgeLink } from '../settings/knowledgeLink';
 import { formatDateOnly } from '../utils/dateTimeUtils';
 import { type AnswerSource, sourceExcerpt, sourceHref } from './chatCompanion';
 
@@ -61,16 +61,13 @@ type ReaderState =
   | { status: 'excerpt'; reason: ExcerptReason }
   | { status: 'error' };
 
-// The chunk browser's text search matches a substring; the excerpt's first
-// characters are a verbatim prefix of the chunk, which is enough to find it.
-const NEEDLE_LENGTH = 80;
-
 /**
  * One cited source, the second level of an answer's sources panel: a Back
  * arrow to the list, the full passage rendered, and what is known about the
  * chunk and its knowledge. The passage is fetched by the chunk key retrieval
- * labelled it with; a re-chunked source is searched by the answer's excerpt,
- * and when neither finds it the excerpt is shown with a note saying why.
+ * labelled it with; for a re-chunked source the server searches the answer's
+ * excerpt in the same call, and when neither finds it the excerpt is shown
+ * with a note saying why.
  * Render it inside the panel, keyed on the source.
  */
 export default function CitationReader({
@@ -103,30 +100,14 @@ export default function CitationReader({
       if (!cancelled) setState(next);
     };
 
-    const findByExcerpt = async () => {
-      const needle = excerpt.slice(0, NEEDLE_LENGTH).trim();
-      if (!needle) return settle({ status: 'excerpt', reason: 'missing' });
-      const response = await userService.getDocumentChunks(
-        sourceId,
-        1,
-        1,
-        token,
-        undefined,
-        needle,
-      );
-      if (!response.ok) return settle({ status: 'excerpt', reason: 'missing' });
-      const body = await response.json();
-      const chunk: Chunk | undefined = body?.chunks?.[0];
-      settle(
-        chunk
-          ? { status: 'ready', chunk, source: null }
-          : { status: 'excerpt', reason: 'missing' },
-      );
-    };
-
     setState({ status: 'loading' });
     userService
-      .getSourceChunk(sourceId, chunkKey, token)
+      .getSourceChunk(
+        sourceId,
+        chunkKey,
+        token,
+        excerpt.slice(0, SEARCH_LENGTH).trim() || undefined,
+      )
       .then(async (response) => {
         if (response.ok) {
           const body = await response.json();
@@ -137,16 +118,18 @@ export default function CitationReader({
             pagePath: body.page_path,
           });
         }
-        if (response.status === 404) {
-          const body = await response.json().catch(() => ({}));
-          // The source is gone or out of reach; the chunk browser would
-          // refuse the same way, so there is nothing more to search.
-          if (body?.message !== 'Chunk not found') {
-            return settle({ status: 'excerpt', reason: 'forbidden' });
-          }
-          return findByExcerpt();
+        const body = await response.json().catch(() => ({}));
+        // Neither the key nor the excerpt is in the source any more.
+        if (body?.reason === 'chunk_missing') {
+          return settle({ status: 'excerpt', reason: 'missing' });
         }
-        if (response.status === 401 || response.status === 403) {
+        // The store cannot look chunks up; a retry would not change that.
+        if (body?.reason === 'unsupported') {
+          return settle({ status: 'excerpt', reason: 'excerptOnly' });
+        }
+        // Any other 404 is a source removed or out of reach: the API does
+        // not say which.
+        if ([401, 403, 404].includes(response.status)) {
           return settle({ status: 'excerpt', reason: 'forbidden' });
         }
         settle({ status: 'error' });

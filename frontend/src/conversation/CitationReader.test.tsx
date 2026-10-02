@@ -116,10 +116,13 @@ describe('CitationReader', () => {
     service.getSourceChunk.mockReturnValue(json(200, CHUNK));
     await render(FILE);
 
+    // The excerpt's start rides along: a re-chunked source no longer has the
+    // key, and the server searches it in the same pass.
     expect(service.getSourceChunk).toHaveBeenCalledWith(
       'src-1',
       'a'.repeat(32),
       'tok',
+      'Staff accrue 25 days',
     );
     expect(header().querySelector('h2')?.textContent).toBe('Leave policy.docx');
     expect(header().textContent).toContain('HR handbook');
@@ -165,39 +168,12 @@ describe('CitationReader', () => {
     expect(body().textContent).toContain('An excerpt saved long ago');
   });
 
-  it('finds a re-chunked passage by its excerpt', async () => {
+  it('says the passage is gone when neither its key nor its excerpt finds it', async () => {
     service.getSourceChunk.mockReturnValue(
-      json(404, { message: 'Chunk not found' }),
-    );
-    service.getDocumentChunks.mockReturnValue(
-      json(200, {
-        chunks: [
-          { doc_id: '9', text: 'Staff accrue 25 days, revised.', metadata: {} },
-        ],
-      }),
+      json(404, { message: 'Chunk not found', reason: 'chunk_missing' }),
     );
     await render(FILE);
-
-    expect(service.getDocumentChunks).toHaveBeenCalledWith(
-      'src-1',
-      1,
-      1,
-      'tok',
-      undefined,
-      'Staff accrue 25 days',
-    );
-    expect(body().textContent).toContain('Staff accrue 25 days, revised.');
-    // The name comes from the knowledge list the app already holds.
-    expect(header().textContent).toContain('Policies library');
-    expect(body().querySelector('[role="note"]')).toBeNull();
-  });
-
-  it('says the passage is gone when the excerpt finds nothing either', async () => {
-    service.getSourceChunk.mockReturnValue(
-      json(404, { message: 'Chunk not found' }),
-    );
-    service.getDocumentChunks.mockReturnValue(json(200, { chunks: [] }));
-    await render(FILE);
+    expect(service.getDocumentChunks).not.toHaveBeenCalled();
     expect(body().querySelector('[role="note"]')?.textContent).toContain(
       'conversation.sources.reader.missing',
     );
@@ -207,6 +183,8 @@ describe('CitationReader', () => {
   it.each([
     [403, { message: 'Forbidden' }],
     [404, { message: 'Source not found' }],
+    // Only the reason code means "gone", never the message text.
+    [404, { message: 'Chunk not found' }],
   ])(
     'falls back to the excerpt when the source is out of reach (%s)',
     async (status, payload) => {
@@ -218,6 +196,17 @@ describe('CitationReader', () => {
       );
     },
   );
+
+  it('shows only the excerpt when the store cannot look chunks up', async () => {
+    service.getSourceChunk.mockReturnValue(
+      json(501, { reason: 'unsupported' }),
+    );
+    await render(FILE);
+    expect(body().querySelector('[role="note"]')?.textContent).toContain(
+      'conversation.sources.reader.excerptOnly',
+    );
+    expect(button('retry')).toBeUndefined();
+  });
 
   it('offers a retry when the load fails', async () => {
     service.getSourceChunk.mockReturnValueOnce(json(500, {}));
@@ -330,13 +319,11 @@ describe('CitationReader › Open in Knowledge', () => {
     expect(url.searchParams.get('chunk')).toBeNull();
   });
 
-  it('links a re-chunked passage of a source in the knowledge list', async () => {
+  it('links a re-chunked passage by the chunk the server found', async () => {
     service.getSourceChunk.mockReturnValue(
-      json(404, { message: 'Chunk not found' }),
-    );
-    service.getDocumentChunks.mockReturnValue(
       json(200, {
-        chunks: [{ doc_id: '9', text: 'Staff accrue 25 days.', metadata: {} }],
+        ...CHUNK,
+        chunk: { doc_id: '9', text: 'Staff accrue 25 days.', metadata: {} },
       }),
     );
     await render(FILE);

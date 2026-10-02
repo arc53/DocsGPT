@@ -20,9 +20,11 @@ export const KNOWLEDGE_LINK_PARAMS = [
   'wikiPage',
 ] as const;
 
-// The chunk browser's search is a substring match, and the excerpt's start
-// is a verbatim prefix of the chunk, so this much finds it.
-const SEARCH_LENGTH = 80;
+/**
+ * How much of a citation's excerpt finds its chunk: searches match a
+ * substring, and the excerpt's start is a verbatim prefix of the chunk.
+ */
+export const SEARCH_LENGTH = 80;
 
 /**
  * The Knowledge URL that opens `link`.

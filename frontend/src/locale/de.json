@@ -2023,7 +2023,7 @@
         "tokens": "{{tokens}} Tokens",
         "excerptOnly": "Für diese Antwort ist nur der gespeicherte Auszug verfügbar.",
         "missing": "Diese Passage ist nicht mehr in der Quelle, sie wurde womöglich bearbeitet oder neu indexiert. Angezeigt wird der mit der Antwort gespeicherte Auszug.",
-        "forbidden": "Du hast keinen Zugriff mehr auf diese Quelle. Angezeigt wird der mit der Antwort gespeicherte Auszug.",
+        "forbidden": "Diese Quelle wurde entfernt, oder du hast keinen Zugriff mehr darauf. Angezeigt wird der mit der Antwort gespeicherte Auszug.",
         "loadFailed": "Die Passage konnte nicht geladen werden.",
         "openLink": "Link öffnen",
         "openInKnowledge": "In Wissen öffnen"

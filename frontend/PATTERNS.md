@@ -191,7 +191,8 @@ A cited source opens in that panel as its second level, `CitationReader`:
 a source card under the answer, a tile in the list and an inline `[n]` pill
 all open the source they name, with Back to the list. The reader fetches the
 full passage by the chunk key retrieval labelled it with (`source_id` +
-`chunk_key`), renders it with `SourceMarkdown`, and lists what is known in a
+`chunk_key`; the endpoint searches the excerpt's start in the same call for a
+re-chunked source), renders it with `SourceMarkdown`, and lists what is known in a
 `DescriptionList`. When the passage can't be fetched (an answer saved before
 chunk keys, a re-chunked source, a source out of reach) it shows the answer's
 excerpt under an `info` note saying why; a failed load is the destructive

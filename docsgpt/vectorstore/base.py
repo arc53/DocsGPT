@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import List, Optional
 
 import requests
 
@@ -494,31 +494,57 @@ class BaseVectorStore(ABC):
                     deleted += 1
         return deleted
 
-    def get_chunk_by_key(self, key: str) -> Optional[dict]:
+    def _scan_chunks(self) -> List[dict]:
+        """Every chunk of this source, raising when the store cannot list them.
+
+        ``get_chunks`` reads a store error as "no chunks" in several stores;
+        a lookup must not, or a citation that is only unreachable would tell
+        the reader its passage is gone. Stores that swallow errors in
+        ``get_chunks`` override this with the unguarded listing.
+
+        Returns:
+            list[dict]: ``{"doc_id", "text", "metadata"}`` per chunk.
+
+        Raises:
+            NotImplementedError: The store has no ``get_chunks``.
+        """
+        chunks = self.get_chunks()
+        if chunks is None:
+            raise NotImplementedError(f"{type(self).__name__} cannot list its chunks")
+        return chunks
+
+    def get_chunk_by_key(self, key: str, excerpt: Optional[str] = None) -> Optional[dict]:
         """Return the chunk whose text hashes to ``key``, or ``None``.
 
         ``key`` is a citation's ``chunk_key`` (the MD5 of the chunk text, see
         ``docsgpt.retriever.labels.chunk_key``). Default implementation hashes
-        ``get_chunks()`` until one matches, the same scan the chunk browser
-        pages through; override with a single query where the store can hash
-        server-side. Duplicate texts share a key, and the first copy wins.
+        every chunk in one pass of :meth:`_scan_chunks`; override with a query
+        where the store can hash server-side. Duplicate texts share a key, and
+        the first copy wins. A re-chunked source no longer has the key, so the
+        same pass also notes the first chunk containing ``excerpt``, the start
+        of the passage the answer saved.
 
         Args:
             key: The chunk key, 32 lowercase hex characters.
+            excerpt: Text to fall back on, matched case-insensitively.
 
         Returns:
             dict | None: ``{"doc_id", "text", "metadata"}`` for the chunk.
+
+        Raises:
+            NotImplementedError: The store cannot list its chunks.
         """
         from docsgpt.retriever.labels import chunk_key
 
-        for chunk in self.get_chunks() or []:
-            if chunk_key(chunk.get("text")) == key:
-                return {
-                    "doc_id": str(chunk.get("doc_id", "")),
-                    "text": chunk.get("text", ""),
-                    "metadata": chunk.get("metadata") or {},
-                }
-        return None
+        needle = (excerpt or "").strip().lower()
+        by_excerpt = None
+        for chunk in self._scan_chunks():
+            text = chunk.get("text") or ""
+            if chunk_key(text) == key:
+                return _chunk_row(chunk)
+            if needle and by_excerpt is None and needle in text.lower():
+                by_excerpt = chunk
+        return _chunk_row(by_excerpt) if by_excerpt else None
 
     def is_azure_configured(self):
         """Kept for compatibility; delegates to the module-level check."""
@@ -527,3 +553,12 @@ class BaseVectorStore(ABC):
     def _get_embeddings(self, embeddings_name, embeddings_key=None):
         """Resolve embeddings for this store; see :func:`get_embeddings`."""
         return get_embeddings(embeddings_name, embeddings_key)
+
+
+def _chunk_row(chunk: dict) -> dict:
+    """The ``{"doc_id", "text", "metadata"}`` shape a chunk lookup returns."""
+    return {
+        "doc_id": str(chunk.get("doc_id", "")),
+        "text": chunk.get("text", ""),
+        "metadata": chunk.get("metadata") or {},
+    }

@@ -664,20 +664,42 @@ class PGVectorStore(BaseVectorStore):
         finally:
             cursor.close()
 
-    def get_chunk_by_key(self, key: str) -> Optional[Dict[str, Any]]:
+    def get_chunk_by_key(self, key: str, excerpt: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Find this source's chunk by its text's MD5 in one query.
 
         The source_id index narrows the scan to one source and Postgres's own
-        ``md5()`` does the hashing, so no column or index is added. Errors are
-        raised, not read as "no chunk": a citation that is merely unreachable
-        must not tell the reader the passage is gone.
+        ``md5()`` does the hashing, so no column or index is added. A miss with
+        an ``excerpt`` runs a second query for the first chunk containing it,
+        for a re-chunked source. Errors are raised, not read as "no chunk": a
+        citation that is merely unreachable must not tell the reader the
+        passage is gone.
 
         Args:
             key: The chunk key, 32 lowercase hex characters.
+            excerpt: Text to fall back on, matched case-insensitively.
 
         Returns:
             dict | None: ``{"doc_id", "text", "metadata"}``; the lowest id wins
             for duplicate texts.
+        """
+        row = self._first_chunk_where(f"md5({self._text_column}) = %s", key)
+        needle = (excerpt or "").strip().lower()
+        if row is None and needle:
+            row = self._first_chunk_where(f"strpos(lower({self._text_column}), %s) > 0", needle)
+        if not row:
+            return None
+        doc_id, text, metadata = row
+        return {"doc_id": str(doc_id), "text": text, "metadata": metadata or {}}
+
+    def _first_chunk_where(self, condition: str, value: str) -> Optional[tuple]:
+        """The lowest-id ``(id, text, metadata)`` row of this source matching ``condition``.
+
+        Args:
+            condition: A SQL predicate with one ``%s`` placeholder.
+            value: The placeholder's value.
+
+        Returns:
+            tuple | None: The row, or ``None``.
         """
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -685,8 +707,8 @@ class PGVectorStore(BaseVectorStore):
             cursor.execute(
                 f"SELECT id, {self._text_column}, {self._metadata_column} "
                 f"FROM {self._table_name} "
-                f"WHERE source_id = %s AND md5({self._text_column}) = %s ORDER BY id LIMIT 1;",
-                (self._source_id, key),
+                f"WHERE source_id = %s AND {condition} ORDER BY id LIMIT 1;",
+                (self._source_id, value),
             )
             row = cursor.fetchone()
             conn.commit()
@@ -699,10 +721,7 @@ class PGVectorStore(BaseVectorStore):
             raise
         finally:
             cursor.close()
-        if not row:
-            return None
-        doc_id, text, metadata = row
-        return {"doc_id": str(doc_id), "text": text, "metadata": metadata or {}}
+        return row
 
     def add_chunk(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> str:
         """Add a single chunk to the vector store"""

@@ -173,33 +173,37 @@ class QdrantStore(BaseVectorStore):
 
     def get_chunks(self) -> List[Dict[str, Any]]:
         """Return every chunk stored for this source."""
-        chunks: List[Dict[str, Any]] = []
-        offset = None
         try:
-            while True:
-                records, offset = self._client.scroll(
-                    collection_name=self._collection,
-                    scroll_filter=self._filter,
-                    limit=100,
-                    with_payload=True,
-                    with_vectors=False,
-                    offset=offset,
-                )
-                for record in records:
-                    payload = record.payload or {}
-                    chunks.append(
-                        {
-                            "doc_id": str(record.id),
-                            "text": payload.get("page_content"),
-                            "metadata": payload.get("metadata") or {},
-                        }
-                    )
-                if offset is None:
-                    break
-            return chunks
+            return self._scan_chunks()
         except Exception as e:
             logging.error("Error getting chunks: %s", e, exc_info=True)
             return []
+
+    def _scan_chunks(self) -> List[Dict[str, Any]]:
+        """Every chunk of this source; a client error raises."""
+        chunks: List[Dict[str, Any]] = []
+        offset = None
+        while True:
+            records, offset = self._client.scroll(
+                collection_name=self._collection,
+                scroll_filter=self._filter,
+                limit=100,
+                with_payload=True,
+                with_vectors=False,
+                offset=offset,
+            )
+            for record in records:
+                payload = record.payload or {}
+                chunks.append(
+                    {
+                        "doc_id": str(record.id),
+                        "text": payload.get("page_content"),
+                        "metadata": payload.get("metadata") or {},
+                    }
+                )
+            if offset is None:
+                break
+        return chunks
 
     def add_chunk(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> str:
         """Add one chunk and return its id."""

@@ -262,6 +262,8 @@ class TestChunkByKey:
         assert found["doc_id"] == ids[0]
         assert found["text"] == "Café — Highlands"
         assert _store(live_dsn, source_id="elsewhere").get_chunk_by_key(chunk_key("other")) is None
+        # A re-chunked passage is found by the start of its excerpt.
+        assert store.get_chunk_by_key("0" * 32, excerpt="café — high")["doc_id"] == ids[0]
         store.close()
 
 

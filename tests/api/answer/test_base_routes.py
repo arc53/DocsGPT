@@ -1248,10 +1248,14 @@ class TestCompleteStreamWalAcceptance:
     ):
         """The resumed turn continues the paused one's ``[n]`` numbering, so
         it needs the sources in full: the stream's 100-character excerpts
-        would never dedupe against a later hit on the same chunk."""
+        would never dedupe against a later hit on the same chunk. When the
+        WAL reservation failed, the pause creates the conversation row, which
+        trims each source's text to 1000 characters in place, so the saved
+        state must not share those dicts."""
         from docsgpt.api.answer.routes.base import BaseAnswerResource
 
-        doc = {"title": "a.pdf", "source": "a.pdf", "text": "x" * 500, "chunk_key": "k"}
+        doc = {"title": "a.pdf", "source": "a.pdf", "text": "x" * 1500, "chunk_key": "k"}
+        expected = dict(doc)
         with flask_app.app_context():
             resource = BaseAnswerResource()
             mock_agent = MagicMock()
@@ -1272,7 +1276,11 @@ class TestCompleteStreamWalAcceptance:
 
             with _patch_db_session(pg_conn), patch(
                 "docsgpt.api.answer.services.continuation_service.ContinuationService.save_state",
-            ) as save_state:
+            ) as save_state, patch.object(
+                resource.conversation_service,
+                "save_user_question",
+                side_effect=RuntimeError("wal down"),
+            ):
                 list(
                     resource.complete_stream(
                         question="run my tool",
@@ -1285,7 +1293,7 @@ class TestCompleteStreamWalAcceptance:
                     )
                 )
 
-            assert save_state.call_args.kwargs["agent_config"]["retrieved_docs"] == [doc]
+            assert save_state.call_args.kwargs["agent_config"]["retrieved_docs"] == [expected]
 
     def test_continuation_seeds_sequence_no_from_journal_high_water_mark(
         self, pg_conn, flask_app,

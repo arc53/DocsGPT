@@ -166,7 +166,7 @@ export default function Sources({
     const link = readKnowledgeLink(searchParams);
     if (!link) return;
     const listed =
-      currentDocuments.find((d) => d.id === link.sourceId) ??
+      paginatedDocuments?.find((d) => d.id === link.sourceId) ??
       knowledge?.find((d) => d.id === link.sourceId);
     if (!listed && knowledge == null) return; // the list is still loading
     setSearchParams(
@@ -185,7 +185,7 @@ export default function Sources({
       isNested: listed.isNested ?? raw.is_nested,
     });
     setViewLink(link);
-  }, [searchParams, knowledge, currentDocuments]);
+  }, [searchParams, knowledge, paginatedDocuments]);
   const closeDocument = () => {
     setDocumentToView(undefined);
     setViewLink(null);

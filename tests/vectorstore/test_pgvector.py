@@ -592,6 +592,19 @@ class TestPGVectorStoreGetChunkByKey:
         store, _, mock_cursor, _ = _make_store()
         mock_cursor.fetchone.return_value = None
         assert store.get_chunk_by_key("a" * 32) is None
+        assert mock_cursor.execute.call_count == 1
+
+    def test_a_key_miss_searches_the_excerpt(self):
+        store, _, mock_cursor, _ = _make_store(source_id="src1")
+        mock_cursor.fetchone.side_effect = [None, (7, "Late pickup fees", {})]
+
+        found = store.get_chunk_by_key("a" * 32, excerpt="  Late Pickup ")
+
+        assert found["doc_id"] == "7"
+        sql, params = mock_cursor.execute.call_args[0]
+        sql = " ".join(sql.split())
+        assert "WHERE source_id = %s AND strpos(lower(text), %s) > 0 ORDER BY id LIMIT 1" in sql
+        assert params == ("src1", "late pickup")
 
     def test_null_metadata_reads_as_empty(self):
         store, _, mock_cursor, _ = _make_store()

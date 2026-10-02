@@ -4673,13 +4673,19 @@
     },
     "/api/sources/{source_id}/chunk": {
       "get": {
-        "description": "The chunk behind a citation, found by its content key, with what the reader needs about its source. 404 when the caller cannot see the source or the chunk is gone (the source was re-chunked or edited).",
+        "description": "The chunk behind a citation, found by its content key, else by its excerpt, with what the reader needs about its source. 404 when the caller cannot see the source, or with reason chunk_missing when neither finds the chunk (the source was edited); 501 with reason unsupported when the vector store cannot look chunks up.\nArgs:\n    source_id: The source the citation names.\n\nReturns:\n    Response: ``{\"success\", \"chunk\", \"source\", \"page_path\"}``, or an\n    error with ``reason`` ``chunk_missing`` (404) or ``unsupported``\n    (501) the reader tells apart from a source out of reach.",
         "operationId": "get_chunk_by_key",
         "parameters": [
           {
             "description": "The citation's ``chunk_key``: the MD5 of the chunk text",
             "in": "query",
             "name": "chunk_key",
+            "type": "string"
+          },
+          {
+            "description": "Optional: the start of the cited passage, searched when the key misses",
+            "in": "query",
+            "name": "excerpt",
             "type": "string"
           }
         ],
@@ -4688,6 +4694,7 @@
             "description": "Success"
           }
         },
+        "summary": "Return the cited chunk and its source",
         "tags": [
           "sources"
         ],
