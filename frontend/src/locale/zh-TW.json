@@ -1424,7 +1424,6 @@
         "mcp_linear": "將議題和文件同步到知識庫，並讓代理尋找、建立和更新議題。",
         "mcp_atlassian": "搜尋和更新 Jira 議題與 Confluence 頁面。",
         "mcp_sentry": "查看 Sentry 問題、事件和發行版本。",
-        "mcp_asana": "尋找和更新 Asana 任務與專案。",
         "mcp_stripe": "查看 Stripe 中的客戶、付款和訂閱。",
         "github": "將儲存庫同步到知識庫，並讓代理讀取程式碼、Issue 和提取要求。"
       },

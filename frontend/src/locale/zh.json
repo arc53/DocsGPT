@@ -1424,7 +1424,6 @@
         "mcp_linear": "将问题和文档同步到知识库，并让智能体查找、创建和更新问题。",
         "mcp_atlassian": "搜索和更新 Jira 问题与 Confluence 页面。",
         "mcp_sentry": "查看 Sentry 问题、事件和发布版本。",
-        "mcp_asana": "查找和更新 Asana 任务与项目。",
         "mcp_stripe": "查看 Stripe 中的客户、付款和订阅。",
         "github": "将仓库同步到知识库，并让智能体读取代码、Issue 和拉取请求。"
       },

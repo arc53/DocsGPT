@@ -1431,7 +1431,6 @@
         "mcp_linear": "Sync issues and documents into Knowledge, and let agents find, create and update issues.",
         "mcp_atlassian": "Search and update Jira issues and Confluence pages.",
         "mcp_sentry": "Look up Sentry issues, events and releases.",
-        "mcp_asana": "Find and update Asana tasks and projects.",
         "mcp_stripe": "Look up customers, payments and subscriptions in Stripe.",
         "github": "Sync repositories into Knowledge and let agents read code, issues and pull requests."
       },

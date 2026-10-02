@@ -1425,7 +1425,6 @@
         "mcp_linear": "Issues und Dokumente in Wissen synchronisieren und Agenten Issues finden, anlegen und aktualisieren lassen.",
         "mcp_atlassian": "Jira-Issues und Confluence-Seiten durchsuchen und aktualisieren.",
         "mcp_sentry": "Sentry-Issues, -Events und -Releases nachschlagen.",
-        "mcp_asana": "Asana-Aufgaben und -Projekte finden und aktualisieren.",
         "mcp_stripe": "Kunden, Zahlungen und Abonnements in Stripe nachschlagen.",
         "github": "Repositorys in Wissen synchronisieren und Agenten Code, Issues und Pull Requests lesen lassen."
       },
