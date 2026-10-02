@@ -1426,6 +1426,7 @@
         "mcp_atlassian": "Jira-Issues und Confluence-Seiten durchsuchen und aktualisieren.",
         "mcp_sentry": "Sentry-Issues, -Events und -Releases nachschlagen.",
         "mcp_stripe": "Kunden, Zahlungen und Abonnements in Stripe nachschlagen.",
+        "mcp_trello": "Trello-Boards und -Karten finden sowie Karten erstellen und aktualisieren.",
         "github": "Repositorys in Wissen synchronisieren und Agenten Code, Issues und Pull Requests lesen lassen."
       },
       "empty": "Noch nichts verbunden. Verbinde einen Dienst, um seine Inhalte zu synchronisieren oder Agenten neue Werkzeuge zu geben.",

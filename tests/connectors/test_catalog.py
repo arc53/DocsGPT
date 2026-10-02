@@ -101,6 +101,20 @@ class TestRowMapping:
 
 
 class TestPresets:
+    def test_trello_preset(self):
+        definition = catalog.get_definition("mcp:trello")
+
+        assert definition.name == "Trello"
+        assert definition.description == "Find Trello boards and cards, and create and update cards."
+        assert definition.icon == "trello"
+        assert definition.category == "projects"
+        assert definition.mcp_url == "https://mcp.trello.com/v1"
+        assert definition.auth_kind == "mcp_oauth"
+        assert definition.capabilities == ("read", "write")
+        assert definition.docs_url == (
+            "https://support.atlassian.com/trello/docs/connect-trello-to-ai-assistants-with-trello-mcp/"
+        )
+
     def test_presets_load_from_yaml(self, tmp_path, monkeypatch):
         presets = tmp_path / "mcp.yaml"
         presets.write_text(

@@ -65,3 +65,13 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://docs.stripe.com/mcp
+
+- key: mcp:trello
+  name: Trello
+  description: Find Trello boards and cards, and create and update cards.
+  icon: trello
+  category: projects
+  mcp_url: https://mcp.trello.com/v1
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://support.atlassian.com/trello/docs/connect-trello-to-ai-assistants-with-trello-mcp/
