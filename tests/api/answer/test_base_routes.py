@@ -1204,12 +1204,13 @@ class TestCompleteStreamWalAcceptance:
     def test_images_queued_before_the_pause_are_saved_with_it(
         self, pg_conn, flask_app,
     ):
-        """An attachments read that queued images in the same round as a
-        client tool call: the images ride in the saved state (by
-        reference) so the resumed turn can still show them."""
+        """An attachments read that returned images in the same round as a
+        client tool call: the images ride on its tool message in the saved
+        messages (by reference), so the resumed turn still shows them."""
         from docsgpt.api.answer.routes.base import BaseAnswerResource
 
-        saved = [{"label": "F2 plan.png", "attachment": {"path": "inputs/plan.png"}}]
+        image = {"label": "F2 plan.png", "path": "inputs/plan.png", "mime_type": "image/png"}
+        read = {"role": "tool", "tool_call_id": "c0", "content": "shown", "images": [image]}
         with flask_app.app_context():
             resource = BaseAnswerResource()
             mock_agent = MagicMock()
@@ -1217,10 +1218,9 @@ class TestCompleteStreamWalAcceptance:
                 [{"type": "tool_calls_pending", "data": {"pending_tool_calls": [{"call_id": "c1"}]}}]
             )
             mock_agent._pending_continuation = {
-                "messages": [],
+                "messages": [read],
                 "tools_dict": {},
                 "pending_tool_calls": [{"call_id": "c1"}],
-                "native_reads": saved,
             }
             mock_agent.tool_calls = []
             mock_agent.compression_metadata = None
@@ -1241,7 +1241,7 @@ class TestCompleteStreamWalAcceptance:
                     )
                 )
 
-            assert save_state.call_args.kwargs["agent_config"]["native_reads"] == saved
+            assert save_state.call_args.kwargs["messages"] == [read]
 
     def test_sources_found_before_the_pause_are_saved_with_it(
         self, pg_conn, flask_app,

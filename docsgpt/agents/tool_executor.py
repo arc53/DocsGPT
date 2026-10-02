@@ -584,10 +584,11 @@ class ToolExecutor:
         # are final. Held here rather than in ``tools_dict``, which is saved
         # with a paused turn and would come back as a detached copy.
         self.citation_registry: Optional[List[Dict]] = None
-        # Images a tool asked to show the model (``attachments_read`` on an
-        # image or a scanned page). The LLM handler adds them in a user
-        # message after the tool results and empties this list.
+        # Images the last tool call returned for the model to see (references,
+        # see ``docsgpt.llm.tool_images``). The LLM handler moves them onto
+        # that call's tool message; ``images_shown`` counts them per turn.
         self.pending_native_parts: List[Dict] = []
+        self.images_shown = 0
         # Context a tool result may still take (tokens below the compression
         # threshold), set by the LLM handler before each call, and the
         # compression epoch: tools that size or dedupe their results read both.
@@ -1832,7 +1833,7 @@ class ToolExecutor:
                     _redact_args_for_log(call_args),
                 )
                 result = tool.execute_action(action_name, **parameters)
-                self._collect_native_parts(tool)
+                result = self._collect_native_parts(tool, result, tool_call_data)
         except Exception as exc:
             if proposed_ok:
                 _mark_failed(
@@ -2139,21 +2140,43 @@ class ToolExecutor:
     # small and optional, and are copied only when present so an ordinary tool
     # call does not grow null columns in every persisted row.
     _PRESERVED_TOOL_CALL_KEYS = (
-        "artifacts", "device_id", "connector_key", "connector_name", "access", "sent_arguments",
+        "artifacts", "device_id", "connector_key", "connector_name", "access", "sent_arguments", "images",
     )
 
-    def _collect_native_parts(self, tool: Any) -> None:
-        """Take the images a tool queued for the model, if it queues any."""
+    def _collect_native_parts(self, tool: Any, result: Any, tool_call_data: Dict) -> Any:
+        """Take the images a tool queued for the model, up to the turn's limit.
+
+        Args:
+            tool: The tool that just ran.
+            result: Its result.
+            tool_call_data: The call's record; the shown images' labels go in
+                ``images``.
+
+        Returns:
+            The result, with a note when images were over the limit.
+        """
         drain = getattr(tool, "drain_native_parts", None)
         if not callable(drain):
-            return
+            return result
         try:
-            parts = drain()
+            parts = [p for p in drain() or [] if isinstance(p, dict)]
         except Exception:
             logger.exception("Failed to collect images from tool %s", type(tool).__name__)
-            return
-        if isinstance(parts, list):
-            self.pending_native_parts.extend(p for p in parts if isinstance(p, dict))
+            return result
+        from docsgpt.core.settings import settings
+
+        room = max(int(settings.ATTACHMENT_MAX_NATIVE_PARTS) - self.images_shown, 0)
+        shown, dropped = parts[:room], parts[room:]
+        self.images_shown += len(shown)
+        self.pending_native_parts.extend(shown)
+        if shown:
+            tool_call_data["images"] = [str(p.get("label") or "image") for p in shown]
+        if not dropped:
+            return result
+        note = f"{len(dropped)} image(s) not shown: the limit of images for this turn is reached."
+        if isinstance(result, dict):
+            return {**result, "images_not_shown": note}
+        return f"{result}\n\n[{note}]"
 
     def get_truncated_tool_calls(self) -> List[Dict]:
         """Project tool calls into the shape that is streamed and persisted.

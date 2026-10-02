@@ -12,6 +12,7 @@ from docsgpt.attachment_names import normalize_attachment_filename
 from docsgpt.core import log_context
 from docsgpt.core.settings import settings
 from docsgpt.llm.base import BaseLLM, optional_int
+from docsgpt.llm.tool_images import IMAGES_KEY, data_url, follow_up_note, reads_images, tool_result
 from docsgpt.storage.storage_creator import StorageCreator
 
 logger = logging.getLogger(__name__)
@@ -667,9 +668,31 @@ class OpenAILLM(BaseLLM):
 
     def _clean_messages_openai(self, messages):
         cleaned_messages = []
+        vision = reads_images(self)
+        # Chat Completions takes no images in a ``tool`` message: the images
+        # of a run of tool results go in one user message after it. The
+        # Responses API takes them inside ``function_call_output``.
+        follow_up = []
+
+        def flush_follow_up():
+            if follow_up:
+                cleaned_messages.append({
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": follow_up_note([label for label, _, _ in follow_up])},
+                        *(
+                            {"type": "image_url", "image_url": {"url": data_url(mime_type, data)}}
+                            for _, mime_type, data in follow_up
+                        ),
+                    ],
+                })
+                follow_up.clear()
+
         for message in messages:
             role = message.get("role")
             content = message.get("content")
+            if role != "tool":
+                flush_follow_up()
             # Reasoning round-trips for providers that demand it
             # (DeepSeek thinking mode). Other OpenAI-compatible APIs
             # ignore the extra field.
@@ -717,11 +740,13 @@ class OpenAILLM(BaseLLM):
             # Standard format: tool message with tool_call_id (passthrough)
             tool_call_id = message.get("tool_call_id")
             if role == "tool" and tool_call_id is not None:
-                cleaned_messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "content": content if isinstance(content, str) else json.dumps(content),
-                })
+                text, shown = tool_result(message, vision)
+                cleaned_tool = {"role": "tool", "tool_call_id": tool_call_id, "content": text}
+                if shown and self._uses_responses_api():
+                    cleaned_tool[IMAGES_KEY] = shown
+                else:
+                    follow_up.extend(shown)
+                cleaned_messages.append(cleaned_tool)
                 continue
 
             if role and content is not None:
@@ -787,6 +812,7 @@ class OpenAILLM(BaseLLM):
                         cleaned_messages.append(list_msg)
                 else:
                     raise ValueError(f"Unexpected content type: {type(content)}")
+        flush_follow_up()
         return cleaned_messages
 
     @staticmethod
@@ -1252,14 +1278,20 @@ class OpenAILLM(BaseLLM):
                     )
                     continue
                 tool_content = message.get("content")
+                output = tool_content if isinstance(tool_content, str) else json.dumps(tool_content)
+                shown = message.get(IMAGES_KEY)
+                if shown:
+                    output = [
+                        *([{"type": "input_text", "text": output}] if output else []),
+                        *(
+                            {"type": "input_image", "image_url": data_url(mime_type, data), "detail": "auto"}
+                            for _, mime_type, data in shown
+                        ),
+                    ]
                 input_items.append({
                     "type": "function_call_output",
                     "call_id": tool_call_id,
-                    "output": (
-                        tool_content
-                        if isinstance(tool_content, str)
-                        else json.dumps(tool_content)
-                    ),
+                    "output": output,
                 })
                 continue
             parts = self._responses_content_parts(role, message.get("content"))

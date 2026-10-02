@@ -136,57 +136,23 @@ def _is_restated_payload(existing: str, incoming: str) -> bool:
     return True
 
 
-def render_native_reads(
-    llm, messages: List[Dict], labels: List[str], attachments: List[Dict], *, check_vision: bool = False
-) -> tuple:
-    """Append the follow-up user message that shows ``llm`` the requested images.
+def take_tool_images(executor: Any, message: Dict) -> Dict:
+    """Move the images the last tool call queued onto its tool message.
 
     Args:
-        llm: The model the images are sent to; its provider formats them.
-        messages: The messages to append to.
-        labels: One label per image, in order.
-        attachments: The images (a stored path or rendered ``data``).
-        check_vision: Check that ``llm`` reads the images (a fallback; the
-            tool only queued them because the primary does).
+        executor: The executor whose ``pending_native_parts`` holds them.
+        message: The call's tool message; edited in place.
 
     Returns:
-        The messages with the follow-up message, and that message. A model
-        that reads none of the images, or a provider that fails to format
-        them, gets a note saying they cannot be shown instead.
+        ``message``.
     """
-    from docsgpt.agents.tools.attachments import native_reads_note
+    from docsgpt.llm.tool_images import IMAGES_KEY
 
-    listed = "; ".join(labels)
-    supported: List[str] = []
-    if check_vision:
-        try:
-            supported = [str(t) for t in llm.get_supported_attachment_types() or []]
-        except Exception:
-            supported = []
-    if check_vision and attachments and not any(str(a.get("mime_type") or "") in supported for a in attachments):
-        note = {
-            "role": "user",
-            "content": (
-                f"[The images requested with attachments_read ({listed}) cannot be shown: the responding "
-                "model does not read images. Tell the user they could not be viewed; do not guess what they show.]"
-            ),
-        }
-        return [*messages, note], note
-    note = {"role": "user", "content": [{"type": "text", "text": native_reads_note(labels)}]}
-    try:
-        prepared = llm.prepare_messages_with_attachments([*messages, note], [dict(a) for a in attachments])
-    except Exception as e:
-        logger.error("Could not attach requested images: %s", bounded_error_text(e))
-        note = {
-            "role": "user",
-            "content": (
-                f"[The images requested with attachments_read ({listed}) could not be "
-                "attached. Tell the user they could not be viewed; do not guess what they show.]"
-            ),
-        }
-        return [*messages, note], note
-    built = next((m for m in reversed(prepared) if isinstance(m, dict) and m.get("role") == "user"), note)
-    return prepared, built
+    refs = getattr(executor, "pending_native_parts", None)
+    if isinstance(refs, list) and refs:
+        executor.pending_native_parts = []
+        message[IMAGES_KEY] = refs
+    return message
 
 
 class LLMHandler(ABC):
@@ -1665,7 +1631,7 @@ class LLMHandler(ABC):
                     id=call_id, name=call.name, arguments=call.arguments
                 )
                 updated_messages.append(
-                    self.create_tool_message(resolved_call, tool_response)
+                    take_tool_images(agent.tool_executor, self.create_tool_message(resolved_call, tool_response))
                 )
             except Exception as e:
                 logger.error(f"Error executing tool: {str(e)}", exc_info=True)
@@ -1705,6 +1671,8 @@ class LLMHandler(ABC):
 
                 error_message = self.create_tool_message(error_call, error_response)
                 updated_messages.append(error_message)
+                # Images a failed call queued are not its result.
+                take_tool_images(agent.tool_executor, {})
 
                 mapping = agent.tool_executor._name_to_tool
                 if call.name in mapping:
@@ -1726,67 +1694,7 @@ class LLMHandler(ABC):
                         "status": "error",
                     },
                 }
-        updated_messages = self.append_native_reads(agent, updated_messages, paused=bool(pending_actions))
         return updated_messages, pending_actions if pending_actions else None
-
-    def append_native_reads(
-        self, agent, messages: List[Dict], executor: Any = None, *, paused: bool = False
-    ) -> List[Dict]:
-        """Show the model the images its tool calls asked for.
-
-        ``attachments_read`` on an image or a scanned page queues the image
-        on the executor. Chat Completions takes no images inside ``tool``
-        messages, so they go in a user message after the tool results, built
-        by the provider's own ``prepare_messages_with_attachments`` (image
-        parts for OpenAI and the Responses API, image blocks merged into the
-        tool-result turn for Anthropic, inline bytes for Google).
-
-        Args:
-            agent: The agent; its LLM formats the parts.
-            messages: The messages after the tool results.
-            executor: Executor holding the queue; the agent's by default.
-            paused: The batch paused for the client or an approval. The
-                images wait on the executor (``paused_native_parts``); the
-                pause saves them by reference and the resume shows them after
-                the tool results.
-
-        Returns:
-            The messages, with the follow-up message when there were images.
-        """
-        executor = executor if executor is not None else getattr(agent, "tool_executor", None)
-        parts = getattr(executor, "pending_native_parts", None)
-        if not isinstance(parts, list) or not parts:
-            return messages
-        executor.pending_native_parts = []
-        if paused:
-            logger.info("Keeping %d requested image(s) for the resumed turn", len(parts))
-            kept = getattr(executor, "paused_native_parts", None)
-            executor.paused_native_parts = [*(kept if isinstance(kept, list) else []), *parts]
-            return messages
-
-        labels = [str(p.get("label") or "image") for p in parts]
-        attachments = [p.get("attachment") for p in parts if isinstance(p.get("attachment"), dict)]
-        prepared, note = render_native_reads(agent.llm, messages, labels, attachments)
-        # The images as the tool queued them, not as this provider formats
-        # them: a fallback model renders the same note in its own format.
-        registry = getattr(agent, "_native_read_messages", None)
-        if not isinstance(registry, list):
-            registry = []
-            agent._native_read_messages = registry
-        registry.append({"message": note, "labels": labels, "attachments": attachments})
-        return prepared
-
-    @staticmethod
-    def _paused_native_reads(agent) -> List[Dict]:
-        """The images a paused batch queued, ready for the saved pause state."""
-        from docsgpt.agents.tools.attachments import serialize_native_reads
-
-        executor = getattr(agent, "tool_executor", None)
-        parts = getattr(executor, "paused_native_parts", None)
-        if not isinstance(parts, list) or not parts:
-            return []
-        executor.paused_native_parts = []
-        return serialize_native_reads(parts)
 
     def handle_non_streaming(
         self, agent, response: Any, tools_dict: Dict, messages: List[Dict]
@@ -1830,7 +1738,6 @@ class LLMHandler(ABC):
                     "messages": messages,
                     "pending_tool_calls": pending_actions,
                     "tools_dict": tools_dict,
-                    "native_reads": self._paused_native_reads(agent),
                     "reasoning_content": reasoning_for_round,
                 }
                 yield {
@@ -2133,7 +2040,6 @@ class LLMHandler(ABC):
                 "messages": messages,
                 "pending_tool_calls": pending_actions,
                 "tools_dict": tools_dict,
-                "native_reads": self._paused_native_reads(agent),
                 "reasoning_content": pause_reasoning,
             }
             yield {

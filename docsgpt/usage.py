@@ -2,6 +2,7 @@ import logging
 import time
 from typing import Any, Dict
 
+from docsgpt.llm.tool_images import IMAGE_TOKENS
 from docsgpt.pricing import compute_cost_usd
 from docsgpt.tracing.llm import finish_llm_call, start_llm_span
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
@@ -80,6 +81,9 @@ def _count_prompt_tokens(messages, tools=None, usage_attachments=None, **kwargs)
         prompt_tokens += _count_tokens(message.get("tool_call_id"))
         prompt_tokens += _count_tokens(message.get("function_call"))
         prompt_tokens += _count_tokens(message.get("function_response"))
+        images = message.get("images")
+        if isinstance(images, list):
+            prompt_tokens += IMAGE_TOKENS * len(images)
 
     # Count tool schema payload passed to the model.
     prompt_tokens += _count_tokens(tools)

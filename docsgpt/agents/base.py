@@ -29,7 +29,9 @@ from docsgpt.core.settings import settings
 from docsgpt.llm.handlers.base import (
     ToolCall,
     _bound_tool_response_for_llm,
+    take_tool_images,
 )
+from docsgpt.llm.tool_images import IMAGES_KEY, replayed_result, split_content
 from docsgpt.guardrails.config import DEFAULT_BLOCK_MESSAGE as GUARDRAIL_DEFAULT_MESSAGE
 from docsgpt.guardrails.runtime import (
     build_engine as build_guardrail_engine,
@@ -711,7 +713,7 @@ class BaseAgent(ABC):
                 # (handle_tool_calls); the journal keeps the full result.
                 tool_response = _bound_tool_response_for_llm(tool_response)
                 messages.append(
-                    self.llm_handler.create_tool_message(tc, tool_response)
+                    take_tool_images(self.tool_executor, self.llm_handler.create_tool_message(tc, tool_response))
                 )
 
             elif action.get("decision") == "denied":
@@ -738,7 +740,9 @@ class BaseAgent(ABC):
                 yield {"type": "tool_call", "data": denied_data}
 
             elif "result" in action:
-                result = action["result"]
+                # Images in a client's result are shown to the model, not
+                # sent as base64 text.
+                result, images = split_content(action["result"], pending.get("llm_name", pending["name"]))
                 result_str = (
                     json.dumps(result)
                     if not isinstance(result, str)
@@ -752,13 +756,14 @@ class BaseAgent(ABC):
                 tc = ToolCall(
                     id=call_id, name=pending["name"], arguments=args
                 )
-                messages.append(
-                    self.llm_handler.create_tool_message(
-                        # Client-supplied results get the same per-result
-                        # cap as server-side tool executions.
-                        tc, _bound_tool_response_for_llm(result_str)
-                    )
+                tool_message = self.llm_handler.create_tool_message(
+                    # Client-supplied results get the same per-result
+                    # cap as server-side tool executions.
+                    tc, _bound_tool_response_for_llm(result_str)
                 )
+                if images:
+                    tool_message[IMAGES_KEY] = images
+                messages.append(tool_message)
                 client_data = {
                     "tool_name": pending.get("tool_name", "unknown"),
                     "call_id": call_id,
@@ -769,12 +774,6 @@ class BaseAgent(ABC):
                 }
                 trace_unexecuted_tool_call(tc, client_data, **{"docsgpt.client_executed": True})
                 yield {"type": "tool_call", "data": client_data}
-
-        # Images an attachments read queued before the pause (restored with
-        # the state) or during the approved calls above follow the results.
-        queued = getattr(self.tool_executor, "pending_native_parts", None)
-        if isinstance(queued, list) and queued:
-            messages = self.llm_handler.append_native_reads(self, messages)
 
         # Resume the LLM loop with the updated messages
         llm_response = self._llm_gen(messages, preserve_responses_state=True)
@@ -1559,16 +1558,10 @@ class BaseAgent(ABC):
                 for tool_call, emitted_call in zip(
                     historical_tool_calls, tool_message["tool_calls"]
                 ):
-                    result = tool_call.get("result")
-                    result_str = (
-                        json.dumps(result)
-                        if not isinstance(result, str)
-                        else (result or "")
-                    )
                     messages.append({
                         "role": "tool",
                         "tool_call_id": emitted_call["id"],
-                        "content": result_str,
+                        "content": replayed_result(tool_call),
                     })
             if has_completed_turn:
                 asst_msg: Dict[str, Any] = {

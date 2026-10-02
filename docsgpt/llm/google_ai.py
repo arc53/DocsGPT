@@ -1,5 +1,6 @@
 import base64
 import logging
+import re
 
 from google import genai
 from google.genai import types
@@ -8,6 +9,7 @@ from docsgpt.core.settings import settings
 
 from docsgpt.llm.base import BaseLLM
 from docsgpt.llm.handlers.google import _decode_thought_signature
+from docsgpt.llm.tool_images import follow_up_note, reads_images, tool_result
 from docsgpt.storage.storage_creator import StorageCreator
 
 
@@ -208,7 +210,7 @@ class GoogleLLM(BaseLLM):
             lambda local_path, **kwargs: open(local_path, "rb").read(),
         )
 
-    def _clean_messages_google(self, messages):
+    def _clean_messages_google(self, messages, model=None):
         """
         Convert OpenAI format messages to Google AI format and collect system prompts.
 
@@ -236,9 +238,36 @@ class GoogleLLM(BaseLLM):
 
         import json as _json
 
+        vision = reads_images(self)
+        # Gemini 3 takes images inside a function response; earlier models
+        # get them in a user turn after the responses.
+        native = self._takes_function_response_images(model or getattr(self, "model_id", None))
+        call_names = {}
+        responses = None
+        follow_up = []
+
+        def flush_follow_up():
+            if follow_up:
+                cleaned_messages.append(
+                    types.Content(
+                        role="user",
+                        parts=[
+                            types.Part.from_text(text=follow_up_note([label for label, _, _ in follow_up])),
+                            *(
+                                types.Part.from_bytes(data=base64.b64decode(data), mime_type=mime_type)
+                                for _, mime_type, data in follow_up
+                            ),
+                        ],
+                    )
+                )
+                follow_up.clear()
+
         for message in messages:
             role = message.get("role")
             content = message.get("content")
+            if role != "tool":
+                responses = None
+                flush_follow_up()
 
             # Gemini only accepts user/model in the contents list.
             if role == "system":
@@ -257,6 +286,7 @@ class GoogleLLM(BaseLLM):
             if msg_tool_calls and role == "model":
                 for tc in msg_tool_calls:
                     func = tc.get("function", {})
+                    call_names[tc.get("id")] = func.get("name", "")
                     args = func.get("arguments", "{}")
                     if isinstance(args, str):
                         try:
@@ -289,21 +319,33 @@ class GoogleLLM(BaseLLM):
             # Standard format: tool message with tool_call_id
             tool_call_id = message.get("tool_call_id")
             if role == "tool" and tool_call_id is not None:
-                result_content = content
-                if isinstance(result_content, str):
-                    try:
-                        result_content = _json.loads(result_content)
-                    except (_json.JSONDecodeError, TypeError):
-                        pass
-                # Google expects function_response name — extract from tool_call_id context
-                # We use a placeholder name since Google API doesn't require exact match
-                parts.append(
-                    types.Part.from_function_response(
-                        name="tool_result",
-                        response={"result": result_content},
-                    )
+                result_content, shown = tool_result(message, vision)
+                try:
+                    result_content = _json.loads(result_content)
+                except (_json.JSONDecodeError, TypeError):
+                    pass
+                image_parts = None
+                if shown and native:
+                    image_parts = [
+                        types.FunctionResponsePart(
+                            inline_data=types.FunctionResponseBlob(
+                                mime_type=mime_type, data=base64.b64decode(data), display_name=f"image-{index}"
+                            )
+                        )
+                        for index, (_, mime_type, data) in enumerate(shown, start=1)
+                    ]
+                else:
+                    follow_up.extend(shown)
+                part = types.Part.from_function_response(
+                    name=call_names.get(tool_call_id) or "tool_result",
+                    response={"result": result_content},
+                    parts=image_parts,
                 )
-                cleaned_messages.append(types.Content(role="model", parts=parts))
+                # A batch's responses answer its calls together, in one user turn.
+                if responses is None:
+                    responses = types.Content(role="user", parts=[])
+                    cleaned_messages.append(responses)
+                responses.parts.append(part)
                 continue
 
             if role == "tool":
@@ -375,10 +417,17 @@ class GoogleLLM(BaseLLM):
                     raise ValueError(f"Unexpected content type: {type(content)}")
                 if parts:
                     cleaned_messages.append(types.Content(role=role, parts=parts))
+        flush_follow_up()
         system_instruction = (
             "\n\n".join(system_instructions) if system_instructions else None
         )
         return cleaned_messages, system_instruction
+
+    @staticmethod
+    def _takes_function_response_images(model):
+        """Whether ``model`` takes images inside a function response (Gemini 3 and later)."""
+        match = re.search(r"gemini-(\d+)", str(model or ""))
+        return bool(match) and int(match.group(1)) >= 3
 
     def _clean_schema(self, schema_obj):
         """
@@ -552,7 +601,7 @@ class GoogleLLM(BaseLLM):
         """Generate content using Google AI API without streaming."""
         system_instruction = None
         if formatting == "openai":
-            messages, system_instruction = self._clean_messages_google(messages)
+            messages, system_instruction = self._clean_messages_google(messages, model)
         config = types.GenerateContentConfig(
             thinking_config=types.ThinkingConfig(include_thoughts=True),
         )
@@ -591,7 +640,7 @@ class GoogleLLM(BaseLLM):
         """Generate content using Google AI API with streaming."""
         system_instruction = None
         if formatting == "openai":
-            messages, system_instruction = self._clean_messages_google(messages)
+            messages, system_instruction = self._clean_messages_google(messages, model)
         # include_thoughts surfaces Gemini's thought-summary parts so the
         # same {"type":"thought"} accumulator that DeepSeek uses can
         # capture and persist them. Off by default; thinking itself is

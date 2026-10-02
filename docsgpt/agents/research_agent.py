@@ -11,6 +11,7 @@ from docsgpt.agents.tools.graph_search import add_graph_search_tool
 from docsgpt.agents.tools.internal_search import add_internal_search_tool
 from docsgpt.agents.tools.wiki import add_wiki_tool
 from docsgpt.agents.tools.think import THINK_TOOL_ENTRY, THINK_TOOL_ID
+from docsgpt.llm.handlers.base import take_tool_images
 from docsgpt.logging import LogContext
 
 logger = logging.getLogger(__name__)
@@ -648,12 +649,7 @@ class ResearchAgent(BaseAgent):
                 }],
             })
             tool_message = self.llm_handler.create_tool_message(call, result)
-            messages.append(tool_message)
-
-        # Images an attachments read asked for follow the tool results.
-        pending = getattr(executor, "pending_native_parts", None)
-        if isinstance(pending, list) and pending:
-            messages = self.llm_handler.append_native_reads(self, messages, executor)
+            messages.append(take_tool_images(executor, tool_message))
         return messages, search_returned_empty
 
     def _refuse_paused_call(

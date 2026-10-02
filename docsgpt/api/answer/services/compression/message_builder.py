@@ -5,6 +5,8 @@ import logging
 import uuid
 from typing import Dict, List, Optional
 
+from docsgpt.llm.tool_images import replayed_result
+
 logger = logging.getLogger(__name__)
 
 
@@ -68,12 +70,7 @@ class MessageBuilder:
                             },
                         }],
                     })
-                    result = tool_call.get("result")
-                    result_str = (
-                        json.dumps(result)
-                        if not isinstance(result, str)
-                        else (result or "")
-                    )
+                    result_str = replayed_result(tool_call)
                     messages.append({
                         "role": "tool",
                         "tool_call_id": call_id,
@@ -206,12 +203,7 @@ class MessageBuilder:
                             },
                         }],
                     })
-                    result = tool_call.get("result")
-                    result_str = (
-                        json.dumps(result)
-                        if not isinstance(result, str)
-                        else (result or "")
-                    )
+                    result_str = replayed_result(tool_call)
                     rebuilt_messages.append({
                         "role": "tool",
                         "tool_call_id": call_id,
