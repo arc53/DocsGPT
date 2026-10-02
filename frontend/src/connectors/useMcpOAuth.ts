@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
@@ -25,13 +24,16 @@ type Handlers = {
  * Sign in to an MCP server over OAuth from a click. The pop-up opens blank
  * inside the click (so the browser allows it) and follows the worker's
  * `mcp.oauth.*` events: pointed at the provider on `awaiting_redirect`,
- * closed on `completed` or `failed`. Closing the pop-up first stops the
- * wait and reports `authCancelled`, as the connector sign-in does.
+ * closed on `completed` or `failed`. Only those events end the wait (or
+ * `cancel`, the wizard's Cancel button): a pop-up that reads as closed may
+ * still be signing in, because a provider page sending
+ * Cross-Origin-Opener-Policy (Sentry, Stripe) cuts it off from this tab and
+ * `closed` turns true. A sign-in the user abandons ends on the server's
+ * timeout as `failed`.
  * `blockedUrl` is set when the browser blocked the pop-up anyway, so the
  * caller can offer the link.
  */
 export default function useMcpOAuth() {
-  const { t } = useTranslation();
   const token = useSelector(selectToken);
   const events = useSelector(selectRecentEvents);
   const [taskId, setTaskId] = useState<string | null>(null);
@@ -40,12 +42,6 @@ export default function useMcpOAuth() {
   const popupRef = useRef<Window | null>(null);
   const handlersRef = useRef<Handlers | null>(null);
   const handledRef = useRef<Set<string>>(new Set());
-  const pollRef = useRef<number | null>(null);
-
-  const stopPolling = () => {
-    if (pollRef.current !== null) window.clearInterval(pollRef.current);
-    pollRef.current = null;
-  };
 
   const closePopup = () => {
     if (popupRef.current && !popupRef.current.closed) popupRef.current.close();
@@ -53,7 +49,6 @@ export default function useMcpOAuth() {
   };
 
   const finish = useCallback(() => {
-    stopPolling();
     closePopup();
     setTaskId(null);
     setPending(false);
@@ -61,17 +56,6 @@ export default function useMcpOAuth() {
   }, []);
 
   useEffect(() => finish, [finish]);
-
-  // The user closed the pop-up before signing in: stop waiting.
-  const watchPopup = useCallback(() => {
-    stopPolling();
-    pollRef.current = window.setInterval(() => {
-      if (!popupRef.current?.closed) return;
-      const done = handlersRef.current;
-      finish();
-      done?.onError(t('modals.uploadDoc.connectors.auth.authCancelled'));
-    }, 1000);
-  }, [finish, t]);
 
   const start = useCallback(
     async (config: McpOAuthConfig, handlers: Handlers) => {
@@ -85,7 +69,6 @@ export default function useMcpOAuth() {
         'mcpOAuth',
         'width=600,height=700',
       );
-      if (popupRef.current) watchPopup();
       try {
         const response = await userService.testMCPConnection({ config }, token);
         const result = await response.json();
@@ -105,7 +88,7 @@ export default function useMcpOAuth() {
         handlers.onError('');
       }
     },
-    [token, finish, watchPopup],
+    [token, finish],
   );
 
   useEffect(() => {
@@ -129,8 +112,7 @@ export default function useMcpOAuth() {
             'mcpOAuth',
             'width=600,height=700',
           );
-          if (popupRef.current) watchPopup();
-          else setBlockedUrl(url);
+          if (!popupRef.current) setBlockedUrl(url);
         }
       } else if (event.type === 'mcp.oauth.completed') {
         const done = handlersRef.current;
@@ -145,7 +127,7 @@ export default function useMcpOAuth() {
         return;
       }
     }
-  }, [events, taskId, finish, watchPopup]);
+  }, [events, taskId, finish]);
 
   return { start, cancel: finish, pending, blockedUrl };
 }

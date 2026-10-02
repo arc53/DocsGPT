@@ -1425,7 +1425,6 @@
         "mcp_linear": "Sincroniza incidencias y documentos con Conocimiento y deja que los agentes busquen, creen y actualicen incidencias.",
         "mcp_atlassian": "Busca y actualiza incidencias de Jira y páginas de Confluence.",
         "mcp_sentry": "Consulta incidencias, eventos y versiones de Sentry.",
-        "mcp_asana": "Encuentra y actualiza tareas y proyectos de Asana.",
         "mcp_stripe": "Consulta clientes, pagos y suscripciones en Stripe.",
         "github": "Sincroniza repositorios con Conocimiento y deja que los agentes lean código, issues y pull requests."
       },

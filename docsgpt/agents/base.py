@@ -683,13 +683,30 @@ class BaseAgent(ABC):
                 )
                 tool_gen = self._execute_tool_action(tools_dict, tc)
                 tool_response = None
-                while True:
-                    try:
-                        event = next(tool_gen)
-                        yield event
-                    except StopIteration as e:
-                        tool_response, _ = e.value
-                        break
+                try:
+                    while True:
+                        try:
+                            event = next(tool_gen)
+                            yield event
+                        except StopIteration as e:
+                            tool_response, _ = e.value
+                            break
+                except Exception as exc:
+                    # As in handle_tool_calls: a failing tool becomes the
+                    # model's tool result instead of ending the answer.
+                    logger.error(f"Error executing tool: {exc}", exc_info=True)
+                    tool_response = f"Error executing tool: {exc}"
+                    yield {
+                        "type": "tool_call",
+                        "data": {
+                            "tool_name": pending.get("tool_name", "unknown"),
+                            "call_id": call_id,
+                            "action_name": pending.get("llm_name", pending["name"]),
+                            "arguments": args,
+                            "error": tool_response,
+                            "status": "error",
+                        },
+                    }
                 # Same per-result cap as the in-loop path
                 # (handle_tool_calls); the journal keeps the full result.
                 tool_response = _bound_tool_response_for_llm(tool_response)
