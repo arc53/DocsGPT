@@ -15,8 +15,8 @@ Composition happens **here, at load time**, not through Jinja ``{% include %}``:
   silently stop working. Composing first keeps that parser seeing the whole
   prompt.
 
-The composed output is byte-identical to the presets this replaced; the
-``tests/test_prompt_composer.py`` goldens pin that.
+The ``tests/test_prompt_composer.py`` goldens pin the composed output byte
+for byte, so a fragment edit shows up as a reviewed golden change.
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ _SECTION_ORDER: Tuple[str, ...] = (
     "identity.txt",
     "persona.txt",
     None,  # answering — resolved per (mode, tone)
+    "citations.txt",  # renders ``source.citation_rules`` when sources are attached
     "formatting.txt",
     "boundaries.txt",
     "platform.txt",

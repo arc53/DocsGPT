@@ -1520,8 +1520,9 @@ sampled, so don't shrink or hide the strip (the measurements are in
 `ui/bar-tint-reset.ts`).
 
 Content read alongside the chat (notes, todos, files, `components/ArtifactPanel`)
-and an answer's full source list (`conversation/SourcesPanel`) share the chat's
-docked side panel (see Side panels). Don't add another pattern.
+and an answer's sources (`conversation/SourcesPanel`, with a cited source's
+`CitationReader` as its second level) share the chat's docked side panel (see
+Side panels). Don't add another pattern.
 
 ### ActionMenu (`ui/dropdown-menu.tsx`)
 

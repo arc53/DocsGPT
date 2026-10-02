@@ -249,6 +249,24 @@ class TestUpdateChunkInPlace:
         owner.close()
 
 
+class TestChunkByKey:
+    def test_finds_a_chunk_by_the_key_retrieval_labels_it_with(self, live_dsn, stub_embeddings):
+        from docsgpt.retriever.labels import chunk_key
+
+        ensure_vector_schema()
+        store = _store(live_dsn)
+        ids = store.add_texts(["Café — Highlands", "other"], [{"source": "a.txt"}, {"source": "b.txt"}])
+
+        found = store.get_chunk_by_key(chunk_key("Café — Highlands"))
+
+        assert found["doc_id"] == ids[0]
+        assert found["text"] == "Café — Highlands"
+        assert _store(live_dsn, source_id="elsewhere").get_chunk_by_key(chunk_key("other")) is None
+        # A re-chunked passage is found by the start of its excerpt.
+        assert store.get_chunk_by_key("0" * 32, excerpt="café — high")["doc_id"] == ids[0]
+        store.close()
+
+
 class TestWritePathSafetyNet:
     """A process that never ran the boot hook must still be able to ingest.
 

@@ -42,6 +42,7 @@ vi.mock('../FileTree', async () => {
       embedded?: boolean;
       canEdit?: boolean;
       initialPath?: string;
+      linkedChunk?: { id?: string };
       actionsTarget?: HTMLElement | null;
       onCrumbsChange?: (crumbs: { label: string }[]) => void;
     }) => {
@@ -54,6 +55,7 @@ vi.mock('../FileTree', async () => {
           data-testid="file-tree"
           data-can-edit={String(props.canEdit)}
           data-initial-path={props.initialPath ?? ''}
+          data-linked={props.linkedChunk?.id ?? ''}
         >
           {props.embedded ? 'embedded' : 'page'}
           {props.actionsTarget
@@ -217,6 +219,7 @@ describe('GraphSourceView', () => {
     onBack = vi.fn(),
     isNested?: boolean,
     canEdit?: boolean,
+    linkedChunk?: React.ComponentProps<typeof GraphSourceView>['linkedChunk'],
   ) => {
     await act(async () => {
       root.render(
@@ -226,6 +229,7 @@ describe('GraphSourceView', () => {
           sourceType={sourceType}
           isNested={isNested}
           canEdit={canEdit}
+          linkedChunk={linkedChunk}
           onBackToDocuments={onBack}
           headerAction={<button type="button">Test retrieval</button>}
         />,
@@ -430,6 +434,24 @@ describe('GraphSourceView', () => {
     expect(
       container.querySelector('[data-testid="file-tree"]')?.textContent,
     ).toBe('embedded');
+  });
+
+  it('opens a cited chunk on the Files tab, until that tab is left', async () => {
+    await render(undefined, vi.fn(), true, true, {
+      id: 'c7',
+      search: 'Nordhaven',
+      path: 'carriers/nordhaven.md',
+    });
+    const tree = () => container.querySelector('[data-testid="file-tree"]');
+    expect(tree()?.getAttribute('data-initial-path')).toBe(
+      'carriers/nordhaven.md',
+    );
+    expect(tree()?.getAttribute('data-linked')).toBe('c7');
+
+    await openTab('settings.sources.graphrag.view.tabs.graph');
+    await openTab('settings.sources.graphrag.view.tabs.files');
+    expect(tree()?.getAttribute('data-initial-path')).toBe('');
+    expect(tree()?.getAttribute('data-linked')).toBe('');
   });
 
   it("puts the Files tab's action in the header, only on that tab", async () => {

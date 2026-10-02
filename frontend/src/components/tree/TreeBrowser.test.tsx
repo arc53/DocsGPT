@@ -483,6 +483,33 @@ describe('TreeBrowser', () => {
     expect(crumbs()).toEqual([SOURCES, 'Contracts', 'new.pdf']);
   });
 
+  it('a linked chunk opens in its file, and only the first time', async () => {
+    state.chunks = [
+      { doc_id: 'c1', text: 'Scope', metadata: {} },
+      { doc_id: 'c2', text: 'Liability cap', metadata: {} },
+    ];
+    await render(NESTED, {
+      initialPath: 'msa.pdf',
+      linkedChunk: { id: 'c2', search: 'Liability', path: 'msa.pdf' },
+    });
+    // The file's chunk list searched for it, with that chunk open.
+    const calls = vi.mocked(userService.getDocumentChunks).mock.calls;
+    expect(calls.at(-1)?.[4]).toBe('legal/2024/msa.pdf');
+    expect(calls.at(-1)?.[5]).toBe('Liability');
+    expect(crumbs().at(-1)).toContain('settings.sources.chunkCrumb');
+    expect(container.textContent).toContain('Liability cap');
+
+    // Leaving the file drops the link: opening it again lists its chunks.
+    await clickCrumb('Contracts');
+    await openRow('legal');
+    await openRow('2024');
+    await openRow('msa.pdf');
+    expect(chunkListOpen()).toBe(true);
+    expect(
+      vi.mocked(userService.getDocumentChunks).mock.calls.at(-1)?.[5],
+    ).toBe('');
+  });
+
   it('an unknown initialPath leaves the root open', async () => {
     await render(NESTED, { initialPath: 'missing.pdf' });
     expect(crumbs()).toEqual([SOURCES, 'Contracts']);

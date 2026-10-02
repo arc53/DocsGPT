@@ -73,6 +73,12 @@ const systemVariableOptionDefinitions = [
     value: 'source.count',
   },
   {
+    // The built-in prompts' Citations section: a template prompt cites
+    // with [n] once it has this (docs: Agents › Prompts › Citations).
+    labelKey: 'modals.prompts.systemVariableOptions.citationRules',
+    value: 'source.citation_rules',
+  },
+  {
     labelKey: 'modals.prompts.systemVariableOptions.systemDate',
     value: 'system.date',
   },

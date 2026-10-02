@@ -1843,6 +1843,7 @@
         "sourceSummaries": "Alias für Inhalte (abwärtskompatibel)",
         "sourceDocuments": "Dokumentenobjekte-Liste",
         "sourceCount": "Anzahl der abgerufenen Dokumente",
+        "citationRules": "Zitierregeln ([n]-Zitate)",
         "systemDate": "Aktuelles Datum (JJJJ-MM-TT)",
         "systemTime": "Aktuelle Uhrzeit (HH:MM:SS)",
         "systemTimestamp": "ISO 8601 Zeitstempel",
@@ -2010,7 +2011,24 @@
       "fromConnectorTitle": "Aus {{name}}: {{title}}",
       "knowledge": "Wissen",
       "forAnswer_one": "{{count}} Quelle für diese Antwort",
-      "forAnswer_other": "{{count}} Quellen für diese Antwort"
+      "forAnswer_other": "{{count}} Quellen für diese Antwort",
+      "open": "Quelle {{num}} öffnen",
+      "reader": {
+        "back": "Alle Quellen",
+        "knowledge": "Wissen",
+        "file": "Datei",
+        "page": "Seite",
+        "link": "Link",
+        "added": "Hinzugefügt",
+        "length": "Länge",
+        "tokens": "{{tokens}} Tokens",
+        "excerptOnly": "Für diese Antwort ist nur der gespeicherte Auszug verfügbar.",
+        "missing": "Diese Passage ist nicht mehr in der Quelle, sie wurde womöglich bearbeitet oder neu indexiert. Angezeigt wird der mit der Antwort gespeicherte Auszug.",
+        "forbidden": "Diese Quelle wurde entfernt, oder du hast keinen Zugriff mehr darauf. Angezeigt wird der mit der Antwort gespeicherte Auszug.",
+        "loadFailed": "Die Passage konnte nicht geladen werden.",
+        "openLink": "Link öffnen",
+        "openInKnowledge": "In Wissen öffnen"
+      }
     },
     "attachments": {
       "attach": "Anhängen",

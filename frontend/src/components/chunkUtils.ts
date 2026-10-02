@@ -8,6 +8,14 @@ import i18next from 'i18next';
 import { ChunkType } from '../settings/types';
 import { formatCount, intlLocale } from '../utils/dateTimeUtils';
 
+/**
+ * A chunk a source view opens as soon as it lists it: a citation opened in
+ * Knowledge. `search` (the answer's excerpt, a verbatim prefix of the chunk)
+ * puts it on the first page, `id` picks it among the hits, and `path` is its
+ * file in a source with a folder structure.
+ */
+export type LinkedChunk = { id?: string; search: string; path?: string };
+
 /** What a chunk card shows when the token count is genuinely unknown. */
 export const UNKNOWN_TOKEN_COUNT = '-';
 

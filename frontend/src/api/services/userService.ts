@@ -288,6 +288,17 @@ const userService = {
       endpoints.USER.GET_CHUNKS(docId, page, perPage, path, search),
       token,
     ),
+  /** The chunk behind a citation, by the content key retrieval labelled it with. */
+  getSourceChunk: (
+    sourceId: string,
+    chunkKey: string,
+    token: string | null,
+    excerpt?: string,
+  ): Promise<Response> =>
+    throttledApiClient.get(
+      endpoints.USER.SOURCE_CHUNK(sourceId, chunkKey, excerpt),
+      token,
+    ),
   addChunk: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.ADD_CHUNK, data, token),
   deleteChunk: (

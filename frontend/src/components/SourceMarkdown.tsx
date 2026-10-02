@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import ReactMarkdown, {
   type Components,
   type ExtraProps,
 } from 'react-markdown';
+import { Link } from 'react-router-dom';
 import remarkGfm from 'remark-gfm';
 
 import { markdownCode, markdownHeadings, markdownTables } from '@/lib/markdown';
@@ -55,6 +56,13 @@ const components: Components = {
   ),
 };
 
+/**
+ * Where a link inside the source goes, when it is not a web address: a page
+ * of the same wiki opened in place (`onOpen`), a place in the app (`to`), or
+ * `'text'` for one that leads nowhere (a page that does not exist).
+ */
+export type SourceLink = { onOpen: () => void } | { to: string } | 'text';
+
 type MdNode = {
   type: string;
   value?: string;
@@ -103,21 +111,59 @@ function remarkHighlight(term: string) {
  * Markdown as a source view renders it: a wiki page, an open chunk, the edit
  * drawer's preview. The chat answer's headings and tables, lists outside the
  * text, links as `link inline`. `highlight` marks an entity's name (the graph's
- * chunk drawer).
+ * chunk drawer); `resolveLink` sends a link between wiki pages somewhere that
+ * exists, where a new tab would open a route the app does not have.
  */
 export default function SourceMarkdown({
   content,
   highlight,
+  resolveLink,
 }: {
   content: string;
   highlight?: string;
+  /**
+   * Where each link goes; null keeps it a new-tab link as written. Unset,
+   * every link is one.
+   */
+  resolveLink?: (href: string) => SourceLink | null;
 }) {
   const term = highlight?.trim();
+  const linked = useMemo<Components>(() => {
+    if (!resolveLink) return components;
+    const WebLink = components.a as React.ComponentType<
+      React.ComponentProps<'a'> & ExtraProps
+    >;
+    return {
+      ...components,
+      a: (props) => {
+        const target = props.href ? resolveLink(props.href) : null;
+        if (target === null) return <WebLink {...props} />;
+        if (target === 'text') return <>{props.children}</>;
+        if ('to' in target) {
+          return (
+            <Button variant="link" size="text" asChild>
+              <Link to={target.to}>{props.children}</Link>
+            </Button>
+          );
+        }
+        return (
+          <Button
+            variant="link"
+            size="text"
+            type="button"
+            onClick={target.onOpen}
+          >
+            {props.children}
+          </Button>
+        );
+      },
+    };
+  }, [resolveLink]);
   return (
     <div className="text-foreground text-sm leading-relaxed wrap-break-word">
       <ReactMarkdown
         remarkPlugins={term ? [remarkGfm, remarkHighlight(term)] : [remarkGfm]}
-        components={components}
+        components={linked}
       >
         {content}
       </ReactMarkdown>

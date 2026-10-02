@@ -12,6 +12,7 @@ from docsgpt.api.answer.services.prompt_renderer import (
     PromptRenderer,
     format_docs_for_prompt,
     prompt_embeds_documents,
+    prompt_requests_citations,
     resolve_prompt_skeleton,
 )
 from docsgpt.api.answer.services.stream_processor import (
@@ -314,6 +315,7 @@ def _run_agent_headless(
             artifact_parent={"conversation_id": conversation_id},
             enabled_tools=tool_executor.get_enabled_tool_names(),
             persona=persona,
+            sources_attached=bool(source_active),
         )
     except Exception as exc:
         logger.warning("Headless prompt rendering failed; using raw prompt: %s", exc)
@@ -329,6 +331,7 @@ def _run_agent_headless(
         "chat_history": chat_history or [],
         "retrieved_docs": retrieved_docs,
         "prompt_embeds_documents": prompt_embeds_documents(raw_prompt),
+        "prompt_cites_sources": prompt_requests_citations(raw_prompt),
         "sources_were_searched": bool(source_active),
         "decoded_token": decoded_token,
         "attachments": [],

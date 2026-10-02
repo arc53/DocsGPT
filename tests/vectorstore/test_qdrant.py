@@ -130,6 +130,13 @@ class TestQdrantStore:
         ):
             assert populated.get_chunks() == []
 
+    def test_chunk_lookup_raises_when_client_raises(self, populated):
+        # A citation that is only unreachable must not read as "gone".
+        with patch.object(
+            populated._client, "scroll", side_effect=RuntimeError("qdrant down")
+        ), pytest.raises(RuntimeError):
+            populated.get_chunk_by_key("0" * 32)
+
     def test_delete_chunks_by_source_path(self, populated):
         assert populated.delete_chunks_by_source_path("db.txt") == 1
         assert len(populated.get_chunks()) == 2

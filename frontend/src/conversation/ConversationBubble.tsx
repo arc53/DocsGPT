@@ -55,7 +55,11 @@ import ConnectorIcon from '../connectors/ConnectorIcon';
 import { connectorIconKey } from '../connectors/i18n';
 import { AnswerSegment } from './answerSegments';
 import { deriveArtifactChips } from './artifactChips';
-import { useChatCompanion } from './chatCompanion';
+import {
+  type AnswerSource,
+  sourceHref,
+  useChatCompanion,
+} from './chatCompanion';
 import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
 import ResearchProgress from './ResearchProgress';
 import SourcesPanel from './SourcesPanel';
@@ -74,13 +78,7 @@ const ConversationBubble = forwardRef<
     feedback?: FEEDBACK;
     handleFeedback?: (feedback: FEEDBACK) => void;
     thought?: string;
-    sources?: {
-      title: string;
-      text: string;
-      link: string;
-      connector_key?: string | null;
-      connector_name?: string | null;
-    }[];
+    sources?: AnswerSource[];
     toolCalls?: ToolCallsType[];
     /** Arrival order of the answer's parts; drives inline rendering. */
     segments?: AnswerSegment[];
@@ -158,11 +156,20 @@ const ConversationBubble = forwardRef<
 
   const companion = useChatCompanion();
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
-  // The chat's docked slot when there is one, else a modal panel.
-  const openSources = useCallback(() => {
-    if (companion && sources) companion.openSources(sources);
-    else setIsSidebarOpen(true);
-  }, [companion, sources]);
+  // The modal panel's open source; the docked slot keeps its own.
+  const [openSourceIndex, setOpenSourceIndex] = useState<number | null>(null);
+  // The chat's docked slot when there is one, else a modal panel. An index
+  // opens that source's reader; none opens the list.
+  const openSources = useCallback(
+    (index?: number) => {
+      if (companion && sources) companion.openSources(sources, index);
+      else {
+        setOpenSourceIndex(index ?? null);
+        setIsSidebarOpen(true);
+      }
+    },
+    [companion, sources],
+  );
   const editableQueryRef = useRef<HTMLDivElement>(null);
   const [isQuestionCollapsed, setIsQuestionCollapsed] = useState(true);
 
@@ -322,8 +329,7 @@ const ConversationBubble = forwardRef<
     const showSources = !(
       DisableSourceFE ||
       type === 'ERROR' ||
-      sources?.length === 0 ||
-      sources?.some((source) => source.link === 'None')
+      sources?.length === 0
     );
     bubble = (
       <div
@@ -343,7 +349,7 @@ const ConversationBubble = forwardRef<
                   variant="ghost"
                   size="sm"
                   aria-haspopup={companion ? undefined : 'dialog'}
-                  onClick={openSources}
+                  onClick={() => openSources()}
                   className="my-2 ml-3.5 w-fit"
                 >
                   <Database className="text-muted-foreground" aria-hidden />
@@ -359,87 +365,93 @@ const ConversationBubble = forwardRef<
                     w-full here would be the column width plus them. */}
                 <div className="animate-in fade-in mr-5 ml-6 duration-160 ease-out motion-reduce:animate-none">
                   <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-                    {sources?.slice(0, 3)?.map((source, index) => (
-                      <div
-                        key={index}
-                        id={`source-${index}`}
-                        className="relative"
-                      >
-                        {/* Stretched button: its ::after covers the card, so the
+                    {sources?.slice(0, 3)?.map((source, index) => {
+                      const href = sourceHref(source);
+                      return (
+                        <div
+                          key={index}
+                          id={`source-${index}`}
+                          className="relative"
+                        >
+                          {/* Stretched button: its ::after covers the card, so the
                             whole card opens the sheet; the URL link is a sibling
                             above it (z-10), never nested inside a button. */}
-                        <div className="bg-answer-surface hover:bg-accent has-[>button:focus-visible]:ring-ring/50 relative h-28 rounded-4xl p-4 has-[>button:focus-visible]:ring-3">
-                          <button
-                            type="button"
-                            className="block w-full cursor-pointer text-left outline-none after:absolute after:inset-0 after:rounded-4xl"
-                            onClick={openSources}
-                          >
-                            <span className="line-clamp-3 h-12 text-xs wrap-break-word">
-                              {source.text}
-                            </span>
-                          </button>
-                          {source.link && source.link !== 'local' ? (
-                            <Button
-                              variant="link"
-                              size="inline"
-                              asChild
-                              // eslint-disable-next-line shadcn/no-restyle -- a source card's URL row: foreground at rest, primary on hover
-                              className="hover:text-primary relative z-10 mt-3.5 max-w-full flex-row justify-start gap-1.5 font-normal text-current underline-offset-2"
+                          <div className="bg-answer-surface hover:bg-accent has-[>button:focus-visible]:ring-ring/50 relative h-28 rounded-4xl p-4 has-[>button:focus-visible]:ring-3">
+                            <button
+                              type="button"
+                              className="block w-full cursor-pointer text-left outline-none after:absolute after:inset-0 after:rounded-4xl"
+                              onClick={() => openSources(index)}
                             >
-                              <a
-                                href={source.link}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                              <span className="line-clamp-3 h-12 text-xs wrap-break-word">
+                                {source.text}
+                              </span>
+                            </button>
+                            {href ? (
+                              <Button
+                                variant="link"
+                                size="inline"
+                                asChild
+                                // eslint-disable-next-line shadcn/no-restyle -- a source card's URL row: foreground at rest, primary on hover
+                                className="hover:text-primary relative z-10 mt-3.5 max-w-full flex-row justify-start gap-1.5 font-normal text-current underline-offset-2"
                               >
-                                {source.connector_key ? (
-                                  <ConnectorIcon
-                                    icon={connectorIconKey(
-                                      source.connector_key,
-                                    )}
-                                    className="text-muted-foreground size-4 shrink-0"
-                                  />
-                                ) : (
-                                  <FileText className="text-muted-foreground size-4 shrink-0" />
-                                )}
+                                <a
+                                  href={href}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  {source.connector_key ? (
+                                    <ConnectorIcon
+                                      icon={connectorIconKey(
+                                        source.connector_key,
+                                      )}
+                                      className="text-muted-foreground size-4 shrink-0"
+                                    />
+                                  ) : (
+                                    <FileText className="text-muted-foreground size-4 shrink-0" />
+                                  )}
+                                  <p
+                                    className="mt-0.5 truncate text-xs"
+                                    title={href}
+                                  >
+                                    {href}
+                                  </p>
+                                </a>
+                              </Button>
+                            ) : source.connector_name ? (
+                              <div className="mt-3.5 flex flex-row items-center gap-1.5">
+                                <ConnectorIcon
+                                  icon={connectorIconKey(source.connector_key)}
+                                  className="text-muted-foreground size-4 shrink-0"
+                                />
                                 <p
                                   className="mt-0.5 truncate text-xs"
-                                  title={source.link}
+                                  title={source.title}
                                 >
-                                  {source.link}
+                                  {t(
+                                    'conversation.sources.fromConnectorTitle',
+                                    {
+                                      name: source.connector_name,
+                                      title: source.title,
+                                      interpolation: { escapeValue: false },
+                                    },
+                                  )}
                                 </p>
-                              </a>
-                            </Button>
-                          ) : source.connector_name ? (
-                            <div className="mt-3.5 flex flex-row items-center gap-1.5">
-                              <ConnectorIcon
-                                icon={connectorIconKey(source.connector_key)}
-                                className="text-muted-foreground size-4 shrink-0"
-                              />
-                              <p
-                                className="mt-0.5 truncate text-xs"
-                                title={source.title}
-                              >
-                                {t('conversation.sources.fromConnectorTitle', {
-                                  name: source.connector_name,
-                                  title: source.title,
-                                  interpolation: { escapeValue: false },
-                                })}
-                              </p>
-                            </div>
-                          ) : (
-                            <div className="mt-3.5 flex flex-row items-center gap-1.5">
-                              <FileText className="text-muted-foreground size-4 shrink-0" />
-                              <p
-                                className="mt-0.5 truncate text-xs"
-                                title={source.title}
-                              >
-                                {source.title}
-                              </p>
-                            </div>
-                          )}
+                              </div>
+                            ) : (
+                              <div className="mt-3.5 flex flex-row items-center gap-1.5">
+                                <FileText className="text-muted-foreground size-4 shrink-0" />
+                                <p
+                                  className="mt-0.5 truncate text-xs"
+                                  title={source.title}
+                                >
+                                  {source.title}
+                                </p>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                     {(sources?.length ?? 0) > 3 && (
                       <button
                         type="button"
@@ -447,7 +459,7 @@ const ConversationBubble = forwardRef<
                           'bg-answer-surface text-primary hover:bg-accent hover:text-primary flex h-28 cursor-pointer flex-col-reverse rounded-4xl p-4 text-left outline-none',
                           focusRing,
                         )}
-                        onClick={openSources}
+                        onClick={() => openSources()}
                       >
                         <span className="line-clamp-3 h-22 text-xs">
                           {t('conversation.sources.view_more', {
@@ -525,7 +537,7 @@ const ConversationBubble = forwardRef<
             // A citation pill jumps to a source card, so an answer whose
             // sources are not shown has nothing to cite.
             sourceCount={showSources ? (sources?.length ?? 0) : 0}
-            onOpenSources={openSources}
+            onOpenSource={openSources}
             agentId={agentId}
             // A research run already narrates itself above; the status line
             // would be a second live indicator away from the point of action.
@@ -704,7 +716,11 @@ const ConversationBubble = forwardRef<
         )}
         {sources && !companion && (
           <SidePanel open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
-            <SourcesPanel sources={sources} />
+            <SourcesPanel
+              sources={sources}
+              openIndex={openSourceIndex}
+              onOpenIndexChange={setOpenSourceIndex}
+            />
           </SidePanel>
         )}
       </div>

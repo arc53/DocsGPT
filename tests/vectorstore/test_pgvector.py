@@ -572,3 +572,50 @@ def test_get_chunks_orders_by_id():
 
     sql = " ".join(mock_cursor.execute.call_args[0][0].split())
     assert sql.endswith("WHERE source_id = %s ORDER BY id;")
+
+
+@pytest.mark.unit
+class TestPGVectorStoreGetChunkByKey:
+    def test_one_query_by_source_and_md5_of_the_text(self):
+        store, _, mock_cursor, _ = _make_store(source_id="src1")
+        mock_cursor.fetchone.return_value = (42, "the text", {"title": "t"})
+
+        found = store.get_chunk_by_key("a" * 32)
+
+        assert found == {"doc_id": "42", "text": "the text", "metadata": {"title": "t"}}
+        sql, params = mock_cursor.execute.call_args[0]
+        sql = " ".join(sql.split())
+        assert "WHERE source_id = %s AND md5(text) = %s ORDER BY id LIMIT 1" in sql
+        assert params == ("src1", "a" * 32)
+
+    def test_no_row_is_none(self):
+        store, _, mock_cursor, _ = _make_store()
+        mock_cursor.fetchone.return_value = None
+        assert store.get_chunk_by_key("a" * 32) is None
+        assert mock_cursor.execute.call_count == 1
+
+    def test_a_key_miss_searches_the_excerpt(self):
+        store, _, mock_cursor, _ = _make_store(source_id="src1")
+        mock_cursor.fetchone.side_effect = [None, (7, "Late pickup fees", {})]
+
+        found = store.get_chunk_by_key("a" * 32, excerpt="  Late Pickup ")
+
+        assert found["doc_id"] == "7"
+        sql, params = mock_cursor.execute.call_args[0]
+        sql = " ".join(sql.split())
+        assert "WHERE source_id = %s AND strpos(lower(text), %s) > 0 ORDER BY id LIMIT 1" in sql
+        assert params == ("src1", "late pickup")
+
+    def test_null_metadata_reads_as_empty(self):
+        store, _, mock_cursor, _ = _make_store()
+        mock_cursor.fetchone.return_value = (1, "t", None)
+        assert store.get_chunk_by_key("a" * 32)["metadata"] == {}
+
+    def test_a_query_error_propagates(self):
+        # Unlike ``get_chunks`` the lookup must not read a failure as "gone":
+        # the route answers that with the excerpt-only fallback.
+        store, mock_conn, mock_cursor, _ = _make_store()
+        mock_cursor.execute.side_effect = RuntimeError("down")
+        with pytest.raises(RuntimeError):
+            store.get_chunk_by_key("a" * 32)
+        mock_conn.rollback.assert_called_once()

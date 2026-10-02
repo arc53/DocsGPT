@@ -36,6 +36,8 @@ logger = logging.getLogger(__name__)
 #: tool owner's id. The plaintext ``value`` of those entries is kept empty.
 API_TOOL_SECRETS_KEY = "encrypted_action_secrets"
 API_TOOL_SECRET_SECTIONS = ("headers", "query_params")
+# Tools that label their hits ``[n]`` from the answer's citation registry.
+CITING_TOOLS = frozenset({"internal_search", "graph_search"})
 
 
 def api_tool_action_with_secrets(tool_data: Dict, action_name: str, fallback_owner: Optional[str] = None) -> Dict:
@@ -577,6 +579,11 @@ class ToolExecutor:
         # sandbox tools so a referenced attachment can be lazily bridged to a
         # conversation-scoped artifact at tool-use time.
         self.attachments: List[Dict] = []
+        # The answer's source list the search tools number their hits from
+        # (``docsgpt.agents.citations``), set by the agent once its documents
+        # are final. Held here rather than in ``tools_dict``, which is saved
+        # with a paused turn and would come back as a detached copy.
+        self.citation_registry: Optional[List[Dict]] = None
         # Images a tool asked to show the model (``attachments_read`` on an
         # image or a scanned page). The LLM handler adds them in a user
         # message after the tool results and empties this list.
@@ -1939,6 +1946,8 @@ class ToolExecutor:
                 # Refresh unconditionally so a turn with no attachments clears the
                 # prior turn's list (no stale carryover within the session).
                 cached_config["attachments"] = self.attachments or []
+            if isinstance(cached_config, dict) and tool_data["name"] in CITING_TOOLS:
+                cached_config["citation_registry"] = self.citation_registry
             return cached
 
         tm = ToolManager(config={})
@@ -2022,6 +2031,8 @@ class ToolExecutor:
             # ref (A1) and edit_artifact resolve against the workflow run.
             if self.workflow_run_id:
                 tool_config["workflow_run_id"] = self.workflow_run_id
+            if tool_data["name"] in CITING_TOOLS:
+                tool_config["citation_registry"] = self.citation_registry
             if tool_data["name"] == "scheduler":
                 # Agent-bound: stamp schedules.agent_id. Agentless: the tool
                 # falls back to ``origin_conversation_id`` as the schedule's

@@ -1837,6 +1837,7 @@
         "sourceSummaries": "Alias for content (backward compatible)",
         "sourceDocuments": "Document objects list",
         "sourceCount": "Number of retrieved documents",
+        "citationRules": "引用ルール（[n] 形式）",
         "systemDate": "Current date (YYYY-MM-DD)",
         "systemTime": "Current time (HH:MM:SS)",
         "systemTimestamp": "ISO 8601 timestamp",
@@ -2001,7 +2002,24 @@
       "fromConnector": "{{name}} から",
       "fromConnectorTitle": "{{name}} から: {{title}}",
       "knowledge": "ナレッジ",
-      "forAnswer": "この回答のソース{{count}}件"
+      "forAnswer": "この回答のソース{{count}}件",
+      "open": "ソース{{num}}を開く",
+      "reader": {
+        "back": "すべてのソース",
+        "knowledge": "ナレッジ",
+        "file": "ファイル",
+        "page": "ページ",
+        "link": "リンク",
+        "added": "追加日",
+        "length": "長さ",
+        "tokens": "{{tokens}} トークン",
+        "excerptOnly": "この回答で利用できるのは保存された抜粋のみです。",
+        "missing": "この箇所はソースにもう存在しません。編集または再インデックスされた可能性があります。回答と一緒に保存された抜粋を表示しています。",
+        "forbidden": "このソースは削除されたか、アクセス権がなくなりました。回答と一緒に保存された抜粋を表示しています。",
+        "loadFailed": "この箇所を読み込めませんでした。",
+        "openLink": "リンクを開く",
+        "openInKnowledge": "ナレッジで開く"
+      }
     },
     "attachments": {
       "attach": "添付",

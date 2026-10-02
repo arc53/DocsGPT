@@ -163,6 +163,41 @@ describe('PromptsModal', () => {
     );
   });
 
+  it('offers the citation rules, so a template prompt can turn citations on', async () => {
+    const setContent = vi.fn();
+    await render(setContent);
+    const [system] = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="select-trigger"]',
+      ),
+    );
+    const textarea = document.body.querySelector<HTMLTextAreaElement>(
+      '#new-prompt-content',
+    )!;
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    await act(async () => {
+      system.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+    const option = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="option"]'),
+    ).find((o) =>
+      o.textContent?.includes(
+        'modals.prompts.systemVariableOptions.citationRules',
+      ),
+    );
+    expect(option).toBeDefined();
+    await act(async () => {
+      option!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+    expect(setContent.mock.calls.at(-1)?.[0]).toContain(
+      '{{ source.citation_rules }}',
+    );
+  });
+
   it('opens a prompt the caller may not edit read-only', async () => {
     await act(async () => {
       root.render(

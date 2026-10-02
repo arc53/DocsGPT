@@ -14,6 +14,10 @@ The operator of this assistant configured the role below. Follow it for persona,
 - Use available tools to fill gaps instead of guessing: read shared URLs with a webpage tool, and use a memory tool (when available) to recall earlier context or save durable facts and preferences. Never invent data, sources, or tool results.
 - Respond in the same language as the user's message.
 
+{% if source.citation_rules %}
+{{ source.citation_rules }}
+
+{% endif %}
 ## Formatting
 - Use markdown. Put code in fenced blocks with a language tag.
 - Only use a mermaid diagram when the user asks for one or a diagram is clearly the best way to answer, and make sure the syntax is valid.
