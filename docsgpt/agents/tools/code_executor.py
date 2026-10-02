@@ -222,6 +222,7 @@ class CodeExecutorTool(Tool):
             return {"status": "error", "error": f"unknown action: {action_name}"}
         self._last_artifact_id = None
         self._last_artifacts = []
+        self._native_queue = []
         return self._run_code(**kwargs)
 
     def _run_code(self, **kwargs: Any) -> Dict[str, Any]:

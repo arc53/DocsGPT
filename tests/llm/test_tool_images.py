@@ -75,6 +75,12 @@ class TestNormalize:
         with pytest.raises(ValueError):
             tool_images.normalize_image(b"%PDF-1.4 not an image")
 
+    def test_a_truncated_image_is_refused_not_sent(self):
+        out = io.BytesIO()
+        Image.new("RGB", (64, 64), "blue").save(out, "JPEG")
+        with pytest.raises(ValueError):
+            tool_images.normalize_image(out.getvalue()[:-40])
+
 
 class TestToolResult:
     def test_images_come_out_ready_to_send(self):

@@ -543,6 +543,8 @@ class MCPTool(Tool):
             raise Exception(f"Failed to discover tools from MCP server: {str(e)}")
 
     def execute_action(self, action_name: str, **kwargs) -> Any:
+        # Images a failed earlier call queued are not this call's.
+        self._native_queue = []
         if not self.server_url:
             raise Exception("No MCP server configured")
         if not self._client:

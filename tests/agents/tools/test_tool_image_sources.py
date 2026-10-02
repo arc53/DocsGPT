@@ -162,6 +162,12 @@ class TestCodeExecutorCharts:
         persist.assert_not_called()
         assert payload["artifacts"] == [] and len(tool.drain_native_parts()) == 1
 
+    def test_a_run_never_reports_an_earlier_runs_charts(self, monkeypatch):
+        tool, _, _ = self._run(monkeypatch, [])
+        tool._native_queue = [{"label": "stale"}]
+        tool.execute_action("run_code", code="print(1)", capture_artifacts=False)
+        assert tool.drain_native_parts() == []
+
     def test_no_charts_no_change(self, monkeypatch):
         tool, persist, payload = self._run(monkeypatch, [])
         assert "charts_shown" not in payload and tool.drain_native_parts() == []

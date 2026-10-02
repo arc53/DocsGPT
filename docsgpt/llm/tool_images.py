@@ -51,10 +51,14 @@ def normalize_image(raw: bytes) -> Tuple[str, bytes]:
     try:
         image = Image.open(io.BytesIO(raw))
         width, height = image.size
+        if width * height > _MAX_PIXELS:
+            raise ValueError(f"image too large to show ({width}x{height})")
+        # Decode it whole: a truncated file opens fine and fails the provider request.
+        image.load()
+    except ValueError:
+        raise
     except Exception as exc:
-        raise ValueError("not an image") from exc
-    if width * height > _MAX_PIXELS:
-        raise ValueError(f"image too large to show ({width}x{height})")
+        raise ValueError("not an image that can be read") from exc
     mime_type = Image.MIME.get(image.format or "", "")
     animated = bool(getattr(image, "is_animated", False))
     if mime_type in _PASS_TYPES and max(width, height) <= MAX_SIDE and len(raw) <= _PASS_BYTES and not animated:

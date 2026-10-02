@@ -549,6 +549,15 @@ class TestExecuteAction:
             tool.execute_action("test_action")
 
     @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    def test_an_earlier_calls_images_are_not_carried_over(self, mock_run, mcp_config):
+        tool = _make_tool(mcp_config)
+        tool._client = MagicMock()
+        tool._native_queue = [{"label": "stale"}]
+        mock_run.return_value = {"key": "value"}
+        tool.execute_action("test_action")
+        assert tool.drain_native_parts() == []
+
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_successful_execute(self, mock_run, mcp_config):
         tool = _make_tool(mcp_config)
         tool._client = MagicMock()

@@ -323,7 +323,7 @@ class GoogleLLM(BaseLLM):
                 try:
                     result_content = _json.loads(result_content)
                 except (_json.JSONDecodeError, TypeError):
-                    pass
+                    pass  # Not JSON: the response carries it as text.
                 image_parts = None
                 if shown and native:
                     image_parts = [
