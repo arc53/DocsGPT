@@ -174,3 +174,29 @@ def test_the_change_is_a_span_attribute(monkeypatch):
     tracing_llm.finish_llm_call(span, llm, "gpt-6.1-sol", {}, duration_ms=1, error=None)
 
     assert span.end.call_args.kwargs["attributes"]["docsgpt.prefix_changed"] == "tools"
+
+
+def test_a_tool_less_retry_records_the_request_it_sent(monkeypatch, caplog):
+    """The endpoint refused tools and the retry went without: no false change later."""
+    import httpx
+    from openai import BadRequestError
+
+    llm = _make_llm(monkeypatch)
+    create = llm.client.responses.create.side_effect
+    request = httpx.Request("POST", "http://localhost:8000/v1/responses")
+    message = "tool choice requires --enable-auto-tool-choice and --tool-call-parser"
+    refusal = BadRequestError(message, response=httpx.Response(400, request=request), body={"message": message})
+
+    def _refuse_tools(**params):
+        if params.get("tools"):
+            raise refusal
+        return create(**params)
+
+    llm.client.responses.create.side_effect = _refuse_tools
+    with caplog.at_level(logging.INFO):
+        _call(llm)
+        _call(llm)
+
+    assert llm._tools_rejected is True
+    assert _changes(caplog) == []
+    assert llm.export_responses_state()["tools_hash"] == llm._tools_fingerprint(None)

@@ -899,6 +899,9 @@ class OpenAILLM(BaseLLM):
             if not _is_tools_unsupported_error(error):
                 raise
             response = create(**self._params_without_tools(params))
+            if getattr(self, "_pending_tools_hash", None) is not None:
+                # A Responses chain records the tools block actually sent.
+                self._pending_tools_hash = self._tools_fingerprint(None)
             # Latch only once the tool-less retry has actually worked: a retry
             # that also 400s proves nothing about tool support, and must not
             # disable tools for the rest of this answer.
