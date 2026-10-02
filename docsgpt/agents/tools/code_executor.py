@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
 import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
@@ -15,9 +18,12 @@ from docsgpt.agents.tools.attachment_bridge import (
 )
 from docsgpt.agents.tools.base import Tool
 from docsgpt.core.settings import settings
+from docsgpt.llm.tool_images import image_ref
 from docsgpt.sandbox.artifacts_capture import (
     MAX_CAPTURED_FILES,
+    QuotaExceeded,
     capture_artifacts,
+    persist_new_artifact,
     snapshot_signatures,
     unique_input_path,
 )
@@ -39,6 +45,9 @@ logger = logging.getLogger(__name__)
 # Re-exported for back-compat: callers (and tests) import these mime helpers
 # from this module; they now live in the shared capture helper.
 __all__ = ["CodeExecutorTool", "_infer_mime", "_kind_for_mime", "_tail", "_OUTPUT_TAIL_BYTES"]
+
+# Charts one run may show the model.
+MAX_SHOWN_CHARTS = 4
 
 # Maximum bytes of stdout/stderr returned to the LLM. The raw stream is never
 # forwarded; only this tail keeps binary/runaway output out of the context.
@@ -75,6 +84,8 @@ class CodeExecutorTool(Tool):
         self._require_approval: bool = bool(self.config.get("require_approval", False))
         self._last_artifact_id: Optional[str] = None
         self._last_artifacts: List[Dict[str, Any]] = []
+        # Charts the last run displayed, for the model to see (``drain_native_parts``).
+        self._native_queue: List[Dict[str, Any]] = []
 
     # ------------------------------------------------------------------
     # Tool ABC
@@ -120,6 +131,8 @@ class CodeExecutorTool(Tool):
                     "Files written by the code are saved as downloadable artifacts (write throwaway "
                     "files under `tmp/`, or pass `outputs` to save only specific files); only a compact "
                     "summary (output tail + artifact references) is returned, never raw bytes. "
+                    "Charts the code displays (plt.show()) are saved too and shown to you as images "
+                    "when you can read images. "
                     "Each saved file appears to the user as a download button: name it in your answer, "
                     "never write a link or sandbox path to it. "
                     "Each call is capped at ~60s of wall-clock; for longer work, start it in the "
@@ -260,8 +273,12 @@ class CodeExecutorTool(Tool):
                     artifacts = self._capture_artifacts(manager, session_id, pre_signatures, outputs)
                 except Exception:
                     logger.exception("code_executor: artifact capture failed")
+            charts = self._show_charts(result, should_capture)
 
-            return self._shape_payload(result, artifacts, materialized.get("loaded", []))
+            payload = self._shape_payload(result, artifacts + charts, materialized.get("loaded", []))
+            if self._native_queue:
+                payload["charts_shown"] = [part["label"] for part in self._native_queue]
+            return payload
         finally:
             if not self._keep_alive(kwargs.get("persist"), ttl):
                 try:
@@ -439,6 +456,57 @@ class CodeExecutorTool(Tool):
                 if a.get("artifact_id")
             ]
         return captured
+
+    def _show_charts(self, result: ExecResult, save: bool) -> List[Dict[str, Any]]:
+        """Queue the charts the run displayed for the model to see, saving each as an artifact.
+
+        Args:
+            result: The run's result; ``plots`` holds the displayed charts.
+            save: Save them as artifacts (the call's ``capture_artifacts``).
+
+        Returns:
+            The saved charts' artifact references.
+        """
+        saved: List[Dict[str, Any]] = []
+        for plot in result.plots[:MAX_SHOWN_CHARTS]:
+            try:
+                raw = base64.b64decode(plot.content_base64)
+            except (binascii.Error, ValueError):
+                continue
+            filename = f"chart-{hashlib.sha256(raw).hexdigest()[:8]}.{plot.format or 'png'}"
+            ref = None
+            if save:
+                try:
+                    ref = persist_new_artifact(
+                        user_id=self.user_id,
+                        kind=_kind_for_mime(_infer_mime(filename)),
+                        data=raw,
+                        filename=filename,
+                        mime_type=_infer_mime(filename),
+                        conversation_id=self.conversation_id,
+                        workflow_run_id=self.workflow_run_id,
+                        message_id=self.message_id,
+                        produced_by={"tool": "code_executor", "action": "run_code", "display": True},
+                    )
+                except QuotaExceeded:
+                    save = False
+                except Exception:
+                    logger.exception("code_executor: saving a displayed chart failed")
+            if ref is not None:
+                saved.append(ref)
+                self._last_artifacts.append({"id": ref["artifact_id"], "filename": filename, "ref": ref.get("ref")})
+                self._last_artifact_id = self._last_artifact_id or ref["artifact_id"]
+            label = f"{ref['ref']} {filename}" if ref and ref.get("ref") else filename
+            try:
+                self._native_queue.append(image_ref(raw, label))
+            except ValueError:
+                logger.info("code_executor: a displayed chart is not an image that can be shown")
+        return saved
+
+    def drain_native_parts(self) -> List[Dict[str, Any]]:
+        """Charts the last run displayed, emptied as they are taken."""
+        parts, self._native_queue = self._native_queue, []
+        return parts
 
     def _shape_payload(
         self, result: ExecResult, artifacts: List[Dict[str, Any]], inputs_loaded: List[str]

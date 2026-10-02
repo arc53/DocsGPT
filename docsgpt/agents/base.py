@@ -15,6 +15,7 @@ from docsgpt.agents.attachment_budget import (
 from docsgpt.agents.attachment_dispatch import AttachmentDispatch
 from docsgpt.agents.context_overflow import SAFETY_SHARE, ContextOverflowError, turn_message_budget
 from docsgpt.agents.turn_capabilities import TurnCapabilities, build_turn_capabilities
+from docsgpt.agents.tools.view_image import add_view_image_tool
 from docsgpt.agents.tool_executor import (
     ToolExecutor,
     trace_unexecuted_tool_call,
@@ -31,7 +32,7 @@ from docsgpt.llm.handlers.base import (
     _bound_tool_response_for_llm,
     take_tool_images,
 )
-from docsgpt.llm.tool_images import IMAGES_KEY, replayed_result, split_content
+from docsgpt.llm.tool_images import IMAGES_KEY, reads_images, replayed_result, split_content
 from docsgpt.guardrails.config import DEFAULT_BLOCK_MESSAGE as GUARDRAIL_DEFAULT_MESSAGE
 from docsgpt.guardrails.runtime import (
     build_engine as build_guardrail_engine,
@@ -807,6 +808,9 @@ class BaseAgent(ABC):
         return self.tool_executor._build_tool_parameters(action)
 
     def _prepare_tools(self, tools_dict):
+        # A vision model can look at the images its tools point to.
+        if self._llm_supports_tools() and reads_images(self.llm):
+            add_view_image_tool(tools_dict)
         # The executor gates tool calls itself, so it needs this run's engine.
         self.tool_executor.guardrail_engine = self.guardrails
         self.tools = self.tool_executor.prepare_tools_for_llm(tools_dict)
