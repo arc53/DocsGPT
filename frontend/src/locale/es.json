@@ -1509,6 +1509,7 @@
         "mcp_miro": "Busca tableros de Miro, lee contenido y comentarios, crea diagramas y responde a comentarios.",
         "mcp_resend": "Envía correos electrónicos y gestiona contactos, audiencias y dominios.",
         "mcp_calcom": "Lee y gestiona tus reservas, tipos de eventos, disponibilidad y horarios de Cal.com.",
+        "mcp_cloudflare": "Gestiona Workers, DNS, R2 y más a través de la API de Cloudflare.",
         "github": "Sincroniza repositorios con Conocimiento y deja que los agentes lean código, issues y pull requests."
       },
       "empty": "Aún no hay nada conectado. Conecta un servicio para sincronizar su contenido o dar nuevas herramientas a los agentes.",
