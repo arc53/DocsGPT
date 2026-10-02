@@ -1511,6 +1511,7 @@
         "mcp_resend": "Send emails and manage contacts, audiences and domains.",
         "mcp_calcom": "Read and manage your Cal.com bookings, event types, availability and schedules.",
         "mcp_alphavantage": "Look up stock quotes, fundamentals, forex, crypto, economic indicators and market news.",
+        "mcp_cloudflare": "Manage Workers, DNS, R2 and more through the Cloudflare API.",
         "github": "Sync repositories into Knowledge and let agents read code, issues and pull requests."
       },
       "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",
