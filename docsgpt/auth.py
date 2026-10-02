@@ -14,10 +14,13 @@ def _bearer_value(request):
     if not header or not isinstance(header, str):
         return None
     scheme, _, value = header.partition(" ")
-    return value.strip() if scheme.lower() == "bearer" and value else header.strip()
+    if scheme.lower() != "bearer":
+        return None
+    token = value.strip()
+    return token if token else None
 
 
-def handle_auth(request, data={}):
+def handle_auth(request, data=None):
     # Personal access tokens are opaque (not JWTs) and resolve against the
     # database in every auth mode that supports them, including AUTH_TYPE unset.
     from docsgpt.api.pat.tokens import authenticate_pat, looks_like_pat
@@ -27,16 +30,19 @@ def handle_auth(request, data={}):
         return authenticate_pat(bearer, request)
 
     if settings.AUTH_TYPE in ["simple_jwt", "session_jwt", "oidc"]:
-        jwt_token = request.headers.get("Authorization")
-        if not jwt_token:
+        header = request.headers.get("Authorization")
+        if header is None or (isinstance(header, str) and not header.strip()):
             return None
-
-        jwt_token = jwt_token.replace("Bearer ", "")
+        if not bearer:
+            return {
+                "message": "Authentication error: invalid token",
+                "error": "invalid_token",
+            }
 
         is_oidc = settings.AUTH_TYPE == "oidc"
         try:
             decoded_token = jwt.decode(
-                jwt_token,
+                bearer,
                 settings.JWT_SECRET_KEY,
                 algorithms=["HS256"],
                 # oidc sessions are minted with an exp at the login callback and
