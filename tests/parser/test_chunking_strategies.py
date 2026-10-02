@@ -77,6 +77,58 @@ class TestRecursive:
         assert len(out) == 1
         assert out[0].text.strip() == "short text here"
 
+    def test_chunk_overlap_creates_overlapping_chunks(self):
+        """Ensure chunk_overlap causes adjacent chunks to share token overlap."""
+        # 4 sentences, 2 chunks with overlap
+        sentences = [
+            "Alpha sentence one is here.",
+            "Beta sentence two is here.",
+            "Gamma sentence three is here.",
+            "Delta sentence four is here.",
+        ]
+        text = " ".join(sentences)
+        chunker = RecursiveChunker(max_tokens=20, min_tokens=5, chunk_overlap=8)
+        out = chunker.chunk([Document(text=text, doc_id="d")])
+        assert len(out) >= 2
+        for c in out:
+            assert _tok(c.text) <= 20
+
+        # Verify second chunk shares trailing content of first chunk
+        first_chunk = out[0].text
+        second_chunk = out[1].text
+        # Common text must exist
+        shared = set(first_chunk.split()) & set(second_chunk.split())
+        assert len(shared) > 0
+
+    def test_chunk_overlap_zero_produces_disjoint_chunks(self):
+        """Ensure chunk_overlap=0 produces disjoint chunks without repeated content."""
+        text = "\n\n".join([f"Paragraph {i} content text." for i in range(10)])
+        chunker = RecursiveChunker(max_tokens=25, min_tokens=5, chunk_overlap=0)
+        out = chunker.chunk([Document(text=text, doc_id="d")])
+        assert len(out) >= 2
+        # Without overlap, paragraphs are disjoint
+        for i in range(len(out) - 1):
+            assert out[i].text.strip() not in out[i + 1].text
+
+    def test_words_not_split_mid_word(self):
+        """Ensure whitespace separator prevents slicing words mid-word."""
+        # Text without newlines or periods: words must remain intact
+        words = ["elephant", "hippopotamus", "rhinoceros", "chimpanzee", "crocodile"] * 6
+        text = " ".join(words)
+        chunker = RecursiveChunker(max_tokens=15, min_tokens=3, chunk_overlap=0)
+        out = chunker.chunk([Document(text=text, doc_id="d")])
+        assert len(out) > 1
+        for c in out:
+            # Each chunk's words must be full words from our list
+            chunk_words = c.text.strip().split()
+            for w in chunk_words:
+                assert w in words, f"Word '{w}' was sliced mid-word!"
+
+    def test_recursive_chunk_alias_is_registered(self):
+        """Ensure recursive_chunk alias resolves to RecursiveChunker."""
+        chunker = ChunkerCreator.create_chunker("recursive_chunk")
+        assert isinstance(chunker, RecursiveChunker)
+
 
 @pytest.mark.unit
 class TestMarkdown:

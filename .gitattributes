@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Keep tiktoken binary/LF
+*.tiktoken binary
