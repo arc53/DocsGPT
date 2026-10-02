@@ -2103,9 +2103,9 @@ def _backfill_pending_tool_state(
              created_at, expires_at)
         VALUES
             (CAST(:conv_id AS uuid), :user_id,
-             CAST(:messages AS jsonb), CAST(:pending AS jsonb),
-             CAST(:tools_dict AS jsonb), CAST(:schemas AS jsonb),
-             CAST(:agent_config AS jsonb), CAST(:client_tools AS jsonb),
+             CAST(:messages AS json), CAST(:pending AS json),
+             CAST(:tools_dict AS json), CAST(:schemas AS json),
+             CAST(:agent_config AS json), CAST(:client_tools AS json),
              :created_at, :expires_at)
         ON CONFLICT (conversation_id, user_id) DO UPDATE SET
             messages = EXCLUDED.messages,
