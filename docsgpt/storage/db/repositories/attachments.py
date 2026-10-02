@@ -14,8 +14,21 @@ from docsgpt.utils import strip_null_bytes
 _UPDATABLE_SCALARS = {
     "filename", "upload_path", "mime_type", "size",
     "content", "token_count", "openai_file_id", "google_file_uri",
+    "content_hash",
 }
 _UPDATABLE_JSONB = {"metadata"}
+
+# Columns the chat planner reads; everything but the (large) text.
+_PLANNING_COLUMNS = (
+    "id, user_id, filename, upload_path, mime_type, size, token_count, "
+    "metadata, created_at, legacy_mongo_id, content_hash"
+)
+
+
+def is_archive_row(row: dict) -> bool:
+    """A zip attachment unpacked into member rows (``metadata.archive``)."""
+    metadata = row.get("metadata")
+    return isinstance(metadata, dict) and isinstance(metadata.get("archive"), dict)
 
 
 def _attachment_to_dict(row: Any) -> dict:
@@ -51,6 +64,7 @@ class AttachmentsRepository:
         google_file_uri: Optional[str] = None,
         metadata: Any = None,
         legacy_mongo_id: Optional[str] = None,
+        content_hash: Optional[str] = None,
     ) -> dict:
         result = self._conn.execute(
             text(
@@ -58,12 +72,12 @@ class AttachmentsRepository:
                 INSERT INTO attachments (
                     user_id, filename, upload_path, mime_type, size,
                     content, token_count, openai_file_id, google_file_uri,
-                    metadata, legacy_mongo_id
+                    metadata, legacy_mongo_id, content_hash
                 )
                 VALUES (
                     :user_id, :filename, :upload_path, :mime_type, :size,
                     :content, :token_count, :openai_file_id, :google_file_uri,
-                    CAST(:metadata AS jsonb), :legacy_mongo_id
+                    CAST(:metadata AS jsonb), :legacy_mongo_id, :content_hash
                 )
                 RETURNING *
                 """
@@ -86,6 +100,7 @@ class AttachmentsRepository:
                     else None
                 ),
                 "legacy_mongo_id": legacy_mongo_id,
+                "content_hash": content_hash,
             },
         )
         return _attachment_to_dict(result.fetchone())
@@ -99,6 +114,51 @@ class AttachmentsRepository:
         )
         row = result.fetchone()
         return _attachment_to_dict(row) if row is not None else None
+
+    def get_for_update(self, attachment_id: str, user_id: str) -> Optional[dict]:
+        """Read one of the owner's rows and lock it until the transaction ends.
+
+        A zip's member tasks finish on different workers; each records its
+        outcome on the zip's row under this lock, so exactly one of them sees
+        the last member done and completes the zip.
+
+        Args:
+            attachment_id: The PG ``attachments.id``.
+            user_id: The owner.
+
+        Returns:
+            The row, or None when it is not the owner's or the id is not a UUID.
+        """
+        if not looks_like_uuid(str(attachment_id)):
+            return None
+        result = self._conn.execute(
+            text("SELECT * FROM attachments WHERE id = CAST(:id AS uuid) AND user_id = :user_id FOR UPDATE"),
+            {"id": str(attachment_id), "user_id": user_id},
+        )
+        row = result.fetchone()
+        return _attachment_to_dict(row) if row is not None else None
+
+    def find_and_lock_processing_archives(self, limit: int = 100) -> list[dict]:
+        """Zips of any user whose members are still parsing, locked for the reconciler.
+
+        Served by the partial index of migration 0045. Rows a member task is
+        updating right now are skipped (``SKIP LOCKED``); the next tick sees
+        them.
+
+        Args:
+            limit: Most rows returned per call, oldest first.
+
+        Returns:
+            The zips' rows, each locked until the transaction ends.
+        """
+        result = self._conn.execute(
+            text(
+                "SELECT * FROM attachments WHERE (metadata->'archive'->>'status') = 'processing' "
+                "ORDER BY created_at LIMIT :limit FOR UPDATE SKIP LOCKED"
+            ),
+            {"limit": int(limit)},
+        )
+        return [_attachment_to_dict(r) for r in result.fetchall()]
 
     def get_any(self, attachment_id: str, user_id: str) -> Optional[dict]:
         """Resolve an attachment by either PG UUID or legacy Mongo ObjectId string."""
@@ -177,6 +237,130 @@ class AttachmentsRepository:
             params["user_id"] = user_id
         result = self._conn.execute(text(sql), params)
         row = result.fetchone()
+        return _attachment_to_dict(row) if row is not None else None
+
+    def list_for_planning(self, ids: list[str], user_id: str) -> list[dict]:
+        """Fetch a user's attachments by PG id, without their text.
+
+        The chat attachment planner lists files from earlier turns but never
+        inlines them, so their (up to 100k-token) ``content`` is left out.
+
+        Args:
+            ids: PG ``attachments.id`` values, in the order wanted.
+            user_id: The owner; other users' rows are skipped.
+
+        Returns:
+            The rows found, in the order of ``ids``; unknown or non-UUID ids
+            are skipped.
+        """
+        wanted = [str(i) for i in ids if i is not None and looks_like_uuid(str(i))]
+        if not wanted:
+            return []
+        result = self._conn.execute(
+            text(
+                f"SELECT {_PLANNING_COLUMNS} "
+                "FROM attachments WHERE id = ANY(CAST(:ids AS uuid[])) AND user_id = :user_id"
+            ),
+            {"ids": wanted, "user_id": user_id},
+        )
+        by_id = {}
+        for row in result.fetchall():
+            out = _attachment_to_dict(row)
+            by_id[str(out["id"])] = out
+        rows = [by_id[i] for i in dict.fromkeys(wanted) if i in by_id]
+        return self._with_archive_members(rows, user_id, _PLANNING_COLUMNS)
+
+    def expand_archives(self, rows: list[dict], user_id: str) -> list[dict]:
+        """Follow each zip attachment with its member rows, text included.
+
+        A zip attached to a chat is unpacked by the worker into one row per
+        member; the request names only the zip. Loading a turn's attachments
+        through this puts the members right after their zip, in archive
+        order, so they are planned, read and referenced like any upload.
+
+        Args:
+            rows: Full attachment rows, in upload order.
+            user_id: The owner; only their member rows are added.
+
+        Returns:
+            The rows with members inserted; a row listed twice appears once.
+        """
+        return self._with_archive_members(rows, user_id, "*")
+
+    def _with_archive_members(self, rows: list[dict], user_id: str, columns: str) -> list[dict]:
+        """Insert each archive's member rows after it (owner-scoped, archive order, no repeats)."""
+        parent_ids = [str(r["id"]) for r in rows if is_archive_row(r)]
+        if not parent_ids:
+            return rows
+        result = self._conn.execute(
+            text(
+                f"SELECT {columns} FROM attachments "
+                "WHERE user_id = :user_id AND metadata->>'parent_attachment_id' = ANY(:parent_ids) "
+                "ORDER BY metadata->>'parent_attachment_id', "
+                "CASE WHEN metadata->>'archive_index' ~ '^[0-9]{1,9}$' "
+                "THEN (metadata->>'archive_index')::int END NULLS LAST, created_at"
+            ),
+            {"user_id": user_id, "parent_ids": parent_ids},
+        )
+        members: dict[str, list[dict]] = {}
+        for row in result.fetchall():
+            out = _attachment_to_dict(row)
+            members.setdefault(str(out["metadata"]["parent_attachment_id"]), []).append(out)
+        expanded: list[dict] = []
+        seen: set[str] = set()
+        for row in rows:
+            for item in [row, *members.get(str(row["id"]), [])]:
+                key = str(item["id"])
+                if key not in seen:
+                    seen.add(key)
+                    expanded.append(item)
+        return expanded
+
+    def find_by_hash(
+        self,
+        user_id: str,
+        content_hash: str,
+        *,
+        exclude_legacy_id: Optional[str] = None,
+        archive: Optional[bool] = None,
+    ) -> Optional[dict]:
+        """The user's newest successfully parsed upload of the same bytes.
+
+        Lets an upload of bytes the user already sent reuse the parsed text
+        instead of parsing again; the new upload still gets its own row.
+
+        Args:
+            user_id: The owner; other users' rows are never returned.
+            content_hash: sha256 hex of the original bytes.
+            exclude_legacy_id: Upload handle to skip, so a retried task never
+                matches its own earlier attempt.
+            archive: True to match only zip indexes, False to match only
+                other files (a zip's row holds its index, not text a file
+                with the same bytes could reuse), None for either.
+
+        Returns:
+            The full row, or None when there is no parsed row with that hash
+            (failed parses store no content and are skipped, and so is a zip
+            whose members are still being parsed).
+        """
+        if not content_hash:
+            return None
+        sql = (
+            "SELECT * FROM attachments "
+            "WHERE user_id = :user_id AND content_hash = :content_hash "
+            "AND content IS NOT NULL "
+            "AND (metadata->'archive' IS NULL OR metadata->'archive'->>'status' = 'complete')"
+        )
+        params: dict[str, Any] = {"user_id": user_id, "content_hash": content_hash}
+        if archive is True:
+            sql += " AND metadata->'archive' IS NOT NULL"
+        elif archive is False:
+            sql += " AND metadata->'archive' IS NULL"
+        if exclude_legacy_id is not None:
+            sql += " AND legacy_mongo_id IS DISTINCT FROM :exclude_legacy_id"
+            params["exclude_legacy_id"] = str(exclude_legacy_id)
+        sql += " ORDER BY created_at DESC LIMIT 1"
+        row = self._conn.execute(text(sql), params).fetchone()
         return _attachment_to_dict(row) if row is not None else None
 
     def list_for_user(self, user_id: str) -> list[dict]:

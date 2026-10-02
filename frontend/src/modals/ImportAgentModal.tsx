@@ -1,4 +1,4 @@
-import { TriangleAlert, CircleCheck, CircleAlert } from 'lucide-react';
+import { TriangleAlert, CircleCheck } from 'lucide-react';
 import { useState } from 'react';
 import { type FileRejection } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
@@ -287,7 +287,6 @@ export default function ImportAgentModal({
       <div className="flex flex-col gap-4">
         {warnings ? (
           <Alert variant="warning" role="status">
-            <TriangleAlert aria-hidden="true" />
             <AlertTitle>
               {importedStatus === 'published'
                 ? t('modals.importAgent.warningsTitlePublished')
@@ -317,20 +316,21 @@ export default function ImportAgentModal({
           </div>
         ) : (
           <div className="flex flex-col gap-5">
-            <div className="bg-muted rounded-xl p-3 text-sm">
-              {plan.target.action === 'update'
-                ? t('modals.importAgent.willUpdate', {
-                    matchedBy: plan.target.matched_by,
-                  })
-                : t('modals.importAgent.willCreate')}
-            </div>
+            <Alert variant="info" role="note">
+              <AlertDescription>
+                {plan.target.action === 'update'
+                  ? t('modals.importAgent.willUpdate', {
+                      matchedBy: plan.target.matched_by,
+                    })
+                  : t('modals.importAgent.willCreate')}
+              </AlertDescription>
+            </Alert>
 
             {plan.workflow &&
               (plan.workflow.action === 'delete' ? (
                 // Irreversible: the graph, its run history and its artifacts
                 // all go. Warn rather than confirming with a green check.
                 <Alert variant="warning">
-                  <TriangleAlert className="size-4" aria-hidden="true" />
                   <AlertDescription>
                     {t('modals.importAgent.workflowDelete', {
                       nodes: plan.workflow.nodes,
@@ -435,7 +435,6 @@ export default function ImportAgentModal({
                     )}
                     {tool.status === 'unavailable' && (
                       <Alert variant="warning">
-                        <TriangleAlert className="size-4" aria-hidden="true" />
                         <AlertDescription>
                           {t('modals.importAgent.toolUnavailable', {
                             type: tool.type,
@@ -500,7 +499,6 @@ export default function ImportAgentModal({
 
             {error && (
               <Alert variant="destructive">
-                <CircleAlert className="size-4" aria-hidden="true" />
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}

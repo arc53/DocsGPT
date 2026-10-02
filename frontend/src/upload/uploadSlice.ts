@@ -56,6 +56,12 @@ export interface Attachment {
   extractionStatus?: string;
   /** Why a ``failed`` attachment failed, when known (server or client gate). */
   errorMessage?: string;
+  /**
+   * How many ``attachment.queued`` / ``attachment.progress`` events the row
+   * has taken, live or replayed. The composer's processing watchdog reads a
+   * change as a sign of life, so it fails only a file that went silent.
+   */
+  activity?: number;
 }
 
 export type UploadTaskStatus =
@@ -93,16 +99,212 @@ export interface UploadTask {
   tokenLimitReached?: boolean;
 }
 
+/** ``attachment.*`` events held for a row that has not learned its id yet. */
+interface EarlyAttachmentEvents {
+  /** Wallclock ms of the first stashed event, for the TTL. */
+  at: number;
+  events: Array<{ type: string; payload: Record<string, unknown> }>;
+}
+
 interface UploadState {
   attachments: Attachment[];
   tasks: UploadTask[];
   /** Persisted dismissed sourceIds; keeps backlog-replay auto-creates silent. */
   dismissedSourceIds: DismissedEntry[];
+  /**
+   * ``attachment.*`` events that arrived before their upload response,
+   * keyed by attachment id. The worker can finish a small file before the
+   * response tells the row its attachment id; these are replayed onto the
+   * row once it does. Bounded by ``EARLY_ATTACHMENT_EVENTS_CAP`` and
+   * ``EARLY_ATTACHMENT_EVENTS_TTL_MS``.
+   */
+  earlyAttachmentEvents: Record<string, EarlyAttachmentEvents>;
+}
+
+/** Most attachment ids whose early events are held at once. */
+export const EARLY_ATTACHMENT_EVENTS_CAP = 200;
+/**
+ * How long early events wait for their row. The response that binds the id
+ * follows the event by about one round trip, so minutes is generous.
+ */
+export const EARLY_ATTACHMENT_EVENTS_TTL_MS = 2 * 60_000;
+/** Events kept per attachment; the worker sends about four per file. */
+const EARLY_EVENTS_PER_ATTACHMENT_CAP = 8;
+
+/**
+ * Give a completed row the server's attachment id as its ``id``.
+ *
+ * Every send path reads ``id``; until completion it holds the client
+ * placeholder, which the backend cannot resolve and silently drops. A row
+ * can complete through the SSE reducer or through ``updateAttachment``
+ * (the race recovery, when the terminal event beat the upload response),
+ * so both go through here.
+ */
+function bindServerId(attachment: Attachment): Attachment {
+  if (attachment.status === 'completed' && attachment.attachmentId) {
+    attachment.id = attachment.attachmentId;
+  }
+  return attachment;
+}
+
+/** An attachment ready to go out with a message: its server id and name. */
+export interface SendableAttachment {
+  id: string;
+  fileName: string;
+}
+
+/**
+ * The attachments a send should carry: completed rows only, by server id.
+ *
+ * The one place that decides which id goes on the wire, so every send path
+ * (chat, agent preview, shared chat, workflow runs) sends the same thing.
+ * A repeated server id is sent once.
+ */
+export function toSendableAttachments(
+  attachments: Attachment[],
+): SendableAttachment[] {
+  const seen = new Set<string>();
+  const sendable: SendableAttachment[] = [];
+  for (const attachment of attachments) {
+    if (attachment.status !== 'completed') continue;
+    const id = attachment.attachmentId ?? attachment.id;
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    sendable.push({ id, fileName: attachment.fileName });
+  }
+  return sendable;
+}
+
+/**
+ * The reason an ``attachment.failed`` event gives (its ``error``), if any.
+ *
+ * Args:
+ *   payload: The event's payload.
+ *
+ * Returns:
+ *   The worker's reason, or undefined when it sent none.
+ */
+export function attachmentFailureReason(
+  payload: Record<string, unknown>,
+): string | undefined {
+  const error = payload.error;
+  return typeof error === 'string' && error.trim() ? error.trim() : undefined;
+}
+
+/**
+ * Apply one ``attachment.*`` event to its row. Shared by the live SSE path
+ * and the replay of events that arrived before the row knew its id.
+ */
+function applyAttachmentEvent(
+  attachment: Attachment,
+  type: string,
+  payload: Record<string, unknown>,
+): void {
+  switch (type) {
+    case 'attachment.queued':
+    case 'attachment.progress': {
+      if (attachment.status === 'completed' || attachment.status === 'failed') {
+        break;
+      }
+      attachment.status = 'processing';
+      attachment.activity = (attachment.activity ?? 0) + 1;
+      const current = Number(payload.current);
+      if (Number.isFinite(current)) {
+        const clamped = Math.max(0, Math.min(100, current));
+        if (clamped > attachment.progress) {
+          attachment.progress = clamped;
+        }
+      }
+      break;
+    }
+    case 'attachment.completed': {
+      attachment.status = 'completed';
+      attachment.progress = 100;
+      bindServerId(attachment);
+      const tokenCount = Number(payload.token_count);
+      if (Number.isFinite(tokenCount)) {
+        attachment.token_count = tokenCount;
+      }
+      if (typeof payload.mime_type === 'string') {
+        attachment.mimeType = payload.mime_type;
+      }
+      if (typeof payload.extraction_status === 'string') {
+        attachment.extractionStatus = payload.extraction_status;
+      }
+      break;
+    }
+    case 'attachment.failed': {
+      attachment.status = 'failed';
+      const reason = attachmentFailureReason(payload);
+      if (reason) attachment.errorMessage = reason;
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+function pruneEarlyAttachmentEvents(state: UploadState): void {
+  const cutoff = Date.now() - EARLY_ATTACHMENT_EVENTS_TTL_MS;
+  for (const [id, entry] of Object.entries(state.earlyAttachmentEvents)) {
+    if (entry.at < cutoff) delete state.earlyAttachmentEvents[id];
+  }
+}
+
+/**
+ * Hold an event whose row has not learned its attachment id yet. Only while
+ * an upload is still waiting for its response: otherwise the event belongs
+ * to another tab or to the backlog a page load replays.
+ */
+function stashEarlyAttachmentEvent(
+  state: UploadState,
+  attachmentId: string,
+  type: string,
+  payload: Record<string, unknown>,
+): void {
+  const awaitingId = state.attachments.some(
+    (a) => a.status === 'uploading' && !a.attachmentId,
+  );
+  if (!awaitingId) return;
+  pruneEarlyAttachmentEvents(state);
+  let entry = state.earlyAttachmentEvents[attachmentId];
+  if (!entry) {
+    const ids = Object.keys(state.earlyAttachmentEvents);
+    for (let i = 0; i <= ids.length - EARLY_ATTACHMENT_EVENTS_CAP; i++) {
+      delete state.earlyAttachmentEvents[ids[i]];
+    }
+    entry = { at: Date.now(), events: [] };
+    state.earlyAttachmentEvents[attachmentId] = entry;
+  }
+  entry.events.push({ type, payload });
+  if (entry.events.length > EARLY_EVENTS_PER_ATTACHMENT_CAP) {
+    entry.events.splice(
+      0,
+      entry.events.length - EARLY_EVENTS_PER_ATTACHMENT_CAP,
+    );
+  }
+}
+
+/** Replay the events stashed for ``attachment``'s id onto it, then drop them. */
+function replayEarlyAttachmentEvents(
+  state: UploadState,
+  attachment: Attachment,
+): void {
+  const attachmentId = attachment.attachmentId;
+  if (!attachmentId) return;
+  pruneEarlyAttachmentEvents(state);
+  const entry = state.earlyAttachmentEvents[attachmentId];
+  if (!entry) return;
+  delete state.earlyAttachmentEvents[attachmentId];
+  for (const event of entry.events) {
+    applyAttachmentEvent(attachment, event.type, event.payload);
+  }
 }
 
 const initialState: UploadState = {
   attachments: [],
   tasks: [],
+  earlyAttachmentEvents: {},
   dismissedSourceIds: loadDismissed(
     DISMISSED_SOURCE_IDS_STORAGE_KEY,
     DISMISSED_SOURCE_IDS_TTL_MS,
@@ -115,6 +317,8 @@ export const uploadSlice = createSlice({
   reducers: {
     addAttachment: (state, action: PayloadAction<Attachment>) => {
       state.attachments.push(action.payload);
+      const added = state.attachments[state.attachments.length - 1];
+      if (added.attachmentId) replayEarlyAttachmentEvents(state, added);
     },
     updateAttachment: (
       state,
@@ -127,10 +331,15 @@ export const uploadSlice = createSlice({
         (att) => att.id === action.payload.id,
       );
       if (index !== -1) {
-        state.attachments[index] = {
+        state.attachments[index] = bindServerId({
           ...state.attachments[index],
           ...action.payload.updates,
-        };
+        });
+        // The upload response just told this row its attachment id:
+        // apply whatever the worker reported before it arrived.
+        if (action.payload.updates.attachmentId) {
+          replayEarlyAttachmentEvents(state, state.attachments[index]);
+        }
       }
     },
     removeAttachment: (state, action: PayloadAction<string>) => {
@@ -267,61 +476,18 @@ export const uploadSlice = createSlice({
       // Attachment events flow through the same SSE pipe; route them
       // to ``state.attachments`` matched by ``attachmentId``. SSE is
       // the sole driver of attachment state transitions — polling
-      // has been removed. Events for attachments uploaded in another
-      // session are silently dropped.
+      // has been removed. An event that beats its upload response is
+      // stashed until the row learns its id; events for attachments
+      // uploaded in another session are dropped.
       if (e.type.startsWith('attachment.') && scopeId) {
         const attachment = state.attachments.find(
           (a) => a.attachmentId === scopeId,
         );
+        const payload = (e.payload || {}) as Record<string, unknown>;
         if (attachment) {
-          const payload = (e.payload || {}) as Record<string, unknown>;
-          switch (e.type) {
-            case 'attachment.queued':
-            case 'attachment.progress': {
-              if (
-                attachment.status === 'completed' ||
-                attachment.status === 'failed'
-              ) {
-                break;
-              }
-              attachment.status = 'processing';
-              const current = Number(payload.current);
-              if (Number.isFinite(current)) {
-                const clamped = Math.max(0, Math.min(100, current));
-                if (clamped > attachment.progress) {
-                  attachment.progress = clamped;
-                }
-              }
-              break;
-            }
-            case 'attachment.completed': {
-              attachment.status = 'completed';
-              attachment.progress = 100;
-              // Replace the client-generated uuid with the server's
-              // attachment id so question submission
-              // (Conversation.tsx:174) sends an id the backend can
-              // resolve. Without this the backend would silently drop
-              // the attachment from the message context.
-              attachment.id = scopeId;
-              const tokenCount = Number(payload.token_count);
-              if (Number.isFinite(tokenCount)) {
-                attachment.token_count = tokenCount;
-              }
-              if (typeof payload.mime_type === 'string') {
-                attachment.mimeType = payload.mime_type;
-              }
-              if (typeof payload.extraction_status === 'string') {
-                attachment.extractionStatus = payload.extraction_status;
-              }
-              break;
-            }
-            case 'attachment.failed': {
-              attachment.status = 'failed';
-              break;
-            }
-            default:
-              break;
-          }
+          applyAttachmentEvent(attachment, e.type, payload);
+        } else {
+          stashEarlyAttachmentEvent(state, scopeId, e.type, payload);
         }
         return;
       }
@@ -438,6 +604,14 @@ export const selectAttachments = (state: RootState) => state.upload.attachments;
 export const selectCompletedAttachments = createSelector(
   [selectAttachments],
   (attachments) => attachments.filter((att) => att.status === 'completed'),
+);
+export const selectSendableAttachments = createSelector(
+  [selectAttachments],
+  toSendableAttachments,
+);
+export const selectSendableAttachmentIds = createSelector(
+  [selectSendableAttachments],
+  (sendable) => sendable.map((attachment) => attachment.id),
 );
 export const selectUploadTasks = (state: RootState) => state.upload.tasks;
 

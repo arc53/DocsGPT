@@ -35,6 +35,25 @@ class AgentSettings(SettingsGroup):
         description="Cap on one tool result entering the LLM context (0 disables); journal and DB keep it whole.",
     )
 
+    # Chat attachments.
+    ATTACHMENT_BUDGET_SHARE: float = Field(
+        default=0.5,
+        gt=0,
+        le=1,
+        description=(
+            "Largest fraction of the model's context window a turn's attached files may take. Files that do not "
+            "fit are listed in the turn's manifest and, past the first partial one, left to tools."
+        ),
+    )
+    ATTACHMENT_MAX_NATIVE_PARTS: int = Field(
+        default=40,
+        ge=0,
+        description=(
+            "Native file parts (images, PDFs, PDF page images) sent per turn; past the cap files go as extracted "
+            "text or are left out. Keep it below the provider's per-request image limit."
+        ),
+    )
+
     # Conversation compression.
     ENABLE_CONVERSATION_COMPRESSION: bool = Field(
         default=True, description="Compress long conversations once they approach the context window."

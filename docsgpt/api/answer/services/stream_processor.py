@@ -14,6 +14,7 @@ from docsgpt.api.answer.services.compression import CompressionOrchestrator
 from docsgpt.api.answer.services.compression.token_counter import TokenCounter
 from docsgpt.api.answer.services.compression.types import is_compression_summary_row
 from docsgpt.api.answer.services.conversation_service import ConversationService
+from docsgpt.error import bounded_error_text
 from docsgpt.prompts.composer import compose_preset, is_composed_preset
 from docsgpt.api.answer.services.prompt_renderer import (
     PromptRenderer,
@@ -21,10 +22,19 @@ from docsgpt.api.answer.services.prompt_renderer import (
     prompt_embeds_documents,
     resolve_prompt_skeleton,
 )
+from docsgpt.agents.attachment_budget import (
+    compute_attachment_budget,
+    manifest_estimate,
+    plan_attachments,
+)
+from docsgpt.agents.context_overflow import ContextOverflowError, turn_message_budget
+from docsgpt.agents.turn_capabilities import build_turn_capabilities
 from docsgpt.core.model_utils import (
     get_api_key_for_provider,
     get_default_model_id,
+    get_model_capabilities,
     get_provider_from_model_id,
+    get_token_limit,
     validate_model_id,
 )
 from docsgpt.agents.tools.wiki import apply_resume_caller_rules, outside_edits_allowed
@@ -68,6 +78,39 @@ def is_external_api_caller(data: Dict[str, Any], decoded_token: Optional[Dict], 
         return False
     caller = (decoded_token or {}).get("sub")
     return not caller or caller != owner
+
+
+def multimodal_reaches_model(model_id: Optional[str], user_id: Optional[str]) -> bool:
+    """Whether a request's multimodal content array is sent to the model as is.
+
+    ``create_agent`` forwards it only to OpenAI-family providers; others get
+    the text question, which message building can shorten.
+
+    Args:
+        model_id: The turn's model.
+        user_id: The BYOM resolution scope.
+
+    Returns:
+        True when the array reaches the provider unshortened.
+    """
+    try:
+        from docsgpt.llm.openai import OpenAILLM
+        from docsgpt.llm.providers import PROVIDERS_BY_NAME
+
+        provider = (
+            get_provider_from_model_id(model_id, user_id=user_id) if model_id else None
+        ) or settings.LLM_PROVIDER
+        plugin = PROVIDERS_BY_NAME.get(str(provider).lower())
+        llm_class = getattr(plugin, "llm_class", None)
+        return isinstance(llm_class, type) and issubclass(llm_class, OpenAILLM)
+    except Exception:
+        return False
+
+
+def _position(query: Dict[str, Any], fallback: int) -> int:
+    """A conversation message's position, else its index in the loaded list."""
+    position = query.get("position")
+    return position if isinstance(position, int) and not isinstance(position, bool) else fallback
 
 
 def _clamp_chunks(value: int) -> int:
@@ -486,6 +529,8 @@ class StreamProcessor:
         self.source = {}
         self.all_sources = []
         self.attachments = []
+        # Rows of files attached on earlier turns (no text), in upload order.
+        self.earlier_attachments: List[Dict[str, Any]] = []
         self.history = []
         self.retrieved_docs = []
         self.agent_config = {}
@@ -532,8 +577,10 @@ class StreamProcessor:
         self._validate_and_set_model()
         self._configure_source()
         self._configure_retriever()
-        self._load_conversation_history()
+        # Attachments first: the history load sizes the turn (fit check,
+        # compression threshold) with them.
         self._process_attachments()
+        self._load_conversation_history()
 
     def handoff_trace(self) -> Optional[tracing.Trace]:
         """Hand the setup trace to a streaming ``complete_stream``.
@@ -653,6 +700,12 @@ class StreamProcessor:
         # Build a normal agent (config / LLM / client tools), no new question.
         agent = self.build_agent("")
         tools_dict = agent.tool_executor.get_tools()
+        # The resent files arrive as attachment rows (the route converted the
+        # parts): plan them against the resent messages, with the attachments
+        # tool in the round, instead of replaying them raw.
+        prepare_resent = getattr(agent, "prepare_resent_attachments", None)
+        if callable(prepare_resent):
+            prepare_resent(tools_dict, prior_messages)
 
         return agent, prior_messages, tools_dict, pending_tool_calls, tool_actions, ""
 
@@ -664,6 +717,13 @@ class StreamProcessor:
             )
             if not conversation:
                 raise ValueError("Conversation not found or unauthorized")
+
+            self.earlier_attachments = self._with_request_earlier_attachments(
+                self._load_earlier_attachments(conversation)
+            )
+            # Decide fit before compressing: a turn that cannot fit even with
+            # no history fails here, without a compression call.
+            self._ensure_turn_fits()
 
             # Check if compression is enabled and needed
             if settings.ENABLE_CONVERSATION_COMPRESSION:
@@ -698,6 +758,8 @@ class StreamProcessor:
                     if not is_compression_summary_row(query)
                 ]
         else:
+            self.earlier_attachments = self._with_request_earlier_attachments([])
+            self._ensure_turn_fits()
             # model_user_id keeps history trim aligned with the BYOM's
             # actual context window instead of the default 128k.
             self.history = limit_chat_history(
@@ -717,6 +779,10 @@ class StreamProcessor:
                 model_user_id=self.model_user_id,
                 model_id=self.model_id,
                 decoded_token=self.decoded_token,
+                # The turn's own size, its planned attachments included, so
+                # an attach-heavy turn compresses the history rather than
+                # overflowing next to it.
+                current_query_tokens=self._turn_token_estimate(),
             )
 
             if not result.success:
@@ -792,6 +858,233 @@ class StreamProcessor:
                 for query in conversation.get("queries", [])
             ]
 
+    def _load_earlier_attachments(self, conversation: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Rows of the files attached on the conversation's earlier turns.
+
+        On a retry or an edit (``index`` in the request), only the turns
+        before the replaced one count.
+
+        Args:
+            conversation: The conversation, with its ``queries``.
+
+        Returns:
+            The caller's attachment rows (without their text), in upload
+            order; an id seen twice is listed once.
+        """
+        ids: List[str] = []
+        # A retry or an edit at ``index`` replaces that turn and drops every
+        # later one: their files are not this conversation's earlier files.
+        index = (getattr(self, "data", None) or {}).get("index")
+        replaced_from = index if isinstance(index, int) and not isinstance(index, bool) and index >= 0 else None
+        for position, query in enumerate(conversation.get("queries") or []):
+            if not isinstance(query, dict) or is_compression_summary_row(query):
+                continue
+            if replaced_from is not None and _position(query, position) >= replaced_from:
+                continue
+            for attachment_id in query.get("attachments") or []:
+                if attachment_id:
+                    ids.append(str(attachment_id))
+        if not ids:
+            return []
+        try:
+            return self._fetch_attachment_rows(list(dict.fromkeys(ids)))
+        except Exception as e:
+            logger.error(f"Error loading earlier attachments: {e}", exc_info=True)
+            return []
+
+    def _is_v1_request(self) -> bool:
+        return getattr(self, "trace_source", None) == "v1"
+
+    def _with_request_earlier_attachments(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """``rows`` plus the files a stateless ``/v1`` client re-sent from earlier messages.
+
+        The route marks the attachment ids of files that first appeared in
+        a user message before the last one; the planner then lists them as
+        earlier instead of inlining every re-sent file again each turn.
+
+        Args:
+            rows: The conversation's own earlier attachment rows.
+
+        Returns:
+            The rows, then the request's, each id once.
+        """
+        if not self._is_v1_request():
+            return rows
+        requested = [str(i) for i in (self.data or {}).get("earlier_attachments") or [] if i]
+        known = {str(r.get("id")) for r in rows if isinstance(r, dict)}
+        missing = [i for i in dict.fromkeys(requested) if i not in known]
+        if not missing:
+            return rows
+        try:
+            fetched = self._fetch_attachment_rows(missing)
+        except Exception as e:
+            logger.error("Error loading the request's earlier attachments: %s", bounded_error_text(e))
+            return rows
+        # A handle can name a row the conversation already lists by its PG id.
+        return [*rows, *(r for r in fetched if str(r.get("id")) not in known)]
+
+    def _request_skipped_files(self) -> List[Dict[str, Any]]:
+        """Files the request named that are not attachment rows, with the reason.
+
+        A ``/v1`` request lists the inline files it could not store; on any
+        surface, an attachment id with no row yet is a file still being
+        processed (named by the start of its id, the only name known).
+        """
+        skipped: List[Dict[str, Any]] = []
+        if self._is_v1_request():
+            skipped = [s for s in (self.data or {}).get("skipped_files") or [] if isinstance(s, dict)]
+        for attachment_id in getattr(self, "missing_attachment_ids", None) or []:
+            skipped.append(
+                {
+                    "filename": f"attachment {attachment_id[:8]}",
+                    "mime_type": "application/octet-stream",
+                    "reason": "processing",
+                }
+            )
+        return skipped
+
+    def _fetch_attachment_rows(self, ids: List[str]) -> List[Dict[str, Any]]:
+        """The caller's attachment rows for ``ids``, metadata only.
+
+        An id may be a PG id or an upload handle (``legacy_mongo_id``): a
+        ``/v1`` file stored this request is named by its handle.
+        """
+        with db_readonly() as conn:
+            repo = AttachmentsRepository(conn)
+            resolved = repo.resolve_ids(ids)
+            pg_ids = list(dict.fromkeys(resolved.get(str(i), str(i)) for i in ids))
+            return repo.list_for_planning(pg_ids, self.initial_user_id)
+
+    def _window(self) -> int:
+        """The turn's model window."""
+        try:
+            return int(
+                get_token_limit(
+                    getattr(self, "model_id", None), user_id=getattr(self, "model_user_id", None)
+                )
+            )
+        except Exception:
+            return int(settings.DEFAULT_LLM_TOKEN_LIMIT)
+
+    def _multimodal_tokens(self) -> int:
+        """Tokens of a multimodal content array that reaches the model unshortened."""
+        content = (getattr(self, "data", None) or {}).get("multimodal_content")
+        if not isinstance(content, list) or not content:
+            return 0
+        if not multimodal_reaches_model(
+            getattr(self, "model_id", None), getattr(self, "model_user_id", None)
+        ):
+            return 0
+        return TokenCounter.count_message_tokens([{"content": content}])
+
+    def _question_tokens(self) -> int:
+        """Tokens of the turn's own message."""
+        from docsgpt.utils import num_tokens_from_string
+
+        multimodal = self._multimodal_tokens()
+        if multimodal:
+            return multimodal
+        question = (getattr(self, "data", None) or {}).get("question")
+        return num_tokens_from_string(question) if isinstance(question, str) else 0
+
+    def _system_prompt_tokens(self) -> int:
+        """Estimated tokens of the system prompt, before rendering."""
+        from docsgpt.utils import num_tokens_from_string
+
+        try:
+            override = (getattr(self, "data", None) or {}).get("system_prompt_override")
+            agent_config = getattr(self, "agent_config", None) or {}
+            if agent_config.get("allow_system_prompt_override") and isinstance(override, str):
+                return num_tokens_from_string(override)
+            prompt = self._get_prompt_content()
+            return num_tokens_from_string(prompt) if isinstance(prompt, str) else 0
+        except Exception:
+            return 0
+
+    def _preliminary_attachment_reserve(self) -> int:
+        """Tokens the turn's attachments are expected to take, before the agent plans.
+
+        Uses the planner the agent runs, with what is known before the tools
+        are resolved: the model's registry capabilities and the share of the
+        window attachments may take. The agent re-plans against the real
+        free space once the history is settled.
+
+        Returns:
+            The planned content plus manifest, in tokens.
+        """
+        current = getattr(self, "attachments", None) or []
+        earlier = getattr(self, "earlier_attachments", None) or []
+        if not current and not earlier:
+            return 0
+        try:
+            window = self._window()
+            caps = get_model_capabilities(
+                getattr(self, "model_id", None), user_id=getattr(self, "model_user_id", None)
+            ) or {}
+            capabilities = build_turn_capabilities(
+                supported_attachment_types=caps.get("supported_attachment_types") or [],
+                tool_calling=bool(caps.get("supports_tools")),
+                server_tools={},
+                window=window,
+                is_v1=getattr(self, "trace_source", None) == "v1",
+                sandbox_available=False,
+            )
+            plan = plan_attachments(
+                current,
+                capabilities,
+                budget=compute_attachment_budget(
+                    window=window, share=float(settings.ATTACHMENT_BUDGET_SHARE)
+                ),
+                earlier=earlier,
+                max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
+            )
+            return plan.reserved_tokens
+        except Exception as e:
+            logger.warning(f"Could not estimate the turn's attachments: {e}")
+            return 0
+
+    def _turn_token_estimate(self) -> int:
+        """The turn's own size for the compression threshold: question plus attachments."""
+        try:
+            return self._question_tokens() + self._preliminary_attachment_reserve()
+        except Exception as e:
+            logger.warning(f"Could not size the turn for compression: {e}")
+            return 500
+
+    def _ensure_turn_fits(self) -> None:
+        """Refuse a turn whose own content cannot fit, before any compression.
+
+        Counts only the turn itself: the system prompt, the attachment
+        manifest and the turn's message (a multimodal content array, or the
+        plain question). History never counts, since it is compressed or
+        pruned. The message gets the budget message building gives it, so a
+        message that passes here is never cut later. Files that do not fit
+        are planned partial or left out, so they cannot make a turn
+        impossible.
+
+        Raises:
+            ContextOverflowError: Before any compression or provider call.
+        """
+        window = self._window()
+        file_count = len(getattr(self, "attachments", None) or []) + len(
+            getattr(self, "earlier_attachments", None) or []
+        )
+        fixed = self._system_prompt_tokens() + manifest_estimate(file_count)
+        own = self._question_tokens()
+        budget = max(turn_message_budget(window, fixed), 0)
+        needed = fixed + own
+        if needed >= window or own > budget:
+            available = min(fixed + budget, window)
+            raise ContextOverflowError(
+                f"This message needs about {needed:,} tokens, more than the "
+                f"model can take for one message ({available:,} of its "
+                f"{window:,} tokens), even without any conversation history. "
+                f"Shorten the message or send fewer or smaller files.",
+                needed_tokens=needed,
+                available_tokens=available,
+                stage="pre_compression",
+            )
+
     def _process_attachments(self):
         """Process any attachments in the request"""
         attachment_ids = self.data.get("attachments", [])
@@ -803,6 +1096,9 @@ class StreamProcessor:
         if not attachment_ids:
             return []
         attachments = []
+        # An id with no row yet is a file the worker has not finished (an API
+        # client that did not wait for its parse): the manifest names it.
+        self.missing_attachment_ids = []
         try:
             with db_readonly() as conn:
                 repo = AttachmentsRepository(conn)
@@ -811,11 +1107,15 @@ class StreamProcessor:
                         attachment_doc = repo.get_any(str(attachment_id), user_id)
                         if attachment_doc:
                             attachments.append(attachment_doc)
+                        else:
+                            self.missing_attachment_ids.append(str(attachment_id))
                     except Exception as e:
                         logger.error(
                             f"Error retrieving attachment {attachment_id}: {e}",
                             exc_info=True,
                         )
+                # A zip is followed by the files the worker unpacked from it.
+                attachments = repo.expand_archives(attachments, user_id)
         except Exception as e:
             logger.error(f"Error opening attachments connection: {e}", exc_info=True)
         return attachments
@@ -1815,6 +2115,33 @@ class StreamProcessor:
             self._required_tool_actions = {}
             return self._required_tool_actions
 
+    def _resume_output_format(self, agent_config: Dict[str, Any]) -> Tuple[Optional[Dict], bool, bool]:
+        """Pick the structured-output settings for a resumed turn.
+
+        The resuming request decides when it says anything, as on a fresh
+        turn: its ``json_schema`` (with its ``strict`` flag) replaces the
+        paused schema, and ``json_object`` drops any schema. A request that
+        sends no ``response_format`` keeps the paused schema and strictness,
+        since that schema may be the agent's own configured one.
+
+        Args:
+            agent_config: The ``agent_config`` saved with the paused state.
+
+        Returns:
+            ``(json_schema, json_schema_strict, json_object)`` for the agent.
+        """
+        json_schema = agent_config.get("json_schema")
+        json_schema_strict = agent_config.get("json_schema_strict")
+        request_schema = self.data.get("json_schema")
+        if request_schema is not None:
+            json_schema = request_schema
+            json_schema_strict = self.data.get("json_schema_strict")
+        json_object = bool(self.data.get("json_object"))
+        if json_object:
+            json_schema = None
+        strict = True if json_schema_strict is None else bool(json_schema_strict)
+        return json_schema, strict, json_object
+
     @_traced_setup
     def resume_from_tool_actions(
         self,
@@ -1918,7 +2245,7 @@ class StreamProcessor:
         user_api_key = agent_config.get("user_api_key")
         agent_id = agent_config.get("agent_id")
         prompt = agent_config.get("prompt", "")
-        json_schema = agent_config.get("json_schema")
+        json_schema, json_schema_strict, json_object = self._resume_output_format(agent_config)
         retriever_config = agent_config.get("retriever_config")
 
         # Recreate dependencies
@@ -1981,9 +2308,18 @@ class StreamProcessor:
             "chat_history": [],
             "decoded_token": self.decoded_token,
             "json_schema": json_schema,
+            "json_schema_strict": json_schema_strict,
+            "json_object": json_object,
+            # The resuming request's own sampling and tool-call controls
+            # (``tool_choice``, ``max_tokens``, ...), never the paused ones:
+            # each OpenAI-style request states its params in full, and a
+            # client forces a final answer by resuming with
+            # ``tool_choice: "none"``.
+            "llm_params": self.data.get("llm_params") or {},
             "llm": llm,
             "llm_handler": llm_handler,
             "tool_executor": tool_executor,
+            "is_v1": getattr(self, "trace_source", None) == "v1",
         }
 
         # Restore the search-tool config on resume. Classic agents carry one
@@ -1998,6 +2334,14 @@ class StreamProcessor:
         if saved_guardrails:
             agent_kwargs["agent_config"] = {"guardrails": saved_guardrails}
         agent_kwargs["request_id"] = agent_config.get("request_id")
+
+        # Images an attachments read queued in the paused round: shown after
+        # the tool results once the turn resumes.
+        saved_reads = agent_config.get("native_reads")
+        if saved_reads:
+            from docsgpt.agents.tools.attachments import restore_native_reads
+
+            tool_executor.pending_native_parts = restore_native_reads(saved_reads)
 
         agent = AgentCreator.create_agent(agent_key, **agent_kwargs)
         agent.conversation_id = conversation_id
@@ -2178,6 +2522,12 @@ class StreamProcessor:
             "tool_executor": tool_executor,
             "agent_config": self.agent_config.get("config") or {},
             "request_id": self.request_id or self.data.get("request_id"),
+            "is_v1": getattr(self, "trace_source", None) == "v1",
+            # Chat turns budget their files against the window; earlier
+            # turns' files are listed, never inlined again.
+            "attachment_planning": True,
+            "earlier_attachments": self.earlier_attachments,
+            "skipped_attachments": self._request_skipped_files(),
         }
 
         # Wiki tool injection + authz: only for agent types that build a

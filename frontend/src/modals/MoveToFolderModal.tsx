@@ -57,6 +57,8 @@ export default function MoveToFolderModal({
   const [isLoading, setIsLoading] = useState(false);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  // A create or move request is in flight: the submit shows pending.
+  const [submitting, setSubmitting] = useState(false);
   const newFolderInputRef = useRef<HTMLInputElement>(null);
   // Track navigation path for nested folders
   const [folderPath, setFolderPath] = useState<string[]>([]);
@@ -145,8 +147,11 @@ export default function MoveToFolderModal({
     }
   };
 
-  const createNewFolder = () => {
-    handleCreateFolder(newFolderName.trim());
+  const createNewFolder = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    await handleCreateFolder(newFolderName.trim());
+    setSubmitting(false);
     setNewFolderName('');
     setIsCreatingFolder(false);
   };
@@ -169,6 +174,8 @@ export default function MoveToFolderModal({
   };
 
   const handleMove = async () => {
+    if (submitting) return;
+    setSubmitting(true);
     try {
       const response = await userService.moveAgentToFolder(
         { agent_id: agentId, folder_id: selectedFolderId },
@@ -180,6 +187,8 @@ export default function MoveToFolderModal({
       }
     } catch (error) {
       console.error('Failed to move agent:', error);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -200,6 +209,7 @@ export default function MoveToFolderModal({
               : t('agents.folders.move')
           }
           onSubmit={submitFooter}
+          pending={submitting}
           disabled={isCreatingFolder && !newFolderName.trim()}
           footerStart={
             isCreatingFolder ? (
@@ -223,7 +233,6 @@ export default function MoveToFolderModal({
                   }
                 }}
                 placeholder={t('agents.folders.newFolder')}
-                shape="pill"
                 autoFocus
               />
             ) : (
@@ -249,16 +258,11 @@ export default function MoveToFolderModal({
           padding plus the content area's 4px). */}
       <div className="-mx-9">
         <div className="bg-muted px-8 py-2">
-          <Breadcrumb className="min-w-0">
-            <BreadcrumbList className="flex-nowrap">
+          <Breadcrumb>
+            <BreadcrumbList>
               {folderPath.length === 0 ? (
-                <BreadcrumbItem className="min-w-0">
-                  <BreadcrumbPage
-                    title={t('agents.filters.byMe')}
-                    className="max-w-[32ch]"
-                  >
-                    {t('agents.filters.byMe')}
-                  </BreadcrumbPage>
+                <BreadcrumbItem>
+                  <BreadcrumbPage>{t('agents.filters.byMe')}</BreadcrumbPage>
                 </BreadcrumbItem>
               ) : (
                 <BreadcrumbItem>
@@ -276,13 +280,8 @@ export default function MoveToFolderModal({
                 <Fragment key={item.id}>
                   <BreadcrumbSeparator />
                   {index === breadcrumbItems.length - 1 ? (
-                    <BreadcrumbItem className="min-w-0">
-                      <BreadcrumbPage
-                        title={item.name}
-                        className="max-w-[32ch]"
-                      >
-                        {item.name}
-                      </BreadcrumbPage>
+                    <BreadcrumbItem>
+                      <BreadcrumbPage>{item.name}</BreadcrumbPage>
                     </BreadcrumbItem>
                   ) : (
                     <BreadcrumbItem>
@@ -352,7 +351,9 @@ export default function MoveToFolderModal({
                     >
                       <span className="flex flex-1 items-center gap-2">
                         <Folder className="text-primary" />
-                        <span className="truncate">{folder.name}</span>
+                        <span className="truncate" title={folder.name}>
+                          {folder.name}
+                        </span>
                       </span>
                       {/* Check if folder has subfolders */}
                       {folders.some((f) => f.parent_id === folder.id) && (

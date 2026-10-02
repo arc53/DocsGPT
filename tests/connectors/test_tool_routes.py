@@ -328,3 +328,39 @@ class TestOwnerCredentialWrites:
         assert listed["mcp_tool"] == ["create_issue"]
         # No credentials: nothing of the owner's to write with.
         assert listed["read_webpage"] == []
+
+
+class TestActionAccessInListing:
+    """Every listed action says whether it reads or writes, so the tool editor can group it."""
+
+    def _listed(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import GetTools
+
+        with _db(pg_conn), app.test_request_context("/api/get_tools"):
+            from flask import request
+
+            request.decoded_token = {"sub": "alice"}
+            return GetTools().get().get_json()["tools"]
+
+    def test_stored_actions_without_access_get_it_from_the_rule(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        UserToolsRepository(pg_conn).create(
+            "alice", "memory", actions=[{"name": "memory_view", "active": True},
+                                        {"name": "memory_create", "active": True}])
+        tool = next(t for t in self._listed(app, pg_conn) if t["name"] == "memory" and t.get("ownership") == "user")
+        assert {a["name"]: a["access"] for a in tool["actions"]} == {"memory_view": "read", "memory_create": "write"}
+
+    def test_an_explicit_access_is_kept(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        UserToolsRepository(pg_conn).create(
+            "alice", "memory", actions=[{"name": "memory_create", "active": True, "access": "read"}])
+        tool = next(t for t in self._listed(app, pg_conn) if t["name"] == "memory" and t.get("ownership") == "user")
+        assert tool["actions"][0]["access"] == "read"
+
+    def test_default_and_builtin_rows_carry_access_too(self, app, pg_conn):
+        for tool in self._listed(app, pg_conn):
+            if tool.get("default") or tool.get("builtin"):
+                for action in tool.get("actions") or []:
+                    assert action.get("access") in ("read", "write"), (tool["name"], action.get("name"))

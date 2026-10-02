@@ -4,8 +4,17 @@ import logging
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, List, Optional, Tuple
 
+from docsgpt.agents.attachment_budget import (
+    AttachmentPlan,
+    _attachment_id,
+    compute_attachment_budget,
+    plan_attachments,
+)
+from docsgpt.agents.attachment_dispatch import AttachmentDispatch
+from docsgpt.agents.context_overflow import SAFETY_SHARE, ContextOverflowError, turn_message_budget
+from docsgpt.agents.turn_capabilities import TurnCapabilities, build_turn_capabilities
 from docsgpt.agents.tool_executor import (
     ToolExecutor,
     trace_unexecuted_tool_call,
@@ -30,6 +39,7 @@ from docsgpt.guardrails.stream import StreamingOutputGuard
 from docsgpt.guardrails.types import Action, Stage, resolve_tool_result
 from docsgpt.llm.handlers.handler_creator import LLMHandlerCreator
 from docsgpt.llm.llm_creator import LLMCreator
+from docsgpt.sandbox import sandbox_configured
 from docsgpt.logging import (
     agent_log_context,
     build_stack_data,
@@ -91,6 +101,15 @@ class BaseAgent(ABC):
     _guardrail_engine_built = False
     guardrails_config = None
     request_id = None
+    is_v1 = False
+    turn_capabilities: Optional[TurnCapabilities] = None
+    attachment_planning = False
+    attachment_plan: Optional[AttachmentPlan] = None
+    earlier_attachments: List[Dict] = []
+    _current_turn_message: Optional[Dict] = None
+    _attachments_merged = False
+    _attachment_token_correction = 0
+    _attachments_tool_config: Optional[Dict] = None
 
     def __init__(
         self,
@@ -125,6 +144,10 @@ class BaseAgent(ABC):
         model_user_id: Optional[str] = None,
         agent_config: Optional[Dict] = None,
         request_id: Optional[str] = None,
+        is_v1: bool = False,
+        attachment_planning: bool = False,
+        earlier_attachments: Optional[List[Dict]] = None,
+        skipped_attachments: Optional[List[Dict]] = None,
     ):
         self.endpoint = endpoint
         self.llm_name = llm_name
@@ -224,6 +247,31 @@ class BaseAgent(ABC):
         self.initial_user_id: Optional[str] = None
 
         self.request_id = request_id
+        # The turn came through ``/v1/chat/completions``: the client owns the
+        # transcript, so nothing it sent may be rewritten or echoed.
+        self.is_v1 = bool(is_v1)
+        # Set by ``_prepare_tools`` once the turn's final tool list is known.
+        self.turn_capabilities = None
+        # Chat turns budget their attachments (``attachment_budget``): what
+        # fits is inlined into the turn's message, the rest is listed. Off for
+        # callers that size attachments themselves (workflow nodes).
+        self.attachment_planning = bool(attachment_planning)
+        # Files attached on earlier turns of the conversation, in upload
+        # order: listed in the plan, never inlined again.
+        self.earlier_attachments = list(earlier_attachments or [])
+        # Files the request sent that never became attachment rows (a /v1
+        # file too large, of an unreadable type, or not parsed in time):
+        # named in the manifest with the reason.
+        self.skipped_attachments = [s for s in (skipped_attachments or []) if isinstance(s, dict)]
+        self.attachment_plan = None
+        # The user message ``_build_messages`` built for this turn; the
+        # handler merges the plan into it and compression keeps it whole.
+        self._current_turn_message = None
+        self._attachments_merged = False
+        self._attachment_token_correction = 0
+        # Config of this turn's attachments tool, when one was added; the
+        # turn's capabilities and plan are copied into it once known.
+        self._attachments_tool_config = None
         self.guardrails_config = resolve_guardrails_config(agent_config)
         self._guardrail_engine = None
         self._guardrail_engine_built = False
@@ -381,6 +429,13 @@ class BaseAgent(ABC):
     def _previous_response_id(self) -> Optional[str]:
         """Return the preceding turn's Responses id when chaining onto it is safe.
 
+        See :meth:`_previous_response_choice`, which also says why not.
+        """
+        return self._previous_response_choice()[0]
+
+    def _previous_response_choice(self) -> Tuple[Optional[str], Optional[str]]:
+        """The preceding turn's Responses id to chain onto, or why there is none.
+
         Chaining keeps the provider's stored transcript (and its prompt cache)
         warm across turns, but that transcript is invisible to every local
         guard, so it is bounded. No chaining across turns when the operator
@@ -388,37 +443,53 @@ class BaseAgent(ABC):
         reached the chain budget (default: the model's context window), or
         when the conversation was compressed after that turn was produced —
         the compressed local history is the context then, not the server's.
+
+        Returns:
+            ``(response_id, None)`` to chain, else ``(None, reason)``:
+            ``disabled``, ``first_turn``, ``no_previous_response`` (the last
+            turn stored no response: it failed, or came from another API),
+            ``fallback_answered`` (a fallback model answered the last turn),
+            ``chain_key_mismatch`` (another model, endpoint or credential),
+            ``native_parts_cap``, ``compression`` or ``chain_budget``.
         """
         if not settings.OPENAI_RESPONSES_CHAIN_ACROSS_TURNS:
-            return None
+            return None, "disabled"
         if not self.chat_history:
-            return None
+            return None, "first_turn"
         turn = self.chat_history[-1]
-        if not isinstance(turn, dict):
-            return None
-        meta = turn.get("metadata")
+        meta = turn.get("metadata") if isinstance(turn, dict) else None
         if not isinstance(meta, dict):
-            return None
+            return None, "no_previous_response"
+        if not meta.get("response_id"):
+            answered_by = meta.get("answered_by")
+            if (
+                isinstance(answered_by, list)
+                and answered_by
+                and isinstance(answered_by[-1], dict)
+                and answered_by[-1].get("fallback")
+            ):
+                return None, "fallback_answered"
+            return None, "no_previous_response"
         chain_key_factory = getattr(self.llm, "responses_chain_key", None)
         current_chain_key = (
             chain_key_factory() if callable(chain_key_factory) else None
         )
-        if not (
-            current_chain_key
-            and meta.get("response_chain_key") == current_chain_key
-            and meta.get("response_id")
-        ):
-            return None
+        if not (current_chain_key and meta.get("response_chain_key") == current_chain_key):
+            return None, "chain_key_mismatch"
+
+        # The stored transcript would replay more attached images and PDFs
+        # than the per-turn cap: start from the local history, which lists
+        # earlier files instead.
+        if self._replayed_native_parts() > int(settings.ATTACHMENT_MAX_NATIVE_PARTS):
+            return None, "native_parts_cap"
 
         current_epoch = _parse_epoch(getattr(self, "last_compression_at", None))
         if current_epoch is not None:
             turn_epoch = _parse_epoch(meta.get("compression_epoch"))
             if turn_epoch is None or turn_epoch < current_epoch:
-                logger.info(
-                    "Responses chain reset: the conversation was compressed after "
-                    "the previous turn; starting from the compressed local history"
-                )
-                return None
+                # Compressed after the previous turn: the compressed local
+                # history is the context now.
+                return None, "compression"
 
         usage = meta.get("usage") if isinstance(meta.get("usage"), dict) else {}
         try:
@@ -428,7 +499,7 @@ class BaseAgent(ABC):
         if not prompt_tokens:
             # No provider-reported usage on the previous turn (older rows,
             # estimate-only providers): nothing to bound against.
-            return meta["response_id"]
+            return meta["response_id"], None
         budget = settings.OPENAI_RESPONSES_CHAIN_BUDGET_TOKENS
         if not budget:
             from docsgpt.core.model_utils import get_token_limit
@@ -438,14 +509,38 @@ class BaseAgent(ABC):
                 user_id=getattr(self, "model_user_id", None) or getattr(self, "user", None),
             )
         if budget and prompt_tokens >= int(budget):
-            logger.info(
-                "Responses chain budget reached (%s >= %s prompt tokens on the "
-                "previous turn); starting this turn from the local history",
+            logger.debug(
+                "Responses chain budget reached (%s >= %s prompt tokens on the previous turn)",
                 prompt_tokens,
                 budget,
             )
-            return None
-        return meta["response_id"]
+            return None, "chain_budget"
+        return meta["response_id"], None
+
+    def _replayed_native_parts(self) -> int:
+        """Native files a chained request would make the provider see.
+
+        Chaining replays every earlier turn's input server-side, images and
+        PDFs included, on top of this turn's own native parts. Local history
+        replays none: earlier files are listed in the manifest instead.
+
+        Returns:
+            Earlier image/PDF attachments plus this turn's planned native parts.
+        """
+        earlier = getattr(self, "earlier_attachments", None) or []
+        count = sum(
+            1
+            for row in earlier
+            if isinstance(row, dict)
+            and (
+                str(row.get("mime_type") or "").startswith("image/")
+                or row.get("mime_type") == "application/pdf"
+            )
+        )
+        plan = getattr(self, "attachment_plan", None)
+        if isinstance(plan, AttachmentPlan):
+            count += plan.native_parts
+        return count
 
     def _previous_responses_state(self) -> Optional[Dict[str, Any]]:
         """Return continuity state from the immediately preceding turn."""
@@ -650,6 +745,12 @@ class BaseAgent(ABC):
                 trace_unexecuted_tool_call(tc, client_data, **{"docsgpt.client_executed": True})
                 yield {"type": "tool_call", "data": client_data}
 
+        # Images an attachments read queued before the pause (restored with
+        # the state) or during the approved calls above follow the results.
+        queued = getattr(self.tool_executor, "pending_native_parts", None)
+        if isinstance(queued, list) and queued:
+            messages = self.llm_handler.append_native_reads(self, messages)
+
         # Resume the LLM loop with the updated messages
         llm_response = self._llm_gen(messages, preserve_responses_state=True)
         yield from self._handle_response(
@@ -683,12 +784,149 @@ class BaseAgent(ABC):
         # The executor gates tool calls itself, so it needs this run's engine.
         self.tool_executor.guardrail_engine = self.guardrails
         self.tools = self.tool_executor.prepare_tools_for_llm(tools_dict)
+        self.turn_capabilities = self._compute_turn_capabilities(tools_dict)
+        self._sync_attachments_tool()
+
+    def _add_attachments_tool(self, tools_dict: Dict) -> None:
+        """Add the server-side attachments tool when the conversation has files.
+
+        Only for chat turns that plan their attachments, on a model that takes
+        tools. Call it after the executor merged any client tools and before
+        ``_prepare_tools``, so the turn's capabilities see the tool.
+
+        Args:
+            tools_dict: The turn's tools; mutated in place.
+        """
+        from docsgpt.agents.tools.attachments import add_attachments_tool
+
+        self._attachments_tool_config = None
+        if not getattr(self, "attachment_planning", False):
+            return
+        current = [_attachment_id(a) for a in (self.attachments or []) if isinstance(a, dict)]
+        earlier = [
+            _attachment_id(a) for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)
+        ]
+        if not (current or earlier) or not self._llm_supports_tools():
+            return
+        owner = getattr(self, "initial_user_id", None) or self.user
+        self._attachments_tool_config = add_attachments_tool(
+            tools_dict, user=owner, current_ids=current, earlier_ids=earlier
+        )
+
+    def _sync_attachments_tool(
+        self,
+        plan: Optional[AttachmentPlan] = None,
+        capabilities: Optional[TurnCapabilities] = None,
+    ) -> None:
+        """Copy the turn's capabilities and plan into the attachments tool.
+
+        A tool the executor already loaded holds a copy of the config, so it
+        is updated too: a fallback that re-plans after a tool round must
+        reach the tool the model keeps calling.
+
+        Args:
+            plan: The plan to show; the turn's own when omitted (a fallback
+                passes its re-plan).
+            capabilities: The capabilities to apply; the turn's own when
+                omitted (a fallback passes its own vision and window).
+        """
+        config = getattr(self, "_attachments_tool_config", None)
+        if not isinstance(config, dict):
+            return
+        from docsgpt.agents.tools.attachments import AttachmentsTool, sync_attachments_tool
+
+        if plan is None:
+            plan = getattr(self, "attachment_plan", None)
+        plan = plan if isinstance(plan, AttachmentPlan) else None
+        used = plan.native_parts if plan is not None else 0
+        configs = [config]
+        loaded = getattr(getattr(self, "tool_executor", None), "_loaded_tools", None)
+        if isinstance(loaded, dict):
+            configs.extend(
+                tool.config
+                for tool in loaded.values()
+                if isinstance(tool, AttachmentsTool) and isinstance(tool.config, dict) and tool.config is not config
+            )
+        for target in configs:
+            sync_attachments_tool(
+                target,
+                capabilities=capabilities or self.turn_capabilities,
+                plan=plan,
+                max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS) - used,
+            )
+
+    def _server_tool_actions(self, tools_dict: Dict) -> Dict[str, List[str]]:
+        """LLM-visible action names of this turn's server-side tools, by tool name.
+
+        Read from the executor's name mapping, so it reflects exactly what
+        ``prepare_tools_for_llm`` handed the model (inactive actions and
+        collapsed duplicates excluded). Client-executed tools are left out: a
+        client tool that happens to share a name is not ours to route to.
+
+        Args:
+            tools_dict: The turn's tools, as passed to ``_prepare_tools``.
+
+        Returns:
+            Tool-dict ``name`` mapped to its LLM-visible action names.
+        """
+        mapping = getattr(self.tool_executor, "_name_to_tool", None)
+        if not isinstance(mapping, dict) or not isinstance(tools_dict, dict):
+            return {}
+        actions: Dict[str, List[str]] = {}
+        for llm_name, target in mapping.items():
+            if not isinstance(target, tuple) or not target:
+                continue
+            tool = tools_dict.get(target[0])
+            if not isinstance(tool, dict) or tool.get("client_side"):
+                continue
+            name = tool.get("name")
+            if isinstance(name, str) and name:
+                actions.setdefault(name, []).append(llm_name)
+        return actions
+
+    def _compute_turn_capabilities(self, tools_dict: Dict) -> TurnCapabilities:
+        """Resolve what this turn can do with attachments, once per turn.
+
+        Args:
+            tools_dict: The turn's final tools.
+
+        Returns:
+            The turn's capabilities, read by the attachment planner and the
+            manifest.
+        """
+        from docsgpt.core.model_utils import get_token_limit
+
+        try:
+            supported = self.llm.get_supported_attachment_types()
+        except Exception:
+            supported = []
+        if not isinstance(supported, (list, tuple, set, frozenset)):
+            supported = []
+        try:
+            window = int(
+                get_token_limit(self.model_id, user_id=self.model_user_id or self.user)
+            )
+        except Exception:
+            window = int(settings.DEFAULT_LLM_TOKEN_LIMIT)
+        tool_calling = bool(self.tools) and self._llm_supports_tools()
+        server_tools = self._server_tool_actions(tools_dict)
+        return build_turn_capabilities(
+            supported_attachment_types=supported,
+            tool_calling=tool_calling,
+            server_tools=server_tools,
+            window=window,
+            is_v1=self.is_v1,
+            sandbox_available="code_executor" in server_tools and sandbox_configured(),
+        )
 
     def _execute_tool_action(self, tools_dict, call):
-        # Mirror the request's attachments onto the executor so sandbox tools
-        # can lazily bridge a referenced chat attachment to a conversation
-        # artifact; only the caller's own (user-scoped) attachments are passed.
-        self.tool_executor.attachments = self.attachments
+        # Mirror the conversation's attachments onto the executor so sandbox
+        # tools can lazily bridge a referenced chat attachment (by ref F#, id
+        # or name) to a conversation artifact. Earlier turns' files come first,
+        # matching the manifest's refs; only the caller's own (user-scoped)
+        # attachments are passed and the bridge re-checks the owner.
+        earlier = [a for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)]
+        self.tool_executor.attachments = earlier + list(self.attachments or [])
         return self.tool_executor.execute(
             tools_dict, call, self.llm.__class__.__name__
         )
@@ -699,10 +937,43 @@ class BaseAgent(ABC):
     # ---- Context / token management ----
 
     def _calculate_current_context_tokens(self, messages: List[Dict]) -> int:
+        """Tokens ``messages`` will take, attachments included at their planned size.
+
+        Before the handler merges the plan into the turn's message, the
+        planned content is not in ``messages`` yet, so its reserved size is
+        added. After the merge, the token counter sees a flat estimate per
+        native part (an image, a whole PDF), so the plan's real size for
+        those parts replaces it. Neither applies once the turn's message is
+        no longer in the list (a compression rebuilt it without).
+        """
         from docsgpt.api.answer.services.compression.token_counter import (
             TokenCounter,
         )
-        return TokenCounter.count_message_tokens(messages)
+
+        tokens = TokenCounter.count_message_tokens(messages)
+        plan = getattr(self, "attachment_plan", None)
+        carrier = getattr(self, "_current_turn_message", None)
+        if not isinstance(plan, AttachmentPlan) or carrier is None:
+            return tokens
+        if not any(message is carrier for message in messages):
+            return tokens
+        if not getattr(self, "_attachments_merged", False):
+            return tokens + plan.reserved_tokens
+        return tokens + max(int(getattr(self, "_attachment_token_correction", 0) or 0), 0)
+
+    def note_attachments_merged(self, carrier: Dict, native_estimate: int) -> None:
+        """Record that the handler merged the plan into the turn's message.
+
+        Args:
+            carrier: The message the plan was merged into.
+            native_estimate: What the token counter charges for the native
+                parts the merge added (a flat per-part estimate).
+        """
+        plan = self.attachment_plan
+        self._current_turn_message = carrier
+        self._attachments_merged = True
+        native = plan.native_tokens if isinstance(plan, AttachmentPlan) else 0
+        self._attachment_token_correction = max(native - int(native_estimate or 0), 0)
 
     def _check_context_limit(self, messages: List[Dict]) -> bool:
         from docsgpt.core.model_utils import get_token_limit
@@ -725,6 +996,25 @@ class BaseAgent(ABC):
         except Exception as e:
             logger.error(f"Error checking context limit: {str(e)}", exc_info=True)
             return False
+
+    def _context_room_tokens(self, messages: List[Dict]) -> Optional[int]:
+        """Tokens left below the compression threshold for the next tool result.
+
+        Args:
+            messages: The messages the next call would send.
+
+        Returns:
+            The room (never negative), or None when it cannot be sized.
+        """
+        from docsgpt.core.model_utils import get_token_limit
+
+        try:
+            context_limit = get_token_limit(self.model_id, user_id=self.model_user_id or self.user)
+            threshold = int(context_limit * settings.COMPRESSION_THRESHOLD_PERCENTAGE)
+            return max(threshold - self._calculate_current_context_tokens(messages), 0)
+        except Exception:
+            logger.debug("Could not size the context room", exc_info=True)
+            return None
 
     def _validate_context_size(self, messages: List[Dict]) -> None:
         from docsgpt.core.model_utils import get_token_limit
@@ -818,11 +1108,14 @@ class BaseAgent(ABC):
             if current_tokens < context_limit:
                 return messages
 
-        raise ValueError(
+        raise ContextOverflowError(
             f"Conversation context ({current_tokens:,} tokens) exceeds the "
             f"model's context window ({context_limit:,} tokens) even after "
             f"shrinking tool results. Start a new conversation or remove "
-            f"large attachments."
+            f"large attachments.",
+            needed_tokens=current_tokens,
+            available_tokens=context_limit,
+            stage="dispatch",
         )
 
     # ---- Message building ----
@@ -1064,44 +1357,61 @@ class BaseAgent(ABC):
         )
         system_tokens = num_tokens_from_string(system_prompt)
 
-        safety_buffer = int(context_limit * 0.1)
+        safety_buffer = int(context_limit * SAFETY_SHARE)
         available_after_system = context_limit - system_tokens - safety_buffer
 
-        max_query_tokens = int(available_after_system * 0.8)
+        max_query_tokens = turn_message_budget(context_limit, system_tokens)
 
         # An oversized system prompt (a long memory listing, a big custom
         # prompt) used to drive this negative, which made
         # ``_truncate_text_middle`` return "" — dispatching a full-price
         # request with no question in it. Fail loudly instead.
         if max_query_tokens <= 0:
-            raise ValueError(
+            raise ContextOverflowError(
                 f"The system prompt ({system_tokens:,} tokens) leaves no room "
                 f"for your question within the model's context window "
                 f"({context_limit:,} tokens). Start a new conversation or "
-                f"remove large attachments or sources."
+                f"remove large attachments or sources.",
+                needed_tokens=system_tokens + safety_buffer,
+                available_tokens=context_limit,
+                stage="build",
             )
 
-        # Cap the question first. Shedding runs against the *final* question,
-        # otherwise a question that alone exceeds the budget keeps the loop
-        # condition true and drains every document before the truncation below
-        # ever runs. Half the budget each leaves room for both.
-        # Split the budget only when documents are competing for it; a chat
-        # with no retrieval keeps the whole allowance for the question.
-        has_documents = bool(getattr(self, "retrieved_docs", None)) and not getattr(
-            self, "prompt_embeds_documents", False
-        )
-        query_budget = max(max_query_tokens // 2, 1) if has_documents else max_query_tokens
-        if num_tokens_from_string(query) > query_budget:
-            query = self._truncate_text_middle(query, query_budget)
+        # The question is never cut: a message the user wrote (or a /v1
+        # client pasted) either fits whole or the turn fails openly with the
+        # overflow error. Documents are shed around it below.
+        query_tokens = num_tokens_from_string(query)
+        if query_tokens > max_query_tokens:
+            raise ContextOverflowError(
+                f"This message ({query_tokens:,} tokens) is longer than the "
+                f"model can take for one message ({max_query_tokens:,} tokens).",
+                needed_tokens=system_tokens + query_tokens,
+                available_tokens=system_tokens + max_query_tokens,
+                stage="build",
+            )
 
         # Then shed whole documents, lowest-ranked first: a middle-truncated
         # document block would corrupt its XML, and retriever order is
         # relevance-descending so the tail is the least useful.
         document_block = self._build_document_block()
+
+        # Plan the turn's files against what is left once the system prompt
+        # (compressed summary included), the post-compression history, the
+        # documents' reserve and the question are counted; then hold their
+        # space so documents and history shrink around them.
+        self.attachment_plan = self._plan_attachments(
+            context_limit=context_limit,
+            system_tokens=system_tokens,
+            query_tokens=self._query_tokens(query),
+            docs_tokens=num_tokens_from_string(document_block) if document_block else 0,
+        )
+        reserved = self.attachment_plan.reserved_tokens if self.attachment_plan else 0
+        self._sync_attachments_tool()
+
         while (
             document_block
             and num_tokens_from_string(self._compose_user_turn(document_block, query))
-            > max_query_tokens
+            > max_query_tokens - reserved
         ):
             self.retrieved_docs = self.retrieved_docs[:-1]
             document_block = self._build_document_block()
@@ -1109,7 +1419,7 @@ class BaseAgent(ABC):
         user_content = self._compose_user_turn(document_block, query)
         user_tokens = num_tokens_from_string(user_content)
 
-        available_for_history = max(available_after_system - user_tokens, 0)
+        available_for_history = max(available_after_system - user_tokens - reserved, 0)
 
         working_history = self._truncate_history_to_fit(
             self.chat_history,
@@ -1225,8 +1535,134 @@ class BaseAgent(ABC):
             )
         else:
             final_content = user_content
-        messages.append({"role": "user", "content": final_content})
+        turn_message = {"role": "user", "content": final_content}
+        messages.append(turn_message)
+        self._current_turn_message = turn_message
+        self._attachments_merged = False
+        self._attachment_token_correction = 0
         return messages
+
+    def _query_tokens(self, query: str) -> int:
+        """Tokens of the turn's own message: the multimodal array when one is sent."""
+        from docsgpt.api.answer.services.compression.token_counter import (
+            TokenCounter,
+        )
+        from docsgpt.utils import num_tokens_from_string
+
+        multimodal = getattr(self, "multimodal_content", None)
+        if multimodal:
+            return TokenCounter.count_message_tokens([{"content": multimodal}])
+        return num_tokens_from_string(query or "")
+
+    def _history_tokens(self) -> int:
+        """Tokens of the history replayed this turn (after compression)."""
+        from docsgpt.api.answer.services.compression.token_counter import (
+            TokenCounter,
+        )
+
+        return TokenCounter.count_query_tokens(
+            [h for h in (self.chat_history or []) if isinstance(h, dict)]
+        )
+
+    def _plan_attachments(
+        self,
+        *,
+        context_limit: int,
+        system_tokens: int,
+        query_tokens: int,
+        docs_tokens: int,
+    ) -> Optional[AttachmentPlan]:
+        """Plan this turn's attachments, once its other parts are sized.
+
+        Args:
+            context_limit: The model's window.
+            system_tokens: The system prompt, compressed summary included.
+            query_tokens: The turn's own message.
+            docs_tokens: The retrieved documents block.
+
+        Returns:
+            The plan, or None when planning is off or there are no files.
+        """
+        if not getattr(self, "attachment_planning", False):
+            return None
+        current = [a for a in (self.attachments or []) if isinstance(a, dict)]
+        earlier = [a for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)]
+        skipped = list(getattr(self, "skipped_attachments", None) or [])
+        if not current and not earlier and not skipped:
+            return None
+        if self.turn_capabilities is None:
+            self.turn_capabilities = self._compute_turn_capabilities({})
+        budget = compute_attachment_budget(
+            window=context_limit,
+            share=float(settings.ATTACHMENT_BUDGET_SHARE),
+            system_tokens=system_tokens,
+            history_tokens=self._history_tokens(),
+            query_tokens=query_tokens,
+            docs_tokens=docs_tokens,
+        )
+        plan = plan_attachments(
+            current,
+            self.turn_capabilities,
+            budget=budget,
+            earlier=earlier,
+            max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
+        )
+        plan.skipped = skipped
+        logger.info(
+            "Attachment plan: %d file(s), budget %d, inline %d tokens (%s)",
+            len(plan.files),
+            plan.budget,
+            plan.inline_tokens,
+            ", ".join(f"{f.ref}={f.status.value}" for f in plan.files),
+        )
+        return plan
+
+    def prepare_resent_attachments(self, tools_dict: Dict, messages: List[Dict]) -> None:
+        """Plan the files of a turn the client re-sent whole (a stateless tool round).
+
+        A ``/v1`` client without server-side state resumes by re-posting the
+        whole transcript, files included. They arrive as attachment rows (the
+        route converted the parts), so the round plans them against the
+        resent messages like a fresh turn: what fits is inlined into the last
+        user message when the handler merges the plan, the rest is listed in
+        the manifest and readable with the attachments tool, which is added
+        to the round's tools.
+
+        Args:
+            tools_dict: The round's tools; the attachments tool is added.
+            messages: The resent messages, up to the paused tool calls.
+        """
+        from docsgpt.api.answer.services.compression.token_counter import TokenCounter
+        from docsgpt.core.model_utils import get_token_limit
+
+        current = [a for a in (self.attachments or []) if isinstance(a, dict)]
+        earlier = [a for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)]
+        skipped = list(getattr(self, "skipped_attachments", None) or [])
+        if not getattr(self, "attachment_planning", False) or not (current or earlier or skipped):
+            return
+        carrier = next((m for m in reversed(messages) if isinstance(m, dict) and m.get("role") == "user"), None)
+        if carrier is None:
+            return
+        self._add_attachments_tool(tools_dict)
+        self._prepare_tools(tools_dict)
+        context_limit = get_token_limit(self.model_id, user_id=self.model_user_id or self.user)
+        budget = compute_attachment_budget(
+            window=context_limit,
+            share=float(settings.ATTACHMENT_BUDGET_SHARE),
+            system_tokens=TokenCounter.count_message_tokens(messages),
+        )
+        self.attachment_plan = plan_attachments(
+            current,
+            self.turn_capabilities,
+            budget=budget,
+            earlier=earlier,
+            max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
+        )
+        self.attachment_plan.skipped = skipped
+        self._current_turn_message = carrier
+        self._attachments_merged = False
+        self._attachment_token_correction = 0
+        self._sync_attachments_tool()
 
     def _truncate_history_to_fit(
         self,
@@ -1343,6 +1779,9 @@ class BaseAgent(ABC):
         gen_kwargs = {"model": self.upstream_model_id, "messages": messages}
         if self.attachments:
             gen_kwargs["_usage_attachments"] = self.attachments
+        if self.attachments or isinstance(getattr(self, "attachment_plan", None), AttachmentPlan):
+            # Native-part usage and a fallback's re-plan of the turn's files.
+            gen_kwargs["_attachment_dispatch"] = AttachmentDispatch(self)
 
         if self.tools and self._llm_supports_tools():
             gen_kwargs["tools"] = self.tools
@@ -1365,12 +1804,16 @@ class BaseAgent(ABC):
         ):
             # OpenAI json_object mode: guarantee valid JSON, no schema enforcement.
             gen_kwargs["response_format"] = {"type": "json_object"}
-        if (
-            settings.OPENAI_RESPONSES_STORE
-            and hasattr(self.llm, "_uses_responses_api")
-            and self.llm._uses_responses_api()
-        ):
-            previous_response_id = self._previous_response_id()
+        uses_responses = getattr(self.llm, "_uses_responses_api", None)
+        if callable(uses_responses) and uses_responses():
+            previous_response_id, chain_reset = None, "disabled"
+            if settings.OPENAI_RESPONSES_STORE:
+                previous_response_id, chain_reset = self._previous_response_choice()
+            # The LLM logs the reason when this turn's first call goes out
+            # unchained (it alone knows whether the request really chained).
+            note_chain_turn = getattr(self.llm, "note_chain_turn", None)
+            if callable(note_chain_turn):
+                note_chain_turn(chain_reset, new_turn=not preserve_responses_state)
             if previous_response_id:
                 gen_kwargs["previous_response_id"] = previous_response_id
                 if not preserve_responses_state and hasattr(
@@ -1381,6 +1824,10 @@ class BaseAgent(ABC):
                     # message instead of appending a copy server-side.
                     state = self._previous_responses_state() or {}
                     self.llm._chain_system_hash = state.get("system_hash")
+                    # And the tools block it last saw, so a changed one is
+                    # logged (``responses_prefix_changed``).
+                    if hasattr(self.llm, "_chain_tools_hash"):
+                        self.llm._chain_tools_hash = state.get("tools_hash")
         if hasattr(self.llm, "_prompt_cache_key"):
             # Route a user's calls to the same cache shard. Keyed by user, not
             # conversation: a new conversation has no id until its first turn

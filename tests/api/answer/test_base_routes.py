@@ -16,6 +16,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from docsgpt.error import GENERIC_ERROR_MESSAGE
+
 
 @pytest.mark.unit
 class TestPrepareToolCallsForLogging:
@@ -978,8 +980,11 @@ class TestCompleteStreamWalAcceptance:
             assert len(msgs) == 1
             assert msgs[0]["prompt"] == "why does the WAL matter?"
             assert msgs[0]["status"] == "failed"
-            assert "RuntimeError" in msgs[0]["metadata"]["error"]
-            assert "LLM upstream failed" in msgs[0]["metadata"]["error"]
+            # The row keeps the curated text the user saw, never the raw
+            # exception (provider errors can echo the request payload).
+            assert msgs[0]["metadata"]["error"] == GENERIC_ERROR_MESSAGE
+            assert msgs[0]["metadata"]["error_code"] == "server_error"
+            assert "LLM upstream failed" not in msgs[0]["metadata"]["error"]
 
     def test_workflow_node_error_persists_as_failed_not_blank_complete(
         self, pg_conn, flask_app,
@@ -1195,6 +1200,48 @@ class TestCompleteStreamWalAcceptance:
             # No tool.approval.required publish when save_state failed.
             event_types = [a[1] for a in published if len(a) >= 2]
             assert "tool.approval.required" not in event_types
+
+    def test_images_queued_before_the_pause_are_saved_with_it(
+        self, pg_conn, flask_app,
+    ):
+        """An attachments read that queued images in the same round as a
+        client tool call: the images ride in the saved state (by
+        reference) so the resumed turn can still show them."""
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        saved = [{"label": "F2 plan.png", "attachment": {"path": "inputs/plan.png"}}]
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            mock_agent = MagicMock()
+            mock_agent.gen.return_value = iter(
+                [{"type": "tool_calls_pending", "data": {"pending_tool_calls": [{"call_id": "c1"}]}}]
+            )
+            mock_agent._pending_continuation = {
+                "messages": [],
+                "tools_dict": {},
+                "pending_tool_calls": [{"call_id": "c1"}],
+                "native_reads": saved,
+            }
+            mock_agent.tool_calls = []
+            mock_agent.compression_metadata = None
+            mock_agent.compression_saved = False
+
+            with _patch_db_session(pg_conn), patch(
+                "docsgpt.api.answer.services.continuation_service.ContinuationService.save_state",
+            ) as save_state:
+                list(
+                    resource.complete_stream(
+                        question="run my tool",
+                        agent=mock_agent,
+                        conversation_id=None,
+                        user_api_key=None,
+                        decoded_token={"sub": "u-tap"},
+                        should_persist=True,
+                        model_id="gpt-4",
+                    )
+                )
+
+            assert save_state.call_args.kwargs["agent_config"]["native_reads"] == saved
 
     def test_continuation_seeds_sequence_no_from_journal_high_water_mark(
         self, pg_conn, flask_app,

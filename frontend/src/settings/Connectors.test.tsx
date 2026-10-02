@@ -2,7 +2,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Provider } from 'react-redux';
-import { Link, MemoryRouter } from 'react-router-dom';
+import { Link, MemoryRouter, useLocation } from 'react-router-dom';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -25,11 +25,29 @@ vi.mock('../connectors/useConnectorLauncher', () => ({
   default: () => ({ launch, modals: null }),
 }));
 
+// The real drawer, with the props it is opened with recorded.
+const drawerProps = vi.hoisted(() => vi.fn());
+vi.mock('../connectors/ConnectionDrawer', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../connectors/ConnectionDrawer')>();
+  return {
+    default: (props: Parameters<typeof actual.default>[0]) => {
+      drawerProps(props);
+      return <actual.default {...props} />;
+    },
+  };
+});
+
 import connectorsReducer from '../connectors/connectorsSlice';
 import type { ConnectorDefinition } from '../connectors/types';
 import Connectors from './Connectors';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location">{location.search}</output>;
+}
 
 const definition = (
   overrides: Partial<ConnectorDefinition>,
@@ -149,6 +167,7 @@ describe('Connectors page', () => {
               to="/settings/connectors?connector=google_drive"
             />
             <Connectors />
+            <LocationProbe />
           </MemoryRouter>
         </Provider>,
       );
@@ -160,17 +179,32 @@ describe('Connectors page', () => {
       `[data-testid="connector-card-${key}"]`,
     );
 
+  const badges = (key: string) =>
+    Array.from(card(key)!.querySelectorAll<HTMLElement>('[data-slot="badge"]'));
+  const footer = (key: string) =>
+    card(key)!.querySelector('[data-slot="card-footer"]');
+
   it('renders every card state', async () => {
     await render();
-    expect(card('telegram')!.textContent).toContain(
+    // Available: no badge and no footer; the tile itself is the action.
+    expect(footer('telegram')).toBeNull();
+    expect(badges('telegram').map((b) => b.textContent)).not.toContain(
       'settings.connectors.status.connect',
     );
-    expect(card('google_drive')!.textContent).toContain(
+    // The state leads the badge row; how many accounts is footer meta.
+    expect(badges('google_drive')[0].textContent).toBe(
+      'settings.connectors.status.connected',
+    );
+    expect(badges('google_drive')[0].dataset.variant).toBe('success');
+    expect(footer('google_drive')!.textContent).toBe(
       'settings.connectors.status.connectedCount:2',
     );
-    expect(card('confluence')!.textContent).toContain(
+    expect(badges('confluence')[0].textContent).toBe(
       'settings.connectors.status.reconnect',
     );
+    expect(badges('confluence')[0].dataset.variant).toBe('warning');
+    // A custom entry makes a new tool on each click: no state, no cue.
+    expect(footer('custom_mcp')).toBeNull();
     expect(card('share_point')!.textContent).toContain(
       'settings.connectors.status.needsAdminSetup',
     );
@@ -181,6 +215,46 @@ describe('Connectors page', () => {
     // No publisher jargon ("Preset", "Built in") on cards.
     expect(card('custom_mcp')!.textContent).not.toContain(
       'settings.connectors.publisher',
+    );
+  });
+
+  it("names the one connected account in the card's footer", async () => {
+    service.listConnections.mockResolvedValue({
+      success: true,
+      connections: [
+        {
+          id: 'c1',
+          connector_key: 'confluence',
+          status: 'reconnect_needed',
+          auth_kind: 'oauth',
+          account_label: 'dana@meridian.example',
+        },
+      ],
+    });
+    await render();
+    expect(footer('confluence')!.textContent).toBe('dana@meridian.example');
+  });
+
+  it('closes the toolbar with a rule and puts no plus on the page action', async () => {
+    await render();
+    const toolbar = container.querySelector('[data-slot="page-toolbar"]')!;
+    expect(toolbar.querySelector('[data-slot="separator"]')).not.toBeNull();
+    const action = Array.from(toolbar.querySelectorAll('button')).find(
+      (b) => b.textContent === 'settings.connectors.addCustom',
+    )!;
+    expect(action.querySelectorAll('svg')).toHaveLength(1);
+    expect(action.querySelector('svg')!.getAttribute('class')).toContain(
+      'lucide-chevron-down',
+    );
+  });
+
+  it('opens the drawer on the account a ?connection= link names', async () => {
+    await render('/settings/connectors?connector=telegram&connection=a2');
+    expect(drawerProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        connector: expect.objectContaining({ key: 'telegram' }),
+        initialConnectionId: 'a2',
+      }),
     );
   });
 
@@ -204,11 +278,85 @@ describe('Connectors page', () => {
     );
   });
 
-  it('filters to connected services', async () => {
+  const pills = () =>
+    Array.from(
+      container.querySelectorAll<HTMLElement>(
+        '[data-slot="toggle-group-item"]',
+      ),
+    );
+  // "label count": ToggleGroupItem draws the count in its own span.
+  const pillText = (item: Element) =>
+    `${item.firstChild?.textContent} ${item.querySelector('[data-slot="count"]')?.textContent}`;
+  const pill = (key: string) =>
+    pills().find((item) =>
+      pillText(item).startsWith(`settings.connectors.filters.${key} `),
+    );
+  const location = () =>
+    container.querySelector('[data-testid="location"]')!.textContent ?? '';
+
+  it('filters by state, not category: All, Connected, Disconnected with counts', async () => {
+    await render();
+    expect(pills().map(pillText)).toEqual([
+      expect.stringMatching(/^settings\.connectors\.filters\.all \d+$/),
+      'settings.connectors.filters.connected 1',
+      'settings.connectors.filters.disconnected 1',
+    ]);
+    expect(container.textContent).not.toContain(
+      'settings.connectors.categories',
+    );
+    // Three pills fit a phone: no Select stands in for them.
+    expect(container.querySelector('[role="combobox"]')).toBeNull();
+    // Page-toolbar filter: a sm group that hugs, drawing its own track.
+    const group = container.querySelector('[data-slot="toggle-group"]')!;
+    expect(group.className).toContain('bg-muted');
+    expect(group.className).toContain('w-fit');
+    expect(group.parentElement!.className).not.toContain('bg-muted');
+    expect(
+      group.querySelector('[data-slot="toggle-group-item"]')!.className,
+    ).toContain('h-8');
+  });
+
+  it('filters to services with a working account', async () => {
     await render('/settings/connectors?filter=connected');
     expect(card('google_drive')).not.toBeNull();
-    expect(card('confluence')).not.toBeNull();
+    expect(card('confluence')).toBeNull();
     expect(card('telegram')).toBeNull();
+  });
+
+  it('filters to services whose account is signed out or disconnected', async () => {
+    service.listConnections.mockResolvedValue({
+      success: true,
+      connections: [
+        {
+          id: 'c1',
+          connector_key: 'telegram',
+          status: 'disconnected',
+          account_label: 'Alerts bot',
+        },
+      ],
+    });
+    await render('/settings/connectors?filter=disconnected');
+    expect(card('confluence')).not.toBeNull();
+    expect(card('telegram')).not.toBeNull();
+    expect(card('google_drive')).toBeNull();
+  });
+
+  it('keeps the filter in the address', async () => {
+    await render();
+    await act(async () => pill('disconnected')!.click());
+    expect(location()).toContain('filter=disconnected');
+    await act(async () => pill('all')!.click());
+    expect(location()).not.toContain('filter=');
+  });
+
+  it('offers no state that nothing is in', async () => {
+    service.getCatalog.mockResolvedValue({
+      success: true,
+      connectors: [definition({})],
+    });
+    await render();
+    // Only All would be left: no filter row at all.
+    expect(pills()).toHaveLength(0);
   });
 
   it('shows the empty state when nothing is connected', async () => {
@@ -220,41 +368,24 @@ describe('Connectors page', () => {
     expect(container.textContent).toContain('settings.connectors.empty');
   });
 
-  it('says when the composer narrowed the list, and clears it', async () => {
+  it('shows a narrowed list as a chip that clears it', async () => {
     await render('/settings/connectors?capability=sync');
     expect(container.textContent).toContain(
-      'settings.connectors.capabilityFilter.sync',
+      'settings.connectors.capabilityChip.sync',
     );
     expect(card('telegram')).toBeNull();
-    const showAll = Array.from(container.querySelectorAll('button')).find(
-      (button) =>
-        button.textContent === 'settings.connectors.capabilityFilter.showAll',
+    const clear = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="settings.connectors.capabilityFilter.clear"]',
     )!;
-    await act(async () => showAll.click());
+    // Badge onRemove's X: a 24px target, not a hand-built 12px button.
+    expect(clear.dataset.slot).toBe('badge-remove');
+    expect(clear.closest('[data-slot="badge"]')).not.toBeNull();
+    await act(async () => clear.click());
     expect(container.textContent).not.toContain(
-      'settings.connectors.capabilityFilter.sync',
+      'settings.connectors.capabilityChip.sync',
     );
+    expect(location()).not.toContain('capability=');
     expect(card('telegram')).not.toBeNull();
-  });
-
-  it('only offers categories that have connectors', async () => {
-    await render();
-    const pills = Array.from(
-      container.querySelectorAll('[data-slot="toggle-group-item"]'),
-    ).map((item) => item.textContent);
-    expect(pills).toContain('settings.connectors.categories.all');
-    expect(pills).toContain('settings.connectors.categories.files');
-    expect(pills).not.toContain('settings.connectors.categories.database');
-  });
-
-  it('offers no category that the capability filter would leave empty', async () => {
-    await render('/settings/connectors?capability=sync');
-    const pills = Array.from(
-      container.querySelectorAll('[data-slot="toggle-group-item"]'),
-    ).map((item) => item.textContent);
-    expect(pills).toContain('settings.connectors.categories.files');
-    // Telegram (messaging) cannot sync.
-    expect(pills).not.toContain('settings.connectors.categories.messaging');
   });
 
   describe('opened for Knowledge', () => {

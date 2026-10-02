@@ -25,7 +25,6 @@ import { Modal } from '../components/ui/modal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import MoveToFolderModal from '../modals/MoveToFolderModal';
 import { ActiveState } from '../models/misc';
-import { showActionToast } from '../notifications/actionToastSlice';
 import { useSidebarLevel } from '../navigation/SidebarLevelProvider';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 import {
@@ -72,6 +71,7 @@ export default function AgentCard({
   const [moveModalState, setMoveModalState] = useState<ActiveState>('INACTIVE');
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string>();
 
   const openEditor = () => {
     if (agent.agent_type === 'workflow') {
@@ -252,35 +252,23 @@ export default function AgentCard({
     }
   };
 
+  // Returned to ConfirmationModal: it stays pending while this runs and
+  // keeps a failure in the dialog (the server's message when it gives one).
   const handleDelete = async () => {
-    try {
-      const response = await userService.deleteAgent(agent.id ?? '', token);
-      if (!response.ok) {
-        const message = await response
-          .json()
-          .then((data: { message?: string }) => data?.message)
-          .catch(() => null);
-        dispatch(
-          showActionToast({
-            variant: 'destructive',
-            message: message || t('agents.deleteFailed'),
-          }),
-        );
-        return;
-      }
-      const updatedAgents = agents.filter(
-        (prevAgent) => prevAgent.id !== agent.id,
-      );
-      updateAgents?.(updatedAgents);
-    } catch (error) {
-      console.error('Error:', error);
-      dispatch(
-        showActionToast({
-          variant: 'destructive',
-          message: t('agents.deleteFailed'),
-        }),
-      );
+    setDeleteError(undefined);
+    const response = await userService.deleteAgent(agent.id ?? '', token);
+    if (!response.ok) {
+      const message = await response
+        .json()
+        .then((data: { message?: string }) => data?.message)
+        .catch(() => null);
+      setDeleteError(message || undefined);
+      throw new Error(message || 'Failed to delete agent');
     }
+    const updatedAgents = agents.filter(
+      (prevAgent) => prevAgent.id !== agent.id,
+    );
+    updateAgents?.(updatedAgents);
   };
 
   const handleDuplicate = async () => {
@@ -306,77 +294,84 @@ export default function AgentCard({
     });
     updateAgents?.(updatedAgents);
   };
+  // Same rule as handleClick: a Discovered card always opens, an own or team
+  // agent once it's published.
+  const canOpen =
+    section === 'shared' ||
+    ((section === 'user' || section === 'team') &&
+      agent.status === 'published');
+  const title = (
+    <CardTitle title={agent.name} className="truncate capitalize">
+      {agent.name}
+    </CardTitle>
+  );
   return (
+    // DESIGN "A clickable card that holds a link": a stretched button on the
+    // title opens the agent; the menu and badge sit above it as siblings.
     <Card
       variant="filled"
-      interactive={agent.status === 'published'}
+      interactive={canOpen ? 'within' : false}
       padding="lg"
-      role={agent.status === 'published' ? 'button' : undefined}
-      tabIndex={agent.status === 'published' ? 0 : undefined}
-      aria-label={agent.status === 'published' ? agent.name : undefined}
-      className="relative h-44 justify-between"
-      onClick={(e) => {
-        e.stopPropagation();
-        handleClick();
-      }}
-      onKeyDown={(e) => {
-        if (
-          agent.status === 'published' &&
-          (e.key === 'Enter' || e.key === ' ')
-        ) {
-          e.preventDefault();
-          handleClick();
-        }
-      }}
+      className="relative h-44 gap-1"
     >
-      {menuOptions.length > 0 && (
-        <ActionMenu
-          options={menuOptions}
-          triggerLabel={t('agents.card.actions')}
-          align="end"
-          className="absolute top-3 right-3 z-10"
+      <div className="mb-1 flex w-full items-center gap-1 px-1">
+        {/* Decorative: the title beside it names the agent. */}
+        <Avatar
+          src={agent.image}
+          alt=""
+          size="xs"
+          shape="circle"
+          imgClassName="size-7 object-contain"
         />
+        {agent.status === 'draft' && (
+          <p className="text-foreground text-xs opacity-50">
+            ({t('agents.card.draft')})
+          </p>
+        )}
+      </div>
+      {canOpen ? (
+        <button
+          type="button"
+          onClick={handleClick}
+          className="w-full min-w-0 cursor-pointer px-1 text-left outline-none after:absolute after:inset-0 after:rounded-2xl"
+        >
+          {title}
+        </button>
+      ) : (
+        <div className="px-1">{title}</div>
+      )}
+      <CardDescription size="xs" className="mx-1 line-clamp-3">
+        {agent.description}
+      </CardDescription>
+      {/* After the open target, so Tab reaches the agent before its menu. */}
+      {menuOptions.length > 0 && (
+        <div className="absolute top-3 right-3 z-10">
+          <ActionMenu
+            options={menuOptions}
+            triggerLabel={t('agents.card.actions')}
+            align="end"
+          />
+        </div>
       )}
       {/* Team access badge — pinned to the top row, left of the ⋯ menu
           (right-11 clears the 28px trigger at right-3) so the two align. */}
       <RoleBadge item={agent} className="absolute top-4 right-11 z-10" />
-      <div className="w-full">
-        <div className="flex w-full items-center gap-1 px-1">
-          <Avatar
-            src={agent.image}
-            alt={`${agent.name}`}
-            size="xs"
-            shape="circle"
-            imgClassName="size-7 object-contain"
-          />
-          {agent.status === 'draft' && (
-            <p className="text-foreground text-xs opacity-50">
-              ({t('agents.card.draft')})
-            </p>
-          )}
-        </div>
-        <div className="mt-2 px-1">
-          <CardTitle title={agent.name} className="truncate capitalize">
-            {agent.name}
-          </CardTitle>
-          <CardDescription size="xs" className="mt-1 line-clamp-3">
-            {agent.description}
-          </CardDescription>
-        </div>
-      </div>
       <ConfirmationModal
-        message={t('agents.deleteConfirmation')}
+        message={t('agents.deleteConfirmation', {
+          interpolation: { escapeValue: false },
+          name: agent.name,
+        })}
+        description={t('agents.deleteConsequence')}
         modalState={deleteConfirmation}
         setModalState={setDeleteConfirmation}
         submitLabel={t('agents.form.buttons.delete')}
-        handleSubmit={() => {
-          handleDelete();
-          setDeleteConfirmation('INACTIVE');
-        }}
+        handleSubmit={handleDelete}
+        error={deleteError ?? t('agents.deleteFailed')}
         cancelLabel={t('cancel')}
         variant="destructive"
       />
       <Modal
+        mobileVariant="dialog"
         open={exportError !== null}
         onOpenChange={(open) => {
           if (!open) setExportError(null);

@@ -106,7 +106,11 @@ export default function UsageQuota() {
         />
         {resetsAt ? (
           <p className="text-muted-foreground text-xs">
-            {t('settings.analytics.quota.resets', { resetsAt })}
+            {t('settings.analytics.quota.resets', {
+              resetsAt,
+              // React escapes; i18next's own escaping turns "/" into &#x2F;.
+              interpolation: { escapeValue: false },
+            })}
           </p>
         ) : null}
       </div>

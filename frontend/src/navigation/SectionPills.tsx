@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { selectIsAdmin } from '@/preferences/preferenceSlice';
 
+import ConnectionHealthDot from '../connectors/ConnectionHealthDot';
 import { selectConnectorsEnabled } from '../connectors/connectorsSlice';
 import { getVisibleGroups } from './sections';
 import { useSectionContext } from './useSectionContext';
@@ -53,6 +54,7 @@ export default function SectionPills({ className }: { className?: string }) {
           >
             <Link to={entry.path} aria-current={isActive ? 'page' : undefined}>
               {t(entry.labelKey)}
+              {entry.path === '/settings/connectors' && <ConnectionHealthDot />}
             </Link>
           </Button>
         );

@@ -1,22 +1,16 @@
-import { ExternalLink, Info, TriangleAlert } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
 import connectorsService from '../api/services/connectorsService';
-import CopyButton from '../components/CopyButton';
-import PageToolbar from '../components/PageToolbar';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
+import { CopyField } from '../components/ui/code-block';
 import { FormField } from '../components/ui/form-field';
 import { ListRow, ListRows } from '../components/ui/list-row';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetTitle,
-} from '../components/ui/sheet';
+import { PanelBody, PanelHeader, SidePanel } from '../components/ui/side-panel';
 import {
   DescriptionItem,
   DescriptionList,
@@ -83,14 +77,16 @@ type AdminConnectorsData = {
   connectors: AdminConnector[];
   allow_custom_mcp: boolean;
   default_encryption_key: boolean;
+  /** Every new connection is refused (multi-user install on the default key). */
+  connections_blocked?: boolean;
   oauth_redirect_uri: string;
   mcp_redirect_uri: string;
 };
 
 const POLICY_LABELS: Record<Policy, string> = {
-  choose: 'The sharer decides per share',
-  member: "Always each person's own account",
-  owner: "Always the sharer's account",
+  choose: 'Sharer decides',
+  member: "Each person's own",
+  owner: "Sharer's account",
 };
 
 const hasTools = (connector: AdminConnector) =>
@@ -99,6 +95,14 @@ const hasTools = (connector: AdminConnector) =>
 const hasSetupGuide = (connector: AdminConnector) =>
   connector.required_settings.length > 0 ||
   (connector.oauth_settings?.length ?? 0) > 0;
+
+/** The connectors whose OAuth app registers the connectors callback. */
+const callbackCaption = (connectors: AdminConnector[]) => {
+  const names = connectors.filter(hasSetupGuide).map((c) => c.name);
+  return names.length > 0
+    ? new Intl.ListFormat('en-GB', { type: 'conjunction' }).format(names)
+    : 'OAuth connectors';
+};
 
 /** Works with pasted tokens, but its optional OAuth sign-in is not set up yet. */
 const tokensOnly = (connector: AdminConnector) =>
@@ -125,17 +129,6 @@ function SettingsList({
   );
 }
 
-function CodeRow({ value }: { value: string }) {
-  return (
-    <Card variant="filled" padding="sm" className="flex-row items-start gap-2">
-      <pre className="min-w-0 flex-1 font-mono text-xs wrap-anywhere whitespace-pre-wrap">
-        {value}
-      </pre>
-      <CopyButton textToCopy={value} />
-    </Card>
-  );
-}
-
 function SetupGuide({
   connector,
   redirectUri,
@@ -145,6 +138,13 @@ function SetupGuide({
   redirectUri: string;
   onClose: () => void;
 }) {
+  // Focus lands on Done, not on the Copy button, whose tooltip opens on
+  // focus. autoFocus covers a dialog opened from the page; over the phone
+  // panel the panel's focus trap takes focus back first and the dialog then
+  // focuses its first button, so Done takes it again once both have run.
+  const focusDone = useCallback((node: HTMLButtonElement | null) => {
+    if (node) window.setTimeout(() => node.focus(), 0);
+  }, []);
   const oauthSettings = connector.oauth_settings ?? [];
   const optionalOAuth =
     connector.required_settings.length === 0 && oauthSettings.length > 0;
@@ -159,7 +159,13 @@ function SetupGuide({
           : 'Register DocsGPT as an OAuth app with the provider, then set these server settings and restart the API and the worker.'
       }
       footer={
-        <Button size="lg" shape="pill" onClick={onClose}>
+        <Button
+          ref={focusDone}
+          autoFocus
+          size="lg"
+          shape="pill"
+          onClick={onClose}
+        >
           Done
         </Button>
       }
@@ -175,7 +181,7 @@ function SetupGuide({
                 : 'Redirect URI to register'
             }
           />
-          <CodeRow value={redirectUri} />
+          <CopyField value={redirectUri} wrap="anywhere" />
         </section>
         {connector.required_settings.length > 0 && (
           <section className="flex flex-col gap-2">
@@ -195,7 +201,6 @@ function SetupGuide({
         )}
         {connector.key === 'github' && (
           <Alert variant="info" role="note">
-            <Info />
             <AlertDescription>
               In the GitHub App, give repository permissions Contents and
               Metadata read-only access, and turn on Request user authorization
@@ -209,7 +214,6 @@ function SetupGuide({
         )}
         {connector.key === 'google_drive' && (
           <Alert variant="info" role="note">
-            <Info />
             <AlertDescription>
               Publish the Google OAuth app (or use an internal Workspace app).
               Apps left in Testing get refresh tokens that expire after seven
@@ -224,7 +228,7 @@ function SetupGuide({
               target="_blank"
               rel="noopener noreferrer"
             >
-              Setup guide
+              Documentation
               <ExternalLink />
             </a>
           </Button>
@@ -314,13 +318,22 @@ export default function Connectors() {
         : { policies: { [connector.key]: { enabled: on } } },
     );
 
+  // Settings come first: a row that needs setup keeps saying so. A ready
+  // row can't be connected while connects are refused.
+  const blocked = data.connections_blocked === true;
   const statusBadge = (connector: AdminConnector) => (
     <span className="inline-flex flex-wrap gap-1">
-      <Badge variant={connector.configured ? 'success' : 'warning'}>
-        {connector.configured ? 'Ready' : 'Needs setup'}
-      </Badge>
-      {connector.configured && tokensOnly(connector) && (
-        <Badge variant="neutral">Tokens only</Badge>
+      {connector.configured && blocked ? (
+        <Badge variant="destructive">Blocked</Badge>
+      ) : (
+        <>
+          <Badge variant={connector.configured ? 'success' : 'warning'}>
+            {connector.configured ? 'Ready' : 'Needs setup'}
+          </Badge>
+          {connector.configured && tokensOnly(connector) && (
+            <Badge variant="neutral">Tokens only</Badge>
+          )}
+        </>
       )}
     </span>
   );
@@ -338,9 +351,10 @@ export default function Connectors() {
         : 'No tools',
     ].join(' · ');
 
-  const enabledSwitch = (connector: AdminConnector) => {
+  const enabledSwitch = (connector: AdminConnector, id?: string) => {
     const control = (
       <Switch
+        id={id}
         checked={enabledOf(connector)}
         disabled={!connector.configured}
         aria-label={`${connector.name} enabled`}
@@ -372,7 +386,7 @@ export default function Connectors() {
         }
       >
         <SelectTrigger
-          size="sm"
+          size={fullWidth ? 'field' : 'sm'}
           className={fullWidth ? 'w-full' : 'w-60'}
           aria-label={`${connector.name} sharing policy`}
         >
@@ -392,49 +406,54 @@ export default function Connectors() {
 
   return (
     <div className="flex flex-col gap-8">
-      <PageToolbar intro="Choose which connectors members can use and whose account a shared tool runs with. A connector that still needs server settings starts turned off and is hidden from members; it turns on once its settings are in place, unless you switch it off." />
+      <p className="text-muted-foreground text-sm">
+        Choose which connectors members can use and whose account a shared tool
+        runs with. A connector that still needs server settings starts turned
+        off and is hidden from members; it turns on once its settings are in
+        place, unless you switch it off.
+      </p>
 
       {data.default_encryption_key && (
         <Alert variant="destructive">
-          <TriangleAlert />
           <AlertTitle>
-            Set ENCRYPTION_SECRET_KEY before connecting services.
+            {blocked ? (
+              <>
+                Members can&apos;t connect services until you set{' '}
+                <code className="font-mono text-xs">ENCRYPTION_SECRET_KEY</code>
+                .
+              </>
+            ) : (
+              <>
+                Set{' '}
+                <code className="font-mono text-xs">ENCRYPTION_SECRET_KEY</code>{' '}
+                before connecting services.
+              </>
+            )}
           </AlertTitle>
           <AlertDescription>
-            Stored credentials are encrypted with ENCRYPTION_SECRET_KEY, which
-            still has its public default value. Set your own, keep the old one
-            in ENCRYPTION_SECRET_KEY_PREVIOUS and run{' '}
-            <code className="font-mono text-xs">
-              docsgpt connectors reencrypt
-            </code>
-            .
+            <p>
+              Stored credentials are encrypted with{' '}
+              <code className="font-mono text-xs">ENCRYPTION_SECRET_KEY</code>,
+              which still has its public default value
+              {blocked ? ', so every new connection is refused' : ''}. Set your
+              own, keep the old one in{' '}
+              <code className="font-mono text-xs">
+                ENCRYPTION_SECRET_KEY_PREVIOUS
+              </code>{' '}
+              and run{' '}
+              <code className="font-mono text-xs">
+                docsgpt connectors reencrypt
+              </code>
+              .
+            </p>
           </AlertDescription>
         </Alert>
       )}
 
       <section className="flex flex-col gap-3">
         <SectionHeader
-          title="Redirect URIs"
-          description="Register these with each provider's OAuth app."
-        />
-        <div className="grid grid-cols-1 gap-x-4 gap-y-3 lg:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <span className="text-muted-foreground text-xs">
-              Google Drive, SharePoint, Confluence and the GitHub App
-            </span>
-            <CodeRow value={data.oauth_redirect_uri} />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <span className="text-muted-foreground text-xs">MCP servers</span>
-            <CodeRow value={data.mcp_redirect_uri} />
-          </div>
-        </div>
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <SectionHeader
           title="Connectors"
-          description="The custom MCP server row decides whether members can add their own MCP servers; presets are switched one by one."
+          description="The MCP server row decides whether members can add their own MCP servers; presets are switched one by one."
         />
         {/* Phones: a list; each row opens the connector's controls. */}
         <Card padding="none" className="overflow-hidden md:hidden">
@@ -471,7 +490,7 @@ export default function Connectors() {
                 <TableHeader align="right">Connections</TableHeader>
                 <TableHeader>Enabled</TableHeader>
                 <TableHeader>Shared tools use</TableHeader>
-                <TableHeader />
+                <TableHeader align="right">Actions</TableHeader>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -483,7 +502,9 @@ export default function Connectors() {
                         icon={connector.icon}
                         className="size-5 shrink-0"
                       />
-                      <span className="truncate">{connector.name}</span>
+                      <span className="truncate" title={connector.name}>
+                        {connector.name}
+                      </span>
                       {connector.publisher !== 'built_in' && (
                         <Badge variant="neutral">
                           {connector.publisher === 'preset'
@@ -504,7 +525,7 @@ export default function Connectors() {
                       <Button
                         type="button"
                         variant="outline"
-                        size="xs"
+                        size="sm"
                         onClick={() => setGuide(connector)}
                       >
                         Setup guide
@@ -554,47 +575,69 @@ export default function Connectors() {
         </section>
       )}
 
+      {/* Reference an admin copies once, so it comes last. */}
+      <section className="flex flex-col gap-3">
+        <SectionHeader
+          title="Redirect URIs"
+          description="Register these with each provider's OAuth app."
+        />
+        <div className="grid grid-cols-1 gap-x-4 gap-y-4 lg:grid-cols-2">
+          <section className="flex flex-col gap-2">
+            <SectionHeader
+              as="h3"
+              size="xs"
+              title={callbackCaption(data.connectors)}
+            />
+            <CopyField value={data.oauth_redirect_uri} wrap="anywhere" />
+          </section>
+          <section className="flex flex-col gap-2">
+            <SectionHeader as="h3" size="xs" title="MCP servers" />
+            <CopyField value={data.mcp_redirect_uri} wrap="anywhere" />
+          </section>
+        </div>
+      </section>
+
       {detail && (
-        <Sheet open onOpenChange={(open) => !open && setDetailKey(null)}>
-          <SheetContent side="right" size="detail" closeLabel="Close">
-            <div className="flex flex-col gap-6 p-6">
-              <div className="flex items-center gap-3 pr-12">
-                <ConnectorIcon icon={detail.icon} className="size-7" />
-                <SheetTitle className="truncate">{detail.name}</SheetTitle>
-              </div>
-              <SheetDescription>{summary(detail)}</SheetDescription>
-              <SettingRows>
-                <SettingRow
-                  label="Enabled"
-                  description={
-                    detail.configured
-                      ? 'Members can connect and use it.'
-                      : 'Add its server settings first (Setup guide).'
-                  }
-                >
-                  {enabledSwitch(detail)}
-                </SettingRow>
-              </SettingRows>
-              {hasTools(detail) && (
-                <FormField label="Shared tools use">
-                  {policyControl(detail, true)}
-                </FormField>
-              )}
-              {hasSetupGuide(detail) && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  shape="pill"
-                  className="w-fit"
-                  onClick={() => setGuide(detail)}
-                >
-                  Setup guide
-                </Button>
-              )}
-            </div>
-          </SheetContent>
-        </Sheet>
+        <SidePanel open onOpenChange={(open) => !open && setDetailKey(null)}>
+          <PanelHeader
+            title={detail.name}
+            description={summary(detail)}
+            leading={
+              <ConnectorIcon icon={detail.icon} className="size-7 shrink-0" />
+            }
+          />
+          <PanelBody>
+            <SettingRows>
+              <SettingRow
+                label="Enabled"
+                htmlFor={`enabled-${detail.key}`}
+                description={
+                  detail.configured
+                    ? 'Members can connect and use it.'
+                    : 'Add its server settings first (Setup guide).'
+                }
+              >
+                {enabledSwitch(detail, `enabled-${detail.key}`)}
+              </SettingRow>
+            </SettingRows>
+            {hasTools(detail) && (
+              <FormField label="Shared tools use">
+                {policyControl(detail, true)}
+              </FormField>
+            )}
+            {hasSetupGuide(detail) && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-fit"
+                onClick={() => setGuide(detail)}
+              >
+                Setup guide
+              </Button>
+            )}
+          </PanelBody>
+        </SidePanel>
       )}
 
       {guide && (

@@ -8,6 +8,22 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+const confirm = vi.hoisted(() => ({
+  handleSubmit: null as null | (() => void | Promise<unknown>),
+}));
+vi.mock('../modals/ConfirmationModal', () => ({
+  default: ({
+    variant,
+    handleSubmit,
+  }: {
+    variant?: string;
+    handleSubmit: () => void | Promise<unknown>;
+  }) => {
+    confirm.handleSubmit = handleSubmit;
+    return <div data-testid="delete-confirm" data-variant={variant} />;
+  },
+}));
+
 import ConversationTile from './ConversationTile';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -35,7 +51,11 @@ describe('ConversationTile', () => {
     container.remove();
   });
 
-  const render = (currentId: string | null, select = vi.fn()) => {
+  const render = (
+    currentId: string | null,
+    select = vi.fn(),
+    onDelete: (id: string) => void | Promise<unknown> = () => undefined,
+  ) => {
     act(() => {
       root.render(
         <Provider store={makeStore(currentId)}>
@@ -44,7 +64,7 @@ describe('ConversationTile', () => {
               conversation={{ id: 'c1', name: 'Halvorsen QBR prep' }}
               selectConversation={select}
               onConversationClick={() => undefined}
-              onDeleteConversation={() => undefined}
+              onDeleteConversation={onDelete}
               onSave={() => undefined}
             />
           </MemoryRouter>
@@ -62,6 +82,13 @@ describe('ConversationTile', () => {
     expect(link.querySelector('span')?.className).toContain('truncate');
   });
 
+  it('shows the full conversation name on hover of its truncated label', () => {
+    const link = render('c1');
+    expect(link.querySelector('span.truncate')?.getAttribute('title')).toBe(
+      'Halvorsen QBR prep',
+    );
+  });
+
   it('keeps the actions menu outside the link', () => {
     const link = render('c1');
     const menu = container.querySelector('button[aria-label="convTile.menu"]');
@@ -75,5 +102,22 @@ describe('ConversationTile', () => {
     expect(link.hasAttribute('aria-current')).toBe(false);
     act(() => link.click());
     expect(select).toHaveBeenCalledWith('c1');
+  });
+
+  it('confirms a delete with the destructive submit', () => {
+    render('c1');
+    const confirm = container.querySelector<HTMLElement>(
+      '[data-testid="delete-confirm"]',
+    );
+    expect(confirm?.dataset.variant).toBe('destructive');
+  });
+
+  // ConfirmationModal stays pending on the promise and keeps a failure open.
+  it('hands the delete request promise to the confirm', () => {
+    const request = Promise.resolve();
+    const onDelete = vi.fn(() => request);
+    render('c1', vi.fn(), onDelete);
+    expect(confirm.handleSubmit!()).toBe(request);
+    expect(onDelete).toHaveBeenCalledWith('c1');
   });
 });

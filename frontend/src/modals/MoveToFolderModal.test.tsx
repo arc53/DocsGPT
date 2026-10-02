@@ -6,11 +6,12 @@ vi.mock('../hooks', () => ({
 }));
 
 const getAgentFolders = vi.fn();
+const moveAgentToFolder = vi.fn();
 vi.mock('../api/services/userService', () => ({
   default: {
     getAgentFolders: (...args: unknown[]) => getAgentFolders(...args),
     createAgentFolder: vi.fn(),
-    moveAgentToFolder: vi.fn(),
+    moveAgentToFolder: (...args: unknown[]) => moveAgentToFolder(...args),
   },
 }));
 
@@ -249,5 +250,42 @@ describe('MoveToFolderModal', () => {
       'pill',
     );
     expect(rowFor('cancel')?.getAttribute('data-shape')).toBe('pill');
+  });
+
+  // S8: the folder-name field is a form control, so square like the Rename
+  // modal's, though it takes the pill footer button's place.
+  it('swaps New Folder for a square folder-name Input', async () => {
+    await render();
+    await act(async () => rowFor('agents.folders.newFolder')?.click());
+    const input = document.body.querySelector<HTMLInputElement>(
+      'input[placeholder="agents.folders.newFolder"]',
+    );
+    expect(input?.getAttribute('data-slot')).toBe('input');
+    expect(input?.getAttribute('data-shape')).toBe('default');
+  });
+
+  // S13: the width policy lives in ui/breadcrumb (nowrap list, capped
+  // crumbs); the page passes no width classes of its own.
+  it('leaves the breadcrumb widths to the primitives', async () => {
+    await render();
+    expect(trail()?.hasAttribute('class')).toBe(false);
+  });
+
+  it('shows pending on Move while the request runs', async () => {
+    let finish!: (value: unknown) => void;
+    moveAgentToFolder
+      .mockReset()
+      .mockImplementation(() => new Promise((resolve) => (finish = resolve)));
+    await render();
+    const move = () =>
+      Array.from(document.body.querySelectorAll('button')).find(
+        (b) => b.textContent === 'agents.folders.move',
+      )!;
+    await act(async () => move().click());
+    expect(move().getAttribute('aria-busy')).toBe('true');
+    await act(async () => move().click());
+    expect(moveAgentToFolder).toHaveBeenCalledTimes(1);
+    await act(async () => finish({ ok: false }));
+    expect(move().getAttribute('aria-busy')).toBeNull();
   });
 });

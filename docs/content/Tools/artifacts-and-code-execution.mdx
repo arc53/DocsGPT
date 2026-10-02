@@ -108,8 +108,10 @@ Build a snapshot with the libraries once, then set `DAYTONA_SNAPSHOT` to it:
 # Reads DAYTONA_API_KEY / DAYTONA_API_URL / DAYTONA_TARGET from your environment:
 python scripts/build_daytona_snapshot.py
 # then set in your environment:
-#   DAYTONA_SNAPSHOT=docsgpt-artifacts-py312
+#   DAYTONA_SNAPSHOT=docsgpt-sandbox-py312
 ```
+
+The snapshot also includes `pandas`, `openpyxl` and `matplotlib`, which the model uses to open and chart spreadsheets attached to a chat. A snapshot built by an earlier version of the script (`docsgpt-artifacts-py312`) has no pandas or matplotlib; build the new one and switch `DAYTONA_SNAPSHOT` to it.
 
 ### Useful settings
 

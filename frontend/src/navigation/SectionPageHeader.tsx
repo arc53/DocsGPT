@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'react-router-dom';
 
 import { useMediaQuery } from '@/hooks';
-import { cn } from '@/lib/utils';
+import { cn, focusRing } from '@/lib/utils';
 
 import { getSectionForPath, type Section, type SectionItem } from './sections';
 import { useSectionContext } from './useSectionContext';
@@ -43,7 +43,8 @@ export function SectionBackLink({
     <Link
       to={to}
       className={cn(
-        'text-muted-foreground hover:text-foreground mb-4 inline-flex items-center gap-2 text-sm',
+        focusRing,
+        'text-muted-foreground hover:text-foreground mb-4 inline-flex items-center gap-2 rounded-sm text-sm outline-none',
         className,
       )}
     >

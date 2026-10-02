@@ -87,8 +87,26 @@ const adminService = {
       `${endpoints.ADMIN.ACTIVITY_EXPORT}${qs({ ...filters, format })}`,
       token,
     ),
-  getQuotas: (token: string | null): Promise<any> =>
-    apiClient.get(endpoints.ADMIN.QUOTAS, token),
+  getQuotas: (
+    token: string | null,
+    opts?: {
+      teamsPage: number;
+      usersPage: number;
+      pageSize: number;
+      teamsQ?: string;
+      usersQ?: string;
+    },
+  ): Promise<any> => {
+    if (!opts) return apiClient.get(endpoints.ADMIN.QUOTAS, token);
+    const params = new URLSearchParams({
+      teams_page: String(opts.teamsPage),
+      users_page: String(opts.usersPage),
+      page_size: String(opts.pageSize),
+    });
+    if (opts.teamsQ) params.set('teams_q', opts.teamsQ);
+    if (opts.usersQ) params.set('users_q', opts.usersQ);
+    return apiClient.get(`${endpoints.ADMIN.QUOTAS}?${params}`, token);
+  },
   getUserQuota: (userId: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.ADMIN.QUOTA_USER(userId), token),
   setQuota: (

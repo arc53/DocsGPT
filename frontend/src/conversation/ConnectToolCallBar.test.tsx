@@ -6,8 +6,8 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, opts?: { name?: string }) =>
-      opts?.name ? `${key}:${opts.name}` : key,
+    t: (key: string, opts?: { name?: string; owner?: string }) =>
+      [key, opts?.name, opts?.owner].filter(Boolean).join(':'),
   }),
 }));
 
@@ -172,7 +172,7 @@ describe('ConnectToolCallBar', () => {
       connections: [{ id: 'conn-1', status: 'reconnect_needed' }],
     });
     await act(async () =>
-      button('conversation.toolApproval.connect:Telegram').click(),
+      button('settings.connectors.status.reconnect').click(),
     );
     expect(launch).toHaveBeenCalledWith(TELEGRAM, {
       mode: 'reconnect',
@@ -192,8 +192,100 @@ describe('ConnectToolCallBar', () => {
   it('an account that needs signing in again is healed from its drawer', async () => {
     await render(call('reconnect_needed'));
     await act(async () =>
-      button('conversation.toolApproval.connect:Notion').click(),
+      button('settings.connectors.status.reconnect').click(),
     );
     expect(document.body.textContent).toContain('DRAWER');
+  });
+
+  it('asks you to sign in again, not to connect, for a reconnect', async () => {
+    await render(ownCall('reconnect_needed'), vi.fn(), {
+      catalog: [TELEGRAM],
+      connections: [{ id: 'conn-1', status: 'reconnect_needed' }],
+    });
+    expect(container.textContent).toContain(
+      'settings.connectors.health.pickerNotice:Telegram',
+    );
+    expect(container.textContent).not.toContain(
+      'conversation.toolApproval.connectTitle',
+    );
+    expect(button('settings.connectors.status.reconnect')).toBeDefined();
+    expect(
+      button('conversation.toolApproval.connect:Telegram'),
+    ).toBeUndefined();
+  });
+
+  it('names the call and its state in the shared card header', async () => {
+    await render(call('missing'));
+    expect(container.textContent).toContain(
+      'conversation.toolApproval.title:Notion',
+    );
+    expect(container.textContent).toContain(
+      'conversation.toolApproval.state.notConnected',
+    );
+  });
+
+  it('says the service is connected once it is', async () => {
+    await render(call('missing'), vi.fn(), {
+      connections: [
+        { id: 'c9', connector_key: 'mcp:notion', status: 'connected' },
+      ],
+    });
+    expect(container.textContent).toContain(
+      'conversation.toolApproval.connectedTitle:Notion',
+    );
+    expect(container.textContent).toContain(
+      'settings.connectors.status.connected',
+    );
+  });
+
+  it('never says "your this service account" without a name', async () => {
+    await render({
+      ...call('missing'),
+      connection_required: {
+        connector_key: null,
+        connector_name: null,
+        status: 'missing',
+      },
+    });
+    expect(container.textContent).toContain(
+      'conversation.toolApproval.connectTitleGeneric',
+    );
+    expect(button('settings.connectors.status.connect')).toBeDefined();
+  });
+
+  const ownerCall = (owner_name?: string): ToolCallsType => ({
+    ...call('reconnect_needed'),
+    tool_name: 'github',
+    action_name: 'create_issue',
+    connection_required: {
+      connector_key: 'github',
+      connector_name: 'GitHub',
+      status: 'reconnect_needed',
+      owner_account: true,
+      ...(owner_name ? { owner_name } : {}),
+    },
+  });
+
+  it("asks for the owner on the owner's broken account, Skip only", async () => {
+    await render(ownerCall('lena@example.com'), vi.fn(), {
+      // Even with an account of your own, the call runs on the owner's.
+      connections: [{ id: 'c9', connector_key: 'github', status: 'connected' }],
+    });
+    expect(container.textContent).toContain(
+      'conversation.toolApproval.ownerReconnect:GitHub:lena@example.com',
+    );
+    const labels = Array.from(container.querySelectorAll('button')).map(
+      (b) => b.textContent,
+    );
+    expect(labels).toEqual(['conversation.toolApproval.skip']);
+  });
+
+  it('falls back to generic owner copy without the owner name', async () => {
+    await render(ownerCall());
+    expect(container.textContent).toContain(
+      'conversation.toolApproval.ownerReconnectGeneric',
+    );
+    expect(button('conversation.toolApproval.skip')).toBeDefined();
+    expect(button('settings.connectors.status.reconnect')).toBeUndefined();
   });
 });

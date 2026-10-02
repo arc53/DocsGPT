@@ -514,3 +514,16 @@ class TestFinalizeClearsLease:
         assert row["status"] == "completed"
         assert row["lease_owner_id"] is None
         assert row["lease_expires_at"] is None
+
+
+class TestLiveLeaseKeys:
+    def test_only_keys_with_an_unexpired_lease(self, pg_conn):
+        repo = _repo(pg_conn)
+        for key in ("live", "expired", "released", "done"):
+            repo.try_claim_lease(key=key, task_name="t", task_id="t1", owner_id="o")
+        _expire_lease(pg_conn, "expired")
+        repo.release_lease("released", "o")
+        repo.finalize_task(key="done", result_json={}, status="completed")
+
+        assert repo.live_lease_keys(["live", "expired", "released", "done", "absent"]) == {"live"}
+        assert repo.live_lease_keys([]) == set()

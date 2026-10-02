@@ -577,6 +577,15 @@ class ToolExecutor:
         # sandbox tools so a referenced attachment can be lazily bridged to a
         # conversation-scoped artifact at tool-use time.
         self.attachments: List[Dict] = []
+        # Images a tool asked to show the model (``attachments_read`` on an
+        # image or a scanned page). The LLM handler adds them in a user
+        # message after the tool results and empties this list.
+        self.pending_native_parts: List[Dict] = []
+        # Context a tool result may still take (tokens below the compression
+        # threshold), set by the LLM handler before each call, and the
+        # compression epoch: tools that size or dedupe their results read both.
+        self.context_room_tokens: Optional[int] = None
+        self.context_epoch = 0
         self.client_tools: Optional[List[Dict]] = None
         self._name_to_tool: Dict[str, Tuple[str, str]] = {}
         # Per-NAME failure counts for invented tool names this turn. After
@@ -1053,13 +1062,14 @@ class ToolExecutor:
             self._connection_params[key] = params
         return self._connection_params[key]
 
-    @staticmethod
-    def _connection_payload(resolved) -> Dict:
+    def _connection_payload(self, resolved) -> Dict:
         """What the chat's Connect card needs; never an account or a secret.
 
         ``connection_id`` is only the caller's own connection, which the card
         reconnects in place; an owner's account (``owner_account``) is not
-        the caller's to reconnect.
+        the caller's to reconnect. ``owner_name`` (the owner's email) is
+        withheld from API-key and public-link callers, who are strangers to
+        the owner.
         """
         payload = {
             "connector_key": resolved.connector_key,
@@ -1072,7 +1082,34 @@ class ToolExecutor:
         }
         if resolved.row is not None and not resolved.delegated:
             payload["connection_id"] = str(resolved.row["id"])
+        stranger = self.external_caller or self.public_link_caller
+        if resolved.row is not None and resolved.delegated and not stranger:
+            owner_name = ToolExecutor._owner_name(resolved.row.get("user_id"))
+            if owner_name:
+                payload["owner_name"] = owner_name
         return payload
+
+    @staticmethod
+    def _owner_name(user_id: Optional[str]) -> Optional[str]:
+        """How the chat names a connection's owner ("Ask lena@… to reconnect it").
+
+        The email on record, which is what sharing already shows members;
+        None without one, and the card uses generic owner copy.
+
+        Args:
+            user_id: The connection owner's auth ``sub``.
+
+        Returns:
+            The owner's email, or None.
+        """
+        if not user_id:
+            return None
+        try:
+            with db_readonly() as conn:
+                return UsersRepository(conn).emails_for([user_id]).get(user_id)
+        except Exception:
+            logger.exception("owner name lookup failed")
+            return None
 
     def check_pause(self, tools_dict: Dict, call, llm_class_name: str) -> Optional[Dict]:
         """Return a pending-action dict (approval / client / headless_denied) or None.
@@ -1293,6 +1330,14 @@ class ToolExecutor:
                 "pause_type": "awaiting_approval",
                 "thought_signature": getattr(call, "thought_signature", None),
             }
+            # The card names the service a connection-backed tool acts on
+            # (logo + "GitHub · Create issue"), never the account behind it.
+            if resolved is not None and resolved.connector_key:
+                from docsgpt.connectors.permissions import action_access
+
+                payload["connector_key"] = resolved.connector_key
+                payload["connector_name"] = resolved.connector_name
+                payload["access"] = action_access(tool_data.get("name"), action_data)
             # The card shows what will be sent: fixed values replace what the
             # model asked for. ``arguments`` stays as the model sent it, since
             # resuming replays it to the model, which never sees fixed values.
@@ -1729,6 +1774,10 @@ class ToolExecutor:
         except ConnectionUnavailable as exc:
             tool, connection_error = None, str(exc)
 
+        hint = getattr(tool, "set_context_hint", None) if tool is not None else None
+        if callable(hint):
+            hint(room_tokens=self.context_room_tokens, epoch=self.context_epoch)
+
         if tool is None:
             error_message = connection_error and (
                 f"{connection_error}. Ask the user to connect it in Settings > Connectors, then try again."
@@ -1776,6 +1825,7 @@ class ToolExecutor:
                     _redact_args_for_log(call_args),
                 )
                 result = tool.execute_action(action_name, **parameters)
+                self._collect_native_parts(tool)
         except Exception as exc:
             if proposed_ok:
                 _mark_failed(
@@ -2080,6 +2130,19 @@ class ToolExecutor:
     _PRESERVED_TOOL_CALL_KEYS = (
         "artifacts", "device_id", "connector_key", "connector_name", "access", "sent_arguments",
     )
+
+    def _collect_native_parts(self, tool: Any) -> None:
+        """Take the images a tool queued for the model, if it queues any."""
+        drain = getattr(tool, "drain_native_parts", None)
+        if not callable(drain):
+            return
+        try:
+            parts = drain()
+        except Exception:
+            logger.exception("Failed to collect images from tool %s", type(tool).__name__)
+            return
+        if isinstance(parts, list):
+            self.pending_native_parts.extend(p for p in parts if isinstance(p, dict))
 
     def get_truncated_tool_calls(self) -> List[Dict]:
         """Project tool calls into the shape that is streamed and persisted.

@@ -14,15 +14,11 @@ import ForceGraph2D, {
   type NodeObject,
 } from 'react-force-graph-2d';
 
-import { useMediaQuery } from '../hooks';
 import { useThemeVersion } from '../utils/chartUtils';
 import { formatCount } from '../utils/dateTimeUtils';
 import GraphCanvasControls from './graph/GraphCanvasControls';
 import GraphEntitySearch from './graph/GraphEntitySearch';
-import GraphNodePanel, {
-  GraphNodePanelDock,
-  type GraphNodeRef,
-} from './graph/GraphNodePanel';
+import GraphNodePanel, { type GraphNodeRef } from './graph/GraphNodePanel';
 import { GraphSeriesDot } from './graph/GraphTypeDot';
 import {
   DIM_ALPHA,
@@ -38,11 +34,10 @@ import {
   type LabelBox,
 } from './graph/graphCanvasUtils';
 import { useGraphNodeDetail } from './graph/useGraphNodeDetail';
-import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { EmptyState } from './ui/empty-state';
 import { LoadingState } from './ui/loading-state';
-import { Sheet, SheetContent } from './ui/sheet';
+import { SidePanel } from './ui/side-panel';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 import {
   type FoldedGraphTypes,
@@ -98,7 +93,7 @@ const LABEL_GAP_PX = 2;
 /**
  * The Graph tab of a knowledge-graph source: entity search, the "Show top"
  * size, the type legend (a filter), and the canvas with its controls and the
- * docked node panel (a bottom sheet on a phone).
+ * node's docked side panel (a full-width sheet on a phone).
  */
 const GraphView: React.FC<GraphViewProps> = ({
   docId,
@@ -115,7 +110,6 @@ const GraphView: React.FC<GraphViewProps> = ({
   canEdit = true,
 }) => {
   const { t } = useTranslation();
-  const { isDesktop } = useMediaQuery();
   const showTopId = useId();
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -468,27 +462,25 @@ const GraphView: React.FC<GraphViewProps> = ({
       <div className="flex flex-wrap items-center gap-3">
         <GraphEntitySearch docId={docId} fold={fold} onPick={onSelect} />
         {/* One phrase at one size: "Show top [50 | 100 | 250] by
-            connections"; the muted track holds only the group. */}
+            connections"; the group's track holds only the numbers. */}
         <div className="flex flex-wrap items-center gap-2">
           <span id={showTopId} className="text-muted-foreground text-sm">
             {t('settings.sources.graphrag.view.showTop')}
           </span>
-          <div className="bg-muted shrink-0 rounded-full p-1">
-            <ToggleGroup
-              type="single"
-              size="xs"
-              className="flex-nowrap"
-              value={String(limit)}
-              onValueChange={(value) => value && onLimitChange(Number(value))}
-              aria-labelledby={showTopId}
-            >
-              {GRAPH_LIMITS.map((option) => (
-                <ToggleGroupItem key={option} value={String(option)}>
-                  {option}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </div>
+          <ToggleGroup
+            className="shrink-0"
+            type="single"
+            size="xs"
+            value={String(limit)}
+            onValueChange={(value) => value && onLimitChange(Number(value))}
+            aria-labelledby={showTopId}
+          >
+            {GRAPH_LIMITS.map((option) => (
+              <ToggleGroupItem key={option} value={String(option)}>
+                {option}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
           <span className="text-muted-foreground text-sm">
             {t('settings.sources.graphrag.view.byConnections')}
           </span>
@@ -496,38 +488,36 @@ const GraphView: React.FC<GraphViewProps> = ({
       </div>
       {legendKeys.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2">
-          <div className="bg-muted rounded-full p-1">
-            <ToggleGroup
-              type="multiple"
-              size="xs"
-              value={legendValue}
-              onValueChange={(values) =>
-                setHidden(
-                  new Set(legendKeys.filter((key) => !values.includes(key))),
-                )
-              }
-              aria-label={t('settings.sources.graphrag.view.typeFilter')}
-            >
-              {fold.groups.map((group) => (
-                <ToggleGroupItem key={group.key} value={group.key}>
-                  <GraphSeriesDot series={group.series} />
-                  {group.label}
-                  <span className="text-muted-foreground tabular-nums">
-                    {formatCount(group.count)}
-                  </span>
-                </ToggleGroupItem>
-              ))}
-              {fold.other.count > 0 ? (
-                <ToggleGroupItem value={OTHER_GROUP_KEY}>
-                  <GraphSeriesDot series={null} />
-                  {t('settings.analytics.otherSeries')}
-                  <span className="text-muted-foreground tabular-nums">
-                    {formatCount(fold.other.count)}
-                  </span>
-                </ToggleGroupItem>
-              ) : null}
-            </ToggleGroup>
-          </div>
+          <ToggleGroup
+            type="multiple"
+            size="xs"
+            value={legendValue}
+            onValueChange={(values) =>
+              setHidden(
+                new Set(legendKeys.filter((key) => !values.includes(key))),
+              )
+            }
+            aria-label={t('settings.sources.graphrag.view.typeFilter')}
+          >
+            {fold.groups.map((group) => (
+              <ToggleGroupItem key={group.key} value={group.key}>
+                <GraphSeriesDot series={group.series} />
+                {group.label}
+                <span className="text-muted-foreground tabular-nums">
+                  {formatCount(group.count)}
+                </span>
+              </ToggleGroupItem>
+            ))}
+            {fold.other.count > 0 ? (
+              <ToggleGroupItem value={OTHER_GROUP_KEY}>
+                <GraphSeriesDot series={null} />
+                {t('settings.analytics.otherSeries')}
+                <span className="text-muted-foreground tabular-nums">
+                  {formatCount(fold.other.count)}
+                </span>
+              </ToggleGroupItem>
+            ) : null}
+          </ToggleGroup>
           {otherLabels.length > 0 ? (
             <span className="text-muted-foreground text-xs">
               {t('settings.sources.graphrag.view.otherTypes', {
@@ -553,17 +543,7 @@ const GraphView: React.FC<GraphViewProps> = ({
         tone="destructive"
         illustration="none"
         title={t('settings.sources.graphrag.view.loadFailed')}
-        action={
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            shape="pill"
-            onClick={onRetry}
-          >
-            {t('retry')}
-          </Button>
-        }
+        onRetry={onRetry}
       />
     );
   }
@@ -587,8 +567,6 @@ const GraphView: React.FC<GraphViewProps> = ({
       status={nodeDetail.status}
       onRetry={nodeDetail.retry}
       fold={fold}
-      onClose={() => onSelect(null)}
-      showClose={isDesktop}
       onSelectNode={onSelect}
       overview={data}
       onOpenInFiles={onOpenInFiles}
@@ -603,7 +581,7 @@ const GraphView: React.FC<GraphViewProps> = ({
       <Card
         variant="subtle"
         padding="none"
-        className="h-[70svh] flex-row gap-0 overflow-hidden"
+        className="relative h-[70svh] flex-row gap-0 overflow-hidden"
       >
         <div
           ref={containerRef}
@@ -653,28 +631,17 @@ const GraphView: React.FC<GraphViewProps> = ({
             </>
           )}
         </div>
-        {isDesktop && panel ? (
-          <GraphNodePanelDock>{panel}</GraphNodePanelDock>
-        ) : null}
-      </Card>
-      {!isDesktop ? (
-        <Sheet
-          open={!!selected && active}
+        <SidePanel
+          variant="docked"
+          expandable="graph-node"
+          open={!!panel && active}
           onOpenChange={(open) => {
             if (!open) onSelect(null);
           }}
         >
-          <SheetContent
-            side="bottom"
-            handle
-            title={selected?.name}
-            // Open on the panel, not with a ring on its first control.
-            onOpenAutoFocus={(event) => event.preventDefault()}
-          >
-            {panel}
-          </SheetContent>
-        </Sheet>
-      ) : null}
+          {panel}
+        </SidePanel>
+      </Card>
     </div>
   );
 };

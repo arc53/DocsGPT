@@ -33,7 +33,7 @@ import {
   htmlLegendPlugin,
   useChartPalette,
 } from '../utils/chartUtils';
-import { formatDate } from '../utils/dateTimeUtils';
+import { formatCount, formatDate } from '../utils/dateTimeUtils';
 import UsageQuota from './components/UsageQuota';
 
 import type { ChartData } from 'chart.js';
@@ -315,16 +315,16 @@ export default function Analytics({ agentId }: AnalyticsProps) {
   const statCards: { label: string; value: string; hint?: string }[] = [
     {
       label: t('settings.analytics.stats.messages'),
-      value: totalMessages.toLocaleString(),
+      value: formatCount(totalMessages),
     },
     {
       label: t('settings.analytics.stats.tokens'),
-      value: totalTokens.toLocaleString(),
+      value: formatCount(totalTokens),
       hint: t('settings.analytics.stats.tokensHint'),
     },
     {
       label: t('settings.analytics.stats.toolCalls'),
-      value: totalToolCalls.toLocaleString(),
+      value: formatCount(totalToolCalls),
     },
     {
       label: t('settings.analytics.stats.runSuccess'),
@@ -332,7 +332,7 @@ export default function Analytics({ agentId }: AnalyticsProps) {
     },
     {
       label: t('settings.analytics.stats.feedback'),
-      value: `+${feedbackTotals.positive} / -${feedbackTotals.negative}`,
+      value: `+${formatCount(feedbackTotals.positive)} / -${formatCount(feedbackTotals.negative)}`,
     },
   ];
 

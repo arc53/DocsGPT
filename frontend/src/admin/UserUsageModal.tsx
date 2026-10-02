@@ -18,6 +18,7 @@ import { formatDate } from '../utils/dateTimeUtils';
 import { Card } from '@/components/ui/card';
 import { LoadingState } from '@/components/ui/loading-state';
 import { SectionHeader } from '@/components/ui/section-header';
+import { EmptyState } from '../components/ui/empty-state';
 import StatCard from '@/components/StatCard';
 import { LoadError, fmtNumber, fmtUsd } from './AdminUI';
 import { useChartPalette } from '../utils/chartUtils';
@@ -64,7 +65,7 @@ function SplitTable({
     <div>
       <p className="text-muted-foreground mb-2 text-sm font-medium">{title}</p>
       {rows.length === 0 ? (
-        <p className="text-muted-foreground text-sm">No usage.</p>
+        <EmptyState size="sm" illustration="none" title="No usage." />
       ) : (
         <TableContainer>
           <Table>
@@ -211,7 +212,7 @@ export default function UserUsageModal({
             />
           </div>
 
-          <Card variant="outline" padding="default" className="h-66">
+          <Card variant="outline" className="h-66">
             <div className="flex items-center justify-between">
               <SectionHeader as="h3" size="xs" title="Daily tokens" />
               <div id="admin-user-usage-legend" className="flex" />

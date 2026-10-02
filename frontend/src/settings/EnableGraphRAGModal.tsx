@@ -1,4 +1,3 @@
-import { CircleAlert, CircleCheck } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -12,6 +11,7 @@ import { Progress } from '../components/ui/progress';
 import { ActiveState, Doc } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch, RootState } from '../store';
+import { formatCount } from '../utils/dateTimeUtils';
 
 import { clearGraphBuild, selectGraphBuilds } from './graphBuildSlice';
 import {
@@ -244,8 +244,7 @@ export default function EnableGraphRAGModal({
           : undefined
       }
       footer={footer}
-      size="md"
-      mobileVariant="sheet"
+      mobileVariant="dialog"
       isPerformingTask={phase === 'building'}
     >
       <div className="flex flex-col gap-5">
@@ -255,12 +254,14 @@ export default function EnableGraphRAGModal({
               <li>{t('settings.sources.graphrag.enable.costExtraction')}</li>
               <li>{t('settings.sources.graphrag.enable.costCost')}</li>
             </ul>
-            <div className="bg-muted text-muted-foreground rounded-xl p-3 text-sm">
-              {t('settings.sources.graphrag.enable.estimate', {
-                lo: estimate.lo.toLocaleString(),
-                hi: estimate.hi.toLocaleString(),
-              })}
-            </div>
+            <Alert variant="info" role="note">
+              <AlertDescription>
+                {t('settings.sources.graphrag.enable.estimate', {
+                  lo: formatCount(estimate.lo),
+                  hi: formatCount(estimate.hi),
+                })}
+              </AlertDescription>
+            </Alert>
           </>
         )}
 
@@ -285,7 +286,6 @@ export default function EnableGraphRAGModal({
 
         {phase === 'summary' && summary && (
           <Alert variant="success">
-            <CircleCheck className="size-4" aria-hidden="true" />
             <AlertDescription>
               {[
                 t('settings.sources.graphrag.enable.summaryNodes', {
@@ -304,7 +304,6 @@ export default function EnableGraphRAGModal({
 
         {phase === 'error' && (
           <Alert variant="destructive">
-            <CircleAlert className="size-4" aria-hidden="true" />
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}

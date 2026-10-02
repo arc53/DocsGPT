@@ -28,6 +28,7 @@ import { useDarkTheme, useMediaQuery } from './hooks';
 import useDataInitializer from './hooks/useDataInitializer';
 import useTokenAuth from './hooks/useTokenAuth';
 import Navigation from './Navigation';
+import { outletBoundaryKey } from './navigation/outletBoundaryKey';
 import { getSectionForPath } from './navigation/sections';
 import { SidebarLevelProvider } from './navigation/SidebarLevelProvider';
 import PageNotFound from './PageNotFound';
@@ -116,8 +117,11 @@ function MainLayout() {
           )}
         >
           {/* Contain route render crashes so navigation stays usable;
-            keyed by path so the boundary resets when the user leaves. */}
-          <ErrorBoundary key={location.pathname}>
+            any navigation clears a crash, and leaving a page remounts it. */}
+          <ErrorBoundary
+            key={outletBoundaryKey(location.pathname)}
+            resetKey={location.pathname}
+          >
             <Outlet />
           </ErrorBoundary>
         </div>

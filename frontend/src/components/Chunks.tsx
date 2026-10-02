@@ -6,6 +6,7 @@ import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import { useDebouncedValue, useLoaderState } from '../hooks';
+import { usePageSize } from '../hooks/usePageState';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { showActionToast } from '../notifications/actionToastSlice';
@@ -30,7 +31,7 @@ import { Input } from './ui/input';
 import { ActionMenu } from './ui/dropdown-menu';
 import { EmptyState } from './ui/empty-state';
 import { IconButton } from './ui/icon-button';
-import { Pagination } from './ui/pagination';
+import { Pagination, pageRangeParams } from './ui/pagination';
 
 /** Chunks per page: divisible by 2, 3 and 4 columns, so a page fills the grid. */
 const PAGE_SIZE_OPTIONS = [12, 24, 48];
@@ -115,7 +116,10 @@ const Chunks: React.FC<ChunksProps> = ({
   const token = useSelector(selectToken);
   const [paginatedChunks, setPaginatedChunks] = useState<ChunkType[]>([]);
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(PAGE_SIZE_OPTIONS[0]);
+  const [perPage, setPerPage] = usePageSize(
+    'DocsGPTPageSize:chunks',
+    PAGE_SIZE_OPTIONS,
+  );
   const [totalChunks, setTotalChunks] = useState(0);
   const [loading, setLoading] = useLoaderState(true);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -437,20 +441,17 @@ const Chunks: React.FC<ChunksProps> = ({
     }
   };
 
+  // Returned to ConfirmationModal through handleConfirmedDelete: it stays
+  // pending while this runs and keeps a failure in the dialog.
   const handleDeleteChunk = async (chunk: ChunkType) => {
-    try {
-      const response = await userService.deleteChunk(
-        documentId,
-        chunk.doc_id,
-        token,
-      );
-      if (!response.ok) throw new Error('Failed to delete chunk');
-      // A page change fetches by itself; otherwise refresh this page.
-      if (!closeChunk(Math.max(0, totalChunks - 1))) fetchChunks();
-    } catch (e) {
-      console.error(e);
-      showError(t('settings.sources.chunkErrors.delete'));
-    }
+    const response = await userService.deleteChunk(
+      documentId,
+      chunk.doc_id,
+      token,
+    );
+    if (!response.ok) throw new Error('Failed to delete chunk');
+    // A page change fetches by itself; otherwise refresh this page.
+    if (!closeChunk(Math.max(0, totalChunks - 1))) fetchChunks();
   };
 
   const confirmDeleteChunk = (chunk: ChunkType) => {
@@ -458,12 +459,10 @@ const Chunks: React.FC<ChunksProps> = ({
     setDeleteModalState('ACTIVE');
   };
 
-  const handleConfirmedDelete = () => {
-    if (chunkToDelete) {
-      handleDeleteChunk(chunkToDelete);
-      setDeleteModalState('INACTIVE');
-      setChunkToDelete(null);
-    }
+  const handleConfirmedDelete = async () => {
+    if (!chunkToDelete) return;
+    await handleDeleteChunk(chunkToDelete);
+    setChunkToDelete(null);
   };
 
   const handleCancelDelete = () => {
@@ -590,17 +589,7 @@ const Chunks: React.FC<ChunksProps> = ({
           tone="destructive"
           illustration="none"
           title={t('settings.sources.chunkErrors.load')}
-          action={
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              shape="pill"
-              onClick={() => fetchChunks()}
-            >
-              {t('retry')}
-            </Button>
-          }
+          onRetry={() => fetchChunks()}
         />
       );
     }
@@ -746,15 +735,15 @@ const Chunks: React.FC<ChunksProps> = ({
         <div className="flex flex-col gap-4">
           {renderToolbar()}
           {renderList()}
-          {/* Past the smallest page size a different size can change the
-              grid, so the pager (and its size select) stays even at 1 page. */}
-          {!loading && !loadFailed && totalChunks > PAGE_SIZE_OPTIONS[0] ? (
+          {!loading && !loadFailed ? (
             <Pagination
               page={page}
-              pageCount={Math.ceil(totalChunks / perPage)}
               pageSize={perPage}
+              total={totalChunks}
               pageSizeOptions={PAGE_SIZE_OPTIONS}
-              pageSizeLabel={t('pagination.chunksPerPage')}
+              rangeLabel={(range) =>
+                t('settings.sources.chunkRange', pageRangeParams(range))
+              }
               onPageChange={setPage}
               onPageSizeChange={(rows) => {
                 setPerPage(rows);
@@ -828,9 +817,11 @@ const Chunks: React.FC<ChunksProps> = ({
 
       <ConfirmationModal
         message={t('modals.chunk.deleteConfirmation')}
+        description={t('common.cantUndo')}
         modalState={deleteModalState}
         setModalState={setDeleteModalState}
         handleSubmit={handleConfirmedDelete}
+        error={t('settings.sources.chunkErrors.delete')}
         handleCancel={handleCancelDelete}
         submitLabel={t('modals.chunk.delete')}
         variant="destructive"

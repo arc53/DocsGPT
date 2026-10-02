@@ -8,10 +8,14 @@ type ErrorBoundaryProps = {
   // Render-prop fallback; receives a retry callback that re-attempts
   // rendering the children.
   fallback?: (retry: () => void) => ReactNode;
+  // A caught error clears when this changes, without remounting healthy
+  // children the way a ``key`` would.
+  resetKey?: unknown;
 };
 
 type ErrorBoundaryState = {
   hasError: boolean;
+  resetKey?: unknown;
 };
 
 function DefaultFallback({ onRetry }: { onRetry: () => void }) {
@@ -33,10 +37,21 @@ export default class ErrorBoundary extends Component<
   ErrorBoundaryProps,
   ErrorBoundaryState
 > {
-  state: ErrorBoundaryState = { hasError: false };
+  state: ErrorBoundaryState = {
+    hasError: false,
+    resetKey: this.props.resetKey,
+  };
 
-  static getDerivedStateFromError(): ErrorBoundaryState {
+  static getDerivedStateFromError(): Partial<ErrorBoundaryState> {
     return { hasError: true };
+  }
+
+  static getDerivedStateFromProps(
+    props: ErrorBoundaryProps,
+    state: ErrorBoundaryState,
+  ): Partial<ErrorBoundaryState> | null {
+    if (props.resetKey === state.resetKey) return null;
+    return { hasError: false, resetKey: props.resetKey };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {

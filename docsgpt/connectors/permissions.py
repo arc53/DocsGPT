@@ -21,7 +21,7 @@ PERMISSION_OFF = "off"
 PERMISSIONS = (PERMISSION_ALWAYS, PERMISSION_ASK, PERMISSION_OFF)
 
 _READ_WORDS = frozenset(
-    ("search", "query", "find", "list", "get", "read", "fetch", "lookup", "describe", "retrieve")
+    ("search", "query", "find", "list", "get", "read", "view", "fetch", "lookup", "describe", "retrieve")
 )
 # A name holding any of these is a write even when it also holds a read word
 # (``get_or_create_page``, ``search_and_replace``).

@@ -4,10 +4,13 @@ import { useSelector } from 'react-redux';
 
 import userService from '../../api/services/userService';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadingState } from '@/components/ui/loading-state';
-import { Sheet, SheetContent } from '../../components/ui/sheet';
+import {
+  PanelBody,
+  PanelHeader,
+  SidePanel,
+} from '../../components/ui/side-panel';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { formatDateTime } from '../../utils/dateTimeUtils';
 import { Trace, TraceRef } from '../types';
@@ -77,81 +80,62 @@ export default function TraceSheet({
   }, [traceRef?.field, traceRef?.value, agentId, token, reloadKey]);
 
   return (
-    <Sheet open={traceRef !== null} onOpenChange={(open) => !open && onClose()}>
-      {/* The waterfall speaks for itself: the title is for screen readers
-          only, and there is no description to announce. */}
-      <SheetContent
-        side="right"
-        title={t('settings.logs.trace.title')}
-        aria-describedby={undefined}
-        size="wide"
-        className="overflow-y-auto"
-      >
-        <div className="flex flex-col gap-6 px-4 pt-4 pb-6">
-          {loading && <LoadingState fill="block" />}
-          {!loading && failed && (
-            <EmptyState
-              tone="destructive"
-              size="sm"
-              illustration="none"
-              title={t('settings.logs.trace.failed')}
-              action={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setReloadKey((key) => key + 1)}
-                >
-                  {t('retry')}
-                </Button>
-              }
-            />
-          )}
-          {!loading && !failed && traces.length === 0 && (
-            <p className="text-muted-foreground text-sm">
-              {t('settings.logs.trace.empty')}
-            </p>
-          )}
-          {traces.map((trace, index) => (
-            <section key={trace.id} className="flex flex-col gap-3">
-              {/* Right padding keeps the first row clear of the close button. */}
-              <div className="flex flex-wrap items-center gap-2 pr-8">
-                {traces.length > 1 && (
-                  <span className="text-foreground text-sm font-medium">
-                    {t('settings.logs.trace.round', { n: index + 1 })}
-                  </span>
-                )}
-                <span className="text-muted-foreground text-xs">
-                  {t(
-                    `settings.logs.trace.sources.${trace.source}`,
-                    trace.source,
-                  )}
+    <SidePanel
+      open={traceRef !== null}
+      onOpenChange={(open) => !open && onClose()}
+      size="wide"
+      aria-describedby={undefined}
+    >
+      <PanelHeader title={t('settings.logs.trace.title')} />
+      <PanelBody>
+        {loading && <LoadingState fill="block" />}
+        {!loading && failed && (
+          <EmptyState
+            tone="destructive"
+            size="sm"
+            illustration="none"
+            title={t('settings.logs.trace.failed')}
+            onRetry={() => setReloadKey((key) => key + 1)}
+          />
+        )}
+        {!loading && !failed && traces.length === 0 && (
+          <p className="text-muted-foreground text-sm">
+            {t('settings.logs.trace.empty')}
+          </p>
+        )}
+        {traces.map((trace, index) => (
+          <section key={trace.id} className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {traces.length > 1 && (
+                <span className="text-foreground text-sm font-medium">
+                  {t('settings.logs.trace.round', { n: index + 1 })}
                 </span>
-                <span className="text-muted-foreground text-xs">
-                  {formatDateTime(trace.started_at)}
-                </span>
-                <Badge variant={STATUS_VARIANT[trace.status] ?? 'neutral'}>
-                  {t(
-                    `settings.logs.trace.status.${trace.status}`,
-                    trace.status,
-                  )}
-                </Badge>
-              </div>
-              <TraceChips
-                durationMs={trace.duration_ms}
-                counts={trace.summary ?? {}}
-              />
-              {trace.dropped_spans > 0 && (
-                <p className="text-muted-foreground text-xs">
-                  {t('settings.logs.trace.droppedSpans', {
-                    count: trace.dropped_spans,
-                  })}
-                </p>
               )}
-              <TraceWaterfall trace={trace} />
-            </section>
-          ))}
-        </div>
-      </SheetContent>
-    </Sheet>
+              <span className="text-muted-foreground text-xs">
+                {t(`settings.logs.trace.sources.${trace.source}`, trace.source)}
+              </span>
+              <span className="text-muted-foreground text-xs">
+                {formatDateTime(trace.started_at)}
+              </span>
+              <Badge variant={STATUS_VARIANT[trace.status] ?? 'neutral'}>
+                {t(`settings.logs.trace.status.${trace.status}`, trace.status)}
+              </Badge>
+            </div>
+            <TraceChips
+              durationMs={trace.duration_ms}
+              counts={trace.summary ?? {}}
+            />
+            {trace.dropped_spans > 0 && (
+              <p className="text-muted-foreground text-xs">
+                {t('settings.logs.trace.droppedSpans', {
+                  count: trace.dropped_spans,
+                })}
+              </p>
+            )}
+            <TraceWaterfall trace={trace} />
+          </section>
+        ))}
+      </PanelBody>
+    </SidePanel>
   );
 }

@@ -149,7 +149,7 @@ class TestClassification:
         fake.get_actions_metadata.return_value = [dict(a) for a in WRITE_ACTIONS]
         with patch.object(service, "access_credentials", return_value={"access_token": "t"}), \
                 patch("docsgpt.agents.tools.mcp_tool.MCPTool", return_value=fake):
-            actions = mcp.discover_builtin_actions("alice", connection, writes=True)
+            actions = mcp.discover_connection_actions("alice", connection, writes=True)
         access = {a["name"]: a["access"] for a in actions}
         assert access == {
             "get_issue": "read", "search_code": "read",

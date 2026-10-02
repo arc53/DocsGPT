@@ -114,8 +114,25 @@ const teamsService = {
   remove: async (id: string, token: string | null): Promise<any> =>
     json(await apiClient.delete(endpoints.USER.TEAM(id), token)),
 
-  listMembers: async (id: string, token: string | null): Promise<any> =>
-    json(await apiClient.get(endpoints.USER.TEAM_MEMBERS(id), token)),
+  listMembers: async (
+    id: string,
+    token: string | null,
+    opts?: { q?: string; page?: number; pageSize?: number },
+  ): Promise<any> => {
+    const params = new URLSearchParams();
+    if (opts?.q) params.set('q', opts.q);
+    if (opts?.pageSize) {
+      params.set('page', String(opts.page ?? 1));
+      params.set('page_size', String(opts.pageSize));
+    }
+    const query = params.toString();
+    return json(
+      await apiClient.get(
+        `${endpoints.USER.TEAM_MEMBERS(id)}${query ? `?${query}` : ''}`,
+        token,
+      ),
+    );
+  },
   addMember: async (
     id: string,
     // Pass either an email (resolved to a sub server-side) or a raw user_id.
@@ -247,6 +264,18 @@ const teamsService = {
 
   listAll: async (token: string | null): Promise<any> =>
     json(await apiClient.get(endpoints.USER.ALL_TEAMS, token)),
+  /** Admin team search: by name or slug, optionally only teams with no allowance. */
+  searchAdminTeams: async (
+    token: string | null,
+    opts: { q: string; withoutQuota?: boolean; limit?: number },
+  ): Promise<any> => {
+    const params = new URLSearchParams({ q: opts.q });
+    if (opts.withoutQuota) params.set('without_quota', '1');
+    if (opts.limit) params.set('limit', String(opts.limit));
+    return json(
+      await apiClient.get(`${endpoints.USER.ALL_TEAMS}?${params}`, token),
+    );
+  },
 };
 
 export default teamsService;

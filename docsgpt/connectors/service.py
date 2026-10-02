@@ -1216,6 +1216,7 @@ def create_tool_for_connection(
     actions: Optional[list] = None,
     permissions: Optional[dict] = None,
     status: bool = True,
+    description: Optional[str] = None,
 ) -> dict:
     """Create the tool a connection provides, with read / write defaults.
 
@@ -1234,6 +1235,7 @@ def create_tool_for_connection(
         actions: Action metadata; defaults to the tool class's own.
         permissions: Per-action permission overrides.
         status: Whether the tool starts enabled.
+        description: Description shown for the tool; defaults to the tool class's.
 
     Returns:
         The new ``user_tools`` row.
@@ -1265,7 +1267,7 @@ def create_tool_for_connection(
         config=dict(config or {}),
         custom_name=name,
         display_name=name,
-        description=doc[1].strip() if len(doc) > 1 else "",
+        description=description if description is not None else (doc[1].strip() if len(doc) > 1 else ""),
         config_requirements=tool.get_config_requirements(),
         actions=actions,
         status=status,
@@ -1306,6 +1308,54 @@ def builtin_mcp_config(definition: Optional[ConnectorDefinition], writes: bool =
     return {"server_url": url, "auth_type": "bearer", "transport_type": "http", "timeout": 30}
 
 
+def preset_mcp_config(definition: Optional[ConnectorDefinition]) -> Optional[dict]:
+    """Tool config of an MCP preset (Notion, Linear…), as its sign-in saves it.
+
+    The OAuth tokens are not part of it: they stay on the connection, which
+    the tool is linked to, and the executor signs in with them at run time.
+
+    Args:
+        definition: The connector.
+
+    Returns:
+        The config, or None when the connector is not an MCP preset.
+    """
+    if (
+        definition is None
+        or definition.publisher != "preset"
+        or not definition.mcp_url
+        or "mcp_tool" not in definition.tool_templates
+    ):
+        return None
+    return {
+        "server_url": definition.mcp_url,
+        "auth_type": "oauth",
+        "oauth_scopes": list(definition.oauth_scopes),
+        "timeout": 30,
+        "transport_type": "auto",
+    }
+
+
+def connection_mcp_config(definition: Optional[ConnectorDefinition], writes: bool = False) -> Optional[dict]:
+    """Config of the MCP tool setup can create for a connection: a built-in's or a preset's.
+
+    Args:
+        definition: The connector.
+        writes: For a built-in connector, use its write endpoint (see
+            :func:`builtin_mcp_config`).
+
+    Returns:
+        The config, or None when setup creates no MCP tool for this connector
+        (a custom server's tool comes only from its save flow).
+    """
+    return builtin_mcp_config(definition, writes=writes) or preset_mcp_config(definition)
+
+
+def mcp_tool_description(config: dict) -> str:
+    """``MCP Server: <url>``: what an MCP tool's save names it."""
+    return f"MCP Server: {config.get('server_url', 'Unknown')}"
+
+
 def builtin_mcp_url(definition: Optional[ConnectorDefinition], stored_url: Optional[str], allowed: bool) -> str:
     """The endpoint a built-in connector's MCP tool may call, whatever its config says.
 
@@ -1339,9 +1389,13 @@ def builtin_writes(definition: Optional[ConnectorDefinition], tool_rows: Iterabl
 
 
 def needs_mcp_discovery(conn, connection: dict) -> bool:
-    """Whether creating this connection's tools first needs its MCP server's actions."""
+    """Whether creating this connection's tools first needs its MCP server's actions.
+
+    True for a built-in connector whose tool is its MCP server (GitHub) and for
+    an MCP preset whose tool was deleted, while the connection has no such tool.
+    """
     definition = catalog.get_definition(catalog.connector_key_for_row(connection))
-    if builtin_mcp_config(definition) is None:
+    if connection_mcp_config(definition) is None:
         return False
     have = {tool.get("name") for tool in ConnectorSessionsRepository(conn).list_tools(str(connection["id"]))}
     return "mcp_tool" not in have
@@ -1365,9 +1419,10 @@ def ensure_connection_tools(
         user_id: The owner.
         connection: The connection row.
         permissions: Per-action permission overrides.
-        mcp_actions: The actions of a built-in connector's MCP server
-            (GitHub's), discovered by the caller outside this transaction.
-            Without them that tool is not created.
+        mcp_actions: The actions of the connection's MCP server (GitHub's,
+            or an MCP preset's whose tool was deleted), discovered by the
+            caller outside this transaction. Without them that tool is not
+            created.
         mcp_writes: Point that tool at the endpoint that also offers writes;
             the caller checked that an admin allows them.
     """
@@ -1378,20 +1433,22 @@ def ensure_connection_tools(
     if not definition or not definition.tool_templates:
         return existing
     have = {tool.get("name") for tool in existing}
-    mcp_config = builtin_mcp_config(definition, writes=mcp_writes)
+    mcp_config = connection_mcp_config(definition, writes=mcp_writes)
     created = []
     for template in definition.tool_templates:
         if template in have:
             continue
         if template == "mcp_tool" and mcp_config is not None and mcp_actions is not None:
+            # A preset's tool is described as its sign-in's save describes it.
+            description = mcp_tool_description(mcp_config) if definition.publisher == "preset" else None
             created.append(create_tool_for_connection(
                 conn, user_id, connection, template=template, config=mcp_config,
-                actions=mcp_actions, permissions=permissions,
+                actions=mcp_actions, permissions=permissions, description=description,
             ))
             continue
         if template in ("mcp_tool", "api_tool"):
-            # Other MCP tools are created by the MCP save flow, which has the
-            # discovered actions; OpenAPI tools come from an imported spec.
+            # A custom server's MCP tool is created by the MCP save flow, which
+            # has the discovered actions; OpenAPI tools come from an imported spec.
             continue
         created.append(
             create_tool_for_connection(conn, user_id, connection, template=template, permissions=permissions)

@@ -1,6 +1,12 @@
 import type { CSSProperties } from 'react';
 import type { Components } from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import {
+  oneLight,
+  vscDarkPlus,
+} from 'react-syntax-highlighter/dist/cjs/styles/prism';
 
+import { CodeFrame } from '@/components/ui/code-block';
 import {
   Table,
   TableBody,
@@ -67,3 +73,51 @@ export const markdownTables: Components = {
     <TableCell align={cellAlign(style)}>{children}</TableCell>
   ),
 };
+
+/** The inline `code` chip, one look in every markdown surface. */
+const inlineCodeChip =
+  'bg-accent text-foreground rounded-md px-2 py-1 text-xs font-normal whitespace-pre-line';
+
+/**
+ * The `code` renderer shared by every markdown surface: inline code is the
+ * chip; a fenced block with a language is a `CodeFrame` (language, copy
+ * button) around the syntax-highlighted source. Spread into `components`.
+ *
+ * @param options.surface The fence header: `answer` in a chat answer, `muted`
+ *   elsewhere. Without it fences are left to the caller's `pre` (a source
+ *   view's plain bordered box) and only the inline chip applies.
+ * @param options.isDarkTheme Picks the Prism theme (the caller's
+ *   `useDarkTheme()`).
+ * @returns The `code` component.
+ */
+export function markdownCode({
+  surface,
+  isDarkTheme = false,
+}: {
+  surface?: 'answer' | 'muted';
+  isDarkTheme?: boolean;
+}): Components {
+  return {
+    code({ children, className }) {
+      const language = /language-(\w+)/.exec(className || '')?.[1];
+      if (!language || !surface) {
+        return <code className={inlineCodeChip}>{children}</code>;
+      }
+      const source = String(children).replace(/\n$/, '');
+      return (
+        <CodeFrame label={language} copyText={source} surface={surface}>
+          <SyntaxHighlighter
+            PreTag="div"
+            language={language}
+            /* eslint-disable-next-line shadcn/no-inline-styles -- SyntaxHighlighter's style prop is its Prism theme object (oneLight / vscDarkPlus), picked by theme at runtime; it is not CSS. See DESIGN.md, Approved exceptions. */
+            style={isDarkTheme ? vscDarkPlus : oneLight}
+            className="mt-0!"
+            customStyle={{ margin: 0, borderRadius: 0, scrollbarWidth: 'thin' }}
+          >
+            {source}
+          </SyntaxHighlighter>
+        </CodeFrame>
+      );
+    },
+  };
+}

@@ -301,6 +301,7 @@ class ResearchAgent(BaseAgent):
         think_entry["config"] = {}
         tools_dict[THINK_TOOL_ID] = think_entry
 
+        self._add_attachments_tool(tools_dict)
         self._prepare_tools(tools_dict)
         return tools_dict
 
@@ -641,6 +642,10 @@ class ResearchAgent(BaseAgent):
             tool_message = self.llm_handler.create_tool_message(call, result)
             messages.append(tool_message)
 
+        # Images an attachments read asked for follow the tool results.
+        pending = getattr(executor, "pending_native_parts", None)
+        if isinstance(pending, list) and pending:
+            messages = self.llm_handler.append_native_reads(self, messages, executor)
         return messages, search_returned_empty
 
     def _refuse_paused_call(

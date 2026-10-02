@@ -7,16 +7,24 @@ import en from '../locale/en.json';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) =>
-      key
-        .split('.')
-        .reduce<unknown>(
-          (node, part) => (node as Record<string, unknown>)?.[part],
-          en,
-        ) ?? key,
+    t: (key: string, opts?: Record<string, unknown>) => {
+      const text =
+        (key
+          .split('.')
+          .reduce<unknown>(
+            (node, part) => (node as Record<string, unknown>)?.[part],
+            en,
+          ) as string | undefined) ?? key;
+      return typeof text === 'string'
+        ? text.replace(/{{(\w+)}}/g, (m, k) =>
+            opts && k in opts ? String(opts[k]) : m,
+          )
+        : text;
+    },
   }),
 }));
 
+import { ChatCompanionContext } from './chatCompanion';
 import ConversationBubble from './ConversationBubble';
 import { ToolCallsType } from './types';
 
@@ -175,8 +183,14 @@ describe('ConversationBubble', () => {
     // so the scrollbar stays clear of the rounded corners.
     const scroller = pre.parentElement!;
     expect(scroller.className.split(' ')).toEqual(
-      expect.arrayContaining(['scrollbar-overlay', 'overflow-y-auto']),
+      expect.arrayContaining([
+        'scrollbar-overlay',
+        'overflow-y-auto',
+        'max-h-40',
+      ]),
     );
+    // ui/code-block CodeBlock surface="subtle" maxHeight="sm".
+    expect(pre.dataset.slot).toBe('code-block');
     const card = scroller.parentElement!;
     expect(card.getAttribute('data-slot')).toBe('card');
     expect(card.getAttribute('data-variant')).toBe('subtle');
@@ -281,6 +295,88 @@ describe('ConversationBubble', () => {
     expect(toggle.querySelector('img')).toBeNull();
     expect(toggle.querySelector('svg')).not.toBeNull();
   });
+  describe('approval card', () => {
+    const githubCall: ToolCallsType = {
+      tool_name: 'github',
+      action_name: 'create_issue',
+      call_id: 'call-2',
+      arguments: { owner: 'meridianfreight', repo: 'ops-portal' },
+      status: 'awaiting_approval',
+      connector_key: 'github',
+      connector_name: 'GitHub',
+      access: 'write',
+    };
+
+    it('names the connector and its action, not the raw tool name', async () => {
+      await render(
+        <ConversationBubble
+          type="ANSWER"
+          toolCalls={[githubCall]}
+          onToolAction={() => {}}
+        />,
+      );
+      expect(container.textContent).toContain('GitHub · Create issue');
+      expect(container.textContent).toContain(
+        tr('conversation.toolApproval.state.approval'),
+      );
+      const spans = Array.from(container.querySelectorAll('span'));
+      expect(spans.some((el) => el.textContent === 'github')).toBe(false);
+    });
+
+    it('shows a dash-named MCP action', async () => {
+      await render(
+        <ConversationBubble
+          type="ANSWER"
+          toolCalls={[
+            {
+              ...githubCall,
+              tool_name: 'mcp_tool',
+              action_name: 'notion-create-pages',
+              connector_key: 'mcp:notion',
+              connector_name: 'Notion',
+            },
+          ]}
+          onToolAction={() => {}}
+        />,
+      );
+      expect(container.textContent).toContain('Notion · Create pages');
+      expect(container.textContent).not.toContain('mcp_tool');
+    });
+
+    it('keeps the arguments behind Details', async () => {
+      await render(
+        <ConversationBubble
+          type="ANSWER"
+          toolCalls={[githubCall]}
+          onToolAction={() => {}}
+        />,
+      );
+      expect(container.querySelector('pre')).toBeNull();
+    });
+
+    it('fits the chat column', async () => {
+      await render(
+        <ConversationBubble
+          type="ANSWER"
+          toolCalls={[githubCall]}
+          onToolAction={() => {}}
+        />,
+      );
+      const approve = buttonByText(tr('conversation.toolApproval.approve'));
+      let node: HTMLElement | null = approve;
+      const chain: string[][] = [];
+      while (node && node !== container) {
+        chain.push(node.className.split(' '));
+        node = node.parentElement;
+      }
+      // The card and the wrapper around it both shrink below their content.
+      expect(
+        chain.filter((c) => c.includes('min-w-0')).length,
+      ).toBeGreaterThanOrEqual(2);
+      expect(chain.some((c) => c.includes('flex-wrap'))).toBe(true);
+    });
+  });
+
   describe('source cards', () => {
     const sources = [
       { title: 'Guide', text: 'Guide text', link: 'https://example.com/guide' },
@@ -338,6 +434,38 @@ describe('ConversationBubble', () => {
         ),
       );
       expect(stops).toEqual([cardButton(0), link, cardButton(1)]);
+    });
+
+    it("shows a synced source's connector logo on its link row", async () => {
+      await render(
+        <ConversationBubble
+          type="ANSWER"
+          message="Hi"
+          sources={[
+            {
+              title: 'Plan',
+              text: 'Plan text',
+              link: 'https://drive.google.com/file/d/1',
+              connector_key: 'google_drive',
+              connector_name: 'Google Drive',
+            },
+          ]}
+        />,
+      );
+      const link = container.querySelector('[id^="source-"] a')!;
+      expect(link.getAttribute('href')).toBe(
+        'https://drive.google.com/file/d/1',
+      );
+      const icon = link.querySelector('svg')!;
+      expect(icon.classList.contains('lucide-file-text')).toBe(false);
+    });
+
+    it('keeps the file glyph on a plain link', async () => {
+      await render(
+        <ConversationBubble type="ANSWER" message="Hi" sources={sources} />,
+      );
+      const icon = container.querySelector('[id^="source-"] a svg')!;
+      expect(icon.classList.contains('lucide-file-text')).toBe(true);
     });
 
     it('shows no hover preview', async () => {
@@ -411,6 +539,26 @@ describe('ConversationBubble', () => {
     expect(buttonByText('retry')).toBeDefined();
   });
 
+  it('shows a curated error as readable text, with its action under it', async () => {
+    const curated =
+      'This message and its attached files are too large for the model.';
+    await render(
+      <ConversationBubble
+        type="ERROR"
+        message={curated}
+        errorCode="context_length_exceeded"
+        errorAction={<button type="button">add-knowledge</button>}
+        retryBtn={<button type="button">retry</button>}
+      />,
+    );
+    const detail = container.querySelector(
+      '[role="alert"] [data-slot="alert-description"]',
+    )!;
+    expect(detail.textContent).toContain(curated);
+    expect(detail.innerHTML).not.toContain('font-mono');
+    expect(buttonByText('add-knowledge')).toBeDefined();
+  });
+
   it('makes the Sources header a step row that opens the All sources sheet', async () => {
     const sources = [1, 2, 3, 4].map((n) => ({
       title: `Doc ${n}`,
@@ -431,5 +579,42 @@ describe('ConversationBubble', () => {
     expect(header.getAttribute('aria-haspopup')).toBe('dialog');
     await act(async () => header.click());
     expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
+  });
+
+  it("opens the sources in the chat's side panel slot when there is one", async () => {
+    const sources = [1, 2, 3, 4].map((n) => ({
+      title: `Doc ${n}`,
+      text: `Excerpt ${n}`,
+      link: `doc-${n}.pdf`,
+    }));
+    const openSources = vi.fn();
+    await render(
+      <ChatCompanionContext.Provider value={{ openSources }}>
+        <ConversationBubble type="ANSWER" message="Answer" sources={sources} />
+      </ChatCompanionContext.Provider>,
+    );
+    const header = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        'button[data-variant="ghost"]',
+      ),
+    ).find((b) => b.textContent?.includes(tr('conversation.sources.title')))!;
+    expect(header.hasAttribute('aria-haspopup')).toBe(false);
+    await act(async () => header.click());
+    expect(openSources).toHaveBeenCalledWith(sources);
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  // S1: every panel under an answer shares the answer surface.
+  it('puts the question attachment chip on the answer surface', async () => {
+    await render(
+      <ConversationBubble
+        type="QUESTION"
+        message="What changed?"
+        filesAttached={[{ id: 'f1', fileName: 'rates.pdf' }]}
+      />,
+    );
+    const chip = container.querySelector('[title="rates.pdf"]')!;
+    expect(chip.className).toContain('bg-answer-surface');
+    expect(chip.className).not.toContain('bg-muted');
   });
 });

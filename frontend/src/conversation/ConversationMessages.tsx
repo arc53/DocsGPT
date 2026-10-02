@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { RotateCcw, TriangleAlert } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Alert, AlertDescription } from '../components/ui/alert';
@@ -21,9 +21,11 @@ import {
   MessageScrollerViewport,
 } from '../components/ui/message-scroller';
 import Hero from '../Hero';
+import AddToKnowledgeAction from './AddToKnowledgeAction';
 import { deriveArtifactChips } from './artifactChips';
 import ConversationBubble from './ConversationBubble';
 import { FEEDBACK, Query, Status } from './conversationModels';
+import { curatedErrorText } from './curatedError';
 import StreamingStatusLine from './StreamingStatusLine';
 import { cn } from '@/lib/utils';
 
@@ -52,7 +54,17 @@ type ConversationMessagesProps = {
   isSplitView?: boolean;
   /** Active agent id; threaded into SchedulerToolCallCard. */
   agentId?: string;
+  /**
+   * Whether a turn whose files did not fit may offer Add to Knowledge. Only
+   * the main chat, where the user picks the Knowledge the chat searches.
+   */
+  canAddToKnowledge?: boolean;
+  /** A failed turn's files were accepted as Knowledge; ``index`` is the turn. */
+  onKnowledgeAdded?: (index: number) => void;
 };
+
+// The backend's code for a turn that did not fit the model's window.
+const CONTEXT_LENGTH_EXCEEDED = 'context_length_exceeded';
 
 const MS_VIEWPORT_SELECTOR = '[data-slot="message-scroller-viewport"]';
 const STICK_THRESHOLD_PX = 48;
@@ -74,6 +86,8 @@ export default function ConversationMessages({
   onToolAction,
   isSplitView = false,
   agentId,
+  canAddToKnowledge = false,
+  onKnowledgeAdded,
 }: ConversationMessagesProps) {
   const { t } = useTranslation();
 
@@ -177,13 +191,36 @@ export default function ConversationMessages({
           <RotateCcw aria-hidden="true" />
         </IconButton>
       );
+      // Files that overflowed the window are better searched than sent:
+      // offer to make them Knowledge, then the question can be asked again.
+      const knowledgeFiles =
+        canAddToKnowledge &&
+        query.errorCode === CONTEXT_LENGTH_EXCEEDED &&
+        query.attachments?.length
+          ? query.attachments
+          : null;
       return (
         <ConversationBubble
           className={bubbleMargin}
           key={`${index}-ERROR`}
-          message={query.error}
+          message={curatedErrorText(
+            t,
+            query.error,
+            query.errorCode,
+            query.errorParams,
+            { offersKnowledge: Boolean(knowledgeFiles) },
+          )}
           type="ERROR"
           retryBtn={retryButton}
+          errorCode={query.errorCode}
+          errorAction={
+            knowledgeFiles ? (
+              <AddToKnowledgeAction
+                files={knowledgeFiles}
+                onAdded={() => onKnowledgeAdded?.(index)}
+              />
+            ) : undefined
+          }
         />
       );
     }
@@ -211,7 +248,6 @@ export default function ConversationMessages({
               role="status"
               className={cn(bubbleMargin, 'mr-5 w-auto')}
             >
-              <TriangleAlert className="size-4" aria-hidden="true" />
               <AlertDescription>{query.notice}</AlertDescription>
             </Alert>
           ) : null}

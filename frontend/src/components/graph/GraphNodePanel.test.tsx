@@ -28,6 +28,7 @@ import i18next from 'i18next';
 
 import userService from '../../api/services/userService';
 import { foldGraphTypes, type GraphNodeDetail } from '../graphViewUtils';
+import { SidePanel } from '../ui/side-panel';
 import GraphNodePanel, { RELATIONSHIP_PREVIEW } from './GraphNodePanel';
 
 const updateChunk = (
@@ -124,16 +125,23 @@ describe('GraphNodePanel', () => {
       onChunkSaved: vi.fn(),
     };
     await act(async () => {
+      const { onClose, ...panelHandlers } = handlers;
       root.render(
-        <GraphNodePanel
-          docId="doc"
-          node={{ id: 'nord', name: 'Nordhaven', type: 'Company' }}
-          detail={DETAIL}
-          status="ready"
-          fold={fold}
-          {...handlers}
-          {...props}
-        />,
+        <SidePanel
+          variant="docked"
+          open
+          onOpenChange={(open) => !open && onClose()}
+        >
+          <GraphNodePanel
+            docId="doc"
+            node={{ id: 'nord', name: 'Nordhaven', type: 'Company' }}
+            detail={DETAIL}
+            status="ready"
+            fold={fold}
+            {...panelHandlers}
+            {...props}
+          />
+        </SidePanel>,
       );
     });
     return handlers;
@@ -145,9 +153,9 @@ describe('GraphNodePanel', () => {
   it('shows the facts, one row per neighbour and the chunk file', async () => {
     await render();
     const text = container.textContent ?? '';
-    expect(container.querySelector('h3')?.textContent).toBe(
-      'Nordhaven Logistics B.V.',
-    );
+    expect(
+      container.querySelector('[data-slot="panel-header"] h2')?.textContent,
+    ).toBe('Nordhaven Logistics B.V.');
     expect(text).toContain('55');
     expect(text).toContain('settings.sources.graphrag.view.chunkCount:20');
 
@@ -167,19 +175,16 @@ describe('GraphNodePanel', () => {
     expect(text).not.toContain('inputs/local');
   });
 
-  it('draws its close X unless the sheet hides it', async () => {
-    const closeButton = () =>
-      container.querySelector(
-        'button[aria-label="settings.sources.graphrag.view.close"]',
-      );
+  it('closes from the side panel X', async () => {
     const { onClose } = await render();
     await act(async () => {
-      (closeButton() as HTMLButtonElement).click();
+      (
+        container.querySelector(
+          'button[aria-label="sidePanel.close"]',
+        ) as HTMLButtonElement
+      ).click();
     });
     expect(onClose).toHaveBeenCalled();
-
-    await render({ showClose: false });
-    expect(closeButton()).toBeNull();
   });
 
   it('selects the neighbour a row points at', async () => {
@@ -282,7 +287,9 @@ describe('GraphNodePanel', () => {
 
   it('shows the known name while loading, and Retry on failure', async () => {
     await render({ detail: null, status: 'loading' });
-    expect(container.querySelector('h3')?.textContent).toBe('Nordhaven');
+    expect(
+      container.querySelector('[data-slot="panel-header"] h2')?.textContent,
+    ).toBe('Nordhaven');
     expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
 
     const { onRetry } = await render({ detail: null, status: 'error' });
@@ -345,10 +352,14 @@ describe('GraphNodePanel', () => {
     expect(tile.textContent).not.toContain('#');
   });
 
-  it('opens a tile in a read drawer with the entity name marked', async () => {
+  it('opens a tile in the panel, with Back and the entity name marked', async () => {
     await render({ detail: CHUNK_DETAIL });
     await openTile();
-    const dialog = document.body.querySelector('[role="dialog"]')!;
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    const dialog = container.querySelector('[data-slot="side-panel"]')!;
+    expect(
+      dialog.querySelector('[aria-label="sidePanel.back"]'),
+    ).not.toBeNull();
     expect(dialog.querySelector('h2')?.textContent).toBe('Account brief');
     expect(dialog.textContent).toContain(
       'settings.sources.graphrag.view.chunkMeta',
@@ -364,14 +375,14 @@ describe('GraphNodePanel', () => {
     );
   });
 
-  it('opens the file on the Files tab and closes the drawer', async () => {
+  it('opens the file on the Files tab and goes back to the node', async () => {
     const { onOpenInFiles, onClose } = await render({ detail: CHUNK_DETAIL });
     await openTile();
     await act(async () =>
       bodyButton('settings.sources.graphrag.view.openInFiles')!.click(),
     );
     expect(onOpenInFiles).toHaveBeenCalledWith('inputs/local/Account_brief.md');
-    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector('[aria-label="sidePanel.back"]')).toBeNull();
     // The node stays selected.
     expect(onClose).not.toHaveBeenCalled();
   });
@@ -402,6 +413,8 @@ describe('GraphNodePanel', () => {
       }),
     );
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    // Back on the node.
+    expect(container.querySelector('[aria-label="sidePanel.back"]')).toBeNull();
   });
 
   it('keeps the edit drawer open with an alert when the save fails', async () => {

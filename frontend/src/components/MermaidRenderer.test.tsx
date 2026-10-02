@@ -91,4 +91,43 @@ describe('MermaidRenderer', () => {
       'mermaid.downloadAs MMD',
     ]);
   });
+
+  it('shows Code as a pressed pill toggle', async () => {
+    renderMermaidDiagramMock.mockResolvedValue({ svg: '<svg></svg>' });
+    await act(async () => {
+      root.render(
+        <MermaidRenderer code={'flowchart LR\nA --> B'} isLoading={false} />,
+      );
+    });
+    const code = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'mermaid.code',
+    )!;
+    expect(code.dataset.slot).toBe('toggle-chip');
+    expect(code.dataset.shape).toBe('pill');
+    expect(code.dataset.size).toBe('xs');
+    expect(code.getAttribute('aria-pressed')).toBe('false');
+    await act(async () => code.click());
+    expect(code.getAttribute('aria-pressed')).toBe('true');
+    expect(code.dataset.variant).toBe('secondary');
+  });
+
+  // Mermaid renders inside chat answers, so its header is the chat code
+  // header (answer-surface), the shared ui/code-block CodeFrame.
+  it('draws its header on answer-surface like a chat code block', async () => {
+    renderMermaidDiagramMock.mockResolvedValue({ svg: '<svg></svg>' });
+    await act(async () => {
+      root.render(
+        <MermaidRenderer code={'flowchart LR\nA --> B'} isLoading={false} />,
+      );
+    });
+    const frame = container.firstElementChild as HTMLElement;
+    const header = frame.firstElementChild as HTMLElement;
+    expect(header.textContent).toContain('mermaid');
+    expect(header.className).toContain('bg-answer-surface');
+    expect(header.className).not.toContain('bg-muted');
+    // The diagram body keeps its card fill.
+    expect(
+      container.querySelector('pre[id^="mermaid-"]')!.closest('.bg-card'),
+    ).not.toBeNull();
+  });
 });

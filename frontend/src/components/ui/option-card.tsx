@@ -35,9 +35,19 @@ function OptionCard({
   ...props
 }: OptionCardProps) {
   return (
-    <Card interactive selected={selected} asChild className={className}>
+    <Card
+      interactive
+      asChild
+      // The chosen tile: a primary border and tint. Keyed on data-selected
+      // so it outranks the card's hover like the other data states.
+      className={cn(
+        'data-[selected=true]:border-primary data-[selected=true]:bg-primary/5',
+        className,
+      )}
+    >
       <button
         type={type}
+        data-selected={selected || undefined}
         role={props.role ?? (selected !== undefined ? 'radio' : undefined)}
         aria-checked={selected}
         data-slot="option-card"

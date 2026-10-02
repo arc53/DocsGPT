@@ -358,14 +358,8 @@
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
   --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-answer-bubble: var(--answer-bubble);
+  --color-answer-surface: var(--answer-surface);
 }
 
 /*
@@ -377,9 +371,11 @@
   --background: #ffffff;
   --foreground: #171717;
   --card: #ffffff;
-  --card-foreground: #171717;
-  --popover: #ffffff;
-  --popover-foreground: #171717;
+  /* Twins kept for shadcn's class names: an alias, so a theme edit touches
+     one value. Re-declared in .dark so they resolve to the dark values. */
+  --card-foreground: var(--foreground);
+  --popover: var(--card);
+  --popover-foreground: var(--foreground);
   --primary: #7d54d1;
   --primary-foreground: #ffffff;
   /* Pressed/active toggle fill: a brand tint, so it shows on any surface
@@ -387,9 +383,9 @@
   --secondary: #7d54d11a; /* primary at 10%; static, so no color-mix fallback */
   --secondary-foreground: var(--primary);
   --muted: #f6f6f6;
-  --muted-foreground: #737373;
+  --muted-foreground: #6b6b6b; /* 4.93:1 on muted, 5.33:1 on white */
   --accent: #ececec;
-  --accent-foreground: #171717;
+  --accent-foreground: var(--foreground);
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
   /* Status colours. Pair `text-<token>` with `bg-<token>/10` for soft badges
@@ -401,7 +397,7 @@
   --info: #2563eb;
   --info-foreground: #ffffff;
   --border: #d9d9d9;
-  --input: #d9d9d9;
+  --input: var(--border);
   --ring: #7d54d1;
   /* Data series reuse brand and status colours: chart-1 is the brand, and a
      series with a meaning takes the matching token (failed = chart-5). */
@@ -411,14 +407,8 @@
   --chart-4: var(--warning);
   --chart-5: var(--destructive);
   --sidebar: #fbfbfb;
-  --sidebar-foreground: #171717;
-  --sidebar-primary: #7d54d1;
-  --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #ececec;
-  --sidebar-accent-foreground: #171717;
-  --sidebar-border: #d9d9d9;
-  --sidebar-ring: #7d54d1;
-  --answer-bubble: #f6f6f6;
+  --answer-surface: #f6f6f6;
   --scrollbar-thumb: #e2e8f0;
   --scrollbar-thumb-hover: #8c9198;
 }
@@ -431,9 +421,9 @@
   --background: #222327;
   --foreground: #fafafa;
   --card: #2b2c31;
-  --card-foreground: #fafafa;
-  --popover: #2b2c31;
-  --popover-foreground: #fafafa;
+  --card-foreground: var(--foreground);
+  --popover: var(--card);
+  --popover-foreground: var(--foreground);
   --primary: #8855f1; /* white text on it is 4.55:1 */
   --primary-foreground: #ffffff;
   --secondary: #976af326; /* #976af3 (the lighter dark purple) at 15% */
@@ -442,7 +432,7 @@
   --muted: #35363b;
   --muted-foreground: #a1a1a1;
   --accent: #3e3f45;
-  --accent-foreground: #fafafa;
+  --accent-foreground: var(--foreground);
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
   --success: #4ade80;
@@ -452,7 +442,7 @@
   --info: #60a5fa;
   --info-foreground: #172554;
   --border: #44454c;
-  --input: #44454c;
+  --input: var(--border);
   --ring: #976af3;
   /* Same aliases as :root, re-declared so they resolve to the dark values. */
   --chart-1: var(--primary);
@@ -461,14 +451,8 @@
   --chart-4: var(--warning);
   --chart-5: var(--destructive);
   --sidebar: #161616;
-  --sidebar-foreground: #fafafa;
-  --sidebar-primary: #976af3;
-  --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #222327;
-  --sidebar-accent-foreground: #fafafa;
-  --sidebar-border: #2b2c31;
-  --sidebar-ring: #976af3;
-  --answer-bubble: #2e303e;
+  --answer-surface: #2e303e;
   --scrollbar-thumb: #949494;
   --scrollbar-thumb-hover: #f0f0f0;
 }

@@ -37,7 +37,7 @@ from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.connectors.catalog import base_url, definition_for_tool
 from docsgpt.connectors.resolve import carry_removed_connection
 from docsgpt.connectors.service import account_tool_names
-from docsgpt.connectors.permissions import owner_credential_writes
+from docsgpt.connectors.permissions import action_access, owner_credential_writes
 from docsgpt.core.settings import settings
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.encryption import CredentialDecryptionError, decrypt_credentials, encrypt_credentials
@@ -688,6 +688,28 @@ class AvailableTools(Resource):
         return make_response(jsonify({"success": True, "data": tools_metadata}), 200)
 
 
+def _stamp_action_access(tool: dict) -> dict:
+    """Mark each of a listed tool's actions ``read`` or ``write``.
+
+    Stored rows only carry ``access`` when their catalog or MCP server said
+    so; the rest are judged by the same rule the runtime uses, so the tool
+    editor can group every tool's actions the same way.
+
+    Args:
+        tool: A tool shaped for the API, changed in place.
+
+    Returns:
+        The same tool.
+    """
+    name = tool.get("name")
+    actions = tool.get("actions")
+    if isinstance(actions, list):
+        for action in actions:
+            if isinstance(action, dict) and action.get("access") not in ("read", "write"):
+                action["access"] = action_access(name, action)
+    return tool
+
+
 @tools_ns.route("/get_tools")
 class GetTools(Resource):
     @api.doc(description="Get tools created by a user")
@@ -745,7 +767,7 @@ class GetTools(Resource):
                 tool_copy["ownership"] = ownership
                 if str(row["id"]) in account_names:
                     tool_copy["customName"] = tool_copy["displayName"] = account_names[str(row["id"])]
-                return tool_copy
+                return _stamp_action_access(tool_copy)
 
             for row in rows:
                 shaped = _shape_tool(row)
@@ -768,7 +790,7 @@ class GetTools(Resource):
             # in the management page (toggle) and the agent picker.
             seen_ids: set = set()
             for default_row in default_tools_for_management(user_doc):
-                default_copy = _row_to_api(default_row)
+                default_copy = _stamp_action_access(_row_to_api(default_row))
                 default_copy["default"] = True
                 default_copy["in_chat"] = bool(default_copy.get("status"))
                 if default_copy.get("name") in BUILTIN_AGENT_TOOLS:
@@ -782,7 +804,7 @@ class GetTools(Resource):
             # flag so the classic picker can hide them and the workflow node
             # picker can keep them.
             for builtin_row in builtin_agent_tools_for_management():
-                builtin_copy = _row_to_api(builtin_row)
+                builtin_copy = _stamp_action_access(_row_to_api(builtin_row))
                 if str(builtin_copy["id"]) in seen_ids:
                     continue
                 builtin_copy["builtin"] = True

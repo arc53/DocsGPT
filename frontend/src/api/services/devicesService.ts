@@ -163,8 +163,13 @@ const devicesService = {
   listAudit: async (
     id: string,
     token: string | null,
+    limit = 100,
+    offset = 0,
   ): Promise<{ entries: AuditEntry[] }> => {
-    const r = await apiClient.get(endpoints.USER.DEVICE_AUDIT(id), token);
+    const r = await apiClient.get(
+      endpoints.USER.DEVICE_AUDIT(id, limit, offset),
+      token,
+    );
     return (await json(r)) as { entries: AuditEntry[] };
   },
 };

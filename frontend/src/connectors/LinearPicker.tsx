@@ -8,6 +8,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import connectorsService from '../api/services/connectorsService';
+import { formatCount, intlLocale } from '../utils/dateTimeUtils';
 import SearchInput from '../components/SearchInput';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
@@ -36,10 +37,20 @@ export const EMPTY_LINEAR_SELECTION: LinearSelection = {
   includeDocuments: false,
 };
 
+/** Names as a list in the UI language: "Engineering, Launch" in English. */
+const listNames = (names: string[], language?: string) =>
+  new Intl.ListFormat(intlLocale(language), {
+    type: 'conjunction',
+    style: 'narrow',
+  }).format(names);
+
 /** `Linear · Engineering, Launch`: a source's name from what it syncs. */
-export const linearSourceName = (selection: LinearSelection) => {
+export const linearSourceName = (
+  selection: LinearSelection,
+  language?: string,
+) => {
   const names = [...selection.teams, ...selection.projects].map((p) => p.name);
-  return names.length ? `Linear · ${names.join(', ')}` : '';
+  return names.length ? `Linear · ${listNames(names, language)}` : '';
 };
 
 /** The wizard's choice as the setup endpoint takes it. */
@@ -65,11 +76,14 @@ export default function LinearPicker({
   token,
   value,
   onChange,
+  onReconnect,
 }: {
   connectionId: string;
   token: string | null;
   value: LinearSelection;
   onChange: (selection: LinearSelection) => void;
+  /** Signs the connection in again when its sign-in expired. */
+  onReconnect?: () => void;
 }) {
   const { t } = useTranslation();
   const [teams, setTeams] = useState<LinearTeam[]>([]);
@@ -112,6 +126,7 @@ export default function LinearPicker({
 
   const pickedTeams = new Set(value.teams.map((team) => team.id));
   const pickedProjects = new Set(value.projects.map((project) => project.id));
+  const picked = pickedTeams.size + pickedProjects.size;
 
   const toggleTeam = (team: LinearTeam, on: boolean) =>
     onChange({
@@ -141,10 +156,16 @@ export default function LinearPicker({
             ? t('settings.connectors.detail.expired')
             : t('settings.connectors.linear.loadFailed')
         }
+        onRetry={error === 'failed' ? load : undefined}
         action={
-          error === 'failed' ? (
-            <Button variant="outline" size="sm" shape="pill" onClick={load}>
-              {t('retry')}
+          error !== 'failed' && onReconnect ? (
+            <Button
+              variant="outline"
+              size="sm"
+              shape="pill"
+              onClick={onReconnect}
+            >
+              {t('settings.connectors.status.reconnect')}
             </Button>
           ) : undefined
         }
@@ -187,7 +208,7 @@ export default function LinearPicker({
   );
 
   const list = (children: ReactNode) => (
-    <Card variant="subtle" padding="none" className="max-h-60 overflow-y-auto">
+    <Card variant="outline" padding="none" className="overflow-hidden">
       <ListRows>{children}</ListRows>
     </Card>
   );
@@ -197,6 +218,7 @@ export default function LinearPicker({
       {teams.length + projects.length > SEARCH_FROM && (
         <SearchInput
           label={t('settings.connectors.linear.search')}
+          labelSurface="card"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -244,7 +266,10 @@ export default function LinearPicker({
                     project.id,
                     pickedProjects.has(project.id),
                     project.name,
-                    [project.state, project.teams.join(', ')]
+                    [
+                      project.state,
+                      project.teams.length ? listNames(project.teams) : '',
+                    ]
                       .filter(Boolean)
                       .join(' · '),
                     (on) => toggleProject(project, on),
@@ -252,6 +277,14 @@ export default function LinearPicker({
                 ),
               )}
             </section>
+          )}
+          {picked > 0 && (
+            <p className="text-muted-foreground text-xs">
+              {t('filePicker.itemsSelected', {
+                count: picked,
+                formatted: formatCount(picked),
+              })}
+            </p>
           )}
         </>
       )}

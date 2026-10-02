@@ -232,10 +232,7 @@ const toastMessageVariants = cva(
     variants: {
       variant: {
         default: 'text-muted-foreground',
-        success: 'text-success',
-        warning: 'text-warning',
         destructive: 'text-destructive',
-        info: 'text-info',
       },
       size: {
         xs: 'text-xs',

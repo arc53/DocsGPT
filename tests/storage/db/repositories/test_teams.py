@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy import text
+
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
 from docsgpt.storage.db.repositories.team_resource_grants import (
@@ -302,6 +304,61 @@ class TestEmailLookup:
         members.add_member(team["id"], "carol", role="team_member")
         row = next(m for m in members.list_members(team["id"]) if m["user_id"] == "carol")
         assert row["email"] == "carol@team.com"
+
+
+class TestListMembersPaging:
+    """``list_members`` / ``count_members`` search + LIMIT/OFFSET in SQL."""
+
+    def _seed(self, conn, n=5):
+        users = UsersRepository(conn)
+        members = TeamMembersRepository(conn)
+        team = _new_team(conn)
+        for i in range(n):
+            users.upsert(f"sub-{i}", email=f"Person{i}@Example.com")
+            members.add_member(team["id"], f"sub-{i}", role="team_member")
+        # Force a granted_at tie so ordering relies on the tie-breaker.
+        conn.execute(
+            text("UPDATE team_members SET granted_at = '2026-01-01' WHERE team_id = CAST(:t AS uuid)"),
+            {"t": team["id"]},
+        )
+        return members, team["id"]
+
+    def test_default_returns_all_rows(self, pg_conn):
+        members, team_id = self._seed(pg_conn)
+        rows = members.list_members(team_id)
+        assert len(rows) == 5
+        assert members.count_members(team_id) == 5
+
+    def test_order_is_deterministic_on_ties(self, pg_conn):
+        members, team_id = self._seed(pg_conn)
+        ids = [r["user_id"] for r in members.list_members(team_id)]
+        assert ids == sorted(ids)
+
+    def test_paging_yields_each_row_once(self, pg_conn):
+        members, team_id = self._seed(pg_conn)
+        seen = []
+        for offset in (0, 2, 4):
+            seen += [r["user_id"] for r in members.list_members(team_id, limit=2, offset=offset)]
+        assert seen == [f"sub-{i}" for i in range(5)]
+        assert members.list_members(team_id, limit=2, offset=6) == []
+
+    def test_q_matches_email_case_insensitively(self, pg_conn):
+        members, team_id = self._seed(pg_conn)
+        rows = members.list_members(team_id, q="PERSON3@example")
+        assert [r["user_id"] for r in rows] == ["sub-3"]
+        assert members.count_members(team_id, q="person3@") == 1
+
+    def test_q_matches_user_id(self, pg_conn):
+        members, team_id = self._seed(pg_conn)
+        TeamMembersRepository(pg_conn).add_member(team_id, "no-email-sub", role="team_member")
+        rows = members.list_members(team_id, q="NO-EMAIL")
+        assert [r["user_id"] for r in rows] == ["no-email-sub"]
+        assert members.count_members(team_id, q="sub") == 6
+
+    def test_q_treats_wildcards_literally(self, pg_conn):
+        members, team_id = self._seed(pg_conn)
+        assert members.list_members(team_id, q="%") == []
+        assert members.count_members(team_id, q="_") == 0
 
 
 class TestCleanupTrigger:

@@ -6,20 +6,29 @@ import {
   PayloadAction,
 } from '@reduxjs/toolkit';
 
+import type { Agent } from '../agents/types';
 import conversationService from '../api/services/conversationService';
 import {
   sseEventReceived,
   type SSEEvent,
 } from '../notifications/notificationsSlice';
 import { getConversations } from '../preferences/preferenceApi';
-import { setConversations } from '../preferences/preferenceSlice';
+import {
+  receiveConversations,
+  setSelectedAgent,
+} from '../preferences/preferenceSlice';
 import type { RootState } from '../store';
 import {
   clearAttachments,
-  selectCompletedAttachments,
+  selectSendableAttachmentIds,
 } from '../upload/uploadSlice';
 import { newIdempotencyKey } from '../utils/idempotency';
 import { appendThoughtText, recordToolCall } from './answerSegments';
+import {
+  type ErrorParams,
+  readStreamError,
+  setErrorDetail,
+} from './curatedError';
 import {
   handleFetchAnswer,
   handleFetchAnswerSteaming,
@@ -47,6 +56,32 @@ function toClientFeedback(value: unknown): FEEDBACK | undefined {
   if (typeof value !== 'string') return undefined;
   const upper = value.toUpperCase();
   return upper === 'LIKE' || upper === 'DISLIKE' ? upper : undefined;
+}
+
+const FAILED_FALLBACK = 'Generation failed before completing.';
+
+/**
+ * A failed turn's stored error as ``{message, code, params}``. The backend
+ * stores curated text in ``error``, its reason in ``error_code``
+ * (``context_length_exceeded``) and the values it was worded from in
+ * ``error_params``; an ``error`` object with ``message``, ``code`` and
+ * ``params`` is read too. Older rows carry only the text.
+ */
+export function readStoredError(
+  error: unknown,
+  code: unknown,
+  params?: unknown,
+): { message: string; code?: string; params?: ErrorParams } {
+  if (error && typeof error === 'object') {
+    const obj = error as {
+      message?: unknown;
+      code?: unknown;
+      params?: unknown;
+    };
+    return readStoredError(obj.message, obj.code ?? code, obj.params ?? params);
+  }
+  const stored = readStreamError({ error, code, params });
+  return { ...stored, message: stored.message || FAILED_FALLBACK };
 }
 
 export function mapServerQueryToClient(raw: any): Query {
@@ -78,9 +113,13 @@ export function mapServerQueryToClient(raw: any): Query {
     query.response = raw?.response ?? '';
   }
   if (isFailed) {
-    query.error =
-      (typeof metadata.error === 'string' && metadata.error) ||
-      'Generation failed before completing.';
+    const stored = readStoredError(
+      metadata.error,
+      metadata.error_code,
+      metadata.error_params,
+    );
+    query.error = stored.message;
+    setErrorDetail(query, stored.code, stored.params);
   }
   return query;
 }
@@ -120,12 +159,29 @@ export type LoadConversationResult = {
   stale: boolean;
 };
 
+// The fields of a loaded chat that say which agent it belongs to.
+export type ConversationAgentFields = {
+  agent_id?: string | null;
+  is_shared_usage?: boolean;
+  shared_token?: string | null;
+};
+
+export type LoadConversationArgs = {
+  id: string;
+  force?: boolean;
+  // The chat's agent (null for none), awaited before anything is applied
+  // so its messages and agent card change in one render. Without it the
+  // selected agent is left alone.
+  resolveAgent?: (data: ConversationAgentFields) => Promise<Agent | null>;
+};
+
 let loadSeq = 0;
 
 export const loadConversation = createAsyncThunk<
   LoadConversationResult,
-  { id: string; force?: boolean }
->('loadConversation', async ({ id, force }, { dispatch, getState }) => {
+  LoadConversationArgs
+>('loadConversation', async (args, { dispatch, getState }) => {
+  const { id, force, resolveAgent } = args;
   const seq = ++loadSeq;
   const state = getState() as RootState;
   const token = state.preference.token;
@@ -138,6 +194,15 @@ export const loadConversation = createAsyncThunk<
   }
   const data = await response.json();
   if (!data) return { data: null, stale: false };
+  let agent: Agent | null | undefined;
+  try {
+    agent = resolveAgent ? await resolveAgent(data) : undefined;
+  } catch (error) {
+    // A superseded load must not reject: its caller would navigate away
+    // from the newer chat.
+    if (seq !== loadSeq) return { data: null, stale: true };
+    throw error;
+  }
 
   // A later loadConversation has been issued; drop our writes so its
   // result wins, and tell the caller not to navigate off our return.
@@ -146,6 +211,7 @@ export const loadConversation = createAsyncThunk<
   }
 
   const mappedQueries = (data.queries || []).map(mapServerQueryToClient);
+  if (agent !== undefined) dispatch(setSelectedAgent(agent));
   dispatch(conversationSlice.actions.setConversation(mappedQueries));
   dispatch(
     conversationSlice.actions.updateConversationId({
@@ -187,9 +253,7 @@ export const fetchAnswer = createAsyncThunk<
   if (arg.attachmentIds !== undefined) {
     attachmentIds = arg.attachmentIds;
   } else {
-    attachmentIds = selectCompletedAttachments(state)
-      .filter((a) => a.id)
-      .map((a) => a.id) as string[];
+    attachmentIds = selectSendableAttachmentIds(state);
     if (attachmentIds.length > 0) {
       dispatch(clearAttachments());
     }
@@ -245,7 +309,7 @@ export const fetchAnswer = createAsyncThunk<
               dispatch(conversationSlice.actions.setStatus('idle'));
               getConversations(state.preference.token)
                 .then((fetchedConversations) => {
-                  dispatch(setConversations(fetchedConversations));
+                  dispatch(receiveConversations(fetchedConversations));
                 })
                 .catch((error) => {
                   console.error('Failed to fetch conversations: ', error);
@@ -341,7 +405,7 @@ export const fetchAnswer = createAsyncThunk<
                 conversationSlice.actions.raiseError({
                   conversationId: currentConversationId,
                   index: targetIndex,
-                  message: data.error,
+                  ...readStreamError(data),
                 }),
               );
             } else {
@@ -390,7 +454,7 @@ export const fetchAnswer = createAsyncThunk<
               }
               getConversations(state.preference.token)
                 .then((fetchedConversations) => {
-                  dispatch(setConversations(fetchedConversations));
+                  dispatch(receiveConversations(fetchedConversations));
                 })
                 .catch((error) => {
                   console.error('Failed to fetch conversations: ', error);
@@ -511,7 +575,7 @@ export const fetchAnswer = createAsyncThunk<
                 conversationSlice.actions.raiseError({
                   conversationId: currentConversationId,
                   index: targetIndex,
-                  message: data.error,
+                  ...readStreamError(data),
                 }),
               );
             } else if (data.type === 'structured_answer') {
@@ -592,7 +656,7 @@ export const fetchAnswer = createAsyncThunk<
         );
         getConversations(state.preference.token)
           .then((fetchedConversations) => {
-            dispatch(setConversations(fetchedConversations));
+            dispatch(receiveConversations(fetchedConversations));
           })
           .catch((error) => {
             console.error('Failed to fetch conversations: ', error);
@@ -724,7 +788,7 @@ export const submitToolActions = createAsyncThunk<
         dispatch(conversationSlice.actions.setStatus('idle'));
         getConversations(state.preference.token)
           .then((fetchedConversations) => {
-            dispatch(setConversations(fetchedConversations));
+            dispatch(receiveConversations(fetchedConversations));
           })
           .catch((error) => {
             console.error('Failed to fetch conversations: ', error);
@@ -791,7 +855,7 @@ export const submitToolActions = createAsyncThunk<
           conversationSlice.actions.raiseError({
             conversationId,
             index: targetIndex,
-            message: data.error,
+            ...readStreamError(data),
           }),
         );
       } else if (data.type === 'answer') {
@@ -837,6 +901,8 @@ export const conversationSlice = createSlice({
       delete state.queries[index].tool_calls;
       delete state.queries[index].segments;
       delete state.queries[index].error;
+      delete state.queries[index].errorCode;
+      delete state.queries[index].errorParams;
       delete state.queries[index].structured;
       delete state.queries[index].schema;
       delete state.queries[index].feedback;
@@ -1072,9 +1138,13 @@ export const conversationSlice = createSlice({
       query.lastHeartbeatAt = tail?.last_heartbeat_at ?? query.lastHeartbeatAt;
       if (status === 'failed') {
         // Surface as error so the placeholder text never renders.
-        query.error =
-          (typeof tail?.error === 'string' && tail.error) ||
-          'Generation failed before completing.';
+        const stored = readStoredError(
+          tail?.error,
+          tail?.error_code,
+          tail?.error_params,
+        );
+        query.error = stored.message;
+        setErrorDetail(query, stored.code, stored.params);
         delete query.response;
         return;
       }
@@ -1097,6 +1167,8 @@ export const conversationSlice = createSlice({
       }
       if (status === 'complete') {
         delete query.error;
+        delete query.errorCode;
+        delete query.errorParams;
       }
     },
     raiseError(
@@ -1105,12 +1177,17 @@ export const conversationSlice = createSlice({
         conversationId: string | null;
         index: number;
         message: string;
+        /** Why the turn failed (``context_length_exceeded``), when known. */
+        code?: string;
+        /** The values a curated error was worded from. */
+        params?: ErrorParams;
       }>,
     ) {
-      const { conversationId, index, message } = action.payload;
+      const { conversationId, index, message, code, params } = action.payload;
       if (state.conversationId !== conversationId) return;
 
       state.queries[index].error = message;
+      setErrorDetail(state.queries[index], code, params);
     },
 
     // Non-fatal counterpart to ``raiseError``: records a notice on the query
@@ -1239,7 +1316,7 @@ conversationListenerMiddleware.startListening({
     // Refresh sidebar; server reorders by updated_at which just bumped.
     try {
       const fetched = await getConversations(token);
-      listenerApi.dispatch(setConversations(fetched));
+      listenerApi.dispatch(receiveConversations(fetched));
     } catch (error) {
       console.error(
         'schedule.message.appended: conversations refresh failed',

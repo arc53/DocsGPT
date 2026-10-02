@@ -37,6 +37,54 @@ class IngestionSettings(SettingsGroup):
     UPLOAD_MAX_ARCHIVE_DEPTH: int = Field(
         default=3, ge=0, description="Maximum nesting depth of archives inside archives."
     )
+    # A zip attached to a chat is unpacked into one attachment per member.
+    ATTACHMENT_ARCHIVE_MAX_MEMBERS: int = Field(
+        default=200,
+        gt=0,
+        description="Files unpacked from one zip attachment (nested archives included); the rest are skipped.",
+    )
+    ATTACHMENT_ARCHIVE_MAX_ENTRIES: int = Field(
+        default=5000,
+        gt=0,
+        description=(
+            "Entries looked at in one zip attachment, nested archives and skipped members included; the rest "
+            "are skipped unread. Bounds the work a zip of many tiny or unsupported entries can cause, "
+            "separately from the file limit."
+        ),
+    )
+    ATTACHMENT_ARCHIVE_MAX_BYTES: int = Field(
+        default=200 * 1024 * 1024,
+        gt=0,
+        description="Total uncompressed bytes unpacked from one zip attachment; members past it are skipped.",
+    )
+    ATTACHMENT_ARCHIVE_MAX_DEPTH: int = Field(
+        default=2,
+        ge=1,
+        description="Archive levels unpacked from a zip attachment (2 = a zip inside the zip); deeper ones are skipped.",
+    )
+    ATTACHMENT_ARCHIVE_MAX_RATIO: int = Field(
+        default=100,
+        gt=0,
+        description="Uncompressed-to-compressed ratio above which a zip attachment is rejected as a zip bomb.",
+    )
+    ATTACHMENT_ARCHIVE_PARALLELISM: int = Field(
+        default=4,
+        gt=0,
+        description=(
+            "Members of one zip attachment parsed at the same time, each as its own worker task; the next "
+            "member is queued as one finishes, so a large zip never floods the queue ahead of other uploads."
+        ),
+    )
+    ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT: int = Field(
+        default=5400,
+        gt=0,
+        description=(
+            "Seconds a zip attachment's member may stay unparsed after it is queued (queue wait included) "
+            "before the reconciler marks it failed, so a lost task never leaves the zip processing forever. "
+            "A member whose task is running (its lease heartbeat is live) is never failed. Keep it above "
+            "CELERY_VISIBILITY_TIMEOUT, after which the broker redelivers a task whose worker died."
+        ),
+    )
     PARSE_PDF_AS_IMAGE: bool = Field(default=False, description="Render PDF pages to images before parsing.")
     PARSE_IMAGE_REMOTE: bool = Field(default=False, description="Send images to a remote parser.")
     DOC_PARSER_ENGINE: Literal["anydoc", "docling"] = Field(
@@ -111,6 +159,15 @@ class IngestionSettings(SettingsGroup):
         ),
     )
     ATTACHMENT_TEXT_MAX_BYTES: int = Field(default=5_000_000, description="Cap on extracted attachment text.")
+    ATTACHMENT_FULL_TEXT_MAX_BYTES: int = Field(
+        default=8_000_000,
+        ge=0,
+        description=(
+            "An attachment's stored text is cut at 100k tokens for the prompt; when it is, the worker also keeps "
+            "up to this many bytes of the whole extracted text next to the original file, so the attachments "
+            "tool can search and read past the cut. The tool never loads a larger side copy. 0 keeps none."
+        ),
+    )
     AGENT_IMAGE_MAX_BYTES: int = Field(default=5_000_000, description="Cap on an image passed to an agent.")
     AGENT_IMAGE_MAX_PIXELS: int = Field(
         default=16_777_216, description="Cap on the pixel count of an image passed to an agent."

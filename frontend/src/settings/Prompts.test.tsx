@@ -29,11 +29,32 @@ vi.mock('../preferences/PromptsModal', () => ({
     return null;
   },
 }));
+const confirm = vi.hoisted(() => ({
+  result: undefined as void | Promise<unknown>,
+}));
 vi.mock('../modals/ConfirmationModal', () => ({
-  default: ({ handleSubmit }: { handleSubmit: () => void }) => (
-    <button type="button" data-testid="confirm" onClick={handleSubmit}>
-      confirm
-    </button>
+  default: ({
+    handleSubmit,
+    error,
+  }: {
+    handleSubmit: () => void | Promise<unknown>;
+    error?: string;
+  }) => (
+    <>
+      <button
+        type="button"
+        data-testid="confirm"
+        onClick={() => {
+          const result = handleSubmit();
+          // Mark it handled; the tests assert on it afterwards.
+          if (result) result.catch(() => undefined);
+          confirm.result = result;
+        }}
+      >
+        confirm
+      </button>
+      <p data-testid="confirm-error">{error}</p>
+    </>
   ),
 }));
 
@@ -88,6 +109,34 @@ describe('Prompts', () => {
     expect(trigger?.getAttribute('data-shape')).toBe('pill');
     expect(trigger?.className).toMatch(/(^|\s)h-9\.5(\s|$)/);
     expect(trigger?.className).not.toMatch(/(^|\s)h-10\.5(\s|$)/);
+  });
+
+  it('is the shared Combobox, its popover at least 18rem wide', () => {
+    renderPrompts();
+    const trigger = container.querySelector<HTMLButtonElement>(
+      'button[role="combobox"]',
+    )!;
+    expect(trigger.dataset.slot).toBe('combobox-trigger');
+    // One chevron, a direct child (SelectTrigger's recipe).
+    const icons = trigger.querySelectorAll('svg');
+    expect(icons).toHaveLength(1);
+    expect(icons[0].parentElement).toBe(trigger);
+    expect(icons[0].getAttribute('class')).toContain('lucide-chevron-down');
+    act(() => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      trigger.click();
+    });
+    const content = document.body.querySelector<HTMLElement>(
+      '[data-slot="popover-content"]',
+    )!;
+    expect(content.className.split(' ')).toEqual(
+      expect.arrayContaining(['w-72', 'min-w-(--radix-popover-trigger-width)']),
+    );
+    expect(content.className).not.toContain(
+      ' w-(--radix-popover-trigger-width)',
+    );
   });
 
   it('puts the edit pencil beside the picker, not inside it', () => {
@@ -367,7 +416,7 @@ describe('Prompts', () => {
       expect(lastModalProps().onDuplicate).toBeUndefined();
     });
 
-    it('keeps the row and shows an error when the delete fails', async () => {
+    it('keeps the row and the error in the dialog when the delete fails', async () => {
       deletePrompt.mockReturnValue(json({ success: false }, false, 403));
       const setPrompts = vi.fn();
       renderPrompts({ prompts: all, selectedPrompt: own, setPrompts });
@@ -384,13 +433,15 @@ describe('Prompts', () => {
           document.body.querySelector('[data-testid="confirm"]') as HTMLElement
         ).click();
       });
+      await expect(confirm.result).rejects.toThrow();
       expect(setPrompts).not.toHaveBeenCalled();
-      expect(dispatch).toHaveBeenCalledWith(
+      expect(
+        document.body.querySelector('[data-testid="confirm-error"]')!
+          .textContent,
+      ).toBe('settings.general.promptActions.deleteFailed');
+      expect(dispatch).not.toHaveBeenCalledWith(
         expect.objectContaining({
-          payload: {
-            variant: 'destructive',
-            message: 'settings.general.promptActions.deleteFailed',
-          },
+          payload: expect.objectContaining({ variant: 'destructive' }),
         }),
       );
     });
@@ -412,6 +463,7 @@ describe('Prompts', () => {
           document.body.querySelector('[data-testid="confirm"]') as HTMLElement
         ).click();
       });
+      await expect(confirm.result).resolves.toBeUndefined();
       expect(setPrompts).toHaveBeenCalledWith(
         all.filter((p) => p.id !== 'own'),
       );

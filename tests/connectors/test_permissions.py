@@ -43,6 +43,17 @@ class TestActionAccess:
     def test_read_verbs_match_as_whole_words(self, name):
         assert p.action_access("mcp_tool", {"name": name}) == "read"
 
+    @pytest.mark.parametrize(
+        "tool,name", [("memory", "memory_view"), ("notes", "note_view"), ("wiki", "wiki_view")]
+    )
+    def test_builtin_view_actions_are_reads(self, tool, name):
+        # Builtins without an explicit ``access`` fall back to the name.
+        assert p.action_access(tool, {"name": name}) == "read"
+
+    @pytest.mark.parametrize("name", ["review_pull_request", "preview_changes", "set_view"])
+    def test_view_is_a_read_only_as_its_own_word(self, name):
+        assert p.action_access("mcp_tool", {"name": name}) == "write"
+
 
 class TestPermissions:
     def test_permission_from_flags(self):

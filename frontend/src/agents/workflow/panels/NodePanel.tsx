@@ -1,13 +1,12 @@
-import { Copy, Trash2, X } from 'lucide-react';
-import { type ReactNode } from 'react';
+import { Copy, Trash2 } from 'lucide-react';
+import { Fragment, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { type Node } from 'reactflow';
 
-import { Badge } from '@/components/ui/badge';
 import { ActionMenu } from '@/components/ui/dropdown-menu';
 import { FormField } from '@/components/ui/form-field';
-import { IconButton } from '@/components/ui/icon-button';
 import { Input } from '@/components/ui/input';
+import { PanelBody, PanelHeader, SidePanel } from '@/components/ui/side-panel';
 import { cn } from '@/lib/utils';
 
 import CopyButton from '../../../components/CopyButton';
@@ -34,9 +33,10 @@ const FIXED_HINT_KEYS: Record<string, string> = {
 };
 
 /**
- * The node settings column docked at the canvas's right edge: a header with
- * the type's icon, the node's title, its type and id, a ⋯ menu (Duplicate,
- * Delete node; none for Start) and close, then the one scrolling body.
+ * A node's settings, docked beside the canvas (DESIGN.md "Side panels"): the
+ * type's tile, the node's title, its type and id, a ⋯ menu (Duplicate,
+ * Delete node; none for Start), Expand and close, then the one scrolling body.
+ * Its host is the builder's `relative flex` row.
  */
 export default function NodePanel({
   node,
@@ -56,74 +56,65 @@ export default function NodePanel({
     : node.data.title || node.data.label || typeLabel;
 
   return (
-    <aside className="bg-background border-border flex w-96 shrink-0 flex-col border-l">
-      <header className="border-border flex items-start gap-3 border-b px-4 py-3">
-        <span
-          className={cn(
-            'flex size-8 shrink-0 items-center justify-center rounded-md',
-            nodeToneClass(node.type),
-          )}
-        >
-          {Icon && <Icon className="size-4" aria-hidden="true" />}
-        </span>
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex min-w-0 items-center gap-2">
-            <h2
-              className="text-foreground truncate text-sm font-semibold"
-              title={title}
-            >
-              {title}
-            </h2>
-            {title !== typeLabel && (
-              <Badge variant="neutral">{typeLabel}</Badge>
-            )}
-          </div>
-          <div className="flex min-w-0 items-center gap-1">
+    <SidePanel
+      variant="docked"
+      expandable="workflow-node"
+      open
+      onOpenChange={(open) => !open && onClose()}
+    >
+      {/* Keyed per node, so switching nodes resets the type's fields but
+          doesn't replay the panel's entrance. */}
+      <Fragment key={node.id}>
+        <PanelHeader
+          title={title}
+          leading={
             <span
-              className="text-muted-foreground truncate font-mono text-xs"
-              title={node.id}
+              className={cn(
+                'flex size-8 shrink-0 items-center justify-center rounded-md',
+                nodeToneClass(node.type),
+              )}
             >
-              {node.id}
+              {Icon && <Icon className="size-4" aria-hidden="true" />}
             </span>
-            <CopyButton
-              textToCopy={node.id}
-              size="xs"
-              copyLabel={t('agents.workflow.builder.copyNodeId')}
-              side="bottom"
-            />
-          </div>
-        </div>
-        {node.type !== 'start' && (
-          <ActionMenu
-            size="toolbar"
-            triggerLabel={t('agents.workflow.builder.nodeActions')}
-            options={[
-              {
-                label: t('agents.workflow.builder.duplicateNode'),
-                icon: Copy,
-                onClick: onDuplicate,
-              },
-              {
-                label: t('agents.workflow.builder.deleteNode'),
-                icon: Trash2,
-                variant: 'destructive',
-                onClick: onDelete,
-              },
-            ]}
-          />
-        )}
-        <IconButton
-          variant="ghost-muted"
-          size="icon-sm"
-          side="bottom"
-          onClick={onClose}
-          label={t('agents.close')}
-          icon={X}
+          }
+          description={
+            <span className="flex min-w-0 items-center gap-1">
+              <span className="shrink-0">{typeLabel}</span>
+              <span aria-hidden="true">·</span>
+              <span className="truncate font-mono text-xs" title={node.id}>
+                {node.id}
+              </span>
+              <CopyButton
+                textToCopy={node.id}
+                size="xs"
+                copyLabel={t('agents.workflow.builder.copyNodeId')}
+                side="bottom"
+              />
+            </span>
+          }
+          actions={
+            node.type !== 'start' ? (
+              <ActionMenu
+                size="toolbar"
+                triggerLabel={t('agents.workflow.builder.nodeActions')}
+                options={[
+                  {
+                    label: t('agents.workflow.builder.duplicateNode'),
+                    icon: Copy,
+                    onClick: onDuplicate,
+                  },
+                  {
+                    label: t('agents.workflow.builder.deleteNode'),
+                    icon: Trash2,
+                    variant: 'destructive',
+                    onClick: onDelete,
+                  },
+                ]}
+              />
+            ) : null
+          }
         />
-      </header>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="flex flex-col gap-6 p-4">
+        <PanelBody>
           {fixed ? (
             <p className="text-muted-foreground text-sm">
               {t(FIXED_HINT_KEYS[node.type ?? ''])}
@@ -144,8 +135,8 @@ export default function NodePanel({
             </FormField>
           )}
           {children}
-        </div>
-      </div>
-    </aside>
+        </PanelBody>
+      </Fragment>
+    </SidePanel>
   );
 }

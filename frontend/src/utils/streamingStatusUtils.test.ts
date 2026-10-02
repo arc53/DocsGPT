@@ -2,7 +2,11 @@ import type { TFunction } from 'i18next';
 import { describe, expect, it } from 'vitest';
 
 import type { ToolCallsType } from '../conversation/types';
-import { getToolChipLabel } from './streamingStatusUtils';
+import {
+  getToolChipLabel,
+  readableAction,
+  toolCallTitle,
+} from './streamingStatusUtils';
 
 // Stub that renders "key" or "key|value,value" so assertions can check both
 // the selected key and the interpolated values.
@@ -184,5 +188,184 @@ describe('getToolChipLabel', () => {
         t,
       ),
     ).toBe('conversation.toolChip.searchingWeb|docsgpt');
+  });
+});
+
+describe('readableAction', () => {
+  it('drops the service prefix and keeps a bare verb', () => {
+    expect(readableAction('linear_create_issue', 'Linear')).toBe(
+      'create issue',
+    );
+    expect(readableAction('notion-create-pages', 'Notion')).toBe(
+      'create pages',
+    );
+    expect(readableAction('create_issue', 'GitHub')).toBe('create issue');
+    expect(readableAction('search', 'Notion')).toBe('search');
+  });
+
+  it('reads without a service name', () => {
+    expect(readableAction('run_command')).toBe('run command');
+  });
+});
+
+describe('toolCallTitle', () => {
+  it('names the connector and its action in sentence case', () => {
+    expect(
+      toolCallTitle(
+        call({
+          tool_name: 'github',
+          action_name: 'create_issue',
+          connector_key: 'github',
+          connector_name: 'GitHub',
+        }),
+        t,
+      ),
+    ).toBe('conversation.toolApproval.title|GitHub,Create issue');
+  });
+
+  it('shows a dash-named MCP action', () => {
+    expect(
+      toolCallTitle(
+        call({
+          tool_name: 'mcp_tool',
+          action_name: 'notion-create-pages',
+          connector_key: 'mcp:notion',
+          connector_name: 'Notion',
+        }),
+        t,
+      ),
+    ).toBe('conversation.toolApproval.title|Notion,Create pages');
+  });
+
+  it('falls back to the tool name without a connector', () => {
+    expect(
+      toolCallTitle(
+        call({ tool_name: 'remote_device', action_name: 'run_command' }),
+        t,
+      ),
+    ).toBe('conversation.toolApproval.title|Remote Device,Run command');
+  });
+});
+
+describe('getToolChipLabel for the attachments tool', () => {
+  const files = (overrides: Partial<ToolCallsType>) =>
+    call({ tool_name: 'attachments', ...overrides });
+
+  it('names a search by its query', () => {
+    expect(
+      getToolChipLabel(
+        files({
+          action_name: 'attachments_search',
+          arguments: { query: 'enzymes', refs: ['F1', 'F2'] },
+        }),
+        t,
+      ),
+    ).toBe('conversation.toolChip.attachmentsSearch|enzymes');
+    expect(
+      getToolChipLabel(
+        files({
+          action_name: 'attachments_search',
+          arguments: { query: 'enzymes' },
+          status: 'pending',
+        }),
+        t,
+      ),
+    ).toBe('conversation.streamingStatus.attachmentsSearch|enzymes');
+    expect(
+      getToolChipLabel(files({ action_name: 'attachments_search' }), t),
+    ).toBe('conversation.toolChip.attachmentsSearchGeneric');
+  });
+
+  it('names a read by its file and the pages or rows it asked for', () => {
+    expect(
+      getToolChipLabel(
+        files({ action_name: 'attachments_read', arguments: { ref: 'f3' } }),
+        t,
+      ),
+    ).toBe('conversation.toolChip.attachmentsRead|F3');
+    expect(
+      getToolChipLabel(
+        files({
+          action_name: 'attachments_read',
+          arguments: { ref: 'F3', pages: '2-4' },
+        }),
+        t,
+      ),
+    ).toBe('conversation.toolChip.attachmentsReadPages|F3,2–4');
+    expect(
+      getToolChipLabel(
+        files({
+          action_name: 'attachments_read',
+          arguments: { ref: 'F3', pages: '5' },
+        }),
+        t,
+      ),
+    ).toBe('conversation.toolChip.attachmentsReadPage|F3,5');
+    expect(
+      getToolChipLabel(
+        files({
+          action_name: 'attachments_read',
+          arguments: { ref: 'F2', rows: '100-200' },
+        }),
+        t,
+      ),
+    ).toBe('conversation.toolChip.attachmentsReadRows|F2,100–200');
+    expect(
+      getToolChipLabel(files({ action_name: 'attachments_read' }), t),
+    ).toBe('conversation.toolChip.attachmentsReadGeneric');
+  });
+
+  it('says an image was viewed when the read showed one', () => {
+    expect(
+      getToolChipLabel(
+        files({
+          action_name: 'attachments_read',
+          arguments: { ref: 'F7' },
+          result:
+            'Image F7 photo.png is attached below in a follow-up message.' as unknown as Record<
+              string,
+              unknown
+            >,
+        }),
+        t,
+      ),
+    ).toBe('conversation.toolChip.attachmentsImage|F7');
+    // A# refs are image artifacts of the conversation.
+    expect(
+      getToolChipLabel(
+        files({ action_name: 'attachments_read', arguments: { ref: 'A2' } }),
+        t,
+      ),
+    ).toBe('conversation.toolChip.attachmentsImage|A2');
+  });
+
+  it('names a listing', () => {
+    expect(
+      getToolChipLabel(files({ action_name: 'attachments_list' }), t),
+    ).toBe('conversation.toolChip.attachmentsList');
+  });
+
+  it('accepts the docsgpt_ prefix the actions take beside a client tool', () => {
+    expect(
+      getToolChipLabel(
+        files({
+          action_name: 'docsgpt_attachments_search',
+          arguments: { query: 'cells' },
+        }),
+        t,
+      ),
+    ).toBe('conversation.toolChip.attachmentsSearch|cells');
+    expect(
+      getToolChipLabel(files({ action_name: 'docsgpt_attachments_list' }), t),
+    ).toBe('conversation.toolChip.attachmentsList');
+  });
+
+  it('leaves another tool with a look-alike action alone', () => {
+    expect(
+      getToolChipLabel(
+        call({ tool_name: 'mcp_tool', action_name: 'attachments_list' }),
+        t,
+      ),
+    ).toBe('conversation.toolChip.usingTool|Mcp Tool');
   });
 });

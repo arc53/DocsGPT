@@ -23,7 +23,7 @@ import {
   setIdentifier,
   updateQuery,
 } from './sharedConversationSlice';
-import { selectCompletedAttachments } from '../upload/uploadSlice';
+import { selectSendableAttachments } from '../upload/uploadSlice';
 import { Head as DocumentHead } from '../components/Head';
 
 export const SharedConversation = () => {
@@ -36,7 +36,7 @@ export const SharedConversation = () => {
   const date = useSelector(selectDate);
   const apiKey = useSelector(selectClientAPIKey);
   const status = useSelector(selectStatus);
-  const completedAttachments = useSelector(selectCompletedAttachments);
+  const sendableAttachments = useSelector(selectSendableAttachments);
 
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
@@ -110,9 +110,7 @@ export const SharedConversation = () => {
     question = question.trim();
     if (question === '') return;
 
-    const filesAttached = completedAttachments
-      .filter((a) => a.id)
-      .map((a) => ({ id: a.id as string, fileName: a.fileName }));
+    const filesAttached = sendableAttachments;
 
     !isRetry &&
       dispatch(
@@ -144,13 +142,7 @@ export const SharedConversation = () => {
           <h1 className="text-foreground text-4xl font-semibold">{title}</h1>
           <p className="text-muted-foreground text-sm">
             {t('sharedConv.subtitle')}{' '}
-            <Button
-              variant="link"
-              size="inline"
-              asChild
-              // eslint-disable-next-line shadcn/no-restyle -- a link inside a regular-weight subtitle
-              className="font-normal"
-            >
+            <Button variant="link" size="text" asChild>
               <a href="/">DocsGPT</a>
             </Button>
           </p>

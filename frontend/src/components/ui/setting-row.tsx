@@ -1,5 +1,6 @@
 import * as React from 'react';
 
+import { FormFieldControlProvider } from '@/components/ui/form-field';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 
@@ -17,7 +18,11 @@ function SettingRows({ className, ...props }: React.ComponentProps<'div'>) {
 type SettingRowProps = {
   label: React.ReactNode;
   description?: React.ReactNode;
-  /** The control's id, so clicking the label toggles it and names it. */
+  /**
+   * The control's id, so clicking the label toggles it and names it.
+   * Generated when omitted; a ui/ control (Switch, Input, SelectTrigger…)
+   * takes it from the row, so it needs no `id` of its own.
+   */
   htmlFor?: string;
   /** Top-align the control, for descriptions that wrap. */
   alignStart?: boolean;
@@ -43,6 +48,9 @@ type SettingRowProps = {
 /**
  * A settings row: title and muted description on the left, a control on the
  * right, 12px of padding above and below (none at the ends of its group).
+ * Like FormField it wires the control through context: the control gets the
+ * row's id (`htmlFor`, or a generated one) and `aria-describedby` pointing at
+ * the description. The `after` field is not wired.
  */
 function SettingRow({
   label,
@@ -56,6 +64,12 @@ function SettingRow({
   children,
 }: SettingRowProps) {
   const Heading = as === 'label' ? null : as;
+  const generatedId = React.useId();
+  const controlId = htmlFor ?? generatedId;
+  // Its own id, not one derived from the control's: a `[id^=…]` lookup for
+  // the control must not land on the description.
+  const generatedDescriptionId = React.useId();
+  const descriptionId = description ? generatedDescriptionId : undefined;
   return (
     <div
       data-slot="setting-row"
@@ -79,19 +93,26 @@ function SettingRow({
             </Heading>
           ) : (
             <Label
-              htmlFor={htmlFor}
+              htmlFor={controlId}
               className="text-foreground w-fit text-sm font-medium"
             >
               {label}
             </Label>
           )}
           {description ? (
-            <p className="text-muted-foreground text-xs">{description}</p>
+            <p id={descriptionId} className="text-muted-foreground text-xs">
+              {description}
+            </p>
           ) : null}
         </div>
         {children ? (
           <div className={cn('shrink-0', stack && 'w-full sm:w-auto')}>
-            {children}
+            <FormFieldControlProvider
+              id={controlId}
+              describedBy={descriptionId}
+            >
+              {children}
+            </FormFieldControlProvider>
           </div>
         ) : null}
       </div>

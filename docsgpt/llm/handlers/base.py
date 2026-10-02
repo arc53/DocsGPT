@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 import uuid
@@ -6,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Generator, List, Optional, Union
 
 from docsgpt.agents.tool_executor import trace_unexecuted_tool_call
+from docsgpt.error import bounded_error_text
 from docsgpt.logging import build_stack_data
 
 logger = logging.getLogger(__name__)
@@ -98,6 +100,17 @@ class LLMResponse:
         return bool(self.tool_calls) and self.finish_reason == "tool_calls"
 
 
+# Stands in for the current turn's message in what a mid-execution compression
+# summarizes: the message (and the files inlined into it) is carried over
+# verbatim instead, so the summary never replaces the documents the turn is
+# working from.
+CURRENT_TURN_STUB = (
+    "[The current request and its attached files are kept verbatim after this "
+    "summary and are not part of it.]"
+)
+_CONTINUATION_PROMPT = "Please continue with the remaining tasks based on the context above."
+
+
 def _is_restated_payload(existing: str, incoming: str) -> bool:
     """True when ``incoming`` restates an already-complete ``existing`` payload.
 
@@ -121,6 +134,59 @@ def _is_restated_payload(existing: str, incoming: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+def render_native_reads(
+    llm, messages: List[Dict], labels: List[str], attachments: List[Dict], *, check_vision: bool = False
+) -> tuple:
+    """Append the follow-up user message that shows ``llm`` the requested images.
+
+    Args:
+        llm: The model the images are sent to; its provider formats them.
+        messages: The messages to append to.
+        labels: One label per image, in order.
+        attachments: The images (a stored path or rendered ``data``).
+        check_vision: Check that ``llm`` reads the images (a fallback; the
+            tool only queued them because the primary does).
+
+    Returns:
+        The messages with the follow-up message, and that message. A model
+        that reads none of the images, or a provider that fails to format
+        them, gets a note saying they cannot be shown instead.
+    """
+    from docsgpt.agents.tools.attachments import native_reads_note
+
+    listed = "; ".join(labels)
+    supported: List[str] = []
+    if check_vision:
+        try:
+            supported = [str(t) for t in llm.get_supported_attachment_types() or []]
+        except Exception:
+            supported = []
+    if check_vision and attachments and not any(str(a.get("mime_type") or "") in supported for a in attachments):
+        note = {
+            "role": "user",
+            "content": (
+                f"[The images requested with attachments_read ({listed}) cannot be shown: the responding "
+                "model does not read images. Tell the user they could not be viewed; do not guess what they show.]"
+            ),
+        }
+        return [*messages, note], note
+    note = {"role": "user", "content": [{"type": "text", "text": native_reads_note(labels)}]}
+    try:
+        prepared = llm.prepare_messages_with_attachments([*messages, note], [dict(a) for a in attachments])
+    except Exception as e:
+        logger.error("Could not attach requested images: %s", bounded_error_text(e))
+        note = {
+            "role": "user",
+            "content": (
+                f"[The images requested with attachments_read ({listed}) could not be "
+                "attached. Tell the user they could not be viewed; do not guess what they show.]"
+            ),
+        }
+        return [*messages, note], note
+    built = next((m for m in reversed(prepared) if isinstance(m, dict) and m.get("role") == "user"), note)
+    return prepared, built
 
 
 class LLMHandler(ABC):
@@ -233,6 +299,9 @@ class LLMHandler(ABC):
         Returns:
             Prepared messages list
         """
+        plan = self._attachment_plan_of(agent)
+        if plan is not None:
+            return self._prepare_planned_messages(agent, messages, plan)
         if not attachments:
             return messages
         logger.info(f"Preparing messages with {len(attachments)} attachments")
@@ -253,7 +322,10 @@ class LLMHandler(ABC):
                     f"Converting PDF to images for synthetic PDF support: {attachment.get('path', 'unknown')}"
                 )
                 try:
-                    converted_images = self._convert_pdf_to_images(attachment)
+                    from docsgpt.agents.attachment_budget import SYNTHETIC_PDF_MAX_PAGES
+
+                    # The renderer returns one page past the cap as a signal.
+                    converted_images = self._convert_pdf_to_images(attachment)[:SYNTHETIC_PDF_MAX_PAGES]
                     processed_attachments.extend(converted_images)
                     logger.info(
                         f"Converted PDF to {len(converted_images)} images"
@@ -294,6 +366,189 @@ class LLMHandler(ABC):
             )
         return messages
 
+    @staticmethod
+    def _attachment_plan_of(agent) -> Optional[Any]:
+        """The agent's attachment plan, when it made one this turn."""
+        from docsgpt.agents.attachment_budget import AttachmentPlan
+
+        plan = getattr(agent, "attachment_plan", None)
+        return plan if isinstance(plan, AttachmentPlan) else None
+
+    @staticmethod
+    def _turn_message(agent, messages: List[Dict]) -> Optional[Dict]:
+        """The message this turn's attachments belong to.
+
+        The one ``_build_messages`` built, when it is in ``messages``; else
+        the last user message.
+        """
+        carrier = getattr(agent, "_current_turn_message", None)
+        if isinstance(carrier, dict) and any(m is carrier for m in messages):
+            return carrier
+        for message in reversed(messages):
+            if message.get("role") == "user":
+                return message
+        return None
+
+    def _prepare_planned_messages(self, agent, messages: List[Dict], plan) -> List[Dict]:
+        """Merge an attachment plan into the turn's message.
+
+        Native parts go through the provider (images, PDFs, or page images on
+        a vision model without PDF support); the plan's text — inlined files
+        fenced as untrusted data, partial markers and notes — is placed before
+        the user's own words. The turn's message dict is edited in place: the
+        provider stream for the first call was created before this runs and
+        holds that same dict.
+
+        Args:
+            agent: The agent that made the plan.
+            messages: The turn's messages.
+            plan: The agent's ``AttachmentPlan``.
+
+        Returns:
+            The prepared messages.
+        """
+        if getattr(agent, "_attachments_merged", False):
+            return messages
+        carrier = self._turn_message(agent, messages)
+        if carrier is None:
+            return messages
+
+        # The turn's message as the user sent it, so a fallback model can
+        # get the files re-planned for its own window.
+        agent._turn_content_before_merge = copy.deepcopy(carrier.get("content"))
+        prepared, carrier, native_estimate = self.merge_attachment_plan(agent.llm, messages, carrier, plan)
+        note = getattr(agent, "note_attachments_merged", None)
+        if callable(note):
+            note(carrier, native_estimate=native_estimate)
+        return prepared
+
+    def merge_attachment_plan(self, llm, messages: List[Dict], carrier: Dict, plan) -> tuple:
+        """Put a plan's native parts and text into ``carrier``, in place.
+
+        Args:
+            llm: The LLM whose provider formats the native parts.
+            messages: Messages ending with (or containing) ``carrier``.
+            carrier: The message the plan's files belong to.
+            plan: The ``AttachmentPlan`` to merge. A native file that fails to
+                convert is switched to its text on the plan.
+
+        Returns:
+            The prepared messages, the merged carrier, and what the token
+            counter charges for the native parts the merge added.
+        """
+        from docsgpt.agents.attachment_budget import SYNTHETIC_PDF_MAX_PAGES, FileStatus
+        from docsgpt.agents.attachment_context import render_attachment_block
+
+        natives = []
+        for planned in plan.files:
+            if not (planned.native and planned.status in (FileStatus.INLINE, FileStatus.PARTIAL)):
+                continue
+            attachment = planned.attachment
+            if attachment.get("mime_type") == "application/pdf" and plan.capabilities.synthetic_pdf:
+                try:
+                    pages = self._convert_pdf_to_images(attachment)
+                except Exception as e:
+                    logger.error(
+                        "Failed to convert PDF %s to images, sending its text: %s",
+                        planned.ref,
+                        bounded_error_text(e),
+                    )
+                    self._use_text_instead(planned)
+                    continue
+                if len(pages) > SYNTHETIC_PDF_MAX_PAGES:
+                    # The PDF runs past the page images a turn gets (its page
+                    # count was unknown when planned). Never drop the rest
+                    # silently: send its text, or mark the pages as partial.
+                    if self._has_text(planned):
+                        self._use_text_instead(planned)
+                        continue
+                    pages = pages[:SYNTHETIC_PDF_MAX_PAGES]
+                    planned.status = FileStatus.PARTIAL
+                    planned.shown_pages = len(pages)
+                    planned.native_parts = len(pages)
+                natives.extend(pages)
+                continue
+            natives.append(attachment)
+
+        before = self._native_part_estimate(carrier)
+        prepared = messages
+        if natives:
+            logger.info(f"Sending {len(natives)} planned attachment(s) natively")
+            prepared = llm.prepare_messages_with_attachments(messages, natives)
+            if not any(message is carrier for message in prepared):
+                for message in reversed(prepared):
+                    if message.get("role") == "user":
+                        carrier = message
+                        break
+
+        block = render_attachment_block(plan)
+        if block:
+            content = carrier.get("content")
+            if isinstance(content, list):
+                carrier["content"] = [{"type": "text", "text": block}, *content]
+            else:
+                text = content if isinstance(content, str) else ""
+                carrier["content"] = f"{block}\n\n{text}" if text else block
+
+        return prepared, carrier, self._native_part_estimate(carrier) - before
+
+    @staticmethod
+    def _has_text(planned) -> bool:
+        """Whether a plan entry has stored text to send instead of page images."""
+        return bool(str(planned.attachment.get("content") or "").strip()) and planned.text_tokens > 0
+
+    @staticmethod
+    def _use_text_instead(planned) -> None:
+        """Switch a PDF whose page images could not be made to its extracted text.
+
+        The text is charged for what it is, within what the plan budgeted
+        for the page images: a text longer than that is sent as a partial
+        head with its marker. With no text the file is unreadable.
+
+        Args:
+            planned: The plan entry; edited in place.
+        """
+        from docsgpt.agents.attachment_budget import (
+            MIN_PARTIAL_TOKENS,
+            PARTIAL_MARKER_TOKENS,
+            PER_FILE_OVERHEAD_TOKENS,
+            FileStatus,
+        )
+
+        budgeted = planned.inline_tokens
+        planned.native = False
+        planned.native_parts = 0
+        planned.shown_pages = 0
+        has_text = LLMHandler._has_text(planned)
+        whole = planned.text_tokens + PER_FILE_OVERHEAD_TOKENS
+        head = budgeted - PER_FILE_OVERHEAD_TOKENS - PARTIAL_MARKER_TOKENS
+        if has_text and whole <= budgeted:
+            planned.status = FileStatus.INLINE
+            planned.shown_tokens = planned.text_tokens
+            planned.inline_tokens = whole
+        elif has_text and head >= min(MIN_PARTIAL_TOKENS, planned.text_tokens):
+            planned.status = FileStatus.PARTIAL
+            planned.shown_tokens = head
+            planned.inline_tokens = budgeted
+        else:
+            planned.status = FileStatus.UNREADABLE
+            planned.shown_tokens = 0
+            planned.inline_tokens = 0
+            planned.reason = "conversion_failed"
+            return
+        planned.reason = None
+
+    @staticmethod
+    def _native_part_estimate(message: Dict) -> int:
+        """What the token counter charges for a message's non-text parts."""
+        from docsgpt.api.answer.services.compression.token_counter import TokenCounter
+
+        content = message.get("content")
+        if not isinstance(content, list):
+            return 0
+        parts = [p for p in content if isinstance(p, dict) and p.get("type") != "text"]
+        return TokenCounter.count_message_tokens([{"content": parts}]) if parts else 0
+
     def _convert_pdf_to_images(self, attachment: Dict) -> List[Dict]:
         """
         Convert a PDF attachment to a list of image attachments.
@@ -304,7 +559,9 @@ class LLMHandler(ABC):
             attachment: PDF attachment dictionary with 'path' and optional 'content'
 
         Returns:
-            List of image attachment dictionaries with 'data', 'mime_type', and 'page'
+            List of image attachment dictionaries with 'data', 'mime_type', and 'page':
+            at most one more than ``SYNTHETIC_PDF_MAX_PAGES``, the extra page
+            only saying the PDF is longer.
         """
         from docsgpt.utils import convert_pdf_to_images
         from docsgpt.storage.storage_creator import StorageCreator
@@ -315,11 +572,14 @@ class LLMHandler(ABC):
 
         storage = StorageCreator.get_storage()
 
-        # Convert PDF to images
+        from docsgpt.agents.attachment_budget import SYNTHETIC_PDF_MAX_PAGES
+
+        # One page past the cap, so a caller can tell a PDF that runs on
+        # from one that ends exactly at the cap.
         images_data = convert_pdf_to_images(
             file_path=file_path,
             storage=storage,
-            max_pages=20,
+            max_pages=SYNTHETIC_PDF_MAX_PAGES + 1,
             dpi=150,
         )
 
@@ -419,28 +679,6 @@ class LLMHandler(ABC):
             system_msg["content"] += f"\n\n{combined_text}"
         return prepared_messages
 
-    def _prune_messages_minimal(self, messages: List[Dict]) -> Optional[List[Dict]]:
-        """
-        Build a minimal context: system prompt + latest user message only.
-        Drops all tool/function messages to shrink context aggressively.
-        """
-        system_message = next((m for m in messages if m.get("role") == "system"), None)
-        if not system_message:
-            logger.warning("Cannot prune messages minimally: missing system message.")
-            return None
-        last_non_system = None
-        for m in reversed(messages):
-            if m.get("role") == "user":
-                last_non_system = m
-                break
-            if not last_non_system and m.get("role") not in ("system", None):
-                last_non_system = m
-        if not last_non_system:
-            logger.warning("Cannot prune messages minimally: missing user/assistant messages.")
-            return None
-        logger.info("Pruning context to system + latest user/assistant message to proceed.")
-        return [system_message, last_non_system]
-
     def _extract_text_from_content(self, content: Any) -> str:
         """
         Convert message content (str or list of parts) to plain text for compression.
@@ -509,7 +747,11 @@ class LLMHandler(ABC):
             content = message.get("content")
 
             if role == "user":
-                current_prompt = self._extract_text_from_content(content)
+                from docsgpt.agents.attachment_context import strip_attachment_blocks
+
+                current_prompt = strip_attachment_blocks(
+                    self._extract_text_from_content(content)
+                )
 
             elif role in {"assistant", "model"}:
                 # Standard format: tool_calls array on assistant message
@@ -599,6 +841,83 @@ class LLMHandler(ABC):
             },
         }
 
+    @staticmethod
+    def _current_turn_index(agent, messages: List[Dict]) -> Optional[int]:
+        """Position of the current turn's user message in ``messages``.
+
+        The message ``_build_messages`` built, when it is still there. A
+        resumed turn's messages were serialized, so the object is gone: the
+        turn then starts at the last user message that follows the system
+        prompt or a finished answer. Messages the loop adds later (a tool
+        result, the wrap-up instruction) follow tool messages instead.
+        """
+        carrier = getattr(agent, "_current_turn_message", None)
+        if isinstance(carrier, dict):
+            for index, message in enumerate(messages):
+                if message is carrier:
+                    return index
+        for index in range(len(messages) - 1, -1, -1):
+            message = messages[index]
+            if message.get("role") != "user":
+                continue
+            previous = messages[index - 1] if index > 0 else None
+            if previous is None or previous.get("role") == "system":
+                return index
+            if (
+                previous.get("role") in ("assistant", "model")
+                and not previous.get("tool_calls")
+                and isinstance(previous.get("content"), str)
+            ):
+                return index
+        return None
+
+    def _split_current_turn(
+        self, agent, messages: List[Dict]
+    ) -> tuple[List[Dict], Optional[Dict]]:
+        """Separate the current turn's message from what may be summarized.
+
+        Returns:
+            ``(summarizable, turn)``: ``messages`` with the turn's message
+            replaced by :data:`CURRENT_TURN_STUB` (its tool rounds stay, so
+            the work done so far is summarized), and the turn's message, or
+            None when it cannot be found.
+        """
+        index = self._current_turn_index(agent, messages)
+        if index is None:
+            return messages, None
+        turn = messages[index]
+        stub = {"role": "user", "content": CURRENT_TURN_STUB}
+        return [*messages[:index], stub, *messages[index + 1:]], turn
+
+    @staticmethod
+    def _nothing_to_summarize(conversation: Optional[Dict]) -> bool:
+        """The synthetic conversation holds only the stubbed current turn."""
+        queries = (conversation or {}).get("queries") or []
+        if not queries:
+            return False
+        return all(
+            q.get("prompt") == CURRENT_TURN_STUB
+            and not q.get("tool_calls")
+            and not q.get("response")
+            for q in queries
+        )
+
+    @staticmethod
+    def _restore_current_turn(
+        rebuilt: Optional[List[Dict]], turn: Optional[Dict]
+    ) -> Optional[List[Dict]]:
+        """Put the current turn's message back after the summary, verbatim."""
+        if rebuilt is None or turn is None:
+            return rebuilt
+        rebuilt = [m for m in rebuilt if m is not turn]
+        if rebuilt and rebuilt[-1].get("role") == "user" and rebuilt[-1].get("content") in (
+            _CONTINUATION_PROMPT,
+            CURRENT_TURN_STUB,
+        ):
+            rebuilt = rebuilt[:-1]
+        rebuilt.append(turn)
+        return rebuilt
+
     def _rebuild_messages_after_compression(
         self,
         messages: List[Dict],
@@ -671,10 +990,30 @@ class LLMHandler(ABC):
         """
         starter = getattr(getattr(agent, "llm", None), "start_responses_turn", None)
         if callable(starter):
-            starter()
+            starter(reason="compression")
         timestamp = getattr(metadata, "timestamp", None)
         if timestamp is not None:
             agent.last_compression_at = timestamp
+
+    @staticmethod
+    def _end_compression_for_turn(agent) -> tuple[bool, None]:
+        """Record that this turn's context cannot be compressed any further.
+
+        Pruning back to the question used to stand in for a compression
+        that could not shrink the turn. It dropped the turn's own tool
+        results, so the model read the same files again, crossed the
+        threshold again and paid for another failed compression call, round
+        after round. The tool loop ends instead: the model answers from what
+        it has, and no further compression is tried this turn.
+
+        Args:
+            agent: The agent running the turn.
+
+        Returns:
+            ``(False, None)``: no rebuilt messages.
+        """
+        agent._compression_exhausted = True
+        return False, None
 
     def _perform_mid_execution_compression(
         self, agent, messages: List[Dict]
@@ -699,6 +1038,9 @@ class LLMHandler(ABC):
                 ConversationService,
             )
 
+            # Only earlier history and this turn's tool work are summarized;
+            # the turn's own message and files are carried over verbatim.
+            summarizable, turn = self._split_current_turn(agent, messages)
             conversation_service = ConversationService()
             orchestrator = CompressionOrchestrator(conversation_service)
 
@@ -718,7 +1060,13 @@ class LLMHandler(ABC):
                 saved_count = len(conversation.get("queries") or [])
                 if saved_count:
                     persist_query_index = saved_count - 1
-                conversation_from_msgs = self._build_conversation_from_messages(messages)
+                conversation_from_msgs = self._build_conversation_from_messages(summarizable)
+                if self._nothing_to_summarize(conversation_from_msgs):
+                    logger.info(
+                        "Mid-execution compression skipped: nothing but the current "
+                        "turn, which is never summarized"
+                    )
+                    return False, None
                 if conversation_from_msgs:
                     conversation = self._carry_current_summary(
                         conversation_from_msgs, agent
@@ -745,13 +1093,7 @@ class LLMHandler(ABC):
 
             if not result.success:
                 logger.warning(f"Mid-execution compression failed: {result.error}")
-                # Try minimal pruning as fallback
-                pruned = self._prune_messages_minimal(messages)
-                if pruned:
-                    agent.context_limit_reached = False
-                    agent.current_token_count = 0
-                    return True, pruned
-                return False, None
+                return self._end_compression_for_turn(agent)
 
             if not result.compression_performed:
                 logger.warning("Compression not performed")
@@ -768,14 +1110,9 @@ class LLMHandler(ABC):
                 ):
                     logger.warning(
                         "Compression did not reduce token count (or produced an "
-                        "empty summary); falling back to minimal pruning"
+                        "empty summary); ending the tool loop"
                     )
-                    pruned = self._prune_messages_minimal(messages)
-                    if pruned:
-                        agent.context_limit_reached = False
-                        agent.current_token_count = 0
-                        return True, pruned
-                    return False, None
+                    return self._end_compression_for_turn(agent)
 
                 logger.info(
                     f"Mid-execution compression successful - ratio: {result.metadata.compression_ratio:.1f}x, "
@@ -810,6 +1147,7 @@ class LLMHandler(ABC):
                 include_current_execution=False,
                 include_tool_calls=False,
             )
+            rebuilt_messages = self._restore_current_turn(rebuilt_messages, turn)
 
             if rebuilt_messages is None:
                 return False, None
@@ -841,10 +1179,17 @@ class LLMHandler(ABC):
             from docsgpt.core.settings import settings
             from docsgpt.llm.llm_creator import LLMCreator
 
-            conversation = self._build_conversation_from_messages(messages)
+            summarizable, turn = self._split_current_turn(agent, messages)
+            conversation = self._build_conversation_from_messages(summarizable)
             if not conversation:
                 logger.warning(
                     "Cannot perform in-memory compression: no user/assistant turns found"
+                )
+                return False, None
+            if self._nothing_to_summarize(conversation):
+                logger.info(
+                    "In-memory compression skipped: nothing but the current turn, "
+                    "which is never summarized"
                 )
                 return False, None
             # The summary already in play must survive this compression too.
@@ -916,14 +1261,9 @@ class LLMHandler(ABC):
                 >= metadata.original_token_count
             ):
                 logger.warning(
-                    "In-memory compression did not reduce token count; falling back to minimal pruning"
+                    "In-memory compression did not reduce token count; ending the tool loop"
                 )
-                pruned = self._prune_messages_minimal(messages)
-                if pruned:
-                    agent.context_limit_reached = False
-                    agent.current_token_count = 0
-                    return True, pruned
-                return False, None
+                return self._end_compression_for_turn(agent)
 
             # Attach metadata to a copy of the synthetic conversation (the
             # one handed to the compressor keeps its carried point).
@@ -954,6 +1294,7 @@ class LLMHandler(ABC):
                 include_current_execution=False,
                 include_tool_calls=False,
             )
+            rebuilt_messages = self._restore_current_turn(rebuilt_messages, turn)
             if rebuilt_messages is None:
                 return False, None
 
@@ -968,6 +1309,29 @@ class LLMHandler(ABC):
                 f"Error performing in-memory compression: {str(e)}", exc_info=True
             )
             return False, None
+
+    @staticmethod
+    def _set_context_room(agent, messages: List[Dict]) -> None:
+        """Hand the executor the context left below the compression threshold."""
+        executor = getattr(agent, "tool_executor", None)
+        room_of = getattr(agent, "_context_room_tokens", None)
+        if executor is None or not callable(room_of):
+            return
+        try:
+            executor.context_room_tokens = room_of(messages)
+        except Exception:
+            logger.debug("Could not size the context room for tools", exc_info=True)
+
+    @staticmethod
+    def _next_context_epoch(agent) -> None:
+        """Start a new read epoch on the executor after a compression."""
+        executor = getattr(agent, "tool_executor", None)
+        if executor is None:
+            return
+        try:
+            executor.context_epoch = int(getattr(executor, "context_epoch", 0) or 0) + 1
+        except Exception:
+            logger.debug("Could not advance the context epoch", exc_info=True)
 
     def handle_tool_calls(
         self,
@@ -1046,6 +1410,10 @@ class LLMHandler(ABC):
                     compression_enabled = settings.ENABLE_CONVERSATION_COMPRESSION
                 except Exception:
                     compression_enabled = False
+                # A compression that could not reduce this turn will not do
+                # better a round later; each try is another LLM call.
+                if getattr(agent, "_compression_exhausted", False) is True:
+                    compression_enabled = False
 
                 if compression_enabled:
                     compression_attempted = True
@@ -1063,6 +1431,9 @@ class LLMHandler(ABC):
                         if compression_successful and rebuilt_messages is not None:
                             # Update the messages list with rebuilt compressed version
                             updated_messages = rebuilt_messages
+                            # Earlier tool results are folded into the summary
+                            # now, so a repeated read is a real read again.
+                            self._next_context_epoch(agent)
                             # The rebuilt list no longer contains the batch
                             # message we were appending to, so mutating it
                             # would be a silent no-op. Start a fresh one for
@@ -1149,6 +1520,9 @@ class LLMHandler(ABC):
                     agent.context_limit_reached = True
                     break
 
+            # Tell the tools how much context a result may still take.
+            self._set_context_room(agent, updated_messages)
+
             # ---- Pause check: approval / client-side execution ----
             llm_class = agent.llm.__class__.__name__
             pause_info = agent.tool_executor.check_pause(
@@ -1231,6 +1605,11 @@ class LLMHandler(ABC):
                 # approval card becomes a Connect card.
                 if pause_info.get("connection_required"):
                     pause_data["connection_required"] = pause_info["connection_required"]
+                # The service a connection-backed tool acts on, for the
+                # approval card's logo and name.
+                for key in ("connector_key", "connector_name", "access"):
+                    if pause_info.get(key):
+                        pause_data[key] = pause_info[key]
                 trace_unexecuted_tool_call(call, pause_data)
                 yield {"type": "tool_call", "data": pause_data}
                 pending_actions.append(pause_info)
@@ -1347,7 +1726,67 @@ class LLMHandler(ABC):
                         "status": "error",
                     },
                 }
+        updated_messages = self.append_native_reads(agent, updated_messages, paused=bool(pending_actions))
         return updated_messages, pending_actions if pending_actions else None
+
+    def append_native_reads(
+        self, agent, messages: List[Dict], executor: Any = None, *, paused: bool = False
+    ) -> List[Dict]:
+        """Show the model the images its tool calls asked for.
+
+        ``attachments_read`` on an image or a scanned page queues the image
+        on the executor. Chat Completions takes no images inside ``tool``
+        messages, so they go in a user message after the tool results, built
+        by the provider's own ``prepare_messages_with_attachments`` (image
+        parts for OpenAI and the Responses API, image blocks merged into the
+        tool-result turn for Anthropic, inline bytes for Google).
+
+        Args:
+            agent: The agent; its LLM formats the parts.
+            messages: The messages after the tool results.
+            executor: Executor holding the queue; the agent's by default.
+            paused: The batch paused for the client or an approval. The
+                images wait on the executor (``paused_native_parts``); the
+                pause saves them by reference and the resume shows them after
+                the tool results.
+
+        Returns:
+            The messages, with the follow-up message when there were images.
+        """
+        executor = executor if executor is not None else getattr(agent, "tool_executor", None)
+        parts = getattr(executor, "pending_native_parts", None)
+        if not isinstance(parts, list) or not parts:
+            return messages
+        executor.pending_native_parts = []
+        if paused:
+            logger.info("Keeping %d requested image(s) for the resumed turn", len(parts))
+            kept = getattr(executor, "paused_native_parts", None)
+            executor.paused_native_parts = [*(kept if isinstance(kept, list) else []), *parts]
+            return messages
+
+        labels = [str(p.get("label") or "image") for p in parts]
+        attachments = [p.get("attachment") for p in parts if isinstance(p.get("attachment"), dict)]
+        prepared, note = render_native_reads(agent.llm, messages, labels, attachments)
+        # The images as the tool queued them, not as this provider formats
+        # them: a fallback model renders the same note in its own format.
+        registry = getattr(agent, "_native_read_messages", None)
+        if not isinstance(registry, list):
+            registry = []
+            agent._native_read_messages = registry
+        registry.append({"message": note, "labels": labels, "attachments": attachments})
+        return prepared
+
+    @staticmethod
+    def _paused_native_reads(agent) -> List[Dict]:
+        """The images a paused batch queued, ready for the saved pause state."""
+        from docsgpt.agents.tools.attachments import serialize_native_reads
+
+        executor = getattr(agent, "tool_executor", None)
+        parts = getattr(executor, "paused_native_parts", None)
+        if not isinstance(parts, list) or not parts:
+            return []
+        executor.paused_native_parts = []
+        return serialize_native_reads(parts)
 
     def handle_non_streaming(
         self, agent, response: Any, tools_dict: Dict, messages: List[Dict]
@@ -1391,6 +1830,7 @@ class LLMHandler(ABC):
                     "messages": messages,
                     "pending_tool_calls": pending_actions,
                     "tools_dict": tools_dict,
+                    "native_reads": self._paused_native_reads(agent),
                     "reasoning_content": reasoning_for_round,
                 }
                 yield {
@@ -1693,6 +2133,7 @@ class LLMHandler(ABC):
                 "messages": messages,
                 "pending_tool_calls": pending_actions,
                 "tools_dict": tools_dict,
+                "native_reads": self._paused_native_reads(agent),
                 "reasoning_content": pause_reasoning,
             }
             yield {

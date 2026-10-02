@@ -7,7 +7,6 @@ import {
   hasAttachmentParser,
   looksLikeText,
   parseUploadErrorMessage,
-  parseUploadErrorsByIndex,
   partitionAttachmentFiles,
 } from './fileUpload';
 
@@ -43,15 +42,16 @@ describe('attachment type gate', () => {
     expect(hasAttachmentParser(file('Report.PDF'))).toBe(true);
     expect(hasAttachmentParser(file('scan.WebP'))).toBe(true);
     expect(hasAttachmentParser(file('subs.vtt'))).toBe(true);
+    // The backend unpacks a zip into one attachment per member.
+    expect(hasAttachmentParser(file('Archive.ZIP'))).toBe(true);
     // No parser — these are judged on content, not on the suffix.
     expect(hasAttachmentParser(file('main.py'))).toBe(false);
-    expect(hasAttachmentParser(file('archive.zip'))).toBe(false);
     expect(hasAttachmentParser(file('clip.mp4'))).toBe(false);
     // .txt is the plain-text fallthrough itself, not a parser.
     expect(hasAttachmentParser(file('notes.txt'))).toBe(false);
   });
 
-  it('mirrors the backend list: no zip, no video, images and markup included', () => {
+  it('mirrors the backend list: zip included, no video, images and markup included', () => {
     expect(ATTACHMENT_PARSER_EXTENSIONS).toContain('.pdf');
     // Parser-backed suffixes the first cut of this list missed.
     for (const ext of [
@@ -65,7 +65,7 @@ describe('attachment type gate', () => {
     ]) {
       expect(ATTACHMENT_PARSER_EXTENSIONS).toContain(ext);
     }
-    expect(ATTACHMENT_PARSER_EXTENSIONS).not.toContain('.zip');
+    expect(ATTACHMENT_PARSER_EXTENSIONS).toContain('.zip');
     expect(ATTACHMENT_PARSER_EXTENSIONS).not.toContain('.mp4');
     expect(ATTACHMENT_PARSER_EXTENSIONS).not.toContain('.txt');
   });
@@ -129,13 +129,20 @@ describe('looksLikeText', () => {
 });
 
 describe('partitionAttachmentFiles', () => {
-  it('refuses video and archives whatever the picker claims the type is', async () => {
+  it('refuses video whatever the picker claims the type is', async () => {
     const { supported, unsupported } = await partitionAttachmentFiles([
       file('clip.mp4', MP4_HEADER, 'text/plain'),
-      file('archive.zip', bytes(0x50, 0x4b, 0x03, 0x04, 0x00, 0x00)),
     ]);
     expect(supported).toEqual([]);
-    expect(unsupported.map((f) => f.name)).toEqual(['clip.mp4', 'archive.zip']);
+    expect(unsupported.map((f) => f.name)).toEqual(['clip.mp4']);
+  });
+
+  it('admits a zip, which the backend unpacks into its files', async () => {
+    const { supported, unsupported } = await partitionAttachmentFiles([
+      file('archive.zip', bytes(0x50, 0x4b, 0x03, 0x04, 0x00, 0x00)),
+    ]);
+    expect(supported.map((f) => f.name)).toEqual(['archive.zip']);
+    expect(unsupported).toEqual([]);
   });
 
   it('keeps text files that have no parser — the backend reads them', async () => {
@@ -201,40 +208,5 @@ describe('parseUploadErrorMessage', () => {
     expect(parseUploadErrorMessage('<html>502</html>')).toBeUndefined();
     expect(parseUploadErrorMessage('{"ok":1}')).toBeUndefined();
     expect(parseUploadErrorMessage('')).toBeUndefined();
-  });
-});
-
-describe('parseUploadErrorsByIndex', () => {
-  it('keys each reason by its upload_index', () => {
-    const byIndex = parseUploadErrorsByIndex(
-      JSON.stringify({
-        success: false,
-        message: 'Unsupported file type: .mp4',
-        errors: [
-          {
-            upload_index: 0,
-            filename: 'clip.mp4',
-            error: 'Unsupported file type: .mp4',
-          },
-          {
-            upload_index: 1,
-            filename: 'a.zip',
-            error: 'Unsupported file type: .zip',
-          },
-        ],
-      }),
-    );
-    // Without this, both chips would repeat the first file's reason.
-    expect(byIndex.get(0)).toBe('Unsupported file type: .mp4');
-    expect(byIndex.get(1)).toBe('Unsupported file type: .zip');
-  });
-
-  it('is empty for bodies with no usable errors array', () => {
-    expect(parseUploadErrorsByIndex('<html>502</html>').size).toBe(0);
-    expect(parseUploadErrorsByIndex('{"message":"nope"}').size).toBe(0);
-    expect(parseUploadErrorsByIndex('').size).toBe(0);
-    expect(
-      parseUploadErrorsByIndex('{"errors":[{"error":"no index"}]}').size,
-    ).toBe(0);
   });
 });

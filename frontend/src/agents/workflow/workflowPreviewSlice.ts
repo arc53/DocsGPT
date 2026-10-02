@@ -2,7 +2,11 @@ import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 import conversationService from '../../api/services/conversationService';
 import { Query, Status } from '../../conversation/conversationModels';
-import { Attachment, clearAttachments } from '../../upload/uploadSlice';
+import {
+  Attachment,
+  clearAttachments,
+  toSendableAttachments,
+} from '../../upload/uploadSlice';
 import { WorkflowEdge, WorkflowNode } from '../types/workflow';
 
 export interface WorkflowExecutionStep {
@@ -71,9 +75,7 @@ interface ThunkState {
 export function collectCompletedAttachmentIds(
   attachments: Attachment[],
 ): string[] {
-  return attachments
-    .filter((att) => att.status === 'completed' && att.id)
-    .map((att) => att.id);
+  return toSendableAttachments(attachments).map((att) => att.id);
 }
 
 /** Locale key of the message shown when a Preview send is blocked. */

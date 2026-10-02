@@ -4,14 +4,14 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../../api/services/userService';
-import { useDebouncedValue, useMediaQuery } from '../../hooks';
+import { useDebouncedValue } from '../../hooks';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { formatCount } from '../../utils/dateTimeUtils';
 import SearchInput from '../SearchInput';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { EmptyState } from '../ui/empty-state';
-import { Pagination } from '../ui/pagination';
+import { Pagination, pageRangeParams } from '../ui/pagination';
 import {
   Select,
   SelectContent,
@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../ui/select';
-import { Sheet, SheetContent } from '../ui/sheet';
+import { SidePanel } from '../ui/side-panel';
 import { Skeleton } from '../ui/skeleton';
 import {
   Table,
@@ -35,10 +35,7 @@ import type {
   GraphNodeSummary,
   GraphTypeFacet,
 } from '../graphViewUtils';
-import GraphNodePanel, {
-  GraphNodePanelDock,
-  type GraphNodeRef,
-} from './GraphNodePanel';
+import GraphNodePanel, { type GraphNodeRef } from './GraphNodePanel';
 import { GraphTypeBadge } from './GraphTypeDot';
 import { useGraphNodeDetail } from './useGraphNodeDetail';
 
@@ -53,7 +50,7 @@ type ListStatus = 'loading' | 'error' | 'ready';
  * The Entities tab: every node of the source, searchable and filterable by
  * type, busiest first, paged. The frame is the Graph tab's: one `subtle`
  * Card at `h-[70svh]` with the table scrolling inside and a row's node panel
- * docked at its right edge (a bottom sheet on a phone), whose "Show in graph"
+ * docked at its right edge (a full-width sheet on a phone), whose "Show in graph"
  * jumps to the canvas.
  */
 export default function GraphEntities({
@@ -76,7 +73,6 @@ export default function GraphEntities({
 }) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
-  const { isDesktop } = useMediaQuery();
 
   const [query, setQuery] = useState('');
   const debouncedQuery = useDebouncedValue(query.trim(), 300);
@@ -141,7 +137,6 @@ export default function GraphEntities({
     };
   }, [docId, filterKey, page, token, attempt]);
 
-  const pageCount = Math.max(1, Math.ceil(total / ENTITIES_PER_PAGE));
   const untypedLabel = t('settings.sources.graphrag.view.untyped');
   const filtered = debouncedQuery !== '' || typeFilter !== ALL_TYPES;
 
@@ -154,8 +149,6 @@ export default function GraphEntities({
       status={nodeDetail.status}
       onRetry={nodeDetail.retry}
       fold={fold}
-      onClose={() => setSelected(null)}
-      showClose={isDesktop}
       onSelectNode={setSelected}
       overview={overview}
       onOpenInFiles={onOpenInFiles}
@@ -183,17 +176,7 @@ export default function GraphEntities({
         tone="destructive"
         illustration="none"
         title={t('settings.sources.graphrag.view.entitiesLoadFailed')}
-        action={
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            shape="pill"
-            onClick={() => setAttempt((n) => n + 1)}
-          >
-            {t('retry')}
-          </Button>
-        }
+        onRetry={() => setAttempt((n) => n + 1)}
       />
     ) : status === 'ready' && nodes.length === 0 ? (
       <EmptyState
@@ -311,43 +294,35 @@ export default function GraphEntities({
       <Card
         variant="subtle"
         padding="none"
-        className="h-[70svh] flex-row gap-0 overflow-hidden"
+        className="relative h-[70svh] flex-row gap-0 overflow-hidden"
       >
         <div className="flex min-w-0 flex-1 flex-col justify-center">
           {body}
         </div>
-        {isDesktop && panel ? (
-          <GraphNodePanelDock>{panel}</GraphNodePanelDock>
-        ) : null}
-      </Card>
-      {showPager ? (
-        <Pagination
-          page={page}
-          pageCount={pageCount}
-          onPageChange={setPage}
-          summary={t('settings.sources.graphrag.view.entityCount', {
-            count: total,
-            formatted: formatCount(total),
-          })}
-        />
-      ) : null}
-      {!isDesktop ? (
-        <Sheet
-          open={!!selected}
+        <SidePanel
+          variant="docked"
+          expandable="graph-node"
+          open={!!panel}
           onOpenChange={(open) => {
             if (!open) setSelected(null);
           }}
         >
-          <SheetContent
-            side="bottom"
-            handle
-            title={selected?.name}
-            // Open on the panel, not with a ring on its first control.
-            onOpenAutoFocus={(event) => event.preventDefault()}
-          >
-            {panel}
-          </SheetContent>
-        </Sheet>
+          {panel}
+        </SidePanel>
+      </Card>
+      {showPager ? (
+        <Pagination
+          page={page}
+          pageSize={ENTITIES_PER_PAGE}
+          total={total}
+          onPageChange={setPage}
+          rangeLabel={(range) =>
+            t(
+              'settings.sources.graphrag.view.entityRange',
+              pageRangeParams(range),
+            )
+          }
+        />
       ) : null}
     </div>
   );

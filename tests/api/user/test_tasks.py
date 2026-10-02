@@ -55,6 +55,19 @@ class TestIngestTask:
         )
 
 
+    @pytest.mark.unit
+    @patch("docsgpt.api.user.tasks.ingest_worker")
+    def test_passes_the_files_to_copy(self, mock_worker):
+        from docsgpt.api.user.tasks import ingest
+
+        mock_worker.return_value = {"status": "ok"}
+        copies = [{"from": "inputs/u/attachments/h/a.pdf", "to": "/path/a.pdf"}]
+
+        ingest("dir", ["pdf"], "job1", "user1", "/path", "file.pdf", copy_files=copies)
+
+        assert mock_worker.call_args.kwargs["copy_files"] == copies
+
+
 class TestIngestRemoteTask:
     @pytest.mark.unit
     @patch("docsgpt.api.user.tasks.remote_worker")

@@ -1,14 +1,6 @@
 import 'reactflow/dist/style.css';
 
-import {
-  CircleAlert,
-  Link,
-  Pencil,
-  Play,
-  Trash2,
-  Users,
-  X,
-} from 'lucide-react';
+import { Link, Pencil, Play, Trash2, Users } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -32,7 +24,6 @@ import ReactFlow, {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { IconButton } from '@/components/ui/icon-button';
 
 import modelService from '../../api/services/modelService';
 import userService from '../../api/services/userService';
@@ -114,6 +105,7 @@ import {
   validateJsonSchemaConfig,
 } from './workflowHelpers';
 import { selectWorkflowPreviewStatus } from './workflowPreviewSlice';
+import { readerIdFromToken } from '../../utils/personLabel';
 import { canAddToolToOwn, getToolDisplayName } from '../../utils/toolUtils';
 
 import type { Model } from '../../models/types';
@@ -217,6 +209,7 @@ function WorkflowBuilderInner() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const token = useSelector(selectToken);
+  const readerId = useMemo(() => readerIdFromToken(token), [token]);
   const sourceDocs = useSelector(selectSourceDocs);
   const previewStatus = useSelector(selectWorkflowPreviewStatus);
   const { agentId } = useParams<{ agentId?: string }>();
@@ -274,6 +267,8 @@ function WorkflowBuilderInner() {
   const [detailsOnApiWrites, setDetailsOnApiWrites] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [isDeletingAgent, setIsDeletingAgent] = useState(false);
+  // The delete confirm's Alert text after a failed delete.
+  const [deleteError, setDeleteError] = useState<string>();
   const [currentAgent, setCurrentAgent] = useState<Agent>(
     createEmptyWorkflowAgent(),
   );
@@ -744,12 +739,12 @@ function WorkflowBuilderInner() {
       }
       navigateBackToAgents();
     } catch (error) {
-      setPublishErrors([
-        error instanceof Error
-          ? error.message
-          : t('agents.workflow.builder.deleteFailed'),
-      ]);
-      setErrorContext('publish');
+      // Rethrown so the confirm stays open and shows deleteError.
+      setDeleteError(
+        (error instanceof Error && error.message) ||
+          t('agents.workflow.builder.deleteFailed'),
+      );
+      throw error;
     } finally {
       setIsDeletingAgent(false);
     }
@@ -1752,10 +1747,8 @@ function WorkflowBuilderInner() {
     () => ({ ...currentAgent, resource_sponsors: workflowResources.sponsors }),
     [currentAgent, workflowResources.sponsors],
   );
-  const showResourceNotice =
-    canManageAgent &&
-    (stoppedResources.length > 0 ||
-      workflowResources.sponsors.some((sponsor) => sponsor.active));
+  // Only stopped items float; who added what is in the node pickers.
+  const showResourceNotice = canManageAgent && stoppedResources.length > 0;
 
   const agentForDetails = useMemo<Agent>(
     () => ({
@@ -1870,7 +1863,6 @@ function WorkflowBuilderInner() {
             agentName={workflowName || t('agents.workflow.builder.newWorkflow')}
             agentEditPath={agentEditPath(effectiveAgentId, true)}
             agentImage={currentAgentImage}
-            currentPage="overview"
             access={canManageAgent ? currentAgent : undefined}
             onNameClick={openDetails}
             status={
@@ -1966,12 +1958,7 @@ function WorkflowBuilderInner() {
         {publishErrors.length > 0 && !showDetails && (
           <div className="pointer-events-none absolute top-20 right-0 left-0 z-20 flex justify-center px-4">
             <div className="bg-card pointer-events-auto w-full max-w-md rounded-xl shadow-md">
-              <Alert
-                variant="destructive"
-                // eslint-disable-next-line shadcn/no-restyle -- the close button sits in the top-right corner, so a long title wraps clear of it
-                className="pr-10"
-              >
-                <CircleAlert className="size-4" />
+              <Alert variant="destructive" onClose={() => setPublishErrors([])}>
                 <AlertTitle>
                   {errorContext === 'preview'
                     ? t('agents.workflow.builder.unablePreview')
@@ -1986,21 +1973,12 @@ function WorkflowBuilderInner() {
                     ))}
                   </ul>
                 </AlertDescription>
-                <div className="absolute top-2.5 right-2.5">
-                  <IconButton
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => setPublishErrors([])}
-                    label={t('agents.close')}
-                    icon={X}
-                  />
-                </div>
               </Alert>
             </div>
           </div>
         )}
 
-        <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
           <NodePalette
             onAdd={handleAddNodeFromPalette}
             onDragStart={handleNodeDragStart}
@@ -2011,20 +1989,27 @@ function WorkflowBuilderInner() {
             className="bg-muted relative min-w-0 flex-1"
           >
             {showResourceNotice && (
-              <FloatingResourceNotice stoppedCount={stoppedResources.length}>
-                <ResourceStatusNotice
-                  agent={resourceNoticeAgent}
-                  stopped={stoppedResources}
-                  resolveName={resolveResourceName}
-                  takeovers={takeovers}
-                  showAttachNote={false}
-                  onTakeOver={(item) => void takeOverResource(item)}
-                  onUndoTakeover={(key) =>
-                    setTakeovers((prev) => prev.filter((k) => k !== key))
-                  }
-                  onRemove={removeResource}
-                  onReconnect={reconnectResource}
-                />
+              <FloatingResourceNotice
+                stoppedCount={stoppedResources.length}
+                // The publish errors float over the same corner; they win.
+                hidden={publishErrors.length > 0 && !showDetails}
+              >
+                {(close) => (
+                  <ResourceStatusNotice
+                    agent={resourceNoticeAgent}
+                    stopped={stoppedResources}
+                    resolveName={resolveResourceName}
+                    readerId={readerId}
+                    takeovers={takeovers}
+                    onTakeOver={(item) => void takeOverResource(item)}
+                    onUndoTakeover={(key) =>
+                      setTakeovers((prev) => prev.filter((k) => k !== key))
+                    }
+                    onRemove={removeResource}
+                    onReconnect={reconnectResource}
+                    onClose={close}
+                  />
+                )}
               </FloatingResourceNotice>
             )}
             <WorkflowModelsContext.Provider value={modelNames}>
@@ -2060,7 +2045,6 @@ function WorkflowBuilderInner() {
 
           {showNodeConfig && selectedNode && (
             <NodePanel
-              key={selectedNode.id}
               node={selectedNode}
               onClose={() => setShowNodeConfig(false)}
               onDuplicate={handleDuplicateNode}
@@ -2180,16 +2164,18 @@ function WorkflowBuilderInner() {
         <ConfirmationModal
           message={
             workflowName
-              ? t('agents.workflow.builder.deleteConfirm', {
+              ? t('agents.deleteConfirmation', {
                   ...NO_ESCAPE,
                   name: workflowName,
                 })
               : t('agents.workflow.builder.deleteConfirmUnnamed')
           }
+          description={t('agents.deleteConsequence')}
           modalState={deleteConfirmation}
           setModalState={setDeleteConfirmation}
           submitLabel={t('agents.form.buttons.delete')}
           handleSubmit={handleDeleteAgent}
+          error={deleteError}
           cancelLabel={t('agents.form.buttons.cancel')}
           variant="destructive"
         />

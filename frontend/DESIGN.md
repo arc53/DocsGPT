@@ -7,6 +7,10 @@ messages point here. Everything in this file is either a
 token in `src/index.css` or a variant in a `ui/` component, so an agent or a
 contributor can always find the concrete thing to use.
 
+Per-area specs (page chrome, the agent pages, app chrome, the chat, source views, the workflow
+builder, connectors) live in [PATTERNS.md](PATTERNS.md): this file is the system, that one is how
+each area applies it.
+
 ## Rules in one paragraph
 
 Pages compose `ui/` components and choose their look through props
@@ -45,9 +49,15 @@ through `@theme inline`, so `bg-`, `text-`, `border-`, `ring-`, `fill-` and
 | `success`, `success-foreground`         | completed, active, healthy                                                        | `text-green-*`, `text-emerald-*`, `bg-green-50/100`                 |
 | `warning`, `warning-foreground`         | paused, pending review, degraded                                                  | `text-amber-*`, `text-yellow-*`, `text-orange-*`, `bg-amber-50/100` |
 | `info`, `info-foreground`               | running, informational                                                            | `text-blue-*`, `bg-blue-50/100`                                     |
-| `sidebar-*`                             | the navigation rail                                                               |                                                                     |
+| `sidebar`, `sidebar-accent`             | the navigation rail and its hover / current-row fill                              |                                                                     |
 | `chart-1` to `chart-5`                  | data series only, never UI chrome (see below)                                     |                                                                     |
-| `answer-bubble`                         | the source cards under an answer and the answer-side panels (AnswerFlow)          |                                                                     |
+| `answer-surface`                        | every panel under an answer: source cards, View more, the wiki path chip, the code-block and Mermaid headers (`CodeFrame`), the attachment chip, `CodePanel` |                    |
+
+The shadcn twins are aliases in `src/index.css`, not values of their own:
+`card-foreground`, `popover-foreground` and `accent-foreground` are
+`var(--foreground)`, `popover` is `var(--card)` and `input` is
+`var(--border)` (re-declared under `.dark` so they resolve to the dark
+values). Change the base token; the twin follows.
 
 Status colours are tuned to stay vivid rather than turning brown or olive,
 so their contrast is low. Against white in light mode, `destructive` and
@@ -56,11 +66,17 @@ dark card, `destructive` is 2.9:1 and the others are 5.5:1 or more. Do not
 use them for long body text; they are for badges, icons, short labels and
 fills.
 
+`muted-foreground` is #6b6b6b in light: 5.33:1 on white, 4.93:1 on `muted`,
+4.51:1 on `accent` and 4.67:1 on `secondary`, so muted text passes AA on a
+hovered or open row too. Dark keeps #a1a1a1; its one known exception is a
+dark hover (4.06:1 on `accent`). JS fallbacks for the token (chart and graph
+colours read at runtime) use the same #6b6b6b.
+
 The dark `primary` (#8855f1) is set so white text on it reaches 4.55:1 on
 every default Button. As text on the dark surfaces it is below 4.5:1 (3.45:1
 on background, 3.06:1 on card), so links and `text-primary` in dark pass only
-as large or UI text; a fix for that needs its own link token. `ring`,
-`secondary` and `sidebar-primary` keep the lighter #976af3.
+as large or UI text; a fix for that needs its own link token. `ring`
+and `secondary` keep the lighter #976af3.
 
 Chart colours are not a separate palette. `chart-1` to `chart-5` alias
 `primary`, `info`, `success`, `warning` and `destructive`, in that order,
@@ -80,14 +96,16 @@ There the four largest types take `chart-1` to `chart-4` and Other is
 `components/graphViewUtils.ts`).
 
 The status set is `success | warning | destructive | info`. `default` is the
-component's own base tone (brand on a Badge or Button, quiet on an Alert or
-Toast). `neutral` is the grey pill or box.
+component's own base tone (brand on a Badge or Button, quiet on a Toast).
+`neutral` is the grey pill. Alert has neither: it is always one of the four
+statuses (see Alert).
 
 One tint scale, by purpose:
 
-- Wash `/5`: a whole surface that is selected or receiving a drop (Card
-  `selected`, Dropzone drag-active and drag-reject). The border carries the
-  state; the wash only warms the surface. Never on a chip or a text fill.
+- Wash `/5`: a whole surface that is selected or receiving a drop (OptionCard
+  `selected`, Dropzone drag-active and drag-reject, a chosen checkbox row; see
+  Row states below). The border carries the state; the wash only warms the
+  surface. Never on a chip or a text fill.
 - Brand soft fill: `bg-secondary text-secondary-foreground` (Badge `default`,
   Avatar `primary`, the OptionCard icon square), never `bg-primary/10`
   (enforced).
@@ -99,8 +117,13 @@ One tint scale, by purpose:
 - Neutral hover: solid `bg-accent` in both themes (ghost buttons, combobox,
   SelectTrigger, Card `interactive`, Dropzone, every list-row highlight).
 - Quiet panel inside a page or card: `bg-muted`, not `bg-muted/40` or `/60`.
-  It is a small box inside a panel (a well, a guardrail stage), never a
-  page-sized panel around cards (see Card surfaces).
+  It is a small well inside a panel that holds an asset (code, a file, a value
+  to copy; see Code blocks), never a note (a static note is `Alert
+  variant="info" role="note"`, see Alert) and never a page-sized panel around
+  cards (see Card surfaces). Other grey boxes are Cards: a grouped sub-panel
+  inside a `subtle` panel is a `subtle` Card (`padding="sm"`), a search result
+  or a summary with its field in a modal is an `outline` Card, and a token or
+  record tile is a `filled` Card.
 - Dividers: `border-border`, not `border-border/60`.
 
 Patterns:
@@ -117,11 +140,22 @@ Patterns:
   lighter #976af3 at 15% (dark) over whatever sits behind it, with `primary` text in light and a
   lighter purple (#b89cf8) in dark. So a pressed toggle (CopyButton's copied
   state, text-to-speech while speaking) shows on card, background and muted
-  alike, and never reads as the neutral ghost hover. Use it as
-  `variant={active ? 'secondary' : 'ghost-muted'}`. That is for one thing
+  alike, and never reads as the neutral ghost hover. On a Button, use it as
+  `variant={active ? 'secondary' : 'ghost-muted'}` with `aria-pressed={active}`;
+  a chip in a wrapping "any of N" row is `ToggleChip`, which draws the same
+  pair (see ToggleChip). That is for one thing
   switched on or off. Picking one value of several (a 7d / 30d / 90d range,
   a schedule's frequency, a filter row) is a `ToggleGroup`, whose on item has
-  the `outline` look with no hue.
+  the `outline` look with no hue (see ToggleGroup).
+- Row states: an open or selected list row is `bg-secondary` (ListRow and
+  TableRow `selected`, CommandItem `checked`, Logs' open row); hover is
+  `bg-accent`. Framed rows (Logs, ToolConfig's actions) have no fill at rest,
+  `hover:bg-accent` while closed and `bg-secondary` while open, with no hover
+  fill under an open row; a trash on the header is
+  `ghost-destructive-on-accent`. A chosen checkbox row (ImportSpec's endpoints) is
+  `has-[[data-state=checked]]:border-primary
+  has-[[data-state=checked]]:bg-primary/5`; its wash beats the hover by
+  design, so a chosen row never turns grey under the pointer.
 - A brand chip, a small action that opens something an answer produced (an
   artifact chip under an answer, a citation pill in its text), is also
   `variant="secondary" shape="pill"`: the default size with a lucide icon
@@ -145,11 +179,12 @@ Patterns:
 
 ### Button (`ui/button.tsx`)
 
-| Prop      | Values                                                                                                                                                                                                                                                 |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `variant` | `default`, `secondary`, `outline`, `outline-primary`, `ghost`, `ghost-muted`, `ghost-destructive`, `ghost-on-accent`, `ghost-destructive-on-accent`, `link`, `destructive`, `destructive-outline`, `combobox`, `sidebar-item`, `tab`, `section-toggle` |
-| `size`    | `xs`, `sm`, `default`, `lg`, `field`, `icon-xs`, `icon-sm`, `icon`, `icon-lg`, `inline`                                                                                                                                                                |
-| `shape`   | `default` (rounded-md), `pill` (rounded-full, wider padding at `default`, `lg` and `field`)                                                                                                                                                            |
+| Prop      | Values                                                                                                                                                                                                                                          |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `variant` | `default`, `secondary`, `outline`, `outline-primary`, `ghost`, `ghost-muted`, `ghost-destructive`, `ghost-on-accent`, `ghost-destructive-on-accent`, `link`, `destructive`, `destructive-outline`, `combobox`, `sidebar-item`, `section-toggle` |
+| `size`    | `default`, `xs`, `sm`, `lg`, `field`, `icon`, `icon-xs`, `icon-sm`, `inline`, `text`; the type (size and weight) lives on the size, and `text` has none, so it inherits                                                                         |
+| `shape`   | `default` (rounded-md), `pill` (rounded-full, wider padding at `default`, `lg` and `field`)                                                                                                                                                     |
+| `tone`    | unset (the variant's colour) or `current` (the text colour of what it sits in, hover included)                                                                                                                                                  |
 
 - Round brand buttons (`rounded-3xl px-5`, `rounded-full px-6`): `shape="pill"`,
   plus `size="lg"` if they were `px-6`.
@@ -181,68 +216,67 @@ Patterns:
   `variant="outline-primary"`.
 - Tiny inline actions (`h-auto px-2 py-1 text-xs`): `size="xs"`.
 - A link inside running text (an artifact link in an answer, a link in
-  markdown, a hint's "Learn more") is `variant="link" size="inline"`, with
-  `asChild` around the `<a>`: no height or padding, underlined on hover, the
-  shared focus ring. Standalone links ("Learn more" with `ExternalLink`, "Go to
-  Tools" with `ArrowRight`) are the same, the icon a child. Toggles and crumbs
-  keep a normal size. The base is `text-sm font-medium`, so a link in a 12px
-  hint passes `text-xs font-normal` (an approved exception), and a link that
-  must keep the colour of what it sits in (a status Alert, a dark overlay, a
-  source card's URL row) passes `text-current`. Never style a raw `<a>` as a
-  link (enforced).
+  markdown, a hint's "Learn more", a Cancel in a status line) is
+  `variant="link" size="text"`, with `asChild` around the `<a>`: no height or
+  padding and no type of its own, so it takes the sentence's size, weight and
+  line-height and keeps `primary`; underlined on hover, the shared focus ring.
+  A standalone link ("Learn more" with `ExternalLink`, "Go to Tools" with
+  `ArrowRight`, the icon a child) is `size="inline"`: the same, but 14px
+  medium, so it reads as a control. A link that takes the colour of what it
+  sits in (a status Alert, the Mermaid dark overlay) adds `tone="current"`.
+  A trailing link icon (`ArrowRight`, `ExternalLink`) is 12px, and `inline`
+  and `text` set it, so don't add `size-3`; a leading icon in a link sets
+  `size-4`. Toggles and crumbs keep a normal size. Never style a raw `<a>` as
+  a link (enforced).
 - Icon-only buttons: see IconButton below. A `title` on a `Button` is
   rejected (enforced).
 - An action whose label doesn't fit beside a name on a phone (the shared
   agent card's Edit, in a long locale) is two elements: an `IconButton`
   with `sm:hidden` and the labelled `Button` with `hidden sm:inline-flex`.
   Never hide a Button's label span, which leaves an icon-only Button.
+- A Button that holds a user-supplied name (a chat, agent or source) in a
+  flex row: Button's base is `shrink-0 whitespace-nowrap`, so `min-w-0` alone
+  does nothing. Pass `min-w-0 shrink` (or `flex-1` when it should fill the row) and put the name in the
+  `truncate` span; its icons stay `shrink-0`. `w-full` doesn't count: a
+  `w-full shrink-0` Button takes the whole row and pushes its neighbour out,
+  under the next control (an `outline` Button's fill is translucent in dark, so
+  it shows through there and hides in light). `variant="combobox"` already
+  carries `min-w-0 shrink`, like the fields it sits among. The phone top bar's
+  title is the worked example (PATTERNS.md › App chrome).
 - Roles for dangerous and dismissive actions: a delete on a page (a "Danger
-  zone" card's Delete agent or Revoke, Delete all) is `destructive-outline`;
+  zone" card's Delete agent or Revoke, Delete all; see Card › Danger zone) is
+  `destructive-outline`;
   the submit of a confirm dialog is `destructive` (`ModalActions destructive`,
   `ConfirmationModal variant="destructive"`); Cancel is `ghost` at the size and
   shape of the button beside it, in a modal footer, a form header or an inline
   editor. A Cancel inside a line of text (the composer's queued send) is
-  `link inline`.
-- The composer controls under the chat field (Attach, Voice, Tools,
-  Sources) are `outline sm pill`. Their icons are `size-3.5 sm:size-4`
-  with no margin; the size's `gap-1.5` spaces them, and the label span keeps
-  `text-xs sm:text-sm` so the row still fits on a phone.
-- Popover comboboxes (`role="combobox"` + `Command`) use `variant="combobox"`,
-  which matches `SelectTrigger`: card fill, normal weight, and muted text
-  while `data-placeholder` is set (`data-placeholder={value ? undefined : ''}`).
-  Pass only layout (`w-full justify-between`) and keep the chevron as the
-  last child.
+  `link text`.
+- The composer controls under the chat field: see PATTERNS.md › Chat composer.
+- `variant="combobox"` is the trigger of a popover picker and matches
+  `SelectTrigger`: card fill, normal weight, muted text while
+  `data-placeholder` is set, a ChevronDown that turns while open. App code
+  doesn't draw it by hand: a single-select picker is `ui/combobox` and a
+  multi-pick is `MultiSelect`, which both draw it (see Combobox).
 - A button or picker that sits in a row of fields is `size="field"`: 38px.
-  `Input` and `SelectTrigger` take `size="field"` too (the same 38px as
-  Input `default`), so a form column has one name for one height. Page
-  actions beside a page's search field (Add Source, Add Tool, Test
-  retrieval, Sync) are `size="field" shape="pill"` too, with no min-width
-  or hand height. With `shape="pill"` its text starts 21px in, like the
-  Input and Select pills beside it. The agent form's pickers are
-  `combobox field pill`, each labelled by a `FormField` (the Prompt picker
-  through `Prompts titleAs="field"`), its Add button `outline-primary field
-pill`, the only `outline-primary` on the agent pages themselves (the Access
-  details modal they open has its own).
-- One variant and size per role on the agent pages (Overview, Logs,
-  Schedules, the workflow builder's toolbar): the page's primary action is
-  `default field pill` (Publish, Save, New schedule), a secondary action
-  `outline field pill` (Save draft, Preview with `Play` first), Cancel `ghost
-field pill`, and page-level actions go in the `ActionMenu` (`size="toolbar"`)
-  at the end of the title row, through `SectionShell titleAction`: Access
-  details and Share with team on Overview (each only when the role allows
-  it, see Access and roles), and Preview until the agent is
-  published (before that the preview only says "Publish to preview"). So the
-  row never holds more than three buttons and fits a phone, where the main
-  one stretches across it (`flex-1 sm:flex-none`; `PageToolbar`'s action slot
-  spans the stacked row below `sm`). The workflow builder's toolbar has no
-  title row and keeps its ⋯ at the row's end, holding Edit details, Access
-  details, Share with team and Delete (see Workflow builder). The
-  agent's Delete is in Overview's danger zone; only the workflow builder's
-  toolbar has it in the ⋯ menu, as a `destructive` item. The row itself is
-  `agents/components/AgentPageToolbar` (see Page chrome). A row's common
-  action is `outline sm pill` (a schedule's Run now or Resume) with its other
-  actions in the row's `ActionMenu`; a delete there is a `destructive` item
-  that opens the confirm modal.
+  `Input` and `SelectTrigger` are 38px too (Input `default`,
+  SelectTrigger's default `field`, Combobox and MultiSelect always `field`),
+  so a form column has one height. Page actions beside a
+  page's search field (Add Source, Add Tool, Test retrieval, Sync) are
+  `size="field" shape="pill"`, with no min-width or hand height. With
+  `shape="pill"` its text starts 21px in, like the Input and Select pills
+  beside it. The agent form's pickers are `combobox field`, each labelled by
+  a `FormField` (the Prompt picker through `Prompts titleAs="field"`), its Add
+  button `outline-primary field`, the only `outline-primary` on the agent
+  pages themselves (the Access details modal they open has its own).
+- **Shape by place.** Form controls (Input, SelectTrigger, a combobox Button,
+  Textarea, and a button inline with a field such as Add or Run) are square
+  in forms, modals and sheets. Pill is for page chrome: header and toolbar
+  actions, `SearchInput`, page filters (Logs, Analytics, GuardrailEvents,
+  the admin Activity toolbar, whose CSV / NDJSON exports are `outline field
+pill`), and a field that takes a pill header button's place (AgentsList's
+  new-folder field). Modal footers (`ModalActions`) stay `lg pill`.
+- Buttons on the agent pages (Overview, Logs, Schedules, the workflow builder's
+  toolbar): see PATTERNS.md › Agent pages.
 - Rows in the navigation sidebar (`hover:bg-sidebar-accent … pl-3 gap-2.5
 rounded-3xl`) are `variant="sidebar-item"`: left-aligned, full-radius, normal
   weight, `bg-sidebar-accent` on hover and while `aria-current="page"`. Use it
@@ -253,53 +287,35 @@ rounded-3xl`) are `variant="sidebar-item"`: left-aligned, full-radius, normal
   the link keeps its fill while the pointer is on a sibling with
   `group-hover:bg-sidebar-accent`. The section sidebar's "Back to app" row is
   the same variant.
-- Inline disclosure toggles ("Advanced settings", "Show advanced options")
-  are `variant="link" size="sm"` with only `-ml-3 w-fit justify-start`;
-  a chevron, when the toggle has one, is a lucide `ChevronRight` (so it
-  takes the link colour) as the first child.
-- Underline route tabs are `variant="tab"`: muted text on a transparent 2px
-  bottom border, square corners, no hover fill. Mark the current tab with
-  `data-active`, which gives it `foreground` text and a `primary` underline.
-  Padding-free tabs (a sub-nav with `gap-6`) add `size="inline"`, which keeps
-  4px above the line; the row draws the 1px baseline, and `-mb-px` lays the
-  underline over it. Its one use is `agents/AgentPageHeader.tsx`, the workflow
-  builder's fixed toolbar: a breadcrumb, the status Badge and the Overview /
-  Logs / Schedules tabs in a `<nav>` (no tabs until the workflow has an
-  id), the others `<Link>`s and the current one a `<span
-aria-current="page">` with `data-active`. The
-  agent section pages switch with the section sidebar (the phone menu below
-  `lg`) and carry no pill row; the agent tile's ⋯ also opens Logs. Tabs that switch a panel in place are
-  `ui/tabs` with `variant="underline"` on `TabsList` and each `TabsTrigger`:
-  the same pixels, plus `role="tablist"`/`"tab"`, `aria-selected` and
-  arrow-key focus; wrap the panel in `TabsContent` (FilePicker's My Files /
-  Shared with Me, Schedules' Recurring / One-time in
+- Inline disclosure toggles ("Advanced settings", "Show advanced options",
+  a device's audit log, the connect wizard's tool count): use
+  `CollapsibleTrigger` (see Disclosure).
+- Tabs are `ui/tabs`, and the underline is their only look (no `variant`
+  prop): muted text on a transparent 2px bottom border, square corners, no
+  hover fill; the active tab gets `foreground` text and a `primary`
+  underline, on a 1px baseline the list draws. Tabs that switch a panel in
+  place are `TabsList` + `TabsTrigger`, with `role="tablist"`/`"tab"`,
+  `aria-selected` and arrow-key focus; wrap the panel in `TabsContent`
+  (FilePicker's My files / Shared with me, Schedules' Recurring / One-time in
   `agents/schedules/SchedulesView.tsx`, the graph source view, the source
-  edit drawer). Each trigger keeps its `px-4`, so the first label sits 16px
-  in from the content edge and the underline runs past the label on both
-  sides. That inset is deliberate (decided 2026-09-28): the tab row reads as
-  its own strip, with a wider target per tab, so don't pull it flush with
-  `-ml-4` or strip the padding. Only the workflow builder's toolbar, where
-  the tabs share a row with a breadcrumb, uses the padding-free `Button
-variant="tab" size="inline"`. The `default` variant is a pill tab, unused
-  in the app. Panels unmount when hidden, except one whose state is costly to
-  rebuild (the graph source view's laid-out canvas and zoom): that
-  `TabsContent` takes `forceMount` plus `data-[state=inactive]:hidden`.
+  edit drawer). Each trigger is 36px with `px-4`, so the first label sits
+  16px in from the content edge and the underline runs past the label on
+  both sides. That inset is deliberate: the tab row reads
+  as its own strip, with a wider target per tab, so don't pull it flush with
+  `-ml-4` or strip the padding. Tabs that navigate are `NavTab` (`asChild`
+  around a router `<Link>`, or a `<span>` for the page on screen, `current`
+  setting `aria-current="page"`), in a `<nav>`: the same recipe and 36px,
+  edge to edge, `-mb-px` laying the underline over the row's baseline. Never
+  Radix Tabs for routes. Its one use is `agents/AgentPageHeader.tsx`, the
+  workflow builder's fixed toolbar (Overview / Logs / Schedules, no tabs until
+  the workflow has an id); the agent section pages switch with the section
+  sidebar (the phone menu below `lg`) and the agent tile's ⋯ also opens Logs.
+  Panels unmount when hidden, except one whose state is costly to rebuild
+  (the graph source view's laid-out canvas and zoom): that `TabsContent`
+  takes `forceMount` plus `data-[state=inactive]:hidden`.
 - A section panel's disclosure header (NewAgent's Advanced and Guardrails
-  panels) is `variant="section-toggle" size="sm"` with `-ml-3 w-fit
-justify-start` and `aria-expanded`: a lucide `ChevronRight` first
-  (`rotate-90` while open) in primary, then the foreground title, with a
-  primary underline on hover. Both call sites wrap the Button in an `<h2>`
-  (a button flattens heading children, so the heading goes outside) and put
-  the title in a `text-lg font-semibold` span. The button draws no focus ring; the panel does,
-  so keyboard focus outlines the whole panel. The panel is a `Card` (a place,
-  `subtle lg`), and every Card carries that ring
-  (`has-[[data-variant=section-toggle]:focus-visible]:ring-3 … ring-inset`,
-  inset because a scrolling column clips an outset ring), so pages pass
-  nothing for it. Status badges go beside the button, not inside it, or the
-  hover underline runs under them. Because the ring comes from the Card,
-  `section-toggle` only goes inside a Card: a collapsible group in a Modal
-  or drawer (Share's Access settings) is the inline `link sm` disclosure
-  toggle above.
+  panels, `variant="section-toggle"`): use `CollapsibleTrigger
+  look="section"` (see Disclosure).
 - Drop `text-white` on default and destructive buttons; the foreground token
   already provides it. Drop `disabled:cursor-not-allowed` on buttons; the
   base disables pointer events. Fields are the other way round (see Focus,
@@ -311,7 +327,9 @@ justify-start` and `aria-expanded`: a lucide `ChevronRight` first
   disables itself, sets `aria-busy`, and draws a 16px spinner over the label,
   which stays in the layout (invisible) so the width doesn't jump. Keep the
   idle label; never hand-place a `Spinner` in a button, swap the label for
-  "Saving…", or pin a fixed width to stop the jump. The one exception is a
+  "Saving…", or pin a fixed width to stop the jump. A busy link (`size="text"`
+  or `inline`) has no frame to hold that empty space, so `loading` keeps its
+  label readable in place, faded, with the spinner after it. The one exception is a
   button whose busy state says something the user needs: a progress figure
   (a connector's Sync shows "42%") or a mode (the composer's Voice button shows
   "Transcribing"). It keeps its busy label with a `Spinner size="xs"` (the
@@ -324,9 +342,8 @@ justify-start` and `aria-expanded`: a lucide `ChevronRight` first
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `variant`     | `outline` (border + card surface, the default), `filled` (muted fill, no border), `subtle` (border on the page background); which one is decided by role, below |
 | `tone`        | `default`, `destructive` (the status soft fill and border, `border-destructive/50 bg-destructive/10`, over any variant)                                         |
-| `padding`     | `none`, `sm` (p-3, row boxes and code blocks), `default` (p-4), `lg` (p-6, tiles, panels and stat tiles)                                                        |
-| `interactive` | whole card is the target: hover, focus ring and `selected` highlight; pair with `asChild` around a `<button>` or `<Link>`                                       |
-| `selected`    | an `interactive` card that is the current choice: `border-primary` and the `/5` wash                                                                            |
+| `padding`     | `none`, `sm` (p-3, row boxes; code wells are `CodeBlock` / `CopyField`, which draw it), `default` (p-4), `lg` (p-6, tiles, panels, stat tiles, a danger zone) |
+| `interactive` | `true`: whole card is the target: hover and focus ring; pair with `asChild` around a `<button>` or `<Link>`. `within`: a stretched child `<button>` is the target and the card draws its hover and focus ring (see A clickable card that holds a link) |
 
 Parts: `CardHeader` (title left, `CardAction` top-right), `CardTitle`,
 `CardDescription`, `CardContent`, `CardFooter` (meta row, sticks to the
@@ -346,8 +363,8 @@ marks structure.
 | -------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | Thing (a tile)       | `filled`, on a page or in a modal                                                 | agents, folders, sources, tools, custom models, teams, chunks, the shared agent card |
 | Place (a panel)      | `subtle` on the page or a right drawer, `outline` on a card (modal, bottom sheet) | the agent form's sections, chart panels, stat tiles, log tables, schedule rows       |
-| Choice (picker tile) | `outline interactive`, or `OptionCard`                                            | the Add tool tiles; selection is drawn by the border, so the border stays            |
-| Well                 | `filled padding="sm"`                                                             | code, a token to copy, run output, inside a panel (see Code blocks below)            |
+| Choice (picker tile) | `outline interactive`, or `OptionCard`                                            | the Add tool tiles; a chosen tile is an `OptionCard` `selected`, drawn by the border |
+| Well                 | `CodeBlock` / `CopyField` (a `filled sm` Card they draw)                          | code, a token to copy, run output, inside a panel (see Code blocks below)            |
 
 - Layers go page → panel (border) → well (fill), or page → tile (fill).
   `subtle` and `outline` are one role on two surfaces; in light mode they
@@ -363,6 +380,13 @@ marks structure.
   so they are fine on a tile. `no-restricted-syntax` enforces this for
   children written in the same JSX as the `<Card variant="filled">`
   (`eslint/card-surfaces.js`).
+- **Muted text on a fill.** `text-muted-foreground` fails AA on the muted
+  fill, so inside a `filled` Card (a tile, and also a well, since `CodeBlock`
+  and `CopyField` draw one) every `text-muted-foreground` element that isn't
+  an svg or a button reads as `foreground`, the same mechanism
+  `tone="destructive"` uses. Icons and ⋯ buttons stay muted (3:1 is enough
+  for them). A tile's hierarchy comes from size and weight, not a lighter
+  grey; don't pass one back.
 - Never a page-sized `bg-muted` panel around a page's cards: panels sit on
   the page background, as on Logs and Analytics.
 - A field in a `subtle` panel passes `labelSurface="background"` (see
@@ -375,25 +399,24 @@ Recipes by role:
   choices: `outline interactive lg` with `asChild` around a `<button>`.
 - Chart panels are `subtle lg` with fixed heights passed as layout; a chart
   panel inside a modal is `outline` (the modal is already `bg-card`).
-- Form sections (the agent form's Basics, Knowledge and behaviour, Model,
-  Advanced, Guardrails) are `subtle lg` with `gap-5`; Basics, Knowledge and
-  behaviour and Model are titled by a `SectionHeader`, Advanced and
-  Guardrails by a `section-toggle` (see Button). A disclosure panel's body
-  under its toggle is one `flex flex-col gap-5` wrapper, its rows carrying
-  no `mt-*`, so every section has 20px under its title. The destructive
-  danger-zone Card follows them.
+- Form sections (the agent form's panels): see PATTERNS.md › Agent pages.
 - Row boxes inside a form or panel (a guardrail check, the schedule's
-  timezone box, the discovered MCP tools) are `padding="sm"`, in the panel
+  timezone box) are `padding="sm"`, in the panel
   variant of the surface they sit on (`subtle` in a page panel, `outline` in
-  a modal).
-- A schedule is `agents/schedules/ScheduleRow`: `subtle`, `padding="none"`,
-  with its run log flush under it; a chevron `IconButton ghost-muted
-icon-xs` toggles the runs.
-- A danger zone (Delete agent, Revoke a device) and a failing stat are
-  `tone="destructive"`; the title beside it is `SectionHeader
-tone="destructive"`. Muted text fails AA on the red fill, so the tone turns
-  every `text-muted-foreground` inside it to `foreground`; don't pass a
-  lighter colour back. Icon buttons inside a destructive-tone row are
+  a modal). A list of named items in one (the custom MCP modal's discovered
+  tools) is a `SectionHeader size="xs"` over `Card padding="none"
+  overflow-hidden` holding `ListRows`.
+- A schedule row: see PATTERNS.md › Agent pages.
+- **Danger zone** (Delete agent, Revoke a device, Settings → General's Delete
+  all): `Card tone="destructive" padding="lg"` laid out as a wrapping row
+  (`flex-row flex-wrap items-center justify-between`), a `SectionHeader
+tone="destructive"` (the title, and the consequence as its `description`)
+  and one `destructive-outline field pill` Button whose label is the action
+  ("Delete agent", "Revoke"), which opens the confirm (see Confirm dialogs).
+  A failing stat is `tone="destructive"` too. Muted text fails AA on the red fill, so the tone turns
+  every `text-muted-foreground` inside it to `foreground`, except a hovered
+  Button, which keeps its hover colour (a `ghost-destructive` Remove still
+  turns red); don't pass a lighter colour back. Icon buttons inside a destructive-tone row are
   `ghost-destructive-on-accent`, whose red tint shows on the fill where
   ghost's grey square would not.
 - The shared agent card (its page and a new agent chat) is a thing:
@@ -408,37 +431,67 @@ page, `outline` inside a modal), `tone="destructive"` for a failing figure,
 `valueTone` (`destructive | warning | info | muted`) to colour the figure by
 meaning, and `loading` for a figure-sized Skeleton.
 
-Code blocks (a run's output, an error trace, a token or command to copy) are
-a `<pre className="font-mono text-xs whitespace-pre-wrap wrap-break-word">`
-in a Card picked by the surface underneath: `filled padding="sm"` (a muted
-well) on a card or background surface, `subtle padding="sm"` on a muted one
-(the tool-approval card, an expanded log row). A copy row is the same Card
-with `className="flex-row items-start gap-2"` and the `CopyButton` inside.
-Inside an Alert or a trace's tool panel, and in a full-pane viewer, the
-`<pre>` takes the recipe with no Card, so boxes don't nest. A scroll cap
-goes on an inner `<div className="scrollbar-overlay max-h-* overflow-y-auto">`
-around the `<pre>`, inside the Card's padding, never on the Card: on the Card
-the scrollbar runs into its rounded corners. Never `break-all` (enforced).
-This recipe is for app output. A fenced code block in a markdown answer is
-source code: it keeps its lines (`white-space: pre`, indentation intact) and
-scrolls sideways inside its own bordered frame (see Chat answer column).
-
 Tile text: the name is `CardTitle` (14px semibold from Card's `text-sm`; pass
 `as="h2"` on a page that goes from its title straight to a tile grid, but
-never a heading inside a clickable tile, whose children a button flattens), the
-description `CardDescription size="xs"` (12px muted, `leading-relaxed`), and
+never a heading inside a clickable tile, whose children a button flattens; it
+sets its own `title` from a string child when its className truncates or
+clamps, see Typography roles › Truncation), the
+description `CardDescription size="xs"` (12px muted, `leading-relaxed`, no `title`), and
 meta lines (a date, a token count, a model id or host) go in `CardFooter` at
 regular weight. `font-medium` is for list rows (`ListRow`), not tiles.
 
+### Code blocks (`ui/code-block.tsx`)
+
+App output, a value to copy, a labelled block and a markdown fence are one
+family; never hand-build a `<pre>` in a Card. Text is `font-mono text-xs`
+(one 16px line), `whitespace-pre-wrap`, and never `break-all` (enforced).
+
+- **`CodeBlock`**: app output (a run's output, an error trace, a JSON
+  payload). `surface` follows what is underneath: `filled` (a muted well) on a
+  card or background, `subtle` on a muted surface (the tool-approval card, an
+  expanded log row), `bare` (no box, so boxes don't nest) inside an Alert or a
+  `CodePanel`, `pane` for a full-pane file viewer (the pane's `p-4`, scrolling
+  inside its height). `maxHeight` `sm | md | lg` (160 / 240 / 320px) or
+  `parent` (scrolls inside a height the caller sets); the cap is the
+  component's, on an inner div so the scrollbar never runs into the Card's
+  corners, so never cap it yourself. `wrap="anywhere"` for URLs and tokens,
+  `tone` `muted | destructive` (`muted` reads as foreground on a `filled`
+  well; see Card surfaces), `font="sans"` for recorded prose (a trace's
+  query).
+- **`CopyField`**: a value to copy (a URL, a token, a command): a filled row
+  with the value (`select-all`) and the copy button, its first line on the
+  button's centre whether it runs one line or several. `wrap="anywhere"` for
+  URLs and tokens; `size="display"` for a short code read aloud (a pairing
+  code: 30px, centred).
+- **`CodePanel`**: a labelled block under an answer or in a trace (a tool
+  call's arguments and result): the `answer-surface` strip with the label and
+  the copy button, a `bare` CodeBlock under it.
+- **Markdown fences** go through `markdownCode` (`lib/markdown.tsx`; see
+  Typography roles › Markdown), which draws a `CodeFrame`: the bordered frame
+  with the language and copy button in a header (the `answer` or `muted`
+  surface) over the highlighted source, which keeps its
+  lines (`white-space: pre`) and scrolls sideways inside the frame. The
+  Mermaid diagram uses the same `CodeFrame`.
+
+Every copy button in the family is the icon-only `CopyButton` at `sm`, drawn
+by the component; never `showText` there.
+
 ### SectionHeader (`ui/section-header.tsx`)
 
-`<SectionHeader as title description actions size tone>`. `size`: `default`
-(18px `text-lg font-semibold`, a section title on a page or panel), `sm` (the
-eyebrow, `text-muted-foreground text-xs font-semibold uppercase
-tracking-wider`, a label set in caps above a group or a table head), `xs`
-(14px `text-sm font-semibold`, a sub-heading inside a panel, drawer or modal).
-`tone="destructive"` for a danger zone only. `as` is the level in the outline
-(`h2` default). The spacing below belongs to the parent's `gap-*`, never an
+`<SectionHeader as title count description actions size tone>`. `size`:
+`title` (20px `text-xl leading-tight font-semibold`, the Title role for a
+detail page or panel whose header isn't a Modal or PanelHeader: a remote
+device's config), `default` (18px `text-lg font-semibold`, a section title
+on a page or panel), `sm` (the eyebrow, `text-muted-foreground text-xs
+font-semibold uppercase tracking-wider`, a label set in caps above a group or
+a table head), `xs` (14px `text-sm font-semibold`, a sub-heading inside a
+panel, drawer or modal). A title that truncates with its full value in a
+`title` attribute (a team's detail page) stays a plain heading.
+`tone="destructive"` for a danger zone only. `count` is the tally beside the
+title (see Counts). `as` is the level in the outline
+(`h2` default, down to `h6`): nested panel sections keep the outline (the
+connection drawer: service `h3`, Knowledge / Tools `h4`, a tool `h5`, its
+action groups `h6`). The spacing below belongs to the parent's `gap-*`, never an
 `mb-*` on the heading. Not for dialog and sheet titles (their own title) or a
 page byline (a muted `text-sm` paragraph).
 
@@ -448,7 +501,7 @@ header: the row centres the title on the buttons and wraps them under it on
 a phone (`flex-wrap items-center gap-x-4 gap-y-2`). Panel and chart titles
 are `size="xs"` with `as="h3"`; a title row that also holds a legend or a
 "Resets" line keeps its wrapper and swaps only the heading. Disclosure
-headers (`Button variant="section-toggle"`) and the Agents breadcrumb are not
+headers (`CollapsibleTrigger look="section"`) and the Agents breadcrumb are not
 SectionHeaders.
 
 ### OptionCard (`ui/option-card.tsx`)
@@ -461,6 +514,13 @@ Pass `selected` (true or false) only in a
 single-select picker inside a `role="radiogroup"`; the tile is then a radio.
 Tiles that advance a step or navigate (Upload's source types, the agent-type
 modal) leave it out and stay plain buttons. Only layout classes on it.
+Icons take the square's colour, lucide glyphs and service logos alike: a
+service tile (Add knowledge's "From a service", three to a row from `md`)
+draws its logo in `text-current` so it matches the source-type tiles above
+it, and its description is only its status ("Connected", "Reconnect"), never
+an account name. "From a service" shows at most six tiles: every service with
+an account, then the rest up to the cap, and always a "Browse all
+connectors" link under them.
 
 ### Badge (`ui/badge.tsx`)
 
@@ -470,20 +530,31 @@ modal) leave it out and stay plain buttons. Only layout classes on it.
 pill, including schedule and run status pills (`agents/schedules/StatusBadge.tsx`
 maps schedule and run statuses to Badge variants), trace chips and statuses,
 token scope chips, "Disabled" and tool chips. A grey chip is `neutral`, never
-a `bg-muted` pill. The admin role is `default` wherever it shows (Teams, Admin
+a `bg-muted` pill: `neutral` is `bg-muted-foreground/15 text-foreground`
+(muted text fails on its own tint; the same pair as Avatar `muted`). The admin role is `default` wherever it shows (Teams, Admin
 → Users); every other role is `neutral`. A shared asset's tile (agent,
 source, tool, prompt) shows the caller's role with `components/RoleBadge`: a
 `neutral` Badge with `Users` first (Editor, Viewer, from `roleOf()`); your own
-assets show none. Chips that show code (token scopes) pass `font-mono`, and
-stat chips `tabular-nums`, as approved exceptions. HTTP method pills take their variant from
+assets show none. Badge's contract allows `font-mono` (chips that show
+identifiers: token scopes, workflow state keys) and `tabular-nums` (stat
+chips: durations, counts); no disable needed. HTTP method pills take their variant from
 `getMethodBadgeVariant` (`utils/httpMethodColors.ts`): GET `success`, POST
 `info`, PUT `warning`, DELETE `destructive`, PATCH `default`, anything else
-`neutral`. `MultiSelect` (`ui/multi-select.tsx`) shows its first two picks as
-`default` Badges with a remove X, then "+N more", on a `Button
-variant="combobox" size="field"` trigger that grows past 38px when the chips
-wrap, with SelectTrigger's turning chevron; each row in its list shows a
-`Checkbox size="sm"`. Inside a Modal pass `modal`, or its popover can't
-scroll and doesn't close on an outside click.
+`neutral`.
+
+A removable chip (a filter chip, a picked source) is `<Badge onRemove
+removeLabel>`: a named X button (12px X in a 16px round hover well, a 24px
+hit area) at the chip's end. Never a hand-placed X beside a Badge, and never
+a remove button inside another button.
+
+`MultiSelect` (`ui/multi-select.tsx`) shows its first two picks as `default`
+Badges (one on a `pill` trigger, so a toolbar stays one row), then "+N more",
+on a `combobox field` trigger (`shape` passes through: `pill` in a page
+toolbar) that grows past 38px when the chips wrap, with the turning chevron.
+The chips have no X, since the trigger is a button: unselect in the list. Each
+row in its list shows a `Checkbox size="sm"`. An option's `description` is a muted `text-xs` line
+under its label in the list only ("Added by Lena"); the chips show the label. Inside a Modal
+or Sheet pass `modal` (see Modal, not Dialog).
 
 In a picker list, mark the item that is currently chosen with
 `CommandItem checked` (a `secondary` brand tint through `data-checked`), not
@@ -492,35 +563,39 @@ follows the pointer and arrow keys, so an accent fill would look like hover.
 While a checked item is also highlighted it keeps its tint and text and gains
 a 1px inset `primary` ring, so the chosen row never turns plain grey.
 
+`MultiSelectPopover` searches with the stock `CommandInput` strip, full
+bleed, over an unframed `CommandList`, and caps itself at the height Radix
+says is free (`--radix-popover-content-available-height`, at most 600px).
 A picker's footer (`MultiSelectPopover footer`) links to the page that manages
 the list, as a `link inline` Button with a 12px `ArrowRight` (Go to Sources, Go
-to Tools). A shortcut action (Upload new, an `outline-primary pill`) sits at the
-right end of the same row: `flex flex-wrap items-center justify-between gap-3`,
-so on a narrow sheet or in a long locale it wraps under the link rather than
-taking a row of its own everywhere (`SourcesPopoverFooter`).
+to Tools). A shortcut action (Upload new, Add tool; an `outline-primary pill`)
+sits at the right end of the same row: `flex flex-wrap items-center
+justify-between gap-3`, so on a narrow sheet or in a long locale it wraps under
+the link rather than taking a row of its own everywhere. Every picker uses
+`PickerFooter` for this row (`SourcesPopoverFooter` wraps it for sources); a
+notice (connections to sign in again) goes above it.
 
 ### Input (`ui/input.tsx`)
 
 | Prop      | Values                                                                               |
 | --------- | ------------------------------------------------------------------------------------ |
-| `size`    | `sm` (h-8), `default` (h-9.5, 38px), `lg` (h-12), `field` (h-9.5, the form-row name) |
+| `size`    | `sm` (h-8), `default` (h-9.5, 38px, the form-row height)                             |
 | `shape`   | `default`, `pill`                                                                    |
 | `variant` | `default`, `bare` (no border, padding, radius, shadow or ring), `filled` (card fill) |
 
 Text alignment classes (`text-right`) and `font-mono` (code fields) are
 allowed on Input and Textarea. `<Input label>` is the shorthand for a
 one-field `FormField`: the same floating label on the border and the same
-`labelSurface` (see FormField). The chat and hero
-fields (`rounded-3xl px-5 py-3`) are `size="lg" shape="pill"`. A
-default-size pill (38px, the form-row height) pads `px-5` like the large
-one, so its text lines up with the Select pills. Compact table
+`labelSurface` (see FormField). A
+default-size pill (38px, the form-row height) pads `px-5`, so its text
+lines up with the Select pills. Compact table
 filters (`h-auto px-2 py-1 text-sm`) are `size="sm"`. An inset icon (a
 search glass) is `leftIcon`, with or without a `label`; it pads the field
 `pl-10`, so never hand-place an icon over an Input. A field inside a host
 that already draws the frame (the renaming sidebar row, a search strip in a
 bordered panel) is `variant="bare"`; the host shows focus, and any inset
 padding goes on the host, not the field. A field on a muted panel (the
-ImportSpec Base URL box) is `variant="filled"`, so it keeps the card fill
+tool-approval card's deny reason) is `variant="filled"`, so it keeps the card fill
 instead of showing the panel through; never pass `bg-card` for it. A floating
 label rests at the field's own text size (16px, 14px from `md`), so a
 labelled search and a placeholder-only one read the same, and with a
@@ -528,15 +603,15 @@ labelled search and a placeholder-only one read the same, and with a
 
 ### SelectTrigger (`ui/select.tsx`)
 
-`size`: `sm` (32px), `default` (36px), `field` (38px, the form-row
-height); `variant`: `default`, `ghost`; `shape`: `default`, `pill`. Pills
-pad `px-5` at every size but `sm` (`px-3`), so their text starts 21px in
-like the Input and Button field pills. A select in a form is
-`size="field"`, labelled by `FormField`. SelectTrigger is `w-fit`; pass
-`w-full` in a form column. Fields that take typing or sit beside one are 16px
+`size`: `sm` (32px) or `field` (38px, the form-row height, the default);
+`shape`: `default`, `pill` (page filters: Logs, Analytics, GuardrailEvents).
+There is no ghost trigger. A `field` pill pads `px-5` (an `sm` one `px-3`), so
+its text starts 21px in like the Input and Button field pills. A select in a
+form is labelled by `FormField`. SelectTrigger is `w-fit`; pass `w-full` in a
+form column. Fields that take typing or sit beside one are 16px
 below `md` (iOS zooms on focus under 16px) and 14px from `md`: Input,
-Textarea, SelectTrigger `default | field`, Button `combobox` `default | field |
-lg` and CommandInput. The `sm` sizes stay 14px. A highlighted list row is
+Textarea, SelectTrigger `field`, Button `combobox` `default | field | lg` and
+CommandInput. The `sm` sizes stay 14px. A highlighted list row is
 `bg-accent` in Select, Command and DropdownMenu alike.
 
 ### Textarea (`ui/textarea.tsx`)
@@ -556,10 +631,10 @@ search palette and the source navigator; its `variant` is `default` or
 `palette` (the search palette's spacing, see Modal, not Dialog).
 `CommandInput`'s `variant` is `default`, the `h-9` row with a bottom border
 at the top of a popover or palette list, or `field`, the 38px pill of a
-list that sits on the page (a source view's navigator filter, see Page
-chrome and Source views); nothing else hand-frames it. `CommandList` caps
+list that sits on the page (a source view's navigator filter, see PATTERNS.md ›
+Page chrome and Source views); nothing else hand-frames it. `CommandList` caps
 itself at `max-h-75` and scrolls; a list that already scrolls inside its
-host (a `Modal mobileVariant="sheet"` body) passes `max-h-none` so there is
+host (a Modal's phone sheet body) passes `max-h-none` so there is
 one scroller. `CommandItem` rows are `cursor-default` like Select and menu
 items, highlight `bg-accent` and mark the open item `checked`
 (`bg-secondary`); don't add `cursor-pointer`. cmdk highlights the first row
@@ -567,7 +642,32 @@ by default, which reads as hover. A list used as navigation, where a current
 item exists (the source navigator), starts the highlight on that item, or on
 a value that matches no row while nothing is open
 (`tree/SourceNavigator`'s `NO_HIGHLIGHT`); a search-then-pick list keeps
-cmdk's first-row highlight.
+cmdk's first-row highlight. A list whose focus stays elsewhere (PromptTextArea's
+`{{` variable menu under its textarea) forwards ArrowUp / ArrowDown / Home /
+End / Enter from that element to the `Command` root, so the keys drive the
+list while the caret stays put.
+
+### Combobox (`ui/combobox.tsx`)
+
+A single-select picker is `Combobox`; never hand-build a Popover + Command
+picker. Its trigger is `combobox field` (`shape="pill"` in a page toolbar)
+with the turning ChevronDown, the picked label truncating with a `title`, and
+its option's `hint` muted at the end; the list is a Command in a popover at
+least the trigger's width (18rem by default), the picked row `checked`. It is
+`modal` by default, so it works inside a Modal or Sheet, and a `FormField`
+labels and wires it (see FormField).
+
+- Options are `options` or headed `groups`; an option's `leading` (an
+  Avatar) and `hint` (muted trailing text: a UTC offset) show in the row.
+- A server-searched list passes `shouldFilter={false}` with `search` /
+  `onSearchChange`, and `valueOption` when the picked option isn't in the
+  current results.
+- Row actions (a prompt's Edit or View) go in `renderItem`, which replaces
+  the row's body.
+- `mode="add"` is a picker that adds something (Share's "Add people or
+  teams"): the trigger always shows the placeholder and no row is marked.
+
+A multi-pick is `MultiSelect` (see Badge).
 
 ### FormField (`ui/form-field.tsx`)
 
@@ -589,8 +689,8 @@ the field come a muted `text-xs` hint and a red `text-xs` error
 placeholder is an example: hidden while the label rests, shown on focus.
 Stack floating fields with `gap-5` so each label clears the field above.
 
-`Input`, `Textarea`, `SelectTrigger` (even nested in `Select`), `MultiSelect`,
-`Dropzone` and `Checkbox` read their `id`, `aria-invalid`, `aria-describedby`,
+`Input`, `Textarea`, `SelectTrigger` (even nested in `Select`), `Combobox`,
+`MultiSelect`, `Dropzone`, `Checkbox` and `Switch` read their `id`, `aria-invalid`, `aria-describedby`,
 `aria-required` and `disabled` from it, so don't set those by hand; an id
 the field already has wins. Any other control: pass `id` to FormField and
 the same id to the control. One FormField holds one control: a second field
@@ -601,7 +701,9 @@ put it inside a FormField (two labels).
 
 `float={false}` puts the label above instead (14px medium, 6px up), for a
 FormField with no single box to sit on: a list of checkboxes, several
-controls in a row, a loading or error line in place of the field. Controls
+controls in a row, a loading or error line in place of the field. On a
+`tone="destructive"` fill no `labelSurface` matches, so fields there use
+`float={false}` too. Controls
 whose label sits beside them (Switch, Checkbox, radio) use `SettingRow` or
 an inline `Label`, not FormField. An editing surface that fills its area
 (the chat composer, the source edit drawer's field, editing a sent question) and
@@ -623,14 +725,18 @@ label-less table cell carries it as the placeholder
 A setting with a control on the right (a Switch, a short Input) is
 `<SettingRow label description htmlFor alignStart stack as after>{control}</SettingRow>`,
 grouped in `<SettingRows>`, which splits rows with `divide-border/50` and pads
-each 12px (none at the group's ends). The title is a `Label` for the control
-(`htmlFor` = the control's id), so every switch has a name and clicking the
-title toggles it; `as="h2" | "h3"` keeps a heading tag, and the control then
-needs its own `aria-label`. `alignStart` top-aligns the control for wrapping
+each 12px (none at the group's ends). It wires its control like FormField:
+the title is a `Label` for the control's id (`htmlFor`, or a generated one),
+and the control's `aria-describedby` is the description, so every switch has
+a name and a description and clicking the title toggles it. A `Switch`,
+`Input`, `SelectTrigger` or `Checkbox` takes the id from the row and needs
+none of its own; any other control takes `htmlFor`. `as="h2" | "h3"` keeps a
+heading tag, and the control then needs its own `aria-label`. `alignStart` top-aligns the control for wrapping
 descriptions. `stack` puts a control too wide for a phone row (a 224px
 picker) under the title below `sm` at full width; give the picker
 `w-full sm:w-56`. `after` holds a field that belongs to the row, 8px under it
-(the agent form's limit Inputs). Settings → General is the page-level example:
+(the agent form's limit Inputs); it isn't wired, so it names itself
+(`aria-label`, or a FormField of its own). Settings → General is the page-level example:
 `PageToolbar` intro and rule, then `SectionHeader`ed groups of SettingRows in a
 `max-w-3xl` column. Inline "switch + label" pairs (a filter
 toggle) are not SettingRows.
@@ -679,31 +785,70 @@ cover the button above; the default `top` everywhere else (under an answer,
 in the composer, in rows). Toast close and collapse buttons are plain `Button`s with
 an `aria-label` and no tooltip.
 
-Tooltips open after 400ms. One `TooltipProvider` is mounted in `main.tsx`,
+Tooltip text is 12px in a box at most 320px wide (`max-w-xs`) that wraps
+with `text-pretty`, so a two-line tooltip fills its box; `text-balance` would
+even the lines out and leave half the box empty. Tooltips open after 400ms. One `TooltipProvider` is mounted in `main.tsx`,
 so moving along a row of icon buttons opens each at once after the first
 (Radix's skip-delay); a `Tooltip` outside it (tests, a portal root) adds its
 own provider. For a hint on something that is not an icon button, compose
-`Tooltip` + `TooltipTrigger asChild` + `TooltipContent`. `title=` stays only
-on truncating text (`span`, `p`, `div`), where it shows the full name.
+`Tooltip` + `TooltipTrigger asChild` + `TooltipContent`; an icon-only link
+(the collapsed rail's) is `TooltipTrigger asChild` around it, never `title`.
+`title=` is not a tooltip: it only carries a cut-off value in full (see
+Typography roles › Truncation).
 
 ### ToggleGroup (`ui/toggle-group.tsx`)
 
 The segmented control for picking one value of several (`type="single"`) or
 several of several (`type="multiple"`).
-Items are pills: the on item is the `outline` look (`bg-background`, border,
-`shadow-xs`), the others `ghost-muted`. `size` is `sm` (32px, the default) or
-`xs` (28px, inside a muted track: a wrapper `<div className="bg-muted
-rounded-full p-1">` around the group, whose own className takes layout only). A single group is a `radiogroup` with one Tab
+It has one look: the group draws its own muted pill track (`bg-muted
+rounded-full`), and its items are pills, the on item the `outline` look
+(`bg-background`, `shadow-xs`) with a `muted-foreground` border, which stands
+out from the track at 3:1 or more in both themes, the others `ghost-muted`.
+Off-item text is `muted-foreground`, 4.93:1 on the track in light. Never
+hand-build a track: no `bg-muted rounded-full p-1` wrapper around a group,
+and its className takes layout only (`shrink-0`, `self-start`, a margin).
+An item's tally is its `count` prop (see Counts).
+
+- **Width.** Pass `fill` when the group is the only control on its row, a
+  form field (a schedule's frequency and weekday, the connect wizard's
+  sign-in method, keep/delete in Remove, a workflow panel's mode): the track
+  is `w-full flex-nowrap` and each item `flex-1 min-w-0 px-1`, so the row
+  ends where the field under it ends. Everywhere else (toolbars, header
+  actions, beside other controls) leave it off and the track hugs its items
+  (`w-fit max-w-full`). A pill track never wraps: one that outgrows its row
+  (a long kind filter on a phone) scrolls sideways (`overflow-x-auto
+  no-scrollbar`; the track's padding keeps the focus ring unclipped).
+- **Size is density.** `sm` (the default: 32px items in a 38px track) is
+  level with `field` controls: forms and page toolbars. `xs` (28px items in
+  a 36px track) is for dense panels: the graph toolbar, workflow panels,
+  permission and parameter rows.
+
+A single group is a `radiogroup` with one Tab
 stop and arrow keys; it sends `""` when the on item is clicked again, so
 ignore that in `onValueChange` (`(v) => v && setRange(v)`). Route links in a
 row (the Agents filter pills) are not a ToggleGroup: they are `Button asChild
 variant={active ? 'outline' : 'ghost-muted'} size="sm" shape="pill"` around
 each `Link`, with `aria-current="page"` on the current one.
 
-Filtering a list by kind (a team's shared resources, Share's People) is this
-`xs` group in its muted track, each item `{label} {formatCount(n)}`, beside a
-`SearchInput size="sm"` (`w-full sm:w-56`); no match is `EmptyState size="xs"
+Filtering a list by kind (a team's shared resources, Share's People) is a
+ToggleGroup that hugs (`sm` on a page, beside a 38px `SearchInput`; `xs` in
+Share's dense list step), each item its label with the kind's `count`,
+beside a `SearchInput` (`w-full sm:w-56`); no match is `EmptyState size="xs"
 illustration="none"`.
+
+### ToggleChip (`ui/toggle-chip.tsx`)
+
+A pressed chip in a wrapping "any of N" row (guardrail stages, PII entities,
+a custom model's capabilities, Mermaid's code view) is `ToggleChip`: Radix
+Toggle, so it sets `aria-pressed`; the tint means on (`secondary`), off is
+`ghost-muted`, both pills. `size` `xs` (28px, the default, dense panels) or
+`sm` (32px, forms; a leading `Check` on the on chip). Never hand-build it as
+`variant={on ? 'secondary' : 'ghost-muted'} shape="pill"`, and never
+`role="switch"`. A `locked` chip is on and can't be turned off (an
+instance-enforced guardrail floor): full colour, a trailing `Lock`,
+`aria-disabled` (not `disabled`, so it stays readable) and the reason in
+`title`; never an emoji. `disabled` is for a chip that is really unavailable
+(a view-only form) and fades. Picking one of N is a ToggleGroup.
 
 ### Separator (`ui/separator.tsx`)
 
@@ -748,28 +893,39 @@ silently: `AdminRoute` at `fill="screen"`, `AgentRouteGuard` at
 inside a control (a busy Button, a picker's `sm` ring) stay `Spinner`.
 
 Nothing to show is `EmptyState`: `size` `default | sm | xs` (128 / 96 / 64px
-art, page / panel / popover), `illustration` `no-files | none` (a "no
-results" line is `size="xs" illustration="none"`), `title`, `description`
-(plain `muted-foreground`), `action`. A page or panel whose fetch failed is
-`EmptyState tone="destructive" illustration="none"` with a `Retry` action
-(`t('retry')`, an `outline sm pill` Button at every EmptyState size): a red
-`CircleAlert`, a red title, `role="alert"`. Never a bare
-`text-destructive` paragraph.
+art, page / panel / popover), `illustration` `no-files | none`, `title`,
+`description` (plain `muted-foreground`), `action`. An empty inline or inside
+a card or panel (no runs yet, no members) is `size="sm" illustration="none"`,
+and a "no results" line in a picker, popover or dense list `size="xs"
+illustration="none"`; never a hand-built muted `<p>`. A page or panel whose fetch failed (see
+Where a message lives › Load errors) is
+`EmptyState tone="destructive" illustration="none" onRetry`: a red
+`CircleAlert`, a red title, `role="alert"`, and `onRetry` draws the Retry
+(`t('retry')`, an `outline sm pill` Button at every size, after `action` when
+both are set). Hand-set that Button only for a Retry outside an EmptyState
+(DeviceAuditList's inline one). Admin's `LoadError` is the same EmptyState, so
+its Retry follows the locale too. Never a bare `text-destructive` paragraph.
 
 ### Progress (`ui/progress.tsx`)
 
 `value` 0 to 100, `variant`: `default`, `success`, `warning`,
-`destructive`, `info`; `size`: `sm`, `default`, `lg`. Replaces the
+`destructive`, `info`; `size`: `sm`, `default`. Replaces the
 width-percent divs in quota, indexing and guardrail views.
 
 ### Avatar (`ui/avatar.tsx`)
 
 `size`: `none` (image decides, the default), `xs` (28px), `sm` (32px),
-`default` (36px), `lg` (40px): Button's names at Button's heights;
-`shape`: `none`, `circle`, `square`; `variant`: `default`, `primary` (brand
-initials on `secondary`), `muted` (a grey `bg-muted-foreground/15` box with
-`foreground` initials). Initials boxes pass the letters as
+`default` (36px), `lg` (40px): Button's names at Button's heights; `xl`
+(48px, `rounded-xl` when square) for a connector logo leading a drawer or
+wizard header. `shape`: `none`, `circle`, `square`; `variant`: `default`,
+`primary` (brand initials on `secondary`), `muted` (a grey
+`bg-muted-foreground/15` box with `foreground` initials), `icon` (the icon
+tile: `bg-muted` with muted text). Initials boxes pass the letters as
 children.
+
+The icon tile leading a row is `<Avatar size="sm" shape="square"
+variant="icon"><Icon className="size-4" /></Avatar>` (32px; `xs`, 28px, in
+the team switcher). Never a hand-built `bg-muted … size-8 rounded-md` span.
 
 ### Dropzone (`ui/dropzone.tsx`)
 
@@ -800,11 +956,10 @@ overlay, whose prompt is a Title (see Typography roles).
 
 ### Toast (`ui/toast.tsx`)
 
-Feedback on anything the user did outside a modal (uploads, runs,
-approvals, team events, a page action's result) is a toast in the
-bottom-right stack; a result inside an open modal is an `Alert` there (see
-"Where a message lives"), since the toast stack paints under the modal's
-overlay. The app has one
+Feedback the screen itself can't show (uploads, runs, approvals, team
+events, a page action's failure) is a toast in the bottom-right stack; a
+result inside an open modal is an `Alert` there, since the toast stack
+paints under the modal's overlay (see "Where a message lives"). The app has one
 `ToastViewport`, mounted in `App.tsx`; it is the live region
 (`role="status"`, `aria-live="polite"`) and the fixed stack, so `Toast`
 cards carry no role and no toast renders its own rail or positioning. Top
@@ -812,11 +967,17 @@ to bottom it holds `TeamNotificationToast`, `ConnectionHealthToast` (a
 connection that needs reconnecting, with a Reconnect action),
 `ToolApprovalToast`, `UploadToast` and `ActionToast`, and it moves to the
 bottom-left while any agent preview drawer is open (workflow or classic). A new toast component returns only its
-`Toast` cards and is added to that viewport. A page that reports the result
-of an action (the admin Users actions) dispatches
-`showActionToast({ variant: 'success' | 'destructive', message })` from
-`notifications/actionToastSlice.ts`; `ActionToast` shows it and dismisses
-it after 4.5s, and a new result replaces the previous one.
+`Toast` cards and is added to that viewport. A result the screen can't show
+dispatches `showActionToast({ variant: 'success' | 'destructive', message })`
+from `notifications/actionToastSlice.ts`: a chunk saved from the graph
+reader's edit drawer, which closes as it saves ("Chunk saved"); a copy from a
+reader's ⋯ menu; an admin Force logout; a page action's failure that happens
+after its confirm closed (a source file delete). `ActionToast` shows it and
+dismisses it after 4.5s, and a new result replaces the previous one. A result
+the row shows gets no toast: Admin › Users' grant, revoke, activate and
+deactivate show their success in the row's badge. Work that finishes after
+the user has moved on has its own card: `UploadToast` follows an upload
+through ingest to "Upload completed".
 
 Compose `Toast` > `ToastHeader variant` (`default`, `success`, `warning`,
 `destructive`, `info`) with `ToastTitle` and `ToastActions` (collapse and
@@ -824,7 +985,7 @@ close as `Button variant="ghost-muted" size="icon-sm"`), then
 `ToastContent` (add `scrollable` for long lists) with `ToastItem label meta`
 rows (optional `icon` before the label), a `ToastStatus status` circle per
 row (`pending`, `success`, `warning`, `destructive`, `info`),
-`ToastMessage variant` for an explanation and `ToastFooter` for action
+`ToastMessage variant` (`default`, or `destructive` for a failure) for an explanation and `ToastFooter` for action
 buttons. `ToastTitle` truncates to one line; `wrap` lets a long title (a
 localised string, a team name) wrap instead. `ToastMessage size` is `xs`
 (default, the note under a row) or `sm` (`text-sm leading-4.5`, the whole
@@ -835,14 +996,24 @@ no width or colour to them.
 
 ### A clickable card that holds a link
 
-A card that opens something and also holds a link (a source card under an
-answer, with its URL) is a plain `relative` container: a `<button
-type="button">` inside it covers the card with `after:absolute after:inset-0`
-(the card's radius on `after:`), and the link is a sibling after it with
-`relative z-10`, so both are real controls, one tab stop each, and neither
-sits inside the other. The container draws the focus ring for the button
-(`has-[>button:focus-visible]:ring-3 …ring-ring/50`). Never put a link inside
-a `role="button"` or a `<button>`.
+A card that opens something and also holds a link or other controls (a
+source card under an answer, with its URL; a tile with a ⋯) is a plain
+`relative` container:
+
+- The target is a `<button type="button">` that is a **direct child** of the
+  card and covers it with `after:absolute after:inset-0` (the card's radius
+  on `after:`). The container draws its focus ring
+  (`has-[>button:focus-visible]:ring-3 …ring-ring/50`); a `Card` does it with
+  `interactive="within"` (Knowledge's source cards, the agent tiles).
+- It comes first in DOM order, so Tab reaches the item before its menu.
+- It is named by the title alone: the title is its content (or its
+  `aria-label`), and the description stays outside it. A decorative avatar
+  beside the title is `alt=""`.
+- Every other control, the `ActionMenu` included, sits in a `relative z-10`
+  (or `absolute … z-10`) element, so all are real controls, one tab stop each,
+  and none sits inside another.
+
+Never put a link inside a `role="button"` or a `<button>`.
 
 ### Where a message lives: FormField, Alert or Toast
 
@@ -850,22 +1021,40 @@ a `role="button"` or a `<button>`.
   floating label red).
 - A result the user must read before closing the modal (a failed share, a
   failed import, a Test connection result) is an `Alert` in the modal body.
-- A fire-and-forget result, or any result on a page rather than in a modal,
-  is a toast (`showActionToast`).
-- A page or panel that failed to load its own content is
-  `EmptyState tone="destructive"` in place of that content, with `Retry`.
+- **Success** shows in the screen itself: the new row, the saved value, the
+  closed modal or drawer, "Unsaved changes" going away. It doesn't also
+  toast. A success toast is only for a result the screen can't show:
+  background work that started, a copy from a menu, a save from a surface
+  that has closed or navigated away.
+- A failure on a page rather than in a modal, or a fire-and-forget result,
+  is a toast (`showActionToast`). A failed confirm is the exception: its
+  message stays in the open ConfirmationModal, never also a toast or a page
+  Alert (see Modal › Async submits).
+- **Load errors.** Every fetch that fills a page or panel has three states:
+  loading, error and data. Its `catch` sets an error that renders
+  `EmptyState tone="destructive" illustration="none" onRetry` in place of the
+  content, never the empty message; resetting a list to `[]` in a `catch` is
+  a bug. A 404 on a single item is "not found"; any other failure is the
+  error. A failed later page of a feed is the `LoadMoreStatus` error strip
+  (see Pagination › Feeds).
 - A notice the user must read before acting (an expiring token, a policy that
-  forces a setting, models without a price) is an `Alert`; one that is only
-  informative and should not be announced passes `role="note"`.
-- Status text of a sentence or more is an `Alert` with a lucide icon, never a
-  coloured paragraph. A long notice about an old run inside a collapsed panel
+  forces a setting, models without a price) is an `Alert`. A static note that
+  is only informative and should not be announced (a view-only form, an
+  explainer) is `Alert variant="info" role="note"`, never a `bg-muted` box.
+- Status text of a sentence or more is an `Alert` (its variant draws the
+  icon), never a coloured paragraph. A long notice about an old run inside a collapsed panel
   is `Alert role="status"`, not `alert`.
 - An action's error on a full-page form (saving an agent) is an `Alert
 variant="destructive"` above the form, not text in or beside the button.
 - A list of errors the user must read on a canvas or page (the workflow's
   publish validation) is a destructive `Alert` floating at `z-20` on an opaque
   `bg-card rounded-xl shadow-md` wrapper that stays until closed; a toast
-  would truncate each error to one line and dismiss itself.
+  would truncate each error to one line and dismiss itself. The workflow's
+  stopped-resources warning is the same recipe (`FloatingResourceNotice`): it
+  floats only while something is stopped, its X sits inside the Alert (`Alert onClose`), a long
+  list scrolls in an inner `scrollbar-overlay max-h-* overflow-y-auto` div,
+  and it steps aside while the publish errors show; once closed a chip
+  reopens it.
 - A switch moves at once and flips back when the server refuses, with a
   destructive toast (an Alert inside a modal). A delete removes its row only
   after the server confirms; a 403 shows `errors.forbidden`.
@@ -888,8 +1077,8 @@ also refuses Logs, Schedules and Pin on a draft), never on `ownership`,
   control that can't apply to the caller at all (a tool's "In my chats" when
   the grant doesn't allow it in their chats) is hidden, not disabled.
 - A view-only form opens with the same fields and `ViewOnlyNotice`
-  (`components/ViewOnlyNotice`: an `Alert role="note"` with `Lock` first and
-  `common.viewOnlyNotice`) as its first child. Where only part of an editable
+  (`components/ViewOnlyNotice`: an info note, `Alert variant="info"
+  role="note"`, with `common.viewOnlyNotice`) as its first child. Where only part of an editable
   form is locked (a tool's credentials when the owner turned off "Editors can
   change credentials", or when the tool runs on the owner's connection, whose
   secret only the owner changes), the same notice passes its own `message`. There is no Save; Cancel becomes a lone Close.
@@ -909,45 +1098,51 @@ also refuses Logs, Schedules and Pin on a draft), never on `ownership`,
 
 Inline notice inside a form, modal or panel (see above). It is never a
 hand-rolled `rounded-lg bg-<role>/10` box.
-`variant`: `default`, `neutral` (the same quiet box, by name: a guardrail
-"not evaluated" outcome), `success`, `warning`, `info`, `destructive`. 14px
-corners (`rounded-xl`), like a popover. Every
-coloured variant is the same shape: `border-<role>/50 bg-<role>/10
-text-<role>`; `default` sits on `bg-background`. Icon first (a lucide icon,
-no classes: the Alert sizes it to 16px and colours it with the text), then
-`AlertTitle` and `AlertDescription`. The icon has its own column and sits
-centred on the text block, beside a single line, a wrapped paragraph or a
-title with its description. Every variant is
-`role="alert"` except `success`, which is `role="status"` so a confirmation
-is announced politely; pass `role` only to override that. Replaces the hand-rolled
+`variant` is required: `success`, `warning`, `info`, `destructive`. There is
+no quiet default; a note is `info` with `role="note"`. 14px
+corners (`rounded-xl`), like a popover. Every variant is the same
+shape: `border-<role>/50 bg-<role>/10 text-<role>`. Children are
+`AlertTitle` and `AlertDescription`.
+
+The variant draws its icon: destructive `CircleAlert`, warning
+`TriangleAlert`, success `CircleCheck`, info `Info`. Never pass an icon child, and no per-site overrides: a lock, a
+shield or a mail glyph on one notice is not a reason. `icon={null}` drops it
+where the body is itself the message (a `CodeBlock` error body:
+TraceSpanDetails). The icon has its own 16px column in the text colour and
+sits centred on the text block, beside a single line, a wrapped paragraph or
+a title with its description.
+
+A static note is `variant="info" role="note"` (see Where a message lives);
+`bg-muted` wells are for assets, not notes.
+
+Every variant is `role="alert"` except `success`, which is `role="status"` so a confirmation
+is announced politely; pass `role` only to override that. `onClose` adds a
+ghost `icon-xs` X in the top-right corner (named `close`) and pads the text
+`pr-10` clear of it: the floating canvas notices (publish errors, stopped
+resources); never hand-place a close button in an Alert. Replaces the hand-rolled
 `rounded-lg border bg-amber-50 text-amber-800` boxes.
 
-A failed chat answer is an `Alert variant="destructive"` on the answer's
-`mr-5 ml-6` column: `CircleAlert`, the fixed title `conversation.failedTitle`,
-and the backend's error (often a raw provider exception) as `font-mono text-xs`
-detail in `AlertDescription`. Its action row is Retry (`RotateCcw`) and Copy,
-both `ghost-muted icon-sm pill` like every other answer action.
-
-The rows in an answer's step column (Sources, Reasoning, each tool step) are
-one recipe: `Button variant="ghost" size="sm"` at `ml-3.5 w-fit`, which puts a
-16px muted icon on the `ml-6` text column, then muted 14px text and a chevron.
-Sources adds its count and a right chevron, and opens the All sources sheet.
+A failed chat answer and the rows in an answer's step column are chat recipes:
+see PATTERNS.md › Chat answer column.
 
 ### Breadcrumb (`ui/breadcrumb.tsx`)
 
-`BreadcrumbPage`, the current crumb, is always one line and truncates with
-an ellipsis. Pages pass only its width (`w-[16ch]`, `max-w-[32ch]`) and a
-`title` with the full text; never `truncate` or typography. Give every
-current crumb a width cap so a long name cannot push the row past the
-screen. It carries the link's focus ring: after a crumb step, PathHeader
-moves focus to the new current crumb (`tabIndex={-1}`) so keyboard focus
-never drops to the page. A crumb that runs a handler instead of navigating is
-`BreadcrumbLink asChild` around a `<button type="button">`; the link carries
-the focus ring. Parent crumbs cap at `max-w-[16ch]` with `truncate` on the
-button itself (a parent with no handler is a plain truncating `<span>`, never
-a disabled button). The current crumb is never a disabled button. The header of
-every source view is `components/tree/PathHeader` (see Source views); don't
-hand-roll a `/`-separated path.
+Pages pass nothing to the breadcrumb parts; the primitive does the layout.
+`BreadcrumbList` stays on one line (`flex-nowrap`), every crumb gives way
+(`min-w-0`) except the first, which stays whole (`shrink-0`), a
+`BreadcrumbLink` truncates at `16ch`, and `BreadcrumbPage`, the current crumb,
+at `32ch`, with a `title` set from string children. The one trail that wraps
+is AgentsList's folder trail (see Approved exceptions). `BreadcrumbPage`
+carries the link's focus ring: after a crumb step, PathHeader moves focus to
+the new current crumb (`tabIndex={-1}`) so keyboard focus never drops to the
+page. A crumb that runs a handler instead of navigating is `BreadcrumbLink
+asChild` around a `<button type="button">`; the link carries the focus ring
+and the cap. A parent with no handler is a plain `<span>` with `max-w-[16ch]
+truncate` and a `title` (PathHeader's; it isn't a BreadcrumbLink, so it sets
+the cap by hand), never a disabled button, and the current crumb is never a
+disabled button either. The header of every source view is
+`components/tree/PathHeader` (see PATTERNS.md › Source views); don't hand-roll a
+`/`-separated path.
 
 ### ListRow and DescriptionList (`ui/list-row.tsx`, `ui/description-list.tsx`)
 
@@ -955,11 +1150,21 @@ An identity row (avatar or icon square, a truncating title, one muted meta
 line, a trailing control) is `ListRow` inside `ListRows` (`divide-y
 divide-border`, no box of its own; wrap it in `Card padding="none"` or a
 bordered list for one). Rows are `px-4 py-3`, the title `text-sm
-font-medium`. `interactive` (with `asChild` around a `<Link>` or `<button>`)
-hovers to `bg-accent` and draws an inset focus ring. `selected` marks the
-row whose detail is open in a drawer beside the list (a team's shared
-resources), exactly as a selected TableRow (see Table). An icon square in
-`leading` is a plain `bg-muted text-muted-foreground size-8 rounded-md` span.
+font-medium`. A string `title` or `description` sets its own `title=` for the cut-off
+value; for a node, put `title` on the node. `interactive` (with `asChild`
+around a `<Link>` or `<button>`) hovers to `bg-accent` and draws an inset
+focus ring. `selected` marks the row whose detail is open in a drawer beside
+the list (a team's shared resources) and the chosen row in a single-pick list
+(a repository in the connect wizard): the `bg-secondary` fill of a selected
+TableRow (see Table), kept on hover, with `aria-current`, but the row's text
+keeps its own colours (a foreground title, a muted meta line). A row you select that
+also holds a ⋯ (a connection's accounts) can't be one `<button>`: it is
+`ListRow interactive selected asChild` around a `relative` box whose title is
+a stretched `<button data-account-select>` (`after:absolute after:inset-0`),
+the box drawing that button's inset focus ring
+(`has-[[data-account-select]:focus-visible]:ring-3 …ring-ring/50 ring-inset`),
+and the ⋯ in a `relative z-10` trailing group. An icon square in
+`leading` is the Avatar icon tile (see Avatar).
 In a narrow side panel (the graph node panel's relationships) rows are
 `size="sm"`: `px-2 py-1.5`, `gap-2.5`, `rounded-md` and top-aligned so a small
 leading mark (a `GraphTypeDot` with `mt-1.5`) sits on the title line. They go
@@ -975,17 +1180,57 @@ right-aligns the values (a phone card; `columns={2}` for a stats dialog).
 
 ### Pagination (`ui/pagination.tsx`)
 
-The pager under a table, tile grid or list: "Page N of M" and four chevron
-`IconButton`s. `pageSize` adds the Rows per page select (`pageSizeLabel`
-renames it when the items aren't rows: the chunk grid's "Chunks per page",
-with `pageSizeOptions={[12, 24, 48]}` so a full page fills 2, 3 or 4
-columns); `summary` puts a
-count on the left ("1,024 users"). `labels="text"` swaps the chevrons for
-Previous / Next buttons. Don't hand-roll a Previous / Next row. With a page
-size select, keep the pager while the total exceeds the smallest option, not
-the current page size, so picking a bigger size never hides the way back
-("Page 1 of 1", chevrons off). Counts and numbers in the UI format on the app
-language: `formatCount` (`utils/dateTimeUtils`, `Intl` on `intlLocale()`), never
+The pager under a table, tile grid or list. It takes `page`, `pageSize` and
+`total` and derives the rest: a range summary on the left ("1–12 of 86
+sources": pass `rangeLabel` with the list's plural key and `pageRangeParams`,
+else the noun-free `pagination.range`), then Previous, five numbered slots
+(`pageSlots`: first, last and current page, an ellipsis always hiding two
+pages or more: `1 2 3 … 8`, `1 … 4 … 8`, `1 … 6 7 8`) and Next. The current
+page is the `outline` button, the others `ghost`. `onPageSizeChange` adds the
+"Per page" select (`pageSizeLabel` renames it, e.g. "Rows per page" on a real
+table); tile grids keep multiples of 12 (`[12, 24, 48]`, the default) so a
+full page fills 1, 2, 3 or 4 columns. The pager is an `@container`: under
+36rem of its own width (a phone, a side panel) it shows the short range and
+`‹ 2 / 8 ›` instead, without the size select. Render it unconditionally once
+the list has loaded; it draws nothing while every item fits on the smallest
+page. With a size select it stays while the total exceeds the smallest
+option, not the current page size, so picking a bigger size never hides the
+way back (page buttons off). Keep a routed list's page in the URL
+(`usePageParam`, replaces the history entry) and a chosen size on the device
+(`usePageSize`, `DocsGPTPageSize:<list>`); a new search or filter starts on
+page 1, and a page the server clamped is followed. Don't hand-roll a
+Previous / Next row.
+
+Pick the pattern by the list: a grid or table you browse or search pages;
+a newest-first feed (logs, run history, guardrail decisions, a device's
+audit, the conversations sidebar) loads older items as it scrolls, never
+page numbers (see Feeds below); a usually short
+list that is loaded in full (tools, custom models, teams, a team's shared
+resources) pages client-side at `SHORT_LIST_PAGE_SIZE` (48, no size select,
+`useClientPage`), a safety net that never splits a normal list; a fixed
+catalog (connectors) and a table of a few rows (access tokens) have no pager;
+a sectioned gallery caps each section at two full rows (`useGridColumns`)
+and links "Show all N" (a `link inline` Button) beside the title to the section's own page, which
+shows everything at 48 per page. Sources opens at 24 per page on desktop and
+12 below it.
+
+**Feeds.** `useLoadMore` (items in the component) or `useScrollSentinel`
+(items in Redux, where SSE merges new rows) watches a 1px sentinel after the
+last item, so loading follows whatever already scrolls and never adds a
+scroller: in a Modal, Sheet or SidePanel the body is still the one scroller,
+and the sidebar's chats load inside the sidebar column. Only a feed on a page
+gets its own cap: an inner `scrollbar-overlay max-h-[45svh] overflow-y-auto`
+div inside the frame (the run log's schedule card, the guardrail table's
+frame, a device's audit list), never on the Card. Under it, outside the
+scroller, `LoadMoreStatus` (`divider` under a flush table) says "Loading
+older…", "Nothing older" or offers Retry (an `outline xs` pill; `loadingLabel` / `doneLabel` for a
+list that isn't newest-first: "Loading more…"); it keeps one row's height and so
+keeps the scrollbar clear of the rounded corner. A feed shorter than one page
+draws no strip. The end is a page shorter than requested, so no count is
+needed. A first load shows `LoadingState`, and a failed one follows Where a
+message lives › Load errors.
+
+Counts and numbers in the UI format on the app language: `formatCount` (`utils/dateTimeUtils`, `Intl` on `intlLocale()`), never
 `toLocaleString()` or a raw `{{count}}`; plural keys get the number as `count`
 and the formatted text as `formatted` (`{{formatted}} members`), a key with no
 plural passes only `formatted`, and a count is never baked into the key name
@@ -999,211 +1244,21 @@ language has no short form). Counts in tables, pagers and inline text use
 `formatCount`. Lists of names join with
 `Intl.ListFormat`, never a hard-coded `', '`.
 
-### Page chrome: SectionShell, PageToolbar, SearchInput
+**Counts.** A count beside a label is the `count` prop of `SectionHeader` or
+`ToggleGroupItem`: muted, normal weight, `tabular-nums`, never set in caps
+(on an eyebrow too) and muted on the selected item too. A number is
+formatted by the component; text is allowed ("2 of 5 allowed"). Never bake
+`· N` or a number into a title string.
 
-Every section page (settings, admin, agents, teams) is wrapped in
-`navigation/SectionShell` (`width` `default` 6xl, `wide` 7xl for admin,
-`narrow` 5xl; `title` replaces the section title; `titleAction` puts a page-level
-control, such as a toolbar `ActionMenu`, at the title row's end;
-`header={false}` drops the title for the phone section index, which draws
-its own);
-it draws the title and
-starts the content 32px below it, so pages carry no root `mt-*`. The block
-under the title is `components/PageToolbar`: `intro`, then the page `search`
-(left, `max-w-md`) and the page `action` (right, `Button size="field"
-shape="pill"`), then `children` (notices that belong to the action, such as
-a limit warning), then `divider` (a `Separator`). With no `search` the intro
-moves into the row's left slot (`max-w-2xl`) beside the action. A page search
-is `components/SearchInput`: the 38px pill (`size="sm"` for 32px) with a
-search icon and a floating `label` on `labelSurface="background"` (its
-default); a placeholder-only search is named by its placeholder. A source
-view's navigator filter is a `CommandInput variant="field"` (the same 38px
-pill, text 40px in, the ring on the frame), because its rows are
-`CommandItem`s (see Source views and Command). `CommandInput`'s `default` variant is the
-`h-9` row with a bottom border at the top of a popover or palette list; the
-wrapper carries `data-variant` for styling from the parent. Nothing else
-hand-frames a `CommandInput`.
-
-An agent's tabs (Overview, Logs, Schedules) share one header,
-`agents/components/AgentPageToolbar` on top of `PageToolbar`, under
-`SectionShell`'s title (the tab's name, or "New agent" through SectionShell's
-`title` prop). Its props: `name` (the agent, first in a muted byline),
-`status` (a Badge beside the name, Overview's Published / Draft), `meta` (the
-tab's context after a middle dot, "Last used" on Logs and Schedules),
-`actions` (the tab's buttons on the right, at most three; the page's ⋯ goes
-in the title row, not here), `intro` (a line that replaces
-the byline: the new-agent form) and `children` (notices between the row and
-the rule, such as the failed-save `Alert`). With a status badge the meta
-takes its own line on a phone. The row keeps the 38px field height when a
-tab has no actions, so the rule lands in the same place on every tab.
-`AgentPageHeader` remains only in the workflow builder's fixed toolbar. All
-three tabs are `SectionShell` pages at the default width; the agent preview
-is a drawer (see Modal, not Dialog). Overview groups its fields into three
-`subtle lg` panels (Basics, Knowledge and behaviour, Model) with the two-up
-field grid, then Advanced, Guardrails and the danger zone. Schedules shows a
-`StatCard` row, Recurring / One-time as `ui/tabs variant="underline"`, and
-each schedule as a `ScheduleRow` (see Card surfaces).
-
-### App chrome: the phone top bar and New Chat
-
-Below `lg` the top of every page is `navigation/MobileTopBar` (56px, `h-14`):
-the sidebar toggle (`PanelLeft`), a title, then New Chat and the account
-avatar (`ProfileButton size="xs"`). It is on `bg-background` like the page,
-with no border and no shadow; a `from-background to-transparent` gradient under
-it lets the content fade out as it scrolls. At `lg` and up, `ActionButtons`
-holds Share and the avatar in the top-right corner instead, and it renders
-nothing on a phone.
-
-The title is for chats only: the open conversation's name, or the agent's
-name on a new agent chat, with the agent's `Avatar` in front. A plain new chat
-has no title. So do section pages (settings, admin, an agent's pages), because
-`SectionShell` already draws their title. When the chat has actions, the title
-is a `ghost sm` Button that opens a `DropdownMenu` with Edit agent (a role
-that may open its edit page), Share, Rename and Delete. Rename edits the name in place, as the
-sidebar row does. A title with no actions (a shared agent's new chat) is
-plain text.
-
-A long title truncates to one line and never runs under New Chat or the
-avatar: the title slot is `flex min-w-0 flex-1`, the agent's `Avatar` and the
-chevron keep their size, and only the name gives way (a `truncate` span with
-`title=` holding the full name). This is the rule for any Button that holds a
-user-supplied name (a chat, agent or source) in a flex row: Button's base is
-`shrink-0 whitespace-nowrap`, so `min-w-0` alone does nothing. Pass `min-w-0
-shrink` (or `flex-1` when it should fill the row) and put the name in the
-`truncate` span; its icons stay `shrink-0`. `w-full` doesn't count: a
-`w-full shrink-0` Button takes the whole row and pushes its neighbour out,
-under the next control (an `outline` Button's fill is translucent in dark, so
-it shows through there and hides in light). `variant="combobox"` already
-carries `min-w-0 shrink`, like the fields it sits among.
-
-New Chat is `SquarePen` everywhere: the phone bar, the sidebar's New Chat row
-and the collapsed rail. `Plus` means "add an item to this list", not "start
-a chat".
-
-### Source views (`components/tree/`, `WikiViewer`, `components/graph/`, `GraphView`)
-
-Every source view (a file or connector tree, a one-document chunk list, a
-wiki, a knowledge graph) is one shell:
-
-- **Header**: `PathHeader`, 16px (`gap-4`) above the content in every
-  source view, crumbs and no back button: Sources (leaves the source view),
-  the source, its folders, the open file and the open chunk ("Chunk 12"),
-  each opening its level, the last one current. A wiki's open page is not a
-  crumb: its crumbs stop at the source, and the page is marked in the
-  navigator and named by its path in the reader's meta. Up one level is
-  a crumb, as on the Tools and Teams detail pages (`DetailBreadcrumb`); the
-  phone's `SectionBackLink` above the title is the only arrow, and it leaves
-  the section. Crumbs never take `text-primary`; parents are muted like any
-  crumb, truncate at `max-w-[16ch]` with a `title`, and the row stays on one
-  line (`flex-nowrap`). A tree embedded in another source view (a graph
-  source's Files tab) draws no Sources crumb and reports its crumbs to the
-  host (`onCrumbsChange`), whose header shows them while that tab is open. The
-  file table has no `..` row. `badge` is the source kind as a `neutral` Badge with a 12px lucide
-  icon (Living wiki, Knowledge graph, a connector's provider; plain uploads
-  have none); `byline` is one muted `text-sm` line of counts ("33 files ·
-  11,420 tokens", "12 pages · 8,111 tokens · …", "371 entities · 1,172
-  relationships"), where a kind that needs explaining adds one sentence. No
-  explainer box. Actions on the right: Test retrieval (`outline field pill`)
-  and the kind's one primary action (Add file, Sync).
-- **Navigator**: `SourceNavigator`, a `w-64` column shown only when there is
-  more than one thing to open (files, wiki pages). A filter `CommandInput
-variant="field"` over a `CommandList` of `CommandItem`s, so the arrow keys
-  walk from the field into the list; the open item is `checked`. Files are a
-  tree (folders expand, a folder opens its table on the right and expands,
-  24px of indent per level to depth 4 and 12px per level below it, every row
-  with its path as `title`); wiki pages are grouped under their top folder as
-  `CommandGroup` headings, labelled by title or by file name in sentence case
-  (`wikiPageLabel`). Typing flattens the list to matching leaves with their
-  full parent path as a muted second line. The column caps its list at
-  `max-h-[70svh]`. Below `lg` it is a `combobox field pill`
-  that opens the same list in a bottom sheet, uncapped (the sheet body
-  scrolls). A source with one file opens
-  straight on its chunk list, and a wiki with one page on its reader at full
-  width: no navigator, no table.
-- **Reader**: `ReaderPanel`, the content you read (a wiki page, an open
-  chunk): a `subtle` Card with `padding="none"`, its meta (muted 12px lines)
-  left and its actions right in a `min-h-14 px-6` header row, a `Separator`,
-  then the body at `px-6 py-5`. The body is always rendered markdown,
-  `components/SourceMarkdown` (the chat answer's headings and tables, lists
-  outside the text); raw text is never the reading view. Actions: an open
-  chunk's previous / next (`IconButton ghost-muted icon-sm pill`, and the
-  arrow keys), then Edit (`outline sm pill`, `Pencil` first) and an
-  `ActionMenu size="toolbar"` (Copy text; a chunk's also has Delete, a
-  destructive item). A wiki page has Edit and the same menu
-  with Copy text, and no previous / next; the navigator walks them. Edit,
-  Delete and Add chunk show only to a role that may edit (see Access and
-  roles).
-- **Read in the page, edit in a drawer**: Edit and Add chunk open
-  `SourceEditSheet`, a right `Sheet size="wide"` (a working surface): title
-  and a mono description (path, version, tokens), then any `fields` edited
-  with the content (a chunk's Title, a `FormField` + `Input` with
-  `labelSurface="background"` and the hint "The name answers cite this
-  chunk by."; Add prefills it with the title the file's chunks already use,
-  else the file's name), Write · Preview
-  (`ui/tabs variant="underline"`; Preview renders the draft with
-  `SourceMarkdown`), one filling `font-mono` Textarea, then Cancel (`ghost lg
-pill`) and Save (`default lg pill`, off until the draft or a field changes, and while the draft is blank). The drawer
-  edits a copy: closing with changes asks "Discard your unsaved changes?". A
-  save result stays in the drawer as an Alert above the field (a wiki
-  conflict `warning`, forbidden and failures `destructive`); success closes
-  it and the page re-renders behind. Never edit in place in the reader.
-- **Chunk grid**: `SearchInput` ("Search chunks"), then Add chunk at the end.
-  The count is in the header's byline; only a chunk list inside a file tree,
-  whose byline is the tree's totals, repeats it as muted meta beside the
-  search; tiles show `chunkPreviewText` (heading markers and dot
-  leaders removed, display only) and `#n · tokens` in `CardFooter`.
-- **Graph**: under the header, `ui/tabs variant="underline"` Graph · Entities
-  · Files (Files is the embedded file tree; a source with no folder structure
-  shows its embedded chunk list there instead, as the plain view does). A tab's own action goes in the
-  header's action row after Test retrieval, only while that tab is open (the
-  Files tab's Add file or Sync, portalled through `TreeBrowser`'s
-  `actionsTarget`), as on the agent pages; the embedded tree draws no row of
-  its own. The Graph tab's toolbar holds the
-  entity search (a Popover + Command over the server's `/graph/nodes?q=`),
-  the phrase "Show top [50 | 100 | 250] by connections" (muted `text-sm`
-  words, the `ToggleGroup xs` alone in its muted track) and the legend, which
-  is the type filter (`ToggleGroup type="multiple" xs` in its own muted track,
-  a colour dot per item). The surface is one `subtle` Card, `padding="none"`, at `h-[70svh]`;
-  the canvas controls (`graph/GraphCanvasControls`) are the workflow
-  builder's `CanvasControls` strip without React Flow or Undo / Redo; change
-  the two together. Type colours come from `graph/GraphTypeDot`
-  (`GraphTypeDot`, `GraphTypeBadge`, `GraphSeriesDot`), never a hand-picked
-  hue; the node panel docks
-  inside it only while a node is selected (a bottom Sheet on phones), as
-  `GraphNodePanelDock`: a `border-l` column at `w-80`, `xl:w-2/5` capped at
-  `max-w-xl` (the detail drawer's 576px). Its header is the workflow node
-  panel's (`px-4 py-3`, the close `ghost-muted icon-sm`); in the phone bottom
-  Sheet (`handle`) the panel passes `showClose={false}`, so there's no X and the
-  scrim closes it. The Entities tab is
-  the same frame: toolbar (`SearchInput` with a `label`, the type Select),
-  then the `h-[70svh]` Card holding the `Table` (no `TableContainer`, it
-  scrolls inside) and the same dock, the open entity's row `selected`, and the
-  pager under the frame. The canvas labels only the ten biggest hubs, the
-  hovered node and the selection with its neighbours, and dims everything
-  unconnected to the selection to 15%. The panel lists the node's
-  relationships, one row per neighbour with its normalised edge labels
-  (`groupRelationships`), each a button that selects that neighbour, then its
-  source chunks as `filled sm interactive` tiles. A tile opens a read drawer
-  (`Sheet size="detail"`, one record) with the chunk rendered and the entity's
-  name marked in the brand tint (`bg-secondary`), and Open in Files and Edit
-  (the same `SourceEditSheet`) in its footer, which is omitted when neither
-  applies; Cancel or Discard in that edit
-  drawer returns to the read drawer, Save closes both, and closing it leaves
-  the node selected. The relationship list is capped server-side: its heading
-  counts the true total (`relationships_total`) and, when the list is partial,
-  a muted `text-xs` line says how many are shown.
-
-### Chat answer column
-
-The answer column never scrolls sideways. Its boxes, from AnswerFlow down to
-MarkdownAnswer, are stretched full width (`w-full min-w-0`, or the flex
-default), never `items-start` / `self-start` with `max-w-full`: a
-shrink-to-fit box sizes to its longest code line, and `max-w-full` caps it at
-100% before its margins are added, so it still spills past a phone screen.
-Wide markdown blocks scroll inside their own frame, not the page: fenced code
-scrolls sideways in its bordered box with the language and copy row fixed
-above it, and tables do the same (`overflow-x-auto` on their bordered
-wrapper).
+Dates and missing values go through the same file. Absolute dates are
+`formatDate`, `formatDateOnly` or `formatDateTime`, en-GB (DD/MM/YYYY,
+24-hour) in every language by decision; "a date or nothing" is
+`formatTimestamp`, never a local wrapper. "Last …" and "next run" are
+`formatRelative` (in the app language; `dateAfterDays` switches to the date
+past a cut-off, `future` words a coming time as "in …"), never a hand-rolled
+"5m / 3h". A missing value (a date, a count, an id) is `EMPTY_VALUE` (`—`),
+never `-` or blank. A formatted date passed into `t()` is interpolated user
+text (see Rules in one paragraph).
 
 ### Grids
 
@@ -1220,91 +1275,64 @@ grid inside a Modal keeps its own column counts, because breakpoints follow
 the window, not the dialog.
 Skeleton mirrors follow the grid they stand in for.
 
-### Workflow builder (`agents/workflow/`)
+### Disclosure (`ui/collapsible.tsx`)
 
-The toolbar is `AgentPageHeader` on `bg-background` with a `border-b`. Its
-current crumb is the agent's `Avatar` (circle, 20px image, the robot when
-there is none), the name (`truncate`, `max-w-[24ch]`) and a muted
-`ChevronDown` in a `ghost sm` Button, the phone top bar's title recipe; it
-opens the workflow details. The status Badge follows (`success` Published,
-`neutral` Draft until the first save), then the tabs. On the right: "Unsaved
-changes" as muted `text-sm` meta while there are any, Preview, Save, and the
-⋯ (`ActionMenu size="toolbar"`): Edit details first (the same drawer, for
-anyone who doesn't try the name), then Access details, Share with team and
-Delete once the workflow is saved, each only when the role allows it.
+A body that opens and closes in place is `<Collapsible open id>`: a grid that
+goes from `0fr` to `1fr` rows and fades over 300ms (`motion-reduce` turns the
+transition off), its content clipped in one track and kept mounted while
+closed but `inert`, so its fields leave the tab order. The body clips only
+while closed or moving, so focus rings inside it show once it is open. There
+is no Accordion.
 
-The workflow details are a right `Sheet size="default"`
-(`components/WorkflowDetailsSheet.tsx`), built like AgentPreviewSheet (header,
-`Separator`, one scrolling body) with the classic Basics phone layout: a
-`subtle lg` Basics panel with `FileUpload size="tile" tileSize="fixed"` beside
-the Name pill and Description across the row, then an Advanced panel with the
-prompt-override `SettingRow`. Its footer is a `ghost lg pill` Cancel and a
-`default lg pill` Save after a `Separator`. The sheet edits a copy: Cancel,
-the X, Escape and the scrim drop the edits; Save is disabled until something
-changes, then saves the workflow and closes, or stays open with a destructive
-`Alert` listing the errors.
+The trigger is `CollapsibleTrigger` (same file): `open`, `onOpenChange` and
+`controls` (the Collapsible's `id`). It sets `aria-expanded` and
+`aria-controls` and draws a lucide `ChevronRight` first that turns while
+open; pass layout only. Never hand-roll the Button.
 
-The canvas is `bg-muted`; the node palette to its left is a `bg-background`
-rail with `border-r` (`NodePalette.tsx`), and each palette pill is a
-`<button>` that is also `draggable`: drag it onto the canvas, or click (or
-press Enter) to add the node beside the selected one, or in the middle of the
-view. Each pill's icon is a `size-8 rounded-md` tinted square, like the
-settings panel's header (the pill is round, its icon is not; the canvas
-nodes keep their `size-10` circles). Pills hover to `bg-accent` only, with
-the focus ring, and a muted `text-xs` line under the groups says so.
-
-- **One tone per node type**: `nodeTones.ts` (`NODE_TONES`, `nodeToneClass`)
-  is read by the palette, every canvas node and the settings panel's header.
-  Agent is the brand soft fill (`bg-secondary text-secondary-foreground`),
-  Start and End `success`, Note and If / Else `warning`, Set State and Code
-  `info`, each `bg-<tone>/10 text-<tone>`. End is never `destructive`.
-- **Selected node**: `border-primary ring-3 ring-ring/50`, the focus-ring
-  look, with no scale (the Note node: `border-warning ring-3
-ring-warning/50`). Node meta is translated and muted (the agent type · the
-  model's display name, from `WorkflowModelsContext`); an output variable is
-  an `ArrowRight` then the name in `font-mono`.
-- **Canvas controls**: one `bg-card border rounded-full p-1` strip at the
-  bottom left (`CanvasControls.tsx`, no shadow): Undo, Redo, a vertical
-  `Separator`, Zoom out, the zoom level, Zoom in and Fit view, each
-  `ghost-muted icon-sm pill` with a top tooltip. React Flow's own
-  `<Controls />` and attribution are not shown.
-- **Node settings** dock at the canvas's right edge (`panels/NodePanel.tsx`):
-  a `w-96 border-l bg-background` column at full height whose body is the one
-  scroller, with no shadow or `z-*`. The header holds the type's `size-8
-rounded-md` icon square, the node's title with a `neutral` type Badge (only
-  once the title differs from the type's name), the
-  id in `font-mono text-xs` with a `CopyButton`, an `ActionMenu
-size="toolbar"` (Duplicate, Delete node; none on Start) and the close
-  button. Start and End have no Title field: their body is one muted
-  `text-sm` line saying what the node does. The body is `flex flex-col gap-6
-p-4`, so its fields pass
-  `labelSurface="background"` and its row boxes (a condition case, a state
-  assignment) are `Card variant="subtle" padding="sm"`. The agent node's
-  fields are grouped by `SectionHeader size="xs" as="h3"` (Model, Prompt,
-  Knowledge, Output) with an Advanced settings `link sm` disclosure that
-  opens on its own when one of its settings is set. The column is narrow, so
-  every field stacks at full width (`flex flex-col gap-5`), Agent type and
-  Model included; no two-up grids. A row box's title is `SectionHeader
-size="xs" as="h4"`. In an If / Else case's Simple mode, the operator Select
-  and Value each carry a floating label (Operator, Value).
-
-### Accordion (`ui/accordion.tsx`)
-
-`AccordionTrigger` carries its own inset and type (`px-4 py-3 text-sm
-font-medium`) and an inset focus ring, since `AccordionItem` clips anything
-outside it. Pages pass nothing to the trigger; put the frame (a bordered,
-rounded box) on a wrapper around `Accordion`.
+- `look="inline"` (the default) is the `link sm` toggle for a group in a
+  form, modal or drawer (RetrievalOptions' Advanced, a device's audit log,
+  the connect wizard's tools, Share's Access settings). `chevron="sm"` draws
+  a 12px chevron.
+- `look="section"` is a section panel's header (NewAgent's Advanced,
+  Guardrails): `variant="section-toggle"`, an 18px semibold title, a
+  primary underline on hover. It only goes inside a Card: the toggle draws no
+  focus ring, and every Card draws one round itself instead
+  (`has-[[data-variant=section-toggle]:focus-visible]:ring-3 … ring-inset`).
+  The caller wraps it in the `<h2>` (a button flattens heading children), and
+  status badges go beside it, not inside, or the underline runs under them.
+- Layout: a closed Collapsible is still a flex item, so a parent's `gap-*`
+  would leave space under a closed toggle. Wrap the trigger and the
+  Collapsible in a plain `<div>` and give the body the gap as top padding
+  (`pt-3`, `pt-5` in a `gap-5` panel).
+- Framed rows (ToolConfig's actions, Logs' rows) keep their own header: a
+  real `<button type="button" aria-expanded aria-controls>` holding the
+  chevron and the title, with any control (a `PermissionSelect`) as its
+  sibling, never inside it, and never a `div role="button"` with hand-written
+  key handlers. Their fills follow Row states: `bg-secondary` while open,
+  never `bg-muted`.
+- WorkflowPreview's step rows and UploadToast's rows use the Collapsible
+  too; don't hand-roll a grid-rows wrapper.
 
 ### Modal, not Dialog
 
 `ui/dialog.tsx` is the Radix primitive and is private to `ui/`; ESLint
 rejects imports of it elsewhere. App code uses `Modal` (sizes `sm` to
-`full`, `mobileVariant="sheet"`) or `CommandDialog`.
+`xl`) or `CommandDialog`.
+
+On phones (below `lg`) a Modal is a bottom sheet by default (see Side panels
+for the shape). `mobileVariant="dialog"` keeps the centred dialog, and only
+for a yes/no confirmation: `ConfirmationModal` passes it, and so do the few
+named opt-outs (sponsor confirm, Disconnect and Remove connection, Export
+failed, Convert to wiki, Enable GraphRAG). A sheet never autofocuses a field
+on a phone, where it would pop the keyboard up: the phone sheet skips Radix's
+open autofocus, and a field's own `autoFocus` would bypass that, so a field
+shown when a Modal opens doesn't take it (one that appears on a tap inside
+it, Move to folder's new-folder field, may).
 
 The width comes from `size` only: `sm` 384, `md` 512 (the default), `lg` 672
 (a form or a one-column list: Move to folder), `xl` 896 (a grid of
-tiles or a wide editor: Add tool, Test retrieval, the prompt editor), `full`.
-Never add a width or height class. The dialog caps itself at `85dvh` and
+tiles or a wide editor: Add tool, Test retrieval, the prompt editor). Don't
+pass the default `size="md"`. Never add a width or height class. The dialog caps itself at `85dvh` and
 its body is the one scroller, so the header and footer stay put; don't cap
 the body with `contentClassName`. `contentClassName="overflow-visible"`
 (`cn` drops the body's `overflow-y-auto` for it) is only for a body whose popover must escape it (Share
@@ -1319,18 +1347,21 @@ aren't clipped. Never `space-y-*` on a body.
 
 A modal's heading is its `title` (20px, `text-xl leading-tight
 font-semibold`) and `description` (muted `text-sm`, 8px under the title).
-Don't pass `hideTitle` to draw your own `<h2>`; `hideTitle` is only for
-dialogs whose top line is not a title (Upload's step headings,
-ScheduleFormModal's editable name, the search palette). A step heading
-under a Back button uses the title's classes (`text-xl leading-tight
-font-semibold`), not a larger size.
+`leading` puts a node before that pair, as `PanelHeader leading` does: the
+connect wizard's connector icon tile, on every step.
+
+**Steps.** A second step inside a modal (Upload's source form, Share's full
+list) passes `onBack`: an icon Back arrow beside the step's real `title` and
+`description`, as PanelHeader's. Never hide the title and draw a Back
+button and an `<h2>` in the body. `hideTitle` is only for dialogs whose top
+line is not a title (ScheduleFormModal's editable name, the search palette).
 
 A list in a modal that can grow long (Share's People) shows the first three
-once it passes five, a `link inline` "Show all N" (12px `ArrowRight`) in its
-SectionHeader's `actions` and a muted `text-xs` "and N more" line, counts
-through `formatCount`. The full list is a second step: a `ghost sm` Back with
-`ArrowLeft`, the title-class heading, then the search and kind filter (see
-ToggleGroup), with `hideTitle` on that step only.
+once it passes five, a `link inline` "Show all N" (its 12px `ArrowRight`
+drawn by the size) in its SectionHeader's `actions` and a muted `text-xs`
+"and N more" line, counts through `formatCount`. The full list is the second
+step (`onBack`, the list's title and a summary as `description`), then the
+search and kind filter (see ToggleGroup).
 
 Buttons go in `footer`, never in `children`. The footer stacks full width on
 phones (primary on top) and sits in a right-aligned row from `sm` up. The
@@ -1341,10 +1372,46 @@ the submit's `loading` spinner. A left-hand extra (Test connection) is
 `footerStart`, and `submitProps` / `cancelProps` carry `type="submit"`,
 `form` or a test id. A lone button is a `size="lg" shape="pill"` Button.
 
+**Async submits.** A submit whose handler awaits the server passes `pending`
+while it runs and closes only when it resolves; a failure stays in the dialog
+as a destructive `Alert`. A yes/no confirm is `ConfirmationModal`: return the
+request's promise from `handleSubmit` and let a failure reject (rethrow
+after setting any message); it shows `pending`, closes on success and on a
+rejection stays open and shows `error` (default `common.actionFailed`,
+"Something went wrong. Please try again."). Prefer a domain key for `error`
+over a transport message. Don't also toast or put an Alert on the page
+underneath: one message, where the user is looking. Clear the confirm's
+subject only on success. The exception is work that runs after the dialog has
+closed (FileTree's queued file or folder delete): its failure is a destructive
+`showActionToast`. `message` is the title, `description` the muted line
+under it and `children` the body. A sync handler closes it at once, which is
+right only for work that reports its own progress (a sync fires and closes).
+
+#### Confirm dialogs
+
+`src/modals/confirmCopy.test.ts` guards this copy.
+
+- **Title** (`message`): the verb and the quoted name as a question,
+  `Delete "{{name}}"?`, in each locale's quotes: `"…"` en / de / es, `「…」`
+  jp / zh-TW, `«…»` ru, `“…”` zh. Never "Are you sure…".
+- **`description`**: the consequence: what else goes with it, then "This
+  can't be undone." (`common.cantUndo`) only when that is true.
+- **Submit**: the bare verb from the domain's own key, never another
+  domain's (`convTile.delete` is for conversations only). Every destructive
+  confirm sets `variant="destructive"`.
+- Names interpolate with `escapeValue: false` (see Rules in one paragraph).
+- **When to confirm**: a remove that loses data or someone else's access
+  confirms, unsharing from a team included; a remove the user can redo in
+  one click (unpin, their own chip) doesn't.
+
+A Popover, date picker or picker opened inside a Modal or Sheet takes
+`modal` (Radix's, or `MultiSelect`'s; Combobox is modal by default), or its
+list can't scroll and doesn't close on an outside click.
+
 A search palette is `CommandDialog` on desktop. Pass cmdk options to its
 inner `Command` through `commandProps` (`shouldFilter={false}` when results
 come from a server search, a controlled `value`). On phones the same palette
-goes in `Modal mobileVariant="sheet"` as `<Command variant="palette">`, which
+goes in a `Modal` (its phone sheet) as `<Command variant="palette">`, which
 gives it the dialog's 48px input row and row spacing, so both widths look
 the same (`modals/SearchConversationsModal.tsx`). `CommandDialog` sits on
 `DialogContent`, which has Modal's surface (`bg-card rounded-2xl
@@ -1356,26 +1423,71 @@ dims the top bar, with SheetOverlay's `animate-in fade-in-0`) share one scrim,
 `overlayScrim` in `lib/utils.ts` (`bg-black/25 backdrop-blur-xs
 dark:bg-black/50`).
 
-A right drawer (`SheetContent side="right"`) is on `bg-background`, like the
-page: its content paints no surface of its own, and panels in it are
-`subtle` (see Card surfaces). Its width is `size`, by role, never a `w-*` or
-`max-w-*` class (enforced): `default` (384px, 75% on a phone) for a companion
-list read beside the chat (an answer's sources, the phone artifact sheet);
-`detail` (576px, full width on a phone) for one record's fields (a schedule
-run); `wide` (600 / 700 / 800px at `sm` / `md` / `lg`, full width on a phone)
-for a working surface (a trace, an agent preview). An agent is previewed in
-one shared drawer, `agents/components/AgentPreviewSheet`, for workflow and
-classic agents alike: `size="wide"`, a `SheetTitle`
-and a one-line `SheetDescription` (the agent's name) in a header padded
-`pr-12` to clear the close X, an `info` Running badge while it answers, a
-`Separator`, then the preview. Every right drawer with a custom header
-(AgentPreviewSheet, SourceEditSheet, GraphChunkSheet, a team's resource
-detail) is that recipe: `SheetContent` `p-0`, a header at `px-6 pt-6 pr-12
-pb-4` that never scrolls, a `Separator`, then the one scrolling body at `px-6
-py-6`. The title wraps (`wrap-break-word`), it doesn't truncate. The row whose
-drawer is open is `selected` (ListRow or TableRow). The workflow preview's Execution details and
-Artifacts rows are the answer's step-row recipe (see Alert), each step a
-`subtle sm` panel with its output in a `filled sm` well.
+#### Side panels
+
+Every right-side panel is `ui/side-panel`: a `SidePanel` holding one
+`PanelHeader`, one `PanelBody` and an optional `PanelFooter`. Pick the
+variant with one question: do you need to keep working with what's behind
+it?
+
+- **`variant="modal"`** (no): a form, one record, editing or a preview (a
+  connection, a team resource, a schedule run, a trace, the workflow details,
+  the source edit drawer, an agent preview). A right `Sheet` over the blurred
+  `overlayScrim`, the full viewport high, focus kept inside.
+- **`variant="docked"`** (yes): what you read or tweak beside a live page
+  (the chat's artifact or an answer's sources, a workflow node's settings, a
+  graph entity). An `<aside>` in the page: no scrim, `border-l` on
+  `bg-background`, the full height of its host. It slides in like the modal
+  one and closes at once (an exit slide snaps back for a frame before it
+  unmounts). The host is a `relative flex overflow-hidden` row with the page
+  as a `min-w-0 flex-1` sibling. While open it covers the app's floating Share
+  and account menu in the top-right corner (`ActionButtons`, `z-10` under the
+  panel's `z-20`); they come back when it closes. One docked slot per page:
+  opening another thing replaces what is there, never stacks.
+  The chat's slot (`conversation/chatCompanion`) holds an artifact or an
+  answer's sources; where there is no slot (a shared chat, an agent preview)
+  the sources open modal.
+
+Two widths, by `size`, never a `w-*` or `max-w-*` class (enforced):
+`default` 480px for every panel, and `wide` (600 / 700 / 800px) only for a
+working surface: a trace, an agent preview, the source editor. `size` is
+modal-only (the types refuse it on a docked panel, which is always 480px
+compact). A docked panel can be
+`expandable="<surface>"` (the types refuse it on a modal one): Expand in its header steps compact,
+half of the host (never narrower than compact) and full (covering the host,
+the page keeping its scroll underneath), then back, and the last width is
+remembered per surface (the artifact, a workflow node, a graph entity). A
+modal panel never expands. Below `lg` both variants are the same full-width
+right sheet; a docked panel's sheet opens on the panel, without a ring on
+its first control.
+
+The panel is itself a place: it paints no card of its own, panels in it are
+`subtle` and tiles `filled` (see Card surfaces). The anatomy never changes:
+
+- **`PanelHeader`**: fixed at `px-6 pt-6 pb-4`, then a `Separator`. The
+  title is the 20px Title role and wraps (`wrap-break-word`), it doesn't
+  truncate; `description` is one muted line (a span inside carries its own
+  typography: `font-mono text-xs` for a path). `leading` takes a node tile or
+  a connector icon; `actions` (a badge, a ⋯ menu), Expand and the X share the
+  title row, so nothing is placed absolutely and no `pr-12` is needed.
+  `onBack` adds a Back arrow for a second level inside the panel (a graph
+  entity's chunk); `children` sit under the title row, still fixed (a team
+  resource's Open and Manage sharing).
+- **`PanelBody`**: the one scroller (`scrollbar-overlay`), its sections
+  `gap-6` apart at `px-6 py-6`; `scroll={false}` when the content owns its
+  scroller (an artifact's iframe or code view).
+- **`PanelFooter`**: a `Separator`, then the actions at the right, `gap-3
+px-6 py-4` (Cancel `ghost lg pill`, Save `default lg pill`).
+
+The row whose panel is open is `selected` (ListRow or TableRow). An agent is
+previewed in one shared panel, `agents/components/AgentPreviewSheet`, for
+workflow and classic agents alike: `size="wide"`, the agent's name as the
+one-line description, an `info` Running badge in `actions` while it answers,
+then the preview, which owns its scroller. The workflow preview's Execution
+details and Artifacts rows are the answer's step-row recipe (see PATTERNS.md › Chat answer column), each
+step a `subtle sm` panel with its output in a `filled sm` well. Never
+hand-build a right panel (an `<aside border-l>` column or a `SheetContent
+side="right"`); compose SidePanel.
 
 Every phone bottom sheet has one shape: `bg-card`, 18px top corners (`rounded-t-2xl`), no top
 border, `shadow-lg` (both `SheetContent side="bottom"` and Modal's phone
@@ -1384,11 +1496,10 @@ sheet), `max-h-sheet` (the visible viewport less the top safe-area inset and a
 padding that clears the iPhone home indicator. Never cap a sheet with `vh` (see
 Viewport heights): a `90vh` sheet slides under Safari's URL bar and covers its
 scrim. `SheetContent side="bottom"` gives the
-shape with `pb-safe-0` (the bare inset); pass `handle` for the grab bar, which
-also hides the X (the overlay dismisses it; the handle is only a cue and doesn't
-drag; pass `showCloseButton` to keep an X).
-`Modal mobileVariant="sheet"` shares the shape and the `SheetHandle` (and,
-like a handled sheet, has no X), with `pb-safe` (the inset, at least 1rem)
+shape with `pb-safe-0` (the bare inset) and draws no X (the scrim dismisses
+it); pass `handle` for the grab bar, which is only a cue and doesn't drag.
+Modal's phone sheet shares the shape and the `SheetHandle` (and has no X
+either), with `pb-safe` (the inset, at least 1rem)
 under its footer. `pb-safe`, `pb-safe-0`
 and `max-h-sheet` are the `index.css` utilities for the safe-area insets; never
 spell `env()` in a class.
@@ -1402,21 +1513,23 @@ mount `BottomTintReset` (`ui/bar-tint-reset.ts`), which shows a 6px
 unmounts, and Safari samples the page colour again. `useDarkTheme` calls
 `resetBottomTint()` and `resetTopTint()` (a 16px strip on the top edge) when the
 theme changes. Anything else fixed to the bottom edge that can go away (a
-drawer, a bottom banner) calls `resetBottomTint()` when it is removed. The sizes
-and the one-frame life were measured on an iPhone (6px at the bottom, 16px at
-the top), and a strip behind the content, transparent or at `opacity-0` isn't
-sampled, so don't shrink or hide the strip.
+drawer, a bottom banner) calls `resetBottomTint()` when it is removed. Keep the
+strip at 6px (bottom) and 16px (top) for one frame, in front of the content and
+opaque: a strip behind the content, transparent or at `opacity-0` isn't
+sampled, so don't shrink or hide the strip (the measurements are in
+`ui/bar-tint-reset.ts`).
 
-Content read alongside the chat (notes, todos, files) opens in
-`components/ArtifactSidebar`: a split column beside the chat on desktop, a
-right `Sheet` on phones. An answer's full source list is a right `Sheet`.
-Don't add a third pattern.
+Content read alongside the chat (notes, todos, files, `components/ArtifactPanel`)
+and an answer's full source list (`conversation/SourcesPanel`) share the chat's
+docked side panel (see Side panels). Don't add another pattern.
 
 ### ActionMenu (`ui/dropdown-menu.tsx`)
 
 The three-dots menu on a card, tile or row. Pass `options: MenuOption[]`
 (`label`, `onClick`, optional lucide `icon`, `variant: 'destructive'`,
-`disabled`) and a `triggerLabel`. It renders a `ghost-on-accent` `icon-xs`
+`disabled`, `separatorBefore` for a rule above a row, which sets a
+destructive Remove apart from the reversible items; `icon` also takes an
+element, such as a `ConnectorIcon`) and a `triggerLabel`. It renders a `ghost-on-accent` `icon-xs`
 trigger with `EllipsisVertical`, and stops clicks and keys on the trigger and
 the menu from reaching the host, so it can sit inside a clickable card.
 In a page header or toolbar on a plain surface (the agent Overview's title
@@ -1425,32 +1538,43 @@ row, through `SectionShell titleAction`; the workflow builder's toolbar), pass
 others there, hovering to `accent`, with its tooltip below. The default
 `row` trigger's darker hover is only for hosts that turn `accent` themselves.
 `align` (default `end`) places the menu, `disabled` greys the trigger, and
-`triggerTestId` puts a `data-testid` on it. `className` takes layout only (position, margin) and lands on the trigger;
-the menu is at least 144px wide and grows with its labels. `open`/`onOpenChange` make it controlled. Don't hand-build
-this menu from `DropdownMenu`, and don't declare a local option type.
+`triggerTestId` puts a `data-testid` on it. `className` takes layout only (position, margin) and lands on the trigger.
+`menuWidth` sets the panel: `default` (at least 144px, growing with its
+labels), `sm` (128px), `lg` (192px) or `fixed` (160px). `open`/`onOpenChange` make it controlled.
+
+A menu behind a labelled button ("Actions" as an `outline` pill with a
+`ChevronDown`, "Download", a title button) passes that Button as `trigger`
+instead of `triggerLabel`; its clicks propagate as usual and it has no
+tooltip. Don't hand-build this menu from `DropdownMenu`, and don't declare a
+local option type. A raw `DropdownMenu` is only for custom content (Help, the
+team switcher, and the account menu: `ProfileButton`, whose header is a
+`DropdownMenuLabel` (avatar, name and email) over a separator and Sign
+out).
 
 ### Table, Label, dialog text
 
 Every table is `ui/table`, markdown tables included (`markdownTables` renders
 its parts); never a raw `<table>` (enforced) or a table utility class. The header row is dense by
 default (`px-2 py-1 lg:px-3 text-sm font-normal text-foreground`, 28px, on
-`TableHead`'s sticky `bg-muted` strip). A `TableRow` hovers (`bg-accent`,
+`TableHead`'s sticky `bg-muted` strip); Logs' header strip over its rows,
+which is not a table, takes the same `foreground` text. A `TableRow` hovers (`bg-accent`,
 pointer) only when it has an `onClick`; a read-only row does not. `selected`
 marks the row whose detail is open beside the table (the graph's Entities):
-`bg-secondary`, the brand tint of an open navigator item, kept on hover, with
-`aria-current`. Use
-A number column (sizes, tokens, counts) is `align="right"` with
-`tabular-nums` on its cells, header included in the alignment, whatever the
-column order (the file table, the graph's Entities). Use
-`TableContainer` for the bordered, scrolling frame; a table that already sits
+`bg-secondary text-secondary-foreground`, the brand tint of an open navigator
+item, kept on hover, with `aria-current`. A number column (sizes, tokens,
+counts) is `align="right"` with `tabular-nums` on its cells, header included
+in the alignment, whatever the column order (the file table, the graph's
+Entities). Use `TableContainer` for the bordered, scrolling frame; a table that already sits
 in a frame renders `Table` alone. `Table` keeps a 600px minimum so wide
 tables scroll sideways; a narrow one inside a panel passes
-`minWidth="min-w-0"`. A fixed icon column is `width="40px" align="center"`.
+`minWidth="min-w-0"`. A fixed column is `TableHeader width` (an icon column
+`width="40px" align="center"`, a Name column `width="14rem"`), never a
+`min-w-[…]` pin on the cells or the fields inside them.
 `TableCell` and `TableHeader` accept typography and alignment classes and
-`text-muted-foreground`. `Label`, `DialogTitle`, `DialogDescription`,
-`SheetTitle` and `SheetDescription` accept typography plus
+`text-muted-foreground`. `Label`, `DialogTitle`, `DialogDescription` and
+`SheetTitle` accept typography plus
 `text-foreground` and `text-muted-foreground`. `DialogContent`,
-`PopoverContent`, `SheetContent`, `SheetHeader`, `SheetFooter`,
+`PopoverContent`, `SheetContent`,
 `DropdownMenuContent`, `DropdownMenuSubContent`, `SelectContent`,
 `TooltipContent` and `Modal` accept `p-0` for edge-to-edge content; Modal
 merges it after its own `p-8`, so no `!` is needed. A modal that needs a
@@ -1498,12 +1622,14 @@ runs under the tab bar, and the app shell can be dragged and bounce. ESLint
   `SectionIndexPage`, draws the same `h1`); the only other text at that size
   is a stat figure (`StatCard`).
 - **Title** of a dialog, sheet, drawer header or detail page: `text-xl
-leading-tight font-semibold`. `DialogTitle` and `SheetTitle` default to it;
-  `font-bold` is never a title weight. A picker popover's header is a
+leading-tight font-semibold`. `DialogTitle`, `SheetTitle` and `PanelHeader`
+  draw it, and a detail page or panel title is `SectionHeader size="title"`;
+  don't hand-write the classes, except on a title that truncates with a
+  `title` attribute (a team's detail page). `font-bold` is never a title
+  weight. A picker popover's header is a
   sub-heading, not a title. The composer's drag-and-drop prompt is a Title
-  in `foreground`. The artifact panel's title (phone sheet and desktop split
-  column alike) is a sub-heading, `text-sm font-semibold wrap-anywhere`: the
-  panel sits beside the chat and its title is often a long generated name.
+  in `foreground`. Every side panel's title, the artifact's included, is this
+  role (`PanelHeader`), and wraps.
 - **Section title**: `SectionHeader` (18px). **Sub-heading** inside a panel,
   drawer or modal: `SectionHeader size="xs"` (14px semibold). **Eyebrow**
   (anything set in caps): `SectionHeader size="sm"`; never `uppercase` on a
@@ -1520,10 +1646,14 @@ leading-tight font-semibold`. `DialogTitle` and `SheetTitle` default to it;
   file: the `ui/table` parts in a `TableContainer` (the frame scrolls
   sideways, `minWidth="min-w-0"` so a narrow table shrinks), so a table in a
   chat answer, a wiki page, a chunk, a note or a preview looks like every
-  other table. Every markdown renderer spreads it.
+  other table. Every markdown renderer spreads it. Code is `markdownCode`
+  from the same file: one inline-code chip in every markdown surface, and
+  fences in a `CodeFrame` (`surface` `answer` in a chat answer, `muted` in an
+  artifact or preview; `SourceMarkdown` passes none and keeps its plain
+  bordered `pre`; see Code blocks).
 - **Mono**: ids, keys and code snippets are `font-mono text-xs`; code fields
-  (textareas) follow the field size; code blocks follow the Card recipe
-  (see Card). A preview of text a person or a model wrote (a trace's query
+  (textareas) follow the field size; code blocks are `ui/code-block` (see
+  Code blocks). A preview of text a person or a model wrote (a trace's query
   or output) stays proportional at the same size; only what the app
   serialised (arguments, results, attributes) is mono. Every stat figure is
   `tabular-nums`.
@@ -1534,6 +1664,14 @@ leading-tight font-semibold`. `DialogTitle` and `SheetTitle` default to it;
   the token instead of widening the table. Both break at spaces first and
   split a token only when it would overflow. Never `break-all`: it splits
   ordinary words mid-word ("notif / ications"); the lint rejects it.
+- **Truncation**: text the user or the server supplied (a name, title, path,
+  URL, email, id or file name) that truncates or clamps carries its full
+  value as `title`. Fixed UI labels don't, nor do clamps that expand in place
+  or excerpts that open in full (a tile's description). The primitives do it
+  for plain text: ListRow for a string title or description, CardTitle for a
+  string child whose className truncates or clamps, BreadcrumbPage for a
+  plain-text crumb; for a node, put `title` on the node. `title` is never a
+  tooltip (see Tooltip).
 
 ### Rhythm
 
@@ -1562,7 +1700,7 @@ squares) and the canvas nodes' icon circles.
 Transition only the property that changes: `transition-colors` by default,
 `transition-transform duration-200` for chevrons,
 `transition-[grid-template-rows,opacity] duration-300 ease-out` for
-collapsibles, `duration-300 ease-in-out` on the named property for the shell
+collapsibles (`ui/collapsible` carries it), `duration-300 ease-in-out` on the named property for the shell
 (sidebar, main column, top buttons); a shadow or ring change is
 `transition-shadow`, several at once a bare `transition`. No `transition-all`
 (the floating labels in `form-field.tsx` and `input.tsx`, which move and
@@ -1588,10 +1726,13 @@ shows.
 - **Focus ring**: `focus-visible:ring-3 focus-visible:ring-ring/50` plus
   `focus-visible:border-ring` on fields. Never `focus:` (mouse users see it)
   and never `ring-2` or `ring-[3px]` (a `focus:` or `focus-within:` ring
-  with `ring-2` is enforced); the `ui/` components already carry it,
-  so plain elements should become components rather than copy the classes.
-  Inside `ui/`, spell it with the `focusRing` constant from `lib/utils.ts`
-  (with `invalidState` and `fieldFrame` for fields) rather than retyping it.
+  with `ring-2` is enforced); the `ui/` components already carry it. So
+  every interactive element in app code is a `ui/` component or `asChild`
+  under one. A raw `<button>`, `<a>` or `<Link>` is only a stretched target
+  (see A clickable card that holds a link), or it carries `focusRing` plus
+  `outline-none`. Spell the ring with the `focusRing` constant from
+  `lib/utils.ts` (with `invalidState` and `fieldFrame` for fields) rather
+  than retyping it.
 - **Focus return**: Modal, Sheet and DialogContent give focus back on close
   only to the element that had it when they opened (`ui/use-focus-return.ts`).
   A tap on iOS, and a click in Safari, doesn't focus the trigger, so Radix's
@@ -1600,19 +1741,22 @@ shows.
   `onCloseAutoFocus` from app code to remember focus yourself (ESLint rejects
   it); the primitive already does. `onOpenAutoFocus` with `preventDefault()`
   is still how a phone picker keeps the keyboard down (`MultiSelectPopover`),
-  and how a phone panel sheet opens without a focus ring on its first control
-  (the graph node panel's bottom Sheet).
+  and how a docked side panel's phone sheet opens without a focus ring on its
+  first control (`SidePanel` does it).
   A dialog panel is a `tabIndex=-1` focus target that Radix can focus, so it
   carries `outline-none`: Safari draws its own blue `outline: auto` there and
   ignores our `outline-color`. Any new focusable container needs the same.
-- **Close buttons**: every Modal, Sheet and DialogContent uses its built-in
-  close (a phone sheet with a handle has none), a `ghost-muted` `size="icon-sm"` Button (32px, accent square on
-  hover) at `top-2 right-2`, the artifact sheet included; never hand-place
-  another X.
-- **Disabled**: buttons (Button, Accordion, Tabs) use
+- **Close buttons**: every Modal and DialogContent uses its built-in close
+  (a phone sheet has none; the scrim closes it), a `ghost-muted`
+  `size="icon-sm"` Button (32px, accent square on hover) at `top-2 right-2`,
+  labelled `t('close')`; a side panel's is the same Button in `PanelHeader`'s
+  title row. Never hand-place another X.
+- **Disabled**: buttons (Button, Tabs) use
   `disabled:pointer-events-none disabled:opacity-50`, so the pointer passes
-  through. Fields (Input, SelectTrigger, Switch, Textarea, CommandInput,
-  Label) use `disabled:cursor-not-allowed disabled:opacity-50` and never
+  through, and so do targets that act like one: the Dropzone and the Command,
+  menu and Select items (`data-[disabled]:pointer-events-none`). Fields
+  (Input, SelectTrigger, Switch, Checkbox, Textarea, CommandInput, Label) use
+  `disabled:cursor-not-allowed disabled:opacity-50` and never
   `pointer-events-none`, which would hide the cursor.
 - **Elevation**: cards have no shadow; fields and outline buttons
   `shadow-xs`; popovers, menus and select lists `shadow-md`; sheets
@@ -1620,8 +1764,7 @@ shows.
   `shadow-toast`. The one exception in `ui/` is the Switch thumb, `bg-white
 shadow-lg` in both themes: the knob is white on any track, and a white knob
   on a white card needs the lift to read as raised. The off track is
-  `bg-input`. Accordions are
-  panels and have none. Outside `ui/` the only shadows are: the workflow
+  `bg-input`. Outside `ui/` the only shadows are: the workflow
   canvas nodes (`shadow-md`, `hover:shadow-lg`: a node lifts off the canvas
   while you drag it); the workflow builder's publish-error panel, which
   floats over the canvas at popover elevation (`shadow-md`, `z-20`); the sliding panel in `navigation/SidebarLevel.tsx`,
@@ -1629,10 +1772,13 @@ shadow-lg` in both themes: the knob is white on any track, and a white knob
   picker's menu (both Approved exceptions). Don't add new ones: a floating panel is a `Popover`,
   `DropdownMenu` or `Modal`, which carry their own shadow and stacking; never
   an `absolute` div with a shadow and a hand-picked `z-*`.
-- **Stacking**: `z-10` sticky headers and table heads inside a page;
-  `z-20` in-page floating chrome (banners, scroll-to-bottom, drag
-  handles); `z-50` overlays, modals, sheets, toasts and the one-frame
-  bar-tint strips; `z-200` every portalled floating list (popover, menu,
+- **Stacking**: `z-10` sticky headers and table heads inside a page, a real
+  control lifted over a stretched target (see A clickable card that holds a
+  link) and a corner control pinned inside a card; `z-20` in-page floating
+  chrome (banners, scroll-to-bottom, drag handles); `z-50` overlays, modals,
+  sheets, toasts, the one-frame bar-tint strips and full-screen takeovers
+  (the workflow builder's shell, the composer's drop overlay),
+  where DOM order decides between them; `z-200` every portalled floating list (popover, menu,
   select, tooltip), so it opens above a Modal without an override. Do not
   invent values in between: a `z-*` outside 0, 10, 20, 50, 200 and `auto` is
   rejected (enforced). The app
@@ -1654,34 +1800,23 @@ Places where a rule is knowingly disabled. Each one carries the same reason
 as a comment at the call site; add a row here when you add a disable so the
 list stays reviewable.
 
-| Where                                                               | Rule                            | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ------------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `components/Notification.tsx`                                       | `shadcn/no-restyle`             | The promo banner's close X (`ghost icon-xs`) sits on the purple gradient. Any fill would be a grey square on it, so hover dims the icon instead (`hover:bg-transparent hover:opacity-70`, plus `dark:hover:bg-transparent` to beat ghost's dark hover), and `text-primary-foreground` keeps it white, because the button inherits the page colour. One user, so it isn't a variant.                                                                                                             |
-| `components/ui/calendar.tsx`                                        | `shadcn/require-static-classes` | The day button merges `defaultClassNames.day`, which react-day-picker returns from `getDefaultClassNames()` at runtime; no static form exists.                                                                                                                                                                                                                                                                                                                                                  |
-| `navigation/SidebarLevel.tsx`                                       | `shadcn/no-arbitrary-values`    | The incoming sidebar panel casts a strong shadow off its left edge while it slides (`shadow-[-12px_0_24px_-6px_rgba(0,0,0,0.45)]`); no scale shadow is horizontal, and the container clips it once the panel comes to rest.                                                                                                                                                                                                                                                                     |
-| `components/MessageInput.tsx`                                       | `shadcn/no-restyle`             | The empty composer's send button is a grey circle (`bg-muted`, `dark:bg-accent`), not a faded brand one; no variant is neutral while disabled, and `secondary` is the brand-tinted pressed state.                                                                                                                                                                                                                                                                                               |
-| `Hero.tsx`                                                          | `shadcn/no-restyle`             | The landing page's model picker keeps its hero look: a borderless muted pill at 16px (`rounded-4xl px-6 py-4 text-base`) whose menu hangs from it as one shape. Three disables: `SelectTrigger`, `SelectContent`, `SelectItem`.                                                                                                                                                                                                                                                                 |
-| `agents/AgentsList.tsx`                                             | `shadcn/no-restyle`             | Inside a folder, the breadcrumb trail replaces the section `<h2>`, so its `BreadcrumbList` keeps heading typography (`text-foreground text-lg font-semibold gap-2`). It's the only breadcrumb that does.                                                                                                                                                                                                                                                                                        |
-| `conversation/MarkdownAnswer.tsx`, `components/ArtifactSidebar.tsx` | `shadcn/no-inline-styles`       | SyntaxHighlighter's `style` prop is its Prism theme object (`oneLight` / `vscDarkPlus`), picked by theme at runtime. It is not CSS, so no class or custom property can replace it. One disable per file.                                                                                                                                                                                                                                                                                        |
-| `agents/workflow/WorkflowPreview.tsx`                               | `shadcn/no-restyle`             | The Preview minimap's node rows are status tiles: the fill, border and ring follow the step (success, primary running + pulse, destructive, muted pending; a ring on the active row) and stay pinned on hover, pending and running rows stay unfaded while disabled, and clickable rows dim to 80% on hover. No Button variant is status-tinted. The rule reports each string inside `cn(...)`, so it's a `/* eslint-disable */` … `/* eslint-enable */` pair around the `className` attribute. |
-| `agents/schedules/ScheduleFormModal.tsx`                            | `shadcn/no-restyle`             | The schedule's name is the dialog's editable title: a `bare` Input with title type (`text-xl font-semibold`), so the dialog passes `hideTitle`. One disable.                                                                                                                                                                                                                                                                                                                                    |
-| `components/MermaidRenderer.tsx`                                    | `shadcn/no-restyle`             | The zoom − / + buttons sit on the diagram's `bg-black/70` overlay, where ghost's accent hover paints a light square with dark text; they hover to `white/20` with white text instead, in both themes. Two disables.                                                                                                                                                                                                                                                                             |
-| `Hero.tsx`                                                          | `shadcn/no-restyle`             | The landing page's demo cards are `Button outline lg pill`, but each is a two-line pill (a title over a clamped 12px query), so it undoes lg's height, the base's one-row layout, weight and nowrap: `h-auto w-full flex-col items-start gap-0 py-3.5 text-left text-xs font-normal whitespace-normal`. One disable.                                                                                                                                                                            |
-| `Navigation.tsx`, `conversation/ConversationTile.tsx`               | `shadcn/no-restyle`             | A sidebar row whose link has sibling buttons (an agent's pin, a conversation's menu and rename Save / Cancel) keeps its fill while the pointer is on a sibling or the menu is open (`group-hover:bg-sidebar-accent`, `bg-sidebar-accent`), and `pr-10` keeps the label clear of the buttons. ConversationTile's `cn(...)` needs a `/* eslint-disable */` … `/* eslint-enable */` pair.                                                                                                          |
-| `admin/Usage.tsx`                                                   | `shadcn/no-restyle`             | The Top users id is a `link inline` Button inside a mono table cell; it keeps the cell's type and wraps (`font-mono text-xs font-normal whitespace-normal text-left`). One disable.                                                                                                                                                                                                                                                                                                             |
-| `agents/workflow/panels/ConditionPanel.tsx`                         | `shadcn/no-restyle`             | The "Learn more" link in the Condition node's Advanced-mode 12px hint keeps the sentence's size and weight (`text-xs font-normal` on `link inline`). One disable; the Set state node's link sits in its `text-sm` intro and needs none.                                                                                                                                                                                                                                                         |
-| `components/MessageInput.tsx`                                       | `shadcn/no-restyle`             | The queued-send Cancel is a `link inline` inside the composer's 12px status line, so it takes the line's size (`text-xs`). One disable, beside the send button's.                                                                                                                                                                                                                                                                                                                               |
-| `settings/PersonalAccessTokens.tsx`                                 | `shadcn/no-restyle`             | Token scope chips are identifiers, so the `neutral` Badge is set in mono (`font-mono`). One disable.                                                                                                                                                                                                                                                                                                                                                                                            |
-| `agents/workflow/WorkflowPreview.tsx`                               | `shadcn/no-restyle`             | A step's state changes (keys and values the app serialised) are `neutral` Badges set in mono (`font-mono`), like token scopes. One disable.                                                                                                                                                                                                                                                                                                                                                     |
-| `settings/traces/TraceChips.tsx`                                    | `shadcn/no-restyle`             | Trace stat chips (durations, counts) use tabular figures so they don't jitter between rows (`tabular-nums` on Badge). One disable.                                                                                                                                                                                                                                                                                                                                                              |
-| `connectors/ConnectorSetupNotice.tsx`                               | `shadcn/no-restyle`             | The setup-guide link inside the needs-setup warning Alert keeps the Alert's status colour (`text-current` on `link inline`). One disable.                                                                                                                                                                                                                                                                                                                                                       |
-| `modals/MCPServerModal.tsx`                                         | `shadcn/no-restyle`             | The authorization link inside the test-result Alert keeps the Alert's status colour (`text-current` on `link inline`). One disable.                                                                                                                                                                                                                                                                                                                                                             |
-| `components/MermaidRenderer.tsx`                                    | `shadcn/no-restyle`             | The zoom readout between − and + is a `link inline` Button on the `bg-black/70` overlay; it keeps the overlay's white 12px regular text (`text-xs font-normal text-current`). One disable, beside the two zoom-button ones above.                                                                                                                                                                                                                                                               |
-| `conversation/SharedConversation.tsx`                               | `shadcn/no-restyle`             | The "DocsGPT" link sits in the `/share/:id` page's regular-weight byline (`font-normal`). One disable.                                                                                                                                                                                                                                                                                                                                                                                          |
-| `conversation/ConversationBubble.tsx`                               | `shadcn/no-restyle`             | A source card's URL row is a `link inline` around an `<a>`: foreground at rest, primary on hover, regular weight, truncating (`text-current font-normal hover:text-primary underline-offset-2 max-w-full justify-start`). One disable.                                                                                                                                                                                                                                                          |
-| `admin/Overview.tsx`                                                | `shadcn/no-restyle`             | "View in Audit" under the denied-sign-ins tile keeps the tile's destructive tone at hint size (`text-destructive text-xs font-normal`). One disable.                                                                                                                                                                                                                                                                                                                                            |
-| `settings/PairDeviceModal.tsx`                                      | `shadcn/no-restyle`             | The install link in Pair a remote machine sits in a 12px hint (`text-xs font-normal`, `self-start` in its column). One disable.                                                                                                                                                                                                                                                                                                                                                                 |
-| `agents/workflow/WorkflowBuilder.tsx`                               | `shadcn/no-restyle`             | The publish-error Alert floats over the canvas with its close button in the top-right corner, so it pads `pr-10` to keep a long title clear of the button. One disable.                                                                                                                                                                                                                                                                                                                         |
+| Where                                                             | Rule                            | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `components/Notification.tsx`                                     | `shadcn/no-restyle`             | The promo banner's close X (`ghost icon-xs`) sits on the purple gradient. Any fill would be a grey square on it, so hover dims the icon instead (`hover:bg-transparent hover:opacity-70`, plus `dark:hover:bg-transparent` to beat ghost's dark hover), and `text-primary-foreground` keeps it white, because the button inherits the page colour. One user, so it isn't a variant.                                                                                                             |
+| `components/ui/calendar.tsx`                                      | `shadcn/require-static-classes` | The day button merges `defaultClassNames.day`, which react-day-picker returns from `getDefaultClassNames()` at runtime; no static form exists.                                                                                                                                                                                                                                                                                                                                                  |
+| `navigation/SidebarLevel.tsx`                                     | `shadcn/no-arbitrary-values`    | The incoming sidebar panel casts a strong shadow off its left edge while it slides (`shadow-[-12px_0_24px_-6px_rgba(0,0,0,0.45)]`); no scale shadow is horizontal, and the container clips it once the panel comes to rest.                                                                                                                                                                                                                                                                     |
+| `components/MessageInput.tsx`                                     | `shadcn/no-restyle`             | The empty composer's send button is a grey circle (`bg-muted`, `dark:bg-accent`), not a faded brand one; no variant is neutral while disabled, and `secondary` is the brand-tinted pressed state.                                                                                                                                                                                                                                                                                               |
+| `Hero.tsx`                                                        | `shadcn/no-restyle`             | The landing page's model picker keeps its hero look: a borderless muted pill at 16px (`rounded-4xl px-6 py-4 text-base`) whose menu hangs from it as one shape. Three disables: `SelectTrigger`, `SelectContent`, `SelectItem`.                                                                                                                                                                                                                                                                 |
+| `agents/AgentsList.tsx`                                           | `shadcn/no-restyle`             | Inside a folder, the breadcrumb trail replaces the section `<h2>`, so its `BreadcrumbList` keeps heading typography (`text-foreground text-lg font-semibold gap-2`) and passes `flex-wrap` (the primitive is `flex-nowrap`). It's the only breadcrumb that does either.                                                                                                                                                                                                                                                                                        |
+| `lib/markdown.tsx`                                                | `shadcn/no-inline-styles`       | SyntaxHighlighter's `style` prop is its Prism theme object (`oneLight` / `vscDarkPlus`), picked by theme at runtime. It is not CSS, so no class or custom property can replace it. One disable, in `markdownCode`, which every markdown fence goes through.                                                                                                                                                                                                                                    |
+| `agents/workflow/WorkflowPreview.tsx`                             | `shadcn/no-restyle`             | The Preview minimap's node rows are status tiles: the fill, border and ring follow the step (success, primary running + pulse, destructive, muted pending; a ring on the active row) and stay pinned on hover, pending and running rows stay unfaded while disabled, and clickable rows dim to 80% on hover. No Button variant is status-tinted. The rule reports each string inside `cn(...)`, so it's a `/* eslint-disable */` … `/* eslint-enable */` pair around the `className` attribute. |
+| `agents/schedules/ScheduleFormModal.tsx`                          | `shadcn/no-restyle`             | The schedule's name is the dialog's editable title: a `bare` Input with title type (`text-xl font-semibold`), so the dialog passes `hideTitle` (see Modal › Steps). One disable.                                                                                                                                                                                                                                                                                                                                    |
+| `components/MermaidRenderer.tsx`                                  | `shadcn/no-restyle`             | The zoom − / + buttons sit on the diagram's `bg-black/70` overlay, where ghost's accent hover paints a light square with dark text; they hover to `white/20` with white text instead, in both themes. Two disables.                                                                                                                                                                                                                                                                             |
+| `Hero.tsx`                                                        | `shadcn/no-restyle`             | The landing page's demo cards are `Button outline lg pill`, but each is a two-line pill (a title over a clamped 12px query), so it undoes lg's height, the base's one-row layout, weight and nowrap: `h-auto w-full flex-col items-start gap-0 py-3.5 text-left text-xs font-normal whitespace-normal`. Two disables: the demo cards and the connect card.                                                                                                                                                                            |
+| `Navigation.tsx`, `conversation/ConversationTile.tsx`             | `shadcn/no-restyle`             | A sidebar row whose link has sibling buttons (an agent's pin, a conversation's menu and rename Save / Cancel) keeps its fill while the pointer is on a sibling or the menu is open (`group-hover:bg-sidebar-accent`, `bg-sidebar-accent`), and `pr-10` keeps the label clear of the buttons. ConversationTile's `cn(...)` needs a `/* eslint-disable */` … `/* eslint-enable */` pair.                                                                                                          |
+| `admin/Usage.tsx`                                                 | `shadcn/no-restyle`             | The Top users id is a `link inline` Button inside a mono table cell; it keeps the cell's type and wraps (`font-mono text-xs font-normal whitespace-normal text-left`). One disable.                                                                                                                                                                                                                                                                                                             |
+| `conversation/ConversationBubble.tsx`                             | `shadcn/no-restyle`             | A source card's URL row is a `link inline` around an `<a>`: foreground at rest, primary on hover, regular weight, truncating (`text-current font-normal hover:text-primary underline-offset-2 max-w-full justify-start`). One disable.                                                                                                                                                                                                                                                          |
+| `admin/Overview.tsx`                                              | `shadcn/no-restyle`             | "View in Audit" under the denied-sign-ins tile keeps the tile's destructive tone at hint size (`text-destructive text-xs font-normal`). One disable.                                                                                                                                                                                                                                                                                                                                            |
 
 Note that a multi-line reason has to be a `/* ... */` block comment;
 consecutive `//` lines only disable the next comment line, not the code.
@@ -1695,10 +1830,16 @@ class can be a hook for code rather than a style.
 ## Live style guide
 
 `npm run dev`, then open `/design`. The page (`src/design/DesignSystem.tsx`)
-renders every `ui/` component with the variants above, shows the resolved
-value of each colour token and has a theme toggle. It is registered only
-when Vite runs in development mode, so it never ships. When you add a
-variant or token, add it there too.
+is a shell: the nav and the list of sections. Each section lives in
+`src/design/sections/<Name>Section.tsx`, built from `Section` and `Example`
+in `src/design/shared.tsx`; app recipes (the toast stack, the connect modal,
+populated side panels) are in `src/design/sections/recipes/`. It renders every
+`ui/` component with the variants above, shows the resolved value of each
+colour token and has a theme toggle. It is registered only when Vite runs in
+development mode, so it never ships. The Button, Badge and Avatar matrices are
+built from the exported cva keys (`buttonVariantNames`, `buttonSizeNames`,
+`badgeVariantNames`, `avatarSizeNames`), so a new variant shows up there by
+itself; any other new variant or token goes into its section file.
 
 ## Cleanup playbook
 
@@ -1719,7 +1860,7 @@ keep every step green.
    Delete the `dark:` twin of every class you tokenise.
 3. **Do not restyle `ui/` components from a page.** If a treatment is used
    in more than one place and no variant fits, add the variant in the
-   component file, add it to `src/design/DesignSystem.tsx`, and document it
+   component file, add it to its section in `src/design/sections/`, and document it
    here. A one-off gets `// eslint-disable-next-line shadcn/<rule> -- reason`.
 4. **Keep behaviour identical.** Same DOM order, same handlers, same
    translations (`t(...)` keys stay). Only classes and component choice
@@ -1737,11 +1878,9 @@ Known traps:
 - Port 5173 may be held by another checkout; check the Vite banner shows
   this repo's path before trusting what you see.
 - `components/SkeletonLoader.tsx`: the chunk, source, tool, add-tool and
-  agent layouts are Card mirrors with `Skeleton` bars, and the `chatbot`,
-  table, logs, default, analysis, connected-state and files layouts use
-  `Skeleton`; none pulses its own surface. `renderFilesSection` (and the
-  GoogleDrivePicker box it mirrors) is still a raw `border rounded-lg` box;
-  move both onto `Card` when you touch them.
+  agent layouts are Card mirrors with `Skeleton` bars, and the file table,
+  logs, default and analysis layouts use `Skeleton`; none pulses its own
+  surface.
 
 ## Working with the lint
 
@@ -1753,7 +1892,10 @@ All `shadcn/*` rules are `error`, and so are the DESIGN.md selectors under
 `no-restricted-syntax`: `eslint/design-rules.js` (class and markup rules,
 tested in `src/design/designRules.lint.test.ts`), `eslint/card-surfaces.js`
 (tested in `src/design/cardSurfaces.lint.test.ts`) and the viewport-height
-and focus-return entries in `eslint.config.js`. Add a new checkable rule as
+and focus-return entries in `eslint.config.js`. The `shadcn/no-restyle`
+component contracts (what each `ui/` part allows in `className`, and their
+messages) are tested against the real config in
+`src/design/noRestyle.lint.test.ts`. Add a new checkable rule as
 a selector there, with a test and a line here. Add a variant or token only when a treatment
 is used in more than one place and none of the existing ones fits; a single
 special case gets a disable comment with a reason.

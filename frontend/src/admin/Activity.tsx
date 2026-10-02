@@ -27,6 +27,7 @@ import {
 } from '../components/ui/table';
 import { Pagination } from '../components/ui/pagination';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
+import { EmptyState } from '../components/ui/empty-state';
 import { selectToken } from '../preferences/preferenceSlice';
 import {
   LoadError,
@@ -254,7 +255,6 @@ export default function Activity() {
     [catalogue],
   );
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const hasFilters =
     categories.length > 0 || events.length > 0 || search !== '';
 
@@ -277,6 +277,7 @@ export default function Activity() {
           selected={categories}
           onChange={withPageReset(setCategories)}
           placeholder="All categories"
+          shape="pill"
           className="w-48"
         />
         <MultiSelect
@@ -285,6 +286,7 @@ export default function Activity() {
           onChange={withPageReset(setEvents)}
           placeholder="All events"
           searchPlaceholder="Find an event"
+          shape="pill"
           className="w-56"
         />
         <ToggleGroup
@@ -320,7 +322,8 @@ export default function Activity() {
         <div className="ml-auto flex items-center gap-2">
           <Button
             variant="outline"
-            size="sm"
+            size="field"
+            shape="pill"
             disabled={exporting}
             onClick={() => exportAs('csv')}
           >
@@ -329,7 +332,8 @@ export default function Activity() {
           </Button>
           <Button
             variant="outline"
-            size="sm"
+            size="field"
+            shape="pill"
             disabled={exporting}
             onClick={() => exportAs('ndjson')}
           >
@@ -344,7 +348,7 @@ export default function Activity() {
       ) : failed ? (
         <LoadError message="Failed to load activity." onRetry={load} />
       ) : rows.length === 0 ? (
-        <p className="text-muted-foreground mt-8 text-sm">No activity.</p>
+        <EmptyState size="sm" illustration="none" title="No activity." />
       ) : (
         <>
           <TableContainer>
@@ -447,9 +451,12 @@ export default function Activity() {
           </TableContainer>
           <Pagination
             page={page}
-            pageCount={totalPages}
+            pageSize={PAGE_SIZE}
+            total={total}
             onPageChange={setPage}
-            summary={`${fmtNumber(total)} events`}
+            rangeLabel={({ from, to }) =>
+              `${fmtNumber(from)}–${fmtNumber(to)} of ${fmtNumber(total)} events`
+            }
           />
         </>
       )}

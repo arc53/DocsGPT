@@ -1,4 +1,3 @@
-import { CircleAlert, TriangleAlert } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -208,7 +207,6 @@ export default function CreateAccessTokenModal({
       title={t('settings.accessTokens.create.title')}
       description={t('settings.accessTokens.create.subtitle')}
       size="lg"
-      mobileVariant="sheet"
       isPerformingTask={submitting}
       footer={
         <ModalActions
@@ -273,7 +271,6 @@ export default function CreateAccessTokenModal({
             </Select>
             {expiry === NO_EXPIRY ? (
               <Alert variant="warning">
-                <TriangleAlert className="size-4" aria-hidden="true" />
                 <AlertDescription>
                   {t('settings.accessTokens.create.noExpirationHint')}
                 </AlertDescription>
@@ -362,9 +359,11 @@ export default function CreateAccessTokenModal({
               </SettingRow>
             </SettingRows>
             {restrict && pickerFamilies.length === 0 && (
-              <p className="text-muted-foreground bg-muted rounded-lg px-4 py-2 text-xs">
-                {t('settings.accessTokens.create.restrictNoFamilies')}
-              </p>
+              <Alert variant="info" role="note">
+                <AlertDescription>
+                  {t('settings.accessTokens.create.restrictNoFamilies')}
+                </AlertDescription>
+              </Alert>
             )}
             {restrict &&
               pickerFamilies.map((family) => {
@@ -426,7 +425,6 @@ export default function CreateAccessTokenModal({
 
         {error && (
           <Alert variant="destructive">
-            <CircleAlert className="size-4" aria-hidden="true" />
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}

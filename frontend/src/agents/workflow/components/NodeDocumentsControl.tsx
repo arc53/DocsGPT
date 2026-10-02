@@ -65,28 +65,21 @@ export default function NodeDocumentsControl({
 
   return (
     <FormField label={label} hint={helpText} id={fieldId} float={false}>
-      {/* The track is a plain wrapper: ToggleGroup takes layout only. */}
-      <div className="bg-muted rounded-full p-1">
-        <ToggleGroup
-          id={fieldId}
-          type="single"
-          size="xs"
-          value={mode}
-          onValueChange={(next) => next && selectMode(next as DocumentsMode)}
-          aria-label={label}
-          className="flex-nowrap"
-        >
-          {MODE_OPTIONS.map(({ mode: optionMode, labelKey }) => (
-            <ToggleGroupItem
-              key={optionMode}
-              value={optionMode}
-              className="flex-1"
-            >
-              {t(labelKey)}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      </div>
+      <ToggleGroup
+        id={fieldId}
+        type="single"
+        size="xs"
+        fill
+        value={mode}
+        onValueChange={(next) => next && selectMode(next as DocumentsMode)}
+        aria-label={label}
+      >
+        {MODE_OPTIONS.map(({ mode: optionMode, labelKey }) => (
+          <ToggleGroupItem key={optionMode} value={optionMode}>
+            {t(labelKey)}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
       {showChoose && (
         <div className="flex flex-col gap-2">
           <MultiSelect

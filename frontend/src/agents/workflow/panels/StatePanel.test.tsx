@@ -58,9 +58,12 @@ describe('StatePanel', () => {
       /agents\.workflow\.builder\.celHint/g,
     );
     expect(matches).toHaveLength(1);
-    expect(
-      container.querySelectorAll('a[href="https://cel.dev/"]'),
-    ).toHaveLength(1);
+    const links = container.querySelectorAll<HTMLElement>(
+      'a[href="https://cel.dev/"]',
+    );
+    expect(links).toHaveLength(1);
+    // Mid-sentence: the link takes the intro's size and weight.
+    expect(links[0].dataset.size).toBe('text');
   });
 
   it('numbers each assignment and puts the variable before the value', () => {

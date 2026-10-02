@@ -14,20 +14,26 @@ import { useDropzone } from 'react-dropzone';
 import i18n from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector, useStore } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 
 import endpoints from '../api/endpoints';
 import userService from '../api/services/userService';
 import SendArrow from '../assets/send.svg?react';
 import {
   addAttachment,
+  attachmentFailureReason,
   removeAttachment,
   selectAttachments,
+  toSendableAttachments,
   updateAttachment,
   reorderAttachments,
 } from '../upload/uploadSlice';
+import { useAddToKnowledge } from '../upload/useAddToKnowledge';
 
+import AddToolModal from '../modals/AddToolModal';
 import { ActiveState, Doc } from '../models/misc';
 import {
+  selectAttachmentBudgetShare,
   selectSelectedDocs,
   selectSelectedModel,
   selectSourceDocs,
@@ -38,6 +44,7 @@ import {
 import type { AppDispatch, RootState } from '../store';
 import Upload from '../upload/Upload';
 import { isTouchDevice } from '../utils/browserUtils';
+import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { IconButton } from './ui/icon-button';
 import { type MultiSelectPopoverItem } from './MultiSelectPopover';
@@ -50,26 +57,36 @@ import {
   selectConnectorCatalog,
 } from '../connectors/connectorsSlice';
 import { toolServiceOf } from '../connectors/toolService';
+import { groupTools } from '../settings/toolGroups';
 import SignInAgainNotice, {
   useSignInAgain,
 } from '../connectors/SignInAgainNotice';
 import {
   AttachFileButton,
   AttachmentChipList,
+  KnowledgeHint,
   MicButton,
   type RecordingState,
   SourcesTrigger,
   ToolsTrigger,
 } from './message-input';
 import { useArmedSend } from './message-input/armedSend';
-import { guardUploadStall } from './message-input/uploadStallGuard';
+import {
+  ATTACHMENT_IDLE_MS,
+  ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_QUEUE_CHECK_MS,
+  ATTACHMENT_QUEUE_MAX_CHECKS,
+  ATTACHMENT_UPLOAD_CONCURRENCY,
+  checkAttachmentTask,
+  createTaskQueue,
+  uploadAttachmentFile,
+} from './message-input/attachmentUpload';
 import { cannotReadAttachment } from './message-input/attachmentReadability';
+import { exceedsAttachmentBudget } from './message-input/attachmentBudget';
 import { handleAbort } from '../conversation/conversationSlice';
 import {
   AUDIO_FILE_ACCEPT_ATTR,
   getFileExtension,
-  parseUploadErrorMessage,
-  parseUploadErrorsByIndex,
   partitionAttachmentFiles,
 } from '../constants/fileUpload';
 import { UserToolType } from '../settings/types';
@@ -356,6 +373,9 @@ export default function MessageInput({
   const [toolsLoading, setToolsLoading] = useState(false);
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
+  const [addToolModalState, setAddToolModalState] =
+    useState<ActiveState>('INACTIVE');
+  const navigate = useNavigate();
   const [handleDragActive, setHandleDragActive] = useState<boolean>(false);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [voiceError, setVoiceError] = useState<string | null>(null);
@@ -380,6 +400,19 @@ export default function MessageInput({
       ),
     [attachments, selectedModel],
   );
+  const attachmentBudgetShare = useSelector(selectAttachmentBudgetShare);
+  // No cap on how many files attach: past the model's attachment budget the
+  // files still send, and Knowledge is offered as the better home for them.
+  const overAttachmentBudget = useMemo(
+    () =>
+      exceedsAttachmentBudget(
+        attachments,
+        selectedModel?.context_window,
+        attachmentBudgetShare ?? undefined,
+      ),
+    [attachments, selectedModel, attachmentBudgetShare],
+  );
+  const knowledge = useAddToKnowledge();
 
   const dispatch = useDispatch();
   const store = useStore<RootState>();
@@ -462,7 +495,7 @@ export default function MessageInput({
   // the row so it can't stay stuck on 'processing'. Mirrors
   // Upload.tsx's ``trackTraining``.
   const trackAttachment = useCallback(
-    (clientId: string, attachmentId: string) => {
+    (clientId: string, attachmentId: string, taskId: string) => {
       let handled = false;
 
       const check = () => {
@@ -501,10 +534,16 @@ export default function MessageInput({
           }
           if (event.type === 'attachment.failed') {
             handled = true;
+            const reason = attachmentFailureReason(
+              (event.payload || {}) as Record<string, unknown>,
+            );
             dispatch(
               updateAttachment({
                 id: clientId,
-                updates: { status: 'failed' },
+                updates: {
+                  status: 'failed',
+                  ...(reason ? { errorMessage: reason } : {}),
+                },
               }),
             );
             return true;
@@ -514,45 +553,129 @@ export default function MessageInput({
       };
 
       if (check()) return;
-      const MAX_WAIT_MS = 5 * 60_000;
+      // Two clocks. Until the worker takes the file (its first queued or
+      // progress event) nothing is timed: a set of forty files queues behind
+      // itself, and a busy worker can take many minutes to reach the last
+      // one. Every ten quiet minutes the task status is asked instead; a
+      // file still queued waits on, up to an hour. Once the worker has it,
+      // an idle window, not a total cap: a big zip (one task per member) or a
+      // slow scan keeps reporting progress, and each report restarts it.
+      const activityOf = () =>
+        store.getState().upload.attachments.find((a) => a.id === clientId)
+          ?.activity ?? 0;
+      let lastActivity = activityOf();
+      let started = lastActivity > 0;
+      let queueChecks = 0;
+      let timer: number | undefined;
       let unsubscribe: (() => void) | null = null;
-      const timer = window.setTimeout(() => {
+      const arm = (ms: number, onElapsed: () => void) => {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(onElapsed, ms);
+      };
+      const fail = (reason: string, errorMessage?: string) => {
+        window.clearTimeout(timer);
         unsubscribe?.();
-        if (!handled) {
-          handled = true;
-          console.warn(
-            'trackAttachment: timed out waiting for terminal SSE',
-            clientId,
-            attachmentId,
-          );
-          dispatch(
-            updateAttachment({
-              id: clientId,
-              updates: { status: 'failed' },
-            }),
-          );
+        if (handled) return;
+        handled = true;
+        console.warn(`trackAttachment: ${reason}`, clientId, attachmentId);
+        dispatch(
+          updateAttachment({
+            id: clientId,
+            updates: {
+              status: 'failed',
+              ...(errorMessage ? { errorMessage } : {}),
+            },
+          }),
+        );
+      };
+      const onIdle = () => fail('no progress from the worker');
+      const onQueueCheck = async () => {
+        if (handled || started) return;
+        const task = taskId
+          ? await checkAttachmentTask(taskId, token)
+          : ({ state: 'unknown' } as const);
+        if (handled || started) return;
+        if (task.state === 'failed') {
+          fail('the parse task failed', task.message);
+        } else if (task.state === 'unavailable') {
+          fail('no worker is running');
+        } else if (task.state === 'started') {
+          started = true;
+          arm(ATTACHMENT_IDLE_MS, onIdle);
+        } else if (++queueChecks >= ATTACHMENT_QUEUE_MAX_CHECKS) {
+          fail('no worker took the file');
+        } else {
+          arm(ATTACHMENT_QUEUE_CHECK_MS, () => void onQueueCheck());
         }
-      }, MAX_WAIT_MS);
+      };
+      if (started) arm(ATTACHMENT_IDLE_MS, onIdle);
+      else arm(ATTACHMENT_QUEUE_CHECK_MS, () => void onQueueCheck());
       unsubscribe = store.subscribe(() => {
         if (check()) {
           window.clearTimeout(timer);
           unsubscribe?.();
+          return;
+        }
+        const activity = activityOf();
+        if (activity !== lastActivity) {
+          lastActivity = activity;
+          started = true;
+          arm(ATTACHMENT_IDLE_MS, onIdle);
         }
       });
     },
-    [dispatch, store],
+    [dispatch, store, token],
   );
+
+  const uploadQueueRef = useRef<ReturnType<typeof createTaskQueue> | null>(
+    null,
+  );
+  const getUploadQueue = useCallback(() => {
+    uploadQueueRef.current ??= createTaskQueue(ATTACHMENT_UPLOAD_CONCURRENCY);
+    return uploadQueueRef.current;
+  }, []);
+  // Uploads not finished yet, by chip id: stops one (drops it from the
+  // queue, aborts its request) when its chip goes.
+  const uploadStoppersRef = useRef(new Map<string, () => void>());
+  useEffect(() => {
+    const present = new Set(attachments.map((attachment) => attachment.id));
+    for (const [id, stop] of uploadStoppersRef.current) {
+      if (present.has(id)) continue;
+      uploadStoppersRef.current.delete(id);
+      stop();
+    }
+  }, [attachments]);
 
   const uploadFiles = useCallback(
     async (incomingFiles: File[]) => {
       if (!incomingFiles || incomingFiles.length === 0) return;
+
+      // The size limit applies the same way to picked, dropped and pasted
+      // files, and a refused file shows as a failed chip that says why.
+      const withinLimit = incomingFiles.filter((file) => {
+        if (file.size <= ATTACHMENT_MAX_BYTES) return true;
+        dispatch(
+          addAttachment({
+            id: generateId(),
+            fileName: file.name,
+            progress: 0,
+            status: 'failed' as const,
+            taskId: '',
+            errorMessage: t('conversation.attachments.tooLarge', {
+              size: Math.round(ATTACHMENT_MAX_BYTES / (1024 * 1024)),
+            }),
+          }),
+        );
+        return false;
+      });
+      if (withinLimit.length === 0) return;
 
       // Run the server's own rule here, not just the input's `accept`:
       // mobile pickers ignore `accept`, and a file the server will refuse
       // should say so before it costs an upload. Surface the refusal as a
       // failed chip so the user sees why instead of a silent drop.
       const { supported, unsupported } =
-        await partitionAttachmentFiles(incomingFiles);
+        await partitionAttachmentFiles(withinLimit);
       unsupported.forEach((file) => {
         dispatch(
           addAttachment({
@@ -570,435 +693,77 @@ export default function MessageInput({
       if (supported.length === 0) return;
       const files = supported;
 
-      const apiHost = envVar('VITE_API_HOST');
+      const url = `${envVar('VITE_API_HOST')}${endpoints.USER.STORE_ATTACHMENT}`;
       const uploadFailedMessage = t('conversation.attachments.uploadFailed');
 
-      if (files.length > 1) {
-        const formData = new FormData();
-        const indexToUiId: Record<number, string> = {};
-
-        files.forEach((file, i) => {
-          formData.append('file', file);
-          const uiId = generateId();
-          indexToUiId[i] = uiId;
-          dispatch(
-            addAttachment({
-              id: uiId,
-              fileName: file.name,
-              progress: 0,
-              status: 'uploading' as const,
-              taskId: '',
-            }),
-          );
-        });
-
-        const xhr = new XMLHttpRequest();
-
-        xhr.upload.addEventListener('progress', (event) => {
-          if (event.lengthComputable) {
-            const progress = Math.round((event.loaded / event.total) * 100);
-            Object.values(indexToUiId).forEach((uiId) =>
-              dispatch(
-                updateAttachment({
-                  id: uiId,
-                  updates: { progress },
-                }),
-              ),
-            );
-          }
-        });
-
-        xhr.onload = () => {
-          const status = xhr.status;
-          if (status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-
-              if (Array.isArray(response?.tasks)) {
-                const tasks = response.tasks as Array<{
-                  task_id?: string;
-                  filename?: string;
-                  attachment_id?: string;
-                  path?: string;
-                  upload_index?: number;
-                }>;
-                const errors = Array.isArray(response?.errors)
-                  ? (response.errors as Array<{
-                      filename?: string;
-                      error?: string;
-                      upload_index?: number;
-                    }>)
-                  : [];
-                const hasIndexedResults =
-                  tasks.some((task) => typeof task.upload_index === 'number') ||
-                  errors.some(
-                    (errorItem) => typeof errorItem.upload_index === 'number',
-                  );
-
-                if (hasIndexedResults) {
-                  const tasksByIndex = new Map<
-                    number,
-                    (typeof tasks)[number]
-                  >();
-                  const failedIndices = new Set<number>();
-
-                  tasks.forEach((task, taskOrderIndex) => {
-                    const uploadIndex =
-                      typeof task.upload_index === 'number'
-                        ? task.upload_index
-                        : taskOrderIndex;
-                    tasksByIndex.set(uploadIndex, task);
-                  });
-
-                  const errorsByIndex = new Map<number, string | undefined>();
-                  errors.forEach((errorItem) => {
-                    if (typeof errorItem.upload_index === 'number') {
-                      failedIndices.add(errorItem.upload_index);
-                      errorsByIndex.set(
-                        errorItem.upload_index,
-                        errorItem.error,
-                      );
-                    }
-                  });
-
-                  files.forEach((_, index) => {
-                    const uiId = indexToUiId[index];
-                    if (!uiId) return;
-
-                    const task = tasksByIndex.get(index);
-                    if (task?.task_id) {
-                      dispatch(
-                        updateAttachment({
-                          id: uiId,
-                          updates: {
-                            taskId: task.task_id,
-                            // Stash the server's attachment id so SSE
-                            // ``attachment.*`` events can match this
-                            // row by ``scope.id`` and drive the
-                            // per-attachment push-fresh poll gate.
-                            attachmentId: task.attachment_id,
-                            status: 'processing',
-                            progress: 10,
-                          },
-                        }),
-                      );
-                      if (task.attachment_id) {
-                        trackAttachment(uiId, task.attachment_id);
-                      }
-                      return;
-                    }
-
-                    if (failedIndices.has(index)) {
-                      dispatch(
-                        updateAttachment({
-                          id: uiId,
-                          updates: {
-                            status: 'failed',
-                            errorMessage: errorsByIndex.get(index),
-                          },
-                        }),
-                      );
-                      return;
-                    }
-
-                    dispatch(
-                      updateAttachment({
-                        id: uiId,
-                        updates: { status: 'failed' },
-                      }),
-                    );
-                  });
-                } else {
-                  tasks.forEach((t, idx) => {
-                    const uiId = indexToUiId[idx];
-                    if (!uiId) return;
-                    if (t?.task_id) {
-                      dispatch(
-                        updateAttachment({
-                          id: uiId,
-                          updates: {
-                            taskId: t.task_id,
-                            attachmentId: t.attachment_id,
-                            status: 'processing',
-                            progress: 10,
-                          },
-                        }),
-                      );
-                      if (t.attachment_id) {
-                        trackAttachment(uiId, t.attachment_id);
-                      }
-                    } else {
-                      dispatch(
-                        updateAttachment({
-                          id: uiId,
-                          updates: { status: 'failed' },
-                        }),
-                      );
-                    }
-                  });
-
-                  if (tasks.length < files.length) {
-                    for (let i = tasks.length; i < files.length; i++) {
-                      const uiId = indexToUiId[i];
-                      if (uiId) {
-                        dispatch(
-                          updateAttachment({
-                            id: uiId,
-                            updates: { status: 'failed' },
-                          }),
-                        );
-                      }
-                    }
-                  }
-                }
-              } else if (response?.task_id) {
-                if (files.length === 1) {
-                  const uiId = indexToUiId[0];
-                  if (uiId) {
-                    dispatch(
-                      updateAttachment({
-                        id: uiId,
-                        updates: {
-                          taskId: response.task_id,
-                          attachmentId: response.attachment_id,
-                          status: 'processing',
-                          progress: 10,
-                        },
-                      }),
-                    );
-                    if (response.attachment_id) {
-                      trackAttachment(uiId, response.attachment_id);
-                    }
-                  }
-                } else {
-                  console.warn(
-                    'Server returned a single task_id for multiple files. Update backend to return tasks[].',
-                  );
-                  const firstUi = indexToUiId[0];
-                  if (firstUi) {
-                    dispatch(
-                      updateAttachment({
-                        id: firstUi,
-                        updates: {
-                          taskId: response.task_id,
-                          status: 'processing',
-                          progress: 10,
-                        },
-                      }),
-                    );
-                  }
-                  for (let i = 1; i < files.length; i++) {
-                    const uiId = indexToUiId[i];
-                    if (uiId) {
-                      dispatch(
-                        updateAttachment({
-                          id: uiId,
-                          updates: { status: 'failed' },
-                        }),
-                      );
-                    }
-                  }
-                }
-              } else {
-                console.error('Unexpected upload response shape', response);
-                Object.values(indexToUiId).forEach((id) =>
-                  dispatch(
-                    updateAttachment({
-                      id,
-                      updates: { status: 'failed' },
-                    }),
-                  ),
-                );
-              }
-            } catch (err) {
-              console.error(
-                'Failed to parse upload response',
-                err,
-                xhr.responseText,
-              );
-              Object.values(indexToUiId).forEach((id) =>
-                dispatch(
-                  updateAttachment({
-                    id,
-                    updates: { status: 'failed' },
-                  }),
-                ),
-              );
-            }
-          } else {
-            console.error('Upload failed', status, xhr.responseText);
-            // Each file gets its own reason where the server sent one; the
-            // top-level message is the fallback, not the answer for all of
-            // them — a batch can fail two files for two different reasons.
-            const fallbackMessage = parseUploadErrorMessage(xhr.responseText);
-            const errorsByIndex = parseUploadErrorsByIndex(xhr.responseText);
-            Object.entries(indexToUiId).forEach(([index, id]) =>
-              dispatch(
-                updateAttachment({
-                  id,
-                  updates: {
-                    status: 'failed',
-                    errorMessage:
-                      errorsByIndex.get(Number(index)) ?? fallbackMessage,
-                  },
-                }),
-              ),
-            );
-          }
-        };
-
-        // No response at all (status 0): a file the browser couldn't read,
-        // a dropped connection, or a stall the guard aborted.
-        xhr.onerror =
-          xhr.onabort =
-          xhr.ontimeout =
-            () => {
-              console.error('Upload network error');
-              Object.values(indexToUiId).forEach((id) =>
-                dispatch(
-                  updateAttachment({
-                    id,
-                    updates: {
-                      status: 'failed',
-                      errorMessage: uploadFailedMessage,
-                    },
-                  }),
-                ),
-              );
-            };
-
-        xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
-        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-        guardUploadStall(xhr);
-        xhr.send(formData);
-        return;
-      }
-
-      // Single-file path: upload each file individually (original repo behavior)
+      // One request per file, a few at a time: each file gets its own
+      // progress, its own error and its own response, so a slow or refused
+      // file never holds back or fails the rest of the set.
       files.forEach((file) => {
-        const formData = new FormData();
-        formData.append('file', file);
-        const xhr = new XMLHttpRequest();
-        const uniqueId = generateId();
+        const uiId = generateId();
+        dispatch(
+          addAttachment({
+            id: uiId,
+            fileName: file.name,
+            progress: 0,
+            status: 'uploading' as const,
+            taskId: '',
+          }),
+        );
 
-        const newAttachment = {
-          id: uniqueId,
-          fileName: file.name,
-          progress: 0,
-          status: 'uploading' as const,
-          taskId: '',
-        };
-
-        dispatch(addAttachment(newAttachment));
-
-        xhr.upload.addEventListener('progress', (event) => {
-          if (event.lengthComputable) {
-            const progress = Math.round((event.loaded / event.total) * 100);
+        const controller = new AbortController();
+        const cancel = getUploadQueue().push(async () => {
+          // Removed from the composer while it waited for a slot.
+          if (!store.getState().upload.attachments.some((a) => a.id === uiId))
+            return;
+          const outcome = await uploadAttachmentFile(file, {
+            url,
+            token,
+            signal: controller.signal,
+            onProgress: (progress) =>
+              dispatch(updateAttachment({ id: uiId, updates: { progress } })),
+          });
+          uploadStoppersRef.current.delete(uiId);
+          // Removed while it uploaded: its request was aborted, nothing to show.
+          if (controller.signal.aborted) return;
+          if (outcome.kind === 'stored') {
             dispatch(
               updateAttachment({
-                id: uniqueId,
-                updates: { progress },
-              }),
-            );
-          }
-        });
-
-        xhr.onload = () => {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              if (response.task_id) {
-                dispatch(
-                  updateAttachment({
-                    id: uniqueId,
-                    updates: {
-                      taskId: response.task_id,
-                      attachmentId: response.attachment_id,
-                      status: 'processing',
-                      progress: 10,
-                    },
-                  }),
-                );
-                if (response.attachment_id) {
-                  trackAttachment(uniqueId, response.attachment_id);
-                }
-              } else {
-                // If backend returned tasks[] for single-file, handle gracefully:
-                if (
-                  Array.isArray(response?.tasks) &&
-                  response.tasks[0]?.task_id
-                ) {
-                  dispatch(
-                    updateAttachment({
-                      id: uniqueId,
-                      updates: {
-                        taskId: response.tasks[0].task_id,
-                        attachmentId: response.tasks[0].attachment_id,
-                        status: 'processing',
-                        progress: 10,
-                      },
-                    }),
-                  );
-                  if (response.tasks[0].attachment_id) {
-                    trackAttachment(uniqueId, response.tasks[0].attachment_id);
-                  }
-                } else {
-                  dispatch(
-                    updateAttachment({
-                      id: uniqueId,
-                      updates: { status: 'failed' },
-                    }),
-                  );
-                }
-              }
-            } catch (err) {
-              console.error(
-                'Failed to parse upload response',
-                err,
-                xhr.responseText,
-              );
-              dispatch(
-                updateAttachment({
-                  id: uniqueId,
-                  updates: { status: 'failed' },
-                }),
-              );
-            }
-          } else {
-            dispatch(
-              updateAttachment({
-                id: uniqueId,
+                id: uiId,
                 updates: {
-                  status: 'failed',
-                  errorMessage: parseUploadErrorMessage(xhr.responseText),
+                  taskId: outcome.taskId,
+                  // ``attachment.*`` events match the row by this id.
+                  attachmentId: outcome.attachmentId,
+                  status: 'processing',
+                  progress: 10,
                 },
               }),
             );
+            if (outcome.attachmentId) {
+              trackAttachment(uiId, outcome.attachmentId, outcome.taskId);
+            }
+            return;
           }
-        };
-
-        xhr.onerror =
-          xhr.onabort =
-          xhr.ontimeout =
-            () => {
-              dispatch(
-                updateAttachment({
-                  id: uniqueId,
-                  updates: {
-                    status: 'failed',
-                    errorMessage: uploadFailedMessage,
-                  },
-                }),
-              );
-            };
-
-        xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
-        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-        guardUploadStall(xhr);
-        xhr.send(formData);
+          dispatch(
+            updateAttachment({
+              id: uiId,
+              updates: {
+                status: 'failed',
+                errorMessage:
+                  outcome.kind === 'network'
+                    ? uploadFailedMessage
+                    : outcome.message,
+              },
+            }),
+          );
+        });
+        uploadStoppersRef.current.set(uiId, () => {
+          cancel();
+          controller.abort();
+        });
       });
     },
-    [dispatch, t, token, trackAttachment],
+    [dispatch, getUploadQueue, store, t, token, trackAttachment],
   );
 
   const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1034,11 +799,11 @@ export default function MessageInput({
     onDragLeave: () => {
       setHandleDragActive(false);
     },
-    maxSize: 25000000,
-    // No `accept`: react-dropzone would drop a rejected file on the floor
-    // with no feedback, and its mime matching disagrees with the server for
-    // text files that have no parser (.py, .log). uploadFiles applies the
-    // server's rule and reports what it refuses.
+    // No `accept` and no `maxSize`: react-dropzone would drop a rejected
+    // file on the floor with no feedback, and its mime matching disagrees
+    // with the server for text files that have no parser (.py, .log).
+    // uploadFiles applies the type and size rules to every path (picker,
+    // drop, paste) and reports what it refuses.
   });
 
   const handleInput = useCallback(() => {
@@ -1593,16 +1358,16 @@ export default function MessageInput({
   const toolService = (tool: UserToolType) =>
     toolServiceOf(tool, connections, catalog);
   const anyConnectedTool = userTools.some((tool) => !!tool.connection_id);
-  // Same groups as the agent builder: built in, one per service, then custom
-  // tools (an API tool, an MCP server with no connection).
-  const isCustomTool = (tool: UserToolType) =>
-    !tool.connection_id &&
-    (tool.name === 'api_tool' || tool.name === 'mcp_tool');
-  const toolRank = (tool: UserToolType) =>
-    tool.connection_id ? 1 : isCustomTool(tool) ? 2 : 0;
-  const toolItems: MultiSelectPopoverItem[] = [...userTools]
-    .sort((a, b) => toolRank(a) - toolRank(b))
-    .map((tool) => {
+  // Same groups as the Tools page and the agent builder: built in, one per
+  // service, then custom tools (an API tool, an MCP server with no
+  // connection).
+  const toolItems: MultiSelectPopoverItem[] = groupTools(
+    userTools,
+    connections,
+    catalog,
+  )
+    .flatMap((group) => group.tools.map((tool) => ({ tool, group })))
+    .map(({ tool, group }) => {
       const service = toolService(tool);
       const connection = service?.connection;
       return {
@@ -1614,10 +1379,11 @@ export default function MessageInput({
           <ToolIcon name={tool.name} className="size-5" />
         ),
         group: anyConnectedTool
-          ? (service?.name ??
-            (isCustomTool(tool)
+          ? group.kind === 'service'
+            ? group.service?.name
+            : group.kind === 'custom'
               ? t('agents.form.toolsPopup.groupCustom')
-              : t('settings.tools.groupBuiltIn')))
+              : t('settings.tools.groupBuiltIn')
           : undefined,
         // Shared-by line; the sign-in warning below wins when both apply.
         description:
@@ -1628,9 +1394,9 @@ export default function MessageInput({
               })
             : undefined,
         descriptionNode: connectionNeedsSignIn(connection) ? (
-          <p className="text-warning text-xs">
-            {t('settings.connectors.health.signInAgain')}
-          </p>
+          <Badge variant="warning">
+            {t('settings.connectors.status.reconnect')}
+          </Badge>
         ) : undefined,
       };
     });
@@ -1774,6 +1540,16 @@ export default function MessageInput({
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
 
+  const handleAddToKnowledge = async () => {
+    const completed = attachments.filter((a) => a.status === 'completed');
+    const accepted = await knowledge.addToKnowledge(
+      toSendableAttachments(completed),
+    );
+    // The files now belong to the Knowledge source; the upload toast shows
+    // its progress and the source is selected for the chat once it is ready.
+    if (accepted) completed.forEach((a) => dispatch(removeAttachment(a.id)));
+  };
+
   const findIndexById = (id: string) =>
     attachments.findIndex((a) => a.id === id);
 
@@ -1837,6 +1613,17 @@ export default function MessageInput({
           modelName={selectedModel?.display_name}
         />
 
+        {showSourceButton && overAttachmentBudget && (
+          <KnowledgeHint
+            readsRest={selectedModel?.supports_tools !== false}
+            pending={knowledge.pending}
+            error={knowledge.error}
+            onAdd={() => {
+              void handleAddToKnowledge();
+            }}
+          />
+        )}
+
         {sendArmed && sendReadiness.state === 'waiting' && (
           <div
             className="text-muted-foreground flex items-center gap-2 px-2 pb-1 text-xs sm:px-3"
@@ -1850,11 +1637,8 @@ export default function MessageInput({
             <Button
               type="button"
               variant="link"
-              size="inline"
+              size="text"
               onClick={cancelArmedSend}
-              /* eslint-disable-next-line shadcn/no-restyle --
-                 The queued-send Cancel sits inline in the composer's 12px status line; link inline keeps the base text-sm, so it takes the line's size. */
-              className="text-xs"
             >
               {t('conversation.attachments.cancelQueuedSend')}
             </Button>
@@ -1880,7 +1664,6 @@ export default function MessageInput({
               recordingState === 'recording' ||
               recordingState === 'transcribing'
             }
-            tabIndex={1}
             placeholder={t('inputPlaceholder')}
             className="text-foreground placeholder:text-muted-foreground w-full resize-none overflow-x-hidden overflow-y-auto rounded-t-3xl bg-transparent px-2 text-base leading-tight whitespace-pre-wrap opacity-100 focus:outline-hidden sm:px-3"
             onKeyDown={handleKeyDown}
@@ -1911,6 +1694,7 @@ export default function MessageInput({
                 selectedIds={selectedToolIds}
                 onToggle={handleToggleTool}
                 loading={toolsLoading}
+                onAddTool={() => setAddToolModalState('ACTIVE')}
                 notice={
                   <SignInAgainNotice
                     connections={brokenConnections.map(
@@ -1988,6 +1772,22 @@ export default function MessageInput({
           isOnboarding={false}
           renderTab={null}
           close={() => setUploadModalState('INACTIVE')}
+          onBrowseConnectors={() =>
+            navigate('/settings/connectors?capability=sync')
+          }
+        />
+      )}
+
+      {showToolButton && (
+        // A new tool is created on, so it is in the chat once the list
+        // refreshes.
+        <AddToolModal
+          message={t('settings.tools.selectToolSetup')}
+          modalState={addToolModalState}
+          setModalState={setAddToolModalState}
+          getUserTools={fetchUserTools}
+          onToolAdded={fetchUserTools}
+          onDevicePaired={fetchUserTools}
         />
       )}
 

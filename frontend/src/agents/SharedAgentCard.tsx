@@ -45,7 +45,10 @@ export default function SharedAgentCard({
           <h2 className="text-foreground text-base leading-snug font-semibold wrap-break-word sm:text-lg">
             {agent.name}
           </h2>
-          <p className="text-muted-foreground line-clamp-3 text-xs leading-relaxed wrap-break-word sm:text-sm">
+          <p
+            className="text-muted-foreground line-clamp-3 text-xs leading-relaxed wrap-break-word sm:text-sm"
+            title={agent.description}
+          >
             {agent.description}
           </p>
         </div>

@@ -60,6 +60,7 @@ const preloadedState: { preference: Preference } = {
     rolesResolved: false,
     ttsAvailable: true,
     sttAvailable: true,
+    attachmentBudgetShare: null,
   },
 };
 const store = configureStore({

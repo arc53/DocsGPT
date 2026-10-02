@@ -779,6 +779,48 @@ Type `int`, default `3`, must be `>= 0`.
 
 Maximum nesting depth of archives inside archives.
 
+### `ATTACHMENT_ARCHIVE_MAX_MEMBERS`
+
+Type `int`, default `200`, must be `> 0`.
+
+Files unpacked from one zip attachment (nested archives included); the rest are skipped.
+
+### `ATTACHMENT_ARCHIVE_MAX_ENTRIES`
+
+Type `int`, default `5000`, must be `> 0`.
+
+Entries looked at in one zip attachment, nested archives and skipped members included; the rest are skipped unread. Bounds the work a zip of many tiny or unsupported entries can cause, separately from the file limit.
+
+### `ATTACHMENT_ARCHIVE_MAX_BYTES`
+
+Type `int`, default `209715200`, must be `> 0`.
+
+Total uncompressed bytes unpacked from one zip attachment; members past it are skipped.
+
+### `ATTACHMENT_ARCHIVE_MAX_DEPTH`
+
+Type `int`, default `2`, must be `>= 1`.
+
+Archive levels unpacked from a zip attachment (2 = a zip inside the zip); deeper ones are skipped.
+
+### `ATTACHMENT_ARCHIVE_MAX_RATIO`
+
+Type `int`, default `100`, must be `> 0`.
+
+Uncompressed-to-compressed ratio above which a zip attachment is rejected as a zip bomb.
+
+### `ATTACHMENT_ARCHIVE_PARALLELISM`
+
+Type `int`, default `4`, must be `> 0`.
+
+Members of one zip attachment parsed at the same time, each as its own worker task; the next member is queued as one finishes, so a large zip never floods the queue ahead of other uploads.
+
+### `ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT`
+
+Type `int`, default `5400`, must be `> 0`.
+
+Seconds a zip attachment's member may stay unparsed after it is queued (queue wait included) before the reconciler marks it failed, so a lost task never leaves the zip processing forever. A member whose task is running (its lease heartbeat is live) is never failed. Keep it above CELERY_VISIBILITY_TIMEOUT, after which the broker redelivers a task whose worker died.
+
 ### `PARSE_PDF_AS_IMAGE`
 
 Type `bool`, default `false`.
@@ -856,6 +898,12 @@ Median chars per sampled page below which a PDF attachment is treated as a scan 
 Type `int`, default `5000000`.
 
 Cap on extracted attachment text.
+
+### `ATTACHMENT_FULL_TEXT_MAX_BYTES`
+
+Type `int`, default `8000000`, must be `>= 0`.
+
+An attachment's stored text is cut at 100k tokens for the prompt; when it is, the worker also keeps up to this many bytes of the whole extracted text next to the original file, so the attachments tool can search and read past the cut. The tool never loads a larger side copy. 0 keeps none.
 
 ### `AGENT_IMAGE_MAX_BYTES`
 
@@ -1379,6 +1427,18 @@ Type `int`, default `20000`, must be `>= 0`.
 
 Cap on one tool result entering the LLM context (0 disables); journal and DB keep it whole.
 
+### `ATTACHMENT_BUDGET_SHARE`
+
+Type `float`, default `0.5`, must be `> 0` and `<= 1`.
+
+Largest fraction of the model's context window a turn's attached files may take. Files that do not fit are listed in the turn's manifest and, past the first partial one, left to tools.
+
+### `ATTACHMENT_MAX_NATIVE_PARTS`
+
+Type `int`, default `40`, must be `>= 0`.
+
+Native file parts (images, PDFs, PDF page images) sent per turn; past the cap files go as extracted text or are left out. Keep it below the provider's per-request image limit.
+
 ### `ENABLE_CONVERSATION_COMPRESSION`
 
 Type `bool`, default `true`.
@@ -1624,7 +1684,7 @@ Sandbox backend: jupyter (self-host) or daytona (Daytona Cloud).
 
 Type `str`, default `http://localhost:8888`.
 
-URL of the Jupyter Kernel Gateway runner (the docsgpt-sandbox service).
+URL of the Jupyter Kernel Gateway runner (the docsgpt-sandbox service). Chat offers attached files to the code execution tool only when this is set explicitly; the default alone does not count.
 
 ### `SANDBOX_GATEWAY_AUTH_TOKEN`
 
@@ -1714,7 +1774,7 @@ Daytona region/target, e.g. "us".
 
 Type `str`, default unset.
 
-Image for new sandboxes; render libs via scripts/build_daytona_snapshot.py.
+Image for new sandboxes; build one with the render and spreadsheet libs via scripts/build_daytona_snapshot.py.
 
 ### `DAYTONA_LANGUAGE`
 

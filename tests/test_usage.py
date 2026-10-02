@@ -184,6 +184,54 @@ def test_stream_token_usage_writes_row_per_call(monkeypatch):
 
 
 @pytest.mark.unit
+def test_stream_token_usage_matches_whole_text_token_count(monkeypatch):
+    """A streamed reply must count the same tokens as the same text returned whole.
+
+    BPE merges across a split point, so summing each chunk's token count on
+    its own can only be greater than or equal to tokenizing the joined text
+    once; splitting mid-word is the simplest way to force that. ``generated_tokens``
+    feeds billing and quota, so a provider that streams in small deltas and does
+    not report its own usage (Gemini, or an OpenAI-compatible server that ignores
+    ``stream_options``) must not be charged more than one that returns the
+    identical text unstreamed.
+    """
+    _install_fake_token_repo(monkeypatch)
+    text = "The quick brown fox jumps over the lazy dog repeatedly until it gets tired."
+    chunks = [text[i : i + 3] for i in range(0, len(text), 3)]
+    assert "".join(chunks) == text
+
+    class DummyLLM:
+        decoded_token = {"sub": "user_123"}
+        user_api_key = "api_key_123"
+        agent_id = "agent_123"
+
+        def __init__(self):
+            # Instance attribute: two ``DummyLLM``s must not share one dict.
+            self.token_usage = {"prompt_tokens": 0, "generated_tokens": 0}
+
+    @gen_token_usage
+    def whole(self, model, messages, stream, tools, **kwargs):
+        _ = (model, messages, stream, tools, kwargs)
+        return text
+
+    @stream_token_usage
+    def chunked(self, model, messages, stream, tools, **kwargs):
+        _ = (model, messages, stream, tools, kwargs)
+        yield from chunks
+
+    whole_llm = DummyLLM()
+    whole(whole_llm, "gpt-4o", [], False, None)
+
+    stream_llm = DummyLLM()
+    list(chunked(stream_llm, "gpt-4o", [], True, None))
+
+    assert (
+        stream_llm.token_usage["generated_tokens"]
+        == whole_llm.token_usage["generated_tokens"]
+    )
+
+
+@pytest.mark.unit
 def test_decorator_propagates_request_id_and_source(monkeypatch):
     """``_request_id`` + ``_token_usage_source`` on the LLM ride along
     with the row insert so DISTINCT counts and source filters work."""
@@ -765,3 +813,67 @@ def test_persist_keeps_the_row_when_pricing_fails(monkeypatch):
     row = _persist_with_cost(monkeypatch, _CostLLM(), boom)
 
     assert row["cost"] == 0.0
+
+
+# ── Attachments are counted once ────────────────────────────────────────────
+
+
+class _Usage:
+    """Stands in for the agent's attachment dispatch."""
+
+    def __init__(self, tokens):
+        self.tokens = tokens
+
+    def usage_tokens(self, messages):
+        return self.tokens
+
+
+class _UsageLLM:
+    decoded_token = {"sub": "user_123"}
+    user_api_key = None
+    agent_id = None
+
+    def __init__(self):
+        self.token_usage = {"prompt_tokens": 0, "generated_tokens": 0}
+
+
+_INLINED = [{"role": "user", "content": "the file text is already here"}]
+_ROW = [{"id": "a1", "mime_type": "text/plain", "content": "word " * 5_000, "metadata": {}}]
+
+
+@pytest.mark.unit
+class TestAttachmentsCountedOnce:
+    def _stream(self, monkeypatch, **kwargs):
+        _install_fake_token_repo(monkeypatch)
+
+        @stream_token_usage
+        def wrapped(self, model, messages, stream, tools, **kw):
+            assert "_attachment_dispatch" not in kw
+            yield "ok"
+
+        llm = _UsageLLM()
+        list(wrapped(llm, "m", _INLINED, True, None, **kwargs))
+        return llm.token_usage["prompt_tokens"]
+
+    def test_text_already_in_the_messages_is_not_counted_again(self, monkeypatch):
+        bare = self._stream(monkeypatch)
+        counted = self._stream(monkeypatch, _usage_attachments=_ROW, _attachment_dispatch=_Usage(0))
+        assert counted == bare
+
+    def test_native_parts_are_counted_at_the_plans_size(self, monkeypatch):
+        bare = self._stream(monkeypatch)
+        counted = self._stream(monkeypatch, _usage_attachments=_ROW, _attachment_dispatch=_Usage(3_000))
+        assert counted == bare + 3_000
+
+    def test_non_streaming_counts_the_same_way(self, monkeypatch):
+        _install_fake_token_repo(monkeypatch)
+
+        @gen_token_usage
+        def wrapped(self, model, messages, stream, tools, **kw):
+            assert "_attachment_dispatch" not in kw
+            return "ok"
+
+        bare_llm, llm = _UsageLLM(), _UsageLLM()
+        wrapped(bare_llm, "m", _INLINED, False, None)
+        wrapped(llm, "m", _INLINED, False, None, _usage_attachments=_ROW, _attachment_dispatch=_Usage(700))
+        assert llm.token_usage["prompt_tokens"] == bare_llm.token_usage["prompt_tokens"] + 700

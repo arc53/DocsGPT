@@ -146,7 +146,9 @@ export default function SourceNavigator({
       <Indent depth={depth} />
       <LeafIcon />
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate">{node.label}</span>
+        <span className="truncate" title={node.label}>
+          {node.label}
+        </span>
         {meta ? (
           <span className="text-muted-foreground truncate text-xs">{meta}</span>
         ) : null}
@@ -171,7 +173,9 @@ export default function SourceNavigator({
             <Indent depth={depth} />
             <Chevron />
             <Folder className="text-primary" />
-            <span className="min-w-0 flex-1 truncate">{node.label}</span>
+            <span className="min-w-0 flex-1 truncate" title={node.label}>
+              {node.label}
+            </span>
             {node.count !== undefined ? (
               <span className="text-muted-foreground text-xs tabular-nums">
                 {node.count}
@@ -261,15 +265,12 @@ export default function SourceNavigator({
         data-placeholder={current ? undefined : ''}
         aria-haspopup="dialog"
       >
-        <span className="truncate">{current?.label ?? title}</span>
+        <span className="truncate" title={current?.label}>
+          {current?.label ?? title}
+        </span>
         <ChevronDown className="opacity-50" />
       </Button>
-      <Modal
-        open={sheetOpen}
-        onOpenChange={setSheetOpen}
-        title={title}
-        mobileVariant="sheet"
-      >
+      <Modal open={sheetOpen} onOpenChange={setSheetOpen} title={title}>
         <div className="flex flex-col gap-2">{list}</div>
       </Modal>
     </>

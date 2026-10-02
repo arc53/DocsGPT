@@ -14,6 +14,7 @@ import {
 } from '../components/ui/table';
 import { selectToken } from '../preferences/preferenceSlice';
 import { LoadingState } from '@/components/ui/loading-state';
+import { EmptyState } from '../components/ui/empty-state';
 import { LoadError, fmtDate } from './AdminUI';
 
 type Admin = { user_id: string; granted_at?: string; sources?: string[] };
@@ -67,7 +68,7 @@ export default function Admins() {
         login.
       </p>
       {admins.length === 0 ? (
-        <p className="text-muted-foreground text-sm">No admins.</p>
+        <EmptyState size="sm" illustration="none" title="No admins." />
       ) : (
         <TableContainer>
           <Table>

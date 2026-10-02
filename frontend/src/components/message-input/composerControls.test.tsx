@@ -27,6 +27,7 @@ describe('composer controls', () => {
             selectedIds={[]}
             onToggle={noop}
             loading={false}
+            onAddTool={noop}
           />,
         ),
         'wrench',

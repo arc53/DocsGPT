@@ -90,20 +90,78 @@ class DeleteAllConversations(Resource):
         return make_response(jsonify({"success": True}), 200)
 
 
+def _parse_list_limit(raw: str | None, default: int = 30) -> int:
+    """Parse a ``limit`` query param, clamped to 1..100.
+
+    Args:
+        raw: The raw query-string value, or ``None``.
+        default: Value used when ``raw`` is missing or not an integer.
+
+    Returns:
+        The clamped limit.
+    """
+    try:
+        limit = int(raw) if raw is not None else default
+    except (TypeError, ValueError):
+        limit = default
+    return max(1, min(limit, 100))
+
+
+def _parse_cursor_date(raw: str | None) -> datetime.datetime | None:
+    """Parse an ISO-8601 keyset cursor timestamp.
+
+    A naive value is taken as UTC. A ``+`` offset that arrived unencoded in
+    the query string (decoded to a space) is repaired before giving up.
+
+    Args:
+        raw: The raw ``before`` query-string value, or ``None``.
+
+    Returns:
+        A timezone-aware datetime, or ``None`` if ``raw`` is missing or invalid.
+    """
+    if not raw:
+        return None
+    for candidate in (raw, raw.replace(" ", "+")):
+        try:
+            parsed = datetime.datetime.fromisoformat(candidate)
+        except ValueError:
+            continue
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+        return parsed
+    return None
+
+
 @conversations_ns.route("/get_conversations")
 class GetConversations(Resource):
     @api.doc(
-        description="Retrieve a list of the latest 30 sidebar conversations (visibility = listed)",
+        description=(
+            "Retrieve the user's sidebar conversations (visibility = listed), "
+            "newest first, ordered by ``date`` DESC then ``id`` DESC. Each item "
+            "carries ``date`` (ISO-8601). To page older conversations, pass the "
+            "last item's ``date`` and ``id`` as ``before`` and ``before_id``. "
+            "Invalid params are ignored."
+        ),
+        params={
+            "limit": "Maximum number of results (default 30, clamped to 1-100)",
+            "before": "Keyset cursor: ISO-8601 ``date`` of the last item seen (needs before_id)",
+            "before_id": "Keyset cursor: ``id`` of the last item seen (needs before)",
+        },
     )
     def get(self):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user_id = decoded_token.get("sub")
+        limit = _parse_list_limit(request.args.get("limit"))
+        before = _parse_cursor_date(request.args.get("before"))
+        before_id = request.args.get("before_id")
+        if before is None or not looks_like_uuid(before_id):
+            before, before_id = None, None
         try:
             with db_readonly() as conn:
                 conversations = ConversationsRepository(conn).list_for_user(
-                    user_id, limit=30
+                    user_id, limit=limit, before=before, before_id=before_id
                 )
             list_conversations = [
                 {
@@ -116,6 +174,7 @@ class GetConversations(Resource):
                     ),
                     "is_shared_usage": conversation.get("is_shared_usage", False),
                     "shared_token": conversation.get("shared_token", None),
+                    "date": conversation.get("date"),
                 }
                 for conversation in conversations
             ]
@@ -499,6 +558,12 @@ class GetMessageTail(Resource):
                     "request_id": msg.get("request_id"),
                     "last_heartbeat_at": metadata.get("last_heartbeat_at"),
                     "error": metadata.get("error"),
+                    # Curated failures carry a code (context_length_exceeded)
+                    # the chat acts on; older rows have none.
+                    "error_code": metadata.get("error_code"),
+                    # The values the curated text is built from, so the
+                    # chat can word it in the user's language.
+                    "error_params": metadata.get("error_params"),
                 }
             ),
             200,

@@ -5,17 +5,11 @@ import 'katex/contrib/mhchem';
 import { Fragment, memo, type ReactNode, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown, { type Components } from 'react-markdown';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import {
-  oneLight,
-  vscDarkPlus,
-} from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import rehypeKatex from 'rehype-katex';
 import type { PluggableList } from 'unified';
 
-import { markdownHeadings, markdownTables } from '@/lib/markdown';
+import { markdownCode, markdownHeadings, markdownTables } from '@/lib/markdown';
 
-import CopyButton from '../components/CopyButton';
 import MermaidRenderer from '../components/MermaidRenderer';
 import { Button } from '../components/ui/button';
 import {
@@ -38,7 +32,7 @@ import {
   type SandboxArtifact,
   sandboxUrlTransform,
 } from './sandboxLinks';
-import { cn } from '@/lib/utils';
+import { cn, focusRing } from '@/lib/utils';
 
 // A formula KaTeX cannot typeset (a half-streamed one, most often) shows its
 // source in the muted text colour rather than KaTeX's red.
@@ -152,7 +146,7 @@ export default function MarkdownAnswer({
         <Button
           type="button"
           variant="link"
-          size="inline"
+          size="text"
           onClick={() =>
             onOpenArtifact({
               id: artifact.id,
@@ -170,6 +164,7 @@ export default function MarkdownAnswer({
     return {
       ...markdownHeadings,
       ...markdownTables,
+      ...markdownCode({ surface: 'answer', isDarkTheme }),
       a({ href, children }) {
         // A generated file is already on the turn as a download
         // chip, but the model links it with a `sandbox:`/`artifact:`
@@ -222,7 +217,12 @@ export default function MarkdownAnswer({
           );
         }
         return (
-          <a href={href} target="_blank" rel="noopener noreferrer">
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(focusRing, 'rounded-sm outline-none')}
+          >
             {children}
           </a>
         );
@@ -250,40 +250,6 @@ export default function MarkdownAnswer({
           return <>{alt ?? ''}</>;
         }
         return <img src={source} alt={alt} className="max-w-full" />;
-      },
-      code(props) {
-        const { children, className, node, ref, ...rest } = props;
-        const match = /language-(\w+)/.exec(className || '');
-        const language = match ? match[1] : '';
-
-        return match ? (
-          <div className="group border-border relative overflow-hidden rounded-xl border">
-            <div className="bg-muted flex items-center justify-between px-2 py-1">
-              <span className="text-foreground text-xs font-medium">
-                {language}
-              </span>
-              <CopyButton
-                textToCopy={String(children).replace(/\n$/, '')}
-                side="bottom"
-              />
-            </div>
-            <SyntaxHighlighter
-              {...rest}
-              PreTag="div"
-              language={language}
-              /* eslint-disable-next-line shadcn/no-inline-styles -- SyntaxHighlighter's style prop is its Prism theme object (oneLight / vscDarkPlus), picked by theme at runtime; it is not CSS. See DESIGN.md, Approved exceptions. */
-              style={isDarkTheme ? vscDarkPlus : oneLight}
-              className="mt-0!"
-              customStyle={{ margin: 0, borderRadius: 0 }}
-            >
-              {String(children).replace(/\n$/, '')}
-            </SyntaxHighlighter>
-          </div>
-        ) : (
-          <code className="bg-accent text-foreground rounded-md px-2 py-1 text-xs font-normal whitespace-pre-line">
-            {children}
-          </code>
-        );
       },
       ul({ children }) {
         return (

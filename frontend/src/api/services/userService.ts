@@ -31,9 +31,10 @@ const userService = {
     token: string | null,
     limit = 100,
     offset = 0,
+    filters: { days?: number; check?: string; outcome?: string } = {},
   ): Promise<any> =>
     throttledApiClient.get(
-      endpoints.USER.GUARDRAIL_EVENTS(agentId, limit, offset),
+      endpoints.USER.GUARDRAIL_EVENTS(agentId, limit, offset, filters),
       token,
     ),
   getGuardrailSummary: (
@@ -125,6 +126,17 @@ const userService = {
     apiClient.post(endpoints.USER.SYNC_SOURCE, data, token),
   reingestSource: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.REINGEST_SOURCE, data, token),
+  createSourceFromAttachments: (
+    data: { attachment_ids: string[]; name?: string },
+    token: string | null,
+    idempotencyKey?: string,
+  ): Promise<Response> =>
+    apiClient.post(
+      endpoints.USER.SOURCE_FROM_ATTACHMENTS,
+      data,
+      token,
+      idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {},
+    ),
   updateSourceConfig: (
     sourceId: string,
     config: any,

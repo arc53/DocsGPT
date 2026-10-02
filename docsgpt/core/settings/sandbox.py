@@ -17,7 +17,10 @@ class SandboxSettings(SettingsGroup):
     )
     SANDBOX_GATEWAY_URL: str = Field(
         default="http://localhost:8888",
-        description="URL of the Jupyter Kernel Gateway runner (the docsgpt-sandbox service).",
+        description=(
+            "URL of the Jupyter Kernel Gateway runner (the docsgpt-sandbox service). Chat offers attached files "
+            "to the code execution tool only when this is set explicitly; the default alone does not count."
+        ),
     )
     SANDBOX_GATEWAY_AUTH_TOKEN: Optional[str] = Field(default=None, description="Gateway auth token, if set.")
     SANDBOX_KERNEL_NAME: str = Field(
@@ -74,7 +77,7 @@ class SandboxSettings(SettingsGroup):
     DAYTONA_TARGET: Optional[str] = Field(default=None, description='Daytona region/target, e.g. "us".')
     DAYTONA_SNAPSHOT: Optional[str] = Field(
         default=None,
-        description="Image for new sandboxes; render libs via scripts/build_daytona_snapshot.py.",
+        description="Image for new sandboxes; build one with the render and spreadsheet libs via scripts/build_daytona_snapshot.py.",
     )
     DAYTONA_LANGUAGE: str = Field(default="python", description="Default runtime language for created sandboxes.")
     DAYTONA_AUTO_STOP_INTERVAL: int = Field(

@@ -5,7 +5,6 @@ import 'katex/dist/katex.min.css';
 import {
   ChevronDown,
   ChevronRight,
-  CircleAlert,
   Database,
   Download,
   Eye,
@@ -14,7 +13,6 @@ import {
   Pencil,
   ThumbsDown,
   ThumbsUp,
-  ExternalLink,
 } from 'lucide-react';
 import {
   forwardRef,
@@ -31,13 +29,15 @@ import WorkflowRunArtifacts from '../agents/workflow/WorkflowRunArtifacts';
 import CopyButton from '../components/CopyButton';
 
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import { Card } from '../components/ui/card';
+import { CodeBlock } from '../components/ui/code-block';
 import { IconButton } from '../components/ui/icon-button';
 import { Input } from '../components/ui/input';
-import { Sheet, SheetContent } from '../components/ui/sheet';
+import { SidePanel } from '../components/ui/side-panel';
 import { Textarea } from '../components/ui/textarea';
 import SpeakButton from '../components/TextToSpeechButton';
+import ToolIcon from '../components/ToolIcon';
 import { useOutsideAlerter } from '../hooks';
 import {
   selectChunks,
@@ -45,15 +45,21 @@ import {
   selectToken,
   selectTtsAvailable,
 } from '../preferences/preferenceSlice';
-import { isToolCallRunning } from '../utils/streamingStatusUtils';
+import {
+  isToolCallRunning,
+  toolCallTitle,
+} from '../utils/streamingStatusUtils';
 import AnswerFlow from './AnswerFlow';
 import ConnectToolCallBar from './ConnectToolCallBar';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import { connectorIconKey } from '../connectors/i18n';
 import { AnswerSegment } from './answerSegments';
 import { deriveArtifactChips } from './artifactChips';
+import { useChatCompanion } from './chatCompanion';
 import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
 import ResearchProgress from './ResearchProgress';
+import SourcesPanel from './SourcesPanel';
+import ToolCallCard from './ToolCallCard';
 import { shownArguments, ToolCallsType } from './types';
 import { wikiWriteActionKey, wikiWritePath } from './wikiToolCall';
 
@@ -83,6 +89,13 @@ const ConversationBubble = forwardRef<
     workflowRunId?: string;
     research?: ResearchState;
     retryBtn?: React.ReactElement;
+    /**
+     * Why an ERROR turn failed, when the backend says. Its presence marks
+     * ``message`` as curated text for the user rather than a raw exception.
+     */
+    errorCode?: string;
+    /** An action offered under a failed turn's error (Add to Knowledge). */
+    errorAction?: React.ReactNode;
     questionNumber?: number;
     isStreaming?: boolean;
     handleUpdatedQuestionSubmission?: (
@@ -120,6 +133,8 @@ const ConversationBubble = forwardRef<
     workflowRunId,
     research,
     retryBtn,
+    errorCode,
+    errorAction,
     questionNumber,
     isStreaming,
     handleUpdatedQuestionSubmission,
@@ -141,8 +156,13 @@ const ConversationBubble = forwardRef<
   const messageRef = useRef<HTMLDivElement>(null);
   const [shouldShowToggle, setShouldShowToggle] = useState(false);
 
+  const companion = useChatCompanion();
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
-  const openSources = useCallback(() => setIsSidebarOpen(true), []);
+  // The chat's docked slot when there is one, else a modal panel.
+  const openSources = useCallback(() => {
+    if (companion && sources) companion.openSources(sources);
+    else setIsSidebarOpen(true);
+  }, [companion, sources]);
   const editableQueryRef = useRef<HTMLDivElement>(null);
   const [isQuestionCollapsed, setIsQuestionCollapsed] = useState(true);
 
@@ -174,7 +194,7 @@ const ConversationBubble = forwardRef<
                 <div
                   key={index}
                   title={file.fileName}
-                  className="bg-muted text-foreground flex items-center rounded-xl p-2 text-sm"
+                  className="bg-answer-surface text-foreground flex items-center rounded-xl p-2 text-sm"
                 >
                   <div className="bg-primary mr-2 items-center justify-center rounded-lg p-1.5">
                     <Paperclip
@@ -182,7 +202,10 @@ const ConversationBubble = forwardRef<
                       className="text-primary-foreground size-3.75"
                     />
                   </div>
-                  <span className="max-w-37.5 truncate font-normal">
+                  <span
+                    className="max-w-37.5 truncate font-normal"
+                    title={file.fileName}
+                  >
                     {file.fileName}
                   </span>
                 </div>
@@ -213,13 +236,13 @@ const ConversationBubble = forwardRef<
                             : t('conversation.question.collapse')
                         }
                         variant="ghost"
-                        size="icon-lg"
+                        size="icon"
                         shape="pill"
                         onClick={(e) => {
                           e.stopPropagation();
                           setIsQuestionCollapsed(!isQuestionCollapsed);
                         }}
-                        className="ml-1"
+                        className="ml-1 size-10"
                       >
                         <ChevronDown
                           aria-hidden
@@ -319,8 +342,8 @@ const ConversationBubble = forwardRef<
                   type="button"
                   variant="ghost"
                   size="sm"
-                  aria-haspopup="dialog"
-                  onClick={() => setIsSidebarOpen(true)}
+                  aria-haspopup={companion ? undefined : 'dialog'}
+                  onClick={openSources}
                   className="my-2 ml-3.5 w-fit"
                 >
                   <Database className="text-muted-foreground" aria-hidden />
@@ -345,11 +368,11 @@ const ConversationBubble = forwardRef<
                         {/* Stretched button: its ::after covers the card, so the
                             whole card opens the sheet; the URL link is a sibling
                             above it (z-10), never nested inside a button. */}
-                        <div className="bg-answer-bubble hover:bg-accent has-[>button:focus-visible]:ring-ring/50 relative h-28 rounded-4xl p-4 has-[>button:focus-visible]:ring-3">
+                        <div className="bg-answer-surface hover:bg-accent has-[>button:focus-visible]:ring-ring/50 relative h-28 rounded-4xl p-4 has-[>button:focus-visible]:ring-3">
                           <button
                             type="button"
                             className="block w-full cursor-pointer text-left outline-none after:absolute after:inset-0 after:rounded-4xl"
-                            onClick={() => setIsSidebarOpen(true)}
+                            onClick={openSources}
                           >
                             <span className="line-clamp-3 h-12 text-xs wrap-break-word">
                               {source.text}
@@ -368,7 +391,16 @@ const ConversationBubble = forwardRef<
                                 target="_blank"
                                 rel="noopener noreferrer"
                               >
-                                <FileText className="text-muted-foreground shrink-0" />
+                                {source.connector_key ? (
+                                  <ConnectorIcon
+                                    icon={connectorIconKey(
+                                      source.connector_key,
+                                    )}
+                                    className="text-muted-foreground size-4 shrink-0"
+                                  />
+                                ) : (
+                                  <FileText className="text-muted-foreground size-4 shrink-0" />
+                                )}
                                 <p
                                   className="mt-0.5 truncate text-xs"
                                   title={source.link}
@@ -412,10 +444,10 @@ const ConversationBubble = forwardRef<
                       <button
                         type="button"
                         className={cn(
-                          'bg-answer-bubble text-primary hover:bg-accent hover:text-primary flex h-28 cursor-pointer flex-col-reverse rounded-4xl p-4 text-left outline-none',
+                          'bg-answer-surface text-primary hover:bg-accent hover:text-primary flex h-28 cursor-pointer flex-col-reverse rounded-4xl p-4 text-left outline-none',
                           focusRing,
                         )}
-                        onClick={() => setIsSidebarOpen(true)}
+                        onClick={openSources}
                       >
                         <span className="line-clamp-3 h-22 text-xs">
                           {t('conversation.sources.view_more', {
@@ -462,16 +494,23 @@ const ConversationBubble = forwardRef<
         )}
         {type === 'ERROR' ? (
           message && (
-            // On the answer's ml-6 text column. The backend's error is often a
-            // raw provider exception, so it is the detail under a readable title.
+            // On the answer's ml-6 text column. Without a code the backend's
+            // error is often a raw provider exception, so it is mono detail
+            // under a readable title; a curated error (it has a code) is
+            // written for the user and reads as prose.
             <div className="animate-in fade-in slide-in-from-bottom-1.5 mr-5 ml-6 self-stretch duration-260 ease-out motion-reduce:animate-none">
               <Alert variant="destructive">
-                <CircleAlert />
                 <AlertTitle>{t('conversation.failedTitle')}</AlertTitle>
                 <AlertDescription>
-                  <p className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
+                  <p
+                    className={cn(
+                      'wrap-break-word whitespace-pre-wrap',
+                      !errorCode && 'font-mono text-xs',
+                    )}
+                  >
                     {message}
                   </p>
+                  {errorAction}
                 </AlertDescription>
               </Alert>
             </div>
@@ -498,18 +537,23 @@ const ConversationBubble = forwardRef<
             turnArtifacts={completedArtifacts}
             onOpenArtifact={onOpenArtifact}
             renderApproval={(toolCall: ToolCallsType) => (
-              <div className="animate-in fade-in mt-4 mr-5 ml-6 duration-160 ease-out motion-reduce:animate-none">
-                {toolCall.connection_required ? (
-                  <ConnectToolCallBar
-                    toolCall={toolCall}
-                    onToolAction={onToolAction}
-                  />
-                ) : (
-                  <ToolCallApprovalBar
-                    toolCall={toolCall}
-                    onToolAction={onToolAction}
-                  />
-                )}
+              // Stretched to the column (see Chat answer column): in the
+              // bubble's wrapping flex column a shrink-to-fit card would size
+              // to its one-line arguments preview and spill past the column.
+              <div className="w-full min-w-0">
+                <div className="animate-in fade-in mt-4 mr-5 ml-6 duration-160 ease-out motion-reduce:animate-none">
+                  {toolCall.connection_required ? (
+                    <ConnectToolCallBar
+                      toolCall={toolCall}
+                      onToolAction={onToolAction}
+                    />
+                  ) : (
+                    <ToolCallApprovalBar
+                      toolCall={toolCall}
+                      onToolAction={onToolAction}
+                    />
+                  )}
+                </div>
               </div>
             )}
             renderWikiWrite={(toolCall: ToolCallsType, isLive: boolean) => (
@@ -658,14 +702,10 @@ const ConversationBubble = forwardRef<
             )}
           </div>
         )}
-        {sources && (
-          <Sheet open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
-            <SheetContent side="right" title={t('conversation.sources.title')}>
-              <div className="flex h-full flex-col items-center gap-2 px-6 py-4 text-center">
-                <AllSources sources={sources} />
-              </div>
-            </SheetContent>
-          </Sheet>
+        {sources && !companion && (
+          <SidePanel open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
+            <SourcesPanel sources={sources} />
+          </SidePanel>
         )}
       </div>
     );
@@ -673,102 +713,6 @@ const ConversationBubble = forwardRef<
   return bubble;
 });
 
-/** Runs `action` on Enter or Space, for a `role="button"` element. */
-function onActivateKey(
-  action: () => void,
-): (e: React.KeyboardEvent<HTMLElement>) => void {
-  return (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      action();
-    }
-  };
-}
-
-type AllSourcesProps = {
-  sources: {
-    title: string;
-    text: string;
-    link?: string;
-    connector_key?: string | null;
-    connector_name?: string | null;
-  }[];
-};
-
-function AllSources(sources: AllSourcesProps) {
-  const { t } = useTranslation();
-
-  const handleCardClick = (link: string) => {
-    if (link && link !== 'local') {
-      window.open(link, '_blank', 'noopener,noreferrer');
-    }
-  };
-
-  return (
-    <div className="h-full w-full">
-      <div className="w-full">
-        <p className="text-left text-xl">{`${sources.sources.length} ${t('conversation.sources.title')}`}</p>
-        <div className="bg-border mx-1 mt-2 h-[0.8px] w-full rounded-full lg:w-[95%]"></div>
-      </div>
-      <div className="mt-6 flex h-[90%] w-52 flex-col gap-4 overflow-y-auto pr-3 sm:w-64">
-        {sources.sources.map((source, index) => {
-          const isExternalSource = source.link && source.link !== 'local';
-          return (
-            <div
-              key={index}
-              className={cn(
-                'group/card bg-card hover:bg-accent relative w-full rounded-4xl p-4 transition-colors',
-                isExternalSource ? 'cursor-pointer' : '',
-              )}
-              onClick={() =>
-                isExternalSource && source.link && handleCardClick(source.link)
-              }
-              {...(isExternalSource && source.link
-                ? {
-                    role: 'button',
-                    tabIndex: 0,
-                    onKeyDown: onActivateKey(() =>
-                      handleCardClick(source.link as string),
-                    ),
-                  }
-                : {})}
-            >
-              <p
-                title={source.title}
-                className={cn(
-                  'line-clamp-3 text-left text-sm font-semibold wrap-break-word',
-                  isExternalSource ? 'group-hover/card:text-primary' : '',
-                )}
-              >
-                {`${index + 1}. ${source.title}`}
-                {isExternalSource && (
-                  <ExternalLink className="text-muted-foreground group-hover/card:text-primary ml-1 inline size-3" />
-                )}
-              </p>
-              {source.connector_name && (
-                <p className="text-muted-foreground mt-2 flex items-center gap-1.5 text-xs">
-                  <ConnectorIcon
-                    icon={connectorIconKey(source.connector_key)}
-                    className="text-muted-foreground size-3.5 shrink-0"
-                  />
-                  <span className="truncate">
-                    {t('conversation.sources.fromConnector', {
-                      name: source.connector_name,
-                      interpolation: { escapeValue: false },
-                    })}
-                  </span>
-                </p>
-              )}
-              <p className="text-foreground mt-3 line-clamp-4 rounded-md text-left text-xs wrap-break-word">
-                {source.text}
-              </p>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 export default ConversationBubble;
 
 function ToolCallApprovalBar({
@@ -786,13 +730,12 @@ function ToolCallApprovalBar({
   const [expanded, setExpanded] = useState(false);
   const [comment, setComment] = useState('');
   const token = useSelector(selectToken);
-  const actionLabel = toolCall.action_name.substring(
-    0,
-    toolCall.action_name.lastIndexOf('_'),
-  );
   const argPreview = JSON.stringify(shownArguments(toolCall));
   const truncated =
-    argPreview.length > 60 ? argPreview.slice(0, 57) + '...' : argPreview;
+    argPreview.length > 60 ? argPreview.slice(0, 57) + '…' : argPreview;
+  const iconKey = connectorIconKey(
+    toolCall.connector_key ?? toolCall.tool_name,
+  );
 
   const isRemoteDevice =
     toolCall.tool_name === 'remote_device' && toolCall.device_id;
@@ -817,21 +760,32 @@ function ToolCallApprovalBar({
   };
 
   return (
-    <div className="border-border bg-muted mb-2 w-full overflow-hidden rounded-2xl border">
-      <div className="flex items-center gap-3 px-4 py-2.5">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="text-sm font-medium whitespace-nowrap">
-            {toolCall.tool_name}
-          </span>
-          <span className="text-muted-foreground text-xs">{actionLabel}</span>
-          <span
-            className="text-muted-foreground hidden min-w-0 truncate font-mono text-xs md:block"
-            title={argPreview}
-          >
-            {truncated}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
+    <ToolCallCard
+      icon={
+        // A pause from before the connector fields still gets a built-in
+        // service's logo from its tool name.
+        iconKey !== 'plug' ? (
+          <ConnectorIcon icon={iconKey} className="size-5" />
+        ) : (
+          <ToolIcon name={toolCall.tool_name} className="size-5" />
+        )
+      }
+      title={toolCallTitle(toolCall, t)}
+      meta={
+        <span
+          className="text-muted-foreground hidden truncate font-mono text-xs md:block"
+          title={argPreview}
+        >
+          {truncated}
+        </span>
+      }
+      state={
+        <Badge variant="info">
+          {t('conversation.toolApproval.state.approval')}
+        </Badge>
+      }
+      actions={
+        <>
           <Button
             type="button"
             size="xs"
@@ -889,20 +843,17 @@ function ToolCallApprovalBar({
               )}
             />
           </IconButton>
-        </div>
-      </div>
+        </>
+      }
+    >
       {expanded && (
-        <div className="border-border border-t px-4 py-3">
-          <p className="text-muted-foreground mb-1 text-xs font-medium">
+        <div className="flex flex-col gap-2">
+          <p className="text-muted-foreground text-xs font-medium">
             {t('conversation.inlineSteps.arguments')}
           </p>
-          <Card variant="subtle" padding="sm" className="mb-2">
-            <div className="scrollbar-overlay max-h-40 overflow-y-auto">
-              <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
-                {JSON.stringify(shownArguments(toolCall), null, 2)}
-              </pre>
-            </div>
-          </Card>
+          <CodeBlock surface="subtle" maxHeight="sm">
+            {JSON.stringify(shownArguments(toolCall), null, 2)}
+          </CodeBlock>
           <Input
             type="text"
             placeholder={t('conversation.toolApproval.denyReasonPlaceholder')}
@@ -919,7 +870,7 @@ function ToolCallApprovalBar({
           />
         </div>
       )}
-    </div>
+    </ToolCallCard>
   );
 }
 
@@ -961,7 +912,7 @@ export function WikiWriteToolCallCard({
       </span>
       {path && (
         <code
-          className="text-muted-foreground bg-answer-bubble min-w-0 truncate rounded-md px-1.5 py-0.5 font-mono text-xs"
+          className="text-muted-foreground bg-answer-surface min-w-0 truncate rounded-md px-1.5 py-0.5 font-mono text-xs"
           title={path}
         >
           {path}

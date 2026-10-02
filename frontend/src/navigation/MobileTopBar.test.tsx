@@ -229,4 +229,38 @@ describe('MobileTopBar', () => {
     render({ ...props, conversationId: 'c2' });
     expect(document.querySelector('[data-testid="share-modal"]')).toBeNull();
   });
+
+  // The real ConfirmationModal: pending on the returned promise, and a
+  // rejected delete stays in the dialog as an error.
+  it('keeps a failed delete open in the confirm dialog', async () => {
+    let reject: (error: Error) => void = () => undefined;
+    const onDelete = vi.fn(
+      () =>
+        new Promise<void>((_, rej) => {
+          reject = rej;
+        }),
+    );
+    render({ title: 'Router drops', conversationId: 'c1', onDelete });
+    openMenu(container.querySelector('[data-testid="mobile-title"]')!);
+    act(() => menuItem('convTile.delete')!.click());
+    // The conversation is named in the title; the consequence is below.
+    const header = document.querySelector('[role="dialog"]')!;
+    expect(header.querySelector('h2')?.textContent).toBe(
+      'convTile.deleteWarning',
+    );
+    expect(
+      header.querySelector('[data-slot="dialog-description"]')?.textContent,
+    ).toBe('convTile.deleteConsequence');
+    const submit = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ).find((b) => b.textContent?.includes('convTile.delete'))!;
+    expect(submit.getAttribute('data-variant')).toBe('destructive');
+    await act(async () => submit.click());
+    expect(onDelete).toHaveBeenCalledWith('c1');
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    await act(async () => reject(new Error('nope')));
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      'common.actionFailed',
+    );
+  });
 });

@@ -3,7 +3,6 @@ import {
   Bot,
   Check,
   ChevronRight,
-  CircleAlert,
   FileText,
   MessageSquare,
   Pencil,
@@ -31,6 +30,9 @@ import {
   agentEditPath,
   agentEditPathFor,
 } from '../agents/paths';
+import { Pagination, pageRangeParams } from '../components/ui/pagination';
+import { useDebouncedValue } from '../hooks';
+import { SHORT_LIST_PAGE_SIZE, useClientPage } from '../hooks/usePageState';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
 import DetailBreadcrumb from '../navigation/DetailBreadcrumb';
@@ -65,13 +67,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
-import { Separator } from '../components/ui/separator';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetTitle,
-} from '../components/ui/sheet';
+import { PanelBody, PanelHeader, SidePanel } from '../components/ui/side-panel';
 import { Textarea } from '../components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import { cn } from '../lib/utils';
@@ -164,6 +160,9 @@ const RESOURCE_TYPES: ReadonlyArray<ResourceType> = [
 ];
 
 // Filter pill order on the shared resources list.
+/** Members per page; search and the pager appear past one page. */
+const MEMBERS_PAGE_SIZE = 25;
+
 const FILTER_TYPES: ReadonlyArray<ResourceType> = [
   'agent',
   'source',
@@ -201,6 +200,15 @@ export default function Teams() {
 
   const [selected, setSelected] = useState<Team | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  // Members page from the server: search and 25 per page, shown only once
+  // a team has more than a page of members.
+  const [membersPage, setMembersPage] = useState(1);
+  const [memberQuery, setMemberQuery] = useState('');
+  const debouncedMemberQuery = useDebouncedValue(memberQuery.trim(), 300);
+  const [membersTotal, setMembersTotal] = useState(0);
+  const [membersAll, setMembersAll] = useState(0);
+  const [membersReload, setMembersReload] = useState(0);
+  const [membersError, setMembersError] = useState(false);
   const [grants, setGrants] = useState<Grant[]>([]);
   // Tools aren't kept in Redux; lazily fetch the user's tool instances (keyed
   // by id) only when a team actually has a tool grant, so shared-tool rows can
@@ -217,6 +225,9 @@ export default function Teams() {
   const [newMemberRole, setNewMemberRole] = useState<TeamRole>('team_member');
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [addMemberError, setAddMemberError] = useState<string | null>(null);
+  // The create, edit and add-member modals' request is in flight (one opens
+  // at a time): the submit shows pending and a second submit is ignored.
+  const [modalPending, setModalPending] = useState(false);
 
   const [deleteTeamModalState, setDeleteTeamModalState] =
     useState<ActiveState>('INACTIVE');
@@ -224,6 +235,8 @@ export default function Teams() {
   const [removeMemberModalState, setRemoveMemberModalState] =
     useState<ActiveState>('INACTIVE');
   const [memberToRemove, setMemberToRemove] = useState<string | null>(null);
+  // The grant waiting on its remove confirm (it takes access away).
+  const [grantToRemove, setGrantToRemove] = useState<Grant | null>(null);
 
   // The caller's role in the selected team, as the grants endpoint reports it.
   const [teamRole, setTeamRole] = useState<TeamRole | null>(null);
@@ -316,6 +329,38 @@ export default function Teams() {
 
   // Friendly label for a grant's access level; reuses the share-modal keys
   // when present, otherwise renders the raw value.
+  useEffect(() => {
+    if (!selected) return;
+    let cancelled = false;
+    teamsService
+      .listMembers(selected.id, token, {
+        q: debouncedMemberQuery,
+        page: membersPage,
+        pageSize: MEMBERS_PAGE_SIZE,
+      })
+      .then((m) => {
+        if (cancelled) return;
+        const rows: Member[] = m?.members ?? [];
+        const total: number = m?.total ?? rows.length;
+        // Removing the last member on the last page: step back a page.
+        if (rows.length === 0 && total > 0 && membersPage > 1) {
+          setMembersPage(Math.ceil(total / MEMBERS_PAGE_SIZE));
+          return;
+        }
+        setMembersError(false);
+        setMembers(rows);
+        setMembersTotal(total);
+        if (!debouncedMemberQuery) setMembersAll(total);
+      })
+      .catch(() => {
+        // A failed load is an error with Retry, not "no members".
+        if (!cancelled) setMembersError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.id, token, debouncedMemberQuery, membersPage, membersReload]);
+
   const accessLevelLabel = (level: string): string => {
     const key = `settings.teams.share.accessLevel.${level}`;
     const label = t(key);
@@ -323,10 +368,21 @@ export default function Teams() {
   };
 
   const openTeam = async (team: Team) => {
+    // Re-opening the same team (after a role change or a removal) keeps the
+    // members page and search; another team starts on page 1.
+    const sameTeam = selected?.id === team.id;
     setSelected(team);
-    // Clear the previous team's data so the detail view doesn't flash stale
-    // members/grants while this team's fetch is in flight.
-    setMembers([]);
+    setMembersReload((n) => n + 1);
+    if (!sameTeam) {
+      // Clear the previous team's data so the detail view doesn't flash
+      // stale members/grants while this team's fetch is in flight.
+      setMembers([]);
+      setMembersError(false);
+      setMembersPage(1);
+      setMemberQuery('');
+      setMembersTotal(0);
+      setMembersAll(0);
+    }
     setGrants([]);
     setTeamRole(null);
     setOpenResourceKey(null);
@@ -334,8 +390,6 @@ export default function Teams() {
     setResourceFilter('all');
     setResourceQuery('');
     try {
-      const m = await teamsService.listMembers(team.id, token);
-      setMembers(m?.members ?? []);
       const g = await teamsService.listGrants(team.id, undefined, token);
       setGrants(g?.grants ?? []);
       setTeamRole(g?.team_role ?? null);
@@ -388,8 +442,9 @@ export default function Teams() {
   };
 
   const handleCreate = async () => {
-    if (!newTeamName.trim()) return;
+    if (!newTeamName.trim() || modalPending) return;
     setCreateError(null);
+    setModalPending(true);
     try {
       const created = await dispatch(
         createTeam({ name: newTeamName.trim(), token }),
@@ -400,6 +455,8 @@ export default function Teams() {
     } catch {
       // Keep the modal open and surface the error so the user can retry.
       setCreateError(t('settings.teams.createTeamError'));
+    } finally {
+      setModalPending(false);
     }
   };
 
@@ -429,9 +486,10 @@ export default function Teams() {
   };
 
   const handleEditSave = async () => {
-    if (!selected || !editName.trim()) return;
+    if (!selected || !editName.trim() || modalPending) return;
     const name = editName.trim();
     const description = editDescription.trim();
+    setModalPending(true);
     try {
       const res = await teamsService.update(
         selected.id,
@@ -448,6 +506,8 @@ export default function Teams() {
       setEditOpen(false);
     } catch (error) {
       setEditError(errorMessage(error, t('settings.teams.updateFailed')));
+    } finally {
+      setModalPending(false);
     }
   };
 
@@ -501,8 +561,9 @@ export default function Teams() {
   };
 
   const handleAddMember = async () => {
-    if (!selected || !newMemberEmail.trim()) return;
+    if (!selected || !newMemberEmail.trim() || modalPending) return;
     setAddMemberError(null);
+    setModalPending(true);
     try {
       const res = await teamsService.addMember(
         selected.id,
@@ -525,6 +586,8 @@ export default function Teams() {
       setAddMemberError(
         errorMessage(error, t('settings.teams.addMemberError')),
       );
+    } finally {
+      setModalPending(false);
     }
   };
 
@@ -545,21 +608,26 @@ export default function Teams() {
     }
   };
 
+  // The member's label for the remove confirm (the id when off this page).
+  const memberToRemoveLabel = (() => {
+    if (!memberToRemove) return '';
+    const m = members.find((x) => x.user_id === memberToRemove);
+    return m ? memberLabel(m) : truncateSub(memberToRemove);
+  })();
+
   const requestRemoveMember = (memberId: string) => {
     setMemberToRemove(memberId);
     setRemoveMemberModalState('ACTIVE');
   };
 
+  // Returns the request so the confirm stays open on a failure and shows
+  // the server's reason (else removeMemberError); the member is cleared only once it's gone, so the
+  // pending (or failed) dialog keeps its name.
   const confirmRemoveMember = async () => {
     if (!selected || !memberToRemove) return;
-    const memberId = memberToRemove;
+    await teamsService.removeMember(selected.id, memberToRemove, token);
     setMemberToRemove(null);
-    try {
-      await teamsService.removeMember(selected.id, memberId, token);
-      openTeam(selected);
-    } catch (error) {
-      reportError(errorMessage(error, t('settings.teams.removeMemberError')));
-    }
+    openTeam(selected);
   };
 
   const requestDeleteTeam = (team: Team) => {
@@ -570,13 +638,10 @@ export default function Teams() {
   const confirmDeleteTeam = async () => {
     if (!teamToDelete) return;
     const team = teamToDelete;
+    // A rejection keeps the confirm open with the server's reason.
+    await dispatch(deleteTeam({ id: team.id, token })).unwrap();
     setTeamToDelete(null);
-    try {
-      await dispatch(deleteTeam({ id: team.id, token })).unwrap();
-      if (selected?.id === team.id) setSelected(null);
-    } catch (error) {
-      reportError(errorMessage(error, t('settings.teams.deleteTeamError')));
-    }
+    if (selected?.id === team.id) setSelected(null);
   };
 
   // Re-read the team's grants after a change (the drawer follows them).
@@ -601,6 +666,7 @@ export default function Teams() {
 
   // Remove one grant: the whole-team grant, or one member's (which needs
   // its target_user_id, or the server would drop the team grant instead).
+  // A failure rethrows, so the confirm stays open with unshareError.
   const handleUnshare = async (grant: Grant) => {
     if (!selected) return;
     const key = grantKey(grant);
@@ -615,8 +681,6 @@ export default function Teams() {
         },
         token,
       );
-    } catch (error) {
-      reportError(errorMessage(error, t('settings.teams.unshareError')));
     } finally {
       setGrantBusy(key, false);
       await refreshGrants();
@@ -684,6 +748,20 @@ export default function Teams() {
     if (!needle) return true;
     return `${resourceName(r)} ${ownerLabel(r)}`.toLowerCase().includes(needle);
   });
+  const {
+    page: resourcesPage,
+    setPage: setResourcesPage,
+    pageItems: pageResources,
+  } = useClientPage(
+    visibleResources,
+    SHORT_LIST_PAGE_SIZE,
+    `${resourceFilter}|${resourceQuery}`,
+  );
+  const {
+    page: teamsPage,
+    setPage: setTeamsPage,
+    pageItems: pageTeams,
+  } = useClientPage(teams, SHORT_LIST_PAGE_SIZE, '');
 
   // The strongest access this team has, plus "+N Editor" when per-member
   // editor grants sit on top of a viewer team grant.
@@ -784,7 +862,6 @@ export default function Teams() {
         intro={t('settings.teams.subtitle')}
         action={
           <Button size="field" shape="pill" onClick={openCreateModal}>
-            <Plus aria-hidden />
             {t('settings.teams.newTeam')}
           </Button>
         }
@@ -800,87 +877,89 @@ export default function Teams() {
               size="sm"
               illustration="none"
               title={t('settings.teams.loadError')}
-              action={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => dispatch(loadTeams({ token }))}
-                >
-                  {t('retry')}
-                </Button>
-              }
+              onRetry={() => dispatch(loadTeams({ token }))}
             />
           ) : teams.length === 0 ? (
             <EmptyState
               title={t('settings.teams.noTeams')}
               action={
-                <Button variant="ghost" onClick={openCreateModal}>
-                  <Plus aria-hidden />
+                <Button type="button" shape="pill" onClick={openCreateModal}>
                   {t('settings.teams.newTeam')}
                 </Button>
               }
             />
           ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {teams.map((team) => (
-                <Card
-                  key={team.id}
-                  asChild
-                  variant="filled"
-                  padding="lg"
-                  interactive
-                  className="group h-full"
-                >
-                  <button onClick={() => openTeam(team)}>
-                    <div className="flex items-center gap-3">
-                      <span aria-hidden="true" className="contents">
-                        <Avatar
-                          alt=""
-                          size="default"
-                          shape="square"
-                          variant="muted"
-                        >
-                          {initialOf(team.name)}
-                        </Avatar>
-                      </span>
-                      <CardTitle className="min-w-0 flex-1 truncate">
-                        {team.name}
-                      </CardTitle>
-                      {roleBadge(team.member_role ?? 'team_member')}
-                      <ChevronRight
-                        className="text-muted-foreground size-4.5 shrink-0 transition-transform group-hover:translate-x-0.5"
-                        aria-hidden
-                      />
-                    </div>
-                    {team.description ? (
-                      <CardDescription size="xs" className="line-clamp-2">
-                        {team.description}
-                      </CardDescription>
-                    ) : (
-                      <p className="text-muted-foreground/50 text-xs italic">
-                        {t('settings.teams.noDescription')}
-                      </p>
-                    )}
-                    <CardFooter className="gap-1.5">
-                      <Users className="size-3.5" aria-hidden />
-                      <span>
-                        {t('settings.teams.memberCount', {
-                          count: team.member_count ?? 0,
-                          formatted: formatCount(team.member_count ?? 0),
-                        })}
-                      </span>
-                      <span aria-hidden>·</span>
-                      <span>
-                        {t('settings.teams.sharedCount', {
-                          count: team.shared_count ?? 0,
-                          formatted: formatCount(team.shared_count ?? 0),
-                        })}
-                      </span>
-                    </CardFooter>
-                  </button>
-                </Card>
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {pageTeams.map((team) => (
+                  <Card
+                    key={team.id}
+                    asChild
+                    variant="filled"
+                    padding="lg"
+                    interactive
+                    className="group h-full"
+                  >
+                    <button onClick={() => openTeam(team)}>
+                      <div className="flex items-center gap-3">
+                        <span aria-hidden="true" className="contents">
+                          <Avatar
+                            alt=""
+                            size="default"
+                            shape="square"
+                            variant="muted"
+                          >
+                            {initialOf(team.name)}
+                          </Avatar>
+                        </span>
+                        <CardTitle className="min-w-0 flex-1 truncate">
+                          {team.name}
+                        </CardTitle>
+                        {roleBadge(team.member_role ?? 'team_member')}
+                        <ChevronRight
+                          className="text-muted-foreground size-4.5 shrink-0 transition-transform group-hover:translate-x-0.5"
+                          aria-hidden
+                        />
+                      </div>
+                      {team.description ? (
+                        <CardDescription size="xs" className="line-clamp-2">
+                          {team.description}
+                        </CardDescription>
+                      ) : (
+                        <p className="text-muted-foreground/50 text-xs italic">
+                          {t('settings.teams.noDescription')}
+                        </p>
+                      )}
+                      <CardFooter className="gap-1.5">
+                        <Users className="size-3.5" aria-hidden />
+                        <span>
+                          {t('settings.teams.memberCount', {
+                            count: team.member_count ?? 0,
+                            formatted: formatCount(team.member_count ?? 0),
+                          })}
+                        </span>
+                        <span aria-hidden>·</span>
+                        <span>
+                          {t('settings.teams.sharedCount', {
+                            count: team.shared_count ?? 0,
+                            formatted: formatCount(team.shared_count ?? 0),
+                          })}
+                        </span>
+                      </CardFooter>
+                    </button>
+                  </Card>
+                ))}
+              </div>
+              <Pagination
+                page={teamsPage}
+                pageSize={SHORT_LIST_PAGE_SIZE}
+                total={teams.length}
+                onPageChange={setTeamsPage}
+                rangeLabel={(range) =>
+                  t('settings.teams.pageRange', pageRangeParams(range))
+                }
+              />
+            </>
           )}
         </div>
       ) : (
@@ -903,11 +982,17 @@ export default function Teams() {
                 </Avatar>
               </span>
               <div className="min-w-0">
-                <h3 className="text-foreground truncate text-xl leading-tight font-semibold">
+                <h3
+                  className="text-foreground truncate text-xl leading-tight font-semibold"
+                  title={selected.name}
+                >
                   {selected.name}
                 </h3>
                 {selected.description && (
-                  <p className="text-muted-foreground mt-1 line-clamp-2 text-sm">
+                  <p
+                    className="text-muted-foreground mt-1 line-clamp-2 text-sm"
+                    title={selected.description}
+                  >
                     {selected.description}
                   </p>
                 )}
@@ -946,23 +1031,54 @@ export default function Teams() {
             <SectionHeader
               as="h4"
               size="sm"
-              title={`${t('settings.teams.members')} · ${formatCount(members.length)}`}
+              title={t('settings.teams.members')}
+              count={membersAll}
               actions={
-                isAdmin && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0"
-                    onClick={openAddMemberModal}
-                  >
-                    <Plus aria-hidden />
-                    {t('settings.teams.addMember')}
-                  </Button>
+                (membersAll > MEMBERS_PAGE_SIZE || isAdmin) && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {membersAll > MEMBERS_PAGE_SIZE && (
+                      <SearchInput
+                        className="w-full sm:w-56"
+                        placeholder={t('settings.teams.searchMembers')}
+                        value={memberQuery}
+                        onChange={(e) => {
+                          setMemberQuery(e.target.value);
+                          setMembersPage(1);
+                        }}
+                      />
+                    )}
+                    {isAdmin && (
+                      <Button
+                        variant="outline"
+                        size="field"
+                        className="shrink-0"
+                        onClick={openAddMemberModal}
+                      >
+                        <Plus aria-hidden />
+                        {t('settings.teams.addMember')}
+                      </Button>
+                    )}
+                  </div>
                 )
               }
             />
-            {members.length === 0 ? (
-              <EmptyState size="sm" title={t('settings.teams.noMembers')} />
+            {membersError ? (
+              <EmptyState
+                tone="destructive"
+                size="sm"
+                illustration="none"
+                title={t('settings.teams.membersLoadError')}
+                onRetry={() => setMembersReload((n) => n + 1)}
+              />
+            ) : members.length === 0 ? (
+              <EmptyState
+                size="sm"
+                title={
+                  debouncedMemberQuery
+                    ? t('settings.teams.sharedList.noMatches')
+                    : t('settings.teams.noMembers')
+                }
+              />
             ) : (
               <ListRows>
                 {members.map((m) => (
@@ -1021,41 +1137,50 @@ export default function Teams() {
                 ))}
               </ListRows>
             )}
+            <Pagination
+              page={membersPage}
+              pageSize={MEMBERS_PAGE_SIZE}
+              total={membersTotal}
+              onPageChange={setMembersPage}
+              rangeLabel={(range) =>
+                t('settings.teams.membersRange', pageRangeParams(range))
+              }
+            />
           </div>
 
           <div className="border-border flex flex-col gap-3 border-t pt-6">
             <SectionHeader
               as="h4"
               size="sm"
-              title={`${t('settings.teams.sharedResources')} · ${formatCount(sharedResources.length)}`}
+              title={t('settings.teams.sharedResources')}
+              count={sharedResources.length}
             />
             {sharedResources.length === 0 ? (
               <EmptyState size="sm" title={t('settings.teams.nothingShared')} />
             ) : (
               <>
                 <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                  <div className="bg-muted max-w-full rounded-full p-1">
-                    <ToggleGroup
-                      type="single"
-                      size="xs"
-                      value={resourceFilter}
-                      onValueChange={(value) =>
-                        value && setResourceFilter(value as ResourceFilter)
-                      }
-                      aria-label={t('settings.teams.sharedList.filterLabel')}
-                    >
-                      {(['all', ...FILTER_TYPES] as ResourceFilter[]).map(
-                        (value) => (
-                          <ToggleGroupItem key={value} value={value}>
-                            {t(`settings.teams.sharedList.filter.${value}`)}{' '}
-                            {formatCount(resourceCounts[value])}
-                          </ToggleGroupItem>
-                        ),
-                      )}
-                    </ToggleGroup>
-                  </div>
+                  <ToggleGroup
+                    type="single"
+                    value={resourceFilter}
+                    onValueChange={(value) =>
+                      value && setResourceFilter(value as ResourceFilter)
+                    }
+                    aria-label={t('settings.teams.sharedList.filterLabel')}
+                  >
+                    {(['all', ...FILTER_TYPES] as ResourceFilter[]).map(
+                      (value) => (
+                        <ToggleGroupItem
+                          key={value}
+                          value={value}
+                          count={resourceCounts[value]}
+                        >
+                          {t(`settings.teams.sharedList.filter.${value}`)}
+                        </ToggleGroupItem>
+                      ),
+                    )}
+                  </ToggleGroup>
                   <SearchInput
-                    size="sm"
                     className="w-full sm:w-56"
                     placeholder={t('settings.teams.sharedList.search')}
                     value={resourceQuery}
@@ -1069,54 +1194,70 @@ export default function Teams() {
                     title={t('settings.teams.sharedList.noMatches')}
                   />
                 ) : (
-                  <ListRows>
-                    {visibleResources.map((r) => {
-                      const isOpen = drawerOpen && openResourceKey === r.key;
-                      return (
-                        <ListRow
-                          key={r.key}
-                          interactive
-                          selected={isOpen}
-                          asChild
-                          leading={
-                            <span
-                              aria-hidden="true"
-                              className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
-                            >
-                              {resourceTypeIcon(r.type)}
-                            </span>
-                          }
-                          title={
-                            <span title={resourceName(r)}>
-                              {resourceName(r)}
-                            </span>
-                          }
-                          description={t('settings.teams.sharedList.meta', {
-                            interpolation: { escapeValue: false },
-                            type: resourceTypeLabel(r.type),
-                            owner: ownerLabel(r),
-                          })}
-                          trailing={
-                            <>
-                              <Badge variant="neutral" className="shrink-0">
-                                {resourceBadge(r)}
-                              </Badge>
-                              <ChevronRight
-                                className="text-muted-foreground size-4 shrink-0"
-                                aria-hidden
-                              />
-                            </>
-                          }
-                        >
-                          <button
-                            type="button"
-                            data-testid="shared-resource-row"
-                            onClick={() => openDrawerFor(r)}
-                          />
-                        </ListRow>
-                      );
-                    })}
-                  </ListRows>
+                  <>
+                    <ListRows>
+                      {pageResources.map((r) => {
+                        const isOpen = drawerOpen && openResourceKey === r.key;
+                        return (
+                          <ListRow
+                            key={r.key}
+                            interactive
+                            selected={isOpen}
+                            asChild
+                            leading={
+                              <Avatar
+                                aria-hidden="true"
+                                size="sm"
+                                shape="square"
+                                variant="icon"
+                              >
+                                {resourceTypeIcon(r.type)}
+                              </Avatar>
+                            }
+                            title={
+                              <span title={resourceName(r)}>
+                                {resourceName(r)}
+                              </span>
+                            }
+                            description={t('settings.teams.sharedList.meta', {
+                              interpolation: { escapeValue: false },
+                              type: resourceTypeLabel(r.type),
+                              owner: ownerLabel(r),
+                            })}
+                            trailing={
+                              <>
+                                <Badge variant="neutral" className="shrink-0">
+                                  {resourceBadge(r)}
+                                </Badge>
+                                <ChevronRight
+                                  className="text-muted-foreground size-4 shrink-0"
+                                  aria-hidden
+                                />
+                              </>
+                            }
+                          >
+                            <button
+                              type="button"
+                              data-testid="shared-resource-row"
+                              onClick={() => openDrawerFor(r)}
+                            />
+                          </ListRow>
+                        );
+                      })}
+                    </ListRows>
+                    <Pagination
+                      page={resourcesPage}
+                      pageSize={SHORT_LIST_PAGE_SIZE}
+                      total={visibleResources.length}
+                      onPageChange={setResourcesPage}
+                      rangeLabel={(range) =>
+                        t(
+                          'settings.teams.sharedList.pageRange',
+                          pageRangeParams(range),
+                        )
+                      }
+                    />
+                  </>
                 )}
               </>
             )}
@@ -1124,241 +1265,257 @@ export default function Teams() {
         </div>
       )}
 
-      <Sheet
+      <SidePanel
         open={drawerOpen && openResource !== null}
         onOpenChange={(open) => !open && closeDrawer()}
       >
         {openResource && selected && (
-          <SheetContent
-            side="right"
-            size="detail"
-            className="p-0"
-            closeLabel={t('settings.teams.drawer.close')}
-          >
-            <div className="flex min-h-0 flex-1 flex-col">
-              {/* A fixed header: pr-12 keeps it clear of the close X. */}
-              <div className="flex flex-col gap-4 px-6 pt-6 pr-12 pb-4">
-                <div className="flex items-start gap-3">
-                  <span
-                    aria-hidden="true"
-                    className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
-                  >
-                    {resourceTypeIcon(openResource.type)}
-                  </span>
-                  <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <SheetTitle className="wrap-break-word">
-                      {resourceName(openResource)}
-                    </SheetTitle>
-                    <SheetDescription>
-                      {t('settings.teams.drawer.subtitle', {
-                        interpolation: { escapeValue: false },
-                        type: resourceTypeLabel(openResource.type),
-                        owner: ownerLabel(openResource),
-                      })}
-                    </SheetDescription>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
+          <>
+            <PanelHeader
+              title={resourceName(openResource)}
+              description={t('settings.teams.drawer.subtitle', {
+                interpolation: { escapeValue: false },
+                type: resourceTypeLabel(openResource.type),
+                owner: ownerLabel(openResource),
+              })}
+              leading={
+                <Avatar
+                  aria-hidden="true"
+                  size="sm"
+                  shape="square"
+                  variant="icon"
+                >
+                  {resourceTypeIcon(openResource.type)}
+                </Avatar>
+              }
+            >
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  shape="pill"
+                  onClick={() => {
+                    const path = openAssetPath(openResource);
+                    closeDrawer();
+                    navigate(path);
+                  }}
+                >
+                  <ArrowUpRight aria-hidden />
+                  {t('settings.teams.drawer.open', {
+                    interpolation: { escapeValue: false },
+                    type: resourceTypeLabel(openResource.type),
+                  })}
+                </Button>
+                {callerCanShare && (
                   <Button
                     variant="outline"
                     size="sm"
                     shape="pill"
                     onClick={() => {
-                      const path = openAssetPath(openResource);
-                      closeDrawer();
-                      navigate(path);
+                      setDrawerOpen(false);
+                      setShareTarget(openResource);
                     }}
                   >
-                    <ArrowUpRight aria-hidden />
-                    {t('settings.teams.drawer.open', {
-                      interpolation: { escapeValue: false },
-                      type: resourceTypeLabel(openResource.type),
-                    })}
+                    <Users aria-hidden />
+                    {t('settings.teams.drawer.manageSharing')}
                   </Button>
-                  {callerCanShare && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      shape="pill"
-                      onClick={() => {
-                        setDrawerOpen(false);
-                        setShareTarget(openResource);
-                      }}
-                    >
-                      <Users aria-hidden />
-                      {t('settings.teams.drawer.manageSharing')}
-                    </Button>
-                  )}
-                </div>
+                )}
               </div>
-              <Separator />
-              <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-6 py-6">
-                <DescriptionList size="sm">
-                  <DescriptionItem label={t('settings.teams.drawer.owner')}>
-                    {ownerLabel(openResource)}
-                  </DescriptionItem>
-                  <DescriptionItem label={t('settings.teams.drawer.shared')}>
-                    {grantedAt(openResource)}
-                  </DescriptionItem>
-                  <DescriptionItem
-                    label={t('settings.teams.drawer.yourAccess')}
-                  >
-                    {callerAccessLabel(openCaller?.access)}
-                  </DescriptionItem>
-                </DescriptionList>
+            </PanelHeader>
+            <PanelBody>
+              <DescriptionList size="sm">
+                <DescriptionItem label={t('settings.teams.drawer.owner')}>
+                  {ownerLabel(openResource)}
+                </DescriptionItem>
+                <DescriptionItem label={t('settings.teams.drawer.shared')}>
+                  {grantedAt(openResource)}
+                </DescriptionItem>
+                <DescriptionItem label={t('settings.teams.drawer.yourAccess')}>
+                  {callerAccessLabel(openCaller?.access)}
+                </DescriptionItem>
+              </DescriptionList>
 
-                <section className="flex flex-col gap-3">
-                  <SectionHeader
-                    as="h3"
-                    size="xs"
-                    title={t('settings.teams.drawer.accessIn', {
-                      interpolation: { escapeValue: false },
-                      team: selected.name,
-                    })}
-                  />
-                  <Card variant="subtle" padding="none">
-                    <ListRows>
-                      {[
-                        ...(openResource.teamGrant
-                          ? [openResource.teamGrant]
-                          : []),
-                        ...openResource.memberGrants,
-                      ].map((g) => {
-                        const isTeam = !g.target_user_id;
-                        const label = isTeam
-                          ? t('settings.teams.drawer.everyone', {
-                              interpolation: { escapeValue: false },
-                              team: selected.name,
-                            })
-                          : g.target_user_label ||
-                            truncateSub(g.target_user_id!);
-                        const busy = busyGrants.has(grantKey(g));
-                        return (
-                          <ListRow
-                            key={grantKey(g)}
-                            leading={
-                              <span aria-hidden="true" className="contents">
-                                <Avatar
-                                  alt=""
-                                  size="sm"
-                                  variant="primary"
-                                  shape={isTeam ? 'square' : 'circle'}
+              <section className="flex flex-col gap-3">
+                <SectionHeader
+                  as="h3"
+                  size="xs"
+                  title={t('settings.teams.drawer.accessIn', {
+                    interpolation: { escapeValue: false },
+                    team: selected.name,
+                  })}
+                />
+                <Card variant="subtle" padding="none">
+                  <ListRows>
+                    {[
+                      ...(openResource.teamGrant
+                        ? [openResource.teamGrant]
+                        : []),
+                      ...openResource.memberGrants,
+                    ].map((g) => {
+                      const isTeam = !g.target_user_id;
+                      const label = isTeam
+                        ? t('settings.teams.drawer.everyone', {
+                            interpolation: { escapeValue: false },
+                            team: selected.name,
+                          })
+                        : g.target_user_label || truncateSub(g.target_user_id!);
+                      const busy = busyGrants.has(grantKey(g));
+                      return (
+                        <ListRow
+                          key={grantKey(g)}
+                          leading={
+                            <span aria-hidden="true" className="contents">
+                              <Avatar
+                                alt=""
+                                size="sm"
+                                variant="primary"
+                                shape={isTeam ? 'square' : 'circle'}
+                              >
+                                {initialOf(isTeam ? selected.name : label)}
+                              </Avatar>
+                            </span>
+                          }
+                          title={<span title={label}>{label}</span>}
+                          description={
+                            isTeam
+                              ? t('settings.teams.drawer.teamGrant')
+                              : t('settings.teams.drawer.memberGrant')
+                          }
+                          trailing={
+                            <>
+                              {callerCanShare ? (
+                                <Select
+                                  value={g.access_level}
+                                  disabled={busy}
+                                  onValueChange={(value) =>
+                                    handleGrantAccess(g, value as AccessLevel)
+                                  }
                                 >
-                                  {initialOf(isTeam ? selected.name : label)}
-                                </Avatar>
-                              </span>
-                            }
-                            title={<span title={label}>{label}</span>}
-                            description={
-                              isTeam
-                                ? t('settings.teams.drawer.teamGrant')
-                                : t('settings.teams.drawer.memberGrant')
-                            }
-                            trailing={
-                              <>
-                                {callerCanShare ? (
-                                  <Select
-                                    value={g.access_level}
-                                    disabled={busy}
-                                    onValueChange={(value) =>
-                                      handleGrantAccess(g, value as AccessLevel)
-                                    }
-                                  >
-                                    <SelectTrigger
-                                      size="sm"
-                                      className="w-28 shrink-0"
-                                      aria-label={t(
-                                        'settings.teams.share.access',
-                                      )}
-                                    >
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {(['viewer', 'editor'] as const).map(
-                                        (level) => (
-                                          <SelectItem key={level} value={level}>
-                                            {accessLevelLabel(level)}
-                                          </SelectItem>
-                                        ),
-                                      )}
-                                    </SelectContent>
-                                  </Select>
-                                ) : (
-                                  <Badge variant="neutral" className="shrink-0">
-                                    {accessLevelLabel(g.access_level)}
-                                  </Badge>
-                                )}
-                                {(callerCanShare || isAdmin) && (
-                                  <IconButton
-                                    variant="ghost-destructive"
-                                    size="icon-sm"
-                                    className="shrink-0"
-                                    disabled={busy}
-                                    label={t(
-                                      'settings.teams.drawer.removeGrant',
+                                  <SelectTrigger
+                                    size="sm"
+                                    className="w-28 shrink-0"
+                                    aria-label={t(
+                                      'settings.teams.share.access',
                                     )}
-                                    icon={Trash2}
-                                    onClick={() => handleUnshare(g)}
-                                  />
-                                )}
-                              </>
-                            }
-                          />
-                        );
-                      })}
-                    </ListRows>
-                  </Card>
-                  <p className="text-muted-foreground text-xs">
-                    {t('settings.teams.drawer.otherTeamsHint')}
-                  </p>
-                </section>
+                                  >
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {(['viewer', 'editor'] as const).map(
+                                      (level) => (
+                                        <SelectItem key={level} value={level}>
+                                          {accessLevelLabel(level)}
+                                        </SelectItem>
+                                      ),
+                                    )}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <Badge variant="neutral" className="shrink-0">
+                                  {accessLevelLabel(g.access_level)}
+                                </Badge>
+                              )}
+                              {(callerCanShare || isAdmin) && (
+                                <IconButton
+                                  variant="ghost-destructive"
+                                  size="icon-sm"
+                                  className="shrink-0"
+                                  disabled={busy}
+                                  label={t('settings.teams.drawer.removeGrant')}
+                                  icon={Trash2}
+                                  onClick={() => setGrantToRemove(g)}
+                                />
+                              )}
+                            </>
+                          }
+                        />
+                      );
+                    })}
+                  </ListRows>
+                </Card>
+                <p className="text-muted-foreground text-xs">
+                  {t('settings.teams.drawer.otherTeamsHint')}
+                </p>
+              </section>
 
-                <section className="flex flex-col gap-3">
-                  <SectionHeader
-                    as="h3"
-                    size="xs"
-                    title={t('settings.teams.drawer.whatPeopleCanDo')}
-                  />
-                  <ul className="flex flex-col gap-2 text-sm">
-                    {capabilityLines(
-                      t,
+              <section className="flex flex-col gap-3">
+                <SectionHeader
+                  as="h3"
+                  size="xs"
+                  title={t('settings.teams.drawer.whatPeopleCanDo')}
+                />
+                <ul className="flex flex-col gap-2 text-sm">
+                  {capabilityLines(
+                    t,
+                    openResource.type,
+                    resolveSettings(
                       openResource.type,
-                      resolveSettings(
-                        openResource.type,
-                        drawerSettings?.settings,
-                      ),
-                    ).map((line) => (
-                      <li key={line.key} className="flex items-center gap-2">
-                        {line.allowed ? (
-                          <Check
-                            className="text-success size-4 shrink-0"
-                            aria-hidden
-                          />
-                        ) : (
-                          <X
-                            className="text-muted-foreground size-4 shrink-0"
-                            aria-hidden
-                          />
-                        )}
-                        <span
-                          className={cn(
-                            !line.allowed && 'text-muted-foreground',
-                          )}
-                        >
-                          {line.text}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="text-muted-foreground text-xs">
-                    {t('settings.teams.drawer.capabilitiesHint')}
-                  </p>
-                </section>
-              </div>
-            </div>
-          </SheetContent>
+                      drawerSettings?.settings,
+                    ),
+                  ).map((line) => (
+                    <li key={line.key} className="flex items-center gap-2">
+                      {line.allowed ? (
+                        <Check
+                          className="text-success size-4 shrink-0"
+                          aria-hidden
+                        />
+                      ) : (
+                        <X
+                          className="text-muted-foreground size-4 shrink-0"
+                          aria-hidden
+                        />
+                      )}
+                      <span
+                        className={cn(!line.allowed && 'text-muted-foreground')}
+                      >
+                        {line.text}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-muted-foreground text-xs">
+                  {t('settings.teams.drawer.capabilitiesHint')}
+                </p>
+              </section>
+            </PanelBody>
+            {grantToRemove && (
+              <ConfirmationModal
+                message={t('settings.teams.share.removeConfirm', {
+                  interpolation: { escapeValue: false },
+                  name: grantToRemove.target_user_id
+                    ? grantToRemove.target_user_label ||
+                      truncateSub(grantToRemove.target_user_id)
+                    : selected.name,
+                })}
+                description={
+                  grantToRemove.target_user_id
+                    ? t('settings.teams.share.removeConfirmPerson', {
+                        interpolation: { escapeValue: false },
+                        name:
+                          grantToRemove.target_user_label ||
+                          truncateSub(grantToRemove.target_user_id),
+                        resource: resourceName(openResource),
+                        team: selected.name,
+                      })
+                    : t('settings.teams.share.removeConfirmTeam', {
+                        interpolation: { escapeValue: false },
+                        team: selected.name,
+                        resource: resourceName(openResource),
+                      })
+                }
+                modalState="ACTIVE"
+                setModalState={(state) =>
+                  state === 'INACTIVE' && setGrantToRemove(null)
+                }
+                submitLabel={t('settings.teams.remove')}
+                handleSubmit={() => handleUnshare(grantToRemove)}
+                error={t('settings.teams.unshareError')}
+                variant="destructive"
+              />
+            )}
+          </>
         )}
-      </Sheet>
+      </SidePanel>
 
       {shareTarget && (
         <ShareToTeamModal
@@ -1380,7 +1537,6 @@ export default function Teams() {
           open ? setCreateOpen(true) : closeCreateModal()
         }
         size="sm"
-        mobileVariant="sheet"
         title={t('settings.teams.createTeam')}
         description={t('settings.teams.createTeamDescription')}
         footer={
@@ -1389,6 +1545,7 @@ export default function Teams() {
             onCancel={closeCreateModal}
             submitLabel={t('settings.teams.create')}
             onSubmit={handleCreate}
+            pending={modalPending}
             disabled={!newTeamName.trim()}
           />
         }
@@ -1396,7 +1553,6 @@ export default function Teams() {
         <FormField label={t('settings.teams.teamNamePlaceholder')}>
           <Input
             type="text"
-            autoFocus
             value={newTeamName}
             onChange={(e) => setNewTeamName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
@@ -1404,7 +1560,6 @@ export default function Teams() {
         </FormField>
         {createError && (
           <Alert variant="destructive" className="mt-3">
-            <CircleAlert className="size-4" aria-hidden="true" />
             <AlertDescription>{createError}</AlertDescription>
           </Alert>
         )}
@@ -1414,7 +1569,6 @@ export default function Teams() {
         open={editOpen}
         onOpenChange={(open) => (open ? setEditOpen(true) : closeEditModal())}
         size="sm"
-        mobileVariant="sheet"
         title={t('settings.teams.editTeam')}
         footer={
           <ModalActions
@@ -1422,6 +1576,7 @@ export default function Teams() {
             onCancel={closeEditModal}
             submitLabel={t('settings.teams.save')}
             onSubmit={handleEditSave}
+            pending={modalPending}
             disabled={!editName.trim()}
           />
         }
@@ -1430,7 +1585,6 @@ export default function Teams() {
           <FormField label={t('settings.teams.teamNamePlaceholder')}>
             <Input
               type="text"
-              autoFocus
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
             />
@@ -1447,7 +1601,6 @@ export default function Teams() {
         </div>
         {editError && (
           <Alert variant="destructive" className="mt-3">
-            <CircleAlert className="size-4" aria-hidden="true" />
             <AlertDescription>{editError}</AlertDescription>
           </Alert>
         )}
@@ -1459,7 +1612,6 @@ export default function Teams() {
           open ? setAddMemberOpen(true) : closeAddMemberModal()
         }
         size="sm"
-        mobileVariant="sheet"
         title={t('settings.teams.addMemberTitle')}
         description={t('settings.teams.addMemberDescription')}
         footer={
@@ -1468,6 +1620,7 @@ export default function Teams() {
             onCancel={closeAddMemberModal}
             submitLabel={t('settings.teams.add')}
             onSubmit={handleAddMember}
+            pending={modalPending}
             disabled={!newMemberEmail.trim()}
           />
         }
@@ -1476,7 +1629,6 @@ export default function Teams() {
           <FormField label={t('settings.teams.memberEmailLabel')}>
             <Input
               type="email"
-              autoFocus
               placeholder={t('settings.teams.memberEmailPlaceholder')}
               value={newMemberEmail}
               onChange={(e) => setNewMemberEmail(e.target.value)}
@@ -1504,7 +1656,6 @@ export default function Teams() {
         </div>
         {addMemberError && (
           <Alert variant="destructive" className="mt-3">
-            <CircleAlert className="size-4" aria-hidden="true" />
             <AlertDescription>{addMemberError}</AlertDescription>
           </Alert>
         )}
@@ -1515,20 +1666,31 @@ export default function Teams() {
           interpolation: { escapeValue: false },
           name: teamToDelete?.name ?? '',
         })}
+        description={t('settings.teams.deleteTeamConsequence')}
         modalState={deleteTeamModalState}
         setModalState={setDeleteTeamModalState}
-        submitLabel={t('settings.teams.deleteTeam')}
+        submitLabel={t('settings.teams.delete')}
         handleSubmit={confirmDeleteTeam}
         handleCancel={() => setTeamToDelete(null)}
+        error={(e) => errorMessage(e, t('settings.teams.deleteTeamError'))}
         variant="destructive"
       />
       <ConfirmationModal
-        message={t('settings.teams.removeMemberConfirmation')}
+        message={t('settings.teams.removeMemberConfirmation', {
+          interpolation: { escapeValue: false },
+          name: memberToRemoveLabel,
+          team: selected?.name ?? '',
+        })}
+        description={t('settings.teams.removeMemberConsequence', {
+          interpolation: { escapeValue: false },
+          team: selected?.name ?? '',
+        })}
         modalState={removeMemberModalState}
         setModalState={setRemoveMemberModalState}
         submitLabel={t('settings.teams.remove')}
         handleSubmit={confirmRemoveMember}
         handleCancel={() => setMemberToRemove(null)}
+        error={(e) => errorMessage(e, t('settings.teams.removeMemberError'))}
         variant="destructive"
       />
     </SectionShell>

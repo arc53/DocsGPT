@@ -1,8 +1,13 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
 
 import { Alert, AlertDescription, AlertTitle } from './alert';
+import { TooltipProvider } from './tooltip';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -27,7 +32,7 @@ const render = async (element: React.ReactElement) => {
 const alertRole = () => container.firstElementChild!.getAttribute('role');
 
 describe('Alert', () => {
-  it.each(['default', 'destructive', 'warning', 'info'] as const)(
+  it.each(['destructive', 'warning', 'info'] as const)(
     'announces %s assertively',
     async (variant) => {
       await render(
@@ -78,7 +83,6 @@ describe('Alert layout', () => {
   it('puts the icon in its own column, centred on the text block', async () => {
     const classes = await classesOf(
       <Alert variant="destructive">
-        <svg />
         <AlertDescription>Failed</AlertDescription>
       </Alert>,
     );
@@ -120,15 +124,134 @@ describe('Alert surface', () => {
     expect(classes).toContain('rounded-xl');
     expect(classes).not.toContain('rounded-lg');
   });
+});
 
-  it('variant="neutral" is the quiet default box', async () => {
+describe('Alert onClose', () => {
+  const closeButton = () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="close"]');
+
+  it('draws no close button unless onClose is passed', async () => {
     await render(
-      <Alert variant="neutral">
-        <AlertDescription>Not evaluated</AlertDescription>
+      <Alert variant="destructive">
+        <AlertTitle>Unable to save</AlertTitle>
       </Alert>,
     );
-    const el = container.firstElementChild as HTMLElement;
-    expect(el.dataset.variant).toBe('neutral');
-    expect(el.className).toContain('bg-background');
+    expect(closeButton()).toBeNull();
+    expect(container.firstElementChild!.className.split(' ')).not.toContain(
+      'pr-10',
+    );
+  });
+
+  it('puts a ghost X in the top-right corner and pads the text clear of it', async () => {
+    const onClose = vi.fn();
+    await render(
+      <TooltipProvider>
+        <Alert variant="destructive" onClose={onClose}>
+          <AlertTitle>Unable to save</AlertTitle>
+          <AlertDescription>Two nodes have no model.</AlertDescription>
+        </Alert>
+      </TooltipProvider>,
+    );
+    const alert = container.querySelector<HTMLElement>('[data-slot="alert"]')!;
+    expect(alert.className.split(' ')).toContain('pr-10');
+    const button = closeButton()!;
+    expect(button).not.toBeNull();
+    expect(alert.contains(button)).toBe(true);
+    expect(button.dataset.variant).toBe('ghost');
+    expect(button.dataset.size).toBe('icon-xs');
+    const corner = button.closest('[data-slot="alert-close"]')!;
+    expect(corner.className.split(' ')).toEqual(
+      expect.arrayContaining(['absolute', 'top-2.5', 'right-2.5']),
+    );
+    await act(async () => button.click());
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Alert icon', () => {
+  const icons = () =>
+    Array.from(container.firstElementChild!.querySelectorAll(':scope > svg'));
+  const defaultIcon = () =>
+    container.firstElementChild!.querySelector<SVGElement>(
+      ':scope > [data-slot="alert-icon"]',
+    );
+
+  it.each([
+    ['destructive', 'lucide-circle-alert'],
+    ['warning', 'lucide-triangle-alert'],
+    ['success', 'lucide-circle-check'],
+    ['info', 'lucide-info'],
+  ] as const)('draws %s with its default icon', async (variant, cls) => {
+    await render(
+      <Alert variant={variant}>
+        <AlertDescription>Notice</AlertDescription>
+      </Alert>,
+    );
+    const icon = defaultIcon();
+    expect(icon).not.toBeNull();
+    expect(icon!.getAttribute('class')).toContain(cls);
+    expect(icon!.getAttribute('aria-hidden')).toBe('true');
+    // First child, so the grid puts it in the icon column.
+    expect(container.firstElementChild!.firstElementChild).toBe(icon);
+  });
+
+  it('has only status variants, and one is required', () => {
+    // Type-level: tsc fails if default or neutral come back, or if variant
+    // turns optional again. Nothing renders.
+    const removed = [
+      // @ts-expect-error default was removed (no app use)
+      <Alert key="default" variant="default" />,
+      // @ts-expect-error neutral was removed (no app use)
+      <Alert key="neutral" variant="neutral" />,
+      // @ts-expect-error variant is required
+      <Alert key="none" />,
+    ];
+    expect(removed).toHaveLength(3);
+  });
+
+  it('icon overrides the default', async () => {
+    const Shield = (props: React.SVGProps<SVGSVGElement>) => (
+      <svg data-testid="shield" {...props} />
+    );
+    await render(
+      <Alert variant="destructive" icon={Shield}>
+        <AlertDescription>Full access</AlertDescription>
+      </Alert>,
+    );
+    expect(icons()).toHaveLength(1);
+    expect(icons()[0].getAttribute('data-testid')).toBe('shield');
+    expect(icons()[0].getAttribute('data-slot')).toBe('alert-icon');
+    expect(icons()[0].getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('icon replaces the info icon', async () => {
+    const Lock = (props: React.SVGProps<SVGSVGElement>) => (
+      <svg data-testid="lock" {...props} />
+    );
+    await render(
+      <Alert variant="info" icon={Lock}>
+        <AlertDescription>View only</AlertDescription>
+      </Alert>,
+    );
+    expect(defaultIcon()?.getAttribute('data-testid')).toBe('lock');
+  });
+
+  it('icon={null} drops it', async () => {
+    await render(
+      <Alert variant="destructive" icon={null}>
+        <AlertDescription>TimeoutError</AlertDescription>
+      </Alert>,
+    );
+    expect(icons()).toEqual([]);
+  });
+
+  it('always shows its icon: no fallback that hides it beside another svg', async () => {
+    await render(
+      <Alert variant="destructive">
+        <AlertDescription>Failed</AlertDescription>
+      </Alert>,
+    );
+    const icon = defaultIcon()!;
+    expect(icon.getAttribute('class')).not.toContain('hidden');
   });
 });

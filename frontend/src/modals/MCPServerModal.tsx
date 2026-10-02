@@ -1,15 +1,16 @@
-import { CircleAlert, CircleCheck, Lock, TriangleAlert } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import { baseURL } from '../api/client';
 import userService from '../api/services/userService';
 import { Alert, AlertDescription } from '../components/ui/alert';
+import { Collapsible, CollapsibleTrigger } from '../components/ui/collapsible';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { FormField } from '../components/ui/form-field';
+import { ListRow, ListRows } from '../components/ui/list-row';
 import { SectionHeader } from '../components/ui/section-header';
 import {
   Select,
@@ -22,6 +23,24 @@ import { ActiveState } from '../models/misc';
 import { selectRecentEvents } from '../notifications/notificationsSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import { Modal, ModalActions } from '../components/ui/modal';
+import { formatCount } from '../utils/dateTimeUtils';
+
+/**
+ * A test result, or the OAuth handshake's progress: `waiting` while the
+ * sign-in runs (info), `popupBlocked` when the browser stopped the sign-in
+ * window (warning, with a link to open it by hand).
+ */
+type TestResult = {
+  success: boolean;
+  message: string;
+  status?: string;
+  notice?: 'waiting' | 'popupBlocked';
+  authorization_url?: string;
+  tools?: { name: string; description?: string }[];
+  tools_count?: number;
+};
+
+const NOTICE_VARIANT = { waiting: 'info', popupBlocked: 'warning' } as const;
 
 interface MCPServerModalProps {
   modalState: ActiveState;
@@ -84,14 +103,7 @@ export default function MCPServerModal({
 
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{
-    success: boolean;
-    message: string;
-    status?: string;
-    authorization_url?: string;
-    tools?: { name: string; description?: string }[];
-    tools_count?: number;
-  } | null>(null);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [discoveredTools, setDiscoveredTools] = useState<
     { name: string; description?: string }[]
   >([]);
@@ -115,6 +127,9 @@ export default function MCPServerModal({
   const [oauthCompleted, setOAuthCompleted] = useState(false);
   const [saveActive, setSaveActive] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const advancedId = useId();
+  // A timeout error opens the section so the message is never hidden.
+  const advancedOpen = showAdvanced || !!errors.timeout;
 
   // A tool shared with the caller (an editor reconnecting the owner's
   // server): its saved secrets stay hidden and a new entry replaces them.
@@ -336,12 +351,9 @@ export default function MCPServerModal({
             // asynchronously, so a blocked popup is expected on
             // some browsers / configs.
             setTestResult({
-              success: true,
-              message: t('settings.tools.mcp.oauthPopupBlocked', {
-                interpolation: { escapeValue: false },
-                defaultValue:
-                  'Popup blocked by browser. Click below to authorize:',
-              }),
+              success: false,
+              notice: 'popupBlocked',
+              message: t('settings.tools.mcp.oauthPopupBlocked'),
               authorization_url: authUrl,
             });
           }
@@ -422,7 +434,8 @@ export default function MCPServerModal({
         result.task_id
       ) {
         setTestResult({
-          success: true,
+          success: false,
+          notice: 'waiting',
           message: t('settings.tools.mcp.oauthInProgress'),
         });
         setSaveActive(false);
@@ -604,9 +617,7 @@ export default function MCPServerModal({
       }}
       title={
         server?.id
-          ? t('settings.tools.mcp.reconnectServer', {
-              defaultValue: 'Reconnect Server',
-            })
+          ? t('settings.tools.mcp.reconnectServer')
           : server?.preset
             ? t('settings.connectors.wizard.connectTitle', {
                 name: server.displayName,
@@ -623,7 +634,6 @@ export default function MCPServerModal({
           : undefined
       }
       size="lg"
-      mobileVariant="sheet"
       footer={
         <ModalActions
           footerStart={
@@ -653,17 +663,20 @@ export default function MCPServerModal({
       }
     >
       <div className="flex flex-col gap-5">
+        {errors.general && (
+          <Alert variant="destructive">
+            <AlertDescription>{errors.general}</AlertDescription>
+          </Alert>
+        )}
         {!server?.preset && (
           <Alert variant="warning" role="note">
-            <TriangleAlert aria-hidden="true" />
             <AlertDescription>
               {t('settings.connectors.unverified')}
             </AlertDescription>
           </Alert>
         )}
         {isShared && (
-          <Alert role="note">
-            <Lock />
+          <Alert variant="info" role="note">
             <AlertDescription>
               {t('settings.tools.mcp.sharedCredentialsNotice')}
               {oauthOwnerOnly &&
@@ -680,7 +693,6 @@ export default function MCPServerModal({
             type="text"
             value={formData.name}
             onChange={(e) => handleInputChange('name', e.target.value)}
-            placeholder={t('settings.tools.mcp.serverName')}
           />
         </FormField>
 
@@ -699,7 +711,6 @@ export default function MCPServerModal({
         </FormField>
         {serverChanged && (
           <Alert variant="warning">
-            <TriangleAlert aria-hidden="true" />
             <AlertDescription>
               {t('settings.tools.mcp.serverChangedNotice', {
                 interpolation: { escapeValue: false },
@@ -732,77 +743,80 @@ export default function MCPServerModal({
 
         {renderAuthFields()}
 
-        {/* Scopes and timeout rarely need changing: behind Advanced. */}
-        {showAdvanced || errors.timeout ? (
-          <>
-            {formData.auth_type === 'oauth' && (
+        {/* Scopes and timeout rarely need changing: behind Advanced. The
+            20px gap sits inside the body, so it folds away with it. */}
+        <div>
+          <CollapsibleTrigger
+            open={advancedOpen}
+            onOpenChange={() => setShowAdvanced((open) => !open)}
+            controls={advancedId}
+            chevron="sm"
+          >
+            <span>{t('settings.tools.mcp.advanced')}</span>
+          </CollapsibleTrigger>
+          <Collapsible open={advancedOpen} id={advancedId}>
+            <div className="flex flex-col gap-5 pt-5">
+              {formData.auth_type === 'oauth' && (
+                <FormField
+                  label={t('settings.tools.mcp.placeholders.oauthScopes')}
+                >
+                  <Input
+                    type="text"
+                    value={formData.oauth_scopes}
+                    onChange={(e) =>
+                      handleInputChange('oauth_scopes', e.target.value)
+                    }
+                    placeholder="read, write"
+                    disabled={oauthOwnerOnly}
+                  />
+                </FormField>
+              )}
               <FormField
-                label={t('settings.tools.mcp.placeholders.oauthScopes')}
+                label={t('settings.tools.mcp.timeout')}
+                error={errors.timeout}
               >
                 <Input
-                  type="text"
-                  value={formData.oauth_scopes}
-                  onChange={(e) =>
-                    handleInputChange('oauth_scopes', e.target.value)
-                  }
-                  placeholder="read, write"
-                  disabled={oauthOwnerOnly}
+                  type="number"
+                  value={formData.timeout}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === '') {
+                      handleInputChange('timeout', '');
+                    } else {
+                      const numValue = parseInt(value);
+                      if (!isNaN(numValue) && numValue >= 1) {
+                        handleInputChange('timeout', numValue);
+                      }
+                    }
+                  }}
+                  placeholder="30"
+                  min={1}
+                  max={300}
                 />
               </FormField>
-            )}
-            <FormField
-              label={t('settings.tools.mcp.timeout')}
-              error={errors.timeout}
-            >
-              <Input
-                type="number"
-                value={formData.timeout}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  if (value === '') {
-                    handleInputChange('timeout', '');
-                  } else {
-                    const numValue = parseInt(value);
-                    if (!isNaN(numValue) && numValue >= 1) {
-                      handleInputChange('timeout', numValue);
-                    }
-                  }
-                }}
-                placeholder="30"
-                min={1}
-                max={300}
-              />
-            </FormField>
-          </>
-        ) : null}
-        <Button
-          type="button"
-          variant="link"
-          size="sm"
-          onClick={() => setShowAdvanced((open) => !open)}
-          className="-ml-3 w-fit justify-start"
-        >
-          {showAdvanced
-            ? t('modals.uploadDoc.hideAdvanced')
-            : t('modals.uploadDoc.showAdvanced')}
-        </Button>
+            </div>
+          </Collapsible>
+        </div>
 
         {testResult && (
-          <Alert variant={testResult.success ? 'success' : 'destructive'}>
-            {testResult.success ? (
-              <CircleCheck className="size-4" aria-hidden="true" />
-            ) : (
-              <CircleAlert className="size-4" aria-hidden="true" />
-            )}
+          <Alert
+            variant={
+              testResult.notice
+                ? NOTICE_VARIANT[testResult.notice]
+                : testResult.success
+                  ? 'success'
+                  : 'destructive'
+            }
+          >
             <AlertDescription>
               <p>{testResult.message}</p>
               {testResult.authorization_url && (
                 <Button
                   variant="link"
-                  size="inline"
+                  size="text"
+                  tone="current"
                   asChild
-                  // eslint-disable-next-line shadcn/no-restyle -- the link inherits its Alert's status colour
-                  className="mt-1.5 text-current"
+                  className="mt-1.5"
                 >
                   <a
                     href={testResult.authorization_url}
@@ -818,9 +832,7 @@ export default function MCPServerModal({
                       if (popup) oauthPopupRef.current = popup;
                     }}
                   >
-                    {t('settings.tools.mcp.openAuthPage', {
-                      defaultValue: 'Open authorization page',
-                    })}
+                    {t('settings.tools.mcp.openAuthPage')}
                   </a>
                 </Button>
               )}
@@ -829,42 +841,32 @@ export default function MCPServerModal({
         )}
 
         {discoveredTools.length > 0 && testResult?.success && (
-          <Card padding="sm" className="gap-2">
+          <div className="flex flex-col gap-2">
             <SectionHeader
               as="h3"
               size="xs"
               title={t('settings.tools.mcp.discoveredTools', {
                 count: discoveredTools.length,
-                defaultValue: `Discovered Actions (${discoveredTools.length})`,
+                formatted: formatCount(discoveredTools.length),
               })}
             />
-            <ul className="flex max-h-40 flex-col gap-1.5 overflow-y-auto">
-              {discoveredTools.map((tool) => (
-                <li
-                  key={tool.name}
-                  className="bg-muted flex items-start gap-2 rounded-lg px-3 py-2 text-sm"
-                >
-                  <span className="text-primary mt-0.5">&#9679;</span>
-                  <div className="min-w-0">
-                    <span className="text-foreground font-medium">
-                      {tool.name}
-                    </span>
-                    {tool.description && (
-                      <p className="text-muted-foreground truncate text-xs">
-                        {tool.description}
-                      </p>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </Card>
+            <Card padding="none" className="overflow-hidden">
+              <ListRows>
+                {discoveredTools.map((tool) => (
+                  <ListRow
+                    key={tool.name}
+                    title={tool.name}
+                    description={tool.description}
+                  />
+                ))}
+              </ListRows>
+            </Card>
+          </div>
         )}
-        {errors.general && (
-          <Alert variant="destructive">
-            <CircleAlert className="size-4" aria-hidden="true" />
-            <AlertDescription>{errors.general}</AlertDescription>
-          </Alert>
+        {!saveActive && !oauthOwnerOnly && (
+          <p className="text-muted-foreground text-xs">
+            {t('settings.tools.mcp.testBeforeSave')}
+          </p>
         )}
       </div>
     </Modal>

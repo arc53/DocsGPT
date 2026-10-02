@@ -160,7 +160,8 @@ describe('saveWithSponsorConsent', () => {
 });
 
 describe('withAttachedOptions', () => {
-  it('adds a labelled option for a selected id the caller cannot list', () => {
+  // The chip shows the plain name; only the list row says who added it.
+  it('adds a plainly named option, marked in its description, for a selected id the caller cannot list', () => {
     const options = withAttachedOptions(
       [{ value: 'mine', label: 'Mine' }],
       [
@@ -168,17 +169,21 @@ describe('withAttachedOptions', () => {
         { id: 'unselected', label: 'Elsewhere' },
       ],
       ['mine', 'owners'],
-      (name) => `${name} (added)`,
+      'Added by someone else',
     );
     expect(options).toEqual([
       { value: 'mine', label: 'Mine' },
-      { value: 'owners', label: 'Owner tool (added)' },
+      {
+        value: 'owners',
+        label: 'Owner tool',
+        description: 'Added by someone else',
+      },
     ]);
   });
 
   it('falls back to the id when no name is known', () => {
-    const options = withAttachedOptions([], [], ['x1'], (name) => name);
-    expect(options).toEqual([{ value: 'x1', label: 'x1' }]);
+    const options = withAttachedOptions([], [], ['x1'], 'd');
+    expect(options).toEqual([{ value: 'x1', label: 'x1', description: 'd' }]);
   });
 });
 
@@ -197,6 +202,7 @@ describe('confirmTakeOver', () => {
       true,
     );
     expect(ask).toHaveBeenCalledWith({
+      mode: 'takeOver',
       resources: [{ ...item, name: 'Jira' }],
       audience,
     });

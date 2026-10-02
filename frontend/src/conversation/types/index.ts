@@ -35,9 +35,12 @@ export type ToolCallsType = {
     connection_id?: string;
     /** The tool runs on its owner's account, not the caller's. */
     owner_account?: boolean;
+    /** How to name that owner (their email); absent when unknown. */
+    owner_name?: string;
   };
-  // Which connection a tool call used, for the connector's logo and name on
-  // its chip (never an account or a secret).
+  // Which connection a tool call used (or, paused for approval, will use),
+  // for the connector's logo and name on its chip and approval card (never
+  // an account or a secret).
   connector_key?: string | null;
   connector_name?: string | null;
   access?: 'read' | 'write' | null;

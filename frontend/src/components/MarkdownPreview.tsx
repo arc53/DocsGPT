@@ -1,8 +1,9 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-import { markdownHeadings, markdownTables } from '@/lib/markdown';
+import { markdownCode, markdownHeadings, markdownTables } from '@/lib/markdown';
 
+import { useDarkTheme } from '../hooks';
 import { Button } from './ui/button';
 
 /**
@@ -11,6 +12,7 @@ import { Button } from './ui/button';
  * markdown bytes never become raw DOM in the app origin.
  */
 export default function MarkdownPreview({ content }: { content: string }) {
+  const [isDarkTheme] = useDarkTheme();
   return (
     <div className="h-full overflow-auto p-4">
       <div className="text-foreground flex flex-col gap-3 text-sm leading-normal break-words whitespace-pre-wrap">
@@ -19,9 +21,10 @@ export default function MarkdownPreview({ content }: { content: string }) {
           components={{
             ...markdownHeadings,
             ...markdownTables,
+            ...markdownCode({ surface: 'muted', isDarkTheme }),
             a({ children, href }) {
               return (
-                <Button variant="link" size="inline" asChild>
+                <Button variant="link" size="text" asChild>
                   <a href={href} target="_blank" rel="noopener noreferrer">
                     {children}
                   </a>
@@ -40,16 +43,6 @@ export default function MarkdownPreview({ content }: { content: string }) {
                 <ol className="list-inside list-decimal pl-4 whitespace-normal">
                   {children}
                 </ol>
-              );
-            },
-            code({ children, ...rest }) {
-              return (
-                <code
-                  className="bg-accent rounded-md px-2 py-1 text-xs font-normal"
-                  {...rest}
-                >
-                  {children}
-                </code>
               );
             },
             blockquote({ children }) {

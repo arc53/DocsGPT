@@ -149,7 +149,7 @@ export default function TraceWaterfall({ trace }: { trace: Trace }) {
             <div
               className={cn(
                 'grid grid-cols-9 items-center gap-3 rounded-md',
-                selected && 'bg-accent',
+                selected && 'bg-secondary',
               )}
             >
               <div className="col-span-5 flex min-w-0 items-center pl-(--trace-indent)">

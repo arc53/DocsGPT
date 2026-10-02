@@ -62,15 +62,22 @@ describe('NodePanel', () => {
       '[aria-label="agents.workflow.builder.nodeActions"]',
     ) as HTMLButtonElement | null;
 
-  it('shows the icon, own title, type badge and id', () => {
+  it('is a docked side panel with the tile, title, and type and id as its description', () => {
     render(agentNode);
-    const header = container.querySelector('header')!;
-    expect(header.textContent).toContain('Classify request');
-    const badge = header.querySelector('[data-slot="badge"]')!;
-    expect(badge.textContent).toBe('agents.workflow.builder.aiAgent');
-    expect(badge.getAttribute('data-variant')).toBe('neutral');
+    const panel = container.querySelector('[data-slot="side-panel"]')!;
+    expect(panel.tagName).toBe('ASIDE');
+    const header = panel.querySelector('[data-slot="panel-header"]')!;
+    expect(header.querySelector('h2')!.textContent).toBe('Classify request');
+    expect(header.textContent).toContain('agents.workflow.builder.aiAgent');
     expect(header.textContent).toContain('classify');
     expect(header.querySelector('.bg-secondary')).not.toBeNull();
+  });
+
+  it('can be expanded', () => {
+    render(agentNode);
+    expect(
+      container.querySelector('[aria-label="sidePanel.expand"]'),
+    ).not.toBeNull();
   });
 
   it('offers Duplicate and Delete node in the node menu', () => {
@@ -105,7 +112,7 @@ describe('NodePanel', () => {
   it('closes from the header', () => {
     const { onClose } = render(agentNode);
     const close = container.querySelector(
-      '[aria-label="agents.close"]',
+      '[aria-label="sidePanel.close"]',
     ) as HTMLButtonElement;
     act(() => close.click());
     expect(onClose).toHaveBeenCalled();

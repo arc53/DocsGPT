@@ -2,7 +2,6 @@ import {
   Bot,
   ChevronDown,
   Circle,
-  CircleAlert,
   CircleCheck,
   CircleX,
   CodeXml,
@@ -15,7 +14,14 @@ import {
   StickyNote,
   Workflow,
 } from 'lucide-react';
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -23,6 +29,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Collapsible } from '@/components/ui/collapsible';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SectionHeader } from '@/components/ui/section-header';
 import { Spinner } from '@/components/ui/spinner';
@@ -40,7 +47,7 @@ import MessageInput from '../../components/MessageInput';
 import ConversationBubble from '../../conversation/ConversationBubble';
 import { Query } from '../../conversation/conversationModels';
 import { AppDispatch } from '../../store';
-import { selectCompletedAttachments } from '../../upload/uploadSlice';
+import { selectSendableAttachments } from '../../upload/uploadSlice';
 import { WorkflowEdge, WorkflowNode } from '../types/workflow';
 import WorkflowRunArtifacts from './WorkflowRunArtifacts';
 import {
@@ -114,6 +121,7 @@ function StepDisclosure({
   onToggle: () => void;
   children: React.ReactNode;
 }) {
+  const bodyId = useId();
   return (
     <div className="my-2 flex w-full flex-col">
       <Button
@@ -122,6 +130,7 @@ function StepDisclosure({
         size="sm"
         onClick={onToggle}
         aria-expanded={isOpen}
+        aria-controls={bodyId}
         // ml-3.5 plus size sm's own has-[>svg]:px-2.5 puts the icon on the
         // answer's ml-6 text column.
         className="ml-3.5 w-fit max-w-full justify-start"
@@ -139,14 +148,9 @@ function StepDisclosure({
           )}
         />
       </Button>
-      <div
-        className={cn(
-          'mr-5 ml-6 grid transition-[grid-template-rows,opacity] duration-300 ease-out',
-          isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
-        )}
-      >
-        <div className="min-h-0 overflow-hidden">{children}</div>
-      </div>
+      <Collapsible open={isOpen} id={bodyId} className="mr-5 ml-6">
+        {children}
+      </Collapsible>
     </div>
   );
 }
@@ -232,7 +236,10 @@ export function ExecutionDetails({
                     NODE_COLORS[step.nodeType] || NODE_COLORS.state,
                   )}
                 />
-                <span className="text-foreground min-w-0 truncate font-medium">
+                <span
+                  className="text-foreground min-w-0 truncate font-medium"
+                  title={displayName}
+                >
                   {displayName}
                 </span>
                 <div className="ml-auto shrink-0">
@@ -258,7 +265,6 @@ export function ExecutionDetails({
               )}
               {step.error && (
                 <Alert variant="destructive" role="status">
-                  <CircleAlert />
                   <AlertDescription>
                     <span className="font-medium">
                       {t('agents.workflow.preview.errorLabel')}{' '}
@@ -272,7 +278,6 @@ export function ExecutionDetails({
               {stateVars.length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {stateVars.map(([key, value]) => (
-                    // eslint-disable-next-line shadcn/no-restyle -- state keys and values are serialised by the app, so the chip is set in mono
                     <Badge key={key} variant="neutral" className="font-mono">
                       <span className="max-w-[100px] truncate">{key}:</span>
                       <span
@@ -312,7 +317,7 @@ export function RunArtifactsSection({
       isOpen={isOpen}
       onToggle={onToggle}
     >
-      <div className="max-h-[480px] overflow-y-auto pt-1">
+      <div className="scrollbar-overlay max-h-[480px] overflow-y-auto pt-1">
         {isOpen && (
           <WorkflowRunArtifacts
             workflowRunId={workflowRunId}
@@ -429,11 +434,17 @@ export function WorkflowMiniMap({
                 <NodeIcon className="size-3.5" />
               </div>
               <div className="min-w-0 flex-1 text-left">
-                <div className="text-foreground truncate font-medium">
+                <div
+                  className="text-foreground truncate font-medium"
+                  title={getNodeDisplayName(node)}
+                >
                   {getNodeDisplayName(node)}
                 </div>
                 {getNodeSubtitle(node) && (
-                  <div className="text-muted-foreground truncate text-xs">
+                  <div
+                    className="text-muted-foreground truncate text-xs"
+                    title={getNodeSubtitle(node) ?? undefined}
+                  >
                     {getNodeSubtitle(node)}
                   </div>
                 )}
@@ -468,8 +479,8 @@ export default function WorkflowPreview({
   const status = useSelector(selectWorkflowPreviewStatus);
   const executionSteps = useSelector(selectWorkflowExecutionSteps);
   const activeNodeId = useSelector(selectActiveNodeId);
-  const completedAttachments = useSelector(selectCompletedAttachments);
-  const hasCompletedAttachment = completedAttachments.length > 0;
+  const sendableAttachments = useSelector(selectSendableAttachments);
+  const hasCompletedAttachment = sendableAttachments.length > 0;
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
   const [sendBlockedMessage, setSendBlockedMessage] = useState<string | null>(
@@ -766,7 +777,6 @@ export default function WorkflowPreview({
           <div className="flex w-full flex-col gap-2 px-4 pt-2 pb-4">
             {sendBlockedMessage && (
               <Alert variant="destructive">
-                <CircleAlert />
                 <AlertDescription>{t(sendBlockedMessage)}</AlertDescription>
               </Alert>
             )}

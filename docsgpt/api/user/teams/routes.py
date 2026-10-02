@@ -70,11 +70,41 @@ teams_ns = Namespace("teams", description="Team management and resource sharing"
 
 _VALID_TEAM_ROLES = (ROLE_TEAM_ADMIN, ROLE_TEAM_MEMBER)
 _VALID_ACCESS_LEVELS = ("viewer", "editor")
+_TEAM_SEARCH_LIMIT = 20
+_TEAM_SEARCH_MAX = 100
+_MEMBERS_PAGE_SIZE_MAX = 100
 
 
 def _current_user() -> str | None:
     token = getattr(request, "decoded_token", None)
     return token.get("sub") if isinstance(token, dict) else None
+
+
+def _optional_int_arg(name: str) -> int | None:
+    """The query arg ``name`` as an int, or None when absent or not an integer."""
+    try:
+        return int(request.args.get(name, ""))
+    except (TypeError, ValueError):
+        return None
+
+
+def _members_query() -> tuple[str | None, int | None, int]:
+    """Parse ``q`` / ``page`` / ``page_size`` for the members list.
+
+    Pagination applies only when ``page_size`` is a valid integer; it is
+    clamped to 1..``_MEMBERS_PAGE_SIZE_MAX`` and ``page`` (1-based) to >= 1.
+
+    Returns:
+        ``(q, limit, offset)`` where ``q`` is None when blank and ``limit`` is
+        None when the whole list is wanted.
+    """
+    q = (request.args.get("q") or "").strip() or None
+    page_size = _optional_int_arg("page_size")
+    if page_size is None:
+        return q, None, 0
+    limit = max(1, min(_MEMBERS_PAGE_SIZE_MAX, page_size))
+    page = max(1, _optional_int_arg("page") or 1)
+    return q, limit, (page - 1) * limit
 
 
 def _denied(err: AccessDenied):
@@ -419,11 +449,21 @@ class Team(Resource):
 class TeamMembers(Resource):
     @team_member_required
     def get(self, team_id):
-        """List members. Requires membership."""
+        """List members. Requires membership.
+
+        Optional query args: ``q`` (case-insensitive substring over email and
+        user id), ``page`` (1-based) and ``page_size`` (1..100; paginates only
+        when given). ``total`` is the row count after the ``q`` filter.
+        """
+        q, limit, offset = _members_query()
         try:
             with db_readonly() as conn:
-                members = TeamMembersRepository(conn).list_members(team_id)
-            return make_response(jsonify({"success": True, "members": members}), 200)
+                repo = TeamMembersRepository(conn)
+                members = repo.list_members(team_id, q=q, limit=limit, offset=offset)
+                total = repo.count_members(team_id, q=q)
+            return make_response(
+                jsonify({"success": True, "members": members, "total": total}), 200
+            )
         except Exception as err:
             logger.error("List members failed: %s", err, exc_info=True)
             return {"success": False}, 400
@@ -909,15 +949,38 @@ class AllTeams(Resource):
     method_decorators = []
 
     def get(self):
-        """Global-admin oversight: every team with member counts."""
+        """Global-admin oversight: every team with member counts, or a picker search.
+
+        With no query args every team is returned. Any of these switches to a
+        bounded search (same row shape):
+            q: Case-insensitive substring of the team name or slug.
+            without_quota: ``1`` keeps only teams with no team ``all``-bucket
+                quota policy.
+            limit: The most rows to return, clamped to 1-100 (default 20).
+        """
         token = getattr(request, "decoded_token", None)
         if not token:
             return {"success": False}, 401
         if not has_role(token, ROLE_ADMIN):
             return {"success": False, "message": "Forbidden"}, 403
+        args = request.args
+        searching = any(key in args for key in ("q", "without_quota", "limit"))
+        try:
+            limit = int(args.get("limit", _TEAM_SEARCH_LIMIT))
+        except (TypeError, ValueError):
+            limit = _TEAM_SEARCH_LIMIT
+        limit = min(max(limit, 1), _TEAM_SEARCH_MAX)
         try:
             with db_readonly() as conn:
-                teams = TeamsRepository(conn).list_all()
+                repo = TeamsRepository(conn)
+                if searching:
+                    teams = repo.search(
+                        q=args.get("q"),
+                        without_quota=args.get("without_quota", "").lower() in ("1", "true"),
+                        limit=limit,
+                    )
+                else:
+                    teams = repo.list_all()
             return make_response(jsonify({"success": True, "teams": teams}), 200)
         except Exception as err:
             logger.error("List all teams failed: %s", err, exc_info=True)

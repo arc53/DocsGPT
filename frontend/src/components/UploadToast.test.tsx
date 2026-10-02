@@ -106,12 +106,19 @@ describe('UploadToast', () => {
     const collapse = container.querySelector(
       'button[aria-label="modals.uploadDoc.progress.collapseDetails"]',
     ) as HTMLButtonElement;
+    const body = container.querySelector<HTMLElement>(
+      '[data-slot="collapsible"]',
+    )!;
+    expect(collapse.getAttribute('aria-expanded')).toBe('true');
+    expect(collapse.getAttribute('aria-controls')).toBe(body.id);
+    expect(body.dataset.state).toBe('open');
     await act(async () => collapse.click());
-    expect(
-      container.querySelector(
-        'button[aria-label="modals.uploadDoc.progress.expandDetails"]',
-      ),
-    ).not.toBeNull();
+    const expand = container.querySelector(
+      'button[aria-label="modals.uploadDoc.progress.expandDetails"]',
+    );
+    expect(expand).not.toBeNull();
+    expect(expand!.getAttribute('aria-expanded')).toBe('false');
+    expect(body.dataset.state).toBe('closed');
     const close = container.querySelector(
       'button[aria-label="modals.uploadDoc.progress.dismiss"]',
     ) as HTMLButtonElement;
