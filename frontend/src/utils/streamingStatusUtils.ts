@@ -180,6 +180,105 @@ function describeAttachmentsCall(toolCall: ToolCallsType): ToolActivity | null {
   return null;
 }
 
+const argText = (args: Record<string, unknown> | undefined, key: string) => {
+  const value = args?.[key];
+  return typeof value === 'string' || typeof value === 'number'
+    ? String(value).trim()
+    : '';
+};
+
+const NOTE_WRITES = new Set([
+  'note_overwrite',
+  'note_str_replace',
+  'note_insert',
+]);
+const MEMORY_WRITES = new Set([
+  'memory_create',
+  'memory_str_replace',
+  'memory_insert',
+]);
+const TODO_BY_ID: Record<string, string> = {
+  todo_get: 'todoGet',
+  todo_update: 'todoUpdate',
+  todo_complete: 'todoComplete',
+  todo_delete: 'todoDelete',
+};
+// Actions of the bundled tools that need no argument to say what they did.
+const FIXED_ACTIVITY: Record<string, string> = {
+  todo_list: 'todoList',
+  note_view: 'noteRead',
+  note_delete: 'noteDelete',
+  ntfy_send_message: 'sentNotification',
+  telegram_send_message: 'telegramMessage',
+  telegram_send_image: 'telegramImage',
+  postgres_execute_sql: 'sqlQuery',
+  postgres_get_schema: 'dbSchema',
+};
+
+/**
+ * A call to one of the bundled tools, named by what it did and to what:
+ * "Read wiki page /sales/pricing.md", "Added todo “…”", "Updated the note",
+ * "Saved /plan.md to memory", "Checked the BTC price in EUR".
+ */
+function describeBuiltInCall(toolCall: ToolCallsType): ToolActivity | null {
+  const { tool_name, action_name, arguments: args } = toolCall;
+  if (FIXED_ACTIVITY[action_name]) return { key: FIXED_ACTIVITY[action_name] };
+
+  if (tool_name === 'wiki' && action_name === 'wiki_view') {
+    const path = argText(args, 'path');
+    return !path || path.endsWith('/')
+      ? { key: 'wikiList' }
+      : { key: 'wikiRead', values: { path } };
+  }
+  if (tool_name === 'todo_list') {
+    if (action_name === 'todo_create') {
+      const title = argText(args, 'title');
+      return title ? { key: 'todoAdd', values: { title } } : null;
+    }
+    const id = argText(args, 'todo_id');
+    return TODO_BY_ID[action_name] && id
+      ? { key: TODO_BY_ID[action_name], values: { id } }
+      : null;
+  }
+  if (tool_name === 'notes' && NOTE_WRITES.has(action_name))
+    return { key: 'noteUpdate' };
+  if (tool_name === 'memory') {
+    const path = argText(args, 'path') || argText(args, 'old_path');
+    if (!path) return null;
+    if (action_name === 'memory_view')
+      return path === '/'
+        ? { key: 'memoryList' }
+        : { key: 'memoryRead', values: { path } };
+    if (MEMORY_WRITES.has(action_name))
+      return { key: 'memorySave', values: { path } };
+    if (action_name === 'memory_delete')
+      return { key: 'memoryDelete', values: { path } };
+    if (action_name === 'memory_rename')
+      return { key: 'memoryRename', values: { path } };
+    return null;
+  }
+  if (action_name === 'cryptoprice_get') {
+    const symbol = argText(args, 'symbol').toUpperCase();
+    const currency = argText(args, 'currency').toUpperCase();
+    return symbol && currency
+      ? { key: 'cryptoPrice', values: { symbol, currency } }
+      : null;
+  }
+  return null;
+}
+
+/**
+ * The last resort: the tool's name with its action in words ("Used Todo List:
+ * update"), or the bare name when the action only repeats it.
+ */
+function describeGenericCall(toolCall: ToolCallsType): ToolActivity {
+  const tool = formatToolLabel(toolCall.tool_name);
+  const action = readableAction(toolCall.action_name ?? '', tool);
+  if (!action || tool.toLowerCase().includes(action))
+    return { key: 'usingTool', values: { tool } };
+  return { key: 'usedToolAction', values: { tool, action } };
+}
+
 export function describeToolCall(toolCall: ToolCallsType): ToolActivity {
   const { tool_name, action_name, arguments: args } = toolCall;
   const query = typeof args?.query === 'string' ? args.query : undefined;
@@ -209,10 +308,11 @@ export function describeToolCall(toolCall: ToolCallsType): ToolActivity {
   if (action_name === 'run_code') return { key: 'runningCode' };
   if (ARTIFACT_ACTIONS.has(action_name)) return { key: 'creatingArtifact' };
   if (tool_name === 'internal_search') return { key: 'searchingKnowledge' };
-  if (tool_name === 'memory' || tool_name === 'notes')
-    return { key: 'accessingMemory' };
+  const builtIn = describeBuiltInCall(toolCall);
+  if (builtIn) return builtIn;
+  if (tool_name === 'memory') return { key: 'accessingMemory' };
 
-  return { key: 'usingTool', values: { tool: formatToolLabel(tool_name) } };
+  return describeGenericCall(toolCall);
 }
 
 // The generic-search fallback key differs between the two namespaces.

@@ -2094,7 +2094,30 @@
       "attachmentsReadRows": "正在讀取 {{ref}}（第 {{rows}} 列）…",
       "attachmentsReadGeneric": "正在讀取檔案…",
       "attachmentsImage": "正在檢視圖片 {{ref}}…",
-      "attachmentsList": "正在列出檔案…"
+      "attachmentsList": "正在列出檔案…",
+      "wikiList": "正在列出 Wiki 頁面…",
+      "wikiRead": "正在閱讀 Wiki 頁面 {{path}}…",
+      "todoAdd": "正在新增待辦「{{title}}」…",
+      "todoList": "正在列出待辦…",
+      "todoGet": "正在讀取待辦 #{{id}}…",
+      "todoUpdate": "正在更新待辦 #{{id}}…",
+      "todoComplete": "正在完成待辦 #{{id}}…",
+      "todoDelete": "正在刪除待辦 #{{id}}…",
+      "noteRead": "正在閱讀筆記…",
+      "noteUpdate": "正在更新筆記…",
+      "noteDelete": "正在刪除筆記…",
+      "memoryList": "正在列出記憶…",
+      "memoryRead": "正在從記憶讀取 {{path}}…",
+      "memorySave": "正在將 {{path}} 儲存到記憶…",
+      "memoryDelete": "正在從記憶刪除 {{path}}…",
+      "memoryRename": "正在重新命名記憶中的 {{path}}…",
+      "cryptoPrice": "正在查詢 {{symbol}} 的 {{currency}} 價格…",
+      "sentNotification": "正在傳送通知…",
+      "telegramMessage": "正在傳送 Telegram 訊息…",
+      "telegramImage": "正在向 Telegram 傳送圖片…",
+      "sqlQuery": "正在執行 SQL 查詢…",
+      "dbSchema": "正在讀取資料庫結構描述…",
+      "usedToolAction": "正在使用 {{tool}}：{{action}}…"
     },
     "toolChip": {
       "searchingWeb": "已搜尋網路 · 「{{query}}」",
@@ -2117,7 +2140,30 @@
       "attachmentsReadRows": "已讀取 {{ref}}（第 {{rows}} 列）",
       "attachmentsReadGeneric": "已讀取檔案",
       "attachmentsImage": "已檢視圖片 {{ref}}",
-      "attachmentsList": "已列出檔案"
+      "attachmentsList": "已列出檔案",
+      "wikiList": "已列出 Wiki 頁面",
+      "wikiRead": "已閱讀 Wiki 頁面 {{path}}",
+      "todoAdd": "已新增待辦「{{title}}」",
+      "todoList": "已列出待辦",
+      "todoGet": "已讀取待辦 #{{id}}",
+      "todoUpdate": "已更新待辦 #{{id}}",
+      "todoComplete": "已完成待辦 #{{id}}",
+      "todoDelete": "已刪除待辦 #{{id}}",
+      "noteRead": "已閱讀筆記",
+      "noteUpdate": "已更新筆記",
+      "noteDelete": "已刪除筆記",
+      "memoryList": "已列出記憶",
+      "memoryRead": "已從記憶讀取 {{path}}",
+      "memorySave": "已將 {{path}} 儲存到記憶",
+      "memoryDelete": "已從記憶刪除 {{path}}",
+      "memoryRename": "已重新命名記憶中的 {{path}}",
+      "cryptoPrice": "已查詢 {{symbol}} 的 {{currency}} 價格",
+      "sentNotification": "已傳送通知",
+      "telegramMessage": "已傳送 Telegram 訊息",
+      "telegramImage": "已向 Telegram 傳送圖片",
+      "sqlQuery": "已執行 SQL 查詢",
+      "dbSchema": "已讀取資料庫結構描述",
+      "usedToolAction": "已使用 {{tool}}：{{action}}"
     },
     "inlineSteps": {
       "arguments": "參數",
@@ -2192,7 +2238,11 @@
       "complete": "已完成",
       "researched": "已研究 {{count}} 個主題"
     },
-    "openFile": "開啟檔案"
+    "openFile": "開啟檔案",
+    "stepGroup": {
+      "steps_other": "{{count}} 個步驟",
+      "failed": "{{count}} 個失敗"
+    }
   },
   "agents": {
     "title": "代理",

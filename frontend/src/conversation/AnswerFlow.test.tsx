@@ -220,3 +220,83 @@ describe('AnswerFlow activity indicator', () => {
     expect(html).toContain('Searching the web');
   });
 });
+
+describe('AnswerFlow step groups', () => {
+  const todo = (id: string, overrides: Partial<ToolCallsType> = {}) =>
+    search({
+      call_id: id,
+      tool_name: 'todo_list',
+      action_name: 'todo_create',
+      arguments: { title: `Task ${id}` },
+      ...overrides,
+    });
+  const calls = [
+    todo('a'),
+    todo('b', {
+      tool_name: 'cryptoprice',
+      action_name: 'cryptoprice_get',
+      arguments: { symbol: 'BTC', currency: 'EUR' },
+      status: 'error',
+    }),
+    todo('c'),
+  ];
+  const run: AnswerSegment[] = [
+    { kind: 'text', text: 'Now step 2:' },
+    { kind: 'tool', call_id: 'a' },
+    { kind: 'text', text: 'The price API returned 401, trying again:' },
+    { kind: 'tool', call_id: 'b' },
+    { kind: 'tool', call_id: 'c' },
+    { kind: 'text', text: 'All done.' },
+  ];
+  const message =
+    'Now step 2:The price API returned 401, trying again:All done.';
+
+  it('folds three steps into one closed row with the failure count', () => {
+    const html = render({ message, toolCalls: calls, segments: run });
+    expect(html).toContain('3 steps');
+    expect(html).toContain('1 failed');
+    expect(html).toContain('aria-expanded="false"');
+    // The rows stay mounted inside the closed Collapsible, inert.
+    expect(html).toContain('inert');
+    expect(html).toContain('Added todo “Task a”');
+    expect(html).toContain('Checked the BTC price in EUR');
+  });
+
+  it('keeps the answer text where it was written around the group', () => {
+    const html = render({ message, toolCalls: calls, segments: run });
+    expect(html.indexOf('Now step 2:')).toBeLessThan(html.indexOf('3 steps'));
+    expect(html.indexOf('3 steps')).toBeLessThan(html.indexOf('All done.'));
+    // Narration between calls sits in the group, not in an answer bubble.
+    expect(html.split('slide-in-from-bottom-1.5').length - 1).toBe(2);
+    expect(html).toContain('The price API returned 401, trying again:');
+  });
+
+  it('opens a live window while the group is the end of a streaming answer', () => {
+    const live = render({
+      message: 'Now step 2:The price API returned 401, trying again:',
+      toolCalls: [...calls.slice(0, 2), todo('c', { status: 'pending' })],
+      segments: run.slice(0, 5),
+      isStreaming: true,
+    });
+    expect(live).toContain('aria-expanded="true"');
+    expect(live).toContain('h-21');
+    expect(live).toContain('Adding todo “Task c”…');
+
+    const settled = render({
+      message,
+      toolCalls: calls,
+      segments: run,
+      isStreaming: true,
+    });
+    expect(settled).not.toContain('h-21');
+    expect(settled).toContain('aria-expanded="false"');
+  });
+
+  it('shows the result of a call that failed in-band', () => {
+    const html = render({
+      toolCalls: [todo('b', { status: 'error', result: { status_code: 401 } })],
+      segments: [{ kind: 'tool', call_id: 'b' }],
+    });
+    expect(html).toContain('failed');
+  });
+});

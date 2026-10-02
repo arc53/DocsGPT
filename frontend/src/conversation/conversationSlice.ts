@@ -23,7 +23,12 @@ import {
   selectSendableAttachmentIds,
 } from '../upload/uploadSlice';
 import { newIdempotencyKey } from '../utils/idempotency';
-import { appendThoughtText, recordToolCall } from './answerSegments';
+import {
+  appendAnswerText,
+  appendThoughtText,
+  hydrateSegments,
+  recordToolCall,
+} from './answerSegments';
 import {
   type ErrorParams,
   readStreamError,
@@ -111,6 +116,12 @@ export function mapServerQueryToClient(raw: any): Query {
 
   if (isTerminalComplete) {
     query.response = raw?.response ?? '';
+    // The order the parts streamed in, saved with the message.
+    query.segments = hydrateSegments(
+      raw?.segments ?? metadata.segments,
+      query.response,
+      query.thought,
+    );
   }
   if (isFailed) {
     const stored = readStoredError(
@@ -933,6 +944,8 @@ export const conversationSlice = createSlice({
       if (query.response != undefined) {
         state.queries[index].response =
           (state.queries[index].response || '') + query.response;
+        if (!state.queries[index].segments) state.queries[index].segments = [];
+        appendAnswerText(state.queries[index].segments, query.response);
       }
 
       if (query.structured !== undefined) {

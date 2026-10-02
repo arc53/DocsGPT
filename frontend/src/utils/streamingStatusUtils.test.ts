@@ -121,13 +121,37 @@ describe('getToolChipLabel', () => {
     ).toBe('conversation.toolChip.creatingArtifact');
   });
 
-  it('falls back to a formatted tool name for unknown tools', () => {
+  it('falls back to the tool and its action for unknown tools', () => {
     expect(
       getToolChipLabel(
         call({ tool_name: 'mcp_tool', action_name: 'some_dynamic_action' }),
         t,
       ),
-    ).toBe('conversation.toolChip.usingTool|Mcp Tool');
+    ).toBe('conversation.toolChip.usedToolAction|Mcp Tool,some dynamic action');
+    expect(
+      getToolChipLabel(
+        call({
+          tool_name: 'mcp_tool',
+          action_name: 'some_dynamic_action',
+          status: 'pending',
+        }),
+        t,
+      ),
+    ).toBe(
+      'conversation.streamingStatus.usedToolAction|Mcp Tool,some dynamic action',
+    );
+  });
+
+  it('keeps the bare tool name when the action only repeats it', () => {
+    expect(
+      getToolChipLabel(
+        call({ tool_name: 'read_document', action_name: 'read_document' }),
+        t,
+      ),
+    ).toBe('conversation.toolChip.usingTool|Read Document');
+    expect(
+      getToolChipLabel(call({ tool_name: 'think', action_name: '' }), t),
+    ).toBe('conversation.toolChip.usingTool|Think');
   });
   it('names a connection-backed call after its service', () => {
     const notion = { tool_name: 'mcp_tool', connector_name: 'Notion' };
@@ -366,6 +390,114 @@ describe('getToolChipLabel for the attachments tool', () => {
         call({ tool_name: 'mcp_tool', action_name: 'attachments_list' }),
         t,
       ),
-    ).toBe('conversation.toolChip.usingTool|Mcp Tool');
+    ).toBe('conversation.toolChip.usedToolAction|Mcp Tool,attachments list');
+  });
+});
+
+describe('getToolChipLabel for built-in tools', () => {
+  const label = (overrides: Partial<ToolCallsType>) =>
+    getToolChipLabel(call(overrides), t);
+  const chip = 'conversation.toolChip.';
+
+  it('names wiki reads by page', () => {
+    expect(
+      label({
+        tool_name: 'wiki',
+        action_name: 'wiki_view',
+        arguments: { path: '/' },
+      }),
+    ).toBe(`${chip}wikiList`);
+    expect(label({ tool_name: 'wiki', action_name: 'wiki_view' })).toBe(
+      `${chip}wikiList`,
+    );
+    expect(
+      label({
+        tool_name: 'wiki',
+        action_name: 'wiki_view',
+        arguments: { path: '/sales/pricing.md' },
+      }),
+    ).toBe(`${chip}wikiRead|/sales/pricing.md`);
+    expect(
+      label({
+        tool_name: 'wiki',
+        action_name: 'wiki_view',
+        arguments: { path: '/sales/' },
+      }),
+    ).toBe(`${chip}wikiList`);
+  });
+
+  it('names todo actions by their todo', () => {
+    expect(
+      label({
+        tool_name: 'todo_list',
+        action_name: 'todo_create',
+        arguments: { title: 'Book the review' },
+      }),
+    ).toBe(`${chip}todoAdd|Book the review`);
+    expect(label({ tool_name: 'todo_list', action_name: 'todo_list' })).toBe(
+      `${chip}todoList`,
+    );
+    expect(
+      label({
+        tool_name: 'todo_list',
+        action_name: 'todo_complete',
+        arguments: { todo_id: 5 },
+      }),
+    ).toBe(`${chip}todoComplete|5`);
+    expect(
+      label({
+        tool_name: 'todo_list',
+        action_name: 'todo_update',
+        arguments: {},
+      }),
+    ).toBe(`${chip}usedToolAction|Todo List,update`);
+  });
+
+  it('tells the note apart from memory', () => {
+    expect(label({ tool_name: 'notes', action_name: 'note_overwrite' })).toBe(
+      `${chip}noteUpdate`,
+    );
+    expect(label({ tool_name: 'notes', action_name: 'note_view' })).toBe(
+      `${chip}noteRead`,
+    );
+    expect(
+      label({
+        tool_name: 'memory',
+        action_name: 'memory_create',
+        arguments: { path: '/nordhaven-renewal.md' },
+      }),
+    ).toBe(`${chip}memorySave|/nordhaven-renewal.md`);
+    expect(
+      label({
+        tool_name: 'memory',
+        action_name: 'memory_rename',
+        arguments: { old_path: '/a.md', new_path: '/b.md' },
+      }),
+    ).toBe(`${chip}memoryRename|/a.md`);
+  });
+
+  it('names a price check by symbol and currency', () => {
+    expect(
+      label({
+        tool_name: 'cryptoprice',
+        action_name: 'cryptoprice_get',
+        arguments: { symbol: 'BTC', currency: 'EUR' },
+      }),
+    ).toBe(`${chip}cryptoPrice|BTC,EUR`);
+  });
+
+  it('names messaging and database actions', () => {
+    expect(label({ tool_name: 'ntfy', action_name: 'ntfy_send_message' })).toBe(
+      `${chip}sentNotification`,
+    );
+    expect(
+      label({ tool_name: 'telegram', action_name: 'telegram_send_image' }),
+    ).toBe(`${chip}telegramImage`);
+    expect(
+      label({ tool_name: 'postgres', action_name: 'postgres_execute_sql' }),
+    ).toBe(`${chip}sqlQuery`);
+    expect(
+      label({ tool_name: 'postgres', action_name: 'postgres_get_schema' }),
+    ).toBe(`${chip}dbSchema`);
   });
 });
