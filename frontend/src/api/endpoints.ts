@@ -79,6 +79,8 @@ const endpoints = {
     SOURCE_FROM_ATTACHMENTS: '/api/sources/from_attachments',
     SOURCE_CONFIG: (id: string) => `/api/sources/${id}/config`,
     SOURCE_SEARCH: (id: string) => `/api/sources/${id}/search`,
+    SOURCE_CHUNK: (id: string, chunkKey: string) =>
+      `/api/sources/${id}/chunk?chunk_key=${encodeURIComponent(chunkKey)}`,
     CREATE_WIKI: '/api/sources/wiki',
     CONVERT_TO_WIKI: (id: string) => `/api/sources/${id}/wiki/convert`,
     ENABLE_GRAPHRAG: (id: string) => `/api/sources/${id}/graphrag/enable`,

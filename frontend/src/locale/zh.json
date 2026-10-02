@@ -2000,7 +2000,23 @@
       "fromConnector": "来自 {{name}}",
       "fromConnectorTitle": "来自 {{name}}：{{title}}",
       "knowledge": "知识库",
-      "forAnswer": "此回答的{{count}}个来源"
+      "forAnswer": "此回答的{{count}}个来源",
+      "open": "打开来源 {{num}}",
+      "reader": {
+        "back": "全部来源",
+        "knowledge": "知识库",
+        "file": "文件",
+        "page": "页面",
+        "link": "链接",
+        "added": "添加时间",
+        "length": "长度",
+        "tokens": "{{tokens}} 个令牌",
+        "excerptOnly": "此回答仅保留了摘录。",
+        "missing": "来源中已不再包含这段内容，可能已被编辑或重新索引。下面显示的是随回答保存的摘录。",
+        "forbidden": "你已无权访问此来源。下面显示的是随回答保存的摘录。",
+        "loadFailed": "无法加载这段内容。",
+        "openLink": "打开链接"
+      }
     },
     "attachments": {
       "attach": "附件",

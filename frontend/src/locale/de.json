@@ -2010,7 +2010,23 @@
       "fromConnectorTitle": "Aus {{name}}: {{title}}",
       "knowledge": "Wissen",
       "forAnswer_one": "{{count}} Quelle für diese Antwort",
-      "forAnswer_other": "{{count}} Quellen für diese Antwort"
+      "forAnswer_other": "{{count}} Quellen für diese Antwort",
+      "open": "Quelle {{num}} öffnen",
+      "reader": {
+        "back": "Alle Quellen",
+        "knowledge": "Wissen",
+        "file": "Datei",
+        "page": "Seite",
+        "link": "Link",
+        "added": "Hinzugefügt",
+        "length": "Länge",
+        "tokens": "{{tokens}} Tokens",
+        "excerptOnly": "Für diese Antwort ist nur der gespeicherte Auszug verfügbar.",
+        "missing": "Diese Passage ist nicht mehr in der Quelle, sie wurde womöglich bearbeitet oder neu indexiert. Angezeigt wird der mit der Antwort gespeicherte Auszug.",
+        "forbidden": "Du hast keinen Zugriff mehr auf diese Quelle. Angezeigt wird der mit der Antwort gespeicherte Auszug.",
+        "loadFailed": "Die Passage konnte nicht geladen werden.",
+        "openLink": "Link öffnen"
+      }
     },
     "attachments": {
       "attach": "Anhängen",

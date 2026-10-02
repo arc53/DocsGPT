@@ -187,6 +187,17 @@ one recipe: `Button variant="ghost" size="sm"` at `ml-3.5 w-fit`, which puts a
 Sources adds its count and a right chevron, and opens the answer's sources in
 the chat's side panel (see DESIGN.md › Side panels).
 
+A cited source opens in that panel as its second level, `CitationReader`:
+a source card under the answer, a tile in the list and an inline `[n]` pill
+all open the source they name, with Back to the list. The reader fetches the
+full passage by the chunk key retrieval labelled it with (`source_id` +
+`chunk_key`), renders it with `SourceMarkdown`, and lists what is known in a
+`DescriptionList`. When the passage can't be fetched (an answer saved before
+chunk keys, a re-chunked source, a source out of reach) it shows the answer's
+excerpt under an `info` note saying why; a failed load is the destructive
+`EmptyState` with Retry. A web source's link sits in the reader's footer, never
+inside the clickable tile.
+
 ## Source views (`components/tree/`, `WikiViewer`, `components/graph/`, `GraphView`)
 
 Every source view (a file or connector tree, a one-document chunk list, a

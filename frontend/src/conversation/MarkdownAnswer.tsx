@@ -82,7 +82,7 @@ export default function MarkdownAnswer({
   artifacts: artifactsProp,
   turnArtifacts: turnArtifactsProp,
   onOpenArtifact,
-  onOpenSources,
+  onOpenSource,
 }: {
   content: string;
   isStreaming?: boolean;
@@ -100,8 +100,8 @@ export default function MarkdownAnswer({
   /** This turn's own artifacts; the filename fallback prefers them. */
   turnArtifacts?: SandboxArtifact[];
   onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
-  /** Opens the full sources list, for a citation whose card is not shown. */
-  onOpenSources?: () => void;
+  /** Opens the cited source (0-based index into the answer's sources). */
+  onOpenSource?: (index: number) => void;
 }) {
   const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
@@ -188,30 +188,14 @@ export default function MarkdownAnswer({
                   variant="secondary"
                   size="xs"
                   shape="pill"
-                  onClick={() => {
-                    const el = document.getElementById(`source-${sourceIdx}`);
-                    if (el) {
-                      el.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'center',
-                      });
-                      el.classList.add('ring-3', 'ring-primary');
-                      setTimeout(
-                        () => el.classList.remove('ring-3', 'ring-primary'),
-                        2000,
-                      );
-                    } else {
-                      // Only the first few sources get a card to scroll to.
-                      onOpenSources?.();
-                    }
-                  }}
+                  onClick={() => onOpenSource?.(sourceIdx)}
                   className="mx-0.5 h-5 min-w-5"
                 >
                   {num}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                {t('conversation.jumpToSource', { num })}
+                {t('conversation.sources.open', { num })}
               </TooltipContent>
             </Tooltip>
           );
@@ -276,7 +260,7 @@ export default function MarkdownAnswer({
         );
       },
     };
-  }, [t, isDarkTheme, artifacts, turnArtifacts, onOpenArtifact, onOpenSources]);
+  }, [t, isDarkTheme, artifacts, turnArtifacts, onOpenArtifact, onOpenSource]);
 
   return (
     <>

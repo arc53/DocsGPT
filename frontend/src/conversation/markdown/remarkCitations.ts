@@ -8,7 +8,10 @@
  * reference link ``[docs][1]`` with a ``[1]: url`` definition stays a link,
  * and brackets the answer escaped, ``arr\[1\]``, stay brackets.
  *
- * The link targets ``#cite-N``, which `MarkdownAnswer` renders as the "jump to
+ * A grouped citation, ``[1, 2]``, becomes one link per number, so each opens
+ * its own source; a number in it beyond the answer's sources stays ``[N]``.
+ *
+ * The link targets ``#cite-N``, which `MarkdownAnswer` renders as the "open
  * source" pill.
  */
 import type { PhrasingContent, Root, Text } from 'mdast';
@@ -24,7 +27,7 @@ export type CitationOptions = {
   sourceCount?: number;
 };
 
-const CITATION = /\[(\d+)\]/g;
+const CITATION = /\[(\d+(?:\s*,\s*\d+)*)\]/g;
 
 // The offsets in `node.value` of characters the source wrote as a backslash
 // escape. The parser resolves escapes, so ``\[1\]`` and ``[1]`` are the same
@@ -75,18 +78,29 @@ export function remarkCitations({ sourceCount }: CitationOptions = {}) {
       const parts: PhrasingContent[] = [];
       let last = 0;
       for (const match of node.value.matchAll(CITATION)) {
-        if (!citable(Number(match[1])) || escaped.has(match.index)) continue;
+        const numbers = match[1].split(',').map((n) => n.trim());
+        if (
+          escaped.has(match.index) ||
+          !numbers.some((n) => citable(Number(n)))
+        )
+          continue;
         if (match.index > last) {
           parts.push({
             type: 'text',
             value: node.value.slice(last, match.index),
           });
         }
-        parts.push({
-          type: 'link',
-          url: `#cite-${match[1]}`,
-          children: [{ type: 'text', value: match[1] }],
-        });
+        for (const n of numbers) {
+          parts.push(
+            citable(Number(n))
+              ? {
+                  type: 'link',
+                  url: `#cite-${n}`,
+                  children: [{ type: 'text', value: n }],
+                }
+              : { type: 'text', value: `[${n}]` },
+          );
+        }
         last = match.index + match[0].length;
       }
       if (parts.length === 0) return;
