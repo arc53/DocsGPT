@@ -2365,10 +2365,7 @@
     },
     "openFile": "Открыть файл",
     "stepGroup": {
-      "steps_one": "{{count}} шаг",
-      "steps_few": "{{count}} шага",
-      "steps_many": "{{count}} шагов",
-      "steps_other": "{{count}} шага",
+      "title": "Инструменты",
       "failed": "Ошибок: {{count}}"
     }
   },

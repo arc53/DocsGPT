@@ -2251,8 +2251,7 @@
     },
     "openFile": "Abrir archivo",
     "stepGroup": {
-      "steps_one": "{{count}} paso",
-      "steps_other": "{{count}} pasos",
+      "title": "Herramientas",
       "failed": "{{count}} con error"
     }
   },

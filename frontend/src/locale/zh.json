@@ -2239,7 +2239,7 @@
     },
     "openFile": "打开文件",
     "stepGroup": {
-      "steps_other": "{{count}} 个步骤",
+      "title": "工具",
       "failed": "{{count}} 个失败"
     }
   },

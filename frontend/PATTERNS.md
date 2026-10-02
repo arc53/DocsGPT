@@ -194,8 +194,10 @@ its text, puts the steps first and the answer after them). `layoutAnswer` turns
 that order into blocks:
 
 - **Step group** (`conversation/StepGroup`): three or more tool calls in a row
-  are one step row: up to three distinct tool icons, "N steps", and the red
-  "N failed" when any failed. It opens a `Collapsible` list of 28px rows on a
+  are one step row in the Sources row's shape: the lucide `Wrench` (the
+  composer's Tools icon), "Tools" (`settings.tools.label`'s word), the call
+  count in `text-muted-foreground/70 font-normal`, and the red "N failed" when
+  any failed. It opens a `Collapsible` list of 28px rows on a
   1px `bg-border` rule through the icon centres. A row is a framed-row
   `<button aria-expanded aria-controls>` (see DESIGN.md › Disclosure) whose
   chevron shows on hover, focus or while open, and opens the call's Arguments

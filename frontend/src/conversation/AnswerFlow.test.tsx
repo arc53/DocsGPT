@@ -253,7 +253,8 @@ describe('AnswerFlow step groups', () => {
 
   it('folds three steps into one closed row with the failure count', () => {
     const html = render({ message, toolCalls: calls, segments: run });
-    expect(html).toContain('3 steps');
+    // The Sources row's shape: the label, then the count in its own span.
+    expect(html).toMatch(/>Tools<\/span><span[^>]*>3<\/span>/);
     expect(html).toContain('1 failed');
     expect(html).toContain('aria-expanded="false"');
     // The rows stay mounted inside the closed Collapsible, inert.
@@ -264,8 +265,8 @@ describe('AnswerFlow step groups', () => {
 
   it('keeps the answer text where it was written around the group', () => {
     const html = render({ message, toolCalls: calls, segments: run });
-    expect(html.indexOf('Now step 2:')).toBeLessThan(html.indexOf('3 steps'));
-    expect(html.indexOf('3 steps')).toBeLessThan(html.indexOf('All done.'));
+    expect(html.indexOf('Now step 2:')).toBeLessThan(html.indexOf('>Tools<'));
+    expect(html.indexOf('>Tools<')).toBeLessThan(html.indexOf('All done.'));
     // Narration between calls sits in the group, not in an answer bubble.
     expect(html.split('slide-in-from-bottom-1.5').length - 1).toBe(2);
     expect(html).toContain('The price API returned 401, trying again:');

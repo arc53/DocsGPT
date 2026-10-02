@@ -2261,8 +2261,7 @@
     },
     "openFile": "Open file",
     "stepGroup": {
-      "steps_one": "{{count}} step",
-      "steps_other": "{{count}} steps",
+      "title": "Tools",
       "failed": "{{count}} failed"
     }
   },

@@ -2240,7 +2240,7 @@
     },
     "openFile": "ファイルを開く",
     "stepGroup": {
-      "steps_other": "{{count}} ステップ",
+      "title": "ツール",
       "failed": "{{count}} 件失敗"
     }
   },

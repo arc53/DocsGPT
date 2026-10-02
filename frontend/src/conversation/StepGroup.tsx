@@ -7,6 +7,7 @@ import {
   type LucideIcon,
   Search,
   Send,
+  Wrench,
 } from 'lucide-react';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -28,20 +29,14 @@ import { cn, focusRing } from '@/lib/utils';
 // The step column is one muted weight: a tool whose bundled icon is a brand
 // mark in its own colours (or that has none, like the wiki) draws a lucide
 // stand-in here. The Tools page keeps the brand marks.
-const STEP_ICONS: Record<string, { key: string; Icon: LucideIcon }> = {
-  wiki: { key: 'wiki', Icon: BookOpen },
-  brave: { key: 'search', Icon: Search },
-  duckduckgo: { key: 'search', Icon: Search },
-  telegram: { key: 'telegram', Icon: Send },
-  ntfy: { key: 'ntfy', Icon: Bell },
-  postgres: { key: 'postgres', Icon: Database },
+const STEP_ICONS: Record<string, LucideIcon> = {
+  wiki: BookOpen,
+  brave: Search,
+  duckduckgo: Search,
+  telegram: Send,
+  ntfy: Bell,
+  postgres: Database,
 };
-
-/** Which icon a call draws, so a group header shows each one once. */
-function stepIconKey(call: ToolCallsType): string {
-  if (call.connector_key) return `connector:${call.connector_key}`;
-  return STEP_ICONS[call.tool_name]?.key ?? call.tool_name;
-}
 
 /**
  * A step's 16px muted icon. ToolIcon renders nothing for a tool with no
@@ -54,7 +49,7 @@ export function StepIcon({
   call: ToolCallsType;
   pulse?: boolean;
 }) {
-  const stand = STEP_ICONS[call.tool_name];
+  const Stand = STEP_ICONS[call.tool_name];
   return (
     <span
       className={cn(
@@ -67,8 +62,8 @@ export function StepIcon({
           icon={connectorIconKey(call.connector_key)}
           className="text-muted-foreground size-4"
         />
-      ) : stand ? (
-        <stand.Icon className="text-muted-foreground size-4" aria-hidden />
+      ) : Stand ? (
+        <Stand className="text-muted-foreground size-4" aria-hidden />
       ) : (
         <ToolIcon
           name={call.tool_name}
@@ -306,7 +301,8 @@ function StepTimeline({
 }
 
 /**
- * Three or more steps in a row, as one row that opens into a compact list.
+ * Three or more tool calls in a row, as one "Tools N" row (like Sources and
+ * Reasoning beside it) that opens into a compact list.
  * While it is the live end of a streaming answer it shows its last three rows
  * in a fixed window; once the answer moves on it closes. Opening or closing it
  * by hand wins over both.
@@ -329,13 +325,6 @@ export default function StepGroup({
     entry.kind === 'call' ? [entry.call] : [],
   );
   const failed = calls.filter((call) => call.status === 'error').length;
-  const icons = calls
-    .filter(
-      (call, i) =>
-        calls.findIndex((other) => stepIconKey(other) === stepIconKey(call)) ===
-        i,
-    )
-    .slice(0, 3);
   const showWindow = isLive && userOpen === null;
   const isOpen = userOpen ?? false;
   const expanded = isOpen || showWindow;
@@ -349,17 +338,17 @@ export default function StepGroup({
         onClick={() => setUserOpen(!expanded)}
         aria-expanded={expanded}
         aria-controls={bodyId}
-        // ml-3.5 plus size sm's own has-[>svg]:px-2.5 (the chevron is a direct
-        // svg child) puts the first icon on the answer's ml-6 text column.
+        // The Sources row's recipe: ml-3.5 plus size sm's own has-[>svg]:px-2.5
+        // puts the icon on the answer's ml-6 text column, then the label and a
+        // muted count. The wrench is the composer's Tools icon.
         className="ml-3.5 w-fit max-w-full justify-start"
       >
-        <span className="flex shrink-0 items-center gap-1" aria-hidden>
-          {icons.map((call) => (
-            <StepIcon key={stepIconKey(call)} call={call} />
-          ))}
+        <Wrench className="text-muted-foreground" aria-hidden />
+        <span className="text-muted-foreground">
+          {t('conversation.stepGroup.title')}
         </span>
-        <span className="text-muted-foreground min-w-0 truncate text-left">
-          {t('conversation.stepGroup.steps', { count: calls.length })}
+        <span className="text-muted-foreground/70 font-normal">
+          {calls.length}
         </span>
         {failed > 0 && (
           <span className="text-destructive shrink-0 text-xs">

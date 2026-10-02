@@ -2251,8 +2251,7 @@
     },
     "openFile": "Datei öffnen",
     "stepGroup": {
-      "steps_one": "{{count}} Schritt",
-      "steps_other": "{{count}} Schritte",
+      "title": "Werkzeuge",
       "failed": "{{count}} fehlgeschlagen"
     }
   },
