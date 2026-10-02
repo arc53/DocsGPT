@@ -288,6 +288,15 @@ class OpenAILLM(BaseLLM):
         # so a failed request leaves the chain's head unchanged and a retry
         # re-sends the head.
         self._pending_system_hash = None
+        # Hash of the tools block the chain's last recorded call sent, and of
+        # the one a request in flight sends (committed like the system hash).
+        # A chained call whose tools differ misses the provider prompt cache.
+        self._chain_tools_hash = None
+        self._pending_tools_hash = None
+        # Which part of the prefix a chained call changed (``tools``,
+        # ``instructions``); None when unchanged. Read by the LLM span
+        # (``docsgpt.prefix_changed``).
+        self._prefix_changed = None
         # Opaque per-user prompt-cache routing key, set by the agent per call.
         self._prompt_cache_key = None
         # Why the next Responses call cannot chain, when something already
@@ -346,6 +355,7 @@ class OpenAILLM(BaseLLM):
             "reasoning_items": self._last_reasoning_items,
             "reasoning_for_calls": self._reasoning_for_calls,
             "system_hash": self._chain_system_hash,
+            "tools_hash": self._chain_tools_hash,
         }
 
     def import_responses_state(self, state: dict | None) -> bool:
@@ -362,6 +372,8 @@ class OpenAILLM(BaseLLM):
         self._reasoning_for_calls = dict(state.get("reasoning_for_calls") or {})
         self._chain_system_hash = state.get("system_hash")
         self._pending_system_hash = None
+        self._chain_tools_hash = state.get("tools_hash")
+        self._pending_tools_hash = None
         return True
 
     def note_chain_turn(self, reason: Optional[str], *, new_turn: bool = True) -> None:
@@ -421,6 +433,59 @@ class OpenAILLM(BaseLLM):
             },
         )
 
+    @staticmethod
+    def _tools_fingerprint(tools: Any) -> str:
+        """Hash of the tools block exactly as it is sent, key order included.
+
+        Args:
+            tools: The request's ``tools`` list, or None.
+
+        Returns:
+            A hexadecimal digest; a request without tools has one too.
+        """
+        encoded = json.dumps(tools or [], default=str).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def _note_prefix(self, params: dict, model: Any) -> None:
+        """Log a chained call whose instructions or tools differ from the chain's.
+
+        A chained call reuses the provider's cached prefix only while the
+        tools block and the system head stay the same as on the previous
+        call in the chain. Called once the request is built, so the head the
+        request keeps or re-sends (``_pending_system_hash``) is known.
+
+        Args:
+            params: The ``responses.create`` kwargs about to be sent.
+            model: The model the call goes to.
+        """
+        tools_hash = self._tools_fingerprint(params.get("tools"))
+        self._pending_tools_hash = tools_hash
+        self._prefix_changed = None
+        if not params.get("previous_response_id"):
+            return
+        changed = []
+        if (
+            self._chain_system_hash
+            and self._pending_system_hash
+            and self._pending_system_hash != self._chain_system_hash
+        ):
+            changed.append("instructions")
+        if self._chain_tools_hash and tools_hash != self._chain_tools_hash:
+            changed.append("tools")
+        if not changed:
+            return
+        self._prefix_changed = ",".join(changed)
+        context = log_context.snapshot()
+        logger.info(
+            "responses_prefix_changed",
+            extra={
+                "changed": changed,
+                "conversation_id": context.get("conversation_id"),
+                "activity_id": context.get("activity_id"),
+                "model": str(model) if model else None,
+            },
+        )
+
     def _note_chain_failure(self, error: Exception, model: Any) -> None:
         """A failed call leaves nothing to chain onto: say why for the next one.
 
@@ -451,6 +516,8 @@ class OpenAILLM(BaseLLM):
         self._imported_response_id = None
         self._chain_system_hash = None
         self._pending_system_hash = None
+        self._chain_tools_hash = None
+        self._pending_tools_hash = None
         self._last_finish_reason = None
 
     def _resolve_file_part(self, item):
@@ -1548,6 +1615,9 @@ class OpenAILLM(BaseLLM):
         # transcript never received.
         self._chain_system_hash = self._pending_system_hash
         self._pending_system_hash = None
+        if self._pending_tools_hash is not None:
+            self._chain_tools_hash = self._pending_tools_hash
+            self._pending_tools_hash = None
         self._last_response_call_ids = self._function_call_ids(response)
         usage = getattr(response, "usage", None)
         if usage is not None:
@@ -1660,6 +1730,7 @@ class OpenAILLM(BaseLLM):
             stream=False,
             kwargs=kwargs,
         )
+        self._note_prefix(params, model)
         response = self._create_with_tool_fallback(
             self.client.responses.create, params, model
         )
@@ -1739,6 +1810,7 @@ class OpenAILLM(BaseLLM):
             stream=True,
             kwargs=kwargs,
         )
+        self._note_prefix(params, model)
         # Issued before the event loop below, so the tool-less retry cannot
         # duplicate output already yielded.
         response = self._create_with_tool_fallback(

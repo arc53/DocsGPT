@@ -1824,6 +1824,10 @@ class BaseAgent(ABC):
                     # message instead of appending a copy server-side.
                     state = self._previous_responses_state() or {}
                     self.llm._chain_system_hash = state.get("system_hash")
+                    # And the tools block it last saw, so a changed one is
+                    # logged (``responses_prefix_changed``).
+                    if hasattr(self.llm, "_chain_tools_hash"):
+                        self.llm._chain_tools_hash = state.get("tools_hash")
         if hasattr(self.llm, "_prompt_cache_key"):
             # Route a user's calls to the same cache shard. Keyed by user, not
             # conversation: a new conversation has no id until its first turn
