@@ -899,6 +899,12 @@ Type `int`, default `5000000`.
 
 Cap on extracted attachment text.
 
+### `ATTACHMENT_FULL_TEXT_MAX_BYTES`
+
+Type `int`, default `8000000`, must be `>= 0`.
+
+An attachment's stored text is cut at 100k tokens for the prompt; when it is, the worker also keeps up to this many bytes of the whole extracted text next to the original file, so the attachments tool can search and read past the cut. The tool never loads a larger side copy. 0 keeps none.
+
 ### `AGENT_IMAGE_MAX_BYTES`
 
 Type `int`, default `5000000`.

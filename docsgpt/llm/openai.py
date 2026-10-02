@@ -9,9 +9,12 @@ from typing import Any, Callable, Optional
 from openai import BadRequestError, OpenAI
 
 from docsgpt.attachment_names import normalize_attachment_filename
+from docsgpt.core import log_context
 from docsgpt.core.settings import settings
 from docsgpt.llm.base import BaseLLM, optional_int
 from docsgpt.storage.storage_creator import StorageCreator
+
+logger = logging.getLogger(__name__)
 
 # Placeholder sent to OpenAI-compatible backends that require no credentials.
 NO_API_KEY = "sk-no-key"
@@ -85,6 +88,14 @@ def _is_tools_unsupported_error(error: Exception) -> bool:
     """
     haystack = _provider_message(error).lower()
     return any(marker in haystack for marker in _TOOLS_UNSUPPORTED_MARKERS)
+
+
+def _is_previous_response_not_found(error: Exception) -> bool:
+    """The provider no longer has the response a chained request pointed at."""
+    if getattr(error, "code", None) == "previous_response_not_found":
+        return True
+    text = str(error).lower()
+    return "previous response" in text and "not found" in text
 
 
 def _data_url_mime(value) -> Optional[str]:
@@ -279,6 +290,16 @@ class OpenAILLM(BaseLLM):
         self._pending_system_hash = None
         # Opaque per-user prompt-cache routing key, set by the agent per call.
         self._prompt_cache_key = None
+        # Why the next Responses call cannot chain, when something already
+        # knows (the agent at a turn's start, a compression, a failed call).
+        self._chain_reset_hint = None
+        # Why the latest Responses call did not chain; None when it did.
+        # Read by the LLM span (``docsgpt.chain_reset_reason``).
+        self._chain_reset_reason = None
+        # Set by the agent for the LLM that runs a conversation turn: only
+        # its unchained calls are logged, once per reason per turn.
+        self._chain_turn_tracked = False
+        self._chain_reasons_logged = set()
         # Files-API ids for inline ``file_data`` content parts already
         # uploaded, keyed by content hash. First-line cache for the
         # in-request tool loop; the Redis-backed cross-request cache
@@ -343,8 +364,86 @@ class OpenAILLM(BaseLLM):
         self._pending_system_hash = None
         return True
 
-    def start_responses_turn(self) -> None:
-        """Reset continuity accumulated during the preceding user turn."""
+    def note_chain_turn(self, reason: Optional[str], *, new_turn: bool = True) -> None:
+        """Track this LLM's Responses chain for the agent's turn.
+
+        Args:
+            reason: Why the turn's first call cannot chain onto the previous
+                turn (``first_turn``, ``compression``, ...), or None when the
+                agent hands it a response id to chain onto.
+            new_turn: A new user turn starts (not a resumed one): reasons are
+                logged afresh.
+        """
+        self._chain_turn_tracked = True
+        if new_turn:
+            self._chain_reasons_logged = set()
+        self._chain_reset_hint = reason
+
+    def _note_chain(self, wanted: Optional[str], chained: Optional[str], model: Any) -> None:
+        """Record, and log once per turn, why a Responses call did not chain.
+
+        Args:
+            wanted: The response id the call would have chained onto.
+            chained: The id it did chain onto; None when unchained.
+            model: The model the call went to.
+        """
+        if not self._chain_turn_tracked:
+            return
+        if chained:
+            self._chain_reset_hint = None
+            self._chain_reset_reason = None
+            return
+        if not settings.OPENAI_RESPONSES_STORE:
+            reason = "disabled"
+        elif wanted:
+            # ``_build_responses_input`` refused to chain: the history does
+            # not answer every call of the response it would chain onto.
+            reason = "history_mismatch"
+        else:
+            reason = self._chain_reset_hint or "no_previous_response"
+        self._chain_reset_hint = None
+        self._chain_reset_reason = reason
+        self._log_chain_reset(reason, model)
+
+    def _log_chain_reset(self, reason: str, model: Any) -> None:
+        """One INFO line per reason per turn: the chain was not used, and why."""
+        if reason in self._chain_reasons_logged:
+            return
+        self._chain_reasons_logged.add(reason)
+        context = log_context.snapshot()
+        logger.info(
+            "responses_chain_reset",
+            extra={
+                "reason": reason,
+                "conversation_id": context.get("conversation_id"),
+                "activity_id": context.get("activity_id"),
+                "model": str(model) if model else None,
+            },
+        )
+
+    def _note_chain_failure(self, error: Exception, model: Any) -> None:
+        """A failed call leaves nothing to chain onto: say why for the next one.
+
+        The provider losing the chained response is logged at once, since a
+        fallback may answer the rest of the turn and no unchained call follows.
+        """
+        if not self._chain_turn_tracked:
+            return
+        if _is_previous_response_not_found(error):
+            self._chain_reset_hint = "not_found"
+            self._chain_reset_reason = "not_found"
+            self._log_chain_reset("not_found", model)
+        else:
+            self._chain_reset_hint = "previous_call_failed"
+
+    def start_responses_turn(self, reason: Optional[str] = None) -> None:
+        """Reset continuity accumulated during the preceding user turn.
+
+        Args:
+            reason: Why the chain is dropped (``compression``), logged with
+                the next call; None at the start of a turn.
+        """
+        self._chain_reset_hint = reason
         self._reasoning_for_calls = {}
         self._last_reasoning_items = []
         self._last_response_id = None
@@ -773,14 +872,18 @@ class OpenAILLM(BaseLLM):
 
         previous_response_id = kwargs.pop("previous_response_id", None)
         if self._uses_responses_api():
-            return self._responses_gen(
-                model,
-                messages,
-                tools=tools,
-                response_format=response_format,
-                previous_response_id=previous_response_id,
-                **kwargs,
-            )
+            try:
+                return self._responses_gen(
+                    model,
+                    messages,
+                    tools=tools,
+                    response_format=response_format,
+                    previous_response_id=previous_response_id,
+                    **kwargs,
+                )
+            except Exception as error:
+                self._note_chain_failure(error, model)
+                raise
 
         self._apply_reasoning_effort(kwargs)
 
@@ -841,14 +944,18 @@ class OpenAILLM(BaseLLM):
 
         previous_response_id = kwargs.pop("previous_response_id", None)
         if self._uses_responses_api():
-            yield from self._responses_gen_stream(
-                model,
-                messages,
-                tools=tools,
-                response_format=response_format,
-                previous_response_id=previous_response_id,
-                **kwargs,
-            )
+            try:
+                yield from self._responses_gen_stream(
+                    model,
+                    messages,
+                    tools=tools,
+                    response_format=response_format,
+                    previous_response_id=previous_response_id,
+                    **kwargs,
+                )
+            except Exception as error:
+                self._note_chain_failure(error, model)
+                raise
             return
 
         self._apply_reasoning_effort(kwargs)
@@ -1535,14 +1642,11 @@ class OpenAILLM(BaseLLM):
         previous_response_id=None,
         **kwargs,
     ):
-        previous_response_id = (
-            self._last_response_id or previous_response_id or self._imported_response_id
-        )
+        wanted = self._last_response_id or previous_response_id or self._imported_response_id
         # Built before the per-turn state is cleared: the coverage guard reads
         # the call_ids the chained response emitted.
-        input_items, previous_response_id = self._build_responses_input(
-            messages, previous_response_id
-        )
+        input_items, previous_response_id = self._build_responses_input(messages, wanted)
+        self._note_chain(wanted, previous_response_id, model)
         self._last_response_id = None
         self._last_response_call_ids = set()
         self._last_usage = None
@@ -1616,14 +1720,11 @@ class OpenAILLM(BaseLLM):
         previous_response_id=None,
         **kwargs,
     ):
-        previous_response_id = (
-            self._last_response_id or previous_response_id or self._imported_response_id
-        )
+        wanted = self._last_response_id or previous_response_id or self._imported_response_id
         # Built before the per-turn state is cleared: the coverage guard reads
         # the call_ids the chained response emitted.
-        input_items, previous_response_id = self._build_responses_input(
-            messages, previous_response_id
-        )
+        input_items, previous_response_id = self._build_responses_input(messages, wanted)
+        self._note_chain(wanted, previous_response_id, model)
         self._last_response_id = None
         self._last_response_call_ids = set()
         self._last_usage = None

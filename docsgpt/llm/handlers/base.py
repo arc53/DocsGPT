@@ -990,7 +990,7 @@ class LLMHandler(ABC):
         """
         starter = getattr(getattr(agent, "llm", None), "start_responses_turn", None)
         if callable(starter):
-            starter()
+            starter(reason="compression")
         timestamp = getattr(metadata, "timestamp", None)
         if timestamp is not None:
             agent.last_compression_at = timestamp

@@ -31,13 +31,23 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from docsgpt.agents.turn_capabilities import TurnCapabilities
+from docsgpt.attachment_full_text import full_text_tokens
 
 # Context the provider charges for one image part. Matches the compression
 # token counter's per-image estimate; real cost varies by provider and size.
 IMAGE_PART_TOKENS = 1500
 # Extra context a native PDF part costs per page on top of its text: providers
 # send each page as an image too. A conservative average across providers.
+# Holds for born-digital PDFs: on gpt-6.1-sol a 30-page PDF sent natively cost
+# 29,413 prompt tokens against 29,215 for its text, so text plus this margin
+# over-reserves a little rather than under.
 NATIVE_PDF_PAGE_TOKENS = 500
+# Context one page of a PDF with no text layer (a scan) takes when the PDF is
+# sent natively: the provider reads it from the page image alone. Measured on
+# gpt-6.1-sol: a 4-page image-only scan cost 12,312 prompt tokens (~3.1k a
+# page), and 14 scans of 31 pages together added ~81k (~2.6k a page). Priced
+# at NATIVE_PDF_PAGE_TOKENS these scans planned at 500 a page, 5-6x too low.
+NATIVE_SCAN_PAGE_TOKENS = 3000
 # Context one PDF page rendered as an image takes (150 dpi, a page of
 # roughly 1240x1754 px). Measured, not the per-image guess above: an
 # end-to-end run of a 200k-window vision model planned ~100k tokens of page
@@ -122,6 +132,10 @@ class PlannedFile:
         reason: Why the file was left out, when it was.
         sandbox_eligible: The code sandbox is in the turn and can take the
             file (its size is within ``SANDBOX_MAX_INPUT_BYTES`` or unknown).
+        full_tokens: Tokens of the whole extracted text the attachments tool
+            can read past the stored cut (``docsgpt.attachment_full_text``);
+            None when the stored text is all there is, including when the
+            side copy's recorded size is unknown or over the current cap.
     """
 
     ref: str
@@ -141,11 +155,17 @@ class PlannedFile:
     shown_pages: int = 0
     reason: Optional[str] = None
     sandbox_eligible: bool = False
+    full_tokens: Optional[int] = None
 
     @property
     def in_context(self) -> bool:
         """Some of the file's content is in this turn's context."""
         return self.inline_tokens > 0
+
+    @property
+    def readable_tokens(self) -> int:
+        """Tokens the attachments tool can read: the whole text when it was kept."""
+        return max(self.full_tokens or 0, self.text_tokens)
 
 
 @dataclass(eq=False)
@@ -550,6 +570,7 @@ def _new_planned(row: Dict[str, Any], ref: str, attachment_id: str, is_current: 
         text_tokens=text_tokens,
         original_tokens=original,
         page_count=page_count if isinstance(page_count, int) and page_count > 0 else None,
+        full_tokens=full_text_tokens(row),
     )
 
 
@@ -609,8 +630,19 @@ def _native_cost(planned: PlannedFile, capabilities: TurnCapabilities) -> int:
         if capabilities.synthetic_pdf:
             return _native_parts(planned, capabilities) * PAGE_IMAGE_TOKENS
         pages = planned.page_count or 1
+        if _pages_are_images(planned):
+            return pages * NATIVE_SCAN_PAGE_TOKENS
         return planned.original_tokens + pages * NATIVE_PDF_PAGE_TOKENS
     return max(planned.original_tokens, IMAGE_PART_TOKENS)
+
+
+def _pages_are_images(planned: PlannedFile) -> bool:
+    """A PDF with no text layer: the provider reads every page as an image.
+
+    The worker marks it ``no_text``; a row whose text layer came out empty
+    (no extracted tokens at all) is read the same way.
+    """
+    return _extraction(planned.attachment).get("status") == "no_text" or planned.original_tokens == 0
 
 
 def _is_spreadsheet(planned: PlannedFile) -> bool:

@@ -158,6 +158,140 @@ class TestTruncationProvenance:
 
 
 @pytest.mark.usefixtures("wired_engine")
+class TestFullTextSideCopy:
+    """A cut attachment keeps its whole extracted text next to the original."""
+
+    @staticmethod
+    def _long_text():
+        # Well past ATTACHMENT_MAX_TOKENS, with a marker only in the tail.
+        return " ".join(f"word{i}" for i in range(60_000)) + " TAILMARKER-150"
+
+    def _patch_reader(self, monkeypatch, text):
+        monkeypatch.setattr(
+            "docsgpt.worker.SimpleDirectoryReader",
+            lambda **kwargs: type("R", (), {"load_data": lambda self: [_Doc(text)]})(),
+        )
+
+    def test_the_whole_text_of_a_cut_file_is_stored_beside_it(self, storage_dir, monkeypatch):
+        text = self._long_text()
+        info = _file_info(storage_dir, filename="ordinance.txt")
+        self._patch_reader(monkeypatch, text)
+
+        _run_worker(info)
+
+        row = _fetch(info["attachment_id"])
+        extraction = row["metadata"]["extraction"]
+        assert extraction["truncated"] is True
+        assert row["token_count"] == 100000
+        assert "TAILMARKER-150" not in row["content"]
+        assert extraction["full_text_path"] == info["path"] + ".extracted.txt"
+        assert (storage_dir / extraction["full_text_path"]).read_text(encoding="utf-8") == text
+        assert extraction["full_text_tokens"] == extraction["original_tokens"]
+        assert extraction["full_text_bytes"] == len(text.encode("utf-8"))
+        assert "full_text_cut" not in extraction
+
+    def test_no_side_copy_when_the_text_fits(self, storage_dir, monkeypatch):
+        info = _file_info(storage_dir)
+        self._patch_reader(monkeypatch, "short text")
+
+        _run_worker(info)
+
+        extraction = _fetch(info["attachment_id"])["metadata"]["extraction"]
+        assert "full_text_path" not in extraction
+        assert not (storage_dir / (info["path"] + ".extracted.txt")).exists()
+
+    def test_the_side_copy_is_capped_by_the_setting(self, storage_dir, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "ATTACHMENT_FULL_TEXT_MAX_BYTES", 500_000)
+        info = _file_info(storage_dir, filename="ordinance.txt")
+        self._patch_reader(monkeypatch, self._long_text())
+
+        _run_worker(info)
+
+        extraction = _fetch(info["attachment_id"])["metadata"]["extraction"]
+        stored = (storage_dir / extraction["full_text_path"]).read_bytes()
+        assert len(stored) <= 500_000
+        assert extraction["full_text_bytes"] == len(stored)
+        assert extraction["full_text_cut"] is True
+        assert 100000 < extraction["full_text_tokens"] < extraction["original_tokens"]
+
+    def test_a_zero_cap_keeps_no_side_copy(self, storage_dir, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "ATTACHMENT_FULL_TEXT_MAX_BYTES", 0)
+        info = _file_info(storage_dir, filename="ordinance.txt")
+        self._patch_reader(monkeypatch, self._long_text())
+
+        _run_worker(info)
+
+        extraction = _fetch(info["attachment_id"])["metadata"]["extraction"]
+        assert extraction["truncated"] is True
+        assert "full_text_path" not in extraction
+
+    def test_a_failed_side_copy_never_fails_the_upload(self, storage_dir, monkeypatch):
+        from docsgpt.storage.local import LocalStorage
+
+        real_save = LocalStorage.save_file
+
+        def _save(self, file_data, path, **kwargs):
+            if path.endswith(".extracted.txt"):
+                raise OSError("disk full")
+            return real_save(self, file_data, path, **kwargs)
+
+        monkeypatch.setattr(LocalStorage, "save_file", _save)
+        info = _file_info(storage_dir, filename="ordinance.txt")
+        self._patch_reader(monkeypatch, self._long_text())
+
+        _run_worker(info)
+
+        row = _fetch(info["attachment_id"])
+        assert row["token_count"] == 100000
+        assert "full_text_path" not in row["metadata"]["extraction"]
+
+    def test_a_reused_parse_gets_its_own_side_copy(self, storage_dir, monkeypatch):
+        text = self._long_text()
+        self._patch_reader(monkeypatch, text)
+        first = _file_info(storage_dir, filename="a.txt", content=b"same long bytes")
+        second = _file_info(storage_dir, filename="b.txt", content=b"same long bytes")
+
+        _run_worker(first)
+        _run_worker(second)
+
+        copy = _fetch(second["attachment_id"])["metadata"]["extraction"]
+        assert copy["full_text_path"] == second["path"] + ".extracted.txt"
+        assert (storage_dir / copy["full_text_path"]).read_text(encoding="utf-8") == text
+        assert copy["full_text_tokens"] == copy["original_tokens"]
+        assert copy["full_text_bytes"] == len(text.encode("utf-8"))
+
+
+    def test_an_earlier_parse_without_a_side_copy_is_parsed_again(self, storage_dir, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        text = self._long_text()
+        calls = []
+
+        def _reader(**kwargs):
+            calls.append(kwargs.get("input_files"))
+            return type("R", (), {"load_data": lambda self: [_Doc(text)]})()
+
+        monkeypatch.setattr("docsgpt.worker.SimpleDirectoryReader", _reader)
+        first = _file_info(storage_dir, filename="a.txt", content=b"same long bytes")
+        second = _file_info(storage_dir, filename="b.txt", content=b"same long bytes")
+        # The first upload predates side copies.
+        monkeypatch.setattr(settings, "ATTACHMENT_FULL_TEXT_MAX_BYTES", 0)
+        _run_worker(first)
+        monkeypatch.setattr(settings, "ATTACHMENT_FULL_TEXT_MAX_BYTES", 8_000_000)
+
+        _run_worker(second)
+
+        assert len(calls) == 2
+        copy = _fetch(second["attachment_id"])["metadata"]
+        assert "reused_from" not in copy
+        assert copy["extraction"]["full_text_path"] == second["path"] + ".extracted.txt"
+
+
+@pytest.mark.usefixtures("wired_engine")
 class TestFailureProvenance:
     def test_terminal_parse_failure_writes_failed_row(self, storage_dir, monkeypatch):
         info = _file_info(storage_dir, filename="broken.xlsx")

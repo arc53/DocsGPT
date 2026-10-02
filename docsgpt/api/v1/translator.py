@@ -632,6 +632,7 @@ def translate_response(
     strip_reasoning_leak: bool = False,
     usage: Optional[Dict[str, Any]] = None,
     finish_reason_override: Optional[str] = None,
+    answered_by: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Translate DocsGPT response to chat completions format.
 
@@ -643,6 +644,9 @@ def translate_response(
         thought: Reasoning/thinking tokens.
         model_name: Model/agent identifier.
         pending_tool_calls: Pending client-side tool calls (if paused).
+        answered_by: The models that answered the turn, one entry per change
+            (``BaseLLM.answered_by``); the last one is reported as
+            ``docsgpt.model``.
 
     Returns:
         Dict in the standard chat completions response format.
@@ -710,10 +714,51 @@ def translate_response(
         docsgpt["sources"] = sources
     if tool_calls:
         docsgpt["tool_calls"] = tool_calls
+    if answered_by:
+        docsgpt.update(model_fields(answered_by[-1]))
+        docsgpt["models"] = [model_fields(entry) for entry in answered_by]
     if docsgpt:
         result["docsgpt"] = docsgpt
 
     return result
+
+
+def model_fields(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """The public fields of one answering-model entry.
+
+    Args:
+        entry: An entry of ``BaseLLM.answered_by``.
+
+    Returns:
+        ``model``, ``provider``, ``fallback`` and, for a fallback, ``reason``.
+    """
+    fields: Dict[str, Any] = {
+        "model": entry.get("model"),
+        "provider": entry.get("provider"),
+        "fallback": bool(entry.get("fallback")),
+    }
+    if fields["fallback"] and entry.get("reason"):
+        fields["reason"] = entry["reason"]
+    return fields
+
+
+def model_chunks(
+    entries: List[Dict[str, Any]], completion_id: str, model_name: str
+) -> List[str]:
+    """``docsgpt`` frames naming the models that started answering.
+
+    Args:
+        entries: New entries of ``BaseLLM.answered_by``, in order.
+        completion_id: The completion ID for this response.
+        model_name: Model/agent identifier (the standard ``model`` field).
+
+    Returns:
+        One ``{"type": "model", ...}`` extension chunk per entry.
+    """
+    return [
+        _make_docsgpt_chunk({"type": "model", **model_fields(entry)}, completion_id, model_name)
+        for entry in entries
+    ]
 
 
 # ---------------------------------------------------------------------------

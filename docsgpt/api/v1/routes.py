@@ -41,6 +41,7 @@ from docsgpt.api.v1.translator import (
     StreamTranslationState,
     apply_converted_files,
     make_usage_chunk,
+    model_chunks,
     translate_request,
     translate_response,
     translate_stream_event,
@@ -262,6 +263,12 @@ def _response_usage(agent: Any) -> Dict[str, Any]:
         "completion_tokens": completion,
         "total_tokens": prompt + completion,
     }
+
+
+def _answered_by(agent: Any) -> List[Dict[str, Any]]:
+    """The models that have answered this turn so far (``BaseLLM.answered_by``)."""
+    entries = getattr(getattr(agent, "llm", None), "answered_by", None)
+    return [e for e in entries if isinstance(e, dict)] if isinstance(entries, list) else []
 
 
 def _response_finish_reason(agent: Any) -> str:
@@ -695,6 +702,8 @@ def _stream_response(
     )
 
     translation_state = StreamTranslationState()
+    # Answering-model entries already named in a ``docsgpt`` frame.
+    models_reported = 0
 
     for line in internal_stream:
         if not line.strip():
@@ -713,6 +722,13 @@ def _stream_response(
             event_data = json.loads(event_str)
         except (json.JSONDecodeError, TypeError):
             continue
+
+        # A model call records who answered before its first output reaches
+        # this loop, so a change is named ahead of the text it produced.
+        answered = _answered_by(agent)
+        if len(answered) > models_reported:
+            yield from model_chunks(answered[models_reported:], completion_id, model_name)
+            models_reported = len(answered)
 
         # Skip the informational ``message_id`` event — it has no v1 /
         # OpenAI-compatible analog.
@@ -800,6 +816,7 @@ def _non_stream_response(
         strip_reasoning_leak=strip_reasoning_leak,
         usage=_response_usage(agent),
         finish_reason_override=_response_finish_reason(agent),
+        answered_by=_answered_by(agent),
     )
     return make_response(jsonify(response), 200)
 

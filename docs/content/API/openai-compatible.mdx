@@ -176,7 +176,7 @@ Each file becomes an attachment of the agent's owner, parsed like a file uploade
 - **Re-sent files cost nothing extra.** Files are matched by their bytes (SHA-256). A file the agent's owner already has, from this conversation or any other, reuses its parsed text instead of being parsed again, so you can keep re-sending every file on every turn and tool round.
 - **Only what fits goes into the prompt.** Up to half of the model's context window (`ATTACHMENT_BUDGET_SHARE`) goes to the turn's files, in the order you sent them. A file that does not fit whole is shown from the start with a note saying how much is included; the rest are left out of the prompt. Images and PDFs go to models that read them natively (at most `ATTACHMENT_MAX_NATIVE_PARTS` per turn); other models get the extracted text.
 - **The model gets a list of the files.** A short manifest is added to the user message on the server: one line per file with a reference (`F1`, `F2`, ...), its size and whether it is in the prompt. Files from earlier turns of a stored conversation stay listed there.
-- **The model can read the rest itself.** When the model takes tools, the turn gets server-side tools to list, read (by token offset or PDF page) and search the conversation's files, and to look at images and scanned pages on vision models. They run on the server and never appear in `tool_calls` or pause your tool loop, even when you send your own tools with similar names. Their activity shows up only in `docsgpt` frames. A model without tool support is told which files were left out.
+- **The model can read the rest itself.** When the model takes tools, the turn gets server-side tools to list, read (by token offset, by PDF page, or by the page markers of a text file such as `--- page 12 ---` lines or form feeds) and search the conversation's files, and to look at images and scanned pages on vision models. A file's text is stored for the prompt up to 100,000 tokens; beyond that, the whole extracted text (up to `ATTACHMENT_FULL_TEXT_MAX_BYTES`) is kept next to the file, so search and reads reach its last page too. They run on the server and never appear in `tool_calls` or pause your tool loop, even when you send your own tools with similar names. Their activity shows up only in `docsgpt` frames. A model without tool support is told which files were left out.
 - **Limits.** A file can be up to `UPLOAD_MAX_FILE_BYTES` (100 MB by default). A file that is larger, is a damaged image, or is a type no parser reads is removed from the request, and the manifest tells the model why it could not be read. A file that could not be stored or parsed in time stays in the request as you sent it. Remote image URLs (`https://...`) and `file_id` parts are passed through unchanged.
 
 <Callout type="info">
@@ -301,8 +301,26 @@ DocsGPT adds an optional `docsgpt` object to both requests and responses for fea
 | `conversation_id` | Server-side conversation ID for this exchange. |
 | `sources` | RAG sources used to answer. |
 | `tool_calls` | Completed tool-call results from the run. |
+| `model`, `provider` | The model that produced the final answer, and its provider. |
+| `fallback` | `true` when that model is a fallback, not the agent's own model. |
+| `reason` | Why the fallback ran: the error class of the failed call, with its HTTP status when it had one (`InternalServerError/500`). Only on a fallback. |
+| `models` | Every model that answered part of the turn, in order, one entry per switch (each with `model`, `provider`, `fallback` and, for a fallback, `reason`). |
 
 When streaming, these arrive on otherwise-empty chunks that carry a top-level `docsgpt` key, so strict OpenAI clients still validate each frame.
+
+### Which model answered
+
+The standard `model` field always echoes the agent, so OpenAI clients see no change. When the agent's model fails (an upstream 5xx, a rate limit, a rejected request) and a backup model takes over, the answer comes from that backup: `docsgpt.model`, `docsgpt.fallback` and `docsgpt.reason` say so. A tool loop can switch models from one round to the next, so `docsgpt.models` lists each switch.
+
+When streaming, a frame names the answering model as soon as it starts producing output, and again each time a different model takes over, before the text that model wrote:
+
+```json
+{"id": "chatcmpl-...", "object": "chat.completion.chunk", "model": "my-agent",
+ "choices": [{"index": 0, "delta": {}, "finish_reason": null}],
+ "docsgpt": {"type": "model", "model": "kimi-k3", "provider": "openai_compatible", "fallback": true, "reason": "InternalServerError/500"}}
+```
+
+A fallback that takes over in the middle of a stream starts its answer over, so text streamed before its `model` frame came from the model named earlier. When a fallback answered any part of a turn, the same list is also stored with the message, as `metadata.answered_by`.
 
 ## When to Use Native Endpoints Instead
 

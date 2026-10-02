@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import ClassVar, Dict, Optional, Tuple
+from typing import Any, ClassVar, Dict, Iterable, Iterator, List, Optional, Tuple
 
 import httpx
 import httpx2
@@ -42,6 +42,26 @@ _STREAM_RETRYABLE_TRANSPORT_ERRORS = tuple(
     for module in (httpx2, httpx)
     for name in _TRANSPORT_ERROR_NAMES
 ) + (openai.APIConnectionError,)
+
+
+def fallback_reason(error: BaseException) -> str:
+    """A short, content-free name for why a model call was handed to a fallback.
+
+    The error's class, and its HTTP status when it carries one
+    (``InternalServerError/500``). Never the message: it can quote the
+    request or the provider's internals.
+
+    Args:
+        error: What the primary raised.
+
+    Returns:
+        The reason.
+    """
+    status = getattr(error, "status_code", None)
+    if status is None:
+        status = getattr(getattr(error, "response", None), "status_code", None)
+    name = type(error).__name__
+    return f"{name}/{status}" if isinstance(status, int) else name
 
 
 def optional_int(value) -> Optional[int]:
@@ -123,6 +143,9 @@ class BaseLLM(ABC):
         # attachment, mapped to that attachment's id, so a fallback swaps
         # each part for its own file's text.
         self._file_part_attachments: Dict[str, str] = {}
+        # The models that answered this instance's calls, one entry per
+        # change (see ``_note_answer``), in order.
+        self.answered_by: List[Dict[str, Any]] = []
 
     @property
     def fallback_llm(self):
@@ -214,6 +237,47 @@ class BaseLLM(ABC):
                 )
 
         return self._fallback_llm
+
+    def _note_answer(
+        self, llm: "BaseLLM", model: Any, *, fallback: bool = False, reason: Optional[str] = None
+    ) -> None:
+        """Record which model produced a call's output, when that changed.
+
+        Called on the first chunk (or the result) of every call made through
+        this instance, the primary's own and a fallback's alike, so a turn
+        whose tool rounds were answered by different models lists each
+        switch. A call that produced nothing is never recorded.
+
+        Args:
+            llm: The instance that answered (this one, or its fallback).
+            model: The model id it was called with.
+            fallback: The answer came from the fallback model.
+            reason: Why the fallback ran (``fallback_reason``).
+        """
+        entry: Dict[str, Any] = {
+            "model": str(model or getattr(llm, "model_id", None) or ""),
+            "provider": getattr(llm, "_provider_plugin", None) or llm.provider_name,
+            "fallback": bool(fallback),
+        }
+        if fallback and reason:
+            entry["reason"] = reason
+        log = getattr(self, "answered_by", None)
+        if not isinstance(log, list):
+            log = self.answered_by = []
+        if log and {k: log[-1].get(k) for k in ("model", "provider", "fallback")} == {
+            k: entry[k] for k in ("model", "provider", "fallback")
+        }:
+            return
+        log.append(entry)
+
+    def _noting_answer(self, stream: Iterable[Any], llm: "BaseLLM", model: Any, **flags: Any) -> Iterator[Any]:
+        """Pass ``stream`` through, recording its model on the first chunk."""
+        first = True
+        for chunk in stream:
+            if first:
+                self._note_answer(llm, model, **flags)
+                first = False
+            yield chunk
 
     @staticmethod
     def _remove_null_values(args_dict):
@@ -628,7 +692,9 @@ class BaseLLM(ABC):
 
         self._responding_provider = self.provider_name
         try:
-            return decorated_method()
+            result = decorated_method()
+            self._note_answer(self, kwargs.get("model"))
+            return result
         except Exception as e:
             if not self.fallback_llm:
                 logger.error(f"Primary LLM failed and no fallback configured: {str(e)}")
@@ -662,10 +728,12 @@ class BaseLLM(ABC):
             for decorator in decorators:
                 fallback_method = decorator(fallback_method)
             try:
-                return fallback_method(fallback, *args, **fallback_kwargs)
+                result = fallback_method(fallback, *args, **fallback_kwargs)
             except Exception as e2:
                 logger.error(f"Fallback LLM also failed; giving up: {str(e2)}")
                 raise
+            self._note_answer(fallback, fallback.model_id, fallback=True, reason=fallback_reason(e))
+            return result
 
     def _stream_with_fallback(
         self, decorated_method, method_name, decorators, *args, **kwargs
@@ -688,8 +756,11 @@ class BaseLLM(ABC):
         """
         self._responding_provider = self.provider_name
         chunks_yielded = 0
+        primary_model = kwargs.get("model")
         try:
             for chunk in decorated_method():
+                if not chunks_yielded:
+                    self._note_answer(self, primary_model)
                 chunks_yielded += 1
                 yield chunk
             return
@@ -734,6 +805,8 @@ class BaseLLM(ABC):
                 )
                 try:
                     for chunk in decorated_method():
+                        if not chunks_yielded:
+                            self._note_answer(self, primary_model)
                         chunks_yielded += 1
                         yield chunk
                     return
@@ -787,7 +860,13 @@ class BaseLLM(ABC):
             for decorator in decorators:
                 fallback_method = decorator(fallback_method)
             try:
-                yield from fallback_method(fallback, *args, **fallback_kwargs)
+                yield from self._noting_answer(
+                    fallback_method(fallback, *args, **fallback_kwargs),
+                    fallback,
+                    fallback.model_id,
+                    fallback=True,
+                    reason=fallback_reason(e),
+                )
             except Exception as e2:
                 logger.error(
                     f"Fallback LLM also failed mid-stream; giving up: {str(e2)}"

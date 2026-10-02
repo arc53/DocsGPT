@@ -138,6 +138,9 @@ def finish_llm_call(
             joined only when the span keeps a preview.
     """
     cache_hit = bool(getattr(llm, CACHE_HIT_ATTR, False))
+    # Why a Responses call went out without ``previous_response_id`` (set by
+    # ``OpenAILLM`` on a conversation turn's calls only).
+    chain_reset = getattr(llm, "_chain_reset_reason", None)
     try:
         setattr(llm, CACHE_HIT_ATTR, False)
     except AttributeError:
@@ -169,6 +172,7 @@ def finish_llm_call(
             "docsgpt.ttft_ms": ttft_ms,
             "docsgpt.cost_usd": cost_usd if isinstance(cost_usd, (int, float)) else None,
             "docsgpt.cache_hit": True if cache_hit else None,
+            "docsgpt.chain_reset_reason": chain_reset if isinstance(chain_reset, str) else None,
         },
     )
 

@@ -176,7 +176,7 @@ also exported as spans that follow the
 `gen_ai.usage.cache_read.input_tokens`, `gen_ai.conversation.id`,
 `gen_ai.agent.id` and `gen_ai.tool.name`. DocsGPT-specific details use the
 `docsgpt.*` prefix (`docsgpt.request_id`, `docsgpt.token_source`,
-`docsgpt.cache_hit`, `docsgpt.ttft_ms`, ...). The trace's root span is a
+`docsgpt.cache_hit`, `docsgpt.ttft_ms`, and on a Responses API call that did not chain onto the previous response, `docsgpt.chain_reset_reason`, ...). The trace's root span is a
 child of the request's HTTP server span, and the stored trace keeps the
 OTel trace id so you can move between the two.
 

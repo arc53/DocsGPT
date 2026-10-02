@@ -34,6 +34,7 @@ from docsgpt.agents.attachment_budget import (
 from docsgpt.agents.attachment_context import UNTRUSTED_NOTE, fence_file, sanitize_filename
 from docsgpt.agents.tools.base import Tool
 from docsgpt.agents.turn_capabilities import ATTACHMENTS_TOOL_NAME, TurnCapabilities
+from docsgpt.attachment_full_text import full_text_location, load_full_text
 from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
 from docsgpt.storage.db.session import db_readonly
 
@@ -68,6 +69,14 @@ MAX_RENDER_SIDE = 2000
 # Lexical search: passages of the stored text, ranked with BM25.
 SEARCH_CHUNK_TOKENS = 300
 SEARCH_CHUNK_STRIDE = 240
+# Tokens of file text one turn's search index takes in, across all files (a
+# file cut at upload is indexed whole from its side copy). Bounds the index's
+# memory (about 40 MB at this size) and its build time; a file past it is
+# indexed in part and the result says so.
+SEARCH_MAX_INDEX_TOKENS = 1_000_000
+# Characters kept per indexed token before tokenizing, so a huge text is not
+# tokenized whole only to index its head. Generous for any script.
+_INDEX_CHARS_PER_TOKEN = 12
 DEFAULT_SEARCH_K = 8
 MAX_SEARCH_K = 20
 SNIPPET_CHARS = 700
@@ -80,6 +89,11 @@ MIN_PAGE_CHARS = 20
 RESULT_OVERHEAD_TOKENS = 600
 
 _REF_RE = re.compile(r"^[Ff]?(\d+)$")
+# A page marker line in extracted text: ``--- page 12 ---``, ``--- stran 12 ---``.
+_PAGE_MARKER_RE = re.compile(
+    r"^[ \t]*-{2,}[ \t]*(?:page|stran|strana|seite|pagina|página)[ \t]+(\d{1,6})[ \t]*-{2,}[ \t]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 _ARTIFACT_REF_RE = re.compile(r"^[Aa]\d+$")
 _RANGE_RE = re.compile(r"^\s*(\d+)\s*(?:[-–:]\s*(\d*)\s*)?$")
 
@@ -332,6 +346,69 @@ def _page_label(pages: List[int]) -> str:
     return "pages " + ", ".join(str(p) for p in pages)
 
 
+def text_pages(text: str) -> Optional[Dict[int, str]]:
+    """The pages of extracted text, by the page markers it carries.
+
+    Marker lines (``--- page 12 ---``, ``--- stran 12 ---``) number the pages;
+    without them, form feeds separate pages 1, 2, ... Text before the first
+    marker is not a page. A page number that repeats (two documents in one
+    file) gets both bodies.
+
+    Args:
+        text: Extracted text.
+
+    Returns:
+        Page number to page text, or None when the text has no page markers.
+    """
+    spans = _text_page_spans(text)
+    if spans is None:
+        return None
+    return {number: "\n".join(text[start:end] for start, end in parts) for number, parts in spans.items()}
+
+
+def _text_page_spans(text: str) -> Optional[Dict[int, List[Tuple[int, int]]]]:
+    """Where each page's text sits in ``text``: the spans ``text_pages`` joins.
+
+    Args:
+        text: Extracted text.
+
+    Returns:
+        Page number to its ``(start, end)`` character spans, in order, or None
+        when the text has no page markers.
+    """
+
+    def _trimmed(start: int, end: int) -> Tuple[int, int]:
+        while start < end and text[start] == "\n":
+            start += 1
+        while end > start and text[end - 1] == "\n":
+            end -= 1
+        return start, end
+
+    markers = list(_PAGE_MARKER_RE.finditer(text or ""))
+    if markers:
+        pages: Dict[int, List[Tuple[int, int]]] = {}
+        for index, marker in enumerate(markers):
+            end = markers[index + 1].start() if index + 1 < len(markers) else len(text)
+            pages.setdefault(int(marker.group(1)), []).append(_trimmed(marker.end(), end))
+        return pages
+    if "\f" in (text or ""):
+        pages, start = {}, 0
+        for number, body in enumerate(text.split("\f"), start=1):
+            pages[number] = [_trimmed(start, start + len(body))]
+            start += len(body) + 1
+        return pages
+    return None
+
+
+def _page_char_position(spans: List[Tuple[int, int]], index: int) -> int:
+    """Position in the whole text of character ``index`` of a page's joined text."""
+    for start, end in spans:
+        if index <= end - start:
+            return start + index
+        index -= end - start + 1
+    return spans[-1][1]
+
+
 def _storage():
     from docsgpt.storage.storage_creator import StorageCreator
 
@@ -548,9 +625,24 @@ class _Index:
         self.postings: Dict[str, List[Tuple[int, int]]] = {}
         self.total_length = 0
 
-    def add(self, planned: PlannedFile, text: str) -> None:
+    def add(self, planned: PlannedFile, text: str, max_tokens: Optional[int] = None) -> Tuple[int, bool]:
+        """Index ``text`` in overlapping passages.
+
+        Args:
+            planned: The file the text belongs to.
+            text: The file's text.
+            max_tokens: Index at most this many tokens of it; None for all.
+
+        Returns:
+            Tokens indexed, and whether the text went on past them.
+        """
         encoding = _encoding()
+        more = False
+        if max_tokens is not None and len(text) > max_tokens * _INDEX_CHARS_PER_TOKEN:
+            text, more = text[: max_tokens * _INDEX_CHARS_PER_TOKEN], True
         ids = encoding.encode_ordinary(text)
+        if max_tokens is not None and len(ids) > max_tokens:
+            ids, more = ids[:max_tokens], True
         start = 0
         while start < len(ids):
             end = min(start + SEARCH_CHUNK_TOKENS, len(ids))
@@ -565,6 +657,7 @@ class _Index:
             if end >= len(ids):
                 break
             start += SEARCH_CHUNK_STRIDE
+        return len(ids), more
 
     def search(
         self, query: str, refs: Optional[set], k: int, offset: int = 0
@@ -655,6 +748,10 @@ class AttachmentsTool(Tool):
         self._native_used = 0
         self._index: Optional[_Index] = None
         self._unsearchable: List[PlannedFile] = []
+        # Files the search index holds only the head of: (file, tokens indexed).
+        self._index_cut: List[Tuple[PlannedFile, int]] = []
+        # Whole texts of files cut at upload, loaded once per turn by ref.
+        self._full_texts: Dict[str, Optional[str]] = {}
         # Context left for a result, set before each call by the executor
         # (None: unknown), and the compression epoch the reads below belong to.
         self._room_tokens: Optional[int] = None
@@ -776,7 +873,10 @@ class AttachmentsTool(Tool):
                         },
                         "pages": {
                             "type": "string",
-                            "description": "PDF pages such as 5 or 12-15, read from the original file.",
+                            "description": (
+                                "Pages such as 5 or 12-15: of a PDF, read from the original file; of a text "
+                                "file, by its page markers."
+                            ),
                             "filled_by_llm": True,
                             "required": False,
                         },
@@ -937,7 +1037,14 @@ class AttachmentsTool(Tool):
     def _size(planned: PlannedFile) -> str:
         parts = []
         extraction = _extraction(planned.attachment)
-        if extraction.get("truncated") and planned.original_tokens > planned.text_tokens:
+        if planned.full_tokens and planned.full_tokens > planned.text_tokens:
+            if planned.original_tokens > planned.full_tokens:
+                parts.append(
+                    f"{planned.full_tokens:,} of ~{planned.original_tokens:,} tokens readable (cut at upload)"
+                )
+            else:
+                parts.append(f"{planned.full_tokens:,} tokens")
+        elif extraction.get("truncated") and planned.original_tokens > planned.text_tokens:
             parts.append(
                 f"{planned.text_tokens:,} of ~{planned.original_tokens:,} tokens stored (cut at upload)"
             )
@@ -986,6 +1093,20 @@ class AttachmentsTool(Tool):
     def _content(self, planned: PlannedFile) -> Optional[Dict[str, Any]]:
         return _load_row(planned.attachment_ids[0], self.user)
 
+    def _text(self, planned: PlannedFile, row: Dict[str, Any]) -> str:
+        """The file's text: the whole of it when it was cut at upload and kept.
+
+        The side copy is loaded at most once per turn; when it is missing or
+        too large, the stored (cut) text is all there is.
+        """
+        stored = str(row.get("content") or "")
+        path = full_text_location(row)
+        if path is None:
+            return stored
+        if planned.ref not in self._full_texts:
+            self._full_texts[planned.ref] = load_full_text(_storage(), path)
+        return self._full_texts[planned.ref] or stored
+
     def _read(
         self, ref: Any, *, offset: Any = None, max_tokens: Any = None, rows: Any = None, pages: Any = None
     ) -> str:
@@ -1021,11 +1142,11 @@ class AttachmentsTool(Tool):
         if row is None:
             return f"{planned.ref} is no longer available."
         name = sanitize_filename(planned.filename)
-        text = str(row.get("content") or "")
+        text = self._text(planned, row)
         budget = self._read_budget(max_tokens)
         if pages not in (None, "", []):
             if planned.mime_type != "application/pdf":
-                return f"{planned.ref} {name} is not a PDF: pages work only for PDFs. Use offset or rows."
+                return self._read_text_pages(planned, text, pages, budget)
             return self._read_pages(planned, row, pages, budget)
         if planned.mime_type.startswith("image/"):
             if self._vision_for(planned.mime_type):
@@ -1106,13 +1227,20 @@ class AttachmentsTool(Tool):
         if self._index is None:
             index = _Index()
             unsearchable: List[PlannedFile] = []
+            room = SEARCH_MAX_INDEX_TOKENS
             for planned in self.files():
                 row = self._content(planned) if self._has_text(planned) else None
-                text = str((row or {}).get("content") or "")
-                if text.strip():
-                    index.add(planned, text)
-                else:
+                text = self._text(planned, row) if row else ""
+                if not text.strip():
                     unsearchable.append(planned)
+                    continue
+                if room <= 0:
+                    self._index_cut.append((planned, 0))
+                    continue
+                indexed, more = index.add(planned, text, max_tokens=room)
+                room -= indexed
+                if more:
+                    self._index_cut.append((planned, indexed))
             self._index, self._unsearchable = index, unsearchable
         return self._index
 
@@ -1146,6 +1274,9 @@ class AttachmentsTool(Tool):
             if skipped
             else ""
         )
+        cut_note = self._index_cut_note(wanted)
+        if cut_note:
+            skipped_note = f"{skipped_note} {cut_note}".strip()
         if not hits:
             if total:
                 return f'Only {total} passage(s) match "{sanitize_filename(query)}"; offset {skip} is past them.'
@@ -1169,6 +1300,24 @@ class AttachmentsTool(Tool):
         if skipped_note:
             lines.append(skipped_note)
         return "\n".join(lines)
+
+    def _index_cut_note(self, wanted: Optional[set]) -> str:
+        """Which files the search saw only the head of, and where to read on."""
+        notes = []
+        for planned, indexed in self._index_cut:
+            if wanted is not None and planned.ref not in wanted:
+                continue
+            if indexed:
+                notes.append(
+                    f"Only the first {indexed:,} tokens of {planned.ref} were searched; read further with "
+                    f'{self._action(READ)}(ref="{planned.ref}", offset={indexed}).'
+                )
+            else:
+                notes.append(
+                    f'{planned.ref} was not searched (too much text this turn); read it with '
+                    f'{self._action(READ)}(ref="{planned.ref}").'
+                )
+        return " ".join(notes)
 
     def _cut_note(self, planned: PlannedFile, row: Dict[str, Any], stored: int) -> str:
         extraction = _extraction(row)
@@ -1283,6 +1432,99 @@ class AttachmentsTool(Tool):
         body = "\n\n".join(sections)
         fenced = fence_file(planned.ref, planned.filename, body, range=label)
         return self._delivered("\n".join([UNTRUSTED_NOTE, fenced, footer]))
+
+    def _read_text_pages(self, planned: PlannedFile, text: str, spec: Any, budget: int) -> str:
+        """Read pages of a text file by the page markers in its text.
+
+        Args:
+            planned: The file.
+            text: Its text (whole, when it was kept past the stored cut).
+            spec: The pages wanted (``"150"``, ``"10-20"``).
+            budget: Tokens the result may hold.
+
+        Returns:
+            The pages, fenced, with where to read on.
+        """
+        name = sanitize_filename(planned.filename)
+        pages = text_pages(text)
+        if not pages:
+            return (
+                f"{planned.ref} {name} has no page markers: pages work only for PDFs and for text with page "
+                "markers (such as \"--- page 3 ---\" lines or form feeds). Use offset or rows."
+            )
+        count = max(pages)
+        wanted = _parse_pages(spec, count)
+        if wanted is None:
+            return f'Invalid pages "{spec}": use a page or a range such as "12-15".'
+        wanted = [p for p in wanted if p <= count]
+        if not wanted:
+            return f"{planned.ref} {name} has {count} pages."
+        encoding = _encoding()
+        sections: List[str] = []
+        shown: List[int] = []
+        used = 0
+        rest_offset: Optional[int] = None
+        for number in wanted[:MAX_TEXT_PAGES_PER_CALL]:
+            body = pages.get(number)
+            if body is None:
+                sections.append(f"--- page {number} ---\n[no page {number} marker in the text]")
+                shown.append(number)
+                continue
+            ids = encoding.encode_ordinary(body)
+            if used + len(ids) > budget:
+                if shown:
+                    break
+                sections.append(f"--- page {number} (first {budget:,} tokens) ---\n{encoding.decode(ids[:budget])}")
+                shown.append(number)
+                rest_offset = self._page_rest_offset(text, number, encoding.decode_bytes(ids[:budget]))
+                break
+            sections.append(f"--- page {number} ---\n{body}")
+            shown.append(number)
+            used += len(ids)
+        label = f"{_page_label(shown)} of {count}"
+        footer = f"[{planned.ref} {name}: showing {label}."
+        if rest_offset is not None:
+            # A page longer than the budget: its rest comes before any later page.
+            footer += (
+                f" Page {shown[-1]} continues: {self._action(READ)}(ref=\"{planned.ref}\", "
+                f"offset={rest_offset})."
+            )
+        remaining = [p for p in wanted if p > shown[-1]]
+        if remaining:
+            footer += f' Continue with {self._action(READ)}(ref="{planned.ref}", pages="{_range_spec(remaining)}").]'
+        elif shown[-1] < count:
+            step = max(len(shown), 1)
+            footer += (
+                f' Next pages: {self._action(READ)}(ref="{planned.ref}", '
+                f'pages="{shown[-1] + 1}-{min(shown[-1] + step, count)}").]'
+            )
+        elif rest_offset is not None:
+            footer += "]"
+        else:
+            footer += " End of file.]"
+        fenced = fence_file(planned.ref, planned.filename, "\n\n".join(sections), range=label)
+        return self._delivered("\n".join([UNTRUSTED_NOTE, fenced, footer]))
+
+    @staticmethod
+    def _page_rest_offset(text: str, number: int, shown: bytes) -> int:
+        """Token offset in ``text`` where the unread rest of page ``number`` starts.
+
+        It is the offset ``attachments_read(offset=...)`` takes, counted over
+        the whole text as that read counts it.
+
+        Args:
+            text: The file's text.
+            number: The page cut short.
+            shown: The bytes of the page's text that were returned.
+
+        Returns:
+            The token offset.
+        """
+        spans = (_text_page_spans(text) or {}).get(number)
+        if not spans:
+            return 0
+        chars = len(shown.decode("utf-8", errors="ignore"))
+        return len(_encoding().encode_ordinary(text[: _page_char_position(spans, chars)]))
 
     def _read_tokens(
         self, planned: PlannedFile, row: Dict[str, Any], text: str, offset: Any, budget: int
