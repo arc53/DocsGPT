@@ -10,7 +10,9 @@ vi.mock('react-i18next', () => ({
 const api = vi.hoisted(() => ({ testMCPConnection: vi.fn() }));
 vi.mock('../api/services/userService', () => ({ default: api }));
 
-import notificationsReducer from '../notifications/notificationsSlice';
+import notificationsReducer, {
+  sseEventReceived,
+} from '../notifications/notificationsSlice';
 import useMcpOAuth, { type McpOAuthConfig } from './useMcpOAuth';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -27,6 +29,15 @@ describe('useMcpOAuth', () => {
   let root: Root;
   let container: HTMLDivElement;
   let hook: ReturnType<typeof useMcpOAuth>;
+  let store: ReturnType<typeof makeStore>;
+
+  const makeStore = () =>
+    configureStore({
+      reducer: {
+        notifications: notificationsReducer,
+        preference: (state = { token: null }) => state,
+      },
+    });
 
   function Probe() {
     hook = useMcpOAuth();
@@ -39,12 +50,7 @@ describe('useMcpOAuth', () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
-    const store = configureStore({
-      reducer: {
-        notifications: notificationsReducer,
-        preference: (state = { token: null }) => state,
-      },
-    });
+    store = makeStore();
     await act(async () => {
       root.render(
         <Provider store={store}>
@@ -63,7 +69,11 @@ describe('useMcpOAuth', () => {
   const pending = () =>
     container.querySelector('span')?.getAttribute('data-pending');
 
-  it('stops waiting and says so when the sign-in window is closed', async () => {
+  // Sentry's and Stripe's sign-in pages send Cross-Origin-Opener-Policy:
+  // same-origin, which cuts the pop-up off from this tab, so `closed` reads
+  // true while the user is still signing in. Only the server knows the
+  // outcome; the wizard's Cancel button ends a sign-in the user abandoned.
+  const startWithPopup = async () => {
     const popup = { closed: false, close: vi.fn(), location: { href: '' } };
     const open = vi.spyOn(window, 'open').mockReturnValue(popup as never);
     api.testMCPConnection.mockResolvedValue({
@@ -74,22 +84,71 @@ describe('useMcpOAuth', () => {
     await act(async () => {
       await hook.start(CONFIG, { onDone, onError });
     });
-    expect(pending()).toBe('true');
-    // Still open: nothing happens.
+    return { popup, open, onDone, onError };
+  };
+
+  const serverEvent = async (type: string, payload = {}) => {
     await act(async () => {
-      vi.advanceTimersByTime(1500);
+      store.dispatch(
+        sseEventReceived({
+          id: `${type}-1`,
+          type,
+          scope: { kind: 'mcp_oauth', id: 'task-1' },
+          payload,
+        }),
+      );
     });
-    expect(onError).not.toHaveBeenCalled();
+  };
+
+  it('keeps waiting for the server when the sign-in window looks closed', async () => {
+    const { popup, open, onDone, onError } = await startWithPopup();
+    expect(pending()).toBe('true');
     popup.closed = true;
     await act(async () => {
-      vi.advanceTimersByTime(1500);
+      vi.advanceTimersByTime(5000);
     });
-    expect(onError).toHaveBeenCalledWith(
-      'modals.uploadDoc.connectors.auth.authCancelled',
-    );
-    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).not.toHaveBeenCalled();
+    expect(onDone).not.toHaveBeenCalled();
+    expect(pending()).toBe('true');
+    open.mockRestore();
+  });
+
+  it('finishes the sign-in the server completed after the window looked closed', async () => {
+    const { popup, open, onDone, onError } = await startWithPopup();
+    popup.closed = true;
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+    await serverEvent('mcp.oauth.completed');
+    expect(onDone).toHaveBeenCalledWith({ taskId: 'task-1' });
+    expect(onError).not.toHaveBeenCalled();
+    expect(pending()).toBe('false');
+    open.mockRestore();
+  });
+
+  it("reports the server's failure after the window looked closed", async () => {
+    const { popup, open, onDone, onError } = await startWithPopup();
+    popup.closed = true;
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+    await serverEvent('mcp.oauth.failed', { error: 'OAuth timeout' });
+    expect(onError).toHaveBeenCalledWith('OAuth timeout');
     expect(onDone).not.toHaveBeenCalled();
     expect(pending()).toBe('false');
+    open.mockRestore();
+  });
+
+  it('stops waiting when the user cancels', async () => {
+    const { popup, open, onDone, onError } = await startWithPopup();
+    popup.closed = true;
+    await act(async () => {
+      hook.cancel();
+    });
+    expect(pending()).toBe('false');
+    await serverEvent('mcp.oauth.completed');
+    expect(onDone).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
     open.mockRestore();
   });
 
