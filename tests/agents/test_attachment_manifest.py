@@ -287,7 +287,7 @@ class TestFilesThatWereNotStored:
         assert plan.reserved_tokens > 0
 
 
-def cut_with_full_text(name="ordinance.txt", stored=100_000, original=240_258, full=None):
+def cut_with_full_text(name="ordinance.txt", stored=100_000, original=240_258, full=None, full_bytes=1_000_000):
     row = att(name, stored, content="head " * 50)
     row["upload_path"] = f"inputs/u/attachments/a1/{name}"
     row["metadata"]["extraction"].update(
@@ -299,6 +299,8 @@ def cut_with_full_text(name="ordinance.txt", stored=100_000, original=240_258, f
             "full_text_tokens": full or original,
         }
     )
+    if full_bytes is not None:
+        row["metadata"]["extraction"]["full_text_bytes"] = full_bytes
     return row
 
 
@@ -342,3 +344,46 @@ class TestTextKeptPastTheCut:
         )
         line = self._line(plan)
         assert "600,000 of ~900,000 tokens" in line
+
+    def test_a_side_copy_over_the_current_cap_is_not_offered(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "ATTACHMENT_FULL_TEXT_MAX_BYTES", 500_000)
+        plan = plan_attachments(
+            [cut_with_full_text(full_bytes=500_001), att("b.txt", 300)], caps(attachments_tool=True), budget=50_000
+        )
+        line = self._line(plan)
+        assert "stored text cut at 100,000 of ~240,258 tokens" in line
+        assert "can be read with" not in line and "240,258 tokens," not in line
+
+    def test_a_side_copy_within_the_current_cap_is_offered(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "ATTACHMENT_FULL_TEXT_MAX_BYTES", 500_000)
+        plan = plan_attachments(
+            [cut_with_full_text(full_bytes=500_000), att("b.txt", 300)], caps(attachments_tool=True), budget=50_000
+        )
+        assert "can be read with attachments_read and searched" in self._line(plan)
+
+    def test_a_side_copy_without_a_recorded_size_is_not_offered(self):
+        plan = plan_attachments(
+            [cut_with_full_text(full_bytes=None), att("b.txt", 300)], caps(attachments_tool=True), budget=50_000
+        )
+        line = self._line(plan)
+        assert "stored text cut at 100,000 of ~240,258 tokens" in line
+        assert "can be read with" not in line
+
+    def test_without_the_side_copy_a_partial_head_still_reads_on_in_the_stored_text(self):
+        plan = plan_attachments([cut_with_full_text(full_bytes=None)], caps(attachments_tool=True), budget=50_000)
+        planned = plan.files[0]
+        block = render_attachment_block(plan)
+        assert planned.full_tokens is None
+        assert f"showing tokens 1–{planned.shown_tokens:,} of 100,000." in block
+        assert f'attachments_read(ref="F1", offset={planned.shown_tokens})' in block
+        assert "of 240,258." not in block
+
+    def test_without_the_side_copy_a_whole_head_does_not_promise_more(self):
+        plan = plan_attachments([cut_with_full_text(full_bytes=None)], caps(attachments_tool=True), budget=200_000)
+        block = render_attachment_block(plan)
+        assert "offset=100000" not in block
+        assert "only the first 100,000 of ~240,258 tokens are included" in block

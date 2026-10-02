@@ -187,6 +187,7 @@ class TestFullTextSideCopy:
         assert extraction["full_text_path"] == info["path"] + ".extracted.txt"
         assert (storage_dir / extraction["full_text_path"]).read_text(encoding="utf-8") == text
         assert extraction["full_text_tokens"] == extraction["original_tokens"]
+        assert extraction["full_text_bytes"] == len(text.encode("utf-8"))
         assert "full_text_cut" not in extraction
 
     def test_no_side_copy_when_the_text_fits(self, storage_dir, monkeypatch):
@@ -211,6 +212,7 @@ class TestFullTextSideCopy:
         extraction = _fetch(info["attachment_id"])["metadata"]["extraction"]
         stored = (storage_dir / extraction["full_text_path"]).read_bytes()
         assert len(stored) <= 500_000
+        assert extraction["full_text_bytes"] == len(stored)
         assert extraction["full_text_cut"] is True
         assert 100000 < extraction["full_text_tokens"] < extraction["original_tokens"]
 
@@ -260,6 +262,7 @@ class TestFullTextSideCopy:
         assert copy["full_text_path"] == second["path"] + ".extracted.txt"
         assert (storage_dir / copy["full_text_path"]).read_text(encoding="utf-8") == text
         assert copy["full_text_tokens"] == copy["original_tokens"]
+        assert copy["full_text_bytes"] == len(text.encode("utf-8"))
 
 
     def test_an_earlier_parse_without_a_side_copy_is_parsed_again(self, storage_dir, monkeypatch):

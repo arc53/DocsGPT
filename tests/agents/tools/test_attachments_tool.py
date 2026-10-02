@@ -815,17 +815,34 @@ def ordinance(tmp_path_factory):
     return out, side, text
 
 
-def seed_cut(db, ordinance, *, side_path=None):
+def seed_cut(db, ordinance, *, side_path=None, side_bytes="recorded"):
     from docsgpt.utils import get_encoding
 
     path, side, text = ordinance
     encoding = get_encoding()
     ids = encoding.encode_ordinary(text)
     head = encoding.decode(ids[:STORED_CUT])
+    extraction = {"full_text_path": str(side_path or side), "full_text_tokens": len(ids)}
+    if side_bytes == "recorded":
+        extraction["full_text_bytes"] = len(text.encode("utf-8"))
+    elif side_bytes is not None:
+        extraction["full_text_bytes"] = side_bytes
     return seed(
         db, "ordinance.txt", head, path=str(path), truncated=True, original_tokens=len(ids),
-        extraction={"full_text_path": str(side_path or side), "full_text_tokens": len(ids)},
+        extraction=extraction,
     ), len(ids)
+
+
+def manifest_line(db, row_id, name="ordinance.txt"):
+    """The manifest line the planner writes for ``row_id`` in a turn with the tool."""
+    from docsgpt.agents.attachment_context import render_manifest
+
+    caps = TurnCapabilities(
+        tool_calling=True, vision=False, native_pdf=False, sandbox=False, window=400_000, is_v1=False,
+        attachments_tool=True, attachments_actions=("attachments_list", "attachments_read", "attachments_search"),
+    )
+    plan = plan_attachments([AttachmentsRepository(db).get(row_id, USER)], caps, budget=50_000, sandbox_max_input_bytes=0)
+    return [line for line in render_manifest(plan).splitlines() if name in line][0]
 
 
 @pytest.mark.unit
@@ -918,6 +935,41 @@ class TestFullText:
         past = tool_for(current=[row_id]).execute_action("attachments_read", ref="F1", offset=STORED_CUT + 10)
 
         assert "not available" in past
+
+    def test_the_tool_and_the_manifest_agree_a_side_copy_is_readable(self, db, storage, ordinance):
+        row_id, total = seed_cut(db, ordinance)
+
+        listing = tool_for(current=[row_id]).execute_action("attachments_list")
+
+        assert "can be read with attachments_read and searched" in manifest_line(db, row_id)
+        assert f"{total:,} tokens" in [line for line in listing.splitlines() if "ordinance.txt" in line][0]
+
+    def test_a_side_copy_over_the_current_cap_reads_as_the_stored_text_everywhere(
+        self, db, storage, ordinance, monkeypatch
+    ):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "ATTACHMENT_FULL_TEXT_MAX_BYTES", 10_000)
+        row_id, total = seed_cut(db, ordinance)
+        tool = tool_for(current=[row_id])
+
+        listing = tool.execute_action("attachments_list")
+        past = tool.execute_action("attachments_read", ref="F1", offset=STORED_CUT + 10)
+
+        line = manifest_line(db, row_id)
+        assert "stored text cut at" in line and "can be read with" not in line
+        assert f"of ~{total:,} tokens stored (cut at upload)" in listing
+        assert "not available" in past
+
+    def test_a_side_copy_without_a_recorded_size_is_not_read(self, db, storage, ordinance):
+        row_id, total = seed_cut(db, ordinance, side_bytes=None)
+        tool = tool_for(current=[row_id])
+
+        past = tool.execute_action("attachments_read", ref="F1", offset=STORED_CUT + 10)
+
+        assert "can be read with" not in manifest_line(db, row_id)
+        assert "not available" in past
+        assert "No matches" in tool.execute_action("attachments_search", query="VZ-150")
 
     def test_search_indexes_a_bounded_amount_of_text_per_turn(self, db, storage, ordinance, monkeypatch):
         monkeypatch.setattr("docsgpt.agents.tools.attachments.SEARCH_MAX_INDEX_TOKENS", 50_000)

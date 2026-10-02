@@ -8,11 +8,15 @@ and records it in ``metadata.extraction``:
 
 * ``full_text_path``: where the side copy is;
 * ``full_text_tokens``: its size in tokens;
+* ``full_text_bytes``: its size in bytes;
 * ``full_text_cut``: present (True) when the side copy itself was capped.
 
 The attachments tool reads and searches that copy, so the tail of a long
 document is reachable. Nothing else reads it, and a missing or unreadable
-copy only means the tool falls back to the stored text.
+copy only means the tool falls back to the stored text. A copy whose
+recorded size is unknown or over the current cap is never offered: the
+planner tells the model it can read past the cut only for a copy the tool
+would load.
 """
 
 from __future__ import annotations
@@ -74,6 +78,7 @@ def store_full_text(
     info: Dict[str, Any] = {
         "full_text_path": path,
         "full_text_tokens": len(encoding.encode_ordinary(text)) if cut else int(token_count),
+        "full_text_bytes": len(data),
     }
     if cut:
         info["full_text_cut"] = True
@@ -112,14 +117,17 @@ def copy_full_text(storage: Any, extraction: Dict[str, Any], original_path: str)
         logger.warning("Could not copy the full text of %s: %s", source, exc)
         return kept
     copied = {k: v for k, v in extraction.items() if k.startswith("full_text_")}
-    return {**kept, **copied, "full_text_path": path}
+    return {**kept, **copied, "full_text_path": path, "full_text_bytes": len(data)}
 
 
 def full_text_location(row: Dict[str, Any]) -> Optional[str]:
-    """Where a row's side copy is, when it has a trustworthy one.
+    """Where a row's side copy is, when it has a trustworthy, loadable one.
 
     Only a copy the worker wrote for this very row is accepted: one beside
-    the row's original file, named after it.
+    the row's original file, named after it, whose recorded size is within
+    the current ``ATTACHMENT_FULL_TEXT_MAX_BYTES``. Checking the recorded
+    size, not the object, keeps this free of storage calls; an object gone
+    since it was written still falls back to the stored text when read.
 
     Args:
         row: An attachment row.
@@ -137,7 +145,17 @@ def full_text_location(row: Dict[str, Any]) -> Optional[str]:
         return None
     if os.path.dirname(path) != os.path.dirname(str(original)):
         return None
+    if not 0 < _recorded_bytes(extraction) <= _max_bytes():
+        return None
     return path
+
+
+def _recorded_bytes(extraction: Dict[str, Any]) -> int:
+    """The side copy's recorded size in bytes; 0 when it is missing or unusable."""
+    try:
+        return max(int(extraction.get("full_text_bytes") or 0), 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def full_text_tokens(row: Dict[str, Any]) -> Optional[int]:

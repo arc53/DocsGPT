@@ -134,7 +134,8 @@ class PlannedFile:
             file (its size is within ``SANDBOX_MAX_INPUT_BYTES`` or unknown).
         full_tokens: Tokens of the whole extracted text the attachments tool
             can read past the stored cut (``docsgpt.attachment_full_text``);
-            None when the stored text is all there is.
+            None when the stored text is all there is, including when the
+            side copy's recorded size is unknown or over the current cap.
     """
 
     ref: str
