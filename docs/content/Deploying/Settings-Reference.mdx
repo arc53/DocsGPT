@@ -408,7 +408,7 @@ Intra-op threads for the local ONNX runner; unset uses every core. It scales sub
 
 ### `EMBEDDINGS_CACHE_DIR`
 
-Type `str`, default `<DOCSGPT_HOME>\models`.
+Type `str`, default `<DOCSGPT_HOME>/models`.
 
 Where embedding models and their tokenizers are cached. Persistent by default: FastEmbed's own default is the temp dir.
 
@@ -634,7 +634,7 @@ Milvus collection name.
 
 ### `MILVUS_URI`
 
-Type `str`, default `<DOCSGPT_HOME>\milvus_local.db`.
+Type `str`, default `<DOCSGPT_HOME>/milvus_local.db`.
 
 Milvus server URI. The default is a milvus-lite (embedded) database file under the data home, like the other local stores.
 

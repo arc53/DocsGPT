@@ -129,6 +129,19 @@ class TestRecursive:
         chunker = ChunkerCreator.create_chunker("recursive_chunk")
         assert isinstance(chunker, RecursiveChunker)
 
+    def test_overlap_honors_min_tokens_when_restart_cannot_fit_next_fragment(self):
+        """Ensure overlap below min_tokens is skipped if it cannot combine with next fragment."""
+        chunker = RecursiveChunker(max_tokens=10, min_tokens=5, chunk_overlap=9)
+        token_map = {"f1": 6, "f2": 4, "f3": 9, "f1f2": 10, "f2f3": 13, "f1f2f3": 19}
+        chunker._token_count = lambda text: token_map.get(text, len(text))
+
+        chunks = chunker._merge_fragments(["f1", "f2", "f3"])
+        # f1 + f2 = 10 tokens (chunk 1)
+        # overlap would be f2 (4 tokens < min_tokens 5)
+        # f2 + f3 = 13 tokens > max_tokens 10
+        # Undersized overlap f2 is skipped so chunk 2 starts at f3
+        assert chunks == ["f1f2", "f3"]
+
 
 @pytest.mark.unit
 class TestMarkdown:
