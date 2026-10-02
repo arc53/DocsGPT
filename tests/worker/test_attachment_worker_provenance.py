@@ -262,6 +262,32 @@ class TestFullTextSideCopy:
         assert copy["full_text_tokens"] == copy["original_tokens"]
 
 
+    def test_an_earlier_parse_without_a_side_copy_is_parsed_again(self, storage_dir, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        text = self._long_text()
+        calls = []
+
+        def _reader(**kwargs):
+            calls.append(kwargs.get("input_files"))
+            return type("R", (), {"load_data": lambda self: [_Doc(text)]})()
+
+        monkeypatch.setattr("docsgpt.worker.SimpleDirectoryReader", _reader)
+        first = _file_info(storage_dir, filename="a.txt", content=b"same long bytes")
+        second = _file_info(storage_dir, filename="b.txt", content=b"same long bytes")
+        # The first upload predates side copies.
+        monkeypatch.setattr(settings, "ATTACHMENT_FULL_TEXT_MAX_BYTES", 0)
+        _run_worker(first)
+        monkeypatch.setattr(settings, "ATTACHMENT_FULL_TEXT_MAX_BYTES", 8_000_000)
+
+        _run_worker(second)
+
+        assert len(calls) == 2
+        copy = _fetch(second["attachment_id"])["metadata"]
+        assert "reused_from" not in copy
+        assert copy["extraction"]["full_text_path"] == second["path"] + ".extracted.txt"
+
+
 @pytest.mark.usefixtures("wired_engine")
 class TestFailureProvenance:
     def test_terminal_parse_failure_writes_failed_row(self, storage_dir, monkeypatch):

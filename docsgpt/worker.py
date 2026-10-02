@@ -2030,12 +2030,29 @@ def _find_reusable_parse(user: str, content_hash: Optional[str], attachment_id: 
     try:
         with db_readonly() as conn:
             # Never a zip's row: it holds the zip's index, not this file's text.
-            return AttachmentsRepository(conn).find_by_hash(
+            row = AttachmentsRepository(conn).find_by_hash(
                 user, content_hash, exclude_legacy_id=str(attachment_id), archive=False
             )
     except Exception:
         logging.warning("Attachment content-hash lookup failed; parsing instead", exc_info=True)
         return None
+    if row is not None and _lacks_full_text(row):
+        # Cut at upload before side copies were kept: parse again, so this
+        # upload gets the whole text and later reuses copy it.
+        logging.info(f"Attachment parse {row.get('id')} kept no full text; parsing again")
+        return None
+    return row
+
+
+def _lacks_full_text(row: Dict[str, Any]) -> bool:
+    """A parse that cut the text and kept no side copy, while side copies are on."""
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    extraction = metadata.get("extraction") if isinstance(metadata.get("extraction"), dict) else {}
+    return (
+        bool(extraction.get("truncated"))
+        and not extraction.get("full_text_path")
+        and int(settings.ATTACHMENT_FULL_TEXT_MAX_BYTES or 0) > 0
+    )
 
 
 def _reused_parse_metadata(row: Dict[str, Any]) -> Dict[str, Any]:
