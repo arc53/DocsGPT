@@ -73,6 +73,16 @@ Key points:
 
 You can pass files into a run. Each input accepts a short reference returned by a previous artifact action, a full artifact id, or the name or id of a file you attached to the conversation. Each referenced file is placed in the workspace at `inputs/<filename>` before the code runs.
 
+### Letting the model see images
+
+When the model reads images, it can look at what its tools produce instead of guessing:
+
+- Charts a run displays with `plt.show()` are saved as artifacts and shown to the model with the run's result. On Daytona this needs a snapshot that includes matplotlib.
+- A `view_image` tool is added next to the Code Executor and Read Webpage. It shows the model an image artifact by its reference (such as `A2`) or an image URL, such as one on a page Read Webpage returned.
+- Images an MCP server returns are shown to the model as images too.
+
+The image goes inside the tool result for Anthropic, the OpenAI Responses API, and Gemini 3. For Chat Completions and earlier Gemini models it follows the tool results in a separate message. Images are scaled down to at most 2000 pixels on the long side, and an earlier turn's images are not sent again: the model views them again when it needs to.
+
 ## Read Document
 
 Read Document parses a file into text, markdown, structured JSON (with tables), or chunks. It is meant for workflows where a node needs the contents of an uploaded or produced document, for example a compliance flow that extracts fields and validates them against a JSON schema.
