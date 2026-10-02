@@ -7,12 +7,14 @@ import { createContext, useContext } from 'react';
  * saved message up to 1,000. `source` is a file path for an uploaded source
  * or a URL for a crawled one. `source_id` and `chunk_key` find the full chunk
  * again (`/api/sources/<id>/chunk`); messages saved before retrieval carried
- * them have neither.
+ * them have neither. `link` is the URL older web-search answers saved instead
+ * of `source`.
  */
 export type AnswerSource = {
   title: string;
   text: string;
   source?: string;
+  link?: string;
   filename?: string;
   source_id?: string;
   chunk_key?: string;
@@ -36,7 +38,7 @@ export const useChatCompanion = () => useContext(ChatCompanionContext);
 
 /** The source's web address, when it is one a browser can open. */
 export function sourceHref(source: AnswerSource): string | null {
-  const value = source.source ?? '';
+  const value = source.source ?? source.link ?? '';
   return /^https?:\/\//i.test(value) ? value : null;
 }
 
