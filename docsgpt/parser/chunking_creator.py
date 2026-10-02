@@ -45,7 +45,7 @@ class ChunkerCreator:
             ValueError: If no chunker is registered for ``strategy``.
         """
         cls._ensure_builtin()
-        key = (strategy or "classic_chunk").lower()
+        key = (strategy or "recursive").lower()
         chunker_class = cls.chunkers.get(key)
         if not chunker_class:
             raise ValueError(f"No chunker class found for strategy {strategy}")
