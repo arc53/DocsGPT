@@ -411,6 +411,25 @@ def test_exec_captures_charts_as_plots(sandbox):
     assert res.plots[0].format == "png" and res.plots[0].content_base64 == "BASE64PNG"
 
 
+def test_exec_takes_shown_charts_out_of_stdout(sandbox):
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    stdout = "before\n<<docsgpt-chart:QUJD>>\n<<docsgpt-chart:REVG>>\nafter\n"
+    created.process.code_run.return_value = _FakeExecuteResponse(exit_code=0, artifacts=_FakeArtifacts(stdout=stdout))
+    res = sandbox.exec("conv-1", "plt.show()")
+    assert res.stdout == "before\nafter\n"
+    assert [p.content_base64 for p in res.plots] == ["QUJD", "REVG"]
+
+
+def test_the_chart_hook_runs_first_and_compiles():
+    from docsgpt.sandbox.daytona import DaytonaSandbox
+
+    wrapped = DaytonaSandbox._with_workspace_cwd("/w", "from __future__ import annotations\nprint(1)")
+    assert wrapped.startswith("from __future__ import annotations")
+    assert "_DgPyplotHook" in wrapped and wrapped.index("_DgPyplotHook") < wrapped.index("print(1)")
+    compile(wrapped, "<code>", "exec")
+
+
 def test_exec_sdk_error_becomes_error_result(sandbox):
     sandbox.open("conv-1")
     _, created = sandbox._client.created[0]
