@@ -1425,7 +1425,6 @@
         "mcp_linear": "Sincroniza incidencias y documentos con Conocimiento y deja que los agentes busquen, creen y actualicen incidencias.",
         "mcp_atlassian": "Busca y actualiza incidencias de Jira y páginas de Confluence.",
         "mcp_sentry": "Consulta incidencias, eventos y versiones de Sentry.",
-        "mcp_asana": "Encuentra y actualiza tareas y proyectos de Asana.",
         "mcp_stripe": "Consulta clientes, pagos y suscripciones en Stripe.",
 "mcp_vercel": "Gestiona proyectos, despliegues y registros de compilación de Vercel.",
         "github": "Sincroniza repositorios con Conocimiento y deja que los agentes lean código, issues y pull requests."
@@ -2105,7 +2104,30 @@
       "attachmentsReadRows": "Leyendo {{ref}} (filas {{rows}})…",
       "attachmentsReadGeneric": "Leyendo un archivo…",
       "attachmentsImage": "Viendo la imagen {{ref}}…",
-      "attachmentsList": "Listando archivos…"
+      "attachmentsList": "Listando archivos…",
+      "wikiList": "Listando páginas de la wiki…",
+      "wikiRead": "Leyendo la página de la wiki {{path}}…",
+      "todoAdd": "Añadiendo la tarea «{{title}}»…",
+      "todoList": "Listando tareas…",
+      "todoGet": "Leyendo la tarea #{{id}}…",
+      "todoUpdate": "Actualizando la tarea #{{id}}…",
+      "todoComplete": "Completando la tarea #{{id}}…",
+      "todoDelete": "Eliminando la tarea #{{id}}…",
+      "noteRead": "Leyendo la nota…",
+      "noteUpdate": "Actualizando la nota…",
+      "noteDelete": "Eliminando la nota…",
+      "memoryList": "Listando la memoria…",
+      "memoryRead": "Leyendo {{path}} de la memoria…",
+      "memorySave": "Guardando {{path}} en la memoria…",
+      "memoryDelete": "Eliminando {{path}} de la memoria…",
+      "memoryRename": "Renombrando {{path}} en la memoria…",
+      "cryptoPrice": "Consultando el precio de {{symbol}} en {{currency}}…",
+      "sentNotification": "Enviando una notificación…",
+      "telegramMessage": "Enviando un mensaje de Telegram…",
+      "telegramImage": "Enviando una imagen a Telegram…",
+      "sqlQuery": "Ejecutando una consulta SQL…",
+      "dbSchema": "Leyendo el esquema de la base de datos…",
+      "usedToolAction": "Usando {{tool}}: {{action}}…"
     },
     "toolChip": {
       "searchingWeb": "Buscado en la web · “{{query}}”",
@@ -2128,7 +2150,30 @@
       "attachmentsReadRows": "Leyó {{ref}} (filas {{rows}})",
       "attachmentsReadGeneric": "Leyó un archivo",
       "attachmentsImage": "Vio la imagen {{ref}}",
-      "attachmentsList": "Listó los archivos"
+      "attachmentsList": "Listó los archivos",
+      "wikiList": "Páginas de la wiki listadas",
+      "wikiRead": "Leída la página de la wiki {{path}}",
+      "todoAdd": "Tarea «{{title}}» añadida",
+      "todoList": "Tareas listadas",
+      "todoGet": "Leída la tarea #{{id}}",
+      "todoUpdate": "Tarea #{{id}} actualizada",
+      "todoComplete": "Tarea #{{id}} completada",
+      "todoDelete": "Tarea #{{id}} eliminada",
+      "noteRead": "Nota leída",
+      "noteUpdate": "Nota actualizada",
+      "noteDelete": "Nota eliminada",
+      "memoryList": "Memoria listada",
+      "memoryRead": "Leído {{path}} de la memoria",
+      "memorySave": "Guardado {{path}} en la memoria",
+      "memoryDelete": "Eliminado {{path}} de la memoria",
+      "memoryRename": "Renombrado {{path}} en la memoria",
+      "cryptoPrice": "Consultado el precio de {{symbol}} en {{currency}}",
+      "sentNotification": "Notificación enviada",
+      "telegramMessage": "Mensaje de Telegram enviado",
+      "telegramImage": "Imagen enviada a Telegram",
+      "sqlQuery": "Consulta SQL ejecutada",
+      "dbSchema": "Esquema de la base de datos leído",
+      "usedToolAction": "Usó {{tool}}: {{action}}"
     },
     "inlineSteps": {
       "arguments": "Argumentos",
@@ -2204,7 +2249,11 @@
       "researched_one": "{{count}} tema investigado",
       "researched_other": "{{count}} temas investigados"
     },
-    "openFile": "Abrir archivo"
+    "openFile": "Abrir archivo",
+    "stepGroup": {
+      "title": "Herramientas",
+      "failed": "{{count}} con error"
+    }
   },
   "agents": {
     "title": "Agentes",
@@ -3077,7 +3126,7 @@
       "personalSubtitle": "Espacio de trabajo personal",
       "roleAdmin": "Admin",
       "roleMember": "Miembro",
-      "manageTeam": "Gestionar equipo",
+      "manageTeams": "Gestionar equipos",
       "createTeam": "Crear equipo",
       "logoAlt": "Logotipo de DocsGPT"
     }

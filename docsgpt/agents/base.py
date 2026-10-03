@@ -683,13 +683,30 @@ class BaseAgent(ABC):
                 )
                 tool_gen = self._execute_tool_action(tools_dict, tc)
                 tool_response = None
-                while True:
-                    try:
-                        event = next(tool_gen)
-                        yield event
-                    except StopIteration as e:
-                        tool_response, _ = e.value
-                        break
+                try:
+                    while True:
+                        try:
+                            event = next(tool_gen)
+                            yield event
+                        except StopIteration as e:
+                            tool_response, _ = e.value
+                            break
+                except Exception as exc:
+                    # As in handle_tool_calls: a failing tool becomes the
+                    # model's tool result instead of ending the answer.
+                    logger.error(f"Error executing tool: {exc}", exc_info=True)
+                    tool_response = f"Error executing tool: {exc}"
+                    yield {
+                        "type": "tool_call",
+                        "data": {
+                            "tool_name": pending.get("tool_name", "unknown"),
+                            "call_id": call_id,
+                            "action_name": pending.get("llm_name", pending["name"]),
+                            "arguments": args,
+                            "error": tool_response,
+                            "status": "error",
+                        },
+                    }
                 # Same per-result cap as the in-loop path
                 # (handle_tool_calls); the journal keeps the full result.
                 tool_response = _bound_tool_response_for_llm(tool_response)
@@ -715,9 +732,12 @@ class BaseAgent(ABC):
                     "call_id": call_id,
                     "action_name": pending.get("llm_name", pending["name"]),
                     "arguments": args,
+                    # Replayed to the model on later turns, so it keeps the decision.
+                    "result": truncate_tool_result(denial),
                     "status": "denied",
                 }
                 trace_unexecuted_tool_call(tc, {**denied_data, "error": comment or None})
+                self.tool_calls.append(denied_data)
                 yield {"type": "tool_call", "data": denied_data}
 
             elif "result" in action:
@@ -751,6 +771,7 @@ class BaseAgent(ABC):
                     "status": result_status(result),
                 }
                 trace_unexecuted_tool_call(tc, client_data, **{"docsgpt.client_executed": True})
+                self.tool_calls.append(client_data)
                 yield {"type": "tool_call", "data": client_data}
 
         # Images an attachments read queued before the pause (restored with

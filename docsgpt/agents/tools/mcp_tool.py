@@ -15,7 +15,17 @@ from fastmcp.client.transports import (
     StdioTransport,
     StreamableHttpTransport,
 )
+import httpx2
 from mcp.client.auth import OAuthClientProvider, TokenStorage
+from mcp.client.auth.utils import (
+    build_oauth_authorization_server_metadata_discovery_urls,
+    build_protected_resource_metadata_discovery_urls,
+    create_oauth_metadata_request,
+    handle_auth_metadata_response,
+    handle_protected_resource_response,
+    issuers_match,
+    validate_metadata_issuer,
+)
 from mcp.shared._httpx_utils import create_mcp_http_client
 from mcp.shared.inbound import (
     MCP_PARAM_HEADER_PREFIX,
@@ -1025,6 +1035,52 @@ class DocsGPTOAuth(OAuthClientProvider):
             self.context.token_expiry_time = float(expires_at)
         elif tokens.refresh_token and tokens.expires_in:
             self.context.token_expiry_time = _EXPIRED
+        if (
+            self.context.oauth_metadata is None
+            and not self.context.is_token_valid()
+            and self.context.can_refresh_token()
+        ):
+            await self._discover_authorization_server()
+
+    async def _discover_authorization_server(self) -> None:
+        """Read the authorization server's metadata so a renewal goes to its token endpoint.
+
+        The SDK fills this in only during a sign-in in the same process; without
+        it a renewal is sent to ``<server>/token``, which is wrong for servers
+        such as Sentry (``/oauth/token``, where ``/token`` answers 500) and ends
+        in "OAuth session expired". Uses the SDK's own discovery order and
+        issuer check. A failure leaves the SDK's default in place.
+        """
+        server_url = self.context.server_url
+        try:
+            async with create_mcp_http_client(timeout=httpx2.Timeout(10.0)) as client:
+                auth_server_url = None
+                for url in build_protected_resource_metadata_discovery_urls(None, server_url):
+                    prm = await handle_protected_resource_response(
+                        await client.send(create_oauth_metadata_request(url))
+                    )
+                    if prm and prm.authorization_servers:
+                        auth_server_url = str(prm.authorization_servers[0])
+                        self.context.protected_resource_metadata = prm
+                        self.context.auth_server_url = auth_server_url
+                        break
+                expected_issuer = auth_server_url or self._expected_issuer()
+                for url in build_oauth_authorization_server_metadata_discovery_urls(auth_server_url, server_url):
+                    ok, metadata = await handle_auth_metadata_response(
+                        await client.send(create_oauth_metadata_request(url))
+                    )
+                    if not ok:
+                        break
+                    if metadata:
+                        # On the legacy path a root issuer written with its
+                        # trailing slash names the same server, as in the SDK.
+                        if auth_server_url is None and issuers_match(str(metadata.issuer), expected_issuer):
+                            expected_issuer = str(metadata.issuer)
+                        validate_metadata_issuer(metadata, expected_issuer)
+                        self.context.oauth_metadata = metadata
+                        return
+        except Exception as exc:  # noqa: BLE001 - the SDK's default endpoint is still tried
+            logger.warning("Could not read OAuth metadata for %s before renewing: %s", server_url, exc)
 
     def _process_auth_url(self, authorization_url: str) -> tuple[str, str]:
         """Process authorization URL to extract state"""

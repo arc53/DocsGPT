@@ -297,6 +297,41 @@ class TestGetPubliclySharedConversations:
         # Non-promptable share should not expose api_key
         assert "api_key" not in data
 
+    def test_returns_segments_without_the_rest_of_the_metadata(self, app, pg_conn):
+        from docsgpt.api.user.sharing.routes import (
+            GetPubliclySharedConversations,
+            ShareConversation,
+        )
+        from docsgpt.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "user-shared-seg"
+        conv_id = _seed_conversation(pg_conn, user, name="Seg")
+        order = [{"kind": "tool", "call_id": "c1"}, {"kind": "text", "length": 2}]
+        ConversationsRepository(pg_conn).append_message(
+            conv_id,
+            {"prompt": "p", "response": "ok", "metadata": {"segments": order, "error": "private"}},
+        )
+
+        with _patch_sharing_db(pg_conn), app.test_request_context(
+            "/api/share?isPromptable=false",
+            method="POST",
+            json={"conversation_id": conv_id},
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            identifier = ShareConversation().post().json["identifier"]
+
+        with _patch_sharing_db(pg_conn), app.test_request_context(
+            f"/api/shared_conversation/{identifier}"
+        ):
+            query = GetPubliclySharedConversations().get(identifier).json["queries"][0]
+
+        assert query["segments"] == order
+        assert "metadata" not in query
+
     def test_returns_api_key_for_promptable_share(self, app, pg_conn):
         from docsgpt.api.user.sharing.routes import (
             GetPubliclySharedConversations,

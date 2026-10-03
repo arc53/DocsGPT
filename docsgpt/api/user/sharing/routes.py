@@ -339,6 +339,8 @@ class GetPubliclySharedConversations(Resource):
                         "thought": msg.get("thought"),
                         "sources": msg.get("sources") or [],
                         "tool_calls": msg.get("tool_calls") or [],
+                        # Only the order, not the rest of the private metadata.
+                        "segments": (msg.get("metadata") or {}).get("segments"),
                         "timestamp": (
                             msg["timestamp"].isoformat()
                             if hasattr(msg.get("timestamp"), "isoformat")

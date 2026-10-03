@@ -64,9 +64,10 @@ export interface Query {
   thought?: string;
   sources?: AnswerSource[];
   tool_calls?: ToolCallsType[];
-  // Arrival-ordered layout of the fields above, so reasoning and tool calls
-  // render where they happened. Live-stream only; absent on reload, where
-  // ``getAnswerSegments`` synthesizes an order instead.
+  // Arrival-ordered layout of the fields above, so answer text, reasoning and
+  // tool calls render where they happened. Recorded live, and rebuilt on load
+  // from the order the backend saved (``hydrateSegments``); when that is absent
+  // or no longer fits, ``getAnswerSegments`` synthesizes one.
   segments?: AnswerSegment[];
   // Set when this answer came from a workflow agent run; lets the chat render
   // the run's produced artifacts via WorkflowRunArtifacts.

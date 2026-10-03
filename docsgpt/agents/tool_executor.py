@@ -272,9 +272,22 @@ def result_status(result: Any) -> str:
 
     Tools report failure in-band (``{"status": "error", ...}`` or an ``error``
     key) while the executor used to stamp every returned result ``completed``,
-    so the stored conversation showed failed calls as successes.
+    so the stored conversation showed failed calls as successes. HTTP-backed
+    tools (cryptoprice, api_tool, ntfy, duckduckgo) report an integer
+    ``status_code`` instead, and a 4xx/5xx there is a failure too.
+
+    Args:
+        result: The tool's return value.
+
+    Returns:
+        ``"error"`` for an in-band failure, otherwise ``"completed"``.
     """
-    if isinstance(result, dict) and (result.get("status") == "error" or result.get("error")):
+    if not isinstance(result, dict):
+        return "completed"
+    if result.get("status") == "error" or result.get("error"):
+        return "error"
+    code = result.get("status_code")
+    if isinstance(code, int) and not isinstance(code, bool) and code >= 400:
         return "error"
     return "completed"
 

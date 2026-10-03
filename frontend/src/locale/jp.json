@@ -1424,7 +1424,6 @@
         "mcp_linear": "課題とドキュメントをナレッジに同期し、エージェントが課題を検索、作成、更新できるようにします。",
         "mcp_atlassian": "Jira の課題と Confluence のページを検索、更新します。",
         "mcp_sentry": "Sentry の課題、イベント、リリースを調べます。",
-        "mcp_asana": "Asana のタスクやプロジェクトを検索、更新します。",
         "mcp_stripe": "Stripe の顧客、支払い、サブスクリプションを調べます。",
 "mcp_vercel": "Vercel のプロジェクト、デプロイ、ビルドログを管理します。",
         "github": "リポジトリをナレッジに同期し、エージェントがコード、Issue、プルリクエストを読めるようにします。"
@@ -2095,7 +2094,30 @@
       "attachmentsReadRows": "{{ref}}（{{rows}} 行）を読み込み中…",
       "attachmentsReadGeneric": "ファイルを読み込み中…",
       "attachmentsImage": "画像 {{ref}} を表示中…",
-      "attachmentsList": "ファイルを一覧表示中…"
+      "attachmentsList": "ファイルを一覧表示中…",
+      "wikiList": "Wiki ページを一覧表示中…",
+      "wikiRead": "Wiki ページ {{path}} を読み込み中…",
+      "todoAdd": "タスク「{{title}}」を追加中…",
+      "todoList": "タスクを一覧表示中…",
+      "todoGet": "タスク #{{id}} を読み込み中…",
+      "todoUpdate": "タスク #{{id}} を更新中…",
+      "todoComplete": "タスク #{{id}} を完了中…",
+      "todoDelete": "タスク #{{id}} を削除中…",
+      "noteRead": "メモを読み込み中…",
+      "noteUpdate": "メモを更新中…",
+      "noteDelete": "メモを削除中…",
+      "memoryList": "メモリを一覧表示中…",
+      "memoryRead": "メモリから {{path}} を読み込み中…",
+      "memorySave": "{{path}} をメモリに保存中…",
+      "memoryDelete": "メモリから {{path}} を削除中…",
+      "memoryRename": "メモリの {{path}} の名前を変更中…",
+      "cryptoPrice": "{{symbol}} の {{currency}} 価格を確認中…",
+      "sentNotification": "通知を送信中…",
+      "telegramMessage": "Telegram メッセージを送信中…",
+      "telegramImage": "Telegram に画像を送信中…",
+      "sqlQuery": "SQL クエリを実行中…",
+      "dbSchema": "データベーススキーマを読み込み中…",
+      "usedToolAction": "{{tool}} を使用中: {{action}}…"
     },
     "toolChip": {
       "searchingWeb": "ウェブ検索済み · 「{{query}}」",
@@ -2118,7 +2140,30 @@
       "attachmentsReadRows": "{{ref}}（{{rows}} 行）を読み込みました",
       "attachmentsReadGeneric": "ファイルを読み込みました",
       "attachmentsImage": "画像 {{ref}} を表示しました",
-      "attachmentsList": "ファイルを一覧表示しました"
+      "attachmentsList": "ファイルを一覧表示しました",
+      "wikiList": "Wiki ページを一覧表示済み",
+      "wikiRead": "Wiki ページ {{path}} を読み込み済み",
+      "todoAdd": "タスク「{{title}}」を追加済み",
+      "todoList": "タスクを一覧表示済み",
+      "todoGet": "タスク #{{id}} を読み込み済み",
+      "todoUpdate": "タスク #{{id}} を更新済み",
+      "todoComplete": "タスク #{{id}} を完了済み",
+      "todoDelete": "タスク #{{id}} を削除済み",
+      "noteRead": "メモを読み込み済み",
+      "noteUpdate": "メモを更新済み",
+      "noteDelete": "メモを削除済み",
+      "memoryList": "メモリを一覧表示済み",
+      "memoryRead": "メモリから {{path}} を読み込み済み",
+      "memorySave": "{{path}} をメモリに保存済み",
+      "memoryDelete": "メモリから {{path}} を削除済み",
+      "memoryRename": "メモリの {{path}} の名前を変更済み",
+      "cryptoPrice": "{{symbol}} の {{currency}} 価格を確認済み",
+      "sentNotification": "通知を送信済み",
+      "telegramMessage": "Telegram メッセージを送信済み",
+      "telegramImage": "Telegram に画像を送信済み",
+      "sqlQuery": "SQL クエリを実行済み",
+      "dbSchema": "データベーススキーマを読み込み済み",
+      "usedToolAction": "{{tool}} を使用: {{action}}"
     },
     "inlineSteps": {
       "arguments": "引数",
@@ -2193,7 +2238,11 @@
       "complete": "完了",
       "researched": "{{count}} 件のトピックを調査しました"
     },
-    "openFile": "ファイルを開く"
+    "openFile": "ファイルを開く",
+    "stepGroup": {
+      "title": "ツール",
+      "failed": "{{count}} 件失敗"
+    }
   },
   "agents": {
     "title": "エージェント",
@@ -3065,7 +3114,7 @@
       "personalSubtitle": "個人ワークスペース",
       "roleAdmin": "管理者",
       "roleMember": "メンバー",
-      "manageTeam": "チームを管理",
+      "manageTeams": "チームを管理",
       "createTeam": "チームを作成",
       "logoAlt": "DocsGPT ロゴ"
     }

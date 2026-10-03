@@ -1424,7 +1424,6 @@
         "mcp_linear": "将问题和文档同步到知识库，并让智能体查找、创建和更新问题。",
         "mcp_atlassian": "搜索和更新 Jira 问题与 Confluence 页面。",
         "mcp_sentry": "查看 Sentry 问题、事件和发布版本。",
-        "mcp_asana": "查找和更新 Asana 任务与项目。",
         "mcp_stripe": "查看 Stripe 中的客户、付款和订阅。",
 "mcp_vercel": "管理 Vercel 项目、部署和构建日志。",
         "github": "将仓库同步到知识库，并让智能体读取代码、Issue 和拉取请求。"
@@ -2094,7 +2093,30 @@
       "attachmentsReadRows": "正在读取 {{ref}}（第 {{rows}} 行）…",
       "attachmentsReadGeneric": "正在读取文件…",
       "attachmentsImage": "正在查看图片 {{ref}}…",
-      "attachmentsList": "正在列出文件…"
+      "attachmentsList": "正在列出文件…",
+      "wikiList": "正在列出 Wiki 页面…",
+      "wikiRead": "正在阅读 Wiki 页面 {{path}}…",
+      "todoAdd": "正在添加待办“{{title}}”…",
+      "todoList": "正在列出待办…",
+      "todoGet": "正在读取待办 #{{id}}…",
+      "todoUpdate": "正在更新待办 #{{id}}…",
+      "todoComplete": "正在完成待办 #{{id}}…",
+      "todoDelete": "正在删除待办 #{{id}}…",
+      "noteRead": "正在阅读笔记…",
+      "noteUpdate": "正在更新笔记…",
+      "noteDelete": "正在删除笔记…",
+      "memoryList": "正在列出记忆…",
+      "memoryRead": "正在从记忆读取 {{path}}…",
+      "memorySave": "正在将 {{path}} 保存到记忆…",
+      "memoryDelete": "正在从记忆删除 {{path}}…",
+      "memoryRename": "正在重命名记忆中的 {{path}}…",
+      "cryptoPrice": "正在查询 {{symbol}} 的 {{currency}} 价格…",
+      "sentNotification": "正在发送通知…",
+      "telegramMessage": "正在发送 Telegram 消息…",
+      "telegramImage": "正在向 Telegram 发送图片…",
+      "sqlQuery": "正在运行 SQL 查询…",
+      "dbSchema": "正在读取数据库架构…",
+      "usedToolAction": "正在使用 {{tool}}：{{action}}…"
     },
     "toolChip": {
       "searchingWeb": "已搜索网络 · “{{query}}”",
@@ -2117,7 +2139,30 @@
       "attachmentsReadRows": "已读取 {{ref}}（第 {{rows}} 行）",
       "attachmentsReadGeneric": "已读取文件",
       "attachmentsImage": "已查看图片 {{ref}}",
-      "attachmentsList": "已列出文件"
+      "attachmentsList": "已列出文件",
+      "wikiList": "已列出 Wiki 页面",
+      "wikiRead": "已阅读 Wiki 页面 {{path}}",
+      "todoAdd": "已添加待办“{{title}}”",
+      "todoList": "已列出待办",
+      "todoGet": "已读取待办 #{{id}}",
+      "todoUpdate": "已更新待办 #{{id}}",
+      "todoComplete": "已完成待办 #{{id}}",
+      "todoDelete": "已删除待办 #{{id}}",
+      "noteRead": "已阅读笔记",
+      "noteUpdate": "已更新笔记",
+      "noteDelete": "已删除笔记",
+      "memoryList": "已列出记忆",
+      "memoryRead": "已从记忆读取 {{path}}",
+      "memorySave": "已将 {{path}} 保存到记忆",
+      "memoryDelete": "已从记忆删除 {{path}}",
+      "memoryRename": "已重命名记忆中的 {{path}}",
+      "cryptoPrice": "已查询 {{symbol}} 的 {{currency}} 价格",
+      "sentNotification": "已发送通知",
+      "telegramMessage": "已发送 Telegram 消息",
+      "telegramImage": "已向 Telegram 发送图片",
+      "sqlQuery": "已运行 SQL 查询",
+      "dbSchema": "已读取数据库架构",
+      "usedToolAction": "已使用 {{tool}}：{{action}}"
     },
     "inlineSteps": {
       "arguments": "参数",
@@ -2192,7 +2237,11 @@
       "complete": "已完成",
       "researched": "已研究 {{count}} 个主题"
     },
-    "openFile": "打开文件"
+    "openFile": "打开文件",
+    "stepGroup": {
+      "title": "工具",
+      "failed": "{{count}} 个失败"
+    }
   },
   "agents": {
     "title": "代理",
@@ -3064,7 +3113,7 @@
       "personalSubtitle": "个人工作区",
       "roleAdmin": "管理员",
       "roleMember": "成员",
-      "manageTeam": "管理团队",
+      "manageTeams": "管理团队",
       "createTeam": "创建团队",
       "logoAlt": "DocsGPT 标志"
     }

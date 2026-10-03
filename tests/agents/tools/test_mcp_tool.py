@@ -1250,8 +1250,9 @@ class TestDBTokenStorage:
 class _StoredTokens:
     """A token storage holding one sign-in, with or without its expiry."""
 
-    def __init__(self, tokens, expires_at=None):
+    def __init__(self, tokens, expires_at=None, client_info=None):
         self.tokens = tokens
+        self.client_info = client_info
         self.expires_at = None
         self._expires_at = expires_at
 
@@ -1260,7 +1261,7 @@ class _StoredTokens:
         return self.tokens
 
     async def get_client_info(self):
-        return None
+        return self.client_info
 
 
 @pytest.mark.unit
@@ -1317,6 +1318,118 @@ class TestStoredSignInRenewal:
         oauth = self._oauth(_StoredTokens(self._token(expires_in=3600)))
         asyncio.run(oauth._initialize())
         assert oauth.context.is_token_valid() is True
+
+    @staticmethod
+    def _metadata_server(monkeypatch, status=200, protected_resource=True, issuer=None):
+        """Serve Sentry-shaped OAuth metadata: the token endpoint is not at ``/token``.
+
+        ``protected_resource=False`` is a legacy server without protected-resource
+        metadata, whose authorization server is its own origin.
+        """
+        import httpx2
+
+        seen = []
+
+        def handler(request):
+            seen.append(str(request.url))
+            if status != 200:
+                return httpx2.Response(status)
+            if request.url.path.startswith("/.well-known/oauth-protected-resource"):
+                if not protected_resource:
+                    return httpx2.Response(404)
+                return httpx2.Response(200, json={
+                    "resource": "https://mcp.example.com/mcp",
+                    "authorization_servers": ["https://mcp.example.com"],
+                })
+            if request.url.path == "/.well-known/oauth-authorization-server":
+                return httpx2.Response(200, json={
+                    # A legacy server may write its root issuer with the slash.
+                    "issuer": issuer
+                    or ("https://mcp.example.com" if protected_resource else "https://mcp.example.com/"),
+                    "authorization_endpoint": "https://mcp.example.com/oauth/authorize",
+                    "token_endpoint": "https://mcp.example.com/oauth/token",
+                    "response_types_supported": ["code"],
+                })
+            return httpx2.Response(404)
+
+        def client(**kwargs):
+            return httpx2.AsyncClient(transport=httpx2.MockTransport(handler), **kwargs)
+
+        monkeypatch.setattr("docsgpt.agents.tools.mcp_tool.create_mcp_http_client", client)
+        return seen
+
+    @staticmethod
+    def _client_info():
+        from mcp.shared.auth import OAuthClientInformationFull
+
+        return OAuthClientInformationFull(
+            client_id="cid", redirect_uris=["https://docsgpt.example.com/api/mcp_server/callback"],
+            token_endpoint_auth_method="none",
+        )
+
+    def test_renewal_goes_to_the_advertised_token_endpoint(self, monkeypatch):
+        # A fresh process holds no OAuth metadata, and the SDK then renews at
+        # <server>/token; Sentry's endpoint is /oauth/token and /token answers 500.
+        import time
+
+        self._metadata_server(monkeypatch)
+        oauth = self._oauth(_StoredTokens(
+            self._token(refresh_token="rt", expires_in=3600), time.time() - 5, client_info=self._client_info(),
+        ))
+        asyncio.run(oauth._initialize())
+        request = asyncio.run(oauth._refresh_token())
+        assert str(request.url) == "https://mcp.example.com/oauth/token"
+
+    def test_legacy_server_with_a_root_issuer_is_accepted(self, monkeypatch):
+        # Without protected-resource metadata the expected issuer is the bare
+        # origin; a server that publishes it with a trailing slash names the
+        # same server (the SDK's sign-in accepts it), and so must the renewal.
+        import time
+
+        self._metadata_server(monkeypatch, protected_resource=False)
+        oauth = self._oauth(_StoredTokens(
+            self._token(refresh_token="rt", expires_in=3600), time.time() - 5, client_info=self._client_info(),
+        ))
+        asyncio.run(oauth._initialize())
+        request = asyncio.run(oauth._refresh_token())
+        assert str(request.url) == "https://mcp.example.com/oauth/token"
+
+    def test_metadata_for_another_issuer_is_not_used(self, monkeypatch, caplog):
+        # The refresh token must never go to a token endpoint vouched for by a
+        # server other than the one the resource names.
+        import logging
+        import time
+
+        self._metadata_server(monkeypatch, issuer="https://evil.example.com")
+        oauth = self._oauth(_StoredTokens(
+            self._token(refresh_token="rt", expires_in=3600), time.time() - 5, client_info=self._client_info(),
+        ))
+        with caplog.at_level(logging.WARNING, logger="docsgpt.agents.tools.mcp_tool"):
+            asyncio.run(oauth._initialize())
+        assert oauth.context.oauth_metadata is None
+        assert "Could not read OAuth metadata" in caplog.text
+
+    def test_a_valid_token_needs_no_discovery(self, monkeypatch):
+        import time
+
+        seen = self._metadata_server(monkeypatch)
+        oauth = self._oauth(_StoredTokens(
+            self._token(refresh_token="rt", expires_in=3600), time.time() + 600, client_info=self._client_info(),
+        ))
+        asyncio.run(oauth._initialize())
+        assert seen == []
+        assert oauth.context.oauth_metadata is None
+
+    def test_unreachable_metadata_leaves_the_sdk_default(self, monkeypatch):
+        import time
+
+        self._metadata_server(monkeypatch, status=503)
+        oauth = self._oauth(_StoredTokens(
+            self._token(refresh_token="rt", expires_in=3600), time.time() - 5, client_info=self._client_info(),
+        ))
+        asyncio.run(oauth._initialize())
+        assert oauth.context.oauth_metadata is None
+        assert oauth.context.is_token_valid() is False
 
     def test_a_lost_sign_in_raises_a_typed_error(self):
         from docsgpt.agents.tools.mcp_tool import MCPReauthorizationRequired

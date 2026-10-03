@@ -187,6 +187,44 @@ one recipe: `Button variant="ghost" size="sm"` at `ml-3.5 w-fit`, which puts a
 Sources adds its count and a right chevron, and opens the answer's sources in
 the chat's side panel (see DESIGN.md › Side panels).
 
+The column renders in the order the answer streamed: answer text, reasoning
+and tool calls interleaved (`answerSegments`, saved with the message as
+`metadata.segments`; a message with no saved order, or one that no longer fits
+its text, puts the steps first and the answer after them). `layoutAnswer` turns
+that order into blocks:
+
+- **Step group** (`conversation/StepGroup`): three or more tool calls in a row
+  are one step row in the Sources row's shape: the lucide `Wrench` (the
+  composer's Tools icon), "Tools" (`settings.tools.label`'s word), the call
+  count in `text-muted-foreground/70 font-normal`, and the red "N failed" when
+  any failed. It opens a `Collapsible` list of 28px rows on a
+  1px `bg-border` rule through the icon centres. A row is a framed-row
+  `<button aria-expanded aria-controls>` (see DESIGN.md › Disclosure) whose
+  chevron shows on hover, focus or while open, and opens the call's Arguments
+  and Response (`ToolCallDetail`). Reasoning between the run's calls is a
+  "Reasoning" row in the list; one short paragraph the model wrote between two
+  calls (≤400 characters, no blank line, heading, list, quote, table or fence)
+  is a muted `text-sm` note in it. Anything longer is answer and splits the
+  run. Reasoning or narration after the run's last call stays outside, and
+  folds in if another call follows.
+- While the group is the live end of a streaming answer it is open on a fixed
+  `h-21` window holding the newest three rows (`mask-t-from-50%`, `inert`), so
+  arriving steps never resize the page; it closes when anything follows it. A
+  click on the header wins over both from then on.
+- One or two calls stay single step rows. Approval bars, wiki-write cards and
+  the scheduler card carry actions, so they end a run and stay in the column.
+- Labels name the action and its target (`describeToolCall`: "Read wiki page
+  /sales/pricing.md", "Added todo “…”", "Updated the note", "Checked the BTC
+  price in EUR"); a tool without its own case is "Used {tool}: {action}", and
+  the bare tool name only when the action repeats it. A label carries its full
+  text as `title`. The backend stores a call whose result reports failure
+  (`status: error`, an `error` key, or an HTTP `status_code` of 400 or more) as
+  `error`, and its Response shows the result in the destructive tone.
+- Icons in the column are one muted weight (`StepIcon`): a tool whose bundled
+  icon is a brand mark in its own colours, or that has none, draws a lucide
+  stand-in (wiki `BookOpen`, Brave and DuckDuckGo `Search`, Telegram `Send`,
+  ntfy `Bell`, Postgres `Database`). The Tools page keeps the brand marks.
+
 A cited source opens in that panel as its second level, `CitationReader`:
 a source card under the answer, a tile in the list and an inline `[n]` pill
 all open the source they name, with Back to the list. The reader fetches the

@@ -56,16 +56,6 @@
   capabilities: [read, write]
   docs_url: https://docs.sentry.io/product/sentry-mcp/
 
-- key: mcp:asana
-  name: Asana
-  description: Find and update Asana tasks and projects.
-  icon: asana
-  category: projects
-  mcp_url: https://mcp.asana.com/v2/mcp
-  auth_kind: mcp_oauth
-  capabilities: [read, write]
-  docs_url: https://developers.asana.com/docs/using-asanas-mcp-server
-
 - key: mcp:stripe
   name: Stripe
   description: Look up customers, payments and subscriptions in Stripe.

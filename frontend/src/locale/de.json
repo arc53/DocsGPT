@@ -1425,7 +1425,6 @@
         "mcp_linear": "Issues und Dokumente in Wissen synchronisieren und Agenten Issues finden, anlegen und aktualisieren lassen.",
         "mcp_atlassian": "Jira-Issues und Confluence-Seiten durchsuchen und aktualisieren.",
         "mcp_sentry": "Sentry-Issues, -Events und -Releases nachschlagen.",
-        "mcp_asana": "Asana-Aufgaben und -Projekte finden und aktualisieren.",
         "mcp_stripe": "Kunden, Zahlungen und Abonnements in Stripe nachschlagen.",
 "mcp_vercel": "Vercel-Projekte, Deployments und Build-Logs verwalten.",
         "github": "Repositorys in Wissen synchronisieren und Agenten Code, Issues und Pull Requests lesen lassen."
@@ -2105,7 +2104,30 @@
       "attachmentsReadRows": "Lese {{ref}} (Zeilen {{rows}})…",
       "attachmentsReadGeneric": "Lese eine Datei…",
       "attachmentsImage": "Betrachte Bild {{ref}}…",
-      "attachmentsList": "Liste Dateien auf…"
+      "attachmentsList": "Liste Dateien auf…",
+      "wikiList": "Liste Wiki-Seiten auf…",
+      "wikiRead": "Lese Wiki-Seite {{path}}…",
+      "todoAdd": "Füge Aufgabe „{{title}}“ hinzu…",
+      "todoList": "Liste Aufgaben auf…",
+      "todoGet": "Lese Aufgabe #{{id}}…",
+      "todoUpdate": "Aktualisiere Aufgabe #{{id}}…",
+      "todoComplete": "Erledige Aufgabe #{{id}}…",
+      "todoDelete": "Lösche Aufgabe #{{id}}…",
+      "noteRead": "Lese die Notiz…",
+      "noteUpdate": "Aktualisiere die Notiz…",
+      "noteDelete": "Lösche die Notiz…",
+      "memoryList": "Liste das Gedächtnis auf…",
+      "memoryRead": "Lese {{path}} aus dem Gedächtnis…",
+      "memorySave": "Speichere {{path}} im Gedächtnis…",
+      "memoryDelete": "Lösche {{path}} aus dem Gedächtnis…",
+      "memoryRename": "Benenne {{path}} im Gedächtnis um…",
+      "cryptoPrice": "Frage {{symbol}}-Kurs in {{currency}} ab…",
+      "sentNotification": "Sende eine Benachrichtigung…",
+      "telegramMessage": "Sende eine Telegram-Nachricht…",
+      "telegramImage": "Sende ein Bild an Telegram…",
+      "sqlQuery": "Führe eine SQL-Abfrage aus…",
+      "dbSchema": "Lese das Datenbankschema…",
+      "usedToolAction": "Nutze {{tool}}: {{action}}…"
     },
     "toolChip": {
       "searchingWeb": "Im Web gesucht · „{{query}}“",
@@ -2128,7 +2150,30 @@
       "attachmentsReadRows": "{{ref}} gelesen (Zeilen {{rows}})",
       "attachmentsReadGeneric": "Eine Datei gelesen",
       "attachmentsImage": "Bild {{ref}} angesehen",
-      "attachmentsList": "Dateien aufgelistet"
+      "attachmentsList": "Dateien aufgelistet",
+      "wikiList": "Wiki-Seiten aufgelistet",
+      "wikiRead": "Wiki-Seite {{path}} gelesen",
+      "todoAdd": "Aufgabe „{{title}}“ hinzugefügt",
+      "todoList": "Aufgaben aufgelistet",
+      "todoGet": "Aufgabe #{{id}} gelesen",
+      "todoUpdate": "Aufgabe #{{id}} aktualisiert",
+      "todoComplete": "Aufgabe #{{id}} erledigt",
+      "todoDelete": "Aufgabe #{{id}} gelöscht",
+      "noteRead": "Notiz gelesen",
+      "noteUpdate": "Notiz aktualisiert",
+      "noteDelete": "Notiz gelöscht",
+      "memoryList": "Gedächtnis aufgelistet",
+      "memoryRead": "{{path}} aus dem Gedächtnis gelesen",
+      "memorySave": "{{path}} im Gedächtnis gespeichert",
+      "memoryDelete": "{{path}} aus dem Gedächtnis gelöscht",
+      "memoryRename": "{{path}} im Gedächtnis umbenannt",
+      "cryptoPrice": "{{symbol}}-Kurs in {{currency}} abgefragt",
+      "sentNotification": "Benachrichtigung gesendet",
+      "telegramMessage": "Telegram-Nachricht gesendet",
+      "telegramImage": "Bild an Telegram gesendet",
+      "sqlQuery": "SQL-Abfrage ausgeführt",
+      "dbSchema": "Datenbankschema gelesen",
+      "usedToolAction": "{{tool}} genutzt: {{action}}"
     },
     "inlineSteps": {
       "arguments": "Argumente",
@@ -2204,7 +2249,11 @@
       "researched_one": "{{count}} Thema recherchiert",
       "researched_other": "{{count}} Themen recherchiert"
     },
-    "openFile": "Datei öffnen"
+    "openFile": "Datei öffnen",
+    "stepGroup": {
+      "title": "Werkzeuge",
+      "failed": "{{count}} fehlgeschlagen"
+    }
   },
   "agents": {
     "title": "Agenten",
@@ -3077,7 +3126,7 @@
       "personalSubtitle": "Persönlicher Workspace",
       "roleAdmin": "Admin",
       "roleMember": "Mitglied",
-      "manageTeam": "Team verwalten",
+      "manageTeams": "Teams verwalten",
       "createTeam": "Team erstellen",
       "logoAlt": "DocsGPT-Logo"
     }

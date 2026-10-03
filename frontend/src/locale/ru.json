@@ -1507,7 +1507,6 @@
         "mcp_linear": "Синхронизируйте задачи и документы в базу знаний и дайте агентам находить, создавать и обновлять задачи.",
         "mcp_atlassian": "Поиск и обновление задач Jira и страниц Confluence.",
         "mcp_sentry": "Просмотр проблем, событий и релизов Sentry.",
-        "mcp_asana": "Поиск и обновление задач и проектов Asana.",
         "mcp_stripe": "Просмотр клиентов, платежей и подписок в Stripe.",
 "mcp_vercel": "Управляйте проектами, развертываниями и журналами сборки Vercel.",
         "github": "Синхронизируйте репозитории в базу знаний и дайте агентам читать код, issues и pull requests."
@@ -2217,7 +2216,30 @@
       "attachmentsReadRows": "Читаю {{ref}} (строки {{rows}})…",
       "attachmentsReadGeneric": "Читаю файл…",
       "attachmentsImage": "Смотрю изображение {{ref}}…",
-      "attachmentsList": "Составляю список файлов…"
+      "attachmentsList": "Составляю список файлов…",
+      "wikiList": "Получаю список страниц вики…",
+      "wikiRead": "Читаю страницу вики {{path}}…",
+      "todoAdd": "Добавляю задачу «{{title}}»…",
+      "todoList": "Получаю список задач…",
+      "todoGet": "Читаю задачу #{{id}}…",
+      "todoUpdate": "Обновляю задачу #{{id}}…",
+      "todoComplete": "Отмечаю задачу #{{id}} выполненной…",
+      "todoDelete": "Удаляю задачу #{{id}}…",
+      "noteRead": "Читаю заметку…",
+      "noteUpdate": "Обновляю заметку…",
+      "noteDelete": "Удаляю заметку…",
+      "memoryList": "Получаю список памяти…",
+      "memoryRead": "Читаю {{path}} из памяти…",
+      "memorySave": "Сохраняю {{path}} в памяти…",
+      "memoryDelete": "Удаляю {{path}} из памяти…",
+      "memoryRename": "Переименовываю {{path}} в памяти…",
+      "cryptoPrice": "Проверяю курс {{symbol}} в {{currency}}…",
+      "sentNotification": "Отправляю уведомление…",
+      "telegramMessage": "Отправляю сообщение в Telegram…",
+      "telegramImage": "Отправляю изображение в Telegram…",
+      "sqlQuery": "Выполняю SQL-запрос…",
+      "dbSchema": "Читаю схему базы данных…",
+      "usedToolAction": "Использую {{tool}}: {{action}}…"
     },
     "toolChip": {
       "searchingWeb": "Поиск в интернете · «{{query}}»",
@@ -2240,7 +2262,30 @@
       "attachmentsReadRows": "Прочитан {{ref}} (строки {{rows}})",
       "attachmentsReadGeneric": "Прочитан файл",
       "attachmentsImage": "Просмотрено изображение {{ref}}",
-      "attachmentsList": "Получен список файлов"
+      "attachmentsList": "Получен список файлов",
+      "wikiList": "Получен список страниц вики",
+      "wikiRead": "Прочитана страница вики {{path}}",
+      "todoAdd": "Добавлена задача «{{title}}»",
+      "todoList": "Получен список задач",
+      "todoGet": "Прочитана задача #{{id}}",
+      "todoUpdate": "Обновлена задача #{{id}}",
+      "todoComplete": "Выполнена задача #{{id}}",
+      "todoDelete": "Удалена задача #{{id}}",
+      "noteRead": "Прочитана заметка",
+      "noteUpdate": "Обновлена заметка",
+      "noteDelete": "Удалена заметка",
+      "memoryList": "Получен список памяти",
+      "memoryRead": "Прочитан {{path}} из памяти",
+      "memorySave": "Сохранён {{path}} в памяти",
+      "memoryDelete": "Удалён {{path}} из памяти",
+      "memoryRename": "Переименован {{path}} в памяти",
+      "cryptoPrice": "Проверен курс {{symbol}} в {{currency}}",
+      "sentNotification": "Отправлено уведомление",
+      "telegramMessage": "Отправлено сообщение в Telegram",
+      "telegramImage": "Отправлено изображение в Telegram",
+      "sqlQuery": "Выполнен SQL-запрос",
+      "dbSchema": "Прочитана схема базы данных",
+      "usedToolAction": "Использован {{tool}}: {{action}}"
     },
     "inlineSteps": {
       "arguments": "Аргументы",
@@ -2318,7 +2363,11 @@
       "researched_many": "Изучено {{count}} тем",
       "researched_other": "Изучено {{count}} темы"
     },
-    "openFile": "Открыть файл"
+    "openFile": "Открыть файл",
+    "stepGroup": {
+      "title": "Инструменты",
+      "failed": "Ошибок: {{count}}"
+    }
   },
   "agents": {
     "title": "Агенты",
@@ -3221,7 +3270,7 @@
       "personalSubtitle": "Личное рабочее пространство",
       "roleAdmin": "Администратор",
       "roleMember": "Участник",
-      "manageTeam": "Управление командой",
+      "manageTeams": "Управление командами",
       "createTeam": "Создать команду",
       "logoAlt": "Логотип DocsGPT"
     }
