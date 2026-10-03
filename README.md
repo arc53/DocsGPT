@@ -22,17 +22,17 @@
   <a href="https://blog.docsgpt.cloud/">🗞 Blog</a>
 </p>
 
-<!-- Keep these links. Translations will automatically update with the README. -->
+<!-- languages:start -->
 <p align="center">
-  <a href="https://zdoc.app/de/arc53/DocsGPT">Deutsch</a> |
-  <a href="https://zdoc.app/es/arc53/DocsGPT">Español</a> |
-  <a href="https://zdoc.app/fr/arc53/DocsGPT">Français</a> |
-  <a href="https://zdoc.app/ja/arc53/DocsGPT">日本語</a> |
-  <a href="https://zdoc.app/ko/arc53/DocsGPT">한국어</a> |
-  <a href="https://zdoc.app/pt/arc53/DocsGPT">Português</a> |
-  <a href="https://zdoc.app/ru/arc53/DocsGPT">Русский</a> |
-  <a href="https://zdoc.app/zh/arc53/DocsGPT">中文</a>
+  <strong>English</strong> |
+  <a href=".github/readme/README.de.md">Deutsch</a> |
+  <a href=".github/readme/README.es.md">Español</a> |
+  <a href=".github/readme/README.ja.md">日本語</a> |
+  <a href=".github/readme/README.ru.md">Русский</a> |
+  <a href=".github/readme/README.zh-CN.md">简体中文</a> |
+  <a href=".github/readme/README.zh-TW.md">繁體中文</a>
 </p>
+<!-- languages:end -->
 
 > [!TIP]
 > Self-host in one command. On macOS and Linux:
