@@ -5,7 +5,8 @@
     "postbuild": "pagefind --site .next/server/app --output-path public/_pagefind",
     "start": "next start",
     "llms": "node scripts/generate-llms.mjs",
-    "llms:check": "node scripts/generate-llms.mjs --check"
+    "llms:check": "node scripts/generate-llms.mjs --check",
+    "dates:check": "node scripts/check-dates.mjs"
   },
   "license": "MIT",
   "dependencies": {

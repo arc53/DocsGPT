@@ -5,16 +5,21 @@ import { Footer, Layout, Navbar } from 'nextra-theme-docs';
 import 'nextra-theme-docs/style.css';
 
 import { DocsGPTChatWidget } from '../components/DocsGPTChatWidget';
+import { HOME_TITLE, SITE_NAME, SITE_URL } from '../page-meta';
 import themeConfig from '../theme.config';
 
 import './brand.css';
 
 const github = 'https://github.com/arc53/DocsGPT';
 
+// Each page adds its own canonical URL, share card and description; see
+// pageMetadata() in page-meta.js.
 export const metadata = {
+  metadataBase: new URL(SITE_URL),
+  applicationName: SITE_NAME,
   title: {
-    default: 'DocsGPT Documentation',
-    template: '%s - DocsGPT Documentation',
+    default: HOME_TITLE,
+    template: `%s | ${SITE_NAME}`,
   },
   description:
     'DocsGPT is an open-source platform for building AI agents and assistants with document retrieval, tools, and multi-model support.',
@@ -49,7 +54,7 @@ const footer = (
       GitHub
     </a>
     {' | '}
-    <a href="https://blog.docsgpt.cloud/" target="_blank" rel="noreferrer">
+    <a href="https://www.docsgpt.cloud/blog" target="_blank" rel="noreferrer">
       Blog
     </a>
   </Footer>
@@ -74,7 +79,6 @@ export default async function RootLayout({ children }) {
         />
         <link rel="manifest" href="/site.webmanifest" />
         <meta name="apple-mobile-web-app-title" content="DocsGPT Docs" />
-        <meta httpEquiv="Content-Language" content="en" />
       </Head>
       <body>
         <Layout
