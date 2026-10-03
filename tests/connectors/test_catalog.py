@@ -101,6 +101,23 @@ class TestRowMapping:
 
 
 class TestPresets:
+    def test_miro_preset_uses_the_catalog_contract(self):
+        definition = catalog.get_definition("mcp:miro")
+
+        assert definition is not None
+        assert definition.name == "Miro"
+        assert definition.icon == "miro"
+        assert definition.category == "projects"
+        assert definition.mcp_url == "https://mcp.miro.com/"
+        assert definition.auth_kind == "mcp_oauth"
+        assert definition.capabilities == ("read", "write")
+        assert definition.docs_url == "https://developers.miro.com/docs/miro-mcp"
+
+    def test_miro_preset_is_listed_with_the_other_remote_servers(self):
+        presets = [d for d in catalog.all_definitions() if d.publisher == "preset"]
+
+        assert "mcp:miro" in {preset.key for preset in presets}
+
     def test_presets_load_from_yaml(self, tmp_path, monkeypatch):
         presets = tmp_path / "mcp.yaml"
         presets.write_text(

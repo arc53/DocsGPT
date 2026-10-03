@@ -34,6 +34,16 @@
   sync_ingestor: linear
   docs_url: https://linear.app/docs/mcp
 
+- key: mcp:miro
+  name: Miro
+  description: Find boards, read content and comments, create diagrams, and reply to comments.
+  icon: miro
+  category: projects
+  mcp_url: https://mcp.miro.com/
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://developers.miro.com/docs/miro-mcp
+
 - key: mcp:atlassian
   name: Jira & Confluence
   description: Search and update Jira issues and Confluence pages.
