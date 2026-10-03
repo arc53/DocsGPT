@@ -410,7 +410,7 @@ numpy==2.5.3
     #   onnxruntime
     #   pandas
     #   qdrant-client
-oauthlib==3.3.1
+oauthlib==4.0.0
     # via requests-oauthlib
 obstore==0.11.1
     # via daytona
@@ -880,7 +880,7 @@ update-checker==1.0.0
     # via praw
 uritemplate==4.2.0
     # via google-api-python-client
-urllib3==2.7.0
+urllib3==2.8.0
     # via
     #   botocore
     #   daytona
