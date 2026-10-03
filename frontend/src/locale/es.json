@@ -1426,6 +1426,7 @@
         "mcp_atlassian": "Busca y actualiza incidencias de Jira y páginas de Confluence.",
         "mcp_sentry": "Consulta incidencias, eventos y versiones de Sentry.",
         "mcp_stripe": "Consulta clientes, pagos y suscripciones en Stripe.",
+        "mcp_zapier": "Usa las acciones habilitadas en tu cuenta de Zapier MCP para leer o actualizar aplicaciones conectadas.",
         "github": "Sincroniza repositorios con Conocimiento y deja que los agentes lean código, issues y pull requests."
       },
       "empty": "Aún no hay nada conectado. Conecta un servicio para sincronizar su contenido o dar nuevas herramientas a los agentes.",

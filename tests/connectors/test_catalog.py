@@ -165,3 +165,15 @@ def test_atlassian_preset_is_part_of_confluence():
     assert atlassian.part_of == "confluence"
     assert atlassian.to_dict()["part_of"] == "confluence"
     assert catalog.get_definition("confluence").to_dict()["part_of"] is None
+
+
+def test_zapier_preset_uses_remote_oauth_catalog_contract():
+    zapier = catalog.get_definition("mcp:zapier")
+
+    assert zapier.name == "Zapier"
+    assert zapier.icon == "zapier"
+    assert zapier.category == "business"
+    assert zapier.mcp_url == "https://mcp.zapier.com/api/v1/connect"
+    assert zapier.auth_kind == "mcp_oauth"
+    assert zapier.capabilities == ("read", "write")
+    assert zapier.docs_url == "https://docs.zapier.com/mcp/get-started/connect"
