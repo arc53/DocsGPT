@@ -106,6 +106,25 @@ class TestLinks:
         assert translate.relative_targets(SOURCE) == ["CONTRIBUTING.md", "docs/public/poster.png"]
 
 
+class TestEmphasis:
+    """CommonMark does not close ``**`` between punctuation and a letter, which CJK text hits often."""
+
+    def test_punctuation_moves_outside_a_closing_marker_before_a_letter(self):
+        assert translate.fix_emphasis("- **安全护栏：**标记 PII") == "- **安全护栏**：标记 PII"
+        assert translate.fix_emphasis("> **Hacktoberfest 2026：**整个十月") == "> **Hacktoberfest 2026**：整个十月"
+
+    def test_rendering_markers_are_left_alone(self):
+        for text in ["**Agents:** text", "**エージェント：** 独自", "**Agents**: text", "a **b** c：**d**"]:
+            assert translate.fix_emphasis(text) == text
+
+    def test_code_blocks_are_left_alone(self):
+        text = "```\n**x：**y\n```\n"
+        assert translate.fix_emphasis(text) == text
+
+    def test_render_applies_it(self):
+        assert "**安装**：运行" in translate.render("zh-CN", "**安装：**运行\n", SHA_NEW)
+
+
 class TestMarker:
     def test_round_trip(self):
         marked = translate.with_marker("body\n", SHA_NEW)
@@ -250,3 +269,36 @@ class TestRepoLayout:
         folder = repo / ".github" / "readme"
         for target in translate.relative_targets(translate.rewrite_links(translate.strip_bar(readme))):
             assert (folder / target.split("#")[0]).resolve().exists(), target
+
+
+class TestMakeAgent:
+    def test_sends_the_key_and_its_own_user_agent(self, monkeypatch):
+        sent = {}
+
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return json.dumps({"choices": [{"message": {"content": "answer"}}]}).encode()
+
+        def fake_urlopen(request, timeout):
+            sent["url"] = request.full_url
+            sent["headers"] = dict(request.header_items())
+            sent["body"] = json.loads(request.data)
+            return _Response()
+
+        monkeypatch.setattr(translate.urllib.request, "urlopen", fake_urlopen)
+        assert translate.make_agent("https://cloud.example/", "key-1")("hello") == "answer"
+        assert sent["url"] == "https://cloud.example/v1/chat/completions"
+        assert sent["headers"]["Authorization"] == "Bearer key-1"
+        # The cloud's firewall answers 403 to urllib's default User-Agent.
+        assert not sent["headers"]["User-agent"].startswith("Python-urllib")
+        assert sent["body"]["messages"] == [{"role": "user", "content": "hello"}]
+
+    def test_missing_key(self):
+        with pytest.raises(translate.TranslationError, match=translate.KEY_ENV):
+            translate.make_agent("https://cloud.example", None)("hello")

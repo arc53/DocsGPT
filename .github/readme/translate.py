@@ -38,6 +38,8 @@ DEFAULT_URL = "https://gptcloud.arc53.com"
 KEY_ENV = "DOCSGPT_README_AGENT_KEY"
 REQUEST_TIMEOUT = 900
 ATTEMPTS = 2
+# The cloud's firewall answers 403 to urllib's default User-Agent.
+USER_AGENT = "docsgpt-readme-translator (+https://github.com/arc53/DocsGPT)"
 
 
 @dataclass(frozen=True)
@@ -66,6 +68,9 @@ NON_RELATIVE_RE = re.compile(r"^([a-zA-Z][a-zA-Z0-9+.-]*:|#|/)")
 URL_RE = re.compile(r"https?://[^\s)\"'<>`]+")
 HEADING_RE = re.compile(r"^#{1,6}\s")
 PREFIX = "../../"
+# ``**label：**text`` never closes in CommonMark: a closing ``**`` after punctuation must be followed by
+# whitespace or punctuation. Moving the punctuation out (``**label**：text``) renders the same intent.
+CLOSING_AFTER_PUNCTUATION_RE = re.compile(r"\*\*(?=\S)([^*\n]*?)([：，。！？；、:;,.!?])\*\*(?=\w)")
 
 
 class TranslationError(Exception):
@@ -174,6 +179,13 @@ def relative_targets(text: str) -> list[str]:
     return found
 
 
+def fix_emphasis(text: str) -> str:
+    """Move punctuation out of bold spans that would otherwise not render, outside fenced code."""
+    return "".join(
+        CLOSING_AFTER_PUNCTUATION_RE.sub(r"**\1**\2", line) if prose else line for line, prose in _outside_fences(text)
+    )
+
+
 # --- Marker -----------------------------------------------------------------
 
 
@@ -196,7 +208,7 @@ def strip_marker(text: str) -> str:
 
 def render(code: str, translated: str, sha: str) -> str:
     """Turn the agent's text (placeholder, root-relative links) into the committed file."""
-    return with_marker(insert_bar(rewrite_links(translated), code), sha)
+    return with_marker(insert_bar(rewrite_links(fix_emphasis(translated)), code), sha)
 
 
 def agent_form(committed: str) -> str:
@@ -296,7 +308,7 @@ def make_agent(url: str, key: Optional[str], timeout: int = REQUEST_TIMEOUT) -> 
         request = urllib.request.Request(
             url.rstrip("/") + "/v1/chat/completions",
             data=body,
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "User-Agent": USER_AGENT},
             method="POST",
         )
         for attempt in range(3):
