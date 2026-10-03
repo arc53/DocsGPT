@@ -165,3 +165,16 @@ def test_atlassian_preset_is_part_of_confluence():
     assert atlassian.part_of == "confluence"
     assert atlassian.to_dict()["part_of"] == "confluence"
     assert catalog.get_definition("confluence").to_dict()["part_of"] is None
+
+
+def test_todoist_is_a_read_write_remote_mcp_preset():
+    from docsgpt.connectors import catalog
+
+    todoist = catalog.get_definition("mcp:todoist")
+    assert todoist.name == "Todoist"
+    assert todoist.mcp_url == "https://ai.todoist.net/mcp"
+    assert todoist.icon == "todoist"
+    assert todoist.category == "projects"
+    assert todoist.auth_kind == "mcp_oauth"
+    assert todoist.capabilities == ("read", "write")
+    assert todoist.docs_url == "https://github.com/Doist/todoist-mcp"

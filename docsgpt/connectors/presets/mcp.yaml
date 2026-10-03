@@ -65,3 +65,13 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://docs.stripe.com/mcp
+
+- key: mcp:todoist
+  name: Todoist
+  description: Find, create, update and complete Todoist tasks and projects.
+  icon: todoist
+  category: projects
+  mcp_url: https://ai.todoist.net/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://github.com/Doist/todoist-mcp
