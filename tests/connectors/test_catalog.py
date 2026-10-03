@@ -15,6 +15,19 @@ def _fresh_registry():
 
 
 class TestDefinitions:
+    def test_calcom_mcp_preset_is_available_for_sign_in(self):
+        definition = catalog.get_definition("mcp:calcom")
+
+        assert definition is not None
+        assert definition.name == "Cal.com"
+        assert definition.description == "Check availability, event types and bookings in Cal.com."
+        assert definition.icon == "calcom"
+        assert definition.category == "business"
+        assert definition.mcp_url == "https://mcp.cal.com/mcp"
+        assert definition.auth_kind == "mcp_oauth"
+        assert definition.capabilities == ("read", "write")
+        assert definition.docs_url == "https://cal.com/docs/mcp-server"
+
     def test_built_ins_are_registered(self):
         keys = {d.key for d in catalog.all_definitions()}
         assert {
