@@ -29,8 +29,12 @@ DocsGPT schedule (daily, 07:00 UTC) ──► {"kind": "stale_sweep"} ───�
 - **`agent.yaml`** is the agent: its prompt (the triage rules), model, tools
   and sources. `.github/workflows/triage-agent.yml` applies it with
   `docsgpt-cli agents apply` on every push to `main` that changes it, and
-  re-uploads `AGENTS.md`, `CONTRIBUTING.md`, `frontend/DESIGN.md` and
-  `docs/content/` as the agent's sources when they change.
+  re-uploads `AGENTS.md`, `CONTRIBUTING.md` and `frontend/DESIGN.md` as the
+  agent's contributor guides when they change. The product docs
+  (`docs/content/`) are refreshed every Monday, or by running the workflow
+  with "Re-upload the product docs" ticked. An upload that fails or times out
+  doesn't stop the agent from being applied; it keeps its previous copy and the
+  run is marked failed.
 - The **triage manual** is a wiki source on DocsGPT Cloud
   (`docsgpt-triage-manual`): maintainers, label meanings, product scope and
   `/corrections.md`. Edit it in the DocsGPT UI; no deploy needed.
@@ -38,10 +42,10 @@ DocsGPT schedule (daily, 07:00 UTC) ──► {"kind": "stale_sweep"} ───�
 | Event | Kind | What the agent does |
 | --- | --- | --- |
 | Issue opened or reopened | `issue_opened` | Scores usefulness, clarity and spam; labels; asks for missing details, links a duplicate, or redirects a vulnerability report to private reporting; closes spam at 0.95+ |
-| Comment asking to work on an issue | `issue_claim` | Assigns the first person who asks; reassigns when the current assignment is stale; declines when someone already has a PR or the claimant is over-committed |
+| Comment asking to work on an issue | `issue_claim` | Assigns the first person who asks; reassigns when the current assignment is stale; declines when someone already has a PR or the claimant is over-committed (2 open assignments, counting claims they made elsewhere in the last 30 minutes, or 3 open PRs) |
 | Issue author replies to `needs-info` | `issue_author_reply` | Removes `needs-info` when answered |
 | PR opened or ready | `pr_opened` | Quick pass: `needs-screenshot`, `heavy-dependency`, competing PRs, spam |
-| CodeRabbit or CI finished | `pr_review` | Verdict `ready`, `changes_needed`, `not_a_fit` or `spam`; one checklist comment per new commit; `waiting-on-author` / `maintainer-review` |
+| CodeRabbit or CI finished | `pr_review` | Verdict `ready`, `changes_needed`, `not_a_fit` or `spam`; one review comment per PR, rewritten on each new commit; `waiting-on-author` / `maintainer-review` |
 | Daily schedule | `stale_sweep` | `stale` after 14 idle days waiting on the author, closes 30 days later, frees assignments idle for 30 days |
 
 Maintainers' comments and PRs, and anything a bot opens or comments, are skipped. Issues
