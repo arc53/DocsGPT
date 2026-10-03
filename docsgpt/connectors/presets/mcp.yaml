@@ -65,3 +65,13 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://docs.stripe.com/mcp
+
+- key: mcp:posthog
+  name: PostHog
+  description: Explore product analytics, feature flags and experiments in PostHog.
+  icon: posthog
+  category: dev
+  mcp_url: https://mcp.posthog.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://posthog.com/docs/model-context-protocol
