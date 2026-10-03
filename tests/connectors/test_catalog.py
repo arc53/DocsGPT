@@ -165,3 +165,16 @@ def test_atlassian_preset_is_part_of_confluence():
     assert atlassian.part_of == "confluence"
     assert atlassian.to_dict()["part_of"] == "confluence"
     assert catalog.get_definition("confluence").to_dict()["part_of"] is None
+
+
+def test_composio_connect_preset_is_available():
+    """Composio Connect is exposed as a remote OAuth MCP preset."""
+    composio = catalog.get_definition("mcp:composio")
+    assert composio is not None
+    assert composio.name == "Composio Connect"
+    assert composio.category == "business"
+    assert composio.icon == "composio"
+    assert composio.mcp_url == "https://connect.composio.dev/mcp"
+    assert composio.auth_kind == "mcp_oauth"
+    assert composio.capabilities == ("read", "write")
+    assert composio.docs_url == "https://docs.composio.dev/docs/composio-connect"
