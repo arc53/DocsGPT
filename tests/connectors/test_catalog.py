@@ -101,6 +101,17 @@ class TestRowMapping:
 
 
 class TestPresets:
+    def test_hugging_face_preset_is_registered(self):
+        definition = catalog.get_definition("mcp:huggingface")
+
+        assert definition.name == "Hugging Face"
+        assert definition.icon == "huggingface"
+        assert definition.category == "dev"
+        assert definition.mcp_url == "https://huggingface.co/mcp"
+        assert definition.auth_kind == "mcp_oauth"
+        assert definition.capabilities == ("read", "write")
+        assert definition.docs_url == "https://huggingface.co/docs/hub/hf-mcp-server"
+
     def test_presets_load_from_yaml(self, tmp_path, monkeypatch):
         presets = tmp_path / "mcp.yaml"
         presets.write_text(
