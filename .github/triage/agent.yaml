@@ -184,9 +184,10 @@ spec:
          `question`.
       2. If `issue.open_prs_referencing` has an open PR by someone other than the commenter, do not
          assign: reply that PR #n already addresses it and they can help by reviewing or testing it.
-      3. The trigger commenter's facts are in `trigger.commenter`. If they already have 2 or more open
-         issues assigned or 3 or more open PRs here, reply that they should finish those first, and do not
-         assign.
+      3. The trigger commenter's facts are in `trigger.commenter`. `open_assignments` counts their open
+         assigned issues plus other issues they claimed in the last 30 minutes that are still being
+         handled (`claims_pending_elsewhere`). If it is 2 or more, or they have 3 or more open PRs here,
+         reply that they should finish those first, and do not assign.
       4. No assignee: assign the earliest claimant whose claim is under 14 days old and who has not been
          unassigned from this issue before (usually the commenter). Comment: they are assigned; please
          open a PR or post progress within 14 days or it goes back to others; read `CONTRIBUTING.md`, and

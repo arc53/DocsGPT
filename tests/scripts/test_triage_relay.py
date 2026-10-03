@@ -470,3 +470,59 @@ class TestBotAuthoredPullRequests:
 
         assert relay.search_items(Refusing(), "is:pr is:open bump", 6) == []
         assert relay.similar_items(Refusing(), 1, "Bump the uv group across directories") == []
+
+
+def _claim_comment(login: str, number: int, at: str, body: str = "I would like to take this issue, please assign me") -> dict:
+    return {
+        "user": {"login": login},
+        "html_url": f"https://github.com/arc53/DocsGPT/issues/{number}#issuecomment-1",
+        "created_at": at,
+        "body": body,
+    }
+
+
+class TestPendingClaims:
+    # Three claims seconds apart, all triaged in parallel before any assignment lands.
+    COMMENTS = [
+        _claim_comment("sujal", 2902, "2026-10-02T14:44:50Z"),
+        _claim_comment("sujal", 2908, "2026-10-02T14:44:55Z"),
+        _claim_comment("sujal", 2911, "2026-10-02T14:44:58Z"),
+        _claim_comment("someone", 2903, "2026-10-02T14:44:52Z"),
+        _claim_comment("sujal", 2875, "2026-10-02T14:44:53Z").copy(),
+    ]
+
+    def setup_method(self) -> None:
+        self.COMMENTS[-1]["html_url"] = "https://github.com/arc53/DocsGPT/pull/2875#issuecomment-2"
+
+    def test_each_claim_counts_the_earlier_ones(self):
+        first = relay.pending_claims(self.COMMENTS, "sujal", "2026-10-02T14:44:50Z", 2902, [])
+        third = relay.pending_claims(self.COMMENTS, "sujal", "2026-10-02T14:44:58Z", 2911, [])
+        assert first == []
+        assert third == [2902, 2908]
+
+    def test_claims_already_assigned_are_not_counted_twice(self):
+        assert relay.pending_claims(self.COMMENTS, "sujal", "2026-10-02T14:44:58Z", 2911, [2902]) == [2908]
+
+    def test_old_and_non_claim_comments_are_ignored(self):
+        comments = [
+            _claim_comment("sujal", 2800, "2026-10-02T13:00:00Z"),
+            _claim_comment("sujal", 2801, "2026-10-02T14:40:00Z", body="Thanks, that worked"),
+        ]
+        assert relay.pending_claims(comments, "sujal", "2026-10-02T14:44:58Z", 2911, []) == []
+
+
+class TestAssignedOpenIssues:
+    def test_counts_issues_only_from_the_issues_api(self):
+        class Pages:
+            def pages(self, path: str, limit: int = 300, **params) -> list:
+                assert path == "/issues" and params == {"assignee": "sujal", "state": "open"}
+                return [{"number": 1}, {"number": 2, "pull_request": {}}, {"number": 3}]
+
+        assert relay.assigned_open_issues(Pages(), "sujal") == [1, 3]
+
+    def test_unavailable_is_none(self):
+        class Refusing:
+            def pages(self, path: str, limit: int = 300, **params) -> list:
+                raise relay.urllib.error.HTTPError("u", 403, "rate limited", {}, None)
+
+        assert relay.assigned_open_issues(Refusing(), "sujal") is None

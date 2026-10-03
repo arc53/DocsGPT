@@ -23,7 +23,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 API = "https://api.github.com"
@@ -469,6 +469,7 @@ def search_items(gh: GitHub, query: str, limit: int) -> list[dict[str, Any]]:
 def author_facts(gh: GitHub, login: str, association: Optional[str]) -> dict[str, Any]:
     """Account age and history in this repo, for spam and experience signals."""
     user = gh.get(f"users/{login}")
+    assigned = assigned_open_issues(gh, login)
     return {
         "login": login,
         "association": association,
@@ -479,8 +480,44 @@ def author_facts(gh: GitHub, login: str, association: Optional[str]) -> dict[str
         "prs_merged_here": count_or_none(gh, f"is:pr is:merged author:{login}"),
         "prs_open_here": count_or_none(gh, f"is:pr is:open author:{login}"),
         "issues_opened_here": count_or_none(gh, f"is:issue author:{login}"),
-        "issues_assigned_open_here": count_or_none(gh, f"is:issue is:open assignee:{login}"),
+        "issues_assigned_open_here": None if assigned is None else len(assigned),
     }
+
+
+CLAIM_WINDOW_MINUTES = 30
+
+
+def assigned_open_issues(gh: GitHub, login: str) -> Optional[list[int]]:
+    """Open issues assigned to ``login``, from the issues API (search lags behind new assignments)."""
+    try:
+        items = gh.pages("/issues", limit=100, assignee=login, state="open")
+    except urllib.error.HTTPError as error:
+        print(f"Assigned issues for {login} unavailable ({error.code})", file=sys.stderr)
+        return None
+    return [item["number"] for item in items if "pull_request" not in item]
+
+
+def pending_claims(
+    comments: list[dict[str, Any]], login: str, before: str, exclude: int, assigned: list[int]
+) -> list[int]:
+    """Other issues ``login`` asked to work on shortly before this claim and isn't assigned to yet.
+
+    Claims made seconds apart are triaged in parallel, so none of them sees the
+    others' assignment; counting the earlier ones keeps the per-person limit.
+    """
+    start = parse_time(before) - timedelta(minutes=CLAIM_WINDOW_MINUTES)
+    numbers: list[int] = []
+    for comment in comments:
+        created = parse_time(comment.get("created_at"))
+        url = comment.get("html_url") or ""
+        if (comment.get("user") or {}).get("login") != login or "/issues/" not in url or not created:
+            continue
+        if not start <= created < parse_time(before) or not is_claim(comment.get("body")):
+            continue
+        number = int(url.split("/issues/")[1].split("#")[0])
+        if number != exclude and number not in assigned and number not in numbers:
+            numbers.append(number)
+    return numbers
 
 
 def comment_view(comment: dict[str, Any]) -> dict[str, Any]:
@@ -811,10 +848,15 @@ def jobs_for(
         if "comment_id" in decision:
             comment = gh.get(f"/issues/comments/{decision['comment_id']}")
             login = comment["user"]["login"]
-            trigger = {
-                "comment": comment_view(comment),
-                "commenter": mark_maintainer(author_facts(gh, login, comment.get("author_association")), maintainers),
-            }
+            commenter = mark_maintainer(author_facts(gh, login, comment.get("author_association")), maintainers)
+            if kind == "issue_claim":
+                since = parse_time(comment["created_at"]) - timedelta(minutes=CLAIM_WINDOW_MINUTES)
+                recent = gh.pages("/issues/comments", limit=300, since=since.strftime("%Y-%m-%dT%H:%M:%SZ"))
+                assigned = assigned_open_issues(gh, login) or []
+                pending = pending_claims(recent, login, comment["created_at"], number, assigned)
+                commenter["claims_pending_elsewhere"] = pending
+                commenter["open_assignments"] = len(assigned) + len(pending)
+            trigger = {"comment": comment_view(comment), "commenter": commenter}
             key += f"-{decision['comment_id']}"
         return [(kind, facts, key, trigger)]
     if "number" in decision:
