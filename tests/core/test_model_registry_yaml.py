@@ -57,6 +57,11 @@ EXPECTED_IDS = {
         "moonshotai/kimi-k2.6",
         "zai-org/glm-5",
     },
+    "atlascloud": {
+        "deepseek-ai/DeepSeek-V3.1-Terminus",
+        "zai-org/GLM-4.6",
+        "Qwen/Qwen3-235B-A22B-Instruct-2507",
+    },
     "openai_compatible": {
         "deepseek-v4-flash",
         "deepseek-v4-pro",
@@ -88,6 +93,7 @@ def _make_settings(**overrides):
     s.GROQ_API_KEY = None
     s.OPEN_ROUTER_API_KEY = None
     s.NOVITA_API_KEY = None
+    s.ATLASCLOUD_API_KEY = None
     s.LLM_PROVIDER = ""
     s.LLM_NAME = None
     s.API_KEY = None
@@ -274,6 +280,7 @@ class TestRegistryPermutations:
             GROQ_API_KEY="x",
             OPEN_ROUTER_API_KEY="x",
             NOVITA_API_KEY="x",
+            ATLASCLOUD_API_KEY="x",
             OPENAI_API_BASE="x",
         )
         with patch("docsgpt.core.settings.settings", s):

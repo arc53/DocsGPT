@@ -76,6 +76,7 @@ class TestLLMHandlerCreator:
             "google": GoogleLLMHandler,
             "anthropic": AnthropicLLMHandler,
             "novita": OpenAILLMHandler,
+            "atlascloud": OpenAILLMHandler,
             "default": OpenAILLMHandler,
         }
 

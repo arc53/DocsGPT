@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Dict, List
 
 from docsgpt.llm.providers.anthropic import AnthropicProvider
+from docsgpt.llm.providers.atlascloud import AtlasCloudProvider
 from docsgpt.llm.providers.base import Provider
 from docsgpt.llm.providers.docsgpt import DocsGPTProvider
 from docsgpt.llm.providers.google import GoogleProvider
@@ -34,6 +35,7 @@ ALL_PROVIDERS: List[Provider] = [
     GroqProvider(),
     OpenRouterProvider(),
     NovitaProvider(),
+    AtlasCloudProvider(),
 ]
 
 PROVIDERS_BY_NAME: Dict[str, Provider] = {p.name: p for p in ALL_PROVIDERS}

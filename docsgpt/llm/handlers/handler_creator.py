@@ -10,6 +10,7 @@ class LLMHandlerCreator:
         "google": GoogleLLMHandler,
         "anthropic": AnthropicLLMHandler,
         "novita": OpenAILLMHandler,  # Novita uses OpenAI-compatible API
+        "atlascloud": OpenAILLMHandler,  # Atlas Cloud uses OpenAI-compatible API
         "default": OpenAILLMHandler,
     }
 

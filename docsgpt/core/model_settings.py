@@ -21,6 +21,7 @@ class ModelProvider(str, Enum):
     GOOGLE = "google"
     DOCSGPT = "docsgpt"
     NOVITA = "novita"
+    ATLASCLOUD = "atlascloud"
 
 
 @dataclass
