@@ -2,10 +2,10 @@
 #
 # Inclusion rules: the vendor operates the server, it has a stable public URL,
 # and it signs in with OAuth plus dynamic client registration (or needs no
-# auth), so connecting takes no admin setup. Each entry was checked for OAuth
-# authorization-server metadata with a registration endpoint and for a 401
-# challenge on the MCP endpoint. Keep the list short; anything else is a
-# custom connector.
+# auth), so connecting takes no admin setup. OAuth entries are checked for
+# authorization-server metadata with a registration endpoint and a 401
+# challenge on the MCP endpoint; no-auth entries must answer tools/list
+# without credentials. Keep the list short; anything else is a custom connector.
 #
 # Keys look like ``mcp:<name>``. The frontend reads ``settings.connectors
 # .descriptions.mcp_<name>`` for a translated description.
@@ -65,3 +65,13 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://docs.stripe.com/mcp
+
+- key: mcp:excalidraw
+  name: Excalidraw
+  description: Draw diagrams and get an editable Excalidraw link.
+  icon: excalidraw
+  category: projects
+  mcp_url: https://mcp.excalidraw.com/mcp
+  auth_kind: mcp
+  capabilities: [read, write]
+  docs_url: https://github.com/excalidraw/excalidraw-mcp

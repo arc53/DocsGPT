@@ -108,7 +108,8 @@ def _mcp_connection(user, config, auth_type, auth_credentials, display_name):
     OAuth servers already have one (the sign-in stored its tokens there).
     Key, bearer and basic auth store their secret on a connection; servers
     with no auth get a credential-less connection so they still appear on
-    the Connectors page. Returns None when a multi-user install runs on the
+    the Connectors page. Saving restores an existing no-auth connection
+    after successful discovery. Returns None when a multi-user install runs on the
     default encryption key, which keeps the legacy per-tool secret.
     """
     from docsgpt.connectors import catalog, service
@@ -134,6 +135,8 @@ def _mcp_connection(user, config, auth_type, auth_credentials, display_name):
                     user, "custom_mcp", connector_key="custom_mcp", auth_kind="none",
                     display_name=display_name, account_label=host, server_url=base,
                 )
+                if row:
+                    repo.update(str(row["id"]), {"status": service.STATUS_CONNECTED, "last_error": None})
     except service.EncryptionKeyNotConfigured:
         return None
     return str(row["id"]) if row else None
