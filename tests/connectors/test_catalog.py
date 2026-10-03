@@ -101,6 +101,16 @@ class TestRowMapping:
 
 
 class TestPresets:
+    def test_fireflies_preset_exposes_meeting_actions(self):
+        definition = catalog.get_definition("mcp:fireflies")
+
+        assert definition.name == "Fireflies"
+        assert definition.category == "knowledge"
+        assert definition.mcp_url == "https://api.fireflies.ai/mcp"
+        assert definition.auth_kind == "mcp_oauth"
+        assert definition.capabilities == ("read", "write")
+        assert definition.docs_url == "https://docs.fireflies.ai/getting-started/mcp-configuration"
+
     def test_presets_load_from_yaml(self, tmp_path, monkeypatch):
         presets = tmp_path / "mcp.yaml"
         presets.write_text(
