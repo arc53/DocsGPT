@@ -40,7 +40,7 @@ _CL100K_BASE_SPECIAL_TOKENS = {
 
 def _load_cl100k_base() -> tiktoken.Encoding:
     """Build cl100k_base from the packaged ranks file."""
-    data = _CL100K_BASE_FILE.read_bytes()
+    data = _CL100K_BASE_FILE.read_bytes().replace(b"\r\n", b"\n")
     if hashlib.sha256(data).hexdigest() != _CL100K_BASE_SHA256:
         raise ValueError(f"{_CL100K_BASE_FILE} does not match the cl100k_base checksum")
     ranks = {
