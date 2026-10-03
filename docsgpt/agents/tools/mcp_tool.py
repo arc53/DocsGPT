@@ -654,7 +654,9 @@ class MCPTool(Tool):
         for item in result.content:
             kind = getattr(item, "type", None)
             resource = getattr(item, "resource", None)
-            mime_type = str(getattr(resource or item, "mimeType", None) or "")
+            source = resource or item
+            # MCP SDK v2 names it ``mime_type``; earlier versions ``mimeType``.
+            mime_type = str(getattr(source, "mime_type", None) or getattr(source, "mimeType", None) or "")
             image_blob = resource is not None and mime_type.startswith("image/") and hasattr(resource, "blob")
             if hasattr(item, "text"):
                 content_list.append({"type": "text", "text": item.text})
