@@ -114,6 +114,7 @@ defaults:                              # optional, applied to every model below
   cache_write_cost_per_million: float  # prompt-cache writes; default: the input rate
   reasoning_effort: <string>           # default null; none|minimal|low|medium|high|xhigh (subset is model-dependent)
   api_flavor: <string>                  # chat_completions (default) or responses
+  tool_result_images: <string>          # default: by API; native (inside the tool result) or follow_up (a user message after it)
 
 models:                                # required
   - id: <string, required>             # unique registry key; persisted in agent records

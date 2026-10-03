@@ -1319,6 +1319,12 @@
         "reasoningEfforts": {
           "default": "По умолчанию у провайдера"
         },
+        "toolImages": "Изображения инструментов",
+        "toolImagesModes": {
+          "default": "Автоматически",
+          "native": "Внутри результата инструмента",
+          "follow_up": "Отдельным сообщением"
+        },
         "chips": {
           "tools": "Инструменты",
           "structuredOutput": "Структурированный вывод",

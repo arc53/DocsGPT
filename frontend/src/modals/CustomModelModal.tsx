@@ -27,6 +27,7 @@ import type {
   CustomModelCapabilities,
   ModelApiFlavor,
   ReasoningEffort,
+  ToolResultImages,
 } from '../models/types';
 
 interface CustomModelModalProps {
@@ -48,6 +49,7 @@ interface FormState {
   context_window: number | '';
   api_flavor: ModelApiFlavor;
   reasoning_effort: ReasoningEffort | 'default';
+  tool_result_images: ToolResultImages | 'default';
   enabled: boolean;
 }
 
@@ -69,6 +71,7 @@ const buildInitialFormState = (model?: CustomModel | null): FormState => {
       context_window: DEFAULT_CONTEXT_WINDOW,
       api_flavor: 'chat_completions',
       reasoning_effort: 'default',
+      tool_result_images: 'default',
       enabled: true,
     };
   }
@@ -89,6 +92,7 @@ const buildInitialFormState = (model?: CustomModel | null): FormState => {
       model.capabilities?.context_window ?? DEFAULT_CONTEXT_WINDOW,
     api_flavor: model.capabilities?.api_flavor ?? 'chat_completions',
     reasoning_effort: model.capabilities?.reasoning_effort ?? 'default',
+    tool_result_images: model.capabilities?.tool_result_images ?? 'default',
     enabled: model.enabled ?? true,
   };
 };
@@ -202,6 +206,9 @@ export default function CustomModelModal({
     };
     if (formData.reasoning_effort !== 'default') {
       capabilities.reasoning_effort = formData.reasoning_effort;
+    }
+    if (formData.supports_images && formData.tool_result_images !== 'default') {
+      capabilities.tool_result_images = formData.tool_result_images;
     }
     const payload: CreateCustomModelPayload = {
       upstream_model_id: formData.upstream_model_id.trim(),
@@ -512,6 +519,36 @@ export default function CustomModelModal({
                 </SelectContent>
               </Select>
             </FormField>
+            {formData.supports_images && (
+              <FormField
+                label={t('settings.customModels.capabilities.toolImages')}
+              >
+                <Select
+                  value={formData.tool_result_images}
+                  onValueChange={(value) =>
+                    handleChange(
+                      'tool_result_images',
+                      value as ToolResultImages | 'default',
+                    )
+                  }
+                >
+                  <SelectTrigger size="field" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(['default', 'native', 'follow_up'] as const).map(
+                      (mode) => (
+                        <SelectItem key={mode} value={mode}>
+                          {t(
+                            `settings.customModels.capabilities.toolImagesModes.${mode}`,
+                          )}
+                        </SelectItem>
+                      ),
+                    )}
+                  </SelectContent>
+                </Select>
+              </FormField>
+            )}
             <FormField
               label={t('settings.customModels.capabilities.contextWindowShort')}
               error={errors.context_window}

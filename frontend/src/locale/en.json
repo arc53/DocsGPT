@@ -1259,6 +1259,12 @@
         "reasoningEfforts": {
           "default": "Provider default"
         },
+        "toolImages": "Tool images",
+        "toolImagesModes": {
+          "default": "Automatic",
+          "native": "Inside the tool result",
+          "follow_up": "Separate message"
+        },
         "chips": {
           "tools": "Tools",
           "structuredOutput": "Structured output",

@@ -48,6 +48,10 @@ class ModelCapabilities:
     # (the default) or "responses" (the /v1/responses endpoint). Set per
     # model so only models that actually support the Responses API opt in.
     api_flavor: str = "chat_completions"
+    # Where images a tool returned go: "native" (inside the tool result),
+    # "follow_up" (a user message after the tool results), or None for what
+    # the wire API supports (see ``docsgpt.llm.tool_images``).
+    tool_result_images: Optional[str] = None
 
 
 @dataclass

@@ -25,6 +25,63 @@ _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 # Label key used to find/reattach the Daytona sandbox bound to a DocsGPT session.
 _SESSION_LABEL = "docsgpt_session_id"
 
+# Run before the code: once the code imports pyplot, ``plt.show()`` prints each
+# open figure as a PNG between chart markers and closes it. Daytona's own chart
+# extraction (behind the backend's show) drops bar charts and fails every run
+# that shows a chart on matplotlib < 3.10; this replaces it.
+# A run returns at most ``MAX_CHARTS`` charts of at most ``MAX_CHART_PIXELS``
+# and ``MAX_CHART_BYTES`` each; the rest are closed without being rendered or printed.
+MAX_CHARTS = 4
+MAX_CHART_PIXELS = 16_000_000
+MAX_CHART_BYTES = 2_000_000
+_CHART_PRELUDE = f"""\
+import sys as _dg_sys
+
+_dg_left = [{MAX_CHARTS}]
+
+
+def _dg_show(*args, **kwargs):
+    import base64, io
+    plt = _dg_sys.modules["matplotlib.pyplot"]
+    for number in plt.get_fignums():
+        if _dg_left[0] <= 0:
+            break
+        figure = plt.figure(number)
+        width, height = figure.get_size_inches() * figure.dpi
+        if width * height > {MAX_CHART_PIXELS}:
+            continue
+        buffer = io.BytesIO()
+        figure.savefig(buffer, format="png", bbox_inches="tight")
+        if buffer.tell() <= {MAX_CHART_BYTES}:
+            _dg_left[0] -= 1
+            print("<<docsgpt-chart:" + base64.b64encode(buffer.getvalue()).decode() + ">>")
+    plt.close("all")
+
+
+class _DgPyplotHook:
+    def find_spec(self, name, path=None, target=None):
+        if name != "matplotlib.pyplot":
+            return None
+        _dg_sys.meta_path.remove(self)
+        import importlib.util
+        spec = importlib.util.find_spec(name)
+        exec_module = spec.loader.exec_module
+
+        def _exec(module):
+            exec_module(module)
+            module.show = _dg_show
+
+        spec.loader.exec_module = _exec
+        return spec
+
+
+if "matplotlib.pyplot" in _dg_sys.modules:
+    _dg_sys.modules["matplotlib.pyplot"].show = _dg_show
+else:
+    _dg_sys.meta_path.insert(0, _DgPyplotHook())
+"""
+_CHART_RE = re.compile(r"<<docsgpt-chart:([A-Za-z0-9+/=]+)>>\n?")
+
 
 class _Handle:
     """Tracks the Daytona sandbox object plus the workspace it executes in."""
@@ -492,6 +549,7 @@ class DaytonaSandbox(CodeSandbox):
             "import os as _os\n"
             f"_os.makedirs({workspace!r}, exist_ok=True)\n"
             f"_os.chdir({workspace!r})\n"
+            + _CHART_PRELUDE
         )
         return hoisted + prelude + rest
 
@@ -537,6 +595,9 @@ class DaytonaSandbox(CodeSandbox):
             stdout = artifacts.stdout
         else:
             stdout = getattr(response, "result", "") or ""
+        # Charts the code showed come back on stdout; take them out before the cap.
+        charts = _CHART_RE.findall(stdout)
+        stdout = _CHART_RE.sub("", stdout)
 
         truncated = False
         if self._max_output_bytes and len(stdout.encode("utf-8", "ignore")) > self._max_output_bytes:
@@ -553,6 +614,7 @@ class DaytonaSandbox(CodeSandbox):
         if exit_code != 0:
             result.error_name = "ExecutionError"
             result.error_value = stdout or f"exited with code {exit_code}"
+        result.plots = [Plot(format="png", content_base64=png) for png in charts]
         if artifacts is not None:
             for chart in getattr(artifacts, "charts", None) or []:
                 png = getattr(chart, "png", None)

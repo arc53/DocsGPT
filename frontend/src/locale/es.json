@@ -1253,6 +1253,12 @@
         "reasoningEfforts": {
           "default": "Predeterminado del proveedor"
         },
+        "toolImages": "Imágenes de herramientas",
+        "toolImagesModes": {
+          "default": "Automático",
+          "native": "Dentro del resultado de la herramienta",
+          "follow_up": "Mensaje aparte"
+        },
         "chips": {
           "tools": "Herramientas",
           "structuredOutput": "Salida estructurada",
