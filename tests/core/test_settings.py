@@ -15,7 +15,8 @@ import pytest
 from pydantic import ValidationError
 
 from docsgpt.core.settings import SETTINGS_GROUPS, Settings, settings
-from docsgpt.core.settings.reference import reference_path, render_reference
+from docsgpt.core.docs_pages import read_last_updated
+from docsgpt.core.settings.reference import reference_path, render_reference, updated_reference
 
 SECRET_FIELDS = (
     "API_KEY",
@@ -242,13 +243,31 @@ class TestListSettings:
 @pytest.mark.unit
 class TestReference:
     def test_reference_lists_every_setting_once(self):
-        page = render_reference()
+        page = render_reference("2026-10-01")
         for name in Settings.model_fields:
             assert page.count(f"### `{name}`") == 1, name
 
+    def test_reference_carries_its_last_updated_date(self):
+        assert read_last_updated(render_reference("2026-10-01")) == "2026-10-01"
+
+    def test_unchanged_page_keeps_its_date(self, monkeypatch):
+        monkeypatch.setattr("docsgpt.core.settings.reference.today", lambda: "2026-12-31")
+        current = render_reference("2026-10-01")
+        assert updated_reference(current) == current
+
+    def test_changed_page_gets_todays_date(self, monkeypatch):
+        monkeypatch.setattr("docsgpt.core.settings.reference.today", lambda: "2026-12-31")
+        stale = render_reference("2026-10-01").replace("### `API_KEY`", "### `OLD_KEY`")
+        assert updated_reference(stale) == render_reference("2026-12-31")
+
+    def test_page_without_a_date_gets_todays_date(self, monkeypatch):
+        monkeypatch.setattr("docsgpt.core.settings.reference.today", lambda: "2026-12-31")
+        undated = render_reference("2026-10-01").replace("lastUpdated: 2026-10-01\n", "")
+        assert updated_reference(undated) == render_reference("2026-12-31")
+
     def test_reference_prose_has_no_bare_angle_brackets_or_braces(self):
         """MDX parses ``<`` and ``{`` in prose as JSX; only code spans may carry them raw."""
-        for lineno, line in enumerate(render_reference().splitlines(), 1):
+        for lineno, line in enumerate(render_reference("2026-10-01").splitlines(), 1):
             if line.startswith(("{/*", "---")):
                 continue
             prose = "".join(line.split("`")[::2])  # drop the inside of every code span
@@ -259,7 +278,8 @@ class TestReference:
         path: Path = reference_path()
         if not path.exists():
             pytest.skip("docs tree not present (installed package, not a checkout)")
-        assert path.read_text(encoding="utf-8") == render_reference(), (
+        current = path.read_text(encoding="utf-8")
+        assert current == updated_reference(current), (
             "docs/content/Deploying/Settings-Reference.mdx is stale; "
             "run: python -m docsgpt.core.settings.reference --write"
         )

@@ -24,6 +24,7 @@ from typing import Any, Literal, Optional, Union
 from pydantic import AliasChoices
 from pydantic.fields import FieldInfo
 
+from docsgpt.core.docs_pages import read_last_updated, today
 from docsgpt.core.paths import home_dir
 from docsgpt.core.settings import SETTINGS_GROUPS, Settings
 
@@ -35,6 +36,7 @@ _HEADER = """\
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
+lastUpdated: {last_updated}
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -124,9 +126,16 @@ def _group_intro(group: type) -> str:
     return doc.split("\n\n", 1)[0].replace("\n", " ").strip()
 
 
-def render_reference() -> str:
-    """The full reference page as MDX text."""
-    parts = [_HEADER]
+def render_reference(last_updated: str) -> str:
+    """The full reference page as MDX text.
+
+    Args:
+        last_updated: The page's ``lastUpdated`` frontmatter date, ``YYYY-MM-DD``.
+
+    Returns:
+        The page source.
+    """
+    parts = [_HEADER.replace("{last_updated}", last_updated, 1)]
     for title, group in SETTINGS_GROUPS:
         parts.append(f"\n## {title}\n")
         intro = _group_intro(group)
@@ -135,6 +144,24 @@ def render_reference() -> str:
         for name in group.model_fields:
             parts.append(_render_field(name, Settings.model_fields[name]) + "\n")
     return "\n".join(parts).rstrip("\n") + "\n"
+
+
+def updated_reference(current: str) -> str:
+    """The page to check in, given the one checked in now.
+
+    The current ``lastUpdated`` date is kept while the rendered content is
+    unchanged; any change to the content (or a missing date) dates the page today.
+
+    Args:
+        current: The checked-in page source, or "" when there is none.
+
+    Returns:
+        The page source ``--write`` writes.
+    """
+    previous = read_last_updated(current)
+    if previous and render_reference(previous) == current:
+        return current
+    return render_reference(today())
 
 
 def reference_path(root: Optional[Path] = None) -> Path:
@@ -151,14 +178,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     action.add_argument("--check", action="store_true", help="exit 1 if the checked-in page is stale")
     args = parser.parse_args(argv)
 
-    rendered = render_reference()
     path = reference_path()
+    current = path.read_text(encoding="utf-8") if path.exists() else ""
+    rendered = updated_reference(current)
     if args.write:
         path.write_text(rendered, encoding="utf-8")
         print(f"wrote {path}")
         return 0
     if args.check:
-        current = path.read_text(encoding="utf-8") if path.exists() else ""
         if current != rendered:
             print(f"{path} is stale; run: python -m docsgpt.core.settings.reference --write", file=sys.stderr)
             return 1

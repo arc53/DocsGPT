@@ -196,8 +196,11 @@ cd frontend && npm run build
 ### Documentation changes
 
 ```bash
-cd docs && npm run build
+cd docs && npm run dates:check && npm run build
 ```
+
+Read `docs/AGENTS.md` first: every page carries a `lastUpdated` date that you bump when
+you change what the page tells the reader.
 
 If Vale is installed locally and you edited prose, also run:
 

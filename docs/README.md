@@ -26,8 +26,8 @@ node scripts/check-links.mjs   # after a build: check internal links and #anchor
 
 Run `npm run build` before opening a PR that touches the docs: it fails on broken MDX. The
 [docs workflow](../.github/workflows/docs.yml) runs the same build on pull requests that change
-`docs/`, checks the internal links in the built pages, and checks that `public/llms.txt` is
-current.
+`docs/`, checks the internal links in the built pages, checks that `public/llms.txt` is
+current, and checks every page's `lastUpdated` date.
 
 ## Where things live
 
@@ -49,19 +49,37 @@ current.
 - `scripts/generate-llms.mjs`: the generator for `public/llms.txt`.
 - `next.config.js`: the Next.js config, including `redirects()`. When you move or delete a
   page, add a permanent redirect from the old URL there.
+- `page-meta.js`: each page's canonical URL, share card and JSON-LD, built from its frontmatter.
+  `app/sitemap.js` serves `/sitemap.xml` from the same data; `public/robots.txt` and the share
+  image `public/og/default.png` are static files.
+- `scripts/check-dates.mjs`: checks every page's `lastUpdated` date (`npm run dates:check`).
+
+## Page frontmatter
+
+Every page sets `title`, `description` and `lastUpdated` (`YYYY-MM-DD`). `lastUpdated` is
+shown at the bottom of the page and becomes the sitemap's `lastmod`, so bump it when you
+change what the page tells the reader and leave it for typo and formatting fixes.
+[AGENTS.md](AGENTS.md) has the full rule. CI fails on a missing, malformed or future date and,
+on pull requests, warns about pages that changed without a new date:
+
+```bash
+npm run dates:check
+```
 
 ## Generated pages
 
 `content/Deploying/Settings-Reference.mdx` is generated from the settings definitions in
-`docsgpt/core/settings/`. Don't edit it by hand. From the repository root, with the backend
-environment active:
+`docsgpt/core/settings/`. Don't edit it by hand, its `lastUpdated` date included: the generator keeps the date while
+the content is unchanged and sets today's date when it changes. From the repository root,
+with the backend environment active:
 
 ```bash
 python -m docsgpt.core.settings.reference --write
 ```
 
 `data/swagger.json` is generated from the backend's routes. After adding or changing a route,
-regenerate it from the repository root (CI fails while it is stale):
+regenerate it from the repository root (CI fails while it is stale); when the snapshot changes,
+this also sets `content/API/reference.mdx`'s `lastUpdated` to today:
 
 ```bash
 python -m docsgpt.api.reference --write

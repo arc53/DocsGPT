@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from docsgpt.api.reference import build_spec, main, render_spec, snapshot_path
+from docsgpt.core.docs_pages import read_last_updated
 
 METHODS = ("get", "put", "post", "delete", "patch", "head", "options")
 
@@ -94,9 +95,32 @@ class TestCli:
         assert main(["--check"]) == 1
         assert "--write" in capsys.readouterr().err
 
+    def test_write_dates_the_reference_page_when_the_snapshot_changes(self, tmp_path, monkeypatch):
+        target = tmp_path / "swagger.json"
+        target.write_text("{}\n", encoding="utf-8")
+        page = tmp_path / "reference.mdx"
+        page.write_text("---\ntitle: REST API Reference\nlastUpdated: 2026-01-01\n---\n", encoding="utf-8")
+        monkeypatch.setattr("docsgpt.api.reference.snapshot_path", lambda: target)
+        monkeypatch.setattr("docsgpt.api.reference.reference_page_path", lambda: page)
+        monkeypatch.setattr("docsgpt.api.reference.today", lambda: "2026-12-31")
+        assert main(["--write"]) == 0
+        assert read_last_updated(page.read_text(encoding="utf-8")) == "2026-12-31"
+
+    def test_write_keeps_the_reference_page_date_when_the_snapshot_is_unchanged(self, tmp_path, monkeypatch):
+        target = tmp_path / "swagger.json"
+        target.write_text(render_spec(), encoding="utf-8")
+        page = tmp_path / "reference.mdx"
+        page.write_text("---\ntitle: REST API Reference\nlastUpdated: 2026-01-01\n---\n", encoding="utf-8")
+        monkeypatch.setattr("docsgpt.api.reference.snapshot_path", lambda: target)
+        monkeypatch.setattr("docsgpt.api.reference.reference_page_path", lambda: page)
+        monkeypatch.setattr("docsgpt.api.reference.today", lambda: "2026-12-31")
+        assert main(["--write"]) == 0
+        assert read_last_updated(page.read_text(encoding="utf-8")) == "2026-01-01"
+
     def test_write_then_check_passes(self, tmp_path, monkeypatch):
         target = tmp_path / "swagger.json"
         monkeypatch.setattr("docsgpt.api.reference.snapshot_path", lambda: target)
+        monkeypatch.setattr("docsgpt.api.reference.reference_page_path", lambda: tmp_path / "missing.mdx")
         assert main(["--write"]) == 0
         assert main(["--check"]) == 0
         assert target.read_text(encoding="utf-8") == render_spec()

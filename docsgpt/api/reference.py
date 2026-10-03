@@ -7,7 +7,8 @@ serves at ``/swagger.json``. Regenerate it after changing a route::
     python -m docsgpt.api.reference --write
 
 ``--check`` exits non-zero when the checked-in snapshot is stale; the test
-suite and CI run the same comparison.
+suite and CI run the same comparison. When ``--write`` changes the snapshot it
+also moves the reference page's ``lastUpdated`` frontmatter date to today.
 
 The snapshot is the flask-restx document with sorted keys and nothing that
 depends on the host serving it. Each operation also says how a personal access
@@ -30,7 +31,10 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
+from docsgpt.core.docs_pages import set_last_updated, today
+
 SNAPSHOT_PATH = Path("docs") / "data" / "swagger.json"
+REFERENCE_PAGE_PATH = Path("docs") / "content" / "API" / "reference.mdx"
 
 _METHODS = ("get", "put", "post", "delete", "patch", "head", "options")
 
@@ -108,6 +112,13 @@ def snapshot_path(root: Optional[Path] = None) -> Path:
     return root / SNAPSHOT_PATH
 
 
+def reference_page_path(root: Optional[Path] = None) -> Path:
+    """Where the page that renders the snapshot lives; ``root`` defaults to the repository root."""
+    if root is None:
+        root = Path(__file__).resolve().parents[2]
+    return root / REFERENCE_PAGE_PATH
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     """Write, check or print the snapshot.
 
@@ -125,13 +136,17 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     rendered = render_spec()
     path = snapshot_path()
+    current = path.read_text(encoding="utf-8") if path.exists() else ""
     if args.write:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(rendered, encoding="utf-8")
         print(f"wrote {path}")
+        page = reference_page_path()
+        if current != rendered and page.exists():
+            page.write_text(set_last_updated(page.read_text(encoding="utf-8"), today()), encoding="utf-8")
+            print(f"dated {page} {today()}")
         return 0
     if args.check:
-        current = path.read_text(encoding="utf-8") if path.exists() else ""
         if current != rendered:
             print(f"{path} is stale; run: python -m docsgpt.api.reference --write", file=sys.stderr)
             return 1
