@@ -27,7 +27,9 @@ If not set, it is derived from the host of `CONNECTOR_REDIRECT_BASE_URI`, then f
 
 ### Step 2: Add an MCP Server
 
-Go to **Settings** > **Connectors** and pick a preset (Notion, Linear, Atlassian, Sentry, Stripe): **Sign in to Notion** opens the service's sign-in, and its tools are ready when you come back. For any other server, choose **Add custom connector** > **MCP server** and enter its URL and authentication; scopes and the timeout are under **Show advanced**. Enter the server URL, select an auth type, and click **Test Connection** to verify, then **Save**.
+Go to **Settings** > **Connectors** and pick a preset (Notion, Linear, Atlassian, Sentry, Stripe or Excalidraw): **Sign in to Notion** opens the service's sign-in, and its tools are ready when you come back. For any other server, choose **Add custom connector** > **MCP server** and enter its URL and authentication; scopes and the timeout are under **Show advanced**. Enter the server URL, select an auth type, and click **Test Connection** to verify, then **Save**.
+
+**Excalidraw** needs no account or sign-in. Choose its card, click **Test Connection**, then **Save**. Its name, URL and **None** authentication are prefilled, so no field edits are needed.
 
 ### Step 3: Enable for Your Agent
 
@@ -35,7 +37,9 @@ In your agent configuration, enable the MCP tools you want the agent to use.
 
 </Steps>
 
-Presets need no URL or form: they sign in with OAuth in one step. Admins can turn presets off one by one, and turn off custom MCP servers, in **Admin > Connectors**. See [Connectors](/Sources/Connectors).
+OAuth presets need no URL or form: they sign in with OAuth in one step. Excalidraw uses the prefilled test-and-save flow without authentication. Admins can turn presets off one by one, and turn off custom MCP servers, in **Admin > Connectors**. See [Connectors](/Sources/Connectors).
+
+For Excalidraw, ask your agent to draw a diagram and return an editable link. The `read_me` tool describes the diagram format, and `export_to_excalidraw` uploads the diagram and returns a `https://excalidraw.com/#json=…` link. Open the link to view and edit it. DocsGPT does not yet render MCP Apps widgets inline, so `create_view` alone only reports that the canvas is rendering.
 
 ## Authentication Types
 
@@ -52,7 +56,7 @@ For OAuth in production, `MCP_OAUTH_REDIRECT_URI` must be a publicly accessible 
 </Callout>
 
 <Callout type="warning">
-OAuth servers, including the presets, also need `ENABLE_SSE_PUSH=true` (the default) and the API served through the ASGI app. The sign-in link and its result reach the web app only as `mcp.oauth.*` events on the [realtime events](/API/realtime-events) stream; with the publisher off, adding an OAuth server never gets past **Test Connection**.
+OAuth servers, including the OAuth presets, also need `ENABLE_SSE_PUSH=true` (the default) and the API served through the ASGI app. The sign-in link and its result reach the web app only as `mcp.oauth.*` events on the [realtime events](/API/realtime-events) stream; with the publisher off, adding an OAuth server never gets past **Test Connection**.
 </Callout>
 
 ## API Endpoints

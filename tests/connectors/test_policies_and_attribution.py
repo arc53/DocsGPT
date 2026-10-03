@@ -73,10 +73,10 @@ def _call(app, resource, method, path, *, user="alice", body=None, roles=None, a
 class TestPresets:
     def test_presets_are_in_the_catalog(self):
         presets = [d for d in catalog.all_definitions() if d.publisher == "preset"]
-        assert {p.key for p in presets} >= {"mcp:notion", "mcp:linear"}
+        assert {p.key for p in presets} >= {"mcp:notion", "mcp:linear", "mcp:excalidraw"}
         for preset in presets:
             assert preset.mcp_url.startswith("https://")
-            assert preset.auth_kind in ("mcp_oauth", "none")
+            assert preset.auth_kind in ("mcp_oauth", "mcp", "none")
             assert preset.tool_templates == ("mcp_tool",)
 
     def test_existing_mcp_connection_maps_to_its_preset(self):

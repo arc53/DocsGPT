@@ -1432,6 +1432,7 @@
         "mcp_atlassian": "Busca y actualiza incidencias de Jira y páginas de Confluence.",
         "mcp_sentry": "Consulta incidencias, eventos y versiones de Sentry.",
         "mcp_stripe": "Consulta clientes, pagos y suscripciones en Stripe.",
+        "mcp_excalidraw": "Dibuja diagramas y obtén un enlace para editarlos en Excalidraw.",
         "github": "Sincroniza repositorios con Conocimiento y deja que los agentes lean código, issues y pull requests."
       },
       "empty": "Aún no hay nada conectado. Conecta un servicio para sincronizar su contenido o dar nuevas herramientas a los agentes.",

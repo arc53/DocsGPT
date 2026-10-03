@@ -301,6 +301,10 @@ Each post becomes one document with its title, subreddit, score, author and link
 
 Notion, Linear, Atlassian, Sentry and Stripe are remote MCP servers that support OAuth with dynamic client registration, so they need no server settings. Members sign in with their own account. The presets ship in `docsgpt/connectors/presets/mcp.yaml`.
 
+Excalidraw is also available as a preset and needs no account or sign-in. Choose **Excalidraw**, click **Test Connection**, then **Save**; the name, URL and **None** authentication are already filled in. Enable its tools for your agent to draw diagrams and get an editable Excalidraw link.
+
+For example, ask “Draw a diagram of how a RAG pipeline works and give me an editable Excalidraw link.” The agent uses `export_to_excalidraw` to return the link. Open it at excalidraw.com to view and edit the diagram. DocsGPT does not yet render the interactive MCP Apps canvas inline; `create_view` alone does not provide a viewable diagram in chat.
+
 ### Linear
 
 One Linear sign-in gives agents Linear's tools and syncs Linear into Knowledge. After signing in, members turn on **Sync into Knowledge** and choose what to sync, or leave it off to keep only the tools; a connection's page adds more with **Sync more content**.
