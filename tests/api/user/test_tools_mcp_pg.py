@@ -36,6 +36,29 @@ def _patch_db(conn):
         yield
 
 
+class TestNoAuthConnection:
+    @pytest.mark.parametrize("status", ["disconnected", "reconnect_needed"])
+    def test_no_auth_save_reconnects_the_existing_account(self, pg_conn, status):
+        from docsgpt.api.user.tools.mcp import _mcp_connection
+        from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+        repo = ConnectorSessionsRepository(pg_conn)
+        row = repo.create(
+            "u-excalidraw", "custom_mcp", connector_key="custom_mcp", auth_kind="none",
+            display_name="Excalidraw", account_label="mcp.excalidraw.com",
+            server_url="https://mcp.excalidraw.com",
+        )
+        cid = str(row["id"])
+        repo.update(cid, {"status": status, "last_error": "Disconnected"})
+        with _patch_db(pg_conn):
+            saved = _mcp_connection(
+                "u-excalidraw", {"server_url": "https://mcp.excalidraw.com/mcp"}, "none", {}, "Excalidraw",
+            )
+        assert saved == cid
+        assert repo.get(cid)["status"] == "connected"
+        assert repo.get(cid)["last_error"] is None
+
+
 class TestSanitizeMcpTransport:
     def test_defaults_to_auto(self):
         from docsgpt.api.user.tools.mcp import _sanitize_mcp_transport

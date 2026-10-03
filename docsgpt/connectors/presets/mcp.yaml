@@ -190,3 +190,13 @@
   auth_kind: mcp
   capabilities: [read]
   docs_url: https://docs.coingecko.com/docs/mcp-server
+
+- key: mcp:excalidraw
+  name: Excalidraw
+  description: Draw diagrams and get an editable Excalidraw link.
+  icon: excalidraw
+  category: projects
+  mcp_url: https://mcp.excalidraw.com/mcp
+  auth_kind: mcp
+  capabilities: [read, write]
+  docs_url: https://github.com/excalidraw/excalidraw-mcp
