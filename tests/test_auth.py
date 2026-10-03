@@ -82,6 +82,67 @@ class TestHandleAuth:
         mock_jwt.decode.assert_called_once()
         assert mock_jwt.decode.call_args[0][0] == "my_token"
 
+    def test_preserves_token_with_bearer_substring(self):
+        from docsgpt.auth import handle_auth
+
+        mock_request = Mock()
+        mock_request.headers.get.return_value = "Bearer token_Bearer_123"
+
+        with patch("docsgpt.auth.settings") as mock_settings, patch(
+            "docsgpt.auth.jwt"
+        ) as mock_jwt:
+            mock_settings.AUTH_TYPE = "simple_jwt"
+            mock_settings.JWT_SECRET_KEY = "secret"
+            mock_jwt.decode.return_value = {"sub": "user1"}
+            handle_auth(mock_request)
+
+        mock_jwt.decode.assert_called_once()
+        assert mock_jwt.decode.call_args[0][0] == "token_Bearer_123"
+
+    @pytest.mark.parametrize(
+        "header_value",
+        [
+            "Bearer",
+            "Bearer ",
+            "Token some_token",
+            "Basic dXNlcjpwYXNz",
+            "invalid_without_scheme",
+            12345,
+        ],
+    )
+    def test_rejects_malformed_authorization_header(self, header_value):
+        from docsgpt.auth import handle_auth
+
+        mock_request = Mock()
+        mock_request.headers.get.return_value = header_value
+
+        with patch("docsgpt.auth.settings") as mock_settings:
+            mock_settings.AUTH_TYPE = "simple_jwt"
+            result = handle_auth(mock_request)
+
+        assert result == {
+            "message": "Authentication error: invalid token",
+            "error": "invalid_token",
+        }
+
+    @pytest.mark.parametrize("header_value", ["", "   "])
+    def test_empty_authorization_header_returns_none(self, header_value):
+        from docsgpt.auth import handle_auth
+
+        mock_request = Mock()
+        mock_request.headers.get.return_value = header_value
+
+        with patch("docsgpt.auth.settings") as mock_settings:
+            mock_settings.AUTH_TYPE = "simple_jwt"
+            result = handle_auth(mock_request)
+
+        assert result is None
+
+    def test_default_data_arg_is_immutable(self):
+        from docsgpt.auth import handle_auth
+
+        assert handle_auth.__defaults__ == (None,)
+
 
 @pytest.mark.unit
 class TestHandleAuthOidc:
