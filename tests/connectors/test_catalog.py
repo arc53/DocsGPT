@@ -179,3 +179,15 @@ def test_clickup_is_a_remote_oauth_preset():
     assert clickup.docs_url == (
         "https://developer.clickup.com/docs/connect-an-ai-assistant-to-clickups-mcp-server"
     )
+
+
+def test_zapier_preset_uses_remote_oauth_catalog_contract():
+    zapier = catalog.get_definition("mcp:zapier")
+
+    assert zapier.name == "Zapier"
+    assert zapier.icon == "zapier"
+    assert zapier.category == "business"
+    assert zapier.mcp_url == "https://mcp.zapier.com/api/v1/connect"
+    assert zapier.auth_kind == "mcp_oauth"
+    assert zapier.capabilities == ("read", "write")
+    assert zapier.docs_url == "https://docs.zapier.com/mcp/get-started/connect"
