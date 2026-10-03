@@ -56,13 +56,18 @@ class RstParser(BaseParser):
         for i, line in enumerate(lines):
             header_match = re.match(r"^[^\S\n]*[-=]+[^\S\n]*$", line)
             if header_match and i > 0 and (
-                    len(lines[i - 1].strip()) == len(header_match.group().strip()) or lines[i - 2] == lines[i - 2]):
-                if current_header is not None:
-                    if current_text == "" or None:
-                        continue
+                    len(lines[i - 1].strip()) <= len(header_match.group().strip())):
+                # Strip the header's own title line back out of the text
+                # accumulated so far, whether that text belongs to a
+                # previous section (current_header is set) or is preamble
+                # before the document's first header (current_header is
+                # still None). Previously this whole block was skipped
+                # whenever current_header was None, which silently
+                # discarded any preamble text preceding the first header.
+                if current_text.endswith(lines[i - 1] + "\n"):
                     # removes the next heading from current Document
-                    if current_text.endswith(lines[i - 1] + "\n"):
-                        current_text = current_text[:len(current_text) - len(lines[i - 1] + "\n")]
+                    current_text = current_text[:len(current_text) - len(lines[i - 1] + "\n")]
+                if current_text != "" or current_header is not None:
                     rst_tups.append((current_header, current_text))
 
                 current_header = lines[i - 1]
