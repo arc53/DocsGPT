@@ -125,6 +125,26 @@ class TestPresets:
         assert catalog.base_url("not a url") == ""
 
 
+def test_vercel_preset_endpoint_and_capabilities():
+    """The Vercel card talks to Vercel's MCP server with MCP OAuth.
+
+    Regression test for the ``mcp:vercel`` preset: its endpoint, its
+    ``mcp_oauth`` auth kind and its read/write capabilities.
+    """
+    from docsgpt.connectors import catalog
+
+    vercel = catalog.get_definition("mcp:vercel")
+    assert vercel is not None
+    assert vercel.publisher == "preset"
+    assert vercel.mcp_url == "https://mcp.vercel.com"
+    assert vercel.mcp_base_url == "https://mcp.vercel.com"
+    assert vercel.auth_kind == "mcp_oauth"
+    assert vercel.capabilities == ("read", "write")
+    assert catalog.preset_for_url("https://mcp.vercel.com").key == "mcp:vercel"
+    row = {"provider": "mcp:https://mcp.vercel.com", "server_url": "https://mcp.vercel.com"}
+    assert catalog.connector_key_for_row(row) == "mcp:vercel"
+
+
 class TestFieldHints:
     """Hints are short, carry no "Optional" (the form stars required fields) and link inline."""
 
