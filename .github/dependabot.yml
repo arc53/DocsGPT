@@ -1,23 +1,50 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
+# Dependabot version updates, weekly and grouped so one pull request carries each
+# ecosystem's minor and patch bumps. Major bumps still come one per pull request.
+# A release has to be a week old before Dependabot proposes it; security updates skip the wait.
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Python dependencies are declared in pyproject.toml and locked in uv.lock, so the
+# uv ecosystem updates those. Dependabot can't re-export docsgpt/requirements*.txt:
+# .github/workflows/dependabot-uv-export.yml does that on its pull requests.
 
 version: 2
 updates:
-  - package-ecosystem: "pip" # See documentation for possible values
-    directory: "/docsgpt" # Location of package manifests
+  - package-ecosystem: "uv"
+    directory: "/"
     schedule:
-      interval: "daily"
-  - package-ecosystem: "npm" # See documentation for possible values
-    directory: "/frontend" # Location of package manifests
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      python:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "npm"
+    directory: "/frontend"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      frontend:
+        update-types: ["minor", "patch"]
+
   - package-ecosystem: "npm"
     directory: "/extensions/react-widget"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      react-widget:
+        update-types: ["minor", "patch"]
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]

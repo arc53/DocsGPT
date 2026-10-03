@@ -1,0 +1,63 @@
+# Re-exports docsgpt/requirements*.txt on Dependabot's uv pull requests. Dependabot
+# updates uv.lock and pyproject.toml but can't run scripts/export_requirements.sh,
+# so without this the "requirements-in-sync" check fails and pytest installs the
+# old pins.
+#
+# A push made with GITHUB_TOKEN starts no workflows, so after pushing the export
+# this dispatches the lint and test workflows on the branch; their results land on
+# the new head commit. Dependabot stops rebasing a branch someone else committed
+# to: comment "@dependabot recreate" on the pull request to get a fresh one.
+name: Dependabot uv export
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - uv.lock
+      - pyproject.toml
+
+permissions: {}
+
+concurrency:
+  group: dependabot-uv-export-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  export:
+    if: >-
+      github.repository == 'arc53/DocsGPT' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'dependabot/uv/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: write
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+
+      - name: Re-export the requirements files
+        run: bash scripts/export_requirements.sh
+
+      - name: Push the export and run the checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if [ -z "$(git status --porcelain -- docsgpt/requirements*.txt)" ]; then
+            echo "The requirements files are current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docsgpt/requirements*.txt
+          git commit -q -m "Re-export the requirements files"
+          git push -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${HEAD_REF}"
+          gh workflow run lint.yml --ref "$HEAD_REF"
+          gh workflow run pytest.yml --ref "$HEAD_REF"
