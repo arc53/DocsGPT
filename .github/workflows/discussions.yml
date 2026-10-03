@@ -1,0 +1,65 @@
+# Answers questions in GitHub Discussions with the DocsGPT discussions agent.
+# Off until the DISCUSSIONS_MODE repository variable is set (shadow or live);
+# see .github/discussions/README.md.
+name: Discussions
+
+on:
+  discussion:
+    types: [created]
+  discussion_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      number:
+        description: Discussion number (empty to answer the backlog)
+        type: number
+      limit:
+        description: With an empty number, answer at most this many
+        type: number
+        default: 5
+      max_age_days:
+        description: With an empty number, skip discussions older than this
+        type: number
+        default: 365
+
+permissions: {}
+
+concurrency:
+  group: discussions-${{ github.event.discussion.number || inputs.number || 'backlog' }}
+  cancel-in-progress: false
+
+jobs:
+  answer:
+    if: github.repository == 'arc53/DocsGPT' && vars.DISCUSSIONS_MODE != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      discussions: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/discussions
+
+      # The agent's answer stays out of this public log until it is posted.
+      - name: Answer
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DOCSGPT_DISCUSSIONS_AGENT_KEY: ${{ secrets.DOCSGPT_DISCUSSIONS_AGENT_KEY }}
+          DISCUSSIONS_MODE: ${{ vars.DISCUSSIONS_MODE }}
+          DISCUSSIONS_CATEGORIES: ${{ vars.DISCUSSIONS_CATEGORIES }}
+          DISCUSSIONS_MAINTAINERS: ${{ vars.DISCUSSIONS_MAINTAINERS }}
+          NUMBER: ${{ inputs.number }}
+          LIMIT: ${{ inputs.limit }}
+          MAX_AGE_DAYS: ${{ inputs.max_age_days }}
+        run: |
+          args=()
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            if [ -n "$NUMBER" ]; then
+              args=(--number "$NUMBER")
+            else
+              args=(--backlog --limit "$LIMIT" --max-age-days "$MAX_AGE_DAYS")
+            fi
+          fi
+          python3 .github/discussions/answer.py "${args[@]}"
