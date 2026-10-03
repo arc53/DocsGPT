@@ -16,6 +16,8 @@ class SpeechSettings(SettingsGroup):
         default="google_tts", description="Text-to-speech provider; none switches it off."
     )
     ELEVENLABS_API_KEY: Optional[str] = Field(default=None, description="ElevenLabs API key.")
+    ELEVENLABS_VOICE_ID: str = Field(default="nPczCjzI2devNBz1zQrb", description="ElevenLabs voice ID.")
+    ELEVENLABS_LANGUAGE: str = Field(default="en", description="Language code for ElevenLabs TTS.")
     STT_PROVIDER: Literal["openai", "faster_whisper", "none"] = Field(
         default="openai", description="Speech-to-text provider; none switches it off."
     )

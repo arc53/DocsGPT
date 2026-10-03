@@ -1,7 +1,10 @@
+import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 from docsgpt.core.settings import settings
 from docsgpt.stt.base import BaseSTT
@@ -32,7 +35,11 @@ class OpenAISTT(BaseSTT):
         timestamps: bool = False,
         diarize: bool = False,
     ) -> Dict[str, Any]:
-        _ = diarize
+        if diarize:
+            logger.warning(
+                "Diarization requested but is not supported by the OpenAI Whisper "
+                "provider. Set STT_ENABLE_DIARIZATION=false to suppress this warning."
+            )
         request: Dict[str, Any] = {
             "file": file_path,
             "model": self.model,
