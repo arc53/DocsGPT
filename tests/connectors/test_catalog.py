@@ -101,6 +101,17 @@ class TestRowMapping:
 
 
 class TestPresets:
+    def test_motherduck_preset_uses_remote_oauth_with_read_and_write_capabilities(self):
+        preset = catalog.get_definition("mcp:motherduck")
+        assert preset is not None
+        assert preset.name == "MotherDuck"
+        assert preset.icon == "motherduck"
+        assert preset.category == "database"
+        assert preset.mcp_url == "https://api.motherduck.com/mcp"
+        assert preset.auth_kind == "mcp_oauth"
+        assert preset.capabilities == ("read", "write")
+        assert preset.docs_url == "https://motherduck.com/docs/sql-reference/mcp/"
+
     def test_presets_load_from_yaml(self, tmp_path, monkeypatch):
         presets = tmp_path / "mcp.yaml"
         presets.write_text(

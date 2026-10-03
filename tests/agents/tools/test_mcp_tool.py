@@ -1125,6 +1125,32 @@ class TestDBTokenStorage:
         assert tokens_out.access_token == "at-abc"
         assert tokens_out.refresh_token == "rt-xyz"
 
+    def test_long_client_id_survives_reconnect(self, monkeypatch, pg_conn):
+        from mcp.shared.auth import OAuthClientInformationFull
+
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
+
+        self._patch_db(monkeypatch, pg_conn)
+        client_id = "client-" + "x" * 4096
+        server_url = "https://api.motherduck.com/mcp"
+        user_id = "user-long-client-id"
+        storage = DBTokenStorage(server_url=server_url, user_id=user_id)
+        client_info = OAuthClientInformationFull(
+            client_id=client_id,
+            redirect_uris=["https://docsgpt.example.com/api/mcp_server/callback"],
+        )
+
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(storage.set_client_info(client_info))
+            reconnected_storage = DBTokenStorage(server_url=server_url, user_id=user_id)
+            restored = loop.run_until_complete(reconnected_storage.get_client_info())
+        finally:
+            loop.close()
+
+        assert restored is not None
+        assert restored.client_id == client_id
+
     def test_set_tokens_populates_scalar_server_url(
         self, monkeypatch, pg_conn,
     ):

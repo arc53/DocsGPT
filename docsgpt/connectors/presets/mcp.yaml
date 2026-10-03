@@ -65,3 +65,13 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://docs.stripe.com/mcp
+
+- key: mcp:motherduck
+  name: MotherDuck
+  description: Explore schemas and run SQL on MotherDuck.
+  icon: motherduck
+  category: database
+  mcp_url: https://api.motherduck.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://motherduck.com/docs/sql-reference/mcp/
