@@ -97,6 +97,8 @@ class TestLinks:
 
     def test_code_blocks_are_left_alone(self):
         text = "```md\n[a](CONTRIBUTING.md)\n```\n[b](LICENSE)\n"
+        assert translate.rewrite_links("````md\n```\n[a](LICENSE)\n````\n[b](LICENSE)\n").endswith("[b](../../LICENSE)\n")
+        assert "[a](LICENSE)" in translate.rewrite_links("````md\n```\n[a](LICENSE)\n````\n")
         assert translate.rewrite_links(text) == "```md\n[a](CONTRIBUTING.md)\n```\n[b](../../LICENSE)\n"
 
     def test_unrewrite_reverses_rewrite(self):
@@ -170,6 +172,17 @@ class TestValidate:
         source = '```bash\ndocsgpt logs   # Follow the logs\n```\n```mermaid\nA["Web app"] --> B\n```\n'
         translated = '```bash\ndocsgpt logs   # Logs verfolgen\n```\n```mermaid\nA["Web-App"] --> B\n```\n'
         assert translate.validate(source, translated) == []
+
+    def test_a_different_fence_inside_a_block_does_not_close_it(self):
+        source = "````md\n~~~\nrun one\n````\n"
+        translated = "````md\n~~~\nrun two\n````\n"
+        assert any("code block" in error for error in translate.validate(source, translated))
+
+    def test_hash_inside_quotes_is_code_not_a_comment(self):
+        source = '```bash\necho "value # original"  # say it\n```\n'
+        assert translate.validate(source, source.replace("# say it", "# sag es")) == []
+        broken = source.replace("# original", "# geändert")
+        assert any("code block" in error for error in translate.validate(source, broken))
 
     def test_changed_mermaid_syntax(self):
         source = '```mermaid\nA["Web app"] --> B\n```\n'

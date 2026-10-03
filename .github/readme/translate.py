@@ -132,19 +132,34 @@ def set_readme_bar(text: str) -> str:
 # --- Links ------------------------------------------------------------------
 
 
-def _is_fence(line: str) -> bool:
-    return re.sub(r"^[\s>]*", "", line).startswith(("```", "~~~"))
+def _fenced(text: str) -> Iterable[tuple[str, str, str]]:
+    """Yield ``(line, kind, language)`` for each line, kind being prose, open, code or close.
+
+    A fence closes only on the opener's character, at least as long and with nothing after it, as in
+    CommonMark, so a ``~~~`` line inside a backtick block is code. Blockquote markers are ignored.
+    """
+    opener = ""
+    language = ""
+    for line in text.splitlines(keepends=True):
+        bare = re.sub(r"^[\s>]*", "", line).rstrip()
+        if not opener:
+            match = re.match(r"(`{3,}|~{3,})(.*)$", bare)
+            if match and not (match.group(1)[0] == "`" and "`" in match.group(2)):
+                opener, language = match.group(1), match.group(2).strip().lower()
+                yield line, "open", language
+            else:
+                yield line, "prose", ""
+        elif re.fullmatch(re.escape(opener[0]) + "{" + str(len(opener)) + ",}", bare):
+            opener = ""
+            yield line, "close", language
+        else:
+            yield line, "code", language
 
 
 def _outside_fences(text: str) -> Iterable[tuple[str, bool]]:
     """Yield each line with whether it lies outside fenced code (fence lines count as inside)."""
-    inside = False
-    for line in text.splitlines(keepends=True):
-        if _is_fence(line):
-            inside = not inside
-            yield line, False
-        else:
-            yield line, not inside
+    for line, kind, _ in _fenced(text):
+        yield line, kind == "prose"
 
 
 def _is_relative(target: str) -> bool:
@@ -224,12 +239,26 @@ def _urls(text: str) -> Counter:
 
 
 def _fences(text: str) -> int:
-    return sum(1 for line in text.splitlines() if _is_fence(line))
+    return sum(1 for _, kind, _ in _fenced(text) if kind in ("open", "close"))
 
 
 def _headings(text: str) -> list[int]:
     """Return the level of each Markdown heading outside fenced code, in order."""
     return [len(line) - len(line.lstrip("#")) for line, prose in _outside_fences(text) if prose and HEADING_RE.match(line)]
+
+
+def _strip_shell_comment(line: str) -> str:
+    """Drop a trailing shell comment; a ``#`` inside quotes or a word is code."""
+    quote = ""
+    for index, char in enumerate(line):
+        if quote:
+            if char == quote:
+                quote = ""
+        elif char in "'\"":
+            quote = char
+        elif char == "#" and (index == 0 or line[index - 1].isspace()):
+            return line[:index].rstrip()
+    return line
 
 
 def _code_blocks(text: str) -> list[list[str]]:
@@ -239,23 +268,16 @@ def _code_blocks(text: str) -> list[list[str]]:
     while any change to a command or to mermaid syntax does not.
     """
     blocks: list[list[str]] = []
-    language = None
-    for line in text.splitlines():
-        bare = re.sub(r"^[\s>]*", "", line).rstrip()
-        if _is_fence(line):
-            if language is None:
-                language = bare.lstrip("`~").strip().lower()
-                blocks.append([])
+    for line, kind, language in _fenced(text):
+        if kind == "open":
+            blocks.append([])
+        elif kind == "code":
+            bare = re.sub(r"^[\s>]*", "", line).rstrip()
+            if language == "mermaid":
+                bare = re.sub(r'"[^"]*"', '""', bare)
             else:
-                language = None
-            continue
-        if language is None:
-            continue
-        if language == "mermaid":
-            bare = re.sub(r'"[^"]*"', '""', bare)
-        else:
-            bare = re.sub(r"(^|\s)#.*$", "", bare).rstrip()
-        blocks[-1].append(bare)
+                bare = _strip_shell_comment(bare)
+            blocks[-1].append(bare)
     return blocks
 
 
