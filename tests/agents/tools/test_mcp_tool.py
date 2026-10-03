@@ -461,6 +461,25 @@ class TestFormatResult:
         assert result["content"][0]["text"] == "Hello"
         assert result["isError"] is False
 
+    def test_structured_content_is_used_when_content_is_empty(self, mcp_config):
+        from types import SimpleNamespace
+
+        tool = _make_tool(mcp_config)
+        result = SimpleNamespace(content=[], structured_content={"bases": [{"name": "Deals"}]}, is_error=False)
+
+        formatted = tool._format_result(result)
+        assert formatted["isError"] is False
+        assert json.loads(formatted["content"][0]["text"]) == {"bases": [{"name": "Deals"}]}
+
+    def test_text_content_is_kept_when_structured_content_is_also_sent(self, mcp_config):
+        from types import SimpleNamespace
+
+        tool = _make_tool(mcp_config)
+        text = SimpleNamespace(type="text", text="one base")
+        result = SimpleNamespace(content=[text], structured_content={"bases": []}, is_error=False)
+
+        assert tool._format_result(result)["content"] == [{"type": "text", "text": "one base"}]
+
     def test_an_image_is_shown_to_the_model_not_inlined(self, mcp_config):
         import base64
         import io
