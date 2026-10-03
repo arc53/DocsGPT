@@ -103,7 +103,7 @@ def _normalize_capabilities(raw) -> dict:
         from docsgpt.core.model_yaml import VALID_API_FLAVORS
 
         api_flavor = raw["api_flavor"]
-        if api_flavor not in VALID_API_FLAVORS:
+        if not isinstance(api_flavor, str) or api_flavor not in VALID_API_FLAVORS:
             valid = ", ".join(sorted(VALID_API_FLAVORS))
             raise ValueError(
                 f"'capabilities.api_flavor' must be one of [{valid}]"
@@ -112,7 +112,7 @@ def _normalize_capabilities(raw) -> dict:
     if "tool_result_images" in raw and raw["tool_result_images"] is not None:
         from docsgpt.core.model_yaml import VALID_TOOL_RESULT_IMAGES
 
-        if raw["tool_result_images"] not in VALID_TOOL_RESULT_IMAGES:
+        if not isinstance(raw["tool_result_images"], str) or raw["tool_result_images"] not in VALID_TOOL_RESULT_IMAGES:
             valid = ", ".join(sorted(VALID_TOOL_RESULT_IMAGES))
             raise ValueError(f"'capabilities.tool_result_images' must be one of [{valid}]")
         out["tool_result_images"] = raw["tool_result_images"]
@@ -120,7 +120,7 @@ def _normalize_capabilities(raw) -> dict:
         from docsgpt.core.model_yaml import VALID_REASONING_EFFORTS
 
         reasoning_effort = raw["reasoning_effort"]
-        if reasoning_effort not in VALID_REASONING_EFFORTS:
+        if not isinstance(reasoning_effort, str) or reasoning_effort not in VALID_REASONING_EFFORTS:
             valid = ", ".join(sorted(VALID_REASONING_EFFORTS))
             raise ValueError(
                 f"'capabilities.reasoning_effort' must be one of [{valid}]"

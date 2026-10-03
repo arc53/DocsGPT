@@ -264,7 +264,14 @@ class TestCreate:
 
     @pytest.mark.parametrize(
         ("capability", "value"),
-        [("api_flavor", "grpc"), ("reasoning_effort", "extreme"), ("tool_result_images", "inline")],
+        [
+            ("api_flavor", "grpc"),
+            ("reasoning_effort", "extreme"),
+            ("tool_result_images", "inline"),
+            ("api_flavor", ["responses"]),
+            ("reasoning_effort", {"level": "high"}),
+            ("tool_result_images", []),
+        ],
     )
     def test_create_rejects_invalid_responses_capabilities(
         self, app, pg_conn, capability, value
