@@ -7,6 +7,7 @@ from anthropic import Anthropic
 
 from docsgpt.core.settings import settings
 from docsgpt.llm.base import BaseLLM, optional_int
+from docsgpt.llm.tool_images import tool_result
 from docsgpt.storage.storage_creator import StorageCreator
 
 logger = logging.getLogger(__name__)
@@ -243,9 +244,18 @@ class AnthropicLLM(BaseLLM):
                 continue
 
             if role == "tool":
-                tool_content = content
-                if not isinstance(tool_content, str):
-                    tool_content = json.dumps(tool_content, default=str)
+                text, shown = tool_result(message, vision=True)
+                tool_content: Any = text
+                if shown:
+                    # Images go inside the tool result: text after tool
+                    # results teaches the model to end its turn there.
+                    tool_content = [
+                        *([{"type": "text", "text": text}] if text else []),
+                        *(
+                            {"type": "image", "source": {"type": "base64", "media_type": mime_type, "data": data}}
+                            for _, mime_type, data in shown
+                        ),
+                    ]
                 mapped.append(
                     {
                         "role": "user",

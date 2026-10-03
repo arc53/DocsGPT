@@ -1252,6 +1252,12 @@
         "reasoningEfforts": {
           "default": "プロバイダーのデフォルト"
         },
+        "toolImages": "ツール画像",
+        "toolImagesModes": {
+          "default": "自動",
+          "native": "ツール結果内",
+          "follow_up": "別メッセージ"
+        },
         "chips": {
           "tools": "ツール",
           "structuredOutput": "構造化出力",

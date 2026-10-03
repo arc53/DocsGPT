@@ -388,16 +388,16 @@ def seed_scan(db, rc12, index=0):
 class TestNativeImages:
     """RC-02: screenshots are looked at, not read, when the model has vision."""
 
-    def test_with_vision_the_image_is_queued_for_a_follow_up_message(self, db, rc02):
+    def test_with_vision_the_image_is_queued_to_show_with_the_result(self, db, rc02):
         shot, entry = seed_shot(db, rc02)
         tool = tool_for(current=[shot], vision=True, max_native_parts=10)
 
         result = tool.execute_action("attachments_read", ref="F1")
 
-        assert "F1" in result and "attached" in result and "below" in result
+        assert "F1" in result and "shown with this result" in result
         parts = tool.drain_native_parts()
         assert len(parts) == 1
-        attachment = parts[0]["attachment"]
+        attachment = parts[0]
         assert attachment["mime_type"] == entry["mime"]
         assert attachment["path"] == str(rc02[0] / entry["path"])
         assert "F1" in parts[0]["label"] and entry["name"] in parts[0]["label"]
@@ -443,17 +443,17 @@ class TestScannedPages:
         result = tool.execute_action("attachments_read", ref="F1")
 
         parts = tool.drain_native_parts()
-        assert [p["attachment"]["page"] for p in parts] == list(range(1, entry["pages"] + 1))
-        assert all(p["attachment"]["mime_type"] == "image/png" and p["attachment"]["data"] for p in parts)
+        assert [p["page"] for p in parts] == list(range(1, entry["pages"] + 1))
+        assert all(p["mime_type"] == "image/png" and p["data"] for p in parts)
         assert "page" in parts[0]["label"] and "F1" in parts[0]["label"]
-        assert "attached" in result and "below" in result
+        assert "shown with this result" in result
 
     @needs_poppler
     def test_requested_page_only(self, db, storage, rc12):
         scan, _entry = seed_scan(db, rc12)
         tool = tool_for(current=[scan], vision=True, max_native_parts=10)
         tool.execute_action("attachments_read", ref="F1", pages="2")
-        assert [p["attachment"]["page"] for p in tool.drain_native_parts()] == [2]
+        assert [p["page"] for p in tool.drain_native_parts()] == [2]
 
     def test_page_cap_per_call(self, db, storage, rc12, monkeypatch):
         scan, _entry = seed_scan(db, rc12)
@@ -497,10 +497,11 @@ class TestImageArtifacts:
 
         result = tool.execute_action("attachments_read", ref="A1")
 
-        assert "A1" in result and "below" in result
+        assert "A1" in result and "shown with this result" in result
         parts = tool.drain_native_parts()
-        assert parts[0]["attachment"] == {
+        assert parts[0] == {
             "path": "artifacts/x/chart.png", "mime_type": "image/png", "filename": "chart.png",
+            "label": "A1 chart.png",
         }
 
     def test_artifacts_of_other_conversations_are_not_reachable(self, db):

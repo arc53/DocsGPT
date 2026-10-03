@@ -1253,6 +1253,12 @@
         "reasoningEfforts": {
           "default": "Anbieter-Standard"
         },
+        "toolImages": "Tool-Bilder",
+        "toolImagesModes": {
+          "default": "Automatisch",
+          "native": "Im Tool-Ergebnis",
+          "follow_up": "Separate Nachricht"
+        },
         "chips": {
           "tools": "Tools",
           "structuredOutput": "Strukturierte Ausgabe",

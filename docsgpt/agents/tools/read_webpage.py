@@ -1,4 +1,6 @@
 import codecs
+import re
+from urllib.parse import urljoin
 
 from markdownify import markdownify
 
@@ -46,6 +48,22 @@ _UNSUPPORTED_CONTENT_HINT = (
     "read_webpage only handles HTML/text pages; use a tool suited to this "
     "file type instead."
 )
+
+
+# A Markdown image: ``![alt](src "title")``.
+_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)\s]*)([^)]*)\)")
+
+
+def _absolute_images(markdown: str, base_url: str) -> str:
+    """Resolve image links against the page URL so they can be opened; drop inline data images."""
+
+    def resolve(match: re.Match) -> str:
+        alt, src, rest = match.groups()
+        if src.startswith("data:"):
+            return f"[inline image: {alt}]" if alt else "[inline image]"
+        return f"![{alt}]({urljoin(base_url, src)}{rest})"
+
+    return _IMAGE_RE.sub(resolve, markdown)
 
 
 def _declared_charset(content_type: str) -> str | None:
@@ -153,6 +171,8 @@ class ReadWebpageTool(Tool):
 
             content_type = response.headers.get("Content-Type", "")
             media_type = content_type.split(";")[0].strip().lower()
+            if media_type.startswith("image/"):
+                return f"Error: URL is an image ({media_type}), not a page. Look at it with view_image if you have it."
             if media_type and not _is_allowed_media_type(media_type):
                 return (
                     f"Error: URL returned content type '{media_type}', which "
@@ -170,7 +190,7 @@ class ReadWebpageTool(Tool):
             html_content = _decode_body(content, content_type)
             markdown_content = markdownify(html_content, heading_style="ATX", newline_style="BACKSLASH")
 
-            return markdown_content
+            return _absolute_images(markdown_content, url)
 
         except UnsafeUserUrlError as e:
             return f"Error: URL validation failed - {e}"

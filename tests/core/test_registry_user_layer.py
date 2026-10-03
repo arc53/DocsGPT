@@ -228,6 +228,7 @@ class TestLLMCreatorDispatchUsesUpstreamModelId:
                 "context_window": 8192,
                 "api_flavor": "responses",
                 "reasoning_effort": "high",
+                "tool_result_images": "follow_up",
             },
         )
 
@@ -265,6 +266,7 @@ class TestLLMCreatorDispatchUsesUpstreamModelId:
         assert caps.supported_attachment_types == []
         assert caps.api_flavor == "responses"
         assert caps.reasoning_effort == "high"
+        assert caps.tool_result_images == "follow_up"
 
     def test_byom_image_alias_expands_to_mime_types(self, pg_conn):
         """A BYOM stored with ``attachments: ["image"]`` (the alias the
