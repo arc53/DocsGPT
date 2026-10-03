@@ -121,7 +121,7 @@ flowchart LR
     subgraph Yours["您的環境"]
         API["DocsGPT API"] <--> Redis["Redis"]
         Redis <--> Worker["Worker<br/>擷取與 embedding"]
-        API --> Data[(("Postgres、向量儲存庫<br/>與檔案"))]
+        API --> Data[("Postgres、向量儲存庫<br/>與檔案")]
         Worker --> Data
         Local["本機模型<br/>（選用）"]
     end

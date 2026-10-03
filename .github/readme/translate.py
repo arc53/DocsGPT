@@ -227,8 +227,36 @@ def _fences(text: str) -> int:
     return sum(1 for line in text.splitlines() if _is_fence(line))
 
 
-def _headings(text: str) -> int:
-    return sum(1 for line, prose in _outside_fences(text) if prose and HEADING_RE.match(line))
+def _headings(text: str) -> list[int]:
+    """Return the level of each Markdown heading outside fenced code, in order."""
+    return [len(line) - len(line.lstrip("#")) for line, prose in _outside_fences(text) if prose and HEADING_RE.match(line)]
+
+
+def _code_blocks(text: str) -> list[list[str]]:
+    """Return the code in each fenced block, minus what may be translated.
+
+    Shell comments and quoted mermaid labels are dropped, so a translated comment or label passes
+    while any change to a command or to mermaid syntax does not.
+    """
+    blocks: list[list[str]] = []
+    language = None
+    for line in text.splitlines():
+        bare = re.sub(r"^[\s>]*", "", line).rstrip()
+        if _is_fence(line):
+            if language is None:
+                language = bare.lstrip("`~").strip().lower()
+                blocks.append([])
+            else:
+                language = None
+            continue
+        if language is None:
+            continue
+        if language == "mermaid":
+            bare = re.sub(r'"[^"]*"', '""', bare)
+        else:
+            bare = re.sub(r"(^|\s)#.*$", "", bare).rstrip()
+        blocks[-1].append(bare)
+    return blocks
 
 
 def _difference(label: str, expected: Counter, got: Counter) -> list[str]:
@@ -253,7 +281,17 @@ def validate(source: str, translated: str) -> list[str]:
     if _fences(translated) != _fences(source):
         errors.append(f"README.md has {_fences(source)} code fence lines, the translation {_fences(translated)}.")
     if _headings(translated) != _headings(source):
-        errors.append(f"README.md has {_headings(source)} Markdown headings, the translation {_headings(translated)}.")
+        errors.append(
+            f"The Markdown heading levels must match README.md: {_headings(source)}, "
+            f"the translation has {_headings(translated)}."
+        )
+    source_blocks, translated_blocks = _code_blocks(source), _code_blocks(translated)
+    for number, (expected, got) in enumerate(zip(source_blocks, translated_blocks), start=1):
+        if expected != got:
+            errors.append(
+                f"README.md code block {number} changed: keep code as it is "
+                "(only shell comments and quoted mermaid labels may be translated)."
+            )
     errors += _difference("URL", _urls(source), _urls(translated))
     errors += _difference("Relative link", Counter(relative_targets(source)), Counter(relative_targets(translated)))
     return errors
@@ -322,7 +360,7 @@ def make_agent(url: str, key: Optional[str], timeout: int = REQUEST_TIMEOUT) -> 
             except (urllib.error.URLError, TimeoutError) as exc:
                 if attempt == 2:
                     raise TranslationError(f"The agent could not be reached ({exc}).") from exc
-            except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+            except (KeyError, IndexError, TypeError, ValueError) as exc:  # ValueError: bad JSON or encoding
                 raise TranslationError("The agent's response has no message content.") from exc
             time.sleep(15 * (attempt + 1))
         raise AssertionError("unreachable")

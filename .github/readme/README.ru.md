@@ -121,7 +121,7 @@ flowchart LR
     subgraph Yours["Ваша среда"]
         API["DocsGPT API"] <--> Redis["Redis"]
         Redis <--> Worker["Worker<br/>загрузка и эмбеддинги"]
-        API --> Data[(("Postgres, векторное хранилище<br/>и файлы"))]
+        API --> Data[("Postgres, векторное хранилище<br/>и файлы")]
         Worker --> Data
         Local["Локальные модели<br/>(необязательно)"]
     end

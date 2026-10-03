@@ -158,6 +158,24 @@ class TestValidate:
         broken = TRANSLATION.replace("## Installieren", "Installieren")
         assert any("heading" in error for error in translate.validate(translate.strip_bar(SOURCE), broken))
 
+    def test_changed_heading_level(self):
+        broken = TRANSLATION.replace("## Installieren", "### Installieren")
+        assert any("heading" in error for error in translate.validate(translate.strip_bar(SOURCE), broken))
+
+    def test_changed_command_inside_a_code_block(self):
+        broken = TRANSLATION.replace("curl -fsSL https://docs.ac/install | bash", "curl -fsSL https://docs.ac/install | sh")
+        assert any("code block" in error for error in translate.validate(translate.strip_bar(SOURCE), broken))
+
+    def test_translated_shell_comments_and_mermaid_labels_pass(self):
+        source = '```bash\ndocsgpt logs   # Follow the logs\n```\n```mermaid\nA["Web app"] --> B\n```\n'
+        translated = '```bash\ndocsgpt logs   # Logs verfolgen\n```\n```mermaid\nA["Web-App"] --> B\n```\n'
+        assert translate.validate(source, translated) == []
+
+    def test_changed_mermaid_syntax(self):
+        source = '```mermaid\nA["Web app"] --> B\n```\n'
+        translated = '```mermaid\nA["Web-App"] -.-> B\n```\n'
+        assert any("code block" in error for error in translate.validate(source, translated))
+
     def test_changed_relative_link(self):
         broken = TRANSLATION.replace("](CONTRIBUTING.md)", "](CONTRIBUTING.de.md)")
         assert any("CONTRIBUTING.md" in error for error in translate.validate(translate.strip_bar(SOURCE), broken))
@@ -298,6 +316,21 @@ class TestMakeAgent:
         # The cloud's firewall answers 403 to urllib's default User-Agent.
         assert not sent["headers"]["User-agent"].startswith("Python-urllib")
         assert sent["body"]["messages"] == [{"role": "user", "content": "hello"}]
+
+    def test_badly_encoded_response_is_a_translation_error(self, monkeypatch):
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b"\xff\xfe\xfa not utf"
+
+        monkeypatch.setattr(translate.urllib.request, "urlopen", lambda request, timeout: _Response())
+        with pytest.raises(translate.TranslationError):
+            translate.make_agent("https://cloud.example", "key-1")("hello")
 
     def test_missing_key(self):
         with pytest.raises(translate.TranslationError, match=translate.KEY_ENV):
