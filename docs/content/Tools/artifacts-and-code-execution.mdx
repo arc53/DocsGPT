@@ -81,7 +81,7 @@ When the model reads images, it can look at what its tools produce instead of gu
 - A `view_image` tool is added next to the Code Executor and Read Webpage. It shows the model an image artifact by its reference (such as `A2`) or an image URL, such as one on a page Read Webpage returned.
 - Images an MCP server returns are shown to the model as images too.
 
-The image goes inside the tool result for Anthropic, the OpenAI Responses API, and Gemini 3. For Chat Completions and earlier Gemini models it follows the tool results in a separate message. Images are scaled down to at most 2000 pixels on the long side, and an earlier turn's images are not sent again: the model views them again when it needs to.
+The image goes inside the tool result for Anthropic, the OpenAI Responses API, and Gemini 3. For Chat Completions and earlier Gemini models it follows the tool results in a separate message. Some OpenAI-compatible providers handle this differently: their Responses API can drop images inside a tool result, while some Chat Completions servers (OpenRouter, for example) accept them there. Set `tool_result_images` on the model (`follow_up` or `native`) in its model YAML, or in Settings for a custom model, to choose for that model. Images are scaled down to at most 2000 pixels on the long side, and an earlier turn's images are not sent again: the model views them again when it needs to.
 
 ## Read Document
 

@@ -196,6 +196,48 @@ class TestOpenAI:
         assert "does not read images" in cleaned[-1]["content"]
 
 
+class TestPlacementOverride:
+    """A model's ``tool_result_images`` overrides where its wire API puts them."""
+
+    def test_follow_up_on_the_responses_api(self, monkeypatch):
+        llm = _openai(monkeypatch, flavor="responses")
+        llm.capabilities.tool_result_images = "follow_up"
+        items = llm._to_responses_input(llm._clean_messages_openai(_conversation(SHOT)))
+
+        output, follow_up = items[-2:]
+        assert output["type"] == "function_call_output" and isinstance(output["output"], str)
+        assert follow_up["role"] == "user"
+        assert follow_up["content"][1] == {
+            "type": "input_image", "image_url": f"data:image/png;base64,{PNG_B64}", "detail": "auto",
+        }
+
+    def test_native_on_chat_completions(self, monkeypatch):
+        llm = _openai(monkeypatch)
+        llm.capabilities.tool_result_images = "native"
+        cleaned = llm._clean_messages_openai(_conversation(SHOT))
+
+        assert cleaned[-1]["role"] == "tool"
+        text, image = cleaned[-1]["content"]
+        assert text["type"] == "text" and image["image_url"]["url"].endswith(PNG_B64)
+
+    def test_follow_up_on_gemini_3(self):
+        from docsgpt.llm.google_ai import GoogleLLM
+
+        llm = GoogleLLM.__new__(GoogleLLM)
+        llm.capabilities = ModelCapabilities(supported_attachment_types=["image/png"], tool_result_images="follow_up")
+        contents, _ = llm._clean_messages_google(_conversation(SHOT), "gemini-3.5-flash")
+        response, note, image = contents[-1].parts
+        assert response.function_response.parts is None
+        assert "A1 chart.png" in note.text and image.inline_data.data == base64.b64decode(PNG_B64)
+
+    def test_an_unknown_value_is_refused_in_a_model_yaml(self):
+        from docsgpt.core.model_yaml import _CapabilityFields
+
+        assert _CapabilityFields(tool_result_images="follow_up").tool_result_images == "follow_up"
+        with pytest.raises(ValueError):
+            _CapabilityFields(tool_result_images="inline")
+
+
 class TestAnthropic:
     def test_they_go_inside_the_tool_result_with_no_text_after_it(self):
         from docsgpt.llm.anthropic import AnthropicLLM

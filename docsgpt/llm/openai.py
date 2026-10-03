@@ -12,7 +12,14 @@ from docsgpt.attachment_names import normalize_attachment_filename
 from docsgpt.core import log_context
 from docsgpt.core.settings import settings
 from docsgpt.llm.base import BaseLLM, optional_int
-from docsgpt.llm.tool_images import IMAGES_KEY, data_url, follow_up_note, reads_images, tool_result
+from docsgpt.llm.tool_images import (
+    IMAGES_KEY,
+    data_url,
+    follow_up_note,
+    native_tool_images,
+    reads_images,
+    tool_result,
+)
 from docsgpt.storage.storage_creator import StorageCreator
 
 logger = logging.getLogger(__name__)
@@ -669,9 +676,12 @@ class OpenAILLM(BaseLLM):
     def _clean_messages_openai(self, messages):
         cleaned_messages = []
         vision = reads_images(self)
-        # Chat Completions takes no images in a ``tool`` message: the images
-        # of a run of tool results go in one user message after it. The
-        # Responses API takes them inside ``function_call_output``.
+        # The Responses API takes images inside ``function_call_output``;
+        # Chat Completions takes none in a ``tool`` message, so the images of
+        # a run of tool results go in one user message after it. A model's
+        # ``tool_result_images`` overrides either way.
+        responses = self._uses_responses_api()
+        native = native_tool_images(self, responses)
         follow_up = []
 
         def flush_follow_up():
@@ -742,8 +752,16 @@ class OpenAILLM(BaseLLM):
             if role == "tool" and tool_call_id is not None:
                 text, shown = tool_result(message, vision)
                 cleaned_tool = {"role": "tool", "tool_call_id": tool_call_id, "content": text}
-                if shown and self._uses_responses_api():
+                if shown and native and responses:
                     cleaned_tool[IMAGES_KEY] = shown
+                elif shown and native:
+                    cleaned_tool["content"] = [
+                        {"type": "text", "text": text},
+                        *(
+                            {"type": "image_url", "image_url": {"url": data_url(mime_type, data)}}
+                            for _, mime_type, data in shown
+                        ),
+                    ]
                 else:
                     follow_up.extend(shown)
                 cleaned_messages.append(cleaned_tool)

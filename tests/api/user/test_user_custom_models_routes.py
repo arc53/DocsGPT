@@ -245,6 +245,7 @@ class TestCreate:
                     "capabilities": {
                         "api_flavor": "responses",
                         "reasoning_effort": "high",
+                        "tool_result_images": "follow_up",
                     },
                 },
             ):
@@ -258,11 +259,12 @@ class TestCreate:
         assert resp.get_json()["capabilities"] == {
             "api_flavor": "responses",
             "reasoning_effort": "high",
+            "tool_result_images": "follow_up",
         }
 
     @pytest.mark.parametrize(
         ("capability", "value"),
-        [("api_flavor", "grpc"), ("reasoning_effort", "extreme")],
+        [("api_flavor", "grpc"), ("reasoning_effort", "extreme"), ("tool_result_images", "inline")],
     )
     def test_create_rejects_invalid_responses_capabilities(
         self, app, pg_conn, capability, value

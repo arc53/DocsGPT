@@ -132,6 +132,20 @@ def reads_images(llm: Any) -> bool:
         return False
 
 
+def native_tool_images(llm: Any, default: bool) -> bool:
+    """Whether ``llm`` gets tool images inside the tool result.
+
+    Args:
+        llm: The model; its ``tool_result_images`` capability overrides.
+        default: What its wire API supports.
+
+    Returns:
+        True for inside the tool result, False for a follow-up user message.
+    """
+    mode = getattr(getattr(llm, "capabilities", None), "tool_result_images", None)
+    return default if mode not in ("native", "follow_up") else mode == "native"
+
+
 def tool_result(message: Dict[str, Any], vision: bool) -> Tuple[str, List[Shown]]:
     """A tool message's text, and the images to show the model with it.
 

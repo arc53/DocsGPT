@@ -41,6 +41,8 @@ VALID_REASONING_EFFORTS = frozenset(
 )
 # Accepted api_flavor values: which OpenAI wire protocol a model speaks.
 VALID_API_FLAVORS = frozenset({"chat_completions", "responses"})
+# Accepted tool_result_images values: where a tool's images go.
+VALID_TOOL_RESULT_IMAGES = frozenset({"native", "follow_up"})
 
 
 class _DefaultsFile(BaseModel):
@@ -71,6 +73,7 @@ class _CapabilityFields(BaseModel):
     cache_write_cost_per_million: Optional[float] = Field(default=None, ge=0)
     reasoning_effort: Optional[str] = None
     api_flavor: Optional[str] = None
+    tool_result_images: Optional[str] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -110,6 +113,14 @@ class _CapabilityFields(BaseModel):
             raise ValueError(
                 f"api_flavor must be one of [{valid}], got {v!r}"
             )
+        return v
+
+    @field_validator("tool_result_images")
+    @classmethod
+    def _valid_tool_result_images(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in VALID_TOOL_RESULT_IMAGES:
+            valid = ", ".join(sorted(VALID_TOOL_RESULT_IMAGES))
+            raise ValueError(f"tool_result_images must be one of [{valid}], got {v!r}")
         return v
 
 
@@ -274,6 +285,7 @@ def _build_model(
         cache_write_cost_per_million=pick("cache_write_cost_per_million", None),
         reasoning_effort=pick("reasoning_effort", None),
         api_flavor=pick("api_flavor", "chat_completions"),
+        tool_result_images=pick("tool_result_images", None),
     )
 
     return AvailableModel(

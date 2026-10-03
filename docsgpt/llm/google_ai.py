@@ -9,7 +9,7 @@ from docsgpt.core.settings import settings
 
 from docsgpt.llm.base import BaseLLM
 from docsgpt.llm.handlers.google import _decode_thought_signature
-from docsgpt.llm.tool_images import follow_up_note, reads_images, tool_result
+from docsgpt.llm.tool_images import follow_up_note, native_tool_images, reads_images, tool_result
 from docsgpt.storage.storage_creator import StorageCreator
 
 
@@ -241,7 +241,9 @@ class GoogleLLM(BaseLLM):
         vision = reads_images(self)
         # Gemini 3 takes images inside a function response; earlier models
         # get them in a user turn after the responses.
-        native = self._takes_function_response_images(model or getattr(self, "model_id", None))
+        native = native_tool_images(
+            self, self._takes_function_response_images(model or getattr(self, "model_id", None))
+        )
         call_names = {}
         responses = None
         follow_up = []

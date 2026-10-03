@@ -1252,6 +1252,12 @@
         "reasoningEfforts": {
           "default": "供應商預設"
         },
+        "toolImages": "工具圖片",
+        "toolImagesModes": {
+          "default": "自動",
+          "native": "放在工具結果中",
+          "follow_up": "單獨訊息"
+        },
         "chips": {
           "tools": "工具",
           "structuredOutput": "結構化輸出",

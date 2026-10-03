@@ -264,6 +264,7 @@ class ModelRegistry:
                         api_flavor=caps_raw.get(
                             "api_flavor", "chat_completions"
                         ),
+                        tool_result_images=caps_raw.get("tool_result_images"),
                     )
                     model_id = str(row["id"])
                     layer[model_id] = AvailableModel(
