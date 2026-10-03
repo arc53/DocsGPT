@@ -61,7 +61,7 @@ Here are some of the most fundamental settings you'll likely want to configure:
     - `google`: Use Google Gemini models with an AI Studio API key (Vertex AI is not supported).
     - `anthropic`: Use Anthropic's Claude models.
     - `groq`: Use Groq's models.
-    - `openrouter`, `novita`: Use OpenRouter or Novita.
+    - `openrouter`, `novita`, `atlascloud`: Use OpenRouter, Novita or Atlas Cloud.
     - `openai` (when using local inference engines like Ollama, Llama.cpp, TGI, etc.): This signals DocsGPT to use an OpenAI-compatible API format, even if the actual LLM is running locally.
 
 - **`LLM_NAME`**: The default model. For a cloud provider it must be a model id from the [model catalog](https://github.com/arc53/DocsGPT/tree/main/docsgpt/core/models) or from a [custom model YAML](#adding-custom-models-models_config_dir); any other name is ignored, with a warning in the log, and the provider's first model is used. With `OPENAI_BASE_URL` it is required and names the model(s) your server serves, comma-separated. See [Default Model Selection](/Models/local-inference#default-model-selection).

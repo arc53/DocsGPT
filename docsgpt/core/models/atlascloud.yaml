@@ -1,0 +1,26 @@
+provider: atlascloud
+defaults:
+  supports_tools: true
+  supports_structured_output: true
+
+models:
+  - id: deepseek-ai/DeepSeek-V3.1-Terminus
+    display_name: DeepSeek V3.1 Terminus
+    description: 685B MoE with hybrid thinking/non-thinking modes, strong agentic tool use and coding
+    context_window: 131072
+    input_cost_per_million: 0.3
+    output_cost_per_million: 0.95
+
+  - id: zai-org/GLM-4.6
+    display_name: GLM-4.6
+    description: Z.ai 355B MoE with a 200K context window, reasoning and function calling
+    context_window: 202752
+    input_cost_per_million: 0.6
+    output_cost_per_million: 2.2
+
+  - id: Qwen/Qwen3-235B-A22B-Instruct-2507
+    display_name: Qwen3 235B A22B Instruct
+    description: Alibaba 235B MoE (22B active) instruct model with strong general reasoning and tool calling
+    context_window: 131072
+    input_cost_per_million: 0.2
+    output_cost_per_million: 0.88
