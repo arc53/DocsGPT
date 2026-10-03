@@ -1309,10 +1309,11 @@ def builtin_mcp_config(definition: Optional[ConnectorDefinition], writes: bool =
 
 
 def preset_mcp_config(definition: Optional[ConnectorDefinition]) -> Optional[dict]:
-    """Tool config of an MCP preset (Notion, Linear…), as its sign-in saves it.
+    """Tool config of an MCP preset, as its connect flow saves it.
 
     The OAuth tokens are not part of it: they stay on the connection, which
     the tool is linked to, and the executor signs in with them at run time.
+    Presets without sign-in keep authentication disabled when recreated.
 
     Args:
         definition: The connector.
@@ -1327,13 +1328,15 @@ def preset_mcp_config(definition: Optional[ConnectorDefinition]) -> Optional[dic
         or "mcp_tool" not in definition.tool_templates
     ):
         return None
-    return {
+    config = {
         "server_url": definition.mcp_url,
-        "auth_type": "oauth",
-        "oauth_scopes": list(definition.oauth_scopes),
+        "auth_type": "oauth" if definition.auth_kind == "mcp_oauth" else "none",
         "timeout": 30,
         "transport_type": "auto",
     }
+    if definition.auth_kind == "mcp_oauth":
+        config["oauth_scopes"] = list(definition.oauth_scopes)
+    return config
 
 
 def connection_mcp_config(definition: Optional[ConnectorDefinition], writes: bool = False) -> Optional[dict]:

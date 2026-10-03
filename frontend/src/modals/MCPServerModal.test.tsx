@@ -77,7 +77,9 @@ describe('MCPServerModal', () => {
     vi.restoreAllMocks();
   });
 
-  const render = async (overrides: Partial<typeof server> = {}) => {
+  const render = async (
+    overrides: Partial<typeof server> & { preset?: boolean } = {},
+  ) => {
     await act(async () => {
       root.render(
         <MCPServerModal
@@ -108,6 +110,66 @@ describe('MCPServerModal', () => {
     document.body.querySelector<HTMLInputElement>(
       'input[placeholder="https://example.com/mcp"]',
     )!;
+
+  const excalidraw = {
+    id: undefined,
+    displayName: 'Excalidraw',
+    server_url: 'https://mcp.excalidraw.com/mcp',
+    auth_type: 'none',
+    has_encrypted_credentials: false,
+    preset: true,
+  };
+
+  it('tests and saves Excalidraw without field edits or sign-in', async () => {
+    const open = vi.spyOn(window, 'open');
+    testMCPConnection.mockReturnValue(
+      json({ success: true, tools: [{ name: 'export_to_excalidraw' }] }),
+    );
+    saveMCPServer.mockReturnValue(json({ success: true }));
+    await render(excalidraw);
+    expect(urlInput().value).toBe(excalidraw.server_url);
+    expect(document.body.querySelector('input[type="password"]')).toBeNull();
+    expect(button('settings.tools.mcp.save').disabled).toBe(true);
+    await act(async () => button('settings.tools.mcp.testConnection').click());
+    expect(testMCPConnection).toHaveBeenCalledWith(
+      {
+        config: {
+          server_url: excalidraw.server_url,
+          auth_type: 'none',
+          timeout: 30,
+        },
+      },
+      'token',
+    );
+    expect(text()).toContain('export_to_excalidraw');
+    expect(button('settings.tools.mcp.save').disabled).toBe(false);
+    await act(async () => button('settings.tools.mcp.save').click());
+    expect(saveMCPServer).toHaveBeenCalledWith(
+      {
+        displayName: 'Excalidraw',
+        config: {
+          server_url: excalidraw.server_url,
+          auth_type: 'none',
+          timeout: 30,
+        },
+        status: true,
+      },
+      'token',
+    );
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('keeps Excalidraw unsaved when its connection test fails', async () => {
+    testMCPConnection.mockReturnValue(
+      json({ success: false, message: 'Server unavailable' }),
+    );
+    await render(excalidraw);
+    await act(async () => button('settings.tools.mcp.testConnection').click());
+    expect(text()).toContain('Server unavailable');
+    expect(button('settings.tools.mcp.save').disabled).toBe(true);
+    await act(async () => button('settings.tools.mcp.save').click());
+    expect(saveMCPServer).not.toHaveBeenCalled();
+  });
 
   it('tells an editor whose tool it is and that their entry replaces it for everyone', async () => {
     await render({ access: 'editor', owner_label: 'Lena Fischer' });

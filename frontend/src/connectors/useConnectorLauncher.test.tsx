@@ -42,7 +42,8 @@ vi.mock('./ConnectWizard', () => ({
     );
   },
 }));
-vi.mock('../modals/MCPServerModal', () => ({ default: () => null }));
+const mcpModal = vi.hoisted(() => vi.fn(() => null));
+vi.mock('../modals/MCPServerModal', () => ({ default: mcpModal }));
 
 import connectorsService from '../api/services/connectorsService';
 import connectorsReducer from './connectorsSlice';
@@ -91,6 +92,7 @@ describe('useConnectorLauncher', () => {
   let root: Root;
 
   beforeEach(async () => {
+    mcpModal.mockClear();
     onConnected.mockReset();
     onCancel.mockReset();
     vi.spyOn(connectorsService, 'getCatalog').mockResolvedValue({
@@ -129,6 +131,34 @@ describe('useConnectorLauncher', () => {
 
   const wizard = () =>
     container.querySelector('[data-testid="wizard-state"]')?.textContent;
+
+  it('prefills Excalidraw with no authentication in the MCP form', async () => {
+    await act(async () =>
+      launchRef!({
+        ...LINEAR,
+        key: 'mcp:excalidraw',
+        name: 'Excalidraw',
+        auth_kind: 'mcp',
+        mcp_url: 'https://mcp.excalidraw.com/mcp',
+        sync_ingestor: null,
+        oauth_scopes: [],
+      }),
+    );
+    expect(wizard()).toBeUndefined();
+    expect(mcpModal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modalState: 'ACTIVE',
+        server: {
+          displayName: 'Excalidraw',
+          server_url: 'https://mcp.excalidraw.com/mcp',
+          auth_type: 'none',
+          oauth_scopes: '',
+          preset: true,
+        },
+      }),
+      undefined,
+    );
+  });
 
   it('opens an MCP preset that syncs straight at picking what to sync', async () => {
     await act(async () =>
