@@ -165,3 +165,12 @@ def test_atlassian_preset_is_part_of_confluence():
     assert atlassian.part_of == "confluence"
     assert atlassian.to_dict()["part_of"] == "confluence"
     assert catalog.get_definition("confluence").to_dict()["part_of"] is None
+
+
+def test_cloudflare_preset_signs_in_with_mcp_oauth():
+    cloudflare = catalog.get_definition("mcp:cloudflare")
+    assert cloudflare.publisher == "preset"
+    assert cloudflare.mcp_url == "https://mcp.cloudflare.com/mcp"
+    assert cloudflare.auth_kind == "mcp_oauth"
+    assert cloudflare.capabilities == ("read", "write")
+    assert catalog.preset_for_url("https://mcp.cloudflare.com/mcp").key == "mcp:cloudflare"
