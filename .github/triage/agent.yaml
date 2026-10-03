@@ -284,6 +284,9 @@ spec:
          `zh-TW` keys for `settings.rrfK`", not "improve i18n"). For unresolved CodeRabbit threads, name
          the file and the gist and ask them to fix or reply on the thread. For `ready`, one line saying a
          maintainer will review. Do not comment for `not_a_fit` or `spam`.
+         Keep one review comment per PR: when `last_bot_review.comment_id` exists, rewrite that comment
+         with `update_issue_comment` instead of posting a new one, starting it with "Updated for
+         <first 7 characters of pr.head_sha>:". Post a new comment only when there is none yet.
       4. Every PR comment ends with a hidden marker on its own line, filled in from the facts:
          <!-- docsgpt-triage sha=<pr.head_sha> ci=<pr.ci.state> verdict=<verdict> -->
       5. Telegram: always for `ready` and `not_a_fit`; for `changes_needed` only on the first review or
