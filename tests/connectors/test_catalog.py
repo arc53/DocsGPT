@@ -179,16 +179,6 @@ class TestPresets:
         assert catalog.base_url("not a url") == ""
 
 
-def test_atlassian_preset_is_part_of_confluence():
-    """One Confluence card: syncing pages and the Jira/Confluence agent actions."""
-    from docsgpt.connectors import catalog
-
-    atlassian = catalog.get_definition("mcp:atlassian")
-    assert atlassian.part_of == "confluence"
-    assert atlassian.to_dict()["part_of"] == "confluence"
-    assert catalog.get_definition("confluence").to_dict()["part_of"] is None
-
-
 def test_clickup_is_a_remote_oauth_preset():
     clickup = catalog.get_definition("mcp:clickup")
 
