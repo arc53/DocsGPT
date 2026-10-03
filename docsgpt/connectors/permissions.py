@@ -27,7 +27,7 @@ _READ_WORDS = frozenset(
 # (``get_or_create_page``, ``search_and_replace``).
 _WRITE_WORDS = frozenset((
     "create", "update", "delete", "remove", "set", "send", "post", "put", "patch", "write", "add", "insert",
-    "upsert", "append", "replace", "edit", "modify", "rename", "move", "copy", "upload", "save", "submit",
+    "upsert", "append", "replace", "rw", "edit", "modify", "rename", "move", "copy", "upload", "save", "submit",
     "publish", "share", "invite", "assign", "archive", "restore", "reset", "clear", "purge", "drop", "execute",
     "run", "invoke", "trigger", "start", "stop", "cancel", "close", "merge", "approve", "reject", "reply",
     "comment", "mark", "enable", "disable", "grant", "revoke", "transfer", "import", "sync", "lock", "unlock",
