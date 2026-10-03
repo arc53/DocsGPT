@@ -65,3 +65,13 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://docs.stripe.com/mcp
+
+- key: mcp:composio
+  name: Composio Connect
+  description: Search and run tools across connected apps, with OAuth sign-in on demand.
+  icon: composio
+  category: business
+  mcp_url: https://connect.composio.dev/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://docs.composio.dev/docs/composio-connect

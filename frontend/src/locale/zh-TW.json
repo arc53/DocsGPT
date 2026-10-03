@@ -1425,6 +1425,7 @@
         "mcp_atlassian": "搜尋和更新 Jira 議題與 Confluence 頁面。",
         "mcp_sentry": "查看 Sentry 問題、事件和發行版本。",
         "mcp_stripe": "查看 Stripe 中的客戶、付款和訂閱。",
+        "mcp_composio": "搜尋並執行已連線應用程式中的工具，並在需要時透過 OAuth 登入。",
         "github": "將儲存庫同步到知識庫，並讓代理讀取程式碼、Issue 和提取要求。"
       },
       "empty": "尚未連線任何服務。連線一個服務以同步其內容，或為代理提供新工具。",
