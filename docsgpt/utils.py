@@ -590,6 +590,20 @@ _CLOSING_TAG_RE = re.compile(r"</([A-Za-z][\w.:-]*)\s*>")
 _ATTRIBUTE_RE = re.compile(r"\s[\w:.-]+\s*=")
 
 
+def _strip_html_comments(text: str) -> str:
+    """Replace each complete ``<!-- ... -->`` with a space; one pass, so linear."""
+    parts, position = [], 0
+    while (start := text.find("<!--", position)) != -1:
+        end = text.find("-->", start + 4)
+        if end == -1:
+            break
+        parts.append(text[position:start])
+        parts.append(" ")
+        position = end + 3
+    parts.append(text[position:])
+    return "".join(parts)
+
+
 def _strip_markup(text: str) -> str:
     closed = {name.lower() for name in _CLOSING_TAG_RE.findall(text)}
 
@@ -624,6 +638,7 @@ def clean_text_for_tts(text: str) -> str:
     # Remove markdown formatting
 
     text = re.sub(r"`([^`]+)`", r"\1", text)  ## `code`
+    text = _strip_html_comments(text)  ## <!-- comments -->
     text = _strip_markup(text)  ## <html> and <Jsx> tags
     text = re.sub(r"\{([^{}]*)\}", r" \1 ", text)  ## {text}
     text = re.sub(r"[{}]", " ", text)  ## unmatched {}

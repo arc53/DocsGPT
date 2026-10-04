@@ -758,6 +758,18 @@ class TestCleanTextForTts:
 
     @pytest.mark.unit
     @pytest.mark.parametrize(
+        "text, expected",
+        [
+            ("Visible <!-- internal note --> text", "Visible text"),
+            ("A <!-- one\nspans\nlines --> B <!----> C", "A B C"),
+            ("Keep <!-- unclosed comment", "Keep <!-- unclosed comment"),
+        ],
+    )
+    def test_removes_html_comments(self, text, expected):
+        assert clean_text_for_tts(text) == expected
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
         "text",
         [
             "Use List<int> or Map<String, int>.",
@@ -783,8 +795,9 @@ class TestCleanTextForTts:
             "![a](" * 40_000,  # unmatched image url
             "[a](" * 50_000,  # unmatched link url
             "<a" * 100_000,  # unmatched html tag
+            "<!--a" * 40_000,  # unclosed html comment
         ],
-        ids=["bracket", "brace", "image", "link", "tag"],
+        ids=["bracket", "brace", "image", "link", "tag", "comment"],
     )
     def test_unmatched_delimiters_clean_in_linear_time(self, text):
         # Each pattern used to rescan the rest of the text from every
