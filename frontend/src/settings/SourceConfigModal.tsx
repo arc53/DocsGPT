@@ -171,6 +171,8 @@ export default function SourceConfigModal({
         document?.name
           ? t('settings.sources.configModal.subtitle', {
               name: document.name,
+              // React escapes the text; i18next escaping it too shows "&amp;".
+              interpolation: { escapeValue: false },
             })
           : t('settings.sources.configModal.subtitleGeneric')
       }
