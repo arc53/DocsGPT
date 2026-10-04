@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-04
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -1415,6 +1415,12 @@ Per-agent default quotas: tokens and requests.
 Type `list[str]`, default `["memory", "read_webpage", "scheduler"]`.
 
 Config-free tools on by default in agentless chats, as a JSON list of tool names (["memory","scheduler"]) or comma-separated names. none (or []) turns them all off; an empty value keeps the default. scheduler is dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add code_executor and artifact_generator once a sandbox runner is configured; both execute through it and would fail on every call without one.
+
+### `AGENT_TRUSTED_ORIGINS`
+
+Type `list[str]`, default `["https://app.docsgpt.cloud", "https://ent.docsgpt.cloud"]`.
+
+Browser origins every agent that restricts its origins accepts besides its own list, as a JSON list or comma-separated origins. This instance's own frontend is always accepted too: the API's origin, OIDC_FRONTEND_URL, and localhost:5173 when the API runs on loopback. none (or []) trusts no extra origin; an empty value keeps the default.
 
 ### `ENABLE_TOOL_PREFETCH`
 

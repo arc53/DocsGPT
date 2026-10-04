@@ -2529,7 +2529,24 @@
         "requestLimiting": "Лимит запросов",
         "requestLimitingDescription": "Ограничить ежедневное общее количество запросов, которые можно сделать к этому агенту",
         "systemPromptOverride": "Разрешить замену промпта",
-        "systemPromptOverrideDescription": "Разрешить вызовам API v1 заменять системный промпт этого агента"
+        "systemPromptOverrideDescription": "Разрешить вызовам API v1 заменять системный промпт этого агента",
+        "origins": {
+          "label": "Разрешённые источники",
+          "description": "Вызывать этого агента с его API-ключом могут только сайты из списка",
+          "inputLabel": "Источник",
+          "hint": "Адрес сайта без пути, например https://example.com. Нажмите Enter, чтобы добавить.",
+          "placeholder": "https://example.com",
+          "add": "Добавить",
+          "listLabel": "Разрешённые источники",
+          "remove": "Удалить {{origin}}",
+          "errors": {
+            "invalid": "Введите адрес, начинающийся с http:// или https://, например https://example.com",
+            "path": "Уберите путь: источник — это только схема, хост и порт",
+            "duplicate": "{{origin}} уже есть в списке",
+            "full": "Можно добавить не более {{max}} источников",
+            "required": "Добавьте хотя бы один источник или отключите эту настройку"
+          }
+        }
       },
       "preview": {
         "savedVersion": "сохранённая версия",

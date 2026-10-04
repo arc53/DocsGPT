@@ -24,6 +24,7 @@ from docsgpt.api.user.tasks import (
 from docsgpt.connectors import service
 from docsgpt.core.settings import settings
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
+from docsgpt.security.origins import DEV_FRONTEND_PORT, LOOPBACK_HOSTS, normalize_origin
 from docsgpt.storage.db.repositories.connector_sessions import (
     ConnectorSessionsRepository,
     owns_connector_session,
@@ -48,29 +49,6 @@ def build_callback_redirect(params: dict) -> str:
     return f"{CALLBACK_STATUS_PATH}?{urlencode(params)}"
 
 
-_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
-_DEV_FRONTEND_PORT = 5173
-
-
-def _origin_of(url: Optional[str]) -> Optional[str]:
-    """Normalized ``scheme://host[:port]`` origin of an http(s) URL, or None."""
-    if not url:
-        return None
-    try:
-        parts = urlsplit(url.strip())
-        port = parts.port
-    except ValueError:
-        return None
-    host = parts.hostname
-    if parts.scheme not in ("http", "https") or not host:
-        return None
-    if ":" in host:
-        host = f"[{host}]"
-    if port is None or port == {"http": 80, "https": 443}[parts.scheme]:
-        return f"{parts.scheme}://{host}"
-    return f"{parts.scheme}://{host}:{port}"
-
-
 def connector_allowed_origins(request_host_url: str) -> list[str]:
     """Frontend origins the OAuth popup may hand a connector session token to."""
     candidates = [
@@ -79,16 +57,16 @@ def connector_allowed_origins(request_host_url: str) -> list[str]:
         settings.OIDC_FRONTEND_URL,
         *(settings.CONNECTOR_ALLOWED_ORIGINS or "").split(","),
     ]
-    callback_origin = _origin_of(settings.CONNECTOR_REDIRECT_BASE_URI)
+    callback_origin = normalize_origin(settings.CONNECTOR_REDIRECT_BASE_URI)
     if callback_origin:
         callback = urlsplit(callback_origin)
-        if callback.hostname in _LOOPBACK_HOSTS:
+        if callback.hostname in LOOPBACK_HOSTS:
             callback_port = f":{callback.port}" if callback.port else ""
             for host in ("localhost", "127.0.0.1"):
-                candidates += [f"http://{host}:{_DEV_FRONTEND_PORT}", f"{callback.scheme}://{host}{callback_port}"]
+                candidates += [f"http://{host}:{DEV_FRONTEND_PORT}", f"{callback.scheme}://{host}{callback_port}"]
     origins: list[str] = []
     for candidate in candidates:
-        origin = _origin_of(candidate)
+        origin = normalize_origin(candidate)
         if origin and origin not in origins:
             origins.append(origin)
     return origins
@@ -211,7 +189,7 @@ def build_authorization(
     return {
         "authorization_url": url,
         "state": state,
-        "callback_origin": _origin_of(settings.CONNECTOR_REDIRECT_BASE_URI),
+        "callback_origin": normalize_origin(settings.CONNECTOR_REDIRECT_BASE_URI),
     }
 
 
@@ -246,7 +224,7 @@ class ConnectorAuth(Resource):
                 return make_response(jsonify({"success": False, "error": str(err), "code": "disabled"}), 403)
             # The popup drops results for origins outside the allowlist, which the
             # user only sees as a cancelled sign-in; name the missing origin here.
-            request_origin = _origin_of(request.headers.get("Origin"))
+            request_origin = normalize_origin(request.headers.get("Origin"))
             if request_origin and request_origin not in connector_allowed_origins(request.host_url):
                 current_app.logger.warning(
                     f"Connector sign-in requested from {request_origin}, which cannot receive the result; "

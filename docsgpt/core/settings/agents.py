@@ -28,6 +28,15 @@ class AgentSettings(SettingsGroup):
             "it and would fail on every call without one."
         ),
     )
+    AGENT_TRUSTED_ORIGINS: Annotated[list[str], NoDecode, EnvList(none_is_empty=True)] = Field(
+        default=["https://app.docsgpt.cloud", "https://ent.docsgpt.cloud"],
+        description=(
+            "Browser origins every agent that restricts its origins accepts besides its own list, as a JSON "
+            "list or comma-separated origins. This instance's own frontend is always accepted too: the API's "
+            "origin, OIDC_FRONTEND_URL, and localhost:5173 when the API runs on loopback. none (or []) trusts "
+            "no extra origin; an empty value keeps the default."
+        ),
+    )
     ENABLE_TOOL_PREFETCH: bool = Field(default=True, description="Pre-fetch retrieval before the agent's first turn.")
     TOOL_RESULT_MAX_TOKENS: int = Field(
         default=20000,

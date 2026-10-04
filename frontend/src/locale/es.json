@@ -2415,7 +2415,24 @@
         "requestLimiting": "Límite de solicitudes",
         "requestLimitingDescription": "Limita el total diario de solicitudes que se pueden hacer a este agente",
         "systemPromptOverride": "Permitir sobrescribir el prompt",
-        "systemPromptOverrideDescription": "Permitir que los llamadores de la API v1 reemplacen el prompt del sistema de este agente"
+        "systemPromptOverrideDescription": "Permitir que los llamadores de la API v1 reemplacen el prompt del sistema de este agente",
+        "origins": {
+          "label": "Orígenes permitidos",
+          "description": "Solo los sitios web de la lista pueden llamar a este agente con su clave de API",
+          "inputLabel": "Origen",
+          "hint": "La dirección de un sitio web sin ruta, como https://example.com. Pulsa Intro para añadirla.",
+          "placeholder": "https://example.com",
+          "add": "Añadir",
+          "listLabel": "Orígenes permitidos",
+          "remove": "Quitar {{origin}}",
+          "errors": {
+            "invalid": "Introduce una dirección que empiece por http:// o https://, como https://example.com",
+            "path": "Omite la ruta: un origen es solo el esquema, el host y el puerto",
+            "duplicate": "{{origin}} ya está en la lista",
+            "full": "Puedes añadir como máximo {{max}} orígenes",
+            "required": "Añade al menos un origen o desactiva esta opción"
+          }
+        }
       },
       "preview": {
         "savedVersion": "versión guardada",

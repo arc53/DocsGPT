@@ -2404,7 +2404,24 @@
         "requestLimiting": "リクエスト制限",
         "requestLimitingDescription": "このエージェントに対して行える1日の合計リクエスト数を制限します",
         "systemPromptOverride": "プロンプトの上書きを許可",
-        "systemPromptOverrideDescription": "v1 API呼び出し元がこのエージェントのシステムプロンプトを置き換えることを許可します"
+        "systemPromptOverrideDescription": "v1 API呼び出し元がこのエージェントのシステムプロンプトを置き換えることを許可します",
+        "origins": {
+          "label": "許可するオリジン",
+          "description": "一覧にあるウェブサイトだけが、API キーでこのエージェントを呼び出せます",
+          "inputLabel": "オリジン",
+          "hint": "https://example.com のような、パスを含まないウェブサイトのアドレス。Enter で追加します。",
+          "placeholder": "https://example.com",
+          "add": "追加",
+          "listLabel": "許可するオリジン",
+          "remove": "{{origin}} を削除",
+          "errors": {
+            "invalid": "https://example.com のように、http:// または https:// で始まるアドレスを入力してください",
+            "path": "パスは含めないでください。オリジンはスキーム、ホスト、ポートのみです",
+            "duplicate": "{{origin}} はすでに一覧にあります",
+            "full": "追加できるオリジンは最大 {{max}} 件です",
+            "required": "オリジンを 1 つ以上追加するか、この設定をオフにしてください"
+          }
+        }
       },
       "preview": {
         "savedVersion": "保存済みバージョン",

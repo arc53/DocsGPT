@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from docsgpt.guardrails.types import ACTIONS_BY_STAGE, Action, Stage
+from docsgpt.security.origins import canonical_origin, normalize_origin
 
 logger = logging.getLogger(__name__)
 
@@ -218,6 +219,44 @@ class AgentConfig(BaseModel):
     # public-link user, and schedules either of them set. Any other such
     # write is refused for them. ``tool_id:action``.
     api_write_allowlist: List[str] = []
+    # Browser origins that may call the agent with its API key. While
+    # ``restrict_origins`` is on, a keyed request must come from one of these
+    # or a trusted origin (``docsgpt/api/agent_origins.py``); turning it off
+    # keeps the list.
+    restrict_origins: bool = False
+    allowed_origins: List[str] = []
+
+    @field_validator("allowed_origins")
+    @classmethod
+    def _check_origins(cls, value: List[str]) -> List[str]:
+        if len(value) > 100:
+            raise ValueError("allowed_origins accepts at most 100 origins")
+        cleaned: List[str] = []
+        for entry in value:
+            origin = canonical_origin(entry)
+            if origin not in cleaned:
+                cleaned.append(origin)
+        return cleaned
+
+    @model_validator(mode="after")
+    def _origins_listed(self) -> "AgentConfig":
+        if self.restrict_origins and not self.allowed_origins:
+            raise ValueError("restrict_origins needs at least one entry in allowed_origins")
+        return self
+
+    def origin_allowed(self, origin: Optional[str], trusted: List[str]) -> bool:
+        """Whether a request from ``origin`` may use the agent's API key.
+
+        Args:
+            origin: The request's normalized origin, or None when it sent none.
+            trusted: Origins every restricted agent accepts (normalized).
+
+        Returns:
+            True when the agent is unrestricted or ``origin`` is listed.
+        """
+        if not self.restrict_origins:
+            return True
+        return origin is not None and (origin in self.allowed_origins or origin in trusted)
 
     @field_validator("api_write_allowlist")
     @classmethod
@@ -240,5 +279,24 @@ class AgentConfig(BaseModel):
         try:
             return cls.model_validate(raw)
         except Exception:
-            # A bad allowlist falls back to none: the safe side.
-            return cls(guardrails=GuardrailsConfig.parse(raw.get("guardrails")))
+            # A bad allowlist falls back to none: the safe side. For origins
+            # the safe side is the opposite, so a restriction stays on and
+            # keeps every entry that still parses.
+            return cls.model_construct(
+                guardrails=GuardrailsConfig.parse(raw.get("guardrails")),
+                api_write_allowlist=[],
+                restrict_origins=bool(raw.get("restrict_origins")),
+                allowed_origins=_salvage_origins(raw.get("allowed_origins")),
+            )
+
+
+def _salvage_origins(raw: Any) -> List[str]:
+    """The entries of a stored ``allowed_origins`` that still normalize."""
+    if not isinstance(raw, list):
+        return []
+    kept: List[str] = []
+    for entry in raw:
+        origin = normalize_origin(entry) if isinstance(entry, str) else None
+        if origin and origin not in kept:
+            kept.append(origin)
+    return kept

@@ -2427,7 +2427,24 @@
         "systemPromptOverride": "Allow prompt override",
         "systemPromptOverrideDescription": "Let v1 API callers replace this agent's system prompt",
         "tokenLimit": "Token limit",
-        "requestLimit": "Request limit"
+        "requestLimit": "Request limit",
+        "origins": {
+          "label": "Allowed origins",
+          "description": "Only the listed websites can call this agent with its API key",
+          "inputLabel": "Origin",
+          "hint": "A website address without a path, such as https://example.com. Press Enter to add it.",
+          "placeholder": "https://example.com",
+          "add": "Add",
+          "listLabel": "Allowed origins",
+          "remove": "Remove {{origin}}",
+          "errors": {
+            "invalid": "Enter an address that starts with http:// or https://, such as https://example.com",
+            "path": "Leave out the path: an origin is only the scheme, host and port",
+            "duplicate": "{{origin}} is already in the list",
+            "full": "You can add at most {{max}} origins",
+            "required": "Add at least one origin, or turn this off"
+          }
+        }
       },
       "preview": {
         "savedVersion": "saved version",
