@@ -837,8 +837,12 @@ class TextToSpeech(Resource):
     def post(self):
         if not TTSCreator.is_enabled(settings.TTS_PROVIDER):
             return _feature_disabled(_TTS_DISABLED_MESSAGE)
-        data = request.get_json()
-        text = clean_text_for_tts(data["text"])
+        text = (request.get_json(silent=True) or {}).get("text")
+        if not isinstance(text, str):
+            return make_response(
+                jsonify({"success": False, "message": "text must be a string"}), 400
+            )
+        text = clean_text_for_tts(text)
         try:
             tts_instance = TTSCreator.create_tts(settings.TTS_PROVIDER)
             audio_base64, detected_language = tts_instance.text_to_speech(text)

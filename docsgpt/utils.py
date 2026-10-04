@@ -558,9 +558,10 @@ def convert_pdf_to_images(
         raise
 
 
-# Symbols (emoji, arrows, skin-tone modifiers), format and private-use
-# characters (zero-width joiners, tags) and variation selectors.
-_UNSPOKEN_CATEGORIES = frozenset({"So", "Sk", "Cc", "Cf", "Co", "Cs", "Cn"})
+# Symbols (emoji, arrows, skin-tone modifiers), enclosing marks (keycaps),
+# format and private-use characters (zero-width joiners, tags) and
+# variation selectors.
+_UNSPOKEN_CATEGORIES = frozenset({"So", "Sk", "Me", "Cc", "Cf", "Co", "Cs", "Cn"})
 
 
 def _is_unspoken_char(ch: str) -> bool:

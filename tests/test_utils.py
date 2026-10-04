@@ -713,6 +713,10 @@ class TestCleanTextForTts:
         assert result == "ok done"
 
     @pytest.mark.unit
+    def test_keycap_emoji_keeps_only_the_digit(self):
+        assert clean_text_for_tts("1️⃣ Install #️⃣ tags") == "1 Install # tags"
+
+    @pytest.mark.unit
     @pytest.mark.parametrize(
         "text",
         ["Café résumé", "Привет мир", "こんにちは世界", "你好，世界", "Größe über"],
