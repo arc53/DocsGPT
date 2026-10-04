@@ -1,0 +1,28 @@
+---
+title: Discord Bot Integration
+description: Step-by-step guide to deploying the official DocsGPT Discord Bot.
+---
+
+# Discord Bot Integration
+
+DocsGPT can be integrated with Discord to answer user queries directly inside your server channels using your custom knowledge base.
+
+## Step 1: Create a Discord Application
+1. Go to the [Discord Developer Portal](https://discord.com) and sign in.
+2. Click **New Application** and give your bot a name.
+3. In the left menu, click **Bot**, then click **Add Bot**.
+4. Scroll down to **Privileged Gateway Intents** and enable **Message Content Intent**.
+5. Under the Token section, click **Reset Token** and copy the string. Keep this token safe.
+
+## Step 2: Set up the Bot Environment
+The official Discord bot runs as an independent extension. You need to route your Discord tokens to your DocsGPT instance.
+1. Access your DocsGPT backend environment variables (`.env` file).
+2. Add your copied token to the file configuration:
+   `DISCORD_BOT_TOKEN=your_token_here`
+3. Restart your DocsGPT docker containers or backend services to apply changes.
+
+## Step 3: Invite the Bot to Your Server
+1. Go back to the Discord Developer Portal and select **OAuth2** -> **URL Generator**.
+2. Select the `bot` scope.
+3. Under Bot Permissions, select **Send Messages** and **Read Message History**.
+4. Copy the generated URL at the bottom and open it in a new browser tab to invite the bot to your target server.
