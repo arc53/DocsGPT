@@ -725,6 +725,12 @@ class TestCleanTextForTts:
         assert clean_text_for_tts(text) == text
 
     @pytest.mark.unit
+    def test_keeps_zero_width_non_joiner(self):
+        # Persian half-space: part of the spelling, not formatting
+        word = "می\u200cشود"
+        assert clean_text_for_tts(word) == word
+
+    @pytest.mark.unit
     def test_ascii_handling_unchanged(self):
         assert clean_text_for_tts("x^2 \x00\x07ok") == "x^2 ok"
 

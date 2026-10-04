@@ -567,6 +567,8 @@ _UNSPOKEN_CATEGORIES = frozenset({"So", "Sk", "Me", "Cc", "Cf", "Co", "Cs", "Cn"
 def _is_unspoken_char(ch: str) -> bool:
     if ch.isascii():
         return not (ch.isprintable() or ch in "\n\r\t")
+    if ch == "\u200c":  # zero-width non-joiner is part of Persian spelling
+        return False
     if "\ufe00" <= ch <= "\ufe0f":
         return True
     return unicodedata.category(ch) in _UNSPOKEN_CATEGORIES
