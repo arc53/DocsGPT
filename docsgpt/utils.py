@@ -574,6 +574,41 @@ def _is_unspoken_char(ch: str) -> bool:
     return unicodedata.category(ch) in _UNSPOKEN_CATEGORIES
 
 
+# Markup the TTS cleaner strips. A "<...>" is only treated as a tag when it is
+# a common HTML element, a closing tag, an opener whose closing tag is in the
+# text, has attributes, or self-closes, so prose such as List<int>,
+# <your-api-key> or "a <= b" is kept. Single-letter names other than a, b, i
+# and u are left alone because they are usually generic type parameters.
+_HTML_TAGS = frozenset(
+    """a abbr audio b blockquote br center cite code dd del details div dl dt em
+    figcaption figure h1 h2 h3 h4 h5 h6 hr i iframe img ins kbd li ol p picture
+    pre script small source span strong style sub summary sup svg table tbody td
+    tfoot th thead tr u ul video""".split()
+)
+_TAG_RE = re.compile(r"<(/?)([A-Za-z][\w.:-]*)((?:\s[^<>]*?)?)(/?)>")
+_CLOSING_TAG_RE = re.compile(r"</([A-Za-z][\w.:-]*)\s*>")
+_ATTRIBUTE_RE = re.compile(r"\s[\w:.-]+\s*=")
+
+
+def _strip_markup(text: str) -> str:
+    closed = {name.lower() for name in _CLOSING_TAG_RE.findall(text)}
+
+    def replace(match: re.Match) -> str:
+        closing, name, attributes, self_closing = match.groups()
+        name = name.lower()
+        if (
+            closing
+            or self_closing
+            or name in _HTML_TAGS
+            or name in closed
+            or _ATTRIBUTE_RE.match(attributes)
+        ):
+            return " "
+        return match.group(0)
+
+    return _TAG_RE.sub(replace, text)
+
+
 def clean_text_for_tts(text: str) -> str:
     """
     clean text for Text-to-Speech processing.
@@ -589,7 +624,7 @@ def clean_text_for_tts(text: str) -> str:
     # Remove markdown formatting
 
     text = re.sub(r"`([^`]+)`", r"\1", text)  ## `code`
-    text = re.sub(r"<[^<>]*>", "", text)  ## <html> tags
+    text = _strip_markup(text)  ## <html> and <Jsx> tags
     text = re.sub(r"\{([^{}]*)\}", r" \1 ", text)  ## {text}
     text = re.sub(r"[{}]", " ", text)  ## unmatched {}
     text = re.sub(r"\[([^\[\]]+)\]", r" \1 ", text)  ## [text]

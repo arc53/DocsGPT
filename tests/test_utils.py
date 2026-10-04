@@ -744,6 +744,32 @@ class TestCleanTextForTts:
         assert clean_text_for_tts(text) == "Intro Outro"
 
     @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "text, expected",
+        [
+            ("x <b>bold</b> y<br/>z", "x bold y z"),
+            ('<div class="a">d</div>', "d"),
+            ('<Callout type="info">Note</Callout>', "Note"),
+            ("<Steps>One</Steps>", "One"),
+        ],
+    )
+    def test_removes_html_and_jsx_markup(self, text, expected):
+        assert clean_text_for_tts(text) == expected
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Use List<int> or Map<String, int>.",
+            "Replace <your-api-key> with your key.",
+            "Press <Enter> to send.",
+            "Check a <= b and c >= d.",
+        ],
+    )
+    def test_keeps_angle_bracket_prose(self, text):
+        assert clean_text_for_tts(text) == text
+
+    @pytest.mark.unit
     def test_lone_less_than_does_not_swallow_text(self):
         text = "Keep rows where timestamp < now() and age <30 days.\nNext line > here"
         assert "now() and age" in clean_text_for_tts(text)
