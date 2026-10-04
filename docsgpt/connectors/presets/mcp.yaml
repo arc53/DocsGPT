@@ -65,3 +65,13 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://docs.stripe.com/mcp
+
+- key: mcp:airtable
+  name: Airtable
+  description: Search, read and update records in Airtable bases.
+  icon: airtable
+  category: database
+  mcp_url: https://mcp.airtable.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://airtable.com/developers/agents/mcp/getting-started

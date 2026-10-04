@@ -165,3 +165,12 @@ def test_atlassian_preset_is_part_of_confluence():
     assert atlassian.part_of == "confluence"
     assert atlassian.to_dict()["part_of"] == "confluence"
     assert catalog.get_definition("confluence").to_dict()["part_of"] is None
+
+def test_airtable_preset_ships_with_oauth_and_read_write():
+    airtable = catalog.get_definition("mcp:airtable")
+    assert airtable is not None
+    assert airtable.publisher == "preset"
+    assert airtable.mcp_url == "https://mcp.airtable.com/mcp"
+    assert airtable.auth_kind == "mcp_oauth"
+    assert set(airtable.capabilities) == {"read", "write"}
+    
