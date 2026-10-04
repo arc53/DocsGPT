@@ -1,7 +1,7 @@
 ---
 title: SSO with OIDC
 description: Sign users into DocsGPT through any OpenID Connect identity provider (Authentik, Keycloak, Okta, ...) — with group allowlists, silent session renewal, back-channel logout, and SCIM provisioning.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-04
 ---
 
 # SSO with OIDC
@@ -91,6 +91,46 @@ OIDC_CLIENT_ID=<client id>
 Create the client with *Standard flow* enabled and PKCE method `S256`; register the same `/api/auth/oidc/callback` redirect URI.
 
 The feature sections below carry their own per-IdP notes — group claims, refresh tokens, back-channel logout, and SCIM each need one IdP-side setting.
+
+## Microsoft Entra ID
+
+Microsoft Entra ID (formerly Azure Active Directory) signs users in through the same flow. Entra differs from the other IdPs on this page in a few ways: the issuer must be tenant-specific, a client secret is required, and group membership arrives as object IDs rather than names. This section covers the Entra-side setup end to end.
+
+### Register the app in Entra
+
+1. In the [Microsoft Entra admin center](https://entra.microsoft.com), go to **Entra ID → App registrations → New registration**:
+   - **Supported account types**: *Accounts in this organizational directory only* (single tenant).
+   - **Redirect URI**: platform **Web**, value `https://<your-docsgpt-api>/api/auth/oidc/callback`.
+
+   Don't pick the **Single-page application** platform. DocsGPT redeems the authorization code on the server, and Entra refuses server-side redemption for single-page application redirect URIs.
+2. On the app's **Overview** page, copy the **Application (client) ID** and the **Directory (tenant) ID**.
+3. Under **Certificates & secrets → Client secrets → New client secret**, create a secret and copy its **Value** (not the Secret ID). Entra requires a secret for **Web** redirect URIs, so `OIDC_CLIENT_SECRET` is mandatory with Entra. Secrets expire, at most 24 months after creation — rotate the secret before its expiry date or sign-in stops working.
+4. Under **Authentication**, add a second **Web** redirect URI equal to `OIDC_FRONTEND_URL`, without a trailing slash (for example `https://docsgpt.example.com`). Entra only honors a sign-out redirect that matches a registered redirect URI; without it, signing out leaves users on Microsoft's "You signed out" page instead of returning them to DocsGPT. Leave **Front-channel logout URL** empty, since DocsGPT doesn't implement front-channel logout.
+5. Under **API permissions → Add a permission → Microsoft Graph → Delegated permissions**, add the OpenID permissions `openid`, `profile`, `email` and `offline_access`, then select **Grant admin consent** so users don't see a consent prompt on first sign-in. The default `User.Read` permission can stay.
+
+### Configure DocsGPT for Entra
+
+```env
+AUTH_TYPE=oidc
+OIDC_ISSUER=https://login.microsoftonline.com/<tenant-id>/v2.0
+OIDC_CLIENT_ID=<application (client) id>
+OIDC_CLIENT_SECRET=<client secret value>
+OIDC_FRONTEND_URL=https://docsgpt.example.com
+OIDC_SCOPES=openid profile email offline_access
+OIDC_USER_ID_CLAIM=oid
+OIDC_PROVIDER_NAME=Microsoft
+JWT_SECRET_KEY=<long random string>
+```
+
+- **`OIDC_ISSUER`** must be the tenant-specific v2.0 authority. The multi-tenant `common` and `organizations` authorities publish an issuer containing a literal `{tenantid}` placeholder, so every ID token fails issuer validation and sign-in ends in `auth_failed`. Signing in users from several tenants with one DocsGPT deployment isn't supported. National clouds use their own host, for example `login.microsoftonline.us` for Azure Government.
+- **`offline_access`** in `OIDC_SCOPES` makes Entra issue a refresh token, which enables [silent session renewal](#silent-session-renewal).
+- **`OIDC_PROVIDER_NAME`** only sets the sign-in button label ("Sign in with Microsoft").
+
+### Choose the Entra user id claim
+
+Use `OIDC_USER_ID_CLAIM=oid`. The `oid` claim is the user's object ID in your tenant: immutable, never reused, and the same value Entra provisioning can send as the SCIM `userName` (see [Provision Entra users over SCIM](#provision-entra-users-over-scim)). Entra only includes it when the `profile` scope is requested.
+
+The default `sub` claim also works, but Entra issues a different `sub` for each app registration. If you ever replace the app registration, every user gets a new `sub` and therefore a fresh, empty DocsGPT account. Avoid `email` and `preferred_username` (the user principal name): both change when a user is renamed and can be reassigned to someone else later, and Entra doesn't guarantee `email` is present. Pick the claim before going live; changing it later gives existing users new, empty accounts.
 
 ## Restricting sign-in by group
 
