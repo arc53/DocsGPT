@@ -109,7 +109,7 @@ class TestLenientRead:
         assert config.origin_allowed("https://evil.com", []) is False
         assert config.origin_allowed("https://a.com", []) is True
 
-    @pytest.mark.parametrize("flag", [False, "false", "False", "no", "off", 0, "0", None])
+    @pytest.mark.parametrize("flag", [False, "false", "False", "no", "off", 0, "0"])
     def test_a_flag_saved_off_stays_off(self, flag):
         # Read the flag the way a write does: a quoted "false" in a YAML is off.
         config = AgentConfig.parse(
@@ -124,9 +124,16 @@ class TestLenientRead:
         )
         assert config.restrict_origins is True
 
-    def test_an_unreadable_flag_keeps_the_restriction_on(self):
-        config = AgentConfig.parse({"restrict_origins": "sometimes", "allowed_origins": ["https://a.com"]})
+    @pytest.mark.parametrize("flag", ["sometimes", None, [], {}])
+    def test_an_unreadable_flag_keeps_the_restriction_on(self, flag):
+        # An explicit null is invalid too (a write refuses it), unlike a missing field.
+        config = AgentConfig.parse({"restrict_origins": flag, "allowed_origins": ["https://a.com"]})
         assert config.restrict_origins is True
+        assert config.origin_allowed("https://evil.com", []) is False
+
+    def test_a_missing_flag_is_off(self):
+        config = AgentConfig.parse({"allowed_origins": ["https://a.com/path"]})
+        assert config.restrict_origins is False
 
     def test_a_bad_row_without_origins_stays_unrestricted(self):
         config = AgentConfig.parse({"api_write_allowlist": ["no-colon"]})

@@ -285,18 +285,20 @@ class AgentConfig(BaseModel):
             return cls.model_construct(
                 guardrails=GuardrailsConfig.parse(raw.get("guardrails")),
                 api_write_allowlist=[],
-                restrict_origins=_salvage_flag(raw.get("restrict_origins")),
+                restrict_origins="restrict_origins" in raw and _salvage_flag(raw["restrict_origins"]),
                 allowed_origins=_salvage_origins(raw.get("allowed_origins")),
             )
 
 
 def _salvage_flag(raw: Any) -> bool:
-    """``restrict_origins`` read as a write reads it (``"false"`` is off).
+    """A stored ``restrict_origins`` read as a write reads it (``"false"`` is off).
 
-    A value that is no boolean at all keeps the restriction on: the safe side.
+    A value that is no boolean at all, ``null`` included, keeps the restriction
+    on: the safe side. Only a missing field means off, and the caller decides
+    that before calling.
     """
     if raw is None:
-        return False
+        return True
     try:
         return TypeAdapter(bool).validate_python(raw)
     except ValidationError:
