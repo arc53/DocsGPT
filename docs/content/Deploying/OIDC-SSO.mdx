@@ -1,12 +1,12 @@
 ---
 title: SSO with OIDC
-description: Sign users into DocsGPT through any OpenID Connect identity provider (Authentik, Keycloak, Okta, ...) — with group allowlists, silent session renewal, back-channel logout, and SCIM provisioning.
+description: Sign users into DocsGPT through any OpenID Connect identity provider (Authentik, Keycloak, Microsoft Entra ID, Okta, ...) — with group allowlists, silent session renewal, back-channel logout, and SCIM provisioning.
 lastUpdated: 2026-10-04
 ---
 
 # SSO with OIDC
 
-Setting `AUTH_TYPE=oidc` makes DocsGPT delegate sign-in to an external OpenID Connect identity provider (IdP). Any spec-compliant IdP with a discovery document works; this guide uses [Authentik](https://goauthentik.io/) as the reference provider and includes a short note for Keycloak.
+Setting `AUTH_TYPE=oidc` makes DocsGPT delegate sign-in to an external OpenID Connect identity provider (IdP). Any spec-compliant IdP with a discovery document works; this guide uses [Authentik](https://goauthentik.io/) as the reference provider and includes setup notes for [Keycloak](#keycloak-and-other-idps) and [Microsoft Entra ID](#microsoft-entra-id).
 
 Beyond basic sign-in, this page covers the optional access controls: [group allowlists](#restricting-sign-in-by-group), [silent session renewal](#silent-session-renewal), [back-channel logout](#back-channel-logout), [SCIM user provisioning](#scim-user-provisioning), and [login auditing](#login-auditing).
 
@@ -39,7 +39,7 @@ Sessions last `OIDC_SESSION_LIFETIME_SECONDS` (8 hours by default) and renew wit
 | `OIDC_FRONTEND_URL` | yes | — | Browser-facing URL of the DocsGPT frontend (where users land after login/logout), e.g. `https://docsgpt.example.com`. |
 | `OIDC_CLIENT_SECRET` | no | — | Set when the IdP client is *confidential*. PKCE is always used, so *public* clients work without a secret. |
 | `OIDC_SCOPES` | no | `openid profile email` | Scopes requested at the IdP. Add `offline_access` when your IdP requires it for refresh tokens (Authentik does). |
-| `OIDC_USER_ID_CLAIM` | no | `sub` | ID-token claim used as the DocsGPT user id. Set to `email` or `preferred_username` for human-readable ids; use `email` when provisioning over [SCIM](#scim-user-provisioning). |
+| `OIDC_USER_ID_CLAIM` | no | `sub` | ID-token claim used as the DocsGPT user id. Set to `email` or `preferred_username` for human-readable ids; use `email` when provisioning over [SCIM](#scim-user-provisioning). With Microsoft Entra ID, use `oid` — see [Choose the Entra user id claim](#choose-the-entra-user-id-claim). |
 | `OIDC_REDIRECT_URI` | no | derived | Full callback URL registered at the IdP. Defaults to `<request host>/api/auth/oidc/callback`; set it explicitly when the API runs behind a reverse proxy. |
 | `OIDC_SESSION_LIFETIME_SECONDS` | no | `28800` (8h) | Lifetime of the DocsGPT session JWT. Sessions renew before expiry — see [Silent session renewal](#silent-session-renewal). |
 | `OIDC_PROVIDER_NAME` | no | — | Display name on the sign-in button: `Acme SSO` renders "Sign in with Acme SSO". Unset, the button shows a generic "SSO". |
@@ -210,6 +210,7 @@ Getting groups into the token:
 
 - **Authentik** includes group names in the `groups` claim through its default `profile` scope — no extra configuration needed.
 - **Keycloak** does not emit groups by default. On the client, open **Client scopes → the client's dedicated scope → Add mapper → By configuration → Group Membership**, set the claim name to `groups`, and turn **Full group path** off so the claim carries plain names (`devs`) rather than paths (`/devs`).
+- **Microsoft Entra ID** emits group object IDs rather than names, and omits the claim for users in more than 200 groups. App roles in the `roles` claim are usually the better fit — see [Restrict access with app roles or groups](#restrict-access-with-app-roles-or-groups).
 
 ## Granting admin via groups
 
@@ -231,6 +232,7 @@ The DocsGPT session JWT lives for `OIDC_SESSION_LIFETIME_SECONDS` (default 8 hou
 Getting a refresh token:
 
 - **Keycloak** issues refresh tokens for the authorization-code flow by default — nothing to change.
+- **Microsoft Entra ID** issues refresh tokens when `offline_access` is in `OIDC_SCOPES`, as in the [Entra configuration](#configure-docsgpt-for-entra).
 - **Authentik** only issues refresh tokens when the `offline_access` scope is requested:
   ```env
   OIDC_SCOPES=openid profile email offline_access
@@ -252,6 +254,7 @@ The endpoint is called server-to-server, so it must be reachable from the IdP (i
 
 - **Keycloak**: open the client → **Settings** and set **Backchannel logout URL** to `https://<your-docsgpt-api>/api/auth/oidc/backchannel-logout`.
 - **Authentik** (2025.8.0 and later; marked Preview): on the OAuth2/OpenID provider set **Logout Method** to *Back-channel* and **Logout URI** to the same URL — see the [Authentik logout docs](https://docs.goauthentik.io/add-secure-apps/providers/oauth2/frontchannel_and_backchannel_logout/). Authentik sends the logout token when a user logs out, an admin deletes their session, the account is deactivated, or the session is revoked. On older Authentik versions back-channel logout is unavailable — revocation latency then falls back to the session lifetime, or use [SCIM deactivation](#scim-user-provisioning), which also revokes sessions instantly.
+- **Microsoft Entra ID** doesn't support back-channel logout — see [Session renewal and sign-out with Entra](#session-renewal-and-sign-out-with-entra) for the alternatives.
 
 ## SCIM user provisioning
 
@@ -266,7 +269,7 @@ The base URL is `https://<your-docsgpt-api>/scim/v2`; every request must carry `
 
 ### Match the SCIM userName to the OIDC user id
 
-SCIM identifies users by `userName`, which DocsGPT matches against its user id — the value of `OIDC_USER_ID_CLAIM`. With the default `sub` claim, the `userName` your IdP sends (typically the email) would never line up with the opaque `sub` of the same user signing in, and DocsGPT would treat them as two unrelated accounts. **When using SCIM, set `OIDC_USER_ID_CLAIM=email` and have the IdP send the email as the SCIM `userName`.**
+SCIM identifies users by `userName`, which DocsGPT matches against its user id — the value of `OIDC_USER_ID_CLAIM`. With the default `sub` claim, the `userName` your IdP sends (typically the email) would never line up with the opaque `sub` of the same user signing in, and DocsGPT would treat them as two unrelated accounts. **When using SCIM, set `OIDC_USER_ID_CLAIM=email` and have the IdP send the email as the SCIM `userName`.** Microsoft Entra ID is the exception: use `oid` and send the object ID as `userName`, as described in [Provision Entra users over SCIM](#provision-entra-users-over-scim).
 
 ### What the endpoint supports
 
@@ -284,6 +287,7 @@ SCIM identifies users by `userName`, which DocsGPT matches against its user id �
 
 - **Okta**: add SCIM provisioning to the app integration with **SCIM connector base URL** = `https://<your-docsgpt-api>/scim/v2` and authentication mode **HTTP Header** carrying the bearer token. Enable creating and deactivating users; skip group push.
 - **Authentik**: create a **SCIM provider** with the same base URL and the token, and attach it to the application as a backchannel provider. Sync users only — leave group mappings out, since DocsGPT answers group provisioning with `501`.
+- **Microsoft Entra ID**: see [Provision Entra users over SCIM](#provision-entra-users-over-scim) — it needs the attribute mappings trimmed to `userName` and `active`.
 
 ## Login auditing
 
