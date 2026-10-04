@@ -797,6 +797,25 @@ class TestCleanTextForTts:
         assert elapsed < 0.5, f"cleanup took {elapsed:.1f}s on {len(text)} chars"
 
     @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "text", ["\n" * 100_000, " \n" * 50_000, "\t\n" * 50_000], ids=["newlines", "spaces", "tabs"]
+    )
+    def test_blank_lines_clean_in_linear_time(self, text):
+        # The list-marker patterns' leading whitespace crossed newlines and
+        # rescanned the blank tail from every line start.
+        import time
+
+        start = time.monotonic()
+        assert clean_text_for_tts(text) == ""
+        elapsed = time.monotonic() - start
+        assert elapsed < 0.5, f"cleanup took {elapsed:.1f}s on {len(text)} chars"
+
+    @pytest.mark.unit
+    def test_indented_list_markers_removed(self):
+        text = "Steps:\n  - first\n\t* second\n    3. third\n\n+ fourth"
+        assert clean_text_for_tts(text) == "Steps: first second third fourth"
+
+    @pytest.mark.unit
     def test_ascii_handling_unchanged(self):
         assert clean_text_for_tts("x^2 \x00\x07ok") == "x^2 ok"
 

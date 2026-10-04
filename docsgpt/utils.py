@@ -633,8 +633,8 @@ def clean_text_for_tts(text: str) -> str:
     text = re.sub(r"(\*|_)(.*?)\1", r"\2", text)  ## *italic* _italic_
     text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)  ## # headers
     text = re.sub(r"^>\s+", "", text, flags=re.MULTILINE)  ## > blockquotes
-    text = re.sub(r"^[\s]*[-\*\+]\s+", "", text, flags=re.MULTILINE)  ## - * + lists
-    text = re.sub(r"^[\s]*\d+\.\s+", "", text, flags=re.MULTILINE)  ## 1. numbered lists
+    text = re.sub(r"^[ \t]*[-\*\+]\s+", "", text, flags=re.MULTILINE)  ## - * + lists
+    text = re.sub(r"^[ \t]*\d+\.\s+", "", text, flags=re.MULTILINE)  ## 1. numbered lists
     text = re.sub(
         r"^[\*\-_]{3,}\s*$", "", text, flags=re.MULTILINE
     )  ## --- *** ___ rules
