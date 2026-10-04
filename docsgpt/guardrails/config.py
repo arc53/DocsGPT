@@ -10,10 +10,10 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError, field_validator, model_validator
 
 from docsgpt.guardrails.types import ACTIONS_BY_STAGE, Action, Stage
-from docsgpt.security.origins import canonical_origin, normalize_origin
+from docsgpt.security.origins import canonical_origin
 
 logger = logging.getLogger(__name__)
 
@@ -285,18 +285,38 @@ class AgentConfig(BaseModel):
             return cls.model_construct(
                 guardrails=GuardrailsConfig.parse(raw.get("guardrails")),
                 api_write_allowlist=[],
-                restrict_origins=bool(raw.get("restrict_origins")),
+                restrict_origins=_salvage_flag(raw.get("restrict_origins")),
                 allowed_origins=_salvage_origins(raw.get("allowed_origins")),
             )
 
 
+def _salvage_flag(raw: Any) -> bool:
+    """``restrict_origins`` read as a write reads it (``"false"`` is off).
+
+    A value that is no boolean at all keeps the restriction on: the safe side.
+    """
+    if raw is None:
+        return False
+    try:
+        return TypeAdapter(bool).validate_python(raw)
+    except ValidationError:
+        return True
+
+
 def _salvage_origins(raw: Any) -> List[str]:
-    """The entries of a stored ``allowed_origins`` that still normalize."""
+    """The entries of ``allowed_origins`` that pass the same check as a write.
+
+    A lenient parse would turn ``https://b.com/path`` into ``https://b.com``,
+    allowing a site nobody listed in that form; a bad entry is dropped instead.
+    """
     if not isinstance(raw, list):
         return []
     kept: List[str] = []
     for entry in raw:
-        origin = normalize_origin(entry) if isinstance(entry, str) else None
+        try:
+            origin = canonical_origin(entry) if isinstance(entry, str) else None
+        except ValueError:
+            continue
         if origin and origin not in kept:
             kept.append(origin)
     return kept

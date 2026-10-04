@@ -35,23 +35,22 @@ UNAVAILABLE_MESSAGE = "Could not check this request's origin. Please try again l
 _FORM_MIMETYPES = ("multipart/form-data", "application/x-www-form-urlencoded")
 
 
-def trusted_origins(host_url: Optional[str]) -> list[str]:
+def trusted_origins() -> list[str]:
     """Origins every restricted agent accepts besides its own list.
 
     DocsGPT's own pages call agents with their keys too (a promptable shared
-    conversation does), so this instance's frontend is always trusted: the
-    API's own origin (the UI served by the backend), ``OIDC_FRONTEND_URL``,
-    and the Vite dev server when the API runs on loopback. Then come the
-    operator's ``AGENT_TRUSTED_ORIGINS``.
-
-    Args:
-        host_url: The URL the request reached the API at.
+    conversation does), so this instance's frontend is always trusted:
+    ``API_URL`` (the UI served by the backend), ``OIDC_FRONTEND_URL``, and the
+    Vite dev server when ``API_URL`` is on loopback. Then come the operator's
+    ``AGENT_TRUSTED_ORIGINS``. All of it is configuration, never the
+    request's ``Host``: the caller chooses that, so trusting it would let any
+    request name its own origin as trusted.
 
     Returns:
         The normalized origins, without duplicates.
     """
-    candidates = [host_url, settings.OIDC_FRONTEND_URL]
-    own = normalize_origin(host_url)
+    candidates = [settings.API_URL, settings.OIDC_FRONTEND_URL]
+    own = normalize_origin(settings.API_URL)
     if own and urlsplit(own).hostname in LOOPBACK_HOSTS:
         candidates += [f"http://{host}:{DEV_FRONTEND_PORT}" for host in ("localhost", "127.0.0.1")]
     candidates += settings.AGENT_TRUSTED_ORIGINS
@@ -63,9 +62,7 @@ def trusted_origins(host_url: Optional[str]) -> list[str]:
     return origins
 
 
-def origin_denied(
-    api_keys: Iterable[Optional[str]], headers: Mapping[str, str], host_url: Optional[str]
-) -> bool:
+def origin_denied(api_keys: Iterable[Optional[str]], headers: Mapping[str, str]) -> bool:
     """Whether any of ``api_keys`` belongs to an agent that refuses this request's origin.
 
     An unknown key is not refused here: the route answers it with its own
@@ -74,7 +71,6 @@ def origin_denied(
     Args:
         api_keys: Every agent key the request carries; empty values are skipped.
         headers: The request headers, read for ``Origin`` and ``Referer``.
-        host_url: The URL the request reached the API at, for :func:`trusted_origins`.
 
     Returns:
         True when the request must be refused.
@@ -83,7 +79,7 @@ def origin_denied(
     if not keys:
         return False
     origin = request_origin(headers)
-    trusted = trusted_origins(host_url)
+    trusted = trusted_origins()
     with db_readonly() as conn:
         repo = AgentsRepository(conn)
         for key in keys:
@@ -100,9 +96,7 @@ def origin_denied(
     return False
 
 
-def origin_refusal(
-    api_keys: Iterable[Optional[str]], headers: Mapping[str, str], host_url: Optional[str]
-) -> Optional[Tuple[str, int]]:
+def origin_refusal(api_keys: Iterable[Optional[str]], headers: Mapping[str, str]) -> Optional[Tuple[str, int]]:
     """The ``(message, status)`` to refuse a request with, or None to let it through.
 
     Fails closed: when the agents cannot be looked up, the request is refused
@@ -112,13 +106,12 @@ def origin_refusal(
     Args:
         api_keys: Every agent key the request carries.
         headers: The request headers.
-        host_url: The URL the request reached the API at.
 
     Returns:
         ``(DENIED_MESSAGE, 403)``, ``(UNAVAILABLE_MESSAGE, 503)`` or None.
     """
     try:
-        denied = origin_denied(api_keys, headers, host_url)
+        denied = origin_denied(api_keys, headers)
     except Exception:
         logger.exception("Could not check the origin of an agent API key request")
         return UNAVAILABLE_MESSAGE, 503
@@ -146,7 +139,7 @@ def enforce_agent_origin():
     """Flask ``before_request`` hook: refuse a request whose agent key refuses its origin."""
     if request.method == "OPTIONS":
         return None
-    refusal = origin_refusal(_flask_request_keys(), request.headers, request.host_url)
+    refusal = origin_refusal(_flask_request_keys(), request.headers)
     if refusal is None:
         return None
     message, status = refusal

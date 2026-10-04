@@ -109,6 +109,58 @@ class TestLenientRead:
         assert config.origin_allowed("https://evil.com", []) is False
         assert config.origin_allowed("https://a.com", []) is True
 
+    @pytest.mark.parametrize("flag", [False, "false", "False", "no", "off", 0, "0", None])
+    def test_a_flag_saved_off_stays_off(self, flag):
+        # Read the flag the way a write does: a quoted "false" in a YAML is off.
+        config = AgentConfig.parse(
+            {"restrict_origins": flag, "allowed_origins": ["https://a.com"], "api_write_allowlist": ["no-colon"]}
+        )
+        assert config.restrict_origins is False
+
+    @pytest.mark.parametrize("flag", [True, "true", "yes", 1])
+    def test_a_flag_saved_on_stays_on(self, flag):
+        config = AgentConfig.parse(
+            {"restrict_origins": flag, "allowed_origins": ["https://a.com"], "api_write_allowlist": ["no-colon"]}
+        )
+        assert config.restrict_origins is True
+
+    def test_an_unreadable_flag_keeps_the_restriction_on(self):
+        config = AgentConfig.parse({"restrict_origins": "sometimes", "allowed_origins": ["https://a.com"]})
+        assert config.restrict_origins is True
+
     def test_a_bad_row_without_origins_stays_unrestricted(self):
         config = AgentConfig.parse({"api_write_allowlist": ["no-colon"]})
         assert config.origin_allowed(None, []) is True
+
+
+@pytest.mark.unit
+class TestImport:
+    """A hand-edited YAML with a bad entry must not import as an unrestricted agent."""
+
+    def _import(self, config):
+        from flask import Flask
+
+        from docsgpt.api.user.agents.portability import _import_config
+
+        with Flask(__name__).app_context():
+            return _import_config({"config": config})
+
+    def test_a_valid_config_is_normalized(self):
+        stored = self._import({"restrict_origins": True, "allowed_origins": ["HTTPS://A.com/"]})
+        assert stored["restrict_origins"] is True
+        assert stored["allowed_origins"] == ["https://a.com"]
+
+    def test_a_bad_entry_keeps_the_restriction_and_the_valid_entries(self):
+        stored = self._import(
+            {"restrict_origins": True, "allowed_origins": ["https://a.com", "https://b.com/path"]}
+        )
+        assert stored["restrict_origins"] is True
+        assert stored["allowed_origins"] == ["https://a.com"]
+        assert AgentConfig.parse(stored).origin_allowed("https://evil.com", []) is False
+
+    def test_nothing_valid_left_still_refuses_every_origin(self):
+        stored = self._import({"restrict_origins": True, "allowed_origins": ["not an origin"]})
+        assert AgentConfig.parse(stored).origin_allowed("https://a.com", []) is False
+
+    def test_no_config_imports_as_empty(self):
+        assert self._import(None) == {}

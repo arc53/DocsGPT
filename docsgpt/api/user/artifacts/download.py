@@ -135,9 +135,7 @@ async def download_artifact(request: Request) -> Response:
     # Same endpoint value the Flask-RESTX route logged, so saved log queries keep matching.
     bind_log_context("artifacts_download_artifact", decoded.get("sub") if decoded else None)
     query = request.query_params
-    refusal = await anyio.to_thread.run_sync(
-        origin_refusal, [query.get("api_key")], request.headers, str(request.base_url)
-    )
+    refusal = await anyio.to_thread.run_sync(origin_refusal, [query.get("api_key")], request.headers)
     if refusal is not None:
         return json_error(*refusal)
 

@@ -395,7 +395,7 @@ While it is on, every request that carries the agent's key must come from a list
 - The origin is read from the request's `Origin` header. When a browser leaves that header off (a plain `GET`, such as an image or a download link), the origin of the `Referer` header is used instead.
 - A request from any other origin, or from no origin at all, is refused with `403` and `This origin is not allowed to use this agent's API key.` On `/v1` the error has the OpenAI shape, with `"type": "permission_error"`.
 - This applies wherever the key is accepted: `/api/answer`, `/stream`, `/api/search`, attachments, feedback, artifact downloads, `/v1` and the MCP server.
-- This DocsGPT instance's own website is always allowed, so a [promptable shared conversation](/Using/sharing) keeps working: the API's own origin, `OIDC_FRONTEND_URL`, and `http://localhost:5173` when the API runs on localhost.
+- This DocsGPT instance's own website is always allowed, so a [promptable shared conversation](/Using/sharing) keeps working: `API_URL`, `OIDC_FRONTEND_URL`, and `http://localhost:5173` when `API_URL` is on localhost. These come from configuration, never from the request's `Host` header, so set `API_URL` to the address browsers use. On a public instance, leaving `API_URL` at its localhost default also trusts the localhost development origins.
 - So are the origins in [`AGENT_TRUSTED_ORIGINS`](/Deploying/Settings-Reference), DocsGPT Cloud's apps by default. Set it to `none` to trust no extra origin.
 - Turning the setting off keeps the list, so you can turn it back on later.
 

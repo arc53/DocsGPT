@@ -50,6 +50,7 @@ def _no_extra_trust(monkeypatch):
     """Trust nothing beyond the agent's list unless a test opts in."""
     monkeypatch.setattr(settings, "AGENT_TRUSTED_ORIGINS", [])
     monkeypatch.setattr(settings, "OIDC_FRONTEND_URL", None)
+    monkeypatch.setattr(settings, "API_URL", "https://api.example.org")
 
 
 def _agent(conn, *, restrict: bool, origins: list[str]) -> str:
@@ -213,35 +214,36 @@ class TestTrustedOrigins:
         default = type(settings).model_fields["AGENT_TRUSTED_ORIGINS"].default
         assert default == ["https://app.docsgpt.cloud", "https://ent.docsgpt.cloud"]
 
-    def test_the_apis_own_origin(self, client, restricted):
-        # The UI served by the backend calls with the instance's own origin.
+    def test_the_configured_api_url(self, client, restricted):
+        # The UI served by the backend calls from API_URL, whatever Host it reached.
+        assert _answer(client, restricted, Origin="https://api.example.org").status_code == 200
+
+    def test_a_forged_host_is_not_trusted(self, client, restricted):
+        # Host is chosen by the caller (or by DNS rebinding): naming it in Origin must not pass.
         resp = client.post(
             "/api/answer",
             json={"api_key": restricted},
-            base_url="https://api.example.org",
-            headers={"Origin": "https://api.example.org"},
+            base_url="http://attacker.example",
+            headers={"Origin": "http://attacker.example"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 403
 
     def test_the_frontend_url(self, client, restricted, monkeypatch):
         monkeypatch.setattr(settings, "OIDC_FRONTEND_URL", "https://app.example.org/")
         assert _answer(client, restricted, Origin="https://app.example.org").status_code == 200
 
-    def test_the_dev_server_on_loopback(self, client, restricted):
+    def test_the_dev_server_when_api_url_is_loopback(self, client, restricted, monkeypatch):
+        monkeypatch.setattr(settings, "API_URL", "http://localhost:7091")
         assert _answer(client, restricted, Origin="http://localhost:5173").status_code == 200
 
-    def test_no_dev_server_trust_off_loopback(self, client, restricted):
-        resp = client.post(
-            "/api/answer",
-            json={"api_key": restricted},
-            base_url="https://api.example.org",
-            headers={"Origin": "http://localhost:5173"},
-        )
-        assert resp.status_code == 403
+    def test_no_dev_server_trust_when_api_url_is_public(self, client, restricted):
+        # The test client reaches the API as localhost; only API_URL decides.
+        assert _answer(client, restricted, Origin="http://localhost:5173").status_code == 403
 
     def test_trusted_origins_are_normalized_and_deduplicated(self, monkeypatch):
         monkeypatch.setattr(settings, "AGENT_TRUSTED_ORIGINS", ["https://A.com/", "https://a.com", "junk"])
-        assert trusted_origins("https://api.example.org/") == ["https://api.example.org", "https://a.com"]
+        monkeypatch.setattr(settings, "API_URL", "https://api.example.org/")
+        assert trusted_origins() == ["https://api.example.org", "https://a.com"]
 
 
 @pytest.mark.unit
@@ -261,7 +263,6 @@ class TestOutsideFlask:
 
         headers = {"authorization": f"Bearer {restricted}", "origin": OTHER}
         with patch.object(mcp_server, "get_http_headers", lambda include=None: headers), \
-                patch.object(mcp_server, "_host_url", return_value="http://api.example.org/"), \
                 patch.object(mcp_server, "search") as search:
             with pytest.raises(PermissionError, match="not allowed"):
                 asyncio.run(mcp_server.search_docs("q"))
@@ -272,7 +273,6 @@ class TestOutsideFlask:
 
         headers = {"authorization": f"Bearer {restricted}", "origin": ALLOWED}
         with patch.object(mcp_server, "get_http_headers", lambda include=None: headers), \
-                patch.object(mcp_server, "_host_url", return_value="http://api.example.org/"), \
                 patch.object(mcp_server, "search", return_value=[{"text": "t"}]):
             assert asyncio.run(mcp_server.search_docs("q")) == [{"text": "t"}]
 
@@ -289,6 +289,20 @@ class TestOutsideFlask:
             )
         assert resp.status_code == 403
         assert resp.json() == {"success": False, "message": DENIED_MESSAGE}
+        load.assert_not_called()
+
+    def test_artifact_download_does_not_trust_a_forged_host(self, restricted):
+        from docsgpt.api.user.artifacts.download import artifact_download_routes
+
+        client = TestClient(Starlette(routes=artifact_download_routes))
+        with patch("docsgpt.api.asgi_auth.handle_auth", return_value=None), \
+                patch("docsgpt.api.user.artifacts.download._load_version") as load:
+            resp = client.get(
+                f"/api/artifacts/{uuid.uuid4()}/download",
+                params={"api_key": restricted},
+                headers={"Host": "attacker.example", "Origin": "http://attacker.example"},
+            )
+        assert resp.status_code == 403
         load.assert_not_called()
 
     def test_artifact_download_uses_the_referer_of_a_link(self, restricted):
@@ -310,7 +324,7 @@ class TestOutsideFlask:
         load.assert_called_once()
 
     def test_origin_denied_skips_empty_keys(self):
-        assert origin_denied([None, "", "  "], SimpleNamespace(get=lambda name: None), None) is False
+        assert origin_denied([None, "", "  "], SimpleNamespace(get=lambda name: None)) is False
 
 
 @contextmanager
@@ -354,7 +368,6 @@ class TestFailsClosed:
 
         monkeypatch.setattr("docsgpt.api.agent_origins.db_readonly", _database_down)
         with patch.object(mcp_server, "get_http_headers", lambda include=None: {"authorization": "Bearer k"}), \
-                patch.object(mcp_server, "_host_url", return_value=None), \
                 patch.object(mcp_server, "search") as search:
             with pytest.raises(RuntimeError, match="try again"):
                 asyncio.run(mcp_server.search_docs("q"))

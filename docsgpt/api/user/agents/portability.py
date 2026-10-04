@@ -22,6 +22,7 @@ graph through the same validation gate as the workflow API.
 from __future__ import annotations
 
 import copy
+import json
 import re
 from typing import Any, Optional
 
@@ -680,18 +681,27 @@ def _import_config(spec: dict) -> dict:
     """Validate a spec's ``config`` through the same gate as the API.
 
     A YAML is hand-editable, so it must not be a way to install a control the
-    write path would have rejected. An invalid block is dropped rather than
-    failing the whole import, and the caller surfaces it as a warning.
+    write path would have rejected. An invalid block does not fail the whole
+    import: what still validates is kept through the same lenient reader the
+    runtime uses, which drops a bad guardrail control or allowlist but keeps
+    an origin restriction on, so a bad entry can't import an unrestricted key.
     """
     from docsgpt.api.user.agents.routes import normalize_agent_config
+    from docsgpt.guardrails.config import AgentConfig
 
+    raw = spec.get("config")
     try:
-        return normalize_agent_config(spec.get("config")) or {}
+        return normalize_agent_config(raw) or {}
     except ValueError:
         current_app.logger.warning(
-            "Dropping invalid guardrails config during agent import"
+            "Dropping the invalid parts of an imported agent config"
         )
-        return {}
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except ValueError:
+                raw = None
+        return AgentConfig.parse(raw if isinstance(raw, dict) else None).model_dump(mode="json")
 
 
 def serialize_agent(conn, agent: dict, user: str) -> dict:
