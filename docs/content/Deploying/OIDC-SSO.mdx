@@ -1,12 +1,12 @@
 ---
 title: SSO with OIDC
-description: Sign users into DocsGPT through any OpenID Connect identity provider (Authentik, Keycloak, Okta, ...) — with group allowlists, silent session renewal, back-channel logout, and SCIM provisioning.
-lastUpdated: 2026-09-30
+description: Sign users into DocsGPT through any OpenID Connect identity provider (Authentik, Keycloak, Microsoft Entra ID, Okta, ...) — with group allowlists, silent session renewal, back-channel logout, and SCIM provisioning.
+lastUpdated: 2026-10-04
 ---
 
 # SSO with OIDC
 
-Setting `AUTH_TYPE=oidc` makes DocsGPT delegate sign-in to an external OpenID Connect identity provider (IdP). Any spec-compliant IdP with a discovery document works; this guide uses [Authentik](https://goauthentik.io/) as the reference provider and includes a short note for Keycloak.
+Setting `AUTH_TYPE=oidc` makes DocsGPT delegate sign-in to an external OpenID Connect identity provider (IdP). Any spec-compliant IdP with a discovery document works; this guide uses [Authentik](https://goauthentik.io/) as the reference provider and includes a short note for Keycloak and a full walkthrough for [Microsoft Entra ID](#entra-id).
 
 Beyond basic sign-in, this page covers the optional access controls: [group allowlists](#restricting-sign-in-by-group), [silent session renewal](#silent-session-renewal), [back-channel logout](#back-channel-logout), [SCIM user provisioning](#scim-user-provisioning), and [login auditing](#login-auditing).
 
@@ -92,6 +92,101 @@ Create the client with *Standard flow* enabled and PKCE method `S256`; register 
 
 The feature sections below carry their own per-IdP notes — group claims, refresh tokens, back-channel logout, and SCIM each need one IdP-side setting.
 
+## Microsoft Entra ID [#entra-id]
+
+Microsoft Entra ID (formerly Azure AD) works as a standard OIDC provider, but it differs from Authentik and Keycloak in a few places: the client must be confidential, groups arrive as object IDs, and there is no back-channel logout. Everything Entra-specific is collected here.
+
+### Register the application [#entra-id-register]
+
+1. In the [Microsoft Entra admin center](https://entra.microsoft.com/) go to **Applications → App registrations → New registration**:
+   - **Supported account types**: *Accounts in this organizational directory only* (single tenant). Multi-tenant registrations are not supported — see the issuer note below.
+   - **Redirect URI**: platform **Web**, value `https://<your-docsgpt-api>/api/auth/oidc/callback`. Don't pick **Single-page application**: DocsGPT redeems the authorization code server-side, and Entra only accepts SPA codes from a browser (`AADSTS9002327`).
+2. On the **Overview** page, note the **Application (client) ID** and the **Directory (tenant) ID**.
+3. Under **Authentication → Web → Redirect URIs**, also add your `OIDC_FRONTEND_URL` (for example `https://docsgpt.example.com`). Entra only follows the post-logout redirect to a registered URI; without it, users stay on Microsoft's "You signed out" page after signing out of DocsGPT.
+4. Under **Certificates & secrets → Client secrets → New client secret**, create a secret and copy its **Value** (not the Secret ID). Entra secrets expire; once one does, every sign-in fails with `auth_failed` until you rotate it.
+5. Under **Token configuration → Add optional claim**, pick token type **ID** and add `email`, accepting the prompt to add the Microsoft Graph `email` permission. Entra leaves `email` out of ID tokens for members of your tenant unless you add it.
+6. Configure DocsGPT in `.env` and restart:
+   ```env
+   AUTH_TYPE=oidc
+   OIDC_ISSUER=https://login.microsoftonline.com/<tenant-id>/v2.0
+   OIDC_CLIENT_ID=<application (client) id>
+   OIDC_CLIENT_SECRET=<client secret value>
+   OIDC_SCOPES=openid profile email offline_access
+   OIDC_FRONTEND_URL=https://docsgpt.example.com
+   OIDC_PROVIDER_NAME=Microsoft
+   JWT_SECRET_KEY=<long random string>
+   ```
+
+`offline_access` makes Entra issue a refresh token, so sessions renew [silently](#silent-session-renewal) instead of round-tripping through Microsoft every `OIDC_SESSION_LIFETIME_SECONDS`.
+
+The issuer must name your tenant ID and end in `/v2.0`. The tenant-independent endpoints (`common`, `organizations`) don't work: their discovery document reports a templated issuer (`https://login.microsoftonline.com/{tenantid}/v2.0`) that never matches a real token, so every sign-in fails ID-token validation.
+
+### Which claim becomes the user id? [#entra-id-user-id]
+
+- `sub` (the default) is stable and opaque. Entra issues a different `sub` for the same user in every application, which is fine for DocsGPT alone.
+- `oid` is the user's object ID, the same across every application in the tenant. Set `OIDC_USER_ID_CLAIM=oid` if you want DocsGPT ids to line up with other Entra-connected systems.
+- `email` is readable, and it is the one to use with [SCIM provisioning from Entra](#entra-id-scim). It needs the optional claim from step 5 of the registration and a `mail` value on every user; a user without one fails sign-in with `missing_claim`.
+- Avoid `preferred_username`: Microsoft documents it as mutable and not meant for authorization decisions.
+
+As with any IdP, choose before going live: changing the claim later gives existing users fresh, empty accounts.
+
+### Groups and app roles [#entra-id-groups]
+
+Entra emits no group information by default. Pick one of two ways to feed [group allowlists](#restricting-sign-in-by-group) and [admin mapping](#granting-admin-via-groups).
+
+**App roles (recommended).** Role values are readable strings, and Entra never truncates the claim. Under **App roles → Create app role**, add roles with **Allowed member types** *Users/Groups* and values such as `docsgpt-user` and `docsgpt-admin`. Then assign users or groups to those roles under **Enterprise applications → your app → Users and groups**. Entra puts the assigned role values in the `roles` claim:
+
+```env
+OIDC_GROUPS_CLAIM=roles
+OIDC_ALLOWED_GROUPS=docsgpt-user,docsgpt-admin
+OIDC_ADMIN_GROUPS=docsgpt-admin
+```
+
+**Groups claim.** Under **Token configuration → Add groups claim**, choose **Groups assigned to the application** and keep **Group ID** for the ID token. The claim carries group **object IDs** (GUIDs), not display names, so list the object IDs from each group's **Overview** page:
+
+```env
+OIDC_ALLOWED_GROUPS=<object id of the users group>,<object id of the admins group>
+OIDC_ADMIN_GROUPS=<object id of the admins group>
+```
+
+Prefer **Groups assigned to the application** over **Security groups** or **All groups**. When a user belongs to more than 200 groups, Entra replaces the `groups` claim with a pointer to Microsoft Graph. DocsGPT does not follow that pointer, and Entra's userinfo endpoint does not return groups either, so the user is treated as having none and rejected with `not_authorized`. Limiting the claim to the groups assigned to the application keeps it short. Assigning groups (rather than individual users) to an application requires Microsoft Entra ID P1 or P2.
+
+`OIDC_GROUPS_CLAIM` names a single claim, so use roles or groups, not a mix of both. Either way, changes are re-checked at every [silent renewal](#silent-session-renewal).
+
+If all you need is "only these people may sign in", you can also enforce it in Entra itself: set **Enterprise applications → your app → Properties → Assignment required?** to **Yes**, and only assigned users and groups can get a token for DocsGPT at all.
+
+### Sessions and sign-out [#entra-id-sessions]
+
+Entra ID does not implement OIDC back-channel logout (it supports front-channel logout only, which DocsGPT does not use), so leave the [back-channel logout](#back-channel-logout) endpoint unconfigured. Signing out of DocsGPT still redirects through Entra's end-session endpoint, which ends the Microsoft session.
+
+Without back-channel logout, a user who is disabled in Entra, or whose sessions you revoke there (**Users → the user → Revoke sessions**), keeps their DocsGPT session until its next renewal: the refresh token is rejected and they must sign in again, which then fails. Renewal happens about 15 minutes before the session expires, so the worst case is `OIDC_SESSION_LIFETIME_SECONDS`. To cut that window, lower the session lifetime or provision over [SCIM](#entra-id-scim), whose deactivation revokes DocsGPT sessions immediately once it arrives.
+
+### Provisioning from Entra ID [#entra-id-scim]
+
+Entra's provisioning service can drive the DocsGPT user lifecycle over [SCIM](#scim-user-provisioning). Enable SCIM in DocsGPT first (`SCIM_ENABLED=true`, `SCIM_TOKEN=<long random string>`) and set `OIDC_USER_ID_CLAIM=email`, so the SCIM `userName` and the OIDC user id carry the same value.
+
+1. Open **Enterprise applications → your app → Provisioning** and set **Provisioning Mode** to *Automatic*. If the page doesn't offer it for your registration's enterprise application, create a separate one for provisioning under **Enterprise applications → New application → Create your own application → Integrate any other application you don't find in the gallery (Non-gallery)**.
+2. Under **Admin Credentials**, set **Tenant URL** to `https://<your-docsgpt-api>/scim/v2` and **Secret Token** to your `SCIM_TOKEN`, then **Test Connection**. The provisioning service calls from Microsoft's cloud, so the endpoint must be reachable from the internet.
+3. Under **Mappings**:
+   - Turn **Provision Microsoft Entra ID Groups** off — DocsGPT answers group writes with `501`.
+   - Open **Provision Microsoft Entra ID Users**. Change the source of `userName` from `userPrincipalName` to `mail`, so it matches the `email` claim users sign in with. Keep `active` as it is.
+   - Delete every other attribute mapping (`displayName`, `emails`, `name.*`, `externalId`, and so on). DocsGPT ignores them on create, but it rejects an update that targets any attribute other than `active`, so a later change to one of them would surface as a provisioning error.
+4. Under **Settings**, set **Scope** to *Sync only assigned users and groups*, assign the users who should have access, and switch **Provisioning Status** to *On*.
+
+Disabling a user in Entra, deleting them, or removing their assignment deactivates them in DocsGPT, which revokes their live sessions and blocks sign-in. Entra runs a provisioning cycle roughly every 40 minutes, so the change lands on the next cycle; use **Provision on demand** on the user to push it immediately.
+
+### Entra ID troubleshooting [#entra-id-troubleshooting]
+
+| Symptom | Cause and fix |
+| --- | --- |
+| `AADSTS50011` on the Microsoft sign-in page | The redirect URI doesn't match. Register `https://<your-docsgpt-api>/api/auth/oidc/callback` under the **Web** platform exactly, and set `OIDC_REDIRECT_URI` when the API runs behind a reverse proxy. |
+| `AADSTS9002327` | The callback is registered under **Single-page application**. Move it to the **Web** platform. |
+| `auth_failed`, API logs show `AADSTS7000218` or `AADSTS7000215` | `OIDC_CLIENT_SECRET` is missing, is the Secret ID instead of the Value, or has expired. |
+| `auth_failed`, API logs show an issuer mismatch | `OIDC_ISSUER` uses `common` or `organizations` instead of your tenant ID. Use `https://login.microsoftonline.com/<tenant-id>/v2.0`. |
+| `missing_claim` with `OIDC_USER_ID_CLAIM=email` | The `email` optional claim isn't configured, or the user has no `mail` attribute. |
+| `not_authorized` for a user who is in the group | `OIDC_ALLOWED_GROUPS` lists group names instead of object IDs, the group isn't assigned to the application, or the user hit the 200-group limit. See [Groups and app roles](#entra-id-groups). |
+| Users stay on Microsoft's "You signed out" page | `OIDC_FRONTEND_URL` isn't registered as a redirect URI (registration step 3). |
+
 ## Restricting sign-in by group
 
 By default any user who can authenticate at the IdP may use DocsGPT. To restrict access to specific IdP groups:
@@ -109,6 +204,7 @@ Getting groups into the token:
 
 - **Authentik** includes group names in the `groups` claim through its default `profile` scope — no extra configuration needed.
 - **Keycloak** does not emit groups by default. On the client, open **Client scopes → the client's dedicated scope → Add mapper → By configuration → Group Membership**, set the claim name to `groups`, and turn **Full group path** off so the claim carries plain names (`devs`) rather than paths (`/devs`).
+- **Microsoft Entra ID** emits groups only after you add a groups claim, and then as object IDs rather than names — see [Entra ID groups and app roles](#entra-id-groups).
 
 ## Granting admin via groups
 
@@ -130,7 +226,7 @@ The DocsGPT session JWT lives for `OIDC_SESSION_LIFETIME_SECONDS` (default 8 hou
 Getting a refresh token:
 
 - **Keycloak** issues refresh tokens for the authorization-code flow by default — nothing to change.
-- **Authentik** only issues refresh tokens when the `offline_access` scope is requested:
+- **Authentik** and **Microsoft Entra ID** only issue refresh tokens when the `offline_access` scope is requested:
   ```env
   OIDC_SCOPES=openid profile email offline_access
   ```
@@ -151,6 +247,7 @@ The endpoint is called server-to-server, so it must be reachable from the IdP (i
 
 - **Keycloak**: open the client → **Settings** and set **Backchannel logout URL** to `https://<your-docsgpt-api>/api/auth/oidc/backchannel-logout`.
 - **Authentik** (2025.8.0 and later; marked Preview): on the OAuth2/OpenID provider set **Logout Method** to *Back-channel* and **Logout URI** to the same URL — see the [Authentik logout docs](https://docs.goauthentik.io/add-secure-apps/providers/oauth2/frontchannel_and_backchannel_logout/). Authentik sends the logout token when a user logs out, an admin deletes their session, the account is deactivated, or the session is revoked. On older Authentik versions back-channel logout is unavailable — revocation latency then falls back to the session lifetime, or use [SCIM deactivation](#scim-user-provisioning), which also revokes sessions instantly.
+- **Microsoft Entra ID** does not support back-channel logout — see [Entra ID sessions and sign-out](#entra-id-sessions) for what to use instead.
 
 ## SCIM user provisioning
 
@@ -183,6 +280,7 @@ SCIM identifies users by `userName`, which DocsGPT matches against its user id �
 
 - **Okta**: add SCIM provisioning to the app integration with **SCIM connector base URL** = `https://<your-docsgpt-api>/scim/v2` and authentication mode **HTTP Header** carrying the bearer token. Enable creating and deactivating users; skip group push.
 - **Authentik**: create a **SCIM provider** with the same base URL and the token, and attach it to the application as a backchannel provider. Sync users only — leave group mappings out, since DocsGPT answers group provisioning with `501`.
+- **Microsoft Entra ID**: see [Provisioning from Entra ID](#entra-id-scim).
 
 ## Login auditing
 
