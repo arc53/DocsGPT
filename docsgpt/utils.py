@@ -569,7 +569,7 @@ def _is_unspoken_char(ch: str) -> bool:
         return not (ch.isprintable() or ch in "\n\r\t")
     if ch == "\u200c":  # zero-width non-joiner is part of Persian spelling
         return False
-    if "\ufe00" <= ch <= "\ufe0f":
+    if "\ufe00" <= ch <= "\ufe0f" or "\U000e0100" <= ch <= "\U000e01ef":
         return True
     return unicodedata.category(ch) in _UNSPOKEN_CATEGORIES
 

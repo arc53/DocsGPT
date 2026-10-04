@@ -731,6 +731,13 @@ class TestCleanTextForTts:
         assert clean_text_for_tts(word) == word
 
     @pytest.mark.unit
+    def test_removes_supplementary_variation_selectors(self):
+        # VS17-VS256 (U+E0100-U+E01EF) go; other combining marks such as
+        # the acute accent in a decomposed "é" stay
+        text = "a\U000e0100b\U000e01ef café"
+        assert clean_text_for_tts(text) == "ab café"
+
+    @pytest.mark.unit
     def test_removes_multiline_tag_with_closing_bracket_on_own_line(self):
         # The lone ">" line must not be taken for a blockquote first
         text = 'Intro\n<video\n  width={1440}\n  controls\n>\n  <source src="a.mp4" />\n</video>\nOutro'
