@@ -178,6 +178,21 @@ Entra's provisioning service can create DocsGPT accounts ahead of first sign-in 
 
 Entra runs a provisioning cycle roughly every 40 minutes, so a user disabled in Entra is deactivated in DocsGPT — and their sessions revoked — at the next cycle rather than instantly. Use **Provision on demand** on the provisioning page to push one user immediately.
 
+### Entra troubleshooting
+
+Entra reports its own errors as `AADSTS` codes, either on the Microsoft sign-in page or in the DocsGPT API log when the token request fails.
+
+| Symptom | Cause and fix |
+| --- | --- |
+| `AADSTS50011` on the Microsoft sign-in page | The redirect URI doesn't match a registered one. Register `https://<your-docsgpt-api>/api/auth/oidc/callback` exactly; behind a reverse proxy, also set `OIDC_REDIRECT_URI` to that URL. |
+| `AADSTS50105` on the Microsoft sign-in page | **Assignment required?** is on and the user isn't assigned to the enterprise app. |
+| `auth_failed`, and the API log shows `AADSTS9002327` | The callback is registered under the **Single-page application** platform. Remove it there and add it under **Web**. |
+| `auth_failed`, and the API log shows `AADSTS7000215` or `AADSTS7000222` | The client secret is wrong (215) or expired (222). Create a new secret and update `OIDC_CLIENT_SECRET` — use the secret's **Value**, not its ID. |
+| `auth_failed`, and the API log reports an invalid issuer | `OIDC_ISSUER` uses the `common` or `organizations` authority. Use `https://login.microsoftonline.com/<tenant-id>/v2.0`. |
+| `missing_claim` with `OIDC_USER_ID_CLAIM=oid` | `profile` is missing from `OIDC_SCOPES`; Entra only emits `oid` with that scope. |
+| `not_authorized` for some users only | They have no role assignment (with `OIDC_GROUPS_CLAIM=roles`), or they're in more than 200 groups and the `groups` claim was left out — see [Restrict access with app roles or groups](#restrict-access-with-app-roles-or-groups). |
+| Signing out ends on Microsoft's "You signed out" page | `OIDC_FRONTEND_URL` isn't registered as a **Web** redirect URI. |
+
 ## Restricting sign-in by group
 
 By default any user who can authenticate at the IdP may use DocsGPT. To restrict access to specific IdP groups:
