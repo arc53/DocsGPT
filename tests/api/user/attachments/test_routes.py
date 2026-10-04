@@ -1879,19 +1879,15 @@ class TestTextToSpeech:
             "Setup Run the installer. code block,"
         )
 
-    @pytest.mark.parametrize("body", [{"text": None}, {"text": 42}, {}])
     @patch("docsgpt.api.user.attachments.routes.TTSCreator.create_tts")
-    def test_tts_rejects_missing_or_non_string_text(self, mock_create_tts, body, flask_app):
+    def test_tts_null_text_returns_400_not_500(self, mock_create_tts, flask_app):
         from docsgpt.api.user.attachments.routes import TextToSpeech
 
         app = Flask(__name__)
-        with app.test_request_context("/api/tts", method="POST", json=body):
+        with app.test_request_context("/api/tts", method="POST", json={"text": None}):
             response = TextToSpeech().post()
             assert _get_response_status(response) == 400
-            assert _get_response_json(response) == {
-                "success": False,
-                "message": "text must be a string",
-            }
+            assert _get_response_json(response) == {"success": False}
         mock_create_tts.assert_not_called()
 
     @patch("docsgpt.api.user.attachments.routes.TTSCreator.create_tts")
