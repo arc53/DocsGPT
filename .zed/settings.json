@@ -30,7 +30,7 @@
     "**/indexes",
     "**/inputs",
     "**/vectors",
-    "models"
+    "**/models--*"
   ],
   // Never shared with collaborators or sent to an AI assistant. The first six
   // are Zed's defaults, which this key also replaces.
