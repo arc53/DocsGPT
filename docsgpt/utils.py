@@ -578,19 +578,21 @@ def clean_text_for_tts(text: str) -> str:
     """
     clean text for Text-to-Speech processing.
     """
-    # Handle code blocks and links
+    # Handle code blocks and links. Bracket patterns stop at the next opener,
+    # so malformed markdown is cleaned in linear time.
 
     text = re.sub(r"```mermaid[\s\S]*?```", " flowchart, ", text)  ## ```mermaid...```
     text = re.sub(r"```[\s\S]*?```", " code block, ", text)  ## ```code```
-    text = re.sub(r"!\[([^\]]*)\]\([^\)]+\)", "", text)  ## ![alt](url)
-    text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)  ## [text](url)
+    text = re.sub(r"!\[([^\[\]]*)\]\([^()]+\)", "", text)  ## ![alt](url)
+    text = re.sub(r"\[([^\[\]]+)\]\([^()]+\)", r"\1", text)  ## [text](url)
 
     # Remove markdown formatting
 
     text = re.sub(r"`([^`]+)`", r"\1", text)  ## `code`
-    text = re.sub(r"\{([^}]*)\}", r" \1 ", text)  ## {text}
+    text = re.sub(r"<[^<>]*>", "", text)  ## <html> tags
+    text = re.sub(r"\{([^{}]*)\}", r" \1 ", text)  ## {text}
     text = re.sub(r"[{}]", " ", text)  ## unmatched {}
-    text = re.sub(r"\[([^\]]+)\]", r" \1 ", text)  ## [text]
+    text = re.sub(r"\[([^\[\]]+)\]", r" \1 ", text)  ## [text]
     text = re.sub(r"[\[\]]", " ", text)  ## unmatched []
     text = re.sub(r"(\*\*|__)(.*?)\1", r"\2", text)  ## **bold** __bold__
     text = re.sub(r"(\*|_)(.*?)\1", r"\2", text)  ## *italic* _italic_
@@ -601,7 +603,6 @@ def clean_text_for_tts(text: str) -> str:
     text = re.sub(
         r"^[\*\-_]{3,}\s*$", "", text, flags=re.MULTILINE
     )  ## --- *** ___ rules
-    text = re.sub(r"<[^>]*>", "", text)  ## <html> tags
 
     # Remove emojis and symbols; keep letters of every script
 

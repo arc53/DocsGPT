@@ -731,6 +731,39 @@ class TestCleanTextForTts:
         assert clean_text_for_tts(word) == word
 
     @pytest.mark.unit
+    def test_removes_multiline_tag_with_closing_bracket_on_own_line(self):
+        # The lone ">" line must not be taken for a blockquote first
+        text = 'Intro\n<video\n  width={1440}\n  controls\n>\n  <source src="a.mp4" />\n</video>\nOutro'
+        assert clean_text_for_tts(text) == "Intro Outro"
+
+    @pytest.mark.unit
+    def test_lone_less_than_does_not_swallow_text(self):
+        text = "Keep rows where timestamp < now() and age <30 days.\nNext line > here"
+        assert "now() and age" in clean_text_for_tts(text)
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "[a" * 50_000,  # unmatched [text]
+            "{a" * 50_000,  # unmatched {text}
+            "![a](" * 40_000,  # unmatched image url
+            "[a](" * 50_000,  # unmatched link url
+            "<a" * 100_000,  # unmatched html tag
+        ],
+        ids=["bracket", "brace", "image", "link", "tag"],
+    )
+    def test_unmatched_delimiters_clean_in_linear_time(self, text):
+        # Each pattern used to rescan the rest of the text from every
+        # opener, so malformed markdown took seconds to minutes.
+        import time
+
+        start = time.monotonic()
+        clean_text_for_tts(text)
+        elapsed = time.monotonic() - start
+        assert elapsed < 0.5, f"cleanup took {elapsed:.1f}s on {len(text)} chars"
+
+    @pytest.mark.unit
     def test_ascii_handling_unchanged(self):
         assert clean_text_for_tts("x^2 \x00\x07ok") == "x^2 ok"
 
