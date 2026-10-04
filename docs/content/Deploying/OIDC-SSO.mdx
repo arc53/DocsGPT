@@ -156,7 +156,7 @@ OIDC_ALLOWED_GROUPS=<object id of the users group>
 OIDC_ADMIN_GROUPS=<object id of the admins group>
 ```
 
-When a user belongs to more than 200 groups, Entra leaves the `groups` claim out of the ID token and points to Microsoft Graph instead. DocsGPT doesn't query Graph, and Entra's userinfo endpoint doesn't return groups, so with `OIDC_ALLOWED_GROUPS` set that user is denied with `not_authorized`; without an allowlist they sign in, but `OIDC_ADMIN_GROUPS` leaves their admin role unchanged. *Groups assigned to the application* only emits the groups assigned to the enterprise app, which keeps the claim short (assigning groups needs Entra ID P1 or P2); app roles avoid the limit entirely.
+When a user belongs to more than 200 groups, Entra leaves the `groups` claim out of the ID token and points to Microsoft Graph instead. DocsGPT doesn't query Graph, and Entra's userinfo endpoint doesn't return groups, so with `OIDC_ALLOWED_GROUPS` set that user is denied with `not_authorized`; without an allowlist they sign in, but `OIDC_ADMIN_GROUPS` leaves their admin role unchanged. *Groups assigned to the application* only emits the groups assigned to the enterprise app, which keeps the claim short (assigning groups needs Entra ID P1 or P2). It only counts **direct** membership, though: a user who is in an assigned group only through a nested group gets no ID for it and fails the allowlist. App roles avoid both the limit and the nesting restriction.
 
 ### Session renewal and sign-out with Entra
 
@@ -168,13 +168,14 @@ Entra doesn't support [back-channel logout](#back-channel-logout); it only offer
 
 Entra's provisioning service can create DocsGPT accounts ahead of first sign-in and deactivate them when users are disabled, deleted, or unassigned. Enable [SCIM](#scim-user-provisioning) in DocsGPT first (`SCIM_ENABLED=true` and a `SCIM_TOKEN`), then:
 
-1. Open **Entra ID → Enterprise apps → *your app* → Provisioning** (the enterprise app is created together with the app registration) and create a configuration with automatic provisioning: **Tenant URL** `https://<your-docsgpt-api>/scim/v2` and **Secret Token** set to your `SCIM_TOKEN`. Select **Test Connection**, then save.
-2. Under **Attribute mapping**:
+1. Create a separate enterprise app for provisioning: **Entra ID → Enterprise apps → New application → Create your own application**, choose *Integrate any other application you don't find in the gallery (Non-gallery)*, and name it, for example, *DocsGPT provisioning*. The enterprise app that Entra creates for your app registration can't run automatic provisioning, so SCIM needs this second app. Set **Visible to users?** to *No* in its **Properties** so it doesn't appear as an extra tile in users' My Apps.
+2. Open the new app's **Provisioning** page and create a configuration with automatic provisioning: **Tenant URL** `https://<your-docsgpt-api>/scim/v2` and **Secret Token** set to your `SCIM_TOKEN`. Select **Test Connection**, then save.
+3. Under **Attribute mapping**:
    - Disable **Provision Microsoft Entra ID Groups**, since DocsGPT answers group provisioning with `501`.
    - In **Provision Microsoft Entra ID Users**, change the source attribute of the `userName` mapping to `objectId`, so it matches the `oid` claim used as `OIDC_USER_ID_CLAIM`. Keep the `active` mapping and delete all other mappings.
 
    DocsGPT honors only `userName` and `active`. Entra sends changes to any other mapped attribute (display name, email, name parts) as SCIM `PATCH` operations that DocsGPT rejects with `400`, and a `PATCH` that bundles such a change with a deactivation is rejected as a whole.
-3. Under **Users and groups**, assign the users or groups to provision (the default scope is *Sync only assigned users and groups*), then start provisioning.
+4. Under the provisioning app's **Users and groups**, assign the users or groups to provision (the default scope is *Sync only assigned users and groups*), then start provisioning. If the sign-in app has **Assignment required?** turned on, keep the two apps' assignments in step.
 
 Entra runs a provisioning cycle roughly every 40 minutes, so a user disabled in Entra is deactivated in DocsGPT — and their sessions revoked — at the next cycle rather than instantly. Use **Provision on demand** on the provisioning page to push one user immediately.
 
@@ -190,7 +191,7 @@ Entra reports its own errors as `AADSTS` codes, either on the Microsoft sign-in 
 | `auth_failed`, and the API log shows `AADSTS7000215` or `AADSTS7000222` | The client secret is wrong (215) or expired (222). Create a new secret and update `OIDC_CLIENT_SECRET` — use the secret's **Value**, not its ID. |
 | `auth_failed`, and the API log reports an invalid issuer | `OIDC_ISSUER` uses the `common` or `organizations` authority. Use `https://login.microsoftonline.com/<tenant-id>/v2.0`. |
 | `missing_claim` with `OIDC_USER_ID_CLAIM=oid` | `profile` is missing from `OIDC_SCOPES`; Entra only emits `oid` with that scope. |
-| `not_authorized` for some users only | They have no role assignment (with `OIDC_GROUPS_CLAIM=roles`), or they're in more than 200 groups and the `groups` claim was left out — see [Restrict access with app roles or groups](#restrict-access-with-app-roles-or-groups). |
+| `not_authorized` for some users only | They have no role assignment (with `OIDC_GROUPS_CLAIM=roles`), they're in more than 200 groups and the `groups` claim was left out, or they're only nested members of a group under *Groups assigned to the application* — see [Restrict access with app roles or groups](#restrict-access-with-app-roles-or-groups). |
 | Signing out ends on Microsoft's "You signed out" page | `OIDC_FRONTEND_URL` isn't registered as a **Web** redirect URI. |
 
 ## Restricting sign-in by group
