@@ -625,6 +625,12 @@ class TestCleanTextForTts:
     def test_removes_images(self):
         result = clean_text_for_tts("![alt text](image.png)")
         assert "image.png" not in result
+        assert result == ""
+
+    @pytest.mark.unit
+    def test_removes_inline_image_without_leftover_marker(self):
+        result = clean_text_for_tts("See ![diagram](a.png) and [docs](https://x.io)")
+        assert result == "See and docs"
 
     @pytest.mark.unit
     def test_removes_inline_code(self):
@@ -694,11 +700,29 @@ class TestCleanTextForTts:
         assert "::" not in result
 
     @pytest.mark.unit
-    def test_removes_non_ascii(self):
+    def test_removes_emoji(self):
         result = clean_text_for_tts("hello \U0001f600 world")
-        assert "\U0001f600" not in result
-        assert "hello" in result
-        assert "world" in result
+        assert result == "hello world"
+
+    @pytest.mark.unit
+    def test_removes_emoji_sequences(self):
+        # thumbs-up + skin tone, ZWJ family, heart + variation selector
+        result = clean_text_for_tts(
+            "ok \U0001f44d\U0001f3fd \U0001f468‍\U0001f469‍\U0001f467 ❤️ done"
+        )
+        assert result == "ok done"
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "text",
+        ["Café résumé", "Привет мир", "こんにちは世界", "你好，世界", "Größe über"],
+    )
+    def test_keeps_non_english_letters(self, text):
+        assert clean_text_for_tts(text) == text
+
+    @pytest.mark.unit
+    def test_ascii_handling_unchanged(self):
+        assert clean_text_for_tts("x^2 \x00\x07ok") == "x^2 ok"
 
     @pytest.mark.unit
     def test_empty_string(self):

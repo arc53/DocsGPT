@@ -1855,6 +1855,31 @@ class TestTextToSpeech:
             assert _get_response_json(response)["success"] is False
 
     @patch("docsgpt.api.user.attachments.routes.TTSCreator.create_tts")
+    def test_tts_strips_markdown_before_synthesis(self, mock_create_tts, flask_app):
+        from docsgpt.api.user.attachments.routes import TextToSpeech
+
+        app = Flask(__name__)
+        mock_tts = MagicMock()
+        mock_tts.text_to_speech.return_value = ("base64audio==", "en")
+        mock_create_tts.return_value = mock_tts
+
+        markdown = (
+            "## Setup\n**Run** the [installer](https://example.com/install)."
+            "\n```bash\n./setup.sh\n```\n![diagram](arch.png)"
+        )
+        with app.test_request_context(
+            "/api/tts",
+            method="POST",
+            json={"text": markdown},
+        ):
+            response = TextToSpeech().post()
+            assert _get_response_status(response) == 200
+
+        mock_tts.text_to_speech.assert_called_once_with(
+            "Setup Run the installer. code block,"
+        )
+
+    @patch("docsgpt.api.user.attachments.routes.TTSCreator.create_tts")
     def test_tts_disabled_returns_404_without_a_provider(self, mock_create_tts, flask_app):
         from docsgpt.api.user.attachments import routes
 
