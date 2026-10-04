@@ -1908,6 +1908,7 @@
         "mcp_neon": "Neon-Postgres-Projekte, -Branches und -Schemas erkunden und SQL ausführen.",
         "mcp_twelvedata": "Kurse, Kursverläufe, technische Indikatoren und Fundamentaldaten für Aktien, Devisen, Kryptowährungen und ETFs abrufen.",
         "mcp_cloudflare": "Workers, DNS, R2 und mehr über die Cloudflare-API verwalten.",
+"mcp_supabase": "Tabellen auflisten, SQL ausführen, Protokolle lesen und Supabase-Projekte verwalten.",
         "github": "Repositorys in Wissen synchronisieren und Agenten Code, Issues und Pull Requests lesen lassen."
       },
       "empty": "Noch nichts verbunden. Verbinde einen Dienst, um seine Inhalte zu synchronisieren oder Agenten neue Werkzeuge zu geben.",

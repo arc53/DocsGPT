@@ -1908,6 +1908,7 @@
         "mcp_neon": "Explore Neon Postgres projects, branches and schemas, and run SQL.",
         "mcp_twelvedata": "Look up quotes, price history, technical indicators and fundamentals for stocks, forex, crypto and ETFs.",
         "mcp_cloudflare": "Manage Workers, DNS, R2 and more through the Cloudflare API.",
+"mcp_supabase": "List tables, run SQL, read logs and manage Supabase projects.",
         "github": "Sync repositories into Knowledge and let agents read code, issues and pull requests."
       },
       "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",

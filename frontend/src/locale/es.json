@@ -1975,6 +1975,7 @@
         "mcp_neon": "Explora proyectos, ramas y esquemas de Postgres en Neon, y ejecuta SQL.",
         "mcp_twelvedata": "Consulta cotizaciones, historial de precios, indicadores técnicos y datos fundamentales de acciones, divisas, criptomonedas y ETF.",
         "mcp_cloudflare": "Gestiona Workers, DNS, R2 y más a través de la API de Cloudflare.",
+"mcp_supabase": "Lista tablas, ejecuta SQL, lee registros y administra proyectos de Supabase.",
         "github": "Sincroniza repositorios con Conocimiento y deja que los agentes lean código, issues y pull requests."
       },
       "empty": "Aún no hay nada conectado. Conecta un servicio para sincronizar su contenido o dar nuevas herramientas a los agentes.",
