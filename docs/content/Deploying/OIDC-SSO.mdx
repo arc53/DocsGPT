@@ -156,7 +156,7 @@ OIDC_ALLOWED_GROUPS=<object id of the users group>
 OIDC_ADMIN_GROUPS=<object id of the admins group>
 ```
 
-When a user belongs to more than 200 groups, Entra leaves the `groups` claim out of the ID token and points to Microsoft Graph instead. DocsGPT doesn't query Graph, and Entra's userinfo endpoint doesn't return groups, so that user is denied with `not_authorized` and their admin role is left unchanged. *Groups assigned to the application* only emits the groups assigned to the enterprise app, which keeps the claim short (assigning groups needs Entra ID P1 or P2); app roles avoid the limit entirely.
+When a user belongs to more than 200 groups, Entra leaves the `groups` claim out of the ID token and points to Microsoft Graph instead. DocsGPT doesn't query Graph, and Entra's userinfo endpoint doesn't return groups, so with `OIDC_ALLOWED_GROUPS` set that user is denied with `not_authorized`; without an allowlist they sign in, but `OIDC_ADMIN_GROUPS` leaves their admin role unchanged. *Groups assigned to the application* only emits the groups assigned to the enterprise app, which keeps the claim short (assigning groups needs Entra ID P1 or P2); app roles avoid the limit entirely.
 
 ### Session renewal and sign-out with Entra
 
