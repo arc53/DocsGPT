@@ -5,6 +5,7 @@ import io
 import logging
 import os
 import re
+import unicodedata
 import uuid
 from pathlib import Path, PurePosixPath
 from typing import List, Optional
@@ -557,6 +558,19 @@ def convert_pdf_to_images(
         raise
 
 
+# Symbols (emoji, arrows, skin-tone modifiers), format and private-use
+# characters (zero-width joiners, tags) and variation selectors.
+_UNSPOKEN_CATEGORIES = frozenset({"So", "Sk", "Cc", "Cf", "Co", "Cs", "Cn"})
+
+
+def _is_unspoken_char(ch: str) -> bool:
+    if ch.isascii():
+        return not (ch.isprintable() or ch in "\n\r\t")
+    if "\ufe00" <= ch <= "\ufe0f":
+        return True
+    return unicodedata.category(ch) in _UNSPOKEN_CATEGORIES
+
+
 def clean_text_for_tts(text: str) -> str:
     """
     clean text for Text-to-Speech processing.
@@ -565,8 +579,8 @@ def clean_text_for_tts(text: str) -> str:
 
     text = re.sub(r"```mermaid[\s\S]*?```", " flowchart, ", text)  ## ```mermaid...```
     text = re.sub(r"```[\s\S]*?```", " code block, ", text)  ## ```code```
-    text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)  ## [text](url)
     text = re.sub(r"!\[([^\]]*)\]\([^\)]+\)", "", text)  ## ![alt](url)
+    text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)  ## [text](url)
 
     # Remove markdown formatting
 
@@ -586,9 +600,9 @@ def clean_text_for_tts(text: str) -> str:
     )  ## --- *** ___ rules
     text = re.sub(r"<[^>]*>", "", text)  ## <html> tags
 
-    # Remove non-ASCII (emojis, special Unicode)
+    # Remove emojis and symbols; keep letters of every script
 
-    text = re.sub(r"[^\x20-\x7E\n\r\t]", "", text)
+    text = "".join(ch for ch in text if not _is_unspoken_char(ch))
 
     # Replace special sequences
 

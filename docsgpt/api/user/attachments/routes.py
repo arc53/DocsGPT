@@ -47,6 +47,7 @@ from docsgpt.upload_limits import (
     UploadTooLargeError,
 )
 from docsgpt.utils import (
+    clean_text_for_tts,
     get_agent_image_content_type,
     is_external_image_url,
     is_safe_agent_image_path,
@@ -837,7 +838,7 @@ class TextToSpeech(Resource):
         if not TTSCreator.is_enabled(settings.TTS_PROVIDER):
             return _feature_disabled(_TTS_DISABLED_MESSAGE)
         data = request.get_json()
-        text = data["text"]
+        text = clean_text_for_tts(data["text"])
         try:
             tts_instance = TTSCreator.create_tts(settings.TTS_PROVIDER)
             audio_base64, detected_language = tts_instance.text_to_speech(text)
