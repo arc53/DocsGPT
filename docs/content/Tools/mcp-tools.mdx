@@ -1,7 +1,7 @@
 ---
 title: MCP Tool Integration
 description: Connect external tools to DocsGPT agents using the Model Context Protocol (MCP) standard.
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-04
 ---
 
 import { Callout } from 'nextra/components'
@@ -27,7 +27,7 @@ If not set, it is derived from the host of `CONNECTOR_REDIRECT_BASE_URI`, then f
 
 ### Step 2: Add an MCP Server
 
-Go to **Settings** > **Connectors** and pick a preset (Notion, Linear, Atlassian, Sentry, Stripe): **Sign in to Notion** opens the service's sign-in, and its tools are ready when you come back. For any other server, choose **Add custom connector** > **MCP server** and enter its URL and authentication; scopes and the timeout are under **Show advanced**. Enter the server URL, select an auth type, and click **Test Connection** to verify, then **Save**.
+Go to **Settings** > **Connectors** and pick a preset (Notion, Linear, Atlassian, Sentry, Stripe, draw.io). OAuth presets such as Notion open the service's sign-in. draw.io needs no sign-in: its server URL and authentication are prefilled, so click **Test Connection**, then **Save**. For any other server, choose **Add custom connector** > **MCP server** and enter its URL and authentication; scopes and the timeout are under **Show advanced**. Click **Test Connection** to verify, then **Save**.
 
 ### Step 3: Enable for Your Agent
 
@@ -35,7 +35,7 @@ In your agent configuration, enable the MCP tools you want the agent to use.
 
 </Steps>
 
-Presets need no URL or form: they sign in with OAuth in one step. Admins can turn presets off one by one, and turn off custom MCP servers, in **Admin > Connectors**. See [Connectors](/Sources/Connectors).
+Presets need no URL entry. Most sign in with OAuth; draw.io uses a prefilled connection form and needs no credentials. Its `create_diagram` tool returns a link to an editable diagram in draw.io. The hosted server receives the diagram content; [draw.io's MCP server](https://github.com/jgraph/drawio-mcp) also documents a self-hosted option. Admins can turn presets off one by one, and turn off custom MCP servers, in **Admin > Connectors**. See [Connectors](/Sources/Connectors).
 
 ## Authentication Types
 
@@ -52,7 +52,7 @@ For OAuth in production, `MCP_OAUTH_REDIRECT_URI` must be a publicly accessible 
 </Callout>
 
 <Callout type="warning">
-OAuth servers, including the presets, also need `ENABLE_SSE_PUSH=true` (the default) and the API served through the ASGI app. The sign-in link and its result reach the web app only as `mcp.oauth.*` events on the [realtime events](/API/realtime-events) stream; with the publisher off, adding an OAuth server never gets past **Test Connection**.
+OAuth servers, including the OAuth presets, also need `ENABLE_SSE_PUSH=true` (the default) and the API served through the ASGI app. The sign-in link and its result reach the web app only as `mcp.oauth.*` events on the [realtime events](/API/realtime-events) stream; with the publisher off, adding an OAuth server never gets past **Test Connection**.
 </Callout>
 
 ## API Endpoints
