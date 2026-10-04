@@ -158,6 +158,26 @@ OIDC_ADMIN_GROUPS=<object id of the admins group>
 
 When a user belongs to more than 200 groups, Entra leaves the `groups` claim out of the ID token and points to Microsoft Graph instead. DocsGPT doesn't query Graph, and Entra's userinfo endpoint doesn't return groups, so that user is denied with `not_authorized` and their admin role is left unchanged. *Groups assigned to the application* only emits the groups assigned to the enterprise app, which keeps the claim short (assigning groups needs Entra ID P1 or P2); app roles avoid the limit entirely.
 
+### Session renewal and sign-out with Entra
+
+With `offline_access` requested, Entra issues refresh tokens and sessions [renew silently](#silent-session-renewal). Each renewal re-checks the allowlist and admin mapping against the fresh ID token. Disabling or deleting the user in Entra, or selecting **Revoke sessions** on their user page, makes the next renewal fail, so they lose access at their next renewal — up to `OIDC_SESSION_LIFETIME_SECONDS` later.
+
+Entra doesn't support [back-channel logout](#back-channel-logout); it only offers front-channel logout, which DocsGPT doesn't implement. To cut access off sooner than the next renewal, deactivate users over [SCIM](#provision-entra-users-over-scim) or lower `OIDC_SESSION_LIFETIME_SECONDS`.
+
+### Provision Entra users over SCIM
+
+Entra's provisioning service can create DocsGPT accounts ahead of first sign-in and deactivate them when users are disabled, deleted, or unassigned. Enable [SCIM](#scim-user-provisioning) in DocsGPT first (`SCIM_ENABLED=true` and a `SCIM_TOKEN`), then:
+
+1. Open **Entra ID → Enterprise apps → *your app* → Provisioning** (the enterprise app is created together with the app registration) and create a configuration with automatic provisioning: **Tenant URL** `https://<your-docsgpt-api>/scim/v2` and **Secret Token** set to your `SCIM_TOKEN`. Select **Test Connection**, then save.
+2. Under **Attribute mapping**:
+   - Disable **Provision Microsoft Entra ID Groups**, since DocsGPT answers group provisioning with `501`.
+   - In **Provision Microsoft Entra ID Users**, change the source attribute of the `userName` mapping to `objectId`, so it matches the `oid` claim used as `OIDC_USER_ID_CLAIM`. Keep the `active` mapping and delete all other mappings.
+
+   DocsGPT honors only `userName` and `active`. Entra sends changes to any other mapped attribute (display name, email, name parts) as SCIM `PATCH` operations that DocsGPT rejects with `400`, and a `PATCH` that bundles such a change with a deactivation is rejected as a whole.
+3. Under **Users and groups**, assign the users or groups to provision (the default scope is *Sync only assigned users and groups*), then start provisioning.
+
+Entra runs a provisioning cycle roughly every 40 minutes, so a user disabled in Entra is deactivated in DocsGPT — and their sessions revoked — at the next cycle rather than instantly. Use **Provision on demand** on the provisioning page to push one user immediately.
+
 ## Restricting sign-in by group
 
 By default any user who can authenticate at the IdP may use DocsGPT. To restrict access to specific IdP groups:
