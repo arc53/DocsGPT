@@ -132,6 +132,32 @@ Use `OIDC_USER_ID_CLAIM=oid`. The `oid` claim is the user's object ID in your te
 
 The default `sub` claim also works, but Entra issues a different `sub` for each app registration. If you ever replace the app registration, every user gets a new `sub` and therefore a fresh, empty DocsGPT account. Avoid `email` and `preferred_username` (the user principal name): both change when a user is renamed and can be reassigned to someone else later, and Entra doesn't guarantee `email` is present. Pick the claim before going live; changing it later gives existing users new, empty accounts.
 
+### Restrict access with app roles or groups
+
+By default every user in the tenant can sign in. Entra offers three ways to narrow that down, and they combine.
+
+**Require assignment in Entra.** Under **Entra ID → Enterprise apps → *your app* → Properties**, set **Assignment required?** to *Yes*, then add the allowed users or groups under **Users and groups**. Unassigned users are stopped on the Microsoft sign-in page and never reach DocsGPT, so no DocsGPT setting is involved.
+
+**App roles (recommended for the allowlist and admin mapping).** App roles arrive in the ID token's `roles` claim as the readable values you define, and they aren't subject to the group-count limit described below.
+
+1. In the app registration, open **App roles → Create app role** and create one role per access level, with **Allowed member types** set to *Users/Groups* — for example the values `DocsGPT.User` and `DocsGPT.Admin`.
+2. Under **Enterprise apps → *your app* → Users and groups → Add user/group**, assign users or groups to those roles. Assigning a *group* to a role requires Microsoft Entra ID P1 or P2; assigning individual users works on every tier.
+3. Point DocsGPT at the `roles` claim:
+   ```env
+   OIDC_GROUPS_CLAIM=roles
+   OIDC_ALLOWED_GROUPS=DocsGPT.User,DocsGPT.Admin
+   OIDC_ADMIN_GROUPS=DocsGPT.Admin
+   ```
+
+**Security groups.** In the app registration, open **Token configuration → Add groups claim** and choose *Security groups* or *Groups assigned to the application*. Entra emits group **object IDs**, not display names, so list the IDs shown on each group's **Overview** page:
+
+```env
+OIDC_ALLOWED_GROUPS=<object id of the users group>
+OIDC_ADMIN_GROUPS=<object id of the admins group>
+```
+
+When a user belongs to more than 200 groups, Entra leaves the `groups` claim out of the ID token and points to Microsoft Graph instead. DocsGPT doesn't query Graph, and Entra's userinfo endpoint doesn't return groups, so that user is denied with `not_authorized` and their admin role is left unchanged. *Groups assigned to the application* only emits the groups assigned to the enterprise app, which keeps the claim short (assigning groups needs Entra ID P1 or P2); app roles avoid the limit entirely.
+
 ## Restricting sign-in by group
 
 By default any user who can authenticate at the IdP may use DocsGPT. To restrict access to specific IdP groups:
