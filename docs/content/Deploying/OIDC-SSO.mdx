@@ -279,7 +279,7 @@ SCIM identifies users by `userName`, which DocsGPT matches against its user id â
 | `GET /scim/v2/Users` | List, with the exact filter `userName eq "..."` and `startIndex`/`count` pagination (1-based, max 200 per page). |
 | `POST /scim/v2/Users` | Create; returns `409` when the `userName` already exists. |
 | `GET /scim/v2/Users/<id>` | Read. |
-| `PUT` / `PATCH /scim/v2/Users/<id>` | Activate/deactivate via the `active` attribute (Okta's string `"true"`/`"false"` values are accepted). `userName` is immutable; other attributes are ignored. |
+| `PUT` / `PATCH /scim/v2/Users/<id>` | Activate/deactivate via the `active` attribute; string values such as Okta's `"true"` or Entra's `"False"` are accepted. `userName` is immutable. `PUT` ignores every other attribute. `PATCH` accepts only `replace` operations, either with `"path": "active"` or without a path (keys other than `active` in the value are ignored); any other operation or path returns `400`. |
 | `DELETE /scim/v2/Users/<id>` | Soft delete â€” deactivates the account instead of removing data. |
 | `/scim/v2/Groups` | Group provisioning is **not** supported: listing returns an empty result so IdP probes don't fail, and mutations return `501`. Use the [group allowlist](#restricting-sign-in-by-group) for group-based access control instead. |
 
