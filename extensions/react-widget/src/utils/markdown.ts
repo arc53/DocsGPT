@@ -135,7 +135,7 @@ const createMarkdown = () => {
     const token = tokens[idx];
     const language = token.info.trim().split(/\s+/)[0].toLowerCase();
     const code = token.content.replace(/\n$/, '');
-    const body = (language && highlight(code, language)) ?? escape(code);
+    const body = (language ? highlight(code, language) : null) ?? escape(code);
     const label = language ? escape(language) : 'text';
     return (
       '<div class="dgpt-code">' +

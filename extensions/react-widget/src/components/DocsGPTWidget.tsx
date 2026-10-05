@@ -1366,6 +1366,40 @@ const SourceText = styled.span`
   }
 `;
 
+/**
+ * One answer's markdown, rendered and sanitised only when its text or source
+ * count changes: a streamed token re-renders the live answer, not the whole
+ * conversation.
+ */
+const AnswerMarkdown = React.memo(function AnswerMarkdown({
+  response,
+  sourceCount,
+  turn,
+  onAnswerClick,
+}: {
+  response: string;
+  sourceCount: number;
+  turn: number;
+  onAnswerClick: (
+    turn: number,
+    event: React.MouseEvent<HTMLDivElement>,
+  ) => void;
+}) {
+  const html = React.useMemo(
+    () =>
+      DOMPurify.sanitize(renderAnswer(response, { sourceCount }), {
+        ADD_ATTR: ['target'],
+      }),
+    [response, sourceCount],
+  );
+  return (
+    <Markdown
+      onClick={(event) => onAnswerClick(turn, event)}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+});
+
 type Source = NonNullable<Query['sources']>[number];
 
 const SourcesComponent = ({
@@ -1898,7 +1932,8 @@ export const WidgetCore = ({
 
   // The widget has no source reader: a pill opens the answer's sources,
   // brings the cited one into view and marks it for a moment.
-  const openCitedSource = (turn: number, source: number) => {
+  // Stable (setters and refs only), so memoised answers keep their handler.
+  const openCitedSource = React.useCallback((turn: number, source: number) => {
     setOpenSources((prev) => (prev.has(turn) ? prev : new Set(prev).add(turn)));
     setHighlightedSource({ turn, source });
     if (highlightTimerRef.current !== null)
@@ -1918,7 +1953,7 @@ export const WidgetCore = ({
       });
       row.focus({ preventScroll: true });
     });
-  };
+  }, []);
 
   React.useEffect(
     () => () => {
@@ -1930,8 +1965,8 @@ export const WidgetCore = ({
 
   // The answer is injected HTML, so its pills and copy buttons are handled
   // here rather than by React.
-  const handleAnswerClick =
-    (turn: number) => (event: React.MouseEvent<HTMLDivElement>) => {
+  const handleAnswerClick = React.useCallback(
+    (turn: number, event: React.MouseEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
       const cite = target.closest<HTMLElement>('.dgpt-cite');
       if (cite) {
@@ -1955,7 +1990,9 @@ export const WidgetCore = ({
           }, 2000);
         })
         .catch((err) => console.warn('Copy failed:', err));
-    };
+    },
+    [openCitedSource],
+  );
 
   // Re-runs the turn in place instead of appending a duplicate prompt.
   const handleRetry = async (index: number) => {
@@ -1969,6 +2006,9 @@ export const WidgetCore = ({
       updated[index] = { prompt, attachments: attached };
       return updated.slice(0, index + 1);
     });
+    // The turns from here on are replaced, and their sources with them.
+    setOpenSources((prev) => new Set([...prev].filter((turn) => turn < index)));
+    setHighlightedSource((prev) => (prev && prev.turn >= index ? null : prev));
     setIsPinnedToLatest(true);
     await stream(
       prompt,
@@ -2257,16 +2297,11 @@ export const WidgetCore = ({
                                   : null
                               }
                             >
-                              <Markdown
-                                onClick={handleAnswerClick(index)}
-                                dangerouslySetInnerHTML={{
-                                  __html: DOMPurify.sanitize(
-                                    renderAnswer(query.response, {
-                                      sourceCount: sources.length,
-                                    }),
-                                    { ADD_ATTR: ['target'] },
-                                  ),
-                                }}
+                              <AnswerMarkdown
+                                response={query.response}
+                                sourceCount={sources.length}
+                                turn={index}
+                                onAnswerClick={handleAnswerClick}
                               />
                             </Message>
                             {renderStatusLine(query, index)}

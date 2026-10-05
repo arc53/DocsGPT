@@ -606,9 +606,10 @@ export const SearchBar = ({
   const [isTouch] = React.useState(isTouchPrimary);
 
   const query = input.trim();
-  // The dropdown shows once there is something to search for.
+  // The dropdown shows once there is something to search for, or a voice
+  // error to explain.
   const showPanel = isDropdown
-    ? isResultVisible && query.length > 0
+    ? isResultVisible && (query.length > 0 || Boolean(dictation.error))
     : isResultVisible;
 
   useVisualViewportBounds(!isDropdown && isResultVisible, resultsRef);
@@ -696,7 +697,11 @@ export const SearchBar = ({
           setResults([]);
           setFailed(true);
         })
-        .finally(() => setLoading(false));
+        // A cancelled search must not end the loading state of the one
+        // that replaced it.
+        .finally(() => {
+          if (!abortController.signal.aborted) setLoading(false);
+        });
     }, 500);
 
     return () => {
@@ -759,7 +764,8 @@ export const SearchBar = ({
       setActiveIndex((index) => Math.max(index - 1, 0));
     } else if (event.key === 'Enter') {
       event.preventDefault();
-      if (query) activate(items[activeIndex]);
+      // Mid-dictation the draft is still an interim transcript.
+      if (query && !dictation.isDictating) activate(items[activeIndex]);
     }
   };
 
@@ -892,9 +898,21 @@ export const SearchBar = ({
 
   return (
     <ThemeProvider theme={themes[theme]}>
-      {isResultVisible && <InterFontFace />}
+      {/* The field is always on the page, so its face loads with it. */}
+      <InterFontFace />
       <Main>
-        <Container ref={containerRef}>
+        <Container
+          ref={containerRef}
+          onBlur={(event) => {
+            // Focus leaving the search bar (Tab past the field, the mic or
+            // the credit link) closes the dropdown. Clicks inside keep focus.
+            if (
+              isDropdown &&
+              !containerRef.current?.contains(event.relatedTarget)
+            )
+              setIsResultVisible(false);
+          }}
+        >
           {isDropdown ? (
             <FieldFrame
               ref={fieldRef}
@@ -956,6 +974,9 @@ export const SearchBar = ({
           {isDropdown && showPanel && dropdownBox && (
             <SearchDropdown
               ref={resultsRef}
+              // Keeps the field focused, so a click in the panel doesn't
+              // blur it closed; links still open on click.
+              onMouseDown={(event) => event.preventDefault()}
               style={{
                 top: dropdownBox.top,
                 left: dropdownBox.left,
