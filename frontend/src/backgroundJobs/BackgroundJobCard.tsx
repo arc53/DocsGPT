@@ -135,11 +135,19 @@ export default function BackgroundJobCard({
     void dispatch(fetchBackgroundJob(jobId));
   }, [knownFinal, jobId, dispatch]);
 
-  // The job just ended: fetch its final timing once.
-  const finalFromEvent = Boolean(job && !running && !job.finished_at);
+  // The job just ended (an event, or a list poll): fetch its final timing
+  // and error once; only the single-job route carries the error.
+  const finalDetailMissing = Boolean(
+    job &&
+    !running &&
+    (!job.finished_at || (job.status === 'failed' && !job.error)),
+  );
+  const finalFetchedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (finalFromEvent) void dispatch(fetchBackgroundJob(jobId));
-  }, [finalFromEvent, jobId, dispatch]);
+    if (!finalDetailMissing || finalFetchedFor.current === jobId) return;
+    finalFetchedFor.current = jobId;
+    void dispatch(fetchBackgroundJob(jobId));
+  }, [finalDetailMissing, jobId, dispatch]);
 
   // Without the event stream, poll: the conversation's job list (one request
   // however many cards are on screen), or this job when its chat is unknown.

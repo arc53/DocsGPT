@@ -28,7 +28,10 @@ import BackgroundJobCard, {
   formatElapsed,
   JOB_POLL_MS,
 } from './BackgroundJobCard';
-import backgroundReducer, { type BackgroundJob } from './backgroundSlice';
+import backgroundReducer, {
+  fetchConversationJobs,
+  type BackgroundJob,
+} from './backgroundSlice';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -233,6 +236,29 @@ describe('BackgroundJobCard', () => {
     );
     expect(button('backgroundJobs.card.cancel')).toBeUndefined();
     expect(container.querySelector('[role="progressbar"]')).toBeNull();
+  });
+
+  it('a job a list poll found failed fetches its error once', async () => {
+    const store = await render();
+    service.getJob.mockClear();
+    service.getJob.mockResolvedValue({
+      job_id: 'j1',
+      status: 'failed',
+      finished_at: '2026-10-06T10:02:00Z',
+      error: 'Killed',
+    });
+    service.listJobs.mockResolvedValue([
+      {
+        job_id: 'j1',
+        status: 'failed',
+        finished_at: '2026-10-06T10:02:00Z',
+      },
+    ]);
+    await act(async () => {
+      await store.dispatch(fetchConversationJobs('c1'));
+    });
+    expect(service.getJob).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('Killed');
   });
 
   it('cancels, and shows it is cancelling', async () => {
