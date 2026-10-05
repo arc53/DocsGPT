@@ -448,6 +448,15 @@ def test_environment_summary_covers_packages_commands_fonts_paths_and_limits():
 
 def test_environment_summary_stays_under_120_words():
     assert _words(manifest.environment_summary(timeout=60, idle_minutes=20)) <= 120
+    assert _words(manifest.environment_summary(timeout=60, idle_minutes=20, max_timeout=1000)) <= 125
+
+
+def test_environment_summary_names_the_longest_timeout_a_call_may_ask_for():
+    text = manifest.environment_summary(timeout=60, idle_minutes=20, max_timeout=1000)
+    assert "60s per call by default, `timeout` up to 1000s" in text
+    # No longer cap to offer: the clause is left out.
+    assert "`timeout`" not in manifest.environment_summary(timeout=60, idle_minutes=20, max_timeout=60)
+    assert "`timeout`" not in manifest.environment_summary(timeout=60, idle_minutes=20)
 
 
 def test_font_table_names_each_font_with_its_full_path_and_scripts():

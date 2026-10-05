@@ -160,17 +160,134 @@ def test_resolve_session_id_sanitizes_disallowed_chars():
     assert re.fullmatch(r"[A-Za-z0-9_-]+", sid)
 
 
-def test_exec_timeout_is_a_fixed_uncapped_value(monkeypatch):
+def test_exec_timeout_defaults_and_max_come_from_settings(monkeypatch):
     from docsgpt.core import settings as settings_module
 
-    # The per-run wall-clock cap is fixed from settings; callers cannot pass one.
     monkeypatch.setattr(settings_module.settings, "SANDBOX_EXEC_TIMEOUT", 60, raising=False)
+    monkeypatch.setattr(settings_module.settings, "SANDBOX_EXEC_MAX_TIMEOUT", 1000, raising=False)
     assert CodeExecutorTool._exec_timeout() == 60.0
-    monkeypatch.setattr(settings_module.settings, "SANDBOX_EXEC_TIMEOUT", 90, raising=False)
-    assert CodeExecutorTool._exec_timeout() == 90.0
-    # The action schema no longer advertises language/libraries/timeout.
+    assert CodeExecutorTool._max_exec_timeout() == 1000.0
+    # A maximum below the default never lowers the default.
+    monkeypatch.setattr(settings_module.settings, "SANDBOX_EXEC_MAX_TIMEOUT", 30, raising=False)
+    assert CodeExecutorTool._max_exec_timeout() == 60.0
+
+
+def test_settings_default_the_max_timeout_to_1000():
+    from docsgpt.core.settings.sandbox import SandboxSettings
+
+    assert SandboxSettings.model_fields["SANDBOX_EXEC_MAX_TIMEOUT"].default == 1000
+    assert SandboxSettings.model_fields["SANDBOX_EXEC_TIMEOUT"].default == 60
+
+
+@pytest.mark.parametrize(
+    "requested, effective, clamped",
+    [
+        (None, 60.0, False),
+        (300, 300.0, False),
+        ("300", 300.0, False),
+        (" 240 ", 240.0, False),
+        (120.0, 120.0, False),
+        ("90.5", 90.0, False),
+        (1000, 1000.0, False),
+        (5000, 1000.0, True),
+        ("5000", 1000.0, True),
+        (0, 60.0, False),
+        (-5, 60.0, False),
+        ("abc", 60.0, False),
+        ("", 60.0, False),
+        (True, 60.0, False),
+        ([300], 60.0, False),
+        (float("nan"), 60.0, False),
+        (float("inf"), 60.0, False),
+    ],
+)
+def test_requested_timeout_is_coerced_and_clamped(monkeypatch, requested, effective, clamped):
+    from docsgpt.core import settings as settings_module
+
+    monkeypatch.setattr(settings_module.settings, "SANDBOX_EXEC_TIMEOUT", 60, raising=False)
+    monkeypatch.setattr(settings_module.settings, "SANDBOX_EXEC_MAX_TIMEOUT", 1000, raising=False)
+    assert CodeExecutorTool._requested_timeout(requested) == (effective, clamped)
+
+
+def test_run_code_schema_offers_a_timeout(monkeypatch):
+    _configure(monkeypatch, timeout=60, max_timeout=1000)
+    timeout = _tool().get_actions_metadata()[0]["parameters"]["properties"]["timeout"]
+    assert timeout["type"] == "integer"
+    text = timeout["description"]
+    assert "60" in text and "1000" in text
+    # Rough budgets help the model pick a value instead of guessing.
+    for budget in ("pip install", "office-convert", "OCR", "video"):
+        assert budget in text, budget
+    # Removed parameters stay removed.
     props = _tool().get_actions_metadata()[0]["parameters"]["properties"]
-    assert "timeout" not in props and "language" not in props and "libraries" not in props
+    assert "language" not in props and "libraries" not in props
+
+
+class _RecordingManager(_FakeManager):
+    def __init__(self, result: ExecResult, created: bool = False) -> None:
+        super().__init__(result, created)
+        self.exec_timeouts: list = []
+
+    def exec(self, session_id, code, timeout=None):
+        self.exec_timeouts.append(timeout)
+        return self._result
+
+
+def test_run_code_passes_the_requested_timeout_to_the_sandbox(monkeypatch):
+    _configure(monkeypatch, timeout=60, max_timeout=1000)
+    manager = _RecordingManager(ExecResult(status="ok", stdout="ok"))
+    payload = _run_with_fake_manager(monkeypatch, manager, code="render()", timeout=600, capture_artifacts=False)
+    assert manager.exec_timeouts == [600.0]
+    assert "timeout" not in payload  # not clamped: nothing to report
+
+
+def test_run_code_without_a_timeout_uses_the_default(monkeypatch):
+    _configure(monkeypatch, timeout=60, max_timeout=1000)
+    manager = _RecordingManager(ExecResult(status="ok", stdout="ok"))
+    _run_with_fake_manager(monkeypatch, manager, code="print(1)", capture_artifacts=False)
+    assert manager.exec_timeouts == [60.0]
+
+
+def test_a_clamped_timeout_is_reported_in_the_result(monkeypatch):
+    _configure(monkeypatch, timeout=60, max_timeout=1000)
+    manager = _RecordingManager(ExecResult(status="ok", stdout="ok"))
+    payload = _run_with_fake_manager(monkeypatch, manager, code="render()", timeout=3600, capture_artifacts=False)
+    assert manager.exec_timeouts == [1000.0]
+    assert "1000s" in payload["timeout"] and "3600" in payload["timeout"]
+
+
+def test_timeout_below_the_max_says_to_pass_a_larger_timeout(monkeypatch):
+    _configure(monkeypatch, timeout=60, max_timeout=1000)
+    tool = _tool()
+    timed_out = ExecResult(status="error", error_name="TimeoutError", error_value="execution exceeded 60s")
+    err = tool._shape_payload(timed_out, [], [], timeout=60.0)["error"]
+    assert "60s" in err and "`timeout`" in err and "1000" in err
+    assert "cannot be raised" not in err
+    # Splitting or backgrounding stays an option for work longer than any cap.
+    assert "background" in err.lower()
+
+
+def test_timeout_at_the_max_says_to_split_or_background(monkeypatch):
+    _configure(monkeypatch, timeout=60, max_timeout=1000)
+    tool = _tool()
+    timed_out = ExecResult(status="error", error_name="TimeoutError", error_value="execution exceeded 1000s")
+    err = tool._shape_payload(timed_out, [], [], timeout=1000.0)["error"]
+    assert "1000s" in err and "maximum" in err
+    assert "background" in err.lower() and "poll" in err.lower()
+    assert "persist=false" in err
+    # A non-timeout failure keeps the raw name/value.
+    crashed = ExecResult(status="error", error_name="ValueError", error_value="boom")
+    assert tool._shape_payload(crashed, [], [])["error"] == "ValueError: boom"
+
+
+def test_out_of_memory_is_reported_as_such_not_as_a_timeout(monkeypatch, fresh_failures):
+    _configure(monkeypatch, timeout=60, max_timeout=1000)
+    oom = ExecResult(status="error", error_name="KernelDiedError", error_value="the kernel died", exit_code=-1,
+                     out_of_memory=True)
+    payload = _run_with_fake_manager(monkeypatch, _FakeManager(oom, created=False), code="big()")
+    assert payload["error"].lower().startswith("out of memory")
+    assert "timed out" not in payload["error"].lower()
+    assert any("chunks" in h for h in payload["hint"])
 
 
 def test_is_timeout_detects_any_backend_naming():
@@ -178,22 +295,6 @@ def test_is_timeout_detects_any_backend_naming():
     assert CodeExecutorTool._is_timeout(ExecResult(error_name="DaytonaTimeoutError"))
     assert CodeExecutorTool._is_timeout(ExecResult(error_value="process timed out"))
     assert not CodeExecutorTool._is_timeout(ExecResult(error_name="ValueError", error_value="boom"))
-
-
-def test_timeout_result_guides_backgrounding(monkeypatch):
-    from docsgpt.core import settings as settings_module
-
-    monkeypatch.setattr(settings_module.settings, "SANDBOX_EXEC_TIMEOUT", 60, raising=False)
-    tool = _tool()
-    timed_out = ExecResult(status="error", error_name="TimeoutError", error_value="execution exceeded 60s")
-    err = tool._shape_payload(timed_out, [], [])["error"]
-    assert "60s" in err and "background" in err.lower() and "poll" in err.lower()
-    # The session is kept by default now; asking for persist=true is no longer needed.
-    assert "persist=true" not in err.lower()
-    assert "persist=false" in err
-    # A non-timeout failure keeps the raw name/value.
-    crashed = ExecResult(status="error", error_name="ValueError", error_value="boom")
-    assert tool._shape_payload(crashed, [], [])["error"] == "ValueError: boom"
 
 
 def test_coerce_int_and_keep_alive():
@@ -609,13 +710,21 @@ def test_materialize_inputs_dedupes_same_filename(monkeypatch):
 # ---------------------------------------------------------------------------
 # Description: what the model is told, per backend
 # ---------------------------------------------------------------------------
-def _configure(monkeypatch, backend: str = "jupyter", snapshot=None, ttl: int = 1200, timeout: int = 60) -> None:
+def _configure(
+    monkeypatch,
+    backend: str = "jupyter",
+    snapshot=None,
+    ttl: int = 1200,
+    timeout: int = 60,
+    max_timeout: int = 1000,
+) -> None:
     from docsgpt.core import settings as settings_module
 
     monkeypatch.setattr(settings_module.settings, "SANDBOX_BACKEND", backend, raising=False)
     monkeypatch.setattr(settings_module.settings, "DAYTONA_SNAPSHOT", snapshot, raising=False)
     monkeypatch.setattr(settings_module.settings, "SANDBOX_MAX_TTL", ttl, raising=False)
     monkeypatch.setattr(settings_module.settings, "SANDBOX_EXEC_TIMEOUT", timeout, raising=False)
+    monkeypatch.setattr(settings_module.settings, "SANDBOX_EXEC_MAX_TIMEOUT", max_timeout, raising=False)
 
 
 def _description(monkeypatch, backend: str = "jupyter", **kwargs) -> str:
@@ -650,11 +759,13 @@ def test_description_is_the_same_for_every_call_and_conversation(monkeypatch):
 def test_description_renders_the_manifest_and_settings(monkeypatch):
     from docsgpt.sandbox import manifest
 
-    desc = _description(monkeypatch, ttl=900, timeout=45)
+    desc = _description(monkeypatch, ttl=900, timeout=45, max_timeout=600)
     assert manifest.description_note() in desc
     assert f"Python {manifest.PYTHON_SERIES}" in desc
     assert "15 min idle" in desc
-    assert "45s per call" in desc
+    assert "45s per call by default" in desc
+    assert "pass `timeout` up to 600s for long jobs" in desc
+    assert "prefer splitting work" in desc
     assert "`environment`" in desc
 
 
@@ -674,7 +785,7 @@ def test_description_states_the_workspace_contract(monkeypatch):
             "`A1`",
             "`F3`",
             "can't be downloaded from inside the sandbox",
-            "in the background",
+            "pass `timeout` up to",
             "Network:",
             "artifact_generator",
             "don't apt-get",
@@ -735,7 +846,7 @@ def test_a_new_session_result_carries_the_environment_summary(monkeypatch):
     _configure(monkeypatch, ttl=1200, timeout=60)
     manager = _FakeManager(ExecResult(status="ok", stdout="ok"), created=True)
     payload = _run_with_fake_manager(monkeypatch, manager, code="print(1)", capture_artifacts=False)
-    assert payload["environment"] == manifest.environment_summary(timeout=60, idle_minutes=20)
+    assert payload["environment"] == manifest.environment_summary(timeout=60, idle_minutes=20, max_timeout=1000)
     # It comes right after the session marker, before the output.
     assert list(payload)[:3] == ["status", "session", "environment"]
 
@@ -811,6 +922,7 @@ def test_timeout_keeps_the_guidance_and_adds_the_lost_work_hint(monkeypatch, fre
     payload = _run_with_fake_manager(monkeypatch, _FakeManager(timed_out, created=False), code="train()")
     assert "background" in payload["error"] and "60s" in payload["error"]
     assert any("interrupted" in h and "scratch/" in h for h in payload["hint"])
+    assert any("`timeout`" in h for h in payload["hint"])
 
 
 def test_output_tails_drop_colour_codes_and_pip_noise(monkeypatch, fresh_failures):

@@ -1717,6 +1717,12 @@ Type `int`, default `60`.
 
 Default wall-clock cap (s) per exec call.
 
+### `SANDBOX_EXEC_MAX_TIMEOUT`
+
+Type `int`, default `1000`, must be `>= 1`.
+
+Longest wall-clock cap (s) the model may ask for on one run_code call, for long jobs such as video renders or OCR of many pages; a larger request is clamped to it. Never below SANDBOX_EXEC_TIMEOUT. On the Jupyter runner keep SANDBOX_KERNEL_IDLE_TIMEOUT above SANDBOX_MAX_TTL; a busy kernel is never culled.
+
 ### `SANDBOX_HTTP_TIMEOUT`
 
 Type `int`, default `10`.
@@ -1746,6 +1752,12 @@ Cap on an input document staged into a sandbox session.
 Type `str`, default `4g`.
 
 Docker mem_limit for the runner container: the gateway, the warm session kernels and the LibreOffice and Chromium processes they start. Consumed by the docsgpt-sandbox compose service, not the app; part of the untrusted-code security boundary.
+
+### `SANDBOX_HOME_SIZE`
+
+Type `str`, default `1g`.
+
+Size of the runner's /sandbox-home tmpfs: the kernels' HOME, where runtime pip installs and caches go. It allows exec so compiled packages load (/tmp stays noexec) and counts against SANDBOX_MEMORY as it fills. Consumed by the docsgpt-sandbox compose service, not the app.
 
 ### `SANDBOX_CPUS`
 

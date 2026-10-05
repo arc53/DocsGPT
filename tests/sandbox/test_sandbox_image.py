@@ -102,9 +102,94 @@ def test_kernel_env_passes_the_manifest_env(tmp_path):
         assert env[name] == value
 
 
-def test_kernel_env_defaults_home_to_tmp_home():
+def _run_without_explicit_home(tmp_path: Path, mounts: str = "", *command: str, **extra: str):
+    """Run kernel-env.sh the way the image does: no SANDBOX_KERNEL_HOME, so it picks the home itself."""
+    mounts_file = tmp_path / "mounts"
+    mounts_file.write_text(mounts)
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        "LANG": "C.UTF-8",
+        "SANDBOX_TMP_HOME": str(tmp_path / "tmp-home"),
+        "SANDBOX_PROC_MOUNTS": str(mounts_file),
+        "OPENAI_API_KEY": "sk-super-secret",
+        **extra,
+    }
+    return subprocess.run(
+        ["sh", str(_KERNEL_ENV), *(command or ("env",))], env=env, capture_output=True, text=True, timeout=30
+    )
+
+
+def test_kernel_env_puts_home_on_the_exec_enabled_mount(tmp_path):
+    """Compiled packages pip-installed at runtime load only from an exec-enabled mount; /tmp is noexec."""
+    mount = tmp_path / "sandbox-home"
+    mount.mkdir()
+    mounts = (
+        "tmpfs /tmp tmpfs rw,nosuid,nodev,noexec,relatime 0 0\n"
+        f"tmpfs {mount} tmpfs rw,nosuid,nodev,relatime,size=1048576k,mode=700,uid=10001,gid=10001 0 0\n"
+    )
+    proc = _run_without_explicit_home(tmp_path, mounts, SANDBOX_HOME_MOUNT=str(mount))
+    assert proc.returncode == 0, proc.stderr
+    env = _parse_env(proc.stdout)
+    home = mount / "home"
+    assert env["HOME"] == str(home)
+    assert env["XDG_CONFIG_HOME"] == str(home / ".config")
+    assert env["XDG_CACHE_HOME"] == str(home / ".cache")
+    assert env["PYTHONUSERBASE"] == str(home / ".local")
+    assert env["PATH"].endswith(f":{home / '.local' / 'bin'}")
+    assert oct(home.stat().st_mode & 0o777) == "0o700"
+    assert proc.stderr == ""
+    # The selection knobs never reach kernel code.
+    for name in ("SANDBOX_HOME_MOUNT", "SANDBOX_TMP_HOME", "SANDBOX_PROC_MOUNTS", "OPENAI_API_KEY"):
+        assert name not in env
+
+
+def test_kernel_env_defaults_the_mount_to_sandbox_home():
     text = _KERNEL_ENV.read_text()
-    assert 'KERNEL_HOME="${SANDBOX_KERNEL_HOME:-/tmp/home}"' in text
+    assert 'HOME_MOUNT="${SANDBOX_HOME_MOUNT:-/sandbox-home}"' in text
+    assert 'TMP_HOME="${SANDBOX_TMP_HOME:-/tmp/home}"' in text
+
+
+def test_kernel_env_falls_back_to_tmp_home_without_the_mount(tmp_path):
+    """An old compose file or a plain docker run has no mount: keep working, say so once."""
+    proc = _run_without_explicit_home(tmp_path, "", SANDBOX_HOME_MOUNT=str(tmp_path / "missing"))
+    assert proc.returncode == 0, proc.stderr
+    assert _parse_env(proc.stdout)["HOME"] == str(tmp_path / "tmp-home")
+    note = proc.stderr.strip().splitlines()
+    assert len(note) == 1 and "noexec" in note[0] and str(tmp_path / "missing") in note[0]
+
+
+def test_kernel_env_falls_back_when_the_mount_is_noexec(tmp_path):
+    mount = tmp_path / "sandbox-home"
+    mount.mkdir()
+    mounts = f"tmpfs {mount} tmpfs rw,nosuid,nodev,noexec,relatime 0 0\n"
+    proc = _run_without_explicit_home(tmp_path, mounts, SANDBOX_HOME_MOUNT=str(mount))
+    assert proc.returncode == 0, proc.stderr
+    assert _parse_env(proc.stdout)["HOME"] == str(tmp_path / "tmp-home")
+    assert len(proc.stderr.strip().splitlines()) == 1
+
+
+def test_kernel_env_falls_back_when_the_mount_is_read_only(tmp_path):
+    mount = tmp_path / "sandbox-home"
+    mount.mkdir()
+    mount.chmod(0o500)
+    try:
+        if os.access(mount, os.W_OK):
+            pytest.skip("running as root: permissions are not enforced")
+        proc = _run_without_explicit_home(tmp_path, "", SANDBOX_HOME_MOUNT=str(mount))
+    finally:
+        mount.chmod(0o700)
+    assert proc.returncode == 0, proc.stderr
+    assert _parse_env(proc.stdout)["HOME"] == str(tmp_path / "tmp-home")
+
+
+def test_kernel_env_explicit_home_wins_over_the_mount(tmp_path):
+    mount = tmp_path / "sandbox-home"
+    mount.mkdir()
+    proc = _run_without_explicit_home(
+        tmp_path, "", SANDBOX_HOME_MOUNT=str(mount), SANDBOX_KERNEL_HOME=str(tmp_path / "explicit")
+    )
+    assert _parse_env(proc.stdout)["HOME"] == str(tmp_path / "explicit")
+    assert proc.stderr == ""
 
 
 def test_kernel_env_creates_the_user_site_dir_so_pip_user_installs_import(tmp_path):
@@ -289,6 +374,41 @@ def test_compose_keeps_the_runner_hardened():
     assert not any("docker.sock" in str(v) for v in svc.get("volumes", []))
 
 
+def _tmpfs_options(entry: str) -> list:
+    return entry.split(":", 1)[1].split(",")
+
+
+def test_compose_mounts_an_exec_enabled_home_and_keeps_tmp_noexec():
+    svc = _compose_service()
+    homes = [t for t in svc["tmpfs"] if t.startswith("/sandbox-home:")]
+    assert len(homes) == 1
+    options = _tmpfs_options(homes[0])
+    # Only this mount may run code; it still refuses setuid binaries and device files.
+    for option in ("rw", "exec", "nosuid", "nodev", "uid=10001", "gid=10001", "mode=0700"):
+        assert option in options, option
+    assert "size=${SANDBOX_HOME_SIZE:-1g}" in options
+    # /tmp keeps Docker's default noexec tmpfs.
+    assert "/tmp" in svc["tmpfs"]
+    assert not any(t.startswith("/tmp:") and "exec" in _tmpfs_options(t) for t in svc["tmpfs"])
+
+
+def test_the_image_check_mounts_the_home_as_compose_does():
+    """The CI smoke test must run with the same /sandbox-home options as compose, size aside."""
+    import re
+
+    workflow = (_REPO / ".github" / "workflows" / "sandbox-image-verify.yml").read_text()
+    flags = re.findall(r"--tmpfs (/sandbox-home:\S+)", workflow)
+    assert flags, "the smoke test does not mount /sandbox-home"
+    compose = next(t for t in _compose_service()["tmpfs"] if t.startswith("/sandbox-home:"))
+    expected = sorted(o for o in _tmpfs_options(compose) if not o.startswith("size="))
+    for flag in flags:
+        assert sorted(o for o in _tmpfs_options(flag) if not o.startswith("size=")) == expected
+
+
+def test_settings_default_matches_the_compose_home_size():
+    assert SandboxSettings.model_fields["SANDBOX_HOME_SIZE"].default == "1g"
+
+
 def test_settings_default_matches_the_compose_default():
     assert SandboxSettings.model_fields["SANDBOX_MEMORY"].default == "4g"
 
@@ -304,6 +424,15 @@ def test_k8s_runner_matches_the_compose_limits():
     shm = next(m for m in container["volumeMounts"] if m["mountPath"] == "/dev/shm")
     volume = next(v for v in pod["volumes"] if v["name"] == shm["name"])
     assert volume["emptyDir"] == {"medium": "Memory", "sizeLimit": "256Mi"}
+
+
+def test_k8s_runner_mounts_a_memory_backed_home():
+    pod = _k8s_deployment()["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+    home = next(m for m in container["volumeMounts"] if m["mountPath"] == "/sandbox-home")
+    volume = next(v for v in pod["volumes"] if v["name"] == home["name"])
+    assert volume["emptyDir"] == {"medium": "Memory", "sizeLimit": "1Gi"}
+    assert not home.get("readOnly")
 
 
 def test_k8s_runner_keeps_the_security_posture():

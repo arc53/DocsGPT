@@ -927,3 +927,73 @@ def test_a_concurrent_open_waits_for_an_expired_sessions_teardown(monkeypatch):
     assert old not in (results["a"].handle, results["b"].handle)
     assert results["a"].handle == results["b"].handle == backend._handles["conv-1"]
     assert sorted(r.created for r in results.values()) == [False, True]
+
+
+# ---------------------------------------------------------------------------
+# A run longer than the idle TTL
+# ---------------------------------------------------------------------------
+
+
+class _SlowBackend(FakeBackend):
+    """An exec that blocks until released, standing in for a run of up to SANDBOX_EXEC_MAX_TIMEOUT."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.timeouts: List[float] = []
+
+    def exec(self, session_id, code, timeout=None) -> ExecResult:
+        self.timeouts.append(timeout)
+        self.started.set()
+        assert self.release.wait(5)
+        return ExecResult(status="ok", stdout="rendered")
+
+
+def test_a_run_longer_than_the_idle_ttl_is_never_reaped_evicted_or_retired(monkeypatch):
+    """A 1000 s run outlives a 1200 s TTL's idle clock only if busy sessions are left alone; they are."""
+    clock = {"t": 1000.0}
+    monkeypatch.setattr("docsgpt.sandbox.manager.time.monotonic", lambda: clock["t"])
+    backend = _SlowBackend()
+    mgr = SandboxManager(backend, max_ttl=1200, max_sessions=1)
+    mgr.open("long", ttl=1200)
+    results = []
+    runner = threading.Thread(target=lambda: results.append(mgr.exec("long", "render()", timeout=1000)))
+    runner.start()
+    assert backend.started.wait(5)
+    try:
+        clock["t"] += 5000  # far past the idle TTL while the run is still going
+        # The beat reaper leaves it alone.
+        assert mgr.reap_expired() == []
+        # A new session at the cap cannot evict it.
+        with pytest.raises(SandboxCapacityError):
+            mgr.open("other")
+        # The same conversation's next call reuses it instead of retiring it as expired.
+        assert mgr.open_session("long").created is False
+        assert backend.torn_down == []
+    finally:
+        backend.release.set()
+        runner.join(5)
+    assert results[0].stdout == "rendered"
+    assert backend.timeouts == [1000]
+    # The idle clock restarts when the run ends, so the session gets its full TTL afterwards.
+    clock["t"] += 1100
+    assert mgr.reap_expired() == []
+    clock["t"] += 200
+    assert mgr.reap_expired() == ["long"]
+
+
+def test_a_close_during_a_long_run_waits_for_it(monkeypatch):
+    backend = _SlowBackend()
+    mgr = SandboxManager(backend, max_ttl=1200)
+    mgr.open("long")
+    results = []
+    runner = threading.Thread(target=lambda: results.append(mgr.exec("long", "render()", timeout=1000)))
+    runner.start()
+    assert backend.started.wait(5)
+    mgr.close("long")  # e.g. a persist=false call from another stream
+    assert backend.torn_down == []
+    backend.release.set()
+    runner.join(5)
+    assert results[0].ok
+    assert backend.torn_down == ["long"]
