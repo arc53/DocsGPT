@@ -58,9 +58,31 @@ MULTI_SCRIPT = {
 }
 
 
+def _forget_renderer_fonts() -> None:
+    """Drop every font the renderer registered (``ArtifactSans*``) from reportlab's registry."""
+    from reportlab.lib import fonts as rl_fonts
+
+    ours = artifact_pdf.BASE_FAMILY.lower()
+    for name in [n for n in pdfmetrics._fonts if n.lower().startswith(ours)]:
+        del pdfmetrics._fonts[name]
+    for face, font in list(pdfmetrics._dynFaceNames.items()):
+        if font.fontName.lower().startswith(ours):
+            del pdfmetrics._dynFaceNames[face]
+    for key, value in list(rl_fonts._tt2ps_map.items()):
+        if key[0].startswith(ours) or value.lower().startswith(ours):
+            del rl_fonts._tt2ps_map[key]
+    for key in [k for k in rl_fonts._ps2tt_map if k.startswith(ours)]:
+        del rl_fonts._ps2tt_map[key]
+
+
 @pytest.fixture(autouse=True)
 def _fresh_font_registry():
-    """Give each test reportlab's font registry as it was: the renderer registers fonts globally."""
+    """Run each test without the renderer's fonts and restore the registry after.
+
+    reportlab's registry is process-global: another test in the same worker
+    (say an artifact_generator render, which finds DejaVu on a Linux runner)
+    may already have bound ``ArtifactSans`` to a different file.
+    """
     from reportlab.lib import fonts as rl_fonts
 
     saved = (
@@ -69,6 +91,7 @@ def _fresh_font_registry():
         dict(rl_fonts._tt2ps_map),
         dict(rl_fonts._ps2tt_map),
     )
+    _forget_renderer_fonts()
     yield
     for current, before in zip(
         (pdfmetrics._fonts, pdfmetrics._dynFaceNames, rl_fonts._tt2ps_map, rl_fonts._ps2tt_map), saved
