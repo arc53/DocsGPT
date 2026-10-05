@@ -31,7 +31,13 @@ class SandboxSettings(SettingsGroup):
             "verbatim and must not be used with untrusted code."
         ),
     )
-    SANDBOX_MAX_TTL: int = Field(default=1200, description="Hard cap (s) on agent-selectable keep-alive TTL.")
+    SANDBOX_MAX_TTL: int = Field(
+        default=1200,
+        description=(
+            "Seconds an idle session is kept before it is closed, and the cap on a keep-alive TTL the model asks "
+            "for. Code Executor sessions stay open between calls until then."
+        ),
+    )
     SANDBOX_MAX_SESSIONS: int = Field(
         default=32,
         description=(

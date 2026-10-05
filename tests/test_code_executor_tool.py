@@ -16,21 +16,25 @@ from docsgpt.agents.tools.code_executor import (
     _tail,
     _OUTPUT_TAIL_BYTES,
 )
-from docsgpt.sandbox.base import ExecResult
+from docsgpt.sandbox.base import ExecResult, OpenedSession
 
 
 class _FakeManager:
     """In-memory sandbox stand-in recording open/close and serving a fixed exec result."""
 
-    def __init__(self, result: ExecResult) -> None:
+    def __init__(self, result: ExecResult, created: bool = True) -> None:
         self._result = result
+        self._created = created
         self.closed: list = []
         self.opened: list = []
         self.list_calls = 0
 
     def open(self, session_id, ttl=None):
+        return self.open_session(session_id, ttl=ttl).handle
+
+    def open_session(self, session_id, ttl=None):
         self.opened.append((session_id, ttl))
-        return session_id
+        return OpenedSession(session_id, self._created)
 
     def exec(self, session_id, code, timeout=None):
         return self._result
@@ -178,6 +182,9 @@ def test_timeout_result_guides_backgrounding(monkeypatch):
     timed_out = ExecResult(status="error", error_name="TimeoutError", error_value="execution exceeded 60s")
     err = tool._shape_payload(timed_out, [], [])["error"]
     assert "60s" in err and "background" in err.lower() and "poll" in err.lower()
+    # The session is kept by default now; asking for persist=true is no longer needed.
+    assert "persist=true" not in err.lower()
+    assert "persist=false" in err
     # A non-timeout failure keeps the raw name/value.
     crashed = ExecResult(status="error", error_name="ValueError", error_value="boom")
     assert tool._shape_payload(crashed, [], [])["error"] == "ValueError: boom"
@@ -190,6 +197,21 @@ def test_coerce_int_and_keep_alive():
     assert CodeExecutorTool._keep_alive(True, None) is True
     assert CodeExecutorTool._keep_alive(False, 30) is True
     assert CodeExecutorTool._keep_alive(False, None) is False
+
+
+def test_keep_alive_is_the_default():
+    # Unset means keep: files, installs and variables from one call are expected in the next.
+    assert CodeExecutorTool._keep_alive(None, None) is True
+
+
+def test_keep_alive_reads_string_forms():
+    for closing in ("false", "False", " FALSE ", "0", "no", "No"):
+        assert CodeExecutorTool._keep_alive(closing, None) is False, closing
+    for keeping in ("true", "1", "yes", "anything"):
+        assert CodeExecutorTool._keep_alive(keeping, None) is True, keeping
+    # A positive ttl still keeps the session whatever persist says.
+    assert CodeExecutorTool._keep_alive("false", 30) is True
+    assert CodeExecutorTool._keep_alive(0, None) is False
 
 
 def test_normalize_outputs():
@@ -278,14 +300,90 @@ def _run_with_fake_manager(monkeypatch, manager, **run_kwargs):
     return _tool().execute_action("run_code", **run_kwargs)
 
 
-def test_session_closed_when_not_kept_alive(monkeypatch):
+def test_session_kept_alive_by_default(monkeypatch):
+    # Closing after every run deleted the Daytona sandbox, so the next call lost the
+    # files, the pip installs and the variables the model had just made.
     manager = _FakeManager(ExecResult(status="ok", stdout="ok"))
     payload = _run_with_fake_manager(
         monkeypatch, manager, code="print(1)", capture_artifacts=False
     )
     assert payload["status"] == "ok"
-    # Neither persist nor a positive ttl -> the warm session is torn down.
+    assert manager.closed == []
+
+
+def test_default_keep_alive_asks_for_the_full_idle_ttl(monkeypatch):
+    """A session another tool opened at a short TTL must not be reaped under the model."""
+    from docsgpt.core import settings as settings_module
+
+    monkeypatch.setattr(settings_module.settings, "SANDBOX_MAX_TTL", 1200, raising=False)
+    manager = _FakeManager(ExecResult(status="ok", stdout="ok"))
+    _run_with_fake_manager(monkeypatch, manager, code="print(1)", capture_artifacts=False)
+    assert manager.opened == [("conv-1", 1200.0)]
+
+    explicit = _FakeManager(ExecResult(status="ok", stdout="ok"))
+    _run_with_fake_manager(monkeypatch, explicit, code="print(1)", ttl=90, capture_artifacts=False)
+    assert explicit.opened == [("conv-1", 90)]
+
+
+def test_session_closed_when_persist_false(monkeypatch):
+    manager = _FakeManager(ExecResult(status="ok", stdout="ok"))
+    _run_with_fake_manager(
+        monkeypatch, manager, code="print(1)", persist=False, capture_artifacts=False
+    )
     assert manager.closed == ["conv-1"]
+    assert manager.opened == [("conv-1", None)]
+
+
+def test_session_closed_when_persist_is_the_string_false(monkeypatch):
+    manager = _FakeManager(ExecResult(status="ok", stdout="ok"))
+    _run_with_fake_manager(
+        monkeypatch, manager, code="print(1)", persist="false", capture_artifacts=False
+    )
+    assert manager.closed == ["conv-1"]
+
+
+def test_result_reports_a_new_session(monkeypatch):
+    manager = _FakeManager(ExecResult(status="ok", stdout="ok"), created=True)
+    payload = _run_with_fake_manager(monkeypatch, manager, code="print(1)", capture_artifacts=False)
+    assert payload["session"] == "new"
+
+
+def test_result_reports_a_reused_session(monkeypatch):
+    manager = _FakeManager(ExecResult(status="ok", stdout="ok"), created=False)
+    payload = _run_with_fake_manager(monkeypatch, manager, code="print(1)", capture_artifacts=False)
+    assert payload["session"] == "reused"
+
+
+def test_failed_runs_still_report_the_session(monkeypatch):
+    errored = _FakeManager(ExecResult(status="error", error_name="NameError", error_value="x"), created=True)
+    payload = _run_with_fake_manager(monkeypatch, errored, code="x", capture_artifacts=False)
+    assert payload["status"] == "error" and payload["session"] == "new"
+
+    class _ExecRaises(_FakeManager):
+        def exec(self, session_id, code, timeout=None):
+            raise RuntimeError("transport")
+
+    raising = _ExecRaises(ExecResult(), created=False)
+    payload = _run_with_fake_manager(monkeypatch, raising, code="print(1)", capture_artifacts=False)
+    assert payload["status"] == "error" and payload["session"] == "reused"
+
+
+def test_a_failed_input_staging_reports_the_session(monkeypatch):
+    from docsgpt.agents.tools import code_executor as ce
+
+    monkeypatch.setattr(ce.CodeExecutorTool, "_materialize_inputs", lambda self, *a: {"error": "nope"})
+    manager = _FakeManager(ExecResult(status="ok"), created=True)
+    payload = _run_with_fake_manager(monkeypatch, manager, code="print(1)", inputs=["A1"])
+    assert payload == {"status": "error", "error": "nope", "session": "new"}
+
+
+def test_an_unavailable_sandbox_reports_no_session(monkeypatch):
+    class _OpenFails(_FakeManager):
+        def open_session(self, session_id, ttl=None):
+            raise RuntimeError("down")
+
+    payload = _run_with_fake_manager(monkeypatch, _OpenFails(ExecResult()), code="print(1)")
+    assert payload["status"] == "error" and "session" not in payload
 
 
 def test_session_kept_alive_on_persist(monkeypatch):
@@ -560,3 +658,43 @@ def test_daytona_snapshot_bakes_the_spreadsheet_libraries():
     for pin in module.SNAPSHOT_PINS:
         if pin.split("==")[0] in ("pandas", "openpyxl", "matplotlib", "python-pptx", "python-docx", "reportlab"):
             assert pin in dockerfile, f"{pin} drifted from the runner image"
+
+
+# ---------------------------------------------------------------------------
+# Description: what persists between calls, per backend
+# ---------------------------------------------------------------------------
+def _description(monkeypatch, backend: str) -> str:
+    from docsgpt.core import settings as settings_module
+
+    monkeypatch.setattr(settings_module.settings, "SANDBOX_BACKEND", backend, raising=False)
+    return _tool().get_actions_metadata()[0]["description"]
+
+
+def test_description_no_longer_asks_for_persist_to_keep_state(monkeypatch):
+    meta = _tool().get_actions_metadata()[0]
+    assert "persist=true" not in meta["description"]
+    persist = meta["parameters"]["properties"]["persist"]["description"]
+    assert "default" in persist.lower() and "false" in persist.lower()
+
+
+def test_jupyter_description_says_variables_carry_over(monkeypatch):
+    desc = _description(monkeypatch, "jupyter")
+    assert "variables" in desc and "carry over" in desc
+    assert "fresh Python interpreter" not in desc
+
+
+def test_daytona_description_says_variables_do_not_carry_over(monkeypatch):
+    desc = _description(monkeypatch, "daytona")
+    assert "fresh Python interpreter" in desc
+    assert "re-import" in desc.lower() and "through files" in desc
+
+
+def test_description_explains_the_session_field_and_paths(monkeypatch):
+    for backend in ("jupyter", "daytona"):
+        desc = _description(monkeypatch, backend)
+        assert "`session`" in desc and "`new`" in desc
+        assert "scratch/" in desc and "/tmp" in desc
+        assert "new version" in desc
+        assert "savefig" in desc
+    outputs = _tool().get_actions_metadata()[0]["parameters"]["properties"]["outputs"]["description"]
+    assert "scratch/" in outputs
