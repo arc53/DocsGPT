@@ -145,13 +145,14 @@ def example_curl(url: str, scheme: str, secret: Optional[str]) -> str:
             f"curl -X POST '{url}' -H 'Content-Type: application/json' -H \"{header}: sha256=$sig\" "
             "--data-raw \"$body\""
         )
-    if scheme == "standard_webhooks":
+    if scheme == "standard_webhooks" and secret:
         return (
-            f"# Sign with a Standard Webhooks library (e.g. `pip install standardwebhooks`) using the secret:\n"
-            f"# Webhook(secret).sign(msg_id, timestamp, body) -> send webhook-id, webhook-timestamp, "
-            f"webhook-signature headers\n"
-            f"curl -X POST '{url}' -H 'Content-Type: application/json' -H 'webhook-id: msg_1' "
-            f"-H \"webhook-timestamp: $(date +%s)\" -H 'webhook-signature: v1,<signature>' --data-raw '{body}'"
+            f"secret='{secret}'; body='{body}'; id=\"msg_$(date +%s)\"; ts=$(date +%s); "
+            "key=$(printf '%s' \"${secret#whsec_}\" | base64 -d | xxd -p | tr -d '\\n'); "
+            "sig=$(printf '%s' \"$id.$ts.$body\" | openssl dgst -sha256 -mac HMAC -macopt hexkey:$key -binary "
+            "| base64); "
+            f"curl -X POST '{url}' -H 'Content-Type: application/json' -H \"webhook-id: $id\" "
+            "-H \"webhook-timestamp: $ts\" -H \"webhook-signature: v1,$sig\" --data-raw \"$body\""
         )
     return f"curl -X POST '{url}' -H 'Content-Type: application/json' --data-raw '{body}'"
 
