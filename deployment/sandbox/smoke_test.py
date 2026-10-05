@@ -96,6 +96,11 @@ def check_fonts(manifest: Dict) -> str:
     # The liberation2 compatibility link must not make fontconfig list the fonts twice.
     regular = [line for line in _run(["fc-list"]).stdout.splitlines() if "LiberationSans-Regular" in line]
     _expect(len(regular) == 1, f"Liberation Sans listed {len(regular)} times")
+    # The fonts the code executor offers for reportlab must load there.
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    for number, font in enumerate(f for f in manifest["fonts"] if f.get("reportlab")):
+        TTFont(f"smoke{number}", font["path"])
     return f"{len(manifest['fonts'])} font files"
 
 

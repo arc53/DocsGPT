@@ -49,7 +49,7 @@ from typing import Any, List, Optional
 from docsgpt.sandbox import manifest
 
 DEFAULT_NAME = "docsgpt-sandbox-py312-v2"
-DEFAULT_PYTHON = "3.12"
+DEFAULT_PYTHON = manifest.PYTHON_SERIES
 DEFAULT_CPU = 2
 DEFAULT_MEMORY_GIB = 2
 DEFAULT_DISK_GIB = 6

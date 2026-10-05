@@ -89,6 +89,12 @@ Answers render math, and the chat widget is published at 0.8.0.
   `html-screenshot` helpers, Node.js 24, and fonts for Arabic, Devanagari and CJK text.
   `pip install` inside the self-hosted runner now works; its read-only filesystem made it fail.
   See [What the sandbox has installed](/Tools/artifacts-and-code-execution#what-the-sandbox-has-installed).
+- The Code Executor's description is shorter and states what each backend keeps between calls,
+  where files must go to reach the user, and which library makes each format. A new session's
+  first result lists the environment, results carry `hint` lines for common mistakes (a missing
+  import, `apt-get`, files written to `/tmp`, the app's own URLs, missing fonts, the same error
+  twice), and output tails drop colour codes and pip noise. See
+  [Hints in results](/Tools/artifacts-and-code-execution#hints-in-results).
 
 ### API
 

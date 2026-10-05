@@ -135,8 +135,8 @@ the **stock** `python3` kernelspec, so session creation fails until you do one
 of these:
 
 - Install the scrubbing spec: copy `kernels/docsgpt-python/kernel.json`
-  (pointing `argv` at a local copy of `kernel-launch.sh`, with `kernel-env.sh`
-  and `sandbox.env` copied next to it) into a Jupyter data dir on the
+  (pointing `argv` at a local copy of `kernel-launch.sh`, with `kernel-env.sh`,
+  `kernel-startup.py` and `sandbox.env` copied next to it) into a Jupyter data dir on the
   kernelspec search path. The default kernel name then works. Kernels get
   `HOME=/tmp/home` unless you set `SANDBOX_KERNEL_HOME` on the gateway.
 - Or set `SANDBOX_KERNEL_NAME=python3` in the app's `.env`. The stock spec
@@ -238,6 +238,11 @@ failed with `Read-only file system: '/home/sandbox/.local'`. The script also
 creates the user site-packages directory before the kernel starts, so a package
 installed from a running kernel imports without a restart. All sessions share
 that `HOME`, like the rest of the container (see *Isolation model*).
+
+ipykernel sets `FORCE_COLOR=1` and `CLICOLOR_FORCE=1` once the kernel is up, so
+Node, npm and pip coloured their output even into a pipe and the model read
+escape codes. `kernel-launch.sh` runs `kernel-startup.py` in every kernel
+(`--IPKernelApp.exec_files`), which drops both and sets `NO_COLOR=1`.
 
 ### Smoke test
 

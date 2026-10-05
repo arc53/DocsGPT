@@ -84,6 +84,46 @@ The self-hosted runner image and the Daytona snapshot hold the same set, listed 
 
 imageio writes animated GIF and WebP; for MP4 and other video the code runs `ffmpeg`. PyMuPDF (`fitz`) is not installed because of its AGPL license; pdfplumber, pypdf and pypdfium2 cover PDF reading.
 
+### What the model is told
+
+The Code Executor's tool description is under 300 words and depends only on the deployment (backend, `SANDBOX_EXEC_TIMEOUT`, `SANDBOX_MAX_TTL` and the manifest), never on the conversation, so providers can cache it. It tells the model:
+
+- what carries over between calls on this backend, and that a result marked `session: new` means it starts again;
+- that every file it writes in the working directory becomes a download, except under `scratch/`, that files elsewhere (such as `/tmp`) are never saved, and to save each deliverable once under its final name;
+- to show a chart with `plt.show()` to check it and `savefig()` the one the user should get, and to name saved files in its answer rather than link them;
+- to pass earlier files by reference (`A1`, `F3`) in `inputs` rather than download artifact URLs, which need the user's session;
+- the time cap, and to split longer work or run it in the background;
+- the preinstalled libraries by import name, the commands, and which library makes which format: reportlab for PDF (`html-to-pdf` for non-Latin text), python-docx, openpyxl and python-pptx for Office files, `office-convert` for conversions and `ffmpeg` for video;
+- to use the Artifact tool for documents the user will keep editing;
+- not to pip-install a listed library or run `apt-get`.
+
+The first result of a new session also carries an `environment` field, under 120 words: the packages with their import names, how to call `office-convert`, `html-to-pdf` and `html-screenshot`, the other commands, each font's file and the scripts it covers, the workspace paths, and the limits. A reused session's results leave it out. A new session also starts with an empty `scratch/` directory, so commands that don't create directories (such as `pdftoppm`) can write there.
+
+### Hints in results
+
+When a run shows a mistake the Code Executor recognizes, the result gets a `hint` list with a line or two for each. Package, command and font names in the hints come from the manifest.
+
+| The run shows | The hint says |
+| --- | --- |
+| An import of a package that isn't installed | Which preinstalled library or command to use instead (for example pdfplumber for `fitz`), or to install the package in the same call |
+| `pip install` of a preinstalled package | It is already installed; drop the pip step |
+| `apt-get`, `apt` or `sudo` in the code | System packages can't be installed; the commands that exist |
+| A missing file or variable in a new session | Earlier files and variables are gone; recreate them or pass them as inputs |
+| A missing variable on Daytona | Each call is a new interpreter; re-import and reload from files |
+| A missing file under `/tmp` | `/tmp` isn't kept; use `scratch/` or the workspace |
+| The time cap | Work not written before the cap is lost; split it and write partial results to `scratch/` |
+| A missing command (`wkhtmltopdf`, `pdftk`, `google-chrome`, ...) | The replacement (`html-to-pdf`, pypdf, ...) and the commands that exist |
+| A 401, 403 or connection error fetching this deployment's URLs or `/api/artifacts/` | Pass the file in `inputs` instead |
+| A PDF, Office file, image, CSV, HTML, MP4 or ZIP written to an absolute path outside the workspace | It was not saved; save it in the workspace |
+| More than three images saved, or files named like preview, test, tmp, debug or check | Which files the user got; put previews in `scratch/` |
+| A font file that can't be opened, or missing glyphs | The installed fonts with their files and scripts |
+| reportlab with non-Latin text in its built-in fonts, or with the Noto CJK collection (which it can't load) | Use `html-to-pdf`, which embeds the fonts and shapes Arabic and Devanagari, or a font reportlab can load |
+| A package installed at runtime whose compiled code won't load (the runner's `/tmp` is mounted `noexec`) | Use a preinstalled or pure-Python library |
+| A successful run with no output and no files | Print what it needs to see |
+| The same error twice in a row in one conversation | Change approach instead of retrying |
+
+Before the output is cut to its last 4,000 characters, colour codes and pip's routine lines ("Requirement already satisfied", the root-user warning, upgrade notices, download progress) are removed. The runner image also stops ipykernel from forcing colour on the programs code starts, so Node and npm print plain text. On Daytona, a failed run's `error` names the exception from the last traceback line instead of repeating the whole output.
+
 ### Run inputs
 
 You can pass files into a run. Each input accepts a short reference returned by a previous artifact action, a full artifact id, or the name or id of a file you attached to the conversation. Each referenced file is placed in the workspace at `inputs/<filename>` before the code runs.

@@ -241,6 +241,7 @@ def test_env_has_the_pip_and_tesseract_settings():
         "PIP_DISABLE_PIP_VERSION_CHECK": "1",
         "OMP_THREAD_LIMIT": "1",
         "IMAGEIO_FFMPEG_EXE": "/usr/bin/ffmpeg",
+        "NO_COLOR": "1",
     }
 
 
@@ -284,7 +285,7 @@ def test_ffmpeg_comes_from_debian_not_a_bundled_wheel():
     assert "ffmpeg" in manifest.apt_package_names()
     assert manifest.ENV["IMAGEIO_FFMPEG_EXE"] == "/usr/bin/ffmpeg"
     for name in ("imageio_ffmpeg", "av", "moviepy"):
-        assert "ffmpeg command" in manifest.NOT_INSTALLED[name]
+        assert "ffmpeg command" in manifest.NOT_INSTALLED[name]["use"]
 
 
 def test_every_helper_is_a_binary_with_a_source_file():
@@ -297,10 +298,76 @@ def test_every_helper_is_a_binary_with_a_source_file():
 
 def test_not_installed_points_pymupdf_at_pdfplumber():
     for name in ("fitz", "pymupdf"):
-        hint = manifest.NOT_INSTALLED[name]
-        assert "pdfplumber" in hint and "pypdf" in hint
+        entry = manifest.NOT_INSTALLED[name]
+        assert entry["package"] == "PyMuPDF"
+        assert "pdfplumber" in entry["use"] and "pypdf" in entry["use"]
     imports = {p["import"] for p in manifest.PIP_PACKAGES}
     assert not set(manifest.NOT_INSTALLED) & imports
+
+
+def test_not_installed_alternatives_name_something_the_image_has():
+    """Each alternative points at a preinstalled package or a command, never at another missing one."""
+    offered = {manifest.dist_name(p["spec"]).lower() for p in manifest.PIP_PACKAGES}
+    offered |= {p["import"].lower() for p in manifest.PIP_PACKAGES}
+    offered |= {b["name"] for b in manifest.BINARIES}
+    for name, entry in manifest.NOT_INSTALLED.items():
+        assert entry["package"], name
+        words = set(re.findall(r"[A-Za-z0-9_.-]+", entry["use"].lower()))
+        assert words & offered, name
+
+
+def test_command_alternatives_are_missing_commands_with_a_present_replacement():
+    commands = set(manifest.command_names())
+    packages = {manifest.dist_name(p["spec"]).lower() for p in manifest.PIP_PACKAGES}
+    for name, use in manifest.COMMAND_ALTERNATIVES.items():
+        assert name not in commands, f"{name} is installed; it needs no alternative"
+        assert any(c in use for c in commands) or any(p in use.lower() for p in packages), name
+    for name in ("wkhtmltopdf", "pdftk", "google-chrome", "chromium"):
+        assert name in manifest.COMMAND_ALTERNATIVES
+
+
+def test_installed_imports_maps_import_names_to_packages():
+    imports = manifest.installed_imports()
+    assert imports["docx"] == "python-docx"
+    assert imports["PIL"] == "pillow"
+    assert imports["bs4"] == "beautifulsoup4"
+    assert "kernel_gateway" not in imports
+    assert len(imports) == len(manifest.PIP_PACKAGES)
+
+
+def test_installed_packages_answers_by_pip_name_or_import_name():
+    """``pip install docx`` and ``pip install python_docx`` both name the preinstalled python-docx."""
+    for asked, expected in (
+        ("python-docx", "python-docx"),
+        ("python_docx", "python-docx"),
+        ("docx", "python-docx"),
+        ("Pillow", "pillow"),
+        ("PyYAML", "PyYAML"),
+        ("bs4", "beautifulsoup4"),
+    ):
+        assert manifest.installed_package(asked) == expected, asked
+    assert manifest.installed_package("seaborn") is None
+
+
+def test_command_names_are_the_commands_on_path():
+    assert set(manifest.command_names()) == {b["name"] for b in manifest.BINARIES if b["on_path"]}
+
+
+def test_format_guide_names_only_what_is_installed():
+    packages = {manifest.dist_name(p["spec"]) for p in manifest.PIP_PACKAGES}
+    commands = set(manifest.command_names())
+    formats = {fmt for fmt, _ in manifest.FORMAT_GUIDE}
+    assert {"pdf", "docx", "xlsx", "pptx"} <= formats
+    # reportlab can't load the CJK collection or shape Arabic; Chromium can.
+    assert "html-to-pdf for non-Latin text" in dict(manifest.FORMAT_GUIDE)["pdf"]
+    for fmt, tools in manifest.FORMAT_GUIDE:
+        named = set(re.findall(r"[A-Za-z0-9_-]+", tools))
+        assert named & (packages | commands), fmt
+
+
+def test_python_series_matches_the_runner_image():
+    dockerfile = (_SANDBOX_DIR / "Dockerfile").read_text()
+    assert f"FROM python:{manifest.PYTHON_SERIES}-slim" in dockerfile
 
 
 def test_manifest_json_carries_what_the_smoke_test_checks():
@@ -312,24 +379,58 @@ def test_manifest_json_carries_what_the_smoke_test_checks():
     assert data["node"]["version"] == manifest.NODE["version"]
 
 
-# -- Model-facing summary ------------------------------------------------------
+# -- Model-facing text -----------------------------------------------------------
 
 
-def test_preinstalled_summary_names_imports_binaries_and_fonts():
-    text = manifest.preinstalled_summary()
-    # Import names are given where they differ from the pip name.
-    assert "python-docx (import docx)" in text
-    assert "beautifulsoup4 (import bs4)" in text
-    assert "PyYAML (import yaml)" in text
-    assert "pandas," in text
-    for name in ("office-convert", "html-to-pdf", "tesseract", "pdftotext", "node", "soffice"):
-        assert name in text
-    assert "ffmpeg" in text and "ffprobe" in text
-    assert "no MP4 writer" in text
-    assert "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" in text
-    assert "Noto Sans CJK" in text
-    # Runner plumbing is not something to import.
+def _words(text: str) -> int:
+    return len(text.split())
+
+
+def test_description_note_lists_import_names_commands_and_formats():
+    text = manifest.description_note()
+    for pkg in manifest.PIP_PACKAGES:
+        assert pkg["import"] in text, pkg["import"]
+    for name in ("office-convert", "html-to-pdf", "html-screenshot", "tesseract", "pdftotext", "ffmpeg", "node"):
+        assert name in text, name
+    for fmt, tools in manifest.FORMAT_GUIDE:
+        assert f"{fmt}: {tools}" in text
+    # The description stays short: fonts and usage lines go in the new-session summary.
+    assert "/usr/share/fonts" not in text
+    assert _words(text) <= 80
+
+
+def test_environment_summary_covers_packages_commands_fonts_paths_and_limits():
+    text = manifest.environment_summary(timeout=60, idle_minutes=20)
+    for pkg in manifest.PIP_PACKAGES:
+        assert pkg["import"] in text, pkg["import"]
+    for binary in manifest.BINARIES:
+        assert binary["name"] in text, binary["name"]
+    assert "office-convert FILE --to pdf" in text
+    for font in manifest.FONTS:
+        assert font["path"].rsplit("/", 1)[-1] in text, font["path"]
+    assert "/usr/share/fonts/" in text
+    for path in ("inputs/", "scratch/", "/tmp"):
+        assert path in text
+    assert "60s" in text and "20 min" in text
     assert "jupyter" not in text.lower()
+
+
+def test_environment_summary_stays_under_120_words():
+    assert _words(manifest.environment_summary(timeout=60, idle_minutes=20)) <= 120
+
+
+def test_font_table_names_each_font_with_its_full_path_and_scripts():
+    table = manifest.font_table()
+    for font in manifest.FONTS:
+        assert font["path"] in table
+        assert font["scripts"].split(";")[0] in table
+
+
+def test_font_table_for_reportlab_leaves_out_fonts_it_cannot_load():
+    table = manifest.font_table(reportlab=True)
+    assert "NotoSansCJK-Regular.ttc" not in table
+    assert "DejaVuSans.ttf" in table
+    assert all(f["path"] in table for f in manifest.FONTS if f["reportlab"])
 
 
 # -- Importable without the app ------------------------------------------------
