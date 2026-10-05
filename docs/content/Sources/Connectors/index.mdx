@@ -9,7 +9,7 @@ import { Steps } from 'nextra/components'
 
 # Connectors
 
-A connector is a service DocsGPT can connect to: Google Drive, SharePoint, Confluence, GitHub, Amazon S3, Reddit, Brave Search, Telegram, ntfy, PostgreSQL, curated MCP servers (Notion, Linear, Atlassian, Sentry, Stripe), and any MCP server or OpenAPI spec you add yourself. A **connection** is one signed-in account or one saved API key for a connector.
+A connector is a service DocsGPT can connect to: Google Drive, SharePoint, Confluence, GitHub, Amazon S3, Reddit, Brave Search, Telegram, ntfy, PostgreSQL, curated MCP servers (Notion, Linear, Atlassian, Sentry, Stripe, ClickUp), and any MCP server or OpenAPI spec you add yourself. A **connection** is one signed-in account or one saved API key for a connector.
 
 Connections are the single place credentials live. A synced source and an agent tool both point at a connection, so you sign in once, reconnect once when a token expires, and disconnect in one place.
 
@@ -299,7 +299,7 @@ Each post becomes one document with its title, subreddit, score, author and link
 
 ### MCP presets
 
-Notion, Linear, Atlassian, Sentry and Stripe are remote MCP servers that support OAuth with dynamic client registration, so they need no server settings. Members sign in with their own account. The presets ship in `docsgpt/connectors/presets/mcp.yaml`.
+Notion, Linear, Atlassian, Sentry, Stripe and ClickUp are remote MCP servers that support OAuth with dynamic client registration, so they need no server settings. Members sign in with their own account. The presets ship in `docsgpt/connectors/presets/mcp.yaml`.
 
 ### Linear
 
