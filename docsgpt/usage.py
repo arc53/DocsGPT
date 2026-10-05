@@ -91,6 +91,7 @@ def _count_prompt_tokens(messages, tools=None, usage_attachments=None, **kwargs)
     # Count structured-output/schema payloads when provided.
     prompt_tokens += _count_tokens(kwargs.get("response_format"))
     prompt_tokens += _count_tokens(kwargs.get("response_schema"))
+    prompt_tokens += _count_tokens(kwargs.get("output_format"))
 
     # Optional usage-only attachment context (not forwarded to provider).
     prompt_tokens += _count_tokens(usage_attachments)

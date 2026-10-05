@@ -1714,13 +1714,11 @@ class TestLLMGenStructuredOutputProviderGating:
         assert "response_format" not in call_kwargs
         assert "response_schema" not in call_kwargs
 
-    def test_non_openai_wire_llm_gets_neither(
+    def test_anthropic_llm_gets_output_format(
         self, agent_base_params, mock_llm_handler_creator, log_context
     ):
-        """Even a capability-claiming Anthropic LLM takes no format kwarg."""
+        """Anthropic takes the schema on its own kwarg, sent as output_config.format."""
         llm = AnthropicLLM(api_key="ant-test", user_api_key=None)
-        llm._supports_structured_output = Mock(return_value=True)
-        llm.prepare_structured_output_format = Mock(return_value={"schema": "x"})
         agent = _build_agent_with_llm(
             agent_base_params, llm, "anthropic", json_schema=SCHEMA
         )
@@ -1728,8 +1726,24 @@ class TestLLMGenStructuredOutputProviderGating:
         agent._llm_gen([{"role": "user", "content": "test"}], log_context)
 
         call_kwargs = llm.gen_stream.call_args[1]
+        assert call_kwargs["output_format"]["type"] == "json_schema"
+        assert call_kwargs["output_format"]["schema"]["additionalProperties"] is False
         assert "response_format" not in call_kwargs
         assert "response_schema" not in call_kwargs
+
+    def test_anthropic_answer_is_marked_structured(
+        self, agent_base_params, mock_llm_handler_creator, log_context
+    ):
+        """Workflow nodes read ``structured`` to parse the answer as JSON."""
+        llm = AnthropicLLM(api_key="ant-test", user_api_key=None)
+        agent = _build_agent_with_llm(
+            agent_base_params, llm, "anthropic", json_schema=SCHEMA
+        )
+
+        events = list(agent._handle_response('{"a": 1}', {}, [], log_context))
+
+        answers = [event for event in events if "answer" in event]
+        assert answers and all(event.get("structured") for event in answers)
 
     def test_non_openai_wire_llm_gets_no_json_object_mode(
         self, agent_base_params, mock_llm_handler_creator, log_context
@@ -1773,17 +1787,13 @@ class TestLLMGenStructuredOutputProviderGating:
         """``BaseLLM.structured_output_kwarg`` is the single source of truth —
         the agent no longer isinstance-checks provider classes."""
         llm = AnthropicLLM(api_key="ant-test", user_api_key=None)
-        llm._supports_structured_output = Mock(return_value=True)
-        llm.prepare_structured_output_format = Mock(return_value={"schema": "x"})
         agent = _build_agent_with_llm(
             agent_base_params, llm, "anthropic", json_schema=SCHEMA
         )
-        assert agent._structured_output_kwarg() is None
+        assert agent._structured_output_kwarg() == "output_format"
 
-        with patch.object(
-            type(llm), "structured_output_kwarg", "response_format", create=True
-        ):
-            assert agent._structured_output_kwarg() == "response_format"
+        with patch.object(type(llm), "structured_output_kwarg", None):
+            assert agent._structured_output_kwarg() is None
 
     def test_capability_flag_still_vetoes_openai_compatible(
         self, agent_base_params, mock_llm_handler_creator, log_context

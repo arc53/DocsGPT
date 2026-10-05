@@ -94,7 +94,8 @@ class BaseLLM(ABC):
 
     # Name of the gen kwarg this provider takes structured output on
     # ("response_format" for OpenAI-wire classes, "response_schema" for
-    # Google); None = the provider has no structured-output kwarg.
+    # Google, "output_format" for Anthropic); None = the provider has no
+    # structured-output kwarg.
     structured_output_kwarg: ClassVar[Optional[str]] = None
 
     # (json_schema, strict) last passed to ``prepare_structured_output_format``;
@@ -108,6 +109,7 @@ class BaseLLM(ABC):
     _STRUCTURED_OUTPUT_KWARGS: ClassVar[Tuple[str, ...]] = (
         "response_format",
         "response_schema",
+        "output_format",
     )
 
     def __init__(
@@ -562,7 +564,8 @@ class BaseLLM(ABC):
         """Re-express the primary's structured-output kwargs for ``fallback``.
 
         Structured output is provider-specific: OpenAI-wire classes take
-        ``response_format``, Google takes ``response_schema``. Forwarding the
+        ``response_format``, Google takes ``response_schema``, Anthropic takes
+        ``output_format``. Forwarding the
         primary's kwarg verbatim to a different-family backup either loses
         enforcement silently (Google swallows ``response_format`` in
         ``**kwargs``) or raises ``TypeError`` inside the OpenAI SDK
