@@ -1,74 +1,151 @@
-/** Colour tokens shared by the chat widget and the search bar. */
+import { css } from 'styled-components';
+
+/**
+ * Colour tokens shared by the chat widget and the search bar. Names and values
+ * mirror the app's theme (`frontend/src/index.css`, `:root` and `.dark`); the
+ * `/NN` shares the app writes as Tailwind opacity modifiers are spelled out as
+ * rgba here.
+ */
 export const themes = {
-  dark: {
-    bg: '#222327',
-    text: '#fff',
-    primary: {
-      text: '#FAFAFA',
-      bg: '#222327',
-    },
-    secondary: {
-      text: '#A1A1AA',
-      bg: '#33343A',
-    },
+  light: {
+    background: '#ffffff',
+    foreground: '#171717',
+    card: '#ffffff',
+    muted: '#f6f6f6',
+    mutedForeground: '#6b6b6b',
+    accent: '#ececec',
+    border: '#d9d9d9',
+    /** `dark:bg-input/30`; light outline buttons sit on the background. */
+    controlFill: '#ffffff',
+    controlHover: '#ececec',
+    primary: '#7d54d1',
+    /** primary/90 */
+    primaryHover: 'rgba(125, 84, 209, 0.9)',
+    primaryForeground: '#ffffff',
+    secondary: 'rgba(125, 84, 209, 0.1)',
+    /** secondary/80 */
+    secondaryHover: 'rgba(125, 84, 209, 0.08)',
+    secondaryForeground: '#7d54d1',
+    destructive: '#ef4444',
+    destructiveForeground: '#ffffff',
+    /** destructive/10 */
+    destructiveSoft: 'rgba(239, 68, 68, 0.1)',
+    /** destructive/50 */
+    destructiveBorder: 'rgba(239, 68, 68, 0.5)',
+    /** destructive/20, the app's destructiveRing */
+    destructiveRing: 'rgba(239, 68, 68, 0.2)',
+    ring: '#7d54d1',
+    /** ring/50 */
+    ringSoft: 'rgba(125, 84, 209, 0.5)',
+    answerSurface: '#f6f6f6',
+    scrollbarThumb: '#e2e8f0',
+    /** The empty composer's send button: muted. */
+    sendIdle: '#f6f6f6',
+    /** The swept status text: muted-foreground with a border-coloured sweep. */
     shimmer: {
-      base: '#A1A1AA',
-      highlight: '#FAFAFA',
+      base: '#6b6b6b',
+      highlight: '#d9d9d9',
     },
-    accent: {
-      base: '#8860DB',
-      hover: '#9B7BE4',
-      strong: '#6D42C5',
-      contrast: '#FFFFFF',
-      soft: 'rgba(136, 96, 219, 0.18)',
-      mark: 'rgba(136, 96, 219, 0.18)',
-      link: '#A78BFA',
-    },
-    hairline: 'rgba(255, 255, 255, 0.08)',
-    danger: {
-      text: '#F87171',
-      soft: 'rgba(248, 113, 113, 0.10)',
-      border: 'rgba(248, 113, 113, 0.32)',
+    /** The app's Prism theme (oneLight) behind fenced code. */
+    code: {
+      background: 'hsl(230, 1%, 98%)',
+      text: 'hsl(230, 8%, 24%)',
+      comment: 'hsl(230, 4%, 64%)',
+      keyword: 'hsl(301, 63%, 40%)',
+      string: 'hsl(119, 34%, 47%)',
+      number: 'hsl(35, 99%, 36%)',
+      function: 'hsl(221, 87%, 60%)',
+      operator: 'hsl(221, 87%, 60%)',
+      property: 'hsl(5, 74%, 59%)',
+      className: 'hsl(35, 99%, 36%)',
+      variable: 'hsl(221, 87%, 60%)',
     },
   },
-  light: {
-    bg: '#fff',
-    text: '#000',
-    primary: {
-      text: '#222327',
-      bg: '#fff',
-    },
-    secondary: {
-      text: '#71717A',
-      bg: '#F4F4F5',
-    },
+  dark: {
+    background: '#222327',
+    foreground: '#fafafa',
+    card: '#2b2c31',
+    muted: '#35363b',
+    mutedForeground: '#a1a1a1',
+    accent: '#3e3f45',
+    border: '#44454c',
+    /** input/30 and input/50 over the card */
+    controlFill: 'rgba(68, 69, 76, 0.3)',
+    controlHover: 'rgba(68, 69, 76, 0.5)',
+    primary: '#8855f1',
+    primaryHover: 'rgba(136, 85, 241, 0.9)',
+    primaryForeground: '#ffffff',
+    secondary: 'rgba(151, 106, 243, 0.15)',
+    secondaryHover: 'rgba(151, 106, 243, 0.12)',
+    secondaryForeground: '#b89cf8',
+    destructive: '#dc2626',
+    destructiveForeground: '#ffffff',
+    destructiveSoft: 'rgba(220, 38, 38, 0.1)',
+    destructiveBorder: 'rgba(220, 38, 38, 0.5)',
+    /** destructive/40 in dark */
+    destructiveRing: 'rgba(220, 38, 38, 0.4)',
+    ring: '#976af3',
+    ringSoft: 'rgba(151, 106, 243, 0.5)',
+    answerSurface: '#2e303e',
+    scrollbarThumb: '#949494',
+    /** accent in dark, where muted would vanish into the card. */
+    sendIdle: '#3e3f45',
     shimmer: {
-      base: '#71717A',
-      highlight: '#D4D4D8',
+      base: '#a1a1a1',
+      highlight: '#fafafa',
     },
-    accent: {
-      base: '#8860DB',
-      hover: '#7A4FD0',
-      strong: '#6D42C5',
-      contrast: '#FFFFFF',
-      soft: 'rgba(136, 96, 219, 0.12)',
-      mark: 'rgba(136, 96, 219, 0.26)',
-      link: '#6D42C5',
-    },
-    hairline: 'rgba(0, 0, 0, 0.08)',
-    danger: {
-      text: '#B91C1C',
-      soft: 'rgba(185, 28, 28, 0.06)',
-      border: 'rgba(185, 28, 28, 0.24)',
+    /** vscDarkPlus */
+    code: {
+      background: '#1e1e1e',
+      text: '#d4d4d4',
+      comment: '#6a9955',
+      keyword: '#569cd6',
+      string: '#ce9178',
+      number: '#b5cea8',
+      function: '#dcdcaa',
+      operator: '#d4d4d4',
+      property: '#9cdcfe',
+      className: '#4ec9b0',
+      variable: '#9cdcfe',
     },
   },
 };
 
-/** Corner radii shared by the widget's chrome. */
+export type WidgetTheme = (typeof themes)['light'];
+
+/** Corner radii: the app's Tailwind steps. */
 export const radii = {
-  sm: '8px',
-  md: '12px',
-  lg: '18px',
-  panel: '16px',
+  /** rounded-sm */
+  sm: '6px',
+  /** rounded-md */
+  md: '8px',
+  /** rounded-xl */
+  xl: '14px',
+  /** rounded-2xl */
+  '2xl': '18px',
+  /** rounded-3xl */
+  '3xl': '22px',
   full: '9999px',
 };
+
+/** Tailwind's shadow scale plus the app's modal shadow. */
+export const shadows = {
+  xs: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+  md: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
+  lg: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
+  modal: '0 4px 40px -3px rgba(0, 0, 0, 0.1)',
+};
+
+export const fonts = {
+  sans: "'DocsGPT Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+  mono: "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace",
+};
+
+/** The app's keyboard ring (`focus-visible:ring-3 ring-ring/50`). */
+export const focusRing = css`
+  outline: none;
+
+  &:focus-visible {
+    box-shadow: 0 0 0 3px ${(props) => props.theme.ringSoft};
+  }
+`;

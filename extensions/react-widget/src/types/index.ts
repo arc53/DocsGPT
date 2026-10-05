@@ -1,38 +1,8 @@
 import 'styled-components';
+import type { WidgetTheme } from '../components/tokens';
 
 declare module 'styled-components' {
-  export interface DefaultTheme {
-    bg: string;
-    text: string;
-    primary: {
-      text: string;
-      bg: string;
-    };
-    secondary: {
-      text: string;
-      bg: string;
-    };
-    /** Gradient stops for the swept status text. */
-    shimmer?: {
-      base: string;
-      highlight: string;
-    };
-    accent?: {
-      base: string;
-      hover: string;
-      strong: string;
-      contrast: string;
-      soft: string;
-      /** Background behind a search keyword match. */
-      mark: string;
-      link: string;
-    };
-    hairline?: string;
-    danger?: {
-      text: string;
-      soft: string;
-      border: string;
-    };
+  export interface DefaultTheme extends WidgetTheme {
     /** Present only in DocsGPTWidget theme (always provided when these styled components render) */
     dimensions?: {
       size: string;
@@ -51,10 +21,7 @@ export type Status = 'idle' | 'loading' | 'failed';
 export type FEEDBACK = 'LIKE' | 'DISLIKE';
 
 export type AttachmentStatus =
-  | 'uploading'
-  | 'processing'
-  | 'completed'
-  | 'failed';
+  'uploading' | 'processing' | 'completed' | 'failed';
 
 export interface Attachment {
   /** Client-side key for the chip; never sent to the server. */
@@ -97,7 +64,10 @@ export interface Query {
 export interface WidgetProps {
   apiHost?: string;
   apiKey?: string;
+  /** Image in the header. Without one, a person on the brand circle. */
   avatar?: string;
+  /** Image on the empty-state card. Without one, the DocsGPT mark. */
+  heroIcon?: string;
   title?: string;
   description?: string;
   heroTitle?: string;

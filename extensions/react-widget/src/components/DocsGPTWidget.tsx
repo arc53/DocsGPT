@@ -1,14 +1,11 @@
 import React, { useRef } from 'react';
 import DOMPurify from 'dompurify';
-import styled, { keyframes, css } from 'styled-components';
-import {
-  PaperPlaneIcon,
-  RocketIcon,
-  ExclamationTriangleIcon,
-  Cross2Icon,
-  EnterFullScreenIcon,
-  ExitFullScreenIcon,
-} from '@radix-ui/react-icons';
+import styled, {
+  keyframes,
+  css,
+  createGlobalStyle,
+  ThemeProvider,
+} from 'styled-components';
 import {
   FEEDBACK,
   MESSAGE_TYPE,
@@ -28,10 +25,10 @@ import { useBackDismiss } from '../hooks/useBackDismiss';
 import { useDictation } from '../hooks/useDictation';
 import { useVisualViewportBounds } from '../hooks/useVisualViewportBounds';
 import { isTouchPrimary } from '../utils/helper';
+import { renderAnswer } from '../utils/markdown';
 import {
   AttachButton,
   AttachmentChips,
-  ClipIcon,
   ComposerNote,
   ControlBar,
   ControlGroup,
@@ -41,10 +38,28 @@ import {
   SentAttachments,
   VoiceWaveform,
 } from './ComposerControls';
-import { DEFAULT_AVATAR } from './defaultAvatar';
-import { radii, themes } from './tokens';
-import { ThemeProvider } from 'styled-components';
-import MarkdownIt from 'markdown-it';
+import {
+  ArrowDown,
+  Check,
+  ChevronRight,
+  CircleAlert,
+  CloudUpload,
+  Copy,
+  Database,
+  DocsGPTMark,
+  ExternalLink,
+  FileText,
+  Globe,
+  Maximize2,
+  MessageCircle,
+  Minimize2,
+  RotateCcw,
+  SendArrow,
+  ThumbsDown,
+  ThumbsUp,
+  X,
+} from './icons';
+import { focusRing, fonts, radii, shadows, themes } from './tokens';
 import {
   prettifyName,
   toolNames,
@@ -52,136 +67,46 @@ import {
   type StreamEvent,
 } from '../utils/streamEvents';
 
-type ToggleIconProps = { filled?: boolean } & React.SVGProps<SVGSVGElement>;
+/**
+ * Inter, the app's face, as a 48 KB Latin variable font. Declared only once
+ * the panel mounts, so a page that never opens the chat downloads nothing.
+ */
+const INTER_URL =
+  'https://cdn.jsdelivr.net/npm/@fontsource-variable/inter@5/files/inter-latin-wght-normal.woff2';
 
-const LikeIcon = ({ filled, ...props }: ToggleIconProps) => (
-  <svg
-    width="14"
-    height="14"
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    xmlns="http://www.w3.org/2000/svg"
-    {...props}
-  >
-    <path
-      d="M9.39995 5.89997V3.09999C9.39995 2.54304 9.1787 2.0089 8.78487 1.61507C8.39105 1.22125 7.85691 1 7.29996 1L4.49998 7.29996V14.9999H12.3959C12.7336 15.0037 13.0612 14.8854 13.3185 14.6667C13.5757 14.448 13.7453 14.1437 13.7959 13.8099L14.7619 7.50996C14.7924 7.30931 14.7788 7.10444 14.7222 6.90954C14.6657 6.71464 14.5674 6.53437 14.4342 6.38123C14.301 6.22808 14.1362 6.10572 13.951 6.02262C13.7659 5.93952 13.5649 5.89767 13.3619 5.89997H9.39995ZM4.49998 14.9999H2.39999C2.02869 14.9999 1.6726 14.8524 1.41005 14.5899C1.1475 14.3273 1 13.9712 1 13.5999V8.69995C1 8.32865 1.1475 7.97256 1.41005 7.71001C1.6726 7.44746 2.02869 7.29996 2.39999 7.29996H4.49998"
-      fill={filled ? 'currentColor' : 'none'}
-    />
-    <path
-      d="M4.49998 7.29996L7.29996 1C7.85691 1 8.39105 1.22125 8.78487 1.61507C9.1787 2.0089 9.39995 2.54304 9.39995 3.09999V5.89997H13.3619C13.5649 5.89767 13.7659 5.93952 13.951 6.02262C14.1362 6.10572 14.301 6.22808 14.4342 6.38123C14.5674 6.53437 14.6657 6.71464 14.7223 6.90954C14.7788 7.10444 14.7924 7.30931 14.7619 7.50996L13.7959 13.8099C13.7453 14.1437 13.5757 14.448 13.3185 14.6667C13.0612 14.8854 12.7336 15.0037 12.3959 14.9999H4.49998M4.49998 7.29996V14.9999M4.49998 7.29996H2.39999C2.02869 7.29996 1.6726 7.44746 1.41005 7.71001C1.1475 7.97256 1 8.32865 1 8.69995V13.5999C1 13.9712 1.1475 14.3273 1.41005 14.5899C1.6726 14.8524 2.02869 14.9999 2.39999 14.9999H4.49998"
-      strokeWidth="1.39999"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
+const InterFontFace = createGlobalStyle`
+  @font-face {
+    font-family: 'DocsGPT Inter';
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url('${INTER_URL}') format('woff2');
+  }
+`;
 
-const DislikeIcon = ({ filled, ...props }: ToggleIconProps) => (
-  <svg
-    width="14"
-    height="14"
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    xmlns="http://www.w3.org/2000/svg"
-    {...props}
-  >
-    <path
-      d="M6.37776 10.1001V12.9C6.37776 13.457 6.599 13.9911 6.99282 14.3849C7.38664 14.7788 7.92077 15 8.47772 15L11.2777 8.70011V1.00025H3.38181C3.04419 0.996436 2.71656 1.11477 2.45929 1.33344C2.20203 1.55212 2.03246 1.8564 1.98184 2.19023L1.01585 8.49012C0.985398 8.69076 0.998931 8.89563 1.05551 9.09053C1.1121 9.28543 1.21038 9.46569 1.34355 9.61884C1.47671 9.77198 1.64159 9.89434 1.82674 9.97744C2.01189 10.0605 2.2129 10.1024 2.41583 10.1001H6.37776ZM11.2777 1.00025H13.1466C13.5428 0.993247 13.9277 1.13195 14.2284 1.39002C14.5291 1.64809 14.7245 2.00758 14.7776 2.40023V7.30014C14.7245 7.69279 14.5291 8.05227 14.2284 8.31035C13.9277 8.56842 13.5428 8.70712 13.1466 8.70011H11.2777"
-      fill={filled ? 'currentColor' : 'none'}
-    />
-    <path
-      d="M11.2777 8.70011L8.47772 15C7.92077 15 7.38664 14.7788 6.99282 14.3849C6.599 13.9911 6.37776 13.457 6.37776 12.9V10.1001H2.41583C2.2129 10.1024 2.01189 10.0605 1.82674 9.97744C1.64159 9.89434 1.47671 9.77198 1.34355 9.61884C1.21038 9.46569 1.1121 9.28543 1.05551 9.09053C0.998931 8.89563 0.985398 8.69076 1.01585 8.49012L1.98184 2.19023C2.03246 1.8564 2.20203 1.55212 2.45929 1.33344C2.71656 1.11477 3.04419 0.996436 3.38181 1.00025H11.2777M11.2777 8.70011V1.00025M11.2777 8.70011H13.1466C13.5428 8.70712 13.9277 8.56842 14.2284 8.31035C14.5291 8.05227 14.7245 7.69279 14.7776 7.30014V2.40023C14.7245 2.00758 14.5291 1.64809 14.2284 1.39002C13.9277 1.13195 13.5428 0.993247 13.1466 1.00025H11.2777"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
+/** What the stream's catch block shows when the request itself failed. */
+const CONNECTION_ERROR =
+  'Something went wrong. Check your connection and try again.';
 
-const CopyIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    width="14"
-    height="14"
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.4"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    xmlns="http://www.w3.org/2000/svg"
-    {...props}
-  >
-    <rect x="5.5" y="5.5" width="9" height="9" rx="1.5" />
-    <path d="M10.5 5.5V3a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v6A1.5 1.5 0 0 0 3 10.5h2.5" />
-  </svg>
-);
+/** How long a source a citation opened stays highlighted. */
+const SOURCE_HIGHLIGHT_MS = 2000;
 
-const CheckIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    width="14"
-    height="14"
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.6"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    xmlns="http://www.w3.org/2000/svg"
-    {...props}
-  >
-    <path d="M2.5 8.5 6 12l7.5-8" />
-  </svg>
-);
+const isWebSource = (source: string) => /^https?:\/\//i.test(source);
 
-const RetryIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    width="14"
-    height="14"
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.4"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    xmlns="http://www.w3.org/2000/svg"
-    {...props}
-  >
-    <path d="M14 8a6 6 0 1 1-1.76-4.24" />
-    <path d="M14 2v4h-4" />
-  </svg>
-);
+/** `example.com/faq` for a source's URL; the URL itself if it won't parse. */
+const sourceHost = (source: string) => {
+  try {
+    const url = new URL(source);
+    const path = url.pathname.replace(/\/$/, '');
+    return `${url.host}${path}`;
+  } catch {
+    return source;
+  }
+};
 
-const StopIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    width="14"
-    height="14"
-    viewBox="0 0 16 16"
-    fill="currentColor"
-    xmlns="http://www.w3.org/2000/svg"
-    {...props}
-  >
-    <rect x="4" y="4" width="8" height="8" rx="1.5" />
-  </svg>
-);
-
-const ArrowDownIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    width="14"
-    height="14"
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.6"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    xmlns="http://www.w3.org/2000/svg"
-    {...props}
-  >
-    <path d="M8 3v10M3.5 8.5 8 13l4.5-4.5" />
-  </svg>
-);
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' &&
+  window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 const sizesConfig = {
   small: { size: 'small', width: '320px', height: '400px' },
@@ -263,13 +188,13 @@ const panelOut = keyframes`
     transform: scale(0.94) translateY(8px);
   }
 `;
-const scaleAnimation = keyframes`
+const fadeIn = keyframes`
   from {
-      transform: scale(1.2);
-      }
-      to {
-      transform: scale(1);
-      }
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 `;
 const settleIn = keyframes`
   from {
@@ -326,19 +251,17 @@ const StyledContainer = styled.div<{ $isOpen: boolean }>`
   flex-direction: column;
   bottom: 0;
   left: 0;
-  background-color: ${(props) => props.theme.primary.bg};
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: ${(props) => props.theme.background};
+  color: ${(props) => props.theme.foreground};
+  font-family: ${fonts.sans};
   /* all: initial re-enables Safari's text auto-inflation. */
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   display: flex;
   padding: 0;
   overflow: hidden;
-  border-radius: ${radii.panel};
-  box-shadow:
-    0 12px 44px rgba(0, 0, 0, 0.18),
-    0 2px 8px rgba(0, 0, 0, 0.1);
+  border-radius: ${radii['2xl']};
+  box-shadow: ${shadows.modal};
   transform-origin: ${(props) =>
     props.theme.dimensions!.size === 'large' ? 'center' : '100% 100%'};
   animation: ${({ $isOpen, theme }) =>
@@ -385,77 +308,85 @@ const StyledContainer = styled.div<{ $isOpen: boolean }>`
   }
 `;
 
-const FloatingButton = styled.div<{
-  $bgcolor: string;
-  $hidden: boolean;
-  $isAnimatingButton: boolean;
-}>`
+// The app's default Button in pill shape, at launcher scale.
+const FloatingButton = styled.button<{ $bg?: string; $hidden: boolean }>`
+  box-sizing: border-box;
   position: fixed;
-  display: ${(props) => (props.$hidden ? 'none' : 'flex')};
+  display: ${(props) => (props.$hidden ? 'none' : 'inline-flex')};
   z-index: 500;
+  align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 14px;
-  align-items: center;
+  height: 48px;
+  margin: 0;
+  padding: 0 20px;
   bottom: 16px;
-  color: white;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  font-size: 14px;
   right: 16px;
-  font-weight: 500;
+  border: none;
   border-radius: ${radii.full};
-  background: ${(props) => props.$bgcolor};
-  box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.18),
-    0 2px 6px rgba(0, 0, 0, 0.12);
+  background: ${(props) => props.$bg ?? props.theme.primary};
+  color: ${(props) => props.theme.primaryForeground};
+  font-family: ${fonts.sans};
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  box-shadow: ${shadows.lg};
   cursor: pointer;
+  outline: none;
   transition:
-    transform 0.2s ease-in-out,
-    box-shadow 0.2s ease-in-out;
-  animation: ${(props) =>
-    props.$isAnimatingButton
-      ? css`
-          ${scaleAnimation} 200ms forwards
-        `
-      : 'none'};
+    background-color 0.15s ease,
+    opacity 0.15s ease;
+  animation: ${fadeIn} 200ms ease-out;
+
   &:hover {
-    transform: translateY(-2px);
-    box-shadow:
-      0 12px 30px rgba(0, 0, 0, 0.22),
-      0 3px 8px rgba(0, 0, 0, 0.14);
+    ${(props) =>
+      props.$bg
+        ? 'opacity: 0.9;'
+        : `background-color: ${props.theme.primaryHover};`}
   }
+
+  &:focus-visible {
+    box-shadow:
+      0 0 0 3px ${(props) => props.theme.ringSoft},
+      ${shadows.lg};
+  }
+
+  img {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     transition: none;
     animation: none;
   }
 `;
+// ghost-muted icon-sm: 32px, rounded-md, accent hover.
 const IconButton = styled.button`
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
+  margin: 0;
   padding: 0;
   border: none;
-  border-radius: ${radii.sm};
+  border-radius: ${radii.md};
   background-color: transparent;
-  color: ${(props) => props.theme.secondary.text};
+  color: ${(props) => props.theme.mutedForeground};
   cursor: pointer;
   transition:
     background-color 0.15s ease,
     color 0.15s ease;
 
   &:hover {
-    background-color: ${(props) => props.theme.secondary.bg};
-    color: ${(props) => props.theme.primary.text};
+    background-color: ${(props) => props.theme.accent};
+    color: ${(props) => props.theme.foreground};
   }
 
-  &:focus-visible {
-    outline: 2px solid ${(props) => props.theme.accent!.base};
-    outline-offset: 1px;
-  }
+  ${focusRing}
 `;
 
 const ExpandButton = styled(IconButton)`
@@ -464,28 +395,94 @@ const ExpandButton = styled(IconButton)`
   }
 `;
 
+// The side panel's PanelHeader at widget scale.
 const Header = styled.div`
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: flex-start;
+  gap: 12px;
   flex-shrink: 0;
   box-sizing: border-box;
-  padding: 12px 12px 12px 16px;
-  border-bottom: 1px solid ${(props) => props.theme.hairline};
+  padding: 16px 16px 12px 16px;
+  border-bottom: 1px solid ${(props) => props.theme.border};
 `;
 
-const Avatar = styled.img`
-  width: 32px;
-  height: 32px;
+const AvatarImage = styled.img<{ $size: number }>`
+  width: ${(props) => props.$size}px;
+  height: ${(props) => props.$size}px;
   flex-shrink: 0;
   border-radius: ${radii.full};
   object-fit: cover;
 `;
 
+// A white glyph on the brand circle: the stand-in when no image is set.
+const AvatarMark = styled.span<{ $size: number }>`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+  width: ${(props) => props.$size}px;
+  height: ${(props) => props.$size}px;
+  border-radius: ${radii.full};
+  background-color: ${(props) => props.theme.primary};
+  color: ${(props) => props.theme.primaryForeground};
+`;
+
+// The generic person, filling the circle the way the old default image did.
+const PersonGlyph = ({ size }: { size: number }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width={size}
+    height={size}
+    viewBox="0 0 40 40"
+    fill="currentColor"
+    aria-hidden="true"
+    focusable="false"
+  >
+    <circle cx="20" cy="16" r="7" />
+    <ellipse cx="20" cy="39.5" rx="18" ry="12.5" />
+  </svg>
+);
+
+/**
+ * The embedder's image, or a stand-in on the brand circle when none is set
+ * or it fails to load: the generic person, or the DocsGPT mark.
+ */
+const AgentAvatar = ({
+  src,
+  size,
+  fallback,
+}: {
+  src?: string;
+  size: number;
+  fallback: 'person' | 'mark';
+}) => {
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => setFailed(false), [src]);
+  if (!src || failed)
+    return (
+      <AvatarMark $size={size} aria-hidden="true">
+        {fallback === 'mark' ? (
+          <DocsGPTMark size={Math.round(size * 0.55)} />
+        ) : (
+          <PersonGlyph size={size} />
+        )}
+      </AvatarMark>
+    );
+  return (
+    <AvatarImage
+      $size={size}
+      src={src}
+      alt=""
+      onError={() => setFailed(true)}
+    />
+  );
+};
+
 const ContentWrapper = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 4px;
   min-width: 0;
   flex: 1;
 `;
@@ -493,30 +490,27 @@ const ContentWrapper = styled.div`
 const HeaderActions = styled.div`
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   flex-shrink: 0;
+  margin: -4px -8px 0 0;
 `;
 
 const Title = styled.h3`
-  font-size: 14px;
+  font-size: 20px;
   font-weight: 600;
-  line-height: 1.3;
-  color: ${(props) => props.theme.primary.text};
+  line-height: 1.25;
+  color: ${(props) => props.theme.foreground};
   margin: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  overflow-wrap: break-word;
 `;
 
 const Description = styled.p`
-  font-size: 12.5px;
-  line-height: 1.35;
-  color: ${(props) => props.theme.secondary.text};
+  font-size: 14px;
+  line-height: 1.43;
+  color: ${(props) => props.theme.mutedForeground};
   margin: 0;
   padding: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  overflow-wrap: break-word;
 `;
 
 const Conversation = styled.div`
@@ -529,105 +523,76 @@ const Conversation = styled.div`
   flex-direction: column;
   gap: 20px;
   scrollbar-width: thin;
-  scrollbar-color: ${(props) => props.theme.secondary.bg} transparent; /* thumb color track color */
+  scrollbar-color: ${(props) => props.theme.scrollbarThumb} transparent;
   &::-webkit-scrollbar {
     width: 6px;
   }
   &::-webkit-scrollbar-thumb {
-    background-color: ${(props) => props.theme.secondary.bg};
+    background-color: ${(props) => props.theme.scrollbarThumb};
     border-radius: ${radii.full};
   }
   &::-webkit-scrollbar-track {
     background: transparent;
   }
 `;
-const ActionsRow = styled.div<{ $pinned?: boolean }>`
+// Always visible; the first glyph sits on the answer's text edge.
+const ActionsRow = styled.div`
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 8px;
+  margin-left: -8px;
   padding: 0;
-  opacity: ${(props) => (props.$pinned ? 1 : 0)};
-  transition: opacity 0.15s ease;
-
-  @media (hover: none) {
-    opacity: 1;
-  }
 `;
-const reactPop = keyframes`
-  0% {
-    transform: scale(1);
-  }
-  45% {
-    transform: scale(1.3);
-  }
-  100% {
-    transform: scale(1);
-  }
-`;
+// ghost-muted icon-sm pill.
 const ActionButton = styled.button<{
-  $active?: boolean;
-  $tone?: 'accent' | 'danger';
+  $tone?: 'primary' | 'destructive';
+  $copied?: boolean;
 }>`
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  height: 26px;
-  padding: 0 7px;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
   border: none;
-  border-radius: ${radii.sm};
-  background-color: transparent;
-  color: ${(props) => props.theme.secondary.text};
-  font-size: 11px;
+  border-radius: ${radii.full};
+  background-color: ${(props) =>
+    props.$copied ? props.theme.secondary : 'transparent'};
+  color: ${(props) =>
+    props.$copied
+      ? props.theme.secondaryForeground
+      : props.$tone === 'primary'
+        ? props.theme.primary
+        : props.$tone === 'destructive'
+          ? props.theme.destructive
+          : props.theme.mutedForeground};
   font-family: inherit;
   cursor: pointer;
   transition:
     background-color 0.15s ease,
     color 0.15s ease;
 
-  &:hover {
-    background-color: ${(props) => props.theme.secondary.bg};
-    color: ${(props) => props.theme.primary.text};
+  &:hover:not(:disabled) {
+    background-color: ${(props) =>
+      props.$copied ? props.theme.secondary : props.theme.accent};
+    color: ${(props) =>
+      props.$copied
+        ? props.theme.secondaryForeground
+        : props.$tone === 'primary'
+          ? props.theme.primary
+          : props.$tone === 'destructive'
+            ? props.theme.destructive
+            : props.theme.foreground};
   }
 
-  &:active {
-    transform: scale(0.92);
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 
-  &:focus-visible {
-    outline: 2px solid ${(props) => props.theme.accent!.base};
-    outline-offset: 1px;
-  }
-
-  ${(props) =>
-    props.$active &&
-    css`
-      color: ${props.$tone === 'danger'
-        ? props.theme.danger!.text
-        : props.theme.accent!.base};
-      background-color: ${props.$tone === 'danger'
-        ? props.theme.danger!.soft
-        : props.theme.accent!.soft};
-
-      &:hover {
-        color: ${props.$tone === 'danger'
-          ? props.theme.danger!.text
-          : props.theme.accent!.base};
-        background-color: ${props.$tone === 'danger'
-          ? props.theme.danger!.soft
-          : props.theme.accent!.soft};
-      }
-
-      svg {
-        animation: ${reactPop} 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
-      }
-
-      @media (prefers-reduced-motion: reduce) {
-        svg {
-          animation: none;
-        }
-      }
-    `}
+  ${focusRing}
 `;
 const Turn = styled.div`
   display: flex;
@@ -637,9 +602,9 @@ const Turn = styled.div`
 `;
 const ActionHint = styled.span`
   margin-left: 4px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
-  color: ${(props) => props.theme.danger!.text};
+  color: ${(props) => props.theme.destructive};
   animation: ${settleIn} 0.18s ease-out;
 
   @media (prefers-reduced-motion: reduce) {
@@ -651,191 +616,441 @@ const MessageBubble = styled.div<{ $type: MESSAGE_TYPE }>`
   flex-direction: column;
   align-items: ${(props) =>
     props.$type === 'QUESTION' ? 'flex-end' : 'flex-start'};
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
-  font-size: 15px;
+  font-size: 16px;
   animation: ${settleIn} 0.22s ease-out;
 
   @media (prefers-reduced-motion: reduce) {
     animation: none;
   }
-
-  &:hover .dgpt-actions,
-  &:focus-within .dgpt-actions {
-    opacity: 1;
-  }
 `;
 const Message = styled.div<{ $type: MESSAGE_TYPE }>`
   display: block;
+  box-sizing: border-box;
   min-width: 0;
-  line-height: 1.6;
+  line-height: 1.5;
   overflow-wrap: break-word;
   ${(props) =>
     props.$type === 'QUESTION'
       ? css`
           max-width: 85%;
-          padding: 10px 16px;
-          border-radius: ${radii.lg};
-          border-bottom-right-radius: ${radii.sm};
-          background: linear-gradient(
-            to bottom right,
-            ${props.theme.accent!.base},
-            ${props.theme.accent!.strong}
-          );
-          color: ${props.theme.accent!.contrast};
+          padding: 16px 20px;
+          border-radius: ${radii['3xl']};
+          background: ${props.theme.secondary};
+          color: ${props.theme.foreground};
+          white-space: pre-wrap;
         `
       : css`
           width: 100%;
           padding: 0;
           background: transparent;
-          color: ${props.theme.primary.text};
+          color: ${props.theme.foreground};
         `}
 `;
+// The app's answer markdown: lib/markdown.tsx, MarkdownAnswer, ui/table and
+// CodeFrame, spelled out for the widget's markdown-it output.
 const Markdown = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+
+  & > :first-child {
+    margin-top: 0;
+  }
+
   a {
-    color: ${(props) => props.theme.accent!.link};
-    text-decoration: underline;
-    text-underline-offset: 2px;
+    color: ${(props) => props.theme.primary};
+    text-decoration: none;
+    text-underline-offset: 4px;
+    border-radius: ${radii.sm};
+    outline: none;
   }
 
   a:hover {
-    color: ${(props) => props.theme.accent!.base};
+    text-decoration: underline;
   }
 
-  pre {
-    box-sizing: border-box;
-    padding: 12px;
-    width: 100%;
-    margin: 12px 0;
-    font-size: 12px;
-    line-height: 1.5;
-    border-radius: ${radii.md};
-    overflow-x: auto;
-    background-color: ${(props) => props.theme.secondary.bg};
-    border: 1px solid ${(props) => props.theme.hairline};
-    color: ${(props) => props.theme.primary.text};
+  a:focus-visible {
+    box-shadow: 0 0 0 3px ${(props) => props.theme.ringSoft};
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    margin: 16px 0 8px 0;
+    font-weight: 600;
+    line-height: 1.375;
+    color: ${(props) => props.theme.foreground};
   }
 
   h1 {
-    font-size: clamp(14px, 40vw, 16px);
+    font-size: 20px;
   }
 
   h2 {
-    font-size: 14px;
+    font-size: 18px;
   }
 
   h3 {
-    font-size: 14px;
+    margin-top: 12px;
+    font-size: 16px;
+  }
+
+  h4,
+  h5,
+  h6 {
+    margin-top: 12px;
+    font-size: 16px;
   }
 
   p {
-    margin: 0px;
+    margin: 0;
   }
 
-  code:not(pre code) {
-    border-radius: 6px;
-    padding: 1.5px 5px;
-    font-size: 0.875em;
-    background-color: ${(props) => props.theme.secondary.bg};
-    border: 1px solid ${(props) => props.theme.hairline};
-    color: ${(props) => props.theme.primary.text};
+  strong {
+    font-weight: 600;
   }
 
-  code {
-    white-space: pre-wrap;
-    overflow-wrap: break-word;
+  hr {
+    width: 100%;
+    margin: 4px 0;
+    border: none;
+    border-top: 1px solid ${(props) => props.theme.border};
+  }
+
+  blockquote {
+    margin: 0;
+    padding-left: 12px;
+    border-left: 2px solid ${(props) => props.theme.border};
+    color: ${(props) => props.theme.mutedForeground};
+  }
+
+  ul,
+  ol {
+    margin: 0;
+    padding: 0 0 0 16px;
+    list-style-position: inside;
+    white-space: normal;
   }
 
   ul {
-    padding: 0px;
-    margin: 1rem 0;
-    list-style-position: outside;
     list-style-type: disc;
-    padding-left: 1rem;
-    white-space: normal;
   }
 
   ol {
-    padding: 0px;
-    margin: 1rem 0;
-    list-style-position: outside;
     list-style-type: decimal;
-    padding-left: 1rem;
-    white-space: normal;
   }
 
-  li {
-    line-height: 1.625;
+  li + li,
+  li > ul,
+  li > ol {
+    margin-top: 0.5em;
   }
+
+  li p {
+    display: inline;
+  }
+
+  code:not(.dgpt-code-body code) {
+    padding: 4px 8px;
+    border-radius: ${radii.md};
+    background-color: ${(props) => props.theme.accent};
+    color: ${(props) => props.theme.foreground};
+    font-family: ${fonts.mono};
+    font-size: 12px;
+    font-weight: 400;
+    white-space: pre-line;
+    overflow-wrap: break-word;
+  }
+
+  /* Citation pill: Button secondary xs pill, h-5 min-w-5. */
+  .dgpt-cite {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    height: 20px;
+    min-width: 20px;
+    margin: 0 2px;
+    padding: 0 8px;
+    border: none;
+    border-radius: ${radii.full};
+    background-color: ${(props) => props.theme.secondary};
+    color: ${(props) => props.theme.secondaryForeground};
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
+    vertical-align: text-bottom;
+    cursor: pointer;
+    outline: none;
+    transition: background-color 0.15s ease;
+  }
+
+  .dgpt-cite:hover {
+    background-color: ${(props) => props.theme.secondaryHover};
+  }
+
+  .dgpt-cite:focus-visible {
+    box-shadow: 0 0 0 3px ${(props) => props.theme.ringSoft};
+  }
+
+  /* The app's Tooltip: foreground box, background text, 12px. */
+  .dgpt-cite::after {
+    content: attr(aria-label);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 6px 12px;
+    border-radius: ${radii.md};
+    background-color: ${(props) => props.theme.foreground};
+    color: ${(props) => props.theme.background};
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.5;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+    z-index: 3;
+  }
+
+  .dgpt-cite:hover::after,
+  .dgpt-cite:focus-visible::after {
+    opacity: 1;
+    transition-delay: 0.4s;
+  }
+
+  /* CodeFrame */
+  .dgpt-code {
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid ${(props) => props.theme.border};
+    border-radius: ${radii.xl};
+  }
+
+  .dgpt-code-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 8px;
+    background-color: ${(props) => props.theme.answerSurface};
+  }
+
+  .dgpt-code-language {
+    color: ${(props) => props.theme.foreground};
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .dgpt-code-copy {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: ${radii.full};
+    background-color: transparent;
+    color: ${(props) => props.theme.mutedForeground};
+    cursor: pointer;
+    outline: none;
+    transition:
+      background-color 0.15s ease,
+      color 0.15s ease;
+  }
+
+  .dgpt-code-copy:hover {
+    background-color: ${(props) => props.theme.accent};
+    color: ${(props) => props.theme.foreground};
+  }
+
+  .dgpt-code-copy:focus-visible {
+    box-shadow: 0 0 0 3px ${(props) => props.theme.ringSoft};
+  }
+
+  .dgpt-code-copy .dgpt-code-copy-done,
+  .dgpt-code-copy.is-copied .dgpt-code-copy-idle {
+    display: none;
+  }
+
+  .dgpt-code-copy.is-copied .dgpt-code-copy-done {
+    display: block;
+  }
+
+  .dgpt-code-copy.is-copied,
+  .dgpt-code-copy.is-copied:hover {
+    background-color: ${(props) => props.theme.secondary};
+    color: ${(props) => props.theme.secondaryForeground};
+  }
+
+  .dgpt-code-body {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 12px;
+    overflow-x: auto;
+    background-color: ${(props) => props.theme.code.background};
+    color: ${(props) => props.theme.code.text};
+    font-family: ${fonts.mono};
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre;
+    tab-size: 2;
+    scrollbar-width: thin;
+    scrollbar-color: ${(props) => props.theme.scrollbarThumb} transparent;
+  }
+
+  .dgpt-code-body code {
+    font-family: inherit;
+    font-size: inherit;
+    white-space: inherit;
+  }
+
+  .token.comment,
+  .token.prolog,
+  .token.cdata {
+    color: ${(props) => props.theme.code.comment};
+  }
+
+  .token.keyword,
+  .token.boolean,
+  .token.important {
+    color: ${(props) => props.theme.code.keyword};
+  }
+
+  .token.string,
+  .token.char,
+  .token.attr-value,
+  .token.regex,
+  .token.inserted {
+    color: ${(props) => props.theme.code.string};
+  }
+
+  .token.number,
+  .token.constant {
+    color: ${(props) => props.theme.code.number};
+  }
+
+  .token.function {
+    color: ${(props) => props.theme.code.function};
+  }
+
+  .token.operator {
+    color: ${(props) => props.theme.code.operator};
+  }
+
+  .token.property,
+  .token.tag,
+  .token.deleted,
+  .token.symbol {
+    color: ${(props) => props.theme.code.property};
+  }
+
+  .token.class-name,
+  .token.attr-name,
+  .token.namespace {
+    color: ${(props) => props.theme.code.className};
+  }
+
+  .token.variable {
+    color: ${(props) => props.theme.code.variable};
+  }
+
+  /* ui/table: a bordered frame that scrolls sideways when it must. */
   .dgpt-table-container {
-    margin: 16px 0;
     width: 100%;
     overflow-x: auto;
-    border: 1px solid ${(props) => props.theme.hairline};
-    border-radius: ${radii.md};
+    border: 1px solid ${(props) => props.theme.border};
+    border-radius: ${radii.sm};
     -webkit-overflow-scrolling: touch;
-    -ms-overflow-style: scrollbar;
     scrollbar-width: thin;
-    scrollbar-color: ${(props) => props.theme.secondary.bg} transparent;
+    scrollbar-color: ${(props) => props.theme.scrollbarThumb} transparent;
   }
 
-  table,
   .dgpt-table {
     width: 100%;
+    min-width: 0;
     border-collapse: collapse;
     text-align: left;
-    min-width: 600px;
-  }
-  thead,
-  .dgpt-thead {
-    font-size: 12px;
-    text-transform: uppercase;
-  }
-
-  th,
-  .dgpt-th,
-  td,
-  .dgpt-td {
-    padding: 10px;
-    border-bottom: 1px solid ${(props) => props.theme.hairline};
     font-size: 14px;
   }
-  th {
-    font-weight: normal !important;
+
+  .dgpt-table thead {
+    background-color: ${(props) => props.theme.muted};
   }
-  td {
-    font-weight: bold;
+
+  .dgpt-table th {
+    padding: 4px 12px;
+    font-weight: 400;
+    color: ${(props) => props.theme.foreground};
+    vertical-align: middle;
+  }
+
+  .dgpt-table td {
+    padding: 8px 12px;
+    font-weight: 400;
+    vertical-align: middle;
+  }
+
+  .dgpt-table tr {
+    border-bottom: 1px solid ${(props) => props.theme.border};
+  }
+
+  .dgpt-table tbody tr:last-child {
+    border-bottom: none;
   }
 `;
+// Alert variant="destructive".
 const ErrorAlert = styled.div`
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  column-gap: 12px;
+  row-gap: 4px;
   box-sizing: border-box;
   width: 100%;
-  padding: 12px 14px;
-  font-weight: 400;
-  color: ${(props) => props.theme.danger!.text};
-  background-color: ${(props) => props.theme.danger!.soft};
-  border: 1px solid ${(props) => props.theme.danger!.border};
-  border-radius: ${radii.md};
-`;
-const ErrorBody = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  min-width: 0;
+  padding: 12px 16px;
+  font-size: 14px;
+  color: ${(props) => props.theme.destructive};
+  background-color: ${(props) => props.theme.destructiveSoft};
+  border: 1px solid ${(props) => props.theme.destructiveBorder};
+  border-radius: ${radii.xl};
+
+  & > svg {
+    grid-row: span 2;
+    align-self: center;
+  }
 `;
 const ErrorTitle = styled.h5`
-  margin: 0 0 2px 0;
-  font-size: 13px;
-  font-weight: 600;
+  grid-column-start: 2;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.025em;
 `;
-const ErrorText = styled.span`
-  font-size: 12.5px;
-  line-height: 1.5;
-  opacity: 0.9;
+const ErrorText = styled.p<{ $raw?: boolean }>`
+  grid-column-start: 2;
+  margin: 0;
+  font-family: ${(props) => (props.$raw ? fonts.mono : 'inherit')};
+  font-size: ${(props) => (props.$raw ? '12px' : '14px')};
+  line-height: 1.625;
+  white-space: pre-wrap;
   overflow-wrap: break-word;
+`;
+const ErrorTurn = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
 `;
 const shimmerSweep = keyframes`
   to {
@@ -858,14 +1073,14 @@ const StatusLine = styled.div`
   max-width: 100%;
   font-size: 12px;
   font-family: inherit;
-  color: ${(props) => props.theme.secondary.text};
+  color: ${(props) => props.theme.mutedForeground};
 `;
 const StatusDot = styled.span`
   flex-shrink: 0;
   width: 6px;
   height: 6px;
   border-radius: 9999px;
-  background-color: ${(props) => props.theme.secondary.text};
+  background-color: ${(props) => props.theme.mutedForeground};
   opacity: 0.5;
   animation: ${statusPulse} 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 
@@ -880,7 +1095,7 @@ const ShimmerText = styled.span`
   text-overflow: ellipsis;
   white-space: nowrap;
   background-image: ${(props) => {
-    const { base, highlight } = props.theme.shimmer!;
+    const { base, highlight } = props.theme.shimmer;
     return `linear-gradient(90deg, ${base} 0%, ${base} 40%, ${highlight} 50%, ${base} 60%, ${base} 100%)`;
   }};
   background-size: 200% 100%;
@@ -892,44 +1107,7 @@ const ShimmerText = styled.span`
   @media (prefers-reduced-motion: reduce) {
     animation: none;
     background-image: none;
-    color: ${(props) => props.theme.secondary.text};
-  }
-`;
-// Reasoning trace from `thought` events.
-const Thought = styled.div`
-  width: 100%;
-  box-sizing: border-box;
-  padding-left: 10px;
-  border-left: 2px solid ${(props) => props.theme.hairline};
-  font-size: 12px;
-  font-family: inherit;
-  font-style: italic;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  color: ${(props) => props.theme.secondary.text};
-`;
-const RetryButton = styled.button`
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-  padding: 6px 12px;
-  border: 1px solid ${(props) => props.theme.danger!.border};
-  border-radius: ${radii.full};
-  background-color: transparent;
-  color: ${(props) => props.theme.danger!.text};
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-
-  &:hover:not(:disabled) {
-    background-color: ${(props) => props.theme.danger!.soft};
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: default;
+    color: ${(props) => props.theme.mutedForeground};
   }
 `;
 // Shown only while scrolled away from the latest turn.
@@ -938,23 +1116,36 @@ const ScrollToLatest = styled.button`
   /* Auto-margin centring, not translateX: settleIn owns transform. */
   left: 0;
   right: 0;
-  bottom: 12px;
+  bottom: 16px;
   margin: 0 auto;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: none;
+  box-sizing: border-box;
+  border: 1px solid ${(props) => props.theme.border};
   border-radius: ${radii.full};
-  background-color: ${(props) => props.theme.accent!.base};
-  color: ${(props) => props.theme.accent!.contrast};
+  background-color: ${(props) => props.theme.background};
+  color: ${(props) => props.theme.foreground};
   line-height: 0;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  box-shadow: ${shadows.xs};
   animation: ${settleIn} 0.18s ease-out;
   z-index: 2;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background-color: ${(props) => props.theme.muted};
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 3px ${(props) => props.theme.ringSoft},
+      ${shadows.xs};
+  }
 `;
 const ConversationArea = styled.div`
   position: relative;
@@ -965,76 +1156,74 @@ const Composer = styled.div`
   flex-shrink: 0;
   box-sizing: border-box;
   padding: 12px 16px 0 16px;
-  border-top: 1px solid ${(props) => props.theme.hairline};
 `;
+// border bg-card rounded-3xl; the rows pad themselves.
 const PromptContainer = styled.form<{ $stacked?: boolean }>`
   box-sizing: border-box;
-  padding: ${(props) =>
-    props.$stacked ? '6px 8px 8px 8px' : '4px 4px 4px 6px'};
-  background-color: ${(props) => props.theme.secondary.bg};
-  border: 1px solid ${(props) => props.theme.hairline};
-  border-radius: ${(props) => (props.$stacked ? radii.lg : '24px')};
-  min-height: ${(props) =>
-    props.theme.dimensions!.size == 'large' ? '40px' : '23px'};
+  padding: ${(props) => (props.$stacked ? '0' : '0 8px 0 0')};
+  background-color: ${(props) => props.theme.card};
+  border: 1px solid ${(props) => props.theme.border};
+  border-radius: ${radii['3xl']};
   /* Stacked needs room for the chips and control row; inline keeps the cap. */
-  max-height: ${(props) => (props.$stacked ? 'none' : '150px')};
+  max-height: ${(props) => (props.$stacked ? 'none' : '160px')};
   display: flex;
   flex-direction: ${(props) => (props.$stacked ? 'column' : 'row')};
-  align-items: ${(props) => (props.$stacked ? 'stretch' : 'end')};
-  gap: 6px;
+  align-items: ${(props) => (props.$stacked ? 'stretch' : 'center')};
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease;
 
-  &:focus-within {
-    border-color: ${(props) => props.theme.accent!.base};
-    box-shadow: 0 0 0 3px ${(props) => props.theme.accent!.soft};
+  /* The field recipe, only while the text field has focus: tabbing on to a
+     control moves the ring to that control. */
+  &:has(textarea:focus-visible) {
+    border-color: ${(props) => props.theme.ring};
+    box-shadow: 0 0 0 3px ${(props) => props.theme.ringSoft};
   }
 `;
 const PromptRow = styled.div`
   box-sizing: border-box;
   display: flex;
-  align-items: end;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   min-width: 0;
 `;
 const HiddenFileInput = styled.input`
   display: none;
 `;
-const StyledTextarea = styled.textarea<{ $hidden?: boolean }>`
+const StyledTextarea = styled.textarea<{
+  $hidden?: boolean;
+  $stacked?: boolean;
+}>`
   box-sizing: border-box;
   ${(props) => (props.$hidden ? 'display: none;' : '')}
   width: 100%;
+  margin: 0;
   border: none;
-  padding: ${(props) =>
-    props.theme.dimensions!.size === 'large'
-      ? '18px 6px 14px 10px'
-      : '9px 6px 5px 10px'};
+  padding: ${(props) => (props.$stacked ? '14px 16px 6px 16px' : '14px 8px 14px 16px')};
   background-color: transparent;
-  font-size: 15px;
+  font-size: 16px;
   font-family: inherit;
-  border-radius: 6px;
-  color: ${(props) => props.theme.text};
+  color: ${(props) => props.theme.foreground};
   outline: none;
   resize: none;
   transition: height 0.1s ease;
   overflow-wrap: break-word;
   white-space: pre-wrap;
-  line-height: 1.4;
+  line-height: 1.25;
   text-align: left;
   min-height: ${(props) =>
-    props.theme.dimensions!.size === 'large' ? '60px' : '40px'};
+    props.theme.dimensions!.size === 'large' ? '64px' : '48px'};
   max-height: 140px;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: ${(props) => props.theme.hairline} transparent;
+  scrollbar-color: ${(props) => props.theme.scrollbarThumb} transparent;
   &::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
   &::-webkit-scrollbar-thumb {
-    background-color: ${(props) => props.theme.hairline};
+    background-color: ${(props) => props.theme.scrollbarThumb};
     border-radius: ${radii.full};
   }
   &::-webkit-scrollbar-track {
@@ -1042,21 +1231,17 @@ const StyledTextarea = styled.textarea<{ $hidden?: boolean }>`
   }
   &::placeholder {
     text-align: left;
-    color: ${(props) => props.theme.secondary.text};
-  }
-
-  /* iOS Safari zooms the page in on any field under 16px. */
-  @media (pointer: coarse) {
-    font-size: 16px;
+    color: ${(props) => props.theme.mutedForeground};
   }
 `;
+// Grey while empty, brand once there is something to send.
 const StyledButton = styled.button`
   display: flex;
   justify-content: center;
   align-items: center;
   flex-shrink: 0;
-  background-color: ${(props) => props.theme.accent!.base};
-  color: ${(props) => props.theme.accent!.contrast};
+  background-color: ${(props) => props.theme.primary};
+  color: ${(props) => props.theme.primaryForeground};
   border-radius: ${radii.full};
   min-width: ${(props) =>
     props.theme.dimensions!.size === 'large' ? '44px' : '36px'};
@@ -1074,210 +1259,326 @@ const StyledButton = styled.button`
     opacity 0.15s ease;
 
   &:hover:not(:disabled) {
-    background-color: ${(props) => props.theme.accent!.hover};
+    background-color: ${(props) => props.theme.primaryHover};
   }
 
   &:focus-visible {
-    outline: 2px solid ${(props) => props.theme.accent!.base};
-    outline-offset: 2px;
+    box-shadow: 0 0 0 3px ${(props) => props.theme.ringSoft};
   }
 
   &:disabled {
-    opacity: 0.4;
+    background-color: ${(props) => props.theme.sendIdle};
+    color: ${(props) => props.theme.mutedForeground};
+    opacity: 0.5;
     cursor: default;
   }
 `;
+const StopGlyph = styled.span`
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background-color: currentColor;
+`;
+// Centred in the empty conversation.
 const HeroContainer = styled.div`
   box-sizing: border-box;
   width: 100%;
-  max-width: 460px;
-  margin: auto;
-  padding: 4px;
+  margin: auto 0;
 `;
+// SharedAgentCard: a filled Card, at the top of the conversation.
 const HeroWrapper = styled.div`
   display: flex;
-  flex-direction: column;
   align-items: flex-start;
-  gap: 10px;
+  gap: 12px;
   box-sizing: border-box;
-  background-color: ${(props) => props.theme.secondary.bg};
-  border: 1px solid ${(props) => props.theme.hairline};
-  border-radius: ${radii.md};
-  font-weight: normal;
   padding: 16px;
+  border-radius: ${radii['2xl']};
+  background-color: ${(props) => props.theme.muted};
 `;
-const HeroBadge = styled.div`
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: ${radii.sm};
-  color: ${(props) => props.theme.accent!.base};
-  background-color: ${(props) => props.theme.accent!.soft};
+const HeroText = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
 `;
 const HeroTitle = styled.h3`
-  color: ${(props) => props.theme.primary.text};
-  font-size: 15px;
+  color: ${(props) => props.theme.foreground};
+  font-size: 16px;
   font-weight: 600;
+  line-height: 1.375;
   margin: 0px;
   padding: 0px;
+  overflow-wrap: break-word;
 `;
+// A filled Card turns muted text to foreground.
 const HeroDescription = styled.p`
-  color: ${(props) => props.theme.secondary.text};
-  font-size: 12.5px;
-  line-height: 1.55;
+  color: ${(props) => props.theme.foreground};
+  font-size: 12px;
+  line-height: 1.625;
   margin: 0px;
   padding: 0px;
+  overflow-wrap: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 `;
 const Hyperlink = styled.a`
   color: inherit;
   text-decoration: underline;
-  /* Keeps descenders clear of the rule at 11px. */
   text-underline-offset: 2px;
-  transition: opacity 0.2s ease;
+  border-radius: ${radii.sm};
+  transition: color 0.15s ease;
   &:hover {
-    opacity: 0.8;
+    color: ${(props) => props.theme.foreground};
   }
+  ${focusRing}
 `;
 const Tagline = styled.div`
   text-align: center;
   display: block;
-  color: ${(props) => props.theme.secondary.text};
-  padding: 7px 12px 9px 12px;
-  font-size: 11px;
-`;
-
-const SourcesList = styled.div`
-  display: flex;
-  width: 100%;
-  margin: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-`;
-
-const SourceChip = styled.a`
-  color: ${(props) => props.theme.secondary.text};
-  background: ${(props) => props.theme.secondary.bg};
-  border: 1px solid ${(props) => props.theme.hairline};
-  padding: 3px 10px;
-  border-radius: ${radii.full};
+  color: ${(props) => props.theme.mutedForeground};
+  padding: 8px 12px;
   font-size: 12px;
+`;
+
+// Sources: a ghost toggle row over one answer-surface well listing them all.
+const SourcesBlock = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  min-width: 0;
+`;
+const SourcesToggle = styled.button`
   display: inline-flex;
   align-items: center;
-  max-width: min(100%, 220px);
-  line-height: 1.6;
-  text-decoration: none;
+  gap: 6px;
+  height: 32px;
+  margin: 0 0 0 -10px;
+  padding: 0 10px;
+  border: none;
+  border-radius: ${radii.sm};
+  background-color: transparent;
+  color: ${(props) => props.theme.mutedForeground};
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
   cursor: pointer;
-  transition:
-    border-color 0.15s ease,
-    color 0.15s ease;
+  transition: background-color 0.15s ease;
 
   &:hover {
-    color: ${(props) => props.theme.primary.text};
-    border-color: ${(props) => props.theme.accent!.base};
+    background-color: ${(props) => props.theme.accent};
+  }
+
+  .dgpt-sources-count {
+    font-weight: 400;
+    opacity: 0.7;
+  }
+
+  .dgpt-sources-chevron {
+    transition: transform 0.15s ease;
+  }
+
+  &[aria-expanded='true'] .dgpt-sources-chevron {
+    transform: rotate(90deg);
+  }
+
+  ${focusRing}
+`;
+const SourcesWell = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 8px;
+  padding: 4px;
+  border-radius: ${radii['2xl']};
+  background-color: ${(props) => props.theme.answerSurface};
+`;
+const sourceRow = css`
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: ${radii.xl};
+  color: ${(props) => props.theme.foreground};
+  text-decoration: none;
+  outline: none;
+  transition:
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  & > svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: ${(props) => props.theme.mutedForeground};
+  }
+
+  &[data-highlighted='true'] {
+    background-color: ${(props) => props.theme.accent};
+    box-shadow: 0 0 0 3px ${(props) => props.theme.ringSoft};
   }
 
   &:focus-visible {
-    outline: 2px solid ${(props) => props.theme.accent!.base};
-    outline-offset: 2px;
+    box-shadow: 0 0 0 3px ${(props) => props.theme.ringSoft};
   }
 `;
-const SourceLabel = styled.span`
+const SourceItem = styled.div`
+  ${sourceRow}
+`;
+const SourceLink = styled.a`
+  ${sourceRow}
+
+  & > svg.dgpt-source-external {
+    margin-top: 4px;
+  }
+
+  &:hover {
+    background-color: ${(props) => props.theme.accent};
+  }
+
+  &:hover .dgpt-source-title {
+    color: ${(props) => props.theme.primary};
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+`;
+const SourceText = styled.span`
+  display: flex;
+  flex-direction: column;
+  flex: 1;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+
+  .dgpt-source-title {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 14px;
+    line-height: 1.43;
+  }
+
+  .dgpt-source-detail {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: ${(props) => props.theme.mutedForeground};
+    font-size: 12px;
+    line-height: 1.33;
+  }
 `;
 
-const ExtraButton = styled.button`
-  color: ${(props) => props.theme.accent!.link};
-  background: transparent;
-  border-radius: ${radii.full};
-  padding: 3px 8px;
-  font-size: 12px;
-  font-family: inherit;
-  border: none;
-  cursor: pointer;
-  transition: opacity 0.2s ease;
-  text-align: center;
-  height: auto;
-  &:hover {
-    opacity: 0.8;
-  }
-`;
+type Source = NonNullable<Query['sources']>[number];
+
 const SourcesComponent = ({
   sources,
+  turn,
+  open,
+  highlighted,
+  onToggle,
 }: {
-  sources: Array<{ source: string; title: string }>;
-}) => {
-  const [showAll, setShowAll] = React.useState(false);
-  const visibleSources = showAll ? sources : sources.slice(0, 3);
-  const extraCount = sources.length - 3;
-
-  return (
-    <SourcesList>
-      {visibleSources.map((source, idx) => (
-        <SourceChip
-          key={idx}
-          href={source.source}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={source.title}
-        >
-          <SourceLabel>{source.title}</SourceLabel>
-        </SourceChip>
-      ))}
-      {sources.length > 3 && (
-        <ExtraButton onClick={() => setShowAll(!showAll)}>
-          {showAll ? 'Show less' : `+ ${extraCount} more`}
-        </ExtraButton>
-      )}
-    </SourcesList>
-  );
-};
+  sources: Source[];
+  /** The answer's index, which keys its rows for a citation to find. */
+  turn: number;
+  open: boolean;
+  highlighted: number | null;
+  onToggle: () => void;
+}) => (
+  <SourcesBlock>
+    <SourcesToggle type="button" aria-expanded={open} onClick={onToggle}>
+      <Database size={16} />
+      <span>Sources</span>
+      <span className="dgpt-sources-count">{sources.length}</span>
+      <ChevronRight size={16} className="dgpt-sources-chevron" />
+    </SourcesToggle>
+    {open && (
+      <SourcesWell>
+        {sources.map((source, index) => {
+          const key = `${turn}-${index}`;
+          const isHighlighted = highlighted === index;
+          // A file's `source` is its path in the library, which no visitor
+          // can open; only a web source is a link.
+          return isWebSource(source.source) ? (
+            <SourceLink
+              key={key}
+              data-source={key}
+              data-highlighted={isHighlighted}
+              href={source.source}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Globe size={16} />
+              <SourceText>
+                <span className="dgpt-source-title">
+                  {source.title || sourceHost(source.source)}
+                </span>
+                <span className="dgpt-source-detail">
+                  {sourceHost(source.source)}
+                </span>
+              </SourceText>
+              <ExternalLink size={12} className="dgpt-source-external" />
+            </SourceLink>
+          ) : (
+            <SourceItem
+              key={key}
+              data-source={key}
+              data-highlighted={isHighlighted}
+              tabIndex={-1}
+            >
+              <FileText size={16} />
+              <SourceText>
+                <span className="dgpt-source-title">{source.title}</span>
+                {source.text && (
+                  <span className="dgpt-source-detail">{source.text}</span>
+                )}
+              </SourceText>
+            </SourceItem>
+          );
+        })}
+      </SourcesWell>
+    )}
+  </SourcesBlock>
+);
 
 const Hero = ({
   title,
   description,
+  icon,
 }: {
   title: string;
   description: string;
+  icon?: string;
 }) => {
   return (
     <HeroContainer>
       <HeroWrapper>
-        <HeroBadge>
-          <RocketIcon width={18} height={18} />
-        </HeroBadge>
-        <HeroTitle>{title}</HeroTitle>
-        <HeroDescription>{description}</HeroDescription>
+        <AgentAvatar src={icon} size={48} fallback="mark" />
+        <HeroText>
+          <HeroTitle>{title}</HeroTitle>
+          <HeroDescription>{description}</HeroDescription>
+        </HeroText>
       </HeroWrapper>
     </HeroContainer>
   );
 };
 export const DocsGPTWidget = (props: WidgetProps) => {
   const {
-    buttonIcon = 'https://d3dg1063dc54p9.cloudfront.net/widget/chat.svg',
+    buttonIcon,
     buttonText = 'Ask a question',
-    buttonBg = 'linear-gradient(to bottom right, #8860DB, #6D42C5)',
+    buttonBg,
     defaultOpen = false,
     ...coreProps
   } = props;
 
   const [open, setOpen] = React.useState<boolean>(defaultOpen);
-  const [isAnimatingButton, setIsAnimatingButton] = React.useState(false);
   const [isFloatingButtonVisible, setIsFloatingButtonVisible] =
     React.useState(!defaultOpen);
-
-  React.useEffect(() => {
-    if (isFloatingButtonVisible)
-      setTimeout(() => setIsAnimatingButton(true), 250);
-    return () => {
-      setIsAnimatingButton(false);
-    };
-  }, [isFloatingButtonVisible]);
 
   const handleClose = () => {
     setIsFloatingButtonVisible(true);
@@ -1288,25 +1589,30 @@ export const DocsGPTWidget = (props: WidgetProps) => {
     setIsFloatingButtonVisible(false);
   };
   return (
-    <>
+    <ThemeProvider theme={themes[coreProps.theme ?? 'dark']}>
       <FloatingButton
-        $bgcolor={buttonBg}
+        type="button"
+        $bg={buttonBg}
         onClick={handleOpen}
         $hidden={!isFloatingButtonVisible}
-        $isAnimatingButton={isAnimatingButton}
       >
-        <img width={24} src={buttonIcon} />
+        {buttonIcon ? (
+          <img src={buttonIcon} alt="" />
+        ) : (
+          <MessageCircle size={20} />
+        )}
         <span>{buttonText}</span>
       </FloatingButton>
       <WidgetCore isOpen={open} handleClose={handleClose} {...coreProps} />
-    </>
+    </ThemeProvider>
   );
 };
 
 export const WidgetCore = ({
   apiHost = 'https://gptcloud.arc53.com',
   apiKey = '527686a3-e867-4b4d-9fec-f5f45fdb613a',
-  avatar = DEFAULT_AVATAR,
+  avatar,
+  heroIcon,
   title = 'Get AI assistance',
   description = "DocsGPT's AI Chatbot is here to help",
   heroTitle = 'Welcome to DocsGPT !',
@@ -1336,6 +1642,16 @@ export const WidgetCore = ({
     number | null
   >(null);
   const [isDraggingFiles, setIsDraggingFiles] = React.useState(false);
+  // Answers whose sources list is open, by turn index.
+  const [openSources, setOpenSources] = React.useState<Set<number>>(
+    () => new Set(),
+  );
+  // The source a citation pill just opened.
+  const [highlightedSource, setHighlightedSource] = React.useState<{
+    turn: number;
+    source: number;
+  } | null>(null);
+  const highlightTimerRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -1380,7 +1696,7 @@ export const WidgetCore = ({
   const resizePrompt = React.useCallback(() => {
     const el = promptRef.current;
     if (!el) return;
-    const baseHeight = size === 'large' ? 60 : 40;
+    const baseHeight = size === 'large' ? 64 : 48;
     const maxHeight = 140;
     el.style.height = 'auto';
     el.style.height = `${Math.max(
@@ -1414,15 +1730,6 @@ export const WidgetCore = ({
     separator: '\n',
     onEnd: focusPrompt,
   });
-  const md = new MarkdownIt();
-  //Custom markdown for the table
-  md.renderer.rules.table_open = () =>
-    '<div class="dgpt-table-container"><table class="dgpt-table">';
-  md.renderer.rules.table_close = () => '</table></div>';
-  md.renderer.rules.thead_open = () => '<thead class="dgpt-thead">';
-  md.renderer.rules.tr_open = () => '<tr class="dgpt-tr">';
-  md.renderer.rules.td_open = () => '<td class="dgpt-td">';
-  md.renderer.rules.th_open = () => '<th class="dgpt-th">';
 
   React.useEffect(() => {
     if (isOpen) {
@@ -1646,8 +1953,7 @@ export const WidgetCore = ({
       });
     } catch {
       const updatedQueries = [...queries];
-      updatedQueries[updatedQueries.length - 1].error =
-        'Something went wrong !';
+      updatedQueries[updatedQueries.length - 1].error = CONNECTION_ERROR;
       setQueries(updatedQueries);
       setStatus('idle');
       //setEventInterrupt(false)
@@ -1688,6 +1994,75 @@ export const WidgetCore = ({
       console.warn('Copy failed:', err);
     }
   };
+
+  const toggleSources = (turn: number) =>
+    setOpenSources((prev) => {
+      const next = new Set(prev);
+      if (next.has(turn)) next.delete(turn);
+      else next.add(turn);
+      return next;
+    });
+
+  // The widget has no source reader: a pill opens the answer's sources,
+  // brings the cited one into view and marks it for a moment.
+  const openCitedSource = (turn: number, source: number) => {
+    setOpenSources((prev) => (prev.has(turn) ? prev : new Set(prev).add(turn)));
+    setHighlightedSource({ turn, source });
+    if (highlightTimerRef.current !== null)
+      window.clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = window.setTimeout(() => {
+      setHighlightedSource(null);
+      highlightTimerRef.current = null;
+    }, SOURCE_HIGHLIGHT_MS);
+    window.requestAnimationFrame(() => {
+      const row = containerRef.current?.querySelector<HTMLElement>(
+        `[data-source="${turn}-${source}"]`,
+      );
+      if (!row) return;
+      row.scrollIntoView({
+        block: 'nearest',
+        behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+      });
+      row.focus({ preventScroll: true });
+    });
+  };
+
+  React.useEffect(
+    () => () => {
+      if (highlightTimerRef.current !== null)
+        window.clearTimeout(highlightTimerRef.current);
+    },
+    [],
+  );
+
+  // The answer is injected HTML, so its pills and copy buttons are handled
+  // here rather than by React.
+  const handleAnswerClick =
+    (turn: number) => (event: React.MouseEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+      const cite = target.closest<HTMLElement>('.dgpt-cite');
+      if (cite) {
+        const n = Number(cite.dataset.cite);
+        if (Number.isInteger(n) && n > 0) openCitedSource(turn, n - 1);
+        return;
+      }
+      const copy = target.closest<HTMLButtonElement>('.dgpt-code-copy');
+      if (!copy) return;
+      const code =
+        copy.closest('.dgpt-code')?.querySelector('pre code')?.textContent ??
+        '';
+      navigator.clipboard
+        .writeText(code)
+        .then(() => {
+          copy.classList.add('is-copied');
+          copy.setAttribute('aria-label', 'Copied');
+          window.setTimeout(() => {
+            copy.classList.remove('is-copied');
+            copy.setAttribute('aria-label', 'Copy code');
+          }, 2000);
+        })
+        .catch((err) => console.warn('Copy failed:', err));
+    };
 
   // Re-runs the turn in place instead of appending a duplicate prompt.
   const handleRetry = async (index: number) => {
@@ -1822,11 +2197,6 @@ export const WidgetCore = ({
     const files = Array.from(e.dataTransfer?.files ?? []);
     if (files.length > 0) addFiles(files);
   };
-  const handleImageError = (
-    event: React.SyntheticEvent<HTMLImageElement, Event>,
-  ) => {
-    event.currentTarget.src = DEFAULT_AVATAR;
-  };
 
   const renderStatusLine = (query: Query, index: number) => {
     if (status !== 'loading' || index !== queries.length - 1) return null;
@@ -1863,7 +2233,7 @@ export const WidgetCore = ({
         onClick={stopGenerating}
         aria-label="Stop generating"
       >
-        <StopIcon width={16} height={16} />
+        <StopGlyph />
       </StyledButton>
     ) : (
       <StyledButton
@@ -1871,7 +2241,7 @@ export const WidgetCore = ({
         aria-label="Send message"
         title={sendBlockedReason ?? undefined}
       >
-        <PaperPlaneIcon width={16} height={16} />
+        <SendArrow size={16} />
       </StyledButton>
     );
 
@@ -1888,6 +2258,7 @@ export const WidgetCore = ({
 
   return (
     <ThemeProvider theme={{ ...themes[theme], dimensions }}>
+      <InterFontFace />
       {isOpen && size === 'large' && <Overlay onClick={handleClose} />}
       {
         <WidgetContainer
@@ -1903,7 +2274,7 @@ export const WidgetCore = ({
             onDrop={handleDrop}
           >
             <Header>
-              <Avatar onError={handleImageError} src={avatar} alt="" />
+              <AgentAvatar src={avatar} size={40} fallback="person" />
               <ContentWrapper>
                 <Title>{title}</Title>
                 <Description>{description}</Description>
@@ -1915,12 +2286,11 @@ export const WidgetCore = ({
                     onClick={() => setIsExpanded((prev) => !prev)}
                     aria-label={isExpanded ? 'Collapse chat' : 'Expand chat'}
                     aria-expanded={isExpanded}
-                    title={isExpanded ? 'Collapse' : 'Expand'}
                   >
                     {isExpanded ? (
-                      <ExitFullScreenIcon width={16} height={16} />
+                      <Minimize2 size={16} />
                     ) : (
-                      <EnterFullScreenIcon width={16} height={16} />
+                      <Maximize2 size={16} />
                     )}
                   </ExpandButton>
                 )}
@@ -1929,7 +2299,7 @@ export const WidgetCore = ({
                   onClick={handleClose}
                   aria-label="Close chat"
                 >
-                  <Cross2Icon width={18} height={18} />
+                  <X size={16} />
                 </IconButton>
               </HeaderActions>
             </Header>
@@ -1940,6 +2310,8 @@ export const WidgetCore = ({
               >
                 {queries.length > 0 ? (
                   queries?.map((query, index) => {
+                    const sources =
+                      showSources && query.sources ? query.sources : [];
                     return (
                       <Turn key={index}>
                         {query.prompt && (
@@ -1965,26 +2337,24 @@ export const WidgetCore = ({
                         )}
                         {query.response ? (
                           <MessageBubble $type="ANSWER">
-                            {showSources &&
-                              query.sources &&
-                              query.sources.length > 0 &&
-                              query.sources.some(
-                                (source) => source.source !== 'local',
-                              ) && (
-                                <SourcesComponent
-                                  sources={query.sources.filter(
-                                    (source) => source.source !== 'local',
-                                  )}
-                                />
-                              )}
+                            {sources.length > 0 && (
+                              <SourcesComponent
+                                sources={sources}
+                                turn={index}
+                                open={openSources.has(index)}
+                                highlighted={
+                                  highlightedSource?.turn === index
+                                    ? highlightedSource.source
+                                    : null
+                                }
+                                onToggle={() => toggleSources(index)}
+                              />
+                            )}
                             {query.toolCalls && query.toolCalls.length > 0 && (
                               <StatusLine>
                                 Used{' '}
                                 {query.toolCalls.map(prettifyName).join(', ')}
                               </StatusLine>
-                            )}
-                            {query.thought && (
-                              <Thought>{query.thought}</Thought>
                             )}
                             <Message
                               $type="ANSWER"
@@ -1995,22 +2365,20 @@ export const WidgetCore = ({
                               }
                             >
                               <Markdown
+                                onClick={handleAnswerClick(index)}
                                 dangerouslySetInnerHTML={{
                                   __html: DOMPurify.sanitize(
-                                    md.render(query.response),
+                                    renderAnswer(query.response, {
+                                      sourceCount: sources.length,
+                                    }),
+                                    { ADD_ATTR: ['target'] },
                                   ),
                                 }}
                               />
                             </Message>
                             {renderStatusLine(query, index)}
 
-                            <ActionsRow
-                              className="dgpt-actions"
-                              $pinned={
-                                Boolean(query.feedback) ||
-                                feedbackErrorIndex === index
-                              }
-                            >
+                            <ActionsRow>
                               <ActionButton
                                 type="button"
                                 onClick={(e) => {
@@ -2022,11 +2390,12 @@ export const WidgetCore = ({
                                     ? 'Copied'
                                     : 'Copy answer'
                                 }
+                                $copied={copiedIndex === index}
                               >
                                 {copiedIndex === index ? (
-                                  <CheckIcon />
+                                  <Check size={16} />
                                 ) : (
-                                  <CopyIcon />
+                                  <Copy size={16} />
                                 )}
                               </ActionButton>
 
@@ -2040,13 +2409,13 @@ export const WidgetCore = ({
                                     }}
                                     aria-label="Good response"
                                     aria-pressed={query.feedback === 'LIKE'}
-                                    title="Good response"
-                                    $active={query.feedback === 'LIKE'}
-                                    $tone="accent"
+                                    $tone={
+                                      query.feedback === 'LIKE'
+                                        ? 'primary'
+                                        : undefined
+                                    }
                                   >
-                                    <LikeIcon
-                                      filled={query.feedback === 'LIKE'}
-                                    />
+                                    <ThumbsUp size={16} />
                                   </ActionButton>
                                   <ActionButton
                                     type="button"
@@ -2056,13 +2425,13 @@ export const WidgetCore = ({
                                     }}
                                     aria-label="Bad response"
                                     aria-pressed={query.feedback === 'DISLIKE'}
-                                    title="Bad response"
-                                    $active={query.feedback === 'DISLIKE'}
-                                    $tone="danger"
+                                    $tone={
+                                      query.feedback === 'DISLIKE'
+                                        ? 'destructive'
+                                        : undefined
+                                    }
                                   >
-                                    <DislikeIcon
-                                      filled={query.feedback === 'DISLIKE'}
-                                    />
+                                    <ThumbsDown size={16} />
                                   </ActionButton>
                                 </>
                               )}
@@ -2073,43 +2442,62 @@ export const WidgetCore = ({
                               )}
                             </ActionsRow>
                           </MessageBubble>
-                        ) : (
-                          <div>
-                            {query.error ? (
-                              <ErrorAlert>
-                                <ExclamationTriangleIcon
-                                  width={18}
-                                  height={18}
-                                  style={{ flexShrink: 0, marginTop: '1px' }}
-                                />
-                                <ErrorBody>
-                                  <ErrorTitle>Network Error</ErrorTitle>
-                                  <ErrorText>{query.error}</ErrorText>
-                                  <RetryButton
-                                    type="button"
-                                    onClick={() => handleRetry(index)}
-                                    disabled={status === 'loading'}
-                                  >
-                                    <RetryIcon />
-                                    Try again
-                                  </RetryButton>
-                                </ErrorBody>
-                              </ErrorAlert>
-                            ) : (
-                              <MessageBubble $type="ANSWER">
-                                {query.thought && (
-                                  <Thought>{query.thought}</Thought>
+                        ) : query.error ? (
+                          <ErrorTurn>
+                            <ErrorAlert role="alert">
+                              <CircleAlert size={16} />
+                              <ErrorTitle>
+                                Couldn&apos;t generate a response
+                              </ErrorTitle>
+                              <ErrorText
+                                $raw={query.error !== CONNECTION_ERROR}
+                              >
+                                {query.error}
+                              </ErrorText>
+                            </ErrorAlert>
+                            <ActionsRow>
+                              <ActionButton
+                                type="button"
+                                onClick={() => handleRetry(index)}
+                                disabled={status === 'loading'}
+                                aria-label="Retry"
+                              >
+                                <RotateCcw size={16} />
+                              </ActionButton>
+                              <ActionButton
+                                type="button"
+                                onClick={() =>
+                                  handleCopy(query.error ?? '', index)
+                                }
+                                aria-label={
+                                  copiedIndex === index
+                                    ? 'Copied'
+                                    : 'Copy error'
+                                }
+                                $copied={copiedIndex === index}
+                              >
+                                {copiedIndex === index ? (
+                                  <Check size={16} />
+                                ) : (
+                                  <Copy size={16} />
                                 )}
-                                {renderStatusLine(query, index)}
-                              </MessageBubble>
-                            )}
-                          </div>
+                              </ActionButton>
+                            </ActionsRow>
+                          </ErrorTurn>
+                        ) : (
+                          <MessageBubble $type="ANSWER">
+                            {renderStatusLine(query, index)}
+                          </MessageBubble>
                         )}
                       </Turn>
                     );
                   })
                 ) : (
-                  <Hero title={heroTitle} description={heroDescription} />
+                  <Hero
+                    title={heroTitle}
+                    description={heroDescription}
+                    icon={heroIcon}
+                  />
                 )}
               </Conversation>
               {!isPinnedToLatest && queries.length > 0 && (
@@ -2118,7 +2506,7 @@ export const WidgetCore = ({
                   onClick={jumpToLatest}
                   aria-label="Scroll to latest message"
                 >
-                  <ArrowDownIcon />
+                  <ArrowDown size={16} />
                 </ScrollToLatest>
               )}
             </ConversationArea>
@@ -2151,12 +2539,13 @@ export const WidgetCore = ({
                           ? 'Listening\u2026'
                           : 'Finishing\u2026'
                       }
-                      minHeight={size === 'large' ? '60px' : '40px'}
+                      minHeight={size === 'large' ? '64px' : '48px'}
                     />
                   )}
                   {/* Kept mounted so promptRef stays valid while dictating. */}
                   <StyledTextarea
                     $hidden={isDictating}
+                    $stacked={hasComposerControls}
                     id="chatInput"
                     ref={promptRef}
                     autoFocus={!touchPrimary}
@@ -2164,6 +2553,7 @@ export const WidgetCore = ({
                     value={prompt}
                     onChange={handlePromptChange}
                     placeholder="Ask your question"
+                    aria-label="Ask your question"
                     onKeyDown={handlePromptKeyDown}
                     onPaste={handlePromptPaste}
                     /* Typing would be overwritten by the next interim
@@ -2208,7 +2598,11 @@ export const WidgetCore = ({
               )}
               <Tagline>
                 Powered by&nbsp;
-                <Hyperlink target="_blank" href="https://www.docsgpt.cloud/">
+                <Hyperlink
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  href="https://www.docsgpt.cloud/"
+                >
                   DocsGPT
                 </Hyperlink>
               </Tagline>
@@ -2216,7 +2610,7 @@ export const WidgetCore = ({
             {isDraggingFiles && (
               <DropOverlay>
                 <DropTarget>
-                  <ClipIcon width={16} height={16} aria-hidden="true" />
+                  <CloudUpload size={16} />
                   Drop files to attach
                 </DropTarget>
               </DropOverlay>

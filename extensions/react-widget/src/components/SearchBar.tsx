@@ -44,9 +44,9 @@ const SearchButton = styled.button<{ $inputWidth: string }>`
   font-family: inherit;
   font-size: 14px;
   text-align: left;
-  color: ${(props) => props.theme.secondary.text};
-  background-color: ${(props) => props.theme.secondary.bg};
-  border: 1px solid ${(props) => props.theme.hairline};
+  color: ${(props) => props.theme.mutedForeground};
+  background-color: ${(props) => props.theme.muted};
+  border: 1px solid ${(props) => props.theme.border};
   border-radius: ${radii.sm};
   outline: none;
   cursor: pointer;
@@ -57,12 +57,12 @@ const SearchButton = styled.button<{ $inputWidth: string }>`
     border-color 0.15s ease;
 
   &:hover {
-    color: ${(props) => props.theme.primary.text};
+    color: ${(props) => props.theme.foreground};
   }
 
   &:focus-visible {
-    border-color: ${(props) => props.theme.accent!.base};
-    box-shadow: 0 0 0 3px ${(props) => props.theme.accent!.soft};
+    border-color: ${(props) => props.theme.primary};
+    box-shadow: 0 0 0 3px ${(props) => props.theme.secondary};
   }
 `;
 
@@ -96,10 +96,10 @@ const SearchResults = styled.div`
   height: 396px;
   padding: 8px 0;
   overflow: hidden;
-  color: ${(props) => props.theme.primary.text};
-  background-color: ${(props) => props.theme.primary.bg};
-  border: 1px solid ${(props) => props.theme.hairline};
-  border-radius: ${radii.panel};
+  color: ${(props) => props.theme.foreground};
+  background-color: ${(props) => props.theme.background};
+  border: 1px solid ${(props) => props.theme.border};
+  border-radius: ${radii['2xl']};
   box-shadow:
     0 12px 44px rgba(0, 0, 0, 0.18),
     0 2px 8px rgba(0, 0, 0, 0.1);
@@ -120,14 +120,14 @@ const SearchResultsScroll = styled.div`
   overflow-y: auto;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: ${(props) => props.theme.hairline} transparent;
+  scrollbar-color: ${(props) => props.theme.border} transparent;
 `;
 
 const IconTitleWrapper = styled.div`
   display: flex;
   align-items: center;
   gap: 8px;
-  color: ${(props) => props.theme.secondary.text};
+  color: ${(props) => props.theme.mutedForeground};
 
   .element-icon {
     margin: 4px;
@@ -138,7 +138,7 @@ const Title = styled.h3`
   margin: 0;
   font-size: 15px;
   font-weight: 500;
-  color: ${(props) => props.theme.primary.text};
+  color: ${(props) => props.theme.foreground};
   overflow-wrap: break-word;
 `;
 
@@ -162,7 +162,7 @@ const ResultWrapper = styled.div`
   transition: background-color 0.15s ease;
 
   &:hover {
-    background-color: ${(props) => props.theme.secondary.bg};
+    background-color: ${(props) => props.theme.accent};
   }
 `;
 
@@ -175,27 +175,27 @@ const Content = styled.div`
   overflow: hidden;
   font-size: 14px;
   line-height: 1.6;
-  color: ${(props) => props.theme.secondary.text};
-  border-left: 2px solid ${(props) => props.theme.hairline};
+  color: ${(props) => props.theme.mutedForeground};
+  border-left: 2px solid ${(props) => props.theme.border};
 
   /* Scoped so the host page's own .highlight elements are untouched. */
   .highlight {
     padding: 1px 2px;
     border-radius: 4px;
     font-weight: 500;
-    color: ${(props) => props.theme.primary.text};
-    background-color: ${(props) => props.theme.accent!.mark};
+    color: ${(props) => props.theme.foreground};
+    background-color: ${(props) => props.theme.secondary};
   }
 
   /* Snippet HTML can contain raw links. */
   a {
-    color: ${(props) => props.theme.accent!.link};
+    color: ${(props) => props.theme.primary};
     text-decoration: underline;
     text-underline-offset: 2px;
   }
 
   a:hover {
-    color: ${(props) => props.theme.accent!.base};
+    color: ${(props) => props.theme.primary};
   }
 `;
 
@@ -220,9 +220,9 @@ const Toolkit = styled.kbd`
   font-weight: 500;
   line-height: 1.6;
   white-space: nowrap;
-  color: ${(props) => props.theme.secondary.text};
-  background-color: ${(props) => props.theme.primary.bg};
-  border: 1px solid ${(props) => props.theme.hairline};
+  color: ${(props) => props.theme.mutedForeground};
+  background-color: ${(props) => props.theme.background};
+  border: 1px solid ${(props) => props.theme.border};
   border-radius: ${radii.sm};
   pointer-events: none;
 `;
@@ -231,8 +231,8 @@ const Loader = styled.div`
   width: 16px;
   height: 16px;
   margin: 2rem auto;
-  border: 2px solid ${(props) => props.theme.hairline};
-  border-top-color: ${(props) => props.theme.accent!.base};
+  border: 2px solid ${(props) => props.theme.border};
+  border-top-color: ${(props) => props.theme.primary};
   border-radius: 50%;
   animation: ${spin} 0.8s linear infinite;
 `;
@@ -241,7 +241,7 @@ const NoResults = styled.div`
   margin-top: 2rem;
   font-size: 14px;
   text-align: center;
-  color: ${(props) => props.theme.secondary.text};
+  color: ${(props) => props.theme.mutedForeground};
 `;
 
 const AskAIButton = styled.button`
@@ -256,9 +256,9 @@ const AskAIButton = styled.button`
   font-size: 15px;
   font-weight: 500;
   text-align: left;
-  color: ${(props) => props.theme.primary.text};
-  background-color: ${(props) => props.theme.secondary.bg};
-  border: 1px solid ${(props) => props.theme.hairline};
+  color: ${(props) => props.theme.foreground};
+  background-color: ${(props) => props.theme.muted};
+  border: 1px solid ${(props) => props.theme.border};
   border-radius: ${radii.md};
   cursor: pointer;
   transition:
@@ -266,8 +266,8 @@ const AskAIButton = styled.button`
     border-color 0.15s ease;
 
   &:hover:not(:disabled) {
-    background-color: ${(props) => props.theme.accent!.soft};
-    border-color: ${(props) => props.theme.accent!.soft};
+    background-color: ${(props) => props.theme.secondary};
+    border-color: ${(props) => props.theme.secondary};
   }
 
   &:disabled {
@@ -276,7 +276,7 @@ const AskAIButton = styled.button`
   }
 
   &:focus-visible {
-    outline: 2px solid ${(props) => props.theme.accent!.base};
+    outline: 2px solid ${(props) => props.theme.primary};
     outline-offset: 2px;
   }
 `;
@@ -287,7 +287,7 @@ const SearchHeader = styled.div`
   gap: 12px;
   margin-bottom: 12px;
   padding: 4px 16px 12px;
-  border-bottom: 1px solid ${(props) => props.theme.hairline};
+  border-bottom: 1px solid ${(props) => props.theme.border};
 `;
 
 const TextField = styled.input<{ $hidden?: boolean }>`
@@ -297,13 +297,13 @@ const TextField = styled.input<{ $hidden?: boolean }>`
   padding: 8px 0;
   font-family: inherit;
   font-size: 18px;
-  color: ${(props) => props.theme.primary.text};
+  color: ${(props) => props.theme.foreground};
   background-color: transparent;
   border: none;
   outline: none;
 
   &::placeholder {
-    color: ${(props) => props.theme.secondary.text};
+    color: ${(props) => props.theme.mutedForeground};
     opacity: 1;
   }
 `;
@@ -316,9 +316,9 @@ const EscapeInstruction = styled.kbd`
   font-weight: 500;
   line-height: 1.6;
   white-space: nowrap;
-  color: ${(props) => props.theme.secondary.text};
-  background-color: ${(props) => props.theme.secondary.bg};
-  border: 1px solid ${(props) => props.theme.hairline};
+  color: ${(props) => props.theme.mutedForeground};
+  background-color: ${(props) => props.theme.muted};
+  border: 1px solid ${(props) => props.theme.border};
   border-radius: ${radii.sm};
   cursor: pointer;
 `;
@@ -327,7 +327,7 @@ const SearchNote = styled.div`
   margin: -4px 16px 8px;
   font-size: 12px;
   line-height: 1.5;
-  color: ${(props) => props.theme.danger!.text};
+  color: ${(props) => props.theme.destructive};
 `;
 
 export const SearchBar = ({
