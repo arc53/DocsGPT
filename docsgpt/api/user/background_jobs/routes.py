@@ -52,8 +52,8 @@ def _detail(job: Dict[str, Any]) -> Dict[str, Any]:
 @background_jobs_ns.route("/background_jobs")
 class BackgroundJobs(Resource):
     @api.doc(
-        description="List the caller's background jobs of one conversation, newest first.",
-        params={"conversation_id": "The conversation whose jobs to list (required)."},
+        description="List the caller's background jobs of one conversation, newest first (no result bodies).",
+        params={"conversation_id": {"description": "The conversation whose jobs to list.", "required": True}},
     )
     def get(self):
         user_id = _user_id()
@@ -70,7 +70,7 @@ class BackgroundJobs(Resource):
         except Exception:
             logger.exception("listing background jobs failed")
             return _err("Failed to list background jobs", 500)
-        return make_response(jsonify({"jobs": [_detail(row) for row in rows]}), 200)
+        return make_response(jsonify({"jobs": [job_summary(row) for row in rows]}), 200)
 
 
 @background_jobs_ns.route("/background_jobs/<string:job_id>")

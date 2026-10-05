@@ -110,7 +110,7 @@ class TestExecutorHandOff:
         conversation_id, message_id = conversation
         tool = _SlowTool(0)
         executor = _executor(conversation_id, message_id, tool, monkeypatch)
-        events, (result, call_id) = _drain(executor.execute(_TOOLS, _call({"url": "a"}), "OpenAILLM"))
+        result, call_id = _drain(executor.execute(_TOOLS, _call({"url": "a"}), "OpenAILLM"))[1]
         assert result == "page for a"
         assert call_id == "c1"
         assert executor.tool_calls[-1]["status"] == "completed"
@@ -128,6 +128,7 @@ class TestExecutorHandOff:
         events, (result, _call_id) = _drain(
             executor.execute(_TOOLS, _call({"url": "b", "background": False}), "OpenAILLM")
         )
+        assert events[0]["data"]["status"] == "pending"
         assert time.monotonic() - started < 5
         assert result["status"] == "running"
         job_id = result["job_id"]
@@ -173,7 +174,7 @@ class TestExecutorHandOff:
         tool = _SlowTool(0)
         executor = _executor(conversation_id, message_id, tool, monkeypatch)
         started = time.monotonic()
-        _events, (result, _) = _drain(executor.execute(_TOOLS, _call({"url": "c", "background": True}), "OpenAILLM"))
+        result, _ = _drain(executor.execute(_TOOLS, _call({"url": "c", "background": True}), "OpenAILLM"))[1]
         assert time.monotonic() - started < 1
         assert result["status"] == "running"
         # Nothing ran in the turn: the worker runs the whole call.
@@ -207,9 +208,9 @@ class TestExecutorHandOff:
         monkeypatch.setattr(tasks.run_background_tool_call, "apply_async", refuse)
         tool = _SlowTool(0)
         executor = _executor(conversation_id, message_id, tool, monkeypatch)
-        _events, (result, _) = _drain(executor.execute(_TOOLS, _call({"url": "e", "background": True}), "OpenAILLM"))
-        # The pool path takes over: a fast call returns its result as before.
-        assert result == "page for e" or result["status"] == "running"
+        result, _ = _drain(executor.execute(_TOOLS, _call({"url": "e", "background": True}), "OpenAILLM"))[1]
+        # The failed worker job can't take the result: the call runs in the foreground.
+        assert result == "page for e"
         refused = [j for j in self._jobs(bg_db, conversation_id) if j["runner"] == "celery"]
         assert refused and refused[0]["status"] == "failed"
         assert refused[0]["delivery_state"] == "suppressed"
@@ -227,7 +228,7 @@ class TestExecutorHandOff:
         tool = _SlowTool(0, gate)
         tool.supports_detached = lambda: True
         executor = _executor(conversation_id, message_id, tool, monkeypatch)
-        _events, (result, _) = _drain(executor.execute(_TOOLS, _call({"url": "f", "background": True}), "OpenAILLM"))
+        result, _ = _drain(executor.execute(_TOOLS, _call({"url": "f", "background": True}), "OpenAILLM"))[1]
         assert result["status"] == "running"
         assert _job_for(bg_db, conversation_id)["runner"] == "inprocess"
         gate.set()

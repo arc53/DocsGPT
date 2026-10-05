@@ -893,7 +893,12 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
             "    try:\n"
             f"        _os.killpg({int(run['pid'])}, 0)\n"
             "    except ProcessLookupError:\n"
+            # It may have written ``exit`` and been reaped between the two checks.
             "        _done, _code = True, 137\n"
+            "        try:\n"
+            "            _code = int(open(_os.path.join(_d, 'exit')).read().strip() or '0')\n"
+            "        except (OSError, ValueError):\n"
+            "            pass\n"
             "    except PermissionError:\n"
             "        pass\n"
             "_tail, _size = '', 0\n"

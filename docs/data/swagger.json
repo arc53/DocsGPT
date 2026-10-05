@@ -2422,13 +2422,14 @@
     },
     "/api/background_jobs": {
       "get": {
-        "description": "List the caller's background jobs of one conversation, newest first.",
+        "description": "List the caller's background jobs of one conversation, newest first (no result bodies).",
         "operationId": "get_background_jobs",
         "parameters": [
           {
-            "description": "The conversation whose jobs to list (required).",
+            "description": "The conversation whose jobs to list.",
             "in": "query",
             "name": "conversation_id",
+            "required": true,
             "type": "string"
           }
         ],

@@ -322,7 +322,7 @@ def _await_or_hand_off(
 
     job: Optional[Dict[str, Any]] = None
     try:
-        job, _created = jobs.create_job(
+        job, created = jobs.create_job(
             context,
             tool_name=spec.tool_name,
             action_name=spec.action_name,
@@ -330,6 +330,10 @@ def _await_or_hand_off(
             arguments=spec.arguments,
             watch=_watch_of(spec),
         )
+        if not created and job.get("status") != "working":
+            # The call already had a job that ended (a worker hand-off that
+            # could not be queued); a finished row can't take this result.
+            job = None
     except Exception:
         logger.exception("background job could not be written; the call stays in the foreground")
     if not job:
@@ -385,6 +389,8 @@ def _run_in_worker(context: BackgroundContext, spec: CallSpec) -> Optional[Outco
         )
     except Exception:
         logger.exception("background job could not be written; the call runs here")
+        return None
+    if not created and (job.get("status") != "working" or job.get("runner") != "celery"):
         return None
     if created:
         from docsgpt.background.celery_runner import enqueue

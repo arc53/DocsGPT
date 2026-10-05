@@ -274,11 +274,6 @@ def finalize(
     try:
         with db_session() as conn:
             repo = BackgroundJobsRepository(conn)
-            current = repo.get(job_id)
-            if current is None or current.get("status") != "working":
-                return None
-            if current.get("cancel_requested_at") and status in ("completed", "failed"):
-                status = "cancelled"
             row = repo.finish(
                 job_id,
                 status=status,

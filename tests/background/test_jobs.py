@@ -177,3 +177,22 @@ class TestFinalize:
         assert jobs.finalize(row["id"], status="completed", result={"text": "late"}) is None
         assert _job_row(bg_db, row["id"])["status"] == "lost"
         assert len(delivered) == 1
+
+
+def test_a_cancel_that_lands_before_the_final_write_wins(bg_db, conversation, monkeypatch):
+    """The cancel check is part of the final UPDATE, not a read before it."""
+    monkeypatch.setattr(jobs, "_deliver", lambda row: None)
+    conversation_id, message_id = conversation
+    row, _ = jobs.create_job(
+        _context(conversation_id, message_id), tool_name="t", action_name="a", journal_key="k", arguments={}
+    )
+    real_finish = BackgroundJobsRepository.finish
+
+    def cancel_then_finish(self, job_id, **kwargs):
+        with bg_db.begin() as conn:
+            BackgroundJobsRepository(conn).request_cancel(job_id, "u1")
+        return real_finish(self, job_id, **kwargs)
+
+    monkeypatch.setattr(BackgroundJobsRepository, "finish", cancel_then_finish)
+    done = jobs.finalize(row["id"], status="completed", result={"text": "ok"})
+    assert done["status"] == "cancelled"

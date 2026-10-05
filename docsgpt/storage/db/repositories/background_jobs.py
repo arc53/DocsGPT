@@ -307,6 +307,10 @@ class BackgroundJobsRepository:
     ) -> Optional[dict]:
         """Write a running job's final state, once.
 
+        A job whose cancellation was requested ends ``cancelled`` instead of
+        ``completed`` or ``failed``, decided in the same write, so a cancel
+        that lands just before the job finishes is never lost.
+
         Args:
             job_id: The job.
             status: ``completed``, ``failed``, ``cancelled`` or ``lost``.
@@ -330,7 +334,9 @@ class BackgroundJobsRepository:
             text(
                 """
                 UPDATE background_jobs SET
-                    status = :status,
+                    status = CASE
+                        WHEN cancel_requested_at IS NOT NULL AND :status IN ('completed', 'failed')
+                        THEN 'cancelled' ELSE :status END,
                     result = COALESCE(CAST(:result AS jsonb), result),
                     error = COALESCE(CAST(:error AS jsonb), error),
                     status_message = COALESCE(:status_message, status_message),

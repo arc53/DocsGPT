@@ -294,3 +294,41 @@ class TestJupyterDetached:
             jupyter.release_adopted("conv", {"observer_kernel_id": "observer-1", "kernel_id": "k1"})
         delete.assert_called_once_with("observer-1")
         assert "conv" not in jupyter._kernels
+
+
+def test_jupyter_probe_rereads_exit_when_the_group_is_gone(tmp_path):
+    """A run that wrote ``exit`` and was reaped between the two checks keeps its real exit code."""
+    import os
+    import subprocess
+
+    from docsgpt.sandbox.jupyter_gateway import JupyterKernelGatewaySandbox, _Kernel
+
+    backend = JupyterKernelGatewaySandbox("http://gateway")
+    backend._kernels["conv"] = _Kernel("k1", str(tmp_path), "conv")
+    job = tmp_path / "scratch" / "jobs" / "abc"
+    job.mkdir(parents=True)
+    finished = subprocess.Popen(["true"], start_new_session=True)
+    finished.wait()
+    probes = []
+    with mock.patch.object(
+        backend, "_run", side_effect=lambda k, code, t, max_output_bytes=None: probes.append(code) or ExecResult()
+    ):
+        with pytest.raises(IOError):
+            backend.poll_detached("conv", {"job_dir": "scratch/jobs/abc", "pid": finished.pid})
+    probe = probes[0]
+    # Simulate the race: no exit file at the first check, written before the re-read.
+    namespace = {}
+    original_exists = os.path.exists
+
+    def exists_once(path, _seen=[]):
+        if path.endswith("/exit") and not _seen:
+            _seen.append(1)
+            (job / "exit").write_text("0")
+            return False
+        return original_exists(path)
+
+    with mock.patch("os.path.exists", exists_once), mock.patch("builtins.print") as printed:
+        exec(compile(probe, "probe", "exec"), namespace)
+    state = json.loads(printed.call_args[0][0].split("<<<DOCSGPT_JOB_BEGIN>>>")[1].split("<<<DOCSGPT_JOB_END>>>")[0])
+    assert state["done"] is True
+    assert state["exit"] == 0
