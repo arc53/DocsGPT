@@ -1,10 +1,11 @@
 """Daytona Cloud sandbox: managed, strongly isolated runtimes via the Apache-2.0 Daytona SDK."""
 
+import contextlib
 import logging
 import posixpath
 import re
 import threading
-from typing import Dict, List, Optional
+from typing import Dict, Iterator, List, Optional
 
 from docsgpt.sandbox.base import (
     CodeSandbox,
@@ -82,6 +83,29 @@ else:
     _dg_sys.meta_path.insert(0, _DgPyplotHook())
 """
 _CHART_RE = re.compile(r"<<docsgpt-chart:([A-Za-z0-9+/=]+)>>\n?")
+
+
+# What the toolbox daemon answers when a code_run outlives its timeout: HTTP 408
+# with this code in the body. The SDK does not wrap it, so the raw toolbox
+# ApiException reaches the caller.
+_EXEC_TIMEOUT_CODE = "PROCESS_EXECUTION_TIMEOUT"
+
+# Exit codes of a process killed by SIGKILL: 128 + 9 through a shell, -9 from
+# the process itself. In the sandbox that is the kernel's OOM killer; the
+# timeout path answers 408 instead.
+_SIGKILL_EXIT_CODES = frozenset({137, -9})
+
+
+def _is_exec_timeout(exc: BaseException) -> bool:
+    """True when a code_run failed because it outlived its timeout."""
+    if _EXEC_TIMEOUT_CODE in str(getattr(exc, "body", "") or ""):
+        return True
+    return getattr(exc, "status", None) == 408
+
+
+def _activity_interval(auto_stop_minutes: int) -> float:
+    """Seconds between activity refreshes during a long run: a third of the auto-stop window, at least 30."""
+    return max(30.0, auto_stop_minutes * 60 / 3)
 
 
 class _Handle:
@@ -501,17 +525,25 @@ class DaytonaSandbox(CodeSandbox):
         wall = int(timeout or self._default_timeout)
         wrapped = self._with_workspace_cwd(handle.workspace, code)
         try:
-            response = handle.sandbox.process.code_run(wrapped, timeout=wall)
+            # code_run's own HTTP request timeout is ``wall`` plus a margin (SDK
+            # 0.211, pinned by a test), so a long run never waits unbounded.
+            with self._kept_active(handle, wall):
+                response = handle.sandbox.process.code_run(wrapped, timeout=wall)
         except Exception as exc:  # noqa: BLE001 - any SDK/cloud error -> error result, never raise
+            if _is_exec_timeout(exc):
+                return self._timeout_result(wall)
             # A cached handle may point at a sandbox Daytona auto-stopped; wake it and
             # retry once. Genuine code errors return a nonzero-exit response (they do
             # NOT raise), so this only retries transport/stopped faults.
             failure: Exception = exc
             if self._ensure_started(handle):
                 try:
-                    return self._to_result(handle.sandbox.process.code_run(wrapped, timeout=wall))
+                    with self._kept_active(handle, wall):
+                        return self._to_result(handle.sandbox.process.code_run(wrapped, timeout=wall))
                 except Exception as retry_exc:  # noqa: BLE001 - second failure -> error result below
                     # The retry ran on the woken sandbox; its error (a timeout, say) is the one to report.
+                    if _is_exec_timeout(retry_exc):
+                        return self._timeout_result(wall)
                     failure = retry_exc
             result = ExecResult(
                 status="error",
@@ -529,6 +561,52 @@ class DaytonaSandbox(CodeSandbox):
                 result.runtime_invalidated = True
             return result
         return self._to_result(response)
+
+    @staticmethod
+    def _timeout_result(wall: int) -> ExecResult:
+        """The result of a run the toolbox stopped at its timeout."""
+        return ExecResult(
+            status="error", error_name="TimeoutError", error_value=f"execution exceeded {wall}s", exit_code=-1
+        )
+
+    @contextlib.contextmanager
+    def _kept_active(self, handle: "_Handle", wall: int) -> Iterator[None]:
+        """Refresh the sandbox's activity while a run that could outlast the auto-stop timer is in flight.
+
+        Daytona stops a sandbox after ``auto_stop_interval`` minutes without
+        activity. Its docs count SDK calls as activity but say nothing about one
+        request that stays open; a live probe (SDK 0.211.2, 1-minute auto-stop,
+        a 200 s code_run) saw the sandbox stay up and its activity stamped mid-run.
+        Since that is not documented, a run longer than half the window also
+        refreshes the activity every third of the window. A failed refresh is
+        logged and ignored.
+
+        Args:
+            handle: The session's sandbox.
+            wall: The run's timeout in seconds.
+        """
+        window = self._auto_stop_interval * 60
+        refresh = getattr(handle.sandbox, "refresh_activity", None)
+        if not window or wall <= window / 2 or not callable(refresh):
+            yield
+            return
+        stop = threading.Event()
+        interval = _activity_interval(self._auto_stop_interval)
+
+        def _beat() -> None:
+            while not stop.wait(interval):
+                try:
+                    refresh(request_timeout=self._default_timeout)
+                except Exception as exc:  # noqa: BLE001 - a missed refresh must not touch the run
+                    logger.warning("Daytona activity refresh failed for %s: %s", handle.sandbox_id, exc)
+
+        beat = threading.Thread(target=_beat, daemon=True, name=f"daytona-activity-{handle.sandbox_id[:8]}")
+        beat.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            beat.join(timeout=1)
 
     def _sandbox_gone(self, handle: "_Handle") -> bool:
         """True when the sandbox behind ``handle`` no longer exists in the cloud.
@@ -625,7 +703,14 @@ class DaytonaSandbox(CodeSandbox):
             exit_code=exit_code,
             truncated=truncated,
         )
-        if exit_code != 0:
+        if exit_code in _SIGKILL_EXIT_CODES:
+            result.error_name = "ExecutionError"
+            result.error_value = (
+                f"the process was killed (exit code {exit_code}), most likely for using more memory than the "
+                "sandbox allows"
+            )
+            result.out_of_memory = True
+        elif exit_code != 0:
             result.error_name = "ExecutionError"
             result.error_value = stdout or f"exited with code {exit_code}"
         result.plots = [Plot(format="png", content_base64=png) for png in charts]

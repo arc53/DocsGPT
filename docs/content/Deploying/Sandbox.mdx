@@ -52,6 +52,10 @@ The overlay sets these on `backend` and `worker`, so you don't add them yourself
 
 The runner has no published port. It reaches the API and worker over an internal `sandbox-net` network and reaches the internet over its own `sandbox-egress` network. Its container is read-only, limited to 1024 processes, has a 256 MB `/dev/shm` for Chromium, and is capped by `SANDBOX_MEMORY` (default `4g`) and `SANDBOX_CPUS` (default `1.0`). The memory covers the warm session kernels (about 50-60 MB each when idle) and the LibreOffice and Chromium processes they start; if you set `SANDBOX_MEMORY` yourself from an older `1g` default, raise it.
 
+The runner has two in-memory mounts. `/tmp` holds the session workspaces and is mounted `noexec`, so nothing written there can be run. `/sandbox-home` holds the kernels' home directory, where `pip install` puts packages at runtime, plus pip's cache and the LibreOffice and Chromium profile directories. It allows exec, so a package with compiled code installed at runtime can load, and it keeps `nosuid` and `nodev`. It is owned by the sandbox user with mode `0700` and is capped at `SANDBOX_HOME_SIZE` (default `1g`). Both mounts use RAM, so what they hold counts against `SANDBOX_MEMORY`.
+
+If you run the image without `/sandbox-home`, for example from an older copy of the overlay or a plain `docker run`, the kernels fall back to a home under `/tmp` and the runner logs one line saying so. Everything works except packages with compiled code installed at runtime, which fail to load with `failed to map segment from shared object`. Add the mount from the current overlay to fix that.
+
 ### Block private networks (egress overlay)
 
 By default the runner can reach the internet, which lets code `pip install` packages or call public APIs. It can also reach your LAN, the Docker host and cloud metadata addresses such as `169.254.169.254`. To cut that off, add the egress overlay. It removes the runner's own route out and sends its traffic through a forward proxy that refuses private destinations:
@@ -110,9 +114,13 @@ Set `SANDBOX_BACKEND=daytona`, `DAYTONA_API_KEY`, and optionally `DAYTONA_TARGET
 The runner image and the Daytona snapshot hold the same Python libraries, command-line tools (headless LibreOffice and Chromium, tesseract, poppler, ffmpeg, Node.js 24) and fonts. [What the sandbox has installed](/Tools/artifacts-and-code-execution#what-the-sandbox-has-installed) lists them. To check an image, run its smoke test, which converts real files with each tool:
 
 ```bash
-docker run --rm --read-only --tmpfs /tmp arc53/docsgpt-sandbox:<version> \
-  /opt/docsgpt/kernel-env.sh python /opt/docsgpt/smoke_test.py
+docker run --rm --read-only --tmpfs /tmp \
+  --tmpfs /sandbox-home:rw,exec,nosuid,nodev,size=1g,uid=10001,gid=10001,mode=0700 \
+  arc53/docsgpt-sandbox:<version> \
+  /opt/docsgpt/kernel-env.sh python /opt/docsgpt/smoke_test.py --pip
 ```
+
+`--pip` also installs two small packages at runtime, one with compiled code, and imports them. It needs internet access.
 
 Licenses: the Python libraries, Node.js, Chromium and tesseract are permissive (MIT, BSD or Apache-2.0), LibreOffice is MPL-2.0, and the fonts are under the SIL Open Font License or the Bitstream Vera license. poppler-utils and ffmpeg are Debian's GPL builds, run only as separate programs. Debian publishes their source, so if you redistribute the image, pass that offer on. PyMuPDF (AGPL) is not included.
 
@@ -134,12 +142,26 @@ To check the setup, ask an agent with Code Executor to run `print(1 + 1)`. An er
 | `SANDBOX_GATEWAY_URL` | `http://localhost:8888` | Where the API and worker reach the runner. |
 | `SANDBOX_GATEWAY_AUTH_TOKEN` | unset | Shared token. Set the same value on the runner and on DocsGPT; the runner won't start without it. |
 | `SANDBOX_KERNEL_NAME` | `docsgpt-python` | The kernel each session uses. `docsgpt-python` strips secrets from the kernel environment. The stock `python3` kernel passes the gateway's whole environment to code, so use it only with a bare development gateway that has no other kernel. |
-| `SANDBOX_EXEC_TIMEOUT` | `60` | Wall-clock limit in seconds for one run. |
+| `SANDBOX_EXEC_TIMEOUT` | `60` | Wall-clock limit in seconds for one run, unless the model asks for more. |
+| `SANDBOX_EXEC_MAX_TIMEOUT` | `1000` | The most the model may ask for on one run, for long jobs such as a video render or OCR of many pages. A larger request is cut to this. |
 | `SANDBOX_MAX_TTL` | `1200` | Seconds an idle session is kept before it is closed. Sessions stay open between runs until then. |
 | `SANDBOX_MAX_SESSIONS` | `32` | Live sessions per API or worker process. At the limit, the least recently used idle session is closed. |
 | `SANDBOX_MEMORY`, `SANDBOX_CPUS` | `4g`, `1.0` | Resource caps for the Compose runner container. |
-| `SANDBOX_KERNEL_IDLE_TIMEOUT` | `1800` | Set on the runner, not on DocsGPT. Seconds an idle kernel may live before the runner shuts it down, which catches kernels a restarted API or worker process left behind. Keep it above `SANDBOX_MAX_TTL`. |
+| `SANDBOX_HOME_SIZE` | `1g` | Size of the Compose runner's `/sandbox-home` mount, the kernels' home. It counts against `SANDBOX_MEMORY` as it fills. On Kubernetes, change the `sizeLimit` of the `sandbox-home` volume instead. |
+| `SANDBOX_KERNEL_IDLE_TIMEOUT` | `1800` | Set on the runner, not on DocsGPT. Seconds an idle kernel may live before the runner shuts it down, which catches kernels a restarted API or worker process left behind. Keep it above `SANDBOX_MAX_TTL`. A kernel that is running code is never shut down, so long runs don't need a higher value. |
 
 On the Jupyter runner every conversation that ran code keeps its kernel until the session has been idle for `SANDBOX_MAX_TTL`. An idle kernel takes about 50-60 MB, and more once code has loaded data, and its workspace files sit on the runner's in-memory `/tmp`. Size `SANDBOX_MEMORY` for the conversations you expect to run code at the same time, or lower `SANDBOX_MAX_TTL` or `SANDBOX_MAX_SESSIONS`. On Daytona each session is its own sandbox, which Daytona also stops after `DAYTONA_AUTO_STOP_INTERVAL` idle minutes.
+
+### Long runs
+
+A run can take up to `SANDBOX_EXEC_MAX_TIMEOUT` seconds when the model asks for it. While it runs:
+
+- the session counts as in use, so it is not closed for being idle, closed to make room for another session, or culled by the runner;
+- a Daytona sandbox gets its activity refreshed when the run could outlast half of `DAYTONA_AUTO_STOP_INTERVAL`, so Daytona doesn't stop it mid-run;
+- the chat stream keeps sending keepalive comments every `SSE_KEEPALIVE_SECONDS`, and the answer keeps its liveness heartbeat, so proxies don't drop the connection and the cleanup task doesn't mark the turn failed.
+
+Each long run holds one of the API worker's request threads and one kernel until it ends. If many users start long runs at the same time, raise `SANDBOX_MEMORY` and the number of API workers, or lower `SANDBOX_EXEC_MAX_TIMEOUT`.
+
+When a run uses more memory than the runner allows, the kernel is killed. The model is told the run ran out of memory, with a hint to process the data in smaller pieces, and its next run starts a new session.
 
 The rest, including the output and file size caps and the Daytona settings, are in the [Settings Reference](/Deploying/Settings-Reference#sandbox). The [runner README](https://github.com/arc53/DocsGPT/tree/main/deployment/sandbox) covers the isolation model in more depth.

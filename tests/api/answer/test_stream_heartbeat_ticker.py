@@ -281,3 +281,47 @@ class TestSupersededStreamCancellation:
 
             assert any('"type": "end"' in chunk for chunk in out)
             service.finalize_message.assert_called_once()
+
+
+@pytest.mark.unit
+def test_a_long_tool_call_keeps_both_the_wire_and_the_row_alive(mock_mongo_db, flask_app):
+    """A run_code call may block the stream for up to SANDBOX_EXEC_MAX_TIMEOUT.
+
+    The route wraps the stream in ``with_sse_keepalive``, which pumps it from
+    its own thread, so keepalive comments keep reaching the client while the
+    generator is stuck inside the tool; the row heartbeat ticks on its own
+    thread too, so the reconciler sees a live turn.
+    """
+    from docsgpt.api.answer.routes import base as base_mod
+    from docsgpt.api.answer.routes.base import BaseAnswerResource
+    from docsgpt.streaming.sse_keepalive import with_sse_keepalive
+
+    def _tool_call_then_answer(*args, **kwargs):
+        yield {"type": "tool_call", "data": {"tool_name": "code_executor", "status": "pending"}}
+        time.sleep(0.5)  # the sandbox run
+        yield {"answer": "rendered"}
+
+    service = _service()
+    with flask_app.app_context():
+        resource = BaseAnswerResource()
+        resource.conversation_service = service
+        agent = MagicMock()
+        agent.gen.side_effect = _tool_call_then_answer
+        with patch.object(base_mod, "STREAM_HEARTBEAT_INTERVAL", 0.05):
+            frames = list(
+                with_sse_keepalive(
+                    resource.complete_stream(
+                        question="q",
+                        agent=agent,
+                        conversation_id=None,
+                        user_api_key=None,
+                        decoded_token={"sub": "u"},
+                        should_persist=True,
+                    ),
+                    interval_seconds=0.05,
+                )
+            )
+
+    answer_at = next(i for i, f in enumerate(frames) if "rendered" in f)
+    assert sum(1 for f in frames[:answer_at] if f == ": keepalive\n\n") >= 3
+    assert service.heartbeat_message_state.call_count >= 3

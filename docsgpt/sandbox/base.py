@@ -40,6 +40,9 @@ class ExecResult:
     # The backend invalidated the runtime while producing this result. Managers
     # must discard their cached handle so the next open performs a cold start.
     runtime_invalidated: bool = False
+    # The sandbox killed the process for using too much memory (an OOM kill), as
+    # far as the backend can tell. Reported to the model instead of a timeout.
+    out_of_memory: bool = False
 
     @property
     def ok(self) -> bool:

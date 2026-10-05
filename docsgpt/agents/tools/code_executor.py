@@ -6,6 +6,7 @@ import base64
 import binascii
 import hashlib
 import logging
+import math
 import re
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlsplit
@@ -190,6 +191,7 @@ class CodeExecutorTool(Tool):
         """
         python = f"Python {manifest.PYTHON_SERIES}" if cls._full_image() else "Python"
         timeout = int(cls._exec_timeout())
+        max_timeout = int(cls._max_exec_timeout())
         lines = [
             (
                 f"Run {python} in this conversation's sandbox for real computation, parsing, data work, charts and "
@@ -214,8 +216,9 @@ class CodeExecutorTool(Tool):
                 "`inputs/<name>`. Artifact and app URLs can't be downloaded from inside the sandbox."
             ),
             (
-                f"Limits: {timeout}s per call, hard; split longer work, or run it in the background writing progress "
-                "to scratch/ and check back next call. Network: usually open for pip and public sites."
+                f"Limits: {timeout}s per call by default; pass `timeout` up to {max_timeout}s for long jobs (video, "
+                "OCR of many pages, big conversions); prefer splitting work. Network: usually open for pip and "
+                "public sites."
             ),
             cls._environment_note(),
             "Documents the user will keep editing fit artifact_generator (if available) better.",
@@ -226,13 +229,14 @@ class CodeExecutorTool(Tool):
     def _environment_summary(self) -> str:
         """Return the compact environment summary a new session's first result carries."""
         timeout = int(self._exec_timeout())
+        max_timeout = int(self._max_exec_timeout())
         idle = self._idle_minutes()
         if self._full_image():
-            return manifest.environment_summary(timeout=timeout, idle_minutes=idle)
+            return manifest.environment_summary(timeout=timeout, idle_minutes=idle, max_timeout=max_timeout)
         return (
             "Python with only the stdlib preinstalled; pip install what you need. Working directory = workspace: "
             "files there become downloads, except scratch/; inputs/ holds passed files; /tmp is not kept. "
-            f"Limits: {timeout}s per call; resets after {idle} min idle."
+            f"Limits: {timeout}s per call by default, `timeout` up to {max_timeout}s; resets after {idle} min idle."
         )
 
     def get_actions_metadata(self) -> List[Dict[str, Any]]:
@@ -267,6 +271,10 @@ class CodeExecutorTool(Tool):
                             "downloadable artifacts. When set, only matching files are saved; when omitted, "
                             "every produced file is saved except scratch paths under `scratch/`.",
                         },
+                        "timeout": {
+                            "type": "integer",
+                            "description": self._timeout_parameter_description(),
+                        },
                         "ttl": {
                             "type": "integer",
                             "description": "Keep-alive lifetime (seconds) for the session; clamped by SANDBOX_MAX_TTL.",
@@ -291,6 +299,15 @@ class CodeExecutorTool(Tool):
                 },
             }
         ]
+
+    @classmethod
+    def _timeout_parameter_description(cls) -> str:
+        """Describe the ``timeout`` argument, with rough budgets so the model can pick a value."""
+        return (
+            f"Wall-clock seconds for this call (default {int(cls._exec_timeout())}, max "
+            f"{int(cls._max_exec_timeout())}). Raise it only for long jobs; rough budgets: pip install of a big "
+            "package ~120, office-convert of a large deck ~120, OCR ~2-3 per page, video render scales with frames."
+        )
 
     def get_config_requirements(self) -> Dict[str, Any]:
         """Return configuration requirements (none; approval is an action-level flag,
@@ -349,7 +366,7 @@ class CodeExecutorTool(Tool):
         # session's TTL when one is passed, and a session another tool opened first
         # (artifact_generator opens at the exec timeout) would be reaped early.
         open_ttl = ttl if ttl is not None else (float(settings.SANDBOX_MAX_TTL) if keep_alive else None)
-        timeout = self._exec_timeout()
+        timeout, clamped = self._requested_timeout(kwargs.get("timeout"))
         inputs = kwargs.get("inputs") or []
 
         manager = SandboxCreator.get_manager()
@@ -401,7 +418,11 @@ class CodeExecutorTool(Tool):
                 materialized.get("loaded", []),
                 session=session_state,
                 environment=self._environment_summary() if opened.created else None,
+                timeout=timeout,
             )
+            if clamped:
+                asked = self._timeout_number(kwargs.get("timeout"))
+                payload["timeout"] = f"ran with {int(timeout)}s, the maximum; {asked}s was asked for"
             if self._native_queue:
                 payload["charts_shown"] = [part["label"] for part in self._native_queue]
             hints = self._hints(session_id, code, result, artifacts + charts, opened.created, timeout, should_capture)
@@ -684,6 +705,7 @@ class CodeExecutorTool(Tool):
             full_image=self._full_image(),
             timed_out=not result.ok and self._is_timeout(result),
             timeout=int(timeout),
+            max_timeout=int(self._max_exec_timeout()),
             app_hosts=self._app_hosts(),
             capture=bool(capture),
             charts_shown=len(self._native_queue),
@@ -704,6 +726,7 @@ class CodeExecutorTool(Tool):
         inputs_loaded: List[str],
         session: Optional[str] = None,
         environment: Optional[str] = None,
+        timeout: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Build the compact LLM-facing payload; raw bytes never appear here.
 
@@ -716,6 +739,7 @@ class CodeExecutorTool(Tool):
             inputs_loaded: Workspace paths the inputs were staged at.
             session: ``"new"`` or ``"reused"``, reported right after the status.
             environment: The environment summary, given for a new session only.
+            timeout: The cap this call ran with; the default cap when None.
 
         Returns:
             The payload the model sees.
@@ -732,21 +756,48 @@ class CodeExecutorTool(Tool):
         if stderr_tail:
             payload["stderr_tail"] = stderr_tail
         if not result.ok:
-            if self._is_timeout(result):
-                cap = int(self._exec_timeout())
-                payload["error"] = (
-                    f"Execution timed out. Each run_code call is capped at {cap}s and the limit "
-                    "cannot be raised. For long-running work, start it in the background (e.g. launch a "
-                    "subprocess or `nohup ... &` and write progress to a file) and return immediately, "
-                    "then poll with additional run_code calls to check on it. The session, with the "
-                    "background process and its files, stays alive between calls unless you pass "
-                    "persist=false."
-                )
+            if result.out_of_memory:
+                payload["error"] = self._out_of_memory_text(result)
+            elif self._is_timeout(result):
+                payload["error"] = self._timeout_text(timeout)
             else:
                 payload["error"] = self._error_text(result)
         if inputs_loaded:
             payload["inputs_loaded"] = inputs_loaded
         return payload
+
+    @classmethod
+    def _timeout_text(cls, timeout: Optional[float]) -> str:
+        """Explain a run that hit its wall-clock cap, and how to give the work more room.
+
+        Args:
+            timeout: The cap the run had; the default cap when None.
+
+        Returns:
+            The error line the model sees.
+        """
+        cap = int(timeout if timeout is not None else cls._exec_timeout())
+        most = int(cls._max_exec_timeout())
+        background = (
+            "start it in the background (e.g. launch a subprocess or `nohup ... &` and write progress to a file) "
+            "and return immediately, then poll with additional run_code calls to check on it. The session, with "
+            "the background process and its files, stays alive between calls unless you pass persist=false."
+        )
+        if cap < most:
+            return (
+                f"Execution timed out after {cap}s. If the work needs longer, pass a larger `timeout` (up to "
+                f"{most}s); otherwise split it into smaller calls, or {background}"
+            )
+        return f"Execution timed out at the {cap}s maximum. Split the work into smaller calls, or {background}"
+
+    @staticmethod
+    def _out_of_memory_text(result: ExecResult) -> str:
+        """Explain a run whose process the sandbox killed for using too much memory."""
+        detail = clean_output(result.error_value).strip()
+        text = "Out of memory: the process was killed because it used more memory than the sandbox allows."
+        if detail:
+            text += f" ({detail[:300]})"
+        return text
 
     @staticmethod
     def _error_text(result: ExecResult) -> str:
@@ -795,8 +846,53 @@ class CodeExecutorTool(Tool):
 
     @staticmethod
     def _exec_timeout() -> float:
-        """Return the fixed per-run wall-clock cap (SANDBOX_EXEC_TIMEOUT; not caller-adjustable)."""
+        """Return the default per-run wall-clock cap (SANDBOX_EXEC_TIMEOUT)."""
         return float(settings.SANDBOX_EXEC_TIMEOUT)
+
+    @classmethod
+    def _max_exec_timeout(cls) -> float:
+        """Return the longest cap a call may ask for (SANDBOX_EXEC_MAX_TIMEOUT, never below the default)."""
+        return max(float(settings.SANDBOX_EXEC_MAX_TIMEOUT), cls._exec_timeout())
+
+    @classmethod
+    def _requested_timeout(cls, value: Any) -> Tuple[float, bool]:
+        """Turn the call's ``timeout`` argument into the cap the run gets.
+
+        Models send integers, floats or numeric strings. Anything else, and any
+        value that is not a positive finite number, falls back to the default.
+
+        Args:
+            value: The call's ``timeout`` argument, or None.
+
+        Returns:
+            The cap in whole seconds, and True when the request was above the
+            maximum and was clamped to it.
+        """
+        default = cls._exec_timeout()
+        requested = cls._timeout_number(value)
+        if requested is None:
+            return default, False
+        most = cls._max_exec_timeout()
+        if requested > most:
+            return most, True
+        return float(requested), False
+
+    @staticmethod
+    def _timeout_number(value: Any) -> Optional[int]:
+        """Read a positive whole number of seconds from a ``timeout`` argument, or None."""
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, str):
+            value = value.strip()
+        if not isinstance(value, (int, float, str)) or value == "":
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(number) or number < 1:
+            return None
+        return int(number)
 
     @staticmethod
     def _is_timeout(result: ExecResult) -> bool:

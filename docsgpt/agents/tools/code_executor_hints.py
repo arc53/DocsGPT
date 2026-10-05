@@ -4,7 +4,8 @@ Models repeat the same sandbox mistakes: importing a library the image lacks,
 pip-installing one it has, running apt-get, expecting variables or ``/tmp``
 files to outlive a call, writing deliverables outside the workspace, saving
 previews as downloads, hardcoding font paths, fetching the app's own URLs from
-inside the sandbox, and retrying a failure unchanged. ``fix_hints`` reads one
+inside the sandbox, running out of time or memory, and retrying a failure
+unchanged. ``fix_hints`` reads one
 run (its code, output, error and saved files) and returns a line or two for
 each mistake it recognizes. Package, command and font names come from
 ``docsgpt/sandbox/manifest.py``, so the hints never name something the image
@@ -146,6 +147,7 @@ class RunFacts:
         full_image: The sandbox runs the manifest's image; False for a bare Daytona sandbox.
         timed_out: The run hit the wall-clock cap.
         timeout: The cap in seconds.
+        max_timeout: The longest cap a call may ask for; 0 when unknown.
         app_hosts: This deployment's own hosts, ``host`` or ``host:port``.
         capture: Saving files for the user was on.
         charts_shown: Charts the run displayed to the model.
@@ -159,6 +161,7 @@ class RunFacts:
     full_image: bool = True
     timed_out: bool = False
     timeout: int = 60
+    max_timeout: int = 0
     app_hosts: Tuple[str, ...] = ()
     capture: bool = True
     charts_shown: int = 0
@@ -202,17 +205,25 @@ def _missing_module_hints(facts: RunFacts, text: str) -> List[str]:
     return hints[:2]
 
 
-_CANNOT_MAP_RE = re.compile(r"/site-packages/([\w.-]+)/[^\s'\"]*\.so[^\n]*failed to map segment from shared object")
+# The package (``bidi/...so``) or top-level module (``ujson.cpython-...so``) whose extension failed to load.
+_CANNOT_MAP_RE = re.compile(r"/site-packages/(\w+)[^\s'\"]*\.so[^\n]*failed to map segment from shared object")
 
 
 def _compiled_package_hint(text: str) -> Optional[str]:
-    """A package pip-installed at runtime whose compiled extension the sandbox won't load (a noexec /tmp)."""
+    """A package pip-installed at runtime whose compiled extension the sandbox won't load.
+
+    The runner keeps the kernels' home, where ``pip install --user`` puts
+    packages, on an exec-enabled mount (deployment/sandbox/kernel-env.sh), so
+    compiled packages load. A runner started without that mount falls back to a
+    home under the noexec /tmp, where loading the extension fails with this
+    error; only then does the hint fire.
+    """
     match = _CANNOT_MAP_RE.search(text)
     if not match:
         return None
     return (
-        f"{match.group(1)} was installed at runtime but its compiled code can't load here. Use a preinstalled "
-        "library or a pure-Python package instead."
+        f"{match.group(1)} was installed at runtime but its compiled code can't load in this sandbox (its home "
+        "is on a noexec mount). Use a preinstalled library or a pure-Python package instead."
     )
 
 
@@ -370,6 +381,51 @@ def _timeout_hint(facts: RunFacts) -> Optional[str]:
     return (
         "Nothing from the interrupted work was saved unless it was written before the cap; split the work into "
         "chunks and write partial results to scratch/ as you go."
+    )
+
+
+def _larger_timeout_hint(facts: RunFacts) -> Optional[str]:
+    if not facts.timed_out or facts.timeout >= facts.max_timeout:
+        return None
+    return (
+        f"This call had {facts.timeout}s. If the job is long by nature (video, OCR of many pages, a big "
+        f"conversion or install), rerun it with a larger `timeout` (up to {facts.max_timeout}s)."
+    )
+
+
+# -- 5b. Out of memory -------------------------------------------------------------------------
+
+# A process killed by SIGKILL, which in the sandbox is the kernel's OOM killer:
+# subprocess's messages, a return code the code printed, and the shell's report.
+_KILLED_RE = re.compile(
+    r"died with <Signals\.SIGKILL: 9>"
+    r"|non-zero exit status (?:137|-9)\b"
+    r"|\b(?:returncode|return code|rc|exit code|exit status)\s*[=:]?\s*(?:-9|137)\b"
+    r"|^(?:.*:\s*\d+\s+)?Killed(?:\s{2,}.*)?$",
+    re.MULTILINE,
+)
+
+
+def _out_of_memory(facts: RunFacts, text: str) -> bool:
+    """True when the run, or a process it started, ran out of memory."""
+    if facts.timed_out:
+        return False  # the cap kills the run too; that is not memory
+    result = facts.result
+    if result.out_of_memory:
+        return True
+    name, _ = exception_of(result)
+    if name and name.endswith("MemoryError"):
+        return True
+    return bool(_KILLED_RE.search(text))
+
+
+def _memory_hint(facts: RunFacts, text: str) -> Optional[str]:
+    if not _out_of_memory(facts, text):
+        return None
+    return (
+        "Ran out of memory. Load less at once: read files in chunks (pandas chunksize, one page or frame at a "
+        "time), downsample or lower the resolution, del large objects you no longer need, and write "
+        "intermediate results to scratch/."
     )
 
 
@@ -557,7 +613,9 @@ def fix_hints(facts: RunFacts) -> List[str]:
     """
     text = _text_of(facts.result)
     hints: List[Optional[str]] = [
+        _larger_timeout_hint(facts),
         _timeout_hint(facts),
+        _memory_hint(facts, text),
         _app_url_hint(facts, text),
         *_missing_module_hints(facts, text),
         _compiled_package_hint(text),

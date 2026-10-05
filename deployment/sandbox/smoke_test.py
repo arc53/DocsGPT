@@ -4,8 +4,9 @@
 Run it in the image the way kernels run, so the environment checks see what
 model-written code sees::
 
-    # self-hosted runner image (read-only root, like compose and k8s):
-    docker run --rm --read-only --tmpfs /tmp IMAGE \\
+    # self-hosted runner image (read-only root and the two tmpfs mounts, like compose):
+    docker run --rm --read-only --tmpfs /tmp \\
+        --tmpfs /sandbox-home:rw,exec,nosuid,nodev,size=1g,uid=10001,gid=10001,mode=0700 IMAGE \\
         /opt/docsgpt/kernel-env.sh python /opt/docsgpt/smoke_test.py
     # Daytona snapshot: scripts/build_daytona_snapshot.py --smoke
 
@@ -18,8 +19,10 @@ Then it converts real files: docx and pptx to PDF with office-convert, HTML to
 PDF and PNG with headless Chromium, OCR of a rendered image, pdftotext and
 pdfplumber on a generated PDF, Node and npm, an animated GIF and WebP through
 imageio, and an H.264 MP4 through the ffmpeg command, checked with ffprobe.
-``--pip`` also pip-installs a small package as the sandbox user and imports it
-in the running interpreter (needs network).
+``--pip`` also pip-installs two small packages as the sandbox user (needs
+network): a pure-Python one imported in the running interpreter, and one with a
+compiled extension imported in a new process, which loads only when the home is
+on an exec-enabled mount (``/sandbox-home``; ``/tmp`` is noexec).
 
 Each check prints PASS or FAIL; the exit code is 1 if any failed. Only the
 stdlib and the image's own packages are used.
@@ -320,6 +323,23 @@ def check_pip_user_install(work: Path) -> str:
     return f"tabulate imported from {Path(module.__file__).parent}"
 
 
+# A package with a C extension and no pure-Python fallback, with manylinux wheels
+# for amd64 and arm64: if its .so cannot be mapped, the import fails.
+_COMPILED_PACKAGE = "ujson==6.0.0"
+
+
+def check_pip_compiled_extension(work: Path) -> str:
+    """pip install a compiled package, then import it in a new process (the next call, or a new kernel)."""
+    _run(
+        [sys.executable, "-m", "pip", "install", "--no-deps", "--only-binary=:all:", "--quiet", _COMPILED_PACKAGE],
+        timeout=180,
+    )
+    proc = _run([sys.executable, "-c", "import ujson; print(ujson.__file__); print(ujson.dumps({'ok': 1}))"])
+    path, dumped = proc.stdout.strip().splitlines()[-2:]
+    _expect(dumped == '{"ok":1}', f"ujson returned {dumped!r}")
+    return f"ujson loaded from {path}"
+
+
 # -- Runner --------------------------------------------------------------------
 
 
@@ -348,6 +368,9 @@ def _checks(manifest: Dict, work: Path, with_pip: bool) -> List[Tuple[str, Calla
     ]
     if with_pip:
         checks.append(("pip install --user + import", lambda: check_pip_user_install(sub("pip"))))
+        checks.append(
+            ("pip install of a compiled package + import", lambda: check_pip_compiled_extension(sub("pip-compiled")))
+        )
     return checks
 
 
@@ -362,7 +385,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--manifest", type=Path, default=_DEFAULT_MANIFEST, help="path to manifest.json")
-    parser.add_argument("--pip", action="store_true", help="also pip-install a package and import it (network)")
+    parser.add_argument("--pip", action="store_true", help="also pip-install packages and import them (network)")
     args = parser.parse_args(argv)
     manifest = json.loads(args.manifest.read_text())
 

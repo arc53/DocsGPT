@@ -52,6 +52,44 @@ _CONTAINMENT_SNIPPET = (
 )
 
 
+# Where a container's cgroup counts its OOM kills: cgroup v2, then v1. The
+# counter covers every process in the runner container.
+_OOM_COUNTER_PATHS = ("/sys/fs/cgroup/memory.events", "/sys/fs/cgroup/memory/memory.oom_control")
+_OOM_MARKER_RE = re.compile(r"<<<DOCSGPT_OOM_KILLS:(-?\d+)>>>")
+
+# Kernel-side program that prints the container's OOM-kill count, or -1 when no
+# counter is readable (not in a container, or a cgroup layout without one).
+_OOM_KILLS_SNIPPET = (
+    "_docsgpt_n = -1\n"
+    f"for _docsgpt_p in {_OOM_COUNTER_PATHS!r}:\n"
+    "    try:\n"
+    "        with open(_docsgpt_p) as _docsgpt_f:\n"
+    "            for _docsgpt_l in _docsgpt_f:\n"
+    "                if _docsgpt_l.startswith('oom_kill '):\n"
+    "                    _docsgpt_n = int(_docsgpt_l.split()[1])\n"
+    "    except (OSError, ValueError, IndexError):\n"
+    "        pass\n"
+    "    if _docsgpt_n >= 0:\n"
+    "        break\n"
+    "print('<<<DOCSGPT_OOM_KILLS:%d>>>' % _docsgpt_n)\n"
+    "del _docsgpt_n, _docsgpt_p\n"
+)
+
+# ``status`` values the gateway sends, with no parent message, when the kernel
+# process died: ``restarting`` (it starts a fresh process under the same kernel
+# id) or ``dead`` (it could not).
+_KERNEL_DEATH_STATES = frozenset({"restarting", "dead"})
+
+
+def _parse_oom_kills(stdout: str) -> Optional[int]:
+    """Read the OOM-kill count ``_OOM_KILLS_SNIPPET`` printed; None when it had none."""
+    match = _OOM_MARKER_RE.search(stdout or "")
+    if not match:
+        return None
+    count = int(match.group(1))
+    return count if count >= 0 else None
+
+
 class _Kernel:
     """Tracks one gateway kernel plus the per-session workspace it executes in."""
 
@@ -94,6 +132,9 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
         # Timed-out kernels whose DELETE could not yet be confirmed. Immutable
         # ids stay retryable here and are never reused as active runtimes.
         self._quarantined_kernels: Dict[str, Optional[str]] = {}
+        # The container's OOM-kill count when each kernel was primed (None when
+        # unreadable). A kernel that dies after the count rose was OOM-killed.
+        self._oom_baseline: Dict[str, Optional[int]] = {}
         self._lock = threading.Lock()
         # Session ids with a create in flight; a second open() for the same id
         # waits on this CV and reuses the result instead of double-creating a
@@ -246,6 +287,8 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
 
     def _delete_kernel(self, kernel_id: str) -> bool:
         """Best-effort DELETE of a gateway kernel, retrying once and never raising."""
+        with self._lock:
+            self._oom_baseline.pop(kernel_id, None)
         last_error = "unknown error"
         for _attempt in range(2):
             try:
@@ -384,10 +427,13 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
             f"_os.makedirs({kernel.workspace!r}, mode=0o700, exist_ok=True)\n"
             f"_os.chmod({kernel.workspace!r}, 0o700)\n"
             f"_os.chdir({kernel.workspace!r})\n"
+            + _OOM_KILLS_SNIPPET
         )
         result = self._run(kernel, setup, self._default_timeout)
         if not result.ok:
             raise RuntimeError(f"Sandbox workspace setup failed: {result.error_value}")
+        with self._lock:
+            self._oom_baseline[kernel.kernel_id] = _parse_oom_kills(result.stdout)
         kernel.initialized = True
 
     # -- Execution -------------------------------------------------------
@@ -410,9 +456,13 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
         (file-transfer execs raise it so a multi-MB base64 payload is not truncated).
         """
         try:
+            # The handshake is bounded by the default exec cap, not a long run's
+            # timeout: it waits only for the gateway to answer (and for a
+            # starting kernel's info reply), never for the code. ``_collect``
+            # sets each read's timeout from the run's own deadline.
             ws = websocket.create_connection(
                 self._ws_url(kernel.kernel_id),
-                timeout=timeout,
+                timeout=min(timeout, max(self._default_timeout, self._http_timeout)),
                 header=self._ws_headers(),
             )
         except Exception as exc:  # noqa: BLE001 - connect failure -> error result, never raise
@@ -521,11 +571,15 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
             except json.JSONDecodeError as exc:
                 self._fail(result, "ProtocolError", f"malformed kernel frame: {exc}")
                 break
-            if msg.get("parent_header", {}).get("msg_id") != msg_id:
-                continue
-
             msg_type = msg.get("msg_type") or msg.get("header", {}).get("msg_type")
             content = msg.get("content", {})
+            if msg.get("parent_header", {}).get("msg_id") != msg_id:
+                if msg_type == "status" and content.get("execution_state") in _KERNEL_DEATH_STATES:
+                    # The kernel process died mid-run. The reply will never
+                    # come, so stop now instead of waiting out the deadline.
+                    self._kernel_died(result, content.get("execution_state"), kernel_id, session_id)
+                    break
+                continue
 
             if msg_type == "stream":
                 if not truncated:
@@ -577,6 +631,52 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
         result.stdout = "".join(stdout_parts)
         result.stderr = "".join(stderr_parts)
         return result
+
+    def _kernel_died(
+        self, result: ExecResult, state: str, kernel_id: str, session_id: Optional[str]
+    ) -> None:
+        """Fail a run whose kernel process died, and retire the kernel.
+
+        The gateway restarts a dead kernel under the same id, but the new
+        process has none of the session's variables and is no longer in the
+        session's workspace, so the kernel is deleted and the next call opens a
+        new session. When the container's OOM-kill count rose since the kernel
+        was primed, the run is marked out of memory.
+
+        Args:
+            result: The run's result, failed in place.
+            state: The status the gateway sent, ``restarting`` or ``dead``.
+            kernel_id: The kernel that died.
+            session_id: The session it served, for the quarantine record.
+        """
+        with self._lock:
+            baseline = self._oom_baseline.pop(kernel_id, None)
+        oom_killed = False
+        if state == "restarting" and baseline is not None:
+            now = self._oom_kills_now(kernel_id, session_id)
+            oom_killed = now is not None and now > baseline
+        if oom_killed:
+            message = "the kernel was killed for using more memory than the sandbox allows"
+        else:
+            message = (
+                "the kernel process died while running this code (most often because it ran out of memory)"
+            )
+        self._fail(result, "KernelDiedError", message + "; the next call starts a new session")
+        result.out_of_memory = oom_killed
+        logger.warning(
+            "Kernel %s died mid-run (%s, oom_killed=%s); retiring it", kernel_id, state, oom_killed
+        )
+        self._invalidate_kernel(kernel_id, session_id)
+        result.runtime_invalidated = True
+
+    def _oom_kills_now(self, kernel_id: str, session_id: Optional[str]) -> Optional[int]:
+        """Read the container's OOM-kill count through the restarted kernel; None when unreadable."""
+        try:
+            probe = self._run(_Kernel(kernel_id, _WORKSPACE_ROOT, session_id), _OOM_KILLS_SNIPPET, self._http_timeout)
+        except Exception:  # noqa: BLE001 - the probe is best-effort
+            logger.debug("OOM-kill probe failed for kernel %s", kernel_id, exc_info=True)
+            return None
+        return _parse_oom_kills(probe.stdout) if probe.ok else None
 
     @staticmethod
     def _fail(result: ExecResult, name: str, value: str) -> None:
