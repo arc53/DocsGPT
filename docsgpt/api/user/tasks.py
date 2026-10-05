@@ -671,6 +671,29 @@ except Exception:
     pass
 
 
+@celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)
+def continue_conversation(self, conversation_id, attempt=0):
+    """Run a continuation turn for a conversation's queued wake events.
+
+    Not retried by Celery: an agent turn has side effects. A turn that must
+    wait (a generation is running) re-queues itself with a backoff, and the
+    background sweep picks up events left queued.
+    """
+    from docsgpt.background.continuation import continue_conversation_body
+
+    return continue_conversation_body(conversation_id, attempt)
+
+
+# A continuation is an agent turn: the same time limit as a scheduled run.
+try:
+    from docsgpt.core.settings import settings as _continuation_settings
+
+    continue_conversation.soft_time_limit = max(30, int(_continuation_settings.SCHEDULE_RUN_TIMEOUT))
+    continue_conversation.time_limit = continue_conversation.soft_time_limit + 60
+except Exception:
+    pass
+
+
 @celery.task(bind=True, acks_late=False)
 def cleanup_background_jobs(self):
     """Delete finished background jobs and settled wakes past ``BACKGROUND_RESULT_RETENTION_DAYS``."""

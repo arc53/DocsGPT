@@ -319,11 +319,9 @@ def _patch_origin_entry(conn: Any, row: Dict[str, Any]) -> None:
 
 def _deliver(row: Dict[str, Any]) -> None:
     """Hand a finished job to delivery; a failure here leaves it for the reconciler's sweep."""
-    try:
-        from docsgpt.background.wake import on_job_finished
+    from docsgpt.background.wake import on_job_finished
 
+    try:
         on_job_finished(row)
-    except ImportError:
-        return
     except Exception:
         logger.exception("background job %s: delivery failed; the sweep retries it", row.get("id"))

@@ -102,3 +102,43 @@ class TestCleanup:
         _set(bg_db, row["id"], "expires_at = now() - interval '1 minute'")
         assert reconciler.cleanup()["jobs"] == 1
         assert _get(bg_db, row["id"]) is None
+
+
+class TestRedeliver:
+    def test_resumes_undelivered_results_and_stuck_wakes(self, bg_db, conversation, monkeypatch):
+        from docsgpt.background import wake
+
+        monkeypatch.setattr(jobs, "_deliver", lambda row: None)
+        scheduled = []
+        monkeypatch.setattr(wake, "schedule_continuation", lambda cid, **kw: scheduled.append(cid))
+        conversation_id, message_id = conversation
+        row = _job(conversation_id, message_id)
+        jobs.finalize(row["id"], status="completed", result={"text": "x", "status": "completed"})
+        _set(bg_db, row["id"], "finished_at = now() - interval '10 minutes'")
+
+        summary = reconciler.sweep()
+        # The finished job's wake is queued now; it is not old enough to be resumed again yet.
+        assert summary["redelivered"] == 0
+        with bg_db.connect() as conn:
+            wakes = conn.execute(text("SELECT status FROM conversation_wakes")).fetchall()
+        assert [w[0] for w in wakes] == ["pending"]
+        assert scheduled == [conversation_id]
+
+        with bg_db.begin() as conn:
+            conn.execute(text("UPDATE conversation_wakes SET created_at = now() - interval '10 minutes'"))
+        scheduled.clear()
+        assert reconciler.sweep()["redelivered"] == 1
+        assert scheduled == [conversation_id]
+
+    def test_releases_claims_of_a_dead_continuation(self, bg_db, conversation, monkeypatch):
+        from docsgpt.background import wake
+
+        monkeypatch.setattr(wake, "schedule_continuation", lambda cid, **kw: None)
+        conversation_id, _ = conversation
+        wake.wake_conversation(user_id="u1", conversation_id=conversation_id, source="monitor", ref_id="m",
+                               title="t", body="b", payload=None, dedupe_key="k")
+        with bg_db.begin() as conn:
+            conn.execute(text(
+                "UPDATE conversation_wakes SET status = 'claimed', claimed_at = now() - interval '2 hours'"
+            ))
+        assert reconciler.sweep()["claims_released"] == 1

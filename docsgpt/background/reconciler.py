@@ -34,6 +34,12 @@ _LEASED_RUNNERS = ("inprocess", "celery")
 #: Heartbeat age after which a queued ``celery`` job no worker started is lost.
 UNSTARTED_STALE_SECONDS = 900
 
+#: Seconds an undelivered result waits before the sweep resumes its conversation again.
+REDELIVER_AFTER_SECONDS = 300
+
+#: Seconds a continuation may hold its claim before the sweep hands the events back.
+CLAIM_STALE_SECONDS = 1800
+
 
 def _pick(fetch) -> List[Dict[str, Any]]:
     """Run one locking SELECT in its own short transaction and return the rows."""
@@ -45,7 +51,8 @@ def sweep() -> Dict[str, int]:
     """One reconciler tick over background jobs.
 
     Returns:
-        Counts: ``lost``, ``revived`` (sandbox poll chains restarted) and ``timed_out``.
+        Counts: ``lost``, ``revived`` (sandbox poll chains restarted), ``timed_out``,
+        ``redelivered`` (conversations resumed again) and ``claims_released``.
     """
     summary = {"lost": 0, "timed_out": 0, "revived": 0}
     if not settings.POSTGRES_URI:
@@ -92,7 +99,26 @@ def sweep() -> Dict[str, int]:
         )
         if done is not None:
             summary["timed_out"] += 1
+
+    summary.update(_redeliver())
     return summary
+
+
+def _redeliver() -> Dict[str, int]:
+    """Resume conversations whose results were not delivered (a lost task, a continuation that died)."""
+    from docsgpt.background import wake
+
+    with db_session() as conn:
+        wakes_repo = ConversationWakesRepository(conn)
+        released = wakes_repo.release_stale_claims(older_than_seconds=CLAIM_STALE_SECONDS)
+        waiting = wakes_repo.pending_conversations(older_than_seconds=REDELIVER_AFTER_SECONDS)
+        undelivered = BackgroundJobsRepository(conn).find_undelivered(older_than_seconds=REDELIVER_AFTER_SECONDS)
+    for row in undelivered:
+        # Queues the job's wake if it never was (deduplicated otherwise).
+        wake.on_job_finished(row)
+    for conversation_id, _user_id in waiting:
+        wake.schedule_continuation(conversation_id)
+    return {"redelivered": len(waiting), "claims_released": released}
 
 
 def _mark_lost(row: Dict[str, Any], *, stale_seconds: int) -> bool:

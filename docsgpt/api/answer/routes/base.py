@@ -15,6 +15,7 @@ from flask_restx import Namespace
 from docsgpt import tracing
 from docsgpt.api.answer.segments import AnswerSegments
 from docsgpt.background.context import bind_turn as bind_background_turn
+from docsgpt.background.fold import fold_turn as fold_background_turn
 from docsgpt.api.answer.services.continuation_service import ContinuationService
 from docsgpt.api.answer.services.conversation_service import (
     ConversationService,
@@ -861,7 +862,15 @@ class BaseAnswerResource:
                 # applies the redaction to what it sends the model. Handing it
                 # the already-redacted question would make that a second scan
                 # over different text, and a remote check would be paid twice.
-                gen_iter = agent.gen(query=raw_question)
+                # Background results that finished unseen go in front of it.
+                model_question = raw_question
+                if wal_eligible and conversation_id:
+                    model_question, folded = fold_background_turn(
+                        str(conversation_id), (decoded_token or {}).get("sub"), raw_question
+                    )
+                    if folded:
+                        query_metadata["folded_background"] = folded
+                gen_iter = agent.gen(query=model_question)
 
             # Seed a liveness heartbeat the moment generation starts, before
             # the first chunk. The row is still ``pending`` here; this stamps a
