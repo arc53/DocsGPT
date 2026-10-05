@@ -56,6 +56,20 @@ class Font(TypedDict):
     reportlab: bool
 
 
+class PdfFont(TypedDict):
+    """A TrueType font the pdf artifact renderer embeds: the script it draws and its regular and bold files.
+
+    ``script`` is ``base`` for the base family, ``symbols`` for a fallback
+    tried for characters no other font has, or a script key of
+    ``docsgpt/agents/tools/artifact_pdf.py``. ``bold`` is empty when the
+    package ships no bold face.
+    """
+
+    script: str
+    regular: str
+    bold: str
+
+
 class Missing(TypedDict):
     """A library models import that the image lacks: its pip name and what to use instead."""
 
@@ -73,6 +87,8 @@ class NodeRelease(TypedDict):
 
 # Libraries baked into both images. Pins are exact so a rebuild gives the same
 # image; pdfplumber stays at 0.11.9 because 0.11.10 needs Pillow >= 12.2.
+# reportlab is 4.4+ for its HarfBuzz shaping (through uharfbuzz), which the pdf
+# artifact renderer uses for Devanagari and other complex scripts.
 PIP_PACKAGES: Tuple[PipPackage, ...] = (
     {"spec": "pandas==2.2.3", "import": "pandas", "use": "dataframes, CSV and Excel I/O"},
     {"spec": "numpy==2.1.3", "import": "numpy", "use": "arrays and maths"},
@@ -80,7 +96,10 @@ PIP_PACKAGES: Tuple[PipPackage, ...] = (
     {"spec": "openpyxl==3.1.5", "import": "openpyxl", "use": "Excel .xlsx"},
     {"spec": "python-docx==1.1.2", "import": "docx", "use": "Word .docx"},
     {"spec": "python-pptx==1.0.2", "import": "pptx", "use": "PowerPoint .pptx"},
-    {"spec": "reportlab==4.2.5", "import": "reportlab", "use": "PDF generation"},
+    {"spec": "reportlab==4.4.10", "import": "reportlab", "use": "PDF generation"},
+    {"spec": "uharfbuzz==0.56.2", "import": "uharfbuzz", "use": "text shaping for reportlab (Indic scripts)"},
+    {"spec": "arabic-reshaper==3.0.1", "import": "arabic_reshaper", "use": "join Arabic letters for reportlab"},
+    {"spec": "python-bidi==0.6.11", "import": "bidi", "use": "right-to-left display order for reportlab"},
     {"spec": "lxml==6.1.3", "import": "lxml", "use": "XML and HTML parsing"},
     {"spec": "pillow==11.3.0", "import": "PIL", "use": "images"},
     {"spec": "requests==2.34.2", "import": "requests", "use": "HTTP"},
@@ -236,7 +255,52 @@ FONTS: Tuple[Font, ...] = (
     },
 )
 
-_USE_FFMPEG_CLI = "the ffmpeg command (run it with subprocess) for video, or imageio for GIF and WebP"
+_NOTO_DIR = "/usr/share/fonts/truetype/noto/"
+
+
+def _noto(script: str, family: str, bold: bool = True) -> PdfFont:
+    """Return the ``PdfFont`` for a fonts-noto-core family such as ``NotoSansArabic``."""
+    return {
+        "script": script,
+        "regular": f"{_NOTO_DIR}{family}-Regular.ttf",
+        "bold": f"{_NOTO_DIR}{family}-Bold.ttf" if bold else "",
+    }
+
+
+# Fonts the pdf artifact renderer (docsgpt/agents/tools/artifact_pdf.py) embeds,
+# by script; it looks the files up inside the sandbox and skips any that are
+# missing. Chinese, Japanese and Korean use reportlab's built-in CID fonts, so
+# they are not listed. The paths exist on Debian 12 and 13.
+PDF_FONTS: Tuple[PdfFont, ...] = (
+    {
+        "script": "base",
+        "regular": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "bold": "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    },
+    _noto("arabic", "NotoSansArabic"),
+    _noto("hebrew", "NotoSansHebrew"),
+    _noto("syriac", "NotoSansSyriac", bold=False),
+    _noto("devanagari", "NotoSansDevanagari"),
+    _noto("bengali", "NotoSansBengali"),
+    _noto("gurmukhi", "NotoSansGurmukhi"),
+    _noto("gujarati", "NotoSansGujarati"),
+    _noto("oriya", "NotoSansOriya"),
+    _noto("tamil", "NotoSansTamil"),
+    _noto("telugu", "NotoSansTelugu"),
+    _noto("kannada", "NotoSansKannada"),
+    _noto("malayalam", "NotoSansMalayalam"),
+    _noto("sinhala", "NotoSansSinhala"),
+    _noto("thai", "NotoSansThai"),
+    _noto("lao", "NotoSansLao"),
+    _noto("khmer", "NotoSansKhmer"),
+    _noto("myanmar", "NotoSansMyanmar"),
+    _noto("ethiopic", "NotoSansEthiopic"),
+    _noto("symbols", "NotoSansMath", bold=False),
+    _noto("symbols", "NotoSansSymbols2", bold=False),
+    _noto("symbols", "NotoSansSymbols", bold=False),
+)
+
+_USE_FFMPEG_CLI ="the ffmpeg command (run it with subprocess) for video, or imageio for GIF and WebP"
 _USE_OFFICE_CONVERT = "the office-convert command (LibreOffice) for Office conversions"
 _USE_PDFPLUMBER_TABLES = "pdfplumber's page.extract_tables()"
 
@@ -467,6 +531,7 @@ def render_manifest_json() -> str:
         "env": ENV,
         "binaries": list(BINARIES),
         "fonts": list(FONTS),
+        "pdf_fonts": list(PDF_FONTS),
         "helpers": HELPERS,
     }
     return json.dumps(data, indent=2) + "\n"
