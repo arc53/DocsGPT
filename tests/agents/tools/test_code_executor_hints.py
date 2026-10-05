@@ -250,6 +250,71 @@ def test_timeout_says_unsaved_work_is_lost_and_to_write_partials():
     assert "scratch/" in hint and "chunks" in hint
 
 
+def test_timeout_below_the_max_suggests_a_larger_timeout():
+    result = _error("TimeoutError", "execution exceeded 60.0s")
+    hints = fix_hints(_facts("render()", result, timed_out=True, timeout=60, max_timeout=1000))
+    hint = _one(hints, "`timeout`")
+    assert "1000" in hint
+
+
+def test_timeout_at_the_max_does_not_suggest_a_larger_timeout():
+    result = _error("TimeoutError", "execution exceeded 1000.0s")
+    hints = fix_hints(_facts("render()", result, timed_out=True, timeout=1000, max_timeout=1000))
+    assert not any("`timeout`" in h for h in hints), hints
+    _one(hints, "interrupted")
+
+
+def test_timeout_without_a_known_max_does_not_suggest_a_larger_timeout():
+    result = _error("TimeoutError", "execution exceeded 60.0s")
+    hints = fix_hints(_facts("render()", result, timed_out=True, timeout=60))
+    assert not any("`timeout`" in h for h in hints), hints
+
+
+# -- 5b. Out of memory ------------------------------------------------------------------
+
+
+_OOM_RESULTS = [
+    # The backend saw the process killed for memory (Jupyter kernel death with an OOM kill,
+    # Daytona exit 137).
+    ExecResult(status="error", error_name="KernelDiedError", error_value="died", exit_code=-1, out_of_memory=True),
+    # A subprocess the code started was killed by SIGKILL.
+    _error("CalledProcessError", "Command '['ffmpeg', '-i', 'x.mp4']' died with <Signals.SIGKILL: 9>."),
+    _error("CalledProcessError", "Command 'ffmpeg -i x.mp4' returned non-zero exit status 137."),
+    ExecResult(status="ok", stdout="child rc -9\n"),
+    ExecResult(status="ok", stdout="", stderr="/bin/sh: line 1:    42 Killed                  python big.py\n"),
+    # Python could not allocate.
+    _error("MemoryError", ""),
+    _error("MemoryError", "Unable to allocate 7.45 GiB for an array with shape (1000000000,) and data type float64"),
+    _error("ArrayMemoryError", "Unable to allocate 7.45 GiB for an array"),
+]
+
+
+@pytest.mark.parametrize("result", _OOM_RESULTS)
+def test_out_of_memory_says_to_process_in_chunks(result):
+    hint = _one(fix_hints(_facts("process()", result)), "memory")
+    assert "chunks" in hint
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        _error("ValueError", "invalid literal for int() with base 10: '-9'"),
+        ExecResult(status="ok", stdout="exit status 1370 rows\n"),
+        ExecResult(status="ok", stdout="Killed it!\n"),
+        _error("CalledProcessError", "Command 'false' returned non-zero exit status 1."),
+    ],
+)
+def test_ordinary_failures_are_not_called_out_of_memory(result):
+    assert not any("memory" in h for h in fix_hints(_facts("x()", result)))
+
+
+def test_out_of_memory_on_a_timeout_is_not_reported():
+    """A timeout kills the run too; it must not be read as out of memory."""
+    result = _error("TimeoutError", "execution exceeded 60.0s")
+    hints = fix_hints(_facts("x()", result, timed_out=True, timeout=60, max_timeout=1000))
+    assert not any("memory" in h for h in hints)
+
+
 # -- 6. Missing command ------------------------------------------------------------------
 
 
@@ -449,6 +514,24 @@ def test_a_compiled_package_installed_at_runtime_that_cannot_load():
     )
     hint = _one(fix_hints(_facts("import bidi", result)), "compiled")
     assert "bidi" in hint and "preinstalled" in hint
+
+
+def test_a_top_level_compiled_module_that_cannot_load_is_named():
+    result = _error(
+        "ImportError",
+        "/tmp/home/.local/lib/python3.12/site-packages/ujson.cpython-312-x86_64-linux-gnu.so: "
+        "failed to map segment from shared object",
+    )
+    hint = _one(fix_hints(_facts("import ujson", result)), "compiled")
+    assert hint.startswith("ujson ")
+
+
+def test_the_compiled_package_hint_needs_the_noexec_load_error():
+    """With the exec-enabled home mount pip-installed extensions load; the hint fires only on the real error."""
+    loaded = ExecResult(status="ok", stdout="msgpack 1.1.0 from /sandbox-home/home/.local/lib/python3.12/\n")
+    assert not any("compiled" in h for h in fix_hints(_facts("import msgpack", loaded)))
+    other = _error("ImportError", "/usr/local/lib/python3.12/site-packages/x/x.so: undefined symbol: foo")
+    assert not any("compiled" in h for h in fix_hints(_facts("import x", other)))
 
 
 def test_reportlab_with_a_registered_font_is_fine():

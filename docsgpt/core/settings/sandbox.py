@@ -46,6 +46,16 @@ class SandboxSettings(SettingsGroup):
         ),
     )
     SANDBOX_EXEC_TIMEOUT: int = Field(default=60, description="Default wall-clock cap (s) per exec call.")
+    SANDBOX_EXEC_MAX_TIMEOUT: int = Field(
+        default=1000,
+        ge=1,
+        description=(
+            "Longest wall-clock cap (s) the model may ask for on one run_code call, for long jobs such as video "
+            "renders or OCR of many pages; a larger request is clamped to it. Never below SANDBOX_EXEC_TIMEOUT. "
+            "On the Jupyter runner keep SANDBOX_KERNEL_IDLE_TIMEOUT above SANDBOX_MAX_TTL; a busy kernel is "
+            "never culled."
+        ),
+    )
     SANDBOX_HTTP_TIMEOUT: int = Field(
         default=10, description="Fixed cap (s) for REST control calls (create/delete/alive/interrupt)."
     )
@@ -65,6 +75,14 @@ class SandboxSettings(SettingsGroup):
             "Docker mem_limit for the runner container: the gateway, the warm session kernels and the "
             "LibreOffice and Chromium processes they start. Consumed by the docsgpt-sandbox compose service, not "
             "the app; part of the untrusted-code security boundary."
+        ),
+    )
+    SANDBOX_HOME_SIZE: str = Field(
+        default="1g",
+        description=(
+            "Size of the runner's /sandbox-home tmpfs: the kernels' HOME, where runtime pip installs and caches "
+            "go. It allows exec so compiled packages load (/tmp stays noexec) and counts against SANDBOX_MEMORY "
+            "as it fills. Consumed by the docsgpt-sandbox compose service, not the app."
         ),
     )
     SANDBOX_CPUS: str = Field(

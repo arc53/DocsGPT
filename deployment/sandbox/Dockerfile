@@ -73,8 +73,11 @@ RUN if [ "$INSTALL_DOCLING" = "true" ]; then \
 # `env_file: ../.env` -- the scrubber blocks exfil from the kernel, but the
 # runner image itself should stay free of app secrets it has no use for.
 #
-# kernel-env.sh does the scrubbing and gives kernels a writable HOME under /tmp
-# (the root FS is read-only); sandbox.env is the image environment it passes on.
+# kernel-env.sh does the scrubbing and gives kernels a writable HOME (the root FS
+# is read-only): /sandbox-home/home on the exec-enabled tmpfs compose and k8s
+# mount there, so compiled packages pip-installed at runtime load, or /tmp/home
+# when the image runs without that mount. sandbox.env is the image environment
+# it passes on.
 # kernel-startup.py runs inside each kernel and drops the FORCE_COLOR ipykernel sets.
 COPY kernel-env.sh /opt/docsgpt/kernel-env.sh
 COPY kernel-launch.sh /opt/docsgpt/kernel-launch.sh
@@ -85,7 +88,8 @@ COPY kernels/docsgpt-python/kernel.json /usr/local/share/jupyter/kernels/docsgpt
 
 # Conversion helpers on PATH (html_render.py picks its mode from the name it is
 # run as), and the smoke test with the manifest it checks against:
-#   docker run --rm --read-only --tmpfs /tmp IMAGE \
+#   docker run --rm --read-only --tmpfs /tmp \
+#     --tmpfs /sandbox-home:rw,exec,nosuid,nodev,size=1g,uid=10001,gid=10001,mode=0700 IMAGE \
 #     /opt/docsgpt/kernel-env.sh python /opt/docsgpt/smoke_test.py
 COPY helpers/office_convert.py /usr/local/bin/office-convert
 COPY helpers/html_render.py /usr/local/bin/html-to-pdf

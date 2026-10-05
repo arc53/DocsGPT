@@ -138,7 +138,8 @@ of these:
   (pointing `argv` at a local copy of `kernel-launch.sh`, with `kernel-env.sh`,
   `kernel-startup.py` and `sandbox.env` copied next to it) into a Jupyter data dir on the
   kernelspec search path. The default kernel name then works. Kernels get
-  `HOME=/tmp/home` unless you set `SANDBOX_KERNEL_HOME` on the gateway.
+  `HOME=/sandbox-home/home` when that mount exists and allows exec, otherwise
+  `/tmp/home`, unless you set `SANDBOX_KERNEL_HOME` on the gateway.
 - Or set `SANDBOX_KERNEL_NAME=python3` in the app's `.env`. The stock spec
   inherits the gateway's full env (no secret scrubbing), so use it only for
   single-trust dev.
@@ -230,14 +231,35 @@ pdfplumber, pypdf or pypdfium2.
 
 The root filesystem is read-only (compose `read_only: true`, k8s
 `readOnlyRootFilesystem`), so `kernel-env.sh` gives every kernel a writable
-`HOME` under `/tmp` (`/tmp/home`, or `SANDBOX_KERNEL_HOME` on the runner) and
-points `XDG_CONFIG_HOME`, `XDG_CACHE_HOME` and `PYTHONUSERBASE` into it.
-LibreOffice, Chromium, fontconfig, npm and `pip install` (which falls back to a
-user install) all write there. Before this, `pip install` inside the runner
-failed with `Read-only file system: '/home/sandbox/.local'`. The script also
-creates the user site-packages directory before the kernel starts, so a package
-installed from a running kernel imports without a restart. All sessions share
-that `HOME`, like the rest of the container (see *Isolation model*).
+`HOME` and points `XDG_CONFIG_HOME`, `XDG_CACHE_HOME` and `PYTHONUSERBASE` into
+it. LibreOffice, Chromium, fontconfig, npm and `pip install` (which falls back
+to a user install, with its cache under `XDG_CACHE_HOME`) all write there. The
+script also creates the user site-packages directory before the kernel starts,
+so a package installed from a running kernel imports without a restart. All
+sessions share that `HOME`, like the rest of the container (see *Isolation
+model*).
+
+Where `HOME` goes, first match wins:
+
+1. `SANDBOX_KERNEL_HOME`, when set on the runner.
+2. `/sandbox-home/home`, when `/sandbox-home` (`SANDBOX_HOME_MOUNT`) is a
+   writable mount that is not `noexec`. The compose overlay mounts it as a
+   tmpfs with `rw,exec,nosuid,nodev,size=${SANDBOX_HOME_SIZE:-1g},uid=10001,gid=10001,mode=0700`;
+   the k8s manifest mounts a memory-backed `emptyDir` (1Gi `sizeLimit`), which
+   is never `noexec`.
+3. `/tmp/home` (`SANDBOX_TMP_HOME`), with one line on the gateway's stderr.
+
+Docker mounts a compose `tmpfs:` entry `noexec,nosuid` unless told otherwise,
+so a package with compiled code pip-installed under `/tmp/home` failed to load
+with `failed to map segment from shared object`; pure-Python packages worked.
+Under compose the separate home mount allows exec for that one directory only:
+`/tmp`, where the session workspaces live, stays `noexec`, and `nosuid,nodev`
+still refuse setuid binaries and device files. Both compose mounts are RAM and
+count against the container's memory limit as they fill. On Kubernetes `/tmp` is
+the `scratch` `emptyDir` (node disk, not `noexec`) and only `/sandbox-home` is
+memory-backed, counting against the pod's memory limit. Either way kernel code
+can already run anything through the Python interpreter, so exec on its own
+home adds no new capability beyond loading the extensions it installed.
 
 ipykernel sets `FORCE_COLOR=1` and `CLICOLOR_FORCE=1` once the kernel is up, so
 Node, npm and pip coloured their output even into a pipe and the model read
@@ -249,13 +271,21 @@ escape codes. `kernel-launch.sh` runs `kernel-startup.py` in every kernel
 `smoke_test.py` runs inside the image: it imports every manifest package,
 checks every command and font, and converts real files (docx and pptx to PDF,
 HTML to PDF and PNG, OCR, pdftotext, Node, an animated GIF and WebP, and an
-H.264 MP4 checked with ffprobe). Run it the way kernels run:
+H.264 MP4 checked with ffprobe). `--pip` also pip-installs a pure-Python
+package and one with a compiled extension (`ujson`) and imports them, the
+second in a new process. Run it the way kernels run, with the compose mounts:
 
 ```bash
 docker build -t docsgpt-sandbox deployment/sandbox
-docker run --rm --read-only --tmpfs /tmp docsgpt-sandbox \
-  /opt/docsgpt/kernel-env.sh python /opt/docsgpt/smoke_test.py   # add --pip to test pip installs
+docker run --rm --read-only --tmpfs /tmp \
+  --tmpfs /sandbox-home:rw,exec,nosuid,nodev,size=1g,uid=10001,gid=10001,mode=0700 \
+  docsgpt-sandbox \
+  /opt/docsgpt/kernel-env.sh python /opt/docsgpt/smoke_test.py --pip
 ```
+
+The `Verify the sandbox image` workflow runs the same command on every change
+under `deployment/sandbox/`, then checks that the image without the home mount
+falls back to `/tmp/home`.
 
 For the Daytona snapshot, `python scripts/build_daytona_snapshot.py --smoke`
 runs it in a sandbox made from the snapshot.
@@ -269,7 +299,18 @@ sessions, so a kernel held by an API or worker process that restarted would
 otherwise live until the runner restarts. `gateway-launch.sh` therefore has the
 gateway shut down any kernel idle for `SANDBOX_KERNEL_IDLE_TIMEOUT` seconds
 (1800 by default); keep it above `SANDBOX_MAX_TTL`. The compose overlay passes
-the variable through.
+the variable through. A run's length does not add to it: a run may last up to
+`SANDBOX_EXEC_MAX_TIMEOUT` seconds (1000 by default) when the model asks, but
+the gateway never culls a busy kernel or one with an open connection, the app
+never reaps a session while an exec holds it, and both idle clocks start again
+when the run ends.
+
+A kernel that dies mid-run (the container's OOM killer, usually) is restarted
+by the gateway, which announces it on the kernel channel. The app ends the call
+at once instead of waiting out the timeout, deletes the kernel (the restarted
+process has lost the session's variables and working directory) and reports
+"out of memory" when the container's OOM-kill counter (`memory.events`, or
+`memory.oom_control` on cgroup v1) rose since the kernel started.
 
 Warm kernels count against the runner's memory: an idle kernel takes about
 50-60 MB, more once code has loaded data, and session workspaces live on the
@@ -277,9 +318,10 @@ Warm kernels count against the runner's memory: an idle kernel takes about
 Chromium render about 110 MB on small documents (more on large ones). Size
 `SANDBOX_MEMORY` (4g by default; it was 1g before the image carried LibreOffice
 and Chromium) for the conversations that run code at the same time, or lower
-`SANDBOX_MAX_TTL`. `SANDBOX_MAX_SESSIONS` (32) caps each API and worker process
-on its own, not the runner as a whole, so several processes at their cap can
-hold more warm kernels than 4g fits. The compose overlay also sets `shm_size: 256m` and
+`SANDBOX_MAX_TTL`. Runtime pip installs live on the `/sandbox-home` tmpfs
+(`SANDBOX_HOME_SIZE`, 1g by default) and count too. `SANDBOX_MAX_SESSIONS`
+(32) caps each API and worker process on its own, not the runner as a whole,
+so several processes at their cap can hold more warm kernels than 4g fits. The compose overlay also sets `shm_size: 256m` and
 `pids_limit: 1024` for Chromium; the k8s manifest mounts a 256 Mi memory-backed
 `/dev/shm` and limits memory to 4 Gi.
 

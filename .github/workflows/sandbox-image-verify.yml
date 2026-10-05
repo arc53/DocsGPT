@@ -1,8 +1,8 @@
 name: Verify the sandbox image
 
 # Builds the code-execution runner image (deployment/sandbox) and runs its smoke
-# test the way kernels run: read-only root, /tmp as tmpfs, the scrubbed kernel
-# environment. The test imports every package in docsgpt/sandbox/manifest.py,
+# test the way kernels run: read-only root, /tmp as a noexec tmpfs, the kernels'
+# home on an exec-enabled tmpfs, the scrubbed kernel environment. The test imports every package in docsgpt/sandbox/manifest.py,
 # checks every command and font, and converts real files with LibreOffice,
 # Chromium, tesseract, poppler, ffmpeg and Node, so a Debian package rename or a
 # broken pin fails here instead of in a deployment.
@@ -13,6 +13,7 @@ on:
     paths:
       - 'deployment/sandbox/**'
       - 'docsgpt/sandbox/manifest.py'
+      - 'deployment/optional/docker-compose.optional.sandbox.yaml'
       - '.github/workflows/sandbox-image-verify.yml'
 
 permissions:
@@ -46,8 +47,20 @@ jobs:
           docker image inspect docsgpt-sandbox:verify --format '{{.Size}}' | awk '{printf "uncompressed: %.2f GB\n", $1/1e9}'
           docker history docsgpt-sandbox:verify --format '{{.Size}}\t{{.CreatedBy}}' | head -20
 
+      # The same mounts as deployment/optional/docker-compose.optional.sandbox.yaml:
+      # /tmp is Docker's default noexec tmpfs, /sandbox-home the kernels' exec-enabled home.
       - name: Smoke test (read-only root, as compose runs it)
         run: |
-          docker run --rm --read-only --tmpfs /tmp --memory 4g --shm-size 256m --pids-limit 1024 \
+          docker run --rm --read-only --tmpfs /tmp \
+            --tmpfs /sandbox-home:rw,exec,nosuid,nodev,size=1g,uid=10001,gid=10001,mode=0700 \
+            --memory 4g --shm-size 256m --pids-limit 1024 \
             docsgpt-sandbox:verify \
             /opt/docsgpt/kernel-env.sh python /opt/docsgpt/smoke_test.py --pip
+
+      - name: Without the home mount the kernel falls back to /tmp/home
+        run: |
+          out="$(docker run --rm --read-only --tmpfs /tmp docsgpt-sandbox:verify \
+            /opt/docsgpt/kernel-env.sh sh -c 'echo "HOME=$HOME"' 2>&1)"
+          echo "$out"
+          echo "$out" | grep -q '^HOME=/tmp/home$'
+          echo "$out" | grep -q 'kernel-env: no writable exec-enabled /sandbox-home mount'
