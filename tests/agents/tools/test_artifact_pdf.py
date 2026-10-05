@@ -356,6 +356,13 @@ def test_long_unbroken_text_lays_out_in_linear_time():
     assert len(lines) == 250 and all(len(line) == 80 for line in lines)
 
 
+def test_fitting_prefix_counts_the_characters_that_fit():
+    assert artifact_pdf._fitting_prefix("abcdef", len, 4) == 4
+    assert artifact_pdf._fitting_prefix("abcdef", lambda s: 10.0, 4) == 1
+    # Characters that fit one by one fit whole, even if the word measured as one string did not.
+    assert artifact_pdf._fitting_prefix("abc", lambda s: 1.0, 5) == 3
+
+
 def test_reshape_arabic_joins_letters_into_presentation_forms():
     pytest.importorskip("arabic_reshaper")
     shaped = artifact_pdf.reshape_arabic("سلام")

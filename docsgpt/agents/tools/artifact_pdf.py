@@ -449,9 +449,8 @@ def load_fonts(
         # Which flavour a sentence takes is decided per sentence; a CID font
         # costs nothing until a run uses it, so all three are registered.
         for flavor, name in CID_FONTS.items():
-            if name not in pdfmetrics.getRegisteredFontNames():
-                pdfmetrics.registerFont(UnicodeCIDFont(name))
-                _register_family(name, name, name, name)
+            pdfmetrics.registerFont(UnicodeCIDFont(name))
+            _register_family(name, name, name, name)
             fonts.add_coverage(name, _cid_covers)
             fonts.cjk[flavor] = name
 
