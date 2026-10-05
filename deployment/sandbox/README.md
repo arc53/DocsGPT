@@ -272,7 +272,9 @@ Warm kernels count against the runner's memory: an idle kernel takes about
 Chromium render about 110 MB on small documents (more on large ones). Size
 `SANDBOX_MEMORY` (4g by default; it was 1g before the image carried LibreOffice
 and Chromium) for the conversations that run code at the same time, or lower
-`SANDBOX_MAX_TTL`. The compose overlay also sets `shm_size: 256m` and
+`SANDBOX_MAX_TTL`. `SANDBOX_MAX_SESSIONS` (32) caps each API and worker process
+on its own, not the runner as a whole, so several processes at their cap can
+hold more warm kernels than 4g fits. The compose overlay also sets `shm_size: 256m` and
 `pids_limit: 1024` for Chromium; the k8s manifest mounts a 256 Mi memory-backed
 `/dev/shm` and limits memory to 4 Gi.
 

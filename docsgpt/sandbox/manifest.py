@@ -66,7 +66,7 @@ PIP_PACKAGES: Tuple[PipPackage, ...] = (
     {"spec": "python-docx==1.1.2", "import": "docx", "use": "Word .docx"},
     {"spec": "python-pptx==1.0.2", "import": "pptx", "use": "PowerPoint .pptx"},
     {"spec": "reportlab==4.2.5", "import": "reportlab", "use": "PDF generation"},
-    {"spec": "lxml==6.0.2", "import": "lxml", "use": "XML and HTML parsing"},
+    {"spec": "lxml==6.1.3", "import": "lxml", "use": "XML and HTML parsing"},
     {"spec": "pillow==11.3.0", "import": "PIL", "use": "images"},
     {"spec": "requests==2.34.2", "import": "requests", "use": "HTTP"},
     {"spec": "beautifulsoup4==4.15.0", "import": "bs4", "use": "HTML parsing"},

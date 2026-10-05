@@ -20,6 +20,7 @@ Exit codes: 0 converted, 1 conversion failed, 2 bad arguments or input,
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import shutil
 import signal
@@ -109,10 +110,9 @@ def run(cmd: List[str], timeout: float) -> subprocess.CompletedProcess:
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        try:
+        # The group may already be gone if soffice exited at the deadline.
+        with contextlib.suppress(ProcessLookupError):
             os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
         proc.communicate()
         raise
     return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)

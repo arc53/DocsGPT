@@ -20,6 +20,7 @@ Exit codes: 0 rendered, 1 rendering failed, 2 bad arguments or input,
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import shutil
 import signal
@@ -157,10 +158,9 @@ def run(cmd: List[str], timeout: float) -> subprocess.CompletedProcess:
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        try:
+        # The group may already be gone if Chromium exited at the deadline.
+        with contextlib.suppress(ProcessLookupError):
             os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
         proc.communicate()
         raise
     return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
@@ -223,10 +223,8 @@ def _render(mode: str, prog: str, argv: Optional[List[str]]) -> int:
         return 127
     output = Path(args.output).expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        output.unlink()
-    except FileNotFoundError:
-        pass
+    # A stale file from an earlier run must not pass for this run's output.
+    output.unlink(missing_ok=True)
 
     profile = Path(tempfile.mkdtemp(prefix="chromium-"))
     try:

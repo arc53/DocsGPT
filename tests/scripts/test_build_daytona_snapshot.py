@@ -107,9 +107,11 @@ def test_resource_flags_override_the_defaults(snap):
 
 
 @pytest.mark.parametrize("flag", ["--cpu", "--memory", "--disk"])
-def test_resource_flags_must_be_positive(snap, flag):
+@pytest.mark.parametrize("value,message", [("0", "greater than 0"), ("abc", "not an integer")])
+def test_resource_flags_must_be_positive_integers(snap, flag, value, message, capsys):
     with pytest.raises(SystemExit):
-        snap.parse_args([flag, "0"])
+        snap.parse_args([flag, value])
+    assert message in capsys.readouterr().err
 
 
 def test_dockerfile_flag_prints_without_an_api_key(snap, monkeypatch, capsys):

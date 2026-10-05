@@ -62,8 +62,10 @@ services:
     # each, more with data loaded) and whatever they start: a LibreOffice
     # conversion took about 170 MB and a headless Chromium render
     # about 110 MB on small documents, more on large ones. /tmp (the session
-    # workspaces) is a tmpfs and counts against this limit too. At the default
-    # SANDBOX_MAX_SESSIONS (32 per app process) idle kernels alone near 2 GB.
+    # workspaces) is a tmpfs and counts against this limit too. SANDBOX_MAX_SESSIONS
+    # (32) caps each API and worker process separately, so with both at the cap
+    # idle kernels alone pass 3 GB: raise this, or lower SANDBOX_MAX_SESSIONS or
+    # SANDBOX_MAX_TTL, for a busy deployment.
     mem_limit: ${SANDBOX_MEMORY:-4g}
     cpus: ${SANDBOX_CPUS:-1.0}
     # Chromium is thread-heavy; 256 ran out with a few sessions converting.

@@ -89,7 +89,9 @@ spec:
           # Same budget as the compose overlay's SANDBOX_MEMORY default: the
           # gateway, the warm session kernels, and the LibreOffice (~170 MB) and
           # headless Chromium (~110 MB) processes they start, plus the /tmp
-          # emptyDir if it is memory-backed.
+          # emptyDir if it is memory-backed. SANDBOX_MAX_SESSIONS caps each API
+          # and worker process separately; raise the limit (or lower that cap or
+          # SANDBOX_MAX_TTL) when many processes keep kernels warm at once.
           resources:
             limits:
               memory: "4Gi"

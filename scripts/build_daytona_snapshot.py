@@ -64,7 +64,10 @@ _SANDBOX_DIR = Path(__file__).resolve().parents[1] / "deployment" / "sandbox"
 
 def _positive_int(value: str) -> int:
     """argparse type for a resource size: an integer above zero."""
-    parsed = int(value)
+    try:
+        parsed = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not an integer: {value!r}") from None
     if parsed <= 0:
         raise argparse.ArgumentTypeError("must be greater than 0")
     return parsed
