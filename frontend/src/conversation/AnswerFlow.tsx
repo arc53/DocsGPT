@@ -3,6 +3,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import SchedulerToolCallCard from '../agents/schedules/SchedulerToolCallCard';
+import BackgroundJobCard from '../backgroundJobs/BackgroundJobCard';
 import { Button } from '../components/ui/button';
 import { usePacedText } from '../hooks';
 import {
@@ -155,6 +156,11 @@ export default function AnswerFlow({
             <Fragment key={`wiki-${call.call_id}`}>
               {renderWikiWrite(call, isLiveCall(call))}
             </Fragment>
+          );
+
+        if (call.job_id)
+          return (
+            <BackgroundJobCard key={`job-${call.call_id}`} toolCall={call} />
           );
 
         if (call.tool_name === 'scheduler')

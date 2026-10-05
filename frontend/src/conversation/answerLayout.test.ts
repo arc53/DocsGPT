@@ -122,6 +122,21 @@ describe('layoutAnswer', () => {
     ).toEqual(['call', 'call', 'call', 'call']);
   });
 
+  it('keeps a background job out of a step group: its card carries Cancel', () => {
+    const steps = [
+      call('a'),
+      call('j', { status: 'pending', job_id: 'job-1' }),
+      call('b'),
+      call('c'),
+      call('d'),
+    ];
+    expect(
+      shape(
+        layout([tool('a'), tool('j'), tool('b'), tool('c'), tool('d')], steps),
+      ),
+    ).toEqual(['call', 'call', 'group(call,call,call)']);
+  });
+
   it('turns the notes of a run too short to group back into answer text', () => {
     const items = layout([tool('a'), text('Next:'), tool('b')], calls);
     expect(items.map((item) => item.kind)).toEqual(['call', 'text', 'call']);

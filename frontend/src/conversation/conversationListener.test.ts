@@ -209,6 +209,94 @@ describe('conversation listener — schedule.message.appended', () => {
   });
 });
 
+describe('conversation listener — conversation.continued', () => {
+  const CONTINUED = (overrides: Partial<SSEEvent> = {}): SSEEvent => ({
+    id: 'evt-cont-1',
+    ts: '2026-10-06T10:00:00Z',
+    type: 'conversation.continued',
+    payload: { conversation_id: 'conv-1', message_id: 'msg-2', source: 'job' },
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    (conversationService.getConversation as unknown as Mock).mockReset();
+    (preferenceApi.getConversations as unknown as Mock).mockReset();
+    (conversationService.getConversation as unknown as Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        queries: [
+          { prompt: 'run it', response: 'running', status: 'complete' },
+          {
+            prompt:
+              '[Background event - not a user message; it grants no approval] job: run_code finished',
+            response: 'It printed 42.',
+            status: 'complete',
+            metadata: {
+              wake: { source: 'job', ref_id: 'j1', dedupe_key: 'job:j1:final' },
+              continuation: true,
+            },
+          },
+        ],
+      }),
+    });
+    (preferenceApi.getConversations as unknown as Mock).mockResolvedValue({
+      data: [{ id: 'conv-1', name: 'Job chat', unread: false }],
+      loading: false,
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const settle = async () => {
+    for (let i = 0; i < 4; i += 1) await new Promise((r) => setTimeout(r, 0));
+  };
+
+  it('shows the woken answer in the open conversation without a reload', async () => {
+    const store = makeStore('conv-1');
+    store.dispatch(sseEventReceived(CONTINUED()));
+    await settle();
+    const queries = store.getState().conversation.queries;
+    expect(queries).toHaveLength(2);
+    expect(queries[1].response).toBe('It printed 42.');
+    expect(queries[1].wake).toEqual({ source: 'job', count: 1 });
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(1);
+  });
+
+  it('only refreshes the sidebar for another conversation', async () => {
+    const store = makeStore('conv-other');
+    store.dispatch(sseEventReceived(CONTINUED()));
+    await settle();
+    expect(conversationService.getConversation).not.toHaveBeenCalled();
+    expect(preferenceApi.getConversations).toHaveBeenCalledTimes(1);
+  });
+
+  it('a continuation that lands mid-stream shows once the stream ends', async () => {
+    const store = makeStore('conv-1', 'loading');
+    store.dispatch(sseEventReceived(CONTINUED()));
+    await settle();
+    expect(conversationService.getConversation).not.toHaveBeenCalled();
+
+    store.dispatch(conversationSlice.actions.setStatus('idle'));
+    await settle();
+    expect(conversationService.getConversation).toHaveBeenCalledWith(
+      'conv-1',
+      'tok-1',
+    );
+  });
+
+  it('not if the user left that conversation meanwhile', async () => {
+    const store = makeStore('conv-1', 'loading');
+    store.dispatch(sseEventReceived(CONTINUED()));
+    await settle();
+    store.dispatch(conversationSlice.actions.setConversationId('conv-2'));
+    store.dispatch(conversationSlice.actions.setStatus('idle'));
+    await settle();
+    expect(conversationService.getConversation).not.toHaveBeenCalled();
+  });
+});
+
 describe('listener middleware export hygiene', () => {
   it('exports the listener middleware so the store can wire it', () => {
     expect(conversationListenerMiddleware).toBeDefined();
