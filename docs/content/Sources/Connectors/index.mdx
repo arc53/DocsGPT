@@ -1,7 +1,7 @@
 ---
 title: Connectors
 description: Connect DocsGPT to the services your team uses. One connection can sync content into Knowledge and give agents tools, with credentials encrypted on the server.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-05
 ---
 
 import { Callout } from 'nextra/components'
@@ -9,9 +9,9 @@ import { Steps } from 'nextra/components'
 
 # Connectors
 
-A connector is a service DocsGPT can connect to: Google Drive, SharePoint, Confluence, GitHub, Amazon S3, Reddit, Brave Search, Telegram, ntfy, PostgreSQL, curated MCP servers (Notion, Linear, Atlassian, Sentry, Stripe, draw.io), and any MCP server or OpenAPI spec you add yourself. A **connection** is one signed-in account or one saved API key for a connector.
+A connector is a service DocsGPT can connect to: Google Drive, SharePoint, Confluence, GitHub, Amazon S3, Reddit, Brave Search, Telegram, ntfy, PostgreSQL, curated MCP servers (Notion, Linear, Atlassian, Sentry, Stripe, draw.io), and any MCP server or OpenAPI spec you add yourself. A **connection** is a saved setup for a connector, with credentials when the service requires them.
 
-Connections are the single place credentials live. A synced source and an agent tool both point at a connection, so you sign in once, reconnect once when a token expires, and disconnect in one place.
+Connections are the single place credentials live when a service requires them. A synced source and an agent tool both point at a connection, so you sign in once when needed, reconnect when a token expires, and disconnect in one place.
 
 <video
   autoPlay
