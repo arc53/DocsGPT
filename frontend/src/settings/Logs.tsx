@@ -1,12 +1,22 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Activity, ChevronRight } from 'lucide-react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import ChevronRight from '../assets/chevron-right.svg';
 import CopyButton from '../components/CopyButton';
+import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
-import { Input } from '../components/ui/input';
+import { useScrollSentinel } from '../hooks/useLoadMore';
+import { Button } from '../components/ui/button';
+import { CodeBlock } from '../components/ui/code-block';
+import { Collapsible } from '../components/ui/collapsible';
+import {
+  DescriptionItem,
+  DescriptionList,
+} from '../components/ui/description-list';
+import { EmptyState } from '../components/ui/empty-state';
+import { LoadMoreStatus } from '../components/ui/load-more-status';
 import {
   Select,
   SelectContent,
@@ -15,8 +25,12 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { useLoaderState } from '../hooks';
+import { cn } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
-import { LogData } from './types';
+import TraceChips from './traces/TraceChips';
+import TraceSheet from './traces/TraceSheet';
+import { formatDurationMs } from './traces/traceUtils';
+import { LogData, TraceRef } from './types';
 
 type LogsProps = {
   agentId?: string;
@@ -30,11 +44,14 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingLogs, setLoadingLogs] = useLoaderState(true);
+  // The last page failed: an error with Retry instead of "no logs".
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const [levelFilter, setLevelFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const [openTrace, setOpenTrace] = useState<TraceRef | null>(null);
 
   const logs = Object.values(logsByPage).flat();
 
@@ -62,6 +79,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
       return;
     }
     resetPendingRef.current = true;
+    setLoadFailed(false);
     setLogsByPage({});
     setPage(1);
     setHasMore(true);
@@ -73,6 +91,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     const issuedKey = filterKey;
     const issuedPage = page;
     setLoadingLogs(true);
+    setLoadFailed(false);
     try {
       const response = await userService.getLogs(
         {
@@ -96,6 +115,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
       setHasMore(data.has_more);
     } catch (error) {
       console.error(error);
+      if (issuedKey === filterKeyRef.current) setLoadFailed(true);
     } finally {
       if (issuedKey === filterKeyRef.current) setLoadingLogs(false);
     }
@@ -127,19 +147,18 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     { label: t('settings.logs.types.webhook'), value: 'webhook' },
     { label: t('settings.logs.types.workflow'), value: 'workflow' },
     { label: t('settings.logs.types.system'), value: 'system' },
+    { label: t('settings.logs.types.search'), value: 'search' },
+    { label: t('settings.logs.types.graph'), value: 'graph' },
   ];
 
   return (
-    <div className="mt-8">
+    <div>
       <p className="text-muted-foreground mb-5 text-sm leading-6">
         {t('settings.logs.subtitle')}
       </p>
       <div className="mb-3 flex flex-row flex-wrap items-center gap-3">
         <Select value={levelFilter} onValueChange={setLevelFilter}>
-          <SelectTrigger
-            className="w-[125px] rounded-3xl px-5 py-3 text-sm"
-            size="lg"
-          >
+          <SelectTrigger className="w-[125px]" size="field" shape="pill">
             <SelectValue placeholder={t('settings.logs.levels.all')} />
           </SelectTrigger>
           <SelectContent>
@@ -151,10 +170,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
           </SelectContent>
         </Select>
         <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger
-            className="w-[140px] rounded-3xl px-5 py-3 text-sm"
-            size="lg"
-          >
+          <SelectTrigger className="w-[140px]" size="field" shape="pill">
             <SelectValue placeholder={t('settings.logs.types.all')} />
           </SelectTrigger>
           <SelectContent>
@@ -165,21 +181,31 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
             ))}
           </SelectContent>
         </Select>
-        <Input
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder={t('settings.logs.searchPlaceholder')}
-          className="w-56 rounded-3xl"
-        />
+        <div className="w-56">
+          <SearchInput
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            label={t('settings.logs.searchPlaceholder')}
+          />
+        </div>
       </div>
       <div>
         <LogsTable
           logs={logs}
           setPage={setPage}
           loading={loadingLogs}
+          hasMore={hasMore}
+          failed={loadFailed}
+          onRetry={fetchLogs}
           tableHeader={tableHeader}
+          onViewTrace={setOpenTrace}
         />
       </div>
+      <TraceSheet
+        traceRef={openTrace}
+        agentId={agentId}
+        onClose={() => setOpenTrace(null)}
+      />
     </div>
   );
 }
@@ -188,11 +214,24 @@ type LogsTableProps = {
   logs: LogData[];
   setPage: React.Dispatch<React.SetStateAction<number>>;
   loading: boolean;
+  hasMore: boolean;
+  /** The last page failed to load; `onRetry` asks for it again. */
+  failed: boolean;
+  onRetry: () => void;
   tableHeader?: string;
+  onViewTrace: (ref: TraceRef) => void;
 };
-function LogsTable({ logs, setPage, loading, tableHeader }: LogsTableProps) {
+function LogsTable({
+  logs,
+  setPage,
+  loading,
+  hasMore,
+  failed,
+  onRetry,
+  tableHeader,
+  onViewTrace,
+}: LogsTableProps) {
   const { t } = useTranslation();
-  const observerRef = useRef<IntersectionObserver | null>(null);
   const [openLogId, setOpenLogId] = useState<string | null>(null);
 
   const handleLogToggle = (logId: string) => {
@@ -203,65 +242,59 @@ function LogsTable({ logs, setPage, loading, tableHeader }: LogsTableProps) {
     }
   };
 
-  const firstObserver = useCallback((node: HTMLDivElement | null) => {
-    if (observerRef.current) {
-      observerRef.current.disconnect();
-    }
-
-    if (!node) return;
-
-    observerRef.current = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting) {
-        setPage((prev) => prev + 1);
-      }
-    });
-
-    observerRef.current.observe(node);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
-    };
-  }, []);
+  // Loads the next page as the end of the list nears the screen.
+  const sentinelRef = useScrollSentinel(
+    () => setPage((prev) => prev + 1),
+    !loading && hasMore && !failed,
+    logs.length,
+  );
 
   return (
-    <div className="logs-table border-border bg-card h-[55vh] w-full overflow-hidden rounded-xl border dark:bg-black">
-      <div className="flex h-8 flex-col items-start justify-center bg-black/10 dark:bg-white/5">
-        <p className="text-muted-foreground px-3 text-xs">
+    <div className="border-border bg-card h-[55svh] w-full overflow-hidden rounded-xl border font-mono">
+      <div className="bg-muted flex h-8 flex-col items-start justify-center">
+        <p className="text-foreground px-3 text-xs">
           {tableHeader ? tableHeader : t('settings.logs.tableHeader')}
         </p>
       </div>
-      <div className="relative flex h-[51vh] grow flex-col items-start gap-2 overflow-y-auto overscroll-contain bg-transparent p-4">
-        {!loading && logs.length === 0 && (
-          <p className="text-muted-foreground w-full py-4 text-center text-xs">
-            {t('settings.logs.noLogs')}
-          </p>
+      <div className="relative flex h-[51svh] grow flex-col items-start gap-2 overflow-y-auto overscroll-contain bg-transparent p-4">
+        {!loading && failed && logs.length === 0 && (
+          <EmptyState
+            tone="destructive"
+            size="xs"
+            illustration="none"
+            title={t('settings.logs.loadError')}
+            onRetry={onRetry}
+            className="w-full"
+          />
         )}
-        {logs?.map((log, index) => {
-          if (index === logs.length - 1) {
-            return (
-              <div ref={firstObserver} key={index} className="w-full">
-                <Log
-                  log={log}
-                  isOpen={openLogId === log.id}
-                  onToggle={handleLogToggle}
-                />
-              </div>
-            );
-          } else
-            return (
-              <Log
-                key={index}
-                log={log}
-                isOpen={openLogId === log.id}
-                onToggle={handleLogToggle}
-              />
-            );
-        })}
+        {!loading && !failed && logs.length === 0 && (
+          <EmptyState
+            size="xs"
+            illustration="none"
+            title={t('settings.logs.noLogs')}
+            className="w-full"
+          />
+        )}
+        {logs?.map((log, index) => (
+          <Log
+            key={index}
+            log={log}
+            isOpen={openLogId === log.id}
+            onToggle={handleLogToggle}
+            onViewTrace={onViewTrace}
+          />
+        ))}
+        <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
         {loading && <SkeletonLoader component="logs" />}
+        {!loading && failed && logs.length > 0 && (
+          <LoadMoreStatus
+            loading={false}
+            error
+            done={false}
+            onRetry={onRetry}
+            className="w-full"
+          />
+        )}
       </div>
     </div>
   );
@@ -271,23 +304,30 @@ function formatDuration(start?: string, end?: string): string | null {
   if (!start || !end) return null;
   const ms = new Date(end).getTime() - new Date(start).getTime();
   if (isNaN(ms) || ms < 0) return null;
-  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+  return formatDurationMs(ms);
 }
 
 function Log({
   log,
   isOpen,
   onToggle,
+  onViewTrace,
 }: {
   log: LogData;
   isOpen: boolean;
   onToggle: (id: string) => void;
+  onViewTrace: (ref: TraceRef) => void;
 }) {
   const { t } = useTranslation();
+  const bodyId = useId();
+  // The details mount on first open (a long list stays light), then stay so
+  // closing can animate.
+  const [opened, setOpened] = useState(isOpen);
+  if (isOpen && !opened) setOpened(true);
   const logLevelColor = {
-    info: 'text-green-500',
-    error: 'text-red-500',
-    warning: 'text-yellow-500',
+    info: 'text-success',
+    error: 'text-destructive',
+    warning: 'text-warning',
   };
   const { id, action, timestamp, event_type, ...filteredLog } = log;
 
@@ -336,6 +376,17 @@ function Log({
   } else if (log.event_type === 'system' || log.event_type === 'webhook') {
     if (log.endpoint)
       detailRows.push([t('settings.logs.detail.endpoint'), log.endpoint]);
+  } else if (log.event_type === 'search' || log.event_type === 'graph') {
+    if (log.source)
+      detailRows.push([
+        t('settings.logs.detail.source'),
+        t(`settings.logs.trace.sources.${log.source}`, log.source),
+      ]);
+    if (log.status)
+      detailRows.push([
+        t('settings.logs.detail.status'),
+        t(`settings.logs.trace.status.${log.status}`, log.status),
+      ]);
   }
 
   const textBlocks: { label: string; text: string; isError?: boolean }[] = [];
@@ -392,83 +443,114 @@ function Log({
     });
 
   return (
-    <div className="group dark:hover:bg-accent hover:bg-muted w-full rounded-xl bg-transparent">
-      <div
+    <div
+      className={cn(
+        'group w-full rounded-xl bg-transparent',
+        !isOpen && 'hover:bg-accent',
+      )}
+    >
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        aria-controls={bodyId}
         onClick={() => onToggle(log.id)}
-        className={`text-foreground flex cursor-pointer flex-row items-start gap-2 p-2 px-4 py-3 ${
-          isOpen ? 'dark:bg-background rounded-t-xl bg-[#F1F1F1]' : ''
-        }`}
+        className={cn(
+          'text-foreground focus-visible:ring-ring/50 flex w-full cursor-pointer flex-row items-start gap-2 rounded-xl p-2 px-4 py-3 text-left outline-none focus-visible:ring-3 focus-visible:ring-inset',
+          isOpen && 'bg-secondary rounded-b-none',
+        )}
       >
-        <img
-          src={ChevronRight}
-          alt="Expand log entry"
-          className={`mt-[3px] h-3 w-3 transition duration-300 ${isOpen ? 'rotate-90' : ''}`}
+        <ChevronRight
+          aria-hidden
+          className={cn(
+            'text-muted-foreground mt-[3px] size-3 transition-transform duration-200',
+            isOpen && 'rotate-90',
+          )}
         />
         <span className="flex flex-row flex-wrap gap-2">
-          <h2 className="dark:text-foreground text-xs text-black/60">{`${log.timestamp}`}</h2>
+          <span className="text-muted-foreground text-xs">{`${log.timestamp}`}</span>
           {log.event_type && (
-            <h2 className="text-muted-foreground text-xs">
+            <span className="text-muted-foreground text-xs">
               {t(`settings.logs.types.${log.event_type}`)}
-            </h2>
+            </span>
           )}
-          <h2 className="text-xs text-[#913400] dark:text-orange-500">{`[${log.action}]`}</h2>
-          <h2
-            className={`max-w-72 text-xs ${logLevelColor[log.level]} wrap-break-word`}
+          <span className="text-warning text-xs">{`[${log.action}]`}</span>
+          {log.trace && (
+            <span className="text-muted-foreground text-xs tabular-nums">
+              {formatDurationMs(log.trace.duration_ms)}
+            </span>
+          )}
+          <span
+            className={cn(
+              'max-w-72 text-xs wrap-break-word',
+              logLevelColor[log.level],
+            )}
           >
             {`${log.question}`.length > 250
               ? `${log.question.substring(0, 250)}...`
               : log.question}
-          </h2>
+          </span>
         </span>
-      </div>
-      {isOpen && (
-        <div className="dark:bg-background rounded-b-xl bg-[#F1F1F1] px-4 py-3">
-          {detailRows.length > 0 && (
-            <div className="flex flex-col gap-1 px-2 pb-2">
-              {detailRows.map(([label, value]) => (
-                <div key={label} className="flex flex-row gap-2 text-xs">
-                  <span className="text-muted-foreground w-28 shrink-0">
-                    {label}
-                  </span>
-                  <span className="text-foreground wrap-break-word">
-                    {value}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-          {textBlocks.map((block) => (
-            <div key={block.label} className="px-2 pb-2">
-              <p className="text-muted-foreground text-xs">{block.label}</p>
-              <pre
-                className={`font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap ${
-                  block.isError
-                    ? 'text-red-500'
-                    : 'text-gray-700 dark:text-gray-400'
-                }`}
-              >
-                {block.text}
-              </pre>
-            </div>
-          ))}
-          {jsonBlocks.map((block) => (
-            <div key={block.label} className="px-2 pb-2">
-              <p className="text-muted-foreground text-xs">{block.label}</p>
-              <div className="scrollbar-overlay max-h-60 overflow-y-auto">
-                <pre className="font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap text-gray-700 dark:text-gray-400">
-                  {JSON.stringify(block.value, null, 2)}
-                </pre>
+      </button>
+      <Collapsible open={isOpen} id={bodyId}>
+        {opened && (
+          <div className="bg-secondary rounded-b-xl px-4 py-3">
+            {log.trace && (
+              <div className="flex flex-wrap items-center gap-2 px-2 pb-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => log.trace && onViewTrace(log.trace.ref)}
+                >
+                  <Activity />
+                  {log.trace.count > 1
+                    ? t('settings.logs.trace.viewRounds', {
+                        count: log.trace.count,
+                      })
+                    : t('settings.logs.trace.view')}
+                </Button>
+                <TraceChips
+                  durationMs={log.trace.duration_ms}
+                  counts={log.trace.summary}
+                />
               </div>
+            )}
+            {detailRows.length > 0 && (
+              <DescriptionList size="xs" className="mx-2 mb-2">
+                {detailRows.map(([label, value]) => (
+                  <DescriptionItem key={label} label={label}>
+                    {value}
+                  </DescriptionItem>
+                ))}
+              </DescriptionList>
+            )}
+            {textBlocks.map((block) => (
+              <div key={block.label} className="flex flex-col gap-1 px-2 pb-2">
+                <p className="text-muted-foreground text-xs">{block.label}</p>
+                <CodeBlock
+                  surface="subtle"
+                  tone={block.isError ? 'destructive' : 'default'}
+                >
+                  {block.text}
+                </CodeBlock>
+              </div>
+            ))}
+            {jsonBlocks.map((block) => (
+              <div key={block.label} className="flex flex-col gap-1 px-2 pb-2">
+                <p className="text-muted-foreground text-xs">{block.label}</p>
+                <CodeBlock surface="subtle" maxHeight="md">
+                  {JSON.stringify(block.value, null, 2)}
+                </CodeBlock>
+              </div>
+            ))}
+            <div className="my-px w-fit">
+              <CopyButton
+                textToCopy={JSON.stringify(filteredLog)}
+                showText={true}
+              />
             </div>
-          ))}
-          <div className="my-px w-fit">
-            <CopyButton
-              textToCopy={JSON.stringify(filteredLog)}
-              showText={true}
-            />
           </div>
-        </div>
-      )}
+        )}
+      </Collapsible>
     </div>
   );
 }

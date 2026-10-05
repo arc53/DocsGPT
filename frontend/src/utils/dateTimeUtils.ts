@@ -1,3 +1,5 @@
+import i18next from 'i18next';
+
 type FormatMode = 'auto' | 'date' | 'dateTime';
 
 const DATE_ONLY_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -5,6 +7,8 @@ const LOCAL_DATE_TIME_REGEX =
   /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/;
 const HAS_TIME_REGEX = /\d{1,2}:\d{2}/;
 
+// Dates are en-GB (DD/MM/YYYY, 24-hour) in every UI language; only relative
+// phrases (formatRelative) follow the language.
 const DATE_FORMATTER = new Intl.DateTimeFormat('en-GB', {
   day: '2-digit',
   month: '2-digit',
@@ -67,4 +71,100 @@ export function formatDateOnly(dateString: string): string {
 
 export function formatDateTime(dateString: string): string {
   return formatDateValue(dateString, 'dateTime');
+}
+
+/** The one placeholder for a missing value: a date, a count, an id. */
+export const EMPTY_VALUE = '—';
+
+/**
+ * A timestamp as date and time, or the em dash when there is none.
+ *
+ * Args:
+ *   value: an ISO timestamp, or nothing.
+ *
+ * Returns:
+ *   `formatDateTime(value)`, or `EMPTY_VALUE` for an empty value.
+ */
+export function formatTimestamp(value?: string | null): string {
+  return value ? formatDateTime(value) : EMPTY_VALUE;
+}
+
+// The app's language codes (locale/i18n.ts) that aren't BCP 47 tags.
+const INTL_LOCALES: Record<string, string> = { jp: 'ja', zhTW: 'zh-TW' };
+
+/** The current UI language as a tag `Intl` understands. */
+export function intlLocale(language: string = i18next.language): string {
+  if (!language) return 'en';
+  return INTL_LOCALES[language] ?? language;
+}
+
+/**
+ * A count with the UI language's digit grouping ("1,234", "1.234", "1 234").
+ *
+ * Args:
+ *   value: the number.
+ *   language: an app language code; defaults to the current one.
+ *
+ * Returns:
+ *   The formatted number. Pass it to a plural key as its own param and keep
+ *   `count` numeric, so i18next still picks the plural form.
+ */
+export function formatCount(
+  value: number,
+  language: string = i18next.language,
+): string {
+  return new Intl.NumberFormat(intlLocale(language)).format(value);
+}
+
+const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ['year', 31_536_000_000],
+  ['month', 2_592_000_000],
+  ['week', 604_800_000],
+  ['day', 86_400_000],
+  ['hour', 3_600_000],
+  ['minute', 60_000],
+];
+
+/**
+ * "3 minutes ago", "yesterday", "now", "in 18 hours" in the UI language.
+ *
+ * Args:
+ *   value: an ISO timestamp.
+ *   options.now: the reference time (tests).
+ *   options.locale: an app language code; defaults to the current one.
+ *   options.dateAfterDays: past this many days, show the date instead.
+ *   options.future: word future times as "in …"; otherwise they read "now"
+ *     (a past-event field under server clock skew).
+ *
+ * Returns:
+ *   The phrase, or null when the value is empty or unparseable.
+ */
+export function formatRelative(
+  value: string | null | undefined,
+  options: {
+    now?: number;
+    locale?: string;
+    dateAfterDays?: number;
+    future?: boolean;
+  } = {},
+): string | null {
+  if (!value) return null;
+  const then = Date.parse(value);
+  if (Number.isNaN(then)) return null;
+  const { now = Date.now(), locale, dateAfterDays, future = false } = options;
+  // Past times read "… ago"; future ones "in …" only when the caller expects
+  // them (a schedule's next run), else they clamp to "now".
+  const sign = then > now ? 1 : -1;
+  const diffMs = future ? Math.abs(now - then) : Math.max(0, now - then);
+  if (dateAfterDays !== undefined && diffMs > dateAfterDays * 86_400_000) {
+    return formatDateOnly(value);
+  }
+  const formatter = new Intl.RelativeTimeFormat(intlLocale(locale), {
+    numeric: 'auto',
+  });
+  for (const [unit, ms] of RELATIVE_UNITS) {
+    if (diffMs >= ms)
+      return formatter.format(sign * Math.round(diffMs / ms), unit);
+  }
+  return formatter.format(0, 'second');
 }

@@ -1,4 +1,3 @@
-import { getSessionToken } from '../../utils/providerUtils';
 import apiClient, { throttledApiClient } from '../client';
 import endpoints from '../endpoints';
 
@@ -7,6 +6,8 @@ const userService = {
     throttledApiClient.get(endpoints.USER.CONFIG, null),
   getMe: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.ME, token),
+  getQuota: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.QUOTA, token),
   getNewToken: (): Promise<any> =>
     throttledApiClient.get(endpoints.USER.NEW_TOKEN, null),
   // Token deliberately null: a stale Authorization header must not be able
@@ -19,12 +20,6 @@ const userService = {
     apiClient.get(`${endpoints.USER.DOCS}`, token),
   getDocsWithPagination: (query: string, token: string | null): Promise<any> =>
     apiClient.get(`${endpoints.USER.DOCS_PAGINATED}?${query}`, token),
-  getAPIKeys: (token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.API_KEYS, token),
-  createAPIKey: (data: any, token: string | null): Promise<any> =>
-    apiClient.post(endpoints.USER.CREATE_API_KEY, data, token),
-  deleteAPIKey: (data: any, token: string | null): Promise<any> =>
-    apiClient.post(endpoints.USER.DELETE_API_KEY, data, token),
   getAgent: (id: string, token: string | null): Promise<any> =>
     throttledApiClient.get(endpoints.USER.AGENT(id), token),
   getAgents: (token: string | null): Promise<any> =>
@@ -36,9 +31,10 @@ const userService = {
     token: string | null,
     limit = 100,
     offset = 0,
+    filters: { days?: number; check?: string; outcome?: string } = {},
   ): Promise<any> =>
     throttledApiClient.get(
-      endpoints.USER.GUARDRAIL_EVENTS(agentId, limit, offset),
+      endpoints.USER.GUARDRAIL_EVENTS(agentId, limit, offset, filters),
       token,
     ),
   getGuardrailSummary: (
@@ -113,12 +109,34 @@ const userService = {
     apiClient.post(endpoints.USER.SCHEDULE_ANALYTICS, data, token),
   getLogs: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.LOGS, data, token),
+  getTraces: (
+    params: Record<string, string>,
+    token: string | null,
+    signal?: AbortSignal,
+  ): Promise<any> =>
+    apiClient.get(
+      endpoints.USER.TRACES(new URLSearchParams(params).toString()),
+      token,
+      {},
+      signal,
+    ),
   manageSync: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.MANAGE_SYNC, data, token),
   syncSource: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.SYNC_SOURCE, data, token),
   reingestSource: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.REINGEST_SOURCE, data, token),
+  createSourceFromAttachments: (
+    data: { attachment_ids: string[]; name?: string },
+    token: string | null,
+    idempotencyKey?: string,
+  ): Promise<Response> =>
+    apiClient.post(
+      endpoints.USER.SOURCE_FROM_ATTACHMENTS,
+      data,
+      token,
+      idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {},
+    ),
   updateSourceConfig: (
     sourceId: string,
     config: any,
@@ -146,6 +164,15 @@ const userService = {
     limit?: number,
   ): Promise<Response> =>
     throttledApiClient.get(endpoints.USER.SOURCE_GRAPH(sourceId, limit), token),
+  getSourceGraphNodes: (
+    sourceId: string,
+    params: { q?: string; type?: string; page?: number; perPage?: number },
+    token: string | null,
+  ): Promise<Response> =>
+    throttledApiClient.get(
+      endpoints.USER.SOURCE_GRAPH_NODES(sourceId, params),
+      token,
+    ),
   getSourceGraphNode: (
     sourceId: string,
     nodeId: string,
@@ -171,6 +198,17 @@ const userService = {
     token: string | null,
   ): Promise<Response> =>
     apiClient.put(endpoints.USER.WIKI_PAGE(sourceId, data.path), data, token),
+  getWikiSettings: (
+    sourceId: string,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.get(endpoints.USER.WIKI_SETTINGS(sourceId), token),
+  updateWikiSettings: (
+    sourceId: string,
+    data: { allow_outside_edits: boolean },
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.put(endpoints.USER.WIKI_SETTINGS(sourceId), data, token),
   getAvailableTools: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.GET_AVAILABLE_TOOLS, token),
   getUserTools: (token: string | null): Promise<any> =>
@@ -250,6 +288,17 @@ const userService = {
       endpoints.USER.GET_CHUNKS(docId, page, perPage, path, search),
       token,
     ),
+  /** The chunk behind a citation, by the content key retrieval labelled it with. */
+  getSourceChunk: (
+    sourceId: string,
+    chunkKey: string,
+    token: string | null,
+    excerpt?: string,
+  ): Promise<Response> =>
+    throttledApiClient.get(
+      endpoints.USER.SOURCE_CHUNK(sourceId, chunkKey, excerpt),
+      token,
+    ),
   addChunk: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.ADD_CHUNK, data, token),
   deleteChunk: (
@@ -270,24 +319,19 @@ const userService = {
     apiClient.post(endpoints.USER.MCP_SAVE_SERVER, data, token),
   getMCPAuthStatus: (token: string | null): Promise<any> =>
     throttledApiClient.get(endpoints.USER.MCP_AUTH_STATUS, token),
-  syncConnector: (
-    docId: string,
+  // The source's own connection syncs it; no browser token is involved.
+  syncConnector: (docId: string, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.SYNC_CONNECTOR, { source_id: docId }, token),
+  getConnectorAuthUrl: (
     provider: string,
     token: string | null,
-  ): Promise<any> => {
-    const sessionToken = getSessionToken(provider);
-    return apiClient.post(
-      endpoints.USER.SYNC_CONNECTOR,
-      {
-        source_id: docId,
-        session_token: sessionToken,
-        provider: provider,
-      },
+    connectionId?: string,
+    install?: boolean,
+  ): Promise<any> =>
+    apiClient.get(
+      endpoints.USER.CONNECTOR_AUTH(provider, connectionId, install),
       token,
-    );
-  },
-  getConnectorAuthUrl: (provider: string, token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.CONNECTOR_AUTH(provider), token),
+    ),
   getConnectorFiles: (
     data: any,
     token: string | null,
@@ -299,28 +343,6 @@ const userService = {
       token,
       {},
       signal,
-    ),
-  validateConnectorSession: (
-    provider: string,
-    token: string | null,
-  ): Promise<any> =>
-    apiClient.post(
-      endpoints.USER.CONNECTOR_VALIDATE_SESSION,
-      {
-        provider,
-        session_token: getSessionToken(provider),
-      },
-      token,
-    ),
-  disconnectConnector: (
-    provider: string,
-    sessionToken: string,
-    token: string | null,
-  ): Promise<any> =>
-    apiClient.post(
-      endpoints.USER.CONNECTOR_DISCONNECT,
-      { provider, session_token: sessionToken },
-      token,
     ),
   textToSpeech: (
     text: string,

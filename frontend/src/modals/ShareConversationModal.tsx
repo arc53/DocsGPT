@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import conversationService from '../api/services/conversationService';
-import Spinner from '../components/Spinner';
+import CopyButton from '../components/CopyButton';
 import { Button } from '../components/ui/button';
+import { FormField } from '../components/ui/form-field';
 import { Modal } from '../components/ui/modal';
 import {
   Select,
@@ -13,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import { SettingRow } from '../components/ui/setting-row';
 import { Switch } from '../components/ui/switch';
 import { Doc } from '../models/misc';
 import {
@@ -38,9 +40,9 @@ export const ShareConversationModal = ({
   const domain = window.location.origin;
 
   const [identifier, setIdentifier] = useState<null | string>(null);
-  const [isCopied, setIsCopied] = useState(false);
   const [status, setStatus] = useState<StatusType>('idle');
   const [allowPrompt, setAllowPrompt] = useState<boolean>(false);
+  const promptSwitchId = useId();
 
   const sourceDocs = useSelector(selectSourceDocs);
   const preSelectedDoc = useSelector(selectSelectedDocs);
@@ -59,11 +61,6 @@ export const ShareConversationModal = ({
     label: string;
     value: string;
   } | null>(preSelectedDoc ? extractDocPaths(preSelectedDoc)[0] : null);
-
-  const handleCopyKey = (url: string) => {
-    navigator.clipboard.writeText(url);
-    setIsCopied(true);
-  };
 
   const togglePromptPermission = () => {
     setAllowPrompt(!allowPrompt);
@@ -110,19 +107,45 @@ export const ShareConversationModal = ({
       title={t('modals.shareConv.label')}
       description={t('modals.shareConv.note')}
       contentClassName="!overflow-visible"
+      footer={
+        status === 'fetched' ? (
+          <CopyButton
+            size="lg"
+            textToCopy={`${domain}/share/${identifier}`}
+            copyLabel={t('modals.saveKey.copy')}
+            copiedLabel={t('modals.saveKey.copied')}
+          />
+        ) : (
+          <Button
+            type="button"
+            size="lg"
+            shape="pill"
+            loading={status === 'loading'}
+            onClick={() => {
+              shareCoversationPublicly(allowPrompt);
+            }}
+          >
+            {t('modals.shareConv.create')}
+          </Button>
+        )
+      }
     >
       <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <span className="text-foreground text-lg dark:text-white">
-            {t('modals.shareConv.option')}
-          </span>
+        <SettingRow
+          label={t('modals.shareConv.option')}
+          htmlFor={promptSwitchId}
+        >
           <Switch
+            id={promptSwitchId}
             checked={allowPrompt}
             onCheckedChange={togglePromptPermission}
           />
-        </div>
+        </SettingRow>
         {allowPrompt && (
-          <div className="my-4">
+          <FormField
+            label={t('modals.createAPIKey.sourceDoc')}
+            className="my-4"
+          >
             <Select
               value={sourcePath?.value}
               onValueChange={(value) => {
@@ -132,7 +155,7 @@ export const ShareConversationModal = ({
                 if (opt) setSourcePath(opt);
               }}
             >
-              <SelectTrigger className="w-full rounded-xl px-5 py-3" size="lg">
+              <SelectTrigger className="w-full" size="field">
                 <SelectValue placeholder={t('modals.createAPIKey.sourceDoc')} />
               </SelectTrigger>
               <SelectContent>
@@ -143,35 +166,11 @@ export const ShareConversationModal = ({
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </FormField>
         )}
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="no-scrollbar border-border text-foreground dark:border-border w-full overflow-x-auto rounded-full border-2 px-4 py-3 whitespace-nowrap dark:text-white">
-            {`${domain}/share/${identifier ?? '....'}`}
-          </span>
-          {status === 'fetched' ? (
-            <Button
-              type="button"
-              size="lg"
-              className="my-1 w-28 rounded-3xl"
-              onClick={() => handleCopyKey(`${domain}/share/${identifier}`)}
-            >
-              {isCopied ? t('modals.saveKey.copied') : t('modals.saveKey.copy')}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              size="lg"
-              className="my-1 w-28 justify-evenly rounded-3xl text-center"
-              onClick={() => {
-                shareCoversationPublicly(allowPrompt);
-              }}
-            >
-              {t('modals.shareConv.create')}
-              {status === 'loading' && <Spinner size="small" />}
-            </Button>
-          )}
-        </div>
+        <span className="no-scrollbar border-border text-foreground w-full overflow-x-auto rounded-full border-2 px-4 py-3 whitespace-nowrap">
+          {`${domain}/share/${identifier ?? '....'}`}
+        </span>
       </div>
     </Modal>
   );

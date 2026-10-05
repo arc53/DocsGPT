@@ -15,26 +15,33 @@ setting a shared gateway token:
 
 ```bash
 export SANDBOX_GATEWAY_AUTH_TOKEN=$(openssl rand -hex 32)
-docker compose \
+docker compose --env-file .env \
   -f deployment/docker-compose.yaml \
-  -f deployment/optional/docker-compose.optional.sandbox.yaml up
+  -f deployment/optional/docker-compose.optional.sandbox.yaml up -d
 ```
+
+Run it from the repository root. `--env-file .env` lets Compose read the root
+`.env` for the `${...}` values, so the token can live there instead of in the
+shell.
 
 The token is **required** — the gateway fails closed if it is unset (see
 *Gateway authentication* below). Add the egress-firewall overlay for SSRF
 containment (see *Network egress / SSRF*):
 
 ```bash
-docker compose \
+docker compose --env-file .env \
   -f deployment/docker-compose.yaml \
   -f deployment/optional/docker-compose.optional.sandbox.yaml \
-  -f deployment/optional/docker-compose.optional.sandbox-egress.yaml up
+  -f deployment/optional/docker-compose.optional.sandbox-egress.yaml up -d
 ```
 
 Then enable `code_executor` / `artifact_generator` **per-agent** in the agent
 tool picker. Agents without them never call the runner, and the backend/worker
-degrade gracefully when the runner is absent. The `-hub` and `-azure` compose
-variants take the same sandbox overlay.
+degrade gracefully when the runner is absent. The `-hub` compose variant takes
+the same sandbox overlay. The egress overlay's proxy image is a placeholder:
+replace it with your own deny-private forward proxy before using it (see
+*Network egress / SSRF*). The user-facing guide is
+[Code Execution Sandbox](https://docs.docsgpt.cloud/Deploying/Sandbox).
 
 ## Isolation model
 
@@ -98,13 +105,14 @@ Build and run the runner on its own, then point the app at it:
 
 ```bash
 docker build -t docsgpt-sandbox deployment/sandbox
-docker run --rm -p 8888:8888 -e SANDBOX_GATEWAY_AUTH_TOKEN=devtoken docsgpt-sandbox
+docker run --rm -p 127.0.0.1:8888:8888 -e SANDBOX_GATEWAY_AUTH_TOKEN=devtoken docsgpt-sandbox
 # in the app's .env:  SANDBOX_GATEWAY_URL=http://localhost:8888
 #                     SANDBOX_GATEWAY_AUTH_TOKEN=devtoken
 ```
 
-The token is required — the image's entrypoint refuses to start without it (see
-*Gateway authentication*). Without Docker (matches the test harness) you can run
+The published image `arc53/docsgpt-sandbox:<version>` (`develop` tracks main)
+works the same way if you'd rather not build. The token is required — the
+image's entrypoint refuses to start without it (see *Gateway authentication*). Without Docker (matches the test harness) you can run
 the gateway directly from a venv that has `jupyter-kernel-gateway` installed; set
 a matching `--KernelGatewayApp.auth_token`:
 
@@ -119,15 +127,17 @@ limit so large `get_file` base64 payloads aren't silently truncated. (On older
 gateways the trait may live elsewhere; the client's `get_file` integrity check
 catches any truncation regardless.)
 
-A bare-venv gateway uses the **stock** `python3` kernelspec, which inherits the
-gateway's full env (no secret scrubbing). The default `SANDBOX_KERNEL_NAME` is
-`python3`, so plain venv dev gets no scrubbing — acceptable for single-trust
-dev. The Docker image instead ships the env-scrubbing spec under the distinct
-name `docsgpt-python` (see *Isolation model*) and the runner stack sets
-`SANDBOX_KERNEL_NAME=docsgpt-python`. To get the scrubbing behavior in a venv,
-copy `kernels/docsgpt-python/kernel.json` (pointing `argv` at a local copy of
-`kernel-launch.sh`) into a Jupyter data dir on the kernelspec search path and
-set `SANDBOX_KERNEL_NAME=docsgpt-python` before launching.
+The default `SANDBOX_KERNEL_NAME` is `docsgpt-python`, the env-scrubbing spec
+the Docker image ships (see *Isolation model*). A bare-venv gateway has only
+the **stock** `python3` kernelspec, so session creation fails until you do one
+of these:
+
+- Install the scrubbing spec: copy `kernels/docsgpt-python/kernel.json`
+  (pointing `argv` at a local copy of `kernel-launch.sh`) into a Jupyter data
+  dir on the kernelspec search path. The default kernel name then works.
+- Or set `SANDBOX_KERNEL_NAME=python3` in the app's `.env`. The stock spec
+  inherits the gateway's full env (no secret scrubbing), so use it only for
+  single-trust dev.
 
 ## Gateway authentication
 
@@ -159,30 +169,54 @@ k8s these are added to the `docsgpt-api` and `docsgpt-worker` deployments when
 enabling the opt-in `sandbox-deploy.yaml` (the default `docsgpt-deploy.yaml`
 omits them); see that manifest's header for the exact env and the token Secret.
 
+## Session lifetime
+
+The app keeps a session's kernel between `run_code` calls, so variables, files
+and installed packages carry over, and retires it once it has been idle for
+`SANDBOX_MAX_TTL` seconds (1200 by default). Each process retires only its own
+sessions, so a kernel held by an API or worker process that restarted would
+otherwise live until the runner restarts. `gateway-launch.sh` therefore has the
+gateway shut down any kernel idle for `SANDBOX_KERNEL_IDLE_TIMEOUT` seconds
+(1800 by default); keep it above `SANDBOX_MAX_TTL`. The compose overlay passes
+the variable through.
+
+Warm kernels count against the runner's memory: an idle kernel takes about
+50-60 MB, more once code has loaded data, and session workspaces live on the
+`/tmp` tmpfs. Size `SANDBOX_MEMORY` (1g by default) for the conversations that
+run code at the same time, or lower `SANDBOX_MAX_TTL`.
+
 ## Artifact rendering on Daytona (snapshot)
 
 The `artifact` tool renders `presentation` / `document` / `spreadsheet` / `pdf`
 specs by running a fixed renderer **inside the sandbox** that imports
-`python-pptx`, `python-docx`, `openpyxl`, and `reportlab` (HTML/markdown need no
-library). The self-hosted Jupyter runner inherits these from the backend venv,
-but Daytona's default snapshot is a plain Python image — so under
-`SANDBOX_BACKEND=daytona` those renders fail with `render failed: ExecutionError`
-(a `ModuleNotFoundError` raised inside the sandbox). HTML/markdown still work.
+`python-pptx`, `python-docx`, `openpyxl`, and `reportlab` (HTML needs no
+library). The self-hosted Jupyter runner image bakes these in
+(`deployment/sandbox/Dockerfile`), but Daytona's default snapshot is a plain
+Python image — so under `SANDBOX_BACKEND=daytona` those renders fail with
+`render failed: ExecutionError` (a `ModuleNotFoundError` raised inside the
+sandbox). HTML still works.
 
 Bake the libraries into a Daytona snapshot once, then point `DAYTONA_SNAPSHOT`
 at it:
 
 ```bash
 # Reads DAYTONA_API_KEY / DAYTONA_API_URL / DAYTONA_TARGET from .env:
-python scripts/build_daytona_snapshot.py        # builds "docsgpt-artifacts-py312"
+python scripts/build_daytona_snapshot.py        # builds "docsgpt-sandbox-py312"
 # then in .env:
-#   DAYTONA_SNAPSHOT=docsgpt-artifacts-py312
+#   DAYTONA_SNAPSHOT=docsgpt-sandbox-py312
 ```
+
+The snapshot also carries `pandas`, `openpyxl` and `matplotlib`, so
+spreadsheets a chat hands to `code_executor` can be opened and charted
+there. A snapshot built by an earlier version of the script
+(`docsgpt-artifacts-py312`) has no pandas or matplotlib: build the new name
+and switch `DAYTONA_SNAPSHOT` to it.
 
 The snapshot lives in **your** Daytona account, so each deployment builds its
 own — the script is idempotent and skips if the name already exists. Keep the
-pins in `scripts/build_daytona_snapshot.py` in sync with the backend venv so the
-Daytona render output matches the Jupyter-backend output.
+pins in `scripts/build_daytona_snapshot.py` in sync with the runner's
+`deployment/sandbox/Dockerfile` so the Daytona render output matches the
+Jupyter-backend output.
 
 ## Document reading (parsing worker — not the sandbox)
 
@@ -208,13 +242,15 @@ pool. A GPU helps it only with the docling extra installed
 `OCR_ENABLED=true` alone keeps the CPU-only native backend with the default
 `OCR_ENGINE=tesseract`, which GPU libraries do not accelerate. Setting
 `OCR_ENGINE=deepseek` instead moves the OCR cost onto the Ollama/vLLM endpoint
-and leaves this worker light.
+or a hosted API (`OCR_DEEPSEEK_PROVIDER`) and leaves this worker light.
 
-**Dev / single-worker setups:** without a dedicated parsing worker the default
-worker must also consume `parsing`, or the tool's await never resolves:
+**Dev / single-worker setups:** a worker started without `-Q` already consumes
+every configured queue, `parsing` included, so no extra flag is needed. Only if
+you restrict queues with `-Q` must you include `parsing` (and `embeddings`) or
+run a dedicated parsing worker, or the tool's await never resolves:
 
 ```bash
-celery -A docsgpt.app.celery worker -Q docsgpt,parsing,embeddings -l INFO
+celery -A docsgpt.app.celery worker -B -Q docsgpt,parsing,embeddings -l INFO
 ```
 
 Tuning settings: `DOCUMENT_PARSE_TIMEOUT` (seconds the tool awaits before

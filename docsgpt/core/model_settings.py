@@ -19,8 +19,6 @@ class ModelProvider(str, Enum):
     ANTHROPIC = "anthropic"
     GROQ = "groq"
     GOOGLE = "google"
-    HUGGINGFACE = "huggingface"
-    LLAMA_CPP = "llama.cpp"
     DOCSGPT = "docsgpt"
     NOVITA = "novita"
 
@@ -32,8 +30,15 @@ class ModelCapabilities:
     supports_streaming: bool = True
     supported_attachment_types: List[str] = field(default_factory=list)
     context_window: int = 128000
-    input_cost_per_token: Optional[float] = None
-    output_cost_per_token: Optional[float] = None
+    # USD per 1M tokens; consumed by ``docsgpt/pricing.py``. ``None`` means
+    # "not declared": the call is recorded at $0 unless
+    # ``QUOTA_UNPRICED_RATE_PER_MILLION`` is set.
+    input_cost_per_million: Optional[float] = None
+    output_cost_per_million: Optional[float] = None
+    # Rates for the prompt-cache sub-bins of the prompt total. ``None`` bills
+    # those tokens at ``input_cost_per_million``.
+    cached_input_cost_per_million: Optional[float] = None
+    cache_write_cost_per_million: Optional[float] = None
     # OpenAI reasoning-model effort hint (none/minimal/low/medium/high/xhigh;
     # the accepted subset is model-dependent). Consumed by OpenAILLM — sent
     # top-level on Chat Completions and nested under ``reasoning`` on the
@@ -43,6 +48,10 @@ class ModelCapabilities:
     # (the default) or "responses" (the /v1/responses endpoint). Set per
     # model so only models that actually support the Responses API opt in.
     api_flavor: str = "chat_completions"
+    # Where images a tool returned go: "native" (inside the tool result),
+    # "follow_up" (a user message after the tool results), or None for what
+    # the wire API supports (see ``docsgpt.llm.tool_images``).
+    tool_result_images: Optional[str] = None
 
 
 @dataclass

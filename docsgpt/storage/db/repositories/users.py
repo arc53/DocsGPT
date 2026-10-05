@@ -130,6 +130,24 @@ class UsersRepository:
     # ------------------------------------------------------------------
     # Pinned agents
     # ------------------------------------------------------------------
+    def emails_for(self, user_ids: Iterable[str]) -> dict[str, str]:
+        """Map each given user id that has a stored email to that email.
+
+        Args:
+            user_ids: Auth ``sub`` values to look up.
+
+        Returns:
+            ``{user_id: email}`` for the ids with a non-null email; the rest are absent.
+        """
+        ids = list(dict.fromkeys(user_ids))
+        if not ids:
+            return {}
+        result = self._conn.execute(
+            text("SELECT user_id, email FROM users WHERE user_id = ANY(:ids) AND email IS NOT NULL"),
+            {"ids": ids},
+        )
+        return {row[0]: row[1] for row in result.fetchall()}
+
     def add_pinned(self, user_id: str, agent_id: str) -> None:
         """Idempotently append ``agent_id`` to ``agent_preferences.pinned``.
 

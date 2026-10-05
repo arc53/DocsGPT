@@ -1,6 +1,6 @@
 {
   "name": "docsgpt",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "private": false,
   "description": "DocsGPT 🦖 is an innovative open-source tool designed to simplify the retrieval of information from project documentation using advanced GPT models 🤖.",
   "source": "./src/index.html",
@@ -51,7 +51,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dompurify": "^3.4.15",
-    "flow-bin": "^0.331.0",
+    "flow-bin": "^0.333.0",
     "markdown-it": "^15.0.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
@@ -99,7 +99,7 @@
     "widget"
   ],
   "author": "Arc53",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/arc53/DocsGPT/issues"
   },

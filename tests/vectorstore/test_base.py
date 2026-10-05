@@ -660,3 +660,161 @@ class TestGetEmbeddingsResolver:
 
         assert result is sentinel
         mock_resolver.assert_called_once_with("a-name", "a-key")
+
+
+class _RecordingStore(ConcreteVectorStore):
+    """Store whose add/delete calls are recorded, for the update fallback."""
+
+    def __init__(self, delete_result=True, delete_error=None):
+        super().__init__()
+        self.calls = []
+        self._delete_result = delete_result
+        self._delete_error = delete_error
+
+    def add_chunk(self, text, metadata=None, *args, **kwargs):
+        self.calls.append(("add", text, metadata))
+        return "new-id"
+
+    def delete_chunk(self, chunk_id, *args, **kwargs):
+        self.calls.append(("delete", chunk_id))
+        if chunk_id != "old-id":
+            return True
+        if self._delete_error is not None:
+            raise self._delete_error
+        return self._delete_result
+
+
+@pytest.mark.unit
+class TestBaseUpdateChunkFallback:
+    def test_adds_then_deletes_and_returns_the_new_id(self):
+        store = _RecordingStore()
+
+        new_id = store.update_chunk("old-id", "new text", {"k": "v"})
+
+        assert new_id == "new-id"
+        assert store.calls == [("add", "new text", {"k": "v"}), ("delete", "old-id")]
+
+    def test_false_delete_rolls_back_the_new_chunk_and_raises(self):
+        store = _RecordingStore(delete_result=False)
+
+        with pytest.raises(RuntimeError, match="old-id"):
+            store.update_chunk("old-id", "new text", {})
+
+        assert store.calls == [
+            ("add", "new text", {}),
+            ("delete", "old-id"),
+            ("delete", "new-id"),
+        ]
+
+    def test_raising_delete_rolls_back_the_new_chunk_and_raises(self):
+        store = _RecordingStore(delete_error=ConnectionError("milvus down"))
+
+        with pytest.raises(RuntimeError, match="old-id") as excinfo:
+            store.update_chunk("old-id", "new text", {})
+
+        assert isinstance(excinfo.value.__cause__, ConnectionError)
+        assert store.calls[-1] == ("delete", "new-id")
+
+    def test_failed_rollback_still_raises_the_update_error(self, caplog):
+        store = _RecordingStore(delete_result=False)
+        real_delete = store.delete_chunk
+
+        def delete(chunk_id, *args, **kwargs):
+            if chunk_id == "new-id":
+                store.calls.append(("delete", chunk_id))
+                raise ConnectionError("rollback failed")
+            return real_delete(chunk_id)
+
+        store.delete_chunk = delete
+
+        with caplog.at_level("ERROR"), pytest.raises(RuntimeError, match="old-id"):
+            store.update_chunk("old-id", "new text", {})
+
+        assert ("delete", "new-id") in store.calls
+        assert "new-id" in caplog.text
+
+    def test_failed_add_skips_the_delete(self):
+        store = _RecordingStore()
+        store.add_chunk = Mock(side_effect=RuntimeError("embed down"))
+
+        with pytest.raises(RuntimeError):
+            store.update_chunk("old-id", "new text", {})
+
+        assert ("delete", "old-id") not in store.calls
+
+    def test_milvus_keeps_the_default(self):
+        """Milvus has no in-place update here; it re-adds under a new id."""
+        from docsgpt.vectorstore.milvus import MilvusStore
+
+        assert MilvusStore.update_chunk is BaseVectorStore.update_chunk
+
+
+class _ChunkListStore(ConcreteVectorStore):
+    def __init__(self, chunks):
+        super().__init__()
+        self._chunks = chunks
+
+    def get_chunks(self, *args, **kwargs):
+        return self._chunks
+
+
+@pytest.mark.unit
+class TestBaseGetChunkByKey:
+    """The default lookup hashes the source's chunks until one matches."""
+
+    def test_returns_the_chunk_whose_text_hashes_to_the_key(self):
+        from docsgpt.retriever.labels import chunk_key
+
+        store = _ChunkListStore([
+            {"doc_id": "1", "text": "first", "metadata": {}},
+            {"doc_id": "2", "text": "second", "metadata": {"title": "b"}},
+        ])
+        found = store.get_chunk_by_key(chunk_key("second"))
+        assert found == {"doc_id": "2", "text": "second", "metadata": {"title": "b"}}
+
+    def test_first_copy_wins_for_duplicate_text(self):
+        from docsgpt.retriever.labels import chunk_key
+
+        store = _ChunkListStore([
+            {"doc_id": "1", "text": "boilerplate", "metadata": {}},
+            {"doc_id": "2", "text": "boilerplate", "metadata": {}},
+        ])
+        assert store.get_chunk_by_key(chunk_key("boilerplate"))["doc_id"] == "1"
+
+    def test_no_match_is_none(self):
+        assert _ChunkListStore([{"doc_id": "1", "text": "x"}]).get_chunk_by_key("0" * 32) is None
+
+    def test_a_store_without_get_chunks_cannot_look_up(self):
+        # Elasticsearch has no ``get_chunks``; the base one returns None,
+        # which must not read as "the chunk is gone".
+        with pytest.raises(NotImplementedError):
+            ConcreteVectorStore().get_chunk_by_key("0" * 32)
+
+    def test_a_scan_error_propagates(self):
+        class _Down(ConcreteVectorStore):
+            def _scan_chunks(self):
+                raise RuntimeError("down")
+
+        with pytest.raises(RuntimeError):
+            _Down().get_chunk_by_key("0" * 32)
+
+    def test_a_key_miss_falls_back_to_the_excerpt_in_the_same_scan(self):
+        store = _ChunkListStore([
+            {"doc_id": "1", "text": "Other clause", "metadata": {}},
+            {"doc_id": "2", "text": "Late Pickup fees apply after 6pm", "metadata": {}},
+        ])
+        found = store.get_chunk_by_key("0" * 32, excerpt="late pickup fees")
+        assert found["doc_id"] == "2"
+
+    def test_the_key_wins_over_an_earlier_excerpt_match(self):
+        from docsgpt.retriever.labels import chunk_key
+
+        store = _ChunkListStore([
+            {"doc_id": "1", "text": "Late pickup, older copy", "metadata": {}},
+            {"doc_id": "2", "text": "Late pickup", "metadata": {}},
+        ])
+        assert store.get_chunk_by_key(chunk_key("Late pickup"), excerpt="Late pickup")["doc_id"] == "2"
+
+    def test_a_blank_excerpt_matches_nothing(self):
+        store = _ChunkListStore([{"doc_id": "1", "text": "x", "metadata": {}}])
+        assert store.get_chunk_by_key("0" * 32, excerpt="   ") is None

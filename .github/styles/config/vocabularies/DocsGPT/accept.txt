@@ -3,9 +3,9 @@ Anthropic's
 api
 APIs
 Atlassian
-automations
 autoescaping
 Autoescaping
+automations
 backfill
 backfills
 bool
@@ -21,9 +21,9 @@ diarization
 Docling
 docsgpt
 docstrings
+enqueues
 Entra
 env
-enqueues
 EOL
 ESLint
 feedbacks
@@ -35,6 +35,7 @@ hardcoding
 Idempotency
 JSONPath
 kubectl
+launchd
 Lightsail
 llama_cpp
 llm
@@ -70,6 +71,7 @@ SGLang
 Shareability
 Signup
 Supabase
+systemd
 UIs
 uncomment
 URl

@@ -215,6 +215,82 @@ class TestHandlerApprovalPause:
         ]
         assert len(approval_events) == 1
 
+    def test_approval_event_carries_what_will_be_sent(self):
+        handler = ConcreteHandler()
+        agent = self._make_agent({
+            "call_id": "c1",
+            "name": "send_msg_0",
+            "tool_name": "telegram",
+            "tool_id": "0",
+            "action_name": "send_msg",
+            "arguments": {"text": "hello", "chat_id": "666"},
+            "sent_arguments": {"text": "hello", "chat_id": "111"},
+            "pause_type": "awaiting_approval",
+            "thought_signature": None,
+        })
+        call = ToolCall(id="c1", name="send_msg_0", arguments='{"text": "hello"}')
+        gen = handler.handle_tool_calls(agent, [call], {"0": {"name": "telegram"}}, [])
+        events = []
+        try:
+            while True:
+                events.append(next(gen))
+        except StopIteration:
+            pass
+        (event,) = [e for e in events if e.get("data", {}).get("status") == "awaiting_approval"]
+        assert event["data"]["sent_arguments"] == {"text": "hello", "chat_id": "111"}
+
+    def test_approval_event_names_the_connector(self):
+        """The approval card shows the connector's logo and name, never an account."""
+        handler = ConcreteHandler()
+        agent = self._make_agent({
+            "call_id": "c1",
+            "name": "create_issue_0",
+            "tool_name": "github",
+            "tool_id": "0",
+            "action_name": "create_issue",
+            "arguments": {"title": "Delay"},
+            "pause_type": "awaiting_approval",
+            "connector_key": "github",
+            "connector_name": "GitHub",
+            "access": "write",
+            "thought_signature": None,
+        })
+        call = ToolCall(id="c1", name="create_issue_0", arguments='{"title": "Delay"}')
+        gen = handler.handle_tool_calls(agent, [call], {"0": {"name": "github"}}, [])
+        events = []
+        try:
+            while True:
+                events.append(next(gen))
+        except StopIteration:
+            pass
+        (event,) = [e for e in events if e.get("data", {}).get("status") == "awaiting_approval"]
+        assert event["data"]["connector_key"] == "github"
+        assert event["data"]["connector_name"] == "GitHub"
+        assert event["data"]["access"] == "write"
+
+    def test_approval_event_without_a_connector_has_no_connector_fields(self):
+        handler = ConcreteHandler()
+        agent = self._make_agent({
+            "call_id": "c1",
+            "name": "send_msg_0",
+            "tool_name": "telegram",
+            "tool_id": "0",
+            "action_name": "send_msg",
+            "arguments": {"text": "hello"},
+            "pause_type": "awaiting_approval",
+            "thought_signature": None,
+        })
+        call = ToolCall(id="c1", name="send_msg_0", arguments='{"text": "hello"}')
+        gen = handler.handle_tool_calls(agent, [call], {"0": {"name": "telegram"}}, [])
+        events = []
+        try:
+            while True:
+                events.append(next(gen))
+        except StopIteration:
+            pass
+        (event,) = [e for e in events if e.get("data", {}).get("status") == "awaiting_approval"]
+        assert not {"connector_key", "connector_name", "access"} & set(event["data"])
+
     def test_mixed_normal_and_approval(self):
         """First tool runs normally, second needs approval."""
         handler = ConcreteHandler()
@@ -479,3 +555,49 @@ class TestGenContinuationApproval:
             and e.get("data", {}).get("status") == "denied"
         ]
         assert len(denied) == 1
+
+    def test_resolved_calls_join_the_turns_tool_calls(self):
+        """Denied and client-executed calls are saved with the turn, not only streamed."""
+        agent, mock_executor, mock_handler = self._make_agent()
+        mock_executor.get_truncated_tool_calls = Mock(
+            side_effect=lambda: list(mock_executor.tool_calls)
+        )
+
+        messages = [{"role": "system", "content": "test"}]
+        pending = [
+            {
+                "call_id": "c1",
+                "name": "act_0",
+                "tool_name": "tool",
+                "tool_id": "0",
+                "action_name": "act",
+                "arguments": {},
+                "pause_type": "awaiting_approval",
+                "thought_signature": None,
+            },
+            {
+                "call_id": "c2",
+                "name": "lookup_0",
+                "tool_name": "client",
+                "tool_id": "0",
+                "action_name": "lookup",
+                "arguments": {},
+                "pause_type": "requires_client_execution",
+                "thought_signature": None,
+            },
+        ]
+        tool_actions = [
+            {"call_id": "c1", "decision": "denied", "comment": "not now"},
+            {"call_id": "c2", "result": {"ok": True}},
+        ]
+
+        events = list(agent.gen_continuation(
+            messages, {"0": {"name": "tool"}}, pending, tool_actions
+        ))
+
+        recorded = {call["call_id"]: call["status"] for call in mock_executor.tool_calls}
+        assert recorded == {"c1": "denied", "c2": "completed"}
+        # A later turn replays the stored result, so the denial and its reason go with it.
+        assert mock_executor.tool_calls[0]["result"] == "Tool execution denied by user. Reason: not now"
+        final = next(e["tool_calls"] for e in events if isinstance(e, dict) and "tool_calls" in e)
+        assert [call["call_id"] for call in final] == ["c1", "c2"]

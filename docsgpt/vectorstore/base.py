@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import List, Optional
 
 import requests
 
@@ -277,7 +277,7 @@ def _delegation_enabled() -> bool:
     with a ``MagicMock``, whose every attribute is a truthy object, and
     ``bool()`` on that would silently route them through the broker.
     """
-    return getattr(settings, "EMBEDDINGS_DELEGATE_TO_WORKER", False) is True
+    return settings.EMBEDDINGS_DELEGATE_TO_WORKER is True
 
 
 def get_embeddings(
@@ -362,6 +362,14 @@ def build_local_embeddings(
     return embedding_instance
 
 
+class InvalidChunkMetadataError(ValueError):
+    """Chunk metadata the store cannot write, such as a key it reserves.
+
+    A client-input error, distinct from a store or embedding failure: the
+    chunk routes answer it with a 400 rather than a 500.
+    """
+
+
 class BaseVectorStore(ABC):
     def __init__(self):
         pass
@@ -431,6 +439,46 @@ class BaseVectorStore(ABC):
         """Delete a specific chunk from the vectorstore"""
         pass
 
+    def update_chunk(self, chunk_id: str, text: str, metadata: dict) -> str:
+        """Replace a chunk's text and metadata, returning the id it is now under.
+
+        Stores that can rewrite a row in place override this and keep both the
+        id and the chunk's position in :meth:`get_chunks`. This default works
+        for any store but re-adds the chunk and deletes the old one, so the
+        returned id differs and the chunk moves; callers holding the old id
+        (graph links, for one) must follow the returned id.
+
+        Args:
+            chunk_id: Id of the chunk to replace.
+            text: The chunk's new text.
+            metadata: The chunk's complete new metadata.
+
+        Returns:
+            The id the updated chunk is stored under.
+
+        Raises:
+            RuntimeError: The old chunk could not be deleted. The new chunk is
+                deleted again (best effort) so no duplicate is left behind.
+        """
+        new_chunk_id = self.add_chunk(text, metadata)
+        delete_error: Optional[Exception] = None
+        try:
+            deleted = self.delete_chunk(chunk_id)
+        except Exception as err:
+            deleted, delete_error = False, err
+        if deleted:
+            return new_chunk_id
+        try:
+            self.delete_chunk(new_chunk_id)
+        except Exception:
+            logging.error(
+                "Failed to roll back new chunk %s after old chunk %s could not be deleted",
+                new_chunk_id,
+                chunk_id,
+                exc_info=True,
+            )
+        raise RuntimeError(f"Failed to delete old chunk {chunk_id} during update") from delete_error
+
     def delete_chunks_by_source_path(self, path) -> int:
         """Delete every chunk whose ``metadata.source`` equals ``path``.
 
@@ -446,6 +494,58 @@ class BaseVectorStore(ABC):
                     deleted += 1
         return deleted
 
+    def _scan_chunks(self) -> List[dict]:
+        """Every chunk of this source, raising when the store cannot list them.
+
+        ``get_chunks`` reads a store error as "no chunks" in several stores;
+        a lookup must not, or a citation that is only unreachable would tell
+        the reader its passage is gone. Stores that swallow errors in
+        ``get_chunks`` override this with the unguarded listing.
+
+        Returns:
+            list[dict]: ``{"doc_id", "text", "metadata"}`` per chunk.
+
+        Raises:
+            NotImplementedError: The store has no ``get_chunks``.
+        """
+        chunks = self.get_chunks()
+        if chunks is None:
+            raise NotImplementedError(f"{type(self).__name__} cannot list its chunks")
+        return chunks
+
+    def get_chunk_by_key(self, key: str, excerpt: Optional[str] = None) -> Optional[dict]:
+        """Return the chunk whose text hashes to ``key``, or ``None``.
+
+        ``key`` is a citation's ``chunk_key`` (the MD5 of the chunk text, see
+        ``docsgpt.retriever.labels.chunk_key``). Default implementation hashes
+        every chunk in one pass of :meth:`_scan_chunks`; override with a query
+        where the store can hash server-side. Duplicate texts share a key, and
+        the first copy wins. A re-chunked source no longer has the key, so the
+        same pass also notes the first chunk containing ``excerpt``, the start
+        of the passage the answer saved.
+
+        Args:
+            key: The chunk key, 32 lowercase hex characters.
+            excerpt: Text to fall back on, matched case-insensitively.
+
+        Returns:
+            dict | None: ``{"doc_id", "text", "metadata"}`` for the chunk.
+
+        Raises:
+            NotImplementedError: The store cannot list its chunks.
+        """
+        from docsgpt.retriever.labels import chunk_key
+
+        needle = (excerpt or "").strip().lower()
+        by_excerpt = None
+        for chunk in self._scan_chunks():
+            text = chunk.get("text") or ""
+            if chunk_key(text) == key:
+                return _chunk_row(chunk)
+            if needle and by_excerpt is None and needle in text.lower():
+                by_excerpt = chunk
+        return _chunk_row(by_excerpt) if by_excerpt else None
+
     def is_azure_configured(self):
         """Kept for compatibility; delegates to the module-level check."""
         return _azure_configured()
@@ -453,3 +553,12 @@ class BaseVectorStore(ABC):
     def _get_embeddings(self, embeddings_name, embeddings_key=None):
         """Resolve embeddings for this store; see :func:`get_embeddings`."""
         return get_embeddings(embeddings_name, embeddings_key)
+
+
+def _chunk_row(chunk: dict) -> dict:
+    """The ``{"doc_id", "text", "metadata"}`` shape a chunk lookup returns."""
+    return {
+        "doc_id": str(chunk.get("doc_id", "")),
+        "text": chunk.get("text", ""),
+        "metadata": chunk.get("metadata") or {},
+    }

@@ -126,6 +126,31 @@ class TestExecuteScheduledRunBody:
         assert sched["consecutive_failure_count"] == 1
         assert "schedule.run.failed" in {e[0] for e in stub_events}
 
+    def test_quota_refusal_marks_budget_exceeded(
+        self, pg_engine, patched_engine, stub_events,
+    ):
+        from datetime import datetime, timezone
+
+        from docsgpt.quotas.service import QuotaExceeded, QuotaExceededError
+
+        exceeded = QuotaExceeded(
+            user_id="u1", bucket="all", budget="tokens", usage=10, limit=10,
+            source="instance", source_id=None,
+            resets_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        )
+        with pg_engine.begin() as conn:
+            _, run, _ = _make_pending_run(conn)
+        with patch(
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
+            side_effect=QuotaExceededError(exceeded),
+        ):
+            result = execute_scheduled_run_body(str(run["id"]), "celery-q")
+        assert result["status"] == "failed"
+        with pg_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
+        assert row["error_type"] == "budget_exceeded"
+        assert "Usage quota reached" in row["error"]
+
     def test_autopause_after_threshold(
         self, pg_engine, patched_engine, stub_events,
     ):
@@ -591,3 +616,127 @@ class TestExecuteScheduledRunBody:
         meta = messages[0]._mapping["message_metadata"]
         assert meta.get("scheduled") is True
         assert "schedule.message.appended" in {e[0] for e in stub_events}
+
+
+class TestRunAsOwnerAccessRecheck:
+    """A schedule someone set on another user's agent re-checks their access
+    on every run; the run itself always executes as the agent's owner."""
+
+    def _member_run(self, conn, *, grant: bool):
+        import uuid as _uuid
+
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.team_resource_grants import (
+            TeamResourceGrantsRepository,
+        )
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+        agent_id = _make_agent(conn, "owner-x")
+        if grant:
+            team = TeamsRepository(conn).create("T", f"t-{_uuid.uuid4().hex[:8]}", "owner-x")
+            TeamMembersRepository(conn).add_member(str(team["id"]), "member-y")
+            TeamResourceGrantsRepository(conn).grant(
+                str(team["id"]), "agent", agent_id, "owner-x", "owner-x",
+                access_level="viewer",
+            )
+        schedule = SchedulesRepository(conn).create(
+            user_id="member-y", agent_id=agent_id, trigger_type="recurring",
+            instruction="hello", cron="* * * * *",
+            next_run_at=_now() + timedelta(minutes=5),
+        )
+        run = ScheduleRunsRepository(conn).record_pending(
+            str(schedule["id"]), "member-y", agent_id, _now(),
+        )
+        return run
+
+    def test_revoked_member_run_fails_without_running(
+        self, pg_engine, patched_engine, stub_events,
+    ):
+        with pg_engine.begin() as conn:
+            run = self._member_run(conn, grant=False)
+        with patch(
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
+        ) as headless:
+            result = execute_scheduled_run_body(str(run["id"]), "celery-r")
+        headless.assert_not_called()
+        assert result["status"] == "failed"
+        with pg_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
+        assert row["status"] == "failed"
+        assert row["error"] == "agent access revoked"
+
+    def test_member_with_grant_runs(self, pg_engine, patched_engine, stub_events):
+        with pg_engine.begin() as conn:
+            run = self._member_run(conn, grant=True)
+        with patch(
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
+            return_value={
+                "answer": "ok", "tool_calls": [], "sources": [], "thought": "",
+                "prompt_tokens": 1, "generated_tokens": 1, "denied": [],
+                "error_type": None, "model_id": "m",
+            },
+        ) as headless:
+            result = execute_scheduled_run_body(str(run["id"]), "celery-g")
+        assert result["status"] == "success"
+        # Runs with the owner's agent row (owner's context).
+        assert headless.call_args.args[0]["user_id"] == "owner-x"
+
+
+_OK = {
+    "answer": "ok", "tool_calls": [], "sources": [], "thought": "",
+    "prompt_tokens": 1, "generated_tokens": 1, "denied": [],
+    "error_type": None, "model_id": "m",
+}
+
+
+class TestCallerRules:
+    """A scheduled run acts as the owner but keeps the rules of whoever set it."""
+
+    def _run(self, conn, *, owner="owner-x", user="owner-x", shared=False, created_via="ui", grant=False):
+        import uuid as _uuid
+
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.team_resource_grants import (
+            TeamResourceGrantsRepository,
+        )
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+        agent_id = _make_agent(conn, owner)
+        conn.execute(text("UPDATE agents SET shared = :s WHERE id = CAST(:id AS uuid)"),
+                     {"s": shared, "id": agent_id})
+        if grant:
+            team = TeamsRepository(conn).create("T", f"t-{_uuid.uuid4().hex[:8]}", owner)
+            TeamMembersRepository(conn).add_member(str(team["id"]), user)
+            TeamResourceGrantsRepository(conn).grant(
+                str(team["id"]), "agent", agent_id, owner, owner, access_level="viewer",
+            )
+        schedule = SchedulesRepository(conn).create(
+            user_id=user, agent_id=agent_id, trigger_type="once", instruction="hello",
+            run_at=_now(), next_run_at=_now(), created_via=created_via,
+        )
+        return ScheduleRunsRepository(conn).record_pending(str(schedule["id"]), user, agent_id, _now())
+
+    def _caller(self, pg_engine, **kwargs):
+        with pg_engine.begin() as conn:
+            run = self._run(conn, **kwargs)
+        with patch("docsgpt.api.user.scheduler_worker.run_agent_headless", return_value=_OK) as headless:
+            assert execute_scheduled_run_body(str(run["id"]), "celery-c")["status"] == "success"
+        return {k: headless.call_args.kwargs.get(k) for k in ("external_caller", "public_link_caller")}
+
+    def test_public_link_users_schedule_runs_as_a_public_link_caller(self, pg_engine, patched_engine, stub_events):
+        assert self._caller(pg_engine, user="stranger", shared=True) == {
+            "external_caller": False, "public_link_caller": True,
+        }
+
+    def test_team_members_schedule_runs_as_a_teammate(self, pg_engine, patched_engine, stub_events):
+        assert self._caller(pg_engine, user="member-y", shared=True, grant=True) == {
+            "external_caller": False, "public_link_caller": False,
+        }
+
+    def test_schedule_set_through_the_api_runs_as_an_external_caller(self, pg_engine, patched_engine, stub_events):
+        assert self._caller(pg_engine, created_via="api") == {
+            "external_caller": True, "public_link_caller": False,
+        }
+
+    def test_owners_own_schedule_runs_as_the_owner(self, pg_engine, patched_engine, stub_events):
+        assert self._caller(pg_engine) == {"external_caller": False, "public_link_caller": False}

@@ -14,8 +14,8 @@ def mock_settings():
     s.MICROSOFT_TENANT_ID = "tenant-id-123"
     s.CONNECTOR_REDIRECT_BASE_URI = "https://redirect.example.com/callback"
     s.MONGO_DB_NAME = "test_db"
-    # Delete MICROSOFT_AUTHORITY so getattr falls back to default
-    del s.MICROSOFT_AUTHORITY
+    # Unset, as in a real Settings object, so the tenant-derived authority is used.
+    s.MICROSOFT_AUTHORITY = None
     return s
 
 
@@ -285,63 +285,3 @@ class _FakeReadonlyCtx:
         return False
 
 
-class TestGetTokenInfoFromSession:
-
-    def _patches(self, session_return):
-        fake_repo_cls = type(
-            "FakeRepo",
-            (_FakeRepo,),
-            {"_session": session_return},
-        )
-        return (
-            patch(
-                "docsgpt.storage.db.repositories.connector_sessions.ConnectorSessionsRepository",
-                fake_repo_cls,
-            ),
-            patch(
-                "docsgpt.storage.db.session.db_readonly",
-                lambda: _FakeReadonlyCtx(),
-            ),
-        )
-
-    @pytest.mark.unit
-    def test_valid_session(self, auth, mock_settings):
-        repo_patch, ctx_patch = self._patches({
-            "session_token": "st",
-            "token_info": {"access_token": "at", "refresh_token": "rt"},
-        })
-        with repo_patch, ctx_patch:
-            result = auth.get_token_info_from_session("st")
-            assert result["access_token"] == "at"
-            assert "token_uri" in result
-
-    @pytest.mark.unit
-    def test_session_not_found_raises(self, auth, mock_settings):
-        repo_patch, ctx_patch = self._patches(None)
-        with repo_patch, ctx_patch:
-            with pytest.raises(ValueError, match="Failed to retrieve SharePoint token"):
-                auth.get_token_info_from_session("bad")
-
-    @pytest.mark.unit
-    def test_missing_token_info_raises(self, auth, mock_settings):
-        repo_patch, ctx_patch = self._patches({"session_token": "st"})
-        with repo_patch, ctx_patch:
-            with pytest.raises(ValueError, match="Failed to retrieve SharePoint token"):
-                auth.get_token_info_from_session("st")
-
-    @pytest.mark.unit
-    def test_empty_token_info_raises(self, auth, mock_settings):
-        repo_patch, ctx_patch = self._patches({"session_token": "st", "token_info": None})
-        with repo_patch, ctx_patch:
-            with pytest.raises(ValueError, match="Failed to retrieve SharePoint token"):
-                auth.get_token_info_from_session("st")
-
-    @pytest.mark.unit
-    def test_missing_required_fields_raises(self, auth, mock_settings):
-        repo_patch, ctx_patch = self._patches({
-            "session_token": "st",
-            "token_info": {"access_token": "at"},
-        })
-        with repo_patch, ctx_patch:
-            with pytest.raises(ValueError, match="Failed to retrieve SharePoint token"):
-                auth.get_token_info_from_session("st")

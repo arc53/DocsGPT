@@ -1,3 +1,4 @@
+import copy
 import logging
 import re
 import uuid
@@ -13,6 +14,8 @@ from docsgpt.agents.default_tools import (
     resolve_tool_by_id,
     synthesized_default_tools,
 )
+from docsgpt import tracing
+from docsgpt.agents.tool_pins import iter_parameters, llm_fills, resolve_arguments, sent_arguments
 from docsgpt.agents.tools.tool_action_parser import ToolActionParser
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.guardrails.types import Stage as GuardrailStage, resolve_tool_result
@@ -27,6 +30,126 @@ from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 
 logger = logging.getLogger(__name__)
+
+#: ``user_tools.config`` key holding an api_tool's encrypted header /
+#: query-param values: ``{action: {section: {param: value}}}``, keyed by the
+#: tool owner's id. The plaintext ``value`` of those entries is kept empty.
+API_TOOL_SECRETS_KEY = "encrypted_action_secrets"
+API_TOOL_SECRET_SECTIONS = ("headers", "query_params")
+# Tools that label their hits ``[n]`` from the answer's citation registry.
+CITING_TOOLS = frozenset({"internal_search", "graph_search"})
+
+
+def api_tool_action_with_secrets(tool_data: Dict, action_name: str, fallback_owner: Optional[str] = None) -> Dict:
+    """An api_tool action definition with its stored secret values merged back.
+
+    Secrets are decrypted with the tool row's ``user_id`` (the owner), never
+    the invoker's id. Legacy rows that still hold plaintext values need no
+    merge and are returned as stored.
+
+    Args:
+        tool_data: The ``user_tools`` row.
+        action_name: The action key in ``config["actions"]``.
+        fallback_owner: Used only when the row carries no ``user_id``.
+
+    Returns:
+        A deep copy of the action with header / query-param values filled in.
+    """
+    config = tool_data.get("config") or {}
+    action = copy.deepcopy(config["actions"][action_name])
+    blob = config.get(API_TOOL_SECRETS_KEY)
+    owner = tool_data.get("user_id") or fallback_owner
+    if not blob or not owner:
+        return action
+    secrets = decrypt_credentials(blob, owner).get(action_name) or {}
+    for section in API_TOOL_SECRET_SECTIONS:
+        block = action.get(section)
+        props = block.get("properties") if isinstance(block, dict) else None
+        if not isinstance(props, dict):
+            continue
+        for param, value in (secrets.get(section) or {}).items():
+            if isinstance(props.get(param), dict):
+                props[param]["value"] = value
+    return action
+
+
+def record_tool_span_start(call: Any, **attributes: Any) -> Any:
+    """Open an ``execute_tool`` span for ``call`` (no-op without an active trace)."""
+    llm_name = getattr(call, "name", None) or "unknown"
+    base = {
+        "gen_ai.operation.name": "execute_tool",
+        "gen_ai.tool.name": llm_name,
+        "gen_ai.tool.call.id": getattr(call, "id", None),
+        "gen_ai.tool.type": "function",
+    }
+    base.update(attributes)
+    return tracing.start_span(
+        tracing.KIND_TOOL,
+        f"execute_tool {llm_name}",
+        attributes={k: v for k, v in base.items() if v is not None},
+    )
+
+
+#: ``tool_calls`` statuses mapped to trace span statuses.
+_TOOL_SPAN_STATUS = {
+    "error": tracing.STATUS_ERROR,
+    "denied": tracing.STATUS_DENIED,
+    "skipped": tracing.STATUS_SKIPPED,
+    "awaiting_approval": tracing.STATUS_PENDING,
+    "requires_client_execution": tracing.STATUS_PENDING,
+}
+
+
+def trace_unexecuted_tool_call(call: Any, data: Dict[str, Any], **attributes: Any) -> None:
+    """Record a tool call that this process did not execute.
+
+    The single entry point for calls that never reach :meth:`ToolExecutor.execute`
+    (which traces executed calls itself): calls paused for approval or for the
+    client, denied ones, ones skipped at the context limit, and results a client
+    sends back on resume. A new pause or refusal path records its call here.
+
+    Args:
+        call: The tool call (anything with ``name`` and ``id``).
+        data: The tool-call record emitted for it (``status``, ``arguments``, ...).
+        **attributes: Extra span attributes.
+    """
+    finish_tool_span(record_tool_span_start(call, **attributes), data)
+
+
+def finish_tool_span(span: Any, data: Dict[str, Any]) -> None:
+    """Close a tool span from the ``tool_calls`` entry the call produced.
+
+    Args:
+        span: The span from :func:`record_tool_span_start`.
+        data: The tool-call record (``tool_name``, ``arguments``, ``result``,
+            ``status``, ...); results in it are already guardrail-scanned.
+    """
+    if not span:
+        return
+    status = str(data.get("status") or "completed")
+    span.set(
+        **{
+            "docsgpt.tool": data.get("tool_name"),
+            "docsgpt.action": data.get("action_name"),
+            "docsgpt.tool_status": status,
+            "docsgpt.artifact_id": data.get("artifact_id"),
+        }
+    )
+    if data.get("arguments") is not None:
+        span.preview("arguments", data.get("arguments"))
+    if data.get("result") is not None:
+        span.preview("result", data.get("result"))
+    span_status = _TOOL_SPAN_STATUS.get(status, tracing.STATUS_OK)
+    # ``error`` and ``result`` are tool output or user text (a denial
+    # comment), so they travel only as previews, which honour the content
+    # capture settings; ``span.error`` is exported and stored unconditionally.
+    if data.get("error"):
+        span.preview("error", data["error"])
+    if span_status == tracing.STATUS_ERROR:
+        error_type = str(data.get("error_type") or "ToolError")
+        span.error = f"Tool call failed ({error_type})"
+        span.set(**{"error.type": error_type})
+    span.end(span_status)
 
 
 def _is_foreign_key_violation(exc: BaseException) -> bool:
@@ -53,7 +176,7 @@ def _dedupable_tool_names() -> frozenset:
     """
     from docsgpt.core.settings import settings
 
-    return frozenset(BUILTIN_AGENT_TOOLS) | frozenset(getattr(settings, "DEFAULT_CHAT_TOOLS", None) or [])
+    return frozenset(BUILTIN_AGENT_TOOLS) | frozenset(settings.DEFAULT_CHAT_TOOLS or [])
 
 
 def _requires_approval(tool: Dict, action: Dict) -> bool:
@@ -66,6 +189,16 @@ def _requires_approval(tool: Dict, action: Dict) -> bool:
     if bool(action.get("require_approval")):
         return True
     return bool((tool.get("config") or {}).get("require_approval"))
+
+
+def _account_slug(account: Optional[str], limit: int = 24) -> str:
+    """An account name as a function-name suffix: ``Ops: on-call!`` → ``ops_on_call``.
+
+    Empty when nothing ASCII is left (a name in another script); the caller
+    then numbers the duplicates instead.
+    """
+    slug = re.sub(r"[^a-z0-9]+", "_", str(account or "").lower()).strip("_")
+    return slug[:limit].rstrip("_")
 
 
 def _sanitize_tool_prefix(tool_name: Optional[str]) -> str:
@@ -139,9 +272,22 @@ def result_status(result: Any) -> str:
 
     Tools report failure in-band (``{"status": "error", ...}`` or an ``error``
     key) while the executor used to stamp every returned result ``completed``,
-    so the stored conversation showed failed calls as successes.
+    so the stored conversation showed failed calls as successes. HTTP-backed
+    tools (cryptoprice, api_tool, ntfy, duckduckgo) report an integer
+    ``status_code`` instead, and a 4xx/5xx there is a failure too.
+
+    Args:
+        result: The tool's return value.
+
+    Returns:
+        ``"error"`` for an in-band failure, otherwise ``"completed"``.
     """
-    if isinstance(result, dict) and (result.get("status") == "error" or result.get("error")):
+    if not isinstance(result, dict):
+        return "completed"
+    if result.get("status") == "error" or result.get("error"):
+        return "error"
+    code = result.get("status_code")
+    if isinstance(code, int) and not isinstance(code, bool) and code >= 400:
         return "error"
     return "completed"
 
@@ -352,6 +498,36 @@ def _mark_failed(
         logger.exception("tool_call_attempts failed-write failed for %s", call_id)
 
 
+def journal_refused_call(executor: Any, pause_info: Dict, error: str) -> None:
+    """Journal a tool call that was refused instead of paused, as failed.
+
+    A headless run and a research step can't pause for anyone, so a call
+    ``check_pause`` would pause on is answered with a refusal. Journaling it
+    keeps the refusal visible to the reconciler and tool analytics.
+
+    Args:
+        executor: The run's ``ToolExecutor``.
+        pause_info: What ``check_pause`` returned for the call.
+        error: The failure recorded on the journal row.
+    """
+    if _record_proposed(
+        pause_info["call_id"],
+        pause_info["tool_name"],
+        pause_info["action_name"],
+        pause_info.get("arguments") or {},
+        tool_id=pause_info.get("tool_id"),
+        message_id=getattr(executor, "message_id", None),
+        user_id=getattr(executor, "user", None),
+        agent_id=getattr(executor, "agent_id", None),
+    ):
+        _mark_failed(
+            pause_info["call_id"],
+            error,
+            message_id=getattr(executor, "message_id", None),
+            user_id=getattr(executor, "user", None),
+        )
+
+
 class ToolExecutor:
     """Handles tool discovery, preparation, and execution.
 
@@ -367,6 +543,9 @@ class ToolExecutor:
         *,
         headless: bool = False,
         tool_allowlist: Optional[List[str]] = None,
+        external_caller: bool = False,
+        public_link_caller: bool = False,
+        api_write_allowlist: Optional[List[str]] = None,
     ):
         self.user_api_key = user_api_key
         self.user = user
@@ -377,6 +556,15 @@ class ToolExecutor:
         self.headless = bool(headless)
         # Tool-instance ids pre-authorized for headless approval-gated execution.
         self.tool_allowlist: set = {str(x) for x in tool_allowlist} if tool_allowlist else set()
+        # Someone calling the agent with its API key (widget, API): the run
+        # uses the owner's accounts and nobody can approve, so writes on a
+        # connected account run only when the owner allowlisted them.
+        self.external_caller = bool(external_caller)
+        # Someone who reaches the agent only through its public link: they
+        # may not approve writes on the owner's account either, so those run
+        # only when allowlisted. Their own account (member mode) is theirs.
+        self.public_link_caller = bool(public_link_caller)
+        self.api_write_allowlist: set = {str(x) for x in api_write_allowlist or []}
         # Set by BaseAgent._prepare_tools when the agent has tool-stage controls.
         self.guardrail_engine = None
         self.tool_calls: List[Dict] = []
@@ -385,6 +573,15 @@ class ToolExecutor:
         # get_tools() resolves EXACTLY these ids — builtin synthetic ids and
         # user_tools rows alike — with no defaults mixed in. None = unscoped.
         self.allowed_tool_ids: Optional[List[str]] = None
+        # Who an explicit tool-id scope resolves as: the workflow owner for a
+        # node, so whoever runs it gets the owner's tools. None = ``user``.
+        self.tool_owner: Optional[str] = None
+        # Tool id -> the user to resolve it as, for a workflow node's tools
+        # sponsored by an editor (see resource_access.active_sponsor).
+        self.tool_principals: Dict[str, str] = {}
+        # The workflow row a node's tools belong to, so a dropped one is
+        # logged with why it doesn't run.
+        self.tool_holder: Optional[Dict] = None
         self.conversation_id: Optional[str] = None
         # Set by the workflow engine for agent nodes so run-scoped tools
         # (artifact_generator / code_executor) address artifacts by the
@@ -395,6 +592,21 @@ class ToolExecutor:
         # sandbox tools so a referenced attachment can be lazily bridged to a
         # conversation-scoped artifact at tool-use time.
         self.attachments: List[Dict] = []
+        # The answer's source list the search tools number their hits from
+        # (``docsgpt.agents.citations``), set by the agent once its documents
+        # are final. Held here rather than in ``tools_dict``, which is saved
+        # with a paused turn and would come back as a detached copy.
+        self.citation_registry: Optional[List[Dict]] = None
+        # Images the last tool call returned for the model to see (references,
+        # see ``docsgpt.llm.tool_images``). The LLM handler moves them onto
+        # that call's tool message; ``images_shown`` counts them per turn.
+        self.pending_native_parts: List[Dict] = []
+        self.images_shown = 0
+        # Context a tool result may still take (tokens below the compression
+        # threshold), set by the LLM handler before each call, and the
+        # compression epoch: tools that size or dedupe their results read both.
+        self.context_room_tokens: Optional[int] = None
+        self.context_epoch = 0
         self.client_tools: Optional[List[Dict]] = None
         self._name_to_tool: Dict[str, Tuple[str, str]] = {}
         # Per-NAME failure counts for invented tool names this turn. After
@@ -405,6 +617,11 @@ class ToolExecutor:
         self._tool_to_name: Dict[Tuple[str, str], str] = {}
         # Filled by the LLMHandler.handle_tool_calls headless loop.
         self.headless_denials: List[Dict] = []
+        # Per-turn connection resolution for connection-backed tools, keyed
+        # by tool row id, so check_pause and execute share one lookup.
+        self._connections: Dict[str, Any] = {}
+        # Tool parameters those connections set (Telegram's default chat).
+        self._connection_params: Dict[str, Dict] = {}
 
     def get_tools(self) -> Dict[str, Dict]:
         """Load tool configs from DB based on user context.
@@ -416,6 +633,9 @@ class ToolExecutor:
             tools = self._get_tools_by_ids(self.allowed_tool_ids)
         elif self.user_api_key:
             tools = self._get_tools_by_api_key(self.user_api_key)
+        elif self.agent_id:
+            # A draft agent has no key yet; it still runs with only its own tools.
+            tools = self._get_tools_by_agent_id(self.agent_id)
         else:
             tools = self._get_user_tools(self.user or "local")
         if self.client_tools:
@@ -436,24 +656,44 @@ class ToolExecutor:
         """Resolve an explicit tool-id scope — exactly these ids, no defaults.
 
         Used by workflow agent nodes: the node's configured tools (builtin
-        synthetic ids like Artifact/Code Executor/Read Document, or the user's
-        ``user_tools`` rows) are the node's WHOLE toolset. An unresolvable id
-        is dropped with a warning rather than failing the node.
+        synthetic ids like Artifact/Code Executor/Read Document, or the
+        ``user_tools`` rows of ``tool_owner``) are the node's WHOLE toolset.
+        Rows resolve as the workflow owner, then as the editor who attached
+        them, never as whoever runs the workflow — the same rule as an agent's
+        own tools. An unresolvable id is dropped with a warning rather than
+        failing the node.
         """
         if not tool_ids:
             return {}
+        principal = self.tool_owner or self.user
         with db_readonly() as conn:
             tools_repo = UserToolsRepository(conn)
             tools: List[Dict] = []
             for tid in tool_ids:
-                row = resolve_tool_by_id(tid, self.user, user_tools_repo=tools_repo)
+                row = resolve_tool_by_id(tid, principal, user_tools_repo=tools_repo)
+                if row is None and str(tid) in self.tool_principals:
+                    row = resolve_tool_by_id(tid, self.tool_principals[str(tid)], user_tools_repo=tools_repo)
                 if row is None:
-                    logger.warning("tool id %s did not resolve; dropped from scoped toolset", tid)
+                    self._log_dropped_scoped_tool(conn, tid, principal)
                     continue
                 if self.headless and is_headless_excluded_tool(row.get("name")):
                     continue
                 tools.append(row)
         return {str(tool["id"]): tool for tool in tools}
+
+    def _log_dropped_scoped_tool(self, conn, tool_id: str, principal: Optional[str]) -> None:
+        """Log a node tool the scoped toolset leaves out, with why when the workflow is known."""
+        # Lazy: docsgpt.api's package import pulls in every route module.
+        from docsgpt.api.user.resource_access import log_stopped, resolve_holder_tool
+
+        holder = {**(self.tool_holder or {}), "user_id": principal}
+        reason = None
+        try:
+            _row, access = resolve_holder_tool(conn, "workflow", holder, tool_id)
+            reason = access.reason
+        except Exception:
+            logger.exception("Could not tell why tool %s does not resolve", tool_id)
+        log_stopped("workflow", holder, "tool", tool_id, reason)
 
     def _get_tools_by_api_key(self, api_key: str) -> Dict[str, Dict]:
         """Resolve an agent's toolset — exactly ``agents.tools``, no defaults."""
@@ -461,30 +701,55 @@ class ToolExecutor:
         # generator; wrapping it in a single connection would pin a PG
         # conn for the whole stream. Open, fetch, close.
         with db_readonly() as conn:
-            agent_data = AgentsRepository(conn).find_by_key(api_key)
-            tool_ids = agent_data.get("tools", []) if agent_data else []
-            tools_repo = UserToolsRepository(conn)
-            owner = (agent_data.get("user_id") or agent_data.get("user")) if agent_data else None
-            tools: List[Dict] = []
-            for tid in tool_ids:
-                row = resolve_tool_by_id(tid, owner, user_tools_repo=tools_repo)
+            return self._agent_tools(conn, AgentsRepository(conn).find_by_key(api_key))
+
+    def _get_tools_by_agent_id(self, agent_id: str) -> Dict[str, Dict]:
+        """Resolve a keyless (draft) agent's toolset the same way as by key.
+
+        The run was authorized upstream, so the row is read unscoped. An
+        agent that no longer exists gets no tools.
+        """
+        with db_readonly() as conn:
+            repo = AgentsRepository(conn)
+            agent_data = repo.get_by_id(str(agent_id)) or repo.get_by_legacy_id(str(agent_id))
+            return self._agent_tools(conn, agent_data)
+
+    def _agent_tools(self, conn, agent_data: Optional[Dict]) -> Dict[str, Dict]:
+        """Exactly the tools in ``agent_data["tools"]``, resolved as the agent's owner."""
+        tool_ids = (agent_data.get("tools") or []) if agent_data else []
+        tools_repo = UserToolsRepository(conn)
+        owner = (agent_data.get("user_id") or agent_data.get("user")) if agent_data else None
+        tools: List[Dict] = []
+        for tid in tool_ids:
+            row = resolve_tool_by_id(tid, owner, user_tools_repo=tools_repo)
+            if row is None:
+                # A tool the owner can't use runs as the editor who
+                # attached it, while they still qualify: the same check
+                # the agent page's run state uses.
+                # Lazy: docsgpt.api's package import pulls in every route module.
+                from docsgpt.api.user.resource_access import log_stopped, resolve_holder_tool
+
+                row, access = resolve_holder_tool(conn, "agent", agent_data, tid, tools_repo=tools_repo)
                 if row is None:
-                    continue
-                # Workflow-only builtins (read_document) never resolve for a
-                # chat/scheduled agent — nodes get them via the scoped-id path.
-                if row.get("workflow_only"):
-                    continue
-                # Headless runs (scheduled / webhook) drop chat-only tools
-                # like ``scheduler`` so a fire-time LLM can't chain schedules.
-                if self.headless and is_headless_excluded_tool(row.get("name")):
-                    continue
-                tools.append(row)
+                    log_stopped("agent", agent_data, "tool", tid, access.reason)
+            if row is None:
+                continue
+            # Workflow-only builtins (read_document) never resolve for a
+            # chat/scheduled agent — nodes get them via the scoped-id path.
+            if row.get("workflow_only"):
+                continue
+            # Headless runs (scheduled / webhook) drop chat-only tools
+            # like ``scheduler`` so a fire-time LLM can't chain schedules.
+            if self.headless and is_headless_excluded_tool(row.get("name")):
+                continue
+            tools.append(row)
         return {str(tool["id"]): tool for tool in tools}
 
     def _get_user_tools(self, user: str = "local") -> Dict[str, Dict]:
         """Resolve an agentless chat's toolset: explicit user tools plus defaults."""
         with db_readonly() as conn:
             user_tools = UserToolsRepository(conn).list_active_for_user(user)
+            user_tools.extend(self._shared_in_chat_tools(conn, user))
             user_doc = UsersRepository(conn).get(user) if self.agent_id is None else None
         # Headless agentless runs (e.g. scheduled fire) drop chat-only
         # tools (``scheduler``) from explicit user_tools too.
@@ -500,6 +765,32 @@ class ToolExecutor:
             ):
                 tools[str(default_row["id"])] = default_row
         return tools
+
+    @staticmethod
+    def _shared_in_chat_tools(conn, user: str) -> List[Dict]:
+        """Team-shared tools the user switched into their chats and may still use.
+
+        The grant (and the ``use_in_own`` switch) is re-checked on every call;
+        a revoked tool is dropped silently. Rows are the owner's, so their
+        credentials decrypt with the owner's id.
+        """
+        from docsgpt.storage.db.repositories.user_tool_preferences import (
+            UserToolPreferencesRepository,
+        )
+
+        tool_ids = UserToolPreferencesRepository(conn).list_in_chat_tool_ids(user)
+        if not tool_ids:
+            return []
+        repo = UserToolsRepository(conn)
+        rows: List[Dict] = []
+        for tid in tool_ids:
+            row = resolve_tool_by_id(tid, user, user_tools_repo=repo)
+            if row is None or row.get("user_id") == user:
+                if row is None:
+                    logger.info("in-chat shared tool %s no longer usable by %s; dropped", tid, user)
+                continue
+            rows.append(row)
+        return rows
 
     def merge_client_tools(self, tools_dict: Dict, client_tools: List[Dict]) -> Dict:
         """Merge client-provided tool definitions into tools_dict.
@@ -630,15 +921,36 @@ class ToolExecutor:
         self._tool_to_name = {}
         all_llm_names: set = set()
 
+        # Connection tools that share an action name are told apart by what
+        # they connect to: the service ("search" on Notion and on Linear), or
+        # the account when one service is connected twice (two Telegram bots).
+        connected: Dict[int, Tuple[str, str]] = {}
+        for index, (tool_id, _tool_name, action_name, _action, is_client) in enumerate(entries):
+            if name_counts[action_name] > 1 and not is_client:
+                names = self._connection_names(tools_dict[tool_id])
+                if names:
+                    connected[index] = names
+        per_service = Counter((entries[i][2], service) for i, (service, _account) in connected.items())
+
         result = []
-        for tool_id, tool_name, action_name, action, is_client in entries:
+        for index, (tool_id, tool_name, action_name, action, is_client) in enumerate(entries):
+            service, account = connected.get(index, (None, None))
+            # The account is named only where it is what tells tools apart.
+            if service is not None and per_service[(action_name, service)] < 2:
+                account = None
+            slug = _account_slug(account or service)
             if name_counts[action_name] == 1 and len(action_name) <= _MAX_LLM_NAME_LEN:
                 llm_name = action_name
             else:
                 # An over-long unique name skips the prefix — it needs
                 # truncation, not disambiguation.
                 prefix = _sanitize_tool_prefix(tool_name) if name_counts[action_name] > 1 else ""
-                base = f"{prefix}_{action_name}" if prefix and not action_name.startswith(f"{prefix}_") else action_name
+                if slug:
+                    base = f"{action_name}_{slug}"
+                elif prefix and not action_name.startswith(f"{prefix}_"):
+                    base = f"{prefix}_{action_name}"
+                else:
+                    base = action_name
                 base = base[:_MAX_LLM_NAME_LEN]
                 # A duplicated bare name stays ambiguous, and a candidate
                 # must not steal a unique action's name or one already taken.
@@ -657,31 +969,54 @@ class ToolExecutor:
             if is_client:
                 params = action.get("parameters", {})
             else:
-                params = self._build_tool_parameters(action)
+                params = self._build_tool_parameters(
+                    action, hidden=set(self._connection_parameters(tools_dict[tool_id])),
+                )
 
+            description = action.get("description", "")
+            if account:
+                description = f"{description} ({service} account: {account})".strip()
+            elif service:
+                description = f"{description} ({service})".strip()
             result.append(
                 {
                     "type": "function",
                     "function": {
                         "name": llm_name,
-                        "description": action.get("description", ""),
+                        "description": description,
                         "parameters": params,
                     },
                 }
             )
         return result
 
-    def _build_tool_parameters(self, action: Dict) -> Dict:
+    def _connection_names(self, tool_data: Dict) -> Optional[Tuple[str, str]]:
+        """``(service, account)`` a connection tool runs with, e.g. ``("Telegram", "Alerts bot")``."""
+        if not tool_data.get("connection_id") or tool_data.get("client_side"):
+            return None
+        resolved = self._resolve_connection(tool_data)
+        if resolved is None or resolved.row is None:
+            return None
+        from docsgpt.connectors.service import account_name
+
+        return resolved.connector_name or tool_data.get("name") or "", account_name(resolved.row)
+
+    def _build_tool_parameters(self, action: Dict, hidden: Optional[set] = None) -> Dict:
+        """The JSON schema the model sees for ``action``.
+
+        Parameters the model does not fill (fixed values) and ``hidden`` ones
+        (values the connection fixes) are left out, so the model is never
+        asked for them.
+        """
         params = {"type": "object", "properties": {}, "required": []}
-        for param_type in ["query_params", "headers", "body", "parameters"]:
-            if param_type in action and action[param_type].get("properties"):
-                for k, v in action[param_type]["properties"].items():
-                    if v.get("filled_by_llm", True):
-                        params["properties"][k] = {
-                            key: value for key, value in v.items() if key not in ("filled_by_llm", "value", "required")
-                        }
-                        if v.get("required", False):
-                            params["required"].append(k)
+        for _section, k, v in iter_parameters(action):
+            if not llm_fills(v) or (hidden and k in hidden):
+                continue
+            params["properties"][k] = {
+                key: value for key, value in v.items() if key not in ("filled_by_llm", "value", "required")
+            }
+            if v.get("required", False):
+                params["required"].append(k)
         return params
 
     def _guardrail_tool_result(self, result: Any, tool_name: str, action_name: str) -> Any:
@@ -704,6 +1039,98 @@ class ToolExecutor:
             logger.exception("Tool-result guardrail failed for %s.%s", tool_name, action_name)
             return result
         return resolve_tool_result(result, decision)
+
+    def _resolve_connection(self, tool_data: Dict):
+        """The connection a connection-backed tool runs with this turn, or None."""
+        if not tool_data.get("connection_id") or tool_data.get("client_side"):
+            return None
+        key = str(tool_data.get("id") or tool_data.get("connection_id"))
+        if key not in self._connections:
+            from docsgpt.connectors.resolve import resolve_connection
+
+            try:
+                self._connections[key] = resolve_connection(tool_data, self.user)
+            except Exception:
+                logger.exception("connection resolution failed for tool %s", key)
+                self._connections[key] = None
+        return self._connections[key]
+
+    def _connection_parameters(self, tool_data: Dict) -> Dict:
+        """Tool parameters the connection a call runs with sets, e.g. Telegram's default chat.
+
+        Resolved like the credentials: in member mode each member's own
+        connection (and so their own chat) applies. Only connectors with
+        such fields are looked up.
+        """
+        if not tool_data.get("connection_id") or tool_data.get("client_side"):
+            return {}
+        from docsgpt.connectors import catalog
+
+        definition = catalog.definition_for_tool(tool_data.get("name") or "")
+        if definition is None or not catalog.parameter_fields(definition.key):
+            return {}
+        key = str(tool_data.get("id") or tool_data.get("connection_id"))
+        if key not in self._connection_params:
+            resolved = self._resolve_connection(tool_data)
+            params: Dict = {}
+            if resolved is not None and resolved.available:
+                from docsgpt.connectors.service import connection_parameters
+
+                try:
+                    params = connection_parameters(resolved.row)
+                except Exception:
+                    logger.exception("connection parameters failed for tool %s", key)
+            self._connection_params[key] = params
+        return self._connection_params[key]
+
+    def _connection_payload(self, resolved) -> Dict:
+        """What the chat's Connect card needs; never an account or a secret.
+
+        ``connection_id`` is only the caller's own connection, which the card
+        reconnects in place; an owner's account (``owner_account``) is not
+        the caller's to reconnect. ``owner_name`` (the owner's email) is
+        withheld from API-key and public-link callers, who are strangers to
+        the owner.
+        """
+        payload = {
+            "connector_key": resolved.connector_key,
+            "connector_name": resolved.connector_name,
+            "status": (
+                "missing" if resolved.row is None
+                else (resolved.row.get("status") or "reconnect_needed")
+            ),
+            "owner_account": bool(resolved.delegated),
+        }
+        if resolved.row is not None and not resolved.delegated:
+            payload["connection_id"] = str(resolved.row["id"])
+        stranger = self.external_caller or self.public_link_caller
+        if resolved.row is not None and resolved.delegated and not stranger:
+            owner_name = ToolExecutor._owner_name(resolved.row.get("user_id"))
+            if owner_name:
+                payload["owner_name"] = owner_name
+        return payload
+
+    @staticmethod
+    def _owner_name(user_id: Optional[str]) -> Optional[str]:
+        """How the chat names a connection's owner ("Ask lena@… to reconnect it").
+
+        The email on record, which is what sharing already shows members;
+        None without one, and the card uses generic owner copy.
+
+        Args:
+            user_id: The connection owner's auth ``sub``.
+
+        Returns:
+            The owner's email, or None.
+        """
+        if not user_id:
+            return None
+        try:
+            with db_readonly() as conn:
+                return UsersRepository(conn).emails_for([user_id]).get(user_id)
+        except Exception:
+            logger.exception("owner name lookup failed")
+            return None
 
     def check_pause(self, tools_dict: Dict, call, llm_class_name: str) -> Optional[Dict]:
         """Return a pending-action dict (approval / client / headless_denied) or None.
@@ -751,6 +1178,41 @@ class ToolExecutor:
                 "thought_signature": getattr(call, "thought_signature", None),
             }
 
+        # A tool whose connection needs signing in pauses on a Connect card
+        # (the approval card's connection variant) instead of failing; the
+        # user connects, then continues, and the pending call resumes.
+        resolved = self._resolve_connection(tool_data)
+        if resolved is not None and not resolved.available:
+            if self.headless or self.external_caller:
+                return {
+                    "call_id": call_id,
+                    "name": llm_name,
+                    "tool_name": tool_data.get("name", "unknown"),
+                    "tool_id": tool_id,
+                    "action_name": action_name,
+                    "llm_name": llm_name,
+                    "arguments": arguments,
+                    "pause_type": "headless_denied",
+                    "deny_reason": (
+                        f"{resolved.connector_name or 'This service'} needs to be connected "
+                        "before this tool can run."
+                    ),
+                    "error_type": "connection_required",
+                    "thought_signature": getattr(call, "thought_signature", None),
+                }
+            return {
+                "call_id": call_id,
+                "name": llm_name,
+                "tool_name": tool_data.get("name", "unknown"),
+                "tool_id": tool_id,
+                "action_name": action_name,
+                "llm_name": llm_name,
+                "arguments": arguments,
+                "pause_type": "awaiting_approval",
+                "connection_required": self._connection_payload(resolved),
+                "thought_signature": getattr(call, "thought_signature", None),
+            }
+
         # Approval required
         if tool_data["name"] == "api_tool":
             action_data = tool_data.get("config", {}).get("actions", {}).get(action_name, {})
@@ -787,6 +1249,74 @@ class ToolExecutor:
                 or require_approval
             )
 
+        # An admin forbade changes through this connector (GitHub): its tool
+        # already calls the read-only endpoint, so say why instead of failing.
+        if resolved is not None and not resolved.writes_allowed:
+            from docsgpt.connectors.permissions import ACCESS_WRITE, action_access
+
+            if action_access(tool_data.get("name"), action_data) == ACCESS_WRITE:
+                return {
+                    "call_id": call_id,
+                    "name": llm_name,
+                    "tool_name": tool_data.get("name", "unknown"),
+                    "tool_id": tool_id,
+                    "action_name": action_name,
+                    "llm_name": llm_name,
+                    "arguments": arguments,
+                    "pause_type": "headless_denied",
+                    "deny_reason": (
+                        f"An admin turned off changes through {resolved.connector_name or 'this service'}. "
+                        "It can only look things up."
+                    ),
+                    "error_type": "tool_not_allowed",
+                    "thought_signature": getattr(call, "thought_signature", None),
+                }
+
+        # A member running someone else's account (a shared tool in owner
+        # mode) always confirms write actions, whatever the owner chose for
+        # themselves.
+        if not require_approval and resolved is not None and resolved.delegated:
+            from docsgpt.connectors.permissions import ACCESS_WRITE, action_access
+
+            require_approval = action_access(tool_data.get("name"), action_data) == ACCESS_WRITE
+
+        # An API-key caller writes with the owner's credentials only with the
+        # owner's say-so: nobody can approve in a widget, and "Always allow"
+        # was the owner's choice for themselves, not for anyone with the key.
+        # A public-link user is a stranger to the owner, so their approval
+        # can't stand in for the owner's either.
+        if (self.external_caller or self.public_link_caller) and self._on_owner_credentials(
+            tool_data, resolved, action_name
+        ):
+            from docsgpt.connectors.permissions import ACCESS_WRITE, action_access
+
+            if action_access(tool_data.get("name"), action_data) == ACCESS_WRITE:
+                entry = f"{tool_data.get('id') or tool_id}:{action_name}"
+                if entry in self.api_write_allowlist:
+                    return None
+                route = "for API or widget callers" if self.external_caller else "from its public link"
+                target = (
+                    f"the owner's {resolved.connector_name} account"
+                    if resolved is not None and resolved.connector_name
+                    else "the owner's credentials"
+                )
+                return {
+                    "call_id": call_id,
+                    "name": llm_name,
+                    "tool_name": tool_data.get("name", "unknown"),
+                    "tool_id": tool_id,
+                    "action_name": action_name,
+                    "llm_name": llm_name,
+                    "arguments": arguments,
+                    "pause_type": "headless_denied",
+                    "deny_reason": (
+                        f"This agent can't take this action with {target} {route}. "
+                        "The owner can allow it in the agent's Access details."
+                    ),
+                    "error_type": "tool_not_allowed",
+                    "thought_signature": getattr(call, "thought_signature", None),
+                }
+
         if require_approval:
             if self.headless:
                 tool_row_id = str(tool_data.get("id") or tool_id)
@@ -821,6 +1351,20 @@ class ToolExecutor:
                 "pause_type": "awaiting_approval",
                 "thought_signature": getattr(call, "thought_signature", None),
             }
+            # The card names the service a connection-backed tool acts on
+            # (logo + "GitHub · Create issue"), never the account behind it.
+            if resolved is not None and resolved.connector_key:
+                from docsgpt.connectors.permissions import action_access
+
+                payload["connector_key"] = resolved.connector_key
+                payload["connector_name"] = resolved.connector_name
+                payload["access"] = action_access(tool_data.get("name"), action_data)
+            # The card shows what will be sent: fixed values replace what the
+            # model asked for. ``arguments`` stays as the model sent it, since
+            # resuming replays it to the model, which never sees fixed values.
+            sent = sent_arguments(action_data, arguments, self._connection_parameters(tool_data))
+            if action_data and sent != arguments:
+                payload["sent_arguments"] = sent
             # Surface the device id so the approval UI can offer a
             # "don't ask again" sticky-pattern action for remote devices.
             if tool_data.get("name") == "remote_device":
@@ -830,6 +1374,35 @@ class ToolExecutor:
             return payload
 
         return None
+
+    def _on_owner_credentials(self, tool_data: Dict, resolved, action_name: Optional[str] = None) -> bool:
+        """Whether a call would act with credentials the caller doesn't hold.
+
+        The connection's account when there is one, else the tool owner's
+        stored credentials (see ``holds_owner_credentials``). An API-key
+        caller and any scheduled run hold none of their own: the run acts as
+        the owner. A public-link user in the app holds their own account only.
+
+        Args:
+            tool_data: The ``user_tools`` row being called.
+            resolved: The connection ``resolve_connection`` picked, or None.
+            action_name: The action called; an API tool action carries its
+                own headers and query values.
+
+        Returns:
+            True when the call would use someone else's credentials.
+        """
+        from docsgpt.connectors.permissions import holds_owner_credentials
+
+        if resolved is not None:
+            holder = (resolved.row or {}).get("user_id")
+        elif holds_owner_credentials(tool_data, action_name):
+            holder = tool_data.get("user_id")
+        else:
+            return False
+        if self.external_caller or self.headless:
+            return True
+        return holder != self.user
 
     def _remote_device_requires_approval(
         self,
@@ -950,7 +1523,31 @@ class ToolExecutor:
     MAX_ADVERTISED_TOOL_NAMES = 30
 
     def execute(self, tools_dict: Dict, call, llm_class_name: str):
-        """Execute a tool call. Yields status events, returns (result, call_id)."""
+        """Execute a tool call. Yields status events, returns (result, call_id).
+
+        Every call is recorded as an ``execute_tool`` trace span; its outcome
+        is read from the ``tool_calls`` entry each branch of :meth:`_execute`
+        appends, so the span matches what the conversation stores.
+        """
+        span = record_tool_span_start(call)
+        recorded = len(self.tool_calls)
+        try:
+            outcome = yield from self._execute(tools_dict, call, llm_class_name)
+        except Exception as exc:
+            # A tool's exception text can quote its response; like tool
+            # output it goes only into the capture-gated preview.
+            span.preview("error", str(exc))
+            span.error = f"Tool call failed ({type(exc).__name__})"
+            span.end(tracing.STATUS_ERROR, attributes={"error.type": type(exc).__name__})
+            raise
+        except GeneratorExit:
+            span.end(tracing.STATUS_CANCELLED)
+            raise
+        data = self.tool_calls[-1] if len(self.tool_calls) > recorded else {}
+        finish_tool_span(span, data)
+        return outcome
+
+    def _execute(self, tools_dict: Dict, call, llm_class_name: str):
         parser = ToolActionParser(llm_class_name, name_mapping=self._name_to_tool)
         tool_id, action_name, call_args = parser.parse_args(call)
         llm_name = getattr(call, "name", "unknown")
@@ -1117,6 +1714,12 @@ class ToolExecutor:
             "arguments": call_args,
         }
         tool_data = tools_dict[tool_id]
+        # Name the service a connection-backed tool used, so the chip can show
+        # its logo ("Searched Notion"). Never the account behind it.
+        resolved = self._resolve_connection(tool_data)
+        if resolved is not None and resolved.connector_key:
+            tool_call_data["connector_key"] = resolved.connector_key
+            tool_call_data["connector_name"] = resolved.connector_name
         # Surface the device id on remote_device tool-call events so the
         # approval UI can wire up the sticky "don't ask again" button.
         if tool_data.get("name") == "remote_device":
@@ -1157,40 +1760,49 @@ class ToolExecutor:
             return error_message, call_id
         yield {"type": "tool_call", "data": {**tool_call_data, "status": "pending"}}
         action_data = (
-            tool_data["config"]["actions"][action_name]
+            api_tool_action_with_secrets(tool_data, action_name, self.user)
             if tool_data["name"] == "api_tool"
             else next(action for action in tool_data["actions"] if action["name"] == action_name)
         )
 
-        query_params, headers, body, parameters = {}, {}, {}, {}
-        param_types = {
-            "query_params": query_params,
-            "headers": headers,
-            "body": body,
-            "parameters": parameters,
-        }
+        if "connector_key" in tool_call_data:
+            from docsgpt.connectors.permissions import action_access
 
-        for param_type, target_dict in param_types.items():
-            if param_type in action_data and action_data[param_type].get("properties"):
-                for param, details in action_data[param_type]["properties"].items():
-                    if param not in call_args and "value" in details and details["value"]:
-                        target_dict[param] = details["value"]
-        for param, value in call_args.items():
-            for param_type, target_dict in param_types.items():
-                if param_type in action_data and param in action_data[param_type].get("properties", {}):
-                    target_dict[param] = value
+            tool_call_data["access"] = action_access(tool_data.get("name"), action_data)
+
+        # Fixed values win over whatever the model sent for the same key.
+        sections = resolve_arguments(action_data, call_args, self._connection_parameters(tool_data))
+        query_params, headers = sections["query_params"], sections["headers"]
+        body, parameters = sections["body"], sections["parameters"]
+        # The chat shows what was sent; ``arguments`` keeps what the model
+        # asked for, which is what a later turn replays to it.
+        sent = sent_arguments(action_data, call_args, self._connection_parameters(tool_data))
+        if sent != (call_args if isinstance(call_args, dict) else {}):
+            tool_call_data["sent_arguments"] = sent
 
         # Load tool (with caching)
-        tool = self._get_or_load_tool(
-            tool_data,
-            tool_id,
-            action_name,
-            headers=headers,
-            query_params=query_params,
-        )
+        from docsgpt.connectors.service import ConnectionUnavailable
+
+        connection_error = None
+        try:
+            tool = self._get_or_load_tool(
+                tool_data,
+                tool_id,
+                action_name,
+                headers=headers,
+                query_params=query_params,
+            )
+        except ConnectionUnavailable as exc:
+            tool, connection_error = None, str(exc)
+
+        hint = getattr(tool, "set_context_hint", None) if tool is not None else None
+        if callable(hint):
+            hint(room_tokens=self.context_room_tokens, epoch=self.context_epoch)
 
         if tool is None:
-            error_message = (
+            error_message = connection_error and (
+                f"{connection_error}. Ask the user to connect it in Settings > Connectors, then try again."
+            ) or (
                 f"Failed to load tool '{tool_data.get('name')}' (tool_id key={tool_id}): missing 'id' on tool row."
             )
             logger.error(
@@ -1234,6 +1846,7 @@ class ToolExecutor:
                     _redact_args_for_log(call_args),
                 )
                 result = tool.execute_action(action_name, **parameters)
+                result = self._collect_native_parts(tool, result, tool_call_data)
         except Exception as exc:
             if proposed_ok:
                 _mark_failed(
@@ -1347,9 +1960,12 @@ class ToolExecutor:
                 # Refresh unconditionally so a turn with no attachments clears the
                 # prior turn's list (no stale carryover within the session).
                 cached_config["attachments"] = self.attachments or []
+            if isinstance(cached_config, dict) and tool_data["name"] in CITING_TOOLS:
+                cached_config["citation_registry"] = self.citation_registry
             return cached
 
         tm = ToolManager(config={})
+        load_user = self.user
 
         if tool_data["name"] == "api_tool":
             action_config = tool_data["config"]["actions"][action_name]
@@ -1364,6 +1980,9 @@ class ToolExecutor:
                 tool_config["body_encoding_rules"] = action_config.get("body_encoding_rules", {})
         else:
             tool_config = tool_data["config"].copy() if tool_data["config"] else {}
+            # Whose MCP tokens a tool uses is decided by resolving its
+            # connection below, never by a value stored in its config.
+            tool_config.pop("connection_id", None)
             # Credentials are PBKDF2-bound to the tool OWNER's sub, not the
             # invoker's. Decrypt with the tool row's user_id so a team member
             # running an owner's shared tool authenticates with the owner's
@@ -1372,7 +1991,17 @@ class ToolExecutor:
             # silently decrypt-failing. Falls back to self.user for the
             # agentless path where the tool row carries no user_id.
             tool_owner = tool_data.get("user_id") or self.user
-            if tool_config.get("encrypted_credentials") and tool_owner:
+            resolved = self._resolve_connection(tool_data)
+            if tool_data["name"] == "mcp_tool":
+                # MCP OAuth tokens are read as the account the call runs on:
+                # the resolved connection's owner (a member's own in member
+                # mode), else the tool owner, so a shared server without a
+                # connection runs on the owner's sign-in like every other
+                # credential.
+                load_user = ((resolved.row or {}).get("user_id") if resolved else None) or tool_owner
+            if resolved is not None:
+                self._apply_connection(tool_data, tool_id, tool_config, resolved)
+            elif tool_config.get("encrypted_credentials") and tool_owner:
                 if tool_owner != self.user:
                     # Credential delegation: the invoker is running a shared
                     # tool with the owner's secrets. Audit it (the agent-run
@@ -1416,18 +2045,31 @@ class ToolExecutor:
             # ref (A1) and edit_artifact resolve against the workflow run.
             if self.workflow_run_id:
                 tool_config["workflow_run_id"] = self.workflow_run_id
+            if tool_data["name"] in CITING_TOOLS:
+                tool_config["citation_registry"] = self.citation_registry
             if tool_data["name"] == "scheduler":
                 # Agent-bound: stamp schedules.agent_id. Agentless: the tool
                 # falls back to ``origin_conversation_id`` as the schedule's
                 # conversation home.
                 tool_config["agent_id"] = str(self.agent_id) if self.agent_id else None
+                if self.external_caller:
+                    # Its runs act as the owner for an API-key caller.
+                    tool_config["created_via"] = "api"
             if tool_data["name"] == "mcp_tool":
                 tool_config["query_mode"] = True
+                # The stored schemas carry the server's ``x-mcp-header``
+                # annotations, which say which arguments each call also
+                # sends as ``Mcp-Param-*`` headers.
+                tool_config["action_schemas"] = {
+                    action["name"]: action.get("parameters") or {}
+                    for action in tool_data.get("actions") or []
+                    if isinstance(action, dict) and action.get("name")
+                }
 
         tool = tm.load_tool(
             tool_data["name"],
             tool_config=tool_config,
-            user_id=self.user,
+            user_id=load_user,
         )
 
         # Don't cache api_tool since config varies by action
@@ -1436,10 +2078,118 @@ class ToolExecutor:
 
         return tool
 
+    def _apply_connection(self, tool_data: Dict, tool_id: str, tool_config: Dict, resolved) -> None:
+        """Merge a connection's credentials into ``tool_config``.
+
+        A connection only serves the tools its connector provides (a Telegram
+        bot token never reaches an ntfy tool), and an MCP connection's secret
+        only goes to the server it was stored for.
+
+        Args:
+            tool_data: The ``user_tools`` row being run.
+            tool_id: The tool's key in this run.
+            tool_config: The config the tool is loaded with, updated in place.
+            resolved: The connection :func:`resolve_connection` picked.
+
+        Raises:
+            ConnectionUnavailable: The connection needs signing in again, or
+                does not belong to this tool's connector or server.
+        """
+        from docsgpt.connectors import catalog, service
+        from docsgpt.connectors.resolve import audit_delegation
+
+        unavailable = service.ConnectionUnavailable(
+            f"{resolved.connector_name or 'This service'} needs to be connected",
+            connection_id=resolved.connection_id,
+        )
+        if not resolved.available or resolved.row is None:
+            raise unavailable
+        tool_name = tool_data.get("name")
+        definition = catalog.get_definition(resolved.connector_key)
+        if definition is None or tool_name not in definition.tool_templates:
+            logger.warning(
+                "tool %s (%s) points at a %s connection", tool_data.get("id") or tool_id, tool_name,
+                resolved.connector_key,
+            )
+            raise unavailable
+        if tool_name == "mcp_tool":
+            # A connection's secret only goes to the server it was stored for:
+            # a custom server's own URL (legacy rows name it in ``provider``),
+            # or a preset's or built-in connector's MCP server (GitHub's token
+            # only ever goes to GitHub's). No server known, nothing is sent.
+            stored_for = catalog.base_url(resolved.row.get("server_url"))
+            provider = str(resolved.row.get("provider") or "")
+            if not stored_for and provider.startswith("mcp:"):
+                stored_for = catalog.base_url(provider[len("mcp:"):])
+            if not stored_for:
+                stored_for = definition.mcp_base_url or ""
+            if not stored_for or stored_for != catalog.base_url(tool_config.get("server_url")):
+                raise unavailable
+            if service.builtin_mcp_config(definition) is not None:
+                # Only the connector's own endpoints: GitHub's write one while
+                # the tool opted in and an admin allows it, else read-only.
+                tool_config["server_url"] = service.builtin_mcp_url(
+                    definition, tool_config.get("server_url"), resolved.writes_allowed,
+                )
+        audit_delegation(
+            resolved,
+            invoker=self.user,
+            resource_type="tool",
+            resource_id=str(tool_data.get("id") or tool_id),
+            agent_id=self.agent_id,
+        )
+        tool_config.pop("encrypted_credentials", None)
+        if (resolved.row.get("auth_kind") or "") in ("api_key", "none", "oauth"):
+            # Pasted keys, or the current access token of a built-in OAuth
+            # sign-in (GitHub's App), refreshed first when it has expired.
+            credentials = service.access_credentials(resolved.row)
+            tool_config.update(credentials)
+            tool_config["auth_credentials"] = credentials
+        if tool_data.get("name") == "mcp_tool":
+            # MCP OAuth tokens are read by connection id inside the tool.
+            tool_config["connection_id"] = resolved.connection_id
+
     # Keys the client needs that are not part of the fixed shape below. They are
     # small and optional, and are copied only when present so an ordinary tool
     # call does not grow null columns in every persisted row.
-    _PRESERVED_TOOL_CALL_KEYS = ("artifacts", "device_id")
+    _PRESERVED_TOOL_CALL_KEYS = (
+        "artifacts", "device_id", "connector_key", "connector_name", "access", "sent_arguments", "images",
+    )
+
+    def _collect_native_parts(self, tool: Any, result: Any, tool_call_data: Dict) -> Any:
+        """Take the images a tool queued for the model, up to the turn's limit.
+
+        Args:
+            tool: The tool that just ran.
+            result: Its result.
+            tool_call_data: The call's record; the shown images' labels go in
+                ``images``.
+
+        Returns:
+            The result, with a note when images were over the limit.
+        """
+        drain = getattr(tool, "drain_native_parts", None)
+        if not callable(drain):
+            return result
+        try:
+            parts = [p for p in drain() or [] if isinstance(p, dict)]
+        except Exception:
+            logger.exception("Failed to collect images from tool %s", type(tool).__name__)
+            return result
+        from docsgpt.core.settings import settings
+
+        room = max(int(settings.ATTACHMENT_MAX_NATIVE_PARTS) - self.images_shown, 0)
+        shown, dropped = parts[:room], parts[room:]
+        self.images_shown += len(shown)
+        self.pending_native_parts.extend(shown)
+        if shown:
+            tool_call_data["images"] = [str(p.get("label") or "image") for p in shown]
+        if not dropped:
+            return result
+        note = f"{len(dropped)} image(s) not shown: the limit of images for this turn is reached."
+        if isinstance(result, dict):
+            return {**result, "images_not_shown": note}
+        return f"{result}\n\n[{note}]"
 
     def get_truncated_tool_calls(self) -> List[Dict]:
         """Project tool calls into the shape that is streamed and persisted.

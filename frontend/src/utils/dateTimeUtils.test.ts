@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatDate, formatDateOnly, formatDateTime } from './dateTimeUtils';
+import {
+  EMPTY_VALUE,
+  formatCount,
+  formatDate,
+  formatDateOnly,
+  formatDateTime,
+  formatTimestamp,
+} from './dateTimeUtils';
 
 describe('dateTimeUtils', () => {
   it('formats date-only values as DD/MM/YYYY', () => {
@@ -39,5 +46,94 @@ describe('dateTimeUtils', () => {
   it('returns the original value when parsing fails', () => {
     expect(formatDate('not a date')).toBe('not a date');
     expect(formatDateTime('still not a date')).toBe('still not a date');
+  });
+});
+
+describe('formatRelative', () => {
+  const NOW = Date.parse('2026-09-25T12:00:00Z');
+  const ago = (ms: number) => new Date(NOW - ms).toISOString();
+
+  it('returns null for empty or unparseable values', async () => {
+    const { formatRelative } = await import('./dateTimeUtils');
+    expect(formatRelative(null, { now: NOW })).toBeNull();
+    expect(formatRelative('garbage', { now: NOW })).toBeNull();
+  });
+
+  it('words a future time as "in …" when asked (the next scheduled run)', async () => {
+    const { formatRelative } = await import('./dateTimeUtils');
+    const ahead = (ms: number) => new Date(NOW + ms).toISOString();
+    const opts = { now: NOW, locale: 'en', future: true };
+    expect(formatRelative(ahead(18 * 3_600_000), opts)).toBe('in 18 hours');
+    // Clock skew under a minute still reads "now".
+    expect(formatRelative(ahead(20_000), opts)).toBe('now');
+  });
+
+  it('clamps a future time to "now" by default (server clock skew)', async () => {
+    const { formatRelative } = await import('./dateTimeUtils');
+    const ahead = (ms: number) => new Date(NOW + ms).toISOString();
+    expect(formatRelative(ahead(3 * 60_000), { now: NOW, locale: 'en' })).toBe(
+      'now',
+    );
+  });
+
+  it('words the gap with Intl in the given language', async () => {
+    const { formatRelative } = await import('./dateTimeUtils');
+    expect(formatRelative(ago(20_000), { now: NOW, locale: 'en' })).toBe('now');
+    expect(formatRelative(ago(3 * 60_000), { now: NOW, locale: 'en' })).toBe(
+      '3 minutes ago',
+    );
+    expect(
+      formatRelative(ago(26 * 3_600_000), { now: NOW, locale: 'en' }),
+    ).toBe('yesterday');
+    expect(formatRelative(ago(3 * 60_000), { now: NOW, locale: 'de' })).toBe(
+      'vor 3 Minuten',
+    );
+  });
+
+  it("maps the app's language codes to BCP 47", async () => {
+    const { formatRelative } = await import('./dateTimeUtils');
+    expect(formatRelative(ago(3 * 60_000), { now: NOW, locale: 'jp' })).toBe(
+      '3 分前',
+    );
+  });
+
+  it('falls back to a date past dateAfterDays', async () => {
+    const { formatRelative } = await import('./dateTimeUtils');
+    const old = ago(45 * 86_400_000);
+    expect(
+      formatRelative(old, { now: NOW, locale: 'en', dateAfterDays: 30 }),
+    ).toBe(formatDateOnly(old));
+  });
+});
+
+describe('formatCount', () => {
+  it('groups digits the way the app language does', () => {
+    expect(formatCount(1234567, 'en')).toBe('1,234,567');
+    expect(formatCount(1234567, 'de')).toBe('1.234.567');
+    expect(formatCount(1234, 'ru')).toBe('1\u00a0234');
+  });
+
+  it('maps the app codes Intl does not know', () => {
+    expect(formatCount(1234, 'jp')).toBe('1,234');
+    expect(formatCount(1234, 'zhTW')).toBe('1,234');
+  });
+
+  it('leaves small numbers alone', () => {
+    expect(formatCount(7, 'de')).toBe('7');
+  });
+});
+
+describe('formatTimestamp', () => {
+  it('formats a value as date and time', () => {
+    expect(formatTimestamp('2026-09-30 14:05')).toBe(
+      formatDateTime('2026-09-30 14:05'),
+    );
+  });
+
+  it('shows the one missing-value placeholder for an empty value', () => {
+    expect(EMPTY_VALUE).toBe('—');
+    expect(formatTimestamp(null)).toBe('—');
+    expect(formatTimestamp(undefined)).toBe('—');
+    expect(formatTimestamp('')).toBe('—');
   });
 });

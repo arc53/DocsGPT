@@ -1,0 +1,98 @@
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { useDarkTheme } from './index';
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+describe('useDarkTheme', () => {
+  let container: HTMLDivElement;
+
+  beforeEach(() => {
+    localStorage.setItem('selectedTheme', 'Light');
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: false,
+      media: query,
+      addListener: () => {},
+      removeListener: () => {},
+    }));
+    container = document.createElement('div');
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    container.remove();
+    localStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it('updates every consumer when one of them toggles the theme', async () => {
+    let toggle: (() => void) | undefined;
+    let logoIsDark: boolean | undefined;
+
+    function Settings() {
+      const [, toggleTheme] = useDarkTheme();
+      toggle = toggleTheme;
+      return null;
+    }
+    function Logo() {
+      [logoIsDark] = useDarkTheme();
+      return null;
+    }
+
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <>
+          <Settings />
+          <Logo />
+        </>,
+      );
+    });
+    expect(logoIsDark).toBe(false);
+
+    await act(async () => toggle?.());
+    expect(logoIsDark).toBe(true);
+
+    await act(async () => toggle?.());
+    expect(logoIsDark).toBe(false);
+
+    await act(async () => root.unmount());
+  });
+
+  it('resets both Safari bars once per theme change, not on load', async () => {
+    const strips = (edge: 'top' | 'bottom') =>
+      document.querySelectorAll(`[data-slot="${edge}-tint-reset"]`).length;
+    let toggle: (() => void) | undefined;
+
+    function Settings() {
+      const [, toggleTheme] = useDarkTheme();
+      toggle = toggleTheme;
+      return null;
+    }
+    function Logo() {
+      useDarkTheme();
+      return null;
+    }
+
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <>
+          <Settings />
+          <Logo />
+        </>,
+      );
+    });
+    expect(strips('bottom')).toBe(0);
+    expect(strips('top')).toBe(0);
+
+    // Both consumers apply the new theme; one strip is enough.
+    await act(async () => toggle?.());
+    expect(strips('bottom')).toBe(1);
+    expect(strips('top')).toBe(1);
+
+    await act(async () => root.unmount());
+  });
+});

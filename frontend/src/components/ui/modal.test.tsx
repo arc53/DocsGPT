@@ -1,0 +1,473 @@
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const media = { isMobile: false, isDesktop: true };
+vi.mock('../../hooks', () => ({
+  useMediaQuery: () => media,
+}));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => `t:${key}` }),
+}));
+
+import { Button } from './button';
+import { Modal, ModalActions } from './modal';
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+let container: HTMLDivElement;
+let root: Root;
+
+beforeEach(() => {
+  container = document.createElement('div');
+  document.body.appendChild(container);
+  root = createRoot(container);
+});
+
+afterEach(async () => {
+  await act(async () => root.unmount());
+  container.remove();
+});
+
+const render = async (element: React.ReactElement) => {
+  await act(async () => root.render(element));
+};
+
+const settle = () =>
+  act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+
+const content = () =>
+  document.querySelector<HTMLElement>('[data-slot="modal-content"]')!;
+
+describe('Modal close button', () => {
+  it('names the corner X through the shared close key', async () => {
+    await render(
+      <Modal open onOpenChange={() => undefined} title="Rename">
+        Body
+      </Modal>,
+    );
+    const close = document.querySelector<HTMLButtonElement>(
+      '[data-slot="modal-content"] button[aria-label]:not([data-slot=modal-footer] *)',
+    )!;
+    expect(close.getAttribute('aria-label')).toBe('t:close');
+  });
+});
+
+describe('Modal header', () => {
+  it('draws the title at 20px with the description 8px under it', async () => {
+    await render(
+      <Modal
+        open
+        onOpenChange={() => undefined}
+        title="Create access token"
+        description="The token acts as you."
+      >
+        Body
+      </Modal>,
+    );
+    const title = document.querySelector('[data-slot="dialog-title"]')!;
+    expect(title.className).toContain('text-xl');
+    expect(title.className).toContain('leading-tight');
+    expect(title.className).not.toContain('text-lg');
+    const description = document.querySelector(
+      '[data-slot="dialog-description"]',
+    )!;
+    expect(description.className).toContain('mt-2');
+    // One flex item for both, so the column's gap-4 doesn't add to mt-2.
+    expect(title.parentElement).toBe(description.parentElement);
+    expect(title.parentElement).not.toBe(content());
+  });
+});
+
+describe('Modal leading', () => {
+  it('puts the leading node beside the title and description', async () => {
+    await render(
+      <Modal
+        open
+        onOpenChange={() => undefined}
+        title="Connect GitHub"
+        description="Sync repositories into Knowledge."
+        leading={<span data-testid="tile">G</span>}
+      >
+        Body
+      </Modal>,
+    );
+    const header = document.querySelector('[data-slot="modal-header"]')!;
+    const tile = document.querySelector('[data-testid="tile"]')!;
+    const title = document.querySelector('[data-slot="dialog-title"]')!;
+    const description = document.querySelector(
+      '[data-slot="dialog-description"]',
+    )!;
+    expect(header.className).toContain('flex');
+    expect(header.className).toContain('gap-3');
+    expect(header.firstElementChild).toBe(tile);
+    // Title and description still share one column, 8px apart.
+    expect(title.parentElement).toBe(description.parentElement);
+    expect(title.parentElement).not.toBe(header);
+    expect(title.parentElement!.className).toContain('min-w-0');
+  });
+
+  it('keeps the plain header without it', async () => {
+    await render(
+      <Modal open onOpenChange={() => undefined} title="Create a team">
+        Body
+      </Modal>,
+    );
+    const header = document.querySelector('[data-slot="modal-header"]')!;
+    expect(header.className).not.toContain('gap-3');
+  });
+});
+
+describe('Modal onBack', () => {
+  it('draws an icon Back beside the real title and description', async () => {
+    const onBack = vi.fn();
+    await render(
+      <Modal
+        open
+        onOpenChange={() => undefined}
+        title="People with access"
+        description="HR Policy Bot · Teams: 6"
+        onBack={onBack}
+      >
+        Body
+      </Modal>,
+    );
+    const header = document.querySelector('[data-slot="modal-header"]')!;
+    const back = header.firstElementChild as HTMLButtonElement;
+    expect(back.tagName).toBe('BUTTON');
+    expect(back.getAttribute('aria-label')).toBe('t:sidePanel.back');
+    expect(back.className).toContain('-ml-2');
+    expect(header.className).toContain('flex');
+    expect(header.className).toContain('gap-3');
+    const title = document.querySelector('[data-slot="dialog-title"]')!;
+    const description = document.querySelector(
+      '[data-slot="dialog-description"]',
+    )!;
+    expect(title.textContent).toBe('People with access');
+    expect(description.textContent).toBe('HR Policy Bot · Teams: 6');
+    expect(title.parentElement).toBe(description.parentElement);
+    expect(title.closest('[data-slot="modal-header"]')).toBe(header);
+    await act(async () => back.click());
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('takes a backLabel and keeps a leading tile after the arrow', async () => {
+    await render(
+      <Modal
+        open
+        onOpenChange={() => undefined}
+        title="Upload new document"
+        onBack={() => undefined}
+        backLabel="Back to sources"
+        leading={<span data-testid="tile">G</span>}
+      >
+        Body
+      </Modal>,
+    );
+    const header = document.querySelector('[data-slot="modal-header"]')!;
+    const back = header.firstElementChild as HTMLButtonElement;
+    expect(back.getAttribute('aria-label')).toBe('Back to sources');
+    expect(back.nextElementSibling).toBe(
+      document.querySelector('[data-testid="tile"]'),
+    );
+  });
+
+  it('renders no Back without onBack', async () => {
+    await render(
+      <Modal open onOpenChange={() => undefined} title="Create a team">
+        Body
+      </Modal>,
+    );
+    const header = document.querySelector('[data-slot="modal-header"]')!;
+    expect(header.querySelector('button')).toBeNull();
+  });
+});
+
+describe('Modal footer', () => {
+  it('stacks on phones and sits in a right-aligned row from sm up', async () => {
+    await render(
+      <Modal
+        open
+        onOpenChange={() => undefined}
+        title="Create a team"
+        footer={<Button>Create</Button>}
+      >
+        Body
+      </Modal>,
+    );
+    const footer = document.querySelector('[data-slot="modal-footer"]')!;
+    const classes = footer.className.split(' ');
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'flex-col-reverse',
+        'gap-3',
+        'sm:flex-row',
+        'sm:justify-end',
+      ]),
+    );
+  });
+});
+
+describe('ModalActions', () => {
+  const renderActions = async (
+    props: Partial<React.ComponentProps<typeof ModalActions>> = {},
+  ) =>
+    render(
+      <Modal
+        open
+        onOpenChange={() => undefined}
+        title="Create access token"
+        footer={
+          <ModalActions
+            cancelLabel="Cancel"
+            onCancel={() => undefined}
+            submitLabel="Create token"
+            onSubmit={() => undefined}
+            {...props}
+          />
+        }
+      >
+        Body
+      </Modal>,
+    );
+
+  const footerButtons = () =>
+    Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="modal-footer"] button',
+      ),
+    );
+
+  it('renders a ghost Cancel and a primary submit, both lg pills', async () => {
+    await renderActions();
+    const [cancel, submit] = footerButtons();
+    expect(cancel.textContent).toBe('Cancel');
+    expect(cancel.dataset.variant).toBe('ghost');
+    expect(submit.textContent).toBe('Create token');
+    expect(submit.dataset.variant).toBe('default');
+    for (const button of [cancel, submit]) {
+      expect(button.dataset.size).toBe('lg');
+      expect(button.dataset.shape).toBe('pill');
+      expect(button.type).toBe('button');
+    }
+  });
+
+  it('renders only Cancel without a submitLabel', async () => {
+    await renderActions({ submitLabel: undefined });
+    const buttons = footerButtons();
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].textContent).toBe('Cancel');
+  });
+
+  it('turns the submit red when destructive', async () => {
+    await renderActions({ destructive: true });
+    expect(footerButtons()[1].dataset.variant).toBe('destructive');
+  });
+
+  it('shows the spinner while pending and disables submit', async () => {
+    await renderActions({ pending: true });
+    const submit = footerButtons()[1];
+    expect(submit.disabled).toBe(true);
+    expect(submit.getAttribute('aria-busy')).toBe('true');
+  });
+
+  it('disables submit without a spinner when disabled', async () => {
+    await renderActions({ disabled: true });
+    const submit = footerButtons()[1];
+    expect(submit.disabled).toBe(true);
+    expect(submit.hasAttribute('aria-busy')).toBe(false);
+  });
+
+  it('pushes footerStart to the left edge from sm up', async () => {
+    await renderActions({
+      footerStart: <Button variant="outline">Test connection</Button>,
+    });
+    const start = document.querySelector('[data-slot="modal-footer-start"]')!;
+    expect(start.className).toContain('sm:mr-auto');
+    expect(start.textContent).toBe('Test connection');
+  });
+
+  it('passes extra props to the buttons', async () => {
+    await renderActions({
+      submitProps: { type: 'submit', form: 'token-form' },
+      cancelProps: { 'aria-label': 'Close dialog' },
+    });
+    const [cancel, submit] = footerButtons();
+    expect(submit.type).toBe('submit');
+    expect(submit.getAttribute('form')).toBe('token-form');
+    expect(cancel.getAttribute('aria-label')).toBe('Close dialog');
+  });
+});
+
+describe('Modal mobile sheet', () => {
+  afterEach(() => {
+    media.isMobile = false;
+  });
+
+  it('takes the bottom-sheet shape and handle from ui/sheet on phones', async () => {
+    media.isMobile = true;
+    await render(
+      <Modal open onOpenChange={() => undefined} title="Test retrieval">
+        Body
+      </Modal>,
+    );
+    const sheet = content();
+    expect(sheet.hasAttribute('data-mobile-sheet')).toBe(true);
+    const classes = sheet.className.split(' ');
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'bg-card',
+        'rounded-t-2xl',
+        'max-h-sheet',
+        'pb-safe',
+        'gap-3',
+        'px-4',
+      ]),
+    );
+    expect(sheet.className).not.toContain('env(');
+    // Every bottom sheet has the sheet elevation, like SheetContent.
+    expect(classes).toContain('shadow-lg');
+    expect(classes).not.toContain('shadow-modal');
+    expect(sheet.firstElementChild!.getAttribute('data-slot')).toBe(
+      'sheet-handle',
+    );
+  });
+
+  it('is a sheet on phones by default', async () => {
+    media.isMobile = true;
+    await render(
+      <Modal open onOpenChange={() => undefined} title="Rename">
+        Body
+      </Modal>,
+    );
+    expect(content().hasAttribute('data-mobile-sheet')).toBe(true);
+    expect(
+      content().querySelector('[data-slot="sheet-handle"]'),
+    ).not.toBeNull();
+  });
+
+  it('stays a centred dialog on phones with mobileVariant="dialog"', async () => {
+    media.isMobile = true;
+    await render(
+      <Modal
+        open
+        onOpenChange={() => undefined}
+        title="Delete?"
+        mobileVariant="dialog"
+      >
+        Body
+      </Modal>,
+    );
+    expect(content().hasAttribute('data-mobile-sheet')).toBe(false);
+    expect(content().className).toContain('rounded-2xl');
+    expect(content().querySelector('[data-slot="sheet-handle"]')).toBeNull();
+  });
+
+  it('caps the desktop dialog at 85dvh and scrolls only its body', async () => {
+    await render(
+      <Modal open onOpenChange={() => undefined} title="Add tool" size="xl">
+        Body
+      </Modal>,
+    );
+    const classes = content().className.split(' ');
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'flex',
+        'flex-col',
+        'max-h-[85dvh]',
+        'sm:max-w-4xl',
+      ]),
+    );
+    expect(classes).not.toContain('grid');
+    const body = [...content().children].find(
+      (el) => el.textContent === 'Body',
+    )!;
+    expect(body.className).toContain('overflow-y-auto');
+    expect(body.className).toContain('min-h-0');
+    expect(body.className).toContain('grow');
+  });
+
+  it('keeps the centred dialog on desktop', async () => {
+    await render(
+      <Modal open onOpenChange={() => undefined} title="Test retrieval">
+        Body
+      </Modal>,
+    );
+    expect(content().hasAttribute('data-mobile-sheet')).toBe(false);
+    expect(content().className).toContain('rounded-2xl');
+    expect(content().querySelector('[data-slot="sheet-handle"]')).toBeNull();
+  });
+});
+
+describe('Modal focus return', () => {
+  const opener = () =>
+    document.querySelector<HTMLButtonElement>('[data-testid="opener"]')!;
+
+  const renderModal = (open: boolean) =>
+    render(
+      <>
+        <button type="button" data-testid="opener">
+          Open
+        </button>
+        <Modal open={open} onOpenChange={() => undefined} title="Upload">
+          Body
+        </Modal>
+      </>,
+    );
+
+  it('returns focus to the element that had it on open', async () => {
+    await renderModal(false);
+    opener().focus();
+    await renderModal(true);
+    await renderModal(false);
+    await settle();
+    expect(document.activeElement).toBe(opener());
+  });
+
+  it('moves focus nowhere when nothing had it on open', async () => {
+    await renderModal(false);
+    await renderModal(true);
+    await renderModal(false);
+    await settle();
+    expect(document.activeElement).toBe(document.body);
+  });
+});
+
+describe('Modal bottom-bar reset', () => {
+  // Earlier tests close bottom sheets on unmount, which leaves strips behind.
+  beforeEach(() => {
+    document
+      .querySelectorAll('[data-slot="bottom-tint-reset"]')
+      .forEach((node) => node.remove());
+  });
+
+  afterEach(() => {
+    media.isMobile = false;
+  });
+
+  const strip = () =>
+    document.querySelector<HTMLElement>('[data-slot="bottom-tint-reset"]');
+
+  const renderModal = (open: boolean) =>
+    render(
+      <Modal open={open} onOpenChange={() => undefined} title="Upload">
+        Body
+      </Modal>,
+    );
+
+  it('resets the bottom bar when the phone sheet closes', async () => {
+    media.isMobile = true;
+    await renderModal(true);
+    await renderModal(false);
+    expect(strip()).not.toBeNull();
+  });
+
+  it('leaves the bar alone for the centred dialog', async () => {
+    await renderModal(true);
+    await renderModal(false);
+    await settle();
+    expect(strip()).toBeNull();
+  });
+});

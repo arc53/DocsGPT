@@ -1,0 +1,70 @@
+---
+title: SharePoint / OneDrive Connector
+description: Connect your Microsoft SharePoint or OneDrive as an external knowledge base to upload and process files directly.
+lastUpdated: 2026-09-30
+---
+
+import { Callout } from 'nextra/components'
+import { Steps } from 'nextra/components'
+
+# SharePoint / OneDrive Connector
+
+Connect your SharePoint or OneDrive account to upload and process files directly as an external knowledge base. Supports Office files, PDFs, text files, CSVs, images, and more. Authentication is handled via Microsoft Entra ID (Azure AD) with automatic token refresh.
+
+<Callout type="info">
+Members connect this service from **Settings > Connectors**, and one sign-in serves every source that uses it. Admins can check what is still missing in **Admin > Connectors**. See [Connectors](/Sources/Connectors).
+</Callout>
+
+## Setup
+
+<Steps>
+
+### Step 1: Create an App Registration in Azure
+
+1. Go to the [Azure Portal](https://portal.azure.com/) > **Microsoft Entra ID** > **App registrations** > **New registration**
+2. Set **Redirect URI** (Web) to:
+   - Local: `http://127.0.0.1:7091/api/connectors/callback` (the default `CONNECTOR_REDIRECT_BASE_URI`; Admin > Connectors shows the exact value to copy)
+   - Production: `https://yourdomain.com/api/connectors/callback` (the value of `CONNECTOR_REDIRECT_BASE_URI`, registered as-is)
+
+### Step 2: Configure API Permissions
+
+In your App Registration, go to **API permissions** > **Add a permission** > **Microsoft Graph** > **Delegated permissions** and add the permissions DocsGPT requests: `Files.Read`, `Sites.Read.All` and `User.Read` (new registrations usually have `User.Read` already). Grant admin consent if possible.
+
+### Step 3: Create a Client Secret
+
+Go to **Certificates & secrets** > **New client secret**. Copy the secret value immediately (it won't be shown again).
+
+### Step 4: Configure Environment Variables
+
+Add to your `.env` file:
+
+```env
+MICROSOFT_CLIENT_ID=your-azure-ad-client-id
+MICROSOFT_CLIENT_SECRET=your-azure-ad-client-secret
+MICROSOFT_TENANT_ID=your-azure-ad-tenant-id
+```
+
+| Variable | Description | Required | Default |
+|----------|-------------|----------|---------|
+| `MICROSOFT_CLIENT_ID` | Application (client) ID from App Registration overview | Yes | — |
+| `MICROSOFT_CLIENT_SECRET` | Client secret value | Yes | — |
+| `MICROSOFT_TENANT_ID` | Directory (tenant) ID | No | `common` |
+| `MICROSOFT_AUTHORITY` | Login endpoint override | No | Auto-constructed |
+| `CONNECTOR_ALLOWED_ORIGINS` | Comma-separated frontend origins allowed to receive the sign-in result, e.g. `https://docsgpt.example.com` | When the frontend is on its own origin | API origin; also `localhost:5173` when the callback is on `localhost`/`127.0.0.1` |
+
+<Callout type="warning">
+`MICROSOFT_TENANT_ID=common` (the default) allows any Microsoft account to authenticate. Set this to your specific tenant ID in production.
+</Callout>
+
+### Step 5: Restart and Use
+
+Restart your application, then go to **Settings > Connectors** and pick **SharePoint**. You'll be redirected to Microsoft to sign in, then can browse and select files to process.
+
+</Steps>
+
+## Troubleshooting
+
+- **Option not appearing** — Verify `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` are set, then restart.
+- **Authentication failed** — Check that the redirect URI matches exactly and equals `CONNECTOR_REDIRECT_BASE_URI`, with no query parameters.
+- **Sign-in popup closes but the account never connects** — The frontend origin is not allowed to receive the result. Add it to `CONNECTOR_ALLOWED_ORIGINS` in the backend `.env`.
+- **Permission denied** — Ensure admin consent is granted and the user has access to the target files.

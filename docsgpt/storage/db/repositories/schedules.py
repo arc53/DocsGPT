@@ -242,8 +242,24 @@ class SchedulesRepository:
         schedule_id: str,
         user_id: str,
         fields: dict,
+        *,
+        pending_once_status: Optional[str] = None,
     ) -> Optional[dict]:
-        """Apply a whitelisted partial update; return the new row or None."""
+        """Apply a whitelisted partial update; return the new row or None.
+
+        Args:
+            schedule_id: Schedule UUID.
+            user_id: The owner the row must belong to.
+            fields: Columns to set; others are ignored.
+            pending_once_status: When set, update only a one-time task still in
+                this status that the dispatcher hasn't claimed (an active task
+                must still have ``next_run_at``). Rescheduling uses it so a
+                task dispatched, paused or cancelled since it was read is left
+                alone, and ``None`` is returned instead.
+
+        Returns:
+            The updated row, or ``None`` when no row matched.
+        """
         filtered = {k: v for k, v in fields.items() if k in _ALLOWED_UPDATES}
         if not filtered:
             return self.get(schedule_id, user_id)
@@ -261,10 +277,16 @@ class SchedulesRepository:
             else:
                 set_parts.append(f"{key} = :{key}")
                 params[key] = val
+        guard = ""
+        if pending_once_status is not None:
+            guard = " AND trigger_type = 'once' AND status = :pending_status"
+            params["pending_status"] = pending_once_status
+            if pending_once_status == "active":
+                guard += " AND next_run_at IS NOT NULL"
         sql = (
             "UPDATE schedules SET " + ", ".join(set_parts) +
-            " WHERE id = CAST(:id AS uuid) AND user_id = :user_id "
-            "RETURNING *"
+            " WHERE id = CAST(:id AS uuid) AND user_id = :user_id" + guard +
+            " RETURNING *"
         )
         row = self._conn.execute(text(sql), params).fetchone()
         return row_to_dict(row) if row is not None else None

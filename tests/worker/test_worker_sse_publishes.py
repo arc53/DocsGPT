@@ -470,6 +470,7 @@ def _stub_connector_pipeline(
     from docsgpt import worker
 
     fake_connector = MagicMock(name="connector")
+    fake_connector.connection_id = None
     fake_connector.download_to_directory.return_value = {
         "files_downloaded": files_downloaded,
         "empty_result": empty_result,
@@ -482,7 +483,7 @@ def _stub_connector_pipeline(
     monkeypatch.setattr(
         worker.ConnectorCreator,
         "create_connector",
-        staticmethod(lambda source_type, session_token: fake_connector),
+        staticmethod(lambda source_type, session_token=None, connection_id=None: fake_connector),
     )
 
     fake_reader = MagicMock(name="reader")
@@ -676,7 +677,10 @@ class TestAttachmentWorkerPublishes:
         ]
         assert publishes.calls[1][2]["current"] == 30
         failed = publishes.calls[2][2]
-        assert "parse boom" in failed["error"]
+        # The raw exception text stays in the logs; the chip gets a curated message.
+        assert "parse boom" not in failed["error"]
+        assert failed["code"] == "processing_failed"
+        assert failed["error"] == "This file could not be processed."
         assert failed["filename"] == "notes.txt"
 
 

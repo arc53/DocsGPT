@@ -1,0 +1,47 @@
+name: Lint the installers
+
+# deployment/install.sh runs as `curl | bash` on macOS (bash 3.2) and Linux, and
+# deployment/install.ps1 as `irm | iex` on Windows; a syntax error in either
+# breaks every install at once. The end-to-end run through install.sh is in
+# docker-image-verify.yml.
+
+on:
+  pull_request:
+    paths:
+      - 'deployment/install.sh'
+      - 'deployment/install.ps1'
+      - '.github/workflows/installer-lint.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'deployment/install.sh'
+      - 'deployment/install.ps1'
+      - '.github/workflows/installer-lint.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: shellcheck install.sh
+        run: |
+          bash -n deployment/install.sh
+          shellcheck --shell=bash deployment/install.sh
+
+      - name: Parse install.ps1
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD/deployment/install.ps1", [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count) {
+            $errors | ForEach-Object { Write-Host "install.ps1:$($_.Extent.StartLineNumber): $($_.Message)" }
+            exit 1
+          }
+          Write-Host 'install.ps1 parses'

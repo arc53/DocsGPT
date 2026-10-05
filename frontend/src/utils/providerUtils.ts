@@ -1,25 +1,34 @@
 /**
- * Utility functions for managing session tokens for different cloud service providers.
- * Follows the convention: {provider}_session_token
+ * Connector sign-ins used to keep a random session handle per provider in
+ * localStorage (``<provider>_session_token``). Credentials now live only on
+ * the server and the browser refers to a connection by its id, so the old
+ * handles are claimed once (linked to the signed-in user's connection) and
+ * removed.
  */
 
-import userService from '../api/services/userService';
+import connectorsService from '../api/services/connectorsService';
 
-export const getSessionToken = (provider: string): string | null => {
-  return localStorage.getItem(`${provider}_session_token`);
-};
+const LEGACY_PROVIDERS = ['google_drive', 'share_point', 'confluence'];
 
-export const setSessionToken = (provider: string, token: string): void => {
-  localStorage.setItem(`${provider}_session_token`, token);
-};
+const legacyKey = (provider: string) => `${provider}_session_token`;
 
-export const removeSessionToken = (provider: string): void => {
-  localStorage.removeItem(`${provider}_session_token`);
-};
-
-export const validateProviderSession = async (
+export const claimLegacySessionTokens = async (
   token: string | null,
-  provider: string,
-) => {
-  return await userService.validateConnectorSession(provider, token);
+): Promise<void> => {
+  for (const provider of LEGACY_PROVIDERS) {
+    let value: string | null = null;
+    try {
+      value = localStorage.getItem(legacyKey(provider));
+    } catch {
+      return;
+    }
+    if (!value) continue;
+    try {
+      await connectorsService.claim(provider, value, token);
+    } catch {
+      // The handle is useless to this frontend either way; drop it.
+    } finally {
+      localStorage.removeItem(legacyKey(provider));
+    }
+  }
 };

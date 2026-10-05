@@ -22,6 +22,7 @@ def _processor() -> StreamProcessor:
     sp.agent_config = {}
     sp.retriever_config = {"retriever_name": "classic", "chunks": 2, "doc_token_limit": 50000}
     sp.data = {}
+    sp.decoded_token = {"sub": "u"}
     return sp
 
 
@@ -81,7 +82,7 @@ class TestBuildAgentExposure:
         assert result == "AGENT"
         sp.pre_fetch_docs.assert_not_called()
         _, kwargs = sp.create_agent.call_args
-        assert "agentic_sources" not in kwargs
+        assert kwargs.get("agentic_sources") is None
 
     def test_mixed_prefetches_and_scopes_tool(self):
         sp = self._agentic_processor()
@@ -117,9 +118,9 @@ class TestBuildAgentExposure:
         ]
         result = sp.build_agent("q")
         assert result == "AGENT"
-        sp.pre_fetch_docs.assert_called_once_with("q")
+        sp.pre_fetch_docs.assert_called_once_with("q", exposure=None)
         _, kwargs = sp.create_agent.call_args
-        assert "agentic_sources" not in kwargs
+        assert kwargs.get("agentic_sources") is None
 
     def test_classic_no_per_source_detail_is_today(self):
         # Single-source / no-config requests carry no per-source detail; classic
@@ -128,9 +129,9 @@ class TestBuildAgentExposure:
         sp.all_sources = []
         sp.source = {"active_docs": ["a"]}
         sp.build_agent("q")
-        sp.pre_fetch_docs.assert_called_once_with("q")
+        sp.pre_fetch_docs.assert_called_once_with("q", exposure=None)
         _, kwargs = sp.create_agent.call_args
-        assert "agentic_sources" not in kwargs
+        assert kwargs.get("agentic_sources") is None
 
     def test_classic_mixed_prefetches_and_scopes_tool(self):
         # Classic with an agentic_tool source now pre-fetches only the prefetch

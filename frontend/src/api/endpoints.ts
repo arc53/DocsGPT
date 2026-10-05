@@ -2,6 +2,7 @@ const endpoints = {
   USER: {
     CONFIG: '/api/config',
     ME: '/api/user/me',
+    QUOTA: '/api/user/quota',
     NEW_TOKEN: '/api/generate_token',
     OIDC_LOGIN: '/api/auth/oidc/login',
     OIDC_TOKEN: '/api/auth/oidc/token',
@@ -10,14 +11,25 @@ const endpoints = {
     MODELS: '/api/models',
     DOCS: '/api/sources',
     DOCS_PAGINATED: '/api/sources/paginated',
-    API_KEYS: '/api/get_api_keys',
-    CREATE_API_KEY: '/api/create_api_key',
-    DELETE_API_KEY: '/api/delete_api_key',
     AGENT: (id: string) => `/api/get_agent?id=${id}`,
     AGENTS: '/api/get_agents',
     GUARDRAIL_CATALOG: '/api/guardrails/catalog',
-    GUARDRAIL_EVENTS: (agentId: string, limit = 100, offset = 0) =>
-      `/api/guardrails/events?agent_id=${agentId}&limit=${limit}&offset=${offset}`,
+    GUARDRAIL_EVENTS: (
+      agentId: string,
+      limit = 100,
+      offset = 0,
+      filters: { days?: number; check?: string; outcome?: string } = {},
+    ) => {
+      const params = new URLSearchParams({
+        agent_id: agentId,
+        limit: String(limit),
+        offset: String(offset),
+      });
+      if (filters.days) params.set('days', String(filters.days));
+      if (filters.check) params.set('check', filters.check);
+      if (filters.outcome) params.set('outcome', filters.outcome);
+      return `/api/guardrails/events?${params.toString()}`;
+    },
     GUARDRAIL_SUMMARY: (agentId?: string, days = 30) =>
       `/api/guardrails/summary?days=${days}` +
       (agentId ? `&agent_id=${agentId}` : ''),
@@ -46,6 +58,7 @@ const endpoints = {
     TEAM_TRANSFER_OWNER: (id: string) => `/api/teams/${id}/transfer_owner`,
     RESOURCE_SHARES: (resourceType: string, resourceId: string) =>
       `/api/resource_shares?resource_type=${resourceType}&resource_id=${resourceId}`,
+    RESOURCE_SETTINGS: '/api/resource_settings',
     ALL_TEAMS: '/api/admin/teams',
     PROMPTS: '/api/get_prompts',
     CREATE_PROMPT: '/api/create_prompt',
@@ -59,22 +72,43 @@ const endpoints = {
     TOOL_ANALYTICS: '/api/get_tool_analytics',
     SCHEDULE_ANALYTICS: '/api/get_schedule_analytics',
     LOGS: `/api/get_user_logs`,
+    TRACES: (params: string) => `/api/traces?${params}`,
     MANAGE_SYNC: '/api/manage_sync',
     SYNC_SOURCE: '/api/sync_source',
     REINGEST_SOURCE: '/api/sources/reingest',
+    SOURCE_FROM_ATTACHMENTS: '/api/sources/from_attachments',
     SOURCE_CONFIG: (id: string) => `/api/sources/${id}/config`,
     SOURCE_SEARCH: (id: string) => `/api/sources/${id}/search`,
+    SOURCE_CHUNK: (id: string, chunkKey: string, excerpt?: string) => {
+      const params = new URLSearchParams({ chunk_key: chunkKey });
+      if (excerpt) params.set('excerpt', excerpt);
+      return `/api/sources/${id}/chunk?${params.toString()}`;
+    },
     CREATE_WIKI: '/api/sources/wiki',
     CONVERT_TO_WIKI: (id: string) => `/api/sources/${id}/wiki/convert`,
     ENABLE_GRAPHRAG: (id: string) => `/api/sources/${id}/graphrag/enable`,
     SOURCE_GRAPH: (id: string, limit?: number) =>
       `/api/sources/${id}/graph${limit ? `?limit=${limit}` : ''}`,
+    SOURCE_GRAPH_NODES: (
+      id: string,
+      params: { q?: string; type?: string; page?: number; perPage?: number },
+    ) => {
+      const search = new URLSearchParams();
+      if (params.q) search.set('q', params.q);
+      // An empty type filters to untyped nodes, so it is sent only when set.
+      if (params.type !== undefined) search.set('type', params.type);
+      if (params.page) search.set('page', String(params.page));
+      if (params.perPage) search.set('per_page', String(params.perPage));
+      const qs = search.toString();
+      return `/api/sources/${id}/graph/nodes${qs ? `?${qs}` : ''}`;
+    },
     SOURCE_GRAPH_NODE: (id: string, nodeId: string) =>
       `/api/sources/${id}/graph/node/${encodeURIComponent(nodeId)}`,
     TASK_STATUS: (taskId: string) => `/api/task_status?task_id=${taskId}`,
     WIKI_PAGES: (id: string) => `/api/sources/${id}/wiki/pages`,
     WIKI_PAGE: (id: string, path: string) =>
       `/api/sources/${id}/wiki/page?path=${encodeURIComponent(path)}`,
+    WIKI_SETTINGS: (id: string) => `/api/sources/${id}/wiki/settings`,
     GET_AVAILABLE_TOOLS: '/api/available_tools',
     GET_USER_TOOLS: '/api/get_tools',
     CREATE_TOOL: '/api/create_tool',
@@ -83,11 +117,44 @@ const endpoints = {
     DELETE_TOOL: '/api/delete_tool',
     PARSE_SPEC: '/api/parse_spec',
     SYNC_CONNECTOR: '/api/connectors/sync',
-    CONNECTOR_AUTH: (provider: string) =>
-      `/api/connectors/auth?provider=${provider}`,
+    CONNECTOR_AUTH: (
+      provider: string,
+      connectionId?: string,
+      install?: boolean,
+    ) =>
+      `/api/connectors/auth?provider=${encodeURIComponent(provider)}${
+        connectionId ? `&connection_id=${encodeURIComponent(connectionId)}` : ''
+      }${install ? '&install=1' : ''}`,
     CONNECTOR_FILES: '/api/connectors/files',
     CONNECTOR_VALIDATE_SESSION: '/api/connectors/validate-session',
     CONNECTOR_DISCONNECT: '/api/connectors/disconnect',
+    CONNECTORS_CATALOG: '/api/connectors/catalog',
+    CONNECTIONS: '/api/connections',
+    CONNECTION: (id: string) => `/api/connections/${encodeURIComponent(id)}`,
+    CONNECTION_DISCONNECT: (id: string) =>
+      `/api/connections/${encodeURIComponent(id)}/disconnect`,
+    CONNECTION_SETUP: (id: string) =>
+      `/api/connections/${encodeURIComponent(id)}/setup`,
+    CONNECTION_RECONNECT: (id: string) =>
+      `/api/connections/${encodeURIComponent(id)}/reconnect`,
+    CONNECTION_PICKER_TOKEN: (id: string) =>
+      `/api/connections/${encodeURIComponent(id)}/picker-token`,
+    CONNECTION_REFRESH_TOOLS: (id: string) =>
+      `/api/connections/${encodeURIComponent(id)}/refresh-tools`,
+    CONNECTION_TOOL_PERMISSIONS: (id: string, toolId: string) =>
+      `/api/connections/${encodeURIComponent(id)}/tools/${encodeURIComponent(toolId)}/permissions`,
+    CONNECTION_REPOSITORIES: (id: string) =>
+      `/api/connections/${encodeURIComponent(id)}/repositories`,
+    CONNECTION_LINEAR: (id: string) =>
+      `/api/connections/${encodeURIComponent(id)}/linear`,
+    CONNECTION_TOOL_PARAMETERS: (id: string, toolId: string) =>
+      `/api/connections/${encodeURIComponent(id)}/tools/${encodeURIComponent(toolId)}/parameters`,
+    CONNECTION_WRITES: (id: string) =>
+      `/api/connections/${encodeURIComponent(id)}/writes`,
+    CONNECTIONS_CLAIM: '/api/connections/claim',
+    TOOL_CREDENTIAL_MODE: (toolId: string) =>
+      `/api/connections/tools/${encodeURIComponent(toolId)}/credential-mode`,
+    ADMIN_CONNECTORS: '/api/admin/connectors',
     GET_CHUNKS: (
       docId: string,
       page: number,
@@ -142,6 +209,8 @@ const endpoints = {
     CUSTOM_MODEL_TEST: (id: string) => `/api/user/models/${id}/test`,
     CUSTOM_MODEL_TEST_PAYLOAD: '/api/user/models/test',
     AGENT_SCHEDULES: (agentId: string) => `/api/agents/${agentId}/schedules`,
+    AGENT_SCHEDULE_STATS: (agentId: string, days?: number) =>
+      `/api/agents/${agentId}/schedules/stats?days=${days ?? 30}`,
     SCHEDULE: (id: string) => `/api/schedules/${id}`,
     SCHEDULE_RUN_NOW: (id: string) => `/api/schedules/${id}/run`,
     SCHEDULE_RUNS: (id: string, limit?: number, offset?: number) =>
@@ -151,10 +220,15 @@ const endpoints = {
     DEVICES: '/api/devices',
     DEVICE: (id: string) => `/api/devices/${id}`,
     DEVICE_AUTO_APPROVE: (id: string) => `/api/devices/${id}/auto-approve`,
-    DEVICE_AUDIT: (id: string) => `/api/devices/${id}/audit`,
+    DEVICE_AUDIT: (id: string, limit = 100, offset = 0) =>
+      `/api/devices/${id}/audit?limit=${limit}&offset=${offset}`,
     DEVICE_PAIRINGS: '/api/devices/pairings',
     DEVICE_PAIRING: (deviceCode: string) =>
       `/api/devices/pairings/${deviceCode}`,
+    ACCESS_TOKENS: '/api/user/tokens',
+    ACCESS_TOKEN: (id: string) => `/api/user/tokens/${id}`,
+    ACCESS_TOKEN_REGENERATE: (id: string) =>
+      `/api/user/tokens/${id}/regenerate`,
   },
   V1: {
     CHAT_COMPLETIONS: '/v1/chat/completions',
@@ -168,10 +242,19 @@ const endpoints = {
       `/api/admin/users/${encodeURIComponent(id)}/role`,
     USER_REVOKE_SESSIONS: (id: string) =>
       `/api/admin/users/${encodeURIComponent(id)}/revoke-sessions`,
+    USER_USAGE: (id: string) =>
+      `/api/admin/users/${encodeURIComponent(id)}/usage`,
     ADMINS: '/api/admin/admins',
     USAGE: '/api/admin/usage',
-    AUDIT: '/api/admin/audit',
-    DEVICE_AUDIT: '/api/admin/devices/audit',
+    ACTIVITY: '/api/admin/activity',
+    ACTIVITY_EVENTS: '/api/admin/activity/events',
+    ACTIVITY_EXPORT: '/api/admin/activity/export',
+    QUOTAS: '/api/admin/quotas',
+    QUOTA_INSTANCE: '/api/admin/quotas/instance',
+    QUOTA_TEAM: (id: string) =>
+      `/api/admin/quotas/teams/${encodeURIComponent(id)}`,
+    QUOTA_USER: (id: string) =>
+      `/api/admin/quotas/users/${encodeURIComponent(id)}`,
   },
   CONVERSATION: {
     ANSWER: '/api/answer',

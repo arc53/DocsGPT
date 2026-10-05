@@ -4,22 +4,25 @@ import { useSelector } from 'react-redux';
 
 import devicesService, {
   ApprovalMode,
-  AuditEntry,
   Device,
 } from '../api/services/devicesService';
-import ArrowLeft from '../assets/arrow-left.svg';
 import CopyButton from '../components/CopyButton';
-import Spinner from '../components/Spinner';
 import ToolIcon from '../components/ToolIcon';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '../components/ui/accordion';
+import DetailBreadcrumb from '../navigation/DetailBreadcrumb';
+import DeviceAuditList from './DeviceAuditList';
 import { Alert, AlertDescription } from '../components/ui/alert';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
+import { Collapsible, CollapsibleTrigger } from '../components/ui/collapsible';
+import {
+  DescriptionItem,
+  DescriptionList,
+} from '../components/ui/description-list';
+import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
+import { LoadingState } from '../components/ui/loading-state';
+import { SectionHeader } from '../components/ui/section-header';
 import {
   Select,
   SelectContent,
@@ -30,7 +33,11 @@ import {
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
-import { formatDateTime } from '../utils/dateTimeUtils';
+import {
+  EMPTY_VALUE,
+  formatRelative,
+  formatTimestamp,
+} from '../utils/dateTimeUtils';
 import { UserToolType } from './types';
 
 /** ms-since-last-seen threshold for the online pill. */
@@ -41,26 +48,6 @@ function isOnline(device: Device | null): boolean {
   const t = Date.parse(device.last_seen_at);
   if (Number.isNaN(t)) return false;
   return Date.now() - t < ONLINE_WINDOW_MS;
-}
-
-function formatTimestamp(value: string | null | undefined): string {
-  return value ? formatDateTime(value) : '-';
-}
-
-/** Compact relative span (e.g. "12s", "5m", "3h", "2d") since `value`. */
-function formatRelative(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const t = Date.parse(value);
-  if (Number.isNaN(t)) return null;
-  const diff = Math.max(0, Date.now() - t);
-  const s = Math.floor(diff / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.floor(h / 24);
-  return `${d}d`;
 }
 
 interface Props {
@@ -84,10 +71,10 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const [audit, setAudit] = React.useState<AuditEntry[] | null>(null);
-  const [auditLoading, setAuditLoading] = React.useState(false);
-
   const [revokeState, setRevokeState] = React.useState<ActiveState>('INACTIVE');
+  const [auditOpen, setAuditOpen] = React.useState(false);
+  const [auditLoaded, setAuditLoaded] = React.useState(false);
+  const auditId = React.useId();
 
   const applyDevice = React.useCallback((d: Device) => {
     setDevice(d);
@@ -112,27 +99,6 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
   React.useEffect(() => {
     loadDevice();
   }, [loadDevice]);
-
-  const loadAudit = React.useCallback(() => {
-    if (!deviceId) return;
-    setAuditLoading(true);
-    devicesService
-      .listAudit(deviceId, token)
-      .then((res) => setAudit(res.entries || []))
-      .catch((err) => {
-        console.error('load audit failed', err);
-        setAudit([]);
-      })
-      .finally(() => setAuditLoading(false));
-  }, [deviceId, token]);
-
-  const handleAuditToggle = (value: string) => {
-    // Radix Accordion (type="single") passes the open item id, or empty
-    // when closed. Lazy-fetch on first open.
-    if (value === 'audit' && audit === null) {
-      loadAudit();
-    }
-  };
 
   const hasUnsavedChanges =
     !!device &&
@@ -164,16 +130,11 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
     }
   };
 
+  // Returns the request: a failure keeps the confirm open with its error.
   const handleRevoke = async () => {
     if (!deviceId) return;
-    try {
-      await devicesService.revoke(deviceId, token);
-      setRevokeState('INACTIVE');
-      handleGoBack();
-    } catch (err) {
-      console.error('revoke failed', err);
-      setRevokeState('INACTIVE');
-    }
+    await devicesService.revoke(deviceId, token);
+    handleGoBack();
   };
 
   const online = isOnline(device);
@@ -181,39 +142,32 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
   const pillText =
     (online ? t('settings.devices.online') : t('settings.devices.offline')) +
     (lastSeenAgo
-      ? ` · ${t('settings.devices.seenAgo', { time: lastSeenAgo })}`
+      ? ` · ${t('settings.devices.seen', { time: lastSeenAgo })}`
       : '');
 
   if (loading && !device) {
-    return (
-      <div className="mt-8 flex items-center justify-center py-16">
-        <Spinner size="large" />
-      </div>
-    );
+    return <LoadingState fill="block" size="lg" />;
   }
 
   return (
-    <div className="scrollbar-overlay mt-8 flex flex-col gap-6">
-      <div className="mb-4 flex items-center justify-between">
-        <div className="text-foreground dark:text-foreground flex items-center gap-3 text-sm">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="text-muted-foreground rounded-full p-3"
-            onClick={handleGoBack}
-          >
-            <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
-          </Button>
-          <p className="mt-px">{t('settings.tools.backToAllTools')}</p>
-        </div>
+    <div className="scrollbar-overlay flex flex-col gap-6">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <DetailBreadcrumb
+          parentLabel={t('settings.tools.label')}
+          currentLabel={
+            device?.name || tool.customName || tool.displayName || tool.name
+          }
+          onParentClick={handleGoBack}
+        />
         <Button
           type="button"
-          className="rounded-full px-3 py-2 text-xs text-nowrap text-white sm:px-4 sm:py-2"
+          size="sm"
+          shape="pill"
           onClick={handleSaveChanges}
-          disabled={!hasUnsavedChanges || saving || loading}
+          disabled={!hasUnsavedChanges || loading}
+          loading={saving}
         >
-          {saving ? t('settings.tools.saving') : t('settings.tools.save')}
+          {t('settings.tools.save')}
         </Button>
       </div>
 
@@ -226,78 +180,76 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
       <div className="flex flex-wrap items-center gap-3">
         <ToolIcon
           name={tool.name}
-          title={`${tool.displayName} icon`}
-          className="h-7 w-7"
+          title={t('settings.tools.toolIconTitle', { name: tool.displayName })}
+          className="size-7"
         />
-        <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
-          {device?.name || tool.customName || tool.displayName || 'device'}
-        </h2>
-        <span
-          className={`rounded-full px-3 py-0.5 text-xs font-medium ${
-            online
-              ? 'bg-green-100 text-green-900 dark:bg-green-900/30 dark:text-green-300'
-              : 'bg-gray-200 text-gray-700 dark:bg-gray-700/40 dark:text-gray-300'
-          }`}
-        >
-          {pillText}
-        </span>
+        <SectionHeader
+          size="title"
+          title={
+            device?.name ||
+            tool.customName ||
+            tool.displayName ||
+            t('settings.devices.fallbackName')
+          }
+        />
+        <Badge variant={online ? 'success' : 'neutral'}>{pillText}</Badge>
         {approvalMode === 'full' && (
-          <span className="rounded-full bg-red-200 px-3 py-0.5 text-xs font-medium text-red-900 dark:bg-red-900/40 dark:text-red-300">
+          <Badge variant="destructive">
             {t('settings.devices.approvalFull')}
-          </span>
+          </Badge>
         )}
       </div>
 
       {/* Identity */}
-      <section className="flex flex-col gap-4">
-        <h3 className="text-foreground dark:text-foreground text-sm font-semibold">
-          {t('settings.devices.identity')}
-        </h3>
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-4">
-          <label className="text-muted-foreground w-32 shrink-0 pt-2 text-sm">
-            {t('settings.devices.nameLabel')}
-          </label>
-          <div className="w-full max-w-[340px]">
-            <Input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={t('settings.devices.nameLabel')}
-              className="rounded-xl"
-            />
-          </div>
-        </div>
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-4">
-          <label className="text-muted-foreground w-32 shrink-0 pt-2 text-sm">
-            {t('settings.devices.descriptionLabel')}
-          </label>
-          <div className="w-full max-w-[340px]">
-            <Input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={t('settings.devices.descriptionPlaceholder')}
-              className="rounded-xl"
-            />
-          </div>
-        </div>
+      <section className="flex flex-col gap-5">
+        <SectionHeader
+          as="h3"
+          size="xs"
+          title={t('settings.devices.identity')}
+        />
+        <FormField
+          label={t('settings.devices.nameLabel')}
+          labelSurface="background"
+          className="w-full max-w-[340px]"
+        >
+          <Input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </FormField>
+        <FormField
+          label={t('settings.devices.descriptionLabel')}
+          labelSurface="background"
+          className="w-full max-w-[340px]"
+        >
+          <Input
+            type="text"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder={t('settings.devices.descriptionPlaceholder')}
+          />
+        </FormField>
       </section>
 
       {/* Access */}
-      <section className="flex flex-col gap-4">
-        <h3 className="text-foreground dark:text-foreground text-sm font-semibold">
-          {t('settings.devices.access')}
-        </h3>
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-4">
-          <label className="text-muted-foreground w-32 shrink-0 pt-2 text-sm">
-            {t('settings.devices.approvalMode')}
-          </label>
-          <div className="flex w-full max-w-[340px] flex-col gap-2">
+      <section className="flex flex-col gap-5">
+        <SectionHeader as="h3" size="xs" title={t('settings.devices.access')} />
+        <div className="flex w-full max-w-[340px] flex-col gap-2">
+          <FormField
+            label={t('settings.devices.approvalMode')}
+            labelSurface="background"
+            hint={
+              approvalMode === 'full'
+                ? t('settings.devices.approvalFullDescription')
+                : t('settings.devices.approvalAskDescription')
+            }
+          >
             <Select
               value={approvalMode}
               onValueChange={(value) => setApprovalMode(value as ApprovalMode)}
             >
-              <SelectTrigger className="w-full rounded-xl px-4 py-2" size="lg">
+              <SelectTrigger className="w-full" size="field">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -309,57 +261,48 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
                 </SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-muted-foreground text-xs">
-              {approvalMode === 'full'
-                ? t('settings.devices.approvalFullDescription')
-                : t('settings.devices.approvalAskDescription')}
-            </p>
-            {approvalMode === 'full' && (
-              <div className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
+          </FormField>
+          {approvalMode === 'full' && (
+            <Alert variant="destructive">
+              <AlertDescription>
                 {t('settings.devices.fullAccessWarning')}
-              </div>
-            )}
-          </div>
+              </AlertDescription>
+            </Alert>
+          )}
         </div>
       </section>
 
       {/* Connection */}
       <section className="flex flex-col gap-4">
-        <h3 className="text-foreground dark:text-foreground text-sm font-semibold">
-          {t('settings.devices.connection')}
-        </h3>
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-4">
-          <span className="text-muted-foreground w-32 shrink-0 pt-px text-sm">
-            {t('settings.devices.hostLabel')}
-          </span>
-          <div className="text-muted-foreground w-full max-w-md text-sm">
-            <span className="font-mono">
+        <SectionHeader
+          as="h3"
+          size="xs"
+          title={t('settings.devices.connection')}
+        />
+        <DescriptionList layout="columns" size="sm">
+          <DescriptionItem label={t('settings.devices.hostLabel')}>
+            <span className="font-mono text-xs">
               {device?.hostname || 'unknown host'}
             </span>
             {device?.os ? ` · ${device.os}` : ''}
             {device?.arch ? ` · ${device.arch}` : ''}
             {device?.cli_version ? ` · cli ${device.cli_version}` : ''}
-          </div>
-        </div>
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-4">
-          <span className="text-muted-foreground w-32 shrink-0 pt-1 text-sm">
-            {t('settings.devices.deviceIdLabel')}
-          </span>
-          <div className="flex w-full max-w-md flex-wrap items-center gap-2">
-            <code className="text-foreground dark:text-foreground bg-muted max-w-full truncate rounded px-2 py-0.5 font-mono text-xs">
-              {deviceId || '-'}
-            </code>
-            {deviceId && <CopyButton textToCopy={deviceId} />}
-          </div>
-        </div>
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-4">
-          <span className="text-muted-foreground w-32 shrink-0 pt-px text-sm">
-            {t('settings.devices.lastSeenLabel')}
-          </span>
-          <div className="text-muted-foreground w-full max-w-md text-sm">
+          </DescriptionItem>
+          <DescriptionItem label={t('settings.devices.deviceIdLabel')}>
+            <div className="flex flex-wrap items-center gap-2">
+              <code
+                className="text-foreground bg-muted max-w-full truncate rounded-md px-2 py-0.5 font-mono text-xs"
+                title={deviceId || undefined}
+              >
+                {deviceId || EMPTY_VALUE}
+              </code>
+              {deviceId && <CopyButton textToCopy={deviceId} />}
+            </div>
+          </DescriptionItem>
+          <DescriptionItem label={t('settings.devices.lastSeenLabel')}>
             {formatTimestamp(device?.last_seen_at)}
-          </div>
-        </div>
+          </DescriptionItem>
+        </DescriptionList>
         {!online && (
           <p className="text-muted-foreground text-xs">
             {t('settings.devices.offlineHint')}
@@ -369,94 +312,69 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
 
       {/* Recent activity */}
       <section className="flex flex-col gap-3">
-        <h3 className="text-foreground dark:text-foreground text-sm font-semibold">
-          {t('settings.devices.auditTitle')}
-        </h3>
-        <Accordion
-          type="single"
-          collapsible
-          onValueChange={handleAuditToggle}
-          className="border-border dark:border-border w-full rounded-xl border"
+        <SectionHeader
+          as="h3"
+          size="xs"
+          title={t('settings.devices.auditTitle')}
+        />
+        <CollapsibleTrigger
+          open={auditOpen}
+          onOpenChange={(open) => {
+            setAuditOpen(open);
+            setAuditLoaded(true);
+          }}
+          controls={auditId}
         >
-          <AccordionItem value="audit" className="border-b-0">
-            <AccordionTrigger className="px-4 py-3 text-sm font-semibold">
-              {t('settings.devices.auditTitle')}
-              {audit !== null ? ` (${audit.length})` : ''}
-            </AccordionTrigger>
-            <AccordionContent className="px-4 pb-4">
-              {auditLoading ? (
-                <p className="text-muted-foreground py-2 text-sm">
-                  {t('settings.devices.auditLoading')}
-                </p>
-              ) : !audit || audit.length === 0 ? (
-                <p className="text-muted-foreground py-2 text-sm">
-                  {t('settings.devices.auditEmpty')}
-                </p>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {audit.map((entry) => (
-                    <li
-                      key={entry.id}
-                      className="bg-muted/40 flex flex-col gap-1 rounded-md px-3 py-2 text-xs"
-                    >
-                      <code className="text-foreground dark:text-foreground block font-mono break-all whitespace-pre-wrap">
-                        {entry.command}
-                      </code>
-                      <div className="text-muted-foreground flex flex-wrap gap-3">
-                        <span>
-                          {t('settings.devices.auditDecision')}:{' '}
-                          {entry.decision}
-                        </span>
-                        <span>
-                          {t('settings.devices.auditExit')}:{' '}
-                          {entry.exit_code ?? '-'}
-                        </span>
-                        <span>
-                          {t('settings.devices.auditDuration')}:{' '}
-                          {entry.duration_ms ?? '-'} ms
-                        </span>
-                        <span>{formatTimestamp(entry.created_at)}</span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
+          {auditOpen
+            ? t('settings.devices.auditHide')
+            : t('settings.devices.auditShow')}
+        </CollapsibleTrigger>
+        <Collapsible open={auditOpen} id={auditId}>
+          {/* Fetched on first open, then kept so closing can animate. */}
+          {auditLoaded && <DeviceAuditList deviceId={deviceId} token={token} />}
+        </Collapsible>
       </section>
 
       {/* Danger zone */}
-      <section className="flex flex-col gap-3">
-        <h3 className="text-destructive text-sm font-semibold">
-          {t('settings.devices.dangerZone')}
-        </h3>
-        <div className="border-destructive/40 flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-muted-foreground text-sm">
-            {t('settings.devices.dangerZoneDescription')}
-          </p>
-          <Button
-            type="button"
-            variant="destructive"
-            className="shrink-0 rounded-full px-5 text-white"
-            onClick={() => setRevokeState('ACTIVE')}
-          >
-            {t('settings.devices.revoke')}
-          </Button>
-        </div>
-      </section>
+      <Card
+        tone="destructive"
+        padding="lg"
+        className="flex-row flex-wrap items-center justify-between"
+      >
+        <SectionHeader
+          as="h3"
+          tone="destructive"
+          title={t('settings.devices.dangerZone')}
+          description={t('settings.devices.dangerZoneDescription')}
+          className="min-w-0 flex-1"
+        />
+        <Button
+          type="button"
+          variant="destructive-outline"
+          size="field"
+          shape="pill"
+          className="shrink-0"
+          onClick={() => setRevokeState('ACTIVE')}
+        >
+          {t('settings.devices.revoke')}
+        </Button>
+      </Card>
 
       <ConfirmationModal
         message={
           device
-            ? t('settings.devices.revokeWarning', { name: device.name })
+            ? t('settings.devices.revokeWarning', {
+                interpolation: { escapeValue: false },
+                name: device.name,
+              })
             : ''
         }
+        description={t('settings.devices.revokeConsequence')}
         modalState={revokeState}
         setModalState={setRevokeState}
         handleSubmit={handleRevoke}
         submitLabel={t('settings.devices.revoke')}
-        variant="danger"
+        variant="destructive"
       />
     </div>
   );

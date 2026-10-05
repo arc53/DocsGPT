@@ -18,7 +18,7 @@ class StorageCreator:
     @classmethod
     def get_storage(cls) -> BaseStorage:
         if cls._instance is None:
-            storage_type = getattr(settings, "STORAGE_TYPE", "local")
+            storage_type = settings.STORAGE_TYPE
             cls._instance = cls.create_storage(storage_type)
         
         return cls._instance

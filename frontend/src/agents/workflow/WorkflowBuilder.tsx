@@ -1,23 +1,6 @@
 import 'reactflow/dist/style.css';
 
-import {
-  AlertCircle,
-  Bot,
-  Code2,
-  Database,
-  Flag,
-  GitBranch,
-  Link,
-  Loader2,
-  Pencil,
-  Play,
-  Plus,
-  Redo2,
-  StickyNote,
-  Trash2,
-  Undo2,
-  X,
-} from 'lucide-react';
+import { Link, Pencil, Play, Trash2, Users } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -28,45 +11,53 @@ import ReactFlow, {
   applyNodeChanges,
   Background,
   Connection,
-  Controls,
   Edge,
   EdgeChange,
   Node,
   NodeChange,
   NodeTypes,
-  Panel,
   ReactFlowProvider,
   useReactFlow,
+  XYPosition,
 } from 'reactflow';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { MultiSelect } from '@/components/ui/multi-select';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Sheet, SheetContent } from '@/components/ui/sheet';
 
 import modelService from '../../api/services/modelService';
 import userService from '../../api/services/userService';
-import { FileUpload } from '../../components/FileUpload';
 import AgentDetailsModal from '../../modals/AgentDetailsModal';
 import ConfirmationModal from '../../modals/ConfirmationModal';
 import { ActiveState } from '../../models/misc';
+import ShareToTeamModal from '../../teams/ShareToTeamModal';
+import { can } from '../../utils/accessUtils';
 import {
   selectSourceDocs,
   selectToken,
 } from '../../preferences/preferenceSlice';
-import { getToolDisplayName } from '../../utils/toolUtils';
+import { agentEditPath, agentsListPath } from '../paths';
+import { ActionMenu } from '@/components/ui/dropdown-menu';
 import AgentPageHeader from '../AgentPageHeader';
-import { Agent } from '../types';
+import AgentPreviewSheet from '../components/AgentPreviewSheet';
+import {
+  confirmTakeOver,
+  readSponsorRefusal,
+  saveWithSponsorConsent,
+  sponsorNotAllowedMessage,
+} from '../sponsorConsent';
+import { useSponsorPrompt } from '../useSponsorPrompt';
+import ResourceStatusNotice, {
+  type NamedResource,
+  unnamedResourceLabel,
+} from '../components/ResourceStatusNotice';
+import FloatingResourceNotice from './components/FloatingResourceNotice';
+import { useSignInAgain } from '../../connectors/SignInAgainNotice';
+import WorkflowDetailsSheet, {
+  type WorkflowDetailsSave,
+} from './components/WorkflowDetailsSheet';
+import type { SponsorAudience } from '../sponsorConsent';
+import { Agent, ResourceSponsor, ResourceState } from '../types';
 import { ConditionCase, WorkflowNode } from '../types/workflow';
 import {
   createDefaultCodeConfig,
@@ -76,17 +67,9 @@ import {
   validateCodeJsonSchema,
 } from './codeNodeConfig';
 import MobileBlocker from './components/MobileBlocker';
-import { buildSimpleCel, parseSimpleCel } from './simpleCel';
-import NodeDocumentsControl from './components/NodeDocumentsControl';
-import PromptTextArea, {
-  extractUpstreamVariables,
-} from './components/PromptTextArea';
-import {
-  FILE_PASSING_OPTIONS,
-  FilePassing,
-  normalizeFilePassing,
-  toDocumentVariableOptions,
-} from './documentConfig';
+import { parseSimpleCel } from './simpleCel';
+import { extractUpstreamVariables } from './components/PromptTextArea';
+import { toDocumentVariableOptions } from './documentConfig';
 import { useUndoRedo, WorkflowSnapshot } from './hooks/useUndoRedo';
 import {
   AgentNode,
@@ -97,53 +80,48 @@ import {
   SetStateNode,
   StartNode,
 } from './nodes';
+import CanvasControls from './CanvasControls';
+import NodePalette from './NodePalette';
+import NodePanel from './panels/NodePanel';
+import { WorkflowModelsContext } from './WorkflowModelsContext';
+import AgentPanel from './panels/AgentPanel';
+import CodePanel from './panels/CodePanel';
+import ConditionPanel from './panels/ConditionPanel';
+import NotePanel from './panels/NotePanel';
+import StatePanel from './panels/StatePanel';
 import WorkflowPreview from './WorkflowPreview';
+import {
+  nodeResourceIds,
+  stoppedNodeResources,
+  withoutNodeResource,
+} from './nodeResources';
+import {
+  type AgentNodeConfig,
+  findFreePosition,
+  NO_ESCAPE,
+  normalizeConditionCases,
+  schemaErrorText,
+  type UserTool,
+  validateJsonSchemaConfig,
+} from './workflowHelpers';
+import { selectWorkflowPreviewStatus } from './workflowPreviewSlice';
+import { readerIdFromToken } from '../../utils/personLabel';
+import { canAddToolToOwn, getToolDisplayName } from '../../utils/toolUtils';
 
 import type { Model } from '../../models/types';
-import { useOutsideAlerter } from '@/hooks';
 
 const PRIMARY_ACTION_SPINNER_DELAY_MS = 180;
 
-interface AgentNodeConfig {
-  agent_type: 'classic' | 'research';
-  llm_name?: string;
-  model_id?: string;
-  system_prompt: string;
-  prompt_template: string;
-  output_variable?: string;
-  stream_to_user: boolean;
-  sources: string[];
-  tools: string[];
-  chunks?: string;
-  retriever?: string;
-  json_schema?: Record<string, unknown>;
-  input_documents?: string[];
-  file_passing?: FilePassing;
-}
-
-interface UserTool {
-  id: string;
-  name: string;
-  displayName: string;
-  customName?: string;
-  // Workflow-only builtins (e.g. read_document) are kept here; the classic
-  // agent picker filters them out.
-  workflow_only?: boolean;
-}
-
-function validateJsonSchemaConfig(schema: unknown): string | null {
-  if (schema === undefined || schema === null) return null;
-  if (typeof schema !== 'object' || Array.isArray(schema)) {
-    return 'must be a valid JSON object';
-  }
-
-  const schemaObject = schema as Record<string, unknown>;
-  if (!('schema' in schemaObject) && !('type' in schemaObject)) {
-    return 'must include either a "type" or "schema" field';
-  }
-
-  return null;
-}
+/** How a save ended; `cancelled` when the caller declined to sponsor. */
+type WorkflowSaveOutcome = 'saved' | 'failed' | 'cancelled';
+// A node added from the palette while one is selected lands this far right
+// of it (then moves down until it covers nothing).
+const ADD_BESIDE_GAP_X = 80;
+// Roughly half a node's size, to centre a new node in the view.
+const NEW_NODE_HALF_WIDTH = 100;
+const NEW_NODE_HALF_HEIGHT = 32;
+// A duplicate sits this far down and right of its original.
+const DUPLICATE_OFFSET = 40;
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -159,7 +137,7 @@ function createEmptyWorkflowAgent(): Agent {
     description: '',
     image: '',
     source: '',
-    chunks: '2',
+    chunks: '6',
     retriever: '',
     prompt_id: '',
     tools: [],
@@ -181,52 +159,6 @@ function canReachEnd(
   return edges
     .filter((e) => e.source === nodeId)
     .some((e) => canReachEnd(e.target, edges, nodeIds, endIds, visited));
-}
-
-function normalizeConditionCases(cases: ConditionCase[]): ConditionCase[] {
-  const usedHandles = new Set<string>();
-  let nextIndex = 0;
-
-  return cases.map((conditionCase) => {
-    const candidate = (conditionCase.sourceHandle || '').trim();
-    if (candidate && !usedHandles.has(candidate)) {
-      usedHandles.add(candidate);
-      const match = candidate.match(/^case_(\d+)$/);
-      if (match) {
-        nextIndex = Math.max(nextIndex, Number(match[1]) + 1);
-      }
-      return conditionCase;
-    }
-
-    while (usedHandles.has(`case_${nextIndex}`)) {
-      nextIndex += 1;
-    }
-    const generatedHandle = `case_${nextIndex}`;
-    usedHandles.add(generatedHandle);
-    nextIndex += 1;
-
-    return {
-      ...conditionCase,
-      sourceHandle: generatedHandle,
-    };
-  });
-}
-
-function getNextConditionHandle(cases: ConditionCase[]): string {
-  const usedHandles = new Set(
-    cases.map((conditionCase) => conditionCase.sourceHandle).filter(Boolean),
-  );
-  const usedIndices = Array.from(usedHandles)
-    .map((handle) => handle.match(/^case_(\d+)$/))
-    .filter((match): match is RegExpMatchArray => Boolean(match))
-    .map((match) => Number(match[1]));
-
-  let nextIndex = usedIndices.length > 0 ? Math.max(...usedIndices) + 1 : 0;
-  while (usedHandles.has(`case_${nextIndex}`)) {
-    nextIndex += 1;
-  }
-
-  return `case_${nextIndex}`;
 }
 
 function createWorkflowPayload(
@@ -274,10 +206,12 @@ const NODE_TYPES: NodeTypes = {
 };
 
 function WorkflowBuilderInner() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const token = useSelector(selectToken);
+  const readerId = useMemo(() => readerIdFromToken(token), [token]);
   const sourceDocs = useSelector(selectSourceDocs);
+  const previewStatus = useSelector(selectWorkflowPreviewStatus);
   const { agentId } = useParams<{ agentId?: string }>();
   const [searchParams] = useSearchParams();
   const folderId = searchParams.get('folder_id');
@@ -294,11 +228,33 @@ function WorkflowBuilderInner() {
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [workflowName, setWorkflowName] = useState('New Workflow');
   const [workflowDescription, setWorkflowDescription] = useState('');
-  const [showWorkflowSettings, setShowWorkflowSettings] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  // A save asked for by the details sheet runs after its values reach state.
+  const [detailsSaveRequested, setDetailsSaveRequested] = useState(false);
+  const [detailsSaving, setDetailsSaving] = useState(false);
+  const [detailsSaveFailed, setDetailsSaveFailed] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [showPrimaryActionSpinner, setShowPrimaryActionSpinner] =
     useState(false);
   const [publishErrors, setPublishErrors] = useState<string[]>([]);
+  // Asks before a node resource the owner can't use runs with the
+  // caller's access; the save that asked gets the retried save's result.
+  const sponsorPrompt = useSponsorPrompt();
+  // What runs on the nodes with an editor's access and what stopped, from
+  // the workflow read (people who may edit it).
+  const [workflowResources, setWorkflowResources] = useState<{
+    sponsors: ResourceSponsor[];
+    states: ResourceState[];
+    audience?: SponsorAudience;
+  }>({ sponsors: [], states: [] });
+  // Keys of stopped node resources the caller agreed to run with their
+  // access; sent as ``confirm_sponsor`` with the next save.
+  const [takeovers, setTakeovers] = useState<string[]>([]);
+  // Bumped after a reconnect so the run state is read again.
+  const [resourcesReloadKey, setResourcesReloadKey] = useState(0);
+  const signInAgain = useSignInAgain({
+    onConnected: () => setResourcesReloadKey((key) => key + 1),
+  });
   const [errorContext, setErrorContext] = useState<'preview' | 'publish'>(
     'publish',
   );
@@ -307,7 +263,12 @@ function WorkflowBuilderInner() {
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
+  // Access details opened from Share to allow changes: its allowlist unfolds.
+  const [detailsOnApiWrites, setDetailsOnApiWrites] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
   const [isDeletingAgent, setIsDeletingAgent] = useState(false);
+  // The delete confirm's Alert text after a failed delete.
+  const [deleteError, setDeleteError] = useState<string>();
   const [currentAgent, setCurrentAgent] = useState<Agent>(
     createEmptyWorkflowAgent(),
   );
@@ -315,10 +276,23 @@ function WorkflowBuilderInner() {
   const [savedWorkflowSignature, setSavedWorkflowSignature] = useState<
     string | null
   >(null);
-  const workflowSettingsRef = useRef<HTMLDivElement>(null);
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
+  const modelNames = useMemo(
+    () =>
+      Object.fromEntries(
+        availableModels.map((model) => [model.id, model.display_name]),
+      ),
+    [availableModels],
+  );
   const [defaultAgentModelId, setDefaultAgentModelId] = useState('');
   const [availableTools, setAvailableTools] = useState<UserTool[]>([]);
+  // Names of every tool and source the saved graph references, whoever owns
+  // them, so node pickers keep a remove-only option for the owner's private
+  // ones (GET /api/workflows/<id> ``ref_details``).
+  const [nodeRefNames, setNodeRefNames] = useState<{
+    tools: { id: string; label: string }[];
+    sources: { id: string; label: string }[];
+  }>({ tools: [], sources: [] });
   const sourceOptions = useMemo(
     () =>
       (sourceDocs ?? [])
@@ -463,19 +437,13 @@ function WorkflowBuilderInner() {
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
-  const onDrop = useCallback(
-    (event: React.DragEvent) => {
-      event.preventDefault();
-
-      const type = event.dataTransfer.getData('application/reactflow');
-      if (!type) return;
-
+  /**
+   * Add a node of a palette type at a flow position, with its default config.
+   * Takes an undo snapshot first; the selection is left as it was.
+   */
+  const createNode = useCallback(
+    (type: string, position: XYPosition) => {
       takeSnapshot();
-
-      const position = reactFlowInstance.screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY,
-      });
 
       const baseNode: Node = {
         id: `${type}_${Date.now()}`,
@@ -524,7 +492,61 @@ function WorkflowBuilderInner() {
 
       setNodes((nds) => nds.concat(baseNode));
     },
-    [reactFlowInstance, availableModels, defaultAgentModelId, takeSnapshot],
+    [availableModels, defaultAgentModelId, takeSnapshot],
+  );
+
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+
+      const type = event.dataTransfer.getData('application/reactflow');
+      if (!type) return;
+
+      createNode(
+        type,
+        reactFlowInstance.screenToFlowPosition({
+          x: event.clientX,
+          y: event.clientY,
+        }),
+      );
+    },
+    [reactFlowInstance, createNode],
+  );
+
+  // Click or Enter on a palette pill: beside the selected node, else in the
+  // middle of what the canvas shows.
+  const handleAddNodeFromPalette = useCallback(
+    (type: string) => {
+      const anchor = selectedNode
+        ? nodes.find((n) => n.id === selectedNode.id)
+        : undefined;
+      if (anchor) {
+        createNode(
+          type,
+          findFreePosition(nodes, {
+            x: anchor.position.x + (anchor.width ?? 0) + ADD_BESIDE_GAP_X,
+            y: anchor.position.y,
+          }),
+        );
+        return;
+      }
+      const rect = reactFlowWrapper.current?.getBoundingClientRect();
+      const center = rect
+        ? reactFlowInstance.screenToFlowPosition({
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+          })
+        : { x: 0, y: 0 };
+      // Positions are a node's top-left corner; centre a typical node.
+      createNode(
+        type,
+        findFreePosition(nodes, {
+          x: center.x - NEW_NODE_HALF_WIDTH,
+          y: center.y - NEW_NODE_HALF_HEIGHT,
+        }),
+      );
+    },
+    [selectedNode, nodes, createNode, reactFlowInstance],
   );
 
   const handleNodeClick = useCallback(
@@ -578,6 +600,43 @@ function WorkflowBuilderInner() {
     if (!selectedNode) return;
     deleteNodesAndEdges([selectedNode], []);
   }, [selectedNode, deleteNodesAndEdges]);
+
+  // Clone the open node beside itself and open the copy.
+  const handleDuplicateNode = useCallback(() => {
+    if (!selectedNode || selectedNode.type === 'start') return;
+    const original = nodes.find((n) => n.id === selectedNode.id);
+    if (!original) return;
+    takeSnapshot();
+    const copy: Node = {
+      id: `${original.type}_${Date.now()}`,
+      type: original.type,
+      position: {
+        x: original.position.x + DUPLICATE_OFFSET,
+        y: original.position.y + DUPLICATE_OFFSET,
+      },
+      data: structuredClone(original.data),
+      selected: true,
+    };
+    setNodes((nds) =>
+      nds.map((n) => (n.selected ? { ...n, selected: false } : n)).concat(copy),
+    );
+    setSelectedNode(copy);
+    setShowNodeConfig(true);
+  }, [selectedNode, nodes, takeSnapshot]);
+
+  const handleRemoveConditionBranch = useCallback(
+    (sourceHandle: string) => {
+      if (!selectedNode) return;
+      const nodeId = selectedNode.id;
+      setEdges((eds) =>
+        eds.filter(
+          (edge) =>
+            !(edge.source === nodeId && edge.sourceHandle === sourceHandle),
+        ),
+      );
+    },
+    [selectedNode],
+  );
 
   const handleUpdateNodeData = useCallback(
     (data: Record<string, unknown>, options?: { snapshot?: boolean }) => {
@@ -662,14 +721,8 @@ function WorkflowBuilderInner() {
     [handleUpdateNodeData, selectedNode],
   );
 
-  const handleUpload = useCallback((files: File[]) => {
-    if (files && files.length > 0) {
-      setImageFile(files[0]);
-    }
-  }, []);
-
   const navigateBackToAgents = useCallback(() => {
-    navigate(folderId ? `/agents?folder=${folderId}` : '/agents');
+    navigate(agentsListPath(folderId));
   }, [navigate, folderId]);
 
   const handleDeleteAgent = useCallback(async () => {
@@ -680,29 +733,22 @@ function WorkflowBuilderInner() {
       const response = await userService.deleteAgent(agentToDelete, token);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Failed to delete workflow agent');
+        throw new Error(
+          errorData.message || t('agents.workflow.builder.deleteFailed'),
+        );
       }
       navigateBackToAgents();
     } catch (error) {
-      setPublishErrors([
-        error instanceof Error
-          ? error.message
-          : 'Failed to delete workflow agent',
-      ]);
-      setErrorContext('publish');
+      // Rethrown so the confirm stays open and shows deleteError.
+      setDeleteError(
+        (error instanceof Error && error.message) ||
+          t('agents.workflow.builder.deleteFailed'),
+      );
+      throw error;
     } finally {
       setIsDeletingAgent(false);
     }
-  }, [currentAgentId, currentAgent.id, token, navigateBackToAgents]);
-
-  useEffect(() => {
-    if (publishErrors.length > 0) {
-      const timer = setTimeout(() => {
-        setPublishErrors([]);
-      }, 6000);
-      return () => clearTimeout(timer);
-    }
-  }, [publishErrors.length]);
+  }, [currentAgentId, currentAgent.id, token, navigateBackToAgents, t]);
 
   useEffect(() => {
     if (!isPublishing) {
@@ -725,7 +771,10 @@ function WorkflowBuilderInner() {
     // behind it), or once another handler has already consumed the event. Kept
     // in one place so the branches can't drift apart.
     const shouldIgnoreShortcut = (e: KeyboardEvent): boolean =>
-      e.defaultPrevented || showPreview || isEditableTarget(e.target);
+      e.defaultPrevented ||
+      showPreview ||
+      showDetails ||
+      isEditableTarget(e.target);
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (shouldIgnoreShortcut(e)) return;
@@ -766,24 +815,13 @@ function WorkflowBuilderInner() {
     undo,
     redo,
     showPreview,
+    showDetails,
   ]);
 
   const handlePaneClick = useCallback(() => {
     setShowNodeConfig(false);
     setSelectedNode(null);
-    setShowWorkflowSettings(false);
   }, []);
-
-  const handleCloseWorkflowSettings = useCallback(() => {
-    setShowWorkflowSettings(false);
-  }, []);
-
-  useOutsideAlerter(
-    workflowSettingsRef,
-    handleCloseWorkflowSettings,
-    [],
-    false,
-  );
 
   useEffect(() => {
     const loadModelsAndTools = async () => {
@@ -807,7 +845,10 @@ function WorkflowBuilderInner() {
         const toolsResponse = await userService.getUserTools(token);
         if (toolsResponse.ok) {
           const toolsData = await toolsResponse.json();
-          setAvailableTools(toolsData.tools);
+          // Shared tools the caller can't add to their own agents stay out.
+          setAvailableTools(
+            (toolsData.tools as UserTool[]).filter(canAddToolToOwn),
+          );
         }
       } catch (error) {
         console.error('Failed to load models or tools:', error);
@@ -912,6 +953,42 @@ function WorkflowBuilderInner() {
     loadAgentDetails();
   }, [agentId, token]);
 
+  const applyResourceDetails = useCallback(
+    (data: {
+      resource_sponsors?: ResourceSponsor[];
+      resource_states?: ResourceState[];
+      sponsor_audience?: SponsorAudience;
+    }) =>
+      setWorkflowResources({
+        sponsors: data.resource_sponsors ?? [],
+        states: data.resource_states ?? [],
+        audience: data.sponsor_audience,
+      }),
+    [],
+  );
+
+  // Fresh sponsor details and run state after a save or a reconnect,
+  // without touching the canvas.
+  const refreshResourceDetails = useCallback(
+    async (id: string | null) => {
+      if (!id) return;
+      try {
+        const response = await userService.getWorkflow(id, token);
+        if (!response.ok) return;
+        const responseData = await response.json();
+        applyResourceDetails(responseData.data ?? {});
+      } catch {
+        // The notice keeps what it showed.
+      }
+    },
+    [applyResourceDetails, token],
+  );
+
+  useEffect(() => {
+    if (resourcesReloadKey > 0) void refreshResourceDetails(workflowId);
+    // Only a reconnect asks for this; the workflow id is read when it does.
+  }, [resourcesReloadKey, refreshResourceDetails]);
+
   useEffect(() => {
     const loadWorkflow = async () => {
       if (!workflowId) return;
@@ -923,7 +1000,23 @@ function WorkflowBuilderInner() {
           workflow,
           nodes: apiNodes,
           edges: apiEdges,
+          ref_details: refDetails,
         } = responseData.data;
+        applyResourceDetails(responseData.data);
+        setNodeRefNames({
+          tools: (refDetails?.tools ?? []).map(
+            (tool: { id: string; name?: string; display_name?: string }) => ({
+              id: tool.id,
+              label: getToolDisplayName(tool),
+            }),
+          ),
+          sources: (refDetails?.sources ?? []).map(
+            (source: { id: string; name: string | null }) => ({
+              id: source.id,
+              label: source.name || '',
+            }),
+          ),
+        });
         const nextWorkflowName = workflow.name;
         const nextWorkflowDescription = workflow.description || '';
         const mappedNodes = apiNodes.map((n: WorkflowNode) => {
@@ -998,36 +1091,45 @@ function WorkflowBuilderInner() {
       }
     };
     loadWorkflow();
-  }, [workflowId, reactFlowInstance, token, clearHistory]);
+  }, [
+    workflowId,
+    reactFlowInstance,
+    token,
+    clearHistory,
+    applyResourceDetails,
+  ]);
 
   const validateWorkflow = useCallback((): string[] => {
     const errors: string[] = [];
 
     if (!workflowName.trim()) {
-      errors.push('Workflow name is required');
+      errors.push(t('agents.workflow.validation.nameRequired'));
     }
 
     const startNodes = nodes.filter((n) => n.type === 'start');
     if (startNodes.length !== 1) {
-      errors.push('Workflow must have exactly one start node');
+      errors.push(t('agents.workflow.validation.oneStart'));
     }
 
     const endNodes = nodes.filter((n) => n.type === 'end');
     const endNodeIds = new Set(endNodes.map((n) => n.id));
     if (endNodes.length === 0) {
-      errors.push('Workflow must have at least one end node');
+      errors.push(t('agents.workflow.validation.needEnd'));
     }
 
     const agentNodes = nodes.filter((n) => n.type === 'agent');
     if (agentNodes.length === 0) {
-      errors.push('Workflow must have at least one AI agent node');
+      errors.push(t('agents.workflow.validation.needAgent'));
     }
 
     agentNodes.forEach((node) => {
       const config = node.data?.config;
       if (!config?.llm_name && !config?.model_id) {
         errors.push(
-          `Agent "${node.data?.title || node.id}" must have a model selected`,
+          t('agents.workflow.validation.agentModel', {
+            ...NO_ESCAPE,
+            name: node.data?.title || node.id,
+          }),
         );
       }
 
@@ -1039,7 +1141,10 @@ function WorkflowBuilderInner() {
         );
         if (selectedModel && !selectedModel.supports_structured_output) {
           errors.push(
-            `Agent "${node.data?.title || node.id}" selected model does not support structured output`,
+            t('agents.workflow.validation.agentStructuredOutput', {
+              ...NO_ESCAPE,
+              name: node.data?.title || node.id,
+            }),
           );
         }
       }
@@ -1054,7 +1159,11 @@ function WorkflowBuilderInner() {
           : schemaValidationError;
       if (effectiveSchemaError) {
         errors.push(
-          `Agent "${node.data?.title || node.id}" JSON schema ${effectiveSchemaError}`,
+          t('agents.workflow.validation.agentSchema', {
+            ...NO_ESCAPE,
+            name: node.data?.title || node.id,
+            error: schemaErrorText(t, effectiveSchemaError),
+          }),
         );
       }
     });
@@ -1063,7 +1172,7 @@ function WorkflowBuilderInner() {
       const startId = startNodes[0].id;
       const hasOutgoing = edges.some((e) => e.source === startId);
       if (!hasOutgoing) {
-        errors.push('Start node must be connected to another node');
+        errors.push(t('agents.workflow.validation.startConnected'));
       }
     }
 
@@ -1071,7 +1180,10 @@ function WorkflowBuilderInner() {
       const hasIncoming = edges.some((e) => e.target === endNode.id);
       if (!hasIncoming) {
         errors.push(
-          `End node "${endNode.id}" must have an incoming connection`,
+          t('agents.workflow.validation.endIncoming', {
+            ...NO_ESCAPE,
+            name: endNode.id,
+          }),
         );
       }
     });
@@ -1079,10 +1191,10 @@ function WorkflowBuilderInner() {
     const nodeIds = new Set(nodes.map((n) => n.id));
     edges.forEach((edge) => {
       if (!nodeIds.has(edge.source)) {
-        errors.push(`Edge references non-existent source node`);
+        errors.push(t('agents.workflow.validation.edgeSource'));
       }
       if (!nodeIds.has(edge.target)) {
-        errors.push(`Edge references non-existent target node`);
+        errors.push(t('agents.workflow.validation.edgeTarget'));
       }
     });
 
@@ -1096,7 +1208,10 @@ function WorkflowBuilderInner() {
         !cases.some((c: ConditionCase) => Boolean((c.expression || '').trim()))
       ) {
         errors.push(
-          `Condition "${conditionTitle}" must have at least one case with an expression`,
+          t('agents.workflow.validation.conditionNeedsCase', {
+            ...NO_ESCAPE,
+            name: conditionTitle,
+          }),
         );
       }
 
@@ -1106,7 +1221,10 @@ function WorkflowBuilderInner() {
         const handle = (conditionCase.sourceHandle || '').trim();
         if (!handle) {
           errors.push(
-            `Condition "${conditionTitle}" has a case without a branch handle`,
+            t('agents.workflow.validation.conditionCaseNoHandle', {
+              ...NO_ESCAPE,
+              name: conditionTitle,
+            }),
           );
           return;
         }
@@ -1117,14 +1235,21 @@ function WorkflowBuilderInner() {
       });
       duplicateCaseHandles.forEach((handle) => {
         errors.push(
-          `Condition "${conditionTitle}" has duplicate case handle "${handle}"`,
+          t('agents.workflow.validation.conditionDuplicateHandle', {
+            ...NO_ESCAPE,
+            name: conditionTitle,
+            handle,
+          }),
         );
       });
 
       const outgoing = edges.filter((e) => e.source === node.id);
       if (outgoing.length < 2) {
         errors.push(
-          `Condition "${conditionTitle}" must have at least 2 outgoing connections`,
+          t('agents.workflow.validation.conditionTwoOutgoing', {
+            ...NO_ESCAPE,
+            name: conditionTitle,
+          }),
         );
       }
 
@@ -1142,24 +1267,40 @@ function WorkflowBuilderInner() {
       for (const [handle, handleEdges] of outgoingByHandle.entries()) {
         if (!handle) {
           errors.push(
-            `Condition "${conditionTitle}" has a connection without a branch handle`,
+            t('agents.workflow.validation.conditionEdgeNoHandle', {
+              ...NO_ESCAPE,
+              name: conditionTitle,
+            }),
           );
           continue;
         }
         if (handle !== 'else' && !caseHandles.has(handle)) {
           errors.push(
-            `Condition "${conditionTitle}" has a connection from unknown branch "${handle}"`,
+            t('agents.workflow.validation.conditionUnknownBranch', {
+              ...NO_ESCAPE,
+              name: conditionTitle,
+              handle,
+            }),
           );
         }
         if (handleEdges.length > 1) {
           errors.push(
-            `Condition "${conditionTitle}" has multiple connections from branch "${handle}"`,
+            t('agents.workflow.validation.conditionMultipleEdges', {
+              ...NO_ESCAPE,
+              name: conditionTitle,
+              handle,
+            }),
           );
         }
       }
 
       if (!outgoingByHandle.has('else')) {
-        errors.push(`Condition "${conditionTitle}" must have an Else branch`);
+        errors.push(
+          t('agents.workflow.validation.conditionNeedsElse', {
+            ...NO_ESCAPE,
+            name: conditionTitle,
+          }),
+        );
       }
 
       cases.forEach((conditionCase: ConditionCase) => {
@@ -1170,12 +1311,20 @@ function WorkflowBuilderInner() {
         const hasOutgoing = Boolean(outgoingByHandle.get(handle)?.length);
         if (hasExpression && !hasOutgoing) {
           errors.push(
-            `Condition "${conditionTitle}" case "${handle}" has an expression but no branch connection`,
+            t('agents.workflow.validation.caseNoConnection', {
+              ...NO_ESCAPE,
+              name: conditionTitle,
+              handle,
+            }),
           );
         }
         if (!hasExpression && hasOutgoing) {
           errors.push(
-            `Condition "${conditionTitle}" case "${handle}" has a branch connection but no expression`,
+            t('agents.workflow.validation.caseNoExpression', {
+              ...NO_ESCAPE,
+              name: conditionTitle,
+              handle,
+            }),
           );
         }
         if (conditionMode === 'simple' && hasExpression) {
@@ -1184,7 +1333,11 @@ function WorkflowBuilderInner() {
           );
           if (!parsedCondition.variable.trim()) {
             errors.push(
-              `Condition "${conditionTitle}" case "${handle}" must specify a variable in Simple mode`,
+              t('agents.workflow.validation.caseNoVariable', {
+                ...NO_ESCAPE,
+                name: conditionTitle,
+                handle,
+              }),
             );
           }
         }
@@ -1194,7 +1347,11 @@ function WorkflowBuilderInner() {
         if (!canReachEnd(edge.target, edges, nodeIds, endNodeIds)) {
           const handle = edge.sourceHandle || 'branch';
           errors.push(
-            `Branch "${handle}" of condition "${conditionTitle}" must eventually reach an end node`,
+            t('agents.workflow.validation.branchReachEnd', {
+              ...NO_ESCAPE,
+              name: conditionTitle,
+              handle,
+            }),
           );
         }
       });
@@ -1205,7 +1362,12 @@ function WorkflowBuilderInner() {
       const codeTitle = node.data?.title || node.id;
       const config = node.data?.config;
       if (!(config?.code || '').trim()) {
-        errors.push(`Code node "${codeTitle}" must have code to run`);
+        errors.push(
+          t('agents.workflow.validation.codeRequired', {
+            ...NO_ESCAPE,
+            name: codeTitle,
+          }),
+        );
       }
 
       const schemaValidationError = validateCodeJsonSchema(config?.json_schema);
@@ -1216,13 +1378,17 @@ function WorkflowBuilderInner() {
           : schemaValidationError;
       if (effectiveSchemaError) {
         errors.push(
-          `Code node "${codeTitle}" JSON schema ${effectiveSchemaError}`,
+          t('agents.workflow.validation.codeSchema', {
+            ...NO_ESCAPE,
+            name: codeTitle,
+            error: schemaErrorText(t, effectiveSchemaError),
+          }),
         );
       }
     });
 
     return errors;
-  }, [workflowName, nodes, edges, agentJsonSchemaErrors, availableModels]);
+  }, [workflowName, nodes, edges, agentJsonSchemaErrors, availableModels, t]);
 
   const canManageAgent = Boolean(currentAgentId || currentAgent.id);
   const effectiveAgentId = currentAgentId || currentAgent.id || '';
@@ -1242,18 +1408,19 @@ function WorkflowBuilderInner() {
   const hasSavableChanges =
     canManageAgent && savedWorkflowSignature !== null
       ? workflowPayloadSignature !== savedWorkflowSignature ||
-        imageFile !== null
+        imageFile !== null ||
+        takeovers.length > 0
       : false;
 
   const persistWorkflow = useCallback(
-    async (navigateAfterSuccess: boolean): Promise<boolean> => {
+    async (navigateAfterSuccess: boolean): Promise<WorkflowSaveOutcome> => {
       setPublishErrors([]);
       setErrorContext('publish');
 
       const validationErrors = validateWorkflow();
       if (validationErrors.length > 0) {
         setPublishErrors(validationErrors);
-        return false;
+        return 'failed';
       }
 
       setIsPublishing(true);
@@ -1263,14 +1430,39 @@ function WorkflowBuilderInner() {
 
         let savedWorkflowId = workflowId;
         if (workflowId) {
-          const updateResponse = await userService.updateWorkflow(
-            workflowId,
-            workflowPayload,
-            token,
+          // A node tool or source the owner can't use would run with the
+          // caller's access: ask first, then save again with their answer.
+          const updateResponse = await saveWithSponsorConsent(
+            (confirm) =>
+              userService.updateWorkflow(
+                workflowId,
+                confirm.length > 0
+                  ? { ...workflowPayload, confirm_sponsor: confirm }
+                  : workflowPayload,
+                token,
+              ),
+            sponsorPrompt.ask,
+            takeovers,
           );
+          if (!updateResponse) return 'cancelled';
           if (!updateResponse.ok) {
+            const refusal = await readSponsorRefusal(updateResponse);
+            if (refusal?.kind === 'unexpected') {
+              // Someone changed the workflow since the caller chose.
+              setTakeovers([]);
+              void refreshResourceDetails(workflowId);
+              throw new Error(t('agents.form.sponsors.confirmationOutdated'));
+            }
+            if (refusal?.kind === 'notAllowed') {
+              throw new Error(
+                sponsorNotAllowedMessage(t, i18n.language, refusal.resources),
+              );
+            }
             const errorData = await updateResponse.json().catch(() => ({}));
-            throw new Error(errorData.message || 'Failed to update workflow');
+            throw new Error(
+              errorData.message ||
+                t('agents.workflow.builder.updateWorkflowFailed'),
+            );
           }
 
           if (effectiveAgentId) {
@@ -1294,7 +1486,7 @@ function WorkflowBuilderInner() {
               token,
             );
             if (!agentUpdateResponse.ok) {
-              throw new Error('Failed to update agent');
+              throw new Error(t('agents.workflow.builder.updateAgentFailed'));
             }
             const updatedAgent = await agentUpdateResponse
               .json()
@@ -1311,10 +1503,12 @@ function WorkflowBuilderInner() {
           }
           setImageFile(null);
           setSavedWorkflowSignature(JSON.stringify(workflowPayload));
+          setTakeovers([]);
+          void refreshResourceDetails(workflowId);
           if (navigateAfterSuccess) {
             navigateBackToAgents();
           }
-          return true;
+          return 'saved';
         }
 
         const createResponse = await userService.createWorkflow(
@@ -1326,9 +1520,12 @@ function WorkflowBuilderInner() {
           const backendErrors = errorData.errors || [];
           if (backendErrors.length > 0) {
             setPublishErrors(backendErrors);
-            return false;
+            return 'failed';
           }
-          throw new Error(errorData.message || 'Failed to create workflow');
+          throw new Error(
+            errorData.message ||
+              t('agents.workflow.builder.createWorkflowFailed'),
+          );
         }
         const responseData = await createResponse.json();
         savedWorkflowId = responseData?.data?.id ?? responseData?.id;
@@ -1361,7 +1558,9 @@ function WorkflowBuilderInner() {
         );
         if (!agentResponse.ok) {
           const errorData = await agentResponse.json().catch(() => ({}));
-          throw new Error(errorData.message || 'Failed to create agent');
+          throw new Error(
+            errorData.message || t('agents.workflow.builder.createAgentFailed'),
+          );
         }
         const agentData = await agentResponse.json().catch(() => ({}));
         if (agentData?.id) {
@@ -1385,7 +1584,7 @@ function WorkflowBuilderInner() {
         if (navigateAfterSuccess) {
           navigateBackToAgents();
         }
-        return true;
+        return 'saved';
       } catch (error) {
         if (createdWorkflowId) {
           try {
@@ -1405,9 +1604,11 @@ function WorkflowBuilderInner() {
         }
         console.error('Failed to save workflow:', error);
         setPublishErrors([
-          error instanceof Error ? error.message : 'Failed to save workflow',
+          error instanceof Error
+            ? error.message
+            : t('agents.workflow.builder.saveFailed'),
         ]);
-        return false;
+        return 'failed';
       } finally {
         setIsPublishing(false);
       }
@@ -1421,25 +1622,133 @@ function WorkflowBuilderInner() {
       workflowName,
       workflowDescription,
       imageFile,
+      currentAgent.allow_system_prompt_override,
       folderId,
       navigateBackToAgents,
+      t,
+      i18n.language,
+      sponsorPrompt.ask,
+      takeovers,
+      refreshResourceDetails,
     ],
   );
 
-  const handleWorkflowSettingsDone = useCallback(() => {
-    setShowWorkflowSettings(false);
-    if (!canManageAgent || !hasSavableChanges || isPublishing) return;
-    void persistWorkflow(false);
-  }, [canManageAgent, hasSavableChanges, isPublishing, persistWorkflow]);
+  const openDetails = useCallback(() => {
+    setDetailsSaveFailed(false);
+    setShowDetails(true);
+  }, []);
 
+  // Save from the details sheet: put its values into the builder, then save
+  // once they are in state (the effect below), so the request carries them.
+  const handleDetailsSave = useCallback((values: WorkflowDetailsSave) => {
+    setWorkflowName(values.name);
+    setWorkflowDescription(values.description);
+    setCurrentAgent((prev) => ({
+      ...prev,
+      allow_system_prompt_override: values.allowPromptOverride,
+    }));
+    if (values.imageFile) setImageFile(values.imageFile);
+    setDetailsSaveRequested(true);
+  }, []);
+
+  useEffect(() => {
+    if (!detailsSaveRequested) return;
+    setDetailsSaveRequested(false);
+    setDetailsSaving(true);
+    setDetailsSaveFailed(false);
+    void persistWorkflow(false).then((outcome) => {
+      setDetailsSaving(false);
+      if (outcome === 'saved') setShowDetails(false);
+      // Declining the sponsor confirmation leaves the sheet open, no error.
+      else if (outcome === 'failed') setDetailsSaveFailed(true);
+    });
+  }, [detailsSaveRequested, persistWorkflow]);
+
+  // Save on a saved workflow is an edit; the first save publishes it. A new
+  // workflow has no access fields, so it reads as the owner's.
+  // Without it the Save/Publish button isn't rendered at all.
+  const canSubmit = can(currentAgent, canManageAgent ? 'edit' : 'publish');
   const isPrimaryActionDisabled =
     isPublishing || (canManageAgent && !hasSavableChanges);
-  const primaryActionLabel = canManageAgent ? 'Save' : 'Publish';
+  const primaryActionLabel = canManageAgent
+    ? t('agents.form.buttons.save')
+    : t('agents.form.buttons.publish');
 
   const handlePrimaryAction = useCallback(() => {
     if (isPrimaryActionDisabled) return;
     void persistWorkflow(false);
   }, [isPrimaryActionDisabled, persistWorkflow]);
+
+  // Stopped node resources still on the canvas.
+  const stoppedResources = useMemo(
+    () =>
+      stoppedNodeResources(workflowResources.states, nodeResourceIds(nodes)),
+    [workflowResources.states, nodes],
+  );
+
+  const resolveResourceName = useCallback(
+    (item: NamedResource): string => {
+      if (item.name) return item.name;
+      const known = (
+        item.type === 'tool' ? nodeRefNames.tools : nodeRefNames.sources
+      ).find((entry) => entry.id.toLowerCase() === item.id)?.label;
+      return known || unnamedResourceLabel(t, item);
+    },
+    [nodeRefNames, t],
+  );
+
+  /** Take a stopped tool or source off every agent node; saving stores it. */
+  const removeResource = useCallback(
+    (item: ResourceState) => {
+      takeSnapshot();
+      setNodes((prev) => withoutNodeResource(prev, item));
+      setTakeovers((prev) => prev.filter((k) => k !== item.key));
+    },
+    [takeSnapshot],
+  );
+
+  /**
+   * Ask before a stopped node resource runs with the caller's access,
+   * naming who reaches it through the workflow; on yes the next save
+   * confirms it.
+   */
+  const takeOverResource = useCallback(
+    async (item: ResourceState) => {
+      const agreed = await confirmTakeOver(
+        sponsorPrompt.ask,
+        item,
+        resolveResourceName(item),
+        workflowResources.audience,
+      );
+      if (agreed)
+        setTakeovers((prev) =>
+          prev.includes(item.key) ? prev : [...prev, item.key],
+        );
+    },
+    [resolveResourceName, sponsorPrompt.ask, workflowResources.audience],
+  );
+
+  /** Sign a stopped node tool's connection in again, in place where possible. */
+  const reconnectResource = useCallback(
+    (item: ResourceState) => {
+      const connection = item.connection;
+      if (!connection?.id || !connection.connector_key) return;
+      const isMcp =
+        availableTools.find((tool) => tool.id === item.id)?.name === 'mcp_tool';
+      signInAgain.reconnect(
+        { id: connection.id, connector_key: connection.connector_key },
+        isMcp ? item.id : undefined,
+      );
+    },
+    [availableTools, signInAgain],
+  );
+
+  const resourceNoticeAgent = useMemo<Agent>(
+    () => ({ ...currentAgent, resource_sponsors: workflowResources.sponsors }),
+    [currentAgent, workflowResources.sponsors],
+  );
+  // Only stopped items float; who added what is in the node pickers.
+  const showResourceNotice = canManageAgent && stoppedResources.length > 0;
 
   const agentForDetails = useMemo<Agent>(
     () => ({
@@ -1447,7 +1756,12 @@ function WorkflowBuilderInner() {
       ...currentAgent,
       id: effectiveAgentId,
       name: workflowName,
-      description: workflowDescription || `Workflow agent: ${workflowName}`,
+      description:
+        workflowDescription ||
+        t('agents.workflow.builder.defaultDescription', {
+          ...NO_ESCAPE,
+          name: workflowName,
+        }),
       image: currentAgentImage,
       agent_type: 'workflow',
       status: currentAgent.status || 'published',
@@ -1460,6 +1774,7 @@ function WorkflowBuilderInner() {
       workflowDescription,
       currentAgentImage,
       workflowId,
+      t,
     ],
   );
 
@@ -1541,203 +1856,37 @@ function WorkflowBuilderInner() {
   return (
     <>
       <MobileBlocker />
-      <div className="bg-background fixed inset-0 z-50 hidden h-screen w-full flex-col md:flex">
-        <div className="border-border bg-card dark:bg-background flex items-center justify-between border-b px-6 py-4">
-          <div className="flex items-center gap-4">
-            {canManageAgent ? (
-              <AgentPageHeader
-                agentId={effectiveAgentId}
-                agentName={workflowName}
-                agentEditPath={`/agents/workflow/edit/${effectiveAgentId}`}
-                currentPage="overview"
-                inline
-              />
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={navigateBackToAgents}
-                className="text-muted-foreground rounded-full px-4 py-2 text-sm font-normal shadow-none"
-              >
-                {t('agents.backToAll')}
-              </Button>
-            )}
-            {!canManageAgent && (
-              <div className="min-w-0">
-                <div
-                  className="max-w-xs truncate text-xl font-bold text-gray-900 dark:text-white"
-                  title={workflowName || 'New Workflow'}
-                >
-                  {workflowName || 'New Workflow'}
-                </div>
-                {workflowDescription && (
-                  <div
-                    className="text-muted-foreground max-w-xs truncate text-xs"
-                    title={workflowDescription}
-                  >
-                    {workflowDescription}
-                  </div>
-                )}
-              </div>
-            )}
-            <div className="relative flex items-center">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => setShowWorkflowSettings(!showWorkflowSettings)}
-                className="text-muted-foreground hover:bg-accent hover:text-foreground size-auto p-1"
-                aria-label="Workflow settings"
-                title={
-                  workflowDescription
-                    ? `${workflowName || 'New Workflow'} — ${workflowDescription}`
-                    : 'Edit workflow details'
-                }
-              >
-                <Pencil size={14} />
-              </Button>
-              {showWorkflowSettings && (
-                <div
-                  ref={workflowSettingsRef}
-                  className="border-border bg-card absolute top-full left-0 z-50 mt-2 w-80 rounded-xl border p-4 shadow-lg"
-                >
-                  <div className="mb-3">
-                    <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Workflow Name
-                    </label>
-                    <Input
-                      type="text"
-                      value={workflowName}
-                      onChange={(e) => setWorkflowName(e.target.value)}
-                      className="bg-card h-auto rounded-lg px-3 py-2 text-sm shadow-none"
-                      placeholder="Enter workflow name"
-                    />
-                  </div>
-                  <div className="mb-3">
-                    <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Description
-                    </label>
-                    <textarea
-                      value={workflowDescription}
-                      onChange={(e) => setWorkflowDescription(e.target.value)}
-                      className="focus-visible:ring-ring/50 focus-visible:border-ring border-border bg-card w-full rounded-lg border px-3 py-2 text-sm outline-none focus-visible:ring-2 dark:text-white"
-                      rows={3}
-                      placeholder="Describe what this workflow does"
-                    />
-                  </div>
-                  <div className="mb-3">
-                    <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Agent Image
-                    </label>
-                    {currentAgentImage && !imageFile && (
-                      <div className="mb-2 flex items-center gap-2">
-                        <img
-                          src={currentAgentImage}
-                          alt="Agent image"
-                          className="h-10 w-10 rounded-full object-cover"
-                        />
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          Current image
-                        </span>
-                      </div>
-                    )}
-                    <FileUpload
-                      showPreview
-                      maxFiles={1}
-                      previewSize={56}
-                      onUpload={handleUpload}
-                      onRemove={() => setImageFile(null)}
-                      uploadText={[
-                        {
-                          text: 'Click to upload',
-                          colorClass: 'text-primary',
-                        },
-                        {
-                          text: ' or drag and drop',
-                          colorClass: 'text-muted-foreground',
-                        },
-                      ]}
-                      className="border-border rounded-lg border-2 border-dashed p-3 text-center transition-colors"
-                    />
-                    <p className="text-muted-foreground mt-1 text-xs">
-                      Image updates are included the next time you save.
-                    </p>
-                  </div>
-                  <div className="mb-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                          {t('agents.form.advanced.systemPromptOverride')}
-                        </label>
-                        <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                          {t(
-                            'agents.form.advanced.systemPromptOverrideDescription',
-                          )}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() =>
-                          setCurrentAgent((prev) => ({
-                            ...prev,
-                            allow_system_prompt_override:
-                              !prev.allow_system_prompt_override,
-                          }))
-                        }
-                        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-                          currentAgent.allow_system_prompt_override
-                            ? 'bg-primary'
-                            : 'bg-gray-300 dark:bg-gray-600'
-                        }`}
-                      >
-                        <span
-                          className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${
-                            currentAgent.allow_system_prompt_override
-                              ? ''
-                              : '-translate-x-5'
-                          }`}
-                        />
-                      </button>
-                    </div>
-                  </div>
-                  <Button
-                    type="button"
-                    onClick={handleWorkflowSettingsDone}
-                    disabled={isPublishing}
-                    className="w-full rounded-lg text-white"
-                  >
-                    Done
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {canManageAgent && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setAgentDetails('ACTIVE')}
-                className="rounded-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200"
-              >
-                <Link size={16} />
-                Access Details
-              </Button>
-            )}
-            {canManageAgent && (
-              <Button
-                type="button"
-                variant="destructive-outline"
-                onClick={() => setDeleteConfirmation('ACTIVE')}
-                disabled={isDeletingAgent}
-                className="bg-card rounded-full border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 hover:text-red-600 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-900/10 dark:hover:text-red-400"
-              >
-                <Trash2 size={16} />
-                {isDeletingAgent ? 'Deleting...' : 'Delete'}
-              </Button>
+      <div className="bg-background fixed inset-0 z-50 hidden h-dvh w-full flex-col lg:flex">
+        <div className="border-border bg-background flex items-center justify-between gap-4 border-b px-6 py-4">
+          <AgentPageHeader
+            agentId={canManageAgent ? effectiveAgentId : undefined}
+            agentName={workflowName || t('agents.workflow.builder.newWorkflow')}
+            agentEditPath={agentEditPath(effectiveAgentId, true)}
+            agentImage={currentAgentImage}
+            access={canManageAgent ? currentAgent : undefined}
+            onNameClick={openDetails}
+            status={
+              canManageAgent && currentAgent.status !== 'draft' ? (
+                <Badge variant="success">
+                  {t('agents.form.status.published')}
+                </Badge>
+              ) : (
+                <Badge variant="neutral">{t('agents.card.draft')}</Badge>
+              )
+            }
+            inline
+          />
+          <div className="flex shrink-0 items-center gap-2">
+            {(!canManageAgent || hasSavableChanges) && (
+              <span className="text-muted-foreground mr-2 text-sm">
+                {t('agents.workflow.builder.unsavedChanges')}
+              </span>
             )}
             <Button
               type="button"
               variant="outline"
+              size="field"
+              shape="pill"
               onClick={() => {
                 const validationErrors = validateWorkflow();
                 if (validationErrors.length > 0) {
@@ -1747,1330 +1896,316 @@ function WorkflowBuilderInner() {
                 }
                 setShowPreview(true);
               }}
-              className="rounded-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200"
             >
-              <Play size={16} />
-              Preview
+              <Play />
+              {t('agents.form.sections.preview')}
             </Button>
-            <Button
-              type="button"
-              onClick={handlePrimaryAction}
-              disabled={isPrimaryActionDisabled}
-              className={`relative rounded-full px-6 py-2 text-sm font-medium shadow-sm ${
-                canManageAgent && !hasSavableChanges
-                  ? 'dark:bg-accent bg-gray-200 text-gray-500 hover:bg-gray-200 dark:text-gray-400'
-                  : 'text-white'
-              }`}
-            >
-              <span
-                className={
-                  showPrimaryActionSpinner ? 'opacity-0' : 'opacity-100'
-                }
+            {canSubmit && (
+              <Button
+                type="button"
+                onClick={handlePrimaryAction}
+                disabled={isPrimaryActionDisabled}
+                loading={showPrimaryActionSpinner}
+                size="field"
+                shape="pill"
               >
                 {primaryActionLabel}
-              </span>
-              {showPrimaryActionSpinner ? (
-                <Loader2 size={16} className="absolute animate-spin" />
-              ) : null}
-            </Button>
+              </Button>
+            )}
+            <ActionMenu
+              size="toolbar"
+              triggerLabel={t('agents.form.buttons.moreActions')}
+              options={[
+                {
+                  label: t('agents.workflow.builder.editDetailsMenu'),
+                  icon: Pencil,
+                  onClick: openDetails,
+                },
+                ...(canManageAgent && can(currentAgent, 'manage_access_details')
+                  ? [
+                      {
+                        label: t('agents.form.buttons.accessDetails'),
+                        icon: Link,
+                        onClick: () => setAgentDetails('ACTIVE'),
+                      },
+                    ]
+                  : []),
+                ...(canManageAgent && can(currentAgent, 'share')
+                  ? [
+                      {
+                        label: t('agents.shareWithTeam'),
+                        icon: Users,
+                        onClick: () => setShareModalOpen(true),
+                      },
+                    ]
+                  : []),
+                ...(canManageAgent && can(currentAgent, 'delete')
+                  ? [
+                      {
+                        label: t('agents.form.buttons.delete'),
+                        icon: Trash2,
+                        variant: 'destructive' as const,
+                        disabled: isDeletingAgent,
+                        onClick: () => setDeleteConfirmation('ACTIVE'),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           </div>
         </div>
 
-        {publishErrors.length > 0 && (
-          <div className="pointer-events-none absolute top-20 right-0 left-0 z-50 flex justify-center px-4">
-            <Alert
-              variant="destructive"
-              className="pointer-events-auto w-full max-w-md bg-red-50 shadow-lg dark:bg-red-950/20"
-            >
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>
-                {errorContext === 'preview'
-                  ? 'Unable to preview workflow'
-                  : canManageAgent
-                    ? 'Unable to save workflow'
-                    : 'Unable to publish workflow'}
-              </AlertTitle>
-              <AlertDescription>
-                <ul className="mt-2 list-inside list-disc space-y-1 wrap-break-word">
-                  {publishErrors.map((error, index) => (
-                    <li key={index}>{error}</li>
-                  ))}
-                </ul>
-              </AlertDescription>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => setPublishErrors([])}
-                className="absolute top-4 right-4 size-auto p-0 text-red-700 hover:bg-transparent hover:text-red-900 dark:text-red-300 dark:hover:bg-transparent dark:hover:text-red-100"
-              >
-                <X size={16} />
-              </Button>
-            </Alert>
+        {publishErrors.length > 0 && !showDetails && (
+          <div className="pointer-events-none absolute top-20 right-0 left-0 z-20 flex justify-center px-4">
+            <div className="bg-card pointer-events-auto w-full max-w-md rounded-xl shadow-md">
+              <Alert variant="destructive" onClose={() => setPublishErrors([])}>
+                <AlertTitle>
+                  {errorContext === 'preview'
+                    ? t('agents.workflow.builder.unablePreview')
+                    : canManageAgent
+                      ? t('agents.workflow.builder.unableSave')
+                      : t('agents.workflow.builder.unablePublish')}
+                </AlertTitle>
+                <AlertDescription>
+                  <ul className="mt-2 list-inside list-disc space-y-1 wrap-break-word">
+                    {publishErrors.map((error, index) => (
+                      <li key={index}>{error}</li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            </div>
           </div>
         )}
 
-        <div className="flex flex-1 overflow-hidden">
-          <div className="border-border bg-muted dark:bg-background flex w-64 flex-col gap-6 border-r p-4">
-            <div>
-              <h3 className="mb-3 text-xs font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
-                Core Nodes
-              </h3>
-              <div className="flex flex-col gap-2">
-                <div
-                  className="group border-border bg-card flex cursor-move items-center gap-3 rounded-full border px-4 py-3 shadow-sm transition-all hover:shadow-md"
-                  draggable
-                  onDragStart={(e) => handleNodeDragStart(e, 'agent')}
-                >
-                  <div className="text-primary group-hover:bg-primary flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100 transition-colors group-hover:text-white dark:bg-purple-900/40">
-                    <Bot size={18} />
-                  </div>
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                    AI Agent
-                  </span>
-                </div>
-                <div
-                  className="group border-border bg-card flex cursor-move items-center gap-3 rounded-full border px-4 py-3 shadow-sm transition-all hover:shadow-md"
-                  draggable
-                  onDragStart={(e) => handleNodeDragStart(e, 'end')}
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-600 transition-colors group-hover:bg-green-600 group-hover:text-white dark:bg-green-900/40 dark:text-green-300">
-                    <Flag size={18} />
-                  </div>
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                    End
-                  </span>
-                </div>
-                <div
-                  className="group border-border bg-card flex cursor-move items-center gap-3 rounded-full border px-4 py-3 shadow-sm transition-all hover:shadow-md"
-                  draggable
-                  onDragStart={(e) => handleNodeDragStart(e, 'note')}
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-yellow-600 transition-colors group-hover:bg-yellow-500 group-hover:text-white dark:bg-yellow-900/40 dark:text-yellow-300">
-                    <StickyNote size={18} />
-                  </div>
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                    Note
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <h3 className="mb-3 text-xs font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
-                Logic & Data
-              </h3>
-              <div className="flex flex-col gap-2">
-                <div
-                  className="group border-border bg-card flex cursor-move items-center gap-3 rounded-full border px-4 py-3 shadow-sm transition-all hover:shadow-md"
-                  draggable
-                  onDragStart={(e) => handleNodeDragStart(e, 'state')}
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 transition-colors group-hover:bg-blue-600 group-hover:text-white dark:bg-blue-900/40 dark:text-blue-300">
-                    <Database size={18} />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-foreground text-sm font-medium">
-                      Set State
-                    </span>
-                    <span className="text-muted-foreground text-xs">
-                      Modify workflow variables
-                    </span>
-                  </div>
-                </div>
-                <div
-                  className="group border-border bg-card flex cursor-move items-center gap-3 rounded-full border px-4 py-3 shadow-sm transition-all hover:shadow-md"
-                  draggable
-                  onDragStart={(e) => handleNodeDragStart(e, 'condition')}
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 transition-colors group-hover:bg-orange-600 group-hover:text-white dark:bg-orange-900/40 dark:text-orange-300">
-                    <GitBranch size={18} />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-foreground text-sm font-medium">
-                      If / Else
-                    </span>
-                    <span className="text-muted-foreground text-xs">
-                      Conditional branching
-                    </span>
-                  </div>
-                </div>
-                <div
-                  className="group border-border bg-card flex cursor-move items-center gap-3 rounded-full border px-4 py-3 shadow-sm transition-all hover:shadow-md"
-                  draggable
-                  onDragStart={(e) => handleNodeDragStart(e, 'code')}
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 transition-colors group-hover:bg-indigo-600 group-hover:text-white dark:bg-indigo-900/40 dark:text-indigo-300">
-                    <Code2 size={18} />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-foreground text-sm font-medium">
-                      Code
-                    </span>
-                    <span className="text-muted-foreground text-xs">
-                      Run code in a sandbox
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          <NodePalette
+            onAdd={handleAddNodeFromPalette}
+            onDragStart={handleNodeDragStart}
+          />
 
           <div
             ref={reactFlowWrapper}
-            className="bg-muted dark:bg-background/10 relative flex-1"
+            className="bg-muted relative min-w-0 flex-1"
           >
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onEdgeClick={onEdgeClick}
-              onDrop={onDrop}
-              onDragOver={onDragOver}
-              onNodeClick={handleNodeClick}
-              onPaneClick={handlePaneClick}
-              onNodeDragStart={snapshotBeforeCanvasChange}
-              onSelectionDragStart={snapshotBeforeCanvasChange}
-              nodeTypes={nodeTypes}
-              nodeDragThreshold={1}
-              deleteKeyCode={null}
-              fitView
-            >
-              <Background />
-              <Controls />
-              <Panel position="top-left" className="flex gap-1.5">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon-sm"
-                  onClick={undo}
-                  disabled={!canUndo}
-                  title="Undo (Ctrl+Z)"
-                  aria-label="Undo"
-                  className="bg-card"
-                >
-                  <Undo2 size={16} />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon-sm"
-                  onClick={redo}
-                  disabled={!canRedo}
-                  title="Redo (Ctrl+Shift+Z)"
-                  aria-label="Redo"
-                  className="bg-card"
-                >
-                  <Redo2 size={16} />
-                </Button>
-              </Panel>
-            </ReactFlow>
-
-            {showNodeConfig && selectedNode && (
-              <>
-                <div className="border-border bg-card shadow-modal absolute top-4 right-4 z-20 w-96 rounded-2xl border">
-                  <div className="border-border flex items-center justify-between border-b p-4">
-                    <h3 className="font-semibold text-gray-900 dark:text-white">
-                      {selectedNode.type === 'start' && 'Start Node'}
-                      {selectedNode.type === 'end' && 'End Node'}
-                      {selectedNode.type === 'agent' && 'AI Agent'}
-                      {selectedNode.type === 'note' && 'Note'}
-                      {selectedNode.type === 'state' && 'Set global variables'}
-                      {selectedNode.type === 'condition' && 'If / Else'}
-                      {selectedNode.type === 'code' && 'Code'}
-                    </h3>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => setShowNodeConfig(false)}
-                      className="size-auto p-0 text-gray-400 hover:bg-transparent hover:text-gray-600 dark:hover:bg-transparent dark:hover:text-gray-200 [&_svg:not([class*='size-'])]:size-5"
-                    >
-                      <X size={20} />
-                    </Button>
-                  </div>
-
-                  <div className="max-h-[calc(100vh-200px)] overflow-y-auto p-4">
-                    <div className="mb-4 flex flex-col gap-2">
-                      <div className="bg-muted rounded-lg p-3">
-                        <div className="mb-1 text-xs text-gray-500 dark:text-gray-400">
-                          Node ID
-                        </div>
-                        <div className="truncate font-mono text-xs text-gray-700 dark:text-gray-300">
-                          {selectedNode.id}
-                        </div>
-                      </div>
-
-                      {selectedNode.type !== 'start' &&
-                        selectedNode.type !== 'end' && (
-                          <>
-                            <div>
-                              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                Title
-                              </label>
-                              <Input
-                                type="text"
-                                value={
-                                  selectedNode.data.title ||
-                                  selectedNode.data.label ||
-                                  ''
-                                }
-                                onChange={(e) =>
-                                  handleUpdateNodeData({
-                                    title: e.target.value,
-                                    label: e.target.value,
-                                  })
-                                }
-                                className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
-                                placeholder="Enter node title"
-                              />
-                            </div>
-
-                            {selectedNode.type === 'agent' && (
-                              <>
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Agent Type
-                                  </label>
-                                  <Select
-                                    value={
-                                      selectedNode.data.config?.agent_type ||
-                                      'classic'
-                                    }
-                                    onValueChange={(value) =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          agent_type: value,
-                                        },
-                                      })
-                                    }
-                                  >
-                                    <SelectTrigger className="w-full">
-                                      <SelectValue placeholder="Select agent type" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="classic">
-                                        Classic
-                                      </SelectItem>
-                                      <SelectItem value="research">
-                                        Research
-                                      </SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Model
-                                  </label>
-                                  <Select
-                                    value={
-                                      selectedNode.data.config?.model_id || ''
-                                    }
-                                    onValueChange={(value) => {
-                                      const selectedModel =
-                                        availableModels.find(
-                                          (m) => m.id === value,
-                                        );
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          model_id: value,
-                                          llm_name:
-                                            selectedModel?.provider || '',
-                                        },
-                                      });
-                                    }}
-                                  >
-                                    <SelectTrigger className="w-full">
-                                      <SelectValue placeholder="Select a model" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {(() => {
-                                        const builtin = availableModels.filter(
-                                          (m) => m.source !== 'user',
-                                        );
-                                        const user = availableModels.filter(
-                                          (m) => m.source === 'user',
-                                        );
-                                        return (
-                                          <>
-                                            {builtin.length > 0 && (
-                                              <SelectGroup>
-                                                <SelectLabel>
-                                                  {t(
-                                                    'settings.customModels.modelsGroup.builtin',
-                                                  )}
-                                                </SelectLabel>
-                                                {builtin.map((model) => (
-                                                  <SelectItem
-                                                    key={model.id}
-                                                    value={model.id}
-                                                  >
-                                                    {model.display_name} ·{' '}
-                                                    {model.provider}
-                                                  </SelectItem>
-                                                ))}
-                                              </SelectGroup>
-                                            )}
-                                            {user.length > 0 && (
-                                              <SelectGroup>
-                                                <SelectLabel>
-                                                  {t(
-                                                    'settings.customModels.modelsGroup.user',
-                                                  )}
-                                                </SelectLabel>
-                                                {user.map((model) => (
-                                                  <SelectItem
-                                                    key={model.id}
-                                                    value={model.id}
-                                                  >
-                                                    {model.display_name} ·{' '}
-                                                    {model.provider}
-                                                  </SelectItem>
-                                                ))}
-                                              </SelectGroup>
-                                            )}
-                                          </>
-                                        );
-                                      })()}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    System Prompt
-                                  </label>
-                                  <textarea
-                                    value={
-                                      selectedNode.data.config?.system_prompt ??
-                                      ''
-                                    }
-                                    onChange={(e) =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          system_prompt: e.target.value,
-                                        },
-                                      })
-                                    }
-                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
-                                    rows={3}
-                                    placeholder="System prompt for the agent"
-                                  />
-                                </div>
-                                <PromptTextArea
-                                  label="Prompt Template"
-                                  value={
-                                    selectedNode.data.config?.prompt_template ||
-                                    ''
-                                  }
-                                  onChange={(val) =>
-                                    handleUpdateNodeData({
-                                      config: {
-                                        ...(selectedNode.data.config || {}),
-                                        prompt_template: val,
-                                      },
-                                    })
-                                  }
-                                  nodes={nodes}
-                                  edges={edges}
-                                  selectedNodeId={selectedNode.id}
-                                  placeholder="Use {{ agent.variable }} for dynamic content"
-                                />
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Output Variable
-                                  </label>
-                                  <Input
-                                    type="text"
-                                    value={
-                                      selectedNode.data.config
-                                        ?.output_variable || ''
-                                    }
-                                    onChange={(e) => {
-                                      const nextOutputVariable = e.target.value;
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          output_variable: nextOutputVariable,
-                                        },
-                                      });
-                                    }}
-                                    className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
-                                    placeholder="Variable name for output"
-                                  />
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="checkbox"
-                                    id="stream_to_user"
-                                    checked={
-                                      selectedNode.data.config
-                                        ?.stream_to_user ?? true
-                                    }
-                                    onChange={(e) =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          stream_to_user: e.target.checked,
-                                        },
-                                      })
-                                    }
-                                    className="h-4 w-4"
-                                  />
-                                  <label
-                                    htmlFor="stream_to_user"
-                                    className="text-sm text-gray-700 dark:text-gray-300"
-                                  >
-                                    Stream output to user
-                                  </label>
-                                </div>{' '}
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Tools
-                                  </label>
-                                  <MultiSelect
-                                    options={availableTools.map((tool) => ({
-                                      value: tool.id,
-                                      label: getToolDisplayName(tool),
-                                    }))}
-                                    selected={
-                                      selectedNode.data.config?.tools || []
-                                    }
-                                    onChange={(newTools) =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          tools: newTools,
-                                        },
-                                      })
-                                    }
-                                    placeholder="Select tools..."
-                                    searchPlaceholder="Search tools..."
-                                    emptyText="No tools available"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Sources
-                                  </label>
-                                  <MultiSelect
-                                    options={sourceOptions}
-                                    selected={
-                                      selectedNode.data.config?.sources || []
-                                    }
-                                    onChange={(newSources) =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          sources: newSources,
-                                        },
-                                      })
-                                    }
-                                    placeholder="Select sources..."
-                                    searchPlaceholder="Search sources..."
-                                    emptyText="No sources available"
-                                  />
-                                </div>
-                                <NodeDocumentsControl
-                                  key={selectedNode.id}
-                                  value={
-                                    selectedNode.data.config?.input_documents ??
-                                    []
-                                  }
-                                  onChange={(nextInputDocuments) =>
-                                    handleUpdateNodeData({
-                                      config: {
-                                        ...(selectedNode.data.config || {}),
-                                        input_documents: nextInputDocuments,
-                                      },
-                                    })
-                                  }
-                                  options={selectedAgentDocumentOptions}
-                                  label="Documents"
-                                  helpText="Documents passed to this agent from uploads or upstream nodes."
-                                />
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    File passing
-                                  </label>
-                                  <Select
-                                    value={normalizeFilePassing(
-                                      selectedNode.data.config?.file_passing,
-                                    )}
-                                    onValueChange={(value) =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          file_passing: value as FilePassing,
-                                        },
-                                      })
-                                    }
-                                  >
-                                    <SelectTrigger className="w-full">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {FILE_PASSING_OPTIONS.map((option) => (
-                                        <SelectItem
-                                          key={option.value}
-                                          value={option.value}
-                                        >
-                                          {option.label}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                  <p className="text-muted-foreground mt-1 text-xs">
-                                    Auto: send native when the model supports
-                                    it, otherwise extract text.
-                                  </p>
-                                </div>
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Structured Output (JSON Schema)
-                                  </label>
-                                  {!selectedAgentModelSupportsStructuredOutput && (
-                                    <p className="mb-2 text-xs text-red-600 dark:text-red-400">
-                                      Selected model does not support structured
-                                      output.
-                                    </p>
-                                  )}
-                                  <textarea
-                                    value={selectedAgentJsonSchemaText}
-                                    onChange={(e) =>
-                                      handleAgentJsonSchemaChange(
-                                        e.target.value,
-                                      )
-                                    }
-                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 font-mono text-xs transition-all outline-none focus-visible:ring-2 dark:text-white"
-                                    rows={8}
-                                    placeholder={`{
-  "type": "object",
-  "properties": {
-    "summary": { "type": "string" }
-  },
-  "required": ["summary"]
-}`}
-                                  />
-                                  {selectedAgentJsonSchemaText.trim() !==
-                                    '' && (
-                                    <p
-                                      className={`mt-2 text-xs ${
-                                        selectedAgentJsonSchemaError
-                                          ? 'text-red-600 dark:text-red-400'
-                                          : 'text-green-600 dark:text-green-400'
-                                      }`}
-                                    >
-                                      {selectedAgentJsonSchemaError
-                                        ? `Invalid JSON schema: ${selectedAgentJsonSchemaError}`
-                                        : 'Valid JSON schema'}
-                                    </p>
-                                  )}
-                                </div>
-                              </>
-                            )}
-
-                            {selectedNode.type === 'note' && (
-                              <div>
-                                <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                  Note Content
-                                </label>
-                                <textarea
-                                  value={selectedNode.data.content || ''}
-                                  onChange={(e) =>
-                                    handleUpdateNodeData({
-                                      content: e.target.value,
-                                    })
-                                  }
-                                  className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
-                                  rows={4}
-                                  placeholder="Enter note content"
-                                />
-                              </div>
-                            )}
-
-                            {selectedNode.type === 'state' && (
-                              <>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">
-                                  Assign values to workflow&apos;s state
-                                  variables
-                                </p>
-                                {(
-                                  selectedNode.data.config?.operations || []
-                                ).map(
-                                  (
-                                    op: {
-                                      expression: string;
-                                      target_variable: string;
-                                    },
-                                    idx: number,
-                                  ) => (
-                                    <div
-                                      key={idx}
-                                      className="border-border rounded-xl border p-3"
-                                    >
-                                      <div className="mb-2 flex items-center justify-between">
-                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                                          Assign value
-                                        </span>
-                                        {(
-                                          selectedNode.data.config
-                                            ?.operations || []
-                                        ).length > 1 && (
-                                          <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon-sm"
-                                            onClick={() => {
-                                              const ops = [
-                                                ...(selectedNode.data.config
-                                                  ?.operations || []),
-                                              ];
-                                              ops.splice(idx, 1);
-                                              handleUpdateNodeData({
-                                                config: {
-                                                  ...(selectedNode.data
-                                                    .config || {}),
-                                                  operations: ops,
-                                                },
-                                              });
-                                            }}
-                                            className="size-auto p-0 text-gray-400 hover:bg-transparent hover:text-red-500 dark:hover:bg-transparent"
-                                          >
-                                            <Trash2 size={14} />
-                                          </Button>
-                                        )}
-                                      </div>
-                                      <textarea
-                                        value={op.expression}
-                                        onChange={(e) => {
-                                          const ops = [
-                                            ...(selectedNode.data.config
-                                              ?.operations || []),
-                                          ];
-                                          ops[idx] = {
-                                            ...ops[idx],
-                                            expression: e.target.value,
-                                          };
-                                          handleUpdateNodeData({
-                                            config: {
-                                              ...(selectedNode.data.config ||
-                                                {}),
-                                              operations: ops,
-                                            },
-                                          });
-                                        }}
-                                        className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card dark:bg-accent mb-1 w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
-                                        rows={2}
-                                        placeholder="query"
-                                      />
-                                      <p className="text-muted-foreground mb-3 text-xs">
-                                        Use Common Expression Language to create
-                                        a custom expression. Reference state by
-                                        bare name (<code>query</code>), not{' '}
-                                        <code>{'{{query}}'}</code>.{' '}
-                                        <a
-                                          href="https://cel.dev/"
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="text-primary underline"
-                                        >
-                                          Learn more
-                                        </a>
-                                      </p>
-                                      <div>
-                                        <span className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                          To variable
-                                        </span>
-                                        <Input
-                                          type="text"
-                                          value={op.target_variable}
-                                          onChange={(e) => {
-                                            const ops = [
-                                              ...(selectedNode.data.config
-                                                ?.operations || []),
-                                            ];
-                                            ops[idx] = {
-                                              ...ops[idx],
-                                              target_variable: e.target.value,
-                                            };
-                                            handleUpdateNodeData({
-                                              config: {
-                                                ...(selectedNode.data.config ||
-                                                  {}),
-                                                operations: ops,
-                                              },
-                                            });
-                                          }}
-                                          className="bg-card dark:bg-accent h-auto rounded-xl px-3 py-2 text-sm shadow-none"
-                                          placeholder="variable_name"
-                                        />
-                                      </div>
-                                    </div>
-                                  ),
-                                )}
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => {
-                                    const ops = [
-                                      ...(selectedNode.data.config
-                                        ?.operations || []),
-                                      { expression: '', target_variable: '' },
-                                    ];
-                                    handleUpdateNodeData({
-                                      config: {
-                                        ...(selectedNode.data.config || {}),
-                                        operations: ops,
-                                      },
-                                    });
-                                  }}
-                                  className="h-auto gap-1 self-start rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400"
-                                >
-                                  <Plus size={14} />
-                                  Add
-                                </Button>
-                              </>
-                            )}
-
-                            {selectedNode.type === 'condition' && (
-                              <>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">
-                                  Create conditions to branch your workflow
-                                </p>
-                                <div className="border-border flex overflow-hidden rounded-lg border">
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    onClick={() =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          mode: 'simple',
-                                        },
-                                      })
-                                    }
-                                    className={`h-auto flex-1 rounded-none px-3 py-1.5 text-xs font-medium ${
-                                      (selectedNode.data.config?.mode ||
-                                        'simple') === 'simple'
-                                        ? 'bg-primary hover:bg-primary text-white hover:text-white'
-                                        : 'text-gray-600 dark:text-gray-400'
-                                    }`}
-                                  >
-                                    Simple
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    onClick={() =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          mode: 'advanced',
-                                        },
-                                      })
-                                    }
-                                    className={`h-auto flex-1 rounded-none px-3 py-1.5 text-xs font-medium ${
-                                      selectedNode.data.config?.mode ===
-                                      'advanced'
-                                        ? 'bg-primary hover:bg-primary text-white hover:text-white'
-                                        : 'text-gray-600 dark:text-gray-400'
-                                    }`}
-                                  >
-                                    Advanced
-                                  </Button>
-                                </div>
-
-                                {(selectedNode.data.config?.cases || []).map(
-                                  (c: ConditionCase, idx: number) => (
-                                    <div
-                                      key={c.sourceHandle}
-                                      className="border-border rounded-xl border p-3"
-                                    >
-                                      <div className="mb-2 flex items-center justify-between">
-                                        <span className="text-sm font-semibold text-orange-600 dark:text-orange-400">
-                                          {idx === 0 ? 'If' : 'Else if'}
-                                        </span>
-                                        {(selectedNode.data.config?.cases || [])
-                                          .length > 1 && (
-                                          <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon-sm"
-                                            onClick={() => {
-                                              const cases =
-                                                normalizeConditionCases([
-                                                  ...(selectedNode.data.config
-                                                    ?.cases || []),
-                                                ]);
-                                              const removedHandle =
-                                                cases[idx]?.sourceHandle;
-                                              cases.splice(idx, 1);
-                                              handleUpdateNodeData({
-                                                config: {
-                                                  ...(selectedNode.data
-                                                    .config || {}),
-                                                  cases,
-                                                },
-                                              });
-                                              if (removedHandle) {
-                                                setEdges((eds) =>
-                                                  eds.filter(
-                                                    (edge) =>
-                                                      !(
-                                                        edge.source ===
-                                                          selectedNode.id &&
-                                                        edge.sourceHandle ===
-                                                          removedHandle
-                                                      ),
-                                                  ),
-                                                );
-                                              }
-                                            }}
-                                            className="size-auto p-0 text-gray-400 hover:bg-transparent hover:text-red-500 dark:hover:bg-transparent"
-                                          >
-                                            <Trash2 size={14} />
-                                          </Button>
-                                        )}
-                                      </div>
-                                      <Input
-                                        type="text"
-                                        value={c.name || ''}
-                                        onChange={(e) => {
-                                          const cases = [
-                                            ...(selectedNode.data.config
-                                              ?.cases || []),
-                                          ];
-                                          cases[idx] = {
-                                            ...cases[idx],
-                                            name: e.target.value,
-                                          };
-                                          handleUpdateNodeData({
-                                            config: {
-                                              ...(selectedNode.data.config ||
-                                                {}),
-                                              cases,
-                                            },
-                                          });
-                                        }}
-                                        className="bg-card dark:bg-accent mb-2 h-auto rounded-xl px-3 py-2 text-sm shadow-none"
-                                        placeholder="Case name (optional)"
-                                      />
-                                      {(selectedNode.data.config?.mode ||
-                                        'simple') === 'simple' ? (
-                                        <div className="flex items-center gap-2">
-                                          <Input
-                                            type="text"
-                                            value={
-                                              parseSimpleCel(c.expression)
-                                                .variable
-                                            }
-                                            onChange={(e) => {
-                                              const parsed = parseSimpleCel(
-                                                c.expression,
-                                              );
-                                              const cases = [
-                                                ...(selectedNode.data.config
-                                                  ?.cases || []),
-                                              ];
-                                              cases[idx] = {
-                                                ...cases[idx],
-                                                expression: buildSimpleCel(
-                                                  e.target.value,
-                                                  parsed.operator,
-                                                  parsed.value,
-                                                ),
-                                              };
-                                              handleUpdateNodeData({
-                                                config: {
-                                                  ...(selectedNode.data
-                                                    .config || {}),
-                                                  cases,
-                                                },
-                                              });
-                                            }}
-                                            className="bg-card dark:bg-accent h-auto rounded-xl px-3 py-2 text-sm shadow-none"
-                                            placeholder="Variable"
-                                          />
-                                          <Select
-                                            value={
-                                              parseSimpleCel(c.expression)
-                                                .operator
-                                            }
-                                            onValueChange={(op) => {
-                                              const parsed = parseSimpleCel(
-                                                c.expression,
-                                              );
-                                              const cases = [
-                                                ...(selectedNode.data.config
-                                                  ?.cases || []),
-                                              ];
-                                              cases[idx] = {
-                                                ...cases[idx],
-                                                expression: buildSimpleCel(
-                                                  parsed.variable,
-                                                  op,
-                                                  parsed.value,
-                                                ),
-                                              };
-                                              handleUpdateNodeData({
-                                                config: {
-                                                  ...(selectedNode.data
-                                                    .config || {}),
-                                                  cases,
-                                                },
-                                              });
-                                            }}
-                                          >
-                                            <SelectTrigger className="w-24 shrink-0">
-                                              <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value="==">
-                                                =
-                                              </SelectItem>
-                                              <SelectItem value="!=">
-                                                !=
-                                              </SelectItem>
-                                              <SelectItem value=">">
-                                                &gt;
-                                              </SelectItem>
-                                              <SelectItem value="<">
-                                                &lt;
-                                              </SelectItem>
-                                              <SelectItem value=">=">
-                                                &gt;=
-                                              </SelectItem>
-                                              <SelectItem value="<=">
-                                                &lt;=
-                                              </SelectItem>
-                                              <SelectItem value="contains">
-                                                contains
-                                              </SelectItem>
-                                              <SelectItem value="startsWith">
-                                                starts
-                                              </SelectItem>
-                                            </SelectContent>
-                                          </Select>
-                                          <Input
-                                            type="text"
-                                            value={
-                                              parseSimpleCel(c.expression).value
-                                            }
-                                            onChange={(e) => {
-                                              const parsed = parseSimpleCel(
-                                                c.expression,
-                                              );
-                                              const cases = [
-                                                ...(selectedNode.data.config
-                                                  ?.cases || []),
-                                              ];
-                                              cases[idx] = {
-                                                ...cases[idx],
-                                                expression: buildSimpleCel(
-                                                  parsed.variable,
-                                                  parsed.operator,
-                                                  e.target.value,
-                                                ),
-                                              };
-                                              handleUpdateNodeData({
-                                                config: {
-                                                  ...(selectedNode.data
-                                                    .config || {}),
-                                                  cases,
-                                                },
-                                              });
-                                            }}
-                                            className="bg-card dark:bg-accent h-auto rounded-xl px-3 py-2 text-sm shadow-none"
-                                            placeholder="Value"
-                                          />
-                                        </div>
-                                      ) : (
-                                        <>
-                                          <textarea
-                                            value={c.expression}
-                                            onChange={(e) => {
-                                              const cases = [
-                                                ...(selectedNode.data.config
-                                                  ?.cases || []),
-                                              ];
-                                              cases[idx] = {
-                                                ...cases[idx],
-                                                expression: e.target.value,
-                                              };
-                                              handleUpdateNodeData({
-                                                config: {
-                                                  ...(selectedNode.data
-                                                    .config || {}),
-                                                  cases,
-                                                },
-                                              });
-                                            }}
-                                            className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card dark:bg-accent w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
-                                            rows={2}
-                                            placeholder='Enter condition, e.g. query.contains("refund")'
-                                          />
-                                          <p className="text-muted-foreground mt-1 text-xs">
-                                            Use Common Expression Language to
-                                            create a custom expression.
-                                            Reference state by bare name (
-                                            <code>query</code>), not{' '}
-                                            <code>{'{{query}}'}</code>.{' '}
-                                            <a
-                                              href="https://cel.dev/"
-                                              target="_blank"
-                                              rel="noreferrer"
-                                              className="text-primary underline"
-                                            >
-                                              Learn more
-                                            </a>
-                                          </p>
-                                        </>
-                                      )}
-                                    </div>
-                                  ),
-                                )}
-
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => {
-                                    const cases = normalizeConditionCases([
-                                      ...(selectedNode.data.config?.cases ||
-                                        []),
-                                    ]);
-                                    const nextHandle =
-                                      getNextConditionHandle(cases);
-                                    cases.push({
-                                      name: '',
-                                      expression: '',
-                                      sourceHandle: nextHandle,
-                                    });
-                                    handleUpdateNodeData({
-                                      config: {
-                                        ...(selectedNode.data.config || {}),
-                                        cases,
-                                      },
-                                    });
-                                  }}
-                                  className="h-auto gap-1 self-start rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400"
-                                >
-                                  <Plus size={14} />
-                                  Add
-                                </Button>
-                              </>
-                            )}
-
-                            {selectedNode.type === 'code' && (
-                              <>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">
-                                  Run code in the workflow sandbox. Produced
-                                  files are saved as artifacts.
-                                </p>
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Code
-                                  </label>
-                                  <textarea
-                                    value={selectedNode.data.config?.code ?? ''}
-                                    onChange={(e) =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          code: e.target.value,
-                                        },
-                                      })
-                                    }
-                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 font-mono text-xs transition-all outline-none focus-visible:ring-2 dark:text-white"
-                                    rows={10}
-                                    spellCheck={false}
-                                    placeholder={'print("hello world")'}
-                                  />
-                                </div>
-                                <NodeDocumentsControl
-                                  key={selectedNode.id}
-                                  value={selectedNode.data.config?.inputs ?? []}
-                                  onChange={(nextInputs) =>
-                                    handleUpdateNodeData({
-                                      config: {
-                                        ...(selectedNode.data.config || {}),
-                                        inputs: nextInputs,
-                                      },
-                                    })
-                                  }
-                                  options={selectedCodeDocumentOptions}
-                                  label="Input files"
-                                  helpText="Artifacts/upstream refs staged as files in the sandbox (one becomes inputs/<name>)."
-                                />
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Output Variable
-                                  </label>
-                                  <Input
-                                    type="text"
-                                    value={
-                                      selectedNode.data.config
-                                        ?.output_variable || ''
-                                    }
-                                    onChange={(e) =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          output_variable: e.target.value,
-                                        },
-                                      })
-                                    }
-                                    className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
-                                    placeholder="Variable name for output"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Timeout (seconds)
-                                  </label>
-                                  <Input
-                                    type="number"
-                                    min={1}
-                                    value={
-                                      selectedNode.data.config?.timeout ?? ''
-                                    }
-                                    onChange={(e) => {
-                                      const raw = e.target.value;
-                                      const parsed =
-                                        raw.trim() === ''
-                                          ? undefined
-                                          : Number.parseInt(raw, 10);
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          timeout:
-                                            parsed !== undefined &&
-                                            Number.isFinite(parsed)
-                                              ? parsed
-                                              : undefined,
-                                        },
-                                      });
-                                    }}
-                                    className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
-                                    placeholder="Optional"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Structured Output (JSON Schema)
-                                  </label>
-                                  <textarea
-                                    value={selectedCodeJsonSchemaText}
-                                    onChange={(e) =>
-                                      handleCodeJsonSchemaChange(e.target.value)
-                                    }
-                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 font-mono text-xs transition-all outline-none focus-visible:ring-2 dark:text-white"
-                                    rows={6}
-                                    placeholder={`{
-  "type": "object",
-  "properties": {
-    "result": { "type": "string" }
-  },
-  "required": ["result"]
-}`}
-                                  />
-                                  {selectedCodeJsonSchemaText.trim() !== '' && (
-                                    <p
-                                      className={`mt-2 text-xs ${
-                                        selectedCodeJsonSchemaError
-                                          ? 'text-red-600 dark:text-red-400'
-                                          : 'text-green-600 dark:text-green-400'
-                                      }`}
-                                    >
-                                      {selectedCodeJsonSchemaError
-                                        ? `Invalid JSON schema: ${selectedCodeJsonSchemaError}`
-                                        : 'Valid JSON schema'}
-                                    </p>
-                                  )}
-                                </div>
-                              </>
-                            )}
-                          </>
-                        )}
-                    </div>
-
-                    <Button
-                      type="button"
-                      variant="destructive-outline"
-                      onClick={handleDeleteNode}
-                      disabled={selectedNode?.type === 'start'}
-                      className="w-full rounded-full border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 hover:text-red-600 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-900/10 dark:hover:text-red-400"
-                    >
-                      <Trash2 size={16} />
-                      {selectedNode?.type === 'start'
-                        ? 'Cannot Delete Start Node'
-                        : 'Delete Node'}
-                    </Button>
-                  </div>
-                </div>
-              </>
+            {showResourceNotice && (
+              <FloatingResourceNotice
+                stoppedCount={stoppedResources.length}
+                // The publish errors float over the same corner; they win.
+                hidden={publishErrors.length > 0 && !showDetails}
+              >
+                {(close) => (
+                  <ResourceStatusNotice
+                    agent={resourceNoticeAgent}
+                    stopped={stoppedResources}
+                    resolveName={resolveResourceName}
+                    readerId={readerId}
+                    takeovers={takeovers}
+                    onTakeOver={(item) => void takeOverResource(item)}
+                    onUndoTakeover={(key) =>
+                      setTakeovers((prev) => prev.filter((k) => k !== key))
+                    }
+                    onRemove={removeResource}
+                    onReconnect={reconnectResource}
+                    onClose={close}
+                  />
+                )}
+              </FloatingResourceNotice>
             )}
+            <WorkflowModelsContext.Provider value={modelNames}>
+              <ReactFlow
+                nodes={nodes}
+                edges={edges}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onConnect={onConnect}
+                onEdgeClick={onEdgeClick}
+                onDrop={onDrop}
+                onDragOver={onDragOver}
+                onNodeClick={handleNodeClick}
+                onPaneClick={handlePaneClick}
+                onNodeDragStart={snapshotBeforeCanvasChange}
+                onSelectionDragStart={snapshotBeforeCanvasChange}
+                nodeTypes={nodeTypes}
+                nodeDragThreshold={1}
+                deleteKeyCode={null}
+                proOptions={{ hideAttribution: true }}
+                fitView
+              >
+                <Background />
+                <CanvasControls
+                  onUndo={undo}
+                  onRedo={redo}
+                  canUndo={canUndo}
+                  canRedo={canRedo}
+                />
+              </ReactFlow>
+            </WorkflowModelsContext.Provider>
           </div>
+
+          {showNodeConfig && selectedNode && (
+            <NodePanel
+              node={selectedNode}
+              onClose={() => setShowNodeConfig(false)}
+              onDuplicate={handleDuplicateNode}
+              onDelete={handleDeleteNode}
+              onUpdate={handleUpdateNodeData}
+            >
+              {selectedNode.type === 'agent' && (
+                <AgentPanel
+                  node={selectedNode}
+                  onUpdate={handleUpdateNodeData}
+                  nodes={nodes}
+                  edges={edges}
+                  availableModels={availableModels}
+                  availableTools={availableTools}
+                  sourceOptions={sourceOptions}
+                  attachedTools={nodeRefNames.tools}
+                  attachedSources={nodeRefNames.sources}
+                  documentOptions={selectedAgentDocumentOptions}
+                  jsonSchemaText={selectedAgentJsonSchemaText}
+                  jsonSchemaError={selectedAgentJsonSchemaError}
+                  modelSupportsStructuredOutput={
+                    selectedAgentModelSupportsStructuredOutput
+                  }
+                  onJsonSchemaChange={handleAgentJsonSchemaChange}
+                />
+              )}
+              {selectedNode.type === 'note' && (
+                <NotePanel
+                  node={selectedNode}
+                  onUpdate={handleUpdateNodeData}
+                />
+              )}
+              {selectedNode.type === 'state' && (
+                <StatePanel
+                  node={selectedNode}
+                  onUpdate={handleUpdateNodeData}
+                />
+              )}
+              {selectedNode.type === 'condition' && (
+                <ConditionPanel
+                  node={selectedNode}
+                  onUpdate={handleUpdateNodeData}
+                  onRemoveBranch={handleRemoveConditionBranch}
+                />
+              )}
+              {selectedNode.type === 'code' && (
+                <CodePanel
+                  node={selectedNode}
+                  onUpdate={handleUpdateNodeData}
+                  documentOptions={selectedCodeDocumentOptions}
+                  jsonSchemaText={selectedCodeJsonSchemaText}
+                  jsonSchemaError={selectedCodeJsonSchemaError}
+                  onJsonSchemaChange={handleCodeJsonSchemaChange}
+                />
+              )}
+            </NodePanel>
+          )}
         </div>
 
-        <Sheet open={showPreview} onOpenChange={setShowPreview}>
-          <SheetContent
-            side="right"
-            title="Workflow preview"
-            className="bg-card w-full max-w-none p-0 sm:max-w-[600px] md:max-w-[700px] lg:max-w-[800px]"
-          >
-            <WorkflowPreview
-              workflowId={workflowId}
-              workflowData={{
-                name: workflowName,
-                description: workflowDescription,
-                nodes: nodes
-                  .filter((n) => n.type !== 'note')
-                  .map((n) => ({
-                    id: n.id,
-                    type: n.type as
-                      'start' | 'end' | 'agent' | 'state' | 'code',
-                    title: n.data.title || n.data.label || n.type,
-                    position: n.position,
-                    data:
-                      n.type === 'code'
-                        ? serializeCodeConfig(n.data.config)
-                        : n.type === 'agent'
-                          ? n.data.config
-                          : n.data,
-                  })),
-                edges: edges.map((e) => ({
-                  id: e.id,
-                  source: e.source,
-                  target: e.target,
-                  sourceHandle: e.sourceHandle || undefined,
-                  targetHandle: e.targetHandle || undefined,
+        <WorkflowDetailsSheet
+          open={showDetails}
+          onOpenChange={setShowDetails}
+          details={{
+            name: workflowName,
+            description: workflowDescription,
+            allowPromptOverride: Boolean(
+              currentAgent.allow_system_prompt_override,
+            ),
+          }}
+          currentImage={currentAgentImage}
+          saving={detailsSaving}
+          errors={detailsSaveFailed ? publishErrors : []}
+          onSave={handleDetailsSave}
+        />
+        <AgentPreviewSheet
+          open={showPreview}
+          onOpenChange={setShowPreview}
+          title={t('agents.form.sections.preview')}
+          description={
+            workflowDescription
+              ? `${workflowName} · ${workflowDescription}`
+              : workflowName
+          }
+          running={previewStatus === 'loading'}
+        >
+          <WorkflowPreview
+            workflowId={workflowId}
+            workflowData={{
+              name: workflowName,
+              description: workflowDescription,
+              nodes: nodes
+                .filter((n) => n.type !== 'note')
+                .map((n) => ({
+                  id: n.id,
+                  type: n.type as 'start' | 'end' | 'agent' | 'state' | 'code',
+                  title: n.data.title || n.data.label || n.type,
+                  position: n.position,
+                  data:
+                    n.type === 'code'
+                      ? serializeCodeConfig(n.data.config)
+                      : n.type === 'agent'
+                        ? n.data.config
+                        : n.data,
                 })),
-              }}
-            />
-          </SheetContent>
-        </Sheet>
+              edges: edges.map((e) => ({
+                id: e.id,
+                source: e.source,
+                target: e.target,
+                sourceHandle: e.sourceHandle || undefined,
+                targetHandle: e.targetHandle || undefined,
+              })),
+            }}
+          />
+        </AgentPreviewSheet>
+        {sponsorPrompt.modal}
+        {signInAgain.modals}
         <ConfirmationModal
-          message={`Are you sure you want to delete "${workflowName || 'this workflow agent'}"?`}
+          message={
+            workflowName
+              ? t('agents.deleteConfirmation', {
+                  ...NO_ESCAPE,
+                  name: workflowName,
+                })
+              : t('agents.workflow.builder.deleteConfirmUnnamed')
+          }
+          description={t('agents.deleteConsequence')}
           modalState={deleteConfirmation}
           setModalState={setDeleteConfirmation}
-          submitLabel="Delete"
+          submitLabel={t('agents.form.buttons.delete')}
           handleSubmit={handleDeleteAgent}
-          cancelLabel="Cancel"
-          variant="danger"
+          error={deleteError}
+          cancelLabel={t('agents.form.buttons.cancel')}
+          variant="destructive"
         />
+        {shareModalOpen && effectiveAgentId && (
+          <ShareToTeamModal
+            resourceType="agent"
+            resourceId={effectiveAgentId}
+            resourceName={workflowName}
+            onClose={() => setShareModalOpen(false)}
+            onOpenAccessDetails={
+              canManageAgent && can(currentAgent, 'manage_access_details')
+                ? () => {
+                    setShareModalOpen(false);
+                    setDetailsOnApiWrites(true);
+                    setAgentDetails('ACTIVE');
+                  }
+                : undefined
+            }
+          />
+        )}
         {canManageAgent && (
           <AgentDetailsModal
             agent={agentForDetails}
             mode="edit"
             modalState={agentDetails}
-            setModalState={setAgentDetails}
+            setModalState={(state) => {
+              setAgentDetails(state);
+              if (state === 'INACTIVE') setDetailsOnApiWrites(false);
+            }}
+            openApiWrites={detailsOnApiWrites}
             onKeyRegenerated={(key) =>
               setCurrentAgent((prev) => ({ ...prev, key }))
             }

@@ -1,20 +1,25 @@
 ---
-title: 🗝️ Generic API Tool
+title: API Tool
 description: Learn how to configure and use the API Tool in DocsGPT to connect with any RESTful API without writing custom code.
+lastUpdated: 2026-09-30
 ---
 
 import { Callout } from 'nextra/components';
 import Image from 'next/image';
 
-# Using the Generic API Tool
+# API Tool
 
-The API Tool provides a no-code/low-code solution to make DocsGPT interact with third-party or internal RESTful APIs. It acts as a bridge, allowing the Large Language Model (LLM) to leverage external services based on your chat interactions.
+The API Tool provides a no-code/low-code solution to make DocsGPT interact with publicly reachable RESTful APIs. It acts as a bridge, allowing the Large Language Model (LLM) to leverage external services based on your chat interactions.
  This guide will walk you through its capabilities, configuration, and best practices.
+
+<Callout type="info">
+The API Tool only calls hosts on the public internet. It refuses `localhost`, loopback, private (RFC 1918), link-local, carrier-grade NAT and other reserved addresses, which also rules out services on your LAN and sibling Docker Compose services, and it does not follow redirects. A refused URL returns `URL validation error: ...`. There is no allowlist; for an internal API, write a [custom Python tool](/Tools/creating-a-tool). See [Outbound network access](/Deploying/Security#outbound-network-access).
+</Callout>
 
 ## Introduction to the Generic API Tool
 
 **When to Use It:**
-    * Ideal for quickly integrating existing APIs where the interaction involves standard HTTP requests (GET, POST, PUT, DELETE).
+    * Ideal for quickly integrating existing APIs where the interaction involves standard HTTP requests (GET, POST, PUT, PATCH, DELETE and so on).
     * Suitable for fetching data to enrich answers (e.g., current weather, stock prices, product details).
     * Useful for triggering simple actions in other systems (e.g., sending a notification, creating a basic task).
 
@@ -24,16 +29,15 @@ The API Tool provides a no-code/low-code solution to make DocsGPT interact with 
 
 ## Capabilities of the API Tool
 
-**Supported HTTP Methods:** You can configure actions using standard HTTP methods such as:
-    * `GET`: To retrieve data.
-    * `POST`: To submit data to create a new resource.
-    * `PUT`: To update an existing resource.
-    * `DELETE`: To remove a resource.
+**Supported HTTP Methods:** `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD` and `OPTIONS`.
 
 **Request Configuration:**
     * **Headers:** Define static or dynamic HTTP headers for authentication (e.g., API keys), content type specification, etc.
     * **Query Parameters:** Specify URL query parameters, which can be static or dynamically filled by the LLM based on user input.
-    * **Request Body:** Define the structure of the request body (e.g., JSON), with fields that can be static or dynamically populated by the LLM.
+    * **Path parameters:** Write a placeholder such as `{userId}` in the URL. A query parameter with the same name fills it (URL-encoded) instead of being appended to the query string.
+    * **Request Body:** Define the fields of the request body, static or filled by the LLM, and pick its **Body content type**: JSON (the default), form-urlencoded, multipart form data, plain text, XML or raw bytes (`application/octet-stream`).
+
+**Timeout:** Each request times out after 90 seconds.
 
 **Response Handling:**
     * The API Tool executes the request and receives the raw response from the API (typically JSON or plain text).
@@ -42,7 +46,12 @@ The API Tool provides a no-code/low-code solution to make DocsGPT interact with 
 
 ## Configuring an API as a Tool
 
-You can configure the API Tool through the DocsGPT user interface, found in **Settings -> Tools**. When you add or modify an API Tool, you'll define specific actions that DocsGPT can perform.
+The API Tool isn't in the Add Tool list of built-in tools. Start a new one from **Settings -> Connectors -> Add custom tool -> OpenAPI / REST**, or from the **Add custom tool** button at the bottom of the Add Tool dialog, which opens the Connectors page filtered to custom tools, where you pick **OpenAPI / REST**. Either opens a new API tool on **Settings -> Tools**, where you define the actions DocsGPT can perform. You edit it there later too.
+
+There are two ways to fill in actions:
+
+- **Import Spec:** upload an OpenAPI 3.x or Swagger 2.0 specification (JSON or YAML), then pick which of its operations to import. DocsGPT fills in each action's URL, method, parameters and body from the spec.
+- **By hand:** add each action and fill in the fields described below.
 
 <Callout type="info">
   The configuration involves defining how DocsGPT should call an API endpoint. Each configured API call essentially becomes a distinct "action" the LLM can choose to use.
@@ -66,7 +75,7 @@ When you configure a new API action, you'll fill in the following fields:
 -   **`Name`:** A user-friendly name for this specific API action (e.g., "Phone-check" as in the image, or more specific like "ValidateUSPhoneNumber"). This helps in managing your tools.
 -   **`Description`:** This is a **critical field**. Provide a clear and concise description of what the API action does, what kind of input it expects (implicitly), and what kind of output it provides. The LLM uses this description to understand when and how to use this action.
 -   **`URL`:** The full endpoint URL for the API request.
--   **`HTTP Method`:** Select the appropriate HTTP method (e.g., GET, POST) from a dropdown.
+-   **`HTTP Method`:** Select the HTTP method from the dropdown.
 -   **`Headers`:** You can add custom HTTP headers as key-value pairs (Name, Value). Indicate if the value should be `Filled by LLM` or is static. If filled by LLM, provide a `Description` for the LLM.
 
 -   **`Query Parameters`:** For `GET` requests or when parameters are sent in the URL.
@@ -78,13 +87,13 @@ When you configure a new API action, you'll fill in the following fields:
     * `Description`: Context for the LLM if the parameter is to be filled dynamically, or for your own reference if static.
     * `Value`: The static value if not filled by LLM.
 
--   **`Request Body`:** Used to send data (commonly JSON) to the API. Similar to Query Parameters, you define fields with `Name`, `Type`, whether it's `Filled by LLM`, a `Description` for dynamic fields, and a static `Value` if applicable.
+-   **`Request Body`:** Used to send data to the API, encoded as the selected **Body content type**. Similar to Query Parameters, you define fields with `Name`, `Type`, whether it's `Filled by LLM`, a `Description` for dynamic fields, and a static `Value` if applicable.
 
 **Response Handling Guidance for the LLM:**
 
 While the API Tool configuration UI doesn't have explicit fields for defining response parsing rules (like JSONPath extractors), you significantly influence how the LLM handles the response through:
     * **Tool Action `Description`:** Clearly state what kind of information the API returns (e.g., "This API returns a JSON object with 'status' and 'location' fields for the phone number."). This helps the LLM know what to look for in the API's output.
-    * **Prompt Engineering:** For more complex scenarios, you might need to adjust your global or agent-specific prompts to guide DocsGPT on how to interpret and present information from API tool responses. See [Customising Prompts](/Guides/Customising-prompts).
+    * **Prompt Engineering:** For more complex scenarios, you might need to adjust your global or agent-specific prompts to guide DocsGPT on how to interpret and present information from API tool responses. See [Prompts](/Agents/prompts).
 
 ## Using the Configured API Tool in Chat
 
@@ -124,6 +133,14 @@ Once an API action is configured and enabled, DocsGPT's LLM can decide to use it
     * The API Tool passes this JSON response back to the LLM.
     * The LLM, guided by the tool's description and the user's original query, extracts relevant information and formulates a user-friendly answer.
     * **DocsGPT Chat Response:** "Yes, +14155555555 appears to be a valid landline phone number in California, United States."
+
+## Permissions and approval
+
+DocsGPT treats an action by its HTTP method: `GET`, `HEAD` and `OPTIONS` are reads, and every other method is a write.
+
+- **Approval.** Each action has an **Approval** switch in the tool's settings, off by default. When it is on, the agent pauses and asks before running the action (in chat, the approval card; through the API, a [pause you resume](/API/agent-api#tools-that-need-approval)). Turn it on for actions that change data, such as `POST`, `PUT`, `PATCH` and `DELETE`.
+- **API keys, widgets and public links.** Someone who uses the agent through its API key, the chat widget or its public link can't approve on your behalf. So a write action that sends a header or query value you saved (a key or token) is refused for them unless you allow it in the agent's **Access Details > Changes others can make as you**. An allowed action then runs without asking. Reads, and actions that send no saved value, are not limited. See [Letting API callers make changes](/API/agent-api#letting-api-callers-make-changes) and [Agents used through an API key](/Sources/Connectors#agents-used-through-an-api-key).
+- **Webhooks and schedules.** Nobody can approve during a [webhook](/API/webhooks#how-a-webhook-run-behaves) or scheduled run, so an action with **Approval** on is skipped there, unless the schedule lists the tool in its `tool_allowlist`.
 
 ## Advanced Tips and Best Practices
 

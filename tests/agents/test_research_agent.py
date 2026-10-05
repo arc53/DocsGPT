@@ -779,6 +779,20 @@ class TestCollectStepSources:
 
         assert len(agent.citations.citations) == 2
 
+    def test_collects_pages_the_graph_tool_read(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        from docsgpt.agents.tools.graph_search import GRAPH_TOOL_ID
+
+        agent = ResearchAgent(**agent_base_params)
+        graph = Mock()
+        graph.retrieved_docs = [{"source": "s3", "title": "quill.md", "text": "Quill"}]
+        agent.tool_executor._loaded_tools[f"graph_search:{GRAPH_TOOL_ID}:{agent.user or ''}"] = graph
+
+        agent._collect_step_sources()
+
+        assert len(agent.citations.citations) == 1
+
     def test_no_tool_no_error(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
     ):
@@ -1612,3 +1626,186 @@ class TestResearchAgentClarificationCoverage:
         text = 'Here is my response: {"needs_clarification": false} end.'
         result = agent._parse_clarification_json(text)
         assert result == {"needs_clarification": False}
+
+
+@pytest.mark.unit
+class TestGenInnerTraceSpans:
+    """Each research phase is a step span in the execution trace."""
+
+    def test_phases_become_step_spans(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+        log_context,
+        monkeypatch,
+    ):
+        from docsgpt import tracing
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "TRACES_ENABLED", True)
+        agent = ResearchAgent(**agent_base_params)
+        plan_steps = [{"query": "s1", "rationale": "r"}, {"query": "s2", "rationale": "r"}]
+
+        def fake_step(query, tools_dict):
+            with tracing.span(tracing.KIND_LLM, "chat m"):
+                return f"report {query}"
+
+        trace = tracing.start_trace(source="stream", capture_otel_context=False)
+        with tracing.activate(trace), \
+             patch.object(agent, "_setup_tools", return_value={}), \
+             patch.object(agent, "_is_follow_up", return_value=False), \
+             patch.object(agent, "_clarification_phase", return_value=None), \
+             patch.object(agent, "_planning_phase", return_value=(plan_steps, "moderate")), \
+             patch.object(agent, "_research_step", side_effect=fake_step), \
+             patch.object(agent, "_synthesis_phase", return_value=iter([{"answer": "final"}])), \
+             patch.object(agent, "_get_truncated_tool_calls", return_value=[]):
+            list(agent._gen_inner("Compare A and B", log_context))
+
+        names = [s.name for s in trace.spans if s.kind == tracing.KIND_STEP]
+        assert names == [
+            "research clarify",
+            "research plan",
+            "research step 1",
+            "research step 2",
+            "research synthesis",
+        ]
+        by_name = {s.name: s for s in trace.spans}
+        assert by_name["research plan"].attributes["docsgpt.research.steps"] == 2
+        llm_spans = [s for s in trace.spans if s.kind == tracing.KIND_LLM]
+        assert llm_spans[0].parent_id == by_name["research step 1"].id
+        assert by_name["research step 1"].previews["query"] == "s1"
+
+
+# =====================================================================
+# Research steps honour approval and outside-caller gates
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestResearchStepPauseGates:
+    """A research step can't pause for anyone, so a gated call is refused, not run."""
+
+    def _run(self, agent_base_params, mock_llm_handler, executor, tools_dict, calls, monkeypatch):
+        from docsgpt.agents import tool_executor as te_mod
+
+        # Journal writes need a database; the refusal still goes through them.
+        monkeypatch.setattr(te_mod, "_record_proposed", lambda *a, **kw: False)
+        agent = ResearchAgent(tool_executor=executor, **agent_base_params)
+        executor.prepare_tools_for_llm(tools_dict)
+        ran = []
+
+        def gen_execute(tools, tc, llm_class):
+            ran.append(tc.name)
+            yield {"type": "tool_call", "data": {"action_name": tc.name, "status": "pending"}}
+            return (f"ran {tc.name}", tc.id)
+
+        executor.execute = gen_execute
+        mock_llm_handler.create_tool_message = Mock(
+            side_effect=lambda call, result: {"role": "tool", "tool_call_id": call.id, "content": str(result)}
+        )
+        messages, _ = agent._execute_step_tools_with_refinement(
+            calls, tools_dict, [{"role": "user", "content": "q"}], executor, False
+        )
+        results = {m["tool_call_id"]: m["content"] for m in messages if m.get("role") == "tool"}
+        return ran, results, messages
+
+    def test_public_link_wiki_write_is_refused_and_view_still_runs(
+        self, agent_base_params, mock_llm, mock_llm_handler, mock_llm_creator, mock_llm_handler_creator, monkeypatch,
+    ):
+        from docsgpt.agents.tool_executor import ToolExecutor
+        from docsgpt.agents.tools.wiki import add_wiki_tool
+        from docsgpt.llm.handlers.base import ToolCall
+
+        tools_dict = {}
+        add_wiki_tool(
+            tools_dict,
+            {"source_id": "w1", "source_owner_id": "visitor", "user": "visitor", "approval_required": True},
+        )
+        executor = ToolExecutor(user="visitor", decoded_token={"sub": "visitor"}, public_link_caller=True)
+        calls = [
+            ToolCall(id="c1", name="wiki_create", arguments={"path": "/x.md", "content": "x"}),
+            ToolCall(id="c2", name="wiki_view", arguments={"path": "/"}),
+        ]
+        ran, results, messages = self._run(
+            agent_base_params, mock_llm_handler, executor, tools_dict, calls, monkeypatch
+        )
+        assert ran == ["wiki_view"]
+        assert "approval" in results["c1"].lower() and "not run" in results["c1"].lower()
+        assert results["c2"] == "ran wiki_view"
+        # Each call, refused or not, still gets its assistant tool_call turn.
+        assert [m["tool_calls"][0]["id"] for m in messages if m.get("role") == "assistant"] == ["c1", "c2"]
+
+    def test_external_caller_owner_credential_write_is_refused_read_runs(
+        self, agent_base_params, mock_llm, mock_llm_handler, mock_llm_creator, mock_llm_handler_creator, monkeypatch,
+    ):
+        from docsgpt.agents.tool_executor import ToolExecutor
+        from docsgpt.llm.handlers.base import ToolCall
+
+        params = {"type": "object", "properties": {"text": {"type": "string"}}}
+        tools_dict = {
+            "tool-1": {
+                "id": "tool-1",
+                "name": "telegram",
+                "user_id": "owner",
+                "config": {"encrypted_credentials": "secret"},
+                "actions": [
+                    {"name": "send_message", "description": "Send", "active": True, "parameters": params},
+                    {"name": "get_updates", "description": "Read", "active": True, "parameters": params},
+                ],
+            }
+        }
+        executor = ToolExecutor(user="owner", decoded_token={"sub": "owner"}, external_caller=True)
+        calls = [
+            ToolCall(id="c1", name="send_message", arguments={"text": "hi"}),
+            ToolCall(id="c2", name="get_updates", arguments={"text": "x"}),
+        ]
+        ran, results, _ = self._run(agent_base_params, mock_llm_handler, executor, tools_dict, calls, monkeypatch)
+        assert ran == ["get_updates"]
+        assert "can't take this action" in results["c1"]
+        assert results["c2"] == "ran get_updates"
+
+    def test_approval_required_action_is_refused_for_the_owner_too(
+        self, agent_base_params, mock_llm, mock_llm_handler, mock_llm_creator, mock_llm_handler_creator, monkeypatch,
+    ):
+        from docsgpt.agents.tool_executor import ToolExecutor
+        from docsgpt.llm.handlers.base import ToolCall
+
+        tools_dict = {
+            "tool-2": {
+                "id": "tool-2",
+                "name": "api_tool_like",
+                "user_id": "owner",
+                "config": {},
+                "actions": [
+                    {"name": "delete_all", "description": "Delete", "active": True, "require_approval": True,
+                     "parameters": {"type": "object", "properties": {}}},
+                ],
+            }
+        }
+        executor = ToolExecutor(user="owner", decoded_token={"sub": "owner"})
+        calls = [ToolCall(id="c1", name="delete_all", arguments={})]
+        ran, results, _ = self._run(agent_base_params, mock_llm_handler, executor, tools_dict, calls, monkeypatch)
+        assert ran == []
+        assert "approval" in results["c1"].lower()
+
+    def test_headless_denial_is_recorded(
+        self, agent_base_params, mock_llm, mock_llm_handler, mock_llm_creator, mock_llm_handler_creator, monkeypatch,
+    ):
+        from docsgpt.agents.tool_executor import ToolExecutor
+        from docsgpt.llm.handlers.base import ToolCall
+
+        tools_dict = {
+            "tool-2": {
+                "id": "tool-2", "name": "x", "user_id": "owner", "config": {},
+                "actions": [{"name": "delete_all", "description": "Delete", "active": True,
+                             "require_approval": True, "parameters": {"type": "object", "properties": {}}}],
+            }
+        }
+        executor = ToolExecutor(user="owner", decoded_token={"sub": "owner"}, headless=True)
+        calls = [ToolCall(id="c1", name="delete_all", arguments={})]
+        ran, results, _ = self._run(agent_base_params, mock_llm_handler, executor, tools_dict, calls, monkeypatch)
+        assert ran == []
+        assert results["c1"].startswith("Tool denied")
+        assert [d["action_name"] for d in executor.headless_denials] == ["delete_all"]

@@ -33,13 +33,17 @@ _SECRET_SUBSTRINGS = (
     "credential",
     "authorization",
     "bearer",
+    # Connection secrets: an OAuth token_info blob, MCP token and client
+    # registration dicts (``client_secret`` is covered by ``secret``).
+    "token_info",
+    "client_info",
 )
 
 
 def is_secret_key(key: str) -> bool:
     """True when ``key`` names a credential that must not be persisted/returned."""
     k = key.lower()
-    if k == "token":
+    if k in ("token", "tokens"):
         return True
     return any(s in k for s in _SECRET_SUBSTRINGS)
 

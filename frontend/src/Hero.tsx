@@ -1,9 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 
 import modelService from './api/services/modelService';
-import DocsGPT3 from './assets/cute_docsgpt3.svg';
+import DocsGPTLogo from './assets/full-logo-b.svg';
+import DocsGPTLogoWhite from './assets/full-logo-w.svg';
+import { Button } from './components/ui/button';
+import { cn } from './lib/utils';
 import {
   Select,
   SelectContent,
@@ -12,6 +16,16 @@ import {
   SelectValue,
 } from './components/ui/select';
 import {
+  selectConnections,
+  selectConnectorCatalog,
+  selectConnectorsEnabled,
+  selectConnectorsLoaded,
+} from './connectors/connectorsSlice';
+import { catalogCards } from './connectors/catalogCards';
+import { connectorName } from './connectors/i18n';
+import type { ConnectorDefinition } from './connectors/types';
+import { useDarkTheme } from './hooks';
+import {
   selectAvailableModels,
   selectSelectedModel,
   selectToken,
@@ -19,10 +33,12 @@ import {
   setModelsLoading,
   setSelectedModel,
 } from './preferences/preferenceSlice';
+import { intlLocale } from './utils/dateTimeUtils';
 
 import type { Model } from './models/types';
 
 function HeroModelSelect() {
+  const { t } = useTranslation();
   const dispatch = useDispatch();
   const selectedModel = useSelector(selectSelectedModel);
   const availableModels = useSelector(selectAvailableModels);
@@ -91,17 +107,27 @@ function HeroModelSelect() {
       disabled={!hasModels}
     >
       <SelectTrigger
-        className="bg-muted dark:bg-card text-foreground hover:bg-muted dark:hover:bg-card w-full justify-between rounded-4xl border-0 px-6 py-4 text-base shadow-none data-[state=open]:rounded-b-none"
-        size="lg"
+        /* eslint-disable-next-line shadcn/no-restyle --
+           The landing page's one focal control keeps its own look: a
+           borderless muted pill at 16px whose menu joins it (DESIGN.md,
+           Approved exceptions). */
+        className="bg-muted dark:bg-card text-foreground hover:bg-muted dark:hover:bg-card w-full justify-between rounded-4xl border-0 px-6 py-4 text-base shadow-none data-[state=open]:rounded-b-none md:text-base"
+        size="field"
       >
-        <SelectValue placeholder="Select Model" />
+        <SelectValue placeholder={t('conversation.selectModel')} />
       </SelectTrigger>
-      <SelectContent className="bg-muted dark:bg-card rounded-t-none rounded-b-4xl border-0 shadow-md data-[side=bottom]:translate-y-0">
+      <SelectContent
+        /* eslint-disable-next-line shadcn/no-restyle --
+           The hero picker's menu hangs from its trigger as one muted
+           shape (DESIGN.md, Approved exceptions). */
+        className="bg-muted dark:bg-card rounded-t-none rounded-b-4xl border-0 shadow-md data-[side=bottom]:translate-y-0"
+      >
         {hasModels ? (
           availableModels?.map((model: Model) => (
             <SelectItem
               key={model.id}
               value={model.id}
+              /* eslint-disable-next-line shadcn/no-restyle -- hero menu rows match its 16px trigger */
               className="px-5 py-3 text-base [&_[data-slot=select-item-indicator]]:right-5"
             >
               {model.display_name}
@@ -109,7 +135,7 @@ function HeroModelSelect() {
           ))
         ) : (
           <div className="text-muted-foreground px-5 py-3 text-base">
-            No models available
+            {t('agents.form.modelsPopup.noOptionsMessage')}
           </div>
         )}
       </SelectContent>
@@ -128,19 +154,57 @@ export default function Hero({
     isRetry?: boolean;
   }) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const [isDarkTheme] = useDarkTheme();
+  const navigate = useNavigate();
   const demos = t('demo', { returnObjects: true }) as Array<{
     header: string;
     query: string;
   }>;
+  // Nothing connected yet: the last card offers connecting a service, named
+  // after what this install can actually connect.
+  const connectorsEnabled = useSelector(selectConnectorsEnabled);
+  const connectorsLoaded = useSelector(selectConnectorsLoaded);
+  const connections = useSelector(selectConnections);
+  const catalog = useSelector(selectConnectorCatalog);
+  const connectable = catalog.filter(
+    (connector) => connector.available && connector.publisher !== 'custom',
+  );
+  const offerConnect =
+    connectorsEnabled &&
+    connectorsLoaded &&
+    connections.length === 0 &&
+    connectable.length > 0;
+  // Named after services whose data you chat with (files, docs, issues),
+  // not a web search or a bot that sends messages; one card per service.
+  const holdsData = (connector: ConnectorDefinition) =>
+    connector.category !== 'search' &&
+    (connector.capabilities ?? []).some((c) => c === 'sync' || c === 'read');
+  const dataServices = catalogCards(connectable).filter(holdsData);
+  const named = (dataServices.length > 0 ? dataServices : connectable).map(
+    (connector) => connectorName(t, connector),
+  );
+  const NAMED = 2;
+  const connectNames = new Intl.ListFormat(intlLocale(i18n.language), {
+    type: 'conjunction',
+  }).format(
+    named.length > NAMED
+      ? [...named.slice(0, NAMED), t('connectHero.more')]
+      : named,
+  );
+  const cards = (demos ?? []).filter((demo) => demo.header && demo.query);
+  const shown = offerConnect ? cards.slice(0, 3) : cards;
 
   return (
     <div className="text-foreground flex h-full w-full flex-col items-center justify-between">
       {/* Header Section */}
       <div className="flex grow flex-col items-center justify-center pt-8 md:pt-0">
-        <div className="mb-px flex items-center">
-          <span className="text-4xl font-semibold">DocsGPT</span>
-          <img className="mb-1 inline w-14" src={DocsGPT3} alt="docsgpt" />
+        <div className="mb-4 flex items-center">
+          <img
+            className="h-7 w-auto"
+            src={isDarkTheme ? DocsGPTLogoWhite : DocsGPTLogo}
+            alt="DocsGPT"
+          />
         </div>
         {/* Model Selector */}
         <div className="relative w-72">
@@ -151,23 +215,59 @@ export default function Hero({
       {/* Demo Buttons Section */}
       <div className="mb-3 w-full max-w-full md:mb-3">
         <div className="grid grid-cols-1 gap-3 text-xs md:grid-cols-1 md:gap-4 lg:grid-cols-2">
-          {demos?.map(
+          {shown.map(
             (demo: { header: string; query: string }, key: number) =>
               demo.header &&
               demo.query && (
-                <button
+                <Button
                   key={key}
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  shape="pill"
                   onClick={() => handleQuestion({ question: demo.query })}
-                  className={`border-border text-foreground hover:bg-muted dark:hover:bg-muted/50 bg-card w-full rounded-full border px-6 py-3.5 text-left transition-colors dark:bg-transparent ${key >= 2 ? 'hidden md:block' : ''}`}
+                  className={cn(
+                    /* eslint-disable-next-line shadcn/no-restyle --
+                       The demo card is a two-line pill (title over a clamped
+                       query at 12px), so it undoes lg's one-line height, the
+                       base's row layout, weight and nowrap. */
+                    'h-auto w-full flex-col items-start gap-0 py-3.5 text-left text-xs font-normal whitespace-normal',
+                    key >= 2 && 'hidden md:flex',
+                  )}
                 >
                   <p className="text-foreground mb-2 font-semibold">
                     {demo.header}
                   </p>
-                  <span className="line-clamp-2 text-gray-700 opacity-60 dark:text-gray-300">
+                  <span className="text-muted-foreground line-clamp-2">
                     {demo.query}
                   </span>
-                </button>
+                </Button>
               ),
+          )}
+          {offerConnect && (
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              shape="pill"
+              onClick={() => navigate('/settings/connectors')}
+              data-testid="hero-connect-card"
+              className={cn(
+                /* eslint-disable-next-line shadcn/no-restyle --
+                   Same two-line pill as the demo cards above. */
+                'hidden h-auto w-full flex-col items-start gap-0 py-3.5 text-left text-xs font-normal whitespace-normal md:flex',
+              )}
+            >
+              <p className="text-foreground mb-2 font-semibold">
+                {t('connectHero.title')}
+              </p>
+              <span className="text-muted-foreground line-clamp-2">
+                {t('connectHero.body', {
+                  names: connectNames,
+                  interpolation: { escapeValue: false },
+                })}
+              </span>
+            </Button>
           )}
         </div>
       </div>

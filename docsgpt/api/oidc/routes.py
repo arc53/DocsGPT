@@ -26,7 +26,10 @@ from docsgpt.api.oidc import denylist, provider
 from docsgpt.auth import handle_auth
 from docsgpt.cache import get_redis_instance
 from docsgpt.core.settings import settings
-from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
+from docsgpt.storage.db.repositories.auth_events import (
+    SYSTEM_ACTOR_OIDC,
+    AuthEventsRepository,
+)
 from docsgpt.storage.db.repositories.user_roles import UserRolesRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
@@ -129,6 +132,9 @@ def _reconcile_oidc_admin(user_id: str, groups: list[str] | None) -> None:
                     ip=request.remote_addr,
                     user_agent=request.headers.get("User-Agent"),
                     metadata={"role": "admin", "source": "oidc_group"},
+                    # The provider's group membership drove this, not the user.
+                    actor_id=SYSTEM_ACTOR_OIDC,
+                    target_id=user_id,
                 )
     except Exception:
         logger.error("OIDC admin reconcile failed for %s", user_id, exc_info=True)

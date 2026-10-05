@@ -344,7 +344,7 @@ def get_default_file_extractor(
     """
     if ocr_enabled is None:
         ocr_enabled = settings.OCR_ENABLED
-    selected = (engine or getattr(settings, "DOC_PARSER_ENGINE", None) or "anydoc")
+    selected = (engine or settings.DOC_PARSER_ENGINE or "anydoc")
     selected = str(selected).strip().lower()
     if selected == "docling":
         return _docling_file_extractor(ocr_enabled, pdf_text_fast_path)

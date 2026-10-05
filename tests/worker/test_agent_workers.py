@@ -75,6 +75,9 @@ class TestAgentWebhookWorker:
         assert captured["input"] == '{"event": "ping"}'
         # Webhook caller should pass endpoint='webhook'.
         assert captured["kwargs"].get("endpoint") == "webhook"
+        # The owner set the webhook up (its URL is a secret): the run keeps the
+        # owner's rules, and headless runs still refuse approval-gated tools.
+        assert not captured["kwargs"].get("external_caller")
 
     def test_missing_agent_raises(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
@@ -109,6 +112,36 @@ class TestAgentWebhookWorker:
 
         with pytest.raises(RuntimeError, match="LLM exploded"):
             worker.agent_webhook_worker(task_self, agent_id, {"event": "ping"})
+
+    def test_quota_refusal_is_returned_not_retried(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        """A spent quota cannot succeed on retry, so the task must not raise."""
+        from datetime import datetime, timezone
+
+        from docsgpt import worker
+        from docsgpt.agents import headless_runner
+        from docsgpt.quotas.service import QuotaExceeded, QuotaExceededError
+
+        agent = AgentsRepository(pg_conn).create(
+            user_id="alice", name="hook-agent", status="active",
+            agent_type="classic", retriever="classic", chunks=2, key="sk-test-q",
+        )
+        exceeded = QuotaExceeded(
+            user_id="alice", bucket="all", budget="cost", usage=5.0, limit=5.0,
+            source="user", source_id=None,
+            resets_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        )
+
+        def _refuse(*a, **k):
+            raise QuotaExceededError(exceeded)
+
+        monkeypatch.setattr(headless_runner, "run_agent_headless", _refuse)
+
+        result = worker.agent_webhook_worker(task_self, str(agent["id"]), {"event": "ping"})
+
+        assert result["status"] == "quota_exceeded"
+        assert "$5.00 of $5.00" in result["error"]
 
     def test_webhook_journals_headless_denial_for_approval_gated_tool(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
@@ -345,4 +378,4 @@ class TestRunAgentHeadlessFromWebhook:
         outcome = headless_runner.run_agent_headless(agent_config, "hello")
 
         assert outcome["answer"] == "done"
-        assert captured_source.get("active_docs") == source_id
+        assert captured_source.get("active_docs") == [source_id]

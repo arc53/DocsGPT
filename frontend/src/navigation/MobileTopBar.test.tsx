@@ -1,0 +1,266 @@
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
+// Both read the store; the bar only decides when they appear.
+vi.mock('../components/ProfileButton', () => ({
+  default: () => <span data-testid="profile" />,
+}));
+vi.mock('../modals/ShareConversationModal', () => ({
+  ShareConversationModal: ({ conversationId }: { conversationId: string }) => (
+    <div data-testid="share-modal">{conversationId}</div>
+  ),
+}));
+
+import MobileTopBar from './MobileTopBar';
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+const openMenu = (trigger: Element) =>
+  act(() => {
+    trigger.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+    );
+    (trigger as HTMLElement).click();
+  });
+
+const menuItem = (label: string) =>
+  Array.from(document.querySelectorAll('[role="menuitem"]')).find(
+    (el) => el.textContent === label,
+  ) as HTMLElement | undefined;
+
+describe('MobileTopBar', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  const render = (props: Partial<Parameters<typeof MobileTopBar>[0]>) =>
+    act(() => {
+      root.render(
+        <MemoryRouter>
+          <MobileTopBar onOpenSidebar={() => {}} {...props} />
+        </MemoryRouter>,
+      );
+    });
+
+  const button = (label: string) =>
+    container.querySelector(
+      `button[aria-label="${label}"]`,
+    ) as HTMLButtonElement | null;
+
+  it('shows the sidebar toggle, new chat and profile on an empty chat, with no title', () => {
+    const onOpenSidebar = vi.fn();
+    const onNewChat = vi.fn();
+    render({ onOpenSidebar, onNewChat });
+
+    act(() => button('navigation.openSidebar')!.click());
+    act(() => button('newChat')!.click());
+    expect(onOpenSidebar).toHaveBeenCalledOnce();
+    expect(onNewChat).toHaveBeenCalledOnce();
+    expect(container.querySelector('[data-testid="profile"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="mobile-title"]')).toBeNull();
+  });
+
+  it('shows no title and no new chat in a section (settings, admin)', () => {
+    render({});
+
+    expect(container.querySelector('[data-testid="mobile-title"]')).toBeNull();
+    expect(button('newChat')).toBeNull();
+    expect(button('navigation.openSidebar')).not.toBeNull();
+  });
+
+  it('shows a shared agent name as plain text: it has no actions', () => {
+    render({ title: 'Support Assistant', agentImage: '', onNewChat: () => {} });
+
+    const title = container.querySelector('[data-testid="mobile-title"]');
+    expect(title?.textContent).toBe('Support Assistant');
+    expect(title?.tagName).not.toBe('BUTTON');
+  });
+
+  it('lets a long title shrink and truncate instead of running under the actions', () => {
+    const long =
+      'Explain the difference between agents and workflows in detail';
+    render({ title: long, conversationId: 'c1', onNewChat: () => {} });
+
+    // Button's base is shrink-0, so min-w-0 alone never lets it narrow.
+    const trigger = container.querySelector('[data-testid="mobile-title"]')!;
+    const classes = trigger.className.split(' ');
+    expect(classes).toEqual(expect.arrayContaining(['min-w-0', 'shrink']));
+    expect(classes).not.toContain('shrink-0');
+    const name = trigger.querySelector('span.truncate')!;
+    expect(name.textContent).toBe(long);
+    expect(name.getAttribute('title')).toBe(long);
+  });
+
+  it('truncates a long plain-text title too', () => {
+    const long = 'A shared agent with a very long name that cannot fit';
+    render({ title: long, agentImage: '', onNewChat: () => {} });
+
+    const name = container.querySelector(
+      '[data-testid="mobile-title"] span.truncate',
+    )!;
+    expect(name.getAttribute('title')).toBe(long);
+  });
+
+  it('opens share, rename and delete from the conversation title', () => {
+    render({
+      title: 'Router drops',
+      conversationId: 'c1',
+      onNewChat: () => {},
+      onRename: () => {},
+      onDelete: () => {},
+    });
+
+    const title = container.querySelector('[data-testid="mobile-title"]')!;
+    expect(title.tagName).toBe('BUTTON');
+    expect(title.textContent).toContain('Router drops');
+    openMenu(title);
+    expect(menuItem('convTile.share')).toBeDefined();
+    expect(menuItem('convTile.rename')).toBeDefined();
+    expect(menuItem('convTile.delete')).toBeDefined();
+    expect(menuItem('navigation.editAgent')).toBeUndefined();
+
+    act(() => menuItem('convTile.share')!.click());
+    expect(
+      document.querySelector('[data-testid="share-modal"]')?.textContent,
+    ).toBe('c1');
+  });
+
+  it('renames the conversation in place', () => {
+    const onRename = vi.fn();
+    render({
+      title: 'Router drops',
+      conversationId: 'c1',
+      onRename,
+      onDelete: () => {},
+    });
+
+    openMenu(container.querySelector('[data-testid="mobile-title"]')!);
+    act(() => menuItem('convTile.rename')!.click());
+    const input = container.querySelector('input') as HTMLInputElement;
+    expect(input.value).toBe('Router drops');
+
+    act(() => {
+      const setValue = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!;
+      setValue.call(input, 'TP-Link fix');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    act(() => button('convTile.save')!.click());
+    expect(onRename).toHaveBeenCalledWith({ id: 'c1', name: 'TP-Link fix' });
+    expect(container.querySelector('input')).toBeNull();
+  });
+
+  it('adds Edit agent for an owned agent, even before the chat has a title', () => {
+    render({
+      title: 'Music score analyst',
+      agentImage: '/robot.svg',
+      editAgentPath: '/agents/edit/a1',
+    });
+
+    const title = container.querySelector('[data-testid="mobile-title"]')!;
+    expect(title.querySelector('img')).not.toBeNull();
+    openMenu(title);
+    expect(menuItem('navigation.editAgent')).toBeDefined();
+    expect(menuItem('convTile.share')).toBeUndefined();
+  });
+
+  it('keeps the menu on a chat or owned agent with an empty name', () => {
+    render({
+      title: '',
+      conversationId: 'c1',
+      editAgentPath: '/agents/edit/a1',
+      onRename: () => {},
+      onDelete: () => {},
+    });
+
+    const title = container.querySelector('[data-testid="mobile-title"]')!;
+    expect(title.tagName).toBe('BUTTON');
+    expect(title.textContent).toContain('newChat');
+    openMenu(title);
+    expect(menuItem('navigation.editAgent')).toBeDefined();
+    expect(menuItem('convTile.rename')).toBeDefined();
+  });
+
+  it('drops a rename in progress when the conversation changes', () => {
+    const onRename = vi.fn();
+    const props = { title: 'Router drops', onRename, onDelete: () => {} };
+    render({ ...props, conversationId: 'c1' });
+
+    openMenu(container.querySelector('[data-testid="mobile-title"]')!);
+    act(() => menuItem('convTile.rename')!.click());
+    expect(container.querySelector('input')).not.toBeNull();
+
+    render({ ...props, title: 'Other chat', conversationId: 'c2' });
+    expect(container.querySelector('input')).toBeNull();
+    expect(button('convTile.save')).toBeNull();
+    expect(onRename).not.toHaveBeenCalled();
+  });
+
+  it('closes an open share when the conversation changes', () => {
+    const props = {
+      title: 'Router drops',
+      onRename: () => {},
+      onDelete: () => {},
+    };
+    render({ ...props, conversationId: 'c1' });
+
+    openMenu(container.querySelector('[data-testid="mobile-title"]')!);
+    act(() => menuItem('convTile.share')!.click());
+    expect(
+      document.querySelector('[data-testid="share-modal"]'),
+    ).not.toBeNull();
+
+    render({ ...props, conversationId: 'c2' });
+    expect(document.querySelector('[data-testid="share-modal"]')).toBeNull();
+  });
+
+  // The real ConfirmationModal: pending on the returned promise, and a
+  // rejected delete stays in the dialog as an error.
+  it('keeps a failed delete open in the confirm dialog', async () => {
+    let reject: (error: Error) => void = () => undefined;
+    const onDelete = vi.fn(
+      () =>
+        new Promise<void>((_, rej) => {
+          reject = rej;
+        }),
+    );
+    render({ title: 'Router drops', conversationId: 'c1', onDelete });
+    openMenu(container.querySelector('[data-testid="mobile-title"]')!);
+    act(() => menuItem('convTile.delete')!.click());
+    // The conversation is named in the title; the consequence is below.
+    const header = document.querySelector('[role="dialog"]')!;
+    expect(header.querySelector('h2')?.textContent).toBe(
+      'convTile.deleteWarning',
+    );
+    expect(
+      header.querySelector('[data-slot="dialog-description"]')?.textContent,
+    ).toBe('convTile.deleteConsequence');
+    const submit = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ).find((b) => b.textContent?.includes('convTile.delete'))!;
+    expect(submit.getAttribute('data-variant')).toBe('destructive');
+    await act(async () => submit.click());
+    expect(onDelete).toHaveBeenCalledWith('c1');
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    await act(async () => reject(new Error('nope')));
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      'common.actionFailed',
+    );
+  });
+});

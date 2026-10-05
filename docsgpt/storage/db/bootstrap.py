@@ -96,7 +96,7 @@ def _release_boot_only_embeddings(log: logging.Logger) -> None:
 
     if settings.EMBEDDINGS_BASE_URL:
         return
-    if getattr(settings, "EMBEDDINGS_DELEGATE_TO_WORKER", False) is not True:
+    if settings.EMBEDDINGS_DELEGATE_TO_WORKER is not True:
         return
 
     import gc
@@ -144,8 +144,8 @@ def ensure_vector_schema(*, logger: Optional[logging.Logger] = None) -> None:
         )
         return
 
-    dsn = getattr(settings, "PGVECTOR_CONNECTION_STRING", None)
-    if not dsn and getattr(settings, "POSTGRES_URI", None):
+    dsn = settings.PGVECTOR_CONNECTION_STRING
+    if not dsn and settings.POSTGRES_URI:
         from docsgpt.core.db_uri import normalize_pgvector_connection_string
 
         dsn = normalize_pgvector_connection_string(settings.POSTGRES_URI)
@@ -172,7 +172,7 @@ def ensure_vector_schema(*, logger: Optional[logging.Logger] = None) -> None:
 
     dim: Optional[int] = dimension_for(settings.EMBEDDINGS_NAME)
 
-    graph_enabled = bool(getattr(settings, "GRAPHRAG_ENABLED", False))
+    graph_enabled = bool(settings.GRAPHRAG_ENABLED)
     started = time.monotonic()
     # A plain connection, never the store's pool: this can run pre-fork under
     # ``gunicorn --preload``, and an inherited pooled socket is a broken one.

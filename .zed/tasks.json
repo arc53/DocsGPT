@@ -1,0 +1,100 @@
+// Project tasks for the Zed editor (https://zed.dev/docs/tasks). Run one with
+// `task: spawn`. Python commands go through `uv run --no-sync`, which uses the
+// checkout's `.venv` without changing what is installed in it; create it first
+// with `uv sync`. See AGENTS.md for what each command does.
+[
+  {
+    "label": "services: Postgres + Redis",
+    "command": "docker compose -f deployment/docker-compose-dev.yaml up",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true
+  },
+  {
+    "label": "dev: API + worker + frontend",
+    "command": "uv run --no-sync docsgpt dev --ui",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true
+  },
+  {
+    "label": "dev: API + worker + frontend (mock LLM, no API key)",
+    "command": "uv run --no-sync docsgpt dev --ui --mock-llm",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true
+  },
+  {
+    "label": "backend: API",
+    "command": "uv run --no-sync docsgpt api --reload",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true
+  },
+  {
+    "label": "backend: Celery worker",
+    "command": "uv run --no-sync docsgpt worker",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true
+  },
+  {
+    "label": "backend: run migrations",
+    "command": "uv run --no-sync docsgpt migrate",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "frontend: dev server",
+    "command": "npm run dev",
+    "cwd": "$ZED_WORKTREE_ROOT/frontend",
+    "use_new_terminal": true
+  },
+  {
+    "label": "frontend: build into docsgpt/static",
+    "command": "bash scripts/build_frontend.sh",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  // Coverage is switched off for partial runs: pytest.ini turns it on, and a
+  // report for one file is slow and misleading.
+  {
+    "label": "pytest: all",
+    "command": "uv run --no-sync python -m pytest",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "pytest: this file",
+    "command": "uv run --no-sync python -m pytest --no-cov \"$ZED_RELATIVE_FILE\"",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "pytest: test under cursor ($ZED_SYMBOL)",
+    "command": "uv run --no-sync python -m pytest --no-cov \"$ZED_RELATIVE_FILE\" -k \"$ZED_SYMBOL\"",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "pytest: last failed",
+    "command": "uv run --no-sync python -m pytest --no-cov --lf",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "vitest: all",
+    "command": "npm run test",
+    "cwd": "$ZED_WORKTREE_ROOT/frontend"
+  },
+  {
+    "label": "vitest: this file",
+    "command": "npx vitest run \"$ZED_FILE\"",
+    "cwd": "$ZED_WORKTREE_ROOT/frontend"
+  },
+  {
+    "label": "lint: ruff check --fix",
+    "command": "uv run --no-sync ruff check --fix .",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "lint: frontend (eslint --fix + prettier)",
+    "command": "npm run lint-fix && npm run format",
+    "cwd": "$ZED_WORKTREE_ROOT/frontend"
+  },
+  // CI fails when docsgpt/requirements*.txt are stale against uv.lock.
+  {
+    "label": "deps: uv lock + export requirements",
+    "command": "uv lock && bash scripts/export_requirements.sh",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  }
+]

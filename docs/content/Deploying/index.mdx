@@ -1,0 +1,69 @@
+---
+title: Choose a Deployment
+description: Compare the ways to install DocsGPT (installer, Docker Compose, pip, Kubernetes, air-gapped) and pick the one that fits.
+lastUpdated: 2026-09-30
+---
+
+import { Callout } from 'nextra/components'
+
+# Choose a Deployment
+
+DocsGPT runs as an API (which also serves the web UI), a Celery worker,
+PostgreSQL and Redis. Every install method below runs those same pieces. They
+differ in who manages them, where the data lives, and which version you get.
+
+## At a glance
+
+| Method | Best for | What runs | Address | Data | Version |
+| --- | --- | --- | --- | --- | --- |
+| [Installer / `docsgpt up`](/Deploying/Docker-Deploying#run-it-with-docsgpt-up) | Most people: a laptop, a home server or a cloud VM | Docker Compose stack managed by the `docsgpt` command | `http://localhost:7091`, or `https://<domain>` with `--domain` | Named Docker volumes; settings in `~/.docsgpt/server/.env` | The installed package's release |
+| [Standalone Compose file](/Deploying/Docker-Deploying#quickest-setup-pre-built-images-no-checkout) | Running the images with plain Docker Compose, no Python on the host | The same stack, from one downloaded file | `http://localhost:7091` | Named Docker volumes; `.env` next to the file | `latest` unless `DOCSGPT_IMAGE_TAG` is set |
+| [Source checkout, `setup.sh`](/quickstart#from-a-clone-with-the-setup-script) | Trying changes, building your own images | Compose files under `deployment/` | `http://localhost:5173` (UI) and `:7091` (API) | Uploads and indexes in `application/` in the checkout, the database in the `docsgpt-oss_postgres_data` volume; `.env` in the repository root | `develop` (follows `main`) unless `DOCSGPT_IMAGE_TAG` is set |
+| [pip install](/Deploying/Pip-Install) | Hosts without Docker, or your own process manager | `docsgpt api` and `docsgpt worker` (or `docsgpt up --native` services) against your Postgres and Redis | `http://127.0.0.1:7091` | `~/.docsgpt/server` | The installed package's release |
+| [Kubernetes](/Deploying/Kubernetes-Deploying) | Clusters, several API or worker replicas | Manifests in `deployment/k8s/` | Through `kubectl port-forward` or your Ingress | Postgres volume, S3 for uploads | Pinned in the manifests |
+| [Air-gapped](/Deploying/Air-Gapped) | Networks without internet access | Any of the above, with images and models brought in | As above | As above | Whatever you mirror |
+| [Development environment](/Deploying/Development-Environment) | Working on DocsGPT itself | Postgres and Redis in Docker, the app from source | `http://localhost:5173` | The checkout | Your working tree |
+
+## Which one to pick
+
+- **Start with the installer.** `curl -fsSL https://docs.ac/install | bash`
+  (or `irm https://docs.ac/install.ps1 | iex` on Windows) installs the
+  `docsgpt` package and runs `docsgpt up`. It generates the secrets, keeps the
+  stack on the release you installed, and gives you `docsgpt status`,
+  `docsgpt backup` and `docsgpt upgrade`. See the [Quickstart](/quickstart).
+- **On a cloud VM**, such as Amazon Lightsail, Hetzner, DigitalOcean or any
+  other provider, use the same installer with a domain. Point the domain's DNS
+  record at the VM, open ports 80 and 443, then run:
+
+  ```bash
+  curl -fsSL https://docs.ac/install | bash -s -- --domain docs.example.com
+  ```
+
+  Caddy obtains the certificate and DocsGPT asks for an access token. Keep the
+  other ports closed. For separate user accounts, add
+  [OIDC single sign-on](/Deploying/OIDC-SSO).
+- **Prefer plain Compose** when you manage containers yourself, for example
+  with an existing Compose-based setup. The standalone file runs the same
+  images as `docsgpt up`, and `docsgpt up --adopt` can take it over later.
+- **Use a checkout** to change the code or build images. `setup.sh` and the
+  checkout Compose files are meant for local use: they run `develop` images by
+  default and publish on `127.0.0.1`. Set `DOCSGPT_IMAGE_TAG` in `.env` to pin
+  a release.
+- **Use pip** where Docker is not available or not wanted. You provide
+  PostgreSQL and Redis; `docsgpt up --native` can run the API and worker as
+  launchd or systemd services on macOS and Linux.
+- **Use Kubernetes** when you already run a cluster and want replicas, rolling
+  upgrades and your own Ingress.
+
+<Callout type="warning" emoji="⚠️">
+  Before DocsGPT is reachable by anyone else, set `AUTH_TYPE`, a real
+  `INTERNAL_KEY` and `ENCRYPTION_SECRET_KEY`, and publish it over HTTPS.
+  `docsgpt up` does most of this for you. Work through the
+  [security checklist](/Deploying/Security) for any other method.
+</Callout>
+
+## After installing
+
+- [App Configuration](/Deploying/DocsGPT-Settings): where `.env` lives and the main settings.
+- [docsgpt CLI Reference](/Deploying/cli): every `docsgpt` command.
+- [Upgrading](/upgrading): how to move to a new release on each install method.

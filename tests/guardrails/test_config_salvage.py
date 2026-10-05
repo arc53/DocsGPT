@@ -13,7 +13,7 @@ import pytest
 
 from docsgpt.core.settings import settings
 from docsgpt.guardrails.config import AgentConfig, GuardrailsConfig
-from docsgpt.guardrails.guardrail_creator import GuardrailCreator
+from docsgpt.guardrails.guardrail_creator import GuardrailCreator, warn_unknown_checks_enabled
 from docsgpt.guardrails.runtime import resolve_config
 
 TWO_CONTROLS = {
@@ -58,6 +58,35 @@ class TestAllowlistMatchesRegistry:
         monkeypatch.setattr(settings, "GUARDRAILS_CHECKS_ENABLED", ["pii", "secrets_"])
         monkeypatch.setattr(GuardrailCreator, "_bootstrapped", False)
         assert GuardrailCreator.enabled_keys() == ["pii"]
+
+
+class TestUnknownAllowlistWarning:
+    """An allowlist entry that is not a check is still filtered out, but no longer silently."""
+
+    def test_none_is_reported_with_the_master_switch(self, monkeypatch, caplog):
+        monkeypatch.setattr(settings, "GUARDRAILS_CHECKS_ENABLED", ["none"])
+        caplog.set_level(logging.WARNING, logger="docsgpt.guardrails.guardrail_creator")
+        assert warn_unknown_checks_enabled() == ["none"]
+        assert GuardrailCreator.enabled_keys() == []
+        [record] = [r for r in caplog.records if "GUARDRAILS_CHECKS_ENABLED" in r.getMessage()]
+        assert record.levelno == logging.WARNING
+        message = record.getMessage()
+        assert "none" in message
+        assert "GUARDRAILS_ENABLED=false" in message
+        assert "pii" in message  # the registered names, so the typo is easy to fix
+
+    def test_only_the_unknown_entries_are_listed(self, monkeypatch, caplog):
+        monkeypatch.setattr(settings, "GUARDRAILS_CHECKS_ENABLED", ["pii", "secrets_"])
+        caplog.set_level(logging.WARNING, logger="docsgpt.guardrails.guardrail_creator")
+        assert warn_unknown_checks_enabled() == ["secrets_"]
+        assert GuardrailCreator.enabled_keys() == ["pii"]
+
+    @pytest.mark.parametrize("allowlist", [[], ["pii", "secrets"]])
+    def test_a_valid_allowlist_is_quiet(self, monkeypatch, caplog, allowlist):
+        monkeypatch.setattr(settings, "GUARDRAILS_CHECKS_ENABLED", allowlist)
+        caplog.set_level(logging.WARNING, logger="docsgpt.guardrails.guardrail_creator")
+        assert warn_unknown_checks_enabled() == []
+        assert not [r for r in caplog.records if "GUARDRAILS_CHECKS_ENABLED" in r.getMessage()]
 
 
 class TestSalvage:

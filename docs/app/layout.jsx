@@ -1,35 +1,45 @@
-import Image from 'next/image';
 import { Analytics } from '@vercel/analytics/react';
-import { Banner, Head } from 'nextra/components';
+import { Head } from 'nextra/components';
 import { getPageMap } from 'nextra/page-map';
 import { Footer, Layout, Navbar } from 'nextra-theme-docs';
 import 'nextra-theme-docs/style.css';
 
 import { DocsGPTChatWidget } from '../components/DocsGPTChatWidget';
-import CuteLogo from '../public/cute-docsgpt.png';
+import { HOME_TITLE, SITE_NAME, SITE_URL } from '../page-meta';
 import themeConfig from '../theme.config';
+
+import './brand.css';
 
 const github = 'https://github.com/arc53/DocsGPT';
 
+// Each page adds its own canonical URL, share card and description; see
+// pageMetadata() in page-meta.js.
 export const metadata = {
+  metadataBase: new URL(SITE_URL),
+  applicationName: SITE_NAME,
   title: {
-    default: 'DocsGPT Documentation',
-    template: '%s - DocsGPT Documentation',
+    default: HOME_TITLE,
+    template: `%s | ${SITE_NAME}`,
   },
   description:
-    'Use DocsGPT to chat with your data. DocsGPT is a GPT-powered chatbot that can answer questions about your data.',
+    'DocsGPT is an open-source platform for building AI agents and assistants with document retrieval, tools, and multi-model support.',
 };
 
 const navbar = (
   <Navbar
     logo={
       <div style={{ alignItems: 'center', display: 'flex', gap: '8px' }}>
-        <Image src={CuteLogo} alt="DocsGPT logo" width={28} height={28} />
+        <img
+          className="brand-logo brand-logo-light"
+          src="/logo-b.svg"
+          alt="DocsGPT logo"
+        />
+        <img className="brand-logo brand-logo-dark" src="/logo-w.svg" alt="" />
         <span style={{ fontWeight: 'bold', fontSize: 18 }}>DocsGPT Docs</span>
       </div>
     }
     projectLink={github}
-    chatLink="https://discord.com/invite/n5BX8dh8rU"
+    chatLink="https://discord.gg/vN7YFfdMpj"
   />
 );
 
@@ -44,7 +54,7 @@ const footer = (
       GitHub
     </a>
     {' | '}
-    <a href="https://blog.docsgpt.cloud/" target="_blank" rel="noreferrer">
+    <a href="https://www.docsgpt.cloud/blog" target="_blank" rel="noreferrer">
       Blog
     </a>
   </Footer>
@@ -54,25 +64,24 @@ export default async function RootLayout({ children }) {
   return (
     <html lang="en" dir="ltr" suppressHydrationWarning>
       <Head>
+        <link rel="icon" href="/favicon.ico" sizes="48x48" />
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <link
+          rel="icon"
+          href="/favicon-96x96.png"
+          type="image/png"
+          sizes="96x96"
+        />
         <link
           rel="apple-touch-icon"
+          href="/apple-touch-icon.png"
           sizes="180x180"
-          href="/favicons/apple-touch-icon.png"
         />
-        <link rel="icon" type="image/png" sizes="32x32" href="/favicons/favicon-32x32.png" />
-        <link rel="icon" type="image/png" sizes="16x16" href="/favicons/favicon-16x16.png" />
-        <link rel="manifest" href="/favicons/site.webmanifest" />
-        <meta httpEquiv="Content-Language" content="en" />
+        <link rel="manifest" href="/site.webmanifest" />
+        <meta name="apple-mobile-web-app-title" content="DocsGPT Docs" />
       </Head>
       <body>
         <Layout
-          banner={
-            <Banner storageKey="docs-launch">
-              <div className="flex justify-center items-center gap-2">
-                Welcome to the new DocsGPT docs!
-              </div>
-            </Banner>
-          }
           navbar={navbar}
           footer={footer}
           pageMap={await getPageMap()}

@@ -22,10 +22,16 @@ class DeployError(Exception):
     """A problem the user can act on; the command prints it without a traceback."""
 
 
-def run(args: Sequence[str], *, cwd: Optional[Path] = None, capture: bool = False, check: bool = True):
-    """Run a command, streaming its output unless ``capture``; with ``check`` a failure raises DeployError."""
+def run(args: Sequence[str], *, cwd: Optional[Path] = None, capture: bool = False, check: bool = True,
+        stdout=None, stdin=None):
+    """Run a command, streaming its output unless ``capture`` or a file is given for ``stdout``.
+
+    ``stdout`` and ``stdin`` take open files, so a dump goes straight to disk and
+    back in again without passing through this process.
+    """
+    streams = {"capture_output": True} if capture else {"stdout": stdout, "stdin": stdin}
     try:
-        result = subprocess.run(list(args), cwd=cwd, text=True, capture_output=capture, check=False)
+        result = subprocess.run(list(args), cwd=cwd, text=True, check=False, **streams)
     except FileNotFoundError as exc:
         raise DeployError(f"{args[0]} is not installed or not on PATH") from exc
     if check and result.returncode != 0:
@@ -94,9 +100,37 @@ class Docker:
             raise DeployError("Docker is not running. Start it with `sudo systemctl start docker` and run this again.")
         raise DeployError("Docker is not running. Start Docker Desktop and run this again.")
 
-    def compose(self, directory: Path, *args: str, capture: bool = False, check: bool = True):
+    def compose(self, directory: Path, *args: str, capture: bool = False, check: bool = True,
+                stdout=None, stdin=None):
         """``docker compose <args>`` in ``directory``, which holds the Compose file and its ``.env``."""
-        return self._run(["docker", "compose", *args], cwd=directory, capture=capture, check=check)
+        return self._run(["docker", "compose", *args], cwd=directory, capture=capture, check=check,
+                         stdout=stdout, stdin=stdin)
+
+    def export_volume(self, volume: str, dest: Path, image: str) -> None:
+        """Write ``volume`` to ``dest`` as a tar, through an image the install already has."""
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with dest.open("wb") as handle:
+            self._run(
+                ["docker", "run", "--rm", "-v", f"{volume}:/data:ro", image, "tar", "cf", "-", "-C", "/data", "."],
+                stdout=handle,
+            )
+
+    def import_volume(self, volume: str, source: Path, image: str) -> None:
+        """Replace ``volume``'s contents with the tar at ``source``; the volume is created when missing."""
+        # Unpack into a throwaway directory inside the container first, so a truncated or corrupt
+        # tar fails before the live volume is touched rather than halfway through emptying it. The
+        # container makes the directory itself: the image does not run as root, and a fixed path
+        # would be both a guess about what is writable and a temp-file smell.
+        script = (
+            'set -e; stage=$(mktemp -d); tar xf - -C "$stage"; '
+            'find /data -mindepth 1 -delete; tar cf - -C "$stage" . | tar xf - -C /data; '
+            'rm -rf "$stage"'
+        )
+        with source.open("rb") as handle:
+            self._run(
+                ["docker", "run", "--rm", "-i", "-v", f"{volume}:/data", image, "sh", "-c", script],
+                stdin=handle,
+            )
 
     def volume_exists(self, name: str) -> bool:
         return self._run(["docker", "volume", "inspect", name], capture=True, check=False).returncode == 0

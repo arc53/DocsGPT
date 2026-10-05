@@ -183,3 +183,68 @@ class TestCrawlerLoaderGaps:
 
                 result = loader.load_data("https://example.com")
                 assert result[0].text == "test"
+
+
+@patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
+@patch("docsgpt.parser.remote.crawler_loader.pinned_request")
+def test_colliding_pages_get_distinct_file_paths(mock_pinned_request, mock_validate_url):
+    responses = {
+        "http://example.com": DummyResponse(
+            "<html><body><a href='/a'>A</a><a href='/a.html'>A2</a>"
+            "<a href='/l?page=2'>L</a></body></html>"
+        ),
+        "http://example.com/a": DummyResponse("<html><body>a</body></html>"),
+        "http://example.com/a.html": DummyResponse("<html><body>a2</body></html>"),
+        "http://example.com/l?page=2": DummyResponse("<html><body>l</body></html>"),
+    }
+    mock_pinned_request.side_effect = lambda _m, url, timeout=30: responses[url]
+
+    result = CrawlerLoader(limit=10).load_data("http://example.com")
+
+    paths = {doc.extra_info["source"]: doc.extra_info["file_path"] for doc in result}
+    assert paths == {
+        "http://example.com": "index.md",
+        "http://example.com/a": "a.md",
+        "http://example.com/a.html": "a-2.md",
+        "http://example.com/l?page=2": "l__page=2.md",
+    }
+
+
+@patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
+@patch("docsgpt.parser.remote.crawler_loader.pinned_request")
+def test_reordered_query_and_fragment_variants_are_fetched_once(mock_pinned_request, mock_validate_url):
+    responses = {
+        "http://example.com": DummyResponse(
+            "<html><body><a href='/p?a=1&b=2'>P</a><a href='/p?b=2&a=1'>P2</a>"
+            "<a href='/p?a=1&b=2#top'>P3</a></body></html>"
+        ),
+        "http://example.com/p?a=1&b=2": DummyResponse("<html><body>p</body></html>"),
+        "http://example.com/p?b=2&a=1": DummyResponse("<html><body>p</body></html>"),
+        "http://example.com/p?a=1&b=2#top": DummyResponse("<html><body>p</body></html>"),
+    }
+    mock_pinned_request.side_effect = lambda _m, url, timeout=30: responses[url]
+
+    result = CrawlerLoader(limit=10).load_data("http://example.com")
+
+    fetched = [c.args[1] for c in mock_pinned_request.call_args_list]
+    assert fetched[0] == "http://example.com"
+    assert len(fetched) == 2
+    # The page is fetched as a link wrote it, not as its normalized key.
+    assert fetched[1] in responses
+    assert len(result) == 2
+
+
+@patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
+@patch("docsgpt.parser.remote.crawler_loader.pinned_request")
+def test_malformed_link_does_not_abort_the_crawl(mock_pinned_request, mock_validate_url):
+    responses = {
+        "http://example.com": DummyResponse(
+            "<html><body><a href='http://[bad'>Bad</a><a href='/good'>Good</a></body></html>"
+        ),
+        "http://example.com/good": DummyResponse("<html><body>good</body></html>"),
+    }
+    mock_pinned_request.side_effect = lambda _m, url, timeout=30: responses[url]
+
+    result = CrawlerLoader(limit=10).load_data("http://example.com")
+
+    assert {d.extra_info["source"] for d in result} == {"http://example.com", "http://example.com/good"}

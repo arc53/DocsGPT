@@ -8,14 +8,20 @@ models:
     display_name: DeepSeek V4 Pro
     description: 1.6T MoE (49B active) with 1M context, hybrid CSA/HCA attention, top-tier reasoning and agentic coding
     context_window: 1048576
+    input_cost_per_million: 1.6
+    output_cost_per_million: 3.2
 
   - id: moonshotai/kimi-k2.6
     display_name: Kimi K2.6
     description: 1T-parameter open-weight MoE with native vision/video, multi-step tool calling, and agentic long-horizon execution
     attachments: [image]
     context_window: 262144
+    input_cost_per_million: 0.8
+    output_cost_per_million: 3.4
 
   - id: zai-org/glm-5
     display_name: GLM-5
     description: Z.AI 754B-parameter MoE with strong general reasoning, function calling, and structured output
     context_window: 202800
+    input_cost_per_million: 1.0
+    output_cost_per_million: 3.2

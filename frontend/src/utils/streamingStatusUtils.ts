@@ -41,6 +41,244 @@ const NO_ESCAPE = { interpolation: { escapeValue: false } } as const;
  */
 export type ToolActivity = { key: string; values?: Record<string, string> };
 
+const CONNECTOR_SEARCH_WORDS = /search|query|find|list/i;
+
+/**
+ * An action's name in words, without the service prefix it repeats:
+ * "linear_create_issue" and "notion-create-pages" drop "linear" / "notion";
+ * a bare verb ("search") keeps its whole name. Lower case.
+ *
+ * @param action - The action's name as the model called it.
+ * @param service - The service's name, whose prefix is dropped.
+ */
+export function readableAction(action: string, service?: string | null) {
+  return action
+    .replace(/^[a-z0-9]+[_-](?=[a-z])/i, (prefix) =>
+      service &&
+      service.toLowerCase().startsWith(prefix.slice(0, -1).toLowerCase())
+        ? ''
+        : prefix,
+    )
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * A call's card title: "GitHub · Create issue", or the tool's name when no
+ * connection backs it ("Remote Device · Run command").
+ */
+export function toolCallTitle(toolCall: ToolCallsType, t: TFunction): string {
+  const name = toolCall.connector_name || formatToolLabel(toolCall.tool_name);
+  const words = readableAction(
+    toolCall.action_name ?? '',
+    toolCall.connector_name,
+  );
+  const action = words.charAt(0).toUpperCase() + words.slice(1);
+  if (!name) return action;
+  if (!action) return name;
+  return t('conversation.toolApproval.title', { name, action, ...NO_ESCAPE });
+}
+
+/**
+ * A call to a connection-backed tool, named after its service: "Searched
+ * Notion", "Read from Google Drive", "Used Linear: create issue". Reads that
+ * look up something search; other reads read; writes name their action.
+ */
+function describeConnectorCall(toolCall: ToolCallsType): ToolActivity | null {
+  const name = toolCall.connector_name;
+  if (!name) return null;
+  const action = toolCall.action_name ?? '';
+  if (toolCall.access === 'write') {
+    return {
+      key: 'connectorWrite',
+      values: { name, action: readableAction(action, name) },
+    };
+  }
+  if (CONNECTOR_SEARCH_WORDS.test(action))
+    return { key: 'connectorSearch', values: { name } };
+  return { key: 'connectorRead', values: { name } };
+}
+
+// Connector activities read differently while running and once done.
+const CONNECTOR_KEYS: Record<
+  'streamingStatus' | 'toolChip',
+  Record<string, string>
+> = {
+  streamingStatus: {
+    connectorSearch: 'searchingConnector',
+    connectorRead: 'usingConnector',
+    connectorWrite: 'usingConnector',
+  },
+  toolChip: {
+    connectorSearch: 'searchedConnector',
+    connectorRead: 'readConnector',
+    connectorWrite: 'usedConnector',
+  },
+};
+
+// The server-side tool that reads a turn's attached files. Its actions take a
+// ``docsgpt_`` prefix when a client tool already uses the plain name.
+const ATTACHMENTS_TOOL = 'attachments';
+const ATTACHMENTS_PREFIX = /^docsgpt_/;
+// A read of an image says so in its first words (attachments.py _show_image).
+const IMAGE_READ_RESULT = /^Image [AF]\d+\b/;
+// A# refs name the conversation's image artifacts.
+const ARTIFACT_REF = /^A\d+$/;
+
+/** A range as the model wrote it ("2-4"), with an en dash for display. */
+function displayRange(range: string): string {
+  return range.trim().replace(/\s*-\s*/g, '–');
+}
+
+/**
+ * A call to the attachments tool, named by what it did with the files:
+ * "Searched files for “enzymes”", "Read F3 (pages 2–4)", "Listed files",
+ * "Viewed image F7".
+ */
+function describeAttachmentsCall(toolCall: ToolCallsType): ToolActivity | null {
+  if (toolCall.tool_name !== ATTACHMENTS_TOOL) return null;
+  const action = (toolCall.action_name ?? '').replace(ATTACHMENTS_PREFIX, '');
+  const args = toolCall.arguments ?? {};
+  const text = (value: unknown) =>
+    typeof value === 'string' || typeof value === 'number'
+      ? String(value).trim()
+      : '';
+
+  if (action === 'attachments_list') return { key: 'attachmentsList' };
+  if (action === 'attachments_search') {
+    const query = text(args.query);
+    return query
+      ? { key: 'attachmentsSearch', values: { query } }
+      : { key: 'attachmentsSearchGeneric' };
+  }
+  if (action === 'attachments_read') {
+    const ref = text(args.ref).toUpperCase();
+    if (!ref) return { key: 'attachmentsReadGeneric' };
+    const result: unknown = toolCall.result;
+    if (
+      ARTIFACT_REF.test(ref) ||
+      (typeof result === 'string' && IMAGE_READ_RESULT.test(result))
+    )
+      return { key: 'attachmentsImage', values: { ref } };
+    const pages = text(args.pages);
+    if (pages)
+      return /[-,]/.test(pages)
+        ? {
+            key: 'attachmentsReadPages',
+            values: { ref, pages: displayRange(pages) },
+          }
+        : { key: 'attachmentsReadPage', values: { ref, pages } };
+    const rows = text(args.rows);
+    if (rows)
+      return {
+        key: 'attachmentsReadRows',
+        values: { ref, rows: displayRange(rows) },
+      };
+    return { key: 'attachmentsRead', values: { ref } };
+  }
+  return null;
+}
+
+const argText = (args: Record<string, unknown> | undefined, key: string) => {
+  const value = args?.[key];
+  return typeof value === 'string' || typeof value === 'number'
+    ? String(value).trim()
+    : '';
+};
+
+const NOTE_WRITES = new Set([
+  'note_overwrite',
+  'note_str_replace',
+  'note_insert',
+]);
+const MEMORY_WRITES = new Set([
+  'memory_create',
+  'memory_str_replace',
+  'memory_insert',
+]);
+const TODO_BY_ID: Record<string, string> = {
+  todo_get: 'todoGet',
+  todo_update: 'todoUpdate',
+  todo_complete: 'todoComplete',
+  todo_delete: 'todoDelete',
+};
+// Actions of the bundled tools that need no argument to say what they did.
+const FIXED_ACTIVITY: Record<string, string> = {
+  todo_list: 'todoList',
+  note_view: 'noteRead',
+  note_delete: 'noteDelete',
+  ntfy_send_message: 'sentNotification',
+  telegram_send_message: 'telegramMessage',
+  telegram_send_image: 'telegramImage',
+  postgres_execute_sql: 'sqlQuery',
+  postgres_get_schema: 'dbSchema',
+};
+
+/**
+ * A call to one of the bundled tools, named by what it did and to what:
+ * "Read wiki page /sales/pricing.md", "Added todo “…”", "Updated the note",
+ * "Saved /plan.md to memory", "Checked the BTC price in EUR".
+ */
+function describeBuiltInCall(toolCall: ToolCallsType): ToolActivity | null {
+  const { tool_name, action_name, arguments: args } = toolCall;
+  if (FIXED_ACTIVITY[action_name]) return { key: FIXED_ACTIVITY[action_name] };
+
+  if (tool_name === 'wiki' && action_name === 'wiki_view') {
+    const path = argText(args, 'path');
+    return !path || path.endsWith('/')
+      ? { key: 'wikiList' }
+      : { key: 'wikiRead', values: { path } };
+  }
+  if (tool_name === 'todo_list') {
+    if (action_name === 'todo_create') {
+      const title = argText(args, 'title');
+      return title ? { key: 'todoAdd', values: { title } } : null;
+    }
+    const id = argText(args, 'todo_id');
+    return TODO_BY_ID[action_name] && id
+      ? { key: TODO_BY_ID[action_name], values: { id } }
+      : null;
+  }
+  if (tool_name === 'notes' && NOTE_WRITES.has(action_name))
+    return { key: 'noteUpdate' };
+  if (tool_name === 'memory') {
+    const path = argText(args, 'path') || argText(args, 'old_path');
+    if (!path) return null;
+    if (action_name === 'memory_view')
+      return path === '/'
+        ? { key: 'memoryList' }
+        : { key: 'memoryRead', values: { path } };
+    if (MEMORY_WRITES.has(action_name))
+      return { key: 'memorySave', values: { path } };
+    if (action_name === 'memory_delete')
+      return { key: 'memoryDelete', values: { path } };
+    if (action_name === 'memory_rename')
+      return { key: 'memoryRename', values: { path } };
+    return null;
+  }
+  if (action_name === 'cryptoprice_get') {
+    const symbol = argText(args, 'symbol').toUpperCase();
+    const currency = argText(args, 'currency').toUpperCase();
+    return symbol && currency
+      ? { key: 'cryptoPrice', values: { symbol, currency } }
+      : null;
+  }
+  return null;
+}
+
+/**
+ * The last resort: the tool's name with its action in words ("Used Todo List:
+ * update"), or the bare name when the action only repeats it.
+ */
+function describeGenericCall(toolCall: ToolCallsType): ToolActivity {
+  const tool = formatToolLabel(toolCall.tool_name);
+  const action = readableAction(toolCall.action_name ?? '', tool);
+  if (!action || tool.toLowerCase().includes(action))
+    return { key: 'usingTool', values: { tool } };
+  return { key: 'usedToolAction', values: { tool, action } };
+}
+
 export function describeToolCall(toolCall: ToolCallsType): ToolActivity {
   const { tool_name, action_name, arguments: args } = toolCall;
   const query = typeof args?.query === 'string' ? args.query : undefined;
@@ -63,13 +301,18 @@ export function describeToolCall(toolCall: ToolCallsType): ToolActivity {
       return { key: 'readingPage', values: { target } };
     }
   }
+  const attachments = describeAttachmentsCall(toolCall);
+  if (attachments) return attachments;
+  const connector = describeConnectorCall(toolCall);
+  if (connector) return connector;
   if (action_name === 'run_code') return { key: 'runningCode' };
   if (ARTIFACT_ACTIONS.has(action_name)) return { key: 'creatingArtifact' };
   if (tool_name === 'internal_search') return { key: 'searchingKnowledge' };
-  if (tool_name === 'memory' || tool_name === 'notes')
-    return { key: 'accessingMemory' };
+  const builtIn = describeBuiltInCall(toolCall);
+  if (builtIn) return builtIn;
+  if (tool_name === 'memory') return { key: 'accessingMemory' };
 
-  return { key: 'usingTool', values: { tool: formatToolLabel(tool_name) } };
+  return describeGenericCall(toolCall);
 }
 
 // The generic-search fallback key differs between the two namespaces.
@@ -84,7 +327,9 @@ function activityLabel(
   t: TFunction,
 ): string {
   const key =
-    activity.key === 'web' ? GENERIC_SEARCH_KEY[namespace] : activity.key;
+    activity.key === 'web'
+      ? GENERIC_SEARCH_KEY[namespace]
+      : (CONNECTOR_KEYS[namespace][activity.key] ?? activity.key);
   return t(
     `conversation.${namespace}.${key}`,
     activity.values ? { ...activity.values, ...NO_ESCAPE } : undefined,

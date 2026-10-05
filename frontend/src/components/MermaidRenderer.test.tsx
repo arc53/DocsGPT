@@ -6,7 +6,10 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const renderMermaidDiagramMock = vi.hoisted(() => vi.fn());
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, opts?: { format?: string }) =>
+      opts?.format ? `${key} ${opts.format}` : key,
+  }),
 }));
 vi.mock('react-redux', () => ({ useSelector: () => 'idle' }));
 vi.mock('../hooks', () => ({ useDarkTheme: () => [false] }));
@@ -48,7 +51,83 @@ describe('MermaidRenderer', () => {
       );
     });
 
-    expect(container.querySelector('pre.mermaid')).not.toBeNull();
+    // The diagram host is the only <pre> while the code view is closed.
+    expect(container.querySelectorAll('pre')).toHaveLength(1);
+    expect(container.querySelector('pre')?.id).toMatch(/^mermaid-/);
     expect(container.querySelector('svg[data-rendered="true"]')).not.toBeNull();
+  });
+
+  it('opens the Download menu with a menu item per format', async () => {
+    renderMermaidDiagramMock.mockResolvedValue({ svg: '<svg></svg>' });
+
+    await act(async () => {
+      root.render(
+        <MermaidRenderer code={'flowchart LR\nA --> B'} isLoading={false} />,
+      );
+    });
+
+    const trigger = container.querySelector<HTMLButtonElement>(
+      'button[aria-haspopup="menu"]',
+    );
+    expect(trigger).not.toBeNull();
+    expect(trigger?.textContent).toContain('mermaid.download');
+    expect(trigger?.hasAttribute('title')).toBe(false);
+    expect(trigger?.getAttribute('aria-haspopup')).toBe('menu');
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+
+    await act(async () => {
+      trigger?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+
+    expect(trigger?.getAttribute('aria-expanded')).toBe('true');
+    const items = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).map((item) => item.textContent);
+    expect(items).toEqual([
+      'mermaid.downloadAs SVG',
+      'mermaid.downloadAs PNG',
+      'mermaid.downloadAs MMD',
+    ]);
+  });
+
+  it('shows Code as a pressed pill toggle', async () => {
+    renderMermaidDiagramMock.mockResolvedValue({ svg: '<svg></svg>' });
+    await act(async () => {
+      root.render(
+        <MermaidRenderer code={'flowchart LR\nA --> B'} isLoading={false} />,
+      );
+    });
+    const code = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'mermaid.code',
+    )!;
+    expect(code.dataset.slot).toBe('toggle-chip');
+    expect(code.dataset.shape).toBe('pill');
+    expect(code.dataset.size).toBe('xs');
+    expect(code.getAttribute('aria-pressed')).toBe('false');
+    await act(async () => code.click());
+    expect(code.getAttribute('aria-pressed')).toBe('true');
+    expect(code.dataset.variant).toBe('secondary');
+  });
+
+  // Mermaid renders inside chat answers, so its header is the chat code
+  // header (answer-surface), the shared ui/code-block CodeFrame.
+  it('draws its header on answer-surface like a chat code block', async () => {
+    renderMermaidDiagramMock.mockResolvedValue({ svg: '<svg></svg>' });
+    await act(async () => {
+      root.render(
+        <MermaidRenderer code={'flowchart LR\nA --> B'} isLoading={false} />,
+      );
+    });
+    const frame = container.firstElementChild as HTMLElement;
+    const header = frame.firstElementChild as HTMLElement;
+    expect(header.textContent).toContain('mermaid');
+    expect(header.className).toContain('bg-answer-surface');
+    expect(header.className).not.toContain('bg-muted');
+    // The diagram body keeps its card fill.
+    expect(
+      container.querySelector('pre[id^="mermaid-"]')!.closest('.bg-card'),
+    ).not.toBeNull();
   });
 });

@@ -148,6 +148,11 @@ class TestHeadlessSchedulerExclusion:
                 "get": lambda _self, _u: None,
             })(),
         )
+        # No team tools switched into chats either.
+        monkeypatch.setattr(
+            te_module.ToolExecutor, "_shared_in_chat_tools",
+            staticmethod(lambda _conn, _user: []),
+        )
 
         sched_id = default_tool_id("scheduler")
 

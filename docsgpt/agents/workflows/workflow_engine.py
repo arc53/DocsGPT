@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List, Optional, TYPE_CHECKING
 
+from docsgpt import tracing
 from docsgpt.agents.workflows.cel_evaluator import CelEvaluationError, evaluate_cel
 from docsgpt.agents.workflows.node_agent import WorkflowNodeAgentFactory
 from docsgpt.agents.workflows.schemas import (
@@ -23,7 +24,8 @@ from docsgpt.core.json_schema_utils import (
     JsonSchemaValidationError,
     normalize_json_schema_payload,
 )
-from docsgpt.error import sanitize_api_error
+from docsgpt.agents.context_overflow import is_context_length_error
+from docsgpt.error import sanitize_api_error, user_facing_error
 from docsgpt.templates.namespaces import NamespaceManager
 from docsgpt.templates.template_engine import TemplateEngine, TemplateRenderError
 
@@ -114,6 +116,9 @@ class WorkflowEngine:
         self, initial_inputs: WorkflowState, query: str
     ) -> Generator[Dict[str, str], None, None]:
         self._initialize_state(initial_inputs, query)
+        # A workflow run's Logs row finds its trace by this id; a nested
+        # engine (a workflow inside a workflow) keeps the outermost run's.
+        tracing.bind_if_unset(workflow_run_id=self.workflow_run_id)
 
         # Surface the run id up front so the client can list this run's
         # artifacts (GET /api/artifacts?workflow_run_id=) once it has been
@@ -140,6 +145,16 @@ class WorkflowEngine:
                 break
             log_entry = self._create_log_entry(node)
             self._last_node_tool_calls = []
+            step_span = tracing.start_span(
+                tracing.KIND_STEP,
+                f"workflow_step {node.title or node.type.value}",
+                attributes={
+                    "docsgpt.workflow.node_id": node.id,
+                    "docsgpt.workflow.node_type": node.type.value,
+                    "docsgpt.workflow.node_title": node.title or None,
+                    "docsgpt.workflow_run_id": self.workflow_run_id,
+                },
+            )
 
             yield {
                 "type": "workflow_step",
@@ -150,7 +165,8 @@ class WorkflowEngine:
             }
 
             try:
-                yield from self._execute_node(node)
+                with step_span:
+                    yield from self._execute_node(node)
                 log_entry["status"] = ExecutionStatus.COMPLETED.value
                 self._finalize_log_entry(log_entry, pre_state)
 
@@ -186,6 +202,15 @@ class WorkflowEngine:
                     if is_config_error
                     else sanitize_api_error(e)
                 )
+                # A turn too big for the model's window gets the curated
+                # message, with the code and sizes the client words it from.
+                curated: Dict[str, Any] = {}
+                if is_context_length_error(e):
+                    public = user_facing_error(e)
+                    user_friendly_error = public.message
+                    curated = {"code": public.code}
+                    if public.params:
+                        curated["params"] = public.params
                 yield {
                     "type": "workflow_step",
                     "node_id": node.id,
@@ -198,7 +223,8 @@ class WorkflowEngine:
                 yield {
                     "type": "error",
                     "error": user_friendly_error,
-                    "user_facing": is_config_error,
+                    "user_facing": is_config_error or bool(curated),
+                    **curated,
                 }
                 break
             self.execution_log.append(log_entry)
@@ -390,9 +416,14 @@ class WorkflowEngine:
             "model_user_id": getattr(self.agent, "model_user_id", None),
             "api_key": node_api_key,
             "tool_ids": node_config.tools,
+            "tool_owner": self._workflow_owner_id(),
+            "tool_principals": self._node_tool_principals(node_config.tools),
+            "tool_holder": getattr(self.agent, "workflow_row", None),
             "prompt": node_prompt,
             "chat_history": self.agent.chat_history,
             "decoded_token": self.agent.decoded_token,
+            # Attributes the node's token usage to the workflow agent.
+            "agent_id": getattr(self.agent, "agent_id", None),
             "json_schema": node_json_schema,
             "retrieved_docs": node_docs,
             # A template that interpolates the documents itself already carries
@@ -412,7 +443,7 @@ class WorkflowEngine:
                     else {}
                 ),
                 "retriever_name": node_config.retriever or "classic",
-                "chunks": int(node_config.chunks) if node_config.chunks else 2,
+                "chunks": int(node_config.chunks) if node_config.chunks else 6,
                 "model_id": node_model_id,
                 "llm_name": node_llm_name,
                 "api_key": node_api_key,
@@ -427,9 +458,9 @@ class WorkflowEngine:
         # the tool_call_attempts primary key and drop the later journal rows.
         node_executor = getattr(node_agent, "tool_executor", None)
         if node_executor is not None:
-            node_executor.message_id = getattr(
-                getattr(self.agent, "tool_executor", None), "message_id", None
-            )
+            run_executor = getattr(self.agent, "tool_executor", None)
+            node_executor.message_id = getattr(run_executor, "message_id", None)
+            self._inherit_caller_policy(node_executor, run_executor)
         # Run-scope the node agent's tools so artifact_generator / code_executor
         # address artifacts by this workflow run: a short ref (A1) created by one
         # node resolves for edit_artifact in a later node within the same run. Only
@@ -639,7 +670,7 @@ class WorkflowEngine:
         raw_ids = self._resolve_input_artifact_ids(inputs)
         if not raw_ids:
             return loaded
-        max_bytes = int(getattr(settings, "SANDBOX_MAX_INPUT_BYTES", 0) or 0)
+        max_bytes = int(settings.SANDBOX_MAX_INPUT_BYTES or 0)
         storage = StorageCreator.get_storage()
         # Two inputs whose current versions share a filename would clobber each other at the
         # same ``inputs/{name}`` path; track used paths and disambiguate deterministically.
@@ -749,15 +780,15 @@ class WorkflowEngine:
 
         supported = set(supported_types)
         supports_images = any(t.startswith("image/") for t in supported)
-        max_files = int(getattr(settings, "WORKFLOW_NODE_NATIVE_MAX_FILES", 5))
-        extract_max = int(getattr(settings, "WORKFLOW_NODE_EXTRACT_MAX_FILES", 5))
+        max_files = int(settings.WORKFLOW_NODE_NATIVE_MAX_FILES)
+        extract_max = int(settings.WORKFLOW_NODE_EXTRACT_MAX_FILES)
         # One wall clock for every blocking parse this node issues. The cap
         # above bounds how MANY parses run; this bounds how LONG they take in
         # total, so N documents cannot serialize N size-scaled windows.
         parse_deadline = time.monotonic() + float(
-            getattr(settings, "WORKFLOW_NODE_EXTRACT_BUDGET_SECONDS", 900)
+            settings.WORKFLOW_NODE_EXTRACT_BUDGET_SECONDS
         )
-        max_bytes = int(getattr(settings, "SANDBOX_MAX_INPUT_BYTES", 25 * 1024 * 1024))
+        max_bytes = int(settings.SANDBOX_MAX_INPUT_BYTES)
 
         # One read-only connection for the whole batch; the resolved-version
         # rows are collected, then storage reads happen outside the DB context.
@@ -976,7 +1007,7 @@ class WorkflowEngine:
         if not user_id:
             return None
         options = {"output": "markdown", "include_tables": False, "persist": False}
-        queue = getattr(settings, "DOCUMENT_PARSE_QUEUE", "parsing")
+        queue = settings.DOCUMENT_PARSE_QUEUE
         # OCR cost scales with pages, so the window grows with the document's size
         # (floored at DOCUMENT_PARSE_TIMEOUT); the task's per-call time limits are
         # raised to match, else the worker would self-terminate mid-parse.
@@ -1084,7 +1115,7 @@ class WorkflowEngine:
         """Return the stricter of the node's requested timeout and the sandbox cap."""
         from docsgpt.core.settings import settings
 
-        cap = float(getattr(settings, "SANDBOX_EXEC_TIMEOUT", 60))
+        cap = float(settings.SANDBOX_EXEC_TIMEOUT)
         if requested is None:
             return cap
         try:
@@ -1304,6 +1335,64 @@ class WorkflowEngine:
         docs_together = "\n\n".join(docs_together_parts) if docs_together_parts else None
         return docs, docs_together
 
+    @staticmethod
+    def _inherit_caller_policy(node_executor: Any, run_executor: Any) -> None:
+        """Give a node's executor the caller rules of the run that started it.
+
+        A node's tools run for the same caller as the workflow agent: a
+        scheduled run still can't pause, and an API-key or public-link caller
+        still can't write on the owner's account unless it is allowlisted.
+
+        Args:
+            node_executor: The node agent's ``ToolExecutor``.
+            run_executor: The workflow agent's ``ToolExecutor``, if any.
+        """
+        if run_executor is None:
+            return
+        for attr in ("headless", "external_caller", "public_link_caller"):
+            setattr(node_executor, attr, bool(getattr(run_executor, attr, False)))
+        for attr in ("tool_allowlist", "api_write_allowlist"):
+            setattr(node_executor, attr, set(getattr(run_executor, attr, None) or ()))
+
+    def _workflow_owner_id(self) -> Optional[str]:
+        """The workflow's owner, whom node tools and sources run as.
+
+        Returns:
+            The owner's user id, or None when the run has none.
+        """
+        resolve_owner = getattr(self.agent, "_resolve_owner_id", None)
+        return (resolve_owner() if callable(resolve_owner) else None) or self._resolve_user_id()
+
+    def _node_tool_principals(self, tool_ids) -> Dict[str, str]:
+        """Node tool id -> the editor to resolve it as, for sponsored tools.
+
+        Only tools with a live sponsor on the workflow appear; the executor
+        still tries the owner first.
+
+        Args:
+            tool_ids: The node's configured tool ids.
+
+        Returns:
+            dict: ``tool_id -> sponsor`` user id.
+        """
+        workflow_row = getattr(self.agent, "workflow_row", None)
+        if not tool_ids or not workflow_row or not workflow_row.get("resource_sponsors"):
+            return {}
+        from docsgpt.api.user.resource_access import active_sponsor
+        from docsgpt.storage.db.session import db_readonly
+
+        principals: Dict[str, str] = {}
+        try:
+            with db_readonly() as conn:
+                for tid in tool_ids:
+                    sponsor = active_sponsor(conn, "workflow", workflow_row, "tool", str(tid))
+                    if sponsor:
+                        principals[str(tid)] = sponsor
+        except Exception:
+            logger.exception("Workflow node tool sponsor lookup failed; using the owner only.")
+            return {}
+        return principals
+
     def _authorized_node_sources(self, sources) -> list:
         """Filter a node's configured source ids to those its owner may read.
 
@@ -1312,7 +1401,9 @@ class WorkflowEngine:
         tenant's source id and the retriever — which filters only on
         ``source_id`` — handed the documents back. Gate on the workflow owner
         (not the runner): a shared workflow legitimately reads its owner's
-        sources, exactly like a shared agent does.
+        sources, exactly like a shared agent does. A source the owner can't
+        read still passes while the editor who attached it (its sponsor)
+        qualifies.
 
         Args:
             sources: Source ids from the stored node config.
@@ -1323,28 +1414,26 @@ class WorkflowEngine:
         if not sources:
             return []
         ids = sources if isinstance(sources, list) else [sources]
-        resolve_owner = getattr(self.agent, "_resolve_owner_id", None)
-        owner = (resolve_owner() if callable(resolve_owner) else None) or (
-            self._resolve_user_id()
-        )
+        owner = self._workflow_owner_id()
         if not owner:
             logger.warning("Workflow node sources dropped: no owner to authorize.")
             return []
 
-        from docsgpt.api.user.team_sharing import can_access
+        from docsgpt.api.user.resource_access import log_stopped, ref_access
         from docsgpt.storage.db.session import db_readonly
 
+        # The same check the workflow page's run state uses: the owner, else
+        # the editor who attached it while they still qualify.
+        holder = {**(getattr(self.agent, "workflow_row", None) or {}), "user_id": owner}
         allowed = []
         try:
             with db_readonly() as conn:
                 for sid in ids:
-                    if sid and can_access(conn, "source", str(sid), owner):
+                    access = ref_access(conn, "workflow", holder, "source", str(sid)) if sid else None
+                    if access is not None and access.principal:
                         allowed.append(sid)
                     else:
-                        logger.warning(
-                            "Workflow node source %s dropped: %s has no access.",
-                            sid, owner,
-                        )
+                        log_stopped("workflow", holder, "source", sid, access.reason if access else None)
         except Exception:
             logger.exception("Workflow node source authorization failed; dropping all.")
             return []
@@ -1371,7 +1460,7 @@ class WorkflowEngine:
                 source={"active_docs": self._authorized_node_sources(node_config.sources)},
                 chat_history=[],
                 prompt="",
-                chunks=int(node_config.chunks) if node_config.chunks else 2,
+                chunks=int(node_config.chunks) if node_config.chunks else 6,
                 decoded_token=self.agent.decoded_token,
             )
             docs = retriever.search(query)

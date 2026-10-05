@@ -12,7 +12,7 @@ from typing import Optional
 
 from sqlalchemy import Connection, text
 
-from docsgpt.storage.db.base_repository import row_to_dict
+from docsgpt.storage.db.base_repository import like_escape, row_to_dict
 
 
 class TeamsRepository:
@@ -91,6 +91,47 @@ class TeamsRepository:
                 ORDER BY t.created_at DESC
                 """
             )
+        )
+        return [row_to_dict(r) for r in result.fetchall()]
+
+    def search(self, q: Optional[str] = None, without_quota: bool = False, limit: int = 20) -> list[dict]:
+        """Teams matching a picker query, shaped like :meth:`list_all` — global-admin only.
+
+        Args:
+            q: Case-insensitive substring of the team name or slug; ``None`` or
+                blank matches every team.
+            without_quota: Only teams with no team-scope ``all``-bucket quota
+                policy (enabled or not) — the teams an admin can still give an
+                allowance to.
+            limit: The most rows to return.
+
+        Returns:
+            Team rows with ``member_count``, newest first (ties broken by id).
+        """
+        clauses = []
+        params: dict = {"limit": limit}
+        if q and q.strip():
+            clauses.append("(t.name ILIKE :pattern ESCAPE '\\' OR t.slug ILIKE :pattern ESCAPE '\\')")
+            params["pattern"] = f"%{like_escape(q.strip())}%"
+        if without_quota:
+            clauses.append(
+                "NOT EXISTS (SELECT 1 FROM quota_policies p WHERE p.scope = 'team' "
+                "AND p.bucket = 'all' AND p.subject_id = CAST(t.id AS text))"
+            )
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        result = self._conn.execute(
+            text(
+                f"""
+                SELECT t.*,
+                       (SELECT count(DISTINCT user_id) FROM team_members m
+                        WHERE m.team_id = t.id) AS member_count
+                FROM teams t
+                {where}
+                ORDER BY t.created_at DESC, t.id
+                LIMIT :limit
+                """
+            ),
+            params,
         )
         return [row_to_dict(r) for r in result.fetchall()]
 

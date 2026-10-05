@@ -23,10 +23,45 @@ def client(app):
 class TestHomeRoute:
 
     @pytest.mark.unit
-    def test_root_returns_200(self, client):
-        """Root serves Swagger UI via Flask-RESTX."""
+    def test_root_redirects_to_the_swagger_ui(self, client):
+        """On the bare API, root sends the caller to the Swagger UI."""
         response = client.get("/")
+        assert response.status_code == 302
+        assert response.headers["Location"].endswith("/api/docs")
+
+
+class TestSwaggerDocs:
+
+    @pytest.mark.unit
+    def test_swagger_ui_lives_under_the_api_prefix(self, client):
+        response = client.get("/api/docs")
         assert response.status_code == 200
+        assert "text/html" in response.headers["Content-Type"]
+        assert b"swagger.json" in response.data
+
+    @pytest.mark.unit
+    def test_spec_stays_at_swagger_json(self, client):
+        response = client.get("/swagger.json")
+        assert response.status_code == 200
+        assert json.loads(response.data)["info"]["title"] == "DocsGPT API"
+
+    @pytest.mark.unit
+    def test_swagger_ui_survives_the_bundled_web_ui(self, app, tmp_path):
+        """With the web UI served at /, the Swagger UI is still reachable."""
+        from a2wsgi import WSGIMiddleware
+        from starlette.testclient import TestClient
+
+        from docsgpt.ui import StaticUI
+
+        (tmp_path / "index.html").write_text("<html><body>web ui</body></html>")
+        wrapped = StaticUI.wrap(WSGIMiddleware(app), app.url_map, static_dir=tmp_path)
+        assert isinstance(wrapped, StaticUI)
+        with TestClient(wrapped) as ui_client:
+            assert "web ui" in ui_client.get("/").text
+            docs = ui_client.get("/api/docs")
+            assert docs.status_code == 200
+            assert "swagger.json" in docs.text and "web ui" not in docs.text
+            assert ui_client.get("/swagger.json").status_code == 200
 
 
 class TestHealthRoute:
@@ -116,6 +151,15 @@ class TestConfigRoute:
         data = json.loads(response.data)
         assert data["tts_available"] is False
         assert data["stt_available"] is False
+
+    @pytest.mark.unit
+    def test_exposes_attachment_budget_share(self, client):
+        with patch("docsgpt.app.settings") as mock_settings:
+            mock_settings.AUTH_TYPE = None
+            mock_settings.ATTACHMENT_BUDGET_SHARE = 0.4
+            response = client.get("/api/config")
+        data = json.loads(response.data)
+        assert data["attachment_budget_share"] == 0.4
 
     @pytest.mark.unit
     def test_oidc_config_exposes_login_paths(self, client):
@@ -285,3 +329,29 @@ class TestFlaskCors:
             "Content-Type, Authorization, Idempotency-Key"
         )
         assert response.headers["Access-Control-Allow-Methods"] == "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+
+
+class TestDefaultEncryptionKeyWarning:
+    """The startup warning must say what the public default key actually blocks."""
+
+    def _warning(self, monkeypatch, caplog, auth_type):
+        import logging
+
+        from docsgpt import app as app_module
+        from docsgpt.security import encryption
+
+        monkeypatch.setattr(app_module.settings, "AUTH_TYPE", auth_type)
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", encryption.DEFAULT_ENCRYPTION_KEY)
+        with caplog.at_level(logging.WARNING):
+            app_module._warn_default_encryption_key()
+        return " ".join(r.getMessage() for r in caplog.records)
+
+    def test_with_auth_it_names_the_refused_connections_and_the_rotation(self, monkeypatch, caplog):
+        message = self._warning(monkeypatch, caplog, "oidc")
+        assert "new connections are refused" in message
+        assert "ENCRYPTION_SECRET_KEY_PREVIOUS" in message
+        assert "docsgpt connectors reencrypt" in message
+
+    def test_without_auth_it_names_the_rotation(self, monkeypatch, caplog):
+        message = self._warning(monkeypatch, caplog, None)
+        assert "ENCRYPTION_SECRET_KEY_PREVIOUS" in message

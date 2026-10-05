@@ -7,6 +7,7 @@ from flask_restx import fields, Namespace, Resource
 from sqlalchemy import text as sql_text
 
 from docsgpt.api import api
+from docsgpt.api.audit import record_event
 from docsgpt.api.answer.services.conversation_service import (
     TERMINATED_RESPONSE_PLACEHOLDER,
 )
@@ -45,6 +46,12 @@ class DeleteConversation(Resource):
                 conv = repo.get_any(conversation_id, user_id)
                 if conv is not None:
                     repo.delete(str(conv["id"]), user_id)
+                    record_event(
+                        conn,
+                        "conversation.deleted",
+                        actor=user_id,
+                        conversation_id=str(conv["id"]),
+                    )
         except Exception as err:
             current_app.logger.error(
                 f"Error deleting conversation: {err}", exc_info=True
@@ -65,7 +72,16 @@ class DeleteAllConversations(Resource):
         user_id = decoded_token.get("sub")
         try:
             with db_session() as conn:
-                ConversationsRepository(conn).delete_all_for_user(user_id)
+                deleted = ConversationsRepository(conn).delete_all_for_user(user_id)
+                # Nothing deleted is not an event; the endpoint is idempotent
+                # and a row here would render as a destructive action.
+                if deleted:
+                    record_event(
+                        conn,
+                        "conversation.deleted_all",
+                        actor=user_id,
+                        deleted=deleted,
+                    )
         except Exception as err:
             current_app.logger.error(
                 f"Error deleting all conversations: {err}", exc_info=True
@@ -74,20 +90,78 @@ class DeleteAllConversations(Resource):
         return make_response(jsonify({"success": True}), 200)
 
 
+def _parse_list_limit(raw: str | None, default: int = 30) -> int:
+    """Parse a ``limit`` query param, clamped to 1..100.
+
+    Args:
+        raw: The raw query-string value, or ``None``.
+        default: Value used when ``raw`` is missing or not an integer.
+
+    Returns:
+        The clamped limit.
+    """
+    try:
+        limit = int(raw) if raw is not None else default
+    except (TypeError, ValueError):
+        limit = default
+    return max(1, min(limit, 100))
+
+
+def _parse_cursor_date(raw: str | None) -> datetime.datetime | None:
+    """Parse an ISO-8601 keyset cursor timestamp.
+
+    A naive value is taken as UTC. A ``+`` offset that arrived unencoded in
+    the query string (decoded to a space) is repaired before giving up.
+
+    Args:
+        raw: The raw ``before`` query-string value, or ``None``.
+
+    Returns:
+        A timezone-aware datetime, or ``None`` if ``raw`` is missing or invalid.
+    """
+    if not raw:
+        return None
+    for candidate in (raw, raw.replace(" ", "+")):
+        try:
+            parsed = datetime.datetime.fromisoformat(candidate)
+        except ValueError:
+            continue
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+        return parsed
+    return None
+
+
 @conversations_ns.route("/get_conversations")
 class GetConversations(Resource):
     @api.doc(
-        description="Retrieve a list of the latest 30 sidebar conversations (visibility = listed)",
+        description=(
+            "Retrieve the user's sidebar conversations (visibility = listed), "
+            "newest first, ordered by ``date`` DESC then ``id`` DESC. Each item "
+            "carries ``date`` (ISO-8601). To page older conversations, pass the "
+            "last item's ``date`` and ``id`` as ``before`` and ``before_id``. "
+            "Invalid params are ignored."
+        ),
+        params={
+            "limit": "Maximum number of results (default 30, clamped to 1-100)",
+            "before": "Keyset cursor: ISO-8601 ``date`` of the last item seen (needs before_id)",
+            "before_id": "Keyset cursor: ``id`` of the last item seen (needs before)",
+        },
     )
     def get(self):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user_id = decoded_token.get("sub")
+        limit = _parse_list_limit(request.args.get("limit"))
+        before = _parse_cursor_date(request.args.get("before"))
+        before_id = request.args.get("before_id")
+        if before is None or not looks_like_uuid(before_id):
+            before, before_id = None, None
         try:
             with db_readonly() as conn:
                 conversations = ConversationsRepository(conn).list_for_user(
-                    user_id, limit=30
+                    user_id, limit=limit, before=before, before_id=before_id
                 )
             list_conversations = [
                 {
@@ -100,6 +174,7 @@ class GetConversations(Resource):
                     ),
                     "is_shared_usage": conversation.get("is_shared_usage", False),
                     "shared_token": conversation.get("shared_token", None),
+                    "date": conversation.get("date"),
                 }
                 for conversation in conversations
             ]
@@ -237,6 +312,9 @@ class GetSingleConversation(Resource):
                         # Surfaced from metadata so the chat can render a
                         # workflow run's produced artifacts on reload.
                         "workflow_run_id": metadata.get("workflow_run_id"),
+                        # The order the answer's parts streamed in, so a
+                        # reload lays out text, reasoning and tool calls as live.
+                        "segments": metadata.get("segments"),
                     }
                     if metadata:
                         query["metadata"] = metadata
@@ -483,6 +561,12 @@ class GetMessageTail(Resource):
                     "request_id": msg.get("request_id"),
                     "last_heartbeat_at": metadata.get("last_heartbeat_at"),
                     "error": metadata.get("error"),
+                    # Curated failures carry a code (context_length_exceeded)
+                    # the chat acts on; older rows have none.
+                    "error_code": metadata.get("error_code"),
+                    # The values the curated text is built from, so the
+                    # chat can word it in the user's language.
+                    "error_params": metadata.get("error_params"),
                 }
             ),
             200,

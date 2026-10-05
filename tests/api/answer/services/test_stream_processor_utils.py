@@ -22,7 +22,7 @@ def _patch_db(conn):
         "docsgpt.api.answer.services.stream_processor.db_readonly", _yield
     ), patch(
         "docsgpt.api.answer.services.stream_processor.db_session", _yield
-    ):
+    ), patch("docsgpt.agents.tool_executor.db_readonly", _yield):
         yield
 
 
@@ -288,6 +288,33 @@ class TestGetAttachmentsContent:
             )
         assert got == []
 
+    def test_a_zip_is_followed_by_its_members(self, pg_conn):
+        from docsgpt.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        from docsgpt.storage.db.repositories.attachments import (
+            AttachmentsRepository,
+        )
+
+        repo = AttachmentsRepository(pg_conn)
+        parent = repo.create(
+            "u", "bundle.zip", "/z", content="index",
+            metadata={"archive": {"members": 1}},
+        )
+        member = repo.create(
+            "u", "a.txt", "/a", content="member text",
+            metadata={
+                "parent_attachment_id": str(parent["id"]),
+                "archive_path": "a.txt",
+                "archive_index": 0,
+            },
+        )
+        sp = StreamProcessor({"question": "q"}, {"sub": "u"})
+        with _patch_db(pg_conn):
+            got = sp._get_attachments_content([str(parent["id"])], "u")
+        assert [a["id"] for a in got] == [parent["id"], member["id"]]
+        assert got[1]["content"] == "member text"
+
 
 class TestResolveAgentId:
     def test_returns_agent_id_from_request(self):
@@ -473,7 +500,7 @@ class TestConfigureRetriever:
         sp = StreamProcessor({}, {"sub": "u"})
         sp._configure_retriever()
         assert sp.retriever_config["retriever_name"] == "classic"
-        assert sp.retriever_config["chunks"] == 2
+        assert sp.retriever_config["chunks"] == 6
 
     def test_agent_overrides(self):
         from docsgpt.api.answer.services.stream_processor import (
@@ -519,7 +546,7 @@ class TestConfigureRetriever:
         sp._agent_data = {}
         sp._configure_retriever()
         assert sp.retriever_config["retriever_name"] == "classic"
-        assert sp.retriever_config["chunks"] == 2
+        assert sp.retriever_config["chunks"] == 6
 
     def test_invalid_agent_chunks_falls_back(self):
         from docsgpt.api.answer.services.stream_processor import (
@@ -528,7 +555,7 @@ class TestConfigureRetriever:
         sp = StreamProcessor({}, {"sub": "u"})
         sp._agent_data = {"chunks": "not-a-number"}
         sp._configure_retriever()
-        assert sp.retriever_config["chunks"] == 2
+        assert sp.retriever_config["chunks"] == 6
 
     def test_invalid_request_chunks_falls_back(self):
         from docsgpt.api.answer.services.stream_processor import (
@@ -536,7 +563,7 @@ class TestConfigureRetriever:
         )
         sp = StreamProcessor({"chunks": "abc"}, {"sub": "u"})
         sp._configure_retriever()
-        assert sp.retriever_config["chunks"] == 2
+        assert sp.retriever_config["chunks"] == 6
 
     def test_isnonedoc_without_api_key_sets_chunks_to_0(self):
         from docsgpt.api.answer.services.stream_processor import (
@@ -862,6 +889,59 @@ class TestPreFetchTools:
         # own "/" default applies.
         assert got == {"memory_view": "Directory: /\n(empty)"}
         mock_tool.execute_action.assert_called_once_with("memory_view")
+
+    def test_custom_prompt_memory_view_renders_prefetched_listing(
+        self, pg_conn
+    ):
+        """The documented custom-prompt form ``tools.memory.memory_view``
+        prefetches the memory root and renders it; results are keyed by
+        action name, so a ``tools.memory.root`` lookup stays empty."""
+        from unittest.mock import MagicMock
+
+        from docsgpt.agents.default_tools import synthesize_default_tool
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+
+        template = (
+            "{% if tools.memory.memory_view %}Memory:\n"
+            "{{ tools.memory.memory_view }}{% endif %}"
+            "[{{ tools.memory.root }}]"
+        )
+        sp = StreamProcessor({}, {"sub": "u-mem-render"})
+        sp._prompt_content = template
+
+        mock_tool = MagicMock()
+        mock_tool.get_actions_metadata.return_value = synthesize_default_tool(
+            "memory"
+        )["actions"]
+        mock_tool.execute_action.return_value = "Directory: /\n- notes.md"
+        mock_manager = MagicMock()
+        mock_manager.load_tool.return_value = mock_tool
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
+            True,
+        ), patch(
+            "docsgpt.agents.tools.tool_manager.ToolManager",
+            return_value=mock_manager,
+        ):
+            tools_data = sp.pre_fetch_tools()
+
+        assert tools_data["memory"] == {"memory_view": "Directory: /\n- notes.md"}
+        rendered = PromptRenderer().render_prompt(template, tools_data=tools_data)
+        assert "Memory:\nDirectory: /\n- notes.md" in rendered
+        assert rendered.endswith("[]")
+
+    def test_no_separate_memory_prefetch_helper(self):
+        """Memory is prefetched like any tool; the old ``root`` /
+        ``available`` builder is gone."""
+        from docsgpt.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+
+        assert not hasattr(StreamProcessor, "_fetch_memory_tool_data")
 
     def test_agent_bound_invocation_omits_default_tool_prefetch(self, pg_conn):
         from docsgpt.api.answer.services.stream_processor import (

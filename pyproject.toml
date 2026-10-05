@@ -78,6 +78,8 @@ dependencies = [
   "openapi3-parser>=2.0.0,<3",
   # pandas reads .xlsx through openpyxl but does not depend on it.
   "openpyxl>=3.1.5,<4",
+  # Imported directly by docsgpt.tracing to replay traces as GenAI spans.
+  "opentelemetry-api>=1.29.0,<2",
   "opentelemetry-distro>=0.50b0,<1",
   "opentelemetry-exporter-otlp>=1.29.0,<2",
   "opentelemetry-instrumentation-celery>=0.50b0,<1",
@@ -179,16 +181,14 @@ path = "docsgpt/version.py"
 # model catalogs, the seed config, alembic.ini and the migrations, plus the web
 # UI build under docsgpt/static (gitignored; scripts/build_frontend.sh makes
 # it, and `artifacts` admits it). Build inputs (Dockerfile, exported
-# requirements), the sample index and local runtime data stay out. The
-# one-release `application` import alias is checkout-only.
+# requirements) and local runtime data stay out. The one-release `application`
+# import alias is checkout-only.
 [tool.hatch.build.targets.wheel]
 packages = ["docsgpt"]
 artifacts = ["docsgpt/static/**"]
 exclude = [
   "docsgpt/Dockerfile",
   "docsgpt/requirements*.txt",
-  "docsgpt/index.faiss",
-  "docsgpt/index.pkl",
   "docsgpt/indexes/",
   "docsgpt/inputs/",
   "docsgpt/vectors/",
@@ -206,11 +206,31 @@ artifacts = ["docsgpt/static/**"]
 exclude = [
   "docsgpt/Dockerfile",
   "docsgpt/requirements*.txt",
-  "docsgpt/index.faiss",
-  "docsgpt/index.pkl",
   "docsgpt/indexes/",
   "docsgpt/inputs/",
   "docsgpt/vectors/",
+]
+
+# Shared by every editor's Python language server (pyright, basedpyright,
+# Pylance) and by `pyright` on the command line. Imports are rooted at the
+# checkout (`docsgpt.…`, `tests.…`), and the interpreter is the uv-managed
+# `.venv`. "standard" keeps basedpyright from defaulting to its much stricter
+# "recommended" mode; this is editor feedback, not a CI gate.
+[tool.pyright]
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
+extraPaths = ["."]
+typeCheckingMode = "standard"
+include = ["docsgpt", "application", "tests", "scripts"]
+exclude = [
+  "**/__pycache__",
+  "**/node_modules",
+  ".venv",
+  "docsgpt/static",
+  "docsgpt/indexes",
+  "docsgpt/inputs",
+  "docsgpt/vectors",
 ]
 
 [[tool.uv.index]]

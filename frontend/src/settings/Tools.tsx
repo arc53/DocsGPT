@@ -1,51 +1,66 @@
-import { RefreshCcw, Search as SearchIcon, Trash, Users } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { Eye, Pencil, Plug, RefreshCw, Trash2, Users } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import devicesService from '../api/services/devicesService';
 import userService from '../api/services/userService';
-import Edit from '../assets/edit.svg';
-import NoFilesDarkIcon from '../assets/no-files-dark.svg';
-import NoFilesIcon from '../assets/no-files.svg';
-import ThreeDotsIcon from '../assets/three-dots.svg';
+import PageToolbar from '../components/PageToolbar';
+import { Pagination, pageRangeParams } from '../components/ui/pagination';
+import { SHORT_LIST_PAGE_SIZE, useClientPage } from '../hooks/usePageState';
+import SearchInput from '../components/SearchInput';
+import RoleBadge from '../components/RoleBadge';
 import SkeletonLoader from '../components/SkeletonLoader';
 import ToolIcon from '../components/ToolIcon';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
+import { SectionHeader } from '../components/ui/section-header';
 import { Switch } from '../components/ui/switch';
+import { EmptyState } from '../components/ui/empty-state';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import ConnectorTile from '../connectors/ConnectorTile';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../components/ui/dropdown-menu';
-import { Input } from '../components/ui/input';
-import { useDarkTheme, useLoaderState } from '../hooks';
+  connectionNeedsSignIn,
+  loadConnectors,
+  selectConnections,
+  selectConnectorCatalog,
+} from '../connectors/connectorsSlice';
+import { accountLine, connectorDescription } from '../connectors/i18n';
+import { useSignInAgain } from '../connectors/SignInAgainNotice';
+import { toolServiceOf } from '../connectors/toolService';
+import { useLoaderState } from '../hooks';
+import type { AvailableToolType } from '../modals/types';
 import AddToolModal from '../modals/AddToolModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import MCPServerModal from '../modals/MCPServerModal';
 import { ActiveState } from '../models/misc';
+import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
-import ShareToTeamModal from '../teams/ShareToTeamModal';
+import type { AppDispatch } from '../store';
+import ShareToTeamModal, {
+  type ShareCredentials,
+} from '../teams/ShareToTeamModal';
+import { can, isOwner, roleOf } from '../utils/accessUtils';
+import {
+  canAddToolToOwn,
+  isSharedOAuthMcp,
+  toolInChat,
+} from '../utils/toolUtils';
 import RemoteDeviceConfig from './RemoteDeviceConfig';
 import ToolConfig from './ToolConfig';
+import { groupTools, type ToolGroup } from './toolGroups';
 import { APIToolType, UserToolType } from './types';
-
-type ToolsMenuOption = {
-  icon: string | LucideIcon;
-  label: string;
-  onClick: () => void;
-  variant: 'default' | 'destructive';
-  iconWidth?: number;
-  iconHeight?: number;
-  iconClassName?: string;
-};
 
 export default function Tools() {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
-  const [isDarkTheme] = useDarkTheme();
+  const dispatch = useDispatch<AppDispatch>();
+  const connections = useSelector(selectConnections);
+  const catalog = useSelector(selectConnectorCatalog);
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const [searchTerm, setSearchTerm] = React.useState('');
   const [addToolModalState, setAddToolModalState] =
@@ -55,6 +70,8 @@ export default function Tools() {
     UserToolType | APIToolType | null
   >(null);
   const [loading, setLoading] = useLoaderState(false);
+  // The first load failed: an error with Retry, not the empty state.
+  const [loadFailed, setLoadFailed] = React.useState(false);
   const [deleteModalState, setDeleteModalState] =
     React.useState<ActiveState>('INACTIVE');
   const [toolToDelete, setToolToDelete] = React.useState<UserToolType | null>(
@@ -70,19 +87,42 @@ export default function Tools() {
     [toolId: string]: string;
   }>({});
 
+  // A connection-backed tool shares its connection's account or asks each
+  // member to connect their own; the share dialog shows that choice. Whose
+  // account it is stays the owner's choice: an editor the owner lets share
+  // sees it locked, and still confirms before sharing a tool that can act.
+  const shareCredentials = (
+    tool: UserToolType,
+  ): ShareCredentials | undefined => {
+    if (!tool.connection_id) return undefined;
+    const owner = isOwner(tool);
+    const service = toolServiceOf(tool, connections, catalog);
+    // The owner's own connection names the account; until it loads there
+    // is nothing to show them.
+    if (!service || (owner && !service.connection)) return undefined;
+    const policy = service.connector?.credential_policy;
+    return {
+      toolId: tool.id,
+      connectorName: service.name,
+      account: owner ? (service.connection?.account_label ?? '') : '',
+      mode: tool.credential_mode === 'member' ? 'member' : 'owner',
+      forcedMode: policy === 'owner' || policy === 'member' ? policy : null,
+      hasWrites: (tool.actions ?? []).some(
+        (action) => action.access === 'write',
+      ),
+      readOnly: !owner,
+    };
+  };
+
   const handleDeleteTool = (tool: UserToolType) => {
     setToolToDelete(tool);
     setDeleteModalState('ACTIVE');
   };
 
-  const confirmDeleteTool = () => {
+  // Returned to ConfirmationModal: it stays pending while the delete runs,
+  // closes on success and keeps a failure in the dialog.
+  const confirmDeleteTool = async () => {
     if (!toolToDelete) return;
-    const afterDelete = () => {
-      getUserTools();
-      fetchMcpStatuses();
-      setDeleteModalState('INACTIVE');
-      setToolToDelete(null);
-    };
     // Remote-device tools front a paired device + live session token. Revoke
     // the device server-side (marks revoked, closes any session, invalidates
     // the token, and drops the user_tools row) instead of deleting only the
@@ -92,13 +132,20 @@ export default function Tools() {
         ? toolToDelete.config?.device_id
         : undefined;
     if (deviceId) {
-      devicesService
-        .revoke(deviceId, token)
-        .then(afterDelete)
-        .catch((error) => console.error('Failed to revoke device:', error));
-      return;
+      const result = await devicesService.revoke(deviceId, token);
+      if (result?.success === false) {
+        throw new Error('Failed to revoke device');
+      }
+    } else {
+      const response: Response = await userService.deleteTool(
+        { id: toolToDelete.id },
+        token,
+      );
+      if (!response.ok) throw new Error('Failed to delete tool');
     }
-    userService.deleteTool({ id: toolToDelete.id }, token).then(afterDelete);
+    getUserTools();
+    fetchMcpStatuses();
+    setToolToDelete(null);
   };
 
   const handleReconnect = (tool: UserToolType) => {
@@ -114,50 +161,94 @@ export default function Tools() {
       timeout: config.timeout || 30,
       oauth_scopes: oauthScopes,
       has_encrypted_credentials: !!config.has_encrypted_credentials,
+      access: roleOf(tool),
+      owner_label: tool.owner_label ?? null,
     });
     setReconnectModalState('ACTIVE');
   };
 
-  const getMenuOptions = (tool: UserToolType): ToolsMenuOption[] => {
-    const options: ToolsMenuOption[] = [
-      {
-        icon: Edit,
-        label: t('settings.tools.edit'),
-        onClick: () => handleSettingsClick(tool),
+  const getMenuOptions = (tool: UserToolType): MenuOption[] => {
+    const canEdit = can(tool, 'edit') || can(tool, 'edit_credentials');
+    const options: MenuOption[] = [];
+    const connection = connectionOf(tool);
+    // The owner's connected tool is managed with its connection: open the
+    // Connectors drawer on that account.
+    const connectorKey =
+      connection?.connector_key ??
+      toolServiceOf(tool, connections, catalog)?.connector?.key;
+    if (tool.connection_id && isOwner(tool) && connectorKey) {
+      const params = new URLSearchParams({
+        connector: connectorKey,
+        connection: tool.connection_id,
+      });
+      options.push({
+        icon: Plug,
+        label: t('settings.tools.manageInConnectors'),
+        onClick: () => navigate(`/settings/connectors?${params.toString()}`),
         variant: 'default',
-        iconWidth: 14,
-        iconHeight: 14,
-      },
-      {
-        icon: Trash,
-        label: t('settings.tools.delete'),
-        onClick: () => handleDeleteTool(tool),
-        variant: 'destructive',
-        iconWidth: 16,
-        iconHeight: 16,
-      },
-    ];
-    // Sharing is an owner-only action: hide it for tools shared into the
-    // user's workspace by a team.
-    if (tool.ownership !== 'team') {
-      options.splice(options.length - 1, 0, {
+      });
+    }
+    // The caller's own connection that needs reconnecting (the badge says
+    // so) is reconnected from here, in place where it can be.
+    if (connection && connectionNeedsSignIn(connection))
+      options.push({
+        icon: RefreshCw,
+        label: t('settings.connectors.status.reconnect'),
+        onClick: () =>
+          reconnect(connection, tool.name === 'mcp_tool' ? tool.id : undefined),
+        variant: 'default',
+      });
+    // The owner's connected tool (its connection is theirs) is managed on
+    // the Connectors page, so it has no editor here; a teammate's opens the
+    // tool editor like any other shared tool.
+    if (!(tool.connection_id && isOwner(tool)))
+      options.push(
+        canEdit
+          ? {
+              icon: Pencil,
+              label: t('settings.tools.edit'),
+              onClick: () => setSelectedTool(tool),
+              variant: 'default',
+            }
+          : {
+              icon: Eye,
+              label: t('settings.tools.view'),
+              onClick: () => setSelectedTool(tool),
+              variant: 'default',
+            },
+      );
+    // A connected server signs in again through its connection (Reconnect
+    // above, for the caller's own); only an MCP tool without one keeps
+    // the server form. The tool's own connection id decides, for everyone: a
+    // teammate never sees the owner's connection, and the owner's loads
+    // after the tools. A shared OAuth server's sign-in is the owner's to redo.
+    if (
+      tool.name === 'mcp_tool' &&
+      !tool.connection_id &&
+      can(tool, 'edit_credentials') &&
+      !isSharedOAuthMcp(tool)
+    ) {
+      options.push({
+        icon: RefreshCw,
+        label: t('settings.tools.reconnect'),
+        onClick: () => handleReconnect(tool),
+        variant: 'default',
+      });
+    }
+    if (can(tool, 'share')) {
+      options.push({
         icon: Users,
         label: t('settings.tools.shareWithTeam'),
         onClick: () => setToolToShare(tool),
         variant: 'default',
-        iconWidth: 16,
-        iconHeight: 16,
       });
     }
-    if (tool.name === 'mcp_tool') {
-      options.splice(1, 0, {
-        icon: RefreshCcw,
-        label: t('settings.tools.reconnect'),
-        onClick: () => handleReconnect(tool),
-        variant: 'default',
-        iconWidth: 16,
-        iconHeight: 16,
-        iconClassName: 'text-[#747474]',
+    if (can(tool, 'delete')) {
+      options.push({
+        icon: Trash2,
+        label: t('settings.tools.delete'),
+        onClick: () => handleDeleteTool(tool),
+        variant: 'destructive',
       });
     }
     return options;
@@ -175,11 +266,16 @@ export default function Tools() {
       .catch(() => {});
   }, [token]);
 
+  const { reconnect, modals: signInModals } = useSignInAgain({
+    onConnected: () => getUserTools(),
+  });
+
   const getUserTools = () => {
     setLoading(true);
     userService
       .getUserTools(token)
       .then((res) => {
+        if (!res.ok) throw new Error(`Failed to load tools (${res.status})`);
         return res.json();
       })
       .then((data) => {
@@ -192,32 +288,56 @@ export default function Tools() {
           (tool: UserToolType) => tool.default || !tool.builtin,
         );
         setUserTools(filtered);
+        setLoadFailed(false);
         setLoading(false);
       })
       .catch((error) => {
         console.error('Error fetching tools:', error);
+        setLoadFailed(true);
         setLoading(false);
       });
   };
 
+  const setToolInChat = (toolId: string, value: boolean) =>
+    setUserTools((prevTools) =>
+      prevTools.map((tool) =>
+        tool.id !== toolId
+          ? tool
+          : isOwner(tool)
+            ? { ...tool, status: value, in_chat: value }
+            : { ...tool, in_chat: value },
+      ),
+    );
+
+  // The switch moves at once and flips back when the server refuses it.
   const updateToolStatus = (toolId: string, newStatus: boolean) => {
+    setToolInChat(toolId, newStatus);
+    const fail = () => {
+      setToolInChat(toolId, !newStatus);
+      dispatch(
+        showActionToast({
+          variant: 'destructive',
+          message: t('settings.tools.statusUpdateFailed'),
+        }),
+      );
+    };
     userService
       .updateToolStatus({ id: toolId, status: newStatus }, token)
-      .then(() => {
-        setUserTools((prevTools) =>
-          prevTools.map((tool) =>
-            tool.id === toolId ? { ...tool, status: newStatus } : tool,
-          ),
-        );
+      .then((response: Response) => {
+        if (!response.ok) fail();
       })
-      .catch((error) => {
+      .catch((error: unknown) => {
         console.error('Failed to update tool status:', error);
+        fail();
       });
   };
 
-  const handleSettingsClick = (tool: UserToolType) => {
-    setSelectedTool(tool);
-  };
+  // The caller's own connection behind a connected tool (only their own
+  // connections are loaded): the card names its account.
+  const connectionOf = (tool: UserToolType) =>
+    tool.connection_id
+      ? connections.find((c) => c.id === tool.connection_id)
+      : undefined;
 
   const handleGoBack = () => {
     setSelectedTool(null);
@@ -262,7 +382,197 @@ export default function Tools() {
   React.useEffect(() => {
     getUserTools();
     fetchMcpStatuses();
+    dispatch(loadConnectors({ token }));
   }, []);
+
+  // The Connectors page opens a new OpenAPI tool here as an unsaved draft:
+  // the spec import opens straight away and the tool is created on save.
+  const routeState = location.state as {
+    openToolId?: string;
+    newApiTool?: boolean;
+  } | null;
+  const openToolId = routeState?.openToolId;
+  const newApiTool = routeState?.newApiTool;
+  React.useEffect(() => {
+    if (!openToolId) return;
+    handleToolAdded(openToolId);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [openToolId]);
+  React.useEffect(() => {
+    if (!newApiTool) return;
+    navigate(location.pathname, { replace: true, state: null });
+    userService
+      .getAvailableTools(token)
+      .then((res) => res.json())
+      .then((data) => {
+        const template = (data.data as AvailableToolType[] | undefined)?.find(
+          (candidate) => candidate.name === 'api_tool',
+        );
+        if (!template) return;
+        setSelectedTool({
+          id: '',
+          name: template.name,
+          displayName: template.displayName,
+          customName: '',
+          description: template.description,
+          config: {},
+          actions: template.actions,
+          status: true,
+        } as unknown as UserToolType);
+      })
+      .catch(() => undefined);
+  }, [newApiTool]);
+
+  const filteredTools = userTools.filter((tool) =>
+    (tool.customName || tool.displayName)
+      .toLowerCase()
+      .includes(searchTerm.toLowerCase()),
+  );
+  // Grouped like the composer's picker. Paged in group order, so a group
+  // that runs past a page carries on (under its header) on the next one.
+  const orderedTools = groupTools(filteredTools, connections, catalog).flatMap(
+    (group) => group.tools,
+  );
+  const {
+    page: toolsPage,
+    setPage: setToolsPage,
+    pageItems: pageTools,
+  } = useClientPage(orderedTools, SHORT_LIST_PAGE_SIZE, searchTerm);
+  const pageGroups = groupTools(pageTools, connections, catalog);
+
+  const groupTitle = (group: ToolGroup<UserToolType>) =>
+    group.kind === 'builtIn' ? (
+      t('settings.tools.groupBuiltIn')
+    ) : group.kind === 'custom' ? (
+      t('agents.form.toolsPopup.groupCustom')
+    ) : (
+      <span className="flex items-center gap-2">
+        {group.service?.icon ? (
+          <ConnectorIcon
+            icon={group.service.icon}
+            className="size-4 shrink-0"
+          />
+        ) : null}
+        {group.service?.name}
+      </span>
+    );
+
+  // The state leads the badge row: the caller's own connection needing a
+  // sign-in, or a custom MCP server's sign-in. "Configured" is not a
+  // health check, so it gets none.
+  const stateBadge = (tool: UserToolType) => {
+    const connection = connectionOf(tool);
+    const mcpStatus =
+      tool.name === 'mcp_tool' && !connection
+        ? mcpStatuses[tool.id]
+        : undefined;
+    if (connectionNeedsSignIn(connection) || mcpStatus === 'needs_auth')
+      return (
+        <Badge variant="warning">
+          {t('settings.connectors.status.reconnect')}
+        </Badge>
+      );
+    if (mcpStatus === 'connected')
+      return (
+        <Badge variant="success">
+          {t('settings.connectors.status.connected')}
+        </Badge>
+      );
+    return null;
+  };
+
+  const renderTile = (tool: UserToolType) => {
+    const connection = connectionOf(tool);
+    const service = toolServiceOf(tool, connections, catalog);
+    const connector = service?.connector;
+    // A catalog service reads as the catalog describes it; a custom server
+    // keeps the description it came with. The account is on the tile's own
+    // line, so the title drops the " · account" the server adds to tell
+    // accounts apart in pickers.
+    const fullName = tool.customName || tool.displayName;
+    const title =
+      connection && fullName.startsWith(`${connection.name} · `)
+        ? connection.name
+        : fullName;
+    const description =
+      connector && connector.publisher !== 'custom'
+        ? connectorDescription(t, connector)
+        : tool.description;
+    const account = connection ? accountLine(t, connection) : null;
+    return (
+      <ConnectorTile
+        key={tool.id}
+        // A connected tool shows its service's logo, as the composer does.
+        icon={
+          service?.icon ? (
+            <ConnectorIcon icon={service.icon} className="size-6 shrink-0" />
+          ) : (
+            <ToolIcon
+              name={tool.name}
+              title={t('settings.tools.toolIconTitle', {
+                interpolation: { escapeValue: false },
+                name: tool.displayName,
+              })}
+              className="size-6 shrink-0"
+            />
+          )
+        }
+        title={title}
+        titleAs="h3"
+        description={description}
+        menu={
+          !tool.default ? (
+            <ActionMenu
+              options={getMenuOptions(tool)}
+              triggerLabel={t('settings.tools.settingsIconAlt')}
+            />
+          ) : undefined
+        }
+        badges={
+          <>
+            {stateBadge(tool)}
+            {/* The default copy of a built-in tool (it has no menu), told
+                apart from one the user added. */}
+            {tool.default && (
+              <Badge variant="neutral">
+                {t('settings.tools.defaultBadge')}
+              </Badge>
+            )}
+            <RoleBadge item={tool} />
+          </>
+        }
+        // Which account this is (each account of a service is its own
+        // tool) and the caller's own "In my chats" switch, named for screen
+        // readers only. A shared tool without use_in_own can't be in the
+        // caller's chats at all, so it has no switch.
+        footer={
+          account || canAddToolToOwn(tool) ? (
+            <>
+              {account && (
+                <span className="min-w-0 truncate" title={account}>
+                  {account}
+                </span>
+              )}
+              {canAddToolToOwn(tool) && (
+                <Switch
+                  className="ml-auto shrink-0"
+                  checked={toolInChat(tool)}
+                  onCheckedChange={(checked) =>
+                    updateToolStatus(tool.id, checked)
+                  }
+                  aria-label={t('settings.tools.useInMyChatsAria', {
+                    interpolation: { escapeValue: false },
+                    toolName: tool.customName || tool.displayName,
+                  })}
+                />
+              )}
+            </>
+          ) : undefined
+        }
+      />
+    );
+  };
+
   return (
     <div>
       {selectedTool ? (
@@ -279,224 +589,98 @@ export default function Tools() {
           />
         )
       ) : (
-        <div className="mt-8">
+        <div>
           <div className="relative flex flex-col">
-            <p className="text-muted-foreground mb-5 text-sm leading-6">
-              {t('settings.tools.subtitle')}
-            </p>
-            <div className="my-3 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="w-full max-w-md">
-                <Input
+            <PageToolbar
+              intro={t('settings.tools.subtitle')}
+              search={
+                <SearchInput
                   maxLength={256}
                   label={t('settings.tools.searchPlaceholder')}
                   name="Document-search-input"
-                  type="text"
                   id="tool-search-input"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  labelBgClassName="bg-background"
-                  className="rounded-full"
-                  leftIcon={
-                    <SearchIcon
-                      className="text-muted-foreground size-4"
-                      strokeWidth={1.75}
-                    />
-                  }
                 />
-              </div>
-              <Button
-                type="button"
-                className="h-11 min-w-[108px] rounded-full whitespace-normal text-white"
-                onClick={() => {
-                  setAddToolModalState('ACTIVE');
-                }}
-              >
-                {t('settings.tools.addTool')}
-              </Button>
-            </div>
-            <div className="border-border dark:border-border mt-5 mb-8 border-b" />
+              }
+              action={
+                <Button
+                  type="button"
+                  size="field"
+                  shape="pill"
+                  onClick={() => {
+                    setAddToolModalState('ACTIVE');
+                  }}
+                >
+                  {t('settings.tools.addTool')}
+                </Button>
+              }
+              divider
+            />
             {loading ? (
-              <div className="flex flex-wrap justify-center gap-4 sm:justify-start">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 <SkeletonLoader component="toolCards" count={6} />
               </div>
-            ) : (
-              <div className="flex flex-wrap justify-center gap-4 sm:justify-start">
-                {userTools.length === 0 ? (
-                  <div className="flex w-full flex-col items-center justify-center py-12">
-                    <img
-                      src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                      alt={t('settings.tools.noToolsFound')}
-                      className="mx-auto mb-6 h-32 w-32"
-                    />
-                    <p className="text-center text-lg text-gray-500 dark:text-gray-400">
-                      {t('settings.tools.noToolsFound')}
-                    </p>
+            ) : loadFailed ? (
+              <EmptyState
+                tone="destructive"
+                illustration="none"
+                title={t('settings.tools.loadError')}
+                onRetry={getUserTools}
+              />
+            ) : userTools.length === 0 ? (
+              <EmptyState
+                title={t('settings.tools.noToolsYet')}
+                action={
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <Button
+                      type="button"
+                      shape="pill"
+                      onClick={() => setAddToolModalState('ACTIVE')}
+                    >
+                      {t('settings.tools.addTool')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      shape="pill"
+                      onClick={() =>
+                        navigate('/settings/connectors?capability=tools')
+                      }
+                    >
+                      {t('settings.tools.connectService')}
+                    </Button>
                   </div>
-                ) : (
-                  (() => {
-                    const filtered = userTools.filter((tool) =>
-                      (tool.customName || tool.displayName)
-                        .toLowerCase()
-                        .includes(searchTerm.toLowerCase()),
-                    );
-                    return filtered.length === 0 ? (
-                      <div className="flex w-full flex-col items-center justify-center py-12">
-                        <img
-                          src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                          alt={t('settings.tools.noToolsFound')}
-                          className="mx-auto mb-6 h-32 w-32"
-                        />
-                        <p className="text-center text-lg text-gray-500 dark:text-gray-400">
-                          {t('settings.tools.noToolsFound')}
-                        </p>
+                }
+              />
+            ) : filteredTools.length === 0 ? (
+              <EmptyState
+                size="xs"
+                illustration="none"
+                title={t('settings.tools.noToolsFound')}
+              />
+            ) : (
+              <>
+                <div className="flex flex-col gap-8">
+                  {pageGroups.map((group) => (
+                    <section key={group.key} className="flex flex-col gap-3">
+                      <SectionHeader size="sm" title={groupTitle(group)} />
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        {group.tools.map(renderTile)}
                       </div>
-                    ) : (
-                      filtered.map((tool, index) => (
-                        <div
-                          key={index}
-                          className="bg-muted hover:bg-accent relative flex h-52 w-[300px] flex-col justify-between overflow-hidden rounded-2xl p-5"
-                        >
-                          {!tool.default && (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <button
-                                  type="button"
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="absolute top-4 right-4 z-10 cursor-pointer"
-                                  aria-label={t(
-                                    'settings.tools.settingsIconAlt',
-                                  )}
-                                >
-                                  <img
-                                    src={ThreeDotsIcon}
-                                    alt={t('settings.tools.settingsIconAlt')}
-                                    className="h-[19px] w-[19px]"
-                                  />
-                                </button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent
-                                align="end"
-                                className="min-w-[144px]"
-                              >
-                                {getMenuOptions(tool).map((option, idx) => {
-                                  const IconCmp =
-                                    typeof option.icon !== 'string'
-                                      ? option.icon
-                                      : null;
-                                  return (
-                                    <DropdownMenuItem
-                                      key={idx}
-                                      variant={option.variant}
-                                      onSelect={() => option.onClick()}
-                                    >
-                                      {typeof option.icon === 'string' ? (
-                                        <img
-                                          src={option.icon}
-                                          alt=""
-                                          width={option.iconWidth ?? 16}
-                                          height={option.iconHeight ?? 16}
-                                          className={option.iconClassName}
-                                        />
-                                      ) : (
-                                        IconCmp && (
-                                          <IconCmp
-                                            size={Math.max(
-                                              option.iconWidth ?? 16,
-                                              option.iconHeight ?? 16,
-                                            )}
-                                            strokeWidth={1.75}
-                                            aria-hidden="true"
-                                            className={option.iconClassName}
-                                          />
-                                        )
-                                      )}
-                                      <span>{option.label}</span>
-                                    </DropdownMenuItem>
-                                  );
-                                })}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
-                          <div className="w-full">
-                            <div className="flex w-full items-center gap-2 px-1">
-                              <ToolIcon
-                                name={tool.name}
-                                title={`${tool.displayName} icon`}
-                                className="h-6 w-6"
-                              />
-                              {tool.default && (
-                                <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs leading-none font-medium text-gray-600 dark:bg-gray-700/40 dark:text-gray-300">
-                                  {t('settings.tools.builtIn')}
-                                </span>
-                              )}
-                              {tool.name === 'mcp_tool' &&
-                                mcpStatuses[tool.id] && (
-                                  <span
-                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs leading-none font-medium ${
-                                      mcpStatuses[tool.id] === 'connected'
-                                        ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                                        : mcpStatuses[tool.id] === 'needs_auth'
-                                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-                                          : 'bg-gray-100 text-gray-600 dark:bg-gray-700/40 dark:text-gray-300'
-                                    }`}
-                                  >
-                                    {mcpStatuses[tool.id] === 'connected'
-                                      ? t('settings.tools.authStatus.connected')
-                                      : mcpStatuses[tool.id] === 'needs_auth'
-                                        ? t(
-                                            'settings.tools.authStatus.needsAuth',
-                                          )
-                                        : t(
-                                            'settings.tools.authStatus.configured',
-                                          )}
-                                  </span>
-                                )}
-                              {tool.ownership === 'team' && (
-                                <span className="bg-muted-foreground/10 text-muted-foreground inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs leading-none font-medium">
-                                  <Users
-                                    size={11}
-                                    strokeWidth={2}
-                                    aria-hidden="true"
-                                  />
-                                  {tool.team_access === 'editor'
-                                    ? t('teamAccess.editor')
-                                    : t('teamAccess.viewer')}
-                                </span>
-                              )}
-                            </div>
-                            <div className="mt-[9px]">
-                              <p
-                                title={tool.customName || tool.displayName}
-                                className="text-foreground dark:text-foreground truncate px-1 text-sm leading-relaxed font-semibold capitalize"
-                              >
-                                {tool.customName || tool.displayName}
-                              </p>
-                              <p
-                                className="text-muted-foreground mt-1 line-clamp-4 max-h-24 overflow-hidden px-1 text-xs leading-relaxed break-all"
-                                title={tool.description}
-                              >
-                                {tool.description}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="absolute right-4 bottom-4">
-                            <Switch
-                              checked={tool.status}
-                              onCheckedChange={(checked) =>
-                                updateToolStatus(tool.id, checked)
-                              }
-                              id={`toolToggle-${index}`}
-                              aria-label={t('settings.tools.toggleToolAria', {
-                                toolName: tool.customName || tool.displayName,
-                              })}
-                            />
-                          </div>
-                        </div>
-                      ))
-                    );
-                  })()
-                )}
-              </div>
+                    </section>
+                  ))}
+                </div>
+                <Pagination
+                  page={toolsPage}
+                  pageSize={SHORT_LIST_PAGE_SIZE}
+                  total={filteredTools.length}
+                  onPageChange={setToolsPage}
+                  rangeLabel={(range) =>
+                    t('settings.tools.pageRange', pageRangeParams(range))
+                  }
+                />
+              </>
             )}
           </div>
           <AddToolModal
@@ -509,15 +693,19 @@ export default function Tools() {
           />
           <ConfirmationModal
             message={t('settings.tools.deleteWarning', {
+              interpolation: { escapeValue: false },
               toolName:
                 toolToDelete?.customName || toolToDelete?.displayName || '',
             })}
+            description={t('settings.tools.deleteConsequence')}
             modalState={deleteModalState}
             setModalState={setDeleteModalState}
             handleSubmit={confirmDeleteTool}
+            error={t('settings.tools.deleteFailed')}
             submitLabel={t('settings.tools.delete')}
-            variant="danger"
+            variant="destructive"
           />
+          {signInModals}
           <MCPServerModal
             modalState={reconnectModalState}
             setModalState={setReconnectModalState}
@@ -533,7 +721,11 @@ export default function Tools() {
               resourceType="tool"
               resourceId={toolToShare.id}
               resourceName={toolToShare.customName || toolToShare.displayName}
-              onClose={() => setToolToShare(null)}
+              credentials={shareCredentials(toolToShare)}
+              onClose={() => {
+                setToolToShare(null);
+                getUserTools();
+              }}
             />
           )}
         </div>

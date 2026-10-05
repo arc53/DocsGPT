@@ -25,6 +25,7 @@ from starlette.responses import Response
 from starlette.routing import Route
 
 from docsgpt.api.asgi_auth import authenticate, bind_log_context, json_error
+from docsgpt.api.pat.rules import MESSAGE_REPLAY_SCOPES
 from docsgpt.api.asgi_stream import sse_response
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.session import db_readonly
@@ -33,7 +34,6 @@ from docsgpt.streaming.async_event_replay import (
 )
 from docsgpt.streaming.async_redis import get_async_redis_instance
 from docsgpt.streaming.event_replay import (
-    DEFAULT_KEEPALIVE_SECONDS,
     DEFAULT_POLL_TIMEOUT_SECONDS,
 )
 from docsgpt.streaming.sse_leases import StreamCapExceeded, acquire_stream_lease
@@ -95,7 +95,8 @@ async def stream_message_events(request: Request) -> Response:
     """
     # Same JWT decoder and OIDC revocation check as the Flask routes. With
     # AUTH_TYPE unset the caller resolves to ``{"sub": "local"}``.
-    decoded, error = await authenticate(request)
+    # Same scopes as its Flask sibling GET /api/messages/<id>/tail.
+    decoded, error = await authenticate(request, pat_scope=MESSAGE_REPLAY_SCOPES)
     if error is not None:
         return error
     user_id = decoded.get("sub") if isinstance(decoded, dict) else None
@@ -127,7 +128,7 @@ async def stream_message_events(request: Request) -> Response:
     )
     last_event_id = _normalise_last_event_id(raw_cursor)
     keepalive_seconds = float(
-        getattr(settings, "SSE_KEEPALIVE_SECONDS", DEFAULT_KEEPALIVE_SECONDS)
+        settings.SSE_KEEPALIVE_SECONDS
     )
 
     logger.info(

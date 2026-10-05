@@ -15,7 +15,7 @@ have to know which driver a given field feeds. Each normalizer also
 silently upgrades the legacy ``postgresql+psycopg2://`` prefix since
 psycopg2 is no longer in the project.
 
-This module is deliberately separate from ``docsgpt/core/settings.py``
+This module is deliberately separate from ``docsgpt/core/settings``
 so the Settings class stays focused on field declarations, and the
 URI-rewriting logic can be unit-tested without triggering ``.env``
 file loading from importing Settings.

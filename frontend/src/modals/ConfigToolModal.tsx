@@ -4,10 +4,9 @@ import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import ConfigFields from '../components/ConfigFields';
-import { Button } from '../components/ui/button';
+import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { AvailableToolType } from './types';
@@ -54,15 +53,17 @@ export default function ConfigToolModal({
         if (!visible) return;
       }
       if (spec.required && !configValues[key]?.toString().trim()) {
-        newErrors[key] = `${spec.label || key} is required`;
+        newErrors[key] = t('modals.configTool.fieldRequired', {
+          field: spec.label || key,
+        });
       }
       if (spec.type === 'number' && configValues[key] !== undefined) {
         const num = Number(configValues[key]);
         if (isNaN(num) || num < 1) {
-          newErrors[key] = 'Must be a positive number';
+          newErrors[key] = t('modals.configTool.positiveNumber');
         }
         if (key === 'timeout' && num > 300) {
-          newErrors[key] = 'Maximum timeout is 300 seconds';
+          newErrors[key] = t('modals.configTool.maxTimeout');
         }
       }
     });
@@ -120,50 +121,32 @@ export default function ConfigToolModal({
       title={t('modals.configTool.title')}
       size="lg"
       footer={
-        <>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={handleClose}
-            className="rounded-3xl px-5"
-          >
-            {t('modals.configTool.closeButton')}
-          </Button>
-          <Button
-            type="button"
-            onClick={handleAddTool}
-            disabled={saving}
-            className="rounded-3xl px-5"
-          >
-            {saving
-              ? t('modals.configTool.addButton') + '…'
-              : t('modals.configTool.addButton')}
-          </Button>
-        </>
+        <ModalActions
+          cancelLabel={t('modals.configTool.closeButton')}
+          onCancel={handleClose}
+          submitLabel={t('modals.configTool.addButton')}
+          onSubmit={handleAddTool}
+          pending={saving}
+        />
       }
     >
       <div>
-        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+        <p className="text-muted-foreground mt-2 text-sm">
           {t('modals.configTool.type')}:{' '}
-          <span className="font-medium text-gray-700 dark:text-gray-200">
+          <span className="text-foreground font-medium">
             {tool.displayName}
           </span>
         </p>
 
-        <div className="mt-6 flex flex-col gap-4 px-1">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="customName">
-              {t('modals.configTool.customNamePlaceholder')}
-            </Label>
+        <div className="mt-6 flex flex-col gap-5">
+          <FormField label={t('modals.configTool.customNamePlaceholder')}>
             <Input
-              id="customName"
               type="text"
               value={customName}
               onChange={(e) => setCustomName(e.target.value)}
               placeholder={tool.displayName}
-              className="rounded-xl"
             />
-          </div>
+          </FormField>
 
           {hasConfig && (
             <ConfigFields

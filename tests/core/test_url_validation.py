@@ -43,6 +43,25 @@ class TestIsPrivateIP:
         assert is_private_ip("not-an-ip") is False
         assert is_private_ip("") is False
 
+    @pytest.mark.parametrize(
+        "address",
+        [
+            "::ffff:127.0.0.1",
+            "::ffff:10.0.0.1",
+            "::ffff:192.168.1.1",
+            "::ffff:169.254.0.1",
+            "::ffff:169.254.169.254",
+            "::ffff:100.64.0.1",
+            "::ffff:100.127.255.254",
+            "::ffff:0.0.0.0",
+        ],
+    )
+    def test_ipv4_mapped_ipv6_is_judged_by_its_ipv4_address(self, address):
+        assert is_private_ip(address) is True
+
+    def test_ipv4_mapped_public_address_is_allowed(self):
+        assert is_private_ip("::ffff:8.8.8.8") is False
+
 
 class TestIsMetadataIP:
     """Tests for is_metadata_ip function."""
@@ -56,6 +75,10 @@ class TestIsMetadataIP:
     def test_non_metadata_ip(self):
         assert is_metadata_ip("8.8.8.8") is False
         assert is_metadata_ip("10.0.0.1") is False
+
+    @pytest.mark.parametrize("address", ["::ffff:169.254.169.254", "::ffff:169.254.170.2", "fd00:ec2:0::254"])
+    def test_other_spellings_of_a_metadata_ip(self, address):
+        assert is_metadata_ip(address) is True
 
 
 class TestValidateUrl:
@@ -226,6 +249,20 @@ class TestIsPrivateIPExtended:
         # 240.0.0.0/4 is reserved (future use), Python's ipaddress marks it as such
         assert is_private_ip("240.0.0.1") is True
 
+    def test_carrier_grade_nat(self):
+        """100.64.0.0/10 is not ``is_private`` in Python, but it is an internal range (RFC 6598)."""
+        assert is_private_ip("100.64.0.1") is True
+        assert is_private_ip("100.127.255.254") is True
+        assert is_private_ip("100.128.0.1") is False
+
+    def test_validate_url_blocks_a_host_resolving_to_carrier_grade_nat(self):
+        with patch("docsgpt.core.url_validation.resolve_hostname") as mock_resolve:
+            mock_resolve.return_value = "100.100.1.1"
+            with pytest.raises(SSRFError):
+                validate_url("http://tailnet.example.com")
+        with pytest.raises(SSRFError):
+            validate_url("http://100.64.0.10")
+
 
 class TestValidateUrlExtended:
     """Additional URL validation tests."""
@@ -259,3 +296,22 @@ class TestValidateUrlExtended:
     def test_allows_localhost_ip_with_flag(self):
         result = validate_url("http://10.0.0.1", allow_localhost=True)
         assert result == "http://10.0.0.1"
+
+
+class TestValidateUrlMalformed:
+    """A URL ``urlparse`` cannot parse fails validation instead of escaping."""
+
+    def test_unclosed_ipv6_bracket_raises_ssrf_error(self):
+        with pytest.raises(SSRFError) as exc_info:
+            validate_url("http://[bad")
+        assert "invalid url" in str(exc_info.value).lower()
+
+    def test_unclosed_ipv6_bracket_without_scheme_raises_ssrf_error(self):
+        with pytest.raises(SSRFError):
+            validate_url("[bad")
+
+    def test_safe_variant_reports_failure(self):
+        is_valid, url, error = validate_url_safe("http://[bad")
+        assert is_valid is False
+        assert url == "http://[bad"
+        assert error

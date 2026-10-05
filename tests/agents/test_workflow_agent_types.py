@@ -214,6 +214,27 @@ class TestWorkflowEngineAgenticNode:
         assert engine.state["node_agent_agentic_output"] == "agentic answer"
         assert engine.state["result"] == "agentic answer"
 
+    def test_node_usage_is_attributed_to_the_workflow_agent(self, monkeypatch):
+        engine = create_engine()
+        engine.agent.agent_id = "11111111-1111-1111-1111-111111111111"
+        node = create_agent_node(node_id="agent_attr", agent_type="classic")
+
+        captured: Dict[str, Any] = {}
+
+        def capture_create(**kwargs):
+            captured.update(kwargs)
+            return StubNodeAgent([{"answer": "ok"}])
+
+        monkeypatch.setattr(WorkflowNodeAgentFactory, "create", staticmethod(capture_create))
+        monkeypatch.setattr(
+            "docsgpt.core.model_utils.get_api_key_for_provider",
+            lambda _provider: None,
+        )
+
+        list(engine._execute_agent_node(node))
+
+        assert captured["agent_id"] == "11111111-1111-1111-1111-111111111111"
+
     def test_agentic_node_passes_retriever_config(self, monkeypatch):
         engine = create_engine()
         # The node-source authorization gate is exercised separately;
@@ -519,18 +540,18 @@ class TestWorkflowNodeSourceAuthorization:
         monkeypatch.setattr(session, "db_readonly", _conn)
 
     def test_owner_sources_survive(self, monkeypatch):
-        import docsgpt.api.user.team_sharing as ts
+        import docsgpt.api.user.resource_access as ra
 
         self._stub_db(monkeypatch)
-        monkeypatch.setattr(ts, "can_access", lambda *a, **k: True)
+        monkeypatch.setattr(ra, "can_use_ref", lambda *a, **k: True)
         engine = self._engine("owner")
         assert engine._authorized_node_sources(["s1", "s2"]) == ["s1", "s2"]
 
     def test_foreign_sources_are_dropped(self, monkeypatch):
-        import docsgpt.api.user.team_sharing as ts
+        import docsgpt.api.user.resource_access as ra
 
         self._stub_db(monkeypatch)
-        monkeypatch.setattr(ts, "can_access", lambda conn, k, sid, u: sid == "mine")
+        monkeypatch.setattr(ra, "can_use_ref", lambda conn, k, sid, u: sid == "mine")
         engine = self._engine("owner")
         assert engine._authorized_node_sources(["mine", "theirs"]) == ["mine"]
 
@@ -542,13 +563,13 @@ class TestWorkflowNodeSourceAuthorization:
         assert engine._authorized_node_sources(["s1"]) == []
 
     def test_authorization_error_fails_closed(self, monkeypatch):
-        import docsgpt.api.user.team_sharing as ts
+        import docsgpt.api.user.resource_access as ra
 
         def _boom(*a, **k):
             raise RuntimeError("db down")
 
         self._stub_db(monkeypatch)
-        monkeypatch.setattr(ts, "can_access", _boom)
+        monkeypatch.setattr(ra, "can_use_ref", _boom)
         engine = self._engine("owner")
         assert engine._authorized_node_sources(["s1"]) == []
 

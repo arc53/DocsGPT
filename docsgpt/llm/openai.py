@@ -4,13 +4,25 @@ import io
 import json
 import logging
 import os.path
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from openai import BadRequestError, OpenAI
 
+from docsgpt.attachment_names import normalize_attachment_filename
+from docsgpt.core import log_context
 from docsgpt.core.settings import settings
 from docsgpt.llm.base import BaseLLM, optional_int
+from docsgpt.llm.tool_images import (
+    IMAGES_KEY,
+    data_url,
+    follow_up_note,
+    native_tool_images,
+    reads_images,
+    tool_result,
+)
 from docsgpt.storage.storage_creator import StorageCreator
+
+logger = logging.getLogger(__name__)
 
 # Placeholder sent to OpenAI-compatible backends that require no credentials.
 NO_API_KEY = "sk-no-key"
@@ -84,6 +96,21 @@ def _is_tools_unsupported_error(error: Exception) -> bool:
     """
     haystack = _provider_message(error).lower()
     return any(marker in haystack for marker in _TOOLS_UNSUPPORTED_MARKERS)
+
+
+def _is_previous_response_not_found(error: Exception) -> bool:
+    """The provider no longer has the response a chained request pointed at."""
+    if getattr(error, "code", None) == "previous_response_not_found":
+        return True
+    text = str(error).lower()
+    return "previous response" in text and "not found" in text
+
+
+def _data_url_mime(value) -> Optional[str]:
+    """The MIME type of a ``data:`` URL, or None."""
+    if isinstance(value, str) and value.startswith("data:"):
+        return value[len("data:"):].split(";", 1)[0].split(",", 1)[0] or None
+    return None
 
 
 def _truncate_base64_for_logging(messages):
@@ -269,8 +296,27 @@ class OpenAILLM(BaseLLM):
         # so a failed request leaves the chain's head unchanged and a retry
         # re-sends the head.
         self._pending_system_hash = None
+        # Hash of the tools block the chain's last recorded call sent, and of
+        # the one a request in flight sends (committed like the system hash).
+        # A chained call whose tools differ misses the provider prompt cache.
+        self._chain_tools_hash = None
+        self._pending_tools_hash = None
+        # Which part of the prefix a chained call changed (``tools``,
+        # ``instructions``); None when unchanged. Read by the LLM span
+        # (``docsgpt.prefix_changed``).
+        self._prefix_changed = None
         # Opaque per-user prompt-cache routing key, set by the agent per call.
         self._prompt_cache_key = None
+        # Why the next Responses call cannot chain, when something already
+        # knows (the agent at a turn's start, a compression, a failed call).
+        self._chain_reset_hint = None
+        # Why the latest Responses call did not chain; None when it did.
+        # Read by the LLM span (``docsgpt.chain_reset_reason``).
+        self._chain_reset_reason = None
+        # Set by the agent for the LLM that runs a conversation turn: only
+        # its unchained calls are logged, once per reason per turn.
+        self._chain_turn_tracked = False
+        self._chain_reasons_logged = set()
         # Files-API ids for inline ``file_data`` content parts already
         # uploaded, keyed by content hash. First-line cache for the
         # in-request tool loop; the Redis-backed cross-request cache
@@ -317,6 +363,7 @@ class OpenAILLM(BaseLLM):
             "reasoning_items": self._last_reasoning_items,
             "reasoning_for_calls": self._reasoning_for_calls,
             "system_hash": self._chain_system_hash,
+            "tools_hash": self._chain_tools_hash,
         }
 
     def import_responses_state(self, state: dict | None) -> bool:
@@ -333,10 +380,143 @@ class OpenAILLM(BaseLLM):
         self._reasoning_for_calls = dict(state.get("reasoning_for_calls") or {})
         self._chain_system_hash = state.get("system_hash")
         self._pending_system_hash = None
+        self._chain_tools_hash = state.get("tools_hash")
+        self._pending_tools_hash = None
         return True
 
-    def start_responses_turn(self) -> None:
-        """Reset continuity accumulated during the preceding user turn."""
+    def note_chain_turn(self, reason: Optional[str], *, new_turn: bool = True) -> None:
+        """Track this LLM's Responses chain for the agent's turn.
+
+        Args:
+            reason: Why the turn's first call cannot chain onto the previous
+                turn (``first_turn``, ``compression``, ...), or None when the
+                agent hands it a response id to chain onto.
+            new_turn: A new user turn starts (not a resumed one): reasons are
+                logged afresh.
+        """
+        self._chain_turn_tracked = True
+        if new_turn:
+            self._chain_reasons_logged = set()
+        self._chain_reset_hint = reason
+
+    def _note_chain(self, wanted: Optional[str], chained: Optional[str], model: Any) -> None:
+        """Record, and log once per turn, why a Responses call did not chain.
+
+        Args:
+            wanted: The response id the call would have chained onto.
+            chained: The id it did chain onto; None when unchained.
+            model: The model the call went to.
+        """
+        if not self._chain_turn_tracked:
+            return
+        if chained:
+            self._chain_reset_hint = None
+            self._chain_reset_reason = None
+            return
+        if not settings.OPENAI_RESPONSES_STORE:
+            reason = "disabled"
+        elif wanted:
+            # ``_build_responses_input`` refused to chain: the history does
+            # not answer every call of the response it would chain onto.
+            reason = "history_mismatch"
+        else:
+            reason = self._chain_reset_hint or "no_previous_response"
+        self._chain_reset_hint = None
+        self._chain_reset_reason = reason
+        self._log_chain_reset(reason, model)
+
+    def _log_chain_reset(self, reason: str, model: Any) -> None:
+        """One INFO line per reason per turn: the chain was not used, and why."""
+        if reason in self._chain_reasons_logged:
+            return
+        self._chain_reasons_logged.add(reason)
+        context = log_context.snapshot()
+        logger.info(
+            "responses_chain_reset",
+            extra={
+                "reason": reason,
+                "conversation_id": context.get("conversation_id"),
+                "activity_id": context.get("activity_id"),
+                "model": str(model) if model else None,
+            },
+        )
+
+    @staticmethod
+    def _tools_fingerprint(tools: Any) -> str:
+        """Hash of the tools block exactly as it is sent, key order included.
+
+        Args:
+            tools: The request's ``tools`` list, or None.
+
+        Returns:
+            A hexadecimal digest; a request without tools has one too.
+        """
+        encoded = json.dumps(tools or [], default=str).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def _note_prefix(self, params: dict, model: Any) -> None:
+        """Log a chained call whose instructions or tools differ from the chain's.
+
+        A chained call reuses the provider's cached prefix only while the
+        tools block and the system head stay the same as on the previous
+        call in the chain. Called once the request is built, so the head the
+        request keeps or re-sends (``_pending_system_hash``) is known.
+
+        Args:
+            params: The ``responses.create`` kwargs about to be sent.
+            model: The model the call goes to.
+        """
+        tools_hash = self._tools_fingerprint(params.get("tools"))
+        self._pending_tools_hash = tools_hash
+        self._prefix_changed = None
+        if not params.get("previous_response_id"):
+            return
+        changed = []
+        if (
+            self._chain_system_hash
+            and self._pending_system_hash
+            and self._pending_system_hash != self._chain_system_hash
+        ):
+            changed.append("instructions")
+        if self._chain_tools_hash and tools_hash != self._chain_tools_hash:
+            changed.append("tools")
+        if not changed:
+            return
+        self._prefix_changed = ",".join(changed)
+        context = log_context.snapshot()
+        logger.info(
+            "responses_prefix_changed",
+            extra={
+                "changed": changed,
+                "conversation_id": context.get("conversation_id"),
+                "activity_id": context.get("activity_id"),
+                "model": str(model) if model else None,
+            },
+        )
+
+    def _note_chain_failure(self, error: Exception, model: Any) -> None:
+        """A failed call leaves nothing to chain onto: say why for the next one.
+
+        The provider losing the chained response is logged at once, since a
+        fallback may answer the rest of the turn and no unchained call follows.
+        """
+        if not self._chain_turn_tracked:
+            return
+        if _is_previous_response_not_found(error):
+            self._chain_reset_hint = "not_found"
+            self._chain_reset_reason = "not_found"
+            self._log_chain_reset("not_found", model)
+        else:
+            self._chain_reset_hint = "previous_call_failed"
+
+    def start_responses_turn(self, reason: Optional[str] = None) -> None:
+        """Reset continuity accumulated during the preceding user turn.
+
+        Args:
+            reason: Why the chain is dropped (``compression``), logged with
+                the next call; None at the start of a turn.
+        """
+        self._chain_reset_hint = reason
         self._reasoning_for_calls = {}
         self._last_reasoning_items = []
         self._last_response_id = None
@@ -344,6 +524,8 @@ class OpenAILLM(BaseLLM):
         self._imported_response_id = None
         self._chain_system_hash = None
         self._pending_system_hash = None
+        self._chain_tools_hash = None
+        self._pending_tools_hash = None
         self._last_finish_reason = None
 
     def _resolve_file_part(self, item):
@@ -366,8 +548,12 @@ class OpenAILLM(BaseLLM):
             # into ``input_file`` — and Azure Responses then rejects on
             # the ``file_data`` regardless of the ``file_id``.
             return {"type": "file", "file": {"file_id": file_obj["file_id"]}}
-        filename = file_obj.get("filename") or "upload.pdf"
         file_data = file_obj.get("file_data")
+        # The Files API rejects an upper-case extension (".PDF") as an
+        # unsupported file type; upload under a normalized name.
+        filename = normalize_attachment_filename(
+            file_obj.get("filename") or "upload.pdf", _data_url_mime(file_data)
+        )
         if file_data:
             payload = file_data
             if payload.startswith("data:"):
@@ -489,9 +675,34 @@ class OpenAILLM(BaseLLM):
 
     def _clean_messages_openai(self, messages):
         cleaned_messages = []
+        vision = reads_images(self)
+        # The Responses API takes images inside ``function_call_output``;
+        # Chat Completions takes none in a ``tool`` message, so the images of
+        # a run of tool results go in one user message after it. A model's
+        # ``tool_result_images`` overrides either way.
+        responses = self._uses_responses_api()
+        native = native_tool_images(self, responses)
+        follow_up = []
+
+        def flush_follow_up():
+            if follow_up:
+                cleaned_messages.append({
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": follow_up_note([label for label, _, _ in follow_up])},
+                        *(
+                            {"type": "image_url", "image_url": {"url": data_url(mime_type, data)}}
+                            for _, mime_type, data in follow_up
+                        ),
+                    ],
+                })
+                follow_up.clear()
+
         for message in messages:
             role = message.get("role")
             content = message.get("content")
+            if role != "tool":
+                flush_follow_up()
             # Reasoning round-trips for providers that demand it
             # (DeepSeek thinking mode). Other OpenAI-compatible APIs
             # ignore the extra field.
@@ -539,11 +750,21 @@ class OpenAILLM(BaseLLM):
             # Standard format: tool message with tool_call_id (passthrough)
             tool_call_id = message.get("tool_call_id")
             if role == "tool" and tool_call_id is not None:
-                cleaned_messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "content": content if isinstance(content, str) else json.dumps(content),
-                })
+                text, shown = tool_result(message, vision)
+                cleaned_tool = {"role": "tool", "tool_call_id": tool_call_id, "content": text}
+                if shown and native and responses:
+                    cleaned_tool[IMAGES_KEY] = shown
+                elif shown and native:
+                    cleaned_tool["content"] = [
+                        {"type": "text", "text": text},
+                        *(
+                            {"type": "image_url", "image_url": {"url": data_url(mime_type, data)}}
+                            for _, mime_type, data in shown
+                        ),
+                    ]
+                else:
+                    follow_up.extend(shown)
+                cleaned_messages.append(cleaned_tool)
                 continue
 
             if role and content is not None:
@@ -609,6 +830,7 @@ class OpenAILLM(BaseLLM):
                         cleaned_messages.append(list_msg)
                 else:
                     raise ValueError(f"Unexpected content type: {type(content)}")
+        flush_follow_up()
         return cleaned_messages
 
     @staticmethod
@@ -721,6 +943,9 @@ class OpenAILLM(BaseLLM):
             if not _is_tools_unsupported_error(error):
                 raise
             response = create(**self._params_without_tools(params))
+            if getattr(self, "_pending_tools_hash", None) is not None:
+                # A Responses chain records the tools block actually sent.
+                self._pending_tools_hash = self._tools_fingerprint(None)
             # Latch only once the tool-less retry has actually worked: a retry
             # that also 400s proves nothing about tool support, and must not
             # disable tools for the rest of this answer.
@@ -761,14 +986,18 @@ class OpenAILLM(BaseLLM):
 
         previous_response_id = kwargs.pop("previous_response_id", None)
         if self._uses_responses_api():
-            return self._responses_gen(
-                model,
-                messages,
-                tools=tools,
-                response_format=response_format,
-                previous_response_id=previous_response_id,
-                **kwargs,
-            )
+            try:
+                return self._responses_gen(
+                    model,
+                    messages,
+                    tools=tools,
+                    response_format=response_format,
+                    previous_response_id=previous_response_id,
+                    **kwargs,
+                )
+            except Exception as error:
+                self._note_chain_failure(error, model)
+                raise
 
         self._apply_reasoning_effort(kwargs)
 
@@ -829,14 +1058,18 @@ class OpenAILLM(BaseLLM):
 
         previous_response_id = kwargs.pop("previous_response_id", None)
         if self._uses_responses_api():
-            yield from self._responses_gen_stream(
-                model,
-                messages,
-                tools=tools,
-                response_format=response_format,
-                previous_response_id=previous_response_id,
-                **kwargs,
-            )
+            try:
+                yield from self._responses_gen_stream(
+                    model,
+                    messages,
+                    tools=tools,
+                    response_format=response_format,
+                    previous_response_id=previous_response_id,
+                    **kwargs,
+                )
+            except Exception as error:
+                self._note_chain_failure(error, model)
+                raise
             return
 
         self._apply_reasoning_effort(kwargs)
@@ -1063,14 +1296,20 @@ class OpenAILLM(BaseLLM):
                     )
                     continue
                 tool_content = message.get("content")
+                output = tool_content if isinstance(tool_content, str) else json.dumps(tool_content)
+                shown = message.get(IMAGES_KEY)
+                if shown:
+                    output = [
+                        *([{"type": "input_text", "text": output}] if output else []),
+                        *(
+                            {"type": "input_image", "image_url": data_url(mime_type, data), "detail": "auto"}
+                            for _, mime_type, data in shown
+                        ),
+                    ]
                 input_items.append({
                     "type": "function_call_output",
                     "call_id": tool_call_id,
-                    "output": (
-                        tool_content
-                        if isinstance(tool_content, str)
-                        else json.dumps(tool_content)
-                    ),
+                    "output": output,
                 })
                 continue
             parts = self._responses_content_parts(role, message.get("content"))
@@ -1307,14 +1546,14 @@ class OpenAILLM(BaseLLM):
         params["include"] = ["reasoning.encrypted_content"]
         # Backstop against a chain that outgrows the model's native window:
         # the provider drops the oldest input items instead of failing.
-        if getattr(settings, "OPENAI_RESPONSES_TRUNCATION_AUTO", False):
+        if settings.OPENAI_RESPONSES_TRUNCATION_AUTO:
             params["truncation"] = "auto"
         # Prompt-cache hints. The key pins a conversation to one cache shard;
         # retention asks for the extended tier where the deployment offers it.
         cache_key = getattr(self, "_prompt_cache_key", None)
-        if cache_key and getattr(settings, "OPENAI_PROMPT_CACHE_KEY", False):
+        if cache_key and settings.OPENAI_PROMPT_CACHE_KEY:
             params["prompt_cache_key"] = str(cache_key)
-        retention = getattr(settings, "OPENAI_PROMPT_CACHE_RETENTION", None)
+        retention = settings.OPENAI_PROMPT_CACHE_RETENTION
         if retention:
             params["prompt_cache_retention"] = retention
         return params
@@ -1429,6 +1668,9 @@ class OpenAILLM(BaseLLM):
         # transcript never received.
         self._chain_system_hash = self._pending_system_hash
         self._pending_system_hash = None
+        if self._pending_tools_hash is not None:
+            self._chain_tools_hash = self._pending_tools_hash
+            self._pending_tools_hash = None
         self._last_response_call_ids = self._function_call_ids(response)
         usage = getattr(response, "usage", None)
         if usage is not None:
@@ -1523,14 +1765,11 @@ class OpenAILLM(BaseLLM):
         previous_response_id=None,
         **kwargs,
     ):
-        previous_response_id = (
-            self._last_response_id or previous_response_id or self._imported_response_id
-        )
+        wanted = self._last_response_id or previous_response_id or self._imported_response_id
         # Built before the per-turn state is cleared: the coverage guard reads
         # the call_ids the chained response emitted.
-        input_items, previous_response_id = self._build_responses_input(
-            messages, previous_response_id
-        )
+        input_items, previous_response_id = self._build_responses_input(messages, wanted)
+        self._note_chain(wanted, previous_response_id, model)
         self._last_response_id = None
         self._last_response_call_ids = set()
         self._last_usage = None
@@ -1544,6 +1783,7 @@ class OpenAILLM(BaseLLM):
             stream=False,
             kwargs=kwargs,
         )
+        self._note_prefix(params, model)
         response = self._create_with_tool_fallback(
             self.client.responses.create, params, model
         )
@@ -1604,14 +1844,11 @@ class OpenAILLM(BaseLLM):
         previous_response_id=None,
         **kwargs,
     ):
-        previous_response_id = (
-            self._last_response_id or previous_response_id or self._imported_response_id
-        )
+        wanted = self._last_response_id or previous_response_id or self._imported_response_id
         # Built before the per-turn state is cleared: the coverage guard reads
         # the call_ids the chained response emitted.
-        input_items, previous_response_id = self._build_responses_input(
-            messages, previous_response_id
-        )
+        input_items, previous_response_id = self._build_responses_input(messages, wanted)
+        self._note_chain(wanted, previous_response_id, model)
         self._last_response_id = None
         self._last_response_call_ids = set()
         self._last_usage = None
@@ -1626,6 +1863,7 @@ class OpenAILLM(BaseLLM):
             stream=True,
             kwargs=kwargs,
         )
+        self._note_prefix(params, model)
         # Issued before the event loop below, so the tool-less retry cannot
         # duplicate output already yielded.
         response = self._create_with_tool_fallback(
@@ -1945,6 +2183,11 @@ class OpenAILLM(BaseLLM):
                     prepared_messages[user_message_index]["content"].append(
                         {"type": "file", "file": {"file_id": file_id}}
                     )
+                    attachment_id = attachment.get("id") or attachment.get("_id")
+                    if attachment_id:
+                        # A fallback that cannot take the part swaps in this
+                        # attachment's own text.
+                        self.__dict__.setdefault("_file_part_attachments", {})[file_id] = str(attachment_id)
                 except Exception as e:
                     logging.error(f"Error uploading PDF to OpenAI: {e}", exc_info=True)
                     # Truthy, not membership — ``content`` is always a key on a
@@ -2095,10 +2338,17 @@ class OpenAILLM(BaseLLM):
         if not self.storage.file_exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
         try:
+            # The stored name may be the client's (``PRILOGA_1.PDF``); the Files
+            # API rejects an upper-case extension as an unsupported type.
+            upload_name = normalize_attachment_filename(
+                attachment.get("filename") or os.path.basename(file_path or ""),
+                attachment.get("mime_type"),
+            )
+
             def _upload(local_path, **_kwargs):
                 with open(local_path, "rb") as uploaded_file:
                     return self.client.files.create(
-                        file=uploaded_file,
+                        file=(upload_name, uploaded_file),
                         purpose="assistants",
                     ).id
 

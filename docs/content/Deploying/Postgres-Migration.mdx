@@ -1,6 +1,7 @@
 ---
 title: PostgreSQL for User Data
 description: PostgreSQL is the user-data store for DocsGPT. Covers auto-bootstrap, production hardening, and the one-shot migration from legacy MongoDB deployments.
+lastUpdated: 2026-09-30
 ---
 
 import { Callout } from 'nextra/components'
@@ -23,12 +24,17 @@ Three common paths. Each assumes Postgres 13+ and the default env vars
 
 ### Docker Compose
 
-The bundled compose file ships a `postgres` service. App boot handles the
-rest — no sidecar, no init job.
+Every bundled Compose file ships a `postgres` service. App boot handles
+the rest — no sidecar, no init job. From the repository root:
 
 ```bash
-cd deployment && docker compose up
+docker compose --env-file .env -f deployment/docker-compose-hub.yaml up -d
 ```
+
+`--env-file .env` makes Compose read the root `.env` for the `${...}` values
+in the file (such as `DOCSGPT_IMAGE_TAG`); without it they fall back to their
+defaults. `docsgpt up` and the standalone file work the same way; see
+[Docker Deployment](/Deploying/Docker-Deploying).
 
 ### Managed Postgres (Neon, RDS, Supabase, Cloud SQL)
 
@@ -60,13 +66,14 @@ CREATE ROLE docsgpt LOGIN PASSWORD 'docsgpt' CREATEDB;
 
 ## How auto-bootstrap works
 
-Two env vars control startup behavior. Both default to `true` in the
-app and are idempotent.
+Three env vars control startup behavior. All default to `true` and are
+idempotent. They run when the API **or** the worker starts.
 
 | Setting | Effect | Requires |
 | --- | --- | --- |
 | `AUTO_CREATE_DB` | If the target database is missing, connects to the server's `postgres` maintenance DB and issues `CREATE DATABASE`. | `CREATEDB` privilege (or superuser) |
 | `AUTO_MIGRATE` | Runs `alembic upgrade head` against the target database. | Table-owner or superuser on the target DB |
+| `AUTO_VECTOR_SCHEMA` | With `VECTOR_STORE=pgvector`, creates the `documents` table (and the graph tables when GraphRAG is on) and checks its embedding width. No Alembic migration covers the vector database, because it can be a separate cluster. | `CREATE` on the vector database; the `vector` extension installed or creatable |
 
 Concurrent workers serialize through `alembic_version`, so rolling
 restarts are safe. If the role lacks the required privilege, startup
@@ -79,22 +86,37 @@ fails fast with a clear error rather than silently skipping.
 
 ## Production hardening
 
-Set both flags to `false` in prod and run migrations as a gated,
+Set the flags to `false` in prod and run migrations as a gated,
 auditable step before rolling out the app.
 
 ```env
 AUTO_MIGRATE=false
 AUTO_CREATE_DB=false
+AUTO_VECTOR_SCHEMA=false
 ```
 
 Run migrations from your CI/CD pipeline, a Kubernetes `Job`, or an
-init-container ahead of the app rollout:
+init-container ahead of the app rollout. `docsgpt migrate` is the
+supported command; add `--no-create` when the database is created for
+DocsGPT, so a typo in `POSTGRES_URI` fails instead of creating a new one.
 
-```bash
-python scripts/db/init_postgres.py
-# equivalently:
-alembic -c docsgpt/alembic.ini upgrade head
-```
+| Install | Command |
+| --- | --- |
+| `docsgpt up --native` or pip | `docsgpt migrate --no-create` |
+| Checkout Compose (from the repository root) | `docker compose --env-file .env -f deployment/<file>.yaml run --rm backend python -m docsgpt migrate --no-create` |
+| Installer or `docsgpt up` on Docker (the default), from the stack directory (`~/.docsgpt/server` by default) | `docker compose run --rm backend python -m docsgpt migrate --no-create`. The host's `docsgpt migrate` can't reach this stack's database. |
+| Kubernetes | The bundled `postgres-init` Job runs `python -m docsgpt.cli migrate --no-create`; see [Kubernetes](/Deploying/Kubernetes-Deploying). |
+| Source checkout | `python scripts/db/init_postgres.py` or `alembic -c docsgpt/alembic.ini upgrade head` |
+
+The Docker image has no `docsgpt` console script, so containers call it as
+`python -m docsgpt`. Images up to 0.21.0 lack that entry point too; use
+`python -m docsgpt.cli migrate --no-create` there.
+
+`AUTO_VECTOR_SCHEMA=false` only matters with `VECTOR_STORE=pgvector`. It
+stops the boot-time vector DDL and width check, but the pgvector store still
+creates its table on the first write if it is missing. If the runtime role
+has no DDL rights, create the vector tables once beforehand, for example by
+starting the app once with a privileged role.
 
 The reasoning: the app's runtime role shouldn't carry DDL privileges,
 migrations should gate each rollout, and an explicit step is
@@ -108,8 +130,32 @@ prod deploys.
 
 ## Migrating from MongoDB
 
-One-shot, offline, app stopped. The app itself will create the
-Postgres schema when it boots — you only need to run the data copy.
+One-shot, offline, app stopped. The copy runs from a source checkout:
+`scripts/db/backfill.py` is not in the Docker image or the pip package.
+
+### Before you run it
+
+- **Check out the release you are moving to** and install its
+  requirements plus `pymongo`, as below.
+- **Prepare the Postgres schema.** Run `docsgpt migrate` (or
+  `python scripts/db/init_postgres.py`) first. A real run also applies the
+  migrations itself, the same way the app does on start (following
+  `AUTO_CREATE_DB` / `AUTO_MIGRATE`), but `--dry-run` changes nothing, so
+  against an empty database it fails with `relation "..." does not exist`.
+- **Name the Mongo database.** The script reads the database `docsgpt`,
+  whatever database `MONGO_URI` names. If your data lives in another
+  database, pass `--mongo-db <name>`.
+- **Point it at the app's storage (FAISS only).** With
+  `VECTOR_STORE=faiss`, the `rename_faiss_indexes` step renames
+  `indexes/<mongo_id>` directories through the storage layer, rooted at the
+  data home. Run the script with the same `DOCSGPT_HOME` (or S3 settings)
+  as the app. For the checkout Compose files, which keep indexes in
+  `application/indexes`, that is `DOCSGPT_HOME=$PWD/application`, together
+  with `DOCSGPT_ENV_FILE=$PWD/.env` so the checkout's `.env` is still read
+  (`DOCSGPT_HOME` also moves where `.env` is looked up). If the rename misses
+  them, retrieval returns nothing, without an error.
+
+### Run the copy
 
 ```bash
 pip install -r docsgpt/requirements.txt
@@ -118,6 +164,7 @@ pip install 'pymongo>=4.6'
 export POSTGRES_URI="postgresql://docsgpt:docsgpt@localhost:5432/docsgpt"
 export MONGO_URI="mongodb://user:pass@host:27017/docsgpt"
 
+python -m docsgpt migrate                  # create the schema
 python scripts/db/backfill.py --dry-run    # preview
 python scripts/db/backfill.py              # real run
 # or: python scripts/db/backfill.py --tables users,agents
@@ -138,8 +185,8 @@ unless you still use it as a vector store.
 ## Troubleshooting
 
 - **`relation "..." does not exist`** — schema not applied. Either let
-  the app bootstrap it (`AUTO_MIGRATE=true`) or run
-  `python scripts/db/init_postgres.py`.
+  the app bootstrap it (`AUTO_MIGRATE=true`) or run `docsgpt migrate`
+  (`python -m docsgpt migrate` inside a container).
 - **`permission denied to create database`** — the role lacks
   `CREATEDB`. As superuser: `ALTER ROLE <name> CREATEDB;`. Or create
   the database manually and set `AUTO_CREATE_DB=false`.

@@ -140,6 +140,16 @@ class TestSourceNamespace:
         assert result["docs_together"] == "all content together"
         assert result["summaries"] == "all content together"
 
+    def test_attached_sources_expose_the_citation_rules(self):
+        result = SourceNamespace().build(sources_attached=True)
+        assert result["attached"] is True
+        assert result["citation_rules"].startswith("## Citations")
+        assert "[n]" in result["citation_rules"]
+
+    def test_no_attached_sources_add_no_citation_keys(self):
+        # Absent, not False: an undefined value renders empty in a template.
+        assert SourceNamespace().build(sources_attached=False) == {}
+
     def test_with_both_docs_and_docs_together(self):
         ns = SourceNamespace()
         docs = [{"text": "doc1"}]

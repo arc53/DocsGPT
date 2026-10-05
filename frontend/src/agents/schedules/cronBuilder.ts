@@ -1,11 +1,8 @@
+import type { TFunction } from 'i18next';
 import type { Schedule } from '../types/schedule';
 
 export type ScheduleFrequency =
-  | 'once'
-  | 'daily'
-  | 'weekly'
-  | 'monthly'
-  | 'yearly';
+  'once' | 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 export type ScheduleFormValues = {
   frequency: ScheduleFrequency;
@@ -312,13 +309,70 @@ const formatTime12h = (hour: number, minute: number): string => {
   return `${h12}:${pad2(minute)} ${period}`;
 };
 
-/** Human-readable label for a cron string the form emits; falls back for custom shapes. */
-export function formatCron(expression?: string | null): string {
+const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const MONTH_KEYS = [
+  'jan',
+  'feb',
+  'mar',
+  'apr',
+  'may',
+  'jun',
+  'jul',
+  'aug',
+  'sep',
+  'oct',
+  'nov',
+  'dec',
+];
+
+// Cron text is plain text: React escapes on render.
+const NO_ESCAPE = { interpolation: { escapeValue: false } } as const;
+
+/**
+ * Human-readable label for a cron string the form emits; falls back for custom shapes.
+ *
+ * Args:
+ *   expression: The cron expression.
+ *   t: Optional i18next translate function; without it the label is English.
+ *
+ * Returns:
+ *   The label, or an empty string when there is no expression.
+ */
+export function formatCron(expression?: string | null, t?: TFunction): string {
   if (!expression) return '';
   const parsed = parseCron(expression);
-  if (!parsed) return `Custom: ${expression}`;
+  const custom = () =>
+    t
+      ? t('agents.schedules.cron.custom', { ...NO_ESCAPE, expression })
+      : `Custom: ${expression}`;
+  if (!parsed) return custom();
   const { frequency, hour, minute, dom, mon, dow } = parsed;
   const time = formatTime12h(hour, minute);
+  if (t) {
+    const dayIndex = (dow ?? 0) % 7;
+    const monthIndex = ((mon ?? 1) - 1) % 12;
+    switch (frequency) {
+      case 'daily':
+        return t('agents.schedules.cron.daily', { time });
+      case 'weekly':
+        return t('agents.schedules.cron.weekly', {
+          time,
+          day: t(`agents.schedules.cron.dayNames.${DAY_KEYS[dayIndex]}`),
+        });
+      case 'monthly':
+        return t('agents.schedules.cron.monthly', { time, day: dom });
+      case 'yearly':
+        return t('agents.schedules.cron.yearly', {
+          time,
+          day: dom,
+          month: t(
+            `agents.schedules.cron.monthNames.${MONTH_KEYS[monthIndex]}`,
+          ),
+        });
+      default:
+        return custom();
+    }
+  }
   switch (frequency) {
     case 'daily':
       return `Daily at ${time}`;

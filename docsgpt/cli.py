@@ -89,7 +89,17 @@ def _api(args: argparse.Namespace) -> int:
     if args.reload or sys.platform == "win32":
         import uvicorn
 
-        uvicorn.run("docsgpt.asgi:asgi_app", host=args.host, port=args.port, reload=args.reload)
+        from docsgpt.core.paths import package_dir
+
+        # Watch the package, not the working directory: a checkout also holds .venv, node_modules
+        # and the data the app writes (indexes/, inputs/), which restarts the server mid-ingest.
+        uvicorn.run(
+            "docsgpt.asgi:asgi_app",
+            host=args.host,
+            port=args.port,
+            reload=args.reload,
+            reload_dirs=[str(package_dir())] if args.reload else None,
+        )
         return 0
 
     _gunicorn_application(_gunicorn_options(args.host, args.port, args.workers)).run()
@@ -172,6 +182,8 @@ SCRIPTS = {
     "prefetch-models": ("prefetch_models", "download the embedding, tokenizer and parser models"),
     "verify-offline": ("verify_offline", "check that the install runs with networking off"),
     "reembed": ("reembed", "re-embed every index with the configured embedding model"),
+    "grant-admin": ("grant_admin", "grant, revoke or list the admin role (AUTH_TYPE=oidc)"),
+    "ocr-check": ("ocr_check", "send one page to the configured OCR engine and report what came back"),
 }
 
 
@@ -206,6 +218,10 @@ def _add_deploy_commands(commands) -> None:
                          help="go back to the default image")
     up.set_defaults(docling=None)
     up.add_argument("--image-tag", help="image tag to run instead of this package's version, e.g. develop")
+    up.add_argument("--native", action="store_true",
+                    help="run the API and worker as services on this machine instead of on Docker")
+    up.add_argument("--postgres-uri", help="native mode: the PostgreSQL DocsGPT should use")
+    up.add_argument("--redis-url", help="native mode: the Redis for the queue and the cache (default: localhost:6379)")
     up.add_argument("-y", "--yes", action="store_true", help="ask nothing: use the flags, then the defaults")
     up.add_argument("--reconfigure", action="store_true", help="ask the setup questions again")
     up.add_argument("--adopt", action="store_true", help="take over a DocsGPT stack started from another folder")
@@ -230,12 +246,87 @@ def _add_deploy_commands(commands) -> None:
     uninstall.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
     uninstall.add_argument("--purge", action="store_true", help="also delete the settings and all data")
 
+    backup = stack_command("backup", "backup", "write a backup of the database and the uploaded data")
+    backup.add_argument("--out", help="directory for the archive (default: <stack>/backups)")
+    backup.add_argument("--with-settings", action="store_true",
+                        help="include .env in the archive; it holds this install's secrets")
+
+    restore = stack_command("restore", "restore", "restore a backup over this install")
+    restore.add_argument("archive", help="the .tar.gz written by `docsgpt backup`")
+    restore.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
+    restore.add_argument("--force", action="store_true", help="restore a backup taken with a newer DocsGPT")
+    restore.add_argument("--timeout", type=int, default=300,
+                         help="seconds to wait for the API afterwards (default: 300)")
+
+    doctor = stack_command("doctor", "doctor", "check what this machine needs to run DocsGPT")
+    doctor.add_argument("--postgres-uri", help="check this database instead of the one in .env")
+    doctor.add_argument("--redis-url", help="check this Redis instead of the one in .env")
+
+    restart = stack_command("restart", "restart", "restart the services, changing nothing else")
+    restart.add_argument("services", nargs="*", help="services to restart, e.g. api worker")
+
     env = stack_command("env", "env", "show, get or set the stack's settings")
     env_actions = env.add_subparsers(dest="env_action", metavar="<action>")
     get = env_actions.add_parser("get", help="print one setting")
     get.add_argument("key")
-    set_ = env_actions.add_parser("set", help="set settings (KEY=VALUE ...); run `docsgpt up` to apply")
+    set_ = env_actions.add_parser("set", help="set settings (KEY=VALUE ...)")
     set_.add_argument("pairs", nargs="+", metavar="KEY=VALUE")
+    set_.add_argument("--no-restart", dest="restart", action="store_false",
+                      help="do not restart a running native install afterwards")
+
+    dev = commands.add_parser("dev", help="run this checkout's API, worker and UI with reload")
+    dev.add_argument("--host", default=DEFAULT_HOST, help="interface for the API (default: localhost)")
+    dev.add_argument("--port", type=int, default=DEFAULT_PORT, help="port for the API (default: 7091)")
+    dev.add_argument("--ui", action="store_true", help="also run the frontend dev server")
+    dev.add_argument("--mock-llm", action="store_true",
+                     help="run the mock LLM and point DocsGPT at it, so no API key is needed")
+    dev.add_argument("--no-worker", dest="worker", action="store_false", help="do not run the Celery worker")
+    dev.add_argument("--no-reload", dest="reload", action="store_false",
+                     help="do not restart the API and worker when a file changes")
+    dev.add_argument("-l", "--loglevel", default="INFO", help="worker log level (default: INFO)")
+    dev.set_defaults(func=_deploy("dev"), deploy=True)
+
+
+def _connectors(args: argparse.Namespace) -> int:
+    """``docsgpt connectors reencrypt``: move every stored credential onto the current key.
+
+    Rewrites connections, then the secrets saved on tools and custom models.
+    Anything neither ENCRYPTION_SECRET_KEY nor ENCRYPTION_SECRET_KEY_PREVIOUS
+    opens is left as it is and counted.
+    """
+    if getattr(args, "connectors_action", None) != "reencrypt":
+        print("usage: docsgpt connectors reencrypt", file=sys.stderr)
+        return 2
+    from docsgpt.connectors.service import reencrypt_all, reencrypt_saved_secrets
+
+    counts = reencrypt_all()
+    print(
+        f"docsgpt: re-encrypted {counts['rewritten']} connection(s), "
+        f"{counts['current']} already current, {counts['failed']} unreadable",
+        file=sys.stderr,
+    )
+    if counts["failed"]:
+        print(
+            "docsgpt: unreadable connections were marked 'Reconnect needed'; "
+            "their owners must reconnect them.",
+            file=sys.stderr,
+        )
+    saved = reencrypt_saved_secrets()
+    print(
+        f"docsgpt: re-encrypted {saved['rewritten']} tool and custom-model secret(s), "
+        f"{saved['current']} already current, {saved['failed']} unreadable",
+        file=sys.stderr,
+    )
+    if saved["failed"]:
+        print(
+            "docsgpt: unreadable tool and custom-model secrets were left unchanged; set the key they were "
+            "saved with as ENCRYPTION_SECRET_KEY_PREVIOUS and run this again, or have their owners enter them again.",
+            file=sys.stderr,
+        )
+    if counts["failed"] or saved["failed"]:
+        return 1
+    print("docsgpt: everything is on the current key; ENCRYPTION_SECRET_KEY_PREVIOUS can be removed.", file=sys.stderr)
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -267,6 +358,19 @@ def build_parser() -> argparse.ArgumentParser:
     migrate = commands.add_parser("migrate", help="create the database if needed and run the migrations")
     migrate.add_argument("--no-create", dest="create_db", action="store_false", help="fail instead of creating a missing database")
     migrate.set_defaults(func=_migrate)
+
+    connectors = commands.add_parser(
+        "connectors", help="manage stored credentials (connections, tool and custom-model secrets)"
+    )
+    connector_actions = connectors.add_subparsers(dest="connectors_action", metavar="<action>")
+    connector_actions.add_parser(
+        "reencrypt",
+        help=(
+            "rewrite connections, tool and custom-model secrets with ENCRYPTION_SECRET_KEY "
+            "(after a key rotation; then ENCRYPTION_SECRET_KEY_PREVIOUS can go)"
+        ),
+    )
+    connectors.set_defaults(func=_connectors)
 
     for name, (module, help_text) in SCRIPTS.items():
         commands.add_parser(name, help=f"{help_text} (docsgpt.scripts.{module})", add_help=False)

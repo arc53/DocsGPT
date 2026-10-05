@@ -1,11 +1,13 @@
-import { type ReactNode, useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/utils';
 
-import { Button } from '../../components/ui/button';
+import {
+  Collapsible,
+  CollapsibleTrigger,
+} from '../../components/ui/collapsible';
 import { Input } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
 import {
   Select,
   SelectContent,
@@ -13,15 +15,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../components/ui/select';
+import { SectionHeader } from '../../components/ui/section-header';
+import { SettingRow, SettingRows } from '../../components/ui/setting-row';
 import { Switch } from '../../components/ui/switch';
 import type {
   ChunkingStrategy,
+  GraphSeedStrategy,
   RetrievalExposure,
   SourceConfig,
 } from '../../models/misc';
 import type { Model } from '../../models/types';
-
-import ChevronRight from '../../assets/chevron-right.svg';
 
 // Defaults mirror the backend SourceConfig
 // (application/storage/db/source_config.py). A form seeded with these and sent
@@ -59,6 +62,11 @@ export type RetrievalOptionsValue = {
       batch_size: number;
       max_keep: number;
     };
+    graph: {
+      seed_strategy: GraphSeedStrategy;
+      passage_nodes: boolean;
+      blend_vector: boolean;
+    };
   };
   graph: {
     extraction_model: string | null;
@@ -78,12 +86,18 @@ export const DEFAULT_RETRIEVAL_OPTIONS: RetrievalOptionsValue = {
   retrieval: {
     retriever: 'classic',
     exposure: 'prefetch',
-    chunks: 2,
+    chunks: 6,
     score_threshold: null,
     rephrase_query: true,
     prescreen: {
       enabled: false,
       ...DEFAULT_PRESCREEN,
+    },
+    // The configuration that measured best across the corpora tested.
+    graph: {
+      seed_strategy: 'entities',
+      passage_nodes: true,
+      blend_vector: true,
     },
   },
   graph: {
@@ -138,60 +152,24 @@ export function availableRetrievers(
 }
 
 /**
- * Group eyebrow: an uppercase, tracked title with a normal-weight muted ` · tag`
- * suffix. Reads as more prominent than the individual field labels below it.
+ * Group eyebrow: an uppercase, tracked title with a normal-weight ` · tag`
+ * suffix, set above the field rows of a group.
  */
 function GroupHeader({ title, tag }: { title: string; tag: string }) {
   return (
-    <h4 className="text-foreground text-xs font-semibold tracking-wider uppercase">
-      {title}
-      <span className="text-muted-foreground font-normal normal-case">
-        {' · '}
-        {tag}
-      </span>
-    </h4>
-  );
-}
-
-/**
- * One settings row: a left block (medium-weight label plus optional muted
- * description) and a right block holding the control. `alignStart` top-aligns
- * the row for controls paired with a multi-line description; otherwise both
- * sides are vertically centered.
- */
-function SettingRow({
-  label,
-  htmlFor,
-  description,
-  alignStart = false,
-  children,
-}: {
-  label: string;
-  htmlFor?: string;
-  description?: ReactNode;
-  alignStart?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      className={cn(
-        'flex flex-row justify-between gap-4 py-3 first:pt-0 last:pb-0',
-        alignStart ? 'items-start' : 'items-center',
-      )}
-    >
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <Label
-          htmlFor={htmlFor}
-          className="text-foreground pointer-events-none w-fit text-sm font-medium"
-        >
-          {label}
-        </Label>
-        {description ? (
-          <p className="text-muted-foreground text-xs">{description}</p>
-        ) : null}
-      </div>
-      <div className="shrink-0">{children}</div>
-    </div>
+    <SectionHeader
+      as="h4"
+      size="sm"
+      title={
+        <>
+          {title}
+          <span className="text-muted-foreground font-normal normal-case">
+            {' · '}
+            {tag}
+          </span>
+        </>
+      }
+    />
   );
 }
 
@@ -204,6 +182,7 @@ export function configToOptions(config?: SourceConfig): RetrievalOptionsValue {
   const chunking = config?.chunking ?? {};
   const retrieval = config?.retrieval ?? {};
   const prescreen = retrieval.prescreen ?? null;
+  const retrievalGraph = retrieval.graph ?? {};
   const graph = config?.graph ?? {};
   const d = DEFAULT_RETRIEVAL_OPTIONS;
   return {
@@ -227,6 +206,14 @@ export function configToOptions(config?: SourceConfig): RetrievalOptionsValue {
         model: prescreen?.model ?? DEFAULT_PRESCREEN.model,
         batch_size: prescreen?.batch_size ?? DEFAULT_PRESCREEN.batch_size,
         max_keep: prescreen?.max_keep ?? DEFAULT_PRESCREEN.max_keep,
+      },
+      graph: {
+        seed_strategy:
+          retrievalGraph.seed_strategy ?? d.retrieval.graph.seed_strategy,
+        passage_nodes:
+          retrievalGraph.passage_nodes ?? d.retrieval.graph.passage_nodes,
+        blend_vector:
+          retrievalGraph.blend_vector ?? d.retrieval.graph.blend_vector,
       },
     },
     graph: {
@@ -271,6 +258,11 @@ export function optionsToConfig(value: RetrievalOptionsValue): SourceConfig {
             max_keep: ps.max_keep,
           }
         : null,
+      graph: {
+        seed_strategy: value.retrieval.graph.seed_strategy,
+        passage_nodes: value.retrieval.graph.passage_nodes,
+        blend_vector: value.retrieval.graph.blend_vector,
+      },
     },
     graph: {
       extraction_model: value.graph.extraction_model?.trim()
@@ -329,6 +321,9 @@ type RetrievalOptionsProps = {
   // the retrieval tester, where those knobs cannot affect the result and
   // showing them would imply they do.
   queryOnly?: boolean;
+  // The collapsible toggle's label, where "Advanced settings" alone would be
+  // unclear (the connect wizard). Defaults to the shared title.
+  title?: string;
 };
 
 /**
@@ -345,10 +340,12 @@ export default function RetrievalOptions({
   graphRAGAvailable = false,
   availableModels = [],
   queryOnly = false,
+  title,
 }: RetrievalOptionsProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const expanded = alwaysOpen || open;
+  const bodyId = useId();
 
   const strategyOptions = useMemo(
     () =>
@@ -399,6 +396,12 @@ export default function RetrievalOptions({
     });
   };
 
+  const setGraphRetrieval = (
+    patch: Partial<RetrievalOptionsValue['retrieval']['graph']>,
+  ) => {
+    setRetrieval({ graph: { ...value.retrieval.graph, ...patch } });
+  };
+
   const modelOptions = useMemo(() => {
     const builtin: Model[] = [];
     const user: Model[] = [];
@@ -416,7 +419,7 @@ export default function RetrievalOptions({
       <div className="flex flex-col gap-3">
         <GroupHeader title={tr('retrieval.title')} tag={tr('retrieval.tag')} />
 
-        <div className="divide-border/50 divide-y">
+        <SettingRows>
           <SettingRow
             label={tr('retrieval.retriever')}
             htmlFor="retrieval-retriever"
@@ -430,8 +433,8 @@ export default function RetrievalOptions({
             >
               <SelectTrigger
                 id="retrieval-retriever"
-                className="w-52 rounded-md"
-                size="lg"
+                className="w-52"
+                size="field"
               >
                 <SelectValue />
               </SelectTrigger>
@@ -527,8 +530,8 @@ export default function RetrievalOptions({
               >
                 <SelectTrigger
                   id="retrieval-exposure"
-                  className="w-52 rounded-md"
-                  size="lg"
+                  className="w-52"
+                  size="field"
                 >
                   <SelectValue />
                 </SelectTrigger>
@@ -557,7 +560,7 @@ export default function RetrievalOptions({
               onCheckedChange={(checked) => setPrescreen({ enabled: checked })}
             />
           </SettingRow>
-        </div>
+        </SettingRows>
 
         {/* Prescreen expanded inputs (kept as floating-label cards) */}
         {value.retrieval.prescreen.enabled && (
@@ -568,7 +571,6 @@ export default function RetrievalOptions({
               label={tr('prescreen.candidateK')}
               value={String(value.retrieval.prescreen.candidate_k)}
               disabled={disabled}
-              labelBgClassName="bg-card"
               onChange={(e) =>
                 setPrescreen({
                   candidate_k: Math.max(
@@ -584,7 +586,6 @@ export default function RetrievalOptions({
               label={tr('prescreen.maxKeep')}
               value={String(value.retrieval.prescreen.max_keep)}
               disabled={disabled}
-              labelBgClassName="bg-card"
               onChange={(e) =>
                 setPrescreen({
                   max_keep: Math.min(
@@ -600,7 +601,6 @@ export default function RetrievalOptions({
               label={tr('prescreen.batchSize')}
               value={String(value.retrieval.prescreen.batch_size)}
               disabled={disabled}
-              labelBgClassName="bg-card"
               onChange={(e) =>
                 setPrescreen({
                   batch_size: Math.max(1, Number(e.target.value) || 1),
@@ -611,12 +611,90 @@ export default function RetrievalOptions({
         )}
       </div>
 
+      {/* Graph retrieval group (graphrag only; live, so shown when testing too) */}
+      {isGraphRAG && (
+        <div className="flex flex-col gap-3">
+          <GroupHeader
+            title={tr('graphRetrieval.title')}
+            tag={tr('graphRetrieval.tag')}
+          />
+          <p className="text-muted-foreground text-xs">
+            {tr('graphRetrieval.agentToolHint')}
+          </p>
+
+          <SettingRows>
+            <SettingRow
+              label={tr('graphRetrieval.seedStrategy')}
+              htmlFor="graph-seed-strategy"
+              description={tr('graphRetrieval.seedStrategyHint')}
+              alignStart
+            >
+              <Select
+                value={value.retrieval.graph.seed_strategy}
+                disabled={disabled}
+                onValueChange={(v) =>
+                  setGraphRetrieval({ seed_strategy: v as GraphSeedStrategy })
+                }
+              >
+                <SelectTrigger
+                  id="graph-seed-strategy"
+                  className="w-52"
+                  size="field"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="entities">
+                    {tr('graphRetrieval.seedEntities')}
+                  </SelectItem>
+                  <SelectItem value="relationships">
+                    {tr('graphRetrieval.seedRelationships')}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </SettingRow>
+
+            <SettingRow
+              label={tr('graphRetrieval.passageNodes')}
+              htmlFor="graph-passage-nodes"
+              description={tr('graphRetrieval.passageNodesHint')}
+              alignStart
+            >
+              <Switch
+                id="graph-passage-nodes"
+                checked={value.retrieval.graph.passage_nodes}
+                disabled={disabled}
+                onCheckedChange={(checked) =>
+                  setGraphRetrieval({ passage_nodes: checked })
+                }
+              />
+            </SettingRow>
+
+            <SettingRow
+              label={tr('graphRetrieval.blendVector')}
+              htmlFor="graph-blend-vector"
+              description={tr('graphRetrieval.blendVectorHint')}
+              alignStart
+            >
+              <Switch
+                id="graph-blend-vector"
+                checked={value.retrieval.graph.blend_vector}
+                disabled={disabled}
+                onCheckedChange={(checked) =>
+                  setGraphRetrieval({ blend_vector: checked })
+                }
+              />
+            </SettingRow>
+          </SettingRows>
+        </div>
+      )}
+
       {/* Graph extraction group (graphrag only; re-ingest required to apply) */}
       {isGraphRAG && !queryOnly && (
         <div className="flex flex-col gap-3">
           <GroupHeader title={tr('graph.title')} tag={tr('graph.tag')} />
 
-          <div className="divide-border/50 divide-y">
+          <SettingRows>
             <SettingRow
               label={tr('graph.extractionModel')}
               htmlFor="graph-extraction-model"
@@ -634,8 +712,8 @@ export default function RetrievalOptions({
               >
                 <SelectTrigger
                   id="graph-extraction-model"
-                  className="w-52 rounded-md"
-                  size="lg"
+                  className="w-52"
+                  size="field"
                 >
                   <SelectValue />
                 </SelectTrigger>
@@ -684,7 +762,7 @@ export default function RetrievalOptions({
                 }}
               />
             </SettingRow>
-          </div>
+          </SettingRows>
         </div>
       )}
 
@@ -692,7 +770,7 @@ export default function RetrievalOptions({
       <div className={cn('flex flex-col gap-3', queryOnly && 'hidden')}>
         <GroupHeader title={tr('chunking.title')} tag={tr('chunking.tag')} />
 
-        <div className="divide-border/50 divide-y">
+        <SettingRows>
           <SettingRow
             label={tr('chunking.strategy')}
             htmlFor="chunking-strategy"
@@ -706,8 +784,8 @@ export default function RetrievalOptions({
             >
               <SelectTrigger
                 id="chunking-strategy"
-                className="w-52 rounded-md"
-                size="lg"
+                className="w-52"
+                size="field"
               >
                 <SelectValue />
               </SelectTrigger>
@@ -772,7 +850,7 @@ export default function RetrievalOptions({
               }
             />
           </SettingRow>
-        </div>
+        </SettingRows>
       </div>
     </div>
   );
@@ -782,29 +860,20 @@ export default function RetrievalOptions({
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <Button
-        type="button"
-        variant="link"
-        onClick={() => setOpen((o) => !o)}
-        className="text-foreground hover:text-foreground h-auto w-fit justify-start px-0 py-2 text-sm font-normal hover:no-underline"
+    // No gap here: a closed Collapsible is still a flex item, so the body
+    // carries the space as top padding (DESIGN.md › Disclosure).
+    <div className="flex flex-col">
+      <CollapsibleTrigger
+        open={expanded}
+        onOpenChange={() => setOpen((o) => !o)}
+        controls={bodyId}
+        chevron="sm"
       >
-        <img
-          src={ChevronRight}
-          alt=""
-          className={`h-3 w-3 transform transition-transform ${
-            expanded ? 'rotate-90' : ''
-          }`}
-        />
-        <span>{tr('title')}</span>
-      </Button>
-      <div
-        className={`grid transition-all duration-300 ease-in-out ${
-          expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
-        }`}
-      >
-        <div className="overflow-hidden">{body}</div>
-      </div>
+        <span>{title ?? tr('title')}</span>
+      </CollapsibleTrigger>
+      <Collapsible open={expanded} id={bodyId}>
+        <div className="pt-4">{body}</div>
+      </Collapsible>
     </div>
   );
 }

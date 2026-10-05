@@ -1,0 +1,320 @@
+---
+title: Connectors
+description: Connect DocsGPT to the services your team uses. One connection can sync content into Knowledge and give agents tools, with credentials encrypted on the server.
+lastUpdated: 2026-10-02
+---
+
+import { Callout } from 'nextra/components'
+import { Steps } from 'nextra/components'
+
+# Connectors
+
+A connector is a service DocsGPT can connect to: Google Drive, SharePoint, Confluence, GitHub, Amazon S3, Reddit, Brave Search, Telegram, ntfy, PostgreSQL, curated MCP servers (Notion, Linear, Atlassian, Sentry, Stripe), and any MCP server or OpenAPI spec you add yourself. A **connection** is one signed-in account or one saved API key for a connector.
+
+Connections are the single place credentials live. A synced source and an agent tool both point at a connection, so you sign in once, reconnect once when a token expires, and disconnect in one place.
+
+<video
+  autoPlay
+  muted
+  loop
+  playsInline
+  controls
+  width={1440}
+  height={900}
+  poster="/connect-your-data-poster.png"
+  aria-label="Screen recording: connecting GitHub from Add knowledge and syncing a repository into Knowledge in DocsGPT"
+  style={{ width: '100%', height: 'auto', borderRadius: '0.5rem' }}
+>
+  <source src="/connect-your-data.mp4" type="video/mp4" />
+</video>
+
+*The recording opens **Settings > Knowledge**, clicks **Add knowledge**, then **Connect your data**, and picks **GitHub**. It pastes a personal access token, which stays masked, and clicks **Connect**. Under **Choose what to set up** it turns off **Let agents use GitHub**, leaves **Sync into Knowledge** on, searches for and picks a demo repository, names it "Espresso One docs", sets **Sync** to **Daily** and clicks **Continue**. After **Done**, "Espresso One docs" appears on the Knowledge page once its first sync finishes, and its menu shows **Sync: Daily** checked.*
+
+## Using connectors
+
+Open **Settings > Connectors**. Filters narrow the list by category, and **Connected** shows what you already use.
+
+1. Pick a connector. Services with OAuth open the provider's sign-in page in a pop-up; API-key services ask for the key.
+2. Choose what the connection sets up. Tool services create their tools right away. Services that can sync ask whether to **Sync into Knowledge**: off by default, on when you started from **Add knowledge** or from Knowledge's **Connect a service**. Left off, the account is still connected and you can sync later with **Sync more content** on its page. Turned on, pick files or folders, how often to sync (never, daily, weekly or monthly) and, under **Advanced retrieval settings**, the same chunking and retrieval options as an upload.
+3. Adjust what the tools may do. Each action is **Read** or **Write**, and each can be **Always allow**, **Needs approval** or **Off**. Writes default to needing approval.
+
+**Knowledge** (formerly Sources) is what the assistant searches: uploads, links, and content synced from your connections. The **Add knowledge** and **Add Tool** dialogs, the composer's Knowledge and Tools menus, and the agent builder all start the same flow, and list tools grouped by the connection they use. A service offered two ways appears as one card: Confluence syncs pages into Knowledge and, through **Jira & Confluence**, lets agents search and update Jira and Confluence. GitHub and Linear do both from one connection: see [GitHub](#github) and [Linear](#linear).
+
+A connector's page is the one place to manage it: its accounts (**Reconnect**, **Rename**, **Disconnect**), the Knowledge it syncs (**Sync now**), and its tools (on or off, and what each action may do). On the Knowledge and Tools pages, anything from a connection has **Manage connection** in its menu, which opens that page. Disconnecting keeps synced content but stops its sync.
+
+### Several accounts of one service
+
+You can connect the same service more than once, for example two Telegram bots. Give each account a name when you connect it (**Name this account**) or later with **Rename**. When you have more than one account of a service, its tools are listed as "Telegram · Alerts bot", and the assistant sees each account's actions under that account's name, so it can pick the right one.
+
+### Fixed values
+
+Under **Customize**, each action lists its parameters. A parameter is either left to the AI (**Let AI decide**) or set to **Always use** a value. A fixed value is sent on every call; the AI never sees it and can't change it, even when a prompt asks it to. Only the tool's owner can change fixed values.
+
+A Telegram connection can hold a **Default chat ID**. When it's set, messages always go to that chat. To find a chat's id, add the bot to the chat, send it a message, and open `https://api.telegram.org/bot<token>/getUpdates`. The same bot with another default chat is a separate connection. When team members use their own accounts, each member's messages go to their own default chat.
+
+### When a connection needs attention
+
+If a provider rejects a token that DocsGPT cannot refresh, the connection is marked **Reconnect needed**, its synced sources pause, and you get a notification. Reconnecting the same account resumes them. In a chat, a tool whose connection is missing or expired shows a **Connect** prompt instead of failing; the answer continues once you connect.
+
+### Sharing a tool with a team
+
+Sharing a tool that uses a connection asks whose account team members use:
+
+- **Your account.** Everyone acts as your account on that service. When the tool can write, you confirm this before sharing, and a member's write actions always need approval.
+- **Each person's own.** Each person uses their own account, and sees a **Connect** prompt the first time they use the tool. Through an agent's API key or widget, the agent runs as its owner, so the tool uses the agent owner's account.
+
+An editor you let share the tool sees your choice as **The owner's account** and can't change it. An agent's share dialog shows the same words for each connected tool on the agent (see [Sharing agents and what they use](/Deploying/Access-Control#sharing-agents-and-what-they-use)).
+
+Tools from OAuth MCP servers default to each member's own account. An admin can force one mode for a connector.
+
+### Agents used through an API key
+
+An agent called with its API key (the website widget, the API) runs with its owner's connections, and nobody can approve an action there. It can read through those connections, but it can't take write actions on them unless the owner allows each one under **Access Details > Changes others can make as you**. The same goes for tools that hold the owner's own credentials without a connection: an API tool action that sends a header or query value the owner saved (a key or token), or an MCP server the owner signed in to. The list offers every such write on the agent, including tools a team editor sponsored and the tools on a workflow's nodes. Only the owner can change that list; team editors can't. The owner previewing their own agent in DocsGPT is not limited.
+
+The same list covers people who open the agent from its public link without being on a team it's shared with, and anything they schedule from that chat. They can't approve write actions on the owner's accounts or credentials, so those run only when the owner allows them there. On a tool where each person connects their own account, they act with their own account, so the list doesn't limit them there; a write that needs approval still asks them first.
+
+Schedules that an API or widget chat set up before this version still run as the owner's own, without this list, until they fire or expire. Schedules set from a public link follow the list from their next run.
+
+Wikis have their own switch rather than an entry in this list: API and widget users can read a wiki the agent uses but edit it only when the wiki's owner turns on **Let API and widget users edit this wiki** in its **Wiki settings**. Public-link visitors edit only wikis they can edit themselves, and approve each edit (see [Wiki sources](/Sources/Wiki-sources#edits-from-the-api-widget-and-public-links)).
+
+A webhook is the owner's own automation (its URL is a secret), so its runs are not limited by this list. Nobody can approve during a webhook run, so it still skips every action that needs approval.
+
+### What answers show
+
+Tool calls name the service that ran them: "Searched Notion", "Read from Google Drive", "Used Linear: create issue". Citations from a synced source read "From Google Drive". Answers never show which account was used.
+
+## Admin setup
+
+Admins manage connectors in **Admin > Connectors**. It lists every connector with its status, how many connections use it, and:
+
+- **Enabled** turns a connector off for everyone. Members no longer see it (except to manage a connection they already have), its tools stop working, and its sources stop syncing until you turn it back on. Existing connections are kept.
+- **Shared tools use** is **The sharer decides per share** (default), **Always the sharer's account** or **Always each person's own account**. Connectors that only sync content have no tools and show **No tools**.
+- The **MCP server** row decides whether members can add their own MCP servers. Presets are switched one by one.
+- **Setup guide** on an OAuth connector shows the redirect URI to register and which server settings are still missing. GitHub works without setup and shows **Tokens only** until its optional GitHub App settings are in place.
+- **Write access** has one switch per connector whose tools can opt into changes, currently **Let agents make changes through GitHub** (on by default). Turned off, members no longer see the option, the API refuses it, and every GitHub tool only reads, including ones already set up for changes: they call the read-only endpoint and their write actions are refused with a reason.
+
+A connector that still needs server settings starts turned off and is hidden from members; its switch stays disabled until the settings are present. It turns on once they are, unless you switched it off. On a phone, the page lists the connectors and opens each one's controls in a panel.
+
+### Encryption key
+
+Credentials are encrypted with a key derived from `ENCRYPTION_SECRET_KEY` and bound to the connection's owner. **Set your own value before anyone connects a service.**
+
+```env
+ENCRYPTION_SECRET_KEY=a-long-random-value
+```
+
+When authentication is on (`AUTH_TYPE` set), DocsGPT refuses to create connections while the key is the public default, and Admin > Connectors shows a warning. Secrets saved on tools, MCP servers and custom models are still stored, sealed with the public key. A single-user local install keeps working and logs a warning at startup.
+
+To rotate the key, move the old value to `ENCRYPTION_SECRET_KEY_PREVIOUS`, set the new one, restart the API and worker, then run:
+
+```bash
+docsgpt connectors reencrypt
+```
+
+The command prints how many connections and saved secrets it rewrote. Connections it cannot decrypt with either key are marked **Reconnect needed** for their owners.
+
+It also rewrites the secrets saved on tools and the API keys of custom models; those neither key opens are left unchanged and counted. Remove `ENCRYPTION_SECRET_KEY_PREVIOUS` once the command reports nothing unreadable. A Docker install runs the command inside the backend container, naming its Compose file, for example `docker compose -f docker-compose-standalone.yaml exec backend python -m docsgpt connectors reencrypt`; see [Secrets to set before going live](/Deploying/DocsGPT-Settings#secrets-to-set-before-going-live) for the other install types.
+
+### Outbound network access
+
+Custom MCP servers and the API Tool reach only hosts on the public internet: `localhost`, private, link-local and other reserved addresses are refused, and there is no allowlist. See [Outbound network access](/Deploying/Security#outbound-network-access).
+
+### Redirect URIs
+
+OAuth connectors return to one callback, set by `CONNECTOR_REDIRECT_BASE_URI` (default `http://127.0.0.1:7091/api/connectors/callback`). Register it with each provider exactly as set, without query parameters. MCP servers use `MCP_OAUTH_REDIRECT_URI`, which is derived from the same base when unset. Admin > Connectors shows both values with copy buttons.
+
+If the frontend runs on a different origin from the API, list it in `CONNECTOR_ALLOWED_ORIGINS` so the sign-in pop-up can hand the result back.
+
+### Google Drive
+
+<Steps>
+
+### Create OAuth credentials
+
+In the [Google Cloud Console](https://console.cloud.google.com/), enable the **Google Drive API**, then create an **OAuth client ID** of type **Web application**. Add the redirect URI from Admin > Connectors under **Authorized redirect URIs**.
+
+### Set the server settings
+
+```env
+GOOGLE_CLIENT_ID=your-client-id
+GOOGLE_CLIENT_SECRET=your-client-secret
+```
+
+To offer Google's own file picker, also build the frontend with `VITE_GOOGLE_CLIENT_ID` (and optionally `VITE_GOOGLE_PICKER_API_KEY`). Without them, members browse files in DocsGPT's picker.
+
+### Publish the app
+
+Publish the OAuth consent screen, or make it an **Internal** Workspace app. DocsGPT requests the restricted `drive.readonly` scope, so a published **External** app needs Google's verification before accounts outside your organization can use it freely.
+
+<Callout type="warning" emoji="⚠️">
+Apps left in **Testing** get refresh tokens that expire after seven days, which stops background sync.
+</Callout>
+
+</Steps>
+
+### SharePoint and OneDrive
+
+Register an app in [Microsoft Entra ID](https://entra.microsoft.com/) with a **Web** redirect URI from Admin > Connectors, create a client secret, and grant the delegated Microsoft Graph permissions `Files.Read`, `Sites.Read.All` and `User.Read`.
+
+```env
+MICROSOFT_CLIENT_ID=your-application-id
+MICROSOFT_CLIENT_SECRET=your-client-secret
+MICROSOFT_TENANT_ID=common   # or your tenant id for a single-tenant app
+```
+
+See [SharePoint / OneDrive](/Sources/Connectors/sharepoint) for tenant options.
+
+### Confluence
+
+Create an **OAuth 2.0 (3LO)** app in the [Atlassian developer console](https://developer.atlassian.com/console/myapps/), add the redirect URI from Admin > Connectors as its callback URL, and add the scopes `read:page:confluence`, `read:space:confluence`, `read:attachment:confluence` and `read:me`. See [Confluence](/Sources/Connectors/confluence) for details.
+
+```env
+CONFLUENCE_CLIENT_ID=your-client-id
+CONFLUENCE_CLIENT_SECRET=your-client-secret
+```
+
+### GitHub
+
+One GitHub connection syncs repositories into Knowledge and gives agents GitHub's own [MCP server](https://github.com/github/github-mcp-server) as a tool. When connecting, members choose both on one screen: **Let agents use GitHub** (on by default) and **Sync into Knowledge** with a repository to sync. A connection set up without tools can add them later from its page.
+
+- **Knowledge.** The repository picker lists what the connection can read. Each synced repository is one source, read with the connection's token and synced on the chosen schedule.
+- **Tools.** By default the tool is the read-only endpoint `https://api.githubcopilot.com/mcp/readonly`: agents can read code, issues, pull requests and more, and cannot change anything unless the connection [lets them make changes](#letting-agents-make-changes). Its actions are discovered when the tool is created; **Refresh tools** re-reads them.
+
+Members connect in one of two ways.
+
+#### A personal access token (no admin setup)
+
+Always available. Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new):
+
+<Steps>
+
+### Choose the repositories
+
+Under **Repository access**, pick **Only select repositories** (or all repositories) for the owner whose repositories DocsGPT should read.
+
+### Grant read access
+
+Under **Repository permissions**, set **Contents** to **Read-only**. **Metadata** is read-only by default. Add read-only access to **Issues** and **Pull requests** if agents should read those through the tools, or **Read and write** if agents should also [make changes](#letting-agents-make-changes).
+
+### Paste it into DocsGPT
+
+DocsGPT checks the token with GitHub and names the connection after the account. A token that expires, or that GitHub stops accepting, marks the connection **Reconnect needed**; reconnect with a new token.
+
+</Steps>
+
+A classic token with the `repo` scope also works, but it can read every repository the account can, so prefer a fine-grained one.
+
+#### Sign in with GitHub (a GitHub App)
+
+When an admin registers a GitHub App, members can also **Sign in with GitHub**. Each member then chooses the repositories on GitHub, when they install the app, and DocsGPT reads only those. Tokens last eight hours and are renewed automatically.
+
+<Steps>
+
+### Register the app
+
+In GitHub, open **Settings > Developer settings > GitHub Apps > New GitHub App** (under an organization's settings to let its members install it).
+
+- **Callback URL**: the redirect URI from Admin > Connectors (`CONNECTOR_REDIRECT_BASE_URI`).
+- Turn on **Request user authorization (OAuth) during installation**. Choosing repositories from DocsGPT then returns to DocsGPT, which reloads the repository list.
+- Leave **Expire user authorization tokens** on (DocsGPT refreshes them).
+- **Webhook**: turn off **Active**; DocsGPT does not use webhooks.
+- **Repository permissions**: **Contents** read-only (**Metadata** read-only is added automatically). Add **Issues** and **Pull requests** read-only for the tools, or read and write if members should be able to let agents [make changes](#letting-agents-make-changes). A member's token can only do what both the app and the member may do, so an app without write permissions keeps every agent read-only. When you add permissions later, each installation has to accept them on GitHub first.
+- **Where can this GitHub App be installed?**: **Any account** for members outside your organization, otherwise **Only on this account**.
+
+### Create a client secret
+
+On the app's page, generate a client secret. You do not need a private key: DocsGPT only uses user tokens.
+
+### Set the server settings
+
+```env
+GITHUB_CLIENT_ID=Iv23li...        # the app's Client ID
+GITHUB_CLIENT_SECRET=your-client-secret
+GITHUB_APP_SLUG=docsgpt-acme      # from the app's public link, github.com/apps/<slug>
+```
+
+Restart the API and the worker. **Sign in with GitHub** appears next to the token option.
+
+</Steps>
+
+#### Letting agents make changes
+
+Under **Let agents use GitHub**, **Also let agents make changes (issues, comments, pull requests)** is off by default. Turned on, the tool uses GitHub's full endpoint `https://api.githubcopilot.com/mcp/` instead, which adds write actions such as creating issues, commenting and opening pull requests. The same switch is on the connection's page, on its GitHub tool; switching re-reads the actions from the other endpoint and keeps the permissions and fixed values of actions both endpoints have. Either way the tool sends the token only to `api.githubcopilot.com`.
+
+An action is a **Write** unless GitHub marks it read-only, and writes default to **Needs approval**, so each change asks first until you choose **Always allow** for it. As everywhere, an agent called with its API key takes a write action only if the owner allows it in **Access details**, and an admin can turn changes off for everyone (see [Admin setup](#admin-setup)).
+
+GitHub still checks the token: changes need a token, or a GitHub App, with write access to what they touch:
+
+| To let agents | Repository permission |
+| --- | --- |
+| Create and edit issues, comment on issues | **Issues**: Read and write |
+| Open, update and review pull requests, comment on them | **Pull requests**: Read and write |
+| Create or edit files, push commits, create branches | **Contents**: Read and write |
+
+Leave **Contents** read-only unless agents should edit files. Without a permission, GitHub refuses that action and the agent reports the error.
+
+#### Public repositories and GITHUB_ACCESS_TOKEN
+
+The **GitHub** tile under **Upload & web** in **Add knowledge** still ingests a public repository from its URL, without an account. `GITHUB_ACCESS_TOKEN`, if set, is used only there and only for public repositories, to raise GitHub's rate limit: DocsGPT checks that the repository is public first, because that token belongs to the server and not to the member asking. For a private repository, the form links to the member's GitHub connection.
+
+<Callout type="warning" emoji="⚠️">
+Earlier versions read any repository `GITHUB_ACCESS_TOKEN` could see, private ones included. Sources made that way from private repositories stop syncing; recreate them from a GitHub connection.
+</Callout>
+
+### Amazon S3
+
+S3 needs no server settings. Each member connects with an access key that can list and read the bucket (`s3:ListBucket`, `s3:GetObject`), then picks a bucket and optional path prefix. A custom endpoint URL connects S3-compatible storage such as MinIO or Cloudflare R2.
+
+### Reddit
+
+Reddit needs no server settings. Each member connects with the credentials of their own Reddit app, then chooses which subreddits to sync. Reddit is available only as a connector, not as an **Add knowledge** upload.
+
+<Steps>
+
+### Create a Reddit app
+
+Signed in to Reddit, open [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps/) and click **create another app**. Pick the **script** type, give it a name, and enter any redirect URI (for example `http://localhost:8080`); DocsGPT does not use it.
+
+### Copy its credentials
+
+The **Client ID** is the string under the app's name ("personal use script"), and the **Client secret** is the value labelled **secret**.
+
+### Connect in DocsGPT
+
+In **Settings > Connectors**, pick **Reddit** and fill in:
+
+- **Client ID** and **Client secret** from the app.
+- **User agent**: a descriptive string Reddit uses to identify your requests, such as `docsgpt:my-sync:1.0 (by /u/your-username)`.
+
+### Choose what to sync
+
+Turn on **Sync into Knowledge** and fill in:
+
+- **Search queries**: subreddit names without `r/`, separated by commas, for example `python, django`.
+- **Number of posts**: how many posts to read from each subreddit's **new** and **hot** listings, so each subreddit adds up to twice this number.
+
+</Steps>
+
+Each post becomes one document with its title, subreddit, score, author and link. Only the post's own text is indexed, so link and image posts add little. Comments are not synced.
+
+### MCP presets
+
+Notion, Linear, Atlassian, Sentry and Stripe are remote MCP servers that support OAuth with dynamic client registration, so they need no server settings. Members sign in with their own account. The presets ship in `docsgpt/connectors/presets/mcp.yaml`.
+
+### Linear
+
+One Linear sign-in gives agents Linear's tools and syncs Linear into Knowledge. After signing in, members turn on **Sync into Knowledge** and choose what to sync, or leave it off to keep only the tools; a connection's page adds more with **Sync more content**.
+
+- **Teams and projects.** Each picked team or project brings its issues. An issue in both is synced once.
+- **Include comments** (on by default) adds each issue's comments to it.
+- **Include project documents** syncs the Linear documents of the picked projects.
+
+Each issue becomes one document: its identifier and title, state, assignee, priority, labels, description and comments. It's filed under its team's key (`ENG/ENG-123.md`) and answers cite it with its Linear link. Archived issues are left out.
+
+Linear's MCP server issues its own sign-in tokens, which work only with that server, so DocsGPT reads Linear through the same MCP tools the agents use. Nobody registers a Linear OAuth app. Tokens are renewed automatically. If renewing fails, the connection is marked **Reconnect needed** and its sources pause until you sign in again.
+
+Each sync reads the source again in full, up to 500 issues and 100 documents, most recently updated first. For a large workspace, pick teams or projects rather than everything, and sync daily or weekly.
+
+<Callout type="info">
+Background sync runs on the Celery worker and beat. Keep both running, as in the bundled Compose and Kubernetes files.
+</Callout>

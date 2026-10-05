@@ -1,3 +1,12 @@
+/**
+ * Whether touch is the only pointer: a phone or tablet, not a laptop with a
+ * touchscreen, which `'ontouchstart' in window` cannot tell apart.
+ */
+export const isTouchPrimary = (): boolean => {
+  if (typeof window === 'undefined' || !window.matchMedia) return false;
+  return window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+};
+
 export const getOS = () => {
   const platform = window.navigator.platform;
   const userAgent = window.navigator.userAgent || window.navigator.vendor;

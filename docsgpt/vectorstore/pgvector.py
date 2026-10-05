@@ -54,9 +54,9 @@ class PGVectorStore(BaseVectorStore):
         # Use provided connection string or fall back to settings.
         # If PGVECTOR_CONNECTION_STRING is not set but POSTGRES_URI is,
         # reuse the same cluster — normalize from SQLAlchemy dialect to libpq form.
-        self._connection_string = connection_string or getattr(settings, 'PGVECTOR_CONNECTION_STRING', None)
+        self._connection_string = connection_string or settings.PGVECTOR_CONNECTION_STRING
 
-        if not self._connection_string and getattr(settings, 'POSTGRES_URI', None):
+        if not self._connection_string and settings.POSTGRES_URI:
             from docsgpt.core.db_uri import normalize_pgvector_connection_string
             self._connection_string = normalize_pgvector_connection_string(settings.POSTGRES_URI)
 
@@ -637,7 +637,7 @@ class PGVectorStore(BaseVectorStore):
             select_query = f"""
             SELECT id, {self._text_column}, {self._metadata_column}
             FROM {self._table_name}
-            WHERE source_id = %s;
+            WHERE source_id = %s ORDER BY id;
             """
             cursor.execute(select_query, (self._source_id,))
             results = cursor.fetchall()
@@ -663,6 +663,65 @@ class PGVectorStore(BaseVectorStore):
             return []
         finally:
             cursor.close()
+
+    def get_chunk_by_key(self, key: str, excerpt: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Find this source's chunk by its text's MD5 in one query.
+
+        The source_id index narrows the scan to one source and Postgres's own
+        ``md5()`` does the hashing, so no column or index is added. A miss with
+        an ``excerpt`` runs a second query for the first chunk containing it,
+        for a re-chunked source. Errors are raised, not read as "no chunk": a
+        citation that is merely unreachable must not tell the reader the
+        passage is gone.
+
+        Args:
+            key: The chunk key, 32 lowercase hex characters.
+            excerpt: Text to fall back on, matched case-insensitively.
+
+        Returns:
+            dict | None: ``{"doc_id", "text", "metadata"}``; the lowest id wins
+            for duplicate texts.
+        """
+        row = self._first_chunk_where(f"md5({self._text_column}) = %s", key)
+        needle = (excerpt or "").strip().lower()
+        if row is None and needle:
+            row = self._first_chunk_where(f"strpos(lower({self._text_column}), %s) > 0", needle)
+        if not row:
+            return None
+        doc_id, text, metadata = row
+        return {"doc_id": str(doc_id), "text": text, "metadata": metadata or {}}
+
+    def _first_chunk_where(self, condition: str, value: str) -> Optional[tuple]:
+        """The lowest-id ``(id, text, metadata)`` row of this source matching ``condition``.
+
+        Args:
+            condition: A SQL predicate with one ``%s`` placeholder.
+            value: The placeholder's value.
+
+        Returns:
+            tuple | None: The row, or ``None``.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                f"SELECT id, {self._text_column}, {self._metadata_column} "
+                f"FROM {self._table_name} "
+                f"WHERE source_id = %s AND {condition} ORDER BY id LIMIT 1;",
+                (self._source_id, value),
+            )
+            row = cursor.fetchone()
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                # Connection already gone; nothing left to roll back.
+                pass
+            raise
+        finally:
+            cursor.close()
+        return row
 
     def add_chunk(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> str:
         """Add a single chunk to the vector store"""
@@ -700,6 +759,58 @@ class PGVectorStore(BaseVectorStore):
         except Exception as e:
             conn.rollback()
             logging.error(f"Error adding chunk: {e}")
+            raise
+        finally:
+            cursor.close()
+
+    def update_chunk(self, chunk_id: str, text: str, metadata: Dict[str, Any]) -> str:
+        """Rewrite a chunk's row in place, keeping its id.
+
+        One ``UPDATE`` scoped to this source. The embedding is computed first,
+        so a failed embed writes nothing. ``get_chunks`` orders by id, so the
+        chunk also keeps its place in the list.
+
+        Args:
+            chunk_id: Id of the chunk to replace.
+            text: The chunk's new text.
+            metadata: The chunk's complete new metadata; ``source_id`` is
+                stamped on it as :meth:`add_chunk` does.
+
+        Returns:
+            ``chunk_id``, unchanged.
+
+        Raises:
+            KeyError: If this source has no chunk with that id.
+            ValueError: If no embedding could be generated.
+        """
+        final_metadata = dict(metadata or {})
+        final_metadata["source_id"] = self._source_id
+
+        embeddings = self._embedding.embed_documents([text])
+        if not embeddings:
+            raise ValueError("Could not generate embedding for chunk")
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            update_query = f"""
+            UPDATE {self._table_name}
+            SET {self._text_column} = %s, {self._vector_column} = %s, {self._metadata_column} = %s
+            WHERE id = %s AND source_id = %s;
+            """
+            cursor.execute(
+                update_query,
+                (text, embeddings[0], Jsonb(final_metadata), int(chunk_id), self._source_id),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError(f"Chunk {chunk_id} not found for source {self._source_id}")
+            conn.commit()
+            return str(chunk_id)
+
+        except Exception as e:
+            conn.rollback()
+            logging.error(f"Error updating chunk: {e}")
             raise
         finally:
             cursor.close()

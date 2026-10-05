@@ -3,6 +3,7 @@
 import json
 import math
 import uuid
+from typing import Optional
 
 from flask import current_app, jsonify, make_response, redirect, request
 from flask_restx import fields, Namespace, Resource
@@ -10,6 +11,8 @@ from pydantic import ValidationError
 
 from docsgpt.agents.tools.path_utils import validate_tool_path
 from docsgpt.api import api
+from docsgpt.api.audit import record_event
+from docsgpt.api.pat.rules import filter_listing
 from docsgpt.api.user.tasks import (
     convert_source_to_wiki,
     extract_graph,
@@ -17,11 +20,14 @@ from docsgpt.api.user.tasks import (
     reingest_source_task,
     sync_source,
 )
-from docsgpt.api.user.team_sharing import (
-    can_access,
-    effective_write_owner,
-    visible_with_access,
+from docsgpt.api.user.resource_access import (
+    AccessDenied,
+    delete_settings,
+    payload_for,
+    settings_many,
 )
+from docsgpt.api.user.sources.access import denied_response, load_source
+from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.core.settings import settings
 from docsgpt.graphrag import graphrag_available
 from docsgpt.parser.remote.remote_creator import normalize_remote_data
@@ -44,6 +50,9 @@ from docsgpt.vectorstore.vector_creator import VectorCreator
 
 WIKI_INDEX_PATH = "/index.md"
 
+# Longest graph-node search term forwarded to the store; longer input is truncated.
+_GRAPH_SEARCH_MAX_LEN = 200
+
 
 sources_ns = Namespace(
     "sources", description="Source document management operations", path="/api"
@@ -63,6 +72,37 @@ def _get_provider_from_remote_data(remote_data):
         if isinstance(remote_data_obj, dict):
             return remote_data_obj.get("provider")
     return None
+
+
+def _connection_id(row: dict) -> str | None:
+    """The connection a source syncs from, as a string id, or None."""
+    value = row.get("connection_id")
+    return str(value) if value else None
+
+
+def _with_access(entry: dict, access: Optional[str], switches: Optional[dict]) -> dict:
+    """Add ``access`` + ``allowed_actions`` to a listed source row.
+
+    The source's behaviour ``config`` is cut down to its ``kind`` when the
+    caller's role may not ``view_config`` (a viewer when the owner turned
+    ``viewers_can_see_config`` off). ``kind`` stays because the UI needs it to
+    pick the wiki / graph view.
+
+    Args:
+        entry: The row as the list endpoint builds it.
+        access: ``owner`` / ``editor`` / ``viewer``.
+        switches: The source's owner switches (``settings_many`` output).
+
+    Returns:
+        dict: ``entry`` with the access payload merged in.
+    """
+    payload = payload_for("source", access, switches)
+    if "view_config" not in payload["allowed_actions"]:
+        config = entry.get("config")
+        if config is not None:
+            entry["config"] = {"kind": (config or {}).get("kind", "classic")}
+    entry.update(payload)
+    return entry
 
 
 @sources_ns.route("/sources")
@@ -88,6 +128,7 @@ class CombinedJson(Resource):
                 team_shared = visible_with_access(conn, user, "source")
                 shared_ids = [sid for sid in team_shared if sid not in owned_ids]
                 shared_sources = repo.list_by_ids(shared_ids)
+                switches = settings_many(conn, "source", [*owned_ids, *shared_ids])
             # list_for_user sorts by created_at DESC; legacy shape sorted by
             # "date" DESC. Both are monotonic on creation so the ordering is
             # equivalent for dev; re-sort defensively.
@@ -98,7 +139,7 @@ class CombinedJson(Resource):
 
             def _source_entry(index, *, ownership="user", team_access=None):
                 provider = _get_provider_from_remote_data(index.get("remote_data"))
-                return {
+                entry = {
                     "id": str(index["id"]),
                     "name": index.get("name"),
                     "date": index.get("date"),
@@ -115,7 +156,13 @@ class CombinedJson(Resource):
                     "config": SourceConfig.parse(index.get("config")).model_dump(),
                     "ownership": ownership,
                     "team_access": team_access,
+                    "connectionId": _connection_id(index),
                 }
+                return _with_access(
+                    entry,
+                    "owner" if ownership == "user" else team_access,
+                    switches.get(str(index["id"])),
+                )
 
             for index in indexes:
                 data.append(_source_entry(index))
@@ -130,7 +177,7 @@ class CombinedJson(Resource):
         except Exception as err:
             current_app.logger.error(f"Error retrieving sources: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify(data), 200)
+        return make_response(jsonify(filter_listing(request, "sources", data)), 200)
 
 
 @sources_ns.route("/sources/paginated")
@@ -173,6 +220,9 @@ class PaginatedSources(Resource):
                     sort_order=sort_order,
                     extra_ids=extra_ids,
                 )
+                switches = settings_many(
+                    conn, "source", [str(doc["id"]) for doc in window]
+                )
 
             paginated_docs = []
             for doc in window:
@@ -180,32 +230,38 @@ class PaginatedSources(Resource):
                 # Owner vs team-shared: a row in the window is the caller's own
                 # when its user_id matches; otherwise it arrived via extra_ids.
                 owned = str(doc.get("user_id")) == str(user)
+                entry = {
+                    "id": str(doc["id"]),
+                    "name": doc.get("name", ""),
+                    "date": doc.get("date", ""),
+                    "model": settings.EMBEDDINGS_NAME,
+                    "location": "local",
+                    "tokens": doc.get("tokens", ""),
+                    "retriever": doc.get("retriever", "classic"),
+                    "syncFrequency": doc.get("sync_frequency", ""),
+                    "provider": provider,
+                    "isNested": bool(doc.get("directory_structure")),
+                    "type": doc.get("type", "file"),
+                    # Lenient read (D7): always emit a fully-defaulted
+                    # config so the edit modal can pre-fill, even for a
+                    # legacy {} row.
+                    "config": SourceConfig.parse(
+                        doc.get("config")
+                    ).model_dump(),
+                    # Derived in SourcesRepository.list_for_user.
+                    "ingestStatus": doc.get("ingest_status"),
+                    "ownership": "user" if owned else "team",
+                    "team_access": (
+                        None if owned else team_shared.get(str(doc["id"]))
+                    ),
+                    "connectionId": _connection_id(doc),
+                }
                 paginated_docs.append(
-                    {
-                        "id": str(doc["id"]),
-                        "name": doc.get("name", ""),
-                        "date": doc.get("date", ""),
-                        "model": settings.EMBEDDINGS_NAME,
-                        "location": "local",
-                        "tokens": doc.get("tokens", ""),
-                        "retriever": doc.get("retriever", "classic"),
-                        "syncFrequency": doc.get("sync_frequency", ""),
-                        "provider": provider,
-                        "isNested": bool(doc.get("directory_structure")),
-                        "type": doc.get("type", "file"),
-                        # Lenient read (D7): always emit a fully-defaulted
-                        # config so the edit modal can pre-fill, even for a
-                        # legacy {} row.
-                        "config": SourceConfig.parse(
-                            doc.get("config")
-                        ).model_dump(),
-                        # Derived in SourcesRepository.list_for_user.
-                        "ingestStatus": doc.get("ingest_status"),
-                        "ownership": "user" if owned else "team",
-                        "team_access": (
-                            None if owned else team_shared.get(str(doc["id"]))
-                        ),
-                    }
+                    _with_access(
+                        entry,
+                        "owner" if owned else team_shared.get(str(doc["id"])),
+                        switches.get(str(doc["id"])),
+                    )
                 )
             response = {
                 "total": total_documents,
@@ -219,6 +275,70 @@ class PaginatedSources(Resource):
                 f"Error retrieving paginated sources: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
+
+
+def delete_source(owner: str, doc: dict, *, actor: Optional[str] = None) -> bool:
+    """Delete a source's index, stored files and row. Returns whether it worked.
+
+    Args:
+        owner: The source's owner; the row is deleted as them.
+        doc: The source row, already authorised for the caller.
+        actor: Who asked for the delete (a team editor, say), when not the
+            owner. Recorded on the audit event.
+    """
+    actor = actor or owner
+    storage = StorageCreator.get_storage()
+    resolved_id = str(doc["id"])
+    source_id = resolved_id
+
+    try:
+        if settings.VECTOR_STORE == "faiss":
+            index_path = f"indexes/{resolved_id}"
+            # index.pkl is the legacy sidecar; index.json the current one.
+            # Older sources have only the former, so clear whichever exist.
+            for index_file in ("index.faiss", "index.json", "index.pkl"):
+                if storage.file_exists(f"{index_path}/{index_file}"):
+                    storage.delete_file(f"{index_path}/{index_file}")
+        else:
+            vectorstore = VectorCreator.create_vectorstore(
+                settings.VECTOR_STORE, source_id=source_id
+            )
+            vectorstore.delete_index()
+        if "file_path" in doc and doc["file_path"]:
+            file_path = doc["file_path"]
+            if storage.is_directory(file_path):
+                files = storage.list_files(file_path)
+                for f in files:
+                    storage.delete_file(f)
+            else:
+                storage.delete_file(file_path)
+    except FileNotFoundError:
+        pass
+    except Exception as err:
+        current_app.logger.error(
+            f"Error deleting files and indexes: {err}", exc_info=True
+        )
+        return False
+    try:
+        with db_session() as conn:
+            # The AFTER DELETE trigger drops the source's team grants; the
+            # owner switches have no FK, so clear them here.
+            SourcesRepository(conn).delete(resolved_id, owner)
+            delete_settings(conn, "source", resolved_id)
+            record_event(
+                conn,
+                "source.deleted",
+                actor=actor,
+                source_id=resolved_id,
+                name=doc.get("name"),
+                owner=owner if owner != actor else None,
+            )
+    except Exception as err:
+        current_app.logger.error(
+            f"Error deleting source row: {err}", exc_info=True
+        )
+        return False
+    return True
 
 
 @sources_ns.route("/delete_old")
@@ -237,52 +357,17 @@ class DeleteOldIndexes(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Missing required fields"}), 400
             )
+        # Owner-only unless the owner turned ``editors_can_delete`` on; the
+        # row is deleted as the owner either way.
         try:
             with db_readonly() as conn:
-                doc = SourcesRepository(conn).get_any(source_id, user)
+                doc, ra = load_source(conn, source_id, user, "delete")
+        except AccessDenied as err:
+            return denied_response(err)
         except Exception as err:
             current_app.logger.error(f"Error looking up source: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        if not doc:
-            return make_response(jsonify({"status": "not found"}), 404)
-        storage = StorageCreator.get_storage()
-        resolved_id = str(doc["id"])
-
-        try:
-            if settings.VECTOR_STORE == "faiss":
-                index_path = f"indexes/{resolved_id}"
-                # index.pkl is the legacy sidecar; index.json the current one.
-                # Older sources have only the former, so clear whichever exist.
-                for index_file in ("index.faiss", "index.json", "index.pkl"):
-                    if storage.file_exists(f"{index_path}/{index_file}"):
-                        storage.delete_file(f"{index_path}/{index_file}")
-            else:
-                vectorstore = VectorCreator.create_vectorstore(
-                    settings.VECTOR_STORE, source_id=resolved_id
-                )
-                vectorstore.delete_index()
-            if "file_path" in doc and doc["file_path"]:
-                file_path = doc["file_path"]
-                if storage.is_directory(file_path):
-                    files = storage.list_files(file_path)
-                    for f in files:
-                        storage.delete_file(f)
-                else:
-                    storage.delete_file(file_path)
-        except FileNotFoundError:
-            pass
-        except Exception as err:
-            current_app.logger.error(
-                f"Error deleting files and indexes: {err}", exc_info=True
-            )
-            return make_response(jsonify({"success": False}), 400)
-        try:
-            with db_session() as conn:
-                SourcesRepository(conn).delete(resolved_id, user)
-        except Exception as err:
-            current_app.logger.error(
-                f"Error deleting source row: {err}", exc_info=True
-            )
+        if not delete_source(ra.owner_id, doc, actor=user):
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True}), 200)
 
@@ -330,21 +415,13 @@ class ManageSync(Resource):
             )
         try:
             with db_session() as conn:
-                repo = SourcesRepository(conn)
-                doc = repo.get_any(source_id, user)
-                if doc is not None:
-                    repo.update(str(doc["id"]), user, {"sync_frequency": sync_frequency})
-                else:
-                    # Team editor write path (sync_frequency is metadata, no
-                    # ingestion side effects). Reingest/sync triggers stay
-                    # owner-only pending a cost/side-effect decision.
-                    owner = effective_write_owner(conn, "source", source_id, user)
-                    if not owner:
-                        return make_response(
-                            jsonify({"success": False, "message": "Source not found"}),
-                            404,
-                        )
-                    repo.update(source_id, owner, {"sync_frequency": sync_frequency})
+                # Owner or team editor; the write lands as the owner.
+                doc, ra = load_source(conn, source_id, user, "edit")
+                SourcesRepository(conn).update(
+                    str(doc["id"]), ra.owner_id, {"sync_frequency": sync_frequency}
+                )
+        except AccessDenied as err:
+            return denied_response(err)
         except Exception as err:
             current_app.logger.error(
                 f"Error updating sync frequency: {err}", exc_info=True
@@ -379,21 +456,15 @@ class SyncSource(Resource):
         # source_id (owner-agnostic), so dispatching as the owner is correct.
         try:
             with db_readonly() as conn:
-                doc = SourcesRepository(conn).get_any(source_id, user)
-                owner = user
-                if doc is None:
-                    owner = effective_write_owner(conn, "source", source_id, user)
-                    if owner:
-                        doc = SourcesRepository(conn).get_any(source_id, owner)
+                doc, ra = load_source(conn, source_id, user, "edit")
+        except AccessDenied as err:
+            return denied_response(err)
         except Exception as err:
             current_app.logger.error(f"Error looking up source: {err}", exc_info=True)
             return make_response(
                 jsonify({"success": False, "message": "Invalid source ID"}), 400
             )
-        if not doc:
-            return make_response(
-                jsonify({"success": False, "message": "Source not accessible"}), 403
-            )
+        owner = ra.owner_id
         source_type = doc.get("type", "")
         if source_type and source_type.startswith("connector"):
             return make_response(
@@ -419,6 +490,8 @@ class SyncSource(Resource):
                 sync_frequency=doc.get("sync_frequency", "never"),
                 retriever=doc.get("retriever", "classic"),
                 doc_id=str(doc["id"]),
+                # S3 and GitHub sources made from a connection read with its keys.
+                connection_id=str(doc["connection_id"]) if doc.get("connection_id") else None,
             )
         except Exception as err:
             current_app.logger.error(
@@ -457,12 +530,9 @@ class ReingestSource(Resource):
         # (owner-agnostic), so dispatching as the owner is correct.
         try:
             with db_readonly() as conn:
-                doc = SourcesRepository(conn).get_any(source_id, user)
-                owner = user
-                if doc is None:
-                    owner = effective_write_owner(conn, "source", source_id, user)
-                    if owner:
-                        doc = SourcesRepository(conn).get_any(source_id, owner)
+                doc, ra = load_source(conn, source_id, user, "edit")
+        except AccessDenied as err:
+            return denied_response(err)
         except Exception as err:
             current_app.logger.error(
                 f"Error looking up source: {err}", exc_info=True
@@ -470,10 +540,7 @@ class ReingestSource(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Invalid source ID"}), 400
             )
-        if not doc:
-            return make_response(
-                jsonify({"success": False, "message": "Source not accessible"}), 403
-            )
+        owner = ra.owner_id
         resolved_source_id = str(doc["id"])
         # Drop the stale chunk-progress row so the sources list stops
         # deriving a 'failed' status; reingest never rewrites it itself.
@@ -499,6 +566,23 @@ class ReingestSource(Resource):
                 exc_info=True,
             )
             return make_response(jsonify({"success": False}), 400)
+        try:
+            with db_session() as conn:
+                record_event(
+                    conn,
+                    "source.reingested",
+                    actor=user,
+                    source_id=resolved_source_id,
+                    name=doc.get("name"),
+                    # A team editor can reingest a source they do not own.
+                    owner=owner if owner != user else None,
+                    task_id=task.id,
+                )
+        except Exception as err:
+            current_app.logger.warning(
+                f"Could not audit reingest for {resolved_source_id}: {err}",
+                exc_info=True,
+            )
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
 
@@ -519,11 +603,7 @@ class DirectoryStructure(Resource):
             return make_response(jsonify({"error": "Document ID is required"}), 400)
         try:
             with db_readonly() as conn:
-                doc = SourcesRepository(conn).get_any(doc_id, user)
-            if not doc:
-                return make_response(
-                    jsonify({"error": "Document not found or access denied"}), 404
-                )
+                doc, _ra = load_source(conn, doc_id, user, "use")
             directory_structure = doc.get("directory_structure", {})
             base_path = doc.get("file_path", "")
 
@@ -550,6 +630,8 @@ class DirectoryStructure(Resource):
                 ),
                 200,
             )
+        except AccessDenied as err:
+            return denied_response(err)
         except Exception as e:
             current_app.logger.error(
                 f"Error retrieving directory structure: {e}", exc_info=True
@@ -607,23 +689,9 @@ class SourceConfigResource(Resource):
         try:
             with db_session() as conn:
                 repo = SourcesRepository(conn)
-                # Resolve the owner to write AS: ``user`` when they own the
-                # source, the real owner when ``user`` holds a team ``editor``
-                # grant. A viewer / no-access resolves to None → 403.
-                owner = effective_write_owner(conn, "source", source_id, user)
-                if not owner:
-                    return make_response(
-                        jsonify(
-                            {"success": False, "message": "Source not accessible"}
-                        ),
-                        403,
-                    )
-                doc = repo.get_any(source_id, owner)
-                if doc is None:
-                    return make_response(
-                        jsonify({"success": False, "message": "Source not found"}),
-                        404,
-                    )
+                # Owner or team editor; the write lands as the owner.
+                doc, ra = load_source(conn, source_id, user, "edit")
+                owner = ra.owner_id
                 # Ingest-time fields (config.chunking) only take effect after a
                 # re-ingest (D8); compare against the current config to decide.
                 current_config = SourceConfig.parse(doc.get("config"))
@@ -654,6 +722,8 @@ class SourceConfigResource(Resource):
                 repo.update(
                     str(doc["id"]), owner, {"config": new_config.model_dump()}
                 )
+        except AccessDenied as err:
+            return denied_response(err)
         except Exception as err:
             current_app.logger.error(
                 f"Error updating source config for {source_id}: {err}", exc_info=True
@@ -703,20 +773,6 @@ def _unsupported_retrieval_warnings(config) -> list:
             f"similarity."
         )
     return warnings
-
-
-def _resolve_readable_source(conn, source_id, user):
-    """Return a source dict the caller may READ, or None.
-
-    Read access = owner or any team grant (viewer/editor). Resolves the row
-    without ownership scoping only after the grant check passes.
-    """
-    doc = SourcesRepository(conn).get_any(source_id, user)
-    if doc is not None:
-        return doc
-    if not can_access(conn, "source", source_id, user):
-        return None
-    return SourcesRepository(conn).get_by_id(source_id)
 
 
 def _wiki_page_node(page):
@@ -791,7 +847,9 @@ class CreateWikiSource(Resource):
                     source_id=source_id,
                     user_id=user,
                     type="wiki",
-                    config={"kind": "wiki"},
+                    # Same config as a converted wiki: browsed through the
+                    # tool (``agentic_tool``), not pre-fetched.
+                    config=SourceConfig().wiki_enabled(),
                     directory_structure={},
                     tokens=0,
                     # Wiki pages are embedded like any other source, so record
@@ -810,6 +868,14 @@ class CreateWikiSource(Resource):
                         updated_via="human",
                     )
                     rebuild_wiki_directory_structure(conn, source_id, user)
+                record_event(
+                    conn,
+                    "source.created",
+                    actor=user,
+                    source_id=source_id,
+                    name=name,
+                    type="wiki",
+                )
         except Exception as err:
             current_app.logger.error(
                 f"Error creating wiki source: {err}", exc_info=True
@@ -849,12 +915,10 @@ class WikiPages(Resource):
         user = decoded_token.get("sub")
         try:
             with db_readonly() as conn:
-                doc = _resolve_readable_source(conn, source_id, user)
-                if doc is None:
-                    return make_response(
-                        jsonify({"success": False, "message": "Source not found"}),
-                        404,
-                    )
+                try:
+                    doc, _ra = load_source(conn, source_id, user, "use")
+                except AccessDenied as err:
+                    return denied_response(err)
                 pages = WikiPagesRepository(conn).list_for_source(str(doc["id"]))
                 directory_structure = doc.get("directory_structure") or {}
         except Exception as err:
@@ -897,12 +961,10 @@ class WikiPage(Resource):
             )
         try:
             with db_readonly() as conn:
-                doc = _resolve_readable_source(conn, source_id, user)
-                if doc is None:
-                    return make_response(
-                        jsonify({"success": False, "message": "Source not found"}),
-                        404,
-                    )
+                try:
+                    doc, _ra = load_source(conn, source_id, user, "use")
+                except AccessDenied as err:
+                    return denied_response(err)
                 page = WikiPagesRepository(conn).get_by_path(str(doc["id"]), path)
         except Exception as err:
             current_app.logger.error(
@@ -940,20 +1002,12 @@ class WikiPage(Resource):
         expected_version = data.get("expected_version")
         try:
             with db_session() as conn:
-                owner = effective_write_owner(conn, "source", source_id, user)
-                if not owner:
-                    return make_response(
-                        jsonify(
-                            {"success": False, "message": "Source not accessible"}
-                        ),
-                        403,
-                    )
-                doc = SourcesRepository(conn).get_any(source_id, owner)
-                if doc is None:
-                    return make_response(
-                        jsonify({"success": False, "message": "Source not found"}),
-                        404,
-                    )
+                # Owner or team editor; writes and re-embeds run as the owner.
+                try:
+                    doc, ra = load_source(conn, source_id, user, "edit")
+                except AccessDenied as err:
+                    return denied_response(err)
+                owner = ra.owner_id
                 resolved_source_id = str(doc["id"])
                 try:
                     page = WikiPagesRepository(conn).upsert(
@@ -1004,6 +1058,90 @@ class WikiPage(Resource):
         )
 
 
+def _wiki_settings_body(doc: dict, ra) -> dict:
+    """The wiki settings response: the stored switch plus the caller's access."""
+    return {
+        "success": True,
+        "allow_outside_edits": bool(doc.get("wiki_outside_edits")),
+        **ra.payload(),
+    }
+
+
+@sources_ns.route("/sources/<string:source_id>/wiki/settings")
+class WikiSettings(Resource):
+    @api.doc(
+        description="A wiki's settings. Anyone who can see the wiki may read "
+        "them; returns allow_outside_edits plus the caller's access."
+    )
+    def get(self, source_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        try:
+            with db_readonly() as conn:
+                try:
+                    doc, ra = load_source(conn, source_id, user, "use")
+                except AccessDenied as err:
+                    return denied_response(err)
+        except Exception as err:
+            current_app.logger.error(
+                f"Error reading wiki settings for {source_id}: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify(_wiki_settings_body(doc, ra)), 200)
+
+    @api.doc(
+        description="Change a wiki's settings (owner only, manage_settings). "
+        "Body: {\"allow_outside_edits\": bool}: whether runs from an agent's "
+        "API key or widget may edit the wiki."
+    )
+    def put(self, source_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        data = request.get_json(silent=True) or {}
+        allowed = data.get("allow_outside_edits")
+        if not isinstance(allowed, bool):
+            return make_response(
+                jsonify(
+                    {"success": False, "message": "allow_outside_edits must be true or false"}
+                ),
+                400,
+            )
+        try:
+            with db_session() as conn:
+                try:
+                    doc, ra = load_source(conn, source_id, user, "manage_settings")
+                except AccessDenied as err:
+                    return denied_response(err)
+                if SourceConfig.parse(doc.get("config")).kind != "wiki":
+                    return make_response(
+                        jsonify({"success": False, "message": "Source is not a wiki"}), 400
+                    )
+                if not SourcesRepository(conn).set_wiki_outside_edits(
+                    str(doc["id"]), ra.owner_id, allowed
+                ):
+                    return make_response(
+                        jsonify({"success": False, "message": "Source not found"}), 404
+                    )
+                record_event(
+                    conn,
+                    "source.wiki_settings_updated",
+                    actor=user,
+                    source_id=str(doc["id"]),
+                    allow_outside_edits=allowed,
+                )
+                doc["wiki_outside_edits"] = allowed
+        except Exception as err:
+            current_app.logger.error(
+                f"Error updating wiki settings for {source_id}: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify(_wiki_settings_body(doc, ra)), 200)
+
+
 def _source_is_blank(doc):
     """True when a source has no ingested files to convert into pages."""
     structure = doc.get("directory_structure") or {}
@@ -1037,20 +1175,12 @@ class ConvertSourceToWiki(Resource):
         user = decoded_token.get("sub")
         try:
             with db_session() as conn:
-                owner = effective_write_owner(conn, "source", source_id, user)
-                if not owner:
-                    return make_response(
-                        jsonify(
-                            {"success": False, "message": "Source not accessible"}
-                        ),
-                        403,
-                    )
-                doc = SourcesRepository(conn).get_any(source_id, owner)
-                if doc is None:
-                    return make_response(
-                        jsonify({"success": False, "message": "Source not found"}),
-                        404,
-                    )
+                # Owner or team editor; writes and re-embeds run as the owner.
+                try:
+                    doc, ra = load_source(conn, source_id, user, "edit")
+                except AccessDenied as err:
+                    return denied_response(err)
+                owner = ra.owner_id
                 resolved_source_id = str(doc["id"])
                 # A mid-ingest source has an incomplete directory structure, so
                 # it could be mis-detected as blank and wrongly enabled inline.
@@ -1157,20 +1287,12 @@ class EnableSourceGraphRAG(Resource):
         user = decoded_token.get("sub")
         try:
             with db_session() as conn:
-                owner = effective_write_owner(conn, "source", source_id, user)
-                if not owner:
-                    return make_response(
-                        jsonify(
-                            {"success": False, "message": "Source not accessible"}
-                        ),
-                        403,
-                    )
-                doc = SourcesRepository(conn).get_any(source_id, owner)
-                if doc is None:
-                    return make_response(
-                        jsonify({"success": False, "message": "Source not found"}),
-                        404,
-                    )
+                # Owner or team editor; writes and re-embeds run as the owner.
+                try:
+                    doc, ra = load_source(conn, source_id, user, "edit")
+                except AccessDenied as err:
+                    return denied_response(err)
+                owner = ra.owner_id
                 resolved_source_id = str(doc["id"])
                 cfg = SourceConfig.parse(doc.get("config"))
                 repo = SourcesRepository(conn)
@@ -1213,18 +1335,50 @@ class EnableSourceGraphRAG(Resource):
         )
 
 
-def _graph_overview_payload(source_id, limit):
-    """Return a bounded ``{nodes, edges}`` overview for a graphrag source.
+def _graph_overview_payload(source_id: str, limit: int) -> dict:
+    """Return a bounded ``{nodes, edges, stats}`` overview for a graphrag source.
 
     An empty graph (extraction pending/capped/failed) yields empty lists rather
-    than an error, mirroring the ClassicRAG degradation guarantee.
+    than an error, mirroring the ClassicRAG degradation guarantee, and skips
+    the overview query entirely. ``stats`` carries the whole graph's totals,
+    not the bounded overview's.
+
+    Args:
+        source_id: The resolved source id.
+        limit: Requested overview size; the store clamps it.
+
+    Returns:
+        dict: ``{"nodes": [...], "edges": [...], "stats": {"nodes": int,
+        "edges": int}}``.
     """
     from docsgpt.graphrag.store import GraphStore
 
     store = GraphStore()
-    if store.count_nodes(source_id) == 0:
-        return {"nodes": [], "edges": []}
-    return store.get_graph_overview(source_id, limit)
+    node_count = store.count_nodes(source_id)
+    if node_count == 0:
+        return {"nodes": [], "edges": [], "stats": {"nodes": 0, "edges": 0}}
+    overview = store.get_graph_overview(source_id, limit)
+    return {
+        "nodes": overview["nodes"],
+        "edges": overview["edges"],
+        "stats": {"nodes": node_count, "edges": store.count_edges(source_id)},
+    }
+
+
+def _int_arg(name: str, default: int) -> int:
+    """Read an integer query arg, falling back to ``default`` when unparsable.
+
+    Args:
+        name: Query-string parameter name.
+        default: Value used when the arg is missing or not an integer.
+
+    Returns:
+        int: The parsed value or ``default``.
+    """
+    try:
+        return int(request.args.get(name, default))
+    except (TypeError, ValueError):
+        return default
 
 
 @sources_ns.route("/sources/<string:source_id>/graph")
@@ -1245,12 +1399,10 @@ class SourceGraph(Resource):
             limit = None
         try:
             with db_readonly() as conn:
-                doc = _resolve_readable_source(conn, source_id, user)
-                if doc is None:
-                    return make_response(
-                        jsonify({"success": False, "message": "Source not found"}),
-                        404,
-                    )
+                try:
+                    doc, _ra = load_source(conn, source_id, user, "use")
+                except AccessDenied as err:
+                    return denied_response(err)
                 resolved_source_id = str(doc["id"])
         except Exception as err:
             current_app.logger.error(
@@ -1276,6 +1428,140 @@ class SourceGraph(Resource):
                     "success": True,
                     "nodes": overview["nodes"],
                     "edges": overview["edges"],
+                    "stats": overview["stats"],
+                }
+            ),
+            200,
+        )
+
+
+def _graph_node_page(
+    source_id: str,
+    query: str | None,
+    type_key: str | None,
+    page: int,
+    per_page: int,
+) -> tuple[dict, list]:
+    """Return ``(listing, type_facets)`` for one page of a source's graph nodes.
+
+    A graph store that is not configured, or whose tables do not exist yet
+    (no graph has ever been built on this deployment), yields an empty page,
+    matching :func:`_graph_overview_payload`. Every other failure propagates,
+    so a broken query is never shown as an empty graph.
+
+    Args:
+        source_id: The resolved source id.
+        query: Name substring filter, or ``None``.
+        type_key: Type key filter, or ``None`` for no filter.
+        page: 1-based page, already clamped.
+        per_page: Page size, already clamped.
+
+    Returns:
+        tuple: ``({"nodes": [...], "total": int}, [{"key", "label", "count"}])``.
+
+    Raises:
+        Exception: Any store failure other than a missing store or schema.
+    """
+    import psycopg
+
+    from docsgpt.graphrag.store import GraphStore
+
+    empty = ({"nodes": [], "total": 0}, [])
+    try:
+        store = GraphStore()
+    except (ValueError, ImportError) as err:
+        current_app.logger.info("Graph store unavailable, listing no nodes: %s", err)
+        return empty
+    try:
+        listing = store.list_nodes(
+            source_id,
+            query=query,
+            type_key=type_key,
+            offset=(page - 1) * per_page,
+            limit=per_page,
+        )
+        types = store.node_type_facets(source_id)
+    except psycopg.errors.UndefinedTable as err:
+        current_app.logger.info("Graph tables missing, listing no nodes: %s", err)
+        return empty
+    return listing, types
+
+
+@sources_ns.route("/sources/<string:source_id>/graph/nodes")
+class SourceGraphNodes(Resource):
+    @api.doc(
+        description="Paged, searchable list of a graphrag source's nodes, "
+        "highest degree first, plus type facets over all its nodes (read "
+        "access: owner or shared). Query params: q (name substring), type "
+        "(type key), page (1-based), per_page (1-100, default 25)."
+    )
+    def get(self, source_id: str):
+        """List one page of a source's graph nodes with type facets.
+
+        Args:
+            source_id: The source id from the URL.
+
+        Returns:
+            Response: ``{success, nodes, total, page, per_page, types}``, or
+            401/404/400 on missing auth, no read access or a failure. ``page``
+            is clamped to ``1..GRAPH_NODE_LIST_MAX_PAGE`` and ``per_page`` to
+            ``1..GRAPH_NODE_LIST_MAX_LIMIT``. A graph store that is not
+            configured or has no tables yet reads as an empty page, like the
+            overview; any other store query failure is a 400, never an empty
+            200.
+        """
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        from docsgpt.graphrag.store import (
+            GRAPH_NODE_LIST_DEFAULT_LIMIT,
+            GRAPH_NODE_LIST_MAX_LIMIT,
+            GRAPH_NODE_LIST_MAX_PAGE,
+        )
+
+        page = max(1, min(_int_arg("page", 1), GRAPH_NODE_LIST_MAX_PAGE))
+        per_page = max(
+            1,
+            min(
+                _int_arg("per_page", GRAPH_NODE_LIST_DEFAULT_LIMIT),
+                GRAPH_NODE_LIST_MAX_LIMIT,
+            ),
+        )
+        query = (request.args.get("q") or "").strip()[:_GRAPH_SEARCH_MAX_LEN] or None
+        type_key = request.args.get("type")
+        try:
+            with db_readonly() as conn:
+                try:
+                    doc, _ra = load_source(conn, source_id, user, "use")
+                except AccessDenied as err:
+                    return denied_response(err)
+                resolved_source_id = str(doc["id"])
+        except Exception as err:
+            current_app.logger.error(
+                f"Error resolving source {source_id} for graph nodes: {err}",
+                exc_info=True,
+            )
+            return make_response(jsonify({"success": False}), 400)
+        try:
+            listing, types = _graph_node_page(
+                resolved_source_id, query, type_key, page, per_page
+            )
+        except Exception as err:
+            current_app.logger.error(
+                f"Error listing graph nodes for {source_id}: {err}",
+                exc_info=True,
+            )
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(
+            jsonify(
+                {
+                    "success": True,
+                    "nodes": listing["nodes"],
+                    "total": listing["total"],
+                    "page": page,
+                    "per_page": per_page,
+                    "types": types,
                 }
             ),
             200,
@@ -1295,12 +1581,10 @@ class SourceGraphNode(Resource):
         user = decoded_token.get("sub")
         try:
             with db_readonly() as conn:
-                doc = _resolve_readable_source(conn, source_id, user)
-                if doc is None:
-                    return make_response(
-                        jsonify({"success": False, "message": "Source not found"}),
-                        404,
-                    )
+                try:
+                    doc, _ra = load_source(conn, source_id, user, "use")
+                except AccessDenied as err:
+                    return denied_response(err)
                 resolved_source_id = str(doc["id"])
         except Exception as err:
             current_app.logger.error(

@@ -1,11 +1,16 @@
 import React, { ReactNode } from 'react';
 import { Handle, Position } from 'reactflow';
 
+import { cn } from '@/lib/utils';
+
+import { nodeToneClass, type WorkflowNodeType } from '../nodeTones';
+
 interface BaseNodeProps {
   title: string;
   children?: ReactNode;
   selected?: boolean;
-  type?: 'start' | 'end' | 'default' | 'state' | 'agent' | 'condition' | 'code';
+  /** The node type; picks the icon square's tone from the shared map. */
+  type: WorkflowNodeType;
   icon?: ReactNode;
   handles?: {
     source?: boolean;
@@ -13,70 +18,55 @@ interface BaseNodeProps {
   };
 }
 
+/**
+ * The pill every canvas node but Note and If / Else is drawn as: a tinted
+ * icon, the title, a muted meta block and the handles. Selected is the focus
+ * ring look (`border-primary ring-3 ring-ring/50`), with no scale, so the
+ * node stays put under the pointer.
+ */
 export const BaseNode: React.FC<BaseNodeProps> = ({
   title,
   children,
   selected,
-  type = 'default',
+  type,
   icon,
   handles = { source: true, target: true },
 }) => {
-  let bgColor = 'bg-card';
-  let borderColor = 'border-border';
-  let iconBg = 'bg-gray-100 dark:bg-gray-800';
-  let iconColor = 'text-gray-600 dark:text-gray-400';
-
-  if (selected) {
-    borderColor = 'border-primary ring-2 ring-primary';
-  }
-
-  if (type === 'start') {
-    iconBg = 'bg-green-100 dark:bg-green-900/30';
-    iconColor = 'text-green-600 dark:text-green-400';
-  } else if (type === 'end') {
-    iconBg = 'bg-red-100 dark:bg-red-900/30';
-    iconColor = 'text-red-600 dark:text-red-400';
-  } else if (type === 'state') {
-    iconBg = 'bg-gray-100 dark:bg-gray-800';
-    iconColor = 'text-gray-600 dark:text-gray-400';
-  } else if (type === 'condition') {
-    iconBg = 'bg-orange-100 dark:bg-orange-900/30';
-    iconColor = 'text-orange-600 dark:text-orange-400';
-  } else if (type === 'code') {
-    iconBg = 'bg-indigo-100 dark:bg-indigo-900/30';
-    iconColor = 'text-indigo-600 dark:text-indigo-400';
-  }
-
   return (
     <div
-      className={`rounded-full border ${bgColor} ${borderColor} shadow-md transition-all hover:shadow-lg ${
-        selected ? 'scale-105' : ''
-      } max-w-[250px] min-w-[180px]`}
+      className={cn(
+        'bg-card rounded-full border shadow-md transition hover:shadow-lg',
+        selected ? 'border-primary ring-ring/50 ring-3' : 'border-border',
+        'max-w-[250px] min-w-[180px]',
+      )}
     >
       {handles.target && (
         <Handle
           type="target"
           position={Position.Left}
           isConnectable={true}
-          className="hover:bg-primary/90! border-card! -left-1! h-3! w-3! rounded-full! border-2! bg-gray-400! transition-colors!"
+          className="hover:bg-primary/90! border-card! bg-muted-foreground! -left-1! h-3! w-3! rounded-full! border-2! transition-colors!"
         />
       )}
 
       <div className="flex items-center gap-3 px-4 py-3">
         <div
-          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${iconBg} ${iconColor}`}
+          className={cn(
+            'flex size-10 shrink-0 items-center justify-center rounded-full',
+            nodeToneClass(type),
+          )}
         >
           {icon}
         </div>
         <div className="min-w-0 flex-1 pr-3">
           <div
-            className="truncate text-sm font-semibold text-gray-900 dark:text-white"
+            className="text-foreground truncate text-sm font-semibold"
             title={title}
           >
             {title}
           </div>
           {children && (
-            <div className="mt-1 truncate text-xs text-gray-600 dark:text-gray-400">
+            <div className="text-muted-foreground mt-1 truncate text-xs">
               {children}
             </div>
           )}
@@ -88,7 +78,7 @@ export const BaseNode: React.FC<BaseNodeProps> = ({
           type="source"
           position={Position.Right}
           isConnectable={true}
-          className="hover:bg-primary/90! border-card! -right-1! h-3! w-3! rounded-full! border-2! bg-gray-400! transition-colors!"
+          className="hover:bg-primary/90! border-card! bg-muted-foreground! -right-1! h-3! w-3! rounded-full! border-2! transition-colors!"
         />
       )}
     </div>

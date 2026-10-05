@@ -1,13 +1,19 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import notificationsReducer, {
   sseEventReceived,
   type SSEEvent,
 } from '../notifications/notificationsSlice';
+import type { RootState } from '../store';
 import reducer, {
   addAttachment,
   addUploadTask,
   dismissUploadTask,
+  EARLY_ATTACHMENT_EVENTS_CAP,
+  EARLY_ATTACHMENT_EVENTS_TTL_MS,
+  selectSendableAttachmentIds,
+  selectSendableAttachments,
+  toSendableAttachments,
   updateAttachment,
   updateUploadTask,
   type Attachment,
@@ -47,7 +53,12 @@ describe('dismissal persistence across reload', () => {
   // Mirrors initialState as if hydrated from localStorage.
   const seedState = (entries: { id: string; at: number }[]) =>
     reducer(
-      { attachments: [], tasks: [], dismissedSourceIds: entries },
+      {
+        attachments: [],
+        tasks: [],
+        dismissedSourceIds: entries,
+        earlyAttachmentEvents: {},
+      },
       { type: '@@INIT' },
     );
 
@@ -114,6 +125,7 @@ describe('dismissal persistence across reload', () => {
           }),
         ],
         dismissedSourceIds: [{ id: SRC, at: Date.now() }],
+        earlyAttachmentEvents: {},
       },
       { type: '@@INIT' },
     );
@@ -471,6 +483,9 @@ describe('attachment race recovery', () => {
     expect(uploadState.attachments[0].status).toBe('completed');
     expect(uploadState.attachments[0].progress).toBe(100);
     expect(uploadState.attachments[0].token_count).toBe(99);
+    // The send paths read ``id``: it must be the server's, not the
+    // client placeholder, or the backend silently drops the file.
+    expect(uploadState.attachments[0].id).toBe(ATTACHMENT_ID);
   });
 
   it('attachment.failed envelope can drive a stuck row to failed via reconciler', () => {
@@ -561,5 +576,368 @@ describe('upload race — SSE auto-created duplicate absorbed on sourceId bind',
     expect(task.id).toBe('client-1');
     expect(task.status).toBe('completed');
     expect(task.progress).toBe(100);
+  });
+});
+
+describe('server id binding on completion', () => {
+  const row = (overrides: Partial<Attachment> = {}): Attachment => ({
+    id: 'ui-1',
+    fileName: 'a.pdf',
+    progress: 10,
+    status: 'processing',
+    taskId: 'celery-1',
+    attachmentId: 'srv-1',
+    ...overrides,
+  });
+
+  it('swaps in the server id when an update completes a bound row', () => {
+    let state = reducer(undefined, addAttachment(row()));
+    state = reducer(
+      state,
+      updateAttachment({ id: 'ui-1', updates: { status: 'completed' } }),
+    );
+    expect(state.attachments[0].id).toBe('srv-1');
+  });
+
+  it('binds the id when the same update sets attachmentId and completes', () => {
+    let state = reducer(
+      undefined,
+      addAttachment(row({ attachmentId: undefined, status: 'uploading' })),
+    );
+    state = reducer(
+      state,
+      updateAttachment({
+        id: 'ui-1',
+        updates: { attachmentId: 'srv-2', status: 'completed' },
+      }),
+    );
+    expect(state.attachments[0].id).toBe('srv-2');
+  });
+
+  it('keeps the client id while the row is still processing', () => {
+    let state = reducer(undefined, addAttachment(row()));
+    state = reducer(
+      state,
+      updateAttachment({ id: 'ui-1', updates: { progress: 50 } }),
+    );
+    expect(state.attachments[0].id).toBe('ui-1');
+  });
+});
+
+describe('sendable attachments', () => {
+  const att = (overrides: Partial<Attachment>): Attachment => ({
+    id: 'ui-1',
+    fileName: 'a.pdf',
+    progress: 100,
+    status: 'completed',
+    taskId: 't',
+    ...overrides,
+  });
+
+  it('sends the server id of completed rows only', () => {
+    const rows = [
+      att({ id: 'ui-1', attachmentId: 'srv-1', fileName: 'a.pdf' }),
+      att({ id: 'ui-2', attachmentId: 'srv-2', status: 'processing' }),
+      att({ id: 'ui-3', attachmentId: 'srv-3', status: 'failed' }),
+      att({ id: 'srv-4', attachmentId: 'srv-4', fileName: 'd.pdf' }),
+    ];
+    expect(toSendableAttachments(rows)).toEqual([
+      { id: 'srv-1', fileName: 'a.pdf' },
+      { id: 'srv-4', fileName: 'd.pdf' },
+    ]);
+  });
+
+  it('falls back to id for rows without an attachmentId', () => {
+    expect(toSendableAttachments([att({ id: 'legacy' })])).toEqual([
+      { id: 'legacy', fileName: 'a.pdf' },
+    ]);
+  });
+
+  it('drops empty ids and sends a repeated server id once', () => {
+    const rows = [
+      att({ id: '' }),
+      att({ id: 'ui-1', attachmentId: 'same' }),
+      att({ id: 'ui-2', attachmentId: 'same', fileName: 'copy.pdf' }),
+    ];
+    expect(toSendableAttachments(rows).map((a) => a.id)).toEqual(['same']);
+  });
+
+  it('exposes the same view through the store selectors', () => {
+    const upload = reducer(
+      undefined,
+      addAttachment(att({ id: 'ui-1', attachmentId: 'srv-1' })),
+    );
+    const state = { upload } as unknown as RootState;
+    expect(selectSendableAttachments(state)).toEqual([
+      { id: 'srv-1', fileName: 'a.pdf' },
+    ]);
+    expect(selectSendableAttachmentIds(state)).toEqual(['srv-1']);
+  });
+});
+
+describe('attachment events that arrive before the upload response', () => {
+  const attEvent = (
+    type: string,
+    attachmentId: string,
+    payload: Record<string, unknown> = {},
+  ): SSEEvent => ({
+    id: `${attachmentId}-${type}-${JSON.stringify(payload)}`,
+    type,
+    scope: { kind: 'attachment', id: attachmentId },
+    payload,
+  });
+
+  const uploading = (id: string): Attachment => ({
+    id,
+    fileName: `${id}.pdf`,
+    progress: 40,
+    status: 'uploading',
+    taskId: '',
+  });
+
+  const bind = (id: string, attachmentId: string) =>
+    updateAttachment({
+      id,
+      updates: {
+        taskId: `celery-${id}`,
+        attachmentId,
+        status: 'processing',
+        progress: 10,
+      },
+    });
+
+  it('applies a stashed completion when the row learns its attachment id', () => {
+    let state = reducer(undefined, addAttachment(uploading('ui-1')));
+    state = reducer(
+      state,
+      sseEventReceived(
+        attEvent('attachment.completed', 'srv-1', {
+          token_count: 5,
+          mime_type: 'application/pdf',
+        }),
+      ),
+    );
+    expect(state.attachments[0].status).toBe('uploading');
+
+    state = reducer(state, bind('ui-1', 'srv-1'));
+
+    const [row] = state.attachments;
+    expect(row.status).toBe('completed');
+    expect(row.progress).toBe(100);
+    expect(row.id).toBe('srv-1');
+    expect(row.token_count).toBe(5);
+    expect(row.mimeType).toBe('application/pdf');
+  });
+
+  it('applies a stashed failure', () => {
+    let state = reducer(undefined, addAttachment(uploading('ui-1')));
+    state = reducer(
+      state,
+      sseEventReceived(attEvent('attachment.failed', 'srv-1')),
+    );
+    state = reducer(state, bind('ui-1', 'srv-1'));
+    expect(state.attachments[0].status).toBe('failed');
+  });
+
+  it("keeps the worker's reason on a failed row", () => {
+    let state = reducer(undefined, addAttachment(uploading('ui-1')));
+    state = reducer(state, bind('ui-1', 'srv-1'));
+    state = reducer(
+      state,
+      sseEventReceived(
+        attEvent('attachment.failed', 'srv-1', {
+          error: 'File is password protected',
+        }),
+      ),
+    );
+    expect(state.attachments[0].status).toBe('failed');
+    expect(state.attachments[0].errorMessage).toBe(
+      'File is password protected',
+    );
+  });
+
+  it('leaves a failed row without a reason when the worker gave none', () => {
+    let state = reducer(undefined, addAttachment(uploading('ui-1')));
+    state = reducer(state, bind('ui-1', 'srv-1'));
+    state = reducer(
+      state,
+      sseEventReceived(attEvent('attachment.failed', 'srv-1', { error: ' ' })),
+    );
+    expect(state.attachments[0].status).toBe('failed');
+    expect(state.attachments[0].errorMessage).toBeUndefined();
+  });
+
+  it('keeps progress from stashed events without completing the row', () => {
+    let state = reducer(undefined, addAttachment(uploading('ui-1')));
+    state = reducer(
+      state,
+      sseEventReceived(
+        attEvent('attachment.progress', 'srv-1', { current: 60 }),
+      ),
+    );
+    state = reducer(state, bind('ui-1', 'srv-1'));
+    expect(state.attachments[0].status).toBe('processing');
+    expect(state.attachments[0].progress).toBe(60);
+    expect(state.attachments[0].id).toBe('ui-1');
+  });
+
+  it('completes every row of a batch larger than the notifications ring', () => {
+    const count = 40;
+    let state = reducer(undefined, { type: '@@INIT' });
+    let notifications = notificationsReducer(undefined, { type: '@@INIT' });
+    for (let i = 0; i < count; i++) {
+      state = reducer(state, addAttachment(uploading(`ui-${i}`)));
+    }
+    // The worker finishes every file before any upload response lands:
+    // queued, two progress ticks and a completion per file.
+    for (let i = 0; i < count; i++) {
+      for (const event of [
+        attEvent('attachment.queued', `srv-${i}`),
+        attEvent('attachment.progress', `srv-${i}`, { current: 30 }),
+        attEvent('attachment.progress', `srv-${i}`, { current: 80 }),
+        attEvent('attachment.completed', `srv-${i}`, { token_count: i }),
+      ]) {
+        const action = sseEventReceived(event);
+        state = reducer(state, action);
+        notifications = notificationsReducer(notifications, action);
+      }
+    }
+    // The early completions are gone from the ring buffer...
+    expect(
+      notifications.recentEvents.some((e) => e.scope?.id === 'srv-0'),
+    ).toBe(false);
+
+    for (let i = 0; i < count; i++) {
+      state = reducer(state, bind(`ui-${i}`, `srv-${i}`));
+    }
+    // ...but every row still completes, under its server id.
+    expect(state.attachments.every((a) => a.status === 'completed')).toBe(true);
+    expect(state.attachments.map((a) => a.id)).toEqual(
+      Array.from({ length: count }, (_, i) => `srv-${i}`),
+    );
+  });
+
+  it('does not stash events while no upload is waiting for its id', () => {
+    // A page load replays the SSE backlog: none of it is ours to keep.
+    let state = reducer(undefined, { type: '@@INIT' });
+    state = reducer(
+      state,
+      sseEventReceived(attEvent('attachment.completed', 'srv-old')),
+    );
+    expect(Object.keys(state.earlyAttachmentEvents)).toHaveLength(0);
+  });
+
+  it('drops stashed events once their row is bound', () => {
+    let state = reducer(undefined, addAttachment(uploading('ui-1')));
+    state = reducer(
+      state,
+      sseEventReceived(attEvent('attachment.completed', 'srv-1')),
+    );
+    expect(Object.keys(state.earlyAttachmentEvents)).toEqual(['srv-1']);
+    state = reducer(state, bind('ui-1', 'srv-1'));
+    expect(Object.keys(state.earlyAttachmentEvents)).toHaveLength(0);
+  });
+
+  it('keeps the stash bounded', () => {
+    let state = reducer(undefined, addAttachment(uploading('ui-1')));
+    for (let i = 0; i < EARLY_ATTACHMENT_EVENTS_CAP + 50; i++) {
+      state = reducer(
+        state,
+        sseEventReceived(attEvent('attachment.completed', `stray-${i}`)),
+      );
+    }
+    expect(Object.keys(state.earlyAttachmentEvents)).toHaveLength(
+      EARLY_ATTACHMENT_EVENTS_CAP,
+    );
+    // The oldest go first.
+    expect(state.earlyAttachmentEvents['stray-0']).toBeUndefined();
+  });
+
+  it('forgets stashed events after the TTL', () => {
+    vi.useFakeTimers();
+    try {
+      let state = reducer(undefined, addAttachment(uploading('ui-1')));
+      state = reducer(
+        state,
+        sseEventReceived(attEvent('attachment.completed', 'srv-1')),
+      );
+      vi.advanceTimersByTime(EARLY_ATTACHMENT_EVENTS_TTL_MS + 1);
+      state = reducer(state, bind('ui-1', 'srv-1'));
+      expect(state.attachments[0].status).toBe('processing');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('processing activity', () => {
+  const event = (
+    type: string,
+    attachmentId: string,
+    payload: Record<string, unknown>,
+    n: number,
+  ): SSEEvent => ({
+    id: `${attachmentId}-${n}`,
+    type,
+    scope: { kind: 'attachment', id: attachmentId },
+    payload,
+  });
+
+  const processing: Attachment = {
+    id: 'ui-1',
+    fileName: 'bundle.zip',
+    progress: 10,
+    status: 'processing',
+    taskId: 'celery-1',
+    attachmentId: 'srv-1',
+  };
+
+  it('counts every queued or progress event, even one that does not move the bar', () => {
+    let state = reducer(undefined, addAttachment(processing));
+    const before = state.attachments[0].activity ?? 0;
+    state = reducer(
+      state,
+      sseEventReceived(event('attachment.queued', 'srv-1', {}, 1)),
+    );
+    state = reducer(
+      state,
+      sseEventReceived(
+        event('attachment.progress', 'srv-1', { current: 40 }, 2),
+      ),
+    );
+    state = reducer(
+      state,
+      sseEventReceived(
+        event('attachment.progress', 'srv-1', { current: 40 }, 3),
+      ),
+    );
+    expect(state.attachments[0].progress).toBe(40);
+    expect(state.attachments[0].activity).toBe(before + 3);
+  });
+
+  it('counts progress replayed when the row learns its id', () => {
+    let state = reducer(
+      undefined,
+      addAttachment({
+        ...processing,
+        status: 'uploading',
+        attachmentId: undefined,
+      }),
+    );
+    state = reducer(
+      state,
+      sseEventReceived(
+        event('attachment.progress', 'srv-1', { current: 30 }, 1),
+      ),
+    );
+    expect(state.attachments[0].activity ?? 0).toBe(0);
+    state = reducer(
+      state,
+      updateAttachment({
+        id: 'ui-1',
+        updates: { attachmentId: 'srv-1', status: 'processing' },
+      }),
+    );
+    expect(state.attachments[0].activity).toBe(1);
   });
 });

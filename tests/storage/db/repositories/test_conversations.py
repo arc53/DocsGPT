@@ -100,6 +100,48 @@ class TestListForUser:
         assert conv["visibility"] == "listed"
 
 
+def _set_date(conn, conv_id: str, when: datetime) -> None:
+    conn.execute(
+        text("UPDATE conversations SET date = :d WHERE id = CAST(:id AS uuid)"),
+        {"d": when, "id": conv_id},
+    )
+
+
+class TestListForUserKeyset:
+    def test_orders_by_date_then_id_desc(self, pg_conn):
+        repo = _repo(pg_conn)
+        same = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        ids = [repo.create("alice", f"c{i}")["id"] for i in range(4)]
+        for cid in ids:
+            _set_date(pg_conn, cid, same)
+        results = repo.list_for_user("alice")
+        assert [r["id"] for r in results] == sorted(ids, reverse=True)
+
+    def test_before_cursor_is_strict_with_id_tiebreak(self, pg_conn):
+        repo = _repo(pg_conn)
+        same = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        older = datetime(2025, 1, 1, tzinfo=timezone.utc)
+        ids = sorted((repo.create("alice", f"c{i}")["id"] for i in range(3)), reverse=True)
+        for cid in ids:
+            _set_date(pg_conn, cid, same)
+        old_id = repo.create("alice", "old")["id"]
+        _set_date(pg_conn, old_id, older)
+
+        page = repo.list_for_user("alice", before=same, before_id=ids[0])
+        assert [r["id"] for r in page] == [ids[1], ids[2], old_id]
+
+    def test_before_cursor_keeps_visibility_filter(self, pg_conn):
+        repo = _repo(pg_conn)
+        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        hidden = repo.create("alice", "hidden", visibility="hidden")["id"]
+        _set_date(pg_conn, hidden, datetime(2025, 1, 1, tzinfo=timezone.utc))
+        repo.create("bob", "other-user")
+        page = repo.list_for_user(
+            "alice", before=now, before_id="ffffffff-ffff-ffff-ffff-ffffffffffff"
+        )
+        assert page == []
+
+
 class TestRename:
     def test_renames(self, pg_conn):
         repo = _repo(pg_conn)

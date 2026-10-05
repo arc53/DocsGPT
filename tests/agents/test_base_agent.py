@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 import pytest
 from docsgpt.agents.classic_agent import ClassicAgent
@@ -1087,26 +1087,21 @@ class TestBuildMessagesAdvanced:
         system_content = messages[0]["content"]
         assert "Previous conversation summary" in system_content
 
-    def test_query_truncated_when_too_large(
+    def test_query_too_large_is_refused_not_truncated(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
     ):
+        from docsgpt.agents.context_overflow import ContextOverflowError
+
         agent = ClassicAgent(**agent_base_params)
-
-        call_count = {"n": 0}
-
-        def fake_tokens(text):
-            call_count["n"] += 1
-            return len(text)
 
         with patch(
             "docsgpt.core.model_utils.get_token_limit", return_value=200
-        ), patch("docsgpt.utils.num_tokens_from_string", side_effect=fake_tokens):
-            with patch.object(agent, "_truncate_text_middle", return_value="truncated"):
-                with patch.object(agent, "_truncate_history_to_fit", return_value=[]):
-                    messages = agent._build_messages("sys", "A" * 500)
+        ), patch("docsgpt.utils.num_tokens_from_string", side_effect=len):
+            with patch.object(agent, "_truncate_text_middle") as truncate:
+                with pytest.raises(ContextOverflowError):
+                    agent._build_messages("sys", "A" * 500)
 
-        # The method should have been called for truncation
-        assert messages[-1]["role"] == "user"
+        truncate.assert_not_called()
 
     def test_build_messages_with_tool_call_missing_call_id(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
@@ -1142,6 +1137,56 @@ class TestBuildMessagesAdvanced:
 
 @pytest.mark.unit
 class TestLLMGenAdvanced:
+
+    def test_llm_gen_tells_the_llm_why_the_turn_does_not_chain(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+        monkeypatch,
+    ):
+        from docsgpt.agents import base as base_mod
+
+        monkeypatch.setattr(base_mod.settings, "OPENAI_RESPONSES_STORE", True)
+        mock_llm._uses_responses_api = Mock(return_value=True)
+        mock_llm.responses_chain_key = Mock(return_value="key")
+        agent = ClassicAgent(**agent_base_params)
+        agent.chat_history = []
+
+        agent._llm_gen([{"role": "user", "content": "test"}])
+        mock_llm.note_chain_turn.assert_called_once_with("first_turn", new_turn=True)
+        assert "previous_response_id" not in mock_llm.gen_stream.call_args[1]
+
+        agent._llm_gen([{"role": "user", "content": "test"}], preserve_responses_state=True)
+        assert mock_llm.note_chain_turn.call_args == call("first_turn", new_turn=False)
+
+    def test_llm_gen_restores_the_chains_head_and_tools_hashes(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+        monkeypatch,
+    ):
+        from docsgpt.agents import base as base_mod
+
+        monkeypatch.setattr(base_mod.settings, "OPENAI_RESPONSES_STORE", True)
+        mock_llm._uses_responses_api = Mock(return_value=True)
+        mock_llm._chain_system_hash = None
+        mock_llm._chain_tools_hash = None
+        agent = ClassicAgent(**agent_base_params)
+        monkeypatch.setattr(agent, "_previous_response_choice", lambda: ("resp_1", None))
+        monkeypatch.setattr(
+            agent, "_previous_responses_state", lambda: {"system_hash": "sys-h", "tools_hash": "tools-h"},
+        )
+
+        agent._llm_gen([{"role": "user", "content": "test"}])
+
+        assert mock_llm.gen_stream.call_args[1]["previous_response_id"] == "resp_1"
+        assert mock_llm._chain_system_hash == "sys-h"
+        assert mock_llm._chain_tools_hash == "tools-h"
+
 
     def test_llm_gen_with_attachments(
         self,
@@ -1413,14 +1458,15 @@ class TestBaseAgentContextBudget:
         assert messages[-1]["role"] == "user"
         assert messages[-1]["content"] == "What is Python?"
 
-    def test_long_query_is_truncated_not_emptied(
+    def test_long_query_is_an_overflow_never_cut_or_emptied(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator, monkeypatch
     ):
+        from docsgpt.agents.context_overflow import ContextOverflowError
+
         agent = self._agent_with_limit(agent_base_params, monkeypatch, 2000)
         query = "tell me about pythons " * 500
-        messages = agent._build_messages("short system", query)
-        assert messages[-1]["content"], "query must never be emptied"
-        assert len(messages[-1]["content"]) < len(query)
+        with pytest.raises(ContextOverflowError):
+            agent._build_messages("short system", query)
 
 
 @pytest.mark.unit
@@ -1522,7 +1568,7 @@ class TestBaseAgentDocumentBudgetOrdering:
     document before the truncation step ran — leaving budget unused.
     """
 
-    def test_long_question_keeps_documents_and_is_truncated(
+    def test_long_question_keeps_documents(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator, monkeypatch
     ):
         agent_base_params["retrieved_docs"] = [
@@ -1533,12 +1579,25 @@ class TestBaseAgentDocumentBudgetOrdering:
         monkeypatch.setattr(
             "docsgpt.core.model_utils.get_token_limit", lambda *a, **k: 4000
         )
-        huge_question = "please explain this in detail " * 900
-        user = agent._build_messages("short system", huge_question)[-1]["content"]
+        long_question = "please explain this in detail " * 300
+        user = agent._build_messages("short system", long_question)[-1]["content"]
 
         assert "<documents>" in user, "documents must survive a long question"
         assert agent.retrieved_docs, "documents must not all be shed"
-        assert len(user) < len(huge_question), "question must be truncated"
+        assert user.rstrip().endswith(long_question.rstrip()), "the question is never cut"
+
+    def test_question_over_the_budget_is_an_overflow_not_a_cut(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator, monkeypatch
+    ):
+        from docsgpt.agents.context_overflow import ContextOverflowError
+
+        agent = ClassicAgent(**agent_base_params)
+        monkeypatch.setattr(
+            "docsgpt.core.model_utils.get_token_limit", lambda *a, **k: 4000
+        )
+        with pytest.raises(ContextOverflowError) as info:
+            agent._build_messages("short system", "please explain this in detail " * 900)
+        assert info.value.stage == "build"
 
 
 # ---------------------------------------------------------------------------

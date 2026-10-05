@@ -267,7 +267,7 @@ def get_token_counter(embeddings_name: Optional[str] = None) -> TokenCounter:
         A :class:`HuggingFaceCounter` for a model whose tokenizer could be
         loaded, else a :class:`TiktokenCounter`.
     """
-    name = embeddings_name or getattr(settings, "EMBEDDINGS_NAME", None)
+    name = embeddings_name or settings.EMBEDDINGS_NAME
     key = name or "__default__"
     with _cache_lock:
         if key in _cache:

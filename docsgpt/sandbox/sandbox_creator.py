@@ -64,7 +64,7 @@ class SandboxCreator:
     def get_manager(cls) -> SandboxManager:
         """Return the process-wide ``SandboxManager``, building it on first use."""
         if cls._instance is None:
-            backend = cls.create_backend(getattr(settings, "SANDBOX_BACKEND", "jupyter"))
+            backend = cls.create_backend(settings.SANDBOX_BACKEND)
             cls._instance = SandboxManager(
                 backend=backend,
                 max_ttl=float(settings.SANDBOX_MAX_TTL),

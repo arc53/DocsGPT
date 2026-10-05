@@ -1,26 +1,6 @@
-import { envVar } from '@/env';
-import CrawlerIcon from '../../assets/crawler.svg';
-import FileUploadIcon from '../../assets/file_upload.svg';
-import UrlIcon from '../../assets/url.svg';
-import GithubIcon from '../../assets/github.svg';
-import RedditIcon from '../../assets/reddit.svg';
-import DriveIcon from '../../assets/drive.svg';
-import S3Icon from '../../assets/s3.svg';
-import SharePoint from '../../assets/sharepoint.svg';
-import ConfluenceIcon from '../../assets/confluence.svg';
-import BookIcon from '../../assets/book-mono.svg';
+import { BookOpen, Globe, Link, Upload, type LucideIcon } from 'lucide-react';
 
-export type IngestorType =
-  | 'confluence'
-  | 'crawler'
-  | 'github'
-  | 'reddit'
-  | 'url'
-  | 'google_drive'
-  | 'local_file'
-  | 's3'
-  | 'share_point'
-  | 'wiki';
+export type IngestorType = 'crawler' | 'github' | 'url' | 'local_file' | 'wiki';
 
 export interface IngestorConfig {
   type: IngestorType | null;
@@ -35,41 +15,46 @@ export type IngestorFormData = {
   data: string;
 };
 
-export type FieldType =
-  | 'string'
-  | 'number'
-  | 'enum'
-  | 'boolean'
-  | 'textarea'
-  | 'local_file_picker'
-  | 'remote_file_picker'
-  | 'google_drive_picker'
-  | 'share_point_picker'
-  | 'confluence_picker';
+export type FieldType = 'string' | 'textarea' | 'local_file_picker';
 
 export interface FormField {
   name: string;
+  /** English fallback; the form shows `t(labelKey)` when one is set. */
   label: string;
+  labelKey?: string;
   type: FieldType;
   required?: boolean;
-  advanced?: boolean;
-  options?: { label: string; value: string }[];
 }
 
 export interface IngestorSchema {
   key: IngestorType;
   label: string;
-  icon: string;
+  /**
+   * The Add knowledge tile's icon. GitHub has none: it is listed with the
+   * services (under its connector logo), not among these tiles.
+   */
+  icon?: LucideIcon;
   heading: string;
-  validate?: () => boolean;
   fields: FormField[];
 }
+
+/**
+ * Add knowledge tiles: the source types that need no account. GitHub (a
+ * public repository by URL) sits with the services that sync, which are
+ * connected through the connect wizard.
+ */
+export const UPLOAD_AND_WEB_INGESTORS: IngestorType[] = [
+  'local_file',
+  'url',
+  'crawler',
+  'wiki',
+];
 
 export const IngestorFormSchemas: IngestorSchema[] = [
   {
     key: 'local_file',
     label: 'Upload File',
-    icon: FileUploadIcon,
+    icon: Upload,
     heading: 'Upload new document',
     fields: [
       {
@@ -83,158 +68,43 @@ export const IngestorFormSchemas: IngestorSchema[] = [
   {
     key: 'crawler',
     label: 'Crawler',
-    icon: CrawlerIcon,
+    icon: Globe,
     heading: 'Add content with Web Crawler',
-    fields: [{ name: 'url', label: 'URL', type: 'string', required: true }],
+    fields: [
+      {
+        name: 'url',
+        label: 'URL',
+        labelKey: 'modals.uploadDoc.fields.url',
+        type: 'string',
+        required: true,
+      },
+    ],
   },
   {
     key: 'url',
     label: 'Link',
-    icon: UrlIcon,
+    icon: Link,
     heading: 'Add content from URL',
-    fields: [{ name: 'url', label: 'URL', type: 'string', required: true }],
+    fields: [
+      {
+        name: 'url',
+        label: 'URL',
+        labelKey: 'modals.uploadDoc.fields.url',
+        type: 'string',
+        required: true,
+      },
+    ],
   },
   {
     key: 'github',
     label: 'GitHub',
-    icon: GithubIcon,
     heading: 'Add content from GitHub',
     fields: [
       {
         name: 'repo_url',
         label: 'Repository URL',
+        labelKey: 'modals.uploadDoc.repoUrl',
         type: 'string',
-        required: true,
-      },
-    ],
-  },
-  {
-    key: 'reddit',
-    label: 'Reddit',
-    icon: RedditIcon,
-    heading: 'Add content from Reddit',
-    fields: [
-      { name: 'client_id', label: 'Client ID', type: 'string', required: true },
-      {
-        name: 'client_secret',
-        label: 'Client Secret',
-        type: 'string',
-        required: true,
-      },
-      {
-        name: 'user_agent',
-        label: 'User Agent',
-        type: 'string',
-        required: true,
-      },
-      {
-        name: 'search_queries',
-        label: 'Search Queries',
-        type: 'string',
-        required: true,
-      },
-      {
-        name: 'number_posts',
-        label: 'Number of Posts',
-        type: 'number',
-        required: true,
-      },
-    ],
-  },
-  {
-    key: 'google_drive',
-    label: 'Google Drive',
-    icon: DriveIcon,
-    heading: 'Upload from Google Drive',
-    validate: () => {
-      const googleClientId = envVar('VITE_GOOGLE_CLIENT_ID');
-      return !!googleClientId;
-    },
-    fields: [
-      {
-        name: 'files',
-        label: 'Select Files from Google Drive',
-        type: 'google_drive_picker',
-        required: true,
-      },
-    ],
-  },
-  {
-    key: 's3',
-    label: 'Amazon S3',
-    icon: S3Icon,
-    heading: 'Add content from Amazon S3',
-    fields: [
-      {
-        name: 'aws_access_key_id',
-        label: 'AWS Access Key ID',
-        type: 'string',
-        required: true,
-      },
-      {
-        name: 'aws_secret_access_key',
-        label: 'AWS Secret Access Key',
-        type: 'string',
-        required: true,
-      },
-      {
-        name: 'bucket',
-        label: 'Bucket Name',
-        type: 'string',
-        required: true,
-      },
-      {
-        name: 'prefix',
-        label: 'Path Prefix (optional)',
-        type: 'string',
-        required: false,
-      },
-      {
-        name: 'region',
-        label: 'AWS Region',
-        type: 'string',
-        required: false,
-      },
-      {
-        name: 'endpoint_url',
-        label: 'Custom Endpoint URL (optional)',
-        type: 'string',
-        required: false,
-      },
-    ],
-  },
-  {
-    key: 'share_point',
-    label: 'Share Point',
-    icon: SharePoint,
-    heading: 'Upload from Share Point',
-    validate: () => {
-      const sharePointClientId = envVar('VITE_SHARE_POINT_CLIENT_ID');
-      return !!sharePointClientId;
-    },
-    fields: [
-      {
-        name: 'files',
-        label: 'Select Files from Share Point',
-        type: 'share_point_picker',
-        required: true,
-      },
-    ],
-  },
-  {
-    key: 'confluence',
-    label: 'Confluence',
-    icon: ConfluenceIcon,
-    heading: 'Upload from Confluence',
-    validate: () => {
-      const confluenceClientId = envVar('VITE_CONFLUENCE_CLIENT_ID');
-      return !!confluenceClientId;
-    },
-    fields: [
-      {
-        name: 'files',
-        label: 'Select Pages from Confluence',
-        type: 'confluence_picker',
         required: true,
       },
     ],
@@ -242,12 +112,13 @@ export const IngestorFormSchemas: IngestorSchema[] = [
   {
     key: 'wiki',
     label: 'New wiki',
-    icon: BookIcon,
+    icon: BookOpen,
     heading: 'Create a living wiki',
     fields: [
       {
         name: 'initial_content',
         label: 'Initial content (optional)',
+        labelKey: 'modals.uploadDoc.fields.initialContent',
         type: 'textarea',
         required: false,
       },
@@ -261,52 +132,8 @@ export const IngestorDefaultConfigs: Record<
 > = {
   crawler: { name: '', config: { url: '' } },
   url: { name: '', config: { url: '' } },
-  reddit: {
-    name: '',
-    config: {
-      client_id: '',
-      client_secret: '',
-      user_agent: '',
-      search_queries: '',
-      number_posts: 10,
-    },
-  },
   github: { name: '', config: { repo_url: '' } },
-  google_drive: {
-    name: '',
-    config: {
-      file_ids: '',
-      folder_ids: '',
-      recursive: true,
-    },
-  },
   local_file: { name: '', config: { files: [] } },
-  s3: {
-    name: '',
-    config: {
-      aws_access_key_id: '',
-      aws_secret_access_key: '',
-      bucket: '',
-      prefix: '',
-      region: 'us-east-1',
-      endpoint_url: '',
-    },
-  },
-  share_point: {
-    name: '',
-    config: {
-      file_ids: '',
-      folder_ids: '',
-      recursive: true,
-    },
-  },
-  confluence: {
-    name: '',
-    config: {
-      file_ids: '',
-      folder_ids: '',
-    },
-  },
   wiki: {
     name: '',
     config: {
@@ -318,7 +145,7 @@ export const IngestorDefaultConfigs: Record<
 export interface IngestorOption {
   label: string;
   value: IngestorType;
-  icon: string;
+  icon?: LucideIcon;
   heading: string;
 }
 

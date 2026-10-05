@@ -46,9 +46,9 @@ SUPPORTED_SOURCE_EXTENSIONS = (
 # megabytes of binary garbage, truncates it, and stores it with
 # ``extraction.status == "ok"``. So unparsed suffixes are admitted on
 # content instead (``upload_limits.enforce_parseable_attachment``): text
-# passes, binary is refused. Zip is deliberately absent — source ingestion
-# extracts archives, the attachment path does not, and a zip fails the
-# content check like any other binary.
+# passes, binary is refused. Zip is deliberately absent: it has no parser of
+# its own. A zip attachment is unpacked into its members instead
+# (``ATTACHMENT_ARCHIVE_EXTENSIONS``).
 #
 # Mirrored in ``frontend/src/constants/fileUpload.ts``; update both together.
 ATTACHMENT_PARSER_EXTENSIONS = frozenset(
@@ -69,6 +69,11 @@ ATTACHMENT_PARSER_EXTENSIONS = frozenset(
     # notes.txt walks straight back into the bug this gate exists for.
     - {".txt"}
 )
+
+
+# Archives a chat attachment may be; the worker unpacks each into one
+# attachment per member (``docsgpt.parser.attachment_archive``).
+ATTACHMENT_ARCHIVE_EXTENSIONS = frozenset({".zip"})
 
 
 def attachment_extension(filename: str | None) -> str:
@@ -100,3 +105,15 @@ def has_attachment_parser(filename: str | None) -> bool:
         True when the suffix is in ``ATTACHMENT_PARSER_EXTENSIONS``.
     """
     return attachment_extension(filename) in ATTACHMENT_PARSER_EXTENSIONS
+
+
+def is_attachment_archive(filename: str | None) -> bool:
+    """Return whether an attachment's suffix marks an archive to unpack.
+
+    Args:
+        filename: The upload's filename.
+
+    Returns:
+        True when the suffix is in ``ATTACHMENT_ARCHIVE_EXTENSIONS``.
+    """
+    return attachment_extension(filename) in ATTACHMENT_ARCHIVE_EXTENSIONS

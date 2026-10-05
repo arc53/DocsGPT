@@ -1,30 +1,38 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutGrid,
-  Menu,
   PanelLeftClose,
   PanelLeftOpen,
-  Plus,
-  Search as SearchIcon,
-  Settings as SettingsIcon,
+  Pin,
+  PinOff,
+  Search,
+  Settings,
+  SquarePen,
 } from 'lucide-react';
 
+import {
+  AGENTS_MANAGE_ROOT,
+  agentChatPath,
+  agentEditPathFor,
+  sharedAgentPath,
+} from './agents/paths';
+import { canOpenAgentEditor } from './agents/agentAccess';
 import { Agent } from './agents/types';
 import conversationService from './api/services/conversationService';
 import userService from './api/services/userService';
 import Discord from './assets/discord.svg';
 import Github from './assets/git_nav.svg';
-import Pin from './assets/pin.svg';
 import { Avatar } from './components/ui/avatar';
 import { Button } from './components/ui/button';
-import Spinner from './components/Spinner';
+import { IconButton } from './components/ui/icon-button';
+import { LoadingState } from '@/components/ui/loading-state';
 import Twitter from './assets/TwitterX.svg';
-import UnPin from './assets/unpin.svg';
 import Help from './components/Help';
 import {
+  type ConversationAgentFields,
   handleAbort,
   loadConversation,
   selectQueries,
@@ -34,21 +42,44 @@ import {
 import ConversationTile from './conversation/ConversationTile';
 import { useMediaQuery } from './hooks';
 import useTokenAuth from './hooks/useTokenAuth';
+import { cn, focusRing, overlayScrim } from './lib/utils';
 import ConfirmationModal from './modals/ConfirmationModal';
 import JWTModal from './modals/JWTModal';
 import SearchConversationsModal from './modals/SearchConversationsModal';
 import { ActiveState } from './models/misc';
+import { LoadMoreStatus } from './components/ui/load-more-status';
+import { Skeleton } from './components/ui/skeleton';
+import { useScrollSentinel } from './hooks/useLoadMore';
 import { getConversations } from './preferences/preferenceApi';
+import MobileTopBar from './navigation/MobileTopBar';
+import SectionNav from './navigation/SectionNav';
+import SectionRail from './navigation/SectionRail';
+import SidebarLevel from './navigation/SidebarLevel';
+import {
+  getActiveItem,
+  getSectionForPath,
+  type Section,
+} from './navigation/sections';
+import ConnectionHealthDot from './connectors/ConnectionHealthDot';
+import { useSidebarLevel } from './navigation/SidebarLevelProvider';
+import { useSectionContext } from './navigation/useSectionContext';
+import { useLastAppPath } from './navigation/useLastAppPath';
 import {
   selectAgents,
   selectConversationId,
   selectConversations,
+  selectIsAdmin,
   selectModalStateDeleteConv,
   selectSelectedAgent,
   selectSharedAgents,
   selectToken,
   setAgents,
+  appendConversations,
+  receiveConversations,
+  removeConversation,
+  renameConversation,
   setConversations,
+  setConversationsLoading,
   setModalStateDeleteConv,
   setSelectedAgent,
   setSharedAgents,
@@ -76,9 +107,67 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const agents = useSelector(selectAgents);
   const sharedAgents = useSelector(selectSharedAgents);
   const selectedAgent = useSelector(selectSelectedAgent);
+  const isAdmin = useSelector(selectIsAdmin);
 
-  const { isMobile, isTablet } = useMediaQuery();
+  const { isMobile } = useMediaQuery();
   const { showTokenModal, handleTokenSubmit } = useTokenAuth();
+
+  // Section state is derived from the route, so deep links and the browser
+  // back button keep working without a second source of truth.
+  const { section: routeSection, item: routeSectionItem } = useSectionContext();
+  const { pending, goToLevel } = useSidebarLevel();
+
+  // While a level change is in flight the sidebar runs ahead of the route,
+  // so it can start moving on the click rather than on the commit.
+  const activeSection = pending ? pending.section : routeSection;
+  const activeSectionItem =
+    pending && pending.section
+      ? getActiveItem(pending.section, pending.pathname)
+      : pending
+        ? null
+        : routeSectionItem;
+  const lastAppPath = useLastAppPath();
+  const inSection = Boolean(activeSection);
+
+  // The sidebar is a stack: chats, a section, and a record inside it. A
+  // section that declares a parent sits on the third level, above its
+  // parent's nav.
+  const nestedSection = activeSection?.parentPath ? activeSection : null;
+  const topSection = nestedSection
+    ? getSectionForPath(nestedSection.parentPath ?? '')
+    : activeSection;
+  const sidebarDepth = nestedSection ? 2 : activeSection ? 1 : 0;
+
+  // Panels stay mounted after being left so they have something to animate
+  // out, and so the one behind is already there to be revealed on the way
+  // back. They park off screen, so the cost is a subtree nobody can see.
+  const lastTopSection = useRef<Section | null>(null);
+  const lastNestedSection = useRef<Section | null>(null);
+  if (topSection) lastTopSection.current = topSection;
+  if (nestedSection) lastNestedSection.current = nestedSection;
+  const topPanel = topSection ?? lastTopSection.current;
+  const nestedPanel = nestedSection ?? lastNestedSection.current;
+
+  // Back means "up one level": out of an agent lands on the agent list, out
+  // of a top-level section lands back in the app.
+  const backLabelFor = (section: Section) =>
+    section.parentLabelKey
+      ? t(section.parentLabelKey)
+      : t('navigation.backToApp');
+
+  const exitSectionFrom = (section: Section | null) => () => {
+    if (isMobile) setNavOpen(false);
+    goToLevel(section?.parentPath ?? lastAppPath.current ?? '/');
+  };
+
+  const exitSection = exitSectionFrom(activeSection);
+  const backLabel = activeSection
+    ? backLabelFor(activeSection)
+    : t('navigation.backToApp');
+
+  const closeNavOnMobile = () => {
+    if (isMobile) setNavOpen(false);
+  };
 
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
   const [uploadModalState, setUploadModalState] =
@@ -92,7 +181,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       if (
         navRef.current &&
         !navRef.current.contains(event.target as Node) &&
-        (isMobile || isTablet) &&
+        isMobile &&
         navOpen
       ) {
         setNavOpen(false);
@@ -100,13 +189,13 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     }
 
     //event listener only for mobile/tablet when nav is open
-    if ((isMobile || isTablet) && navOpen) {
+    if (isMobile && navOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => {
         document.removeEventListener('mousedown', handleClickOutside);
       };
     }
-  }, [navOpen, isMobile, isTablet, setNavOpen]);
+  }, [navOpen, isMobile, setNavOpen]);
 
   useEffect(() => {
     function handleSearchShortcut(event: KeyboardEvent) {
@@ -155,11 +244,39 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     }
   }
 
+  // Older chats load as the end of the list scrolls into view; the list
+  // scrolls with the sidebar column, so there is no inner scroller.
+  const [olderLoading, setOlderLoading] = useState(false);
+  const [olderError, setOlderError] = useState(false);
+  const loadOlderConversations = () => {
+    const list = conversations?.data ?? [];
+    const last = list[list.length - 1];
+    if (!last?.date || olderLoading) return;
+    setOlderLoading(true);
+    setOlderError(false);
+    getConversations(token, { date: last.date, id: last.id })
+      .then((result) => {
+        if (result.data) dispatch(appendConversations(result.data));
+        else setOlderError(true);
+      })
+      .finally(() => setOlderLoading(false));
+  };
+  const olderSentinelRef = useScrollSentinel(
+    loadOlderConversations,
+    !!conversations?.hasMore &&
+      !conversations.loading &&
+      !olderLoading &&
+      !olderError,
+    conversations?.data?.length,
+  );
+
   async function fetchConversations() {
-    dispatch(setConversations({ ...conversations, loading: true }));
+    // Only the flag: a copy of the list from this render would put back
+    // a chat removed just before, and the merge would then keep it.
+    dispatch(setConversationsLoading(true));
     return await getConversations(token)
       .then((fetchedConversations) => {
-        dispatch(setConversations(fetchedConversations));
+        dispatch(receiveConversations(fetchedConversations));
       })
       .catch((error) => {
         console.error('Failed to fetch conversations: ', error);
@@ -175,32 +292,34 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     if (queries.length === 0) resetConversation();
   }, [conversations?.data, dispatch]);
 
+  // Both return the request to ConfirmationModal: pending while it runs,
+  // a failure stays in the dialog.
   const handleDeleteAllConversations = () => {
     setIsDeletingConversation(true);
-    conversationService
-      .deleteAll(token)
-      .then(() => {
-        fetchConversations();
-      })
-      .catch((error) => console.error(error));
+    return conversationService.deleteAll(token).then((response: Response) => {
+      if (!response.ok) throw new Error('Failed to delete conversations');
+      fetchConversations();
+    });
   };
 
   const handleDeleteConversation = (id: string) => {
     setIsDeletingConversation(true);
-    conversationService
+    return conversationService
       .delete(id, {}, token)
-      .then(() => {
+      .then((response: Response) => {
+        if (!response.ok) throw new Error('Failed to delete conversation');
+        // Out of the list at once, wherever it is, then refresh the top.
+        dispatch(removeConversation(id));
         fetchConversations();
         resetConversation();
-      })
-      .catch((error) => console.error(error));
+      });
   };
 
   const handleAgentClick = (agent: Agent) => {
     resetConversation();
     dispatch(setSelectedAgent(agent));
-    if (isMobile || isTablet) setNavOpen(!navOpen);
-    navigate(agent.id ? `/agents/${agent.id}/c/new` : '/c/new');
+    if (isMobile) setNavOpen(!navOpen);
+    navigate(agent.id ? agentChatPath(agent.id) : '/c/new');
   };
 
   const handleTogglePin = (agent: Agent) => {
@@ -214,54 +333,55 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     });
   };
 
+  // Where a loaded chat lives (owned agent / shared agent / none) and the
+  // agent its page shows.
+  const resolveConversationRoute = async (
+    index: string,
+    data: ConversationAgentFields,
+  ): Promise<{ path: string; agent: Agent | null }> => {
+    const plain = { path: `/c/${index}`, agent: null };
+    if (!data.agent_id) return plain;
+
+    if (data.is_shared_usage) {
+      if (!data.shared_token) return plain;
+      const sharedResponse = await userService.getSharedAgent(
+        data.shared_token,
+        token,
+      );
+      if (!sharedResponse.ok) return plain;
+      const agent: Agent = await sharedResponse.json();
+      return { path: sharedAgentPath(agent.shared_token), agent: null };
+    }
+
+    const agentResponse = await userService.getAgent(data.agent_id, token);
+    if (!agentResponse.ok) return plain;
+    const agent: Agent = await agentResponse.json();
+    if (agent.shared_token) {
+      return { path: sharedAgentPath(agent.shared_token), agent: null };
+    }
+    return { path: agentChatPath(data.agent_id, index), agent };
+  };
+
   const handleConversationClick = async (index: string) => {
     try {
-      dispatch(setSelectedAgent(null));
-
-      // Pre-fetch to choose the route shape (owned-agent / shared / none).
+      // The agent resolves before the chat is applied, so the old chat
+      // keeps its card until the new one shows with its own.
+      let path = `/c/${index}`;
       const result = await dispatch(
-        loadConversation({ id: index, force: true }),
+        loadConversation({
+          id: index,
+          force: true,
+          resolveAgent: async (data) => {
+            const route = await resolveConversationRoute(index, data);
+            path = route.path;
+            return route.agent;
+          },
+        }),
       ).unwrap();
       // Stale: a newer load has already updated Redux; the URL is
       // wherever that newer flow lands, leave it alone.
       if (result.stale) return;
-      const data = result.data;
-      if (!data) {
-        navigate('/c/new');
-        return;
-      }
-
-      if (!data.agent_id) {
-        navigate(`/c/${index}`);
-        return;
-      }
-
-      let agent: Agent;
-      if (data.is_shared_usage) {
-        const sharedResponse = await userService.getSharedAgent(
-          data.shared_token,
-          token,
-        );
-        if (!sharedResponse.ok) {
-          navigate(`/c/${index}`);
-          return;
-        }
-        agent = await sharedResponse.json();
-        navigate(`/agents/shared/${agent.shared_token}`);
-      } else {
-        const agentResponse = await userService.getAgent(data.agent_id, token);
-        if (!agentResponse.ok) {
-          navigate(`/c/${index}`);
-          return;
-        }
-        agent = await agentResponse.json();
-        if (agent.shared_token) {
-          navigate(`/agents/shared/${agent.shared_token}`);
-        } else {
-          await Promise.resolve(dispatch(setSelectedAgent(agent)));
-          navigate(`/agents/${data.agent_id}/c/${index}`);
-        }
-      }
+      navigate(result.data ? path : '/c/new');
     } catch (error) {
       console.error('Error handling conversation click:', error);
       navigate('/c/new');
@@ -294,7 +414,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       .update(updatedConversation, token)
       .then((response) => response.json())
       .then((data) => {
-        if (data) {
+        if (data?.success) {
+          // A rename keeps the chat's date, so a chat past the newest page
+          // is not in the refetch below: set its name here.
+          const { id, name } = updatedConversation;
+          dispatch(renameConversation({ id, name }));
           fetchConversations();
         }
       })
@@ -304,340 +428,456 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   }
 
   useEffect(() => {
-    setNavOpen(!(isMobile || isTablet));
-  }, [isMobile, isTablet]);
+    setNavOpen(!isMobile);
+  }, [isMobile]);
+
+  // What the phone top bar names: the open chat, else the agent a new chat
+  // is with. A plain new chat and every section (settings, admin, agent
+  // pages) have none; sections carry their own page heading.
+  const currentConversation = conversationId
+    ? conversations?.data?.find((c) => c.id === conversationId)
+    : undefined;
+  // Edit agent is offered to a role that may open the edit page.
+  const canEditSelectedAgent = canOpenAgentEditor(selectedAgent, agents);
+  const mobileTitle = routeSection
+    ? undefined
+    : (currentConversation?.name ?? selectedAgent?.name);
 
   return (
     <>
-      {(isMobile || isTablet) && navOpen && (
+      {isMobile && navOpen && (
         <div
-          className="fixed inset-0 z-10 bg-black opacity-50 transition-opacity duration-300"
+          className={cn(
+            'animate-in fade-in-0 fixed inset-0 z-20',
+            overlayScrim,
+          )}
           onClick={() => setNavOpen(false)}
         />
       )}
 
       {/* Icon rail (desktop only, when sidebar collapsed) */}
-      {!navOpen && !isMobile && !isTablet && (
+      {!navOpen && !isMobile && (
         <div
           ref={navRef}
-          className="bg-sidebar border-border fixed top-0 left-0 z-10 hidden h-full w-14 flex-col items-center gap-2 border-r py-3 lg:flex">
-          <Button
-            type="button"
-            variant="ghost"
+          className="bg-sidebar border-border scrollbar-overlay fixed top-0 left-0 z-10 hidden h-full w-14 flex-col items-center gap-2 overflow-x-hidden overflow-y-auto border-r py-3 lg:flex"
+        >
+          <IconButton
+            label={t('navigation.openSidebar')}
+            side="right"
+            variant="ghost-muted"
             size="icon"
             onClick={() => setNavOpen(true)}
-            aria-label="Open navigation menu"
-            className="text-muted-foreground hover:text-foreground"
           >
-            <PanelLeftOpen className="size-5" strokeWidth={1.75} />
-          </Button>
-          {queries?.length > 0 && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => newChat()}
-              aria-label="Start new chat"
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <Plus className="size-5" strokeWidth={1.75} />
-            </Button>
+            <PanelLeftOpen aria-hidden />
+          </IconButton>
+          {activeSection ? (
+            <SectionRail
+              section={activeSection}
+              activeItemKey={activeSectionItem?.key}
+              isAdmin={isAdmin}
+              onBack={exitSection}
+              backLabel={backLabel}
+            />
+          ) : (
+            <>
+              {queries?.length > 0 && (
+                <IconButton
+                  label={t('newChat')}
+                  side="right"
+                  variant="ghost-muted"
+                  size="icon"
+                  onClick={() => newChat()}
+                >
+                  <SquarePen aria-hidden />
+                </IconButton>
+              )}
+              <IconButton
+                label={t('manageAgents')}
+                side="right"
+                variant="ghost-muted"
+                size="icon"
+                onClick={() => {
+                  dispatch(setSelectedAgent(null));
+                  goToLevel(AGENTS_MANAGE_ROOT);
+                }}
+              >
+                <LayoutGrid aria-hidden />
+              </IconButton>
+              {conversations?.data && conversations.data.length > 0 && (
+                <IconButton
+                  label={t('modals.searchConversations.searchPlaceholder')}
+                  side="right"
+                  variant="ghost-muted"
+                  size="icon"
+                  onClick={() => setSearchOpen(true)}
+                >
+                  <Search aria-hidden />
+                </IconButton>
+              )}
+              <div className="mt-auto flex flex-col items-center gap-2">
+                <IconButton
+                  label={t('settings.label')}
+                  side="right"
+                  variant="ghost-muted"
+                  size="icon"
+                  onClick={() => goToLevel('/settings')}
+                >
+                  <Settings aria-hidden />
+                </IconButton>
+              </div>
+            </>
           )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              dispatch(setSelectedAgent(null));
-              navigate('/agents');
-            }}
-            aria-label={t('manageAgents')}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <LayoutGrid className="size-5" strokeWidth={1.75} />
-          </Button>
-          {conversations?.data && conversations.data.length > 0 && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => setSearchOpen(true)}
-              aria-label={t('modals.searchConversations.searchPlaceholder')}
-              title={t('modals.searchConversations.searchPlaceholder')}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <SearchIcon className="size-5" strokeWidth={1.75} />
-            </Button>
-          )}
-          <div className="mt-auto flex flex-col items-center gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                resetConversation();
-                navigate('/settings');
-              }}
-              aria-label={t('settings.label')}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <SettingsIcon className="size-5" strokeWidth={1.75} />
-            </Button>
-          </div>
         </div>
       )}
       <div
-        className={`${!navOpen && '-ml-96 md:-ml-72'
-          } bg-sidebar dark:border-r-sidebar-border fixed top-0 z-20 flex h-full w-72 flex-col border-r border-b-0 transition-all duration-300 ease-in-out dark:text-white`}
+        className={cn(
+          'bg-sidebar text-foreground fixed top-0 z-20 flex h-full w-72 flex-col border-r border-b-0 transition-[margin] duration-300 ease-in-out',
+          !navOpen && '-ml-96 md:-ml-72',
+        )}
       >
         <div
           className={
-            'visible mt-2 flex h-[6vh] w-full items-center justify-between gap-1 px-2 md:h-12'
+            'visible mt-2 flex h-12 w-full items-center justify-between gap-1 px-2'
           }
         >
           <div className="min-w-0 flex-1">
             <TeamSwitcher
               onNavigate={() => {
-                if (isMobile || isTablet) {
+                if (isMobile) {
                   setNavOpen(false);
                 }
               }}
             />
           </div>
-          <Button
-            type="button"
-            variant="ghost"
+          <IconButton
+            label={
+              navOpen
+                ? t('navigation.closeSidebar')
+                : t('navigation.openSidebar')
+            }
+            side="bottom"
+            variant="ghost-muted"
             size="icon"
-            className="text-muted-foreground hover:text-foreground shrink-0"
+            className="shrink-0"
             onClick={() => {
               setNavOpen(!navOpen);
             }}
-            aria-label={navOpen ? 'Collapse sidebar' : 'Expand sidebar'}
           >
             {navOpen ? (
-              <PanelLeftClose
-                className="size-5 transition-all duration-300 ease-in-out hover:scale-110"
-                strokeWidth={1.75}
-              />
+              <PanelLeftClose aria-hidden />
             ) : (
-              <PanelLeftOpen
-                className="size-5 transition-all duration-300 ease-in-out hover:scale-110"
-                strokeWidth={1.75}
-              />
+              <PanelLeftOpen aria-hidden />
             )}
-          </Button>
+          </IconButton>
         </div>
-        <NavLink
-          to={'/c/new'}
-          onClick={() => {
-            if (isMobile || isTablet) {
-              setNavOpen(!navOpen);
-            }
-            resetConversation();
-          }}
-          className={({ isActive }) =>
-            `${isActive ? 'bg-transparent' : ''
-            } group border-sidebar-border hover:border-sidebar-border sticky mx-4 mt-4 flex cursor-pointer items-center gap-2.5 rounded-3xl border p-3 hover:bg-transparent dark:text-white`
-          }
-        >
-          <Plus
-            className="text-muted-foreground group-hover:text-foreground size-5 shrink-0"
-            strokeWidth={1.75}
-            aria-label="Create new chat"
-          />
-          <p className="text-muted-foreground group-hover:text-foreground text-sm">
-            {t('newChat')}
-          </p>
-        </NavLink>
-        <div
-          id="conversationsMainDiv"
-          className="scrollbar-overlay mb-auto h-[78vh] overflow-x-hidden overflow-y-auto dark:text-white"
-        >
-          {conversations?.loading && !isDeletingConversation && (
-            <div
-              className="text-foreground absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform dark:text-white"
-              role="status"
-              aria-label="Loading conversations"
-            >
-              <Spinner size="small" />
-            </div>
-          )}
-          {recentAgents?.length > 0 ? (
-            <div>
-              <div className="mx-4 my-auto mt-2 flex h-6 items-center">
-                <p className="mt-1 ml-4 text-sm font-semibold">
-                  {t('navigation.agents')}
-                </p>
-              </div>
-              <div className="agents-container">
-                <div>
-                  {recentAgents.map((agent, idx) => (
-                    <div
-                      key={idx}
-                      className={`group hover:bg-sidebar-accent mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between rounded-3xl pl-4 ${agent.id === selectedAgent?.id && !conversationId
-                          ? 'bg-sidebar-accent'
-                          : ''
-                        }`}
-                      onClick={() => handleAgentClick(agent)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="flex w-6 justify-center">
-                          <Avatar
-                            src={agent.image}
-                            alt="agent-logo"
-                            imgClassName="h-6 w-6 rounded-full object-contain"
-                          />
-                        </div>
-                        <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
-                          {agent.name}
-                        </p>
-                      </div>
-                      <div
-                        className={`${isMobile || isTablet ? 'flex' : 'invisible flex group-hover:visible'} items-center px-3`}
-                      >
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          className="h-auto w-auto rounded-full p-0 hover:bg-transparent hover:opacity-75"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleTogglePin(agent);
-                          }}
-                          aria-label={
-                            agent.pinned ? 'Unpin agent' : 'Pin agent'
-                          }
-                        >
-                          <img
-                            src={agent.pinned ? UnPin : Pin}
-                            className="h-4 w-4"
-                          ></img>
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <NavLink
-                  to="/agents"
-                  end
-                  onClick={() => {
-                    dispatch(setSelectedAgent(null));
-                    if (isMobile || isTablet) {
-                      setNavOpen(false);
-                    }
-                  }}
-                  className={({ isActive }) =>
-                    `hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4 ${isActive ? 'bg-sidebar-accent' : ''
-                    }`
-                  }
-                >
-                  <div className="flex w-6 justify-center">
-                    <LayoutGrid
-                      className="text-muted-foreground size-5"
-                      strokeWidth={1.75}
-                      aria-label="manage-agents"
-                    />
-                  </div>
-                  <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
-                    {t('manageAgents')}
-                  </p>
-                </NavLink>
-              </div>
-            </div>
-          ) : (
+        {/* The chat list and the section nav swap places here. Both stay
+            mounted so the conversation list keeps its scroll position while
+            the user is away in a section. */}
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          <SidebarLevel depth={0} current={sidebarDepth}>
             <NavLink
-              to="/agents"
-              end
+              to={'/c/new'}
               onClick={() => {
-                if (isMobile || isTablet) {
-                  setNavOpen(false);
-                }
-                dispatch(setSelectedAgent(null));
-              }}
-              className={({ isActive }) =>
-                `hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3 ${isActive ? 'bg-sidebar-accent' : ''
-                }`
-              }
-            >
-              <LayoutGrid
-                className="text-muted-foreground size-5 shrink-0"
-                strokeWidth={1.75}
-                aria-label="manage-agents"
-              />
-              <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
-                {t('manageAgents')}
-              </p>
-            </NavLink>
-          )}
-          {conversations?.data && conversations.data.length > 0 ? (
-            <div className="mt-7">
-              <div className="my-auto mt-2 ml-2.75 p-1 flex h-9 items-center justify-between gap-4 rounded-3xl">
-                <p className="mt-1 ml-4 text-sm font-semibold">{t('chats')}</p>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setSearchOpen(true)}
-                  className="mr-1 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent rounded-full"
-                  aria-label={t('modals.searchConversations.searchPlaceholder')}
-                  title={t('modals.searchConversations.searchPlaceholder')}
-                >
-                  <SearchIcon
-                    className="size-5"
-                    strokeWidth={1.75}
-                    aria-label="search"
-                  />
-                </Button>
-              </div>
-              <div className="conversations-container">
-                {(conversations.data ?? []).map((conversation) => (
-                  <ConversationTile
-                    key={conversation.id}
-                    conversation={conversation}
-                    selectConversation={(id) => handleConversationClick(id)}
-                    onConversationClick={() => {
-                      if (isMobile) {
-                        setNavOpen(false);
-                      }
-                    }}
-                    onDeleteConversation={(id) => handleDeleteConversation(id)}
-                    onSave={(conversation) =>
-                      updateConversationName(conversation)
-                    }
-                  />
-                ))}
-              </div>
-            </div>
-          ) : (
-            <></>
-          )}
-        </div>
-        <div className="text-foreground flex h-auto flex-col justify-end dark:text-white">
-          <div className="dark:border-b-sidebar-border flex flex-col gap-2 border-b py-2">
-            <NavLink
-              onClick={() => {
-                if (isMobile || isTablet) {
-                  setNavOpen(false);
+                if (isMobile) {
+                  setNavOpen(!navOpen);
                 }
                 resetConversation();
               }}
-              to="/settings"
               className={({ isActive }) =>
-                `hover:bg-sidebar-accent mx-4 my-auto flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3 ${isActive ? 'bg-sidebar-accent' : ''
-                }`
+                cn(
+                  focusRing,
+                  'group border-border hover:border-border sticky mx-4 mt-4 flex cursor-pointer items-center gap-2.5 rounded-3xl border p-3 outline-none hover:bg-transparent',
+                  isActive && 'bg-transparent',
+                )
               }
             >
-              <SettingsIcon
-                className="text-muted-foreground size-5 shrink-0"
-                strokeWidth={1.75}
-                aria-label="Settings"
+              <SquarePen
+                className="text-muted-foreground group-hover:text-foreground size-5 shrink-0"
+                aria-hidden
               />
-              <p className="text-foreground text-sm dark:text-white">
-                {t('settings.label')}
+              <p className="text-muted-foreground group-hover:text-foreground text-sm">
+                {t('newChat')}
               </p>
             </NavLink>
+            <div
+              id="conversationsMainDiv"
+              className="scrollbar-overlay min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
+            >
+              {conversations?.loading && !isDeletingConversation && (
+                <LoadingState
+                  fill="parent"
+                  size="sm"
+                  className="pointer-events-none absolute inset-0"
+                />
+              )}
+              {recentAgents?.length > 0 ? (
+                <div>
+                  <div className="mx-4 my-auto mt-2 flex h-6 items-center">
+                    <p className="mt-1 ml-4 text-sm font-semibold">
+                      {t('navigation.agents')}
+                    </p>
+                  </div>
+                  <div>
+                    <div>
+                      {recentAgents.map((agent, idx) => {
+                        const isCurrent =
+                          agent.id === selectedAgent?.id && !conversationId;
+                        return (
+                          <div key={idx} className="group relative mx-4 mt-4">
+                            <Button
+                              variant="sidebar-item"
+                              asChild
+                              /* eslint-disable-next-line shadcn/no-restyle -- the link and its pin button are siblings, so the row keeps its fill while the pointer is on the pin, and pr-10 keeps the name clear of it */
+                              className="group-hover:bg-sidebar-accent flex w-full pr-10"
+                            >
+                              <Link
+                                to={
+                                  agent.id ? agentChatPath(agent.id) : '/c/new'
+                                }
+                                aria-current={isCurrent ? 'page' : undefined}
+                                onClick={(event) => {
+                                  if (
+                                    event.metaKey ||
+                                    event.ctrlKey ||
+                                    event.shiftKey
+                                  )
+                                    return;
+                                  event.preventDefault();
+                                  handleAgentClick(agent);
+                                }}
+                              >
+                                <div className="flex w-6 shrink-0 justify-center">
+                                  <Avatar
+                                    src={agent.image}
+                                    alt=""
+                                    shape="circle"
+                                    className="overflow-hidden"
+                                    imgClassName="size-6 object-contain"
+                                  />
+                                </div>
+                                <span className="truncate" title={agent.name}>
+                                  {agent.name}
+                                </span>
+                              </Link>
+                            </Button>
+                            <div
+                              className={cn(
+                                'absolute top-1 right-1.5 flex items-center',
+                                !isMobile &&
+                                  'invisible group-focus-within:visible group-hover:visible',
+                              )}
+                            >
+                              <IconButton
+                                label={
+                                  agent.pinned
+                                    ? t('agents.card.unpin')
+                                    : t('agents.card.pin')
+                                }
+                                icon={agent.pinned ? PinOff : Pin}
+                                variant="ghost-on-accent"
+                                size="icon-xs"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleTogglePin(agent);
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <Button
+                      variant="sidebar-item"
+                      asChild
+                      className="mx-4 my-auto mt-2 flex"
+                    >
+                      <NavLink
+                        to={AGENTS_MANAGE_ROOT}
+                        end
+                        onClick={(event) => {
+                          if (event.metaKey || event.ctrlKey || event.shiftKey)
+                            return;
+                          event.preventDefault();
+                          dispatch(setSelectedAgent(null));
+                          closeNavOnMobile();
+                          goToLevel(AGENTS_MANAGE_ROOT);
+                        }}
+                      >
+                        <div className="flex w-6 justify-center">
+                          <LayoutGrid
+                            className="text-muted-foreground size-5"
+                            aria-hidden
+                          />
+                        </div>
+                        <span className="truncate">{t('manageAgents')}</span>
+                      </NavLink>
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  variant="sidebar-item"
+                  asChild
+                  className="mx-4 my-auto mt-2 flex"
+                >
+                  <NavLink
+                    to={AGENTS_MANAGE_ROOT}
+                    end
+                    onClick={(event) => {
+                      if (event.metaKey || event.ctrlKey || event.shiftKey)
+                        return;
+                      event.preventDefault();
+                      closeNavOnMobile();
+                      dispatch(setSelectedAgent(null));
+                      goToLevel(AGENTS_MANAGE_ROOT);
+                    }}
+                  >
+                    <LayoutGrid
+                      className="text-muted-foreground size-5 shrink-0"
+                      aria-hidden
+                    />
+                    <span className="truncate">{t('manageAgents')}</span>
+                  </NavLink>
+                </Button>
+              )}
+              {conversations?.data && conversations.data.length > 0 ? (
+                <div className="mt-7">
+                  <div className="my-auto mt-2 ml-2.75 flex h-9 items-center justify-between gap-4 rounded-3xl p-1">
+                    <p className="mt-1 ml-4 text-sm font-semibold">
+                      {t('chats')}
+                    </p>
+                    <IconButton
+                      label={t('modals.searchConversations.searchPlaceholder')}
+                      variant="ghost-muted"
+                      size="icon"
+                      shape="pill"
+                      onClick={() => setSearchOpen(true)}
+                      className="mr-1"
+                    >
+                      <Search aria-hidden />
+                    </IconButton>
+                  </div>
+                  <div>
+                    {(conversations.data ?? []).map((conversation) => (
+                      <ConversationTile
+                        key={conversation.id}
+                        conversation={conversation}
+                        selectConversation={(id) => handleConversationClick(id)}
+                        onConversationClick={() => {
+                          if (isMobile) {
+                            setNavOpen(false);
+                          }
+                        }}
+                        onDeleteConversation={(id) =>
+                          handleDeleteConversation(id)
+                        }
+                        onSave={(conversation) =>
+                          updateConversationName(conversation)
+                        }
+                      />
+                    ))}
+                    {olderLoading
+                      ? Array.from({ length: 3 }, (_, i) => (
+                          <div
+                            key={i}
+                            aria-hidden="true"
+                            className="mx-4 mt-4 flex h-9 items-center px-3"
+                          >
+                            <Skeleton className="h-3 w-3/4" />
+                          </div>
+                        ))
+                      : null}
+                    {olderError ? (
+                      <LoadMoreStatus
+                        loading={false}
+                        error
+                        done={false}
+                        onRetry={() => {
+                          setOlderError(false);
+                          loadOlderConversations();
+                        }}
+                      />
+                    ) : null}
+                    <div
+                      ref={olderSentinelRef}
+                      aria-hidden="true"
+                      className="h-px"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <></>
+              )}
+            </div>
+          </SidebarLevel>
+          <SidebarLevel depth={1} current={sidebarDepth}>
+            {topPanel && (
+              <SectionNav
+                section={topPanel}
+                activeItemKey={
+                  topPanel === activeSection
+                    ? activeSectionItem?.key
+                    : undefined
+                }
+                isAdmin={isAdmin}
+                onBack={exitSectionFrom(topPanel)}
+                backLabel={backLabelFor(topPanel)}
+                onNavigate={closeNavOnMobile}
+              />
+            )}
+          </SidebarLevel>
+          <SidebarLevel depth={2} current={sidebarDepth}>
+            {nestedPanel && (
+              <SectionNav
+                section={nestedPanel}
+                activeItemKey={
+                  nestedPanel === activeSection
+                    ? activeSectionItem?.key
+                    : undefined
+                }
+                isAdmin={isAdmin}
+                onBack={exitSectionFrom(nestedPanel)}
+                backLabel={backLabelFor(nestedPanel)}
+                onNavigate={closeNavOnMobile}
+              />
+            )}
+          </SidebarLevel>
+        </div>
+        <div className="text-foreground flex h-auto shrink-0 flex-col justify-end">
+          {/* Inside a section its own nav is the way around, so this entry
+              would only duplicate what is already on screen. Entering settings
+              no longer clears the conversation either, so the section's back
+              button can return to it. */}
+          <div
+            className={cn(
+              'flex flex-col gap-2 border-b py-2',
+              inSection && 'hidden',
+            )}
+          >
+            <Button
+              variant="sidebar-item"
+              asChild
+              className="mx-4 my-auto flex"
+            >
+              <Link
+                to="/settings"
+                onClick={(event) => {
+                  if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+                  event.preventDefault();
+                  closeNavOnMobile();
+                  goToLevel('/settings');
+                }}
+              >
+                <Settings
+                  className="text-muted-foreground size-5 shrink-0"
+                  aria-hidden
+                />
+                <p className="text-foreground text-sm">{t('settings.label')}</p>
+                <ConnectionHealthDot />
+              </Link>
+            </Button>
           </div>
-          <div className="text-foreground flex flex-col justify-end dark:text-white">
+          <div className="text-foreground flex flex-col justify-end">
             <div className="flex items-center justify-between py-1">
               <Help />
 
@@ -645,37 +885,37 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 <NavLink
                   target="_blank"
                   to={'https://discord.gg/vN7YFfdMpj'}
-                  className={'hover:bg-sidebar-accent rounded-full'}
+                  className={`${focusRing} hover:bg-sidebar-accent rounded-full outline-none`}
                 >
                   <img
                     src={Discord}
                     width={24}
                     height={24}
-                    alt="Join Discord community"
+                    alt={t('navigation.social.discord')}
                     className="m-2 w-6 self-center filter dark:invert"
                   />
                 </NavLink>
                 <NavLink
                   target="_blank"
                   to={'https://x.com/docsgptai'}
-                  className={'hover:bg-sidebar-accent rounded-full'}
+                  className={`${focusRing} hover:bg-sidebar-accent rounded-full outline-none`}
                 >
                   <img
                     src={Twitter}
                     width={20}
                     height={20}
-                    alt="Follow us on X"
+                    alt={t('navigation.social.x')}
                     className="m-2 self-center filter dark:invert"
                   />
                 </NavLink>
                 <NavLink
                   target="_blank"
                   to={'https://github.com/arc53/docsgpt'}
-                  className={'hover:bg-sidebar-accent rounded-full'}
+                  className={`${focusRing} hover:bg-sidebar-accent rounded-full outline-none`}
                 >
                   <img
                     src={Github}
-                    alt="View on GitHub"
+                    alt={t('navigation.social.github')}
                     width={28}
                     height={28}
                     className="m-2 self-center filter dark:invert"
@@ -686,28 +926,32 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           </div>
         </div>
       </div>
-      <div className="dark:border-b-sidebar-border bg-sidebar sticky z-10 h-16 w-full border-b-2 lg:hidden">
-        <div className="relative flex h-full items-center">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="text-muted-foreground hover:text-foreground ml-4 size-9 lg:hidden"
-            onClick={() => setNavOpen(true)}
-            aria-label="Toggle mobile menu"
-          >
-            <Menu className="size-5" strokeWidth={1.75} />
-          </Button>
-
-        </div>
-      </div>
+      <MobileTopBar
+        onOpenSidebar={() => setNavOpen(true)}
+        onNewChat={routeSection ? undefined : newChat}
+        title={mobileTitle}
+        agentImage={
+          !routeSection && selectedAgent
+            ? (selectedAgent.image ?? '')
+            : undefined
+        }
+        conversationId={routeSection ? null : currentConversation?.id}
+        onRename={updateConversationName}
+        onDelete={handleDeleteConversation}
+        editAgentPath={
+          !routeSection && canEditSelectedAgent && selectedAgent
+            ? agentEditPathFor(selectedAgent)
+            : undefined
+        }
+      />
       <ConfirmationModal
         message={t('modals.deleteConv.confirm')}
+        description={t('modals.deleteConv.consequence')}
         modalState={modalStateDeleteConv}
         setModalState={(state) => dispatch(setModalStateDeleteConv(state))}
         submitLabel={t('modals.deleteConv.delete')}
         handleSubmit={handleDeleteAllConversations}
-        variant="danger"
+        variant="destructive"
       />
       {uploadModalState === 'ACTIVE' && (
         <Upload
@@ -716,6 +960,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           isOnboarding={false}
           renderTab={null}
           close={() => setUploadModalState('INACTIVE')}
+          onBrowseConnectors={() =>
+            navigate('/settings/connectors?capability=sync')
+          }
         ></Upload>
       )}
       <JWTModal
@@ -729,7 +976,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           token={token}
           onSelectConversation={(id) => {
             handleConversationClick(id);
-            if (isMobile || isTablet) setNavOpen(false);
+            if (isMobile) setNavOpen(false);
           }}
         />
       )}

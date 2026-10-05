@@ -340,3 +340,71 @@ def test_action_enum_serialises_as_value():
     dumped = config.model_dump(mode="json")
     assert dumped["controls"][0]["action"] == Action.REDACT.value
     assert dumped["controls"][0]["stage"] == Stage.INPUT.value
+
+
+class QuickRemoteCheck(GuardrailCheck):
+    name = "_test_quick_remote"
+    label = "Quick remote"
+    supported_stages = {Stage.INPUT, Stage.OUTPUT}
+    remote = True
+
+    def scan(self, text, stage, context):
+        from docsgpt import tracing
+
+        with tracing.span(tracing.KIND_LLM, "chat judge"):
+            pass
+        return CheckOutcome.clean()
+
+
+class TestTraceSpans:
+    """Guardrail evaluations appear in the execution trace only when they matter."""
+
+    @pytest.fixture(autouse=True)
+    def _trace(self, monkeypatch):
+        from docsgpt import tracing
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "TRACES_ENABLED", True)
+        GuardrailCreator.register(QuickRemoteCheck.name, QuickRemoteCheck)
+        self.trace = tracing.start_trace(source="stream", capture_otel_context=False)
+        with tracing.activate(self.trace):
+            yield
+        GuardrailCreator.checks.pop(QuickRemoteCheck.name, None)
+
+    def test_clean_local_scan_is_not_traced(self):
+        engine = GuardrailEngine(
+            _config(controls=[{"check": "_test_never", "stage": "output", "action": "block"}])
+        )
+        engine.evaluate("text", Stage.OUTPUT)
+        assert self.trace.spans == []
+        assert self.trace.content_blocked is False
+
+    def test_firing_local_scan_is_traced_and_blocks_previews(self):
+        engine = GuardrailEngine(_config())
+        engine.evaluate("some text", Stage.INPUT)
+        (span,) = self.trace.spans
+        assert span.kind == "guardrail"
+        assert span.attributes["docsgpt.guardrail.blocked"] is True
+        assert span.attributes["docsgpt.guardrail.triggered"] == ["_test_always"]
+        assert self.trace.content_blocked is True
+
+    def test_a_repeating_firing_is_recorded_once(self):
+        """The output guard re-scans every segment; one firing must not fill the span cap."""
+        engine = GuardrailEngine(
+            _config(controls=[{"check": "_test_always", "stage": "output", "action": "flag"}])
+        )
+        for _ in range(50):
+            engine.evaluate("segment", Stage.OUTPUT)
+        assert len(self.trace.spans) == 1
+        assert self.trace.content_blocked is True
+
+    def test_remote_scan_is_traced_with_judge_nested(self):
+        engine = GuardrailEngine(
+            _config(controls=[{"check": "_test_quick_remote", "stage": "input", "action": "block"}])
+        )
+        decision = engine.evaluate("text", Stage.INPUT)
+        assert decision.clean
+        guard, judge = self.trace.spans
+        assert guard.kind == "guardrail"
+        assert judge.parent_id == guard.id
+        assert self.trace.content_blocked is False

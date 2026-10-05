@@ -1,4 +1,5 @@
 import { envVar } from '@/env';
+import { File, Folder, X } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import drivePickerImport from 'react-google-drive-picker';
@@ -9,122 +10,123 @@ const useDrivePicker = ((
   drivePickerImport as unknown as { default?: typeof drivePickerImport }
 ).default ?? drivePickerImport) as typeof drivePickerImport;
 
-import userService from '../api/services/userService';
-import ConnectorAuth from './ConnectorAuth';
+import { useDispatch, useSelector } from 'react-redux';
+
+import connectorsService from '../api/services/connectorsService';
 import {
-  getSessionToken,
-  setSessionToken,
-  removeSessionToken,
-  validateProviderSession,
-} from '../utils/providerUtils';
-import SkeletonLoader from './SkeletonLoader';
+  loadConnectors,
+  selectConnections,
+} from '../connectors/connectorsSlice';
+import type { AppDispatch } from '../store';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import { formatCount } from '../utils/dateTimeUtils';
+import { formatBytes } from '../utils/stringUtils';
+import ConnectorAuth from './ConnectorAuth';
+import { Alert, AlertDescription } from './ui/alert';
+import { Avatar } from './ui/avatar';
 import { Button } from './ui/button';
+import { Card } from './ui/card';
+import { IconButton } from './ui/icon-button';
+import { ListRow, ListRows } from './ui/list-row';
+import { SectionHeader } from './ui/section-header';
 
 interface PickerFile {
   id: string;
   name: string;
   mimeType: string;
-  iconUrl: string;
-  description?: string;
   sizeBytes?: string;
 }
 
+/** Why the last attempt to open the picker failed. */
+type PickerError = 'expired' | 'validateFailed' | 'pickerFailed' | null;
+
 interface GoogleDrivePickerProps {
   token: string | null;
+  /**
+   * The Drive connection to pick from, chosen by the caller (the connect
+   * wizard). Left out, the first connected one, with the picker's own
+   * sign-in.
+   */
+  connectionId?: string | null;
+  /** Reports the account the picker uses, so the upload can name it. */
+  onConnectionChange?: (connectionId: string | null) => void;
   onSelectionChange: (fileIds: string[], folderIds?: string[]) => void;
+  /** Called with the first item's name when the selection goes from empty to one. */
+  onFirstPickName?: (name: string) => void;
+  /** Signs the connection in again when its sign-in expired. */
+  onReconnect?: () => void;
 }
 
+/**
+ * Pick Drive files with Google's own picker; what was picked is listed
+ * under the Select files button as rows that can be removed again.
+ */
 const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
   token,
+  connectionId: suppliedConnectionId,
+  onConnectionChange,
   onSelectionChange,
+  onFirstPickName,
+  onReconnect,
 }) => {
   const { t } = useTranslation();
+  const dispatch = useDispatch<AppDispatch>();
+  const connections = useSelector(selectConnections);
+  const supplied = suppliedConnectionId !== undefined;
+  const [signedInId, setSignedInId] = useState<string | null>(null);
+  const accounts = connections.filter(
+    (c) => c.connector_key === 'google_drive' && c.status === 'connected',
+  );
+  const activeConnectionId = supplied
+    ? suppliedConnectionId
+    : (signedInId ?? accounts[0]?.id ?? null);
+  const activeAccount = accounts.find((a) => a.id === activeConnectionId);
+  const isConnected = !!activeConnectionId;
   const [selectedFiles, setSelectedFiles] = useState<PickerFile[]>([]);
   const [selectedFolders, setSelectedFolders] = useState<PickerFile[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [userEmail, setUserEmail] = useState<string>('');
-  const [isConnected, setIsConnected] = useState(false);
-  const [authError, setAuthError] = useState<string>('');
-  const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [isValidating, setIsValidating] = useState(false);
+  const [error, setError] = useState<PickerError>(null);
+  const [authError, setAuthError] = useState('');
 
   const [openPicker] = useDrivePicker();
 
   useEffect(() => {
-    const sessionToken = getSessionToken('google_drive');
-    if (sessionToken) {
-      setIsValidating(true);
-      setIsConnected(true); // Optimistically set as connected for skeleton
-      validateSession(sessionToken);
-    }
-  }, [token]);
+    onConnectionChange?.(activeConnectionId);
+  }, [activeConnectionId]);
 
-  const validateSession = async (sessionToken: string) => {
+  // The Picker runs in the browser and needs an access token. It is fetched
+  // per use and kept in memory only; the refresh token never leaves the server.
+  const fetchAccessToken = async (): Promise<string | null> => {
+    if (!activeConnectionId) return null;
     try {
-      const validateResponse = await validateProviderSession(
+      const data = await connectorsService.pickerToken(
+        activeConnectionId,
         token,
-        'google_drive',
       );
-
-      if (!validateResponse.ok) {
-        setIsConnected(false);
-        setAuthError(
-          t('modals.uploadDoc.connectors.googleDrive.sessionExpired'),
-        );
-        setIsValidating(false);
-        return false;
+      if (!data?.success || !data.access_token) {
+        setError('expired');
+        dispatch(loadConnectors({ token }));
+        return null;
       }
-
-      const validateData = await validateResponse.json();
-      if (validateData.success) {
-        setUserEmail(
-          validateData.user_email ||
-            t('modals.uploadDoc.connectors.auth.connectedUser'),
-        );
-        setIsConnected(true);
-        setAuthError('');
-        setAccessToken(validateData.access_token || null);
-        setIsValidating(false);
-        return true;
-      } else {
-        setIsConnected(false);
-        setAuthError(
-          validateData.error ||
-            t('modals.uploadDoc.connectors.googleDrive.sessionExpiredGeneric'),
-        );
-        setIsValidating(false);
-        return false;
-      }
-    } catch (error) {
-      console.error('Error validating session:', error);
-      setAuthError(t('modals.uploadDoc.connectors.googleDrive.validateFailed'));
-      setIsConnected(false);
-      setIsValidating(false);
-      return false;
+      setError(null);
+      return data.access_token;
+    } catch (err) {
+      console.error('Error fetching the picker token:', err);
+      setError('validateFailed');
+      return null;
     }
   };
 
   const handleOpenPicker = async () => {
     setIsLoading(true);
-
-    const sessionToken = getSessionToken('google_drive');
-
-    if (!sessionToken) {
-      setAuthError(t('modals.uploadDoc.connectors.googleDrive.noSession'));
-      setIsLoading(false);
-      return;
-    }
-
+    const accessToken = await fetchAccessToken();
     if (!accessToken) {
-      setAuthError(t('modals.uploadDoc.connectors.googleDrive.noAccessToken'));
       setIsLoading(false);
       return;
     }
-
     try {
       const clientId: string = envVar('VITE_GOOGLE_CLIENT_ID');
-      const developerKey: string =
-        envVar('VITE_GOOGLE_PICKER_API_KEY') ?? '';
+      const developerKey: string = envVar('VITE_GOOGLE_PICKER_API_KEY') ?? '';
 
       // Derive appId from clientId (extract numeric part before first dash)
       const appId = clientId ? clientId.split('-')[0] : null;
@@ -162,8 +164,6 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                 id: doc.id,
                 name: doc.name,
                 mimeType: doc.mimeType,
-                iconUrl: doc.iconUrl || '',
-                description: doc.description,
                 sizeBytes: doc.sizeBytes,
               };
 
@@ -191,6 +191,13 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
               );
               return [...prevFolders, ...uniqueNewFolders];
             });
+            if (
+              selectedFiles.length === 0 &&
+              selectedFolders.length === 0 &&
+              docs.length > 0
+            ) {
+              onFirstPickName?.(docs[0].name);
+            }
             onSelectionChange(
               [...selectedFiles, ...newFiles].map((file) => file.id),
               [...selectedFolders, ...newFolders].map((folder) => folder.id),
@@ -200,194 +207,149 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
       });
     } catch (error) {
       console.error('Error opening picker:', error);
-      setAuthError(t('modals.uploadDoc.connectors.googleDrive.pickerFailed'));
+      setError('pickerFailed');
       setIsLoading(false);
     }
   };
 
-  const handleDisconnect = async () => {
-    const sessionToken = getSessionToken('google_drive');
-    if (sessionToken) {
-      try {
-        await userService.disconnectConnector(
-          'google_drive',
-          sessionToken,
-          token,
-        );
-      } catch (err) {
-        console.error('Error disconnecting from Google Drive:', err);
-      }
-    }
-
-    removeSessionToken('google_drive');
-    setIsConnected(false);
-    setSelectedFiles([]);
-    setSelectedFolders([]);
-    setAccessToken(null);
-    setUserEmail('');
-    setAuthError('');
-    onSelectionChange([], []);
+  const remove = (item: PickerFile, folder: boolean) => {
+    const files = folder
+      ? selectedFiles
+      : selectedFiles.filter((f) => f.id !== item.id);
+    const folders = folder
+      ? selectedFolders.filter((f) => f.id !== item.id)
+      : selectedFolders;
+    setSelectedFiles(files);
+    setSelectedFolders(folders);
+    onSelectionChange(
+      files.map((f) => f.id),
+      folders.map((f) => f.id),
+    );
   };
 
+  const row = (item: PickerFile, folder: boolean) => (
+    <ListRow
+      key={item.id}
+      leading={
+        <Avatar size="sm" shape="square" variant="icon">
+          {folder ? (
+            <Folder className="size-4" aria-hidden />
+          ) : (
+            <File className="size-4" aria-hidden />
+          )}
+        </Avatar>
+      }
+      title={item.name}
+      description={
+        folder
+          ? t('filePicker.folder')
+          : item.sizeBytes
+            ? formatBytes(Number(item.sizeBytes))
+            : undefined
+      }
+      trailing={
+        <IconButton
+          variant="ghost-muted"
+          size="icon-sm"
+          icon={X}
+          label={t('modals.uploadDoc.connectors.googleDrive.removeItem', {
+            name: item.name,
+            interpolation: { escapeValue: false },
+          })}
+          onClick={() => remove(item, folder)}
+        />
+      }
+    />
+  );
+
+  const pickedCount = selectedFiles.length + selectedFolders.length;
+
   return (
-    <div>
-      {isValidating ? (
+    <div className="flex flex-col gap-3">
+      {!supplied && (
+        <ConnectorAuth
+          provider="google_drive"
+          label={t('modals.uploadDoc.connectors.googleDrive.connect')}
+          icon={<ConnectorIcon icon="drive" className="size-5" />}
+          onSuccess={(data) => {
+            setAuthError('');
+            dispatch(loadConnectors({ token }));
+            if (data.connection_id) setSignedInId(data.connection_id);
+          }}
+          onError={setAuthError}
+          isConnected={isConnected}
+          userEmail={
+            activeAccount?.account_label ||
+            t('modals.uploadDoc.connectors.auth.connectedUser')
+          }
+          errorMessage={authError}
+        />
+      )}
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>
+            {error === 'expired'
+              ? t('settings.connectors.detail.expired')
+              : t(`modals.uploadDoc.connectors.googleDrive.${error}`)}
+            {error === 'expired' && onReconnect ? (
+              <>
+                {' '}
+                <Button
+                  type="button"
+                  variant="link"
+                  size="text"
+                  tone="current"
+                  onClick={onReconnect}
+                >
+                  {t('settings.connectors.status.reconnect')}
+                </Button>
+              </>
+            ) : null}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {isConnected && (
         <>
-          <SkeletonLoader component="connectedState" />
-          <SkeletonLoader component="filesSection" />
-        </>
-      ) : (
-        <>
-          <ConnectorAuth
-            provider="google_drive"
-            label={t('modals.uploadDoc.connectors.googleDrive.connect')}
-            onSuccess={(data) => {
-              setUserEmail(
-                data.user_email ||
-                  t('modals.uploadDoc.connectors.auth.connectedUser'),
-              );
-              setIsConnected(true);
-              setAuthError('');
-
-              if (data.session_token) {
-                setSessionToken('google_drive', data.session_token);
-                validateSession(data.session_token);
-              }
-            }}
-            onError={(error) => {
-              setAuthError(error);
-              setIsConnected(false);
-            }}
-            isConnected={isConnected}
-            userEmail={userEmail}
-            onDisconnect={handleDisconnect}
-            errorMessage={authError}
-          />
-
-          {isConnected && (
-            <div className="border-border dark:border-border rounded-lg border">
-              <div className="p-4">
-                <div className="mb-4 flex items-center justify-between">
-                  <h3 className="text-sm font-medium">
-                    {t('modals.uploadDoc.connectors.googleDrive.selectedFiles')}
-                  </h3>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => handleOpenPicker()}
-                    className="bg-[#A076F6] hover:bg-[#8A5FD4]"
-                    disabled={isLoading}
-                  >
-                    {isLoading
-                      ? t('modals.uploadDoc.connectors.googleDrive.loading')
-                      : t(
-                          'modals.uploadDoc.connectors.googleDrive.selectFiles',
-                        )}
-                  </Button>
-                </div>
-
-                {selectedFiles.length === 0 && selectedFolders.length === 0 ? (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    {t(
-                      'modals.uploadDoc.connectors.googleDrive.noFilesSelected',
-                    )}
-                  </p>
-                ) : (
-                  <div className="max-h-60 overflow-y-auto">
-                    {selectedFolders.length > 0 && (
-                      <div className="mb-2">
-                        <h4 className="mb-1 text-xs font-medium text-gray-500">
-                          {t('modals.uploadDoc.connectors.googleDrive.folders')}
-                        </h4>
-                        {selectedFolders.map((folder) => (
-                          <div
-                            key={folder.id}
-                            className="flex items-center border-b border-gray-200 p-2 dark:border-gray-700"
-                          >
-                            <img
-                              src={folder.iconUrl}
-                              alt={t(
-                                'modals.uploadDoc.connectors.googleDrive.folderAlt',
-                              )}
-                              className="mr-2 h-5 w-5"
-                            />
-                            <span className="flex-1 truncate text-sm">
-                              {folder.name}
-                            </span>
-                            <Button
-                              type="button"
-                              variant="link"
-                              size="sm"
-                              onClick={() => {
-                                const newSelectedFolders =
-                                  selectedFolders.filter(
-                                    (f) => f.id !== folder.id,
-                                  );
-                                setSelectedFolders(newSelectedFolders);
-                                onSelectionChange(
-                                  selectedFiles.map((f) => f.id),
-                                  newSelectedFolders.map((f) => f.id),
-                                );
-                              }}
-                              className="ml-2 h-auto p-0 text-sm text-red-500 hover:text-red-700 hover:no-underline"
-                            >
-                              {t(
-                                'modals.uploadDoc.connectors.googleDrive.remove',
-                              )}
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {selectedFiles.length > 0 && (
-                      <div>
-                        <h4 className="mb-1 text-xs font-medium text-gray-500">
-                          {t('modals.uploadDoc.connectors.googleDrive.files')}
-                        </h4>
-                        {selectedFiles.map((file) => (
-                          <div
-                            key={file.id}
-                            className="flex items-center border-b border-gray-200 p-2 dark:border-gray-700"
-                          >
-                            <img
-                              src={file.iconUrl}
-                              alt={t(
-                                'modals.uploadDoc.connectors.googleDrive.fileAlt',
-                              )}
-                              className="mr-2 h-5 w-5"
-                            />
-                            <span className="flex-1 truncate text-sm">
-                              {file.name}
-                            </span>
-                            <Button
-                              type="button"
-                              variant="link"
-                              size="sm"
-                              onClick={() => {
-                                const newSelectedFiles = selectedFiles.filter(
-                                  (f) => f.id !== file.id,
-                                );
-                                setSelectedFiles(newSelectedFiles);
-                                onSelectionChange(
-                                  newSelectedFiles.map((f) => f.id),
-                                  selectedFolders.map((f) => f.id),
-                                );
-                              }}
-                              className="ml-2 h-auto p-0 text-sm text-red-500 hover:text-red-700 hover:no-underline"
-                            >
-                              {t(
-                                'modals.uploadDoc.connectors.googleDrive.remove',
-                              )}
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
+          <div className="flex items-center justify-between gap-3">
+            <SectionHeader
+              as="h3"
+              size="xs"
+              title={t('modals.uploadDoc.connectors.googleDrive.selectedFiles')}
+            />
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => handleOpenPicker()}
+              loading={isLoading}
+            >
+              {t('modals.uploadDoc.connectors.googleDrive.selectFiles')}
+            </Button>
+          </div>
+          {pickedCount === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              {t('modals.uploadDoc.connectors.googleDrive.noFilesSelected')}
+            </p>
+          ) : (
+            <>
+              <Card
+                variant="outline"
+                padding="none"
+                className="overflow-hidden"
+              >
+                <ListRows>
+                  {selectedFolders.map((folder) => row(folder, true))}
+                  {selectedFiles.map((file) => row(file, false))}
+                </ListRows>
+              </Card>
+              <p className="text-muted-foreground text-xs">
+                {t('filePicker.itemsSelected', {
+                  count: pickedCount,
+                  formatted: formatCount(pickedCount),
+                })}
+              </p>
+            </>
           )}
         </>
       )}

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime
 from enum import Enum
 from typing import Optional
 
@@ -264,20 +265,48 @@ class ConversationsRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
-    def list_for_user(self, user_id: str, limit: int = 30) -> list[dict]:
+    def list_for_user(
+        self,
+        user_id: str,
+        limit: int = 30,
+        *,
+        before: Optional[datetime] = None,
+        before_id: Optional[str] = None,
+    ) -> list[dict]:
         """List a user's sidebar conversations, most recent first.
 
         Only ``visibility = 'listed'`` rows surface; agent/API/OpenAI-compat
-        traffic persists as ``'hidden'`` and is excluded.
+        traffic persists as ``'hidden'`` and is excluded. Rows are ordered
+        ``date DESC, id DESC`` so the order is total and a keyset cursor
+        never skips or repeats rows that share a timestamp.
+
+        Args:
+            user_id: Owner of the conversations.
+            limit: Maximum number of rows to return.
+            before: Keyset cursor ``date``; only applied together with
+                ``before_id``.
+            before_id: Keyset cursor ``id`` (a UUID string). With ``before``,
+                only rows where ``(date, id) < (before, before_id)`` are
+                returned.
+
+        Returns:
+            The matching conversation rows as dicts.
         """
+        params: dict = {"user_id": user_id, "limit": limit}
+        cursor_sql = ""
+        if before is not None and before_id is not None and looks_like_uuid(before_id):
+            cursor_sql = "AND (date, id) < (:before, CAST(:before_id AS uuid)) "
+            params["before"] = before
+            params["before_id"] = before_id
         result = self._conn.execute(
             text(
                 "SELECT * FROM conversations "
                 "WHERE user_id = :user_id "
                 "AND visibility = 'listed' "
-                "ORDER BY date DESC LIMIT :limit"
+                f"{cursor_sql}"
+                "ORDER BY date DESC, id DESC LIMIT :limit"
             ),
-            {"user_id": user_id, "limit": limit},
+            params,
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
@@ -576,6 +605,18 @@ class ConversationsRepository:
 
         artifacts = ArtifactsRepository(self._conn)
         paths = artifacts.storage_paths_for_conversation(conversation_id)
+        # Traces linked to a message go with it (ON DELETE CASCADE). This
+        # takes the rest -- scheduled runs, stateless /v1 rounds, turns whose
+        # message was never reserved -- whose tool results and chunk previews
+        # the user expects gone with the conversation.
+        self._conn.execute(
+            text(
+                "DELETE FROM request_traces WHERE conversation_id = CAST(:id AS uuid) "
+                "AND EXISTS (SELECT 1 FROM conversations "
+                "WHERE id = CAST(:id AS uuid) AND user_id = :user_id)"
+            ),
+            {"id": conversation_id, "user_id": user_id},
+        )
         result = self._conn.execute(
             text(
                 "DELETE FROM conversations "
@@ -597,6 +638,14 @@ class ConversationsRepository:
         artifacts = ArtifactsRepository(self._conn)
         paths = artifacts.storage_paths_for_user_conversations(user_id)
         artifacts.delete_for_user_conversations(user_id)
+        # See ``delete``: traces not linked to a message are removed explicitly.
+        self._conn.execute(
+            text(
+                "DELETE FROM request_traces WHERE conversation_id IN "
+                "(SELECT id FROM conversations WHERE user_id = :user_id)"
+            ),
+            {"user_id": user_id},
+        )
         result = self._conn.execute(
             text("DELETE FROM conversations WHERE user_id = :user_id"),
             {"user_id": user_id},

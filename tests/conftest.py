@@ -44,6 +44,10 @@ import os
 os.environ.setdefault("AUTO_MIGRATE", "false")
 os.environ.setdefault("AUTO_CREATE_DB", "false")
 os.environ.setdefault("AUTO_VECTOR_SCHEMA", "false")
+# Execution traces write to ``request_traces`` through their own DB session
+# when a request finishes. Off by default so unrelated tests never touch a
+# database through that path; tracing tests switch it on explicitly.
+os.environ.setdefault("TRACES_ENABLED", "false")
 
 import subprocess
 import sys
@@ -181,6 +185,21 @@ def _no_worker_delegation(monkeypatch):
     monkeypatch.setattr(settings, "EMBEDDINGS_DELEGATE_TO_WORKER", False, raising=False)
     monkeypatch.setattr("docsgpt.cache._pubsub_redis_instance", None)
     monkeypatch.setattr("docsgpt.cache._pubsub_redis_creation_failed", True)
+
+
+@pytest.fixture(autouse=True)
+def _graphrag_off_by_default(monkeypatch):
+    """Run with GraphRAG at its shipped default (off), as CI does.
+
+    Every agent that gets a search tool checks its sources for a graph, and
+    that check reads the configured vector database. A dev ``.env`` enabling
+    GraphRAG sent unrelated agent tests to the developer's real database and
+    left a pool to it in ``pgconn._POOLS``, failing a live test that asserts it
+    owns the only pool. Tests that exercise GraphRAG turn it on themselves.
+    """
+    from docsgpt.core.settings import settings
+
+    monkeypatch.setattr(settings, "GRAPHRAG_ENABLED", False, raising=False)
 
 
 @pytest.fixture

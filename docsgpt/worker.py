@@ -1,14 +1,17 @@
 import datetime
+import hashlib
 import io
 import json
 import logging
 import mimetypes
 import os
+import re
 import shutil
 import string
 import tempfile
 import threading
-from typing import Any, Dict
+import traceback
+from typing import Any, Dict, List, Optional, Tuple
 
 import uuid
 from collections import Counter
@@ -16,6 +19,8 @@ from urllib.parse import urljoin, urlsplit
 
 import requests
 
+from docsgpt import tracing
+from docsgpt.attachment_full_text import copy_full_text, store_full_text
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
 from docsgpt.parser.chunking_creator import ChunkerCreator
@@ -24,13 +29,14 @@ from docsgpt.parser.embedding_pipeline import (
     assert_index_complete,
     embed_and_store_documents,
 )
-from docsgpt.parser.file.base_parser import NoTextLayerError
+from docsgpt.parser.file.base_parser import DocumentParseError, NoTextLayerError
 from docsgpt.parser.file.bulk import SimpleDirectoryReader, get_default_file_extractor
-from docsgpt.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
+from docsgpt.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS, is_attachment_archive
 from docsgpt.parser.file.image_parser import (
     VISION_CONVERTIBLE_MIME_TYPES,
     convert_image_to_png,
 )
+from docsgpt.parser.remote.github_loader import GitHubTokenRejected
 from docsgpt.parser.remote.remote_creator import (
     RemoteCreator,
     normalize_remote_data,
@@ -519,6 +525,15 @@ def download_file(url, params, dest_path):
         raise
 
 
+def _worker_api_url() -> str:
+    """Where the worker reaches the API for its own calls: WORKER_API_URL, else API_URL.
+
+    Returns:
+        The base URL, without a path.
+    """
+    return settings.WORKER_API_URL or settings.API_URL
+
+
 def upload_index(full_path, file_data):
     files = None
     try:
@@ -543,7 +558,7 @@ def upload_index(full_path, file_data):
                 "file_pkl": open(pkl_path, "rb"),
             }
             response = requests.post(
-                urljoin(settings.API_URL, "/api/upload_index"),
+                urljoin(_worker_api_url(), "/api/upload_index"),
                 files=files,
                 data=file_data,
                 headers=headers,
@@ -551,7 +566,7 @@ def upload_index(full_path, file_data):
             )
         else:
             response = requests.post(
-                urljoin(settings.API_URL, "/api/upload_index"),
+                urljoin(_worker_api_url(), "/api/upload_index"),
                 data=file_data,
                 headers=headers,
                 timeout=100,
@@ -582,6 +597,7 @@ def ingest_worker(
     config=None,
     idempotency_key=None,
     source_id=None,
+    copy_files=None,
 ):
     """
     Ingest and process documents.
@@ -606,6 +622,10 @@ def ingest_worker(
             envelopes carry the same id the frontend already has — required
             for non-idempotent uploads where the route can't predict
             ``_derive_source_id(idempotency_key)``.
+        copy_files (list[dict]|None): Stored files to copy into the source
+            first, ``{"from": storage path, "to": storage path}`` each (a
+            Knowledge source made from chat attachments). The copy runs here
+            rather than in the request; a retry copies again, harmlessly.
 
     Returns:
         dict: Information about the completed ingestion task, including input parameters and a "limited" flag.
@@ -654,6 +674,13 @@ def ingest_worker(
     # ``failed`` event rather than leaving the toast wedged on
     # 'training' until the polling fallback rescues it 30s later.
     try:
+        for copy in copy_files or []:
+            original = storage.get_file(copy["from"])
+            try:
+                storage.save_file(original, copy["to"])
+            finally:
+                original.close()
+
         with tempfile.TemporaryDirectory() as temp_dir:
             os.makedirs(temp_dir, exist_ok=True)
 
@@ -1236,6 +1263,7 @@ def remote_worker(
     config=None,
     idempotency_key=None,
     source_id=None,
+    connection_id=None,
 ):
     safe_user = safe_filename(user)
     full_path = os.path.join(directory, safe_user, uuid.uuid4().hex)
@@ -1282,7 +1310,26 @@ def remote_worker(
         self.update_state(state="PROGRESS", meta={"current": 1})
         logging.info("Initializing remote loader with type: %s", loader)
         remote_loader = RemoteCreator.create_loader(loader)
-        raw_docs = remote_loader.load_data(source_data)
+        loader_input = source_data
+        if connection_id:
+            loader_input = _with_connection_credentials(source_data, connection_id)
+            if loader_input is None:
+                from docsgpt.connectors.service import ConnectionUnavailable
+
+                raise ConnectionUnavailable("Reconnect to continue", connection_id=str(connection_id))
+        try:
+            raw_docs = remote_loader.load_data(loader_input)
+        except GitHubTokenRejected as exc:
+            # A revoked token pauses the connection's sources until the
+            # owner reconnects, instead of failing on every schedule.
+            from docsgpt.connectors import service as connection_service
+
+            if not connection_id:
+                raise
+            connection_service.mark_reconnect_needed(str(connection_id), str(exc))
+            raise connection_service.ConnectionUnavailable(
+                str(exc), connection_id=str(connection_id),
+            ) from exc
 
         cfg = SourceConfig.parse(config)
         chunker = ChunkerCreator.create_chunker(
@@ -1413,6 +1460,8 @@ def remote_worker(
                     f"Failed to update last_sync for source {source_id_for_events}: {upd_err}"
                 )
         upload_index(full_path, file_data)
+        if connection_id:
+            _link_source_to_connection(source_id_for_events, str(connection_id))
         publish_user_event(
             user,
             "source.ingest.completed",
@@ -1466,6 +1515,7 @@ def sync(
     retriever,
     doc_id=None,
     directory="temp",
+    connection_id=None,
 ):
     try:
         remote_worker(
@@ -1479,11 +1529,16 @@ def sync(
             sync_frequency,
             "sync",
             doc_id,
+            connection_id=connection_id,
         )
     except Exception as e:
         logging.error(f"Error during sync: {e}", exc_info=True)
         return {"status": "error", "error": str(e)}
     return {"status": "success"}
+
+
+# Remote loaders that can only read with a connection (no public fallback).
+_CONNECTION_ONLY_LOADERS = frozenset({"linear"})
 
 
 def sync_worker(self, frequency):
@@ -1493,7 +1548,7 @@ def sync_worker(self, frequency):
     with db_readonly() as conn:
         result = conn.execute(
             sql_text(
-                "SELECT id, name, user_id, type, remote_data, retriever "
+                "SELECT id, name, user_id, type, remote_data, retriever, connection_id, metadata "
                 "FROM sources WHERE sync_frequency = :freq"
             ),
             {"freq": frequency},
@@ -1510,9 +1565,38 @@ def sync_worker(self, frequency):
 
         sync_counts["total_sync_count"] += 1
 
-        # Connector sources have no RemoteCreator loader and need an OAuth
-        # token to sync, which a scheduled task lacks — skip them.
+        # Connector sources sync from their connection, whose token the
+        # worker can refresh. Legacy ones with no connection still need the
+        # browser, so they are skipped as before.
         if source_type and source_type.startswith("connector"):
+            if doc.get("connection_id"):
+                from docsgpt.api.user.tasks import sync_connector_source as sync_task
+
+                sync_task.delay(doc_id)
+                sync_counts["sync_dispatched"] += 1
+            else:
+                sync_counts["sync_skipped"] += 1
+            continue
+
+        metadata = doc.get("metadata")
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except ValueError:
+                metadata = {}
+        if (
+            doc.get("connection_id")
+            and isinstance(metadata, dict)
+            and metadata.get("sync_state") == "paused_reconnect"
+        ):
+            # An S3 or GitHub source whose connection needs reconnecting:
+            # it resumes when the owner reconnects, rather than failing (and
+            # notifying) on every schedule until then.
+            sync_counts["sync_skipped"] += 1
+            continue
+        if source_type in _CONNECTION_ONLY_LOADERS and not doc.get("connection_id"):
+            # Linear is read only with a connection's sign-in; its
+            # connection was removed and the content kept.
             sync_counts["sync_skipped"] += 1
             continue
 
@@ -1524,7 +1608,8 @@ def sync_worker(self, frequency):
             continue
 
         resp = sync(
-            self, source_data, name, user, source_type, frequency, retriever, doc_id
+            self, source_data, name, user, source_type, frequency, retriever, doc_id,
+            connection_id=str(doc["connection_id"]) if doc.get("connection_id") else None,
         )
         sync_counts[
             "sync_success" if resp["status"] == "success" else "sync_failure"
@@ -1532,7 +1617,7 @@ def sync_worker(self, frequency):
     return {
         key: sync_counts[key]
         for key in [
-            "total_sync_count", "sync_success", "sync_failure", "sync_skipped",
+            "total_sync_count", "sync_success", "sync_failure", "sync_skipped", "sync_dispatched",
         ]
     }
 
@@ -1557,7 +1642,87 @@ class AttachmentRejectedError(Exception):
 
     Raised before parsing and marked non-retryable on the Celery task so a
     poison upload fails once instead of retrying identically.
+
+    Attributes:
+        code: The ``attachment.failed`` code it maps to (a key of
+            ``ATTACHMENT_FAILURE_MESSAGES``), or None for a generic rejection.
     """
+
+    def __init__(self, message: str, code: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+# What the browser is told when an attachment fails: a stable code (the UI
+# may localize by it) and a short English message. The exception's own text
+# (paths, parser internals, sometimes the file's bytes) stays in the logs.
+ATTACHMENT_FAILURE_MESSAGES = {
+    "unsupported_type": "This file type is not supported.",
+    "too_large": "This file is too large to process.",
+    "archive_unreadable": "This zip file is damaged, encrypted or not a valid zip.",
+    "image_unreadable": "This image is damaged or is not a valid image.",
+    "no_text": "No text could be read from this file. It may be a scanned document.",
+    "timeout": "Reading this file took too long.",
+    "storage": "The uploaded file could not be read from storage.",
+    "parse_failed": "This file could not be read. It may be damaged.",
+    "rejected": "This file cannot be processed.",
+    "processing_failed": "This file could not be processed.",
+    "repeated_failures": "Processing stopped after repeated failures.",
+}
+# Longest exception text a failure log line keeps; base64 runs are dropped.
+_FAILURE_LOG_CHARS = 500
+_FAILURE_TRACEBACK_CHARS = 4000
+_BASE64_RUN = re.compile(r"[A-Za-z0-9+/=_-]{120,}")
+
+
+def _is_storage_error(error: BaseException) -> bool:
+    """Whether ``error`` came from reading the stored upload."""
+    module = type(error).__module__ or ""
+    return isinstance(error, FileNotFoundError) or module.startswith(("botocore", "boto3", "s3transfer"))
+
+
+def attachment_failure(error: BaseException, filename: Optional[str]) -> Dict[str, str]:
+    """The ``code`` and user-safe ``error`` of a failed attachment's event.
+
+    Args:
+        error: Why it failed.
+        filename: The upload's filename (named in the unsupported-type
+            message, as the upload route names it).
+
+    Returns:
+        ``{"code": ..., "error": ...}``; the message never carries the
+        exception's text.
+    """
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    from docsgpt.upload_limits import UnsupportedUploadTypeError, unsupported_upload_message
+
+    if isinstance(error, AttachmentRejectedError):
+        code = error.code if error.code in ATTACHMENT_FAILURE_MESSAGES else "rejected"
+    elif isinstance(error, UnsupportedUploadTypeError):
+        code = "unsupported_type"
+    elif isinstance(error, NoTextLayerError):
+        code = "no_text"
+    elif isinstance(error, (SoftTimeLimitExceeded, TimeoutError)):
+        code = "timeout"
+    elif isinstance(error, DocumentParseError):
+        code = "parse_failed"
+    elif _is_storage_error(error):
+        code = "storage"
+    else:
+        code = "processing_failed"
+    if code == "unsupported_type":
+        return {"code": code, "error": unsupported_upload_message(filename)}
+    return {"code": code, "error": ATTACHMENT_FAILURE_MESSAGES[code]}
+
+
+def _failure_log_text(error: BaseException) -> str:
+    """An exception for a log line: its text on one line, bounded, without
+    base64 payloads, then the traceback's frames (which hold no message)."""
+    text = " ".join(str(error).split())
+    text = _BASE64_RUN.sub("[long token omitted]", text)
+    frames = "".join(traceback.format_tb(error.__traceback__))[-_FAILURE_TRACEBACK_CHARS:]
+    return f"{type(error).__name__}: {text[:_FAILURE_LOG_CHARS]}\n{frames}".rstrip()
 
 
 def _reject_unparseable_attachment(
@@ -1581,7 +1746,7 @@ def _reject_unparseable_attachment(
     try:
         enforce_parseable_attachment(local_path, filename, parser_extensions)
     except UnsupportedUploadTypeError as exc:
-        raise AttachmentRejectedError(str(exc)) from exc
+        raise AttachmentRejectedError(str(exc), code="unsupported_type") from exc
 
 
 def _reject_attachment_zip_bomb(local_path: str) -> None:
@@ -1601,7 +1766,77 @@ def _reject_attachment_zip_bomb(local_path: str) -> None:
 
     reason = reject_zip_bomb_path(local_path)
     if reason is not None:
-        raise AttachmentRejectedError(reason)
+        raise AttachmentRejectedError(reason, code="too_large")
+
+
+# Raster formats a model is sent as the image itself; each is decoded once
+# here so a damaged file fails in the worker, not at the provider (which
+# rejects the whole turn, every good image with it).
+_CHECKED_IMAGE_TYPES = frozenset(
+    {"image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "image/x-ms-bmp", "image/tiff"}
+)
+
+
+def _check_attachment_image(local_path: str, filename: str) -> Optional[Dict[str, int]]:
+    """Decode an image attachment fully, so a damaged one is refused here.
+
+    ``verify`` catches a broken structure and ``load`` a truncated pixel
+    stream; neither on its own catches both.
+
+    Args:
+        local_path: Filesystem path of the attachment about to be parsed.
+        filename: The upload's original filename, which carries the suffix.
+
+    Returns:
+        ``{"width", "height"}`` for an image, None for anything else.
+
+    Raises:
+        AttachmentRejectedError: With code ``image_unreadable``.
+    """
+    mime_type = mimetypes.guess_type(filename)[0] or ""
+    if mime_type not in _CHECKED_IMAGE_TYPES:
+        return None
+    from PIL import Image
+
+    try:
+        with Image.open(local_path) as image:
+            image.verify()
+        with Image.open(local_path) as image:
+            image.load()
+            width, height = image.size
+    except Exception as exc:
+        raise AttachmentRejectedError(
+            f"{filename} could not be decoded as an image: {type(exc).__name__}", code="image_unreadable"
+        ) from exc
+    if not width or not height:
+        raise AttachmentRejectedError(f"{filename} has no pixels", code="image_unreadable")
+    return {"width": int(width), "height": int(height)}
+
+
+def _one_document(documents: List[Document]) -> Document:
+    """One attachment's parsed documents as a single document.
+
+    Some parsers return one document per section (markdown headers, pages
+    of some formats); an attachment is one file, so every section is kept,
+    in order. The first document's metadata leads; later documents only add
+    keys it lacks.
+
+    Args:
+        documents: What the reader returned for the one file.
+
+    Returns:
+        The joined document (empty when there were none).
+    """
+    if not documents:
+        return Document(text="", extra_info={})
+    if len(documents) == 1:
+        return documents[0]
+    extra: Dict[str, Any] = {}
+    for document in reversed(documents):
+        extra.update(document.extra_info or {})
+    extra.update(documents[0].extra_info or {})
+    text = "\n\n".join(d.text.strip("\n") for d in documents if d.text and d.text.strip())
+    return Document(text=text, extra_info=extra)
 
 
 def _readable_without_text(filename: str) -> bool:
@@ -1618,6 +1853,46 @@ def _readable_without_text(filename: str) -> bool:
     """
     mime_type = mimetypes.guess_type(filename)[0] or ""
     return mime_type == "application/pdf" or mime_type.startswith("image/")
+
+
+def _attachment_fingerprint(local_path: str, filename: str) -> Dict[str, Any]:
+    """Fingerprint an upload's original bytes while they are local.
+
+    The chat budget planner dedupes re-sent files by ``content_hash`` and
+    sizes native PDF parts by ``page_count``; both are only cheap here, where
+    the bytes already sit on disk.
+
+    Args:
+        local_path: Path of the original upload.
+        filename: The upload's original filename.
+
+    Returns:
+        Dict with ``content_hash`` (sha256 hex) and ``size`` (bytes), plus
+        ``page_count`` for a PDF pypdfium2 can open. Empty when the file
+        cannot be read; a fingerprint never fails the upload.
+    """
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with open(local_path, "rb") as handle:
+            for block in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(block)
+                size += len(block)
+    except OSError:
+        return {}
+    fingerprint: Dict[str, Any] = {"content_hash": digest.hexdigest(), "size": size}
+    if (mimetypes.guess_type(filename)[0] or "") == "application/pdf":
+        try:
+            import pypdfium2 as pdfium
+
+            pdf = pdfium.PdfDocument(local_path)
+            try:
+                fingerprint["page_count"] = len(pdf)
+            finally:
+                pdf.close()
+        except Exception:  # noqa: BLE001 - an unreadable PDF just has no page count
+            pass
+    return fingerprint
 
 
 def _store_png_copy(storage, relative_path: str, mime_type: str) -> tuple[str, dict]:
@@ -1682,7 +1957,17 @@ def _bounded_attachment_copy(local_path: str) -> tuple[str, bool]:
 
 
 def _upsert_attachment_row(
-    user, filename, relative_path, *, mime_type, content, token_count, metadata, attachment_id
+    user,
+    filename,
+    relative_path,
+    *,
+    mime_type,
+    content,
+    token_count,
+    metadata,
+    attachment_id,
+    size=None,
+    content_hash=None,
 ):
     """Create or update the attachment row for one upload handle.
 
@@ -1705,6 +1990,8 @@ def _upsert_attachment_row(
                     "content": content,
                     "token_count": token_count,
                     "metadata": metadata,
+                    **({"size": size} if size is not None else {}),
+                    **({"content_hash": content_hash} if content_hash else {}),
                 },
             )
         else:
@@ -1713,11 +2000,129 @@ def _upsert_attachment_row(
                 filename,
                 relative_path,
                 mime_type=mime_type,
+                size=size,
                 content=content,
                 token_count=token_count,
                 metadata=metadata,
                 legacy_mongo_id=str(attachment_id),
+                content_hash=content_hash,
             )
+
+
+def _find_reusable_parse(user: str, content_hash: Optional[str], attachment_id: Any) -> Optional[Dict[str, Any]]:
+    """The user's earlier parsed upload of the same bytes, if any.
+
+    A /v1 client re-sends every file on every turn and a user re-attaches the
+    same file across conversations; parsing it again only costs time. Never
+    fails the upload: a lookup error just means the file is parsed.
+
+    Args:
+        user: The uploader; only their own rows are considered.
+        content_hash: sha256 hex of the upload's bytes.
+        attachment_id: This upload's handle, skipped so a retry never reuses
+            its own earlier attempt.
+
+    Returns:
+        The earlier row (with its content), or None.
+    """
+    if not content_hash:
+        return None
+    try:
+        with db_readonly() as conn:
+            # Never a zip's row: it holds the zip's index, not this file's text.
+            row = AttachmentsRepository(conn).find_by_hash(
+                user, content_hash, exclude_legacy_id=str(attachment_id), archive=False
+            )
+    except Exception:
+        logging.warning("Attachment content-hash lookup failed; parsing instead", exc_info=True)
+        return None
+    if row is not None and _lacks_full_text(row):
+        # Cut at upload before side copies were kept: parse again, so this
+        # upload gets the whole text and later reuses copy it.
+        logging.info(f"Attachment parse {row.get('id')} kept no full text; parsing again")
+        return None
+    return row
+
+
+def _lacks_full_text(row: Dict[str, Any]) -> bool:
+    """A parse that cut the text and kept no side copy, while side copies are on."""
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    extraction = metadata.get("extraction") if isinstance(metadata.get("extraction"), dict) else {}
+    return (
+        bool(extraction.get("truncated"))
+        and not extraction.get("full_text_path")
+        and int(settings.ATTACHMENT_FULL_TEXT_MAX_BYTES or 0) > 0
+    )
+
+
+def _reused_parse_metadata(row: Dict[str, Any]) -> Dict[str, Any]:
+    """The parse-derived metadata of an earlier row, to copy onto a reuse.
+
+    Upload-specific keys (storage details, archive membership) stay with the
+    row they describe.
+
+    Args:
+        row: The earlier attachment row.
+
+    Returns:
+        Its extraction record, page count, transcript/OCR details and parse
+        warnings, plus ``reused_from`` naming the row.
+    """
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    copied = {
+        key: value
+        for key, value in metadata.items()
+        if key in ("extraction", "page_count", "parse_warnings") or key.startswith(("transcript_", "ocr_"))
+    }
+    copied["reused_from"] = str(row.get("id"))
+    return copied
+
+
+def _write_attachment_failure_row(
+    repo: AttachmentsRepository, user: str, file_info: Dict[str, Any], metadata: Dict[str, Any]
+) -> None:
+    """Write an upload's failure metadata, never over a parsed row.
+
+    The conditional update carries the no-clobber guard in its own WHERE
+    clause: a success row committed by a concurrent duplicate execution
+    (broker redelivery, the poison guard racing a live attempt) or earlier in
+    the same attempt is never overwritten with a NULL-content failure.
+
+    Args:
+        repo: Repository on the caller's transaction.
+        user: The uploader.
+        file_info: The upload's ``attachment_id``, ``filename``, ``path``.
+        metadata: The row's metadata, failed ``extraction`` included.
+    """
+    attachment_id = str(file_info["attachment_id"])
+    filename = file_info.get("filename") or ""
+    if repo.update_metadata_if_content_null(attachment_id, user, metadata):
+        return
+    if repo.get_by_legacy_id(attachment_id, user) is not None:
+        return
+    repo.create(
+        user,
+        filename,
+        file_info.get("path") or "",
+        mime_type=mimetypes.guess_type(filename)[0] or "application/octet-stream",
+        content=None,
+        token_count=None,
+        metadata=metadata,
+        legacy_mongo_id=attachment_id,
+    )
+
+
+def _failure_metadata(file_info: Dict[str, Any], error: Any, parser: Optional[str] = None) -> Dict[str, Any]:
+    """An upload's metadata with a failed ``extraction`` record.
+
+    A rejection's code (``image_unreadable``, say) is kept with it, so the
+    planner can say why the file cannot be read.
+    """
+    extraction = {"status": "failed", "parser": parser, "truncated": False, "error": str(error)[:1024]}
+    code = getattr(error, "code", None)
+    if isinstance(error, AttachmentRejectedError) and isinstance(code, str):
+        extraction["code"] = code
+    return {**(file_info.get("metadata") or {}), "extraction": extraction}
 
 
 def record_attachment_failure(user, file_info, error, parser=None):
@@ -1728,40 +2133,12 @@ def record_attachment_failure(user, file_info, error, parser=None):
     goes into ``metadata.extraction``, never into ``content``.
     """
     attachment_id = file_info.get("attachment_id")
-    filename = file_info.get("filename") or ""
     if not attachment_id:
         return
     try:
-        metadata = {
-            **(file_info.get("metadata") or {}),
-            "extraction": {
-                "status": "failed",
-                "parser": parser,
-                "truncated": False,
-                "error": str(error)[:1024],
-            },
-        }
+        metadata = _failure_metadata(file_info, error, parser)
         with db_session() as conn:
-            repo = AttachmentsRepository(conn)
-            # The conditional update carries the no-clobber guard in its own
-            # WHERE clause: a success row committed by a concurrent duplicate
-            # execution (broker redelivery, the poison guard racing a live
-            # attempt) or earlier in this attempt is never overwritten with a
-            # NULL-content failure.
-            if repo.update_metadata_if_content_null(str(attachment_id), user, metadata):
-                return
-            if repo.get_by_legacy_id(str(attachment_id), user) is not None:
-                return
-            repo.create(
-                user,
-                filename,
-                file_info.get("path") or "",
-                mime_type=mimetypes.guess_type(filename)[0] or "application/octet-stream",
-                content=None,
-                token_count=None,
-                metadata=metadata,
-                legacy_mongo_id=str(attachment_id),
-            )
+            _write_attachment_failure_row(AttachmentsRepository(conn), user, file_info, metadata)
     except Exception:
         logging.error(
             f"Failed to record failure row for attachment {attachment_id}",
@@ -1771,9 +2148,50 @@ def record_attachment_failure(user, file_info, error, parser=None):
 
 
 def attachment_worker(self, file_info, user):
+    """Process and store one uploaded attachment without vectorization.
+
+    A zip is unpacked into one attachment per member
+    (``_archive_attachment_worker``); anything else is parsed as one file.
+
+    Args:
+        self: The Celery task, for progress updates.
+        file_info: ``filename``, ``attachment_id`` (the upload handle),
+            ``path`` (storage path) and upload ``metadata``.
+        user: The uploader.
+
+    Returns:
+        The stored attachment's summary.
     """
-    Process and store a single attachment without vectorization.
+    if is_attachment_archive(file_info.get("filename")):
+        return _archive_attachment_worker(self, file_info, user)
+    return _single_attachment_worker(self, file_info, user)
+
+
+def _no_event(*args: Any, **kwargs: Any) -> None:
+    """Stand-in for ``publish_user_event`` where nothing should reach the UI."""
+
+
+class _SilentTask:
+    """Stand-in Celery task for a member parsed inside a zip's own task."""
+
+    def update_state(self, *args: Any, **kwargs: Any) -> None:
+        """Progress of a member is reported by the zip, not per member."""
+
+
+def _single_attachment_worker(self, file_info, user, *, emit_events: bool = True):
+    """Process and store a single attachment without vectorization.
+
+    Args:
+        self: The Celery task (or a stand-in), for progress updates.
+        file_info: ``filename``, ``attachment_id``, ``path``, ``metadata``.
+        user: The uploader.
+        emit_events: Publish the attachment SSE events; off for a zip's
+            members, which the browser never uploaded and does not track.
+
+    Returns:
+        The stored attachment's summary.
     """
+    publish = publish_user_event if emit_events else _no_event
 
     filename = file_info["filename"]
     attachment_id = file_info["attachment_id"]
@@ -1781,7 +2199,7 @@ def attachment_worker(self, file_info, user):
     metadata = file_info.get("metadata", {})
     parser_name = None
 
-    publish_user_event(
+    publish(
         user,
         "attachment.queued",
         {"attachment_id": str(attachment_id), "filename": filename},
@@ -1795,7 +2213,7 @@ def attachment_worker(self, file_info, user):
         self.update_state(
             state="PROGRESS", meta={"current": 30, "status": "Processing content"}
         )
-        publish_user_event(
+        publish(
             user,
             "attachment.progress",
             {
@@ -1819,18 +2237,31 @@ def attachment_worker(self, file_info, user):
         _parser = file_extractor.get(os.path.splitext(filename)[1].lower())
         parser_name = type(_parser).__name__ if _parser is not None else "SimpleDirectoryReader"
 
+        fingerprint: Dict[str, Any] = {}
+        reused: Dict[str, Any] = {}
+
         def _parse_local_file(local_path: str, **kwargs) -> Document:
+            fingerprint.update(_attachment_fingerprint(local_path, filename))
             _reject_unparseable_attachment(local_path, filename, set(file_extractor))
             _reject_attachment_zip_bomb(local_path)
+            image_size = _check_attachment_image(local_path, filename)
+            if image_size:
+                fingerprint["image"] = image_size
+            earlier = _find_reusable_parse(user, fingerprint.get("content_hash"), attachment_id)
+            if earlier is not None:
+                reused.update(earlier)
+                return Document(text=earlier.get("content") or "", extra_info={})
             parse_path, is_temp_copy = _bounded_attachment_copy(local_path)
             try:
-                return SimpleDirectoryReader(
-                    input_files=[parse_path],
-                    exclude_hidden=True,
-                    errors="ignore",
-                    file_extractor=file_extractor,
-                    file_metadata=metadata_from_filename,
-                ).load_data()[0]
+                return _one_document(
+                    SimpleDirectoryReader(
+                        input_files=[parse_path],
+                        exclude_hidden=True,
+                        errors="ignore",
+                        file_extractor=file_extractor,
+                        file_metadata=metadata_from_filename,
+                    ).load_data()
+                )
             finally:
                 if is_temp_copy:
                     try:
@@ -1863,40 +2294,69 @@ def attachment_worker(self, file_info, user):
         parser_metadata = {
             key: value
             for key, value in (attachment_document.extra_info or {}).items()
-            if key.startswith("transcript_") or key == "parse_warnings"
+            if key.startswith(("transcript_", "ocr_")) or key == "parse_warnings"
         }
         if parser_metadata:
             metadata = {**metadata, **parser_metadata}
 
-        # Gate and cut in the same unit. The old form gated on tokens but cut
-        # at 250k *chars*, which for dense scripts (CJK ~1.4 tokens/char)
-        # stored 300k+ tokens while looking like a clean extraction.
-        encoding = get_encoding()
-        tokens = encoding.encode_ordinary(content)
-        original_tokens = len(tokens)
-        truncated = original_tokens > ATTACHMENT_MAX_TOKENS
-        if truncated:
-            content = encoding.decode(tokens[:ATTACHMENT_MAX_TOKENS])
-            token_count = ATTACHMENT_MAX_TOKENS
+        if reused:
+            # Same bytes, already parsed for this user: copy the stored text
+            # and its extraction record instead of parsing again.
+            reused_metadata = _reused_parse_metadata(reused)
+            if isinstance(reused_metadata.get("extraction"), dict):
+                # The earlier row's side copy belongs to that row: this one
+                # gets its own, beside its own original.
+                reused_metadata["extraction"] = copy_full_text(
+                    storage, reused_metadata["extraction"], relative_path
+                )
+            extraction_status = (reused_metadata.get("extraction") or {}).get("status") or "ok"
+            token_count = reused.get("token_count") or 0
+            metadata = {
+                **metadata,
+                **{k: v for k, v in fingerprint.items() if k in ("content_hash", "page_count", "image")},
+                **reused_metadata,
+            }
+            logging.info(
+                f"Attachment {filename} reuses the parse of attachment {reused.get('id')}",
+                extra={"user": user},
+            )
         else:
-            token_count = original_tokens
+            # Gate and cut in the same unit. The old form gated on tokens but cut
+            # at 250k *chars*, which for dense scripts (CJK ~1.4 tokens/char)
+            # stored 300k+ tokens while looking like a clean extraction.
+            encoding = get_encoding()
+            tokens = encoding.encode_ordinary(content)
+            original_tokens = len(tokens)
+            truncated = original_tokens > ATTACHMENT_MAX_TOKENS
+            full_text: Dict[str, Any] = {}
+            if truncated:
+                # The prompt gets the head; the attachments tool searches and
+                # reads the whole text from a side copy.
+                full_text = store_full_text(storage, relative_path, content, encoding, original_tokens)
+                content = encoding.decode(tokens[:ATTACHMENT_MAX_TOKENS])
+                token_count = ATTACHMENT_MAX_TOKENS
+            else:
+                token_count = original_tokens
+            del tokens
 
-        metadata = {
-            **metadata,
-            "extraction": {
-                "status": extraction_status,
-                "parser": parser_name,
-                "truncated": truncated,
-                "original_tokens": original_tokens,
-                "stored_tokens": token_count,
-                **({"reason": no_text_reason} if no_text_reason else {}),
-            },
-        }
+            metadata = {
+                **metadata,
+                **{k: v for k, v in fingerprint.items() if k in ("content_hash", "page_count", "image")},
+                "extraction": {
+                    "status": extraction_status,
+                    "parser": parser_name,
+                    "truncated": truncated,
+                    "original_tokens": original_tokens,
+                    "stored_tokens": token_count,
+                    **full_text,
+                    **({"reason": no_text_reason} if no_text_reason else {}),
+                },
+            }
 
         self.update_state(
             state="PROGRESS", meta={"current": 80, "status": "Storing in database"}
         )
-        publish_user_event(
+        publish(
             user,
             "attachment.progress",
             {
@@ -1923,6 +2383,8 @@ def attachment_worker(self, file_info, user):
             token_count=token_count,
             metadata=metadata,
             attachment_id=attachment_id,
+            size=fingerprint.get("size"),
+            content_hash=fingerprint.get("content_hash"),
         )
 
         logging.info(
@@ -1931,7 +2393,7 @@ def attachment_worker(self, file_info, user):
 
         self.update_state(state="PROGRESS", meta={"current": 100, "status": "Complete"})
 
-        publish_user_event(
+        publish(
             user,
             "attachment.completed",
             {
@@ -1954,22 +2416,841 @@ def attachment_worker(self, file_info, user):
         }
     except Exception as e:
         logging.error(
-            f"Error processing file {filename}: {e}",
+            f"Error processing file {filename}: {_failure_log_text(e)}",
             extra={"user": user},
-            exc_info=True,
         )
         record_attachment_failure(user, file_info, e, parser=parser_name)
-        publish_user_event(
+        publish(
             user,
             "attachment.failed",
             {
                 "attachment_id": str(attachment_id),
                 "filename": filename,
-                "error": str(e)[:1024],
+                **attachment_failure(e, filename),
             },
             scope={"kind": "attachment", "id": str(attachment_id)},
         )
         raise
+
+
+def _archive_index_text(
+    filename: str,
+    member_paths: List[str],
+    skipped: List[Dict[str, Any]],
+    skipped_count: int,
+    failed: Dict[str, str],
+) -> str:
+    """The text stored for a zip itself: what it held and what was left out.
+
+    Args:
+        filename: The zip's name.
+        member_paths: Archive paths of the members stored as attachments.
+        skipped: Recorded skips, ``{"archive_path", "reason"}`` each.
+        skipped_count: All members left out, recorded or not.
+        failed: Archive path to failure reason, for members whose parse failed.
+
+    Returns:
+        A short plain-text index; never the archive's bytes.
+    """
+    from docsgpt.parser.attachment_archive import SKIP_REASON_TEXT
+
+    lines = [
+        f"Archive {filename}: {len(member_paths)} file(s) unpacked, each attached separately; "
+        f"{skipped_count} skipped."
+    ]
+    if member_paths:
+        lines.append("Files:")
+        for path in member_paths:
+            if path not in failed:
+                lines.append(f"- {path}")
+            elif failed[path]:
+                lines.append(f"- {path} (could not be parsed: {failed[path]})")
+            else:
+                lines.append(f"- {path} (could not be parsed)")
+    if skipped:
+        lines.append("Skipped:")
+        lines.extend(
+            f"- {item['archive_path']}: {SKIP_REASON_TEXT.get(item['reason'], item['reason'])}" for item in skipped
+        )
+        hidden = skipped_count - len(skipped)
+        if hidden > 0:
+            lines.append(f"- and {hidden} more")
+    return "\n".join(lines)
+
+
+def _archive_member_handle(attachment_id: Any, index: int, archive_path: str) -> str:
+    """A member's upload handle, the same on every retry of the zip's task."""
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"docsgpt-archive:{attachment_id}:{index}:{archive_path}"))
+
+
+# Progress the zip reports: unpacking fills up to the first mark, its members
+# finishing move it to the second, and completing the zip takes it to 100.
+_ARCHIVE_UNPACKED_PROGRESS = 30
+_ARCHIVE_MEMBERS_DONE_PROGRESS = 90
+# Longest member failure reason kept on the zip.
+_ARCHIVE_FAILURE_REASON_CHARS = 300
+
+
+def _archive_state(row: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The zip's in-progress member bookkeeping, or None once it completed."""
+    metadata = (row or {}).get("metadata")
+    archive = metadata.get("archive") if isinstance(metadata, dict) else None
+    if isinstance(archive, dict) and archive.get("status") == "processing":
+        return archive
+    return None
+
+
+def _archive_progress_event(row: Dict[str, Any], current: int, stage: str) -> Dict[str, Any]:
+    """A zip's ``attachment.progress`` payload, keyed by its upload handle."""
+    return {
+        "attachment_id": str(row.get("legacy_mongo_id") or row["id"]),
+        "filename": row.get("filename") or "",
+        "current": current,
+        "stage": stage,
+    }
+
+
+def _finish_archive(repo: AttachmentsRepository, row: Dict[str, Any], archive: Dict[str, Any]) -> Dict[str, Any]:
+    """Write the zip's index once every member has an outcome.
+
+    Called under the zip row's lock with ``archive`` holding an outcome for
+    every planned member. The bookkeeping (``planned`` / ``outcomes``) is
+    replaced by the summary the planner and manifest read.
+
+    Args:
+        repo: Repository on the transaction holding the lock.
+        row: The zip's row.
+        archive: Its bookkeeping, complete.
+
+    Returns:
+        The ``attachment.completed`` payload to publish once committed.
+    """
+    planned = archive.get("planned") or []
+    outcomes = archive.get("outcomes") or {}
+    skipped = [s for s in archive.get("skipped") or [] if isinstance(s, dict)]
+    skipped_count = int(archive.get("skipped_count") or 0)
+    member_paths: List[str] = []
+    failed_members: List[Dict[str, str]] = []
+    member_tokens = 0
+    for member in planned:
+        path = member["metadata"]["archive_path"]
+        member_paths.append(path)
+        outcome = outcomes.get(member["attachment_id"]) or {}
+        if outcome.get("status") == "ok":
+            member_tokens += int(outcome.get("token_count") or 0)
+        else:
+            failed_members.append({"archive_path": path, "reason": str(outcome.get("reason") or "")})
+    filename = row.get("filename") or ""
+    index_text = _archive_index_text(
+        filename,
+        member_paths,
+        skipped,
+        skipped_count,
+        {item["archive_path"]: item["reason"] for item in failed_members},
+    )
+    index_tokens = len(get_encoding().encode_ordinary(index_text))
+    summary = {
+        "status": "complete",
+        "members": len(planned),
+        "failed": len(failed_members),
+        "failed_members": failed_members,
+        "skipped": skipped,
+        "skipped_count": skipped_count,
+        "total_bytes": int(archive.get("total_bytes") or 0),
+    }
+    metadata = {
+        **(row.get("metadata") or {}),
+        "archive": summary,
+        "extraction": {
+            "status": "ok",
+            "parser": "archive",
+            "truncated": False,
+            "original_tokens": index_tokens,
+            "stored_tokens": index_tokens,
+        },
+    }
+    repo.update(str(row["id"]), row["user_id"], {"content": index_text, "token_count": index_tokens, "metadata": metadata})
+    return {
+        "attachment_id": str(row.get("legacy_mongo_id") or row["id"]),
+        "filename": filename,
+        "token_count": member_tokens,
+        "mime_type": "application/zip",
+        "extraction_status": "ok",
+        "archive": {"members": len(planned), "skipped": skipped_count, "failed": len(failed_members)},
+    }
+
+
+def _archive_now() -> datetime.datetime:
+    """The current time, as the zip's dispatch stamps record it."""
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def _members_to_dispatch(archive: Dict[str, Any], *, resume: bool = False) -> List[Dict[str, Any]]:
+    """Members to hand to the workers so at most the window is in flight.
+
+    Members are dispatched in archive order. With ``n`` of them finished,
+    the first ``n + window`` may have been dispatched; the ones among them
+    not dispatched yet (no ``dispatched_at`` stamp) are due. Every outcome,
+    a worker's or the reconciler's, frees a slot this way.
+
+    Args:
+        archive: The zip's bookkeeping.
+        resume: Dispatch every unfinished member in the window, stamped or
+            not (the zip's own task starting or resuming after a retry).
+
+    Returns:
+        The members' task payloads.
+    """
+    planned = archive.get("planned") or []
+    outcomes = archive.get("outcomes") or {}
+    stamps = archive.get("dispatched_at") or {}
+    window = max(1, int(settings.ATTACHMENT_ARCHIVE_PARALLELISM))
+    due = [m for m in planned[: len(outcomes) + window] if m["attachment_id"] not in outcomes]
+    if resume:
+        return due
+    return [m for m in due if m["attachment_id"] not in stamps]
+
+
+def _stamp_dispatched(archive: Dict[str, Any], members: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """The bookkeeping with ``members`` stamped as dispatched now."""
+    now = _archive_now().isoformat()
+    stamps = {**(archive.get("dispatched_at") or {}), **{m["attachment_id"]: now for m in members}}
+    return {**archive, "dispatched_at": stamps}
+
+
+def _archive_member_task_key(handle: Any) -> str:
+    """A member task's idempotency key, which its lease is held under."""
+    return f"archive-member:{handle}"
+
+
+def _dispatch_archive_member(member_info: Dict[str, Any], user: str) -> None:
+    """Queue one zip member's parse as its own Celery task.
+
+    The idempotency key is the member's handle: a duplicate dispatch (a
+    retried zip resuming its window) waits for or reuses the first run, and
+    a member that keeps killing its worker trips the poison guard, which
+    records it as failed so the zip still completes.
+    """
+    from docsgpt.api.user.tasks import store_archive_member
+
+    store_archive_member.apply_async(
+        args=[member_info, user],
+        kwargs={"idempotency_key": _archive_member_task_key(member_info["attachment_id"])},
+    )
+
+
+def _is_final_attempt(task: Any, exc: BaseException) -> bool:
+    """Whether Celery will not retry ``task`` after ``exc``.
+
+    Args:
+        task: The bound task (or a stand-in without retry settings, which
+            never retries).
+        exc: The exception the attempt raised.
+
+    Returns:
+        True when the exception is not retried or the retries are spent.
+    """
+    no_retry = tuple(getattr(task, "dont_autoretry_for", None) or ())
+    if no_retry and isinstance(exc, no_retry):
+        return True
+    max_retries = getattr(task, "max_retries", None)
+    if max_retries is None:
+        return True
+    retries = getattr(getattr(task, "request", None), "retries", 0) or 0
+    return retries >= max_retries
+
+
+def _apply_archive_outcomes(
+    repo: AttachmentsRepository, row: Dict[str, Any], new_outcomes: Dict[str, Dict[str, Any]]
+) -> Tuple[List[Dict[str, Any]], List[Tuple[str, Dict[str, Any]]]]:
+    """Count members' final outcomes on their zip, then move the zip on.
+
+    The caller holds the zip row's lock, so concurrent members serialize
+    and exactly one sees the last outcome land. A member already counted (a
+    redelivered task) is not counted again. The members whose slots this
+    freed are stamped as dispatched; the caller dispatches them, and
+    publishes the events, once the transaction commits.
+
+    Args:
+        repo: Repository on the transaction holding the lock.
+        row: The zip's locked row.
+        new_outcomes: Member handle to ``{"status": "ok", "token_count": n}``
+            or ``{"status": "failed", "reason": text}``.
+
+    Returns:
+        The members to dispatch, and the zip's events as ``(type, payload)``
+        pairs: progress, or completion when the last member landed.
+    """
+    archive = _archive_state(row)
+    if archive is None:
+        return [], []
+    planned = archive.get("planned") or []
+    known = {m["attachment_id"] for m in planned}
+    outcomes = dict(archive.get("outcomes") or {})
+    for handle, outcome in new_outcomes.items():
+        if handle in known:
+            outcomes.setdefault(str(handle), outcome)
+    archive = {**archive, "outcomes": outcomes}
+    if len(outcomes) >= len(planned):
+        completed = _finish_archive(repo, row, archive)
+        return [], [
+            ("attachment.progress", _archive_progress_event(row, _ARCHIVE_MEMBERS_DONE_PROGRESS, "storing")),
+            ("attachment.completed", completed),
+        ]
+    to_dispatch = _members_to_dispatch(archive)
+    archive = _stamp_dispatched(archive, to_dispatch)
+    repo.update(str(row["id"]), row["user_id"], {"metadata": {**row["metadata"], "archive": archive}})
+    span = _ARCHIVE_MEMBERS_DONE_PROGRESS - _ARCHIVE_UNPACKED_PROGRESS
+    current = _ARCHIVE_UNPACKED_PROGRESS + int(span * len(outcomes) / len(planned))
+    return to_dispatch, [("attachment.progress", _archive_progress_event(row, current, "processing"))]
+
+
+def _count_archive_member_outcome(
+    user: str, member_info: Dict[str, Any], outcome: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    """Count one member's final outcome on its zip and report the zip's progress.
+
+    Args:
+        user: The uploader.
+        member_info: The member's task payload.
+        outcome: ``{"status": "ok", "token_count": n}`` or
+            ``{"status": "failed", "reason": text}``.
+
+    Returns:
+        The members whose slots this freed, stamped as dispatched, for the
+        caller to dispatch.
+    """
+    parent_id = (member_info.get("metadata") or {}).get("parent_attachment_id")
+    with db_session() as conn:
+        repo = AttachmentsRepository(conn)
+        row = repo.get_for_update(str(parent_id), user) if parent_id else None
+        if row is None:
+            return []
+        to_dispatch, events = _apply_archive_outcomes(repo, row, {str(member_info["attachment_id"]): outcome})
+    _publish_archive_events(user, row, events)
+    return to_dispatch
+
+
+def _dispatch_archive_members(members: List[Dict[str, Any]], user: str) -> None:
+    """Dispatch members already stamped as dispatched, failing any that cannot be queued.
+
+    A member is stamped before its dispatch (the stamp commits with the
+    zip's bookkeeping), so a dispatch that raises would otherwise leave it
+    stamped with no task behind it until the reconciler's timeout. Each
+    dispatch is tried twice; a member that still cannot be queued is
+    failed with the reason, which frees its slot for the next member (also
+    dispatched here) or completes the zip.
+
+    Args:
+        members: The members' task payloads.
+        user: The uploader.
+    """
+    pending = list(members)
+    while pending:
+        member = pending.pop(0)
+        error: Optional[Exception] = None
+        for _attempt in range(2):
+            try:
+                _dispatch_archive_member(member, user)
+                error = None
+                break
+            except Exception as exc:
+                error = exc
+        if error is None:
+            continue
+        logging.error(
+            f"Could not queue archive member {member.get('metadata', {}).get('archive_path')}: "
+            f"{_failure_log_text(error)}",
+            extra={"user": user},
+        )
+        reason = "Could not be queued for processing."
+        record_attachment_failure(user, member, reason)
+        pending.extend(
+            _count_archive_member_outcome(
+                user, member, {"status": "failed", "reason": reason[:_ARCHIVE_FAILURE_REASON_CHARS]}
+            )
+        )
+
+
+def _record_archive_member_outcome(user: str, member_info: Dict[str, Any], outcome: Dict[str, Any]) -> None:
+    """Count one member's final outcome on its zip, then dispatch and report.
+
+    Args:
+        user: The uploader.
+        member_info: The member's task payload.
+        outcome: ``{"status": "ok", "token_count": n}`` or
+            ``{"status": "failed", "reason": text}``.
+    """
+    _dispatch_archive_members(_count_archive_member_outcome(user, member_info, outcome), user)
+
+
+def _archive_event_scope(row: Dict[str, Any]) -> Dict[str, str]:
+    """The SSE scope of a zip's events: its upload handle, which the browser tracks."""
+    return {"kind": "attachment", "id": str(row.get("legacy_mongo_id") or row["id"])}
+
+
+def _publish_archive_events(user: str, row: Dict[str, Any], events: List[Tuple[str, Dict[str, Any]]]) -> None:
+    """Report a zip's progress or completion to the browser."""
+    scope = _archive_event_scope(row)
+    for kind, payload in events:
+        publish_user_event(user, kind, payload, scope=scope)
+
+
+def sweep_stuck_archive_members(
+    conn: Any, *, timeout_seconds: int
+) -> Tuple[int, List[Tuple[Dict[str, Any], str]], List[Tuple[str, str, Dict[str, Any], Dict[str, str]]]]:
+    """Fail zip members queued longer than the timeout without an outcome.
+
+    A member whose task was lost (a broker loss, a crash between the commit
+    and the dispatch) would leave its zip processing forever. Each one past
+    ``timeout_seconds`` since its dispatch, whose task holds no live lease
+    (a running task heartbeats its lease, however long the parse takes),
+    gets a failure row and a failed
+    outcome with the reason; that frees its slot for the next member, or
+    completes the zip with honest counts. Runs in the reconciler's
+    transaction; zips a member task holds right now are left to the next
+    tick.
+
+    Args:
+        conn: The reconciler sweep's connection.
+        timeout_seconds: ``ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT``.
+
+    Returns:
+        The number of members failed, the members to dispatch as
+        ``(member_info, user)`` and the events to publish as
+        ``(user, type, payload, scope)``, both for after the commit.
+    """
+    repo = AttachmentsRepository(conn)
+    cutoff = _archive_now() - datetime.timedelta(seconds=timeout_seconds)
+    minutes = max(1, round(timeout_seconds / 60))
+    reason = f"Not processed within {minutes} minutes."
+    failed = 0
+    dispatches: List[Tuple[Dict[str, Any], str]] = []
+    events: List[Tuple[str, str, Dict[str, Any], Dict[str, str]]] = []
+    for row in repo.find_and_lock_processing_archives():
+        archive = _archive_state(row) or {}
+        outcomes = archive.get("outcomes") or {}
+        stamps = archive.get("dispatched_at") or {}
+        stuck = []
+        for member in archive.get("planned") or []:
+            stamp = stamps.get(member["attachment_id"])
+            if member["attachment_id"] in outcomes or not stamp:
+                continue
+            try:
+                stale = datetime.datetime.fromisoformat(stamp) < cutoff
+            except (TypeError, ValueError):
+                stale = True
+            if stale:
+                stuck.append(member)
+        if stuck:
+            from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
+
+            running = IdempotencyRepository(conn).live_lease_keys(
+                [_archive_member_task_key(m["attachment_id"]) for m in stuck]
+            )
+            stuck = [m for m in stuck if _archive_member_task_key(m["attachment_id"]) not in running]
+        if not stuck:
+            continue
+        user = row["user_id"]
+        for member in stuck:
+            _write_attachment_failure_row(repo, user, member, _failure_metadata(member, reason))
+        to_dispatch, zip_events = _apply_archive_outcomes(
+            repo, row, {m["attachment_id"]: {"status": "failed", "reason": reason} for m in stuck}
+        )
+        failed += len(stuck)
+        dispatches.extend((member, user) for member in to_dispatch)
+        scope = _archive_event_scope(row)
+        events.extend((user, kind, payload, scope) for kind, payload in zip_events)
+    return failed, dispatches, events
+
+
+def _member_failure_reason(error: Any, filename: Optional[str] = None) -> str:
+    """A member's failure reason as the zip records it: short, one line.
+
+    The zip's index is the model's view of the archive, so an exception
+    becomes the user-safe message a single failed file gets; its own text
+    (paths, parser internals, sometimes the file's bytes) stays in the logs.
+    A reason given as text is already curated (the poison guard's, the
+    reconciler's) and is kept.
+
+    Args:
+        error: The exception, or a curated reason.
+        filename: The member's filename, named in the unsupported-type message.
+
+    Returns:
+        The reason, at most ``_ARCHIVE_FAILURE_REASON_CHARS`` long.
+    """
+    if isinstance(error, BaseException):
+        text = attachment_failure(error, filename)["error"]
+    else:
+        text = " ".join(str(error).split())
+    return (text or ATTACHMENT_FAILURE_MESSAGES["processing_failed"])[:_ARCHIVE_FAILURE_REASON_CHARS]
+
+
+def archive_member_worker(self, member_info: Dict[str, Any], user: str) -> Dict[str, Any]:
+    """Parse one member of a zip attachment, then count it on the zip.
+
+    The member is parsed like any upload but silently: the browser tracks
+    only the zip. A failure is counted only once it is final (not retried,
+    or out of retries), with its reason, so one bad file never holds the
+    zip back and a transient one is not reported as lost.
+
+    Args:
+        self: The Celery task, for its retry state.
+        member_info: ``filename``, ``attachment_id`` (the member's handle),
+            ``path`` and ``metadata`` (``parent_attachment_id``,
+            ``archive_path``, ``archive_index``).
+        user: The uploader.
+
+    Returns:
+        The member's handle and outcome.
+
+    Raises:
+        Exception: The parse failed and Celery will retry it.
+    """
+    try:
+        result = _single_attachment_worker(_SilentTask(), member_info, user, emit_events=False)
+    except Exception as exc:
+        if not _is_final_attempt(self, exc):
+            raise
+        logging.warning(
+            f"Archive member {member_info.get('metadata', {}).get('archive_path')} could not be parsed: "
+            f"{_failure_log_text(exc)}",
+            extra={"user": user},
+        )
+        outcome = {"status": "failed", "reason": _member_failure_reason(exc, member_info.get("filename"))}
+    else:
+        outcome = {"status": "ok", "token_count": int(result.get("token_count") or 0)}
+    _record_archive_member_outcome(user, member_info, outcome)
+    return {"attachment_id": str(member_info["attachment_id"]), **outcome}
+
+
+def record_archive_member_failure(user: str, member_info: Dict[str, Any], error: Any) -> None:
+    """Fail a member whose task never got to (the poison guard), so its zip completes.
+
+    Args:
+        user: The uploader.
+        member_info: The member's task payload.
+        error: Why it failed.
+    """
+    record_attachment_failure(user, member_info, error)
+    reason = _member_failure_reason(error, member_info.get("filename"))
+    _record_archive_member_outcome(user, member_info, {"status": "failed", "reason": reason})
+
+
+def _claim_archive_row(
+    user: str,
+    file_info: Dict[str, Any],
+    metadata: Dict[str, Any],
+    size: Optional[int],
+    content_hash: Optional[str],
+) -> Dict[str, Any]:
+    """Create or refresh the zip's own row before its members are stored.
+
+    A retried zip keeps the bookkeeping of the run before it, so members
+    already counted stay counted.
+
+    Args:
+        user: The uploader.
+        file_info: The zip's task payload.
+        metadata: The zip's upload metadata (with its content hash).
+        size: The zip's size in bytes.
+        content_hash: sha256 of the zip's bytes.
+
+    Returns:
+        The zip's row as written.
+    """
+    attachment_id = str(file_info["attachment_id"])
+    fields: Dict[str, Any] = {
+        "filename": file_info["filename"],
+        "upload_path": file_info["path"],
+        "mime_type": "application/zip",
+        **({"size": size} if size is not None else {}),
+        **({"content_hash": content_hash} if content_hash else {}),
+    }
+    processing = {**metadata, "extraction": {"status": "processing", "parser": "archive"}}
+    with db_session() as conn:
+        repo = AttachmentsRepository(conn)
+        existing = repo.get_by_legacy_id(attachment_id, user)
+        if existing is None:
+            return repo.create(
+                user,
+                fields["filename"],
+                fields["upload_path"],
+                mime_type="application/zip",
+                size=size,
+                content=None,
+                token_count=None,
+                metadata=processing,
+                legacy_mongo_id=attachment_id,
+                content_hash=content_hash,
+            )
+        row = repo.get_for_update(str(existing["id"]), user) or existing
+        previous = (row.get("metadata") or {}).get("archive")
+        if isinstance(previous, dict):
+            processing["archive"] = previous
+        repo.update(str(row["id"]), user, {**fields, "metadata": processing})
+        return {**row, **fields, "metadata": processing}
+
+
+def _start_archive_members(
+    user: str,
+    parent_id: str,
+    planned: List[Dict[str, Any]],
+    expansion: Any,
+) -> None:
+    """Record the zip's members and hand the first window of them to the workers.
+
+    Members a previous run of this zip already counted keep their outcomes
+    and are not dispatched again. A zip with nothing to parse (or whose
+    members were all counted) completes here.
+
+    Args:
+        user: The uploader.
+        parent_id: The zip row's PG id.
+        planned: The members' task payloads, in archive order.
+        expansion: The ``ArchiveExpansion``, for the skipped members.
+    """
+    handles = {m["attachment_id"] for m in planned}
+    completed: Optional[Dict[str, Any]] = None
+    to_dispatch: List[Dict[str, Any]] = []
+    with db_session() as conn:
+        repo = AttachmentsRepository(conn)
+        row = repo.get_for_update(parent_id, user)
+        if row is None:
+            return
+        previous = _archive_state(row) or {}
+        outcomes = {h: o for h, o in (previous.get("outcomes") or {}).items() if h in handles}
+        archive = {
+            "status": "processing",
+            "members": len(planned),
+            "planned": planned,
+            "outcomes": outcomes,
+            "dispatched_at": {
+                h: t for h, t in (previous.get("dispatched_at") or {}).items() if h in handles and h not in outcomes
+            },
+            "skipped": [{"archive_path": s.archive_path, "reason": s.reason} for s in expansion.skipped],
+            "skipped_count": expansion.skipped_count,
+            "total_bytes": expansion.total_bytes,
+        }
+        if len(outcomes) >= len(planned):
+            completed = _finish_archive(repo, row, archive)
+        else:
+            to_dispatch = _members_to_dispatch(archive, resume=True)
+            archive = _stamp_dispatched(archive, to_dispatch)
+            repo.update(parent_id, user, {"metadata": {**row["metadata"], "archive": archive}})
+    _dispatch_archive_members(to_dispatch, user)
+    if completed is not None:
+        _publish_archive_events(
+            user,
+            row,
+            [
+                ("attachment.progress", _archive_progress_event(row, _ARCHIVE_MEMBERS_DONE_PROGRESS, "storing")),
+                ("attachment.completed", completed),
+            ],
+        )
+
+
+def _record_archive_failure(user: str, file_info: Dict[str, Any], parent_id: Optional[str], error: Any) -> None:
+    """Mark the zip failed without losing its members' bookkeeping.
+
+    Before the zip has a row this is the ordinary failure row. After, only
+    ``metadata.extraction`` changes, so a retry resumes the members already
+    counted.
+    """
+    if parent_id is None:
+        record_attachment_failure(user, file_info, error, parser="archive")
+        return
+    try:
+        with db_session() as conn:
+            repo = AttachmentsRepository(conn)
+            row = repo.get_for_update(parent_id, user)
+            if row is None:
+                return
+            extraction = {"status": "failed", "parser": "archive", "truncated": False, "error": str(error)[:1024]}
+            repo.update(parent_id, user, {"metadata": {**(row.get("metadata") or {}), "extraction": extraction}})
+    except Exception:
+        logging.error(
+            f"Failed to record failure for archive {file_info.get('attachment_id')}",
+            extra={"user": user},
+            exc_info=True,
+        )
+
+
+def record_archive_task_failure(user: str, file_info: Dict[str, Any], error: Any) -> None:
+    """Fail a zip whose own task never got to (the poison guard), keeping its members.
+
+    A zip that already has its row keeps ``metadata.archive``, so members
+    still in flight are counted and can complete it; only
+    ``metadata.extraction`` is marked failed. Never raises.
+
+    Args:
+        user: The uploader.
+        file_info: The zip's task payload.
+        error: Why it failed.
+    """
+    parent_id: Optional[str] = None
+    try:
+        with db_readonly() as conn:
+            row = AttachmentsRepository(conn).get_by_legacy_id(str(file_info.get("attachment_id")), user)
+        parent_id = str(row["id"]) if row else None
+    except Exception:
+        logging.error(
+            f"Failed to look up archive {file_info.get('attachment_id')}", extra={"user": user}, exc_info=True
+        )
+    _record_archive_failure(user, file_info, parent_id, error)
+
+
+def _archive_attachment_worker(self, file_info, user):
+    """Unpack a zip attachment and fan its members out to their own tasks.
+
+    The zip keeps its own row as an index (``metadata.archive`` and a short
+    text listing, never the compressed bytes). Each member is stored next to
+    the other uploads and parsed like one by its own ``store_archive_member``
+    task, in its own row linked by ``metadata.parent_attachment_id`` /
+    ``archive_path`` / ``archive_index``; members load in archive order after
+    the zip wherever the zip is attached
+    (``AttachmentsRepository.list_for_planning`` / ``expand_archives``).
+    At most ``ATTACHMENT_ARCHIVE_PARALLELISM`` members of one zip are queued
+    at a time; each one that finishes queues the next. The zip completes
+    (its ``attachment.completed`` event, which the composer waits for) when
+    the last member has an outcome. Members with no parser that are not
+    text are skipped, like every member the limits leave out, with a reason
+    recorded on the zip. Only the zip reports SSE progress: the browser
+    shows the zip as one file.
+
+    Args:
+        self: The Celery task, for progress updates.
+        file_info: The zip's ``filename``, ``attachment_id``, ``path``,
+            ``metadata``.
+        user: The uploader.
+
+    Returns:
+        The zip's summary. Its members are still being parsed unless the
+        zip had none.
+
+    Raises:
+        AttachmentRejectedError: The file is not a readable zip or is a zip bomb.
+    """
+    from docsgpt.parser.attachment_archive import ArchiveLimits, ArchiveRejectedError, expand_archive
+    from docsgpt.parser.file.constants import attachment_extension
+    from docsgpt.upload_limits import UnsupportedUploadTypeError, enforce_parseable_attachment, looks_like_text
+
+    filename = file_info["filename"]
+    attachment_id = file_info["attachment_id"]
+    relative_path = file_info["path"]
+    metadata = file_info.get("metadata", {}) or {}
+    scope = {"kind": "attachment", "id": str(attachment_id)}
+    parent_id: Optional[str] = None
+
+    with db_readonly() as conn:
+        existing = AttachmentsRepository(conn).get_by_legacy_id(str(attachment_id), user)
+    existing_archive = ((existing or {}).get("metadata") or {}).get("archive")
+    if isinstance(existing_archive, dict) and existing_archive.get("status") == "complete":
+        # A redelivery of a zip that already completed: its members are
+        # parsed and counted, so there is nothing to redo.
+        return {
+            "filename": filename,
+            "path": relative_path,
+            "token_count": existing.get("token_count"),
+            "attachment_id": attachment_id,
+            "mime_type": "application/zip",
+            "metadata": existing.get("metadata"),
+        }
+
+    publish_user_event(
+        user, "attachment.queued", {"attachment_id": str(attachment_id), "filename": filename}, scope=scope
+    )
+    work_dir = tempfile.mkdtemp(prefix="docsgpt-archive-")
+    try:
+        self.update_state(state="PROGRESS", meta={"current": 10})
+        storage = StorageCreator.get_storage()
+        limits = ArchiveLimits.from_settings()
+        fingerprint: Dict[str, Any] = {}
+        file_extractor = get_default_file_extractor(
+            ocr_enabled=settings.OCR_ATTACHMENTS_ENABLED,
+            pdf_text_fast_path=settings.ATTACHMENT_PDF_TEXT_FAST_PATH,
+        )
+        parser_suffixes = set(file_extractor)
+
+        def _accept(member_name: str, read_head) -> bool:
+            # The upload rule (enforce_parseable_attachment) on the member's
+            # head, before it is unpacked: unsupported members never count
+            # toward the zip's file and byte limits.
+            return attachment_extension(member_name) in parser_suffixes or looks_like_text(read_head())
+
+        def _expand(local_path: str, **kwargs):
+            fingerprint.update(_attachment_fingerprint(local_path, filename))
+            return expand_archive(local_path, work_dir, limits, accept=_accept)
+
+        try:
+            expansion = storage.process_file(relative_path, _expand)
+        except ArchiveRejectedError as exc:
+            code = "too_large" if exc.reason == "zip_bomb" else "archive_unreadable"
+            raise AttachmentRejectedError(str(exc), code=code) from exc
+
+        content_hash = fingerprint.get("content_hash")
+        base_metadata = {**metadata, **({"content_hash": content_hash} if content_hash else {})}
+        # The zip's row first, so its members can name it.
+        parent = _claim_archive_row(user, file_info, base_metadata, fingerprint.get("size"), content_hash)
+        parent_id = str(parent["id"])
+
+        attachments_dir = os.path.dirname(os.path.dirname(relative_path))
+        planned: List[Dict[str, Any]] = []
+        total = len(expansion.members) or 1
+        for index, member in enumerate(expansion.members):
+            current = 10 + int((_ARCHIVE_UNPACKED_PROGRESS - 10) * index / total)
+            self.update_state(state="PROGRESS", meta={"current": current, "status": "Unpacking"})
+            publish_user_event(
+                user,
+                "attachment.progress",
+                {"attachment_id": str(attachment_id), "filename": filename, "current": current, "stage": "processing"},
+                scope=scope,
+            )
+            try:
+                enforce_parseable_attachment(member.local_path, member.filename, parser_suffixes)
+            except UnsupportedUploadTypeError:
+                expansion.skip(member.archive_path, "unsupported_type")
+                continue
+            handle = _archive_member_handle(attachment_id, index, member.archive_path)
+            member_path = f"{attachments_dir}/{handle}/{safe_filename(member.filename)}"
+            with open(member.local_path, "rb") as member_bytes:
+                storage_metadata = storage.save_file(member_bytes, member_path) or {}
+            planned.append(
+                {
+                    "filename": member.filename,
+                    "attachment_id": handle,
+                    "path": member_path,
+                    "metadata": {
+                        **(storage_metadata if isinstance(storage_metadata, dict) else {}),
+                        "parent_attachment_id": parent_id,
+                        "archive_path": member.archive_path,
+                        "archive_index": index,
+                    },
+                }
+            )
+
+        self.update_state(state="PROGRESS", meta={"current": _ARCHIVE_UNPACKED_PROGRESS, "status": "Parsing files"})
+        _start_archive_members(user, parent_id, planned, expansion)
+        return {
+            "filename": filename,
+            "path": relative_path,
+            "attachment_id": attachment_id,
+            "mime_type": "application/zip",
+            "members": len(planned),
+        }
+    except Exception as e:
+        logging.error(f"Error unpacking archive {filename}: {_failure_log_text(e)}", extra={"user": user})
+        _record_archive_failure(user, file_info, parent_id, e)
+        publish_user_event(
+            user,
+            "attachment.failed",
+            {"attachment_id": str(attachment_id), "filename": filename, **attachment_failure(e, filename)},
+            scope=scope,
+        )
+        raise
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
 
 
 def parse_document_worker(self, artifact_id, parent, user_id, options):
@@ -2122,12 +3403,14 @@ def agent_webhook_worker(self, agent_id, payload):
     try:
         # Shared headless path with the scheduler; approval-gated tools auto-deny.
         from docsgpt.agents.headless_runner import run_agent_headless
+        from docsgpt.quotas.service import QuotaExceededError
 
         outcome = run_agent_headless(
             agent_config,
             input_data,
             tool_allowlist=_webhook_tool_allowlist(agent_config),
             endpoint="webhook",
+            request_id=getattr(getattr(self, "request", None), "id", None),
         )
         result = {
             "answer": outcome.get("answer", ""),
@@ -2135,6 +3418,12 @@ def agent_webhook_worker(self, agent_id, payload):
             "tool_calls": outcome.get("tool_calls", []),
             "thought": outcome.get("thought", ""),
         }
+    except QuotaExceededError as e:
+        # Returned, not raised: retrying cannot succeed before the quota resets.
+        logging.warning(
+            f"Webhook skipped for agent {agent_id}: {e}", extra={"agent_id": agent_id}
+        )
+        return {"status": "quota_exceeded", "error": str(e)}
     except Exception as e:
         logging.error(f"Error running agent logic: {e}", exc_info=True)
         raise
@@ -2150,6 +3439,132 @@ def agent_webhook_worker(self, agent_id, payload):
 def _webhook_tool_allowlist(agent_config):
     """Deny-all on approval-gated tools for webhooks (per-agent opt-in is TBD)."""
     return []
+
+
+def _with_connection_credentials(source_data, connection_id: str):
+    """Loader input with the connection's stored keys merged in, or None.
+
+    S3, Reddit and GitHub sources made from a connection keep their keys on
+    the connection only, never in ``sources.remote_data``. A JSON string
+    stays a JSON string and a dict a dict; any other string (a GitHub
+    repository URL) becomes ``{"url": ...}`` next to the keys. An MCP
+    sign-in (Linear) gets its ``connection_id`` instead: its tokens stay
+    with the MCP client, which renews them. Returns None when the
+    connection is gone, needs reconnecting, or its connector is turned off.
+    """
+    from docsgpt.connectors import service
+    from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+    with db_readonly() as conn:
+        row = ConnectorSessionsRepository(conn).get(str(connection_id))
+        enabled = row is not None and service.connector_enabled(conn, row)
+    if row is None or not enabled:
+        return None
+    if (row.get("auth_kind") or "") == "mcp_oauth":
+        if service.normalize_status(row) != service.STATUS_CONNECTED:
+            return None
+        credentials = {"connection_id": str(row["id"])}
+    else:
+        try:
+            credentials = service.access_credentials(row)
+        except service.ConnectionUnavailable:
+            return None
+    if isinstance(source_data, str):
+        try:
+            parsed = json.loads(source_data)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict):
+            return json.dumps({**parsed, **credentials})
+        return {"url": source_data, **credentials}
+    return {**dict(source_data or {}), **credentials}
+
+
+def _link_source_to_connection(source_id: str, connection_id: str) -> None:
+    """Point a source at the connection it syncs from, and lift any reconnect pause."""
+    from sqlalchemy import text as sql_text
+
+    try:
+        with db_session() as conn:
+            conn.execute(
+                sql_text(
+                    "UPDATE sources SET connection_id = CAST(:cid AS uuid), "
+                    "metadata = metadata - 'sync_state' WHERE id = CAST(:sid AS uuid)"
+                ),
+                {"cid": str(connection_id), "sid": str(source_id)},
+            )
+    except Exception:
+        logging.warning("Could not link source %s to connection %s", source_id, connection_id, exc_info=True)
+
+
+def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
+    """Re-download and re-index a connector source from its connection.
+
+    Runs as the connection owner with no browser: the connection service
+    refreshes the token under a row lock. When the grant was revoked the
+    service flags the connection and pauses its sources, and this returns
+    ``paused`` rather than failing again on every schedule.
+
+    Args:
+        self: The bound Celery task.
+        source_id: The source to sync.
+
+    Returns:
+        ``{"status": "success" | "paused" | "disabled" | "skipped"}`` plus
+        the ingest result.
+    """
+    from docsgpt.connectors.service import ConnectionUnavailable, connector_enabled, normalize_status
+    from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+    with db_readonly() as conn:
+        from sqlalchemy import text as sql_text
+
+        row = conn.execute(
+            sql_text(
+                "SELECT id, name, user_id, remote_data, retriever, sync_frequency, config, connection_id "
+                "FROM sources WHERE id = CAST(:id AS uuid)"
+            ),
+            {"id": str(source_id)},
+        ).fetchone()
+        source = dict(row._mapping) if row else None
+        connection = (
+            ConnectorSessionsRepository(conn).get(str(source["connection_id"]))
+            if source and source.get("connection_id")
+            else None
+        )
+        enabled = connection is not None and connector_enabled(conn, connection)
+    if not source or not connection:
+        return {"status": "skipped"}
+    if not enabled:
+        return {"status": "disabled"}
+    if normalize_status(connection) != "connected":
+        return {"status": "paused"}
+    remote_data = source.get("remote_data") or {}
+    if isinstance(remote_data, str):
+        try:
+            remote_data = json.loads(remote_data)
+        except json.JSONDecodeError:
+            remote_data = {}
+    provider = remote_data.get("provider") or connection.get("provider")
+    try:
+        result = ingest_connector(
+            self,
+            source.get("name"),
+            source.get("user_id"),
+            provider,
+            connection_id=str(connection["id"]),
+            file_ids=remote_data.get("file_ids") or [],
+            folder_ids=remote_data.get("folder_ids") or [],
+            recursive=remote_data.get("recursive", True),
+            retriever=source.get("retriever") or "classic",
+            operation_mode="sync",
+            doc_id=str(source["id"]),
+            sync_frequency=source.get("sync_frequency") or "never",
+            config=source.get("config") or None,
+        )
+    except ConnectionUnavailable:
+        return {"status": "paused"}
+    return {"status": "success", "result": result}
 
 
 def ingest_connector(
@@ -2168,6 +3583,7 @@ def ingest_connector(
     config=None,
     idempotency_key=None,
     source_id=None,
+    connection_id=None,
 ) -> Dict[str, Any]:
     """
     Ingestion for internal knowledge bases (GoogleDrive, etc.).
@@ -2176,7 +3592,8 @@ def ingest_connector(
         job_name: Name of the ingestion job
         user: User identifier
         source_type: Type of remote source ("google_drive", "dropbox", etc.)
-        session_token: Authentication token for the service
+        session_token: Legacy browser session token naming the connection
+        connection_id: The connection whose account the files are read with
         file_ids: List of file IDs to download
         folder_ids: List of folder IDs to download
         recursive: Whether to recursively download folders
@@ -2238,8 +3655,8 @@ def ingest_connector(
                 meta={"current": 10, "status": "Initializing connector"},
             )
 
-            if not session_token:
-                raise ValueError(f"{source_type} connector requires session_token")
+            if not session_token and not connection_id:
+                raise ValueError(f"{source_type} connector requires a connection")
 
             if not ConnectorCreator.is_supported(source_type):
                 raise ValueError(
@@ -2247,8 +3664,9 @@ def ingest_connector(
                 )
 
             remote_loader = ConnectorCreator.create_connector(
-                source_type, session_token
+                source_type, session_token, connection_id=connection_id
             )
+            connection_id = remote_loader.connection_id
 
             # Create a clean config for storage
             api_source_config = {
@@ -2402,6 +3820,8 @@ def ingest_connector(
                     )
 
             upload_index(vector_store_path, file_data)
+            if connection_id:
+                _link_source_to_connection(source_id_for_events, connection_id)
 
             # Ensure we mark the task as complete
             self.update_state(
@@ -2608,10 +4028,12 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
 
         added = 0
         for chunk in chunks:
-            store.add_chunk(
-                chunk.text,
-                metadata={"source": path, "title": title, "filename": path},
-            )
+            # Start from what the chunker produced -- ``token_count`` above
+            # all, which the source viewer reads per chunk -- and let the
+            # page's own identity win over anything stale it inherited.
+            metadata = dict(chunk.extra_info or {})
+            metadata.update({"source": path, "title": title, "filename": path})
+            store.add_chunk(chunk.text, metadata=metadata)
             added += 1
 
         with db_session() as conn:
@@ -2933,16 +4355,36 @@ def extract_graph_worker(self, source_id, user):
         },
     )
 
+    trace = tracing.start_trace(
+        source="graph_extraction",
+        name=f"graph_extraction {source.get('name') or source_id}",
+        request_id=getattr(self.request, "id", None),
+        user_id=user,
+    )
     try:
-        summary = extract_graph_for_source(
-            source_id,
-            user,
-            chunks,
-            config=cfg,
-            request_id=getattr(self.request, "id", None),
-            progress_cb=_progress,
-        )
+        with tracing.activate(trace), tracing.span(
+            tracing.KIND_STEP,
+            "graph_extraction",
+            attributes={"docsgpt.source_id": source_id, "docsgpt.chunk_count": total},
+        ) as span:
+            summary = extract_graph_for_source(
+                source_id,
+                user,
+                chunks,
+                config=cfg,
+                request_id=getattr(self.request, "id", None),
+                progress_cb=_progress,
+            )
+            if isinstance(summary, dict):
+                span.set(
+                    **{
+                        "docsgpt.graph.nodes": summary.get("nodes"),
+                        "docsgpt.graph.edges": summary.get("edges"),
+                        "docsgpt.graph.chunks_processed": summary.get("chunks_processed"),
+                    }
+                )
     except Exception as e:
+        tracing.flush(trace, tracing.STATUS_ERROR)
         _publish_graph_event(
             user,
             source_id,
@@ -2951,6 +4393,7 @@ def extract_graph_worker(self, source_id, user):
         )
         raise
 
+    tracing.flush(trace)
     _publish_graph_event(
         user,
         source_id,

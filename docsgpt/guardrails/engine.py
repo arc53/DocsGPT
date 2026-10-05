@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 from threading import Thread
 from time import monotonic
-from typing import List, Optional
+from typing import Any, List, Optional, Sequence
 
+from docsgpt import tracing
 from docsgpt.guardrails.base import ScanContext
 from docsgpt.guardrails.config import GuardrailsConfig
 from docsgpt.guardrails.guardrail_creator import GuardrailCreator
@@ -24,6 +25,53 @@ logger = logging.getLogger(__name__)
 
 # Hard cap on threads one stage evaluation may spawn.
 _MAX_WORKERS = 8
+
+
+def _start_guardrail_span(stage: Stage, controls: Sequence[Any]) -> "tracing.Span":
+    """Open a ``guardrail`` span for evaluating ``controls`` at ``stage``."""
+    return tracing.start_span(
+        tracing.KIND_GUARDRAIL,
+        f"guardrail {stage.value}",
+        attributes={
+            "docsgpt.guardrail.stage": stage.value,
+            "docsgpt.guardrail.checks": [c.check for c in controls],
+        },
+    )
+
+
+def _content_fired(decision: StageDecision) -> bool:
+    """True when a check matched, or the text was blocked or redacted."""
+    return bool(decision.triggered or decision.blocked or decision.redacted)
+
+
+def _decision_key(decision: StageDecision) -> tuple:
+    """Identity of a guardrail outcome, for recording each distinct one once."""
+    return (
+        "guardrail",
+        decision.stage.value,
+        tuple(sorted(v.check for v in decision.triggered)),
+        tuple(sorted(v.check for v in decision.unevaluated)),
+        decision.blocked,
+        decision.redacted,
+    )
+
+
+def _describe_decision(span: "tracing.Span", decision: StageDecision) -> None:
+    """Record a stage decision on its span; a firing guardrail drops trace previews."""
+    triggered = [v.check for v in decision.triggered]
+    span.set(
+        **{
+            "docsgpt.guardrail.triggered": triggered or None,
+            "docsgpt.guardrail.blocked": decision.blocked,
+            "docsgpt.guardrail.redacted": decision.redacted,
+            "docsgpt.guardrail.categories": decision.categories() or None,
+            "docsgpt.guardrail.unevaluated": [v.check for v in decision.unevaluated] or None,
+        }
+    )
+    if _content_fired(decision):
+        # The scanned text (or text near it) sits in other spans' previews:
+        # the retrieval query, tool results, the answer. Keep none of it.
+        tracing.mark_content_blocked()
 
 
 class GuardrailEngine:
@@ -93,14 +141,29 @@ class GuardrailEngine:
             return decision
 
         if any(self._needs_deadline(c) for c in controls):
-            decision.verdicts = self._run_concurrent(controls, text, stage)
+            # Remote checks (e.g. an LLM judge) cost real time, so they are
+            # always traced; the judge's own LLM call nests under this span.
+            with _start_guardrail_span(stage, controls) as span:
+                decision.verdicts = self._run_concurrent(controls, text, stage)
+                self._reduce(decision)
+                _describe_decision(span, decision)
         else:
             # Bounded local checks are pattern matches measured in
             # microseconds. Running them inline keeps the streaming hot loop
             # free of thread churn.
             decision.verdicts = [self._run_control(c, text, stage) for c in controls]
+            self._reduce(decision)
+            # The output guard evaluates every streamed segment; tracing each
+            # clean local scan would bury the trace, so only a firing is kept,
+            # and a firing that repeats unchanged segment after segment is
+            # recorded once so it cannot use up the trace's span cap.
+            if not decision.clean or decision.unevaluated:
+                if tracing.first_occurrence(_decision_key(decision)):
+                    with _start_guardrail_span(stage, controls) as span:
+                        _describe_decision(span, decision)
+                elif _content_fired(decision):
+                    tracing.mark_content_blocked()
 
-        self._reduce(decision)
         self._record(decision)
         return decision
 
@@ -117,7 +180,7 @@ class GuardrailEngine:
         for control in controls[:_MAX_WORKERS]:
             slot: dict = {"control": control, "verdict": None}
             thread = Thread(
-                target=self._fill_slot,
+                target=tracing.wrap(self._fill_slot),
                 args=(slot, control, text, stage),
                 daemon=True,
                 name=f"guardrail-{control.check}",

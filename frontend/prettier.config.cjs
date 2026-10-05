@@ -5,4 +5,5 @@ module.exports = {
   singleQuote: true,
   printWidth: 80,
   plugins: ['prettier-plugin-tailwindcss'],
+  tailwindFunctions: ['cn'],
 };

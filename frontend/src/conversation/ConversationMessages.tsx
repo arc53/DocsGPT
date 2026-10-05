@@ -7,10 +7,11 @@ import {
   useRef,
   useState,
 } from 'react';
+import { RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import Retry from '../assets/retry.svg?react';
-import { Button } from '../components/ui/button';
+import { Alert, AlertDescription } from '../components/ui/alert';
+import { IconButton } from '../components/ui/icon-button';
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -20,10 +21,13 @@ import {
   MessageScrollerViewport,
 } from '../components/ui/message-scroller';
 import Hero from '../Hero';
+import AddToKnowledgeAction from './AddToKnowledgeAction';
 import { deriveArtifactChips } from './artifactChips';
 import ConversationBubble from './ConversationBubble';
 import { FEEDBACK, Query, Status } from './conversationModels';
+import { curatedErrorText } from './curatedError';
 import StreamingStatusLine from './StreamingStatusLine';
+import { cn } from '@/lib/utils';
 
 type ConversationMessagesProps = {
   handleQuestion: (params: {
@@ -50,7 +54,17 @@ type ConversationMessagesProps = {
   isSplitView?: boolean;
   /** Active agent id; threaded into SchedulerToolCallCard. */
   agentId?: string;
+  /**
+   * Whether a turn whose files did not fit may offer Add to Knowledge. Only
+   * the main chat, where the user picks the Knowledge the chat searches.
+   */
+  canAddToKnowledge?: boolean;
+  /** A failed turn's files were accepted as Knowledge; ``index`` is the turn. */
+  onKnowledgeAdded?: (index: number) => void;
 };
+
+// The backend's code for a turn that did not fit the model's window.
+const CONTEXT_LENGTH_EXCEEDED = 'context_length_exceeded';
 
 const MS_VIEWPORT_SELECTOR = '[data-slot="message-scroller-viewport"]';
 const STICK_THRESHOLD_PX = 48;
@@ -72,6 +86,8 @@ export default function ConversationMessages({
   onToolAction,
   isSplitView = false,
   agentId,
+  canAddToKnowledge = false,
+  onKnowledgeAdded,
 }: ConversationMessagesProps) {
   const { t } = useTranslation();
 
@@ -116,7 +132,9 @@ export default function ConversationMessages({
       // (dist >= its height) so removing it never shifts the visible content.
       // Reading style.height (the primitive's inline value) avoids a reflow.
       if (!spacerCollapsedRef.current) {
-        const spacer = vp.querySelector<HTMLElement>('.msc-spacer');
+        const spacer = vp.querySelector<HTMLElement>(
+          '[data-message-scroller-spacer]',
+        );
         const spacerH = spacer ? parseFloat(spacer.style.height) || 0 : 0;
         if (spacerH > STICK_THRESHOLD_PX && dist >= spacerH) {
           spacerCollapsedRef.current = true;
@@ -155,10 +173,11 @@ export default function ConversationMessages({
     // tool_calls and would otherwise fall into the answer branch.
     if (query.error) {
       const retryButton = (
-        <Button
-          type="button"
-          variant="ghost"
-          className="dark:text-foreground h-auto self-center rounded-full px-5 py-3 text-lg text-gray-500 delay-100 hover:border-gray-500"
+        <IconButton
+          label={t('conversation.retry')}
+          variant="ghost-muted"
+          size="icon-sm"
+          shape="pill"
           disabled={status === 'loading'}
           onClick={() => {
             const questionToRetry = queries[index].prompt;
@@ -168,22 +187,40 @@ export default function ConversationMessages({
               index,
             });
           }}
-          aria-label={t('Retry') || 'Retry'}
         >
-          <Retry
-            width={12}
-            height={12}
-            className="text-gray-500 dark:text-[#ECECF1]"
-          />
-        </Button>
+          <RotateCcw aria-hidden="true" />
+        </IconButton>
       );
+      // Files that overflowed the window are better searched than sent:
+      // offer to make them Knowledge, then the question can be asked again.
+      const knowledgeFiles =
+        canAddToKnowledge &&
+        query.errorCode === CONTEXT_LENGTH_EXCEEDED &&
+        query.attachments?.length
+          ? query.attachments
+          : null;
       return (
         <ConversationBubble
           className={bubbleMargin}
           key={`${index}-ERROR`}
-          message={query.error}
+          message={curatedErrorText(
+            t,
+            query.error,
+            query.errorCode,
+            query.errorParams,
+            { offersKnowledge: Boolean(knowledgeFiles) },
+          )}
           type="ERROR"
           retryBtn={retryButton}
+          errorCode={query.errorCode}
+          errorAction={
+            knowledgeFiles ? (
+              <AddToKnowledgeAction
+                files={knowledgeFiles}
+                onAdded={() => onKnowledgeAdded?.(index)}
+              />
+            ) : undefined
+          }
         />
       );
     }
@@ -206,12 +243,13 @@ export default function ConversationMessages({
       return (
         <Fragment key={`${index}-ANSWER`}>
           {query.notice ? (
-            <div
+            <Alert
+              variant="warning"
               role="status"
-              className={`${bubbleMargin} mr-5 self-start rounded-2xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200`}
+              className={cn(bubbleMargin, 'mr-5 w-auto')}
             >
-              {query.notice}
-            </div>
+              <AlertDescription>{query.notice}</AlertDescription>
+            </Alert>
           ) : null}
           <ConversationBubble
             className={bubbleMargin}
@@ -242,7 +280,10 @@ export default function ConversationMessages({
     if (status === 'loading' && index === queries.length - 1) {
       return (
         <div
-          className={`fade-in-bubble group dark:text-foreground flex flex-col flex-wrap self-start ${bubbleMargin}`}
+          className={cn(
+            'animate-in fade-in slide-in-from-bottom-1.5 group flex flex-col flex-wrap self-start duration-260 ease-out motion-reduce:animate-none',
+            bubbleMargin,
+          )}
         >
           <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
             <StreamingStatusLine className="my-2 ml-6" />
@@ -270,10 +311,8 @@ export default function ConversationMessages({
       <MessageScroller>
         <MessageScrollerViewport className="sm:pt-6 lg:pt-12">
           <MessageScrollerContent
-            spacerClassName={
-              spacerCollapsed ? 'msc-spacer max-h-0' : 'msc-spacer'
-            }
-            className={`mx-auto pb-7 ${columnClass}`}
+            spacerClassName={spacerCollapsed ? 'max-h-0' : undefined}
+            className={cn('mx-auto pb-7', columnClass)}
           >
             {headerContent}
             {queries.map((query, index) => {
@@ -282,9 +321,10 @@ export default function ConversationMessages({
                 <Fragment key={`${index}-query-fragment`}>
                   <MessageScrollerItem messageId={`q-${index}`} scrollAnchor>
                     <ConversationBubble
-                      className={`${QUESTION_BUBBLE_MARGIN_BOTTOM} ${
-                        index === 0 ? FIRST_QUESTION_BUBBLE_MARGIN_TOP : ''
-                      }`}
+                      className={cn(
+                        QUESTION_BUBBLE_MARGIN_BOTTOM,
+                        index === 0 ? FIRST_QUESTION_BUBBLE_MARGIN_TOP : '',
+                      )}
                       message={query.prompt}
                       type="QUESTION"
                       handleUpdatedQuestionSubmission={handleQuestionSubmission}

@@ -45,7 +45,7 @@ class AgentNodeConfig(BaseModel):
     stream_to_user: bool = True
     tools: List[str] = Field(default_factory=list)
     sources: List[str] = Field(default_factory=list)
-    chunks: str = "2"
+    chunks: str = "6"
     retriever: str = ""
     model_id: Optional[str] = None
     json_schema: Optional[Dict[str, Any]] = None

@@ -48,11 +48,13 @@ class GoogleDriveLoader(BaseConnectorLoader):
         'application/vnd.google-apps.spreadsheet': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     }
 
-    def __init__(self, session_token: str):
+    def __init__(self, session_token: Optional[str] = None, *, connection_id: Optional[str] = None):
         self.auth = GoogleDriveAuth()
         self.session_token = session_token
 
-        token_info = self.auth.get_token_info_from_session(session_token)
+        _, token_info = self._load_token_info(session_token, connection_id)
+        # Google refresh tokens do not rotate, so the credentials object may
+        # renew the access token in memory for the rest of this run.
         self.credentials = self.auth.create_credentials_from_token_info(token_info)
 
         try:

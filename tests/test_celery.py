@@ -276,3 +276,77 @@ class TestReclaimIsSkippedForEmbeds:
         from docsgpt.vectorstore.embeddings_delegated import EMBED_TASK
 
         assert EMBED_TASK in _NO_RECLAIM_TASKS
+
+
+@pytest.mark.unit
+class TestInWorker:
+    """Whether code runs inside a worker must not depend on which thread asks.
+
+    Celery records the executing task on the thread that runs it, so a thread
+    that task starts sees no task at all. Code deciding "am I in the worker?"
+    from that alone takes the web-process branch there: it dispatches to the
+    worker it is running in and blocks on the result, which Celery refuses
+    ("Never call result.get() within a task!") or, where joins are allowed,
+    waits on a queue only this busy process serves.
+    """
+
+    @staticmethod
+    def _ask_from_a_new_thread():
+        import threading
+
+        from docsgpt.celery_init import in_worker
+
+        seen = []
+        thread = threading.Thread(target=lambda: seen.append(in_worker()))
+        thread.start()
+        thread.join()
+        return seen[0]
+
+    def test_false_outside_a_worker(self):
+        from docsgpt.celery_init import in_worker
+
+        assert in_worker() is False
+        assert self._ask_from_a_new_thread() is False
+
+    def test_true_on_a_thread_started_inside_a_worker(self):
+        # Blocking pools (prefork, solo, threads) mark the whole process as one
+        # where joining a task would block; ``denied_join_result`` sets exactly
+        # that flag.
+        from celery.result import denied_join_result
+
+        with denied_join_result():
+            assert self._ask_from_a_new_thread() is True
+
+    def test_true_on_any_thread_of_a_non_blocking_pool_worker(self, monkeypatch):
+        # eventlet/gevent leave the join flag unset and scope the current task
+        # to one greenlet, so only the worker's own startup can say this
+        # process is a worker. The lifecycle signal records that for every
+        # thread and greenlet in it.
+        from celery.signals import worker_init
+
+        monkeypatch.setattr("docsgpt.celery_init._IS_WORKER_PROCESS", False)
+        assert self._ask_from_a_new_thread() is False
+
+        worker_init.send(sender=None)
+
+        assert self._ask_from_a_new_thread() is True
+
+    def test_prefork_children_record_it_on_their_own_start(self, monkeypatch):
+        from celery.signals import worker_process_init
+
+        monkeypatch.setattr("docsgpt.celery_init._IS_WORKER_PROCESS", False)
+        worker_process_init.send(sender=None)
+
+        assert self._ask_from_a_new_thread() is True
+
+    def test_true_on_the_task_thread_of_a_non_blocking_pool(self):
+        # eventlet/gevent pools leave the process flag unset; the thread
+        # running the task still knows it is in one.
+        from unittest.mock import PropertyMock
+
+        from docsgpt.celery_init import celery, in_worker
+
+        with patch.object(
+            type(celery), "current_worker_task", new_callable=PropertyMock, return_value=object()
+        ):
+            assert in_worker() is True

@@ -18,7 +18,9 @@ from docsgpt.sandbox.base import (
     CodeSandbox,
     DisplayData,
     ExecResult,
+    OpenedSession,
     Plot,
+    SandboxGoneError,
 )
 
 logger = logging.getLogger(__name__)
@@ -134,11 +136,20 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
     # -- Lifecycle -------------------------------------------------------
 
     def open(self, session_id: str) -> str:
+        """Start (or reuse) the kernel for ``session_id``; see ``open_session``."""
+        return self.open_session(session_id).handle
+
+    def open_session(self, session_id: str) -> OpenedSession:
         """Start a fresh kernel for ``session_id`` and prime its workspace cwd.
 
         Idempotent under concurrency: if another thread is already creating a kernel
         for this session, wait for it and reuse the result rather than POSTing a
         second kernel that would orphan on the gateway.
+
+        Returns:
+            OpenedSession: The kernel id, and ``created`` True only when this call
+            started the kernel. A new kernel also starts on an emptied workspace
+            (see ``_prime``), so nothing from an earlier kernel survives.
         """
         self._validate_session_id(session_id)
         with self._create_cv:
@@ -149,7 +160,7 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
                 owner == session_id for owner in self._quarantined_kernels.values()
             )
             if existing is not None and not has_quarantine:
-                return existing.kernel_id
+                return OpenedSession(existing.kernel_id, False)
             self._creating.add(session_id)
         try:
             unresolved = self._retry_quarantined_kernels(session_id)
@@ -158,7 +169,7 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
                 # deletion of an older exact id remains pending.
                 existing = self._kernels.get(session_id)
             if existing is not None:
-                return existing.kernel_id
+                return OpenedSession(existing.kernel_id, False)
             if unresolved:
                 raise RuntimeError(
                     f"Previous timed-out kernel for {session_id!r} could not be terminated"
@@ -176,7 +187,7 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
             with self._lock:
                 self._kernels[session_id] = kernel
             self._prime(kernel)
-            return kernel_id
+            return OpenedSession(kernel_id, True)
         finally:
             with self._create_cv:
                 self._creating.discard(session_id)
@@ -341,6 +352,20 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
                 self._quarantined_kernels.pop(kernel_id, None)
         return deleted
 
+    def _forget_kernel(self, kernel_id: str) -> None:
+        """Drop registry entries still bound to ``kernel_id``; a replacement kernel is kept."""
+        with self._lock:
+            for session_id, registered in list(self._kernels.items()):
+                if registered.kernel_id == kernel_id:
+                    self._kernels.pop(session_id, None)
+
+    @staticmethod
+    def _file_op_error(op: str, result: ExecResult) -> IOError:
+        """Build the error for a failed file op; a lost runtime is a ``SandboxGoneError``."""
+        if result.runtime_invalidated:
+            return SandboxGoneError(f"{op} failed: kernel gone ({result.error_name})")
+        return IOError(f"{op} failed: {result.error_value}")
+
     def _prime(self, kernel: _Kernel) -> None:
         """Create the per-session workspace (mode 0700) and chdir the kernel into it."""
         # 0700 on the root and the per-session dir is defense-in-depth only: every
@@ -350,7 +375,7 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
         # prior kernel for the same session id left behind (else artifacts_capture
         # would re-read those files every exec). Only genuine new-kernel creation
         # reaches here -- open() on a live kernel returns early -- so a warm
-        # persist=true session is never wiped mid-computation.
+        # session is never wiped mid-computation.
         setup = (
             "import os as _os, shutil as _sh\n"
             f"_os.makedirs({_WORKSPACE_ROOT!r}, mode=0o700, exist_ok=True)\n"
@@ -391,6 +416,16 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
                 header=self._ws_headers(),
             )
         except Exception as exc:  # noqa: BLE001 - connect failure -> error result, never raise
+            if isinstance(exc, websocket.WebSocketBadStatusException) and exc.status_code == 404:
+                # The gateway no longer has this kernel: culled after idling, or lost
+                # with a gateway restart. Retrying the cached id would fail the same
+                # way on every call, so forget it and let the next open start fresh.
+                self._forget_kernel(kernel.kernel_id)
+                result = _error_result(
+                    "KernelGoneError", "the session's kernel no longer exists; the next call starts a new session"
+                )
+                result.runtime_invalidated = True
+                return result
             return _error_result(type(exc).__name__, str(exc) or "failed to open kernel channel")
         try:
             msg_id = uuid.uuid4().hex
@@ -614,7 +649,7 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
             code = "import base64 as _b64, os as _os\n" + _CONTAINMENT_SNIPPET + body
             result = self._run(kernel, code, self._default_timeout)
             if not result.ok:
-                raise IOError(f"put_file failed: {result.error_value}")
+                raise self._file_op_error("put_file", result)
             offset += self._PUT_CHUNK_BYTES
             first = False
 
@@ -635,7 +670,7 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
         )
         result = self._run(kernel, code, self._default_timeout, max_output_bytes=self._file_transfer_budget())
         if not result.ok:
-            raise IOError(f"get_file failed: {result.error_value}")
+            raise self._file_op_error("get_file", result)
         out = result.stdout
         start = out.find(_FILE_BEGIN)
         end = out.find(_FILE_END)
@@ -662,7 +697,7 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
         )
         result = self._run(kernel, code, self._default_timeout, max_output_bytes=self._file_transfer_budget())
         if not result.ok:
-            raise IOError(f"list_files failed: {result.error_value}")
+            raise self._file_op_error("list_files", result)
         out = result.stdout
         start = out.find(_FILE_BEGIN)
         end = out.find(_FILE_END)

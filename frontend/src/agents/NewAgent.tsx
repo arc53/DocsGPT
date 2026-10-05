@@ -1,9 +1,10 @@
 import isEqual from 'lodash/isEqual';
-import { MoreHorizontal } from 'lucide-react';
+import { CircleCheck, CircleX, Database, Play, SquarePen } from 'lucide-react';
 import React, {
   useCallback,
   useEffect,
   useMemo,
+  useId,
   useRef,
   useState,
 } from 'react';
@@ -11,13 +12,14 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { Card } from '@/components/ui/card';
+import { ActionMenu } from '@/components/ui/dropdown-menu';
+import { EmptyState } from '@/components/ui/empty-state';
+import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 
 import {
@@ -27,20 +29,30 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { SectionHeader } from '@/components/ui/section-header';
+import { SettingRow, SettingRows } from '@/components/ui/setting-row';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 
 import devicesService from '../api/services/devicesService';
 import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
-import SourceIcon from '../assets/source.svg';
 import { FileUpload } from '../components/FileUpload';
 import {
   MultiSelectPopover,
   type MultiSelectPopoverItem,
 } from '../components/MultiSelectPopover';
 import SourcesPopoverFooter from '../components/SourcesPopoverFooter';
-import Spinner from '../components/Spinner';
 import ToolIcon from '../components/ToolIcon';
+import connectorsService from '../api/services/connectorsService';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import { connectionNeedsSignIn } from '../connectors/connectorsSlice';
+import SignInAgainNotice, {
+  useSignInAgain,
+} from '../connectors/SignInAgainNotice';
+import { toolServiceOf } from '../connectors/toolService';
+import type { Connection, ConnectorDefinition } from '../connectors/types';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -58,6 +70,8 @@ import {
 import PromptsModal from '../preferences/PromptsModal';
 import Prompts from '../settings/Prompts';
 import { UserToolType } from '../settings/types';
+import { can } from '../utils/accessUtils';
+import { isReader, personLabel, readerIdFromToken } from '../utils/personLabel';
 import Upload from '../upload/Upload';
 import {
   selectedSourceIdsFromAgent,
@@ -67,14 +81,30 @@ import {
 } from '../utils/sourceUtils';
 import {
   getToolDisplayName,
-  isClassicAgentToolVisible,
+  isAgentPickerToolVisible,
 } from '../utils/toolUtils';
-import AgentPageHeader from './AgentPageHeader';
+import { agentsListPath } from './paths';
 import GuardrailsSection, {
   guardrailsIncomplete,
 } from './components/GuardrailsSection';
 import AgentPreview from './AgentPreview';
-import { Agent, ToolSummary } from './types';
+import { resetPreview, selectPreviewStatus } from './agentPreviewSlice';
+import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
+import AgentPreviewSheet from './components/AgentPreviewSheet';
+import SectionShell from '../navigation/SectionShell';
+import ResourceStatusNotice, {
+  type NamedResource,
+  unnamedResourceLabel,
+} from './components/ResourceStatusNotice';
+import {
+  confirmTakeOver,
+  readSponsorRefusal,
+  saveWithSponsorConsent,
+  sponsorNotAllowedMessage,
+  withAttachedToolRows,
+} from './sponsorConsent';
+import { useSponsorPrompt } from './useSponsorPrompt';
+import { Agent, ResourceSponsor, ResourceState, ToolSummary } from './types';
 import WorkflowBuilder from './workflow/WorkflowBuilder';
 
 import type { Model } from '../models/types';
@@ -103,7 +133,7 @@ const extractApiError = async (
 };
 
 export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { agentId } = useParams();
@@ -112,6 +142,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const folderIdFromUrl = searchParams.get('folder_id');
 
   const token = useSelector(selectToken);
+  const readerId = useMemo(() => readerIdFromToken(token), [token]);
   const sourceDocs = useSelector(selectSourceDocs);
   const selectedAgent = useSelector(selectSelectedAgent);
   const prompts = useSelector(selectPrompts);
@@ -129,7 +160,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     image: '',
     source: '',
     sources: [],
-    chunks: '2',
+    chunks: '6',
     retriever: 'classic',
     prompt_id: 'default',
     tools: [],
@@ -147,6 +178,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [userTools, setUserTools] = useState<MultiSelectPopoverItem[]>([]);
   const [rawUserTools, setRawUserTools] = useState<UserToolType[]>([]);
+  // Connections behind the picker's tools that need signing in again.
+  const [brokenToolConnections, setBrokenToolConnections] = useState<
+    { connection: Connection; mcpToolId?: string }[]
+  >([]);
+  const [toolsReloadKey, setToolsReloadKey] = useState(0);
+  // Bumped after a reconnect so the agent's run state is read again.
+  const [detailsReloadKey, setDetailsReloadKey] = useState(0);
+  const signInAgain = useSignInAgain({
+    onConnected: () => {
+      setToolsReloadKey((key) => key + 1);
+      setDetailsReloadKey((key) => key + 1);
+    },
+  });
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
   const [isSourcePopupOpen, setIsSourcePopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
@@ -157,12 +201,23 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     new Set(),
   );
   const [selectedTools, setSelectedTools] = useState<ToolSummary[]>([]);
+  // Tools on the agent when it loaded: the owner's private ones don't come
+  // back in the caller's own tool list, so the picker adds a row for each.
+  const [attachedTools, setAttachedTools] = useState<ToolSummary[]>([]);
+  // Asks before a save makes what the caller added run with their access.
+  const sponsorPrompt = useSponsorPrompt();
+  // Keys of stopped items the caller chose to keep running with their
+  // access; sent as ``confirm_sponsor`` with the next save.
+  const [takeovers, setTakeovers] = useState<string[]>([]);
   const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(
     new Set(),
   );
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
+  const [deleteError, setDeleteError] = useState<string>();
+  // Access details opened from Share to allow changes: its allowlist unfolds.
+  const [detailsOnApiWrites, setDetailsOnApiWrites] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [addPromptModal, setAddPromptModal] = useState<ActiveState>('INACTIVE');
   const [hasChanges, setHasChanges] = useState(false);
@@ -171,8 +226,26 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [jsonSchemaText, setJsonSchemaText] = useState('');
   const [jsonSchemaValid, setJsonSchemaValid] = useState(true);
+  const tokenLimitSwitchId = useId();
+  const requestLimitSwitchId = useId();
+  const promptOverrideSwitchId = useId();
+  const sourcesPickerId = useId();
+  const toolsPickerId = useId();
+  const modelsPickerId = useId();
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const previewStatus = useSelector(selectPreviewStatus);
+
+  // The preview chat outlives its drawer: closing and reopening keeps the
+  // conversation. It starts over on New chat, after a save, and on leaving.
+  useEffect(() => {
+    dispatch(resetPreview());
+    return () => {
+      dispatch(resetPreview());
+    };
+  }, [dispatch]);
   const [isAdvancedSectionExpanded, setIsAdvancedSectionExpanded] =
     useState(false);
+  const advancedSectionId = React.useId();
 
   const initialAgentRef = useRef<Agent | null>(null);
   const sourceAnchorButtonRef = useRef<HTMLButtonElement>(null);
@@ -207,7 +280,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   };
   const agentTypes = [
     { label: t('agents.form.agentTypes.classic'), value: 'classic' },
-    { label: 'Research', value: 'research' },
+    { label: t('agents.form.agentTypes.research'), value: 'research' },
   ];
 
   const isPublishable = () => {
@@ -248,6 +321,84 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     [agent.source_details, sourceDocs, t],
   );
 
+  // Name of a tool/source/prompt that runs with an editor's access, from the
+  // same owner-agnostic details the pickers show.
+  const resolveSponsoredName = useCallback(
+    (sponsor: NamedResource): string => {
+      if (sponsor.name) return sponsor.name;
+      if (sponsor.type === 'source') return resolveSourceLabel(sponsor.id);
+      if (sponsor.type === 'prompt') {
+        return (
+          prompts.find((prompt) => prompt.id === sponsor.id)?.name ||
+          agent.prompt_name ||
+          unnamedResourceLabel(t, sponsor)
+        );
+      }
+      const tool = selectedTools.find((item) => item.id === sponsor.id);
+      return tool ? getToolDisplayName(tool) : unnamedResourceLabel(t, sponsor);
+    },
+    [agent.prompt_name, prompts, resolveSourceLabel, selectedTools, t],
+  );
+
+  // "Added by …" for a tool, source or prompt that runs with an editor's
+  // access (`resource_sponsors`), shown where it is picked; null otherwise.
+  const addedByLabel = useCallback(
+    (type: ResourceSponsor['type'], id: string): string | null => {
+      const sponsor = (agent.resource_sponsors ?? []).find(
+        (item) =>
+          item.active &&
+          item.type === type &&
+          item.id.toLowerCase() === id.toLowerCase(),
+      );
+      if (!sponsor) return null;
+      if (isReader(sponsor, readerId))
+        return t('agents.form.sponsors.addedByYou');
+      const person = sponsor.user_id ? personLabel(sponsor) : null;
+      return person
+        ? t('agents.form.sponsors.addedBy', {
+            person,
+            interpolation: { escapeValue: false },
+          })
+        : t('agents.form.sponsors.addedByOther');
+    },
+    [agent.resource_sponsors, readerId, t],
+  );
+
+  const promptAddedBy = agent.prompt_id
+    ? addedByLabel('prompt', agent.prompt_id)
+    : null;
+
+  /** Picker rows with their "Added by" line in the row's description. */
+  const withAddedBy = useCallback(
+    (
+      items: MultiSelectPopoverItem[],
+      type: ResourceSponsor['type'],
+    ): MultiSelectPopoverItem[] =>
+      items.map((item) => {
+        const addedBy = addedByLabel(type, item.id);
+        if (!addedBy) return item;
+        // A rich description (a status badge) wins over a plain one, so the
+        // line goes above it.
+        return item.descriptionNode
+          ? {
+              ...item,
+              descriptionNode: (
+                <>
+                  <p
+                    className="text-muted-foreground truncate text-xs"
+                    title={addedBy}
+                  >
+                    {addedBy}
+                  </p>
+                  {item.descriptionNode}
+                </>
+              ),
+            }
+          : { ...item, description: addedBy };
+      }),
+    [addedByLabel],
+  );
+
   const sourceItems = useMemo(() => {
     const items = toSourcePickerItems(
       sourceDocs,
@@ -255,7 +406,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         own: t('agents.form.sourcePopup.groupOwn'),
         team: t('agents.form.sourcePopup.groupTeam'),
       },
-      SourceIcon,
+      <Database />,
     );
     // An attached source the caller can't list — an owner's private source on
     // a team-shared agent — still needs a row of its own, or it reads as
@@ -263,9 +414,23 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const listed = new Set(items.map((item) => item.id));
     const unlisted = Array.from(selectedSourceIds)
       .filter((id) => !listed.has(id))
-      .map((id) => ({ id, label: resolveSourceLabel(id), icon: SourceIcon }));
-    return [...items, ...unlisted];
-  }, [resolveSourceLabel, selectedSourceIds, sourceDocs, t]);
+      .map((id) => ({ id, label: resolveSourceLabel(id), icon: <Database /> }));
+    return withAddedBy([...items, ...unlisted], 'source');
+  }, [resolveSourceLabel, selectedSourceIds, sourceDocs, t, withAddedBy]);
+
+  // The caller's tools, plus a remove-only row for each tool on the agent
+  // they can't list (the owner's private tools on a shared agent).
+  const toolItems = useMemo(
+    () =>
+      withAddedBy(
+        withAttachedToolRows(userTools, attachedTools, {
+          group: t('agents.form.toolsPopup.groupAttached'),
+          description: t('agents.form.toolsPopup.attachedHint'),
+        }),
+        'tool',
+      ),
+    [attachedTools, t, userTools, withAddedBy],
+  );
 
   const selectedSourceNames = useMemo(
     () =>
@@ -316,8 +481,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   const navigateBackToAgents = useCallback(() => {
     const targetPath = validatedFolderId
-      ? `/agents?folder=${validatedFolderId}`
-      : '/agents';
+      ? agentsListPath(validatedFolderId)
+      : agentsListPath();
     navigate(targetPath);
   }, [navigate, validatedFolderId]);
 
@@ -326,10 +491,167 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     navigateBackToAgents();
   };
 
+  // Returned to ConfirmationModal: it stays pending while this runs and
+  // keeps a failure in the dialog (the server's message when it gives one).
   const handleDelete = async (agentId: string) => {
+    setDeleteError(undefined);
     const response = await userService.deleteAgent(agentId, token);
-    if (!response.ok) throw new Error('Failed to delete agent');
+    if (!response.ok) {
+      const message = await extractApiError(response, t('agents.deleteFailed'));
+      setDeleteError(message);
+      throw new Error(message);
+    }
     navigateBackToAgents();
+  };
+
+  // Fresh sponsor details and run state after a save or a reconnect,
+  // without touching unsaved fields.
+  const refreshSponsors = useCallback(
+    async (id?: string) => {
+      if (!id) return;
+      try {
+        const response = await userService.getAgent(id, token);
+        if (!response.ok) return;
+        const data = await response.json();
+        const details: Partial<Agent> = {
+          resource_sponsors: data.resource_sponsors ?? [],
+          resource_states: data.resource_states ?? [],
+          sponsor_audience: data.sponsor_audience,
+        };
+        setAgent((prev) => ({ ...prev, ...details }));
+        if (initialAgentRef.current)
+          initialAgentRef.current = { ...initialAgentRef.current, ...details };
+      } catch {
+        // The notice keeps what it showed.
+      }
+    },
+    [token],
+  );
+
+  useEffect(() => {
+    if (detailsReloadKey > 0) void refreshSponsors(agent.id);
+    // Only a reconnect asks for this; agent.id is read when it does.
+  }, [detailsReloadKey, refreshSponsors]);
+
+  /** The message for a refused save. */
+  const saveFailureMessage = async (
+    response: Response,
+    fallback: string,
+  ): Promise<string> => {
+    const refusal = await readSponsorRefusal(response);
+    if (refusal?.kind === 'notAllowed')
+      return sponsorNotAllowedMessage(t, i18n.language, refusal.resources);
+    if (refusal?.kind === 'unexpected') {
+      // Someone changed the agent since the caller chose; show them now.
+      setTakeovers([]);
+      void refreshSponsors(agent.id);
+      return t('agents.form.sponsors.confirmationOutdated');
+    }
+    return extractApiError(response, fallback);
+  };
+
+  /**
+   * Create or update the agent, asking whenever the server wants the
+   * caller's confirmation to run what they added with their access.
+   * Resolves to null when they decline.
+   */
+  const sendAgent = (formData: FormData) =>
+    saveWithSponsorConsent(
+      (confirm) => {
+        if (confirm.length > 0)
+          formData.set('confirm_sponsor', JSON.stringify(confirm));
+        else formData.delete('confirm_sponsor');
+        return effectiveMode === 'new'
+          ? userService.createAgent(formData, token)
+          : userService.updateAgent(agent.id || '', formData, token);
+      },
+      sponsorPrompt.ask,
+      takeovers,
+    );
+
+  /** Bookkeeping after an update the server accepted. */
+  const afterSaved = (id?: string) => {
+    // What is on the agent now is what the tool picker keeps rows for.
+    setAttachedTools(selectedTools);
+    if (effectiveMode !== 'new') {
+      setTakeovers([]);
+      void refreshSponsors(id);
+    }
+  };
+
+  const undoTakeover = (key: string) =>
+    setTakeovers((prev) => prev.filter((k) => k !== key));
+
+  // Stopped items still on the agent in the form: one removed here (not yet
+  // saved) leaves the notice.
+  const stoppedResources = useMemo(() => {
+    const toolIds = new Set(
+      selectedTools.map((tool) => String(tool?.id).toLowerCase()),
+    );
+    const sourceIds = new Set(
+      Array.from(selectedSourceIds, (id) => id.toLowerCase()),
+    );
+    const promptId = String(agent.prompt_id || '').toLowerCase();
+    return (agent.resource_states ?? []).filter(
+      (item) =>
+        item.state === 'stopped' &&
+        (item.type === 'tool'
+          ? toolIds.has(item.id)
+          : item.type === 'source'
+            ? sourceIds.has(item.id)
+            : promptId === item.id),
+    );
+  }, [
+    agent.resource_states,
+    agent.prompt_id,
+    selectedSourceIds,
+    selectedTools,
+  ]);
+
+  /** Take a stopped item off the agent; the next save stores it. */
+  const removeResource = (item: ResourceState) => {
+    if (item.type === 'tool')
+      setSelectedTools((prev) =>
+        prev.filter((tool) => String(tool?.id).toLowerCase() !== item.id),
+      );
+    else if (item.type === 'source')
+      setSelectedSourceIds(
+        (prev) =>
+          new Set(
+            Array.from(prev).filter((id) => id.toLowerCase() !== item.id),
+          ),
+      );
+    else setAgent((prev) => ({ ...prev, prompt_id: 'default' }));
+    undoTakeover(item.key);
+  };
+
+  /**
+   * Ask before a stopped item runs with the caller's access, naming who
+   * reaches it through the agent; on yes the next save confirms it.
+   */
+  const takeOverResource = async (item: ResourceState) => {
+    const agreed = await confirmTakeOver(
+      sponsorPrompt.ask,
+      item,
+      resolveSponsoredName(item),
+      agent.sponsor_audience,
+    );
+    if (agreed)
+      setTakeovers((prev) =>
+        prev.includes(item.key) ? prev : [...prev, item.key],
+      );
+  };
+
+  /** Sign a stopped tool's connection in again, in place where possible. */
+  const reconnectResource = (item: ResourceState) => {
+    const connection = item.connection;
+    if (!connection?.id || !connection.connector_key) return;
+    const isMcp =
+      rawUserTools.find((tool) => tool.id === item.id)?.name === 'mcp_tool';
+    signInAgain.reconnect(
+      { id: connection.id, connector_key: connection.connector_key },
+      isMcp ? item.id : undefined,
+    );
   };
 
   const handleSaveDraft = async () => {
@@ -394,13 +716,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     try {
       setDraftLoading(true);
       setSubmitError(null);
-      const response =
-        effectiveMode === 'new'
-          ? await userService.createAgent(formData, token)
-          : await userService.updateAgent(agent.id || '', formData, token);
+      const response = await sendAgent(formData);
+      if (!response) return;
       if (!response.ok) {
         setSubmitError(
-          await extractApiError(
+          await saveFailureMessage(
             response,
             t('agents.form.errors.saveDraftFailed'),
           ),
@@ -408,6 +728,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         return;
       }
       const data = await response.json();
+      afterSaved(data.id || agent.id);
 
       const updatedAgent = {
         ...agent,
@@ -487,13 +808,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     try {
       setPublishLoading(true);
       setSubmitError(null);
-      const response =
-        effectiveMode === 'new'
-          ? await userService.createAgent(formData, token)
-          : await userService.updateAgent(agent.id || '', formData, token);
+      const response = await sendAgent(formData);
+      if (!response) return;
       if (!response.ok) {
         setSubmitError(
-          await extractApiError(
+          await saveFailureMessage(
             response,
             t('agents.form.errors.publishFailed'),
           ),
@@ -511,6 +830,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       };
       setAgent(updatedAgent);
       initialAgentRef.current = updatedAgent;
+      afterSaved(updatedAgent.id);
+      // The saved agent is what the preview talks to; start its chat over.
+      dispatch(resetPreview());
 
       if (effectiveMode === 'new' || effectiveMode === 'draft') {
         setEffectiveMode('edit');
@@ -543,18 +865,32 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   useEffect(() => {
     const getTools = async () => {
-      const [toolsResponse, devicesResult] = await Promise.all([
-        userService.getUserTools(token),
-        // Tolerate failures here: the picker should still render the
-        // tool list even if /api/devices returns an error or 401.
-        devicesService.list(token).catch(() => ({ devices: [] })),
-      ]);
+      const [toolsResponse, devicesResult, connectionsResult, catalogResult] =
+        await Promise.all([
+          userService.getUserTools(token),
+          // Tolerate failures here: the picker should still render the
+          // tool list even if /api/devices returns an error or 401.
+          devicesService.list(token).catch(() => ({ devices: [] })),
+          connectorsService
+            .listConnections(token)
+            .catch(() => ({ connections: [] })),
+          // Names a teammate's connected tool, whose connection the caller
+          // never sees.
+          connectorsService.getCatalog(token).catch(() => ({ connectors: [] })),
+        ]);
+      const ownConnections = (connectionsResult?.connections ??
+        []) as Connection[];
+      const catalog = (catalogResult?.connectors ??
+        []) as ConnectorDefinition[];
+      const connectionsById = new Map<string, Connection>(
+        ownConnections.map((c) => [c.id, c]),
+      );
       if (!toolsResponse.ok) throw new Error('Failed to fetch tools');
       const data = await toolsResponse.json();
       // Hide workflow-only builtins (e.g. read_document) from the classic
       // agent picker; they belong to the workflow-node picker only.
       const visibleTools = (data.tools as UserToolType[]).filter(
-        isClassicAgentToolVisible,
+        isAgentPickerToolVisible,
       );
       const devicesById = new Map<
         string,
@@ -567,53 +903,89 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           !Number.isNaN(seen) && Date.now() - seen < onlineWindowMs;
         devicesById.set(d.id, { online, last_seen_at: d.last_seen_at });
       });
-      // Group ordering: builtins -> defaults -> user tools (sorted via the
-      // MultiSelectPopover first-appearance grouping).
+      // Group ordering: builtins -> defaults -> one group per connection
+      // (the service and its account; a teammate's, only the service) ->
+      // custom tools, via the MultiSelectPopover first-appearance grouping.
+      const serviceOf = (tool: UserToolType) =>
+        toolServiceOf(tool, ownConnections, catalog);
+      const connectionOf = (tool: UserToolType) => serviceOf(tool)?.connection;
+      const rank = (tool: UserToolType) =>
+        tool.builtin ? 0 : tool.default ? 1 : tool.connection_id ? 2 : 3;
       const groupFor = (tool: UserToolType): string => {
         if (tool.builtin) return t('agents.form.toolsPopup.groupBuiltin');
         if (tool.default) return t('agents.form.toolsPopup.groupDefault');
+        const service = serviceOf(tool);
+        if (service?.connection)
+          return t('agents.form.toolsPopup.groupConnection', {
+            name: service.connection.name,
+            account: service.connection.account_label,
+            interpolation: { escapeValue: false },
+          });
+        if (service) return service.name;
         return t('agents.form.toolsPopup.groupCustom');
       };
-      const tools: MultiSelectPopoverItem[] = visibleTools.map(
-        (tool: UserToolType) => {
+      const tools: MultiSelectPopoverItem[] = [...visibleTools]
+        .sort(
+          (a, b) =>
+            rank(a) - rank(b) ||
+            // Keeps each connection's tools together.
+            (rank(a) === 2 ? groupFor(a).localeCompare(groupFor(b)) : 0),
+        )
+        .map((tool: UserToolType) => {
+          const connection = connectionOf(tool);
+          const serviceIcon = serviceOf(tool)?.icon;
           const base: MultiSelectPopoverItem = {
             id: tool.id,
             label: getToolDisplayName(tool),
-            icon: <ToolIcon name={tool.name} className="h-5 w-5" />,
+            icon: serviceIcon ? (
+              <ConnectorIcon icon={serviceIcon} className="size-5" />
+            ) : (
+              <ToolIcon name={tool.name} className="size-5" />
+            ),
             group: groupFor(tool),
           };
+          if (connectionNeedsSignIn(connection)) {
+            base.descriptionNode = (
+              <Badge variant="warning" className="mt-0.5">
+                {t('settings.connectors.status.reconnect')}
+              </Badge>
+            );
+          }
           if (tool.name === 'remote_device') {
             const deviceId = (tool.config?.device_id as string) || '';
             const meta = devicesById.get(deviceId);
             const online = meta?.online ?? false;
             base.descriptionNode = (
-              <span
-                className={`mt-0.5 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                  online
-                    ? 'bg-green-100 text-green-900 dark:bg-green-900/30 dark:text-green-300'
-                    : 'bg-gray-200 text-gray-700 dark:bg-gray-700/40 dark:text-gray-300'
-                }`}
+              <Badge
+                variant={online ? 'success' : 'neutral'}
+                className="mt-0.5"
               >
                 {online
                   ? t('settings.devices.online')
                   : t('settings.devices.offline')}
-              </span>
+              </Badge>
             );
           }
           return base;
-        },
-      );
-      const groupOrder = [
-        t('agents.form.toolsPopup.groupBuiltin'),
-        t('agents.form.toolsPopup.groupDefault'),
-        t('agents.form.toolsPopup.groupCustom'),
-      ];
-      tools.sort(
-        (a, b) =>
-          groupOrder.indexOf(a.group || '') - groupOrder.indexOf(b.group || ''),
-      );
+        });
       setUserTools(tools);
       setRawUserTools(visibleTools);
+      setBrokenToolConnections(
+        Array.from(connectionsById.values())
+          .filter(connectionNeedsSignIn)
+          .flatMap((connection) => {
+            const own = visibleTools.filter(
+              (tool) => tool.connection_id === connection.id,
+            );
+            if (own.length === 0) return [];
+            return [
+              {
+                connection,
+                mcpToolId: own.find((tool) => tool.name === 'mcp_tool')?.id,
+              },
+            ];
+          }),
+      );
     };
     const getModels = async () => {
       const response = await modelService.getModels(token);
@@ -638,7 +1010,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     };
     getTools();
     getModels();
-  }, [token, mode]);
+  }, [token, mode, toolsReloadKey]);
 
   // Validate folder_id from URL against user's folders
   useEffect(() => {
@@ -675,7 +1047,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       const getAgent = async () => {
         const response = await userService.getAgent(agentId, token);
         if (!response.ok) {
-          navigate('/agents');
+          navigate(agentsListPath());
           throw new Error('Failed to fetch agent');
         }
         const data = await response.json();
@@ -683,7 +1055,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         const agentSourceIds = selectedSourceIdsFromAgent(data);
         setSelectedSourceIds(new Set(agentSourceIds));
 
-        if (data.tool_details) setSelectedTools(data.tool_details);
+        if (data.tool_details) {
+          setSelectedTools(data.tool_details);
+          setAttachedTools(data.tool_details);
+        }
         if (data.status === 'draft') setEffectiveMode('draft');
         if (data.json_schema) {
           const jsonText = JSON.stringify(data.json_schema, null, 2);
@@ -702,7 +1077,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           agent_type: data.agent_type || 'classic',
           prompt_id: data.prompt_id || 'default',
           retriever: agentSourceIds.length === 0 ? 'classic' : '',
-          chunks: data.chunks || '2',
+          chunks: data.chunks || '6',
           tools: data.tools || [],
           ...serializeAgentSources(agentSourceIds, sourceDocs),
           models: agentModels,
@@ -771,7 +1146,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   }, [selectedTools]);
 
   useEffect(() => {
-    if (isPublishable()) dispatch(setSelectedAgent(agent));
+    // Editing a published agent: the preview talks to the saved version, so
+    // Redux keeps that snapshot (the preview reads its model from it).
+    const saved = effectiveMode === 'edit' ? initialAgentRef.current : null;
+    if (saved) dispatch(setSelectedAgent(saved));
+    else if (isPublishable()) dispatch(setSelectedAgent(agent));
 
     if (!modeConfig[effectiveMode].trackChanges) {
       setHasChanges(true);
@@ -789,256 +1168,260 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const isChanged =
       !isEqual(agent, initialAgentRef.current) ||
       imageFile !== null ||
-      jsonSchemaText !== initialJsonSchemaText;
+      jsonSchemaText !== initialJsonSchemaText ||
+      takeovers.length > 0;
     setHasChanges(isChanged);
-  }, [agent, dispatch, effectiveMode, imageFile, jsonSchemaText]);
-  // Only show the agent sub-nav once the agent has an id (i.e. not the bare
-  // ``new`` mode). The sub-nav links to Logs/Schedules which require an id.
-  const showAgentNav = effectiveMode === 'edit' && Boolean(agent.id);
+  }, [agent, dispatch, effectiveMode, imageFile, jsonSchemaText, takeovers]);
+
+  const isPublished = agent.status === 'published';
+  // What the caller's role allows on this agent (`allowed_actions` from the
+  // API). A new agent carries no access fields, so it reads as the owner's.
+  const canEditPolicy = can(agent, 'edit_policy');
+  // Save on a published agent is an edit; on a draft or a new agent the main
+  // button publishes it.
+  const canSubmit = can(agent, effectiveMode === 'edit' ? 'edit' : 'publish');
+  const agentDisplayName =
+    agent.name?.trim() || t('agents.pageHeader.fallbackName');
+
+  // Page-level actions live in the ⋯ beside the title. Until the agent is
+  // published the preview can only say "Publish to preview", so Preview is a
+  // menu item then and a toolbar button after.
+  const canOpenAccessDetails =
+    modeConfig[effectiveMode].showAccessDetails &&
+    can(agent, 'manage_access_details');
+  const menuOptions = [
+    ...(isPublished
+      ? []
+      : [
+          {
+            label: t('agents.form.sections.preview'),
+            icon: Play,
+            onClick: () => setPreviewOpen(true),
+          },
+        ]),
+    ...(canOpenAccessDetails
+      ? [
+          {
+            label: t('agents.form.buttons.accessDetails'),
+            onClick: () => setAgentDetails('ACTIVE'),
+          },
+        ]
+      : []),
+    // Sharing is the owner's, unless the owner lets editors share.
+    ...(modeConfig[effectiveMode].showAccessDetails &&
+    can(agent, 'share') &&
+    agent.id
+      ? [
+          {
+            label: t('agents.shareWithTeam'),
+            onClick: () => setShareModalOpen(true),
+          },
+        ]
+      : []),
+  ];
+
+  // At most three buttons, so the row fits a phone; the main one stretches
+  // across it there.
+  const headerActions = (
+    <div className="flex flex-wrap items-center gap-2">
+      {hasChanges && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="field"
+          shape="pill"
+          onClick={handleCancel}
+        >
+          {t('agents.form.buttons.cancel')}
+        </Button>
+      )}
+      {modeConfig[effectiveMode].showSaveDraft && can(agent, 'edit') && (
+        <Button
+          type="button"
+          variant="outline"
+          size="field"
+          shape="pill"
+          disabled={isDraftBlocked()}
+          loading={draftLoading}
+          onClick={handleSaveDraft}
+        >
+          {t('agents.form.buttons.saveDraft')}
+        </Button>
+      )}
+      {isPublished && (
+        <Button
+          type="button"
+          variant="outline"
+          size="field"
+          shape="pill"
+          onClick={() => setPreviewOpen(true)}
+        >
+          <Play />
+          {t('agents.form.sections.preview')}
+        </Button>
+      )}
+      {canSubmit && (
+        <Button
+          type="button"
+          size="field"
+          shape="pill"
+          disabled={!isPublishable() || !hasChanges}
+          loading={publishLoading}
+          onClick={handlePublish}
+          className="flex-1 sm:flex-none"
+        >
+          {modeConfig[effectiveMode].buttonText}
+        </Button>
+      )}
+    </div>
+  );
 
   return (
-    <div className="flex flex-col px-4 pt-4 pb-2 max-[1179px]:min-h-dvh min-[1180px]:h-dvh md:px-12 md:pt-4 md:pb-3">
-      {agent.agent_type === 'workflow' && (
-        <div className="mt-4 w-full">
-          <WorkflowBuilder />
-        </div>
-      )}
-      <div className="flex w-full flex-wrap items-center justify-between gap-2 px-4">
-        {showAgentNav ? (
-          <AgentPageHeader
-            agentId={agent.id}
-            agentName={agent.name}
-            agentEditPath={`/agents/edit/${agent.id}`}
-            currentPage="overview"
-          />
-        ) : (
-          <span aria-hidden />
+    <SectionShell
+      title={effectiveMode === 'new' ? t('agents.newAgent') : undefined}
+      titleAction={
+        <ActionMenu
+          size="toolbar"
+          triggerLabel={t('agents.form.buttons.moreActions')}
+          options={menuOptions}
+        />
+      }
+    >
+      {signInAgain.modals}
+      {agent.agent_type === 'workflow' && <WorkflowBuilder />}
+      <AgentPageToolbar
+        intro={agent.id ? undefined : t('agents.form.byline.new')}
+        name={agentDisplayName}
+        status={
+          isPublished ? (
+            <Badge variant="success">{t('agents.form.status.published')}</Badge>
+          ) : (
+            <Badge variant="neutral">{t('agents.card.draft')}</Badge>
+          )
+        }
+        meta={
+          effectiveMode === 'edit' ? (
+            <LastUsedMeta lastUsedAt={agent.last_used_at} />
+          ) : undefined
+        }
+        actions={headerActions}
+      >
+        {submitError && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertDescription>{submitError}</AlertDescription>
+          </Alert>
         )}
-        <div className="flex flex-wrap items-center gap-2">
-          {submitError && (
-            <div
-              role="alert"
-              className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400"
-            >
-              <span className="h-4 w-4 shrink-0 bg-[url('/src/assets/circle-x.svg')] bg-contain bg-center bg-no-repeat" />
-              {submitError}
-            </div>
-          )}
-          {hasChanges && (
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={handleCancel}
-              className="text-primary dark:text-foreground rounded-3xl px-2 hover:bg-transparent"
-            >
-              {t('agents.form.buttons.cancel')}
-            </Button>
-          )}
-          {modeConfig[effectiveMode].showSaveDraft && (
-            <Button
-              type="button"
-              disabled={isDraftBlocked()}
-              onClick={handleSaveDraft}
-              className={`border-primary text-primary hover:bg-primary/90 min-w-28 rounded-3xl border border-solid bg-transparent px-5 whitespace-nowrap hover:text-white ${
-                isDraftBlocked() ? 'disabled:opacity-30' : ''
-              }`}
-            >
-              <span className="flex items-center justify-center transition-all duration-200">
-                {draftLoading ? (
-                  <Spinner size="small" />
-                ) : (
-                  t('agents.form.buttons.saveDraft')
-                )}
-              </span>
-            </Button>
-          )}
-          <Button
-            type="button"
-            disabled={!isPublishable() || !hasChanges}
-            onClick={handlePublish}
-            className={`${!isPublishable() || !hasChanges ? 'disabled:opacity-30' : ''} min-w-28 rounded-3xl px-5 whitespace-nowrap text-white`}
-          >
-            <span className="flex items-center justify-center transition-all duration-200">
-              {publishLoading ? (
-                <Spinner size="small" />
-              ) : (
-                modeConfig[effectiveMode].buttonText
-              )}
-            </span>
-          </Button>
-          {modeConfig[effectiveMode].showAccessDetails && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t('agents.form.buttons.moreActions')}
-                  title={t('agents.form.buttons.moreActions')}
-                >
-                  <MoreHorizontal className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onSelect={() => setAgentDetails('ACTIVE')}>
-                  {t('agents.form.buttons.accessDetails')}
-                </DropdownMenuItem>
-                {/* Sharing is owner-only — hidden for agents shared into the
-                    workspace by a team (ownership === 'team'). */}
-                {agent.ownership !== 'team' && agent.id && (
-                  <DropdownMenuItem onSelect={() => setShareModalOpen(true)}>
-                    {t('agents.shareWithTeam')}
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
-      </div>
-      <div className="bg-muted dark:bg-background mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-2xl p-5 max-[1179px]:overflow-visible min-[1180px]:grid min-[1180px]:gap-5 min-[1180px]:overflow-hidden">
-        <div className="scrollbar-overlay col-span-2 flex flex-col gap-5 max-[1179px]:overflow-visible min-[1180px]:max-h-full min-[1180px]:overflow-y-auto min-[1180px]:pr-3">
-          <div className="bg-card rounded-2xl px-6 py-3">
-            <h2 className="text-lg font-semibold">
-              {t('agents.form.sections.meta')}
-            </h2>
-            <Input
-              className="bg-card mt-3 h-auto rounded-3xl px-5 py-3 text-sm placeholder:text-gray-400 md:text-sm"
-              type="text"
-              value={agent.name}
-              placeholder={t('agents.form.placeholders.agentName')}
-              onChange={(e) => setAgent({ ...agent, name: e.target.value })}
+      </AgentPageToolbar>
+      <div className="flex flex-col gap-5">
+        <Card variant="subtle" padding="lg" className="gap-5">
+          <SectionHeader title={t('agents.form.sections.basics')} />
+          {/* Phone: the avatar beside Name, Description across the row.
+              From sm: the avatar spans both rows beside the fields. */}
+          <div className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-5 sm:items-start">
+            <FileUpload
+              showPreview
+              size="tile"
+              currentImage={agent.image || undefined}
+              onUpload={handleUpload}
+              onRemove={() => setImageFile(null)}
+              uploadText={t('agents.form.labels.avatar')}
+              className="sm:row-span-2"
             />
-            <textarea
-              className="border-border text-foreground dark:text-foreground dark:placeholder:text-muted-foreground bg-card dark:border-border focus-visible:ring-ring/50 focus-visible:border-ring mt-3 h-32 w-full rounded-xl border px-5 py-4 text-sm outline-hidden placeholder:text-gray-400 focus-visible:ring-[3px]"
-              placeholder={t('agents.form.placeholders.describeAgent')}
-              value={agent.description}
-              onChange={(e) =>
-                setAgent({ ...agent, description: e.target.value })
-              }
-            />
-            <div className="mt-3">
-              <FileUpload
-                showPreview
-                className="bg-card"
-                onUpload={handleUpload}
-                onRemove={() => setImageFile(null)}
-                uploadText={[
-                  {
-                    text: t('agents.form.upload.clickToUpload'),
-                    colorClass: 'text-primary',
-                  },
-                  {
-                    text: t('agents.form.upload.dragAndDrop'),
-                    colorClass: 'text-[#525252]',
-                  },
-                ]}
+            <FormField
+              labelSurface="background"
+              label={t('agents.form.labels.name')}
+            >
+              <Input
+                type="text"
+                value={agent.name}
+                placeholder={t('agents.form.placeholders.agentName')}
+                onChange={(e) => setAgent({ ...agent, name: e.target.value })}
               />
-            </div>
+            </FormField>
+            <FormField
+              labelSurface="background"
+              label={t('agents.form.labels.description')}
+              className="col-span-2 sm:col-span-1 sm:col-start-2"
+            >
+              <Textarea
+                className="h-32 sm:h-24"
+                placeholder={t('agents.form.placeholders.describeAgent')}
+                value={agent.description}
+                onChange={(e) =>
+                  setAgent({ ...agent, description: e.target.value })
+                }
+              />
+            </FormField>
           </div>
-          <div className="bg-card rounded-2xl px-6 py-3">
-            <h2 className="text-lg font-semibold">
-              {t('agents.form.sections.source')}
-            </h2>
-            <div className="mt-3">
-              <div className="flex flex-wrap items-center gap-1">
-                <MultiSelectPopover
-                  open={isSourcePopupOpen}
-                  onOpenChange={setIsSourcePopupOpen}
-                  title={t('agents.form.sourcePopup.title')}
-                  items={sourceItems}
-                  selectedIds={Array.from(selectedSourceIds)}
-                  onToggle={(id) => {
-                    const next = new Set(selectedSourceIds);
-                    if (next.has(id)) next.delete(id);
-                    else next.add(id);
-                    setSelectedSourceIds(next);
-                  }}
-                  searchPlaceholder={t(
-                    'agents.form.sourcePopup.searchPlaceholder',
-                  )}
-                  emptyMessage={t('agents.form.sourcePopup.noOptionsMessage')}
-                  footer={
-                    <SourcesPopoverFooter
-                      onNavigate={() => setIsSourcePopupOpen(false)}
-                      onUploadClick={handleUploadClick}
-                    />
-                  }
-                  trigger={
-                    <Button
-                      type="button"
-                      variant="outline"
-                      ref={sourceAnchorButtonRef}
+        </Card>
+        <Card variant="subtle" padding="lg" className="gap-5">
+          <SectionHeader title={t('agents.form.sections.knowledge')} />
+          <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
+            <FormField
+              id={sourcesPickerId}
+              labelSurface="background"
+              label={t('agents.form.labels.sources')}
+              hint={
+                selectedSourceIds.size === 0
+                  ? t('agents.form.sourcePopup.noSourceHint')
+                  : undefined
+              }
+            >
+              <MultiSelectPopover
+                open={isSourcePopupOpen}
+                onOpenChange={setIsSourcePopupOpen}
+                title={t('agents.form.sourcePopup.title')}
+                items={sourceItems}
+                selectedIds={Array.from(selectedSourceIds)}
+                onToggle={(id) => {
+                  const next = new Set(selectedSourceIds);
+                  if (next.has(id)) next.delete(id);
+                  else next.add(id);
+                  setSelectedSourceIds(next);
+                }}
+                searchPlaceholder={t(
+                  'agents.form.sourcePopup.searchPlaceholder',
+                )}
+                emptyMessage={t('agents.form.sourcePopup.noOptionsMessage')}
+                footer={
+                  <SourcesPopoverFooter
+                    onNavigate={() => setIsSourcePopupOpen(false)}
+                    onUploadClick={handleUploadClick}
+                  />
+                }
+                trigger={
+                  <Button
+                    type="button"
+                    variant="combobox"
+                    size="field"
+                    role="combobox"
+                    id={sourcesPickerId}
+                    ref={sourceAnchorButtonRef}
+                    data-placeholder={
+                      selectedSourceIds.size > 0 ? undefined : ''
+                    }
+                    className="w-full justify-start text-left"
+                  >
+                    <span
+                      className="truncate"
                       title={selectedSourceNames.join(', ')}
-                      className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
-                        selectedSourceIds.size > 0
-                          ? 'text-foreground dark:text-foreground'
-                          : 'dark:text-muted-foreground text-gray-400'
-                      }`}
                     >
                       {sourceTriggerLabel}
-                    </Button>
-                  }
-                />
-              </div>
-              {selectedSourceIds.size === 0 && (
-                <p className="text-muted-foreground mt-2 text-xs">
-                  {t('agents.form.sourcePopup.noSourceHint')}
-                </p>
-              )}
-            </div>
-          </div>
-          <div className="bg-card rounded-2xl px-6 py-3">
-            <div className="flex flex-wrap items-end gap-1">
-              <div className="min-w-20 grow basis-full sm:basis-0">
-                <Prompts
-                  prompts={prompts}
-                  selectedPrompt={
-                    prompts.find((prompt) => prompt.id === agent.prompt_id) ||
-                    // Owner-resolved name from the agent payload: lets a team
-                    // member see the owner's prompt name (which isn't in their
-                    // own prompts list). 'public' hides owner-only edit/share
-                    // affordances on a prompt the viewer doesn't own.
-                    (agent.prompt_name
-                      ? {
-                          name: agent.prompt_name,
-                          id: agent.prompt_id || 'default',
-                          type: 'public',
-                        }
-                      : prompts[0]) || {
-                      name: 'default',
-                      id: 'default',
-                      type: 'public',
-                    }
-                  }
-                  onSelectPrompt={(name, id, type) =>
-                    setAgent({ ...agent, prompt_id: id })
-                  }
-                  setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
-                  title={t('agents.form.sections.prompt')}
-                  titleClassName="text-lg font-semibold"
-                  showAddButton={false}
-                  dropdownProps={{ className: 'w-full' }}
-                />
-              </div>
-              <Button
-                type="button"
-                onClick={() => setAddPromptModal('ACTIVE')}
-                className="border-primary text-primary hover:bg-primary/90 h-auto min-w-20 shrink-0 basis-full rounded-3xl border border-solid bg-transparent px-5 py-3 whitespace-nowrap hover:text-white sm:basis-auto"
-              >
-                {t('agents.form.buttons.add')}
-              </Button>
-            </div>
-          </div>
-          <div className="bg-card rounded-2xl px-6 py-3">
-            <h2 className="text-lg font-semibold">
-              {t('agents.form.sections.tools')}
-            </h2>
-            <div className="mt-3 flex flex-wrap items-center gap-1">
+                    </span>
+                  </Button>
+                }
+              />
+            </FormField>
+            <FormField
+              id={toolsPickerId}
+              labelSurface="background"
+              label={t('agents.form.sections.tools')}
+            >
               <MultiSelectPopover
                 open={isToolsPopupOpen}
                 onOpenChange={setIsToolsPopupOpen}
                 title={t('agents.form.toolsPopup.title')}
-                items={userTools}
+                items={toolItems}
                 selectedIds={selectedTools.map((tool) => tool.id)}
                 onToggle={(id) => {
                   const exists = selectedTools.find((t) => t.id === id);
@@ -1046,12 +1429,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     setSelectedTools(selectedTools.filter((t) => t.id !== id));
                     return;
                   }
-                  const item = userTools.find((t) => t.id === id);
+                  const item = toolItems.find((t) => t.id === id);
                   const raw = rawUserTools.find((t) => t.id === id);
+                  const attached = attachedTools.find((t) => t.id === id);
                   if (!item) return;
                   setSelectedTools([
                     ...selectedTools,
-                    {
+                    attached ?? {
                       id: item.id,
                       name: raw?.name || item.label,
                       display_name: item.label,
@@ -1062,43 +1446,126 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   'agents.form.toolsPopup.searchPlaceholder',
                 )}
                 emptyMessage={t('agents.form.toolsPopup.noOptionsMessage')}
+                footer={
+                  brokenToolConnections.length > 0 ? (
+                    <SignInAgainNotice
+                      connections={brokenToolConnections.map(
+                        ({ connection }) => connection,
+                      )}
+                      onReconnect={(connection) => {
+                        setIsToolsPopupOpen(false);
+                        signInAgain.reconnect(
+                          connection,
+                          brokenToolConnections.find(
+                            (entry) => entry.connection.id === connection.id,
+                          )?.mcpToolId,
+                        );
+                      }}
+                    />
+                  ) : undefined
+                }
                 trigger={
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="combobox"
+                    size="field"
+                    role="combobox"
+                    id={toolsPickerId}
                     ref={toolAnchorButtonRef}
-                    className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
-                      selectedTools.length > 0
-                        ? 'text-foreground dark:text-foreground'
-                        : 'dark:text-muted-foreground text-gray-400'
-                    }`}
+                    data-placeholder={selectedTools.length > 0 ? undefined : ''}
+                    className="w-full justify-start text-left"
                   >
-                    {selectedTools.length > 0
-                      ? selectedTools
-                          .map((tool) => getToolDisplayName(tool))
-                          .filter(Boolean)
-                          .join(', ')
-                      : t('agents.form.placeholders.selectTools')}
+                    <span className="truncate">
+                      {selectedTools.length > 0
+                        ? selectedTools
+                            .map((tool) => getToolDisplayName(tool))
+                            .filter(Boolean)
+                            .join(', ')
+                        : t('agents.form.placeholders.selectTools')}
+                    </span>
                   </Button>
                 }
               />
+            </FormField>
+            <div className="flex flex-col sm:col-span-2">
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <Prompts
+                    prompts={prompts}
+                    selectedPrompt={
+                      prompts.find((prompt) => prompt.id === agent.prompt_id) ||
+                      // Owner-resolved name from the agent payload: lets a team
+                      // member see the owner's prompt name (which isn't in their
+                      // own prompts list). 'public' hides owner-only edit/share
+                      // affordances on a prompt the viewer doesn't own.
+                      (agent.prompt_name
+                        ? {
+                            name: agent.prompt_name,
+                            id: agent.prompt_id || 'default',
+                            type: 'public',
+                          }
+                        : prompts[0]) || {
+                        name: 'default',
+                        id: 'default',
+                        type: 'public',
+                      }
+                    }
+                    onSelectPrompt={(name, id, type) =>
+                      setAgent({ ...agent, prompt_id: id })
+                    }
+                    setPrompts={(newPrompts) =>
+                      dispatch(setPrompts(newPrompts))
+                    }
+                    title={t('agents.form.sections.prompt')}
+                    titleAs="field"
+                    labelSurface="background"
+                    showAddButton={false}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline-primary"
+                  size="field"
+                  onClick={() => setAddPromptModal('ACTIVE')}
+                >
+                  {t('agents.form.buttons.add')}
+                </Button>
+              </div>
+              {/* The prompt Select has no description slot, so the mark of a
+                  prompt that runs with an editor's access is a hint under it. */}
+              {promptAddedBy && (
+                <p className="text-muted-foreground mt-1.5 text-xs">
+                  {promptAddedBy}
+                </p>
+              )}
             </div>
+            <ResourceStatusNotice
+              agent={agent}
+              readerId={readerId}
+              stopped={stoppedResources}
+              resolveName={resolveSponsoredName}
+              takeovers={takeovers}
+              onTakeOver={(item) => void takeOverResource(item)}
+              onUndoTakeover={undoTakeover}
+              onRemove={removeResource}
+              onReconnect={reconnectResource}
+            />
           </div>
-          <div className="bg-card rounded-2xl px-6 py-3">
-            <h2 className="text-lg font-semibold">
-              {t('agents.form.sections.agentType')}
-            </h2>
-            <div className="mt-3">
+        </Card>
+        <Card variant="subtle" padding="lg" className="gap-5">
+          <SectionHeader title={t('agents.form.sections.model')} />
+          <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
+            <FormField
+              labelSurface="background"
+              label={t('agents.form.sections.agentType')}
+            >
               <Select
                 value={agent.agent_type || undefined}
                 onValueChange={(value) =>
                   setAgent({ ...agent, agent_type: value })
                 }
               >
-                <SelectTrigger
-                  className="w-full rounded-3xl px-5 py-3 text-sm"
-                  size="lg"
-                >
+                <SelectTrigger className="w-full" size="field">
                   <SelectValue
                     placeholder={t('agents.form.placeholders.selectType')}
                   />
@@ -1111,13 +1578,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-          </div>
-          <div className="bg-card rounded-2xl px-6 py-3">
-            <h2 className="text-lg font-semibold">
-              {t('agents.form.sections.models')}
-            </h2>
-            <div className="mt-3 flex flex-col gap-3">
+            </FormField>
+            <FormField
+              id={modelsPickerId}
+              labelSurface="background"
+              label={t('agents.form.sections.models')}
+            >
               <MultiSelectPopover
                 open={isModelsPopupOpen}
                 onOpenChange={setIsModelsPopupOpen}
@@ -1154,148 +1620,151 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 trigger={
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="combobox"
+                    size="field"
+                    role="combobox"
+                    id={modelsPickerId}
                     ref={modelAnchorButtonRef}
-                    className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
-                      selectedModelIds.size > 0
-                        ? 'text-foreground dark:text-foreground'
-                        : 'dark:text-muted-foreground text-gray-400'
-                    }`}
+                    data-placeholder={
+                      selectedModelIds.size > 0 ? undefined : ''
+                    }
+                    className="w-full justify-start text-left"
                   >
-                    {selectedModelIds.size > 0
-                      ? availableModels
-                          .filter((m) => selectedModelIds.has(m.id))
-                          .map((m) => m.display_name)
-                          .join(', ')
-                      : t('agents.form.placeholders.selectModels')}
+                    <span className="truncate">
+                      {selectedModelIds.size > 0
+                        ? availableModels
+                            .filter((m) => selectedModelIds.has(m.id))
+                            .map((m) => m.display_name)
+                            .join(', ')
+                        : t('agents.form.placeholders.selectModels')}
+                    </span>
                   </Button>
                 }
               />
-              {selectedModelIds.size > 0 && (
-                <div>
-                  <label className="mb-2 block text-sm font-medium">
-                    {t('agents.form.labels.defaultModel')}
-                  </label>
-                  <Select
-                    value={agent.default_model_id || undefined}
-                    onValueChange={(value) =>
-                      setAgent({ ...agent, default_model_id: value })
-                    }
-                  >
-                    <SelectTrigger
-                      className="w-full rounded-3xl px-5 py-3 text-sm"
-                      size="lg"
-                    >
-                      <SelectValue
-                        placeholder={t(
-                          'agents.form.placeholders.selectDefaultModel',
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableModels
-                        .filter((m) => selectedModelIds.has(m.id))
-                        .map((m) => (
-                          <SelectItem key={m.id} value={m.id}>
-                            {m.display_name}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="bg-card rounded-2xl px-6 py-3">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() =>
-                setIsAdvancedSectionExpanded(!isAdvancedSectionExpanded)
-              }
-              className="h-auto w-full justify-between px-0 py-0 text-left hover:bg-transparent"
-            >
-              <div>
-                <h2 className="text-lg font-semibold">
-                  {t('agents.form.sections.advanced')}
-                </h2>
-              </div>
-              <div className="ml-4 flex items-center">
-                <svg
-                  className={`size-5 transform transition-transform duration-200 ${
-                    isAdvancedSectionExpanded ? 'rotate-180' : ''
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+            </FormField>
+            {selectedModelIds.size > 0 && (
+              <FormField
+                labelSurface="background"
+                label={t('agents.form.labels.defaultModel')}
+              >
+                <Select
+                  value={agent.default_model_id || undefined}
+                  onValueChange={(value) =>
+                    setAgent({ ...agent, default_model_id: value })
+                  }
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </div>
-            </Button>
-            {isAdvancedSectionExpanded && (
-              <div className="mt-3">
-                <div>
-                  <h2 className="text-sm font-medium">
-                    {t('agents.form.advanced.jsonSchema')}
-                  </h2>
-                  <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                    {t('agents.form.advanced.jsonSchemaDescription')}
-                  </p>
-                </div>
-                <textarea
-                  value={jsonSchemaText}
-                  onChange={(e) => validateAndSetJsonSchema(e.target.value)}
-                  placeholder={`{
-  "type": "object",
-  "properties": {
-    "name": {"type": "string"},
-    "email": {"type": "string"}
-  },
-  "required": ["name", "email"],
-  "additionalProperties": false
+                  <SelectTrigger className="w-full" size="field">
+                    <SelectValue
+                      placeholder={t(
+                        'agents.form.placeholders.selectDefaultModel',
+                      )}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableModels
+                      .filter((m) => selectedModelIds.has(m.id))
+                      .map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.display_name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </FormField>
+            )}
+          </div>
+        </Card>
+        <Card variant="subtle" padding="lg" className="gap-5">
+          {/* The heading wraps the toggle: a button's children are
+              presentational, so a heading inside it is lost to screen readers.
+              The card's gap-5 sits inside the body, so it folds away with it. */}
+          <div>
+            <h2>
+              <CollapsibleTrigger
+                look="section"
+                open={isAdvancedSectionExpanded}
+                onOpenChange={setIsAdvancedSectionExpanded}
+                controls={advancedSectionId}
+              >
+                {t('agents.form.sections.advanced')}
+              </CollapsibleTrigger>
+            </h2>
+            <Collapsible
+              open={isAdvancedSectionExpanded}
+              id={advancedSectionId}
+            >
+              <div className="pt-5">
+                <FormField
+                  labelSurface="background"
+                  label={t('agents.form.advanced.jsonSchema')}
+                  hint={t('agents.form.advanced.jsonSchemaDescription')}
+                >
+                  <Textarea
+                    value={jsonSchemaText}
+                    onChange={(e) => validateAndSetJsonSchema(e.target.value)}
+                    placeholder={`{
+"type": "object",
+"properties": {
+  "name": {"type": "string"},
+  "email": {"type": "string"}
+},
+"required": ["name", "email"],
+"additionalProperties": false
 }`}
-                  rows={9}
-                  className={`border-border text-foreground dark:text-foreground bg-card dark:border-border focus-visible:ring-ring/50 focus-visible:border-ring mt-2 w-full rounded-2xl border px-4 py-3 font-mono text-sm outline-hidden focus-visible:ring-[3px]`}
-                />
+                    rows={9}
+                    className="font-mono"
+                  />
+                </FormField>
                 {jsonSchemaText.trim() !== '' && (
                   <div
-                    className={`mt-2 flex items-center gap-2 text-sm ${
-                      jsonSchemaValid
-                        ? 'text-green-600 dark:text-green-400'
-                        : 'text-red-600 dark:text-red-400'
-                    }`}
+                    className={cn(
+                      'mt-2 flex items-center gap-2 text-sm',
+                      jsonSchemaValid ? 'text-success' : 'text-destructive',
+                    )}
                   >
-                    <span
-                      className={`h-4 w-4 bg-contain bg-center bg-no-repeat ${
-                        jsonSchemaValid
-                          ? "bg-[url('/src/assets/circle-check.svg')]"
-                          : "bg-[url('/src/assets/circle-x.svg')]"
-                      }`}
-                    />
+                    {jsonSchemaValid ? (
+                      <CircleCheck className="size-4" aria-hidden="true" />
+                    ) : (
+                      <CircleX className="size-4" aria-hidden="true" />
+                    )}
                     {jsonSchemaValid
                       ? t('agents.form.advanced.validJson')
                       : t('agents.form.advanced.invalidJson')}
                   </div>
                 )}
 
-                <div className="mt-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h2 className="text-sm font-medium">
-                        {t('agents.form.advanced.tokenLimiting')}
-                      </h2>
-                      <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                        {t('agents.form.advanced.tokenLimitingDescription')}
-                      </p>
-                    </div>
+                <SettingRows className="mt-6">
+                  <SettingRow
+                    label={t('agents.form.advanced.tokenLimiting')}
+                    description={t(
+                      'agents.form.advanced.tokenLimitingDescription',
+                    )}
+                    htmlFor={tokenLimitSwitchId}
+                    after={
+                      <Input
+                        type="number"
+                        min="0"
+                        value={agent.token_limit || ''}
+                        onChange={(e) =>
+                          setAgent({
+                            ...agent,
+                            token_limit: e.target.value
+                              ? parseInt(e.target.value)
+                              : undefined,
+                          })
+                        }
+                        disabled={!agent.limited_token_mode || !canEditPolicy}
+                        placeholder={t(
+                          'agents.form.placeholders.enterTokenLimit',
+                        )}
+                        aria-label={t('agents.form.advanced.tokenLimit')}
+                      />
+                    }
+                  >
                     <Switch
+                      id={tokenLimitSwitchId}
                       checked={agent.limited_token_mode}
+                      disabled={!canEditPolicy}
                       onCheckedChange={(checked) => {
                         setAgent({
                           ...agent,
@@ -1306,41 +1775,38 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         });
                       }}
                     />
-                  </div>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={agent.token_limit || ''}
-                    onChange={(e) =>
-                      setAgent({
-                        ...agent,
-                        token_limit: e.target.value
-                          ? parseInt(e.target.value)
-                          : undefined,
-                      })
+                  </SettingRow>
+                  <SettingRow
+                    label={t('agents.form.advanced.requestLimiting')}
+                    description={t(
+                      'agents.form.advanced.requestLimitingDescription',
+                    )}
+                    htmlFor={requestLimitSwitchId}
+                    after={
+                      <Input
+                        type="number"
+                        min="0"
+                        value={agent.request_limit || ''}
+                        onChange={(e) =>
+                          setAgent({
+                            ...agent,
+                            request_limit: e.target.value
+                              ? parseInt(e.target.value)
+                              : undefined,
+                          })
+                        }
+                        disabled={!agent.limited_request_mode || !canEditPolicy}
+                        placeholder={t(
+                          'agents.form.placeholders.enterRequestLimit',
+                        )}
+                        aria-label={t('agents.form.advanced.requestLimit')}
+                      />
                     }
-                    disabled={!agent.limited_token_mode}
-                    placeholder={t('agents.form.placeholders.enterTokenLimit')}
-                    className={`bg-card mt-2 h-auto rounded-3xl px-5 py-3 text-sm placeholder:text-gray-400 md:text-sm ${
-                      !agent.limited_token_mode
-                        ? 'cursor-not-allowed opacity-50'
-                        : ''
-                    }`}
-                  />
-                </div>
-
-                <div className="mt-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h2 className="text-sm font-medium">
-                        {t('agents.form.advanced.requestLimiting')}
-                      </h2>
-                      <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                        {t('agents.form.advanced.requestLimitingDescription')}
-                      </p>
-                    </div>
+                  >
                     <Switch
+                      id={requestLimitSwitchId}
                       checked={agent.limited_request_mode}
+                      disabled={!canEditPolicy}
                       onCheckedChange={(checked) => {
                         setAgent({
                           ...agent,
@@ -1351,45 +1817,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         });
                       }}
                     />
-                  </div>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={agent.request_limit || ''}
-                    onChange={(e) =>
-                      setAgent({
-                        ...agent,
-                        request_limit: e.target.value
-                          ? parseInt(e.target.value)
-                          : undefined,
-                      })
-                    }
-                    disabled={!agent.limited_request_mode}
-                    placeholder={t(
-                      'agents.form.placeholders.enterRequestLimit',
+                  </SettingRow>
+                  <SettingRow
+                    label={t('agents.form.advanced.systemPromptOverride')}
+                    description={t(
+                      'agents.form.advanced.systemPromptOverrideDescription',
                     )}
-                    className={`bg-card mt-2 h-auto rounded-3xl px-5 py-3 text-sm placeholder:text-gray-400 md:text-sm ${
-                      !agent.limited_request_mode
-                        ? 'cursor-not-allowed opacity-50'
-                        : ''
-                    }`}
-                  />
-                </div>
-
-                <div className="mt-6">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="min-w-0 flex-1">
-                      <h2 className="text-sm font-medium">
-                        {t('agents.form.advanced.systemPromptOverride')}
-                      </h2>
-                      <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                        {t(
-                          'agents.form.advanced.systemPromptOverrideDescription',
-                        )}
-                      </p>
-                    </div>
+                    htmlFor={promptOverrideSwitchId}
+                  >
                     <Switch
-                      className="shrink-0"
+                      id={promptOverrideSwitchId}
                       checked={agent.allow_system_prompt_override}
                       onCheckedChange={(checked) =>
                         setAgent({
@@ -1398,79 +1835,91 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         })
                       }
                     />
-                  </div>
-                </div>
+                  </SettingRow>
+                </SettingRows>
               </div>
-            )}
+            </Collapsible>
           </div>
-          <GuardrailsSection
-            value={agent.config?.guardrails}
-            token={token}
-            // Guardrails are the owner's policy: the update route drops
-            // ``config`` for team members, editors included. Leaving the
-            // controls live for editors let them save a change the server
-            // silently discarded, and the success toast said it had worked.
-            disabled={Boolean(agent.team_access)}
-            disabledNotice={
-              agent.team_access
-                ? t('agents.form.guardrails.ownerOnly')
-                : undefined
-            }
-            onChange={(guardrails) =>
-              setAgent({
-                ...agent,
-                config: { ...(agent.config ?? {}), guardrails },
-              })
-            }
-          />
-          {modeConfig[effectiveMode].showDelete && agent.id && (
-            <div className="border-destructive/40 bg-destructive/5 rounded-2xl border px-6 py-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <h2 className="text-destructive text-lg font-semibold">
-                    {t('agents.form.dangerZone.heading')}
-                  </h2>
-                  <p className="text-muted-foreground mt-1 text-xs">
-                    {t('agents.form.dangerZone.description')}
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="destructive-outline"
-                  size="sm"
-                  onClick={() => setDeleteConfirmation('ACTIVE')}
-                  className="shrink-0"
-                >
-                  {t('agents.form.dangerZone.deleteButton')}
-                </Button>
-              </div>
-            </div>
+        </Card>
+        <GuardrailsSection
+          value={agent.config?.guardrails}
+          token={token}
+          // Guardrails are policy (`edit_policy`): editors and the owner
+          // change them; anyone else sees them read-only.
+          disabled={!canEditPolicy}
+          onChange={(guardrails) =>
+            setAgent({
+              ...agent,
+              config: { ...(agent.config ?? {}), guardrails },
+            })
+          }
+        />
+        {modeConfig[effectiveMode].showDelete &&
+          agent.id &&
+          can(agent, 'delete') && (
+            <Card
+              tone="destructive"
+              padding="lg"
+              className="flex-row flex-wrap items-center justify-between"
+            >
+              <SectionHeader
+                tone="destructive"
+                title={t('agents.form.dangerZone.heading')}
+                description={t('agents.form.dangerZone.description')}
+                className="min-w-0 flex-1"
+              />
+              <Button
+                type="button"
+                variant="destructive-outline"
+                size="field"
+                shape="pill"
+                onClick={() => setDeleteConfirmation('ACTIVE')}
+                className="shrink-0"
+              >
+                {t('agents.form.dangerZone.deleteButton')}
+              </Button>
+            </Card>
           )}
-        </div>
-        <div className="col-span-3 flex flex-col gap-2 max-[1179px]:h-auto max-[1179px]:px-0 max-[1179px]:py-0 min-[1180px]:h-full min-[1180px]:py-2">
-          <div className="flex-1 max-[1179px]:overflow-visible min-[1180px]:min-h-0 min-[1180px]:overflow-hidden">
-            <AgentPreviewArea />
-          </div>
-        </div>
       </div>
+      {sponsorPrompt.modal}
       <ConfirmationModal
-        message={t('agents.deleteConfirmation')}
+        message={t('agents.deleteConfirmation', {
+          interpolation: { escapeValue: false },
+          name: agent.name,
+        })}
+        description={t('agents.deleteConsequence')}
         modalState={deleteConfirmation}
         setModalState={setDeleteConfirmation}
         submitLabel={t('agents.form.buttons.delete')}
-        handleSubmit={() => {
-          handleDelete(agent.id || '');
-          setDeleteConfirmation('INACTIVE');
-        }}
+        handleSubmit={() => handleDelete(agent.id || '')}
+        error={deleteError ?? t('agents.deleteFailed')}
         cancelLabel={t('agents.form.buttons.cancel')}
-        variant="danger"
+        variant="destructive"
       />
       <AgentDetailsModal
         agent={agent}
         mode={effectiveMode}
         modalState={agentDetails}
-        setModalState={setAgentDetails}
+        setModalState={(state) => {
+          setAgentDetails(state);
+          if (state === 'INACTIVE') setDetailsOnApiWrites(false);
+        }}
+        openApiWrites={detailsOnApiWrites}
         onKeyRegenerated={(key) => setAgent((prev) => ({ ...prev, key }))}
+        onConfigChange={(config) => {
+          // The allowlist is saved already: record it on the saved snapshot
+          // too, and keep any unsaved form edits to the rest of the config.
+          if (initialAgentRef.current)
+            initialAgentRef.current = { ...initialAgentRef.current, config };
+          setAgent((prev) => ({
+            ...prev,
+            config: {
+              ...(prev.config ?? {}),
+              api_write_allowlist: config.api_write_allowlist,
+            },
+          }));
+        }}
+        getSavedConfig={() => initialAgentRef.current?.config ?? agent.config}
       />
       {shareModalOpen && agent.id && (
         <ShareToTeamModal
@@ -1478,6 +1927,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           resourceId={agent.id}
           resourceName={agent.name}
           onClose={() => setShareModalOpen(false)}
+          onOpenAccessDetails={
+            canOpenAccessDetails
+              ? () => {
+                  setShareModalOpen(false);
+                  setDetailsOnApiWrites(true);
+                  setAgentDetails('ACTIVE');
+                }
+              : undefined
+          }
         />
       )}
       {uploadModalState === 'ACTIVE' && (
@@ -1489,6 +1947,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           close={() => setUploadModalState('INACTIVE')}
           onSuccessfulUpload={handleUploadedSource}
           selectUploadedDoc={false}
+          onBrowseConnectors={() =>
+            navigate('/settings/connectors?capability=sync')
+          }
         />
       )}
       <AddPromptModal
@@ -1499,28 +1960,72 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           setAgent({ ...agent, prompt_id: id });
         }}
       />
-    </div>
-  );
-}
-
-function AgentPreviewArea() {
-  const { t } = useTranslation();
-  const selectedAgent = useSelector(selectSelectedAgent);
-  return (
-    <div className="bg-card border-border w-full rounded-2xl border max-[1179px]:h-[600px] min-[1180px]:h-full">
-      {selectedAgent?.status === 'published' ? (
-        <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl">
-          <AgentPreview />
-        </div>
-      ) : (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-2">
-          <span className="block h-12 w-12 bg-[url('/src/assets/science-spark.svg')] bg-contain bg-center bg-no-repeat transition-all dark:bg-[url('/src/assets/science-spark-dark.svg')]" />{' '}
-          <p className="text-muted-foreground text-xs">
-            {t('agents.form.preview.publishedPreview')}
-          </p>
-        </div>
-      )}
-    </div>
+      <AgentPreviewSheet
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        title={t('agents.form.sections.preview')}
+        description={`${agentDisplayName} · ${
+          isPublished
+            ? t('agents.form.preview.savedVersion')
+            : t('agents.card.draft')
+        }`}
+        running={previewStatus === 'loading'}
+        actions={
+          isPublished ? (
+            <Button
+              type="button"
+              variant="ghost-muted"
+              size="sm"
+              shape="pill"
+              onClick={() => dispatch(resetPreview())}
+            >
+              <SquarePen />
+              {t('newChat')}
+            </Button>
+          ) : undefined
+        }
+      >
+        {isPublished ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            {effectiveMode === 'edit' && hasChanges && (
+              <div className="px-4 pt-4">
+                <Alert variant="info" role="note">
+                  <AlertDescription>
+                    {t('agents.form.preview.unsavedChanges')}
+                  </AlertDescription>
+                </Alert>
+              </div>
+            )}
+            <div className="relative min-h-0 flex-1">
+              <AgentPreview />
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-1 items-center justify-center px-6">
+            <EmptyState
+              size="sm"
+              illustration="none"
+              title={t('agents.form.preview.publishTitle')}
+              description={t('agents.form.preview.publishDescription')}
+              action={
+                can(agent, 'publish') ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    shape="pill"
+                    disabled={!isPublishable()}
+                    loading={publishLoading}
+                    onClick={handlePublish}
+                  >
+                    {t('agents.form.buttons.publish')}
+                  </Button>
+                ) : undefined
+              }
+            />
+          </div>
+        )}
+      </AgentPreviewSheet>
+    </SectionShell>
   );
 }
 

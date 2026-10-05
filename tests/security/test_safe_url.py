@@ -190,6 +190,31 @@ def test_rejects_carrier_grade_nat():
         validate_user_base_url("https://100.64.0.1/v1")
 
 
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "address",
+    [
+        "::ffff:127.0.0.1",
+        "::ffff:10.0.0.1",
+        "::ffff:169.254.169.254",
+        "::ffff:169.254.0.1",
+        "::ffff:100.64.0.1",
+    ],
+)
+def test_rejects_ipv4_mapped_ipv6_literal(address):
+    # ``::ffff:a.b.c.d`` reaches the IPv4 host on a dual-stack socket, so it
+    # is judged by the IPv4 address it carries.
+    with pytest.raises(UnsafeUserUrlError, match="blocked address"):
+        validate_user_base_url(f"https://[{address}]/v1")
+
+
+@pytest.mark.unit
+def test_rejects_hostname_resolving_to_ipv4_mapped_cgnat():
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("::ffff:100.64.0.1")):
+        with pytest.raises(UnsafeUserUrlError, match="blocked address"):
+            validate_user_base_url("https://mapped.example.com/v1")
+
+
 # Parse / structural failures
 
 

@@ -35,6 +35,24 @@ def looks_like_uuid(value: Any) -> bool:
     return isinstance(value, str) and bool(_UUID_RE.match(value))
 
 
+def canonical_uuid(value: Any) -> Any:
+    """The lowercase canonical form of a UUID string; anything else unchanged.
+
+    Postgres accepts any casing on ``CAST(... AS uuid)`` but returns the
+    lowercase form, so an id used as a dict key or stored in a JSON/array
+    column must be canonical to match what the database hands back.
+
+    Args:
+        value: A candidate id.
+
+    Returns:
+        ``str(UUID(value))`` for a UUID, else ``value`` as given.
+    """
+    if isinstance(value, UUID):
+        return str(value)
+    return str(UUID(value)) if looks_like_uuid(value) else value
+
+
 def row_to_dict(row: Any) -> dict:
     """Convert a SQLAlchemy ``Row`` to a plain JSON-safe dict.
 
@@ -65,3 +83,21 @@ def row_to_dict(row: Any) -> dict:
         out["_id"] = out["id"]
 
     return out
+
+
+def like_escape(term: str) -> str:
+    """Escape LIKE/ILIKE metacharacters so ``term`` matches literally.
+
+    A search box takes a substring, not a pattern. Interpolated raw, ``%``
+    matches everything and ``_`` matches any single character, so searching
+    for ``100%`` or ``q1_report`` silently returns the wrong rows.
+
+    Callers must pair this with ``ESCAPE '\\'`` on the comparison.
+
+    Args:
+        term: The user-supplied substring.
+
+    Returns:
+        ``term`` with ``\\``, ``%`` and ``_`` backslash-escaped.
+    """
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

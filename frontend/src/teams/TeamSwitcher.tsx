@@ -3,15 +3,19 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import {
-  Building2,
   Check,
   ChevronsUpDown,
   Plus,
-  Settings as SettingsIcon,
+  Settings,
+  User,
   Users,
 } from 'lucide-react';
 
-import DocsGPT3 from '../assets/cute_docsgpt3.svg';
+import DocsGPTLogo from '../assets/full-logo-b.svg';
+import DocsGPTLogoWhite from '../assets/full-logo-w.svg';
+import DocsGPTMark from '../assets/logo-b.svg';
+import DocsGPTMarkWhite from '../assets/logo-w.svg';
+import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import {
@@ -28,6 +32,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
+import { Avatar } from '../components/ui/avatar';
+import { Button } from '../components/ui/button';
+import { focusRing } from '../lib/utils';
 
 type TeamSwitcherProps = {
   // Called after a navigation/selection so callers (e.g. the mobile nav) can
@@ -43,7 +50,8 @@ type TeamSwitcherProps = {
  * The whole row is the dropdown trigger and morphs its identity: in a
  * personal context it shows the DocsGPT logo + wordmark; inside a team it
  * shows an initial avatar + the team name. The dropdown lets the user
- * quick-switch teams, jump to team management, or create a new team.
+ * quick-switch teams and ends in "Manage teams" (or "Create team" while the
+ * user has none).
  * Switching is a UX-only selection persisted in the teams slice via
  * setCurrentTeam; it does not scope app data.
  */
@@ -58,6 +66,7 @@ export default function TeamSwitcher({
   const token = useSelector(selectToken);
   const teams = useSelector(selectTeams);
   const currentTeamId = useSelector(selectCurrentTeamId);
+  const [isDarkTheme] = useDarkTheme();
 
   // Populate the switcher on mount so it works before visiting settings.
   useEffect(() => {
@@ -75,29 +84,57 @@ export default function TeamSwitcher({
   const currentName = currentTeam
     ? currentTeam.name
     : t('teams.switcher.personal');
-  // The header trigger shows the brand ("DocsGPT") in a personal context rather
-  // than "Personal account" — the dropdown still labels the switch entry
-  // "Personal account".
-  const triggerLabel = currentTeam ? currentTeam.name : 'DocsGPT';
   const teamInitial = currentTeam
     ? currentTeam.name.charAt(0).toUpperCase()
     : '';
 
-  // The morphing brand identity shown in the trigger: the DocsGPT logo for a
-  // personal context, or an initial avatar for a team.
+  // The morphing brand identity shown in the trigger: the DocsGPT mark for a
+  // personal context, or an initial avatar for a team. Expanded, a personal
+  // context upgrades this to the full lockup below.
   const triggerIcon = currentTeam ? (
     // A solid square reads heavier than the dino, so keep the team avatar a
     // touch smaller (with a little margin to align with the wordmark).
-    <span className="bg-muted dark:bg-accent text-foreground mx-1 flex size-7 shrink-0 items-center justify-center rounded-md text-sm font-semibold">
-      {teamInitial}
-    </span>
+    <Avatar size="xs" shape="square" variant="icon" className="mx-1">
+      <span className="text-foreground text-sm font-semibold">
+        {teamInitial}
+      </span>
+    </Avatar>
   ) : (
-    <img className="h-9 shrink-0" src={DocsGPT3} alt="DocsGPT Logo" />
+    <img
+      className="h-8 w-auto shrink-0"
+      src={isDarkTheme ? DocsGPTMarkWhite : DocsGPTMark}
+      alt={t('teams.switcher.logoAlt')}
+    />
   );
 
-  // Open the active team's detail directly (not just the list).
+  // Expanded brand row. In a personal context the full lockup replaces the
+  // mark-plus-label pair outright — the wordmark is part of the artwork, so a
+  // separate "DocsGPT" text label would repeat it. `mr-auto` keeps the chevron
+  // pinned right, the job the label's `flex-1` used to do, and `ml-3` lines the
+  // logo's left edge up with the "Agents"/"Chats" section headings below it
+  // (those sit 32px in: `mx-4` on their row plus `ml-4` on the label; the
+  // header strip adds 8px and the sidebar-item row's `pl-3` 12px).
+  const expandedBrand = currentTeam ? (
+    <>
+      {triggerIcon}
+      <span
+        className="text-foreground min-w-0 flex-1 truncate text-xl font-semibold"
+        title={currentTeam.name}
+      >
+        {currentTeam.name}
+      </span>
+    </>
+  ) : (
+    <img
+      className="mr-auto ml-3 h-4 w-auto shrink-0"
+      src={isDarkTheme ? DocsGPTLogoWhite : DocsGPTLogo}
+      alt="DocsGPT"
+    />
+  );
+
+  // The teams list, where "New team" also lives.
   const goToManage = () => {
-    navigate('/teams', { state: { openTeamId: currentTeam?.id } });
+    navigate('/teams');
     onNavigate?.();
   };
 
@@ -114,6 +151,7 @@ export default function TeamSwitcher({
 
   // Teams other than the currently active one, for the "switch to" list.
   const otherTeams = safeTeams.filter((team) => team.id !== currentTeamId);
+  const hasTeams = safeTeams.length > 0;
 
   return (
     <DropdownMenu>
@@ -122,59 +160,54 @@ export default function TeamSwitcher({
           <button
             type="button"
             aria-label={t('teams.switcher.ariaLabel')}
-            className="hover:bg-muted dark:hover:bg-accent flex items-center justify-center rounded-lg p-1 transition-colors"
+            className={`${focusRing} hover:bg-sidebar-accent flex items-center justify-center rounded-full p-1 transition-colors outline-none`}
           >
             {triggerIcon}
           </button>
         ) : (
-          <button
+          <Button
             type="button"
+            variant="sidebar-item"
             aria-label={t('teams.switcher.ariaLabel')}
-            className="hover:bg-muted dark:hover:bg-accent text-foreground flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left transition-colors"
+            className="w-full"
           >
-            {triggerIcon}
-            <span className="text-foreground min-w-0 flex-1 truncate text-xl font-semibold dark:text-white">
-              {triggerLabel}
-            </span>
-            <ChevronsUpDown
-              className="text-muted-foreground size-4 shrink-0"
-              strokeWidth={1.75}
-            />
-          </button>
+            {expandedBrand}
+            {/* sidebar-item rows carry no right padding, so the chevron's
+                margin keeps it clear of the pill's end. */}
+            <ChevronsUpDown className="text-muted-foreground mr-3 size-4" />
+          </Button>
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-62">
-        <DropdownMenuLabel className="flex items-center gap-2">
-          <span className="bg-muted dark:bg-accent flex size-7 shrink-0 items-center justify-center rounded-md">
-            {currentTeam ? (
-              <Users className="size-4" strokeWidth={1.75} />
-            ) : (
-              <Building2 className="size-4" strokeWidth={1.75} />
-            )}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="text-foreground block truncate text-sm font-semibold">
-              {currentName}
+        <DropdownMenuLabel>
+          <div className="flex items-center gap-2">
+            <Avatar size="xs" shape="square" variant="icon">
+              {currentTeam ? (
+                <Users className="text-foreground size-4" />
+              ) : (
+                <User className="text-foreground size-4" />
+              )}
+            </Avatar>
+            <span className="min-w-0 flex-1">
+              <span
+                className="text-foreground block truncate text-sm font-semibold"
+                title={currentTeam?.name}
+              >
+                {currentName}
+              </span>
+              <span className="text-muted-foreground block truncate text-xs font-normal">
+                {currentRoleLabel}
+              </span>
             </span>
-            <span className="text-muted-foreground block truncate text-xs font-normal">
-              {currentRoleLabel}
-            </span>
-          </span>
+          </div>
         </DropdownMenuLabel>
-
-        {currentTeam && (
-          <DropdownMenuItem onSelect={goToManage}>
-            <SettingsIcon className="size-4" strokeWidth={1.75} />
-            <span>{t('teams.switcher.manageTeam')}</span>
-          </DropdownMenuItem>
-        )}
 
         <DropdownMenuSeparator />
 
         {/* Personal account entry */}
         {currentTeam && (
           <DropdownMenuItem onSelect={() => selectTeam(null)}>
-            <Building2 className="size-4" strokeWidth={1.75} />
+            <User className="size-4" />
             <span className="min-w-0 flex-1 truncate">
               {t('teams.switcher.personal')}
             </span>
@@ -185,19 +218,28 @@ export default function TeamSwitcher({
         {/* Other teams to switch to */}
         {otherTeams.map((team) => (
           <DropdownMenuItem key={team.id} onSelect={() => selectTeam(team.id)}>
-            <Users className="size-4" strokeWidth={1.75} />
+            <Users className="size-4" />
             <span className="min-w-0 flex-1 truncate" title={team.name}>
               {team.name}
             </span>
           </DropdownMenuItem>
         ))}
 
-        <DropdownMenuSeparator />
+        {hasTeams && <DropdownMenuSeparator />}
 
-        <DropdownMenuItem onSelect={goToCreate}>
-          <Plus className="size-4" strokeWidth={1.75} />
-          <span>{t('teams.switcher.createTeam')}</span>
-        </DropdownMenuItem>
+        {/* With no teams there is nothing to manage yet, so offer creation;
+            once one exists, the teams page covers both. */}
+        {hasTeams ? (
+          <DropdownMenuItem onSelect={goToManage}>
+            <Settings className="size-4" />
+            <span>{t('teams.switcher.manageTeams')}</span>
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onSelect={goToCreate}>
+            <Plus className="size-4" />
+            <span>{t('teams.switcher.createTeam')}</span>
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

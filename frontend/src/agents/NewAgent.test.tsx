@@ -1,0 +1,1312 @@
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+
+import type { MultiSelectPopoverItem } from '../components/MultiSelectPopover';
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { language: 'en' },
+  }),
+}));
+
+const mockState = {
+  preference: {
+    token: null,
+    sourceDocs: [],
+    selectedAgent: null,
+    prompts: [],
+    agentFolders: [],
+  },
+  agentPreview: { queries: [], status: 'idle' },
+};
+
+const mocks = vi.hoisted(() => {
+  const jsonResponse = (body: unknown, ok = true) =>
+    Promise.resolve({ ok, json: () => Promise.resolve(body) });
+  return {
+    jsonResponse,
+    submitResult: undefined as void | Promise<unknown>,
+    dispatch: vi.fn(),
+    getAgent: vi.fn(() => jsonResponse({})),
+    createAgent: vi.fn(() => jsonResponse({ message: 'Name is taken' }, false)),
+    tools: null as unknown[] | null,
+    connections: [] as unknown[],
+    catalog: [] as unknown[],
+    deleteAgent: vi.fn(() => jsonResponse({})),
+    updateAgent: vi.fn<
+      (id: string, data: FormData, token: string | null) => Promise<unknown>
+    >(() => jsonResponse({})),
+    guardrailsProps: vi.fn(),
+    detailsProps: vi.fn(),
+    shareProps: vi.fn(),
+    reconnect: vi.fn(),
+  };
+});
+const { jsonResponse } = mocks;
+
+vi.mock('../connectors/SignInAgainNotice', () => ({
+  default: () => null,
+  useSignInAgain: () => ({ reconnect: mocks.reconnect, modals: null }),
+}));
+vi.mock('react-redux', () => ({
+  useSelector: (selector: (state: unknown) => unknown) => selector(mockState),
+  useDispatch: () => mocks.dispatch,
+}));
+
+vi.mock('../api/services/userService', () => ({
+  default: {
+    getUserTools: () =>
+      jsonResponse({
+        tools: mocks.tools ?? [
+          {
+            id: 'tool-1',
+            name: 'remote_device',
+            display_name: 'Laptop',
+            config: { device_id: 'device-1' },
+          },
+        ],
+      }),
+    getAgentFolders: () => jsonResponse({ folders: [] }),
+    getAgent: mocks.getAgent,
+    createAgent: mocks.createAgent,
+    updateAgent: mocks.updateAgent,
+    deleteAgent: mocks.deleteAgent,
+    createPrompt: () => jsonResponse({}),
+  },
+}));
+
+vi.mock('../api/services/devicesService', () => ({
+  default: {
+    list: () =>
+      Promise.resolve({
+        devices: [{ id: 'device-1', last_seen_at: new Date().toISOString() }],
+      }),
+  },
+}));
+
+vi.mock('../api/services/connectorsService', () => ({
+  default: {
+    listConnections: () => Promise.resolve({ connections: mocks.connections }),
+    getCatalog: () =>
+      Promise.resolve({ success: true, connectors: mocks.catalog }),
+  },
+}));
+
+vi.mock('../api/services/modelService', () => ({
+  default: {
+    getModels: () => jsonResponse({ models: [] }),
+    transformModels: () => [],
+  },
+}));
+
+// The pickers render only their trigger here, plus each item's rich
+// description so the device status pill can be checked.
+vi.mock('../components/MultiSelectPopover', () => ({
+  MultiSelectPopover: ({
+    trigger,
+    items,
+    onToggle,
+  }: {
+    trigger: React.ReactNode;
+    items: MultiSelectPopoverItem[];
+    onToggle: (id: string) => void;
+  }) => (
+    <div data-testid="picker">
+      {trigger}
+      {items.map((item) => (
+        <div
+          key={item.id}
+          data-group={item.group}
+          data-item={item.id}
+          data-description={item.description}
+        >
+          {item.descriptionNode}
+          <button
+            type="button"
+            data-toggle={item.id}
+            onClick={() => onToggle(item.id)}
+          />
+        </div>
+      ))}
+    </div>
+  ),
+}));
+
+vi.mock('./workflow/WorkflowBuilder', () => ({ default: () => null }));
+vi.mock('./AgentPreview', () => ({ default: () => null }));
+vi.mock('../settings/Prompts', () => ({ default: () => null }));
+vi.mock('./components/GuardrailsSection', () => ({
+  default: (props: { disabled?: boolean }) => {
+    mocks.guardrailsProps(props);
+    return null;
+  },
+  guardrailsIncomplete: () => false,
+}));
+vi.mock('../upload/Upload', () => ({ default: () => null }));
+vi.mock('../modals/AgentDetailsModal', () => ({
+  default: (props: unknown) => {
+    mocks.detailsProps(props);
+    return null;
+  },
+}));
+vi.mock('../teams/ShareToTeamModal', () => ({
+  default: (props: unknown) => {
+    mocks.shareProps(props);
+    return null;
+  },
+}));
+vi.mock('../modals/ConfirmationModal', () => ({
+  default: ({
+    modalState,
+    handleSubmit,
+    error,
+  }: {
+    modalState: string;
+    handleSubmit: () => void | Promise<unknown>;
+    error?: string;
+  }) =>
+    modalState === 'ACTIVE' ? (
+      <>
+        <button
+          type="button"
+          data-testid="confirm-delete"
+          onClick={() => {
+            const result = handleSubmit();
+            // Mark it handled; the tests assert on it afterwards.
+            if (result) result.catch(() => undefined);
+            mocks.submitResult = result;
+          }}
+        >
+          confirm
+        </button>
+        <p data-testid="confirm-error">{error}</p>
+      </>
+    ) : null,
+}));
+vi.mock('../preferences/PromptsModal', () => ({ default: () => null }));
+vi.mock('./components/SponsorConfirmModal', () => ({
+  default: ({
+    confirmation,
+    onConfirm,
+  }: {
+    confirmation: { resources: { key: string; name: string }[] } | null;
+    onConfirm: (keys: string[]) => void;
+  }) =>
+    confirmation ? (
+      <button
+        type="button"
+        data-testid="confirm-sponsor"
+        onClick={() => onConfirm(confirmation.resources.map((r) => r.key))}
+      >
+        {confirmation.resources.map((r) => r.name).join(',')}
+      </button>
+    ) : null,
+}));
+vi.mock('../navigation/SectionPills', () => ({
+  default: () => <div data-testid="section-pills" />,
+}));
+vi.mock('../navigation/SectionPageHeader', () => ({
+  CurrentSectionHeader: ({
+    title,
+    titleAction,
+  }: {
+    title?: React.ReactNode;
+    titleAction?: React.ReactNode;
+  }) => (
+    <div>
+      {title ? <h1>{title}</h1> : null}
+      {titleAction}
+    </div>
+  ),
+}));
+vi.mock('../components/FileUpload', () => ({ FileUpload: () => null }));
+vi.mock('../components/SourcesPopoverFooter', () => ({ default: () => null }));
+vi.mock('../components/ToolIcon', () => ({ default: () => null }));
+
+import NewAgent from './NewAgent';
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+const setNativeValue = (
+  el: HTMLInputElement | HTMLTextAreaElement,
+  value: string,
+) => {
+  const proto =
+    el instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
+  Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(el, value);
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+};
+
+describe('NewAgent form', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    mocks.dispatch.mockClear();
+    mocks.getAgent.mockClear();
+    mocks.createAgent.mockClear();
+    mocks.updateAgent.mockReset();
+    mocks.updateAgent.mockImplementation(() => jsonResponse({}));
+    mocks.tools = null;
+    mocks.connections = [];
+    mocks.catalog = [];
+  });
+
+  const render = async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <NewAgent mode="new" />
+        </MemoryRouter>,
+      );
+    });
+  };
+
+  const buttonByText = (text: string) =>
+    Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes(text),
+    )!;
+
+  // Decision 63 (3): every field, picker and button in the form is 42px.
+  it('renders the name field as a default-size square Input', async () => {
+    await render();
+    const name = container.querySelector<HTMLInputElement>(
+      'input[placeholder="agents.form.placeholders.agentName"]',
+    )!;
+    expect(name.getAttribute('data-slot')).toBe('input');
+    expect(name.getAttribute('data-size')).toBe('default');
+    // S8: form controls are square; only the page chrome is pill.
+    expect(name.getAttribute('data-shape')).toBe('default');
+  });
+
+  it('renders the model Select triggers as square field controls', async () => {
+    await render();
+    const triggers = Array.from(
+      container.querySelectorAll('[data-slot="select-trigger"]'),
+    );
+    expect(triggers.length).toBeGreaterThan(0);
+    for (const trigger of triggers) {
+      expect(trigger.getAttribute('data-size')).toBe('field');
+      expect(trigger.getAttribute('data-shape')).toBe('default');
+    }
+  });
+
+  it('renders the Add prompt button at the field height', async () => {
+    await render();
+    const add = buttonByText('agents.form.buttons.add');
+    expect(add.getAttribute('data-variant')).toBe('outline-primary');
+    expect(add.getAttribute('data-size')).toBe('field');
+    expect(add.getAttribute('data-shape')).toBe('default');
+  });
+
+  it('renders the token and request limits as default-size square Inputs', async () => {
+    await render();
+    await act(async () =>
+      buttonByText('agents.form.sections.advanced').click(),
+    );
+    for (const key of ['enterTokenLimit', 'enterRequestLimit']) {
+      const field = container.querySelector(
+        `input[placeholder="agents.form.placeholders.${key}"]`,
+      )!;
+      expect(field.getAttribute('data-size')).toBe('default');
+      expect(field.getAttribute('data-shape')).toBe('default');
+    }
+  });
+
+  // A1a: three grouped sections instead of six one-field panels.
+  it('groups the form into Basics, Knowledge and behaviour, and Model', async () => {
+    await render();
+    const titles = Array.from(
+      container.querySelectorAll('[data-slot="section-header"] > h2'),
+    ).map((h) => h.textContent);
+    expect(titles).toEqual([
+      'agents.form.sections.basics',
+      'agents.form.sections.knowledge',
+      'agents.form.sections.model',
+    ]);
+    const basics = Array.from(
+      container.querySelectorAll('[data-slot="section-header"]'),
+    ).find((h) => h.textContent === 'agents.form.sections.basics')!;
+    expect(basics.parentElement!.className.split(' ')).toEqual(
+      expect.arrayContaining(['flex', 'flex-col', 'gap-5']),
+    );
+  });
+
+  // On a phone the avatar sits beside Name and Description spans the row;
+  // from sm the avatar spans both rows beside the fields.
+  it('lays Basics out as avatar beside Name, Description full width on a phone', async () => {
+    await render();
+    const name = container.querySelector(
+      'input[placeholder="agents.form.placeholders.agentName"]',
+    )!;
+    const grid = name.closest('.grid')!;
+    expect(grid.className).toContain('grid-cols-[auto_1fr]');
+    const description = container
+      .querySelector(
+        'textarea[placeholder="agents.form.placeholders.describeAgent"]',
+      )!
+      .closest('[data-slot="form-field"]')!;
+    expect(description.className).toContain('col-span-2');
+    expect(description.className).toContain('sm:col-start-2');
+  });
+
+  it('lists tool groups as built-in, default, one per connection, then custom', async () => {
+    mocks.tools = [
+      { id: 'custom', name: 'api_tool', display_name: 'My API' },
+      {
+        id: 'linear',
+        name: 'mcp_tool',
+        display_name: 'Linear',
+        connection_id: 'c-lin',
+      },
+      { id: 'memory', name: 'memory', display_name: 'Memory', builtin: true },
+      {
+        id: 'notion',
+        name: 'mcp_tool',
+        display_name: 'Notion',
+        connection_id: 'c-not',
+      },
+      {
+        id: 'reader',
+        name: 'read_webpage',
+        display_name: 'Reader',
+        default: true,
+      },
+    ];
+    mocks.connections = [
+      { id: 'c-lin', name: 'Linear', account_label: 'a@x', icon: 'linear' },
+      { id: 'c-not', name: 'Notion', account_label: 'b@x', icon: 'notion' },
+    ];
+    await render();
+    const groups = Array.from(
+      container.querySelectorAll('[data-testid="picker"] [data-group]'),
+    ).map((item) => item.getAttribute('data-group'));
+    const order = groups.filter((g, i) => groups.indexOf(g) === i);
+    expect(order).toEqual([
+      'agents.form.toolsPopup.groupBuiltin',
+      'agents.form.toolsPopup.groupDefault',
+      'agents.form.toolsPopup.groupConnection',
+      'agents.form.toolsPopup.groupCustom',
+    ]);
+  });
+
+  // A teammate's connection is never in the caller's list; its tool still
+  // belongs with the services, named from the catalog.
+  it("groups a teammate's connected tool under its service, before custom", async () => {
+    mocks.tools = [
+      { id: 'custom', name: 'api_tool', display_name: 'My API' },
+      {
+        id: 'shared-tg',
+        name: 'telegram',
+        displayName: 'Telegram',
+        connection_id: 'owner-conn',
+        access: 'viewer',
+        allowed_actions: ['use', 'use_in_own'],
+      },
+    ];
+    mocks.catalog = [
+      {
+        key: 'telegram',
+        name: 'Telegram',
+        icon: 'tool_telegram',
+        publisher: 'built_in',
+        tool_templates: ['telegram'],
+      },
+    ];
+    await render();
+    const groups = Array.from(
+      container.querySelectorAll('[data-testid="picker"] [data-group]'),
+    ).map((item) => item.getAttribute('data-group'));
+    expect(groups).toEqual(['Telegram', 'agents.form.toolsPopup.groupCustom']);
+  });
+
+  const renderEdit = async (agent: Record<string, unknown>) => {
+    mocks.getAgent.mockImplementationOnce(() =>
+      jsonResponse({
+        id: 'agent-1',
+        name: 'Shared',
+        description: 'd',
+        status: 'published',
+        agent_type: 'classic',
+        prompt_id: 'default',
+        access: 'editor',
+        allowed_actions: ['edit', 'view'],
+        ...agent,
+      }),
+    );
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
+          <Routes>
+            <Route
+              path="/agents/edit/:agentId"
+              element={<NewAgent mode="edit" />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+  };
+
+  // An editor doesn't list the owner's private tools, but must still be able
+  // to take one off the agent.
+  it("adds a remove-only row for an attached tool the editor can't list", async () => {
+    mocks.tools = [{ id: 'mine', name: 'api_tool', display_name: 'My API' }];
+    await renderEdit({
+      tools: ['owners'],
+      tool_details: [
+        { id: 'owners', name: 'jira', display_name: 'Owner Jira' },
+      ],
+    });
+    const toolPicker = Array.from(
+      container.querySelectorAll('[data-testid="picker"]'),
+    ).find((picker) => picker.textContent?.includes('Owner Jira'))!;
+    const groups = Array.from(toolPicker.querySelectorAll('[data-group]')).map(
+      (item) => item.getAttribute('data-group'),
+    );
+    expect(groups).toEqual([
+      'agents.form.toolsPopup.groupCustom',
+      'agents.form.toolsPopup.groupAttached',
+    ]);
+  });
+
+  // The sponsor confirmation asks before anything runs with an editor's
+  // access, so the form keeps no attach note; who added what is on the
+  // picker rows.
+  it('marks who added a sponsored tool and source in the pickers, with no note', async () => {
+    mocks.tools = [{ id: 'mine', name: 'api_tool', display_name: 'My API' }];
+    await renderEdit({
+      tools: ['mine'],
+      sources: ['s1'],
+      shared: true,
+      resource_sponsors: [
+        {
+          type: 'tool',
+          id: 'mine',
+          user_id: 'bob',
+          label: 'bob@example.com',
+          active: true,
+        },
+        { type: 'source', id: 's1', user_id: null, label: null, active: true },
+      ],
+    });
+    expect(
+      container
+        .querySelector('[data-item="mine"]')
+        ?.getAttribute('data-description'),
+    ).toBe('agents.form.sponsors.addedBy');
+    expect(
+      container
+        .querySelector('[data-item="s1"]')
+        ?.getAttribute('data-description'),
+    ).toBe('agents.form.sponsors.addedByOther');
+    expect(container.textContent).not.toContain('agents.form.sponsors.attach');
+    expect(container.textContent).not.toContain('publicLinkNote');
+    expect(container.querySelector('[data-slot="alert"]')).toBeNull();
+  });
+
+  // The prompt Select has no description slot: the mark is a hint under it.
+  it('marks a sponsored prompt under its picker', async () => {
+    await renderEdit({
+      prompt_id: 'p1',
+      prompt_name: 'Tone',
+      resource_sponsors: [
+        {
+          type: 'prompt',
+          id: 'p1',
+          user_id: 'bob',
+          label: 'bob@example.com',
+          active: true,
+        },
+      ],
+    });
+    const hint = Array.from(container.querySelectorAll('p')).find(
+      (p) => p.textContent === 'agents.form.sponsors.addedBy',
+    );
+    expect(hint?.className).toContain('text-muted-foreground');
+    expect(hint?.className).toContain('text-xs');
+  });
+
+  // F4: one word for the state, as a warning Badge like the device pill.
+  it('marks a tool whose account needs signing in with a Reconnect badge', async () => {
+    mocks.tools = [
+      {
+        id: 'linear',
+        name: 'mcp_tool',
+        display_name: 'Linear',
+        connection_id: 'c-lin',
+      },
+    ];
+    mocks.connections = [
+      {
+        id: 'c-lin',
+        name: 'Linear',
+        account_label: 'a@x',
+        icon: 'linear',
+        status: 'reconnect_needed',
+      },
+    ];
+    await render();
+    const badge = container.querySelector(
+      '[data-item="linear"] [data-slot="badge"]',
+    );
+    expect(badge?.getAttribute('data-variant')).toBe('warning');
+    expect(badge?.textContent).toBe('settings.connectors.status.reconnect');
+    expect(
+      container.querySelector('[data-item="linear"] p.text-warning'),
+    ).toBeNull();
+  });
+
+  it('asks before sponsoring and retries the save with the confirmation', async () => {
+    mocks.updateAgent.mockImplementationOnce(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            success: false,
+            code: 'sponsor_confirmation_required',
+            message: 'confirm',
+            resources: [
+              { key: 'tool:t1', type: 'tool', id: 't1', name: 'Jira' },
+            ],
+            audience: {
+              teams: ['Support'],
+              api_key: true,
+              public_link: false,
+              webhook: false,
+            },
+          }),
+          { status: 409 },
+        ),
+      ),
+    );
+    await renderEdit({});
+    const name = container.querySelector<HTMLInputElement>(
+      'input[placeholder="agents.form.placeholders.agentName"]',
+    )!;
+    await act(async () => setNativeValue(name, 'Renamed'));
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const confirm = container.querySelector<HTMLButtonElement>(
+      '[data-testid="confirm-sponsor"]',
+    )!;
+    expect(confirm.textContent).toBe('Jira');
+    // The refusal is a question, not an error.
+    expect(container.querySelector('[data-variant="destructive"]')).toBeNull();
+    expect(mocks.updateAgent).toHaveBeenCalledTimes(1);
+    const first = mocks.updateAgent.mock.calls[0][1];
+    expect(first.get('confirm_sponsor')).toBeNull();
+
+    await act(async () => confirm.click());
+    expect(mocks.updateAgent).toHaveBeenCalledTimes(2);
+    const retried = mocks.updateAgent.mock.calls[1][1];
+    expect(JSON.parse(retried.get('confirm_sponsor') as string)).toEqual([
+      'tool:t1',
+    ]);
+    expect(
+      container.querySelector('[data-testid="confirm-sponsor"]'),
+    ).toBeNull();
+  });
+
+  const rename = async (value: string) => {
+    const name = container.querySelector<HTMLInputElement>(
+      'input[placeholder="agents.form.placeholders.agentName"]',
+    )!;
+    await act(async () => setNativeValue(name, value));
+  };
+
+  it('drops the remove-only row once the removal is saved', async () => {
+    mocks.tools = [{ id: 'mine', name: 'api_tool', display_name: 'My API' }];
+    await renderEdit({
+      tools: ['owners'],
+      tool_details: [
+        { id: 'owners', name: 'jira', display_name: 'Owner Jira' },
+      ],
+    });
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-toggle="owners"]')!
+        .click(),
+    );
+    // Still listed until saved, so it can be put back.
+    expect(container.querySelector('[data-item="owners"]')).not.toBeNull();
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    expect(mocks.updateAgent).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[data-item="owners"]')).toBeNull();
+  });
+
+  const stoppedTool = {
+    key: 'tool:t1',
+    type: 'tool',
+    id: 't1',
+    name: 'Jira',
+    state: 'stopped',
+    reason: 'sponsor_cannot_edit_agent',
+    sponsor: { user_id: 'bob', label: 'bob@example.com' },
+    can_confirm: true,
+  };
+  const withStoppedTool = (item: Record<string, unknown> = {}) => ({
+    tools: ['t1'],
+    tool_details: [{ id: 't1', name: 'jira', display_name: 'Jira' }],
+    resource_states: [{ ...stoppedTool, ...item }],
+    sponsor_audience: {
+      teams: ['Sales'],
+      api_key: false,
+      public_link: false,
+      webhook: false,
+    },
+  });
+
+  it('asks before taking over a stopped item and sends it with the next save', async () => {
+    await renderEdit(withStoppedTool());
+    const save = buttonByText('agents.form.buttons.save');
+    expect(save.disabled).toBe(true);
+    await act(async () =>
+      buttonByText('agents.form.sponsors.takeOver').click(),
+    );
+    // Nothing is taken over until the reader agrees in the dialog.
+    expect(save.disabled).toBe(true);
+    const confirm = container.querySelector<HTMLButtonElement>(
+      '[data-testid="confirm-sponsor"]',
+    )!;
+    expect(confirm.textContent).toBe('Jira');
+    await act(async () => confirm.click());
+    expect(container.textContent).toContain(
+      'agents.form.sponsors.takeOverPending',
+    );
+    expect(save.disabled).toBe(false);
+    await act(async () => save.click());
+    const sent = mocks.updateAgent.mock.calls[0][1];
+    expect(JSON.parse(sent.get('confirm_sponsor') as string)).toEqual([
+      'tool:t1',
+    ]);
+    // The saved agent is fetched again for its fresh details.
+    expect(mocks.getAgent).toHaveBeenCalledTimes(2);
+  });
+
+  it('removes a stopped item from the agent', async () => {
+    await renderEdit(withStoppedTool({ reason: 'deleted', sponsor: null }));
+    expect(container.textContent).toContain(
+      'agents.form.resourceStates.reason.deleted',
+    );
+    await act(async () =>
+      buttonByText('agents.form.resourceStates.remove').click(),
+    );
+    // Off the form, so off the notice too.
+    expect(container.textContent).not.toContain(
+      'agents.form.resourceStates.reason.deleted',
+    );
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const sent = mocks.updateAgent.mock.calls[0][1];
+    expect(JSON.parse(sent.get('tools') as string)).toEqual([]);
+  });
+
+  it('reconnects the account of a stopped tool in place', async () => {
+    mocks.reconnect.mockClear();
+    await renderEdit(
+      withStoppedTool({
+        reason: 'connection_needs_reconnect',
+        sponsor: null,
+        can_confirm: false,
+        can_reconnect: true,
+        connection: { id: 'c1', connector_key: 'telegram', name: 'Telegram' },
+      }),
+    );
+    await act(async () =>
+      buttonByText('settings.connectors.status.reconnect').click(),
+    );
+    expect(mocks.reconnect).toHaveBeenCalledWith(
+      { id: 'c1', connector_key: 'telegram' },
+      undefined,
+    );
+  });
+
+  it('explains an outdated confirmation and reloads the sponsors', async () => {
+    mocks.updateAgent.mockImplementationOnce(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            success: false,
+            code: 'sponsor_confirmation_unexpected',
+            message: 'raw english',
+            unexpected: ['tool:t1'],
+          }),
+          { status: 400 },
+        ),
+      ),
+    );
+    await renderEdit({});
+    await rename('Renamed');
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    expect(container.textContent).toContain(
+      'agents.form.sponsors.confirmationOutdated',
+    );
+    expect(container.textContent).not.toContain('raw english');
+    expect(mocks.getAgent).toHaveBeenCalledTimes(2);
+  });
+
+  it('labels every picker with a floating label', async () => {
+    await render();
+    const labels = Array.from(
+      container.querySelectorAll('[data-slot="form-field-label"]'),
+    ).map((l) => l.textContent);
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        'agents.form.labels.name',
+        'agents.form.labels.description',
+        'agents.form.labels.sources',
+        'agents.form.sections.tools',
+        'agents.form.sections.agentType',
+        'agents.form.sections.models',
+      ]),
+    );
+  });
+
+  it('gives each picker trigger the combobox role', async () => {
+    await render();
+    const triggers = Array.from(
+      container.querySelectorAll('[data-testid="picker"] > button'),
+    );
+    expect(triggers).toHaveLength(3);
+    triggers.forEach((trigger) =>
+      expect(trigger.getAttribute('role')).toBe('combobox'),
+    );
+  });
+
+  it('puts Sources beside Tools in a two-up field grid', async () => {
+    await render();
+    const [sources, tools] = Array.from(
+      container.querySelectorAll('[data-testid="picker"] > button'),
+    );
+    const grid = sources.closest('.grid')!;
+    expect(grid.className).toContain('sm:grid-cols-2');
+    expect(grid.contains(tools)).toBe(true);
+  });
+
+  it('titles the new-agent page and puts its actions in the agent toolbar', async () => {
+    await render();
+    expect(container.querySelector('h1')?.textContent).toBe('agents.newAgent');
+    const toolbar = container.querySelector('[data-slot="page-toolbar"]')!;
+    expect(toolbar.textContent).toContain('agents.form.byline.new');
+    expect(toolbar.contains(buttonByText('agents.form.buttons.publish'))).toBe(
+      true,
+    );
+  });
+
+  // Before publishing, Preview can only say "Publish to preview", so it is a
+  // ⋯ item beside the title rather than a toolbar button.
+  it('drops the New agent title once the agent is saved', async () => {
+    await render();
+    mocks.createAgent.mockImplementationOnce(() =>
+      jsonResponse({ id: 'agent-1' }),
+    );
+    await act(async () =>
+      buttonByText('agents.form.buttons.saveDraft').click(),
+    );
+    expect(container.querySelector('h1')?.textContent).not.toBe(
+      'agents.newAgent',
+    );
+  });
+
+  // The preview talks to the saved agent; Redux must hold that snapshot, not
+  // the unsaved form, or the preview picks up an unsaved model.
+  it('keeps the preview on the saved agent while editing a published one', async () => {
+    mocks.getAgent.mockImplementationOnce(() =>
+      jsonResponse({
+        id: 'agent-1',
+        name: 'Saved name',
+        description: 'Saved description',
+        status: 'published',
+        agent_type: 'classic',
+        prompt_id: 'default',
+      }),
+    );
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
+          <Routes>
+            <Route
+              path="/agents/edit/:agentId"
+              element={<NewAgent mode="edit" />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+    const name = container.querySelector<HTMLInputElement>(
+      'input[placeholder="agents.form.placeholders.agentName"]',
+    )!;
+    await act(async () => setNativeValue(name, 'Unsaved name'));
+
+    const pushed = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((a) => a?.type === 'preference/setSelectedAgent' && a.payload);
+    expect(pushed.length).toBeGreaterThan(0);
+    for (const action of pushed) {
+      expect(action.payload.name).toBe('Saved name');
+    }
+  });
+
+  it('offers Preview from the title-row menu until the agent is published', async () => {
+    await render();
+    const toolbar = container.querySelector('[data-slot="page-toolbar"]')!;
+    expect(
+      Array.from(toolbar.querySelectorAll('button')).some((b) =>
+        b.textContent?.includes('agents.form.sections.preview'),
+      ),
+    ).toBe(false);
+    const menu = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="agents.form.buttons.moreActions"]',
+    )!;
+    expect(menu.getAttribute('data-size')).toBe('icon');
+    // Beside the page title, not in the toolbar row.
+    expect(menu.closest('[data-slot="page-toolbar"]')).toBeNull();
+    expect(menu.parentElement!.querySelector('h1')).not.toBeNull();
+    await act(async () => {
+      menu.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+    });
+    const preview = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((item) => item.textContent === 'agents.form.sections.preview')!;
+    await act(async () => preview.click());
+    const sheet = document.querySelector('[data-slot="sheet-content"]')!;
+    expect(sheet.textContent).toContain('agents.form.preview.publishTitle');
+  });
+
+  it('stretches the main button on a phone', async () => {
+    await render();
+    const publish = buttonByText('agents.form.buttons.publish');
+    expect(publish.className).toContain('flex-1');
+    expect(publish.className).toContain('sm:flex-none');
+  });
+
+  // The sidebar (and the agent card's menu) already switch between an
+  // agent's pages, so the pages carry no pill row.
+  it('has no destination pills', async () => {
+    await render();
+    expect(container.querySelector('[data-testid="section-pills"]')).toBeNull();
+  });
+
+  it('renders the Advanced header as a section-toggle', async () => {
+    await render();
+    const toggle = buttonByText('agents.form.sections.advanced');
+    expect(toggle.getAttribute('data-variant')).toBe('section-toggle');
+    expect(toggle.getAttribute('data-size')).toBe('sm');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    const chevron = toggle.firstElementChild!;
+    expect(chevron.matches('svg.lucide-chevron-right')).toBe(true);
+    expect(chevron.getAttribute('class')).not.toContain('rotate-90');
+    expect(toggle.querySelectorAll('svg')).toHaveLength(1);
+    expect(toggle.querySelector('h2')).toBeNull();
+    expect(toggle.parentElement!.tagName).toBe('H2');
+    const panel = toggle.closest('[data-slot="card"]')!;
+    expect(panel.className).toContain(
+      'has-[[data-variant=section-toggle]:focus-visible]:ring-3',
+    );
+
+    await act(async () => toggle.click());
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(chevron.getAttribute('class')).toContain('rotate-90');
+  });
+
+  it('renders the description as a default-size ui Textarea at its own height', async () => {
+    await render();
+    const description = container.querySelector(
+      'textarea[placeholder="agents.form.placeholders.describeAgent"]',
+    )!;
+    expect(description.getAttribute('data-slot')).toBe('textarea');
+    expect(description.getAttribute('data-size')).toBe('default');
+    expect(description.className).toContain('h-32');
+    expect(description.className).toContain('sm:h-24');
+  });
+
+  it('renders the pickers as square comboboxes, muted while empty', async () => {
+    await render();
+    const triggers = Array.from(
+      container.querySelectorAll('[data-testid="picker"] > button'),
+    );
+    // Sources, tools, models.
+    expect(triggers).toHaveLength(3);
+    for (const trigger of triggers) {
+      expect(trigger.getAttribute('data-variant')).toBe('combobox');
+      expect(trigger.getAttribute('data-size')).toBe('field');
+      expect(trigger.getAttribute('data-shape')).toBe('default');
+      expect(trigger.className).toContain('rounded-md');
+      expect(trigger.hasAttribute('data-placeholder')).toBe(true);
+      expect(trigger.querySelector('span.truncate')).not.toBeNull();
+    }
+  });
+
+  it('shows the device status as a Badge', async () => {
+    await render();
+    const badge = container.querySelector('[data-slot="badge"]');
+    expect(badge?.textContent).toBe('settings.devices.online');
+    expect(badge?.getAttribute('data-variant')).toBe('success');
+  });
+
+  it('renders Save draft and Publish as pill button variants', async () => {
+    await render();
+    // A4: one purple button per page; every header button is field pill.
+    const draft = buttonByText('agents.form.buttons.saveDraft');
+    expect(draft.getAttribute('data-variant')).toBe('outline');
+    expect(draft.getAttribute('data-size')).toBe('field');
+    expect(draft.getAttribute('data-shape')).toBe('pill');
+    const publish = buttonByText('agents.form.buttons.publish');
+    expect(publish.getAttribute('data-variant')).toBe('default');
+    expect(publish.getAttribute('data-size')).toBe('field');
+    expect(publish.getAttribute('data-shape')).toBe('pill');
+    expect(publish.disabled).toBe(true);
+  });
+
+  // Item 42: the header's Cancel (shown once the form is dirty) is ghost.
+  it('renders the header Cancel as a ghost pill once the form changes', async () => {
+    await render();
+    const name = container.querySelector<HTMLInputElement>(
+      'input[placeholder="agents.form.placeholders.agentName"]',
+    )!;
+    await act(async () => setNativeValue(name, 'Support bot'));
+    const cancel = buttonByText('agents.form.buttons.cancel');
+    expect(cancel.getAttribute('data-variant')).toBe('ghost');
+    expect(cancel.getAttribute('data-size')).toBe('field');
+    expect(cancel.getAttribute('data-shape')).toBe('pill');
+  });
+
+  it('shows a failed save as a destructive alert with an icon', async () => {
+    await render();
+    const draft = buttonByText('agents.form.buttons.saveDraft');
+    await act(async () => draft.click());
+    const alert = container.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toContain('Name is taken');
+    // ui/alert's destructive variant.
+    expect(alert.className).toContain('border-destructive/50');
+    expect(alert.className).toContain('bg-destructive/10');
+    expect(alert.querySelector('svg.lucide-circle-alert')).not.toBeNull();
+    // Decision 69 (b): the notice sits above the form panel, not in the
+    // header's button row.
+    expect(draft.parentElement?.contains(alert)).toBe(false);
+  });
+
+  it('marks JSON schema validity with token colours and lucide icons', async () => {
+    await render();
+    await act(async () =>
+      buttonByText('agents.form.sections.advanced').click(),
+    );
+    const schema = Array.from(container.querySelectorAll('textarea')).find(
+      (el) => el.className.includes('font-mono'),
+    )!;
+    expect(schema.getAttribute('data-slot')).toBe('textarea');
+    expect(schema.getAttribute('data-size')).toBe('default');
+
+    await act(async () => setNativeValue(schema, '{ not json'));
+    const invalid = Array.from(container.querySelectorAll('div')).find(
+      (el) => el.textContent === 'agents.form.advanced.invalidJson',
+    )!;
+    expect(invalid.className).toContain('text-destructive');
+    expect(invalid.querySelector('svg.lucide-circle-x')).not.toBeNull();
+
+    await act(async () => setNativeValue(schema, '{}'));
+    const valid = Array.from(container.querySelectorAll('div')).find(
+      (el) => el.textContent === 'agents.form.advanced.validJson',
+    )!;
+    expect(valid.className).toContain('text-success');
+    expect(valid.querySelector('svg.lucide-circle-check')).not.toBeNull();
+  });
+
+  // Card surfaces: the form is a place, so each section is a subtle panel
+  // straight on the page, with no muted panel around the form.
+  it('draws each form section as a subtle panel on the page', async () => {
+    await render();
+    const titles = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="section-header"]'),
+    );
+    expect(titles.length).toBeGreaterThan(0);
+    for (const title of titles) {
+      const panel = title.closest<HTMLElement>('[data-slot="card"]')!;
+      expect(panel.dataset.variant).toBe(
+        title.closest('[data-tone="destructive"]')
+          ? panel.dataset.variant
+          : 'subtle',
+      );
+    }
+    const advanced = buttonByText('agents.form.sections.advanced');
+    const panel = advanced.closest<HTMLElement>('[data-slot="card"]')!;
+    expect(panel.dataset.variant).toBe('subtle');
+    expect(panel.dataset.padding).toBe('lg');
+    expect(container.querySelector('.bg-muted.rounded-2xl')).toBeNull();
+  });
+
+  it('notches floating labels on the page background', async () => {
+    await render();
+    const labels = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="form-field-label"]'),
+    );
+    expect(labels.length).toBeGreaterThan(0);
+    for (const label of labels) {
+      expect(label.className).toContain('bg-background');
+    }
+  });
+});
+
+describe('NewAgent gating by role', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  const OWNER = [
+    'delete',
+    'edit',
+    'edit_policy',
+    'export',
+    'manage_access_details',
+    'manage_schedules',
+    'manage_settings',
+    'move_folder',
+    'pin',
+    'publish',
+    'share',
+    'use',
+    'view',
+    'view_logs',
+  ];
+  const EDITOR = [
+    'edit',
+    'edit_policy',
+    'export',
+    'manage_access_details',
+    'manage_schedules',
+    'pin',
+    'publish',
+    'use',
+    'view',
+    'view_logs',
+  ];
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    mocks.dispatch.mockClear();
+    mocks.getAgent.mockReset();
+    mocks.getAgent.mockImplementation(() => jsonResponse({}));
+    mocks.deleteAgent.mockReset();
+    mocks.deleteAgent.mockImplementation(() => jsonResponse({}));
+    mocks.guardrailsProps.mockClear();
+  });
+
+  const renderEdit = async (access: 'owner' | 'editor', allowed: string[]) => {
+    mocks.getAgent.mockImplementation(() =>
+      jsonResponse({
+        id: 'agent-1',
+        name: 'Deal Desk',
+        description: 'Researches deals',
+        status: 'published',
+        agent_type: 'classic',
+        prompt_id: 'default',
+        ownership: access === 'owner' ? 'user' : 'team',
+        team_access: access === 'owner' ? null : access,
+        access,
+        allowed_actions: allowed,
+      }),
+    );
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
+          <Routes>
+            <Route
+              path="/agents/edit/:agentId"
+              element={<NewAgent mode="edit" />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+  };
+
+  const buttonByText = (text: string) =>
+    Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes(text),
+    );
+
+  const menuLabels = async () => {
+    const menu = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="agents.form.buttons.moreActions"]',
+    )!;
+    await act(async () => {
+      menu.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+    });
+    return Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).map((item) => item.textContent);
+  };
+
+  const lastGuardrailsDisabled = () =>
+    mocks.guardrailsProps.mock.calls.at(-1)?.[0].disabled;
+
+  it('gives the owner Share, Access details and the danger zone', async () => {
+    await renderEdit('owner', OWNER);
+    expect(buttonByText('agents.form.dangerZone.deleteButton')).toBeDefined();
+    expect(await menuLabels()).toEqual([
+      'agents.form.buttons.accessDetails',
+      'agents.shareWithTeam',
+    ]);
+  });
+
+  it('draws the danger zone as the one tinted card with a field pill', async () => {
+    await renderEdit('owner', OWNER);
+    const del = buttonByText('agents.form.dangerZone.deleteButton')!;
+    expect(del.dataset.variant).toBe('destructive-outline');
+    expect(del.dataset.size).toBe('field');
+    expect(del.dataset.shape).toBe('pill');
+    const card = del.closest<HTMLElement>('[data-slot="card"]')!;
+    expect(card.dataset.tone).toBe('destructive');
+    expect(card.dataset.padding).toBe('lg');
+    expect(card.className).toContain('items-center');
+  });
+
+  it('hides Share and Delete from an editor but keeps Access details', async () => {
+    await renderEdit('editor', EDITOR);
+    expect(buttonByText('agents.form.dangerZone.deleteButton')).toBeUndefined();
+    expect(await menuLabels()).toEqual(['agents.form.buttons.accessDetails']);
+  });
+
+  it('lets an editor change guardrails and quotas', async () => {
+    await renderEdit('editor', EDITOR);
+    expect(lastGuardrailsDisabled()).toBe(false);
+    await act(async () =>
+      buttonByText('agents.form.sections.advanced')!.click(),
+    );
+    const switches =
+      container.querySelectorAll<HTMLButtonElement>('[role="switch"]');
+    expect(switches.length).toBeGreaterThan(0);
+    for (const s of Array.from(switches)) expect(s.disabled).toBe(false);
+  });
+
+  it('locks guardrails and quotas without edit_policy', async () => {
+    await renderEdit(
+      'editor',
+      EDITOR.filter((a) => a !== 'edit_policy'),
+    );
+    expect(lastGuardrailsDisabled()).toBe(true);
+    await act(async () =>
+      buttonByText('agents.form.sections.advanced')!.click(),
+    );
+    const token = container.querySelector<HTMLInputElement>(
+      'input[placeholder="agents.form.placeholders.enterTokenLimit"]',
+    )!;
+    const tokenSwitch = token
+      .closest('[data-slot="setting-row"]')
+      ?.querySelector<HTMLButtonElement>('[role="switch"]');
+    expect(tokenSwitch?.disabled).toBe(true);
+    expect(token.disabled).toBe(true);
+  });
+
+  it('keeps the form clean after the API write allowlist saves', async () => {
+    await renderEdit('owner', OWNER);
+    const details = () =>
+      mocks.detailsProps.mock.calls.at(-1)![0] as {
+        onConfigChange: (config: Record<string, unknown>) => void;
+        getSavedConfig: () => Record<string, unknown> | undefined;
+      };
+    const saved = {
+      ...details().getSavedConfig(),
+      api_write_allowlist: ['tool-1:send'],
+    };
+    await act(async () => details().onConfigChange(saved));
+    expect(details().getSavedConfig()).toEqual(saved);
+    expect(buttonByText('agents.form.buttons.cancel')).toBeUndefined();
+  });
+
+  // "What this agent uses" in Share sends the owner to the API write
+  // allowlist, which opens unfolded; opened any other way it starts folded.
+  it('opens Access details on the allowlist from Share', async () => {
+    await renderEdit('owner', OWNER);
+    const details = () =>
+      mocks.detailsProps.mock.calls.at(-1)![0] as {
+        modalState: string;
+        openApiWrites?: boolean;
+        setModalState: (state: string) => void;
+      };
+    await menuLabels();
+    await act(async () =>
+      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+        .find((item) => item.textContent === 'agents.shareWithTeam')!
+        .click(),
+    );
+    const share = mocks.shareProps.mock.calls.at(-1)![0] as {
+      onOpenAccessDetails?: () => void;
+    };
+    mocks.shareProps.mockClear();
+    await act(async () => share.onOpenAccessDetails!());
+    expect(mocks.shareProps).not.toHaveBeenCalled();
+    expect(details().modalState).toBe('ACTIVE');
+    expect(details().openApiWrites).toBe(true);
+    await act(async () => details().setModalState('INACTIVE'));
+    expect(details().openApiWrites).toBe(false);
+  });
+
+  it('gives Share no way to Access details without manage_access_details', async () => {
+    await renderEdit(
+      'owner',
+      OWNER.filter((a) => a !== 'manage_access_details'),
+    );
+    await menuLabels();
+    await act(async () =>
+      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+        .find((item) => item.textContent === 'agents.shareWithTeam')!
+        .click(),
+    );
+    const share = mocks.shareProps.mock.calls.at(-1)![0] as {
+      onOpenAccessDetails?: () => void;
+    };
+    expect(share.onOpenAccessDetails).toBeUndefined();
+  });
+
+  it('hides Access details without manage_access_details', async () => {
+    await renderEdit(
+      'editor',
+      EDITOR.filter((a) => a !== 'manage_access_details'),
+    );
+    expect(await menuLabels()).toEqual([]);
+  });
+
+  it('keeps a failed delete in the dialog with the server message', async () => {
+    mocks.deleteAgent.mockImplementation(() =>
+      jsonResponse({ message: 'Only the owner can delete' }, false),
+    );
+    await renderEdit('owner', OWNER);
+    await act(async () =>
+      buttonByText('agents.form.dangerZone.deleteButton')!.click(),
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="confirm-delete"]')!
+        .click(),
+    );
+    await expect(mocks.submitResult).rejects.toThrow();
+    await act(async () => undefined);
+    expect(
+      container.querySelector('[data-testid="confirm-error"]')!.textContent,
+    ).toBe('Only the owner can delete');
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'actionToast/showActionToast' }),
+    );
+  });
+});

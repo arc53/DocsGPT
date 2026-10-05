@@ -1,5 +1,5 @@
 name: Run python tests with pytest
-on: [push, pull_request]
+on: [push, pull_request, workflow_dispatch]
 
 permissions:
   contents: read
@@ -24,6 +24,8 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           cd ../tests
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: Check the REST API reference snapshot is current
+        run: python -m docsgpt.api.reference --check
       - name: Test with pytest and generate coverage report
         run: |
           python -m pytest -n auto --cov=docsgpt --cov-report=xml --cov-report=term-missing

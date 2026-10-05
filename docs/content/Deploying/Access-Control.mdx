@@ -1,6 +1,7 @@
 ---
 title: Access Control, Roles & Teams
 description: How DocsGPT models permissions — global admin/user roles (RBAC), the admin dashboard, teams with per-team roles, and sharing agents, sources, prompts, and tools.
+lastUpdated: 2026-09-30
 ---
 
 import { Callout } from 'nextra/components'
@@ -37,7 +38,7 @@ This is the canonical way to check a caller's effective roles (distinct from `/a
 
 There are four ways an account becomes an admin:
 
-1. **The `grant_admin` script** — run `python scripts/grant_admin.py <user_id>` on the server to grant (or `--revoke` / `--list`) the admin role directly. This is the canonical bootstrap for the first admin.
+1. **The `docsgpt grant-admin` command** — grants (or `--revoke` / `--list`) the admin role directly. This is the canonical bootstrap for the first admin; see [Bootstrapping the first admin](#bootstrapping-the-first-admin) for how to run it on each install.
 2. **OIDC group mapping** — `OIDC_ADMIN_GROUPS` auto-grants admin to members of the listed IdP groups. See [below](#admin-via-oidc-groups).
 3. **Local no-auth mode** — `LOCAL_MODE_ADMIN=true` grants admin when `AUTH_TYPE=None` (self-host, no authentication).
 4. **Grant by an existing admin** — through the admin API/dashboard.
@@ -55,9 +56,30 @@ There are four ways an account becomes an admin:
 
 Granting admin through the dashboard itself requires *already being* an admin, which creates a chicken-and-egg problem on a fresh deployment. Break it one of these ways:
 
-- **Run the script** on the server: `python scripts/grant_admin.py <user_id>` (the `user_id` is the OIDC `sub`). The grant is written to `user_roles` with `source='manual'` and takes effect on the user's next request. Use `--list` to see current admins and `--revoke` to remove a manual grant.
+- **Run `docsgpt grant-admin <user_id>`**, where `user_id` is the user's OIDC `sub`. The grant is written to `user_roles` with `source='manual'` and takes effect on the user's next request. It only matters under `AUTH_TYPE=oidc`, and the user must have signed in once first (or pass `--force`). Use `--list` to see current admins and `--revoke` to remove a manual grant.
 - Set `OIDC_ADMIN_GROUPS` to a group you belong to, and sign in — you become an admin automatically.
 - For a no-auth local install, use `LOCAL_MODE_ADMIN=true`.
+
+Where to run the command depends on how DocsGPT is installed. The Docker image has no `docsgpt` console script, so inside a container call it as `python -m docsgpt`:
+
+| Install | Command |
+| --- | --- |
+| `docsgpt up --native` or pip | `docsgpt grant-admin <user_id>` |
+| Installer or `docsgpt up` on Docker (the default), or standalone Compose, from the stack directory (`~/.docsgpt/server` by default) | `docker compose exec backend python -m docsgpt grant-admin <user_id>` |
+| Checkout Compose (from the repository root) | `docker compose --env-file .env -f deployment/docker-compose-hub.yaml exec backend python -m docsgpt grant-admin <user_id>` |
+| Kubernetes | `kubectl exec deploy/docsgpt-api -- python -m docsgpt grant-admin <user_id>` |
+
+On a Docker install, run it inside the backend container as above: the host's `docsgpt` command can't reach the stack's database, which is not published, and its `.env` has no `POSTGRES_URI`.
+
+`grant-admin` is new after 0.21.0; the 0.21.0 image has neither it nor `python -m docsgpt`. On 0.21.0, use `OIDC_ADMIN_GROUPS`, or copy the old script from a checkout of that release (`git checkout 0.21.0`) into the backend container and run it there. From the repository root of that checkout:
+
+```bash
+docker compose --env-file .env -f deployment/docker-compose-hub.yaml cp scripts/. backend:/tmp/scripts/
+docker compose --env-file .env -f deployment/docker-compose-hub.yaml exec -e PYTHONPATH=/app backend \
+  python /tmp/scripts/grant_admin.py <user_id>
+```
+
+For a `docsgpt up` stack, replace `--env-file .env -f deployment/docker-compose-hub.yaml` with `-f ~/.docsgpt/server/docker-compose.yaml`.
 
 ### Admin via OIDC groups
 
@@ -72,7 +94,11 @@ If your IdP only exposes groups via the userinfo endpoint, DocsGPT backfills the
 
 ## Admin dashboard
 
-Admins get a dashboard backed by a REST surface under `/api/admin` (every endpoint requires the admin role). All mutating actions are written to the `auth_events` audit log with the acting admin recorded in the metadata.
+<Callout type="info" emoji="ℹ️">
+The dashboard needs an admin, and an admin exists only under `AUTH_TYPE=oidc`, or in a single-user install with no authentication and `LOCAL_MODE_ADMIN=true`. Under `simple_jwt` and `session_jwt` nobody can open it.
+</Callout>
+
+Admins get a dashboard backed by a REST surface under `/api/admin` (every endpoint requires the admin role). All mutating actions are written to the `auth_events` audit log with the acting admin recorded as the event's `actor_id`.
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -80,17 +106,25 @@ Admins get a dashboard backed by a REST surface under `/api/admin` (every endpoi
 | `GET` | `/api/admin/users` | List users (paginated; supports a `user_id` filter). |
 | `GET` | `/api/admin/users/<id>` | Drill into a single user. |
 | `PATCH` | `/api/admin/users/<id>` | Activate / deactivate a user (deactivation revokes their sessions). |
-| `POST` | `/api/admin/users/<id>/role` | Grant the admin role (guards against removing the last admin). |
-| `DELETE` | `/api/admin/users/<id>/role` | Revoke the admin role. |
-| `POST` | `/api/admin/users/<id>/revoke-sessions` | Force-logout a user. |
+| `POST` | `/api/admin/users/<id>/role` | Grant the admin role (a manual grant; idempotent). |
+| `DELETE` | `/api/admin/users/<id>/role` | Revoke the manual admin grant. Refuses with `409` to remove the last admin. It removes only a manual grant: for an admin who holds the role through `OIDC_ADMIN_GROUPS` it returns `200 {"revoked": false}` and they stay admin. Remove them from the group at the IdP instead; it takes effect at their next sign-in or renewal. |
+| `POST` | `/api/admin/users/<id>/revoke-sessions` | Force-logout a user and revoke all of their personal access tokens. |
+| `GET` | `/api/admin/users/<id>/tokens` | List a user's [personal access tokens](/API/personal-access-tokens), revoked ones included. |
+| `DELETE` | `/api/admin/tokens/<id>` | Revoke any user's personal access token. |
 | `GET` | `/api/admin/admins` | List current admins. |
-| `GET` | `/api/admin/usage` | Token-usage series and top users. |
-| `GET` | `/api/admin/audit` | Authentication/admin audit feed. |
+| `GET` | `/api/admin/usage` | Usage series with tokens and spend, per-model split, latency percentiles, top users. Takes `days`, `bucket` and `group_by=model\|agent\|source`. |
+| `GET` | `/api/admin/users/<id>/usage` | One user's spend: daily series plus a split by model and by flow. |
+| `GET` | `/api/admin/activity` | [Merged activity feed](#activity-feed) across all three audit journals. |
+| `GET` | `/api/admin/activity/events` | The `(event, category)` pairs this instance has recorded, for the filter UI. |
+| `GET` | `/api/admin/activity/export` | The filtered feed as `format=csv` or `format=ndjson`. |
+| `GET` | `/api/admin/audit` | Authentication/admin audit feed (`auth_events` only). |
 | `GET` | `/api/admin/devices/audit` | Remote-device audit feed. |
 | `GET` | `/api/admin/teams` | Instance-wide oversight of all teams. |
+| `GET` `PUT` `DELETE` | `/api/admin/quotas/...` | [Usage quotas](/Deploying/Usage-Quotas) for the instance, teams and users. |
+| `GET` `PUT` | `/api/admin/connectors` | Turn [connectors](/Sources/Connectors#admin-setup) on or off and set their sharing mode, write access and the custom MCP server switch. |
 
 <Callout type="info" emoji="ℹ️">
-Deactivating a user via the dashboard works for any auth type, while OIDC deployments can also offboard through [SCIM](/Deploying/OIDC-SSO#scim-user-provisioning). Both revoke live sessions immediately.
+Deactivating a user (from the dashboard or through [SCIM](/Deploying/OIDC-SSO#scim-user-provisioning)) blocks their sign-in, revokes their live sessions and disables their personal access tokens. It takes effect under `AUTH_TYPE=oidc`, the only mode with separate accounts to deactivate.
 </Callout>
 
 ## Teams
@@ -111,12 +145,12 @@ The team **owner** is a distinct concept from `team_admin`: ownership can be tra
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` / `POST` | `/api/teams` | List your teams / create a team. |
-| `GET` / `PATCH` / `DELETE` | `/api/teams/<id>` | Read, update, or delete a team. |
+| `GET` / `PUT` / `DELETE` | `/api/teams/<id>` | Read, update (team admin), or delete a team (owner only; a global admin overrides). |
 | `GET` / `POST` | `/api/teams/<id>/members` | List members / add a member. |
-| `PATCH` / `DELETE` | `/api/teams/<id>/members/<member_id>` | Change a member's role / remove (or leave). |
-| `POST` | `/api/teams/<id>/transfer_owner` | Transfer ownership. |
+| `PUT` / `DELETE` | `/api/teams/<id>/members/<member_id>` | Change a member's role / remove (or leave). |
+| `POST` | `/api/teams/<id>/transfer_owner` | Transfer ownership to an existing member, who becomes a `team_admin` (owner only; a global admin overrides). |
 
-Membership and removal are guarded so a team can never be left without an admin (the last-admin guard).
+A team always keeps at least one `team_admin`: demoting or removing the last one returns `409`. The team owner can't be demoted or removed either: another admin gets `403`, and the owner gets `400` asking them to transfer ownership first. To step down or leave, transfer ownership (`POST /api/teams/<id>/transfer_owner`), then change your role or leave.
 
 <Callout type="info" emoji="ℹ️">
 Members are added by email (or subject id). The invitee **must have signed in at least once** so DocsGPT can resolve them to a user account.
@@ -130,20 +164,149 @@ Four resource types can be shared: **agents**, **sources**, **prompts**, and **t
 | --- | --- | --- |
 | `GET` / `POST` / `DELETE` | `/api/teams/<id>/grants` | List, create, or revoke a share within a team. |
 | `GET` | `/api/resource_shares` | List shares visible to the caller. |
+| `GET` / `PUT` | `/api/resource_settings` | Read a resource's sharing switches (**Editors can share**, **Editors can delete**, ...), or change them as its owner. |
 
 Sharing rules:
 
-- Only the **owner** of a resource can share it.
+- Only the **owner** of a resource can share it, unless they turn on **Editors can share** in the share dialog's **Access settings**.
 - A share targets either the **whole team** or a **single member**.
 - Each share carries an access level: **`viewer`** (read-only) or **`editor`** (read and modify).
-- `editor` is not the same as owner — an editor can change a resource but cannot delete it or re-share it.
-- Shared tools run server-side with the **owner's** credentials; a grantee never sees the owner's secrets.
+- `editor` is not the same as owner — an editor can change a resource but cannot re-share it unless the owner turns on **Editors can share**, or delete it unless the owner turns on **Editors can delete** (agents and sources only; editors never delete tools or prompts).
+- Shared tools run server-side with the **owner's** credentials, or with each member's own account when a connected tool is shared that way; a grantee never sees the owner's secrets.
+- A wiki's editors can edit its pages, but only its owner decides whether API and widget users can edit it through an agent (see [Wiki sources](/Sources/Wiki-sources#edits-from-the-api-widget-and-public-links)).
+
+### Sharing agents and what they use
+
+Sharing an agent lets people use it; it doesn't share its tools, sources or prompt. Each stays with whoever owns it, and people reach them only through the agent.
+
+- **Viewers** chat with the agent. They don't see its configuration, and they never open its share dialog.
+- **Editors** open its edit page and change it: its instructions, model, tools, sources and prompt, and its [guardrails](/Agents/guardrails) and limits. They can share it or delete it only when you turn on **Editors can share** or **Editors can delete**.
+
+Every tool, source and prompt on the agent runs with one person's access for everyone who uses the agent. The exception is a connected tool shared as **Each person's own**, which uses the account of whoever is chatting. The agent's share dialog lists them under **What this agent uses**, for you and its editors. For a workflow agent, the list also includes the tools and sources on its nodes.
+
+| The item | Runs with | The list says |
+| --- | --- | --- |
+| Yours, or shared with you | Your access | **Your access** (an editor sees **The owner's access**) |
+| Added by an editor while you can't use it | The editor's access; they are its [sponsor](#resources-an-editor-adds-to-someone-elses-agent). Once you can use it, it runs with yours again | **dana@example.com's access** |
+| A tool with saved credentials (an API key, an MCP sign-in) | Its owner's credentials | **Your saved credentials**, or **dana@example.com's saved credentials** for a teammate's tool |
+| A connected tool shared as **Your account** | That account on the service | **Your Notion account**, or **dana@example.com's Notion account** for a teammate's tool |
+| A connected tool shared as **Each person's own** | The account of whoever is chatting; they connect it the first time. API and widget users run the agent as its owner, so they get the owner's account | **Each person's own Notion account (API and widget: yours)** |
+
+The list and the edit page name a person only when you know them already: you, the agent's owner, anyone who shares a team with you and, when you own the agent, whoever sponsored something on it. An item's owner is named for its account or credentials, or as the person to ask about it, only when you can also see that item. Anyone else shows as someone else, for example **Someone else's access**.
+
+An editor becomes a sponsor only after confirming who will reach the resource through the agent. A resource whose sponsor or owner loses access stops running and is marked **Stopped** in the list, with the reason (see [When a resource stops working](#when-a-resource-stops-working)).
+
+Some runs are limited, because nobody can approve an action for you there:
+
+- **API key, website widget and public link.** A write action on your connected accounts or saved credentials runs only if you allow it under **Access Details > Changes others can make as you**. Only the owner can change that list. It offers every such write on the agent, including tools an editor sponsored and the tools on a workflow's nodes. The share dialog marks a tool **Not via API** when none of its writes are allowed, **Not all via API** when only some are, and **Changes off by an admin** when an admin turned off changes through its service. On a tool shared as **Each person's own**, public-link users act with their own account, so the list doesn't limit them there; a write that needs approval still asks them first. See [Agents used through an API key](/Sources/Connectors#agents-used-through-an-api-key). To set the list through the API, see [Letting API callers make changes](/API/agent-api#letting-api-callers-make-changes).
+- **Wikis.** API and widget users, and webhook runs, edit a wiki only when its owner turns on **Let API and widget users edit this wiki** in its **Wiki settings**. Public-link users edit only wikis they can edit themselves, and approve each edit (see [Wiki sources](/Sources/Wiki-sources#edits-from-the-api-widget-and-public-links)).
+- **Research agents.** A research step can't stop to ask, so it skips any action that would need approval or a connection, and any write the caller may not make on your accounts. The step is told why and carries on (see [Research Agent](/Agents/basics#3-research-agent)).
+
+### Resources an editor adds to someone else's agent
+
+An agent (and its workflow) runs as its owner, so its tools, sources and prompts are checked against the owner's access. When a team editor adds one the owner can't use, it runs with the **editor's** access instead, for everyone who uses the agent: members of the teams it is shared with, anyone with its API key or website widget, its public link and its webhook. The editor becomes that resource's **sponsor**.
+
+- Only someone who **owns** the resource, or has **`editor`** access to it through any team, can sponsor it. `viewer` access lets you use a resource in your own agents, but not extend it to another agent's users: the save is refused with `403` and `code: "sponsor_not_allowed"`.
+- Sponsoring is never implied. A save that would make you a new sponsor is refused with `409` until you confirm it. In DocsGPT, a dialog names each resource and who will reach it through the agent. Through the API, send the save again with `confirm_sponsor` listing every resource from the response as `"<type>:<id>"`. A `confirm_sponsor` entry for anything the save doesn't ask you to sponsor is refused with `400`.
+- A sponsored resource stops running when its sponsor can no longer edit the agent, or no longer owns or edits the resource. It stays on the agent but does nothing, and it doesn't pass to whoever saves the agent next. The agent's edit page says why it stopped. An editor who may sponsor it can choose **Run … with my access** there; after they confirm in the same dialog that names who reaches the agent, it runs with their access from their next save. Through the API, include its key in `confirm_sponsor` on any save. Otherwise, someone removes it.
+- A resource that is removed and later added again needs a new confirmation, even if its old sponsor could still sponsor it.
+- Editors can remove any tool, source or prompt from the agent or its workflow nodes, including the owner's private ones they can't open.
+- Workflow nodes follow the same rules, through `PUT /api/workflows/<id>`. The owner's own saves are checked too: a node can't name a tool or source its owner can't use.
+- The confirmation covers the audience the agent has at that moment. If the owner later shares the agent with more teams, or turns on a public link, sponsored resources reach those people too, and their sponsors aren't asked again.
+- `audience.teams` lists every team the agent is shared with, including teams where only some members were given access.
+
+A save that needs confirmation returns:
+
+```json
+{
+  "success": false,
+  "code": "sponsor_confirmation_required",
+  "message": "These resources would run with your access for everyone who uses this agent. Confirm to add them.",
+  "resources": [{ "key": "tool:<id>", "type": "tool", "id": "<id>", "name": "Jira" }],
+  "audience": { "teams": ["Support"], "api_key": true, "public_link": false, "webhook": false }
+}
+```
+
+Owners and editors see sponsored resources on the agent's edit page and in `resource_sponsors` from `GET /api/get_agent` (and `GET /api/workflows/<id>`). Viewers get an empty list. Each entry has the resource (`key`, `type`, `id`, `name`), the sponsor (`user_id`, `label`, both `null` for someone you don't know; see [Sharing agents and what they use](#sharing-agents-and-what-they-use)), `state` (`active` or `inactive`), `reason` when inactive (`sponsor_cannot_edit_agent` or `sponsor_cannot_edit_resource`), and `can_confirm`, which says whether you may take an inactive one over.
+
+<Callout type="warning" emoji="⚠️">
+After upgrading, resources sponsored by someone with only `viewer` access to them stop running. An editor who owns or can edit such a resource can choose **Run … with my access** on the agent's edit page to start it again.
+</Callout>
+
+### When a resource stops working
+
+Every run checks each tool, source and prompt on the agent (and each tool and source on its workflow nodes) against the owner's access, or the sponsor's. One that no longer passes is left out of the run; a prompt falls back to the default prompt. A connected tool whose account needs attention is different: it stays on the agent but can't run until someone fixes the account. In a chat, calling it shows a card asking to connect the account; in a scheduled run, a webhook or an API call, the call is refused. The agent's edit page, and the workflow builder for node resources, lists each resource that stopped or can't run, with the reason and what you can do:
+
+| Reason | What happened | What you can do |
+| --- | --- | --- |
+| `deleted` | The tool was deleted. Left out of runs. | Remove it. |
+| `owner_lost_access` | The owner can no longer use it, for example a team stopped sharing it with them. Left out of runs. | Ask its owner to share it again, choose **Run … with my access** if you may sponsor it, or remove it. |
+| `sponsor_cannot_edit_agent`, `sponsor_cannot_edit_resource` | Its sponsor lost access (see above). Left out of runs. | Choose **Run … with my access** if you may sponsor it, or remove it. |
+| `connection_needs_reconnect` | The account the tool uses was disconnected or needs signing in again. It can't run until someone signs in again. | If it is your account, choose **Reconnect**; otherwise ask the tool's owner. |
+| `connection_removed` | The tool's connection was removed but the tool was kept, and it has no credentials of its own. It can't run until the account is connected again. | Ask the tool's owner to connect the account again, or remove it. |
+| `connector_disabled` | An admin turned the service off. It can't run until it is turned back on. | Ask an admin to turn it back on, or remove it. |
+
+Only tools that run on their owner's account (owner mode) are checked this way. A tool shared in member mode runs on each person's own account, so the owner's account doesn't decide whether it runs: it is listed as running, with the note that each person uses their own account, and whoever runs it is asked to connect their own account when they need to.
+
+**Remove** takes the item off the form; save to store it. Through the API, `GET /api/get_agent` and `GET /api/workflows/<id>` return `resource_states` to owners and editors (an empty list to everyone else): one entry per attached resource with `key`, `type`, `id`, `name`, `state` (`active` or `stopped`), `reason`, `note` (`per_user_account` for a running member-mode tool), `sponsor` (`{user_id, label}`), `contact_role` and `contact`, `connection`, `can_confirm` and `can_reconnect`. `contact_role` is `resource_owner` when the resource's owner can fix it; `contact` names them (`{user_id, label}`) when you know them, and is `null` otherwise. `connection` names the service; its `id` comes only with `can_reconnect`, and the account's own name only for its owner. `runs_as` is the live sponsor a running resource runs as (`null` when it runs as the owner). A running tool also has `credential_mode` (`owner` or `member` for a connected tool, else `null`), `account` (whose saved credentials or `owner`-mode connection it uses), `owner_credential_writes` (its write actions on those credentials, which the API write allowlist covers) and `writes_allowed` (`false` when an admin turned off changes through its service). When anything can be taken over, the response also carries `sponsor_audience`, the same shape as `audience` above. People are named by the rule in [Sharing agents and what they use](#sharing-agents-and-what-they-use): `sponsor`, `runs_as` and `account` have `user_id` and `label` set to `null` for someone you don't know, and `contact` is `null`. A resource's name is shown only for a resource that runs, that someone sponsored, that you can see yourself, or that is on an agent (agent saves check every reference). If the run state can't be worked out, the read still succeeds with an empty list.
+
+The state comes from the checks a run uses, so a source, prompt or tool the page shows as running is one a run uses, and one shown as stopped is left out of runs or can't run until it's fixed, as the table says. Each resource a run leaves out is logged as `resource_stopped` with the agent or workflow, the resource's type and id, and the reason.
 
 ## Audit log
 
-Access-control actions are appended to the `auth_events` table alongside the [authentication events](/Deploying/OIDC-SSO#login-auditing). This includes admin actions — `admin_user_activated` / `admin_user_deactivated`, `admin_sessions_revoked`, `role_granted` / `role_revoked` (with `metadata.source` = `manual` or `oidc_group`) — and team events (`team.create`, `team.member_add`, `team.member_role`, `team.member_remove`, `team.share`, `team.unshare`, `team.transfer_owner`, `team.delete`). The acting admin is recorded in the event metadata.
+Admin, team, token and data-plane actions are appended to the `auth_events` table alongside the [authentication events](/Deploying/OIDC-SSO#login-auditing). This is the full list of events DocsGPT records; the category is what the [Activity feed](#activity-feed) filters on.
+
+| Event | Category | Recorded when |
+| --- | --- | --- |
+| `oidc_login` | `identity` | A user signs in. |
+| `oidc_login_denied` | `identity` | A sign-in is rejected; `metadata.reason` is `not_authorized` (group allowlist) or `account_disabled`. |
+| `oidc_refresh` | `identity` | A session is silently renewed. |
+| `backchannel_logout` | `identity` | The IdP revokes sessions via back-channel logout. |
+| `scim_created` / `scim_deactivated` / `scim_reactivated` | `identity` | SCIM lifecycle changes. |
+| `pat_created` / `pat_revoked` / `pat_regenerated` | `identity` | Personal access token lifecycle. |
+| `role_granted` / `role_revoked` | `access` | The admin role is granted or revoked; `metadata.source` is `manual` or `oidc_group`. |
+| `admin_user_activated` / `admin_user_deactivated` | `access` | An admin activates or deactivates a user. |
+| `admin_sessions_revoked` | `access` | An admin force-logs-out a user. |
+| `team.create`, `team.member_add`, `team.member_role`, `team.member_remove`, `team.share`, `team.unshare`, `team.transfer_owner`, `team.delete` | `access` | Team management. |
+| `quota_policy_set` / `quota_policy_deleted` | `config` | A [usage quota](/Deploying/Usage-Quotas) is changed. |
+| `connector_policy_set` | `config` | An admin changes connector policies under **Admin → Connectors**. |
+| `source.created`, `source.deleted`, `source.reingested`, `source.wiki_settings_updated` | `data` | Knowledge source changes. |
+| `agent.created`, `agent.updated`, `agent.deleted`, `agent.key_regenerated` | `data` | Agent changes. `agent.updated` records the names of the fields that changed, never their values. |
+| `conversation.deleted`, `conversation.deleted_all` | `data` | Conversations are deleted. |
+| `device.<action>` | `device` | A remote-device command (from `device_audit_log`; Activity feed only). |
+| `guardrail.<stage>` | `safety` | A guardrail decision (from `guardrail_events`; Activity feed only). |
+| Any other name | `other` | An event this release doesn't recognize, such as one an older release wrote. The feed still shows it. |
+
+Every row carries `actor_id` (who did it) and `target_id` (the user it was done to, or `NULL` when the event is not about a user), so "everything this admin did" is a single query:
+
+```sql
+SELECT created_at, event, target_id, metadata
+FROM auth_events
+WHERE actor_id = 'the-admin'
+ORDER BY created_at DESC;
+```
+
+### Activity feed
+
+The **Admin → Activity** tab merges three append-only journals into one timeline:
+
+| Journal | Category | What it records |
+| --- | --- | --- |
+| `auth_events` | `identity`, `access`, `config`, `data`, `other` | Sign-ins, provisioning, role and account changes, quota changes, resource mutations. |
+| `device_audit_log` | `device` | Every remote-device command dispatch and its verdict. |
+| `guardrail_events` | `safety` | Every guardrail decision on a request. |
+
+Filter by category, event name, actor, affected user, a time window, or a free-text search that reaches into each row's detail payload, then export the filtered feed as CSV or NDJSON. Exports stream and are capped at 100,000 rows — take a database dump for a full history.
+
+An unknown filter value is refused with a 400 rather than dropped. Dropping it would leave that facet unfiltered, and no filter means every row, so a typo or a stale bookmark would silently widen an audit view instead of narrowing it.
+
+The per-user panel in **Admin → Users** deliberately lists identity and access events only. Data-plane events are filed under the user who performed them, so on an active account routine activity would push a denied login or a role grant out of the window; use the Activity tab filtered by that user to see everything.
+
+Two guardrail columns are deliberately never projected into the feed or the export: `api_key` (a raw agent key) and `matched_value` (unredacted source text). Admin-gating is not a reason to widen what a list response carries.
 
 ## Related
 
+- [Teams and sharing](/Using/teams-and-sharing) — the web-app walkthrough for creating a team, adding members and sharing.
 - [SSO with OIDC](/Deploying/OIDC-SSO) — sign-in, group allowlists, and the `auth_events` table.
+- [Usage Quotas](/Deploying/Usage-Quotas) — token and cost limits per user and per team.
 - [App Configuration](/Deploying/DocsGPT-Settings) — the full settings reference.

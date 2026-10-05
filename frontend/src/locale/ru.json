@@ -7,6 +7,8 @@
   "tagline": "DocsGPT использует GenAI, пожалуйста, проверьте важную информацию, используя источники.",
   "sourceDocs": "Источник",
   "none": "Нет",
+  "loading": "Загрузка...",
+  "retry": "Повторить",
   "cancel": "Отмена",
   "help": "Помощь",
   "emailUs": "Напишите нам",
@@ -22,7 +24,10 @@
     "sharedTitle": "Поделились с вами",
     "sharedBody": "С вашей командой поделились: {{type}} «{{name}}» ({{access}})",
     "sharedBodyNoName": "С вашей командой поделились: {{type}} ({{access}})",
-    "dismiss": "Закрыть"
+    "dismiss": "Закрыть",
+    "toolApprovalTitle": "Требуется одобрение инструмента",
+    "toolApprovalReview": "Проверить",
+    "toolApprovalFallbackName": "Диалог"
   },
   "demo": [
     {
@@ -55,14 +60,23 @@
     "label": "Настройки",
     "general": {
       "label": "Общие",
-      "selectTheme": "Выбрать тему",
+      "subtitle": "Выберите оформление DocsGPT, язык интерфейса и промпт для ваших чатов.",
+      "sections": {
+        "appearance": "Оформление",
+        "chat": "Чат",
+        "dangerZone": "Опасная зона"
+      },
+      "theme": "Тема",
+      "themeDescription": "Светлый или тёмный интерфейс.",
+      "language": "Язык",
+      "languageDescription": "Язык меню и подписей.",
       "light": "Светлая",
       "dark": "Тёмная",
-      "selectLanguage": "Выбрать язык",
       "chunks": "Обработанные фрагменты на запрос",
       "prompt": "Активная подсказка",
+      "promptDescription": "Системный промпт для чатов без агента. Агенты используют свой.",
       "deleteAllLabel": "Удалить все беседы",
-      "deleteAllBtn": "Удалить все",
+      "deleteAllDescription": "Безвозвратно удаляет все беседы в вашем аккаунте. Это действие нельзя отменить.",
       "addNew": "Добавить новый",
       "convHistory": "История разговоров",
       "none": "Нет",
@@ -71,30 +85,41 @@
       "high": "Высокий",
       "unlimited": "Без ограничений",
       "default": "По умолчанию",
-      "add": "Добавить"
+      "add": "Добавить",
+      "promptActions": {
+        "select": "Выберите промпт",
+        "edit": "Редактировать промпт",
+        "view": "Просмотреть промпт",
+        "duplicate": "Дублировать промпт",
+        "delete": "Удалить промпт",
+        "deleteFailed": "Не удалось удалить этот промпт.",
+        "saveFailed": "Не удалось сохранить этот промпт.",
+        "editConflict": "Кто-то другой изменил этот промпт. Откройте его заново, чтобы увидеть новую версию."
+      }
     },
     "sources": {
       "title": "Здесь вы можете управлять всеми исходными файлами, которые доступны вам и которые вы загрузили.",
-      "subtitle": "Загружайте и управляйте документами и источниками знаний, которые обеспечивают ваши ответы",
-      "label": "Источники",
+      "subtitle": "Контент, по которому DocsGPT может искать и который может цитировать: загрузки, сайты, вики и контент, синхронизированный из ваших подключений.",
+      "label": "Знания",
       "name": "Название источника",
       "date": "Дата вектора",
       "type": "Тип",
       "tokenUsage": "Использование токена",
-      "noData": "Нет существующих источников",
+      "noData": "Знаний пока нет",
       "searchPlaceholder": "Поиск...",
       "addNew": "добавить новый",
-      "addSource": "Добавить источник",
+      "addSource": "Добавить знания",
       "addChunk": "Добавить фрагмент",
       "preLoaded": "Предзагруженный",
       "private": "Частный",
       "sync": "Синхронизация",
+      "syncDone": "Готово",
       "syncNow": "Синхронизировать сейчас",
       "syncing": "Синхронизация...",
       "reingest": "Переиндексировать",
       "ingestFailed": "Ошибка индексации",
       "ingestProcessing": "Индексация...",
-      "syncConfirmation": "Вы уверены, что хотите синхронизировать \"{{sourceName}}\"? Это обновит содержимое с вашим облачным хранилищем и может перезаписать любые изменения, внесенные вами в отдельные фрагменты.",
+      "syncConfirmation": "Синхронизировать «{{sourceName}}»?",
       "syncFrequency": {
         "never": "Никогда",
         "daily": "Ежедневно",
@@ -109,15 +134,10 @@
         "selectPage": "Выберите страницу, чтобы просмотреть её содержимое.",
         "edit": "Редактировать",
         "save": "Сохранить",
-        "cancel": "Отмена",
-        "saving": "Сохранение…",
         "saveFailed": "Не удалось сохранить страницу. Пожалуйста, попробуйте ещё раз.",
         "forbidden": "У вас нет прав на редактирование этой страницы.",
         "conflict": "Страница изменилась с момента открытия и была перезагружена. Ваши правки ниже — примените их заново и сохраните ещё раз.",
         "editPlaceholder": "Напишите страницу в Markdown…",
-        "livingTitle": "Живая вики.",
-        "livingExplainer": "Источник, редактируемый агентами: страницы читаются и переписываются по мере работы агентов, и по умолчанию источник доступен агентам через инструмент агентного поиска.",
-        "livingExplainerEditable": "Любой агент, использующий этот источник, может его редактировать.",
         "stamp": {
           "editedBy": "Изменено: {{who}}",
           "agent": "агент",
@@ -137,8 +157,12 @@
           "confirm": "Преобразовать в вики",
           "inProgress": "Преобразование файлов в страницы вики…",
           "summaryPages_one": "Создана {{count}} страница",
+          "summaryPages_few": "Создано страниц: {{count}}",
+          "summaryPages_many": "Создано страниц: {{count}}",
           "summaryPages_other": "Создано страниц: {{count}}",
           "summarySkipped_one": "Пропущен {{count}} файл",
+          "summarySkipped_few": "Пропущено файлов: {{count}}",
+          "summarySkipped_many": "Пропущено файлов: {{count}}",
           "summarySkipped_other": "Пропущено файлов: {{count}}",
           "skippedHeading": "Пропущенные файлы",
           "done": "Готово",
@@ -147,6 +171,29 @@
             "forbidden": "У вас нет прав на преобразование этого источника.",
             "conflict": "Источник ещё индексируется. Дождитесь завершения, прежде чем преобразовывать."
           }
+        },
+        "badge": "Живая вики",
+        "byline_one": "Страниц: {{pages}} · токенов: {{tokens}}",
+        "byline_few": "Страниц: {{pages}} · токенов: {{tokens}}",
+        "byline_many": "Страниц: {{pages}} · токенов: {{tokens}}",
+        "byline_other": "Страниц: {{pages}} · токенов: {{tokens}}",
+        "explainer": "Агенты читают и переписывают эти страницы в ходе работы.",
+        "explainerEditable": "Агенты читают и переписывают эти страницы в ходе работы; любой агент, использующий этот источник, может его редактировать.",
+        "home": "Главная",
+        "filterPages": "Фильтр страниц",
+        "pagesTitle": "Страницы",
+        "loadFailed": "Не удалось загрузить страницы вики.",
+        "pageLoadFailed": "Не удалось загрузить эту страницу.",
+        "editTitle": "Редактировать страницу",
+        "settings": {
+          "action": "Настройки вики",
+          "title": "Настройки вики",
+          "outsideEdits": {
+            "label": "Разрешить пользователям API и виджета редактировать эту вики",
+            "description": "Если выключено, те, кто пользуется агентом через его API-ключ или виджет, могут читать эту вики, но не изменять её. Посетители по публичной ссылке могут редактировать только те вики, которые могут редактировать сами, и перед каждым изменением у них спрашивают подтверждение. Вы и редакторы вики всегда могут её редактировать."
+          },
+          "loadError": "Не удалось загрузить настройки вики.",
+          "saveError": "Не удалось сохранить изменение. Попробуйте ещё раз."
         }
       },
       "graphrag": {
@@ -165,10 +212,16 @@
           "inProgress": "Построение графа…",
           "inProgressPct": "Построение графа… {{pct}}%",
           "summaryNodes_one": "{{count}} сущность",
+          "summaryNodes_few": "Сущностей: {{count}}",
+          "summaryNodes_many": "Сущностей: {{count}}",
           "summaryNodes_other": "Сущностей: {{count}}",
           "summaryEdges_one": "{{count}} связь",
+          "summaryEdges_few": "Связей: {{count}}",
+          "summaryEdges_many": "Связей: {{count}}",
           "summaryEdges_other": "Связей: {{count}}",
           "summaryChunks_one": "Обработан {{count}} фрагмент",
+          "summaryChunks_few": "Обработано фрагментов: {{count}}",
+          "summaryChunks_many": "Обработано фрагментов: {{count}}",
           "summaryChunks_other": "Обработано фрагментов: {{count}}",
           "done": "Готово",
           "errors": {
@@ -180,13 +233,69 @@
         "view": {
           "action": "Просмотр графа",
           "title": "Граф знаний",
-          "explainer": "Узлы — это сущности, а рёбра — их связи. Нажмите на узел, чтобы увидеть его описание и фрагменты, из которых он был извлечён.",
-          "stats": "{{nodes}} сущностей · {{edges}} связей",
+          "stats": "{{entities}} · {{relationships}}",
           "empty": "Графа пока нет — извлечение, возможно, ещё выполняется.",
           "selectNode": "Выберите узел, чтобы увидеть подробности.",
-          "linkedChunks": "Связанные фрагменты",
           "noChunks": "Для этой сущности нет связанных фрагментов.",
-          "close": "Закрыть"
+          "tabs": {
+            "graph": "Граф",
+            "entities": "Сущности",
+            "files": "Файлы"
+          },
+          "findEntity": "Найти сущность",
+          "entityName": "Название",
+          "noEntities": "Сущности не найдены",
+          "showTop": "Показать топ",
+          "byConnections": "по числу связей",
+          "typeFilter": "Фильтр по типу",
+          "otherTypes": "Прочие: {{types}}",
+          "otherTypesMore_one": "ещё {{formatted}}",
+          "otherTypesMore_few": "ещё {{formatted}}",
+          "otherTypesMore_many": "ещё {{formatted}}",
+          "otherTypesMore_other": "ещё {{formatted}}",
+          "untyped": "Без типа",
+          "loadFailed": "Не удалось загрузить граф.",
+          "entitiesLoadFailed": "Не удалось загрузить сущности.",
+          "nodeLoadFailed": "Не удалось загрузить эту сущность.",
+          "loadingNode": "Загрузка сущности",
+          "connections": "Связи",
+          "mentionedIn": "Упоминается в",
+          "showMore": "Показать больше",
+          "showLess": "Показать меньше",
+          "relationships": "Связи с сущностями",
+          "relationshipsCapped_one": "Показаны {{shown}} самых сильных из {{total}} связи.",
+          "relationshipsCapped_few": "Показаны {{shown}} самых сильных из {{total}} связей.",
+          "relationshipsCapped_many": "Показаны {{shown}} самых сильных из {{total}} связей.",
+          "relationshipsCapped_other": "Показаны {{shown}} самых сильных из {{total}} связи.",
+          "noRelationships": "У этой сущности нет связей.",
+          "relatedTo": "связана с",
+          "showAll": "Показать все ({{formatted}})",
+          "showFewer": "Показать меньше",
+          "sourceChunks": "Исходные фрагменты",
+          "showInGraph": "Показать на графе",
+          "allTypes": "Все типы",
+          "chunkCount_one": "{{formatted}} фрагменте",
+          "chunkCount_few": "{{formatted}} фрагментах",
+          "chunkCount_many": "{{formatted}} фрагментах",
+          "chunkCount_other": "{{formatted}} фрагментах",
+          "entityCount_one": "{{formatted}} сущность",
+          "entityCount_few": "{{formatted}} сущности",
+          "entityCount_many": "{{formatted}} сущностей",
+          "entityCount_other": "{{formatted}} сущности",
+          "entityRange_one": "{{from}}–{{to}} из {{formatted}} сущности",
+          "entityRange_few": "{{from}}–{{to}} из {{formatted}} сущностей",
+          "entityRange_many": "{{from}}–{{to}} из {{formatted}} сущностей",
+          "entityRange_other": "{{from}}–{{to}} из {{formatted}} сущности",
+          "relationshipCount_one": "{{formatted}} связь",
+          "relationshipCount_few": "{{formatted}} связи",
+          "relationshipCount_many": "{{formatted}} связей",
+          "relationshipCount_other": "{{formatted}} связи",
+          "chunk": "Фрагмент",
+          "chunkMeta": "{{file}} · токенов: {{tokens}}",
+          "chunkTokens": "токенов: {{tokens}}",
+          "openInFiles": "Открыть в файлах",
+          "editChunk": "Редактировать фрагмент",
+          "chunkSaved": "Фрагмент сохранён"
         }
       },
       "testRetrieval": {
@@ -197,7 +306,10 @@
         "queryPlaceholder": "Спросите что-нибудь, на что этот источник должен ответить...",
         "run": "Запустить",
         "notSavedHint": "Эти настройки используются только для этого теста — они не сохраняются в источнике. Чтобы сделать их постоянными, измените их в настройках источника.",
-        "resultSummary": "Извлечено фрагментов: {{total}} · {{retriever}}",
+        "resultSummary_one": "Извлечён {{count}} фрагмент · {{retriever}}",
+        "resultSummary_few": "Извлечено {{count}} фрагмента · {{retriever}}",
+        "resultSummary_many": "Извлечено фрагментов: {{count}} · {{retriever}}",
+        "resultSummary_other": "Извлечено фрагментов: {{count}} · {{retriever}}",
         "latency": "{{ms}} мс",
         "empty": "По этому запросу фрагменты не извлечены.",
         "emptyWithThreshold": "Ни один фрагмент не набрал оценку не ниже порога ({{threshold}}). Понизьте порог, чтобы увидеть близкие результаты.",
@@ -216,15 +328,12 @@
       },
       "editConfig": "Настройки источника",
       "shareWithTeam": "Поделиться с командой",
-      "deleteWarning": "Вы уверены, что хотите удалить \"{{name}}\"?",
-      "confirmDelete": "Вы уверены, что хотите удалить этот файл? Это действие нельзя отменить.",
-      "backToAll": "Вернуться ко всем источникам",
+      "deleteWarning": "Удалить «{{name}}»?",
       "chunks": "Фрагменты",
       "noChunks": "Фрагменты не найдены",
       "noChunksAlt": "Фрагменты не найдены",
-      "goToSources": "Перейти к источникам",
+      "goToSources": "К знаниям",
       "uploadNew": "Загрузить новый",
-      "searchFiles": "Поиск файлов...",
       "noResults": "Результаты не найдены",
       "fileName": "Имя",
       "tokens": "Токены",
@@ -241,7 +350,6 @@
       "addFile": "Добавить файл",
       "uploadingFilesTitle": "Загрузка файлов...",
       "deletingTitle": "Удаление...",
-      "deleteDirectoryWarning": "Вы уверены, что хотите удалить каталог \"{{name}}\" и все его содержимое? Это действие нельзя отменить.",
       "searchAlt": "Поиск",
       "retrievalOptions": {
         "title": "Расширенные настройки",
@@ -267,6 +375,19 @@
             "agentic_tool": "Инструмент поиска по запросу"
           },
           "exposureHint": "Предзагружать этот источник в промпт или позволить агенту искать по нему по мере необходимости как по инструменту."
+        },
+        "graphRetrieval": {
+          "title": "Поиск по графу",
+          "tag": "без повторной загрузки",
+          "seedStrategy": "Начинать обход с",
+          "seedStrategyHint": "Сущности подходят для большинства документов. Связи позволяют дойти до сущности, которая не упоминается в вопросе, — хорошо для контента о том, как всё связано.",
+          "seedEntities": "Сущностей (рекомендуется)",
+          "seedRelationships": "Связей",
+          "passageNodes": "Включать фрагменты в обход",
+          "passageNodesHint": "Фрагмент находится, если он соответствует вопросу или связан с тем, что соответствует. Лучше всего работает на графах, построенных в этой версии.",
+          "blendVector": "Сочетать с векторным поиском",
+          "blendVectorHint": "Добавляет результаты векторного поиска, чтобы не терять фрагменты, пропущенные графом.",
+          "agentToolHint": "Агенты также могут сами проходить по этим связям, если для источника выбран режим «Инструмент поиска по запросу» или его использует агентный агент."
         },
         "prescreen": {
           "enable": "Включить предварительный отбор LLM",
@@ -309,8 +430,6 @@
         "subtitle": "Настройте, как «{{name}}» разбивается на фрагменты и извлекается.",
         "subtitleGeneric": "Настройте, как этот источник разбивается на фрагменты и извлекается.",
         "save": "Сохранить",
-        "saving": "Сохранение…",
-        "readOnly": "У вас доступ только для просмотра этого общего источника, вы не можете изменять его настройки.",
         "chunkingChangeHint": "Вы изменили настройку разбиения на фрагменты. После сохранения потребуется переиндексация источника, чтобы изменения вступили в силу.",
         "prescreenInvalidHint": "Проверьте значения предварительного отбора: число кандидатов должно быть не меньше числа фрагментов, а число оставляемых фрагментов не должно превышать число кандидатов.",
         "reingestRequired": "Изменения сохранены. Изменённые настройки разбиения вступят в силу только после переиндексации. Переиндексировать сейчас?",
@@ -319,17 +438,71 @@
           "forbidden": "У вас нет прав на изменение настроек этого источника.",
           "saveFailed": "Не удалось сохранить настройки. Пожалуйста, попробуйте ещё раз."
         }
-      }
-    },
-    "apiKeys": {
-      "label": "API ключи",
-      "name": "Название",
-      "key": "API ключ",
-      "sourceDoc": "Источник документа",
-      "createNew": "Создать новый",
-      "noData": "Нет существующих чатботов",
-      "deleteConfirmation": "Вы уверены, что хотите удалить API ключ '{{name}}'?",
-      "description": "Здесь вы можете создавать и управлять чат-ботами. Чат-боты могут быть развернуты на веб-сайтах в виде виджетов или использоваться внутри ваших приложений."
+      },
+      "chunkErrors": {
+        "add": "Не удалось добавить фрагмент",
+        "save": "Не удалось сохранить фрагмент",
+        "delete": "Не удалось удалить фрагмент",
+        "load": "Не удалось загрузить фрагменты"
+      },
+      "chunkPosition": "Фрагмент {{n}} из {{total}} · токенов: {{tokens}}",
+      "chunkCrumb": "Фрагмент {{n}}",
+      "chunkCrumbUnplaced": "Изменённый фрагмент",
+      "chunkPositionUnplaced": "Изменённый фрагмент · токенов: {{tokens}}",
+      "editChunkDescriptionUnplaced": "{{file}} · изменённый фрагмент · токенов: {{tokens}}",
+      "chunkTileMeta": "#{{n}} · токенов: {{tokens}}",
+      "copyText": "Копировать текст",
+      "chunkTitleHint": "Название, под которым ответы ссылаются на этот фрагмент.",
+      "files": "Файлы",
+      "filesLoadError": "Не удалось загрузить файлы",
+      "filesByline_one": "Файлов: {{files}} · токенов: {{tokens}}",
+      "filesByline_few": "Файлов: {{files}} · токенов: {{tokens}}",
+      "filesByline_many": "Файлов: {{files}} · токенов: {{tokens}}",
+      "filesByline_other": "Файлов: {{files}} · токенов: {{tokens}}",
+      "filterFiles": "Фильтр файлов",
+      "searchChunks": "Поиск по фрагментам",
+      "chunkCount_one": "{{formatted}} фрагмент",
+      "chunkCount_few": "{{formatted}} фрагмента",
+      "chunkCount_many": "{{formatted}} фрагментов",
+      "chunkCount_other": "{{formatted}} фрагмента",
+      "chunkRange_one": "{{from}}–{{to}} из {{formatted}} фрагмента",
+      "chunkRange_few": "{{from}}–{{to}} из {{formatted}} фрагментов",
+      "chunkRange_many": "{{from}}–{{to}} из {{formatted}} фрагментов",
+      "chunkRange_other": "{{from}}–{{to}} из {{formatted}} фрагмента",
+      "pageRange_one": "{{from}}–{{to}} из {{formatted}} источника",
+      "pageRange_few": "{{from}}–{{to}} из {{formatted}} источников",
+      "pageRange_many": "{{from}}–{{to}} из {{formatted}} источников",
+      "pageRange_other": "{{from}}–{{to}} из {{formatted}} источника",
+      "editor": {
+        "write": "Редактор",
+        "preview": "Предпросмотр",
+        "previewEmpty": "Пока нечего показать.",
+        "cancel": "Отмена",
+        "discardMessage": "Отменить несохранённые изменения?",
+        "discard": "Отменить изменения"
+      },
+      "editChunk": "Редактировать фрагмент",
+      "editChunkDescription": "{{file}} · фрагмент {{n}} · токенов: {{tokens}}",
+      "previousChunk": "Предыдущий фрагмент",
+      "nextChunk": "Следующий фрагмент",
+      "paused": "Синхронизация приостановлена. Переподключите {{name}}, чтобы продолжить.",
+      "emptyHint": "Загрузите файлы, добавьте сайт или подключите сервис, чтобы синхронизировать его содержимое.",
+      "viewConfig": "Посмотреть настройки источника",
+      "errors": {
+        "forbidden": "У вас нет прав на это действие с этим источником.",
+        "delete": "Не удалось удалить источник.",
+        "sync": "Не удалось синхронизировать источник.",
+        "syncFrequency": "Не удалось изменить частоту синхронизации.",
+        "reingest": "Не удалось запустить повторную загрузку."
+      },
+      "viaConnection": "через {{name}}",
+      "loadError": "Не удалось загрузить базу знаний.",
+      "delete": "Удалить",
+      "deleteConsequence": "Его файлы и фрагменты тоже будут удалены. Это действие нельзя отменить.",
+      "deleteFileConsequence": "Её фрагменты тоже будут удалены. Это действие нельзя отменить.",
+      "deleteDirectoryConsequence": "Всё её содержимое тоже будет удалено. Это действие нельзя отменить.",
+      "syncConsequence": "Содержимое будет обновлено из облачного хранилища, и ваши правки отдельных фрагментов могут быть перезаписаны.",
+      "deleteItemFailed": "Не удалось удалить «{{name}}»."
     },
     "analytics": {
       "label": "Аналитика",
@@ -366,12 +539,24 @@
       "failed": "Не удалось",
       "skipped": "Пропущено",
       "successful": "Успешно",
+      "otherSeries": "Другие",
       "stats": {
         "messages": "Сообщения",
         "tokens": "Токены",
         "toolCalls": "Вызовы инструментов",
         "runSuccess": "Успешность запусков",
         "feedback": "Обратная связь"
+      },
+      "quota": {
+        "title": "Ваша квота использования",
+        "resets": "Сброс: {{resetsAt}}",
+        "tokens": "Токены",
+        "cost": "Стоимость",
+        "usedOf": "{{used}} из {{limit}}",
+        "scope": {
+          "direct": "Чат без агента",
+          "agent": "Через агентов"
+        }
       }
     },
     "logs": {
@@ -395,7 +580,9 @@
         "schedule": "По расписанию",
         "webhook": "Вебхук",
         "workflow": "Рабочий процесс",
-        "system": "Система"
+        "system": "Система",
+        "search": "Поиск",
+        "graph": "Построение графа"
       },
       "detail": {
         "agent": "Агент",
@@ -415,14 +602,133 @@
         "workflow": "Рабочий процесс",
         "activity": "Активность",
         "steps": "Шаги",
-        "result": "Результат"
-      }
+        "result": "Результат",
+        "source": "Источник"
+      },
+      "trace": {
+        "view": "Открыть трассировку",
+        "viewRounds_one": "Открыть трассировку ({{count}} раунд)",
+        "viewRounds_few": "Открыть трассировку ({{count}} раунда)",
+        "viewRounds_many": "Открыть трассировку ({{count}} раундов)",
+        "viewRounds_other": "Открыть трассировку ({{count}} раунда)",
+        "title": "Трассировка выполнения",
+        "empty": "Для этой записи трассировка не сохранена.",
+        "failed": "Не удалось загрузить трассировку.",
+        "noSpans": "Для этого запуска ничего не записано.",
+        "round": "Раунд {{n}}",
+        "step": "Шаг",
+        "toggleChildren": "Показать или скрыть вложенные шаги",
+        "droppedSpans_one": "Ещё {{count}} шаг не записан (лимит размера трассировки).",
+        "droppedSpans_few": "Ещё {{count}} шага не записаны (лимит размера трассировки).",
+        "droppedSpans_many": "Ещё {{count}} шагов не записаны (лимит размера трассировки).",
+        "droppedSpans_other": "Ещё {{count}} шага не записаны (лимит размера трассировки).",
+        "chips": {
+          "llmCalls_one": "{{count}} вызов LLM",
+          "llmCalls_few": "{{count}} вызова LLM",
+          "llmCalls_many": "{{count}} вызовов LLM",
+          "llmCalls_other": "{{count}} вызова LLM",
+          "tokens": "{{input}} вход / {{output}} выход",
+          "toolCalls_one": "{{count}} вызов инструмента",
+          "toolCalls_few": "{{count}} вызова инструментов",
+          "toolCalls_many": "{{count}} вызовов инструментов",
+          "toolCalls_other": "{{count}} вызова инструментов",
+          "retrieval": "RAG {{duration}}",
+          "errors_one": "{{count}} ошибка",
+          "errors_few": "{{count}} ошибки",
+          "errors_many": "{{count}} ошибок",
+          "errors_other": "{{count}} ошибки"
+        },
+        "headline": {
+          "tokens": "{{input}} → {{output}} ток.",
+          "chunks_one": "{{count}} фрагмент",
+          "chunks_few": "{{count}} фрагмента",
+          "chunks_many": "{{count}} фрагментов",
+          "chunks_other": "{{count}} фрагмента",
+          "hits_one": "{{count}} совпадение",
+          "hits_few": "{{count}} совпадения",
+          "hits_many": "{{count}} совпадений",
+          "hits_other": "{{count}} совпадения",
+          "cached": "из кэша"
+        },
+        "status": {
+          "ok": "ОК",
+          "error": "Ошибка",
+          "cancelled": "Отменено",
+          "paused": "Приостановлено",
+          "pending": "Ожидает подтверждения",
+          "denied": "Отклонено",
+          "skipped": "Пропущено"
+        },
+        "kinds": {
+          "agent": "Агент",
+          "llm": "Вызов LLM",
+          "tool": "Вызов инструмента",
+          "retrieval": "Поиск",
+          "search": "Векторный поиск",
+          "embedding": "Эмбеддинг",
+          "rerank": "Переранжирование",
+          "guardrail": "Ограничитель",
+          "step": "Шаг"
+        },
+        "sources": {
+          "stream": "Чат",
+          "answer": "API ответов",
+          "v1": "OpenAI-совместимый API",
+          "webhook": "Вебхук",
+          "schedule": "Запуск по расписанию",
+          "search": "API поиска",
+          "mcp": "Поиск MCP",
+          "graph_extraction": "Построение графа",
+          "headless": "Фоновый запуск"
+        },
+        "fields": {
+          "status": "Статус",
+          "duration": "Длительность",
+          "modelTime": "Время модели",
+          "provider": "Провайдер",
+          "model": "Модель",
+          "inputTokens": "Входные токены",
+          "outputTokens": "Выходные токены",
+          "cachedTokens": "Токены из кэша",
+          "timeToFirstToken": "Время до первого токена",
+          "cost": "Стоимость",
+          "tokenSource": "Назначение",
+          "cacheHit": "Из кэша",
+          "estimatedUsage": "Оценочные токены",
+          "yes": "Да",
+          "tool": "Инструмент",
+          "action": "Действие",
+          "callId": "ID вызова",
+          "retriever": "Ретривер",
+          "sources": "Источники",
+          "topK": "Top K",
+          "chunks": "Фрагменты",
+          "candidates": "Кандидаты",
+          "topScore": "Лучшая оценка",
+          "vectorStore": "Векторное хранилище",
+          "agentType": "Тип агента",
+          "toolCalls": "Вызовы инструментов",
+          "stage": "Этап",
+          "checks": "Проверки",
+          "triggered": "Сработали",
+          "blocked": "Заблокировано",
+          "redacted": "Скрыто",
+          "nodeType": "Тип узла",
+          "phase": "Фаза",
+          "query": "Запрос",
+          "arguments": "Аргументы",
+          "result": "Результат",
+          "output": "Вывод",
+          "retrievedChunks": "Найденные фрагменты",
+          "allAttributes": "Все атрибуты"
+        }
+      },
+      "loadError": "Не удалось загрузить журналы."
     },
     "teams": {
       "label": "Команды",
       "subtitle": "Управляйте командами, участниками и общими ресурсами.",
       "newTeam": "Новая команда",
-      "backToTeams": "Назад к командам",
       "createTeam": "Создать команду",
       "createTeamDescription": "Дайте команде название. После создания вы сможете добавить участников и делиться ресурсами.",
       "editTeam": "Редактировать",
@@ -434,9 +740,6 @@
       "createTeamError": "Не удалось создать команду.",
       "noTeams": "Команд пока нет.",
       "noDescription": "Без описания",
-      "memberCountOne": "{{count}} участник",
-      "memberCountOther": "Участников: {{count}}",
-      "sharedCount": "Общих ресурсов: {{count}}",
       "loadError": "Не удалось загрузить команды.",
       "roleAdmin": "администратор",
       "roleMember": "участник",
@@ -448,7 +751,7 @@
       "selectTeamTitle": "Команда не выбрана",
       "teamSubtitle": "Управляйте участниками и ресурсами, которыми поделились с этой командой.",
       "deleteTeam": "Удалить команду",
-      "deleteTeamConfirmation": "Вы уверены, что хотите удалить «{{name}}»? Это действие нельзя отменить.",
+      "deleteTeamConfirmation": "Удалить «{{name}}»?",
       "members": "Участники",
       "addMember": "Добавить участника",
       "addMemberTitle": "Добавить участника",
@@ -459,7 +762,7 @@
       "memberRoleLabel": "Роль",
       "add": "Добавить",
       "remove": "Удалить",
-      "removeMemberConfirmation": "Удалить этого участника из команды?",
+      "removeMemberConfirmation": "Удалить «{{name}}» из {{team}}?",
       "addMemberError": "Не удалось добавить участника (только для администраторов команды).",
       "memberNotFound": "Пользователь с таким email не найден — он должен сначала войти в систему.",
       "noMembers": "Участников пока нет. Используйте «Добавить участника», чтобы пригласить кого-нибудь по email.",
@@ -503,31 +806,270 @@
         "teamLabel": "Команда",
         "viaTeam": "через {{team}}",
         "removeAccess": "Убрать доступ",
-        "access": "Доступ"
-      }
+        "access": "Доступ",
+        "showAll": "Показать все ({{formatted}})",
+        "andMore_one": "и ещё {{formatted}}",
+        "andMore_few": "и ещё {{formatted}}",
+        "andMore_many": "и ещё {{formatted}}",
+        "andMore_other": "и ещё {{formatted}}",
+        "allSummary": "{{name}} · Команды: {{teams}} · Люди: {{people}}",
+        "searchAccess": "Поиск людей и команд…",
+        "filterLabel": "Фильтр пользователей с доступом",
+        "filter": {
+          "all": "Все",
+          "teams": "Команды",
+          "people": "Люди",
+          "editors": "Редакторы"
+        },
+        "uses": {
+          "title": "Что использует этот агент",
+          "intro": "Все, кто пользуется этим агентом, получают это, каждое — с указанным доступом.",
+          "stopped": "Остановлено",
+          "writesOff": "Не через API",
+          "writesNote": "Некоторые изменения выключены для пользователей API, виджета и ссылки.",
+          "writesNoteEditor": "Некоторые изменения выключены для пользователей API, виджета и ссылки. Попросите владельца разрешить их в разделе «Детали доступа».",
+          "access": {
+            "member": "Собственный аккаунт {{service}} у каждого",
+            "memberNoService": "Собственный аккаунт у каждого",
+            "runsAs": "Работает от имени {{person}}",
+            "runsAsYou": "Работает от вашего имени",
+            "runsAsOther": "Работает от имени другого пользователя"
+          },
+          "writesSomeOff": "Не всё через API",
+          "adminOff": "Изменения выключены администратором",
+          "openAccessDetails": "Открыть детали доступа",
+          "accessDetailsNeedsKey": "Детали доступа покажут эти изменения, когда у агента появится API-ключ.",
+          "reasonShort": {
+            "deleted": "Удалено",
+            "ownerLostAccessYou": "Вы больше не можете это использовать",
+            "ownerLostAccess": "Владелец больше не может это использовать",
+            "sponsorCannotEditAgent": "{{person}} больше не может редактировать агента",
+            "sponsorCannotEditAgentOther": "Добавивший больше не может редактировать агента",
+            "sponsorCannotEditItem": "{{person}} больше не может это редактировать",
+            "sponsorCannotEditItemYou": "Вы больше не можете это редактировать",
+            "sponsorCannotEditItemOther": "Добавивший больше не может это редактировать",
+            "connectionNeedsReconnect": "Выполнен выход из {{service}}",
+            "connectionNeedsReconnectNoService": "Выполнен выход",
+            "connectionRemoved": "Аккаунт {{service}} удалён",
+            "connectionRemovedNoService": "Аккаунт удалён",
+            "connectorDisabled": "{{service}} отключён администратором",
+            "connectorDisabledNoService": "Отключено администратором",
+            "unknown": "Не работает"
+          }
+        },
+        "removeConfirm": "Закрыть доступ для «{{name}}»?",
+        "removeConfirmTeam": "Все в {{team}} потеряют доступ к «{{resource}}». Вы можете снова поделиться в любой момент.",
+        "removeConfirmPerson": "{{name}} потеряет доступ к «{{resource}}» через {{team}}. Вы можете снова поделиться в любой момент."
+      },
+      "memberCount_one": "{{formatted}} участник",
+      "memberCount_few": "{{formatted}} участника",
+      "memberCount_many": "{{formatted}} участников",
+      "memberCount_other": "{{formatted}} участника",
+      "sharedCount_one": "{{formatted}} общий ресурс",
+      "sharedCount_few": "{{formatted}} общих ресурса",
+      "sharedCount_many": "{{formatted}} общих ресурсов",
+      "sharedCount_other": "{{formatted}} общих ресурса",
+      "accessChangeError": "Не удалось изменить доступ.",
+      "accessSettings": {
+        "title": "Настройки доступа",
+        "saveError": "Не удалось сохранить настройку доступа.",
+        "agent": {
+          "editors_can_share": {
+            "label": "Редакторы могут делиться",
+            "description": "Добавлять людей и команды и менять их доступ."
+          },
+          "editors_can_delete": {
+            "label": "Редакторы могут удалять",
+            "description": "Удалить агента для всех."
+          },
+          "editors_can_manage_access_details": {
+            "label": "Редакторы управляют данными доступа",
+            "description": "API-ключ, вебхук и публичная ссылка."
+          },
+          "viewers_can_see_logs": {
+            "label": "Читатели видят журналы",
+            "description": "Диалоги и аналитика этого агента."
+          }
+        },
+        "source": {
+          "editors_can_share": {
+            "label": "Редакторы могут делиться",
+            "description": "Добавлять людей и команды и менять их доступ."
+          },
+          "editors_can_delete": {
+            "label": "Редакторы могут удалять",
+            "description": "Удалить источник для всех."
+          },
+          "viewers_can_see_config": {
+            "label": "Читатели видят настройки",
+            "description": "Настройки разбиения, ретривера и синхронизации, только чтение."
+          }
+        },
+        "tool": {
+          "editors_can_change_credentials": {
+            "label": "Редакторы могут менять учётные данные и подключение",
+            "description": "Они заменяют сохранённые секреты; прочитать их не может никто."
+          },
+          "editors_can_share": {
+            "label": "Редакторы могут делиться",
+            "description": "Добавлять людей и команды и менять их доступ."
+          },
+          "viewers_can_use_in_agents": {
+            "label": "Читатели могут использовать его в своих агентах",
+            "description": "Он работает с вашими учётными данными.",
+            "descriptionMember": "Каждый использует свой аккаунт."
+          }
+        },
+        "prompt": {
+          "editors_can_share": {
+            "label": "Редакторы могут делиться",
+            "description": "Добавлять людей и команды и менять их доступ."
+          },
+          "viewers_can_duplicate": {
+            "label": "Читатели могут создавать копию",
+            "description": "Сделать свою копию для редактирования."
+          }
+        }
+      },
+      "editorHint": {
+        "agent": "Редакторы могут менять его, включая журналы, расписания и данные доступа.",
+        "agentNoAccessDetails": "Редакторы могут менять его, включая журналы и расписания, но не данные доступа.",
+        "source": "Редакторы могут править фрагменты и файлы, синхронизировать и менять настройки.",
+        "tool": "Редакторы могут менять действия и заменять учётные данные, но не читать секреты.",
+        "toolNoCredentials": "Редакторы могут менять действия, но не учётные данные.",
+        "prompt": "Редакторы могут менять текст.",
+        "noShareNoDelete": "Делиться и удалять они не могут.",
+        "shareOnly": "Они также могут делиться, но не удалять.",
+        "deleteOnly": "Они также могут удалять, но не делиться.",
+        "shareAndDelete": "Они также могут делиться и удалять.",
+        "noShare": "Делиться и удалять они не могут.",
+        "share": "Они также могут делиться, но не удалять."
+      },
+      "capabilities": {
+        "agent": {
+          "viewers": "Читатели: общаться с ним и закреплять его",
+          "editors": "Редакторы: править, публиковать, смотреть журналы и управлять расписаниями"
+        },
+        "source": {
+          "viewers": "Читатели: просматривать, искать и использовать в своих агентах",
+          "editors": "Редакторы: править фрагменты и файлы, синхронизировать, менять настройки"
+        },
+        "tool": {
+          "viewers": "Читатели: использовать в агентах владельца",
+          "editors": "Редакторы: менять действия и подтверждения"
+        },
+        "prompt": {
+          "viewers": "Читатели: читать и использовать в своих агентах",
+          "editors": "Редакторы: менять текст"
+        },
+        "switch": {
+          "editors_can_share": {
+            "on": "Редакторы могут делиться",
+            "off": "Редакторы не могут делиться"
+          },
+          "editors_can_delete": {
+            "on": "Редакторы могут удалять",
+            "off": "Редакторы не могут удалять"
+          },
+          "editors_can_manage_access_details": {
+            "on": "Редакторы управляют API-ключом, вебхуком и публичной ссылкой",
+            "off": "Редакторы не управляют API-ключом, вебхуком и публичной ссылкой"
+          },
+          "viewers_can_see_logs": {
+            "on": "Читатели видят журналы",
+            "off": "Читатели не видят журналы"
+          },
+          "viewers_can_see_config": {
+            "on": "Читатели видят настройки",
+            "off": "Читатели не видят настройки"
+          },
+          "editors_can_change_credentials": {
+            "on": "Редакторы могут заменять учётные данные",
+            "off": "Редакторы не могут менять учётные данные"
+          },
+          "viewers_can_use_in_agents": {
+            "on": "Читатели могут использовать его в своих агентах",
+            "off": "Читатели не могут использовать его в своих агентах"
+          },
+          "viewers_can_duplicate": {
+            "on": "Читатели могут создавать копию",
+            "off": "Читатели не могут создавать копию"
+          }
+        }
+      },
+      "sharedList": {
+        "badgeWithEditors_one": "{{level}} · +{{formatted}} редактор",
+        "badgeWithEditors_few": "{{level}} · +{{formatted}} редактора",
+        "badgeWithEditors_many": "{{level}} · +{{formatted}} редакторов",
+        "badgeWithEditors_other": "{{level}} · +{{formatted}} редактора",
+        "meta": "{{type}} · {{owner}}",
+        "filterLabel": "Фильтр общих ресурсов",
+        "filter": {
+          "all": "Все",
+          "agent": "Агенты",
+          "source": "Источники",
+          "tool": "Инструменты",
+          "prompt": "Промпты"
+        },
+        "search": "Поиск в общих…",
+        "noMatches": "Ничего не найдено.",
+        "pageRange_one": "{{from}}–{{to}} из {{formatted}} ресурса",
+        "pageRange_few": "{{from}}–{{to}} из {{formatted}} ресурсов",
+        "pageRange_many": "{{from}}–{{to}} из {{formatted}} ресурсов",
+        "pageRange_other": "{{from}}–{{to}} из {{formatted}} ресурса"
+      },
+      "drawer": {
+        "subtitle": "{{type}} · владелец: {{owner}}",
+        "open": "Открыть: {{type}}",
+        "manageSharing": "Управлять доступом",
+        "owner": "Владелец",
+        "shared": "Открыт",
+        "sharedOnBy": "{{date}}, {{name}}",
+        "yourAccess": "Ваш доступ",
+        "yourAccessLevel": {
+          "owner": "Владелец",
+          "editor": "Редактор",
+          "viewer": "Читатель",
+          "none": "Нет доступа"
+        },
+        "accessIn": "Доступ в {{team}}",
+        "everyone": "Все в {{team}}",
+        "teamGrant": "Вся команда",
+        "memberGrant": "Только этот человек",
+        "removeGrant": "Убрать доступ",
+        "otherTeamsHint": "Доступ есть и у других команд? Им управляют в «Управлять доступом».",
+        "whatPeopleCanDo": "Что здесь можно делать",
+        "capabilitiesHint": "Из настроек доступа владельца. Здесь только для чтения."
+      },
+      "pageRange_one": "{{from}}–{{to}} из {{formatted}} команды",
+      "pageRange_few": "{{from}}–{{to}} из {{formatted}} команд",
+      "pageRange_many": "{{from}}–{{to}} из {{formatted}} команд",
+      "pageRange_other": "{{from}}–{{to}} из {{formatted}} команды",
+      "searchMembers": "Поиск участников…",
+      "membersRange_one": "{{from}}–{{to}} из {{formatted}} участника",
+      "membersRange_few": "{{from}}–{{to}} из {{formatted}} участников",
+      "membersRange_many": "{{from}}–{{to}} из {{formatted}} участников",
+      "membersRange_other": "{{from}}–{{to}} из {{formatted}} участника",
+      "membersLoadError": "Не удалось загрузить участников.",
+      "deleteTeamConsequence": "Его участники потеряют доступ ко всему, чем с ним поделились. Это действие нельзя отменить.",
+      "delete": "Удалить",
+      "removeMemberConsequence": "Участник потеряет доступ ко всему, чем поделились с {{team}}. Его можно добавить снова в любой момент."
     },
     "tools": {
       "label": "Инструменты",
-      "subtitle": "Просматривайте, подключайте и настраивайте инструменты и интеграции для ваших агентов",
+      "subtitle": "Действия, которые могут выполнять ваши агенты. Здесь находятся встроенные инструменты. Инструменты подключённого сервиса сгруппированы под этим сервисом.",
       "searchPlaceholder": "Поиск...",
       "addTool": "Добавить инструмент",
       "noToolsFound": "Инструменты не найдены",
-      "selectToolSetup": "Выберите инструмент для настройки",
+      "selectToolSetup": "Добавить инструмент",
       "settingsIconAlt": "Значок настроек",
       "configureToolAria": "Настроить {{toolName}}",
-      "toggleToolAria": "Переключить {{toolName}}",
       "manageTools": "Перейти к инструментам",
       "edit": "Редактировать",
       "delete": "Удалить",
       "reconnect": "Переподключить",
       "shareWithTeam": "Поделиться с командой",
-      "builtIn": "Встроенный",
-      "authStatus": {
-        "connected": "Подключено",
-        "needsAuth": "Требуется авторизация",
-        "configured": "Настроено"
-      },
-      "deleteWarning": "Вы уверены, что хотите удалить инструмент \"{{toolName}}\"?",
+      "deleteWarning": "Удалить «{{toolName}}»?",
       "unsavedChanges": "У вас есть несохраненные изменения, которые будут потеряны, если вы уйдете без сохранения.",
       "leaveWithoutSaving": "Уйти без сохранения",
       "saveAndLeave": "Сохранить и уйти",
@@ -547,17 +1089,22 @@
       "description": "Описание",
       "descriptionPlaceholder": "Введите описание",
       "bodyContentType": "Тип содержимого тела",
+      "bodyTypeHint": {
+        "json": "Самый распространённый формат. Для современных REST API.",
+        "formUrlencoded": "Стандартный формат отправки форм. Лучше всего подходит для устаревших API и форм входа.",
+        "multipart": "Для API, требующих формат multipart. Загрузка файлов через LLM не поддерживается.",
+        "text": "Простые текстовые данные. Каждое поле с новой строки.",
+        "xml": "Структурированный формат XML. Для SOAP и корпоративных API.",
+        "octetStream": "Необработанные двоичные данные в кодировке base64 для передачи."
+      },
       "headers": "Заголовки",
       "queryParameters": "Параметры запроса",
       "body": "Тело запроса",
-      "deleteActionWarning": "Вы уверены, что хотите удалить действие \"{{name}}\"?",
-      "backToAllTools": "Вернуться ко всем инструментам",
+      "deleteActionWarning": "Удалить «{{name}}»?",
       "save": "Сохранить",
-      "saving": "Сохранение...",
       "saveFailed": "Не удалось сохранить настройки инструмента",
       "fieldName": "Имя поля",
       "fieldType": "Тип поля",
-      "filledByLLM": "Заполняется LLM",
       "fieldDescription": "Описание поля",
       "value": "Значение",
       "addProperty": "Добавить свойство",
@@ -568,56 +1115,97 @@
       "name": "Имя",
       "type": "Тип",
       "mcp": {
-        "addServer": "Add MCP Server",
-        "editServer": "Edit Server",
+        "addServer": "Добавить MCP-сервер",
         "reconnectServer": "Переподключить сервер",
-        "reenterCredentials": "Введите учетные данные ещё раз, чтобы проверить и обновить подключение.",
-        "serverName": "Server Name",
-        "serverUrl": "Server URL",
-        "headerName": "Header Name",
-        "timeout": "Timeout (seconds)",
-        "testConnection": "Test Connection",
-        "testing": "Testing",
-        "saving": "Saving",
-        "save": "Save",
-        "cancel": "Cancel",
-        "noAuth": "No Authentication",
-        "oauthInProgress": "Waiting for OAuth completion...",
-        "oauthCompleted": "OAuth completed successfully",
-        "oauthPopupBlocked": "Браузер заблокировал всплывающее окно. Нажмите ниже для авторизации:",
+        "serverName": "Имя сервера",
+        "serverUrl": "URL сервера",
+        "headerName": "Имя заголовка",
+        "username": "Имя пользователя",
+        "password": "Пароль",
+        "timeout": "Тайм-аут (секунды)",
+        "testConnection": "Проверить подключение",
+        "save": "Сохранить",
+        "cancel": "Отмена",
+        "oauthInProgress": "Ожидание завершения входа через OAuth…",
+        "oauthCompleted": "Вход через OAuth выполнен",
+        "oauthPopupBlocked": "Браузер заблокировал окно входа. Откройте страницу авторизации, чтобы продолжить.",
         "openAuthPage": "Открыть страницу авторизации",
-        "authType": "Authentication Type",
-        "defaultServerName": "My MCP Server",
+        "authType": "Тип аутентификации",
+        "defaultServerName": "Мой MCP-сервер",
         "authTypes": {
-          "none": "No Authentication",
-          "apiKey": "API Key",
-          "bearer": "Bearer Token",
+          "none": "Без аутентификации",
+          "apiKey": "API-ключ",
+          "bearer": "Bearer-токен",
           "oauth": "OAuth",
-          "basic": "Basic Authentication"
+          "basic": "Базовая аутентификация"
         },
         "placeholders": {
-          "serverUrl": "https://api.example.com",
-          "apiKey": "Your secret API key",
-          "bearerToken": "Your secret token",
-          "username": "Your username",
-          "password": "Your password",
-          "oauthScopes": "OAuth scopes (comma separated)"
+          "apiKey": "Ваш секретный API-ключ",
+          "bearerToken": "Ваш секретный токен",
+          "username": "Ваше имя пользователя",
+          "password": "Ваш пароль",
+          "oauthScopes": "Области OAuth (через запятую)"
         },
         "errors": {
-          "nameRequired": "Server name is required",
-          "urlRequired": "Server URL is required",
-          "invalidUrl": "Please enter a valid URL",
-          "apiKeyRequired": "API key is required",
-          "tokenRequired": "Bearer token is required",
-          "usernameRequired": "Username is required",
-          "passwordRequired": "Password is required",
-          "testFailed": "Connection test failed",
-          "saveFailed": "Failed to save MCP server",
-          "oauthFailed": "OAuth process failed or was cancelled",
-          "oauthTimeout": "OAuth process timed out, please try again",
-          "timeoutRange": "Timeout must be between 1 and 300 seconds"
-        }
-      }
+          "nameRequired": "Укажите имя сервера",
+          "urlRequired": "Укажите URL сервера",
+          "invalidUrl": "Введите корректный URL",
+          "apiKeyRequired": "Укажите API-ключ",
+          "tokenRequired": "Укажите Bearer-токен",
+          "usernameRequired": "Укажите имя пользователя",
+          "passwordRequired": "Укажите пароль",
+          "testFailed": "Проверка подключения не удалась",
+          "saveFailed": "Не удалось сохранить MCP-сервер",
+          "oauthFailed": "Вход через OAuth не удался или был отменён",
+          "timeoutRange": "Тайм-аут должен быть от 1 до 300 секунд"
+        },
+        "sharedByEditor": "Предоставил(а) {{owner}} · вы редактор",
+        "aTeammate": "участник команды",
+        "sharedCredentialsNotice": "Сохранённые учётные данные скрыты. Введённые вами данные заменят их для всех, кто пользуется этим инструментом.",
+        "serverChangedNotice": "Сервер изменился, поэтому сохранённый {{credential}} будет удалён. Введите его для нового сервера, чтобы сохранить.",
+        "credentialNames": {
+          "apiKey": "API-ключ",
+          "bearer": "токен",
+          "password": "пароль"
+        },
+        "savedKeyHint": "Ключ сохранён. Оставьте поле пустым, чтобы сохранить его (только пока сервер не изменился).",
+        "sharedOAuthOwnerOnly": "Изменить подключение этого сервера или переподключить вход может только владелец. Вы по-прежнему можете переименовать его и изменять его действия.",
+        "advanced": "Дополнительные настройки",
+        "testBeforeSave": "Проверьте подключение перед сохранением.",
+        "discoveredTools_one": "Найдено {{formatted}} действие",
+        "discoveredTools_other": "Найдено {{formatted}} действия",
+        "discoveredTools_few": "Найдено {{formatted}} действия",
+        "discoveredTools_many": "Найдено {{formatted}} действий"
+      },
+      "configErrors": {
+        "required": "Поле «{{field}}» обязательно",
+        "positiveNumber": "Должно быть положительным числом",
+        "maxTimeout": "Максимальный тайм-аут — 300 секунд"
+      },
+      "headerValuePlaceholder": "например, application/json",
+      "toolIconTitle": "Значок {{name}}",
+      "groupBuiltIn": "Встроенные",
+      "groupService": "Из сервиса",
+      "off": "Выкл.",
+      "view": "Просмотр",
+      "inMyChats": "В моих чатах",
+      "useInMyChatsAria": "Использовать {{toolName}} в моих чатах",
+      "statusUpdateFailed": "Не удалось изменить, используется ли этот инструмент в ваших чатах.",
+      "deleteFailed": "Не удалось удалить этот инструмент.",
+      "sharedBy": "Предоставлено: {{team}}",
+      "savedSecretPlaceholder": "Сохранено · введите новое значение для замены",
+      "pageRange_one": "{{from}}–{{to}} из {{formatted}} инструмента",
+      "pageRange_few": "{{from}}–{{to}} из {{formatted}} инструментов",
+      "pageRange_many": "{{from}}–{{to}} из {{formatted}} инструментов",
+      "pageRange_other": "{{from}}–{{to}} из {{formatted}} инструмента",
+      "manageInConnectors": "Управлять в коннекторах",
+      "defaultBadge": "По умолчанию",
+      "noToolsYet": "Инструментов пока нет",
+      "connectService": "Подключить сервис",
+      "filledBy": "Кто заполняет",
+      "loadError": "Не удалось загрузить инструменты.",
+      "deleteConsequence": "Его настройки и действия тоже будут удалены. Это действие нельзя отменить.",
+      "deleteActionConsequence": "Оно будет удалено, когда вы сохраните инструмент."
     },
     "devices": {
       "label": "Устройства",
@@ -626,7 +1214,7 @@
       "empty": "Нет подключённых устройств.",
       "revoke": "Отозвать",
       "edit": "Редактировать",
-      "revokeWarning": "Отозвать {{name}}? CLI будет отключён.",
+      "revokeWarning": "Отозвать «{{name}}»?",
       "approvalMode": "Режим подтверждения",
       "approvalAsk": "Спрашивать",
       "approvalFull": "Полный доступ",
@@ -634,7 +1222,6 @@
       "offline": "Не в сети",
       "lastSeen": "Последняя активность: {{time}}",
       "lastSeenLabel": "Последняя активность",
-      "seenAgo": "в сети {{time}} назад",
       "nameLabel": "Название устройства",
       "descriptionLabel": "Описание (видно агенту)",
       "descriptionPlaceholder": "Для чего эта машина?",
@@ -668,10 +1255,15 @@
         "installLink": "Нет docsgpt-cli? Установите его",
         "stepTwo": "2. Введите этот код по запросу:",
         "start": "Сгенерировать код",
-        "starting": "Выполнение…",
         "waitingForCli": "Ожидание активации кода в CLI…",
         "cancel": "Отмена"
-      }
+      },
+      "auditDurationValue": "{{value}} мс",
+      "fallbackName": "устройство",
+      "auditShow": "Показать последние команды",
+      "auditHide": "Скрыть последние команды",
+      "seen": "в сети {{time}}",
+      "revokeConsequence": "CLI на этом устройстве будет отключён, а сопряжение удалено. Чтобы подключиться снова, выполните сопряжение ещё раз."
     },
     "customModels": {
       "label": "Свои модели",
@@ -683,13 +1275,11 @@
       "addTitle": "Добавить свою модель",
       "editTitle": "Изменить свою модель",
       "save": "Сохранить",
-      "saving": "Сохранение",
       "testConnection": "Проверить соединение",
-      "testing": "Проверка",
       "testSuccess": "Соединение установлено.",
       "testHintNew": "Заполните Base URL, ID модели и API-ключ, чтобы включить проверку соединения.",
       "disabledBadge": "Отключено",
-      "deleteWarning": "Удалить свою модель «{{modelName}}»?",
+      "deleteWarning": "Удалить «{{modelName}}»?",
       "actionsMenuAria": "Действия для {{modelName}}",
       "modelsGroup": {
         "builtin": "Модели DocsGPT",
@@ -729,6 +1319,12 @@
         "reasoningEfforts": {
           "default": "По умолчанию у провайдера"
         },
+        "toolImages": "Изображения инструментов",
+        "toolImagesModes": {
+          "default": "Автоматически",
+          "native": "Внутри результата инструмента",
+          "follow_up": "Отдельным сообщением"
+        },
         "chips": {
           "tools": "Инструменты",
           "structuredOutput": "Структурированный вывод",
@@ -745,42 +1341,467 @@
         "contextWindowRange": "Контекстное окно должно быть от 1 000 до 10 000 000",
         "saveFailed": "Не удалось сохранить свою модель",
         "testFailed": "Проверка соединения не удалась"
-      }
+      },
+      "pageRange_one": "{{from}}–{{to}} из {{formatted}} модели",
+      "pageRange_few": "{{from}}–{{to}} из {{formatted}} моделей",
+      "pageRange_many": "{{from}}–{{to}} из {{formatted}} моделей",
+      "pageRange_other": "{{from}}–{{to}} из {{formatted}} модели",
+      "loadError": "Не удалось загрузить модели."
     },
-    "scrollTabsLeft": "Прокрутить вкладки влево",
-    "tabsAriaLabel": "Вкладки настроек",
-    "scrollTabsRight": "Прокрутить вкладки вправо"
+    "accessTokens": {
+      "label": "Токены доступа",
+      "subtitle": "Персональные токены доступа позволяют скриптам, CLI и CI-конвейерам обращаться к API DocsGPT от вашего имени. Выдавайте каждому токену только необходимые права.",
+      "createToken": "Создать токен",
+      "disabledNotice": "Персональные токены доступа недоступны на этом сервере. Для них нужен вход через учётную запись, и их должен включить администратор.",
+      "limitReached_one": "Достигнут лимит активных токенов: {{count}}. Отзовите один, чтобы создать новый.",
+      "limitReached_few": "Достигнут лимит активных токенов: {{count}}. Отзовите один, чтобы создать новый.",
+      "limitReached_many": "Достигнут лимит активных токенов: {{count}}. Отзовите один, чтобы создать новый.",
+      "limitReached_other": "Достигнут лимит активных токенов: {{count}}. Отзовите один, чтобы создать новый.",
+      "loadError": "Не удалось загрузить токены доступа. Попробуйте ещё раз.",
+      "revokeError": "Не удалось отозвать токен. Попробуйте ещё раз.",
+      "empty": "Токенов доступа пока нет",
+      "emptyHint": "Создайте токен, чтобы использовать API DocsGPT из скриптов и инструментов командной строки.",
+      "name": "Название",
+      "scopes": "Права",
+      "resources": "Ресурсы",
+      "createdAt": "Создан",
+      "lastUsed": "Последнее использование",
+      "expires": "Истекает",
+      "actions": "Действия",
+      "allResources": "Все ресурсы",
+      "never": "Никогда",
+      "expired": "Истёк {{date}}",
+      "expiresSoon": "Истекает {{date}}",
+      "moreScopes": "ещё {{count}}",
+      "showLess": "Свернуть",
+      "revoke": "Отозвать",
+      "revokeAria": "Отозвать токен {{name}}",
+      "revokeWarning": "Отозвать «{{name}}»?",
+      "restrictionCount": {
+        "agents_one": "{{count}} агент",
+        "agents_few": "{{count}} агента",
+        "agents_many": "{{count}} агентов",
+        "agents_other": "{{count}} агента",
+        "sources_one": "{{count}} источник",
+        "sources_few": "{{count}} источника",
+        "sources_many": "{{count}} источников",
+        "sources_other": "{{count}} источника",
+        "prompts_one": "{{count}} промпт",
+        "prompts_few": "{{count}} промпта",
+        "prompts_many": "{{count}} промптов",
+        "prompts_other": "{{count}} промпта",
+        "tools_one": "{{count}} инструмент",
+        "tools_few": "{{count}} инструмента",
+        "tools_many": "{{count}} инструментов",
+        "tools_other": "{{count}} инструмента",
+        "workflows_one": "{{count}} рабочий процесс",
+        "workflows_few": "{{count}} рабочих процесса",
+        "workflows_many": "{{count}} рабочих процессов",
+        "workflows_other": "{{count}} рабочего процесса"
+      },
+      "families": {
+        "agents": "Агенты",
+        "sources": "Источники",
+        "prompts": "Промпты",
+        "tools": "Инструменты",
+        "models": "Модели",
+        "workflows": "Рабочие процессы",
+        "schedules": "Расписания",
+        "conversations": "Диалоги",
+        "analytics": "Аналитика",
+        "teams": "Команды",
+        "chat": "Чат"
+      },
+      "create": {
+        "title": "Создать токен доступа",
+        "subtitle": "Токен действует от вашего имени в пределах прав и ресурсов, которые вы выберете здесь.",
+        "name": "Название",
+        "namePlaceholder": "например, CI-конвейер",
+        "expiration": "Срок действия",
+        "expiryDays_one": "{{count}} день",
+        "expiryDays_few": "{{count}} дня",
+        "expiryDays_many": "{{count}} дней",
+        "expiryDays_other": "{{count}} дня",
+        "noExpiration": "Бессрочно",
+        "noExpirationHint": "Бессрочные токены опаснее при утечке. Лучше задать срок действия.",
+        "expiresOn": "Истекает {{date}}",
+        "scopes": "Права",
+        "scopesHint": "Выберите, что разрешено этому токену. Право на запись включает право на чтение.",
+        "impliedByWrite": "Входит в право на запись",
+        "restrict": "Ограничить определёнными ресурсами",
+        "restrictHint": "Необязательно. Ограничьте токен выбранными элементами. Оставьте список пустым, чтобы разрешить все.",
+        "restrictNoFamilies": "Сначала выберите право для агентов, источников, промптов, инструментов или чата, чтобы ограничить их ресурсы.",
+        "allSelected": "Все (без ограничений)",
+        "noResources": "Ничего не найдено.",
+        "searchResources": "Поиск...",
+        "resourcesError": "Не удалось загрузить список.",
+        "retry": "Повторить",
+        "cancel": "Отмена",
+        "submit": "Создать токен",
+        "error": "Не удалось создать токен. Попробуйте ещё раз."
+      },
+      "created": {
+        "title": "Токен создан",
+        "subtitle": "Ваш новый токен «{{name}}» готов.",
+        "warning": "Скопируйте токен сейчас и сохраните его в надёжном месте. В целях безопасности он больше не будет показан.",
+        "tokenLabel": "Ваш токен",
+        "usageTitle": "Как использовать",
+        "usageHint": "Экспортируйте его как переменную окружения и передавайте как Bearer-токен в заголовке Authorization.",
+        "done": "Готово"
+      },
+      "regenerate": {
+        "action": "Перевыпустить",
+        "aria": "Перевыпустить токен {{name}}",
+        "title": "Перевыпуск токена",
+        "warning": "Создать новый секрет для «{{name}}»? Текущий секрет сразу перестанет работать, поэтому всё, что его использует, нужно обновить. Имя, права и ограничения останутся прежними.",
+        "newExpiration": "Новый срок действия",
+        "submit": "Перевыпустить",
+        "error": "Не удалось перевыпустить токен. Попробуйте ещё раз.",
+        "done": {
+          "title": "Токен перевыпущен",
+          "subtitle": "Новый секрет для «{{name}}» готов. Старый больше не работает."
+        }
+      },
+      "revokeConsequence": "Всё, что ещё его использует, сразу перестанет работать. Это действие нельзя отменить."
+    },
+    "connectors": {
+      "label": "Коннекторы",
+      "subtitle": "Подключите DocsGPT к сервисам, которыми пользуется ваша команда. Подключение может синхронизировать содержимое в знания и давать агентам инструменты.",
+      "search": "Поиск коннекторов...",
+      "addCustom": "Добавить свой инструмент",
+      "custom": {
+        "custom_mcp": "MCP-сервер",
+        "custom_openapi": "OpenAPI / REST"
+      },
+      "capability": {
+        "sync": "Синхронизация",
+        "read": "Чтение",
+        "write": "Запись"
+      },
+      "status": {
+        "connect": "Подключить",
+        "connected": "Подключено",
+        "connectedCount": "Подключено: {{formatted}}",
+        "reconnect": "Переподключить",
+        "needsAdminSetup": "Нужна настройка администратором",
+        "disabledByAdmin": "Отключено администратором",
+        "custom": "Свой"
+      },
+      "connectionStatus": {
+        "connected": "Подключено",
+        "disconnected": "Отключено",
+        "pending": "Ожидание входа"
+      },
+      "publisher": {
+        "built_in": "Встроенный",
+        "preset": "Готовый",
+        "custom": "Свой"
+      },
+      "descriptions": {
+        "google_drive": "Синхронизирует Документы, Таблицы и PDF в знания.",
+        "share_point": "Синхронизирует файлы с сайтов SharePoint и из OneDrive в знания.",
+        "confluence": "Синхронизирует пространства и страницы Confluence в знания.",
+        "s3": "Синхронизирует документы из бакета S3 в знания.",
+        "reddit": "Синхронизирует публикации Reddit по вашим запросам в знания.",
+        "brave": "Поиск в интернете и по картинкам через Brave Search API.",
+        "telegram": "Отправляет сообщения и изображения в чат Telegram.",
+        "ntfy": "Отправляет push-уведомления через сервер ntfy.",
+        "postgres": "Читает схему и выполняет SQL в базе данных Postgres.",
+        "custom_mcp": "Подключает любой удалённый сервер Model Context Protocol.",
+        "custom_openapi": "Импортирует спецификацию OpenAPI и вызывает её эндпоинты как инструменты.",
+        "mcp_notion": "Поиск, чтение и обновление страниц и баз данных Notion.",
+        "mcp_linear": "Синхронизируйте задачи и документы в базу знаний и дайте агентам находить, создавать и обновлять задачи.",
+        "mcp_atlassian": "Поиск и обновление задач Jira и страниц Confluence.",
+        "mcp_sentry": "Просмотр проблем, событий и релизов Sentry.",
+        "mcp_stripe": "Просмотр клиентов, платежей и подписок в Stripe.",
+        "github": "Синхронизируйте репозитории в базу знаний и дайте агентам читать код, issues и pull requests."
+      },
+      "empty": "Пока ничего не подключено. Подключите сервис, чтобы синхронизировать его контент или дать агентам новые инструменты.",
+      "noMatches": "Нет коннекторов, подходящих под запрос.",
+      "loadFailed": "Не удалось загрузить коннекторы.",
+      "askAdmin": "Попросите администратора настроить это.",
+      "setupSettings": "Задайте эти настройки сервера и перезапустите DocsGPT:",
+      "setupGuide": "Инструкция по настройке",
+      "unverified": "DocsGPT не проверял этот сервер. Подключайте только серверы, которым доверяете.",
+      "detail": {
+        "accounts": "Аккаунты",
+        "connectAnother": "Подключить другой аккаунт",
+        "sources": "Знания из этого подключения",
+        "tools": "Инструменты из этого подключения",
+        "noAccounts": "Аккаунт ещё не подключён.",
+        "failed": "Не удалось загрузить это подключение.",
+        "lastSync": "Синхронизировано {{date}} · {{frequency}}",
+        "paused": "Синхронизация приостановлена",
+        "toolOn": "Вкл.",
+        "toolOff": "Выкл.",
+        "accountMenu": "Действия с аккаунтом",
+        "disconnect": "Отключить",
+        "keyEnding": "Ключ {{hint}}",
+        "syncMore": "Синхронизировать ещё",
+        "refreshTools": "Обновить инструменты",
+        "noSources": "Из этого подключения пока ничего не синхронизировано.",
+        "remove": "Удалить",
+        "refreshed": "Инструменты обновлены: добавлено {{added}}, удалено {{removed}}.",
+        "refreshFailed": "Не удалось обновить инструменты.",
+        "syncNow": "Синхронизировать",
+        "syncStarted": "Синхронизация {{name}}…",
+        "syncFailed": "Не удалось запустить синхронизацию. Попробуйте ещё раз.",
+        "toolSwitchFailed": "Не удалось изменить инструмент. Попробуйте ещё раз.",
+        "expired": "Срок входа истёк. Переподключите, чтобы продолжить пользоваться этим подключением.",
+        "broken": "Это подключение перестало работать. Переподключите, чтобы попробовать снова.",
+        "addTools": "Добавить инструменты",
+        "noTools": "У этого подключения пока нет инструментов.",
+        "addToolsFailed": "Не удалось добавить инструменты. Попробуйте ещё раз.",
+        "rename": "Переименовать",
+        "toolsHint": "«Спрашивать» спросит вас в чате. Изменения через API, виджет и ссылку разрешаются для каждого агента в Access details.",
+        "toolsUnavailable": "Инструменты {{name}} недоступны. Попробуйте ещё раз."
+      },
+      "permission": {
+        "always": "Разрешать",
+        "ask": "Спрашивать",
+        "off": "Выкл.",
+        "label": "Разрешение для {{action}}",
+        "saveFailed": "Не удалось сохранить разрешение. Попробуйте ещё раз.",
+        "groupLabel": "Разрешение для всего в группе «{{group}}»",
+        "customize": "Настроить"
+      },
+      "disconnect": {
+        "title": "Отключить «{{name}}»?",
+        "failed": "Не удалось отключить. Попробуйте ещё раз.",
+        "bodyBoth_one": "Синхронизированный элемент останется в знаниях, но перестанет обновляться. Инструменты этого подключения не будут работать, пока вы не переподключитесь.",
+        "bodyBoth_other": "Синхронизированные элементы ({{formatted}}) останутся в знаниях, но перестанут обновляться. Инструменты этого подключения не будут работать, пока вы не переподключитесь.",
+        "bodyTools": "Инструменты из этого подключения перестанут работать, пока вы не переподключитесь.",
+        "bodySources_one": "Синхронизированный элемент останется в знаниях, но перестанет обновляться до переподключения.",
+        "bodySources_other": "Синхронизированные элементы ({{formatted}}) останутся в знаниях, но перестанут обновляться до переподключения.",
+        "bodyNone": "Данные входа будут удалены. Переподключитесь, чтобы снова пользоваться этим аккаунтом.",
+        "bodyBoth_few": "Синхронизированные элементы ({{formatted}}) останутся в знаниях, но перестанут обновляться. Инструменты этого подключения не будут работать, пока вы не переподключитесь.",
+        "bodyBoth_many": "Синхронизированные элементы ({{formatted}}) останутся в знаниях, но перестанут обновляться. Инструменты этого подключения не будут работать, пока вы не переподключитесь.",
+        "bodySources_few": "Синхронизированные элементы ({{formatted}}) останутся в знаниях, но перестанут обновляться до переподключения.",
+        "bodySources_many": "Синхронизированные элементы ({{formatted}}) останутся в знаниях, но перестанут обновляться до переподключения."
+      },
+      "fields": {
+        "token": "API-ключ",
+        "aws_access_key_id": "ID ключа доступа",
+        "aws_secret_access_key": "Секретный ключ доступа",
+        "region": "Регион",
+        "endpoint_url": "Свой URL эндпоинта",
+        "client_id": "ID клиента",
+        "client_secret": "Секрет клиента",
+        "user_agent": "User agent",
+        "bucket": "Бакет",
+        "prefix": "Префикс пути",
+        "search_queries": "Поисковые запросы",
+        "number_posts": "Количество постов",
+        "telegram_token": "Токен бота",
+        "ntfy_token": "Токен доступа",
+        "postgres_token": "Строка подключения",
+        "brave_token": "API-ключ",
+        "github_access_token": "Персональный токен доступа",
+        "repo_url": "Репозиторий",
+        "telegram_chat_id": "ID чата по умолчанию"
+      },
+      "wizard": {
+        "connectTitle": "Подключить {{name}}",
+        "reconnectTitle": "Переподключить {{name}}",
+        "signIn": "Войти в {{name}}",
+        "syncFrequency": "Синхронизация",
+        "doneTitle": "{{name}} подключён",
+        "doneSummaryNone": "Подключено как {{account}}.",
+        "sourcesCount_one": "{{formatted}} элемент",
+        "sourcesCount_few": "{{formatted}} элемента",
+        "sourcesCount_many": "{{formatted}} элементов",
+        "sourcesCount_other": "{{formatted}} элемента",
+        "toolsCount_one": "{{formatted}} инструмент",
+        "toolsCount_few": "{{formatted}} инструмента",
+        "toolsCount_many": "{{formatted}} инструментов",
+        "toolsCount_other": "{{formatted}} инструмента",
+        "toolsHeading": "Инструменты ({{formatted}})",
+        "tryInChat": "Попробовать в чате",
+        "done": "Готово",
+        "connectFailed": "Не удалось подключиться. Проверьте данные и попробуйте ещё раз.",
+        "syncFailed": "Не удалось запустить синхронизацию. Попробуйте ещё раз.",
+        "connectedWithKey": "Подключено ключом, оканчивающимся на {{hint}}.",
+        "doneCounts": "Синхронизируется в знания: {{sources}}; готово: {{tools}}.",
+        "doneSources": "Синхронизируется в знания: {{sources}}.",
+        "doneTools": "Готово: {{tools}}.",
+        "waiting": "Завершите вход в {{name}} в открывшемся окне.",
+        "openSignIn": "Открыть вход в {{name}}",
+        "methodLabel": "Способ подключения",
+        "methodOauth": "Войти через {{name}}",
+        "methodToken": "Использовать токен доступа",
+        "credentialsRejected": "{{name}} не принял эти учётные данные. Проверьте их и попробуйте ещё раз.",
+        "toolsUnavailable": "Инструменты {{name}} недоступны. Попробуйте ещё раз или отключите их, чтобы продолжить.",
+        "addTools": "Разрешить агентам использовать {{name}}",
+        "addToolsDescription": {
+          "read": "Агенты могут находить информацию. Изменять ничего не могут.",
+          "readWrite": "Агенты могут находить информацию и вносить изменения. Изменения требуют вашего одобрения."
+        },
+        "accountName": "Название аккаунта",
+        "accountNameHint": "Показывается вам и ИИ, чтобы различать аккаунты, например «Бот оповещений».",
+        "syncToKnowledge": "Синхронизировать в знания",
+        "syncToKnowledgeDescription": "Выберите содержимое {{name}}, по которому будут искаться ответы. Если выключено, сервис только подключается; синхронизировать можно позже в разделе «Коннекторы».",
+        "syncLater": "В знания пока ничего не синхронизируется. Чтобы добавить содержимое, откройте {{name}} в разделе «Коннекторы» и выберите «Синхронизировать ещё».",
+        "retrievalSettings": "Расширенные настройки поиска",
+        "chooseWhatToSetUpFor": "Выберите, что настроить для {{name}}",
+        "chooseWhatToSyncFrom": "Выберите, что синхронизировать из {{name}}",
+        "signedInAs": "Вход выполнен как {{account}}.",
+        "finishSetup": "Завершить настройку",
+        "account": "Аккаунт"
+      },
+      "remove": {
+        "title": "Удалить «{{name}}»?",
+        "description": "Сохранённый вход будет удалён. Выберите, что станет с тем, что даёт это подключение.",
+        "sourcesLabel_one": "Элемент, синхронизированный в знания",
+        "sourcesLabel_few": "{{formatted}} элемента, синхронизированных в знания",
+        "sourcesLabel_many": "{{formatted}} элементов, синхронизированных в знания",
+        "sourcesLabel_other": "{{formatted}} элемента, синхронизированных в знания",
+        "keepSources": "Оставить контент (остановить синхронизацию)",
+        "deleteSources": "Удалить",
+        "toolsLabel_one": "Его инструмент",
+        "toolsLabel_few": "Его {{formatted}} инструмента",
+        "toolsLabel_many": "Его {{formatted}} инструментов",
+        "toolsLabel_other": "Его {{formatted}} инструмента",
+        "deleteTools": "Удалить",
+        "keepTools": "Оставить выключенными",
+        "failed": "Не удалось удалить подключение. Попробуйте ещё раз."
+      },
+      "health": {
+        "reconnect": "Переподключите {{name}}, чтобы синхронизация продолжилась.",
+        "reconnectSources_one": "Переподключите {{name}}: {{formatted}} элемент больше не синхронизируется в знания",
+        "reconnectSources_few": "Переподключите {{name}}: {{formatted}} элемента больше не синхронизируются в знания",
+        "reconnectSources_many": "Переподключите {{name}}: {{formatted}} элементов больше не синхронизируются в знания",
+        "reconnectSources_other": "Переподключите {{name}}: {{formatted}} элемента больше не синхронизируются в знания",
+        "reconnectTools": "Переподключите {{name}}, чтобы агенты снова могли его использовать",
+        "reconnectBoth_one": "Переподключите {{name}}: {{formatted}} элемент не синхронизируется, агенты не могут его использовать",
+        "reconnectBoth_few": "Переподключите {{name}}: {{formatted}} элемента не синхронизируются, агенты не могут его использовать",
+        "reconnectBoth_many": "Переподключите {{name}}: {{formatted}} элементов не синхронизируются, агенты не могут его использовать",
+        "reconnectBoth_other": "Переподключите {{name}}: {{formatted}} элемента не синхронизируются, агенты не могут его использовать",
+        "navDot": "Подключению требуется внимание",
+        "signInAgain": "Войдите снова",
+        "pickerNotice": "{{name}}: нужно войти снова."
+      },
+      "error": {
+        "decrypt": "Не удалось расшифровать сохранённые учётные данные. Переподключитесь, чтобы продолжить.",
+        "defaultKey": "Администратор должен задать ENCRYPTION_SECRET_KEY, прежде чем можно будет подключать сервисы."
+      },
+      "sharing": {
+        "owner": "Все используют ваш аккаунт",
+        "member": "Каждый подключает свой аккаунт",
+        "ownerShort": "Ваш аккаунт",
+        "memberShort": "У каждого свой",
+        "ownerShortShared": "Аккаунт владельца"
+      },
+      "share": {
+        "heading": "С чьим аккаунтом он работает",
+        "ownerWarning": "Участники команды будут действовать от имени вашего аккаунта {{name}} ({{account}}).",
+        "ownerWarningShared": "Участники команды будут действовать от имени аккаунта {{name}} владельца.",
+        "confirmWrite": "Я понимаю, что участники команды могут выполнять действия от имени моего аккаунта.",
+        "confirmWriteShared": "Я понимаю, что участники команды могут выполнять действия от имени аккаунта {{name}} владельца.",
+        "memberNote": "Каждый использует свой аккаунт {{name}} и подключает его при первом использовании этого инструмента. Через API-ключ или виджет агента используется аккаунт владельца агента.",
+        "forced": "Администратор задал это для всех общих доступов к этому коннектору.",
+        "ownerChooses": "Изменить это может только владелец.",
+        "saveFailed": "Не удалось сохранить изменение. Попробуйте ещё раз.",
+        "ownerWarningNoAccount": "Участники команды будут действовать от имени вашего аккаунта {{name}}."
+      },
+      "createFailed": "Не удалось добавить коннектор. Попробуйте ещё раз.",
+      "capabilityFilter": {
+        "clear": "Показать все коннекторы"
+      },
+      "capabilityPlain": {
+        "sync": "Синхронизирует в знания",
+        "read": "Ищет информацию",
+        "write": "Выполняет действия"
+      },
+      "github": {
+        "writes": "Разрешить агентам также вносить изменения (задачи, комментарии, пул-реквесты)",
+        "writesDescription": "По умолчанию каждое изменение сначала требует вашего одобрения. Токену или GitHub App нужен доступ на чтение и запись к Issues и Pull requests.",
+        "writesForbidden": "Администратор отключил изменения через GitHub.",
+        "writesFailed": "Не удалось изменить, что агентам можно делать в GitHub.",
+        "chooseRepositories": "Выбрать репозитории на GitHub",
+        "noAppRepositories": "DocsGPT пока не видит ни одного репозитория. Выберите на GitHub, какие ему можно читать.",
+        "noTokenRepositories": "Этот токен не может читать ни одного репозитория. Дайте ему доступ на GitHub и переподключите.",
+        "searchRepositories": "Поиск репозиториев",
+        "repositories": "Репозитории",
+        "updated": "Обновлён {{date}}",
+        "loadFailed": "Не удалось загрузить ваши репозитории."
+      },
+      "linear": {
+        "teams": "Команды",
+        "teamsHint": "Синхронизировать задачи этих команд.",
+        "projects": "Проекты",
+        "projectsHint": "Синхронизировать задачи этих проектов.",
+        "search": "Поиск команд и проектов",
+        "noMatches": "Нет команд или проектов, подходящих под запрос.",
+        "includeComments": "Включать комментарии",
+        "includeCommentsDescription": "Добавлять к каждой задаче её комментарии.",
+        "includeDocuments": "Включать документы проектов",
+        "includeDocumentsDescription": "Синхронизировать документы Linear выбранных проектов.",
+        "loadFailed": "Не удалось загрузить ваши команды и проекты Linear.",
+        "empty": "В этом аккаунте Linear нет команд или проектов для синхронизации."
+      },
+      "parameters": {
+        "show": "Параметры",
+        "fixedCount_one": "{{formatted}} задан",
+        "fixedCount_few": "{{formatted}} задано",
+        "fixedCount_many": "{{formatted}} задано",
+        "fixedCount_other": "{{formatted}} задано",
+        "ai": "Решает ИИ",
+        "fixed": "Всегда использовать",
+        "choiceLabel": "Как заполняется {{parameter}}",
+        "valueLabel": "Значение {{parameter}}",
+        "save": "Сохранить",
+        "saveFailed": "Не удалось сохранить значение. Попробуйте ещё раз.",
+        "fromAccount": "Задано в этом аккаунте: {{value}}",
+        "fixedHint": "Отправляется при каждом вызове. ИИ его никогда не видит.",
+        "showFor": "Параметры: {{action}}"
+      },
+      "fieldHints": {
+        "telegram_chat_id": "Сообщения уходят только в этот чат. Добавьте бота, отправьте ему сообщение и найдите ID чата через <link>getUpdates</link>.",
+        "github_access_token": "Детализированный, с доступом на чтение к Contents и Metadata. Чтобы агенты вносили изменения, также чтение и запись для Issues и Pull requests. <link>Создать токен на GitHub</link>"
+      },
+      "rename": {
+        "title": "Переименовать аккаунт",
+        "description": "Название отличает этот аккаунт от других ваших аккаунтов того же сервиса, для вас и для ИИ. Оставьте поле пустым, чтобы показывать сам аккаунт.",
+        "label": "Название аккаунта",
+        "save": "Сохранить",
+        "failed": "Не удалось переименовать аккаунт. Попробуйте ещё раз."
+      },
+      "browseAll": "Все коннекторы",
+      "filters": {
+        "all": "Все",
+        "connected": "Подключённые",
+        "disconnected": "Отключённые"
+      },
+      "filterLabel": "Фильтр коннекторов",
+      "capabilityChip": {
+        "sync": "Синхронизирует в знания",
+        "tools": "Даёт агентам инструменты"
+      }
+    }
   },
   "modals": {
     "uploadDoc": {
-      "label": "Загрузить новый документ",
+      "label": "Добавить знания",
       "select": "Выберите способ загрузки документа в DocsGPT",
-      "selectSource": "Выберите способ добавления источника",
+      "selectSource": "Добавить знания",
       "selectedFiles": "Выбранные файлы",
       "noFilesSelected": "Файлы не выбраны",
       "file": "Загрузить с устройства",
-      "back": "Назад",
       "wait": "Пожалуйста, подождите...",
       "remote": "Собрать с веб-сайта",
       "start": "Начать чат",
       "name": "Имя",
       "choose": "Выбрать файлы",
-      "info": "Пожалуйста, загрузите файлы .pdf, .txt, .rst, .csv, .xlsx, .xlsm, .xlsb, .xls, .ods, .docx, .docm, .doc, .odt, .rtf, .md, .html, .xhtml, .png, .jpg, .jpeg, .epub, .json, .pptx, .pptm, .ppt, .pps, .ppsx, .ppsm, .pot, .odp, .zip размером до 25 МБ",
+      "dropzoneText": "Нажмите, чтобы загрузить, или перетащите файлы",
+      "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, изображения, аудио, EPUB, JSON или ZIP, до 25 МБ каждый",
+      "filesRejected": "Не добавлены (больше 25 МБ или неподдерживаемый формат): {{files}}",
       "uploadedFiles": "Загруженные файлы",
       "cancel": "Отмена",
-      "train": "Тренировка",
+      "train": "Добавить в знания",
       "create": "Создать",
       "link": "Ссылка",
       "urlLink": "URL ссылка",
       "repoUrl": "URL репозитория",
-      "reddit": {
-        "id": "ID клиента",
-        "secret": "Секрет клиента",
-        "agent": "Пользовательский агент",
-        "searchQueries": "Поисковые запросы",
-        "numberOfPosts": "Количество сообщений",
-        "addQuery": "Добавить запрос"
-      },
       "drag": {
         "title": "Перетащите вложения сюда",
         "description": "Отпустите, чтобы загрузить ваши вложения"
@@ -799,10 +1820,9 @@
         "collapseDetails": "Свернуть детали загрузки",
         "dismiss": "Закрыть уведомление о загрузке",
         "uploadProgress": "Прогресс загрузки {{progress}}%",
-        "clear": "Очистить"
+        "clear": "Очистить",
+        "ingestionFailed": "Не удалось загрузить данные."
       },
-      "showAdvanced": "Показать расширенные настройки",
-      "hideAdvanced": "Скрыть расширенные настройки",
       "ingestors": {
         "local_file": {
           "label": "Загрузить файл",
@@ -820,26 +1840,6 @@
           "label": "GitHub",
           "heading": "Добавить контент из GitHub"
         },
-        "reddit": {
-          "label": "Reddit",
-          "heading": "Добавить контент из Reddit"
-        },
-        "google_drive": {
-          "label": "Google Drive",
-          "heading": "Загрузить из Google Drive"
-        },
-        "s3": {
-          "label": "Amazon S3",
-          "heading": "Добавить контент из Amazon S3"
-        },
-        "share_point": {
-          "label": "SharePoint",
-          "heading": "Загрузить из SharePoint"
-        },
-        "confluence": {
-          "label": "Confluence",
-          "heading": "Загрузить из Confluence"
-        },
         "wiki": {
           "label": "Новая вики",
           "heading": "Создать живую вики"
@@ -848,50 +1848,32 @@
       "connectors": {
         "auth": {
           "connectedUser": "Подключенный пользователь",
-          "authFailed": "Ошибка аутентификации",
-          "authUrlFailed": "Не удалось получить URL авторизации",
-          "popupBlocked": "Не удалось открыть окно аутентификации. Пожалуйста, разрешите всплывающие окна.",
-          "authCancelled": "Аутентификация отменена",
+          "authFailed": "Не удалось войти.",
+          "authUrlFailed": "Не удалось начать вход",
+          "popupBlocked": "Не удалось открыть окно входа. Разрешите всплывающие окна для этого сайта и попробуйте ещё раз.",
+          "authCancelled": "Вход отменён.",
           "connectedAs": "Подключен как {{email}}",
           "disconnect": "Отключить"
         },
         "googleDrive": {
           "connect": "Подключиться к Google Drive",
-          "sessionExpired": "Сеанс истек. Пожалуйста, переподключитесь к Google Drive.",
-          "sessionExpiredGeneric": "Сеанс истек. Пожалуйста, переподключите свою учетную запись.",
-          "validateFailed": "Не удалось проверить сеанс. Пожалуйста, переподключитесь.",
-          "noSession": "Действительный сеанс не найден. Пожалуйста, переподключитесь к Google Drive.",
-          "noAccessToken": "Токен доступа недоступен. Пожалуйста, переподключитесь к Google Drive.",
-          "pickerFailed": "Не удалось открыть средство выбора файлов. Пожалуйста, попробуйте еще раз.",
+          "validateFailed": "Не удалось проверить вход. Попробуйте ещё раз.",
+          "pickerFailed": "Не удалось открыть выбор файлов. Попробуйте ещё раз.",
           "selectedFiles": "Выбранные файлы",
           "selectFiles": "Выбрать файлы",
-          "loading": "Загрузка...",
-          "noFilesSelected": "Файлы или папки не выбраны",
-          "folders": "Папки",
-          "files": "Файлы",
-          "remove": "Удалить",
-          "folderAlt": "Папка",
-          "fileAlt": "Файл"
-        },
-        "sharePoint": {
-          "connect": "Подключиться к SharePoint",
-          "sessionExpired": "Сеанс истек. Пожалуйста, переподключитесь к SharePoint.",
-          "sessionExpiredGeneric": "Сеанс истек. Пожалуйста, переподключите свою учетную запись.",
-          "validateFailed": "Не удалось проверить сеанс. Пожалуйста, переподключитесь.",
-          "noSession": "Действительный сеанс не найден. Пожалуйста, переподключитесь к SharePoint.",
-          "noAccessToken": "Токен доступа недоступен. Пожалуйста, переподключитесь к SharePoint.",
-          "pickerFailed": "Не удалось открыть средство выбора файлов. Пожалуйста, попробуйте еще раз.",
-          "selectedFiles": "Выбранные файлы",
-          "selectFiles": "Выбрать файлы",
-          "loading": "Загрузка...",
-          "noFilesSelected": "Файлы или папки не выбраны",
-          "folders": "Папки",
-          "files": "Файлы",
-          "remove": "Удалить",
-          "folderAlt": "Папка",
-          "fileAlt": "Файл"
+          "noFilesSelected": "Файлы или папки ещё не выбраны.",
+          "removeItem": "Убрать {{name}}"
         }
-      }
+      },
+      "fields": {
+        "url": "URL",
+        "initialContent": "Исходное содержимое (необязательно)"
+      },
+      "github": {
+        "privateHint": "Приватный репозиторий? Подключите аккаунт GitHub, чтобы синхронизировать его.",
+        "connect": "Подключить GitHub"
+      },
+      "fromService": "Из сервиса"
     },
     "createAPIKey": {
       "label": "Создать новый API ключ",
@@ -910,8 +1892,9 @@
       "apiKeyLabel": "API Key"
     },
     "deleteConv": {
-      "confirm": "Вы уверены, что хотите удалить все разговоры?",
-      "delete": "Удалить"
+      "confirm": "Удалить все беседы?",
+      "delete": "Удалить",
+      "consequence": "Все беседы в вашем аккаунте будут удалены вместе с сообщениями. Это действие нельзя отменить."
     },
     "shareConv": {
       "label": "Создать публичную страницу для совместного использования",
@@ -927,11 +1910,14 @@
     "configTool": {
       "title": "Настройка инструмента",
       "type": "Тип",
-      "apiKeyLabel": "API ключ / OAuth",
-      "apiKeyPlaceholder": "Введите API ключ / OAuth",
+      "apiKeyLabel": "API-ключ",
+      "apiKeyPlaceholder": "Введите API-ключ",
       "addButton": "Добавить инструмент",
       "closeButton": "Закрыть",
-      "customNamePlaceholder": "Enter custom name (optional)"
+      "customNamePlaceholder": "Enter custom name (optional)",
+      "fieldRequired": "Поле «{{field}}» обязательно",
+      "positiveNumber": "Должно быть положительным числом",
+      "maxTimeout": "Максимальный тайм-аут — 300 секунд"
     },
     "prompts": {
       "addPrompt": "Добавить промпт",
@@ -948,7 +1934,7 @@
       "save": "Сохранить",
       "cancel": "Отмена",
       "nameExists": "Имя уже существует",
-      "deleteConfirmation": "Вы уверены, что хотите удалить промпт «{{name}}»?",
+      "deleteConfirmation": "Удалить «{{name}}»?",
       "placeholderText": "Введите текст вашего промпта здесь...",
       "addExamplePlaceholder": "Пожалуйста, кратко изложите этот текст:",
       "variablesLabel": "Переменные",
@@ -962,6 +1948,7 @@
         "sourceSummaries": "Псевдоним содержимого (обратная совместимость)",
         "sourceDocuments": "Список объектов документов",
         "sourceCount": "Количество полученных документов",
+        "citationRules": "Правила цитирования ([n])",
         "systemDate": "Текущая дата (ГГГГ-ММ-ДД)",
         "systemTime": "Текущее время (ЧЧ:ММ:СС)",
         "systemTimestamp": "Отметка времени ISO 8601",
@@ -972,7 +1959,8 @@
       "learnAboutPrompts": "Узнать о промптах →",
       "publicPromptEditDisabled": "Публичные промпты нельзя редактировать",
       "promptTypePublic": "публичный",
-      "promptTypePrivate": "приватный"
+      "promptTypePrivate": "приватный",
+      "delete": "Удалить"
     },
     "chunk": {
       "add": "Добавить фрагмент",
@@ -983,9 +1971,8 @@
       "promptText": "Текст подсказки",
       "save": "Сохранить",
       "close": "Закрыть",
-      "cancel": "Отмена",
       "delete": "Удалить",
-      "deleteConfirmation": "Вы уверены, что хотите удалить этот фрагмент?"
+      "deleteConfirmation": "Удалить этот фрагмент?"
     },
     "addAction": {
       "title": "New Action",
@@ -995,7 +1982,7 @@
       "addButton": "Add"
     },
     "agentDetails": {
-      "title": "Access Details",
+      "title": "Детали доступа",
       "publicLink": "Public Link",
       "apiKey": "API Key",
       "webhookUrl": "Webhook URL",
@@ -1003,7 +1990,24 @@
       "test": "Test",
       "learnMore": "Learn more",
       "resetKey": "Сбросить ключ",
-      "resetKeyConfirm": "Вы уверены, что хотите сбросить API-ключ? Текущий ключ немедленно перестанет работать, и это действие нельзя отменить."
+      "resetKeyConfirm": "Сбросить ключ API для «{{name}}»?",
+      "apiWrites": {
+        "title": "Изменения от вашего имени",
+        "description": "Через API, виджет или публичную ссылку никто не может подтвердить их за вас. Разрешите их здесь.",
+        "saveFailed": "Не удалось сохранить. Попробуйте ещё раз.",
+        "summaryNone": "Пока ничего не разрешено",
+        "summaryTools_one": "{{tools}} может вносить изменения",
+        "summaryTools_few": "{{tools}} могут вносить изменения",
+        "summaryTools_many": "{{tools}} могут вносить изменения",
+        "summaryTools_other": "{{tools}} могут вносить изменения",
+        "summaryCount": "разрешено {{allowed}} из {{formatted}}",
+        "toolLabel": "Разрешить изменения через API, виджет и публичные ссылки для {{tool}}",
+        "choose": "Выбрать, что разрешено"
+      },
+      "actionFailed": "Не получилось. Попробуйте ещё раз.",
+      "apiKeyAfterPublish": "Опубликуйте агента, чтобы создать его API-ключ.",
+      "resetKeyConsequence": "Текущий ключ сразу перестанет работать, поэтому всё, что его использует, нужно обновить. Это действие нельзя отменить.",
+      "reset": "Сбросить"
     },
     "importSpec": {
       "title": "Импорт спецификации API",
@@ -1014,7 +2018,10 @@
       "parseError": "Не удалось разобрать спецификацию. Проверьте формат файла.",
       "version": "Версия",
       "baseUrl": "Базовый URL",
-      "actionsFound": "{{count}} действий найдено",
+      "actionsFound_one": "найдено {{count}} действие",
+      "actionsFound_few": "найдено {{count}} действия",
+      "actionsFound_many": "найдено {{count}} действий",
+      "actionsFound_other": "найдено {{count}} действий",
       "selectAll": "Выбрать все",
       "deselectAll": "Снять выделение со всех",
       "cancel": "Отмена",
@@ -1052,26 +2059,41 @@
       "review": "Review",
       "import": "Import",
       "continueToAgent": "Continue to agent"
+    },
+    "jwt": {
+      "title": "Добавить токен JWT",
+      "label": "Токен JWT",
+      "save": "Сохранить токен"
     }
   },
   "sharedConv": {
     "subtitle": "Создано с помощью",
     "button": "Начать работу с DocsGPT",
-    "meta": "DocsGPT использует GenAI, пожалуйста, проверьте важную информацию, используя источники."
+    "meta": "DocsGPT использует GenAI, пожалуйста, проверьте важную информацию, используя источники.",
+    "metaDescription": "Общие беседы с DocsGPT"
   },
   "convTile": {
     "share": "Поделиться",
+    "menu": "Действия с беседой",
     "delete": "Удалить",
     "rename": "Переименовать",
-    "deleteWarning": "Вы уверены, что хотите удалить этот разговор?"
+    "save": "Сохранить",
+    "deleteWarning": "Удалить «{{name}}»?",
+    "deleteWarningUnnamed": "Удалить эту беседу?",
+    "deleteConsequence": "Её сообщения тоже будут удалены. Это действие нельзя отменить."
   },
   "pagination": {
-    "rowsPerPage": "Строк на странице",
+    "label": "Постраничная навигация",
+    "perPage": "На странице",
+    "range": "{{from}}–{{to}} из {{total}}",
     "pageOf": "Страница {{currentPage}} из {{totalPages}}",
-    "firstPage": "Первая страница",
+    "goToPage": "Страница {{page}}",
     "previousPage": "Предыдущая страница",
     "nextPage": "Следующая страница",
-    "lastPage": "Последняя страница"
+    "loadingOlder": "Загрузка более ранних…",
+    "noOlder": "Более ранних нет",
+    "olderFailed": "Не удалось загрузить более ранние записи.",
+    "loadingMore": "Загрузка…"
   },
   "conversation": {
     "copy": "Копировать",
@@ -1081,23 +2103,84 @@
     "edit": {
       "update": "Обновить",
       "cancel": "Отмена",
-      "placeholder": "Введите обновленный запрос..."
+      "placeholder": "Введите обновленный запрос...",
+      "label": "Редактировать"
     },
     "sources": {
       "title": "Источники",
-      "text": "Выберите ваши источники",
+      "text": "Выберите знания",
       "link": "Ссылка на источник",
-      "view_more": "ещё {{count}} источников",
-      "noSourcesAvailable": "Нет доступных источников",
-      "selectedCount": "Выбрано источников: {{count}}",
-      "groupOwn": "Ваши источники",
-      "groupTeam": "Общие с командой"
+      "view_more_one": "ещё {{count}} источник",
+      "view_more_few": "ещё {{count}} источника",
+      "view_more_many": "ещё {{count}} источников",
+      "view_more_other": "ещё {{count}} источников",
+      "noSourcesAvailable": "Знаний пока нет",
+      "selectedCount": "Выбрано: {{count}}",
+      "groupOwn": "Ваши",
+      "groupTeam": "Общие с командой",
+      "fromConnector": "Из {{name}}",
+      "fromConnectorTitle": "Из {{name}}: {{title}}",
+      "knowledge": "Знания",
+      "forAnswer_one": "{{count}} источник для этого ответа",
+      "forAnswer_few": "{{count}} источника для этого ответа",
+      "forAnswer_many": "{{count}} источников для этого ответа",
+      "forAnswer_other": "{{count}} источников для этого ответа",
+      "open": "Открыть источник {{num}}",
+      "reader": {
+        "back": "Все источники",
+        "knowledge": "Знания",
+        "file": "Файл",
+        "page": "Страница",
+        "link": "Ссылка",
+        "added": "Добавлено",
+        "length": "Длина",
+        "tokens": "токенов: {{tokens}}",
+        "excerptOnly": "Для этого ответа доступен только сохранённый фрагмент.",
+        "missing": "Этого отрывка больше нет в источнике: возможно, его изменили или переиндексировали. Показан фрагмент, сохранённый с ответом.",
+        "forbidden": "Этот источник удалён, или у вас больше нет к нему доступа. Показан фрагмент, сохранённый с ответом.",
+        "loadFailed": "Не удалось загрузить отрывок.",
+        "openLink": "Открыть ссылку",
+        "openInKnowledge": "Открыть в знаниях"
+      }
     },
     "attachments": {
       "attach": "Прикрепить",
-      "remove": "Удалить вложение"
+      "remove": "Удалить вложение",
+      "uploadFailed": "Не удалось загрузить. Файл не удалось прочитать или соединение прервалось.",
+      "tooLarge": "Слишком большой файл для вложения (лимит {{size}} МБ)",
+      "attached": "Вложение",
+      "failed": "Ошибка",
+      "attachment": "Вложение",
+      "knowledgeHint": "Эти файлы больше, чем модель может прочитать за раз. Остальное она прочитает по мере необходимости.",
+      "knowledgeHintNoTools": "Эти файлы больше, чем модель может прочитать за раз. Часть из них не будет учтена.",
+      "addToKnowledge": "Добавить в знания",
+      "knowledgeAdded": "Файлы добавляются в знания. Спросите ещё раз, когда они будут готовы.",
+      "knowledgeFailed": "Не удалось добавить эти файлы в знания. Попробуйте ещё раз.",
+      "knowledgeName_one": "{{name}} и ещё {{count}}",
+      "knowledgeName_few": "{{name}} и ещё {{count}}",
+      "knowledgeName_many": "{{name}} и ещё {{count}}",
+      "knowledgeName_other": "{{name}} и ещё {{count}}",
+      "unsupportedType": "Неподдерживаемый тип файла ({{extension}})",
+      "waitingToSend_one": "Отправим, когда {{count}} файл будет обработан…",
+      "waitingToSend_few": "Отправим, когда {{count}} файла будут обработаны…",
+      "waitingToSend_many": "Отправим, когда {{count}} файлов будут обработаны…",
+      "waitingToSend_other": "Отправим, когда {{count}} файла будут обработаны…",
+      "cancelQueuedSend": "Отмена",
+      "unreadableByModel": "{{model}} не может прочитать {{name}} — выберите модель, которая поддерживает изображения или PDF",
+      "queued": "Ожидает загрузки",
+      "uploading": "Загружается",
+      "processing": "Обрабатывается"
     },
     "retry": "Повторить",
+    "failedTitle": "Не удалось сгенерировать ответ",
+    "errors": {
+      "contextLength": "Это сообщение с прикреплёнными файлами не помещается в контекстное окно модели. Отправьте меньше файлов или файлы поменьше.",
+      "contextLengthKnowledge": "Это сообщение с прикреплёнными файлами не помещается в контекстное окно модели. Отправьте меньше файлов или файлы поменьше либо используйте «Добавить в знания», чтобы искать по ним, а не отправлять их целиком.",
+      "contextLengthSized": "Этому сообщению с прикреплёнными файлами нужно больше токенов, чем может принять модель: около {{needed, number}} при лимите {{available, number}}. Отправьте меньше файлов или файлы поменьше.",
+      "contextLengthSizedKnowledge": "Этому сообщению с прикреплёнными файлами нужно больше токенов, чем может принять модель: около {{needed, number}} при лимите {{available, number}}. Отправьте меньше файлов или файлы поменьше либо используйте «Добавить в знания», чтобы искать по ним, а не отправлять их целиком.",
+      "serverError": "Пожалуйста, попробуйте позже. Приносим извинения за неудобства.",
+      "clientDisconnect": "Ответ прервался, прежде чем что-либо было получено. Попробуйте ещё раз."
+    },
     "reasoning": "Рассуждение",
     "wikiWrite": {
       "edited": "Вики отредактирована",
@@ -1127,7 +2210,41 @@
       "accessingMemory": "Обращаюсь к памяти…",
       "runningCode": "Выполняю код…",
       "creatingArtifact": "Создаю артефакт…",
-      "usingTool": "Использую {{tool}}…"
+      "usingTool": "Использую {{tool}}…",
+      "searchingConnector": "Поиск в {{name}}…",
+      "usingConnector": "Использую {{name}}…",
+      "attachmentsSearch": "Ищу в файлах «{{query}}»…",
+      "attachmentsSearchGeneric": "Ищу в файлах…",
+      "attachmentsRead": "Читаю {{ref}}…",
+      "attachmentsReadPage": "Читаю {{ref}} (стр. {{pages}})…",
+      "attachmentsReadPages": "Читаю {{ref}} (стр. {{pages}})…",
+      "attachmentsReadRows": "Читаю {{ref}} (строки {{rows}})…",
+      "attachmentsReadGeneric": "Читаю файл…",
+      "attachmentsImage": "Смотрю изображение {{ref}}…",
+      "attachmentsList": "Составляю список файлов…",
+      "wikiList": "Получаю список страниц вики…",
+      "wikiRead": "Читаю страницу вики {{path}}…",
+      "todoAdd": "Добавляю задачу «{{title}}»…",
+      "todoList": "Получаю список задач…",
+      "todoGet": "Читаю задачу #{{id}}…",
+      "todoUpdate": "Обновляю задачу #{{id}}…",
+      "todoComplete": "Отмечаю задачу #{{id}} выполненной…",
+      "todoDelete": "Удаляю задачу #{{id}}…",
+      "noteRead": "Читаю заметку…",
+      "noteUpdate": "Обновляю заметку…",
+      "noteDelete": "Удаляю заметку…",
+      "memoryList": "Получаю список памяти…",
+      "memoryRead": "Читаю {{path}} из памяти…",
+      "memorySave": "Сохраняю {{path}} в памяти…",
+      "memoryDelete": "Удаляю {{path}} из памяти…",
+      "memoryRename": "Переименовываю {{path}} в памяти…",
+      "cryptoPrice": "Проверяю курс {{symbol}} в {{currency}}…",
+      "sentNotification": "Отправляю уведомление…",
+      "telegramMessage": "Отправляю сообщение в Telegram…",
+      "telegramImage": "Отправляю изображение в Telegram…",
+      "sqlQuery": "Выполняю SQL-запрос…",
+      "dbSchema": "Читаю схему базы данных…",
+      "usedToolAction": "Использую {{tool}}: {{action}}…"
     },
     "toolChip": {
       "searchingWeb": "Поиск в интернете · «{{query}}»",
@@ -1138,7 +2255,42 @@
       "accessingMemory": "Обращение к памяти выполнено",
       "runningCode": "Код выполнен",
       "creatingArtifact": "Артефакт создан",
-      "usingTool": "Использован {{tool}}"
+      "usingTool": "Использован {{tool}}",
+      "searchedConnector": "Поиск в {{name}}",
+      "readConnector": "Прочитано из {{name}}",
+      "usedConnector": "Использован {{name}}: {{action}}",
+      "attachmentsSearch": "Поиск в файлах: «{{query}}»",
+      "attachmentsSearchGeneric": "Поиск в файлах",
+      "attachmentsRead": "Прочитан {{ref}}",
+      "attachmentsReadPage": "Прочитан {{ref}} (стр. {{pages}})",
+      "attachmentsReadPages": "Прочитан {{ref}} (стр. {{pages}})",
+      "attachmentsReadRows": "Прочитан {{ref}} (строки {{rows}})",
+      "attachmentsReadGeneric": "Прочитан файл",
+      "attachmentsImage": "Просмотрено изображение {{ref}}",
+      "attachmentsList": "Получен список файлов",
+      "wikiList": "Получен список страниц вики",
+      "wikiRead": "Прочитана страница вики {{path}}",
+      "todoAdd": "Добавлена задача «{{title}}»",
+      "todoList": "Получен список задач",
+      "todoGet": "Прочитана задача #{{id}}",
+      "todoUpdate": "Обновлена задача #{{id}}",
+      "todoComplete": "Выполнена задача #{{id}}",
+      "todoDelete": "Удалена задача #{{id}}",
+      "noteRead": "Прочитана заметка",
+      "noteUpdate": "Обновлена заметка",
+      "noteDelete": "Удалена заметка",
+      "memoryList": "Получен список памяти",
+      "memoryRead": "Прочитан {{path}} из памяти",
+      "memorySave": "Сохранён {{path}} в памяти",
+      "memoryDelete": "Удалён {{path}} из памяти",
+      "memoryRename": "Переименован {{path}} в памяти",
+      "cryptoPrice": "Проверен курс {{symbol}} в {{currency}}",
+      "sentNotification": "Отправлено уведомление",
+      "telegramMessage": "Отправлено сообщение в Telegram",
+      "telegramImage": "Отправлено изображение в Telegram",
+      "sqlQuery": "Выполнен SQL-запрос",
+      "dbSchema": "Прочитана схема базы данных",
+      "usedToolAction": "Использован {{tool}}: {{action}}"
     },
     "inlineSteps": {
       "arguments": "Аргументы",
@@ -1146,11 +2298,93 @@
       "running": "Выполняется…",
       "denied": "Отклонено пользователем",
       "failed": "не удалось"
+    },
+    "quotaExceeded": {
+      "tokens": "Вы использовали {{used}} из квоты в {{limit}} токенов. Квота сбросится {{resetsAt}}.",
+      "cost": "Вы использовали {{used}} из бюджета в {{limit}}. Бюджет сбросится {{resetsAt}}."
+    },
+    "voice": {
+      "start": "Голосовой ввод",
+      "stopRecording": "Остановить запись",
+      "transcribingAudio": "Расшифровка аудио",
+      "voice": "Голос",
+      "stop": "Стоп",
+      "transcribing": "Расшифровка",
+      "unavailable": "Голосовой ввод сейчас недоступен.",
+      "insecure": "Для голосового ввода нужно защищённое соединение (HTTPS или localhost).",
+      "unsupported": "Голосовой ввод недоступен в этом браузере.",
+      "noWebAudio": "Для голосового ввода браузер должен поддерживать Web Audio.",
+      "micBlocked": "Доступ к микрофону заблокирован. Разрешите доступ к микрофону и попробуйте снова.",
+      "micNotFound": "На этом устройстве не найден микрофон.",
+      "micBusy": "Микрофон недоступен или уже используется.",
+      "micInterrupted": "Доступ к микрофону прервался до начала записи.",
+      "micDenied": "В доступе к микрофону отказано.",
+      "transcribeFailed": "Не удалось расшифровать аудио.",
+      "finalizeFailed": "Не удалось завершить расшифровку в реальном времени.",
+      "startFailed": "Не удалось запустить расшифровку в реальном времени."
+    },
+    "selectModel": "Выберите модель",
+    "question": {
+      "expand": "Показать сообщение целиком",
+      "collapse": "Свернуть"
+    },
+    "exportMarkdown": "Экспортировать в Markdown",
+    "feedback": {
+      "like": "Нравится",
+      "removeLike": "Убрать отметку «Нравится»",
+      "dislike": "Не нравится",
+      "removeDislike": "Убрать отметку «Не нравится»"
+    },
+    "toolApproval": {
+      "approve": "Одобрить",
+      "approveAlways": "Одобрить и больше не спрашивать",
+      "deny": "Отклонить",
+      "details": "Подробности",
+      "denyReasonPlaceholder": "Причина отказа (необязательно)…",
+      "connectTitle": "Этому инструменту нужен ваш аккаунт {{name}}.",
+      "connect": "Подключить {{name}}",
+      "continue": "Продолжить",
+      "skip": "Пропустить",
+      "title": "{{name}} · {{action}}",
+      "state": {
+        "approval": "Нужно одобрение",
+        "notConnected": "Не подключено"
+      },
+      "connectTitleGeneric": "Для этого инструмента сначала нужно подключить аккаунт.",
+      "reconnectGeneric": "В аккаунт этого инструмента нужно войти снова.",
+      "ownerReconnect": "Этот инструмент работает через аккаунт {{name}}, которым поделился {{owner}}. В аккаунт нужно войти снова — попросите {{owner}} переподключить его.",
+      "ownerReconnectGeneric": "Этот инструмент работает через аккаунт владельца, в который нужно войти снова. Попросите владельца переподключить его.",
+      "connectedTitle": "{{name}} подключён. Продолжите, чтобы запустить инструмент.",
+      "connectedGeneric": "Аккаунт подключён. Продолжите, чтобы запустить инструмент."
+    },
+    "research": {
+      "title": "Исследование",
+      "planning": "Планирование исследования…",
+      "researching": "Исследование…",
+      "synthesizing": "Составление отчёта…",
+      "complete": "Готово",
+      "researched_one": "Изучена {{count}} тема",
+      "researched_few": "Изучено {{count}} темы",
+      "researched_many": "Изучено {{count}} тем",
+      "researched_other": "Изучено {{count}} темы"
+    },
+    "openFile": "Открыть файл",
+    "stepGroup": {
+      "title": "Инструменты",
+      "failed": "Ошибок: {{count}}"
     }
   },
   "agents": {
     "title": "Агенты",
     "edit": "Редактировать",
+    "card": {
+      "pin": "Закрепить агента",
+      "unpin": "Открепить агента",
+      "open": "Открыть",
+      "remove": "Удалить",
+      "draft": "Черновик",
+      "actions": "Действия с агентом"
+    },
     "description": "Откройте и создайте пользовательские версии DocsGPT, которые объединяют инструкции, дополнительные знания и любую комбинацию навыков",
     "newAgent": "Новый Агент",
     "importAgent": "Import",
@@ -1180,10 +2414,6 @@
       "byMe": "Мои",
       "team": "Команда",
       "shared": "Поделились со мной"
-    },
-    "teamBadge": {
-      "editor": "Редактор",
-      "viewer": "Читатель"
     },
     "sections": {
       "template": {
@@ -1221,25 +2451,26 @@
         "delete": "Удалить",
         "logs": "Логи",
         "schedules": "Расписания",
-        "accessDetails": "Детали Доступа",
+        "accessDetails": "Детали доступа",
         "add": "Добавить",
         "moreActions": "Другие действия"
       },
       "sections": {
-        "meta": "Мета",
-        "source": "Источник",
         "prompt": "Промпт",
         "tools": "Инструменты",
         "agentType": "Тип агента",
         "models": "Модели",
         "advanced": "Расширенные",
         "guardrails": "Guardrails",
-        "preview": "Предпросмотр"
+        "preview": "Предпросмотр",
+        "basics": "Основное",
+        "knowledge": "Знания и поведение",
+        "model": "Модель"
       },
       "placeholders": {
         "agentName": "Имя агента",
         "describeAgent": "Опишите вашего агента",
-        "selectSources": "Выберите источники",
+        "selectSources": "Выберите знания",
         "chunksPerQuery": "Фрагментов на запрос",
         "selectType": "Выберите тип",
         "selectTools": "Выберите инструменты",
@@ -1249,20 +2480,23 @@
         "enterRequestLimit": "Введите лимит запросов"
       },
       "sourcePopup": {
-        "title": "Выберите Источники",
-        "searchPlaceholder": "Поиск источников...",
-        "noOptionsMessage": "Нет доступных источников",
+        "title": "Выберите знания",
+        "searchPlaceholder": "Поиск по знаниям...",
+        "noOptionsMessage": "Знаний пока нет",
         "groupOwn": "Ваши источники",
         "groupTeam": "Общие с командой",
-        "noSourceHint": "Необязательно. Без источника агент отвечает только на основе модели и своих инструментов."
+        "noSourceHint": "Необязательно. Без знаний агент отвечает только с помощью модели и своих инструментов."
       },
       "toolsPopup": {
         "title": "Выберите Инструменты",
         "searchPlaceholder": "Поиск инструментов...",
         "noOptionsMessage": "Нет доступных инструментов",
         "groupBuiltin": "Встроенные",
-        "groupDefault": "По умолчанию",
-        "groupCustom": "Пользовательские"
+        "groupDefault": "Встроенные",
+        "groupCustom": "Пользовательские",
+        "groupConnection": "{{name}} · {{account}}",
+        "groupAttached": "В этом агенте",
+        "attachedHint": "Добавлено другим пользователем. Вы можете удалить это."
       },
       "modelsPopup": {
         "title": "Выберите Модели",
@@ -1275,10 +2509,15 @@
       },
       "agentTypes": {
         "classic": "Классический",
-        "react": "ReAct"
+        "react": "ReAct",
+        "research": "Исследование"
       },
       "labels": {
-        "defaultModel": "Модель по умолчанию"
+        "defaultModel": "Модель по умолчанию",
+        "name": "Имя",
+        "description": "Описание",
+        "sources": "Знания",
+        "avatar": "Аватар"
       },
       "advanced": {
         "jsonSchema": "Схема ответа JSON",
@@ -1293,7 +2532,10 @@
         "systemPromptOverrideDescription": "Разрешить вызовам API v1 заменять системный промпт этого агента"
       },
       "preview": {
-        "publishedPreview": "Опубликованные агенты можно просмотреть здесь"
+        "savedVersion": "сохранённая версия",
+        "publishTitle": "Опубликуйте, чтобы проверить",
+        "publishDescription": "Предпросмотр общается с опубликованным агентом. Черновики остаются приватными, пока вы их не опубликуете.",
+        "unsavedChanges": "Есть несохранённые изменения. Пока вы не сохраните, предпросмотр использует сохранённую версию."
       },
       "dangerZone": {
         "heading": "Опасная зона",
@@ -1331,12 +2573,14 @@
         "confidence": "Confidence threshold",
         "confidenceHint": "The judge must both flag the content and be at least this confident (default: 0.7)",
         "activeCount": "{{count}} active",
-        "needsSetup": "{{count}} need setup",
+        "needsSetup_one": "{{count}} требует настройки",
+        "needsSetup_few": "{{count}} требуют настройки",
+        "needsSetup_many": "{{count}} требуют настройки",
+        "needsSetup_other": "{{count}} требуют настройки",
         "setupRequired": "Fill in this check's settings before saving.",
         "pickAtLeastOne": "Pick at least one — the check cannot run with none selected.",
         "remove": "Remove",
         "instanceDisabled": "Guardrails are switched off for this instance, so nothing configured here will run. Ask your administrator to set GUARDRAILS_ENABLED.",
-        "ownerOnly": "Guardrails are set by the agent's owner. You can see this policy but only the owner can change it.",
         "floorNotice": "{{count}} control(s) are required by this instance and always apply.",
         "floorControl": "{{stage}}: {{action}} — required by the instance policy",
         "unknownCheck": "This agent uses a check that is not available here ({{check}}). It will still run if the check returns.",
@@ -1355,6 +2599,94 @@
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
         }
+      },
+      "byline": {
+        "new": "Настройте агента и опубликуйте его, чтобы с ним общаться."
+      },
+      "status": {
+        "published": "Опубликован"
+      },
+      "sponsors": {
+        "addedBy": "Добавил(а) {{person}}",
+        "addedByOther": "Добавил(а) другой пользователь",
+        "unknownItem": "Элемент без названия",
+        "notAllowed": "Вы не можете добавить {{names}} к этому агенту. Владелец не может их использовать, а делиться можно только тем, чем вы владеете или что можете редактировать.",
+        "takeOver": "Запускать с моим доступом",
+        "takeOverPending": "{{name}} будет работать с вашим доступом после сохранения.",
+        "undoTakeOver": "Отменить",
+        "confirmationOutdated": "Агент изменился после того, как вы подтвердили, что работает с вашим доступом. Проверьте уведомления и сохраните снова.",
+        "takeOverLabel": "Запускать {{name}} с моим доступом",
+        "addedByYou": "Добавлено вами"
+      },
+      "resourceStates": {
+        "title": "Некоторые инструменты, источники или промпты не работают",
+        "reason": {
+          "deleted": "{{name}} удалён.",
+          "ownerLostAccessYou": "Вы больше не можете использовать {{name}}.",
+          "ownerLostAccess": "Владелец агента больше не может использовать {{name}}.",
+          "sponsorCannotEditAgent": "{{name}} работал с доступом {{person}}, а этот человек больше не может редактировать агента.",
+          "sponsorCannotEditAgentOther": "{{name}} работал с доступом другого пользователя, а этот человек больше не может редактировать агента.",
+          "sponsorCannotEditItem": "{{name}} работал с доступом {{person}}, а этот человек больше не может его редактировать.",
+          "sponsorCannotEditItemOther": "{{name}} работал с доступом другого пользователя, а этот человек больше не может его редактировать.",
+          "connectionNeedsReconnect": "Для {{name}} нужно снова войти в аккаунт {{service}}.",
+          "connectionRemoved": "Аккаунт {{service}}, который использовал {{name}}, удалён.",
+          "connectorDisabled": "Администратор отключил {{service}}, поэтому {{name}} не может работать.",
+          "unknown": "{{name}} не работает.",
+          "sponsorCannotEditItemYou": "{{name}} работал с вашим доступом, а вы больше не можете его редактировать.",
+          "connectionNeedsReconnectNoService": "Для {{name}} нужно снова войти.",
+          "connectionRemovedNoService": "Аккаунт, который использовал {{name}}, удалён.",
+          "connectorDisabledNoService": "Администратор отключил {{name}}."
+        },
+        "ask": {
+          "shareAgain": "Попросите {{person}} снова поделиться им.",
+          "signInAgain": "Попросите {{person}} снова войти в аккаунт.",
+          "connectAgain": "Попросите {{person}} снова подключить аккаунт.",
+          "admin": "Попросите администратора снова включить его.",
+          "shareAgainOwner": "Попросите владельца снова поделиться им.",
+          "signInAgainOwner": "Попросите владельца снова войти в аккаунт.",
+          "connectAgainOwner": "Попросите владельца снова подключить аккаунт."
+        },
+        "promptFallback": "До тех пор агент использует промпт по умолчанию.",
+        "remove": "Убрать",
+        "removeLabel": "Убрать {{name}}",
+        "reconnectLabel": "Переподключить {{name}}",
+        "unnamed": {
+          "tool": "Инструмент {{id}}",
+          "source": "Источник {{id}}",
+          "prompt": "Промпт {{id}}"
+        },
+        "chip": "Не работает: {{formatted}}"
+      },
+      "sponsorConfirm": {
+        "title": "Запускать с вашим доступом?",
+        "audienceTeams": "Участники {{teams}}",
+        "audienceApiKey": "Все, у кого есть API-ключ агента, включая виджет на сайте",
+        "audiencePublicLink": "Все, у кого есть публичная ссылка на агента",
+        "audienceWebhook": "Всё, что вызывает вебхук агента",
+        "audienceEditors": "Все, кто может открыть этого агента",
+        "confirm": "Добавить с моим доступом",
+        "types": {
+          "tool": "Инструмент",
+          "source": "Источник",
+          "prompt": "Промпт"
+        },
+        "description_one": "Владелец агента не может это использовать. Если вы это добавите, оно будет работать с вашим доступом для всех, кто пользуется этим агентом.",
+        "description_other": "Владелец агента не может их использовать. Если вы их добавите, они будут работать с вашим доступом для всех, кто пользуется этим агентом.",
+        "takeOverDescription_one": "Владелец агента не может это использовать. Оно будет работать с вашим доступом для всех, кто пользуется этим агентом.",
+        "takeOverDescription_other": "Владелец агента не может их использовать. Они будут работать с вашим доступом для всех, кто пользуется этим агентом.",
+        "takeOverConfirm": "Запускать с моим доступом",
+        "audienceTitle_one": "Кто сможет использовать это через этого агента",
+        "audienceTitle_other": "Кто сможет использовать их через этого агента",
+        "stopNote_one": "Оно перестанет работать, если вы потеряете право редактирования.",
+        "stopNote_other": "Они перестанут работать, если вы потеряете право редактирования.",
+        "description_few": "Владелец агента не может их использовать. Если вы их добавите, они будут работать с вашим доступом для всех, кто пользуется этим агентом.",
+        "description_many": "Владелец агента не может их использовать. Если вы их добавите, они будут работать с вашим доступом для всех, кто пользуется этим агентом.",
+        "takeOverDescription_few": "Владелец агента не может их использовать. Они будут работать с вашим доступом для всех, кто пользуется этим агентом.",
+        "takeOverDescription_many": "Владелец агента не может их использовать. Они будут работать с вашим доступом для всех, кто пользуется этим агентом.",
+        "audienceTitle_few": "Кто сможет использовать их через этого агента",
+        "audienceTitle_many": "Кто сможет использовать их через этого агента",
+        "stopNote_few": "Они перестанут работать, если вы потеряете право редактирования.",
+        "stopNote_many": "Они перестанут работать, если вы потеряете право редактирования."
       }
     },
     "logs": {
@@ -1365,7 +2697,6 @@
     },
     "schedules": {
       "title": "Расписания агента",
-      "heading": "Расписания",
       "newRecurring": "Новое расписание",
       "closeForm": "Закрыть форму",
       "edit": "Редактировать",
@@ -1377,7 +2708,7 @@
       "resume": "Возобновить",
       "runNow": "Запустить сейчас",
       "delete": "Удалить",
-      "deleteConfirm": "Удалить это расписание? История его запусков также будет удалена. Это действие нельзя отменить.",
+      "deleteConfirm": "Удалить «{{name}}»?",
       "cancel": "Отмена",
       "showRuns": "Показать запуски",
       "hideRuns": "Скрыть запуски",
@@ -1401,11 +2732,17 @@
         "timezoneEmpty": "Часовой пояс не найден.",
         "instructionsLabel": "Инструкции",
         "instructionsPlaceholder": "Введите промпт здесь.",
+        "approvalTools": {
+          "label": "Инструменты, требующие одобрения",
+          "hint": "Во время запуска по расписанию одобрять некому, поэтому действия, требующие одобрения, отклоняются, если вы не отметите здесь их инструмент. Остальные действия выполняются в любом случае.",
+          "warning": "Действия отмеченного инструмента, требующие одобрения, выполняются без запроса при каждом запуске этого расписания."
+        },
         "create": "Создать задачу",
         "save": "Сохранить изменения",
         "errors": {
           "instructionRequired": "Инструкции обязательны.",
-          "runAtInPast": "Выберите дату и время в будущем."
+          "runAtInPast": "Выберите дату и время в будущем.",
+          "saveFailed": "Не удалось сохранить расписание."
         },
         "days": {
           "mon": "Пн",
@@ -1430,22 +2767,133 @@
           "nov": "Ноя",
           "dec": "Дек"
         }
-      }
+      },
+      "status": {
+        "active": "Активно",
+        "paused": "Приостановлено",
+        "completed": "Завершено",
+        "cancelled": "Отменено",
+        "success": "Успешно",
+        "failed": "Ошибка",
+        "skipped": "Пропущено",
+        "running": "Выполняется",
+        "pending": "Ожидает",
+        "timeout": "Тайм-аут"
+      },
+      "trigger": {
+        "cron": "По расписанию",
+        "manual": "Вручную"
+      },
+      "runDetails": {
+        "title": "Сведения о запуске",
+        "status": "Статус",
+        "scheduledFor": "Запланировано на",
+        "started": "Начало",
+        "finished": "Окончание",
+        "tokens": "Токены",
+        "tokensValue": "{{prompt}} в запросе · {{generated}} сгенерировано",
+        "trigger": "Запуск",
+        "error": "Ошибка",
+        "errorWithType": "Ошибка ({{type}})",
+        "output": "Результат",
+        "truncated": "(обрезано)"
+      },
+      "toolCard": {
+        "cancelFailed": "Не удалось отменить",
+        "taskCancelled": "Запланированная задача отменена.",
+        "pendingCount_one": "{{count}} ожидающая задача",
+        "pendingCount_few": "{{count}} ожидающие задачи",
+        "pendingCount_many": "{{count}} ожидающих задач",
+        "pendingCount_other": "{{count}} ожидающей задачи",
+        "schedulingFailed": "Не удалось запланировать",
+        "scheduling": "Планирование…",
+        "scheduled": "Запланированная задача"
+      },
+      "cron": {
+        "daily": "Ежедневно в {{time}}",
+        "weekly": "Еженедельно: {{day}}, в {{time}}",
+        "monthly": "Ежемесячно, {{day}}-го числа в {{time}}",
+        "yearly": "Ежегодно, {{day}} {{month}} в {{time}}",
+        "custom": "Другое: {{expression}}",
+        "dayNames": {
+          "sun": "воскресенье",
+          "mon": "понедельник",
+          "tue": "вторник",
+          "wed": "среда",
+          "thu": "четверг",
+          "fri": "пятница",
+          "sat": "суббота"
+        },
+        "monthNames": {
+          "jan": "января",
+          "feb": "февраля",
+          "mar": "марта",
+          "apr": "апреля",
+          "may": "мая",
+          "jun": "июня",
+          "jul": "июля",
+          "aug": "августа",
+          "sep": "сентября",
+          "oct": "октября",
+          "nov": "ноября",
+          "dec": "декабря"
+        }
+      },
+      "runLog": {
+        "when": "Когда",
+        "details": "Подробнее",
+        "empty": "Для этого расписания пока нет запусков.",
+        "duration": "Длительность",
+        "loadFailed": "Не удалось загрузить запуски."
+      },
+      "actions": "Действия с расписанием",
+      "cancelTask": "Отменить задачу",
+      "failureStreak_one": "{{count}} сбой подряд",
+      "failureStreak_few": "{{count}} сбоя подряд",
+      "failureStreak_many": "{{count}} сбоев подряд",
+      "failureStreak_other": "{{count}} сбоя подряд",
+      "meta": {
+        "nextRun": "Следующий запуск {{time}}",
+        "runsAt": "Запуск {{time}}",
+        "lastRun": "Последний запуск {{time}}"
+      },
+      "stats": {
+        "active": "Активные расписания",
+        "nextRun": "Следующий запуск",
+        "runs": "Запуски за {{days}} дней",
+        "tokens": "{{tokens}} токенов",
+        "failed": "Сбои за {{days}} дней",
+        "latestFailure": "Последний: {{status}}, {{date}}",
+        "paused_one": "{{count}} приостановлено",
+        "paused_few": "{{count}} приостановлено",
+        "paused_many": "{{count}} приостановлено",
+        "paused_other": "{{count}} приостановлено",
+        "overdue": "Просрочено"
+      },
+      "deleteFailed": "Не удалось удалить это расписание.",
+      "deleteConsequence": "История запусков тоже будет удалена. Это действие нельзя отменить."
     },
     "shared": {
-      "notFound": "Агент не найден. Убедитесь, что агент является общим."
+      "notFound": "Агент не найден. Убедитесь, что агент является общим.",
+      "logoAlt": "Логотип агента",
+      "sharedBy": "от {{name}}",
+      "sharedOn": "Опубликовано {{date}}",
+      "connectedTools": "Подключённые инструменты",
+      "toolIconTitle": "Значок {{name}}",
+      "loadError": "Не удалось загрузить этого агента."
     },
     "preview": {
-      "testMessage": "Протестируйте своего агента здесь. Опубликованные агенты можно использовать в разговорах."
+      "testMessage": "Протестируйте своего агента здесь. Опубликованные агенты можно использовать в разговорах.",
+      "emptyTitle": "Протестируйте агента"
     },
-    "deleteConfirmation": "Вы уверены, что хотите удалить этого агента?",
+    "deleteConfirmation": "Удалить «{{name}}»?",
     "folders": {
       "newFolder": "Новая папка",
       "createFolder": "Создать папку",
       "folderName": "Имя папки",
       "rename": "Переименовать",
       "delete": "Удалить",
-      "deleteConfirm": "Вы уверены, что хотите удалить эту папку? Агенты в папке будут перемещены.",
+      "deleteConfirm": "Удалить «{{name}}»?",
       "empty": "Эта папка пуста",
       "moveToFolder": "Переместить в папку",
       "moveTo": "Переместить",
@@ -1454,7 +2902,10 @@
       "backToRoot": "Назад",
       "currentFolder": "Эта папка",
       "noSubfolders": "Нет подпапок",
-      "noFolders": "Пока нет папок"
+      "openFolder": "Открыть папку",
+      "noFolders": "Пока нет папок",
+      "menuAriaLabel": "Действия для {{folderName}}",
+      "deleteConsequence": "Агенты из папки будут перемещены из неё, но не удалены."
     },
     "guardrailEvents": {
       "heading": "Guardrail activity",
@@ -1476,9 +2927,234 @@
       "detail": "Detail",
       "empty": "No guardrail has fired on this agent yet.",
       "emptyForFilter": "No decisions match this filter.",
-      "truncated": "Showing the most recent {{count}} decisions.",
       "loadError": "Could not load guardrail activity"
-    }
+    },
+    "workflow": {
+      "artifacts": {
+        "previewUnsupported": "Предпросмотр этого артефакта недоступен",
+        "loadListFailed": "Не удалось загрузить артефакты",
+        "loadFailed": "Не удалось загрузить артефакт",
+        "loading": "Загрузка артефактов...",
+        "inProgress": "Запуск выполняется — артефакты появятся здесь по мере их создания узлами.",
+        "empty": "Этот запуск не создал артефактов.",
+        "back": "Назад к артефактам",
+        "untitled": "Артефакт {{id}}",
+        "fileKind": "файл"
+      },
+      "builder": {
+        "deleteFailed": "Не удалось удалить агента рабочего процесса",
+        "updateWorkflowFailed": "Не удалось обновить рабочий процесс",
+        "updateAgentFailed": "Не удалось обновить агента",
+        "createWorkflowFailed": "Не удалось создать рабочий процесс",
+        "createAgentFailed": "Не удалось создать агента",
+        "saveFailed": "Не удалось сохранить рабочий процесс",
+        "defaultDescription": "Агент рабочего процесса: {{name}}",
+        "newWorkflow": "Новый рабочий процесс",
+        "workflowNamePlaceholder": "Введите название рабочего процесса",
+        "workflowDescriptionPlaceholder": "Опишите, что делает этот рабочий процесс",
+        "unablePreview": "Не удалось запустить предпросмотр рабочего процесса",
+        "unableSave": "Не удалось сохранить рабочий процесс",
+        "unablePublish": "Не удалось опубликовать рабочий процесс",
+        "coreNodes": "Основные узлы",
+        "logicNodes": "Логика и данные",
+        "aiAgent": "ИИ-агент",
+        "setStateHint": "Изменение переменных рабочего процесса",
+        "conditionHint": "Условное ветвление",
+        "codeHint": "Запуск кода в песочнице",
+        "paletteHint": "Перетащите на холст или нажмите, чтобы добавить.",
+        "nodeActions": "Действия с узлом",
+        "duplicateNode": "Дублировать",
+        "copyNodeId": "Копировать ID узла",
+        "knowledge": "Знания",
+        "output": "Вывод",
+        "streamToUserDescription": "Показывать ответ этого узла в чате по мере написания",
+        "advancedSettings": "Дополнительные настройки",
+        "conditionMode": "Режим условия",
+        "branchName": "Название ветки",
+        "variable": "Переменная",
+        "value": "Значение",
+        "valueCel": "Значение (CEL)",
+        "addCondition": "Добавить условие",
+        "assignment": "Присваивание {{index}}",
+        "addAssignment": "Добавить присваивание",
+        "startNode": "Начальный узел",
+        "endNode": "Конечный узел",
+        "stateTitle": "Задать глобальные переменные",
+        "nodeId": "ID узла",
+        "title": "Название",
+        "titlePlaceholder": "Введите название узла",
+        "agentType": "Тип агента",
+        "agentTypePlaceholder": "Выберите тип агента",
+        "model": "Модель",
+        "modelPlaceholder": "Выберите модель",
+        "systemPrompt": "Системный промпт",
+        "systemPromptPlaceholder": "Системный промпт для агента",
+        "promptTemplate": "Шаблон промпта",
+        "promptTemplatePlaceholder": "Используйте {{example}} для динамического содержимого",
+        "outputVariable": "Выходная переменная",
+        "outputVariablePlaceholder": "Имя переменной для вывода",
+        "streamToUser": "Передавать вывод пользователю потоком",
+        "sources": "Знания",
+        "documents": "Документы",
+        "documentsHint": "Документы, передаваемые этому агенту из загрузок или предыдущих узлов.",
+        "filePassing": "Передача файлов",
+        "filePassingHint": "Авто: отправлять файл напрямую, если модель это поддерживает, иначе извлекать текст.",
+        "structuredOutput": "Структурированный вывод (JSON Schema)",
+        "modelNoStructuredOutput": "Выбранная модель не поддерживает структурированный вывод.",
+        "validSchema": "Корректная JSON-схема",
+        "invalidSchema": "Некорректная JSON-схема: {{error}}",
+        "noteContent": "Текст заметки",
+        "noteContentPlaceholder": "Введите текст заметки",
+        "stateIntro": "Присвойте значения переменным состояния рабочего процесса.",
+        "assignValue": "Присвоить значение",
+        "celHint": "Используйте Common Expression Language, чтобы создать собственное выражение. Ссылайтесь на состояние по имени (<code>query</code>), а не <code>{{braced}}</code>.",
+        "learnMore": "Подробнее",
+        "toVariable": "В переменную",
+        "conditionIntro": "Создайте условия для ветвления рабочего процесса",
+        "modeSimple": "Простой",
+        "modeAdvanced": "Расширенный",
+        "caseNamePlaceholder": "Название варианта (необязательно)",
+        "variablePlaceholder": "Переменная",
+        "valuePlaceholder": "Значение",
+        "operator": "Оператор",
+        "examplePlaceholder": "напр. {{example}}",
+        "opContains": "содержит",
+        "opStartsWith": "начинается",
+        "conditionPlaceholder": "Введите условие, например query.contains(\"refund\")",
+        "codeIntro": "Запуск кода в песочнице рабочего процесса. Созданные файлы сохраняются как артефакты.",
+        "inputFiles": "Входные файлы",
+        "inputFilesHint": "Артефакты и ссылки из предыдущих узлов, размещаемые в песочнице как файлы (каждый становится inputs/<name>).",
+        "timeout": "Тайм-аут (секунды)",
+        "optional": "Необязательно",
+        "cannotDeleteStart": "Начальный узел нельзя удалить",
+        "deleteNode": "Удалить узел",
+        "deleteConfirmUnnamed": "Удалить этого агента рабочего процесса?",
+        "detailsTitle": "Сведения о рабочем процессе",
+        "detailsDescription": "Название, описание и изображение, которые показываются на карточке агента.",
+        "unsavedChanges": "Несохранённые изменения",
+        "editDetailsMenu": "Изменить сведения"
+      },
+      "validation": {
+        "nameRequired": "Укажите название рабочего процесса",
+        "oneStart": "В рабочем процессе должен быть ровно один начальный узел",
+        "needEnd": "В рабочем процессе должен быть хотя бы один конечный узел",
+        "needAgent": "В рабочем процессе должен быть хотя бы один узел ИИ-агента",
+        "agentModel": "Для агента «{{name}}» нужно выбрать модель",
+        "agentStructuredOutput": "Модель, выбранная для агента «{{name}}», не поддерживает структурированный вывод",
+        "agentSchema": "JSON-схема агента «{{name}}»: {{error}}",
+        "startConnected": "Начальный узел должен быть соединён с другим узлом",
+        "endIncoming": "Конечному узлу «{{name}}» нужно входящее соединение",
+        "edgeSource": "Соединение ссылается на несуществующий исходный узел",
+        "edgeTarget": "Соединение ссылается на несуществующий целевой узел",
+        "conditionNeedsCase": "В условии «{{name}}» должен быть хотя бы один вариант с выражением",
+        "conditionCaseNoHandle": "В условии «{{name}}» есть вариант без идентификатора ветки",
+        "conditionDuplicateHandle": "В условии «{{name}}» повторяется идентификатор варианта «{{handle}}»",
+        "conditionTwoOutgoing": "У условия «{{name}}» должно быть не менее 2 исходящих соединений",
+        "conditionEdgeNoHandle": "У условия «{{name}}» есть соединение без идентификатора ветки",
+        "conditionUnknownBranch": "У условия «{{name}}» есть соединение из неизвестной ветки «{{handle}}»",
+        "conditionMultipleEdges": "У условия «{{name}}» несколько соединений из ветки «{{handle}}»",
+        "conditionNeedsElse": "У условия «{{name}}» должна быть ветка «Иначе»",
+        "caseNoConnection": "В условии «{{name}}» у варианта «{{handle}}» есть выражение, но нет соединения ветки",
+        "caseNoExpression": "В условии «{{name}}» у варианта «{{handle}}» есть соединение ветки, но нет выражения",
+        "caseNoVariable": "В условии «{{name}}» для варианта «{{handle}}» в простом режиме нужно указать переменную",
+        "branchReachEnd": "Ветка «{{handle}}» условия «{{name}}» должна в итоге вести к конечному узлу",
+        "codeRequired": "В узле кода «{{name}}» должен быть код для запуска",
+        "codeSchema": "JSON-схема узла кода «{{name}}»: {{error}}"
+      },
+      "schema": {
+        "notObject": "должна быть корректным JSON-объектом",
+        "missingType": "должна содержать поле \"type\" или \"schema\"",
+        "invalidJson": "должна быть корректным JSON"
+      },
+      "filePassing": {
+        "auto": "Авто",
+        "native": "Напрямую",
+        "extract": "Извлечь текст"
+      },
+      "mobileBlocker": {
+        "title": "Требуется компьютер",
+        "body": "Для конструктора рабочих процессов нужен экран побольше. Откройте эту страницу на настольном компьютере или ноутбуке."
+      },
+      "nodes": {
+        "start": "Начало",
+        "startHint": "Точка входа рабочего процесса",
+        "end": "Конец",
+        "endHint": "Завершение рабочего процесса",
+        "agent": "Агент",
+        "note": "Заметка",
+        "condition": "Если / Иначе",
+        "code": "Код",
+        "setState": "Задать состояние",
+        "output": "Вывод: {{variable}}",
+        "noCode": "Кода пока нет",
+        "modeSimple": "простой",
+        "modeAdvanced": "расширенный",
+        "if": "Если",
+        "elseIf": "Иначе если",
+        "else": "Иначе",
+        "operationCount_one": "{{count}} операция",
+        "operationCount_few": "{{count}} операции",
+        "operationCount_many": "{{count}} операций",
+        "operationCount_other": "{{count}} операции",
+        "variableCount_one": "{{count}} переменная",
+        "variableCount_few": "{{count}} переменные",
+        "variableCount_many": "{{count}} переменных",
+        "variableCount_other": "{{count}} переменной",
+        "variableTitle": "Переменная: {{name}}",
+        "valueTitle": "Значение: {{value}}"
+      },
+      "preview": {
+        "executionDetails": "Сведения о выполнении",
+        "stepCount_one": "({{count}} шаг)",
+        "stepCount_few": "({{count}} шага)",
+        "stepCount_many": "({{count}} шагов)",
+        "stepCount_other": "({{count}} шага)",
+        "outputLabel": "Вывод:",
+        "errorLabel": "Ошибка:",
+        "artifacts": "Артефакты",
+        "minimapHeading": "Рабочий процесс",
+        "emptyTitle": "Протестируйте рабочий процесс",
+        "unsavedDraftAttachments": "Сохраните рабочий процесс, прежде чем прикреплять документы в предпросмотре."
+      },
+      "documents": {
+        "modeAll": "Все входные документы",
+        "modeNone": "Нет",
+        "modeChoose": "Выбрать…",
+        "selectPlaceholder": "Выберите документы...",
+        "searchPlaceholder": "Поиск переменных...",
+        "empty": "Нет документов из предыдущих узлов",
+        "refPlaceholder": "Добавить ссылку (например, A1)"
+      },
+      "variables": {
+        "globalContext": "Глобальный контекст",
+        "workflowInput": "Входные данные рабочего процесса",
+        "searchPlaceholder": "Поиск переменных...",
+        "empty": "Переменные не найдены",
+        "addContext": "Добавить контекст"
+      },
+      "zoomIn": "Увеличить",
+      "zoomOut": "Уменьшить",
+      "fitView": "Уместить на экране"
+    },
+    "typeModal": {
+      "title": "Создать нового агента",
+      "description": "Выберите тип агента, которого хотите создать",
+      "classicTitle": "Классический агент",
+      "classicDescription": "Создайте стандартного ИИ-агента с одной моделью, инструментами и источниками знаний",
+      "workflowTitle": "Агент рабочего процесса",
+      "workflowDescription": "Создавайте сложные многошаговые рабочие процессы с разными моделями, условной логикой и управлением состоянием"
+    },
+    "view": "Просмотр",
+    "deleteFailed": "Не удалось удалить агента. Попробуйте ещё раз.",
+    "showAll_one": "Показать все ({{formatted}})",
+    "showAll_few": "Показать все ({{formatted}})",
+    "showAll_many": "Показать все ({{formatted}})",
+    "showAll_other": "Показать все ({{formatted}})",
+    "pageRange_one": "{{from}}–{{to}} из {{formatted}} агента",
+    "pageRange_few": "{{from}}–{{to}} из {{formatted}} агентов",
+    "pageRange_many": "{{from}}–{{to}} из {{formatted}} агентов",
+    "pageRange_other": "{{from}}–{{to}} из {{formatted}} агента",
+    "deleteConsequence": "Его расписания и история запусков тоже будут удалены. Это действие нельзя отменить."
   },
   "components": {
     "fileUpload": {
@@ -1486,7 +3162,48 @@
       "dropFiles": "Drop the files here",
       "fileTypes": "PNG, JPG, JPEG up to",
       "sizeLimitUnit": "MB",
-      "fileSizeError": "File exceeds {{size}}MB limit"
+      "fileSizeError": "File exceeds {{size}}MB limit",
+      "preview": "Предпросмотр изображения",
+      "remove": "Удалить файл"
+    },
+    "artifact": {
+      "types": {
+        "todoList": "Список задач",
+        "note": "Заметка",
+        "memory": "Память"
+      },
+      "fallbackTitle": "Артефакт",
+      "todo": {
+        "done": "Выполнено: {{count}}",
+        "open": "Открыто: {{count}}",
+        "empty": "Задач пока нет"
+      },
+      "note": {
+        "lines_one": "{{count}} строка",
+        "lines_few": "{{count}} строки",
+        "lines_many": "{{count}} строк",
+        "lines_other": "{{count}} строки",
+        "empty": "Пустая заметка"
+      },
+      "notFound": "Артефакт не найден",
+      "loadFailed": "Не удалось загрузить артефакт",
+      "fetchFailed": "Не удалось получить артефакт",
+      "preview": "Предпросмотр артефакта",
+      "download": "Скачать",
+      "restore": "Восстановить",
+      "version": "Версия {{version}}",
+      "versionCurrent": "Версия {{version}} (текущая)",
+      "downloadFailed": "Не удалось скачать",
+      "restoreFailed": "Не удалось восстановить"
+    },
+    "profile": {
+      "avatarAlt": "Аватар пользователя"
+    },
+    "multiSelect": {
+      "more_one": "+ещё {{count}}",
+      "more_few": "+ещё {{count}}",
+      "more_many": "+ещё {{count}}",
+      "more_other": "+ещё {{count}}"
     }
   },
   "pageNotFound": {
@@ -1495,14 +3212,23 @@
     "goHome": "Go Back Home"
   },
   "filePicker": {
-    "searchPlaceholder": "Поиск файлов и папок...",
-    "itemsSelected": "{{count}} выбрано",
-    "name": "Имя",
-    "lastModified": "Последнее изменение",
-    "size": "Размер",
+    "searchPlaceholder": "Поиск файлов и папок",
+    "itemsSelected": "Выбрано: {{formatted}}",
     "myFiles": "Мои файлы",
     "sharedWithMe": "Доступные мне",
-    "loadingMore": "Загрузка файлов..."
+    "myDrive": "Мой диск",
+    "spaces": "Пространства",
+    "root": "Корень",
+    "shared": "Общие",
+    "connectTo": "Подключиться к {{provider}}",
+    "folder": "Папка",
+    "folderMeta": "Папка · Обновлена {{date}}",
+    "fileMeta": "Обновлено {{date}} · {{size}}",
+    "updated": "Обновлено {{date}}",
+    "openFolder": "Открыть {{name}}",
+    "emptyFolder": "Эта папка пуста.",
+    "noMatches": "Нет файлов или папок, соответствующих запросу.",
+    "loadFailed": "Не удалось загрузить файлы."
   },
   "actionButtons": {
     "openNewChat": "Открыть новый чат",
@@ -1513,10 +3239,34 @@
     "viewCode": "Просмотр кода",
     "decreaseZoom": "Уменьшить масштаб",
     "resetZoom": "Сбросить масштаб",
-    "increaseZoom": "Увеличить масштаб"
+    "increaseZoom": "Увеличить масштаб",
+    "download": "Скачать",
+    "downloadAs": "Скачать в {{format}}",
+    "code": "Код",
+    "loading": "Загрузка диаграммы...",
+    "codeTitle": "Код Mermaid",
+    "renderFailed": "Не удалось отрисовать диаграмму: {{message}}"
   },
   "navigation": {
-    "agents": "Агенты"
+    "agents": "Агенты",
+    "backToApp": "Вернуться в приложение",
+    "backToAgents": "Назад к агентам",
+    "sections": {
+      "groups": {
+        "personal": "Личное",
+        "workspace": "Рабочее пространство",
+        "insights": "Аналитика",
+        "administration": "Администрирование"
+      }
+    },
+    "openSidebar": "Открыть боковую панель",
+    "closeSidebar": "Закрыть боковую панель",
+    "editAgent": "Редактировать агента",
+    "social": {
+      "discord": "Присоединиться к сообществу в Discord",
+      "x": "Следите за нами в X",
+      "github": "Открыть на GitHub"
+    }
   },
   "teams": {
     "switcher": {
@@ -1525,8 +3275,9 @@
       "personalSubtitle": "Личное рабочее пространство",
       "roleAdmin": "Администратор",
       "roleMember": "Участник",
-      "manageTeam": "Управление командой",
-      "createTeam": "Создать команду"
+      "manageTeams": "Управление командами",
+      "createTeam": "Создать команду",
+      "logoAlt": "Логотип DocsGPT"
     }
   },
   "notification": {
@@ -1535,5 +3286,25 @@
   },
   "prompts": {
     "textAriaLabel": "Текст подсказки"
-  }
+  },
+  "connectHero": {
+    "title": "Подключите данные",
+    "body": "Общайтесь с {{names}}.",
+    "more": "другими сервисами"
+  },
+  "common": {
+    "close": "Закрыть",
+    "viewOnlyNotice": "Вы можете это просматривать, но ваша роль не позволяет это изменить.",
+    "credentialsLockedNotice": "Только владелец может изменить учётные данные этого инструмента.",
+    "savedSecretHint": "Сохранено. Оставьте поле пустым, чтобы сохранить значение.",
+    "actionFailed": "Что-то пошло не так. Попробуйте ещё раз.",
+    "cantUndo": "Это действие нельзя отменить."
+  },
+  "sidePanel": {
+    "close": "Закрыть",
+    "expand": "Развернуть",
+    "collapse": "Свернуть",
+    "back": "Назад"
+  },
+  "close": "Закрыть"
 }

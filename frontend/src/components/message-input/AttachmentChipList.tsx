@@ -1,10 +1,11 @@
-import { X } from 'lucide-react';
+import { CircleAlert, Clock, Paperclip, X } from 'lucide-react';
+import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import AlertIcon from '../../assets/alert.svg';
-import DocumentationDark from '../../assets/documentation-dark.svg';
 import type { Attachment } from '../../upload/uploadSlice';
-import { Button } from '../ui/button';
+import { IconButton } from '../ui/icon-button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
+import { cn, focusRing } from '@/lib/utils';
 
 type AttachmentChipListProps = {
   attachments: Attachment[];
@@ -30,13 +31,10 @@ export default function AttachmentChipList({
   modelName,
 }: AttachmentChipListProps) {
   const { t } = useTranslation();
+  const reasonIdPrefix = useId();
+  const failureReasonOf = (attachment: Attachment) =>
+    attachment.errorMessage ?? t('conversation.attachments.failed');
 
-  // A tooltip is the one place a touch user can never look, and this list is
-  // where a phone picker's unsupported file lands. Show the reason inline,
-  // as soon as it is known, rather than only once a send is attempted.
-  const failures = attachments.filter(
-    (attachment) => attachment.status === 'failed' && attachment.errorMessage,
-  );
   // Not a failure: the file is kept and still sends. It only warns that the
   // model picked right now would receive nothing it can read.
   const unreadable = modelName
@@ -45,117 +43,172 @@ export default function AttachmentChipList({
 
   return (
     <>
-      <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
-        {attachments.map((attachment) => {
-          return (
-            <div
-              key={attachment.id}
-              draggable={true}
-              onDragStart={(e) => onDragStart(e, attachment.id)}
-              onDragOver={onDragOver}
-              onDrop={(e) => onDropOn(e, attachment.id)}
-              className={`group dark:text-foreground bg-muted text-muted-foreground dark:bg-accent relative flex items-center rounded-xl px-2 py-1 text-xs sm:px-3 sm:py-1.5 sm:text-sm ${
-                attachment.status !== 'completed' ? 'opacity-70' : 'opacity-100'
-              } ${
-                draggingId === attachment.id
-                  ? 'ring-dashed opacity-60 ring-2 ring-purple-200'
-                  : ''
-              }`}
-              title={
-                attachment.status === 'failed' && attachment.errorMessage
-                  ? `${attachment.fileName}: ${attachment.errorMessage}`
-                  : attachment.fileName
-              }
-            >
-              <div className="bg-primary mr-2 flex h-8 w-8 items-center justify-center rounded-md p-1">
-                {attachment.status === 'completed' && (
-                  <img
-                    src={DocumentationDark}
-                    alt="Attachment"
-                    className="h-[15px] w-[15px] object-fill"
-                  />
+      {/* Capped and scrolled inside, so a dozen files never push the
+          composer over the page: about two and a half rows on a
+          phone, three and a half wider, the cut row saying there is more.
+          The inner padding keeps focus and drag rings clear of the clip. */}
+      <div className="px-1 py-1 sm:px-2">
+        <div
+          data-slot="attachment-chips"
+          className="scrollbar-overlay flex max-h-32 flex-wrap gap-1.5 overflow-y-auto p-1 sm:max-h-48 sm:gap-2"
+        >
+          {attachments.map((attachment) => {
+            const failed = attachment.status === 'failed';
+            // Waiting for one of the few upload slots: nothing has moved yet.
+            const queued =
+              attachment.status === 'uploading' && attachment.progress <= 0;
+            // A failed file never blocks the send (it is dropped then), so its
+            // reason stays out of the way: the chip's destructive tone marks it,
+            // the reason is a tooltip on hover and on focus (the chip takes
+            // focus), and it describes the chip and its remove button for
+            // screen readers.
+            const failureReason = failed ? failureReasonOf(attachment) : null;
+            const reasonId = `${reasonIdPrefix}-${attachment.id}`;
+            const chip = (
+              <div
+                key={attachment.id}
+                draggable={true}
+                data-status={attachment.status}
+                tabIndex={failed ? 0 : undefined}
+                aria-describedby={failureReason ? reasonId : undefined}
+                onDragStart={(e) => onDragStart(e, attachment.id)}
+                onDragOver={onDragOver}
+                onDrop={(e) => onDropOn(e, attachment.id)}
+                // opacity-60 while dragging never applied (opacity-70 / -100
+                // come later in the stylesheet), so only the ring shows the drag.
+                className={cn(
+                  'group text-foreground relative flex items-center rounded-xl border px-2 py-1 text-xs outline-none sm:px-3 sm:py-1.5 sm:text-sm',
+                  failed
+                    ? cn('border-destructive/50 bg-destructive/10', focusRing)
+                    : 'bg-muted border-transparent',
+                  attachment.status === 'uploading' ||
+                    attachment.status === 'processing'
+                    ? 'opacity-70'
+                    : 'opacity-100',
+                  draggingId === attachment.id && 'ring-primary/30 ring-2',
                 )}
-
-                {attachment.status === 'failed' && (
-                  <img
-                    src={AlertIcon}
-                    alt="Failed"
-                    className="h-[15px] w-[15px] object-fill"
-                  />
-                )}
-
-                {(attachment.status === 'uploading' ||
-                  attachment.status === 'processing') && (
-                  <div className="flex h-[15px] w-[15px] items-center justify-center">
-                    <svg className="h-[15px] w-[15px]" viewBox="0 0 24 24">
-                      <circle
-                        className="opacity-0"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="transparent"
-                        strokeWidth="4"
-                        fill="none"
-                      />
-                      <circle
-                        className="text-[#ECECF1]"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                        fill="none"
-                        strokeDasharray="62.83"
-                        strokeDashoffset={
-                          62.83 * (1 - attachment.progress / 100)
-                        }
-                        transform="rotate(-90 12 12)"
-                      />
-                    </svg>
-                  </div>
-                )}
-              </div>
-
-              <span className="max-w-[120px] truncate font-medium sm:max-w-[150px]">
-                {attachment.fileName}
-              </span>
-
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                className="ml-1.5 h-auto w-auto rounded-full p-1"
-                onClick={() => {
-                  onRemove(attachment.id);
-                }}
-                aria-label={t('conversation.attachments.remove')}
               >
-                <X
-                  aria-label={t('conversation.attachments.remove')}
-                  className="h-2.5 w-2.5"
-                />
-              </Button>
-            </div>
-          );
-        })}
+                <div
+                  data-slot="attachment-tile"
+                  className={cn(
+                    'mr-2 flex size-8 items-center justify-center rounded-md p-1',
+                    failed
+                      ? 'bg-destructive text-destructive-foreground'
+                      : 'bg-primary text-primary-foreground',
+                  )}
+                >
+                  {attachment.status === 'completed' && (
+                    <Paperclip
+                      aria-label={t('conversation.attachments.attached')}
+                      className="size-3.75"
+                    />
+                  )}
+
+                  {failed && (
+                    <CircleAlert
+                      aria-label={t('conversation.attachments.failed')}
+                      className="size-4"
+                    />
+                  )}
+
+                  {queued && (
+                    <Clock
+                      aria-label={t('conversation.attachments.queued')}
+                      className="size-3.75"
+                    />
+                  )}
+
+                  {!queued &&
+                    (attachment.status === 'uploading' ||
+                      attachment.status === 'processing') && (
+                      <div
+                        role="img"
+                        aria-label={
+                          attachment.status === 'uploading'
+                            ? t('conversation.attachments.uploading')
+                            : t('conversation.attachments.processing')
+                        }
+                        className="flex size-3.75 items-center justify-center"
+                      >
+                        <svg
+                          aria-hidden="true"
+                          className="size-3.75"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                            fill="none"
+                            strokeDasharray="62.83"
+                            strokeDashoffset={
+                              62.83 * (1 - attachment.progress / 100)
+                            }
+                            transform="rotate(-90 12 12)"
+                          />
+                        </svg>
+                      </div>
+                    )}
+                </div>
+
+                <span
+                  className="max-w-[120px] truncate font-medium sm:max-w-[150px]"
+                  title={failed ? undefined : attachment.fileName}
+                >
+                  {attachment.fileName}
+                </span>
+                {failureReason && (
+                  <span id={reasonId} hidden>
+                    {attachment.fileName}: {failureReason}
+                  </span>
+                )}
+
+                <IconButton
+                  label={t('conversation.attachments.remove')}
+                  variant="ghost"
+                  size="icon-xs"
+                  shape="pill"
+                  className="ml-1.5"
+                  aria-describedby={failureReason ? reasonId : undefined}
+                  onClick={() => {
+                    onRemove(attachment.id);
+                  }}
+                >
+                  <X aria-hidden="true" className="size-4" />
+                </IconButton>
+              </div>
+            );
+            if (!failureReason) return chip;
+            return (
+              <Tooltip key={attachment.id}>
+                <TooltipTrigger asChild>{chip}</TooltipTrigger>
+                <TooltipContent>
+                  <span className="wrap-anywhere">{attachment.fileName}</span>:{' '}
+                  {failureReason}
+                </TooltipContent>
+              </Tooltip>
+            );
+          })}
+        </div>
       </div>
 
-      {failures.length > 0 && (
-        <div
-          className="flex flex-col gap-0.5 px-2 pb-1 text-xs text-[#B42318] sm:px-3"
-          role="alert"
-        >
-          {failures.map((attachment) => (
-            <span key={attachment.id}>
-              {attachment.fileName}: {attachment.errorMessage}
-            </span>
-          ))}
-        </div>
-      )}
+      {/* Always mounted, so a chip turning failed is announced: the reason
+          itself is only on hover, which a screen reader never sees. */}
+      <div className="sr-only" role="status" aria-live="polite">
+        {attachments
+          .filter((attachment) => attachment.status === 'failed')
+          .map(
+            (attachment) =>
+              `${attachment.fileName}: ${failureReasonOf(attachment)}`,
+          )
+          .join(' ')}
+      </div>
 
       {unreadable.length > 0 && (
         <div
-          className="flex flex-col gap-0.5 px-2 pb-1 text-xs text-[#B54708] sm:px-3 dark:text-[#FDB022]"
+          className="text-warning flex flex-col gap-0.5 px-2 pb-1 text-xs sm:px-3"
           role="status"
         >
           {unreadable.map((attachment) => (

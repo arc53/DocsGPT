@@ -167,11 +167,11 @@ class TestPerRoundUsageRows:
             return messages, None
 
         rows = []
-        with patch.object(
-            usage_mod,
-            "_persist_call_usage",
-            side_effect=lambda llm_, cu: rows.append(dict(cu)),
-        ):
+
+        def _record(llm_, cu, *, duration_ms=None, ttft_ms=None):
+            rows.append({**cu, "duration_ms": duration_ms, "ttft_ms": ttft_ms})
+
+        with patch.object(usage_mod, "_persist_call_usage", side_effect=_record):
             with patch.object(handler, "handle_tool_calls", fake_tool_calls):
                 first = llm.gen_stream(
                     model="m", messages=[{"role": "user", "content": "hi"}]
@@ -185,6 +185,9 @@ class TestPerRoundUsageRows:
         counts = lambda row: {k: row[k] for k in ("prompt_tokens", "generated_tokens")}  # noqa: E731
         assert counts(rows[0]) == {"prompt_tokens": 100, "generated_tokens": 10}
         assert counts(rows[1]) == {"prompt_tokens": 200, "generated_tokens": 20}
+        # Each round is timed independently, and each streamed a chunk.
+        assert all(row["duration_ms"] is not None for row in rows)
+        assert all(row["ttft_ms"] is not None for row in rows)
 
 
 class TestPreferProviderUsageClaim:

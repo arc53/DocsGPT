@@ -100,6 +100,80 @@ class TestReembedWikiPageWorker:
         )
         assert result == {"status": "embedded", "added": 2, "deleted": 3}
 
+    def test_chunk_metadata_survives_the_rewrite(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        """The chunker's own metadata -- ``token_count`` above all -- has to
+        reach the store, or the source viewer shows "-" for every wiki chunk.
+        """
+        from docsgpt import worker
+
+        source_id = _seed_source(pg_conn)
+
+        store = MagicMock(name="vector_store")
+        store.delete_chunks_by_source_path.return_value = 0
+        _patch_store(monkeypatch, store)
+
+        _patch_repo(monkeypatch, {"content": "page body", "title": "Page Title"})
+        _patch_chunker(
+            monkeypatch,
+            [
+                Document(text="c1", extra_info={"token_count": 11, "custom": "keep"}),
+                Document(text="c2", extra_info={"token_count": 7}),
+            ],
+        )
+
+        worker.reembed_wiki_page_worker(
+            task_self, source_id, "guide/intro.md", "hash-1", "alice"
+        )
+
+        counts = [
+            call.kwargs["metadata"]["token_count"]
+            for call in store.add_chunk.call_args_list
+        ]
+        assert counts == [11, 7]
+        assert store.add_chunk.call_args_list[0].kwargs["metadata"]["custom"] == "keep"
+
+    def test_page_identity_wins_over_stale_chunk_metadata(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        """Whatever the chunker inherited, the page's own path and title are
+        what the store is keyed and filtered on.
+        """
+        from docsgpt import worker
+
+        source_id = _seed_source(pg_conn)
+
+        store = MagicMock(name="vector_store")
+        store.delete_chunks_by_source_path.return_value = 0
+        _patch_store(monkeypatch, store)
+
+        _patch_repo(monkeypatch, {"content": "body", "title": "Page Title"})
+        _patch_chunker(
+            monkeypatch,
+            [
+                Document(
+                    text="c1",
+                    extra_info={
+                        "source": "stale/path.md",
+                        "title": "Stale",
+                        "filename": "stale/path.md",
+                        "token_count": 5,
+                    },
+                )
+            ],
+        )
+
+        worker.reembed_wiki_page_worker(
+            task_self, source_id, "guide/intro.md", "hash-1", "alice"
+        )
+
+        metadata = store.add_chunk.call_args_list[0].kwargs["metadata"]
+        assert metadata["source"] == "guide/intro.md"
+        assert metadata["filename"] == "guide/intro.md"
+        assert metadata["title"] == "Page Title"
+        assert metadata["token_count"] == 5
+
     def test_a_reembed_stamps_the_model_on_the_source(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):

@@ -8,6 +8,7 @@ from threading import Lock
 import redis
 
 from docsgpt.core.settings import settings
+from docsgpt.tracing.llm import CACHE_HIT_ATTR, record_cached_gen
 from docsgpt.utils import get_hash
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ def _cache_default(value):
 # params, ...) is part of the request and therefore part of the key —
 # otherwise a workflow node that changed its JSON schema replays the old
 # schema's cached answer for the whole TTL.
-_CACHE_KEY_IGNORED_KWARGS = frozenset({"_usage_attachments", "attachments"})
+_CACHE_KEY_IGNORED_KWARGS = frozenset({"_usage_attachments", "_attachment_dispatch", "attachments"})
 
 # Kwargs that make the answer depend on provider-held state no key can
 # capture. ``previous_response_id`` chains a Responses API turn server
@@ -222,9 +223,25 @@ def gen_cache_key(messages, model="docgpt", tools=None, extra=None):
     return cache_key
 
 
+def _skips_cache(tools: list | None, extra: dict | None) -> bool:
+    """Whether a generation call goes straight to the provider.
+
+    The cache is off (``LLM_CACHE_ENABLED``), the call passes tools, or it is
+    tied to provider-side conversation state.
+
+    Args:
+        tools: The tool definitions passed to the call, or ``None`` when it has none.
+        extra: The call's other keyword arguments, checked for provider-side state.
+
+    Returns:
+        True when the call must skip the cache.
+    """
+    return not settings.LLM_CACHE_ENABLED or tools is not None or _bypasses_cache(extra)
+
+
 def gen_cache(func):
     def wrapper(self, model, messages, stream, tools=None, *args, **kwargs):
-        if tools is not None or _bypasses_cache(kwargs):
+        if _skips_cache(tools, kwargs):
             return func(self, model, messages, stream, tools, *args, **kwargs)
 
         try:
@@ -240,6 +257,7 @@ def gen_cache(func):
                 if cached_response:
                     decoded = cached_response.decode("utf-8")
                     if not _is_stream_payload(decoded):
+                        record_cached_gen(self, model, decoded)
                         return decoded
             except Exception as e:
                 logger.error(f"Error getting cached response: {e}", exc_info=True)
@@ -247,7 +265,7 @@ def gen_cache(func):
         result = func(self, model, messages, stream, tools, *args, **kwargs)
         if redis_client and isinstance(result, str):
             try:
-                redis_client.set(cache_key, result, ex=1800)
+                redis_client.set(cache_key, result, ex=settings.LLM_CACHE_TTL)
             except Exception as e:
                 logger.error(f"Error setting cache: {e}", exc_info=True)
 
@@ -258,7 +276,7 @@ def gen_cache(func):
 
 def stream_cache(func):
     def wrapper(self, model, messages, stream, tools=None, *args, **kwargs):
-        if tools is not None or _bypasses_cache(kwargs):
+        if _skips_cache(tools, kwargs):
             yield from func(self, model, messages, stream, tools, *args, **kwargs)
             return
 
@@ -295,6 +313,12 @@ def stream_cache(func):
 
                     if cached_chunks is not None:
                         logger.info(f"Cache hit for stream key: {cache_key}")
+                        # ``stream_token_usage`` wraps this cache and owns
+                        # the call's span; flag it as served from cache.
+                        try:
+                            setattr(self, CACHE_HIT_ATTR, True)
+                        except AttributeError:
+                            pass
                         for chunk in cached_chunks:
                             yield chunk
                             time.sleep(0.03)  # Simulate streaming delay
@@ -329,7 +353,7 @@ def stream_cache(func):
         if redis_client and cacheable and had_content:
             try:
                 payload = {"version": 1, "chunks": stream_cache_data}
-                redis_client.set(cache_key, json.dumps(payload), ex=1800)
+                redis_client.set(cache_key, json.dumps(payload), ex=settings.LLM_CACHE_TTL)
                 logger.info(f"Stream cache saved for key: {cache_key}")
             except Exception as e:
                 logger.error(f"Error setting stream cache: {e}", exc_info=True)

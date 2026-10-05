@@ -2,6 +2,11 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from docsgpt.core.settings import settings
+from docsgpt.tracing.retrieval import (
+    describe_documents,
+    start_retrieval_span,
+    start_source_search_span,
+)
 from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.retriever.base import BaseRetriever
 from docsgpt.retriever.fanout import fetch_per_source, max_parallel_sources
@@ -27,7 +32,7 @@ class ClassicRAG(BaseRetriever):
         source,
         chat_history=None,
         prompt="",
-        chunks=2,
+        chunks=6,
         doc_token_limit=50000,
         model_id="docsgpt-local",
         user_api_key=None,
@@ -49,9 +54,9 @@ class ClassicRAG(BaseRetriever):
                 self.chunks = int(chunks)
             except ValueError:
                 logger.warning(
-                    f"Invalid chunks value '{chunks}', using default value 2"
+                    f"Invalid chunks value '{chunks}', using default value 6"
                 )
-                self.chunks = 2
+                self.chunks = 6
         else:
             self.chunks = chunks
         user_id = decoded_token.get("sub") if decoded_token else "default"
@@ -179,8 +184,9 @@ class ClassicRAG(BaseRetriever):
                 retrieval. Forwarded so the store skips embedding the query
                 again; stores that don't support it ignore the kwarg.
         """
-        # ``score_threshold`` is honoured by pgvector/mongodb and safely ignored
-        # by stores whose ``search`` swallows kwargs. The candidate count is
+        # ``score_threshold`` is honoured by the cosine-similarity stores
+        # (pgvector, mongodb, qdrant, milvus) and safely ignored by stores
+        # whose ``search`` swallows kwargs (faiss, elasticsearch). The candidate count is
         # clamped to a ceiling to bound memory/latency.
         k = min(max(src_k * 2, 20), 500)
         search_kwargs = {"k": k}
@@ -266,6 +272,15 @@ class ClassicRAG(BaseRetriever):
         logged and reported as ``None`` so one bad source cannot take the rest
         of the retrieval down with it.
         """
+        span = start_source_search_span(
+            plan["id"],
+            top_k=plan["src_k"],
+            **{
+                "docsgpt.vector_store": settings.VECTOR_STORE,
+                "docsgpt.retriever": type(self).__name__,
+                "docsgpt.shared_query_vector": query_vector is not None,
+            },
+        )
         try:
             if docsearch is None:
                 docsearch = VectorCreator.create_vectorstore(
@@ -279,8 +294,14 @@ class ClassicRAG(BaseRetriever):
                 query_vector=query_vector,
             )
             score_kind = self._score_kind(docsearch) if self.include_scores else None
+            try:
+                candidates = len(docs_temp)
+            except TypeError:
+                candidates = None
+            span.end(attributes={"docsgpt.candidate_count": candidates})
             return docs_temp, score_kind
         except Exception as e:
+            span.end(error=e)
             logger.error(
                 f"Error searching vectorstore {plan['id']}: {e}", exc_info=True
             )
@@ -365,7 +386,11 @@ class ClassicRAG(BaseRetriever):
                     doc_tokens = num_tokens_from_string(doc_text_with_header)
 
                     if cumulative_tokens + doc_tokens < token_budget:
-                        entry = {"text": page_content, **labels}
+                        entry = {
+                            "text": page_content,
+                            **labels,
+                            **self._connector_labels.for_source(vectorstore_id),
+                        }
                         if self.include_scores:
                             entry["score"] = score
                             entry["score_kind"] = score_kind
@@ -385,7 +410,7 @@ class ClassicRAG(BaseRetriever):
 
         # ``chunks_per_source`` has a floor of 1 so no attached source is
         # starved, which means N sources always yield at least N documents —
-        # ``chunks=2`` across 4 sources returned 4, though ``chunks`` is
+        # ``chunks=6`` across 8 sources returned 8, though ``chunks`` is
         # documented as a top-k. Bound the overshoot to exactly that floor so
         # attaching more sources can no longer inflate the result without limit.
         # Ceiling on ``self.chunks`` (the actual fetch target), not
@@ -409,11 +434,20 @@ class ClassicRAG(BaseRetriever):
 
     def search(self, query: str = ""):
         """Search for documents using optional query override"""
-        if query:
-            self.original_question = query
-            # Invalidate the cached rephrase so a per-source path that opts in
-            # rephrases against the new query, not a stale one.
-            self._rephrased_question = None
-            self.question = self._rephrase_query()
-            self._rephrased_question = self.question
-        return self._get_data()
+        with start_retrieval_span(
+            f"retrieval {type(self).__name__}",
+            sources=self.vectorstores,
+            **{"docsgpt.retriever": type(self).__name__, "docsgpt.top_k": self.chunks},
+        ) as span:
+            if query:
+                self.original_question = query
+                # Invalidate the cached rephrase so a per-source path that opts in
+                # rephrases against the new query, not a stale one.
+                self._rephrased_question = None
+                self.question = self._rephrase_query()
+                self._rephrased_question = self.question
+            docs = self._get_data()
+            rephrased = self._rephrased_question
+            span.set(**{"docsgpt.rephrased": bool(rephrased and rephrased != self.original_question)})
+            describe_documents(span, docs, query=rephrased or self.original_question)
+            return docs

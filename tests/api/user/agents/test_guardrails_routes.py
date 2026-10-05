@@ -269,6 +269,171 @@ class TestEventsRoute:
         assert resp.status_code == 400
 
 
+@pytest.mark.unit
+class TestEventsFilters:
+    """Server-side ``days`` / ``check`` / ``outcome`` filters on the events list."""
+
+    def _get(self, app, pg_conn, args="", decoded_token={"sub": "u-gr"}):
+        from docsgpt.api.user.agents.guardrails import GuardrailEvents
+
+        with app.test_request_context(f"/api/guardrails/events{args}"):
+            from flask import request
+
+            request.decoded_token = decoded_token
+            with _patch_db(pg_conn):
+                return GuardrailEvents().get()
+
+    def _events(self, app, pg_conn, agent_id, query=""):
+        import json
+
+        resp = self._get(app, pg_conn, f"?agent_id={agent_id}{query}")
+        assert resp.status_code == 200
+        payload = json.loads(resp.get_data(as_text=True))
+        assert payload["success"] is True
+        return payload["events"]
+
+    def _seed(self, pg_conn):
+        """Five rows on one agent, one on another, with distinct ages.
+
+        Ages (days): pii/redact 0, denylist/block 2, pii/flag 5,
+        policy/not_evaluated 10, denylist/flag 40. The other agent has a
+        fresh denylist/block row that must never show up.
+        """
+        from sqlalchemy import text
+
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.guardrail_events import (
+            GuardrailEventsRepository,
+        )
+
+        agents = AgentsRepository(pg_conn)
+        agent = str(agents.create("u-gr", "a", "published")["id"])
+        other = str(agents.create("u-gr", "b", "published")["id"])
+
+        def row(agent_id, check, action, outcome, request_id):
+            return {"user_id": "u-gr", "agent_id": agent_id, "stage": "input",
+                    "check_name": check, "detector_type": check.upper(),
+                    "action": action, "outcome": outcome,
+                    "request_id": request_id}
+
+        GuardrailEventsRepository(pg_conn).record_many(
+            [
+                row(agent, "pii", "redact", "triggered", "age-0"),
+                row(agent, "denylist", "block", "triggered", "age-2"),
+                row(agent, "pii", "flag", "triggered", "age-5"),
+                row(agent, "policy", "block", "not_evaluated", "age-10"),
+                row(agent, "denylist", "flag", "triggered", "age-40"),
+                row(other, "denylist", "block", "triggered", "other"),
+            ]
+        )
+        for age in (2, 5, 10, 40):
+            pg_conn.execute(
+                text(
+                    "UPDATE guardrail_events SET created_at = "
+                    "NOW() - CAST(:days || ' days' AS interval) "
+                    "WHERE request_id = :rid"
+                ),
+                {"days": str(age), "rid": f"age-{age}"},
+            )
+        return agent
+
+    @staticmethod
+    def _ids(events):
+        return [e["request_id"] for e in events]
+
+    def test_no_filters_returns_everything_newest_first(self, app, pg_conn):
+        agent = self._seed(pg_conn)
+        assert self._ids(self._events(app, pg_conn, agent)) == [
+            "age-0", "age-2", "age-5", "age-10", "age-40",
+        ]
+
+    def test_days_keeps_only_the_trailing_window(self, app, pg_conn):
+        agent = self._seed(pg_conn)
+        assert self._ids(self._events(app, pg_conn, agent, "&days=7")) == [
+            "age-0", "age-2", "age-5",
+        ]
+
+    @pytest.mark.parametrize("raw", ["0", "-3"])
+    def test_days_below_one_clamps_to_one(self, app, pg_conn, raw):
+        agent = self._seed(pg_conn)
+        assert self._ids(self._events(app, pg_conn, agent, f"&days={raw}")) == ["age-0"]
+
+    def test_days_above_365_clamps_to_365(self, app, pg_conn):
+        from sqlalchemy import text
+
+        agent = self._seed(pg_conn)
+        pg_conn.execute(
+            text(
+                "UPDATE guardrail_events SET created_at = NOW() - interval '400 days' "
+                "WHERE request_id = 'age-40'"
+            )
+        )
+        assert "age-40" not in self._ids(self._events(app, pg_conn, agent, "&days=9999"))
+
+    @pytest.mark.parametrize("raw", ["lots", "", "1.5"])
+    def test_invalid_days_is_ignored(self, app, pg_conn, raw):
+        agent = self._seed(pg_conn)
+        assert len(self._events(app, pg_conn, agent, f"&days={raw}")) == 5
+
+    def test_check_is_an_exact_match(self, app, pg_conn):
+        agent = self._seed(pg_conn)
+        assert self._ids(self._events(app, pg_conn, agent, "&check=denylist")) == [
+            "age-2", "age-40",
+        ]
+        assert self._events(app, pg_conn, agent, "&check=deny") == []
+
+    def test_empty_check_is_ignored(self, app, pg_conn):
+        agent = self._seed(pg_conn)
+        assert len(self._events(app, pg_conn, agent, "&check=")) == 5
+
+    @pytest.mark.parametrize(
+        "outcome, expected",
+        [
+            ("block", ["age-2"]),
+            ("redact", ["age-0"]),
+            ("flag", ["age-5", "age-40"]),
+            ("not_evaluated", ["age-10"]),
+        ],
+    )
+    def test_outcome_matches_the_summary_buckets(self, app, pg_conn, outcome, expected):
+        # ``block`` means "we refused": a block control that could not run is
+        # ``not_evaluated``, exactly as the summary totals count it.
+        agent = self._seed(pg_conn)
+        assert self._ids(self._events(app, pg_conn, agent, f"&outcome={outcome}")) == expected
+
+    @pytest.mark.parametrize("raw", ["triggered", "BLOCK", "nope", ""])
+    def test_unknown_outcome_is_ignored(self, app, pg_conn, raw):
+        agent = self._seed(pg_conn)
+        assert len(self._events(app, pg_conn, agent, f"&outcome={raw}")) == 5
+
+    def test_filters_combine_with_and(self, app, pg_conn):
+        agent = self._seed(pg_conn)
+        assert self._ids(
+            self._events(app, pg_conn, agent, "&check=denylist&outcome=flag")
+        ) == ["age-40"]
+        assert self._events(
+            app, pg_conn, agent, "&check=denylist&outcome=flag&days=30"
+        ) == []
+        assert self._ids(
+            self._events(app, pg_conn, agent, "&check=pii&outcome=flag&days=30")
+        ) == ["age-5"]
+
+    def test_offset_pages_within_the_filtered_set(self, app, pg_conn):
+        agent = self._seed(pg_conn)
+        query = "&check=pii&days=30&limit=1"
+        assert self._ids(self._events(app, pg_conn, agent, query)) == ["age-0"]
+        assert self._ids(self._events(app, pg_conn, agent, f"{query}&offset=1")) == ["age-5"]
+        assert self._events(app, pg_conn, agent, f"{query}&offset=2") == []
+
+    def test_filters_do_not_widen_access(self, app, pg_conn):
+        agent = self._seed(pg_conn)
+        resp = self._get(
+            app, pg_conn, f"?agent_id={agent}&check=denylist&days=30",
+            decoded_token={"sub": "intruder"},
+        )
+        assert resp.status_code == 404
+
+
 # ---------------------------------------------------------------------------
 # GET /api/guardrails/summary
 # ---------------------------------------------------------------------------

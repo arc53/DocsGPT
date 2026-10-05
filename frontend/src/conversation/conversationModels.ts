@@ -1,3 +1,4 @@
+import type { AnswerSource } from './chatCompanion';
 import { AnswerSegment } from './answerSegments';
 import { ToolCallsType } from './types';
 
@@ -48,7 +49,7 @@ export interface Answer {
   conversationId: string | null;
   title: string | null;
   thought: string;
-  sources: { title: string; text: string; source: string }[];
+  sources: AnswerSource[];
   tool_calls: ToolCallsType[];
   structured?: boolean;
   schema?: object;
@@ -61,20 +62,30 @@ export interface Query {
   conversationId?: string | null;
   title?: string | null;
   thought?: string;
-  sources?: { title: string; text: string; link: string }[];
+  sources?: AnswerSource[];
   tool_calls?: ToolCallsType[];
-  // Arrival-ordered layout of the fields above, so reasoning and tool calls
-  // render where they happened. Live-stream only; absent on reload, where
-  // ``getAnswerSegments`` synthesizes an order instead.
+  // Arrival-ordered layout of the fields above, so answer text, reasoning and
+  // tool calls render where they happened. Recorded live, and rebuilt on load
+  // from the order the backend saved (``hydrateSegments``); when that is absent
+  // or no longer fits, ``getAnswerSegments`` synthesizes one.
   segments?: AnswerSegment[];
   // Set when this answer came from a workflow agent run; lets the chat render
   // the run's produced artifacts via WorkflowRunArtifacts.
   workflow_run_id?: string;
   error?: string;
+  // Why the turn failed, when the backend says (``context_length_exceeded``);
+  // its presence also marks ``error`` as curated text rather than a raw error.
+  errorCode?: string;
+  // The values a curated error was worded from (``needed_tokens``…), so the
+  // chat can word it in the user's language.
+  errorParams?: Record<string, unknown>;
   // Non-fatal notice (e.g. some workflow input documents were dropped). Shown
   // alongside the answer; unlike ``error`` it does not fail the turn or end the stream.
   notice?: string;
   attachments?: { id: string; fileName: string }[];
+  // Set once a failed turn's files were turned into Knowledge: a retry or an
+  // edit then asks through the selected Knowledge, without the files.
+  attachmentsInKnowledge?: boolean;
   structured?: boolean;
   schema?: object;
   research?: ResearchState;

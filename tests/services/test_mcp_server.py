@@ -99,7 +99,7 @@ class TestSearchDocsTool:
         ):
             out = await search_docs(query="q", chunks=7)
         assert out == hits
-        mock_search.assert_called_once_with("the-key", "q", 7)
+        mock_search.assert_called_once_with("the-key", "q", 7, source="mcp")
 
     @pytest.mark.asyncio
     async def test_default_chunks_is_5(self):
@@ -115,7 +115,7 @@ class TestSearchDocsTool:
             ) as mock_search,
         ):
             await search_docs(query="q")
-        mock_search.assert_called_once_with("k", "q", 5)
+        mock_search.assert_called_once_with("k", "q", 5, source="mcp")
 
     @pytest.mark.asyncio
     async def test_bearer_scheme_case_insensitive(self):
@@ -131,4 +131,4 @@ class TestSearchDocsTool:
             ) as mock_search,
         ):
             await search_docs(query="q")
-        mock_search.assert_called_once_with("lowercase-scheme", "q", 5)
+        mock_search.assert_called_once_with("lowercase-scheme", "q", 5, source="mcp")

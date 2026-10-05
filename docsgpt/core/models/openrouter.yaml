@@ -10,16 +10,25 @@ models:
     description: Free-tier 480B MoE coder model with strong agentic tool use; rate-limited
     context_window: 262000
     attachments: []
+    input_cost_per_million: 0.0
+    output_cost_per_million: 0.0
 
   - id: deepseek/deepseek-v3.2
     display_name: DeepSeek V3.2
-    description: Open-weights reasoning model, very low cost (~$0.25 in / $0.38 out per 1M)
+    description: Open-weights reasoning model, very low cost (~$0.27 in / $0.40 out per 1M)
     context_window: 131072
     attachments: []
     supports_structured_output: true
+    input_cost_per_million: 0.269
+    output_cost_per_million: 0.4
+    cached_input_cost_per_million: 0.1345
 
   - id: anthropic/claude-sonnet-4.6
     display_name: Claude Sonnet 4.6 (via OpenRouter)
     description: Frontier Sonnet-class model with 1M context, vision, and extended thinking
     context_window: 1000000
     supports_structured_output: true
+    input_cost_per_million: 3.0
+    output_cost_per_million: 15.0
+    cached_input_cost_per_million: 0.3
+    cache_write_cost_per_million: 3.75

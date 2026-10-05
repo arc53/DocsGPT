@@ -4,6 +4,7 @@ import traceback
 from flask import make_response, request
 from flask_restx import fields, Resource
 
+from docsgpt.agents.context_overflow import ContextOverflowError
 from docsgpt.api import api
 
 from docsgpt.api.answer.routes.base import answer_ns, BaseAnswerResource
@@ -13,7 +14,11 @@ from docsgpt.api.answer.services.continuation_service import (
     ResumeInProgressError,
 )
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
-from docsgpt.api.answer.services.stream_processor import StreamProcessor
+from docsgpt.api.answer.services.stream_processor import (
+    StreamProcessor,
+    flush_trace_after_request,
+)
+from docsgpt.error import bounded_error_text, user_facing_error
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +48,7 @@ class AnswerResource(Resource, BaseAnswerResource):
                 required=False, default="default", description="Prompt ID"
             ),
             "chunks": fields.Integer(
-                required=False, default=2, description="Number of chunks"
+                required=False, default=6, description="Number of chunks"
             ),
             "retriever": fields.String(required=False, description="Retriever type"),
             "api_key": fields.String(required=False, description="API key"),
@@ -87,7 +92,10 @@ class AnswerResource(Resource, BaseAnswerResource):
         if error := self.validate_request(data):
             return error
         decoded_token = getattr(request, "decoded_token", None)
-        processor = StreamProcessor(data, decoded_token)
+        processor = StreamProcessor(data, decoded_token, trace_source="answer")
+        # ``complete_stream`` is consumed below and writes the trace itself;
+        # this covers requests refused before it runs.
+        flush_trace_after_request(processor)
         try:
             # ---- Continuation mode ----
             if data.get("tool_actions"):
@@ -103,7 +111,9 @@ class AnswerResource(Resource, BaseAnswerResource):
                 )
                 if not processor.decoded_token:
                     return make_response({"error": "Unauthorized"}, 401)
-                if error := self.check_usage(processor.agent_config):
+                if error := self.check_usage_on_resume(
+                    processor, data["conversation_id"]
+                ):
                     return error
                 stream = self.complete_stream(
                     question="",
@@ -113,6 +123,7 @@ class AnswerResource(Resource, BaseAnswerResource):
                     decoded_token=processor.decoded_token,
                     agent_id=processor.agent_id,
                     model_id=processor.model_id,
+                    trace=processor.trace,
                     _continuation={
                         "messages": messages,
                         "tools_dict": tools_dict,
@@ -129,7 +140,11 @@ class AnswerResource(Resource, BaseAnswerResource):
                 if not processor.decoded_token:
                     return make_response({"error": "Unauthorized"}, 401)
 
-                if error := self.check_usage(processor.agent_config):
+                if error := self.check_usage(
+                    processor.agent_config,
+                    processor.decoded_token,
+                    agent_id=processor.agent_id,
+                ):
                     return error
 
                 should_persist, visibility = resolve_persistence(
@@ -150,12 +165,19 @@ class AnswerResource(Resource, BaseAnswerResource):
                     is_shared_usage=processor.is_shared_usage,
                     shared_token=processor.shared_token,
                     model_id=processor.model_id,
+                    request_id=processor.request_id,
+                    trace=processor.trace,
                 )
 
             stream_result = self.process_response_stream(stream)
 
             if stream_result["error"]:
-                return make_response({"error": stream_result["error"]}, 400)
+                body = {"error": stream_result["error"]}
+                if stream_result.get("error_code"):
+                    body["code"] = stream_result["error_code"]
+                if stream_result.get("error_params"):
+                    body["params"] = stream_result["error_params"]
+                return make_response(body, 400)
 
             result = {
                 "conversation_id": stream_result["conversation_id"],
@@ -168,6 +190,14 @@ class AnswerResource(Resource, BaseAnswerResource):
             extra_info = stream_result.get("extra")
             if extra_info:
                 result.update(extra_info)
+        except ContextOverflowError as e:
+            # A turn too big for the window, found before any provider call.
+            logger.info("/api/answer - turn does not fit the context window: %s", bounded_error_text(e))
+            public = user_facing_error(e)
+            body = {"error": public.message, "code": public.code}
+            if public.params:
+                body["params"] = public.params
+            return make_response(body, 400)
         except ResumeInProgressError as e:
             # Another request already owns this conversation's continuation
             # claim. Same contract as ``/stream`` and ``/v1/chat/completions``:

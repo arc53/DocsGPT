@@ -206,9 +206,16 @@ jobs:
           ref: ${{ inputs.version && format('refs/tags/{0}', inputs.version) || github.ref }}
           persist-credentials: false
 
-      - name: Attach the standalone compose file to the release
+      # The installers are served from these assets: docs.ac/install redirects to
+      # releases/latest/download/install.sh (and install.ps1), so the script a
+      # user runs always comes from the newest release.
+      - name: Attach the standalone compose file and the installers to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ env.RELEASE_TAG }}
         run: |
-          gh release upload "$TAG" deployment/docker-compose-standalone.yaml --clobber
+          gh release upload "$TAG" \
+            deployment/docker-compose-standalone.yaml \
+            deployment/install.sh \
+            deployment/install.ps1 \
+            --clobber

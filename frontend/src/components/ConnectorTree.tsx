@@ -1,16 +1,20 @@
 import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
+import { Check, Cloud, RefreshCw } from 'lucide-react';
 
 import userService from '../api/services/userService';
-import CheckmarkIcon from '../assets/checkMark2.svg';
-import SyncIcon from '../assets/sync.svg';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
+import type { Crumb } from './tree/PathHeader';
 import TreeBrowser from './tree/TreeBrowser';
 import type { TreeBrowserController } from './tree/types';
 import { useReingestSseWaiter } from './tree/useReingestWait';
+import type { LinkedChunk } from './chunkUtils';
 
 interface ConnectorTreeProps {
   docId: string;
@@ -18,6 +22,45 @@ interface ConnectorTreeProps {
   onBackToDocuments: () => void;
   /** Extra header control, rendered left of the Sync button. */
   headerAction?: React.ReactNode;
+  /**
+   * Inside another source view (the graph source's Files tab): no Sources
+   * crumb, badge or byline, and no headerAction; Sync stays.
+   */
+  embedded?: boolean;
+  /** Embedded only: the host header's action slot (see TreeBrowser). */
+  actionsTarget?: HTMLElement | null;
+  /** A file to open once the structure loads (path, file name or display name). */
+  initialPath?: string;
+  /** The cited chunk to open in `initialPath`'s chunk list (see `LinkedChunk`). */
+  linkedChunk?: LinkedChunk;
+  /** Embedded only: the tree's crumbs, for the host's header (see TreeBrowser). */
+  onCrumbsChange?: (crumbs: Crumb[]) => void;
+  /**
+   * Whether the caller may change the source (`can(source, 'edit')`).
+   * False hides Sync and the chunk writes; browsing stays.
+   */
+  canEdit?: boolean;
+}
+
+// Provider names are brand names, so they are not translated.
+const PROVIDER_LABELS: Record<string, string> = {
+  google_drive: 'Google Drive',
+  share_point: 'SharePoint',
+  confluence: 'Confluence',
+};
+
+/**
+ * The display name of a connector provider: a known brand name, else the raw
+ * id with underscores as spaces, title-cased ("box_sync" → "Box Sync").
+ */
+export function providerLabel(provider: string): string {
+  const known = PROVIDER_LABELS[provider.toLowerCase()];
+  if (known) return known;
+  return provider
+    .split('_')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 }
 
 const ConnectorTree: React.FC<ConnectorTreeProps> = ({
@@ -25,6 +68,12 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
   sourceName,
   onBackToDocuments,
   headerAction,
+  embedded = false,
+  actionsTarget,
+  initialPath,
+  linkedChunk,
+  onCrumbsChange,
+  canEdit = true,
 }) => {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -48,7 +97,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
     setSyncProgress(0);
 
     try {
-      const response = await userService.syncConnector(docId, provider, token);
+      const response = await userService.syncConnector(docId, token);
       const data = await response.json();
 
       if (data.success) {
@@ -105,43 +154,48 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
 
   const topRightAction = (
     <>
-      {headerAction}
-      <button
-        onClick={() => setSyncConfirmationModal('ACTIVE')}
-        disabled={isSyncing}
-        className={`flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-sm font-medium whitespace-nowrap transition-colors ${
-          isSyncing
-            ? 'dark:bg-muted dark:text-muted-foreground cursor-not-allowed bg-gray-300 text-gray-600'
-            : 'bg-primary hover:bg-primary/90 text-white'
-        }`}
-        title={
-          isSyncing
-            ? `${t('settings.sources.syncing')} ${syncProgress}%`
+      {embedded ? null : headerAction}
+      {canEdit ? (
+        <Button
+          type="button"
+          size="field"
+          shape="pill"
+          onClick={() => setSyncConfirmationModal('ACTIVE')}
+          disabled={isSyncing}
+        >
+          {syncDone ? (
+            <Check />
+          ) : isSyncing ? (
+            // The busy state shows its percentage, so it keeps the label and
+            // draws the app's ring spinner at icon size (DESIGN.md, Button).
+            <Spinner size="xs" label={t('settings.sources.syncing')} />
+          ) : (
+            <RefreshCw />
+          )}
+          {isSyncing
+            ? `${syncProgress}%`
             : syncDone
-              ? 'Done'
-              : t('settings.sources.sync')
-        }
-      >
-        <img
-          src={syncDone ? CheckmarkIcon : SyncIcon}
-          alt={t('settings.sources.sync')}
-          className={`mr-2 h-4 w-4 brightness-0 invert filter ${isSyncing ? 'animate-spin' : ''}`}
-        />
-        {isSyncing
-          ? `${syncProgress}%`
-          : syncDone
-            ? 'Done'
-            : t('settings.sources.sync')}
-      </button>
+              ? t('settings.sources.syncDone')
+              : t('settings.sources.sync')}
+        </Button>
+      ) : null}
     </>
   );
 
   const extraContent = (
     <ConfirmationModal
-      message={t('settings.sources.syncConfirmation', { sourceName })}
+      message={t('settings.sources.syncConfirmation', {
+        interpolation: { escapeValue: false },
+        sourceName,
+      })}
+      description={t('settings.sources.syncConsequence')}
       modalState={syncConfirmationModal}
       setModalState={setSyncConfirmationModal}
-      handleSubmit={handleSync}
+      // The sync runs for minutes with its own progress, so the dialog
+      // closes at once rather than waiting on it.
+      handleSubmit={() => {
+        void handleSync();
+      }}
       submitLabel={t('settings.sources.sync')}
       cancelLabel={t('cancel')}
     />
@@ -152,6 +206,20 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
       docId={docId}
       sourceName={sourceName}
       onBackToDocuments={onBackToDocuments}
+      embedded={embedded}
+      onCrumbsChange={onCrumbsChange}
+      canEdit={canEdit}
+      actionsTarget={actionsTarget}
+      initialPath={initialPath}
+      linkedChunk={linkedChunk}
+      badge={
+        sourceProvider ? (
+          <Badge variant="neutral">
+            <Cloud />
+            {providerLabel(sourceProvider)}
+          </Badge>
+        ) : undefined
+      }
       columnOrder="tokens-first"
       sortEntries
       controllerRef={controllerRef}

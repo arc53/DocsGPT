@@ -3,7 +3,7 @@ import logging
 import mimetypes
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import requests
 
@@ -39,6 +39,14 @@ SKIP_SUFFIXES = (
 )
 
 
+class GitHubTokenRejected(PermissionError):
+    """GitHub answered 401 to a user's own token (revoked or expired)."""
+
+
+class PrivateRepositoryError(PermissionError):
+    """A repository the instance-wide token may not read for a user."""
+
+
 class GitHubLoader(BaseRemote):
     """Load a GitHub repository's text files as ``Document`` objects.
 
@@ -48,15 +56,74 @@ class GitHubLoader(BaseRemote):
     downloads the survivors in parallel.
     """
 
-    def __init__(self):
-        self.access_token = settings.GITHUB_ACCESS_TOKEN
-        self.headers = {
-            "Authorization": f"token {self.access_token}",
-            "Accept": "application/vnd.github.v3+json"
-        } if self.access_token else {
-            "Accept": "application/vnd.github.v3+json"
-        }
-        return
+    def __init__(self, access_token: Optional[str] = None):
+        """Create a loader.
+
+        Args:
+            access_token: A user's own GitHub token (from their GitHub
+                connection). Without one the instance-wide
+                ``GITHUB_ACCESS_TOKEN`` is used, and only for public
+                repositories.
+        """
+        self._user_token = access_token
+        self._use_token(access_token or settings.GITHUB_ACCESS_TOKEN)
+
+    def _use_token(self, token: Optional[str]) -> None:
+        """Send ``token`` (or nothing) on every following request."""
+        self.access_token = token
+        self.headers = {"Accept": "application/vnd.github.v3+json"}
+        if token:
+            self.headers["Authorization"] = f"Bearer {token}"
+
+    @staticmethod
+    def _parse_inputs(inputs: Union[str, Dict[str, Any]]) -> Tuple[str, Optional[str]]:
+        """``(repo_url, token)`` from a URL string or a connection's loader input.
+
+        A source synced from a GitHub connection gets a dict: the repository
+        (``repo_url`` or ``url``) plus the connection's ``access_token``.
+        """
+        if isinstance(inputs, dict):
+            repo = inputs.get("repo_url") or inputs.get("url") or ""
+            token = inputs.get("access_token") or inputs.get("token")
+            return str(repo), (str(token) if token else None)
+        return str(inputs or ""), None
+
+    def ensure_instance_token_allowed(self, repo_name: str) -> None:
+        """Refuse a repository the instance-wide token must not read.
+
+        ``GITHUB_ACCESS_TOKEN`` belongs to the server, not to the user asking,
+        and may see private repositories. Without a user's own token it is
+        used only for public ones (for their higher rate limit); anything
+        else needs the user's GitHub connection.
+
+        Raises:
+            PrivateRepositoryError: The repository is private, internal, or
+                not visible to the token.
+        """
+        if self._user_token or not self.access_token:
+            # A user's own token, or anonymous requests (which only ever see
+            # public repositories).
+            return
+        url = f"https://api.github.com/repos/{repo_name}"
+        response = requests.get(url, headers=self.headers, timeout=30)
+        if response.status_code == 401:
+            # A stale instance token: public repositories still read anonymously.
+            logger.warning("GitHub rejected GITHUB_ACCESS_TOKEN (401); reading %s anonymously", repo_name)
+            self._use_token(None)
+            return
+        if response.status_code == 200:
+            try:
+                data = response.json()
+            except ValueError:
+                data = {}
+            if isinstance(data, dict) and data.get("private") is False and (
+                data.get("visibility") or "public"
+            ) == "public":
+                return
+        raise PrivateRepositoryError(
+            f"{repo_name} is private or could not be found. Connect your GitHub account "
+            "under Connectors to sync private repositories."
+        )
 
     def is_text_file(self, file_path: str) -> bool:
         """Determine if a file is a text file based on extension."""
@@ -129,7 +196,7 @@ class GitHubLoader(BaseRemote):
 
     def _max_file_bytes(self) -> int:
         """Resolve the per-blob size cap; ``0`` disables it."""
-        raw = getattr(settings, "GITHUB_INGEST_MAX_FILE_BYTES", None)
+        raw = settings.GITHUB_INGEST_MAX_FILE_BYTES
         if isinstance(raw, bool) or not isinstance(raw, (int, str)):
             return 1048576
         try:
@@ -139,7 +206,7 @@ class GitHubLoader(BaseRemote):
 
     def _max_workers(self) -> int:
         """Resolve the parallel-fetch width, clamped to a sane range."""
-        raw = getattr(settings, "GITHUB_INGEST_MAX_WORKERS", None)
+        raw = settings.GITHUB_INGEST_MAX_WORKERS
         if isinstance(raw, bool) or not isinstance(raw, (int, str)):
             return 8
         try:
@@ -344,6 +411,10 @@ class GitHubLoader(BaseRemote):
                         raise
                     # If we can't parse the response, raise the original error
                     response.raise_for_status()
+            elif response.status_code == 401 and self._user_token:
+                # The user's own token: a retry without it could only read
+                # public repositories, which is not what they asked for.
+                raise GitHubTokenRejected("GitHub rejected the connection's token. Reconnect GitHub to continue.")
             elif response.status_code == 401 and self.access_token:
                 # An expired or revoked PAT makes even public repos 401, which
                 # is strictly worse than not sending one. Retry unauthenticated
@@ -404,14 +475,30 @@ class GitHubLoader(BaseRemote):
         paths = self.fetch_repo_files(repo_name)
         return self.select_files([(p, 0) for p in paths])
 
-    def load_data(self, repo_url: str) -> List[Document]:
-        """Load every ingestable text file in ``repo_url`` as a Document."""
+    def load_data(self, inputs: Union[str, Dict[str, Any]]) -> List[Document]:
+        """Load every ingestable text file of a repository as a Document.
+
+        Args:
+            inputs: The repository URL, or ``{"repo_url", "access_token"}``
+                for a source synced from a GitHub connection.
+
+        Raises:
+            ValueError: ``inputs`` names no github.com repository.
+            PrivateRepositoryError: Only the instance-wide token is available
+                and the repository is not public.
+            GitHubTokenRejected: GitHub refused the connection's token.
+        """
+        repo_url, token = self._parse_inputs(inputs)
+        if token:
+            self._user_token = token
+            self._use_token(token)
         repo_name = self.normalize_repo(repo_url)
         if not repo_name or "/" not in repo_name:
             raise ValueError(
                 f"Not a valid GitHub repository: {repo_url!r}. "
                 "Expected a github.com URL like https://github.com/owner/name."
             )
+        self.ensure_instance_token_allowed(repo_name)
         branch = self.get_default_branch(repo_name)
         files = self._list_candidate_files(repo_name, branch)
         logger.info(

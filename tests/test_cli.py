@@ -10,6 +10,7 @@ import click
 import pytest
 
 from docsgpt import cli
+from docsgpt.core.paths import package_dir
 from docsgpt.version import __version__
 
 
@@ -32,6 +33,16 @@ class TestTopLevel:
             "assert not loaded, loaded"
         )
         subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).resolve().parents[1], check=True)
+
+
+class TestModuleEntrypoint:
+    def test_python_m_docsgpt_runs_the_cli(self):
+        """`python -m docsgpt` is what a native service falls back to when the script is not on PATH."""
+        result = subprocess.run(
+            [sys.executable, "-m", "docsgpt", "--version"],
+            cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, check=True,
+        )
+        assert result.stdout.strip() == f"docsgpt {__version__}"
 
 
 class TestHome:
@@ -116,7 +127,28 @@ class TestApi:
         uvicorn = types.SimpleNamespace(run=MagicMock())
         monkeypatch.setitem(sys.modules, "uvicorn", uvicorn)
         assert cli.main(["api", "--reload", "--host", "127.0.0.1"]) == 0
-        uvicorn.run.assert_called_once_with("docsgpt.asgi:asgi_app", host="127.0.0.1", port=7091, reload=True)
+        uvicorn.run.assert_called_once_with(
+            "docsgpt.asgi:asgi_app", host="127.0.0.1", port=7091, reload=True,
+            reload_dirs=[str(package_dir())],
+        )
+
+    def test_reload_watches_the_package_not_the_working_directory(self, monkeypatch, tmp_path):
+        """A checkout also holds .venv, node_modules and the indexes and inputs the app writes to,
+        so watching the working directory restarts the server mid-ingest."""
+        uvicorn = types.SimpleNamespace(run=MagicMock())
+        monkeypatch.setitem(sys.modules, "uvicorn", uvicorn)
+        monkeypatch.chdir(tmp_path)
+        assert cli.main(["api", "--reload"]) == 0
+        watched = uvicorn.run.call_args.kwargs["reload_dirs"]
+        assert watched == [str(package_dir())]
+        assert str(tmp_path) not in watched
+
+    def test_without_reload_nothing_is_watched(self, monkeypatch):
+        uvicorn = types.SimpleNamespace(run=MagicMock())
+        monkeypatch.setitem(sys.modules, "uvicorn", uvicorn)
+        monkeypatch.setattr(sys, "platform", "win32")
+        assert cli.main(["api"]) == 0
+        assert uvicorn.run.call_args.kwargs["reload_dirs"] is None
 
 
 class TestWorker:
@@ -194,6 +226,40 @@ class TestMigrate:
         assert "POSTGRES_URI" in capsys.readouterr().err
 
 
+class TestConnectorsReencrypt:
+    def _counts(self, monkeypatch, connections, saved):
+        monkeypatch.setattr("docsgpt.connectors.service.reencrypt_all", lambda: connections)
+        monkeypatch.setattr("docsgpt.connectors.service.reencrypt_saved_secrets", lambda: saved)
+
+    def test_rewrites_connections_and_saved_secrets(self, monkeypatch, capsys):
+        self._counts(
+            monkeypatch,
+            {"rewritten": 2, "current": 1, "failed": 0},
+            {"rewritten": 3, "current": 4, "failed": 0},
+        )
+        assert cli.main(["connectors", "reencrypt"]) == 0
+        err = capsys.readouterr().err
+        assert "re-encrypted 2 connection(s), 1 already current, 0 unreadable" in err
+        assert "re-encrypted 3 tool and custom-model secret(s), 4 already current, 0 unreadable" in err
+        assert "ENCRYPTION_SECRET_KEY_PREVIOUS can be removed" in err
+
+    def test_unreadable_saved_secrets_fail_the_run_and_keep_the_previous_key(self, monkeypatch, capsys):
+        self._counts(
+            monkeypatch,
+            {"rewritten": 0, "current": 0, "failed": 0},
+            {"rewritten": 0, "current": 0, "failed": 2},
+        )
+        assert cli.main(["connectors", "reencrypt"]) == 1
+        err = capsys.readouterr().err
+        assert "left unchanged" in err
+        assert "can be removed" not in err
+
+    def test_help_names_what_it_rewrites(self):
+        # argparse wraps long help at hyphens; undo that before matching.
+        help_text = " ".join(cli.build_parser().format_help().split()).replace("- ", "-")
+        assert "tool and custom-model secrets" in help_text
+
+
 class TestScripts:
     def test_arguments_pass_through_untouched(self, monkeypatch):
         main = MagicMock(return_value=0)
@@ -211,3 +277,32 @@ class TestScripts:
             cli.main([script, "--help"])
         assert exc.value.code == 0
         assert "models" in capsys.readouterr().out
+
+
+class TestGrantAdmin:
+    def test_grant_admin_is_a_command(self, monkeypatch):
+        """The first-admin bootstrap must work from the image and a pip install, not only a checkout."""
+        main = MagicMock(return_value=0)
+        monkeypatch.setattr("docsgpt.scripts.grant_admin.main", main)
+        assert cli.main(["grant-admin", "alice", "--force"]) == 0
+        main.assert_called_once_with(["alice", "--force"])
+
+    def test_listed_in_the_help(self, capsys):
+        cli.build_parser().print_help()
+        assert "grant-admin" in capsys.readouterr().out
+
+    def test_help_names_the_command(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            cli.main(["grant-admin", "--help"])
+        assert exc.value.code == 0
+        out = capsys.readouterr().out
+        assert "docsgpt grant-admin" in out
+        assert "--revoke" in out
+
+    def test_checkout_script_still_runs_the_packaged_command(self):
+        """``python scripts/grant_admin.py`` keeps working for anyone following an older guide."""
+        result = subprocess.run(
+            [sys.executable, "scripts/grant_admin.py", "--help"],
+            cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, check=True,
+        )
+        assert "docsgpt grant-admin" in result.stdout

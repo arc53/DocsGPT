@@ -54,7 +54,3 @@ records for debugging).
   upload specs. Body content must be deterministic — no dates, UUIDs, or
   random tokens.
 
-## Full plan
-
-See [`../../e2e-plan.md`](../../e2e-plan.md) for the phased rollout,
-parallelization model, and Tier-A/B/C spec inventory.

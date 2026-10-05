@@ -11,12 +11,38 @@ class TelegramTool(Tool):
     """
     Telegram Bot
     A flexible Telegram tool for performing various actions (e.g., sending messages, images).
-    Requires a bot token and chat ID for configuration
+    Requires a bot token; a default chat ID set on the connection is used when no chat is named
     """
 
     def __init__(self, config):
         self.config = config
         self.token = config.get("token", "")
+        self.default_chat_id = config.get("chat_id") or None
+
+    def _no_chat(self):
+        return {
+            "status": "error",
+            "error": (
+                "No chat to send to. Name a chat_id, or set a default chat ID on the Telegram "
+                "connection in Settings > Connectors."
+            ),
+        }
+
+    @staticmethod
+    def _result(response, sent_message):
+        """``sent_message`` on success; on failure an error carrying Telegram's reason."""
+        if 200 <= response.status_code < 300:
+            return {"status_code": response.status_code, "message": sent_message}
+        try:
+            description = response.json().get("description")
+        except (ValueError, AttributeError):
+            description = None
+        return {
+            "status": "error",
+            "status_code": response.status_code,
+            "error": f"Telegram refused the request (HTTP {response.status_code}): "
+            f"{description or 'no reason given'}",
+        }
 
     def execute_action(self, action_name, **kwargs):
         actions = {
@@ -27,24 +53,31 @@ class TelegramTool(Tool):
             raise ValueError(f"Unknown action: {action_name}")
         return actions[action_name](**kwargs)
 
-    def _send_message(self, text, chat_id):
+    def _send_message(self, text, chat_id=None):
+        chat_id = chat_id or self.default_chat_id
+        if not chat_id:
+            return self._no_chat()
         logger.debug("Sending Telegram message to chat_id=%s", chat_id)
         url = f"https://api.telegram.org/bot{self.token}/sendMessage"
         payload = {"chat_id": chat_id, "text": text}
         response = requests.post(url, data=payload, timeout=100)
-        return {"status_code": response.status_code, "message": "Message sent"}
+        return self._result(response, "Message sent")
 
-    def _send_image(self, image_url, chat_id):
+    def _send_image(self, image_url, chat_id=None):
+        chat_id = chat_id or self.default_chat_id
+        if not chat_id:
+            return self._no_chat()
         logger.debug("Sending Telegram image to chat_id=%s", chat_id)
         url = f"https://api.telegram.org/bot{self.token}/sendPhoto"
         payload = {"chat_id": chat_id, "photo": image_url}
         response = requests.post(url, data=payload, timeout=100)
-        return {"status_code": response.status_code, "message": "Image sent"}
+        return self._result(response, "Image sent")
 
     def get_actions_metadata(self):
         return [
             {
                 "name": "telegram_send_message",
+                "access": "write",
                 "description": (
                     "Send a text message to the configured Telegram chat via "
                     "the bot. Compose the final message text before sending."
@@ -67,6 +100,7 @@ class TelegramTool(Tool):
             },
             {
                 "name": "telegram_send_image",
+                "access": "write",
                 "description": (
                     "Send an image to the configured Telegram chat. Requires "
                     "a publicly accessible image URL."

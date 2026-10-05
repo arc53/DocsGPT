@@ -2,16 +2,16 @@ import json
 import logging
 import os
 import time
-from typing import Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
+from docsgpt import tracing
 from docsgpt.agents.base import BaseAgent
-from docsgpt.agents.tool_executor import ToolExecutor
-from docsgpt.agents.tools.internal_search import (
-    INTERNAL_TOOL_ID,
-    add_internal_search_tool,
-)
+from docsgpt.agents.tool_executor import ToolExecutor, journal_refused_call
+from docsgpt.agents.tools.graph_search import add_graph_search_tool
+from docsgpt.agents.tools.internal_search import add_internal_search_tool
 from docsgpt.agents.tools.wiki import add_wiki_tool
 from docsgpt.agents.tools.think import THINK_TOOL_ENTRY, THINK_TOOL_ID
+from docsgpt.llm.handlers.base import take_tool_images
 from docsgpt.logging import LogContext
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,15 @@ CLARIFICATION_PROMPT = _load_prompt("clarification.txt")
 PLANNING_PROMPT = _load_prompt("planning.txt")
 STEP_PROMPT = _load_prompt("step.txt")
 SYNTHESIS_PROMPT = _load_prompt("synthesis.txt")
+
+
+def _phase_span(phase: str, **attributes: Any) -> Any:
+    """Open a trace span for one research phase (clarify, plan, a step, synthesis)."""
+    return tracing.start_span(
+        tracing.KIND_STEP,
+        f"research {phase}",
+        attributes={"docsgpt.research.phase": phase.split(" ")[0], **attributes},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +146,14 @@ class ResearchAgent(BaseAgent):
     # Budget & timeout helpers
     # ------------------------------------------------------------------
 
+    def _attach_citation_registry(self) -> None:
+        """Keep the search tools' per-call labels.
+
+        Research numbers its sources itself (:class:`CitationManager`), per
+        step and in the final report, so a shared registry would only make
+        the tools' labels disagree with it.
+        """
+
     def _is_timed_out(self) -> bool:
         return (time.monotonic() - self._start_time) >= self.timeout_seconds
 
@@ -171,7 +188,8 @@ class ResearchAgent(BaseAgent):
 
         # Phase 0: Clarification (skip if user is responding to a prior clarification)
         if not self._is_follow_up():
-            clarification = self._clarification_phase(query)
+            with _phase_span("clarify"):
+                clarification = self._clarification_phase(query)
             if clarification:
                 yield {"metadata": {"is_clarification": True}}
                 yield {"answer": clarification}
@@ -184,7 +202,11 @@ class ResearchAgent(BaseAgent):
 
         # Phase 1: Planning (with adaptive depth)
         yield {"type": "research_progress", "data": {"status": "planning"}}
-        plan, complexity = self._planning_phase(query)
+        with _phase_span("plan") as plan_span:
+            plan, complexity = self._planning_phase(query)
+            plan_span.set(
+                **{"docsgpt.research.steps": len(plan or []), "docsgpt.research.complexity": complexity}
+            )
 
         if not plan:
             logger.warning("ResearchAgent: Planning produced no steps, falling back")
@@ -224,7 +246,9 @@ class ResearchAgent(BaseAgent):
                 },
             }
 
-            report = self._research_step(step_query, tools_dict)
+            with _phase_span(f"step {step_num}", **{"docsgpt.research.step": step_num}) as step_span:
+                step_span.preview("query", step_query)
+                report = self._research_step(step_query, tools_dict)
             intermediate_reports.append({"step": step, "content": report})
 
             yield {
@@ -251,9 +275,10 @@ class ResearchAgent(BaseAgent):
                 "tokens_used": self._tokens_used,
             },
         }
-        yield from self._synthesis_phase(
-            query, plan, intermediate_reports, tools_dict, log_context
-        )
+        with _phase_span("synthesis"):
+            yield from self._synthesis_phase(
+                query, plan, intermediate_reports, tools_dict, log_context
+            )
 
         # Sources and tool calls
         self.retrieved_docs = self.citations.get_all_docs()
@@ -277,6 +302,7 @@ class ResearchAgent(BaseAgent):
         tools_dict = self.tool_executor.get_tools()
 
         add_internal_search_tool(tools_dict, self.retriever_config)
+        add_graph_search_tool(tools_dict, self.retriever_config)
         if self.wiki_config:
             add_wiki_tool(tools_dict, self.wiki_config)
 
@@ -284,6 +310,7 @@ class ResearchAgent(BaseAgent):
         think_entry["config"] = {}
         tools_dict[THINK_TOOL_ID] = think_entry
 
+        self._add_attachments_tool(tools_dict)
         self._prepare_tools(tools_dict)
         return tools_dict
 
@@ -565,24 +592,31 @@ class ResearchAgent(BaseAgent):
         search_returned_empty = False
 
         for call in tool_calls:
-            gen = executor.execute(
-                tools_dict, call, self.llm.__class__.__name__
-            )
-            result = None
-            call_id = None
-            while True:
-                try:
-                    event = next(gen)
-                    # Log tool_call status events instead of discarding them
-                    if isinstance(event, dict) and event.get("type") == "tool_call":
-                        logger.debug(
-                            "Tool %s status: %s",
-                            event.get("data", {}).get("action_name", ""),
-                            event.get("data", {}).get("status", ""),
-                        )
-                except StopIteration as e:
-                    result, call_id = e.value
-                    break
+            # A step runs inside one turn and nobody can answer a pause here,
+            # so a call that would pause (approval, a connection, the client,
+            # an outside caller's write on the owner's account) is refused.
+            refusal = self._refuse_paused_call(tools_dict, call, executor)
+            if refusal is not None:
+                result, call_id = refusal
+            else:
+                gen = executor.execute(
+                    tools_dict, call, self.llm.__class__.__name__
+                )
+                result = None
+                call_id = None
+                while True:
+                    try:
+                        event = next(gen)
+                        # Log tool_call status events instead of discarding them
+                        if isinstance(event, dict) and event.get("type") == "tool_call":
+                            logger.debug(
+                                "Tool %s status: %s",
+                                event.get("data", {}).get("action_name", ""),
+                                event.get("data", {}).get("status", ""),
+                            )
+                    except StopIteration as e:
+                        result, call_id = e.value
+                        break
 
             # Detect empty search results for refinement
             is_search = "search" in (call.name or "").lower()
@@ -615,17 +649,67 @@ class ResearchAgent(BaseAgent):
                 }],
             })
             tool_message = self.llm_handler.create_tool_message(call, result)
-            messages.append(tool_message)
-
+            messages.append(take_tool_images(executor, tool_message))
         return messages, search_returned_empty
 
+    def _refuse_paused_call(
+        self, tools_dict: Dict, call, executor: ToolExecutor
+    ) -> Optional[tuple[str, str]]:
+        """Refuse a call ``check_pause`` would pause on, as a headless run does.
+
+        Args:
+            tools_dict: The step's tools.
+            call: The model's tool call.
+            executor: The run's executor.
+
+        Returns:
+            ``(tool result, call id)`` when the call is refused, else None.
+        """
+        pause_info = executor.check_pause(
+            tools_dict, call, self.llm.__class__.__name__
+        )
+        if not pause_info:
+            return None
+        pause_type = pause_info.get("pause_type")
+        if pause_type == "headless_denied":
+            reason = pause_info.get("deny_reason") or "This tool can't run here."
+            result = f"Tool denied: {reason}"
+            journal_error = f"headless: {reason}" if executor.headless else f"denied: {reason}"
+            if executor.headless:
+                executor.headless_denials.append(pause_info)
+        elif pause_info.get("connection_required"):
+            result = (
+                "Tool not run: its service needs to be connected first, and a "
+                "research step can't wait for that."
+            )
+            journal_error = "research: connection required"
+        elif pause_type == "requires_client_execution":
+            result = (
+                "Tool not run: it runs in the user's app, which a research step "
+                "can't reach."
+            )
+            journal_error = "research: client-side tool"
+        else:
+            result = (
+                "Tool not run: this action needs the user's approval, which a "
+                "research step can't ask for. Tell the user it needs their "
+                "approval in a regular chat."
+            )
+            journal_error = "research: approval required"
+        logger.info(
+            "research_step_tool_refused",
+            extra={
+                "action_name": pause_info.get("action_name"),
+                "pause_type": pause_type,
+            },
+        )
+        journal_refused_call(executor, pause_info, journal_error)
+        return result, pause_info["call_id"]
+
     def _collect_step_sources(self):
-        """Collect sources from InternalSearchTool and register with CitationManager."""
-        cache_key = f"internal_search:{INTERNAL_TOOL_ID}:{self.user or ''}"
-        tool = self.tool_executor._loaded_tools.get(cache_key)
-        if tool and hasattr(tool, "retrieved_docs"):
-            for doc in tool.retrieved_docs:
-                self.citations.add(doc)
+        """Register the search tools' docs (internal search and graph pages) with CitationManager."""
+        for doc in self._search_tool_docs():
+            self.citations.add(doc)
 
     # ------------------------------------------------------------------
     # Phase 3: Synthesis

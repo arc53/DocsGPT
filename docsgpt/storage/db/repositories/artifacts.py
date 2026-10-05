@@ -174,6 +174,59 @@ class ArtifactsRepository:
         row = result.fetchone()
         return _artifact_to_dict(row) if row is not None else None
 
+    def find_by_current_filename(
+        self,
+        filename: str,
+        *,
+        user_id: str,
+        produced_by_tool: str,
+        conversation_id: Optional[str] = None,
+        workflow_run_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Return the newest artifact in a parent whose current version is ``filename`` from ``produced_by_tool``.
+
+        Sandbox capture uses this to save a re-written file as the next version of the
+        artifact it replaces, instead of a second artifact with the same name.
+
+        Args:
+            filename: The current version's filename, matched exactly.
+            user_id: The owner the artifact must belong to.
+            produced_by_tool: The ``produced_by.tool`` the current version must carry.
+            conversation_id: Conversation parent scope.
+            workflow_run_id: Workflow-run parent scope.
+
+        Returns:
+            The artifact dict, or None when no such artifact exists.
+
+        Raises:
+            ValueError: Neither parent was given.
+        """
+        if conversation_id is None and workflow_run_id is None:
+            raise ValueError("find_by_current_filename requires conversation_id or workflow_run_id")
+        clauses, params = self._parent_clauses(conversation_id, workflow_run_id, alias="a")
+        clauses += [
+            "a.user_id = :user_id",
+            "v.filename = :filename",
+            "v.produced_by ->> 'tool' = :tool",
+        ]
+        params.update({"user_id": user_id, "filename": filename, "tool": produced_by_tool})
+        result = self._conn.execute(
+            text(
+                "SELECT a.* FROM artifacts a "
+                "JOIN artifact_versions v ON v.artifact_id = a.id AND v.version = a.current_version "
+                f"WHERE {' AND '.join(clauses)} "
+                # Rows created in one transaction share now(), so the stable per-parent
+                # ref_seq breaks created_at ties (guarded cast, as in next_ref_seq).
+                "ORDER BY a.created_at DESC, "
+                "CASE WHEN a.metadata ->> 'ref_seq' ~ '^[0-9]+$' "
+                "THEN (a.metadata ->> 'ref_seq')::int END DESC NULLS LAST, a.id DESC "
+                "LIMIT 1"
+            ),
+            params,
+        )
+        row = result.fetchone()
+        return _artifact_to_dict(row) if row is not None else None
+
     def list_artifacts(
         self,
         conversation_id: Optional[str] = None,

@@ -1,0 +1,99 @@
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it, vi } from 'vitest';
+
+import { Dropzone } from './dropzone';
+import { FormField } from './form-field';
+
+describe('Dropzone', () => {
+  it('renders the default prompt as a dashed card target', () => {
+    const html = renderToStaticMarkup(<Dropzone onDrop={vi.fn()} />);
+    expect(html).toContain('Click to upload or drag and drop');
+    expect(html).toContain('border-dashed');
+    expect(html).toContain('data-slot="dropzone"');
+    expect(html).toContain('<input');
+  });
+
+  it('shows description, error and custom title', () => {
+    const html = renderToStaticMarkup(
+      <Dropzone
+        onDrop={vi.fn()}
+        title="Drop your agent"
+        description=".yaml or .yml"
+        error="Only .yaml files are supported"
+      />,
+    );
+    expect(html).toContain('Drop your agent');
+    expect(html).toContain('.yaml or .yml');
+    expect(html).toContain('Only .yaml files are supported');
+    expect(html).toContain('text-destructive');
+  });
+
+  it('marks the disabled and compact states with data attributes', () => {
+    const html = renderToStaticMarkup(
+      <Dropzone onDrop={vi.fn()} disabled size="compact" />,
+    );
+    expect(html).toContain('data-disabled="true"');
+    expect(html).toContain('data-size="compact"');
+  });
+
+  it('draws the tile size as an 88px square with a short muted label', () => {
+    const html = renderToStaticMarkup(
+      <Dropzone
+        onDrop={vi.fn()}
+        size="tile"
+        title="Avatar"
+        description="hidden"
+      />,
+    );
+    expect(html).toContain('data-size="tile"');
+    // 64px beside the Name field on a phone, 88px beside both fields from sm.
+    expect(html).toContain('size-16');
+    expect(html).toContain('sm:size-22');
+    // The word shows from sm; on a phone the tile is icon-only.
+    expect(html).toMatch(/class="[^"]*\bsr-only\b[^"]*sm:not-sr-only/);
+    expect(html).not.toContain('w-full cursor-pointer');
+    expect(html).toContain('Avatar');
+    expect(html).not.toContain('hidden</span>');
+  });
+
+  it('keeps a fixed tile at 64px and icon-only at every width', () => {
+    const html = renderToStaticMarkup(
+      <Dropzone onDrop={vi.fn()} size="tile" tileSize="fixed" title="Avatar" />,
+    );
+    expect(html).toContain('data-tile-size="fixed"');
+    expect(html).toContain('size-16');
+    expect(html).not.toContain('sm:size-22');
+    expect(html).not.toContain('sm:not-sr-only');
+    // The word is still the target's accessible name.
+    expect(html).toMatch(/class="[^"]*\bsr-only\b[^"]*">Avatar/);
+  });
+
+  it('never uses raw palette colours', () => {
+    const html = renderToStaticMarkup(<Dropzone onDrop={vi.fn()} />);
+    expect(html).not.toMatch(/\b(bg|text|border)-(gray|red|green|blue)-\d+/);
+  });
+
+  it('lets a FormField label open the file picker', () => {
+    const host = document.createElement('div');
+    host.innerHTML = renderToStaticMarkup(
+      <FormField label="Agent Image" hint="Updates on save">
+        <Dropzone onDrop={vi.fn()} />
+      </FormField>,
+    );
+    const input = host.querySelector('input')!;
+    expect(input.id).not.toBe('');
+    expect(host.querySelector('label')!.getAttribute('for')).toBe(input.id);
+    const target = host.querySelector('[data-slot="dropzone"]')!;
+    expect(target.getAttribute('aria-describedby')).toBe(
+      host.querySelector('p')!.id,
+    );
+  });
+});
+
+describe('Dropzone hover', () => {
+  it('hovers to solid accent like Card and combobox', () => {
+    const html = renderToStaticMarkup(<Dropzone onDrop={vi.fn()} />);
+    expect(html).toContain('hover:bg-accent ');
+    expect(html).not.toContain('hover:bg-accent/40');
+  });
+});

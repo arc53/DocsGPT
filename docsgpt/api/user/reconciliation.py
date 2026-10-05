@@ -42,11 +42,12 @@ def zero_summary() -> Dict[str, int]:
         "ingests_stalled": 0,
         "idempotency_pending_failed": 0,
         "schedule_runs_failed": 0,
+        "archive_members_failed": 0,
     }
 
 
 def run_reconciliation() -> Dict[str, Any]:
-    """Single tick of the reconciler. Five sweeps, FOR UPDATE SKIP LOCKED.
+    """Single tick of the reconciler. Every sweep uses FOR UPDATE SKIP LOCKED.
 
     Stuck ``executed`` tool calls always flip to ``failed`` — operators
     handle cleanup manually via the structured alert. The side effect is
@@ -387,6 +388,40 @@ def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) ->
                     "schedule_id": str(run["schedule_id"]),
                 },
             )
+
+    # Q8: zip attachment members queued past ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT
+    # with no outcome — their task was lost, so the zip would stay
+    # "processing" (and the composer chip spinning) forever. Each is failed
+    # with a reason; that frees its slot for the next member or completes
+    # the zip, whose ``attachment.completed`` goes out after the commit.
+    # Freed members are dispatched after the commit too, like the worker does.
+    from docsgpt import worker as _worker
+
+    member_dispatches: list = []
+    with _sweep(engine, events) as (conn, staged):
+        failed, member_dispatches, archive_events = _worker.sweep_stuck_archive_members(
+            conn, timeout_seconds=int(_settings.ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT),
+        )
+        staged.extend(archive_events)
+        if failed:
+            summary["archive_members_failed"] += failed
+            _emit_alert(
+                conn,
+                name="reconciler_archive_members_failed",
+                user_id=None,
+                detail={
+                    "members": failed,
+                    "timeout_seconds": int(_settings.ATTACHMENT_ARCHIVE_MEMBER_TIMEOUT),
+                },
+            )
+    for member_info, user_id in member_dispatches:
+        try:
+            # A member that cannot be queued is failed with the reason there.
+            _worker._dispatch_archive_members([member_info], user_id)
+        except Exception:
+            # Stamped as dispatched: a member left without a task times out
+            # on a later tick instead of stalling the zip.
+            logger.exception("reconciler: failed to dispatch zip member %s", member_info.get("attachment_id"))
 
     return summary
 

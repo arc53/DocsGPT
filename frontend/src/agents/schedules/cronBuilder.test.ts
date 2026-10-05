@@ -1,3 +1,4 @@
+import i18next from 'i18next';
 import { describe, expect, it } from 'vitest';
 
 import type { Schedule } from '../types/schedule';
@@ -321,5 +322,66 @@ describe('formatCron', () => {
   it('returns empty string for null/undefined', () => {
     expect(formatCron(null)).toBe('');
     expect(formatCron(undefined)).toBe('');
+  });
+});
+
+describe('formatCron with a translate function', () => {
+  // The English locale strings (agents.schedules.cron) must read exactly like
+  // the untranslated fallback.
+  const t = i18next.createInstance();
+  void t.init({
+    lng: 'en',
+    initAsync: false,
+    resources: {
+      en: {
+        translation: {
+          agents: {
+            schedules: {
+              cron: {
+                daily: 'Daily at {{time}}',
+                weekly: 'Weekly on {{day}} at {{time}}',
+                monthly: 'Monthly on day {{day}} at {{time}}',
+                yearly: 'Yearly on {{month}} {{day}} at {{time}}',
+                custom: 'Custom: {{expression}}',
+                dayNames: {
+                  sun: 'Sunday',
+                  mon: 'Monday',
+                  tue: 'Tuesday',
+                  wed: 'Wednesday',
+                  thu: 'Thursday',
+                  fri: 'Friday',
+                  sat: 'Saturday',
+                },
+                monthNames: {
+                  jan: 'January',
+                  feb: 'February',
+                  mar: 'March',
+                  apr: 'April',
+                  may: 'May',
+                  jun: 'June',
+                  jul: 'July',
+                  aug: 'August',
+                  sep: 'September',
+                  oct: 'October',
+                  nov: 'November',
+                  dec: 'December',
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  it.each([
+    '0 9 * * *',
+    '0 9 * * 1',
+    '15 7 * * 0',
+    '0 10 15 * *',
+    '0 8 15 3 *',
+    '0 9 * * 1-5',
+  ])('matches the English fallback for %s', (cron) => {
+    expect(formatCron(cron, t.t)).toBe(formatCron(cron));
   });
 });

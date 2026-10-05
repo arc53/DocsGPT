@@ -5,14 +5,17 @@ import os
 import tempfile
 import uuid
 import zipfile
+from typing import Optional
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 from sqlalchemy import text as sql_text
 
 from docsgpt.api import api
+from docsgpt.api.audit import record_event
 from docsgpt.api.user.tasks import ingest, ingest_connector_task, ingest_remote
-from docsgpt.api.user.team_sharing import effective_write_owner
+from docsgpt.api.user.resource_access import AccessDenied
+from docsgpt.api.user.sources.access import denied_response, load_source
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.source_ids import derive_source_id as _derive_source_id
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
@@ -26,7 +29,6 @@ from docsgpt.security.zip_archive import (
 )
 from docsgpt.storage.db.repositories.connector_sessions import (
     ConnectorSessionsRepository,
-    owns_connector_session,
 )
 from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
@@ -176,6 +178,40 @@ def _source_archive_limits() -> ZipExtractionLimits:
         max_member_bytes=settings.UPLOAD_MAX_FILE_BYTES,
         max_depth=settings.UPLOAD_MAX_ARCHIVE_DEPTH,
     )
+
+
+def _audit_source_created(
+    *,
+    source_id: str,
+    user: Optional[str],
+    name: Optional[str],
+    source_type: str,
+    task_id: Optional[str],
+) -> None:
+    """Record ``source.created`` for an accepted ingestion job.
+
+    Audited at the request, not in the worker: enqueuing is the user's action.
+    The ingest may still fail, which the source's own status records.
+
+    Every path that mints a ``source_id`` and dispatches must call this --
+    ``source.deleted`` is recorded for remote sources too, and a trail showing
+    a deletion with no matching creation is worse than no trail.
+    """
+    try:
+        with db_session() as conn:
+            record_event(
+                conn,
+                "source.created",
+                actor=user,
+                source_id=source_id,
+                name=name,
+                type=source_type,
+                task_id=task_id,
+            )
+    except Exception as err:
+        current_app.logger.warning(
+            "Could not audit source.created for %s: %s", source_id, err, exc_info=True
+        )
 
 
 @sources_upload_ns.route("/upload")
@@ -396,6 +432,13 @@ class UploadFile(Resource):
             return make_response(jsonify({"success": False}), 400)
         # Predetermined id matches the dedup-claim row; loser GET sees same.
         response_task_id = predetermined_task_id or task.id
+        _audit_source_created(
+            source_id=str(source_uuid),
+            user=user,
+            name=job_name,
+            source_type="local",
+            task_id=response_task_id,
+        )
         # ``source_uuid`` was minted above and passed to the worker as
         # ``source_id``; the worker uses it verbatim for every SSE event,
         # so the frontend can correlate inbound ``source.ingest.*`` to
@@ -406,6 +449,45 @@ class UploadFile(Resource):
             "source_id": str(source_uuid),
         }
         return make_response(jsonify(response_payload), 200)
+
+
+def _remote_credentials(user, source, config):
+    """Split an S3 / Reddit request into loader config and the connection holding its keys.
+
+    A request naming a ``connection_id`` uses that connection's stored keys.
+    A request carrying keys (the form before connections) stores them on a
+    connection, so they are entered once and never land in
+    ``sources.remote_data``. When a multi-user install still runs on the
+    public default encryption key, the keys stay with the source as before.
+
+    Returns:
+        ``(source_data, connection_id, error_response)``.
+    """
+    from docsgpt.connectors import catalog, service
+
+    definition = catalog.get_definition(source)
+    credential_keys = {f.key for f in definition.credential_fields}
+    public = {k: v for k, v in config.items() if k not in credential_keys and k != "connection_id"}
+    connection_id = config.get("connection_id")
+    if connection_id:
+        with db_readonly() as conn:
+            row = ConnectorSessionsRepository(conn).get_for_user(str(connection_id), user)
+        if row is None or catalog.connector_key_for_row(row) != source:
+            return None, None, make_response(
+                jsonify({"success": False, "error": "Invalid or unauthorized connection"}), 401,
+            )
+        return public, str(row["id"]), None
+    provided = {k: config[k] for k in credential_keys if config.get(k) not in (None, "")}
+    if not provided:
+        return config, None, None
+    try:
+        with db_session() as conn:
+            row, _ = service.create_api_key_connection(conn, user, definition, provided)
+    except service.ConnectorDisabled as err:
+        return None, None, make_response(jsonify({"success": False, "error": str(err)}), 403)
+    except (service.EncryptionKeyNotConfigured, ValueError):
+        return config, None, None
+    return public, str(row["id"]), None
 
 
 @sources_upload_ns.route("/remote")
@@ -477,32 +559,35 @@ class UploadRemote(Resource):
         try:
             config = json.loads(data["data"])
             source_data = None
+            connection_id = None
 
             if data["source"] == "github":
                 source_data = config.get("repo_url")
             elif data["source"] in ["crawler", "url", "sitemap"]:
                 source_data = config.get("url")
-            elif data["source"] == "reddit":
-                source_data = config
-            elif data["source"] == "s3":
-                source_data = config
+            elif data["source"] in ("reddit", "s3"):
+                source_data, connection_id, error = _remote_credentials(user, data["source"], config)
+                if error is not None:
+                    if scoped_key:
+                        _release_claim(scoped_key)
+                    return error
             elif data["source"] in ConnectorCreator.get_supported_connectors():
-                session_token = config.get("session_token")
-                if not session_token:
+                if not (config.get("connection_id") or config.get("session_token")):
                     if scoped_key:
                         _release_claim(scoped_key)
                     return make_response(
                         jsonify(
                             {
                                 "success": False,
-                                "error": f"Missing session_token in {data['source']} configuration",
+                                "error": f"Missing connection_id in {data['source']} configuration",
                             }
                         ),
                         400,
                     )
-                with db_readonly() as conn:
-                    connector_session = ConnectorSessionsRepository(conn).get_by_session_token(session_token)
-                if not owns_connector_session(connector_session, user, data["source"]):
+                from docsgpt.connectors import service as connection_service
+
+                connector_session = connection_service.resolve_request_connection(user, data["source"], config)
+                if connector_session is None:
                     if scoped_key:
                         _release_claim(scoped_key)
                     return make_response(
@@ -533,7 +618,7 @@ class UploadRemote(Resource):
                         "job_name": data["name"],
                         "user": user,
                         "source_type": data["source"],
-                        "session_token": session_token,
+                        "connection_id": str(connector_session["id"]),
                         "file_ids": file_ids,
                         "folder_ids": folder_ids,
                         "recursive": config.get("recursive", False),
@@ -547,6 +632,13 @@ class UploadRemote(Resource):
                     connector_kwargs["task_id"] = predetermined_task_id
                 task = ingest_connector_task.apply_async(**connector_kwargs)
                 response_task_id = predetermined_task_id or task.id
+                _audit_source_created(
+                    source_id=str(source_uuid),
+                    user=user,
+                    name=data["name"],
+                    source_type=data["source"],
+                    task_id=response_task_id,
+                )
                 # ``source_uuid`` was minted above and passed to the
                 # worker as ``source_id``; the worker uses it verbatim
                 # for every SSE event, so the frontend can correlate
@@ -561,6 +653,7 @@ class UploadRemote(Resource):
             remote_kwargs = {
                 "kwargs": {
                     "source_data": source_data,
+                    "connection_id": connection_id,
                     "job_name": data["name"],
                     "user": user,
                     "loader": data["source"],
@@ -580,6 +673,13 @@ class UploadRemote(Resource):
                 _release_claim(scoped_key)
             return make_response(jsonify({"success": False}), 400)
         response_task_id = predetermined_task_id or task.id
+        _audit_source_created(
+            source_id=str(source_uuid),
+            user=user,
+            name=data["name"],
+            source_type=data["source"],
+            task_id=response_task_id,
+        )
         response_payload = {
             "success": True,
             "task_id": response_task_id,
@@ -664,22 +764,10 @@ class ManageSourceFiles(Resource):
         # (owner-agnostic), so running the ops as the owner is correct.
         try:
             with db_readonly() as conn:
-                source = SourcesRepository(conn).get_any(source_id, user)
-                owner = user
-                if source is None:
-                    owner = effective_write_owner(conn, "source", source_id, user)
-                    if owner:
-                        source = SourcesRepository(conn).get_any(source_id, owner)
-            if not source:
-                return make_response(
-                    jsonify(
-                        {
-                            "success": False,
-                            "message": "Source not found or access denied",
-                        }
-                    ),
-                    404,
-                )
+                source, ra = load_source(conn, source_id, user, "edit")
+            owner = ra.owner_id
+        except AccessDenied as err:
+            return denied_response(err)
         except Exception as err:
             current_app.logger.error(f"Error finding source: {err}", exc_info=True)
             return make_response(

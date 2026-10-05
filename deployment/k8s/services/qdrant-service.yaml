@@ -1,3 +1,4 @@
+# OPT-IN, with deployments/qdrant-deploy.yaml (see its header).
 apiVersion: v1
 kind: Service
 metadata:

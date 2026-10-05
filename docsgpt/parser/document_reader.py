@@ -97,10 +97,10 @@ def bound_parse_payload(payload: Dict[str, Any], max_chars: Optional[int] = None
 
 def _max_input_bytes() -> int:
     """Return the size cap for a parsed document (its own setting, else the sandbox cap)."""
-    explicit = int(getattr(settings, "DOCUMENT_PARSE_MAX_BYTES", 0) or 0)
+    explicit = int(settings.DOCUMENT_PARSE_MAX_BYTES or 0)
     if explicit > 0:
         return explicit
-    return int(getattr(settings, "SANDBOX_MAX_INPUT_BYTES", 25 * 1024 * 1024))
+    return int(settings.SANDBOX_MAX_INPUT_BYTES)
 
 
 # Every zip-packaged format a parser map can route: OOXML and its macro/
@@ -127,8 +127,8 @@ def _zip_bomb_reason(source: Union[bytes, str, Path], suffix: str) -> Optional[s
     """
     if suffix not in _ZIP_CONTAINER_EXTENSIONS:
         return None
-    max_entries = int(getattr(settings, "DOCUMENT_MAX_ARCHIVE_ENTRIES", 10000))
-    cap = int(getattr(settings, "DOCUMENT_MAX_DECOMPRESSED_BYTES", 300 * 1024 * 1024))
+    max_entries = int(settings.DOCUMENT_MAX_ARCHIVE_ENTRIES)
+    cap = int(settings.DOCUMENT_MAX_DECOMPRESSED_BYTES)
     opened = io.BytesIO(source) if isinstance(source, bytes) else source
     try:
         with zipfile.ZipFile(opened) as zf:
@@ -169,14 +169,14 @@ def _resolve_ocr_enabled(ocr: str) -> bool:
         return True
     if ocr == "off":
         return False
-    return bool(getattr(settings, "OCR_ENABLED", False))
+    return bool(settings.OCR_ENABLED)
 
 
 def _effective_engine(engine: str) -> str:
     """Resolve ``auto`` to the server's ``DOC_PARSER_ENGINE``; other values pass through."""
     if engine != "auto":
         return engine
-    configured = getattr(settings, "DOC_PARSER_ENGINE", None) or "anydoc"
+    configured = settings.DOC_PARSER_ENGINE or "anydoc"
     return str(configured).strip().lower()
 
 

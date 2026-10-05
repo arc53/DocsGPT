@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from docsgpt.core.model_settings import (
     AvailableModel,
@@ -41,6 +41,8 @@ VALID_REASONING_EFFORTS = frozenset(
 )
 # Accepted api_flavor values: which OpenAI wire protocol a model speaks.
 VALID_API_FLAVORS = frozenset({"chat_completions", "responses"})
+# Accepted tool_result_images values: where a tool's images go.
+VALID_TOOL_RESULT_IMAGES = frozenset({"native", "follow_up"})
 
 
 class _DefaultsFile(BaseModel):
@@ -65,10 +67,33 @@ class _CapabilityFields(BaseModel):
     supports_streaming: Optional[bool] = None
     attachments: Optional[List[str]] = None
     context_window: Optional[int] = None
-    input_cost_per_token: Optional[float] = None
-    output_cost_per_token: Optional[float] = None
+    input_cost_per_million: Optional[float] = Field(default=None, ge=0)
+    output_cost_per_million: Optional[float] = Field(default=None, ge=0)
+    cached_input_cost_per_million: Optional[float] = Field(default=None, ge=0)
+    cache_write_cost_per_million: Optional[float] = Field(default=None, ge=0)
     reasoning_effort: Optional[str] = None
     api_flavor: Optional[str] = None
+    tool_result_images: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _per_token_alias(cls, data):
+        """Accept the deprecated ``*_cost_per_token`` keys, scaled to per-1M."""
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+        for side in ("input", "output"):
+            old, new = f"{side}_cost_per_token", f"{side}_cost_per_million"
+            if old not in data:
+                continue
+            value = data.pop(old)
+            if new in data:
+                raise ValueError(f"set only one of {old} and {new}")
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"{old} must be a number")
+            logger.warning("%s is deprecated; use %s (USD per 1M tokens)", old, new)
+            data[new] = value * 1_000_000
+        return data
 
     @field_validator("reasoning_effort")
     @classmethod
@@ -88,6 +113,14 @@ class _CapabilityFields(BaseModel):
             raise ValueError(
                 f"api_flavor must be one of [{valid}], got {v!r}"
             )
+        return v
+
+    @field_validator("tool_result_images")
+    @classmethod
+    def _valid_tool_result_images(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in VALID_TOOL_RESULT_IMAGES:
+            valid = ", ".join(sorted(VALID_TOOL_RESULT_IMAGES))
+            raise ValueError(f"tool_result_images must be one of [{valid}], got {v!r}")
         return v
 
 
@@ -193,6 +226,15 @@ def _load_defaults(directory: Path) -> Dict[str, List[str]]:
     return parsed.attachment_aliases
 
 
+# Providers DocsGPT used to ship. A model YAML still naming one (an operator's
+# MODELS_CONFIG_DIR file written for an older release) is skipped with a
+# warning instead of stopping the app from booting.
+REMOVED_PROVIDERS: Dict[str, str] = {
+    "huggingface": "it never had an LLM class; serve the model over an OpenAI-compatible API (TGI, vLLM) instead",
+    "llama.cpp": "run llama.cpp's OpenAI-compatible server and use an openai_compatible YAML or OPENAI_BASE_URL",
+}
+
+
 def _resolve_provider_enum(name: str, source: Path) -> ModelProvider:
     try:
         return ModelProvider(name)
@@ -237,10 +279,13 @@ def _build_model(
         supports_streaming=pick("supports_streaming", True),
         supported_attachment_types=expanded,
         context_window=pick("context_window", 128000),
-        input_cost_per_token=pick("input_cost_per_token", None),
-        output_cost_per_token=pick("output_cost_per_token", None),
+        input_cost_per_million=pick("input_cost_per_million", None),
+        output_cost_per_million=pick("output_cost_per_million", None),
+        cached_input_cost_per_million=pick("cached_input_cost_per_million", None),
+        cache_write_cost_per_million=pick("cache_write_cost_per_million", None),
         reasoning_effort=pick("reasoning_effort", None),
         api_flavor=pick("api_flavor", "chat_completions"),
+        tool_result_images=pick("tool_result_images", None),
     )
 
     return AvailableModel(
@@ -258,7 +303,17 @@ def _build_model(
 
 def _load_one_yaml(
     path: Path, aliases: Dict[str, List[str]]
-) -> ProviderCatalog:
+) -> Optional[ProviderCatalog]:
+    """Parse one model YAML into a catalog.
+
+    Returns:
+        The catalog, or ``None`` when the file names a provider in
+        :data:`REMOVED_PROVIDERS` (logged as a warning and skipped).
+
+    Raises:
+        ModelYAMLError: The file is not valid YAML, does not match the
+            schema, or names a provider that never existed.
+    """
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as e:
@@ -267,6 +322,15 @@ def _load_one_yaml(
         parsed = _ProviderFile.model_validate(raw)
     except Exception as e:
         raise ModelYAMLError(f"{path}: schema error: {e}") from e
+
+    if parsed.provider in REMOVED_PROVIDERS:
+        logger.warning(
+            "%s: skipped; provider %r was removed from DocsGPT (%s).",
+            path,
+            parsed.provider,
+            REMOVED_PROVIDERS[parsed.provider],
+        )
+        return None
 
     provider_enum = _resolve_provider_enum(parsed.provider, path)
     models = [
@@ -380,6 +444,8 @@ def load_model_yamls(directories: Sequence[Path]) -> List[ProviderCatalog]:
             if path.name == DEFAULTS_FILENAME:
                 continue
             catalog = _load_one_yaml(path, aliases)
+            if catalog is None:
+                continue
             catalogs.append(catalog)
             for m in catalog.models:
                 prior = seen_ids.get(m.id)

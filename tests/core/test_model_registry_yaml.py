@@ -30,11 +30,12 @@ from docsgpt.core.model_yaml import (
 # in an upstream model id) that would silently break every agent that
 # references the old id.
 EXPECTED_IDS = {
-    "openai": {"gpt-5.5", "gpt-5.4-mini", "gpt-5.4-nano"},
+    "openai": {"gpt-5.5", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5.6-sol"},
     "anthropic": {
         "claude-opus-4-7",
         "claude-sonnet-4-6",
         "claude-haiku-4-5",
+        "claude-fable-5",
     },
     "google": {
         "gemini-3.1-pro-preview",
@@ -59,10 +60,21 @@ EXPECTED_IDS = {
     "openai_compatible": {
         "deepseek-v4-flash",
         "deepseek-v4-pro",
+        "qwen3.8-max",
+        "glm-5.3",
     },
     "docsgpt": {"docsgpt-local"},
-    "huggingface": {"huggingface-local"},
 }
+
+# Providers whose catalog is an open extension point. ``openai_compatible``
+# is the zero-Python way to add an OpenAI-shaped endpoint — copy
+# ``examples/mistral.yaml.example`` next to the built-ins and it loads — so
+# a fork or a deployment can legitimately have catalogs here that upstream
+# does not. For these the snapshot is a floor, not an exact set: the
+# built-in ids must all still be present, but extra ones are somebody's
+# own provider rather than a regression. A rename, which is what this
+# snapshot exists to catch, still drops an id and still fails.
+EXTENSIBLE_PROVIDERS = {"openai_compatible"}
 
 
 def _make_settings(**overrides):
@@ -76,7 +88,6 @@ def _make_settings(**overrides):
     s.GROQ_API_KEY = None
     s.OPEN_ROUTER_API_KEY = None
     s.NOVITA_API_KEY = None
-    s.HUGGINGFACE_API_KEY = None
     s.LLM_PROVIDER = ""
     s.LLM_NAME = None
     s.API_KEY = None
@@ -132,7 +143,15 @@ class TestYAMLLoader:
                 )
             ]
             actual = {m.id for c in canonical for m in c.models}
-            assert actual == expected, f"{provider}: expected {expected}, got {actual}"
+            if provider in EXTENSIBLE_PROVIDERS:
+                missing = expected - actual
+                assert not missing, (
+                    f"{provider}: built-in ids missing from the catalog: {missing}"
+                )
+            else:
+                assert actual == expected, (
+                    f"{provider}: expected {expected}, got {actual}"
+                )
 
     def test_attachment_alias_image_expands_to_five_mime_types(self):
         grouped = _by_provider(load_model_yamls([BUILTIN_MODELS_DIR]))
@@ -194,9 +213,8 @@ class TestRegistryPermutations:
         assert ids == EXPECTED_IDS["anthropic"] | EXPECTED_IDS["docsgpt"]
 
     def test_anthropic_via_llm_provider_with_llm_name(self):
-        # Mirrors the historical _add_anthropic_models filter: when only
-        # API_KEY (not ANTHROPIC_API_KEY) is set and LLM_NAME matches a
-        # known model, only that model is loaded.
+        # LLM_NAME picks the default model only: with just API_KEY set,
+        # the picker still lists the whole Anthropic catalog.
         s = _make_settings(
             LLM_PROVIDER="anthropic", API_KEY="key", LLM_NAME="claude-haiku-4-5"
         )
@@ -205,7 +223,8 @@ class TestRegistryPermutations:
         anthropic_ids = {
             m.id for m in reg.get_all_models() if m.provider.value == "anthropic"
         }
-        assert anthropic_ids == {"claude-haiku-4-5"}
+        assert anthropic_ids == EXPECTED_IDS["anthropic"]
+        assert reg.default_model_id == "claude-haiku-4-5"
 
     def test_google_only(self):
         s = _make_settings(GOOGLE_API_KEY="g-test")
@@ -235,13 +254,6 @@ class TestRegistryPermutations:
         ids = {m.id for m in reg.get_all_models()}
         assert ids == EXPECTED_IDS["novita"] | EXPECTED_IDS["docsgpt"]
 
-    def test_huggingface_only(self):
-        s = _make_settings(HUGGINGFACE_API_KEY="hf-test")
-        with patch("docsgpt.core.settings.settings", s):
-            reg = ModelRegistry()
-        ids = {m.id for m in reg.get_all_models()}
-        assert ids == EXPECTED_IDS["huggingface"] | EXPECTED_IDS["docsgpt"]
-
     def test_no_credentials_only_docsgpt(self):
         s = _make_settings()
         with patch("docsgpt.core.settings.settings", s):
@@ -250,7 +262,11 @@ class TestRegistryPermutations:
         assert ids == EXPECTED_IDS["docsgpt"]
 
     def test_everything_set(self, monkeypatch):
+        # Every openai_compatible catalog reads its own key from the
+        # environment, so each needs one here for "everything" to mean it.
         monkeypatch.setenv("DEEPSEEK_API_KEY", "x")
+        monkeypatch.setenv("DASHSCOPE_API_KEY", "x")
+        monkeypatch.setenv("ZAI_API_KEY", "x")
         s = _make_settings(
             OPENAI_API_KEY="x",
             ANTHROPIC_API_KEY="x",
@@ -258,7 +274,6 @@ class TestRegistryPermutations:
             GROQ_API_KEY="x",
             OPEN_ROUTER_API_KEY="x",
             NOVITA_API_KEY="x",
-            HUGGINGFACE_API_KEY="x",
             OPENAI_API_BASE="x",
         )
         with patch("docsgpt.core.settings.settings", s):

@@ -14,6 +14,10 @@
  *      file arrives bound to the turn (`conversation_messages.attachments[]`)
  *      instead of being silently dropped from the payload.
  *
+ *   3. Send with an attachment that failed. A failed file never resolves,
+ *      so it must never hold the question: Send drops the failed chip and
+ *      sends the text with whatever did upload.
+ *
  * UI-driven on purpose: the surface under test IS the composer. The
  * attachments spec avoids the file picker for API-direct upload tests;
  * here `setInputFiles` on the dropzone input is the point.
@@ -242,6 +246,79 @@ test.describe("tier-a · composer resilience", () => {
       expect(streamPosts).toHaveLength(1);
       const payload = JSON.parse(streamPosts[0]) as { attachments?: string[] };
       expect(payload.attachments).toHaveLength(1);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("send with a failed attachment drops the file and sends the question", async ({
+    browser,
+  }) => {
+    const { context, sub } = await newUserContext(browser);
+    try {
+      const page = await context.newPage();
+      await openComposer(page);
+
+      const streamPosts: string[] = [];
+      page.on("request", (req) => {
+        if (req.url().includes("/stream") && req.method() === "POST") {
+          streamPosts.push(req.postData() ?? "");
+        }
+      });
+
+      // No response at all (status 0), the shape of the Android file-read
+      // failure seen in production.
+      await page.route("**/api/store_attachment", (route) =>
+        route.abort("failed"),
+      );
+      await page
+        .locator('input[type="file"]')
+        .first()
+        .setInputFiles(SMALL_FIXTURE_PATH);
+
+      // The failed chip is marked by its warning icon; the reason is a
+      // hover tooltip, not a line of text in the composer.
+      const failedIcon = page.getByLabel("Failed", { exact: true });
+      await expect(failedIcon).toBeVisible({ timeout: 5_000 });
+      await failedIcon.hover();
+      await expect(page.getByRole("tooltip")).toContainText(/upload failed/i);
+
+      const question = "does this still send? e2e-failed-attachment";
+      const textarea = page.locator("#message-input");
+      await textarea.fill(question);
+      const streamDone = page.waitForResponse(
+        (r) => r.url().includes("/stream") && r.request().method() === "POST",
+        { timeout: 30_000 },
+      );
+      await textarea.press("Enter");
+      expect((await streamDone).status()).toBe(200);
+
+      // Exactly one send, with no attachment ids.
+      expect(streamPosts).toHaveLength(1);
+      const payload = JSON.parse(streamPosts[0]) as { attachments?: string[] };
+      expect(payload.attachments ?? []).toHaveLength(0);
+
+      // The question is in the thread; the chip and its reason are gone.
+      await expect(page.getByText(question)).toBeVisible();
+      await expect(failedIcon).toHaveCount(0);
+      await expect(page.getByText(/upload failed/i)).toHaveCount(0);
+      await expect(page.getByText("notes.txt")).toBeHidden();
+      await expect(textarea).toHaveValue("");
+
+      const { rows } = await pg.query<{
+        prompt: string | null;
+        attachment_count: number | string | null;
+      }>(
+        `SELECT cm.prompt,
+                COALESCE(array_length(cm.attachments, 1), 0) AS attachment_count
+           FROM conversation_messages cm
+           JOIN conversations c ON c.id = cm.conversation_id
+          WHERE c.user_id = $1`,
+        [sub],
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].prompt).toBe(question);
+      expect(Number(rows[0].attachment_count)).toBe(0);
     } finally {
       await context.close();
     }

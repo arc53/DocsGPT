@@ -1,9 +1,8 @@
+import { Square, Volume2 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
-import Speaker from '../assets/speaker.svg?react';
-import Stopspeech from '../assets/stopspeech.svg?react';
+import { useTranslation } from 'react-i18next';
 import userService from '../api/services/userService';
-import { Button } from './ui/button';
-import Spinner from './Spinner';
+import { IconButton } from './ui/icon-button';
 
 let currentlyPlayingAudio: {
   audio: HTMLAudioElement;
@@ -43,6 +42,7 @@ function setCachedAudio(text: string, audioBase64: string) {
 }
 
 export default function SpeakButton({ text }: { text: string }) {
+  const { t } = useTranslation();
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -172,30 +172,21 @@ export default function SpeakButton({ text }: { text: string }) {
   };
 
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon"
-      className={`cursor-pointer rounded-full ${
-        isSpeaking || isLoading ? 'bg-accent' : ''
-      }`}
-      onClick={handleSpeakClick}
-      aria-label={
+    <IconButton
+      label={
         isLoading
-          ? 'Loading audio'
+          ? t('conversation.loadingAudio', 'Loading audio')
           : isSpeaking
-            ? 'Stop speaking'
-            : 'Speak text'
+            ? t('conversation.stopSpeaking', 'Stop speaking')
+            : t('conversation.speak')
       }
-      disabled={isLoading}
-    >
-      {isLoading ? (
-        <Spinner size="small" />
-      ) : isSpeaking ? (
-        <Stopspeech className="fill-none" />
-      ) : (
-        <Speaker className="fill-none" />
-      )}
-    </Button>
+      variant={isSpeaking || isLoading ? 'secondary' : 'ghost-muted'}
+      size="icon-sm"
+      shape="pill"
+      className="cursor-pointer"
+      onClick={handleSpeakClick}
+      icon={isSpeaking ? Square : Volume2}
+      loading={isLoading}
+    />
   );
 }

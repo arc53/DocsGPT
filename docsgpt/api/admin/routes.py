@@ -23,6 +23,9 @@ from docsgpt.api.user.authz import ROLE_ADMIN, admin_required
 from docsgpt.storage.db.repositories.admin_stats import AdminStatsRepository
 from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
 from docsgpt.storage.db.repositories.device_audit_log import DeviceAuditLogRepository
+from docsgpt.storage.db.repositories.personal_access_tokens import (
+    PersonalAccessTokensRepository,
+)
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.repositories.user_roles import UserRolesRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
@@ -34,6 +37,9 @@ admin_ns = Namespace("admin", description="Admin-only management endpoints", pat
 
 _DEFAULT_PAGE_SIZE = 25
 _MAX_PAGE_SIZE = 100
+
+# Event namespaces the per-user security panel leaves out; see the drill-down.
+_DATA_PLANE_PREFIXES = ("source.", "agent.", "conversation.")
 
 
 def _int_arg(name: str, default: int) -> int:
@@ -132,8 +138,12 @@ class AdminUserResource(Resource):
                 },
                 "roles": sorted({"user", *roles_repo.role_names_for(user_id)}),
                 "grants": roles_repo.list_for(user_id),
+                # Identity and access only. Data-plane events file under the
+                # actor, so an active user's routine deletes would push a
+                # denied login or a role grant out of a 20-row window.
+                # The Activity tab, filtered by user, shows everything.
                 "recent_events": AuthEventsRepository(conn).list_recent(
-                    user_id, limit=20
+                    user_id, limit=20, exclude_events_like=_DATA_PLANE_PREFIXES
                 ),
                 "counts": AdminStatsRepository(conn).user_counts(user_id),
             }
@@ -168,6 +178,8 @@ class AdminUserResource(Resource):
                 ip=request.remote_addr,
                 user_agent=request.headers.get("User-Agent"),
                 metadata={"by": actor, "via": "admin_api"},
+                actor_id=actor,
+                target_id=user_id,
             )
         if not active:
             # Best-effort live-session revocation (mirrors SCIM deactivation).
@@ -200,6 +212,8 @@ class AdminUserRoleResource(Resource):
                         "granted_by": actor,
                         "via": "admin_api",
                     },
+                    actor_id=actor,
+                    target_id=user_id,
                 )
         return make_response(
             jsonify({"success": True, "granted": inserted, "role": ROLE_ADMIN}), 200
@@ -235,6 +249,8 @@ class AdminUserRoleResource(Resource):
                         "revoked_by": actor,
                         "via": "admin_api",
                     },
+                    actor_id=actor,
+                    target_id=user_id,
                 )
         return make_response(jsonify({"success": True, "revoked": removed}), 200)
 
@@ -246,14 +262,56 @@ class AdminUserSessionsResource(Resource):
         """Force-logout: revoke the user's live OIDC sessions (best-effort)."""
         ok = denylist.deny_user(user_id)
         with db_session() as conn:
+            # A forced logout that left API credentials alive would not be one.
+            revoked_token_ids = PersonalAccessTokensRepository(conn).revoke_all_for_user(
+                user_id, reason="admin_sessions_revoked"
+            )
+            # One pat_revoked event per token, like every other revocation path.
+            for token_id in revoked_token_ids:
+                AuthEventsRepository(conn).insert(
+                    user_id,
+                    "pat_revoked",
+                    ip=request.remote_addr,
+                    user_agent=request.headers.get("User-Agent"),
+                    metadata={"token_id": token_id, "by": _actor(), "via": "admin_sessions_revoked"},
+                    actor_id=_actor(),
+                    target_id=user_id,
+                )
             AuthEventsRepository(conn).insert(
                 user_id,
                 "admin_sessions_revoked",
                 ip=request.remote_addr,
                 user_agent=request.headers.get("User-Agent"),
-                metadata={"by": _actor(), "via": "admin_api", "persisted": ok},
+                metadata={
+                    "by": _actor(),
+                    "via": "admin_api",
+                    "persisted": ok,
+                    "personal_access_tokens_revoked": len(revoked_token_ids),
+                },
+                actor_id=_actor(),
+                target_id=user_id,
             )
         return make_response(jsonify({"success": True, "revoked": ok}), 200)
+
+
+@admin_ns.route("/admin/users/<string:user_id>/usage")
+class AdminUserUsageResource(Resource):
+    @admin_required
+    def get(self, user_id):
+        """One user's spend: daily series plus a split by model and by flow."""
+        days = max(1, min(365, _int_arg("days", 30)))
+        start = datetime.now(timezone.utc) - timedelta(days=days)
+        with db_readonly() as conn:
+            series = TokenUsageRepository(conn).bucketed_totals(
+                bucket_unit="day", user_id=user_id, timestamp_gte=start
+            )
+            breakdown = AdminStatsRepository(conn).user_usage_breakdown(
+                user_id, since=start
+            )
+        return make_response(
+            jsonify({"success": True, "days": days, "series": series, **breakdown}),
+            200,
+        )
 
 
 @admin_ns.route("/admin/admins")
@@ -273,7 +331,12 @@ class AdminUsageResource(Resource):
 
     @admin_required
     def get(self):
-        """Global token usage: time-bucketed series + total + top users."""
+        """Global usage: time-bucketed series, totals, spend, latency, top users.
+
+        Every bucket carries both tokens and USD cost. Quota policies have
+        always been settable in dollars; until now nothing showed the spend
+        they were capping.
+        """
         days = max(1, min(365, _int_arg("days", 30)))
         bucket = request.args.get("bucket", "day")
         group_by = request.args.get("group_by", "none")
@@ -282,6 +345,7 @@ class AdminUsageResource(Resource):
         start = datetime.now(timezone.utc) - timedelta(days=days)
         with db_readonly() as conn:
             usage_repo = TokenUsageRepository(conn)
+            stats_repo = AdminStatsRepository(conn)
             series = usage_repo.bucketed_totals(
                 bucket_unit=bucket,
                 timestamp_gte=start,
@@ -290,7 +354,8 @@ class AdminUsageResource(Resource):
             total = usage_repo.sum_tokens_in_range(
                 start=start, end=datetime.now(timezone.utc)
             )
-            top_users = AdminStatsRepository(conn).top_token_users(since=start, limit=10)
+            latency = stats_repo.latency_summary(since=start)
+            top_users = stats_repo.top_token_users(since=start, limit=10)
         return make_response(
             jsonify(
                 {
@@ -300,6 +365,10 @@ class AdminUsageResource(Resource):
                     "group_by": group_by,
                     "series": series,
                     "total_tokens": int(total),
+                    # Summed from the series, not from ``by_model``: the latter
+                    # drops rows with no model_id, so it would undercount.
+                    "total_cost": round(sum(row["cost"] for row in series), 4),
+                    "latency": latency,
                     "top_users": top_users,
                 }
             ),

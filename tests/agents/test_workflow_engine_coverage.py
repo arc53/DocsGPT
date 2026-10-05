@@ -1081,3 +1081,82 @@ class TestNodeDocumentManifest:
         monkeypatch.setattr("docsgpt.storage.db.session.db_readonly", broken_readonly)
         config = AgentNodeConfig(agent_type="classic", input_documents=["*"])
         assert engine._node_document_manifest(config) == ""
+
+
+class TestTraceSpans:
+    """Every executed node is a ``workflow_step`` span; the run id links the trace."""
+
+    @pytest.fixture(autouse=True)
+    def _trace(self, monkeypatch):
+        from docsgpt import tracing
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "TRACES_ENABLED", True)
+        self.trace = tracing.start_trace(source="stream", capture_otel_context=False)
+        with tracing.activate(self.trace):
+            yield
+
+    @pytest.mark.unit
+    def test_step_spans_and_run_binding(self):
+        nodes = [
+            _make_node("n1", NodeType.START, "Start"),
+            _make_node("n2", NodeType.END, "End", config={"config": {}}),
+        ]
+        engine = WorkflowEngine(
+            _make_graph(nodes, [_make_edge("e1", "n1", "n2")]), _make_agent()
+        )
+        list(engine.execute({}, "hello"))
+        steps = [s for s in self.trace.spans if s.kind == "step"]
+        assert [s.name for s in steps] == ["workflow_step Start", "workflow_step End"]
+        assert all(s.status == "ok" for s in steps)
+        assert steps[0].attributes["docsgpt.workflow.node_type"] == "start"
+        assert self.trace.workflow_run_id == str(engine.workflow_run_id)
+
+    @pytest.mark.unit
+    def test_failed_node_is_an_error_span(self):
+        nodes = [
+            _make_node("n1", NodeType.START),
+            _make_node(
+                "n2",
+                NodeType.STATE,
+                "State",
+                config={"config": {"operations": [{"expression": "bad!!!", "target_variable": "x"}]}},
+            ),
+        ]
+        engine = WorkflowEngine(
+            _make_graph(nodes, [_make_edge("e1", "n1", "n2")]), _make_agent()
+        )
+        list(engine.execute({}, "q"))
+        state_span = [s for s in self.trace.spans if s.name == "workflow_step State"][0]
+        assert state_span.status == "error"
+
+
+@pytest.mark.unit
+class TestWorkflowNodeContextOverflow:
+    """A node whose turn cannot fit the window reports the curated overflow error."""
+
+    def test_overflow_is_curated_and_user_facing(self):
+        from docsgpt.agents.context_overflow import ContextOverflowError
+
+        nodes = [
+            _make_node("n1", NodeType.START),
+            _make_node("n2", NodeType.AGENT, "Agent"),
+        ]
+        engine = WorkflowEngine(_make_graph(nodes, [_make_edge("e1", "n1", "n2")]), _make_agent())
+        original_execute = engine._execute_node
+
+        def patched_execute(node):
+            if node.type == NodeType.AGENT:
+                raise ContextOverflowError(
+                    "internal", needed_tokens=5_000, available_tokens=4_000, stage="pre_compression"
+                )
+            yield from original_execute(node)
+
+        engine._execute_node = patched_execute
+        events = list(engine.execute({}, "q"))
+
+        error = [e for e in events if e.get("type") == "error"][0]
+        assert error["user_facing"] is True
+        assert error["code"] == "context_length_exceeded"
+        assert error["params"] == {"needed_tokens": 5_000, "available_tokens": 4_000}
+        assert "5,000" in error["error"]

@@ -4,6 +4,7 @@ import App from './App';
 import { BrowserRouter } from 'react-router-dom';
 import { Provider } from 'react-redux';
 import store from './store';
+import { TooltipProvider } from './components/ui/tooltip';
 import './index.css';
 
 // Show scrollbar on scroll for scrollbar-overlay elements, hide after 1s idle
@@ -18,9 +19,10 @@ function rebuildSbStyles() {
 function showOverlayScrollbar(el: HTMLElement) {
   if (!el.dataset.sbId) el.dataset.sbId = String(++sbIdCounter);
   const sbId = el.dataset.sbId;
-  const isDark = document.body.classList.contains('dark');
-  const thumb = isDark ? '#949494' : '#E2E8F0';
-  const thumbHover = isDark ? '#F0F0F0' : '#8C9198';
+  // --scrollbar-thumb(-hover) in index.css; `.dark` flips them on body.
+  const styles = getComputedStyle(document.body);
+  const thumb = styles.getPropertyValue('--scrollbar-thumb').trim();
+  const thumbHover = styles.getPropertyValue('--scrollbar-thumb-hover').trim();
   // Webkit: inject <style> (Safari only re-renders scrollbar on stylesheet changes)
   activeSbs.set(
     sbId,
@@ -70,7 +72,10 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <BrowserRouter>
       <Provider store={store}>
-        <App />
+        {/* One provider, so tooltips along a row skip the delay after the first. */}
+        <TooltipProvider>
+          <App />
+        </TooltipProvider>
       </Provider>
     </BrowserRouter>
   </React.StrictMode>,

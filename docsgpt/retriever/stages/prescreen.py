@@ -18,6 +18,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional
 
+from docsgpt import tracing
 from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.storage.db.source_config import PreScreenConfig
 
@@ -164,20 +165,28 @@ class PreScreenStage:
         ]
         llm = self._build_llm()
 
-        max_workers = min(_MAX_WORKERS, len(batches))
-        kept: List[Dict[str, Any]] = []
-        if max_workers <= 1:
-            for batch in batches:
-                kept.extend(self._screen_batch(llm, query, batch))
-        else:
-            with ThreadPoolExecutor(max_workers=max_workers) as pool:
-                results = pool.map(
-                    lambda b: self._screen_batch(llm, query, b), batches
-                )
-                for batch_result in results:
-                    kept.extend(batch_result)
-
-        return kept[: self.config.max_keep]
+        with tracing.span(
+            tracing.KIND_RERANK,
+            "rerank prescreen",
+            attributes={
+                "gen_ai.operation.name": "rerank",
+                "docsgpt.candidate_count": len(docs),
+                "docsgpt.batch_count": len(batches),
+            },
+        ) as span:
+            max_workers = min(_MAX_WORKERS, len(batches))
+            kept: List[Dict[str, Any]] = []
+            if max_workers <= 1:
+                for batch in batches:
+                    kept.extend(self._screen_batch(llm, query, batch))
+            else:
+                screen = tracing.wrap(lambda b: self._screen_batch(llm, query, b))
+                with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                    for batch_result in pool.map(screen, batches):
+                        kept.extend(batch_result)
+            survivors = kept[: self.config.max_keep]
+            span.set(**{"docsgpt.kept_count": len(survivors)})
+            return survivors
 
 
 def build_prescreen_stages(

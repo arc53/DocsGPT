@@ -8,9 +8,16 @@ models:
     display_name: GPT-OSS 120B
     description: OpenAI's open-weight 120B flagship served on Groq's LPU hardware; strong general reasoning with strict structured output support
     supports_structured_output: true
+    input_cost_per_million: 0.15
+    output_cost_per_million: 0.6
+    cached_input_cost_per_million: 0.075
   - id: llama-3.3-70b-versatile
     display_name: Llama 3.3 70B Versatile
     description: Meta's Llama 3.3 70B for general-purpose chat with parallel tool use
+    input_cost_per_million: 0.59
+    output_cost_per_million: 0.79
   - id: llama-3.1-8b-instant
     display_name: Llama 3.1 8B Instant
     description: Small, very low-latency Llama model (~560 tok/s) with parallel tool use
+    input_cost_per_million: 0.05
+    output_cost_per_million: 0.08

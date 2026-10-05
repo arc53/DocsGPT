@@ -24,18 +24,19 @@ def _make_llm(monkeypatch, store_responses=True, **extra_settings):
         "docsgpt.llm.openai.StorageCreator",
         types.SimpleNamespace(get_storage=lambda: None),
     )
-    monkeypatch.setattr(
-        "docsgpt.llm.openai.settings",
-        types.SimpleNamespace(
-            OPENAI_API_KEY="k",
-            API_KEY="k",
-            OPENAI_BASE_URL="",
-            AZURE_DEPLOYMENT_NAME="dep",
-            OPENAI_RESPONSES_STORE=store_responses,
-            OPENAI_REASONING_SUMMARY="auto",
-            **extra_settings,
-        ),
-    )
+    # Every setting the Responses path reads, with the hints off; tests opt in per case.
+    stub = {
+        "OPENAI_API_KEY": "k",
+        "API_KEY": "k",
+        "OPENAI_BASE_URL": "",
+        "AZURE_DEPLOYMENT_NAME": "dep",
+        "OPENAI_RESPONSES_STORE": store_responses,
+        "OPENAI_REASONING_SUMMARY": "auto",
+        "OPENAI_RESPONSES_TRUNCATION_AUTO": False,
+        "OPENAI_PROMPT_CACHE_KEY": False,
+        "OPENAI_PROMPT_CACHE_RETENTION": None,
+    }
+    monkeypatch.setattr("docsgpt.llm.openai.settings", types.SimpleNamespace(**{**stub, **extra_settings}))
     from docsgpt.llm.openai import OpenAILLM
 
     llm = OpenAILLM(api_key="k")
@@ -142,7 +143,7 @@ def _params(llm, **kwargs):
 
 
 @pytest.mark.unit
-def test_build_responses_params_defaults_omit_truncation_and_cache_hints(monkeypatch):
+def test_build_responses_params_omits_truncation_and_cache_hints_when_off(monkeypatch):
     llm = _make_llm(monkeypatch)
     llm._prompt_cache_key = "conv-123"
     params = _params(llm)
@@ -416,3 +417,28 @@ def test_recorded_request_without_a_head_clears_the_committed_hash(monkeypatch):
     assert llm._chain_system_hash is None
     chained, _ = llm._build_responses_input(_messages("sys v1"), "resp_2")
     assert _roles(chained) == ["system", "user"]
+
+
+# ── replayed images ──────────────────────────────────────────────────────────
+
+
+def _image(att_id):
+    return {"id": att_id, "filename": f"{att_id}.png", "mime_type": "image/png"}
+
+
+@pytest.mark.unit
+def test_chain_restarts_before_replayed_images_pass_the_cap(monkeypatch):
+    # A chained request makes the provider replay every earlier turn's
+    # input, images included: one screenshot per turn hit the 50-image
+    # limit on a turn that attached nothing. The local history replays no
+    # images (earlier files are listed in the manifest), so start from it.
+    agent = _agent(monkeypatch, [_turn(500)], ATTACHMENT_MAX_NATIVE_PARTS=3)
+    agent.earlier_attachments = [_image(f"e{i}") for i in range(4)]
+    assert agent._previous_response_id() is None
+
+
+@pytest.mark.unit
+def test_chain_kept_while_replayed_images_stay_under_the_cap(monkeypatch):
+    agent = _agent(monkeypatch, [_turn(500)], ATTACHMENT_MAX_NATIVE_PARTS=3)
+    agent.earlier_attachments = [_image("e1"), {"id": "d", "mime_type": "text/plain"}]
+    assert agent._previous_response_id() == "resp_1"

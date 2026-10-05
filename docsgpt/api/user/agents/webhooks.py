@@ -9,6 +9,7 @@ from sqlalchemy import text as sql_text
 
 from docsgpt.api import api
 from docsgpt.api.user.base import require_agent
+from docsgpt.api.user.resource_access import AccessDenied, require
 from docsgpt.api.user.tasks import process_agent_webhook
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.base_repository import looks_like_uuid
@@ -71,7 +72,14 @@ class AgentWebhook(Resource):
             )
         try:
             with db_readonly() as conn:
-                agent = AgentsRepository(conn).get_any(agent_id, user)
+                # The webhook URL is an access detail; it is minted as the owner.
+                try:
+                    ra = require(conn, "agent", agent_id, user, "manage_access_details")
+                except AccessDenied as denied:
+                    return make_response(
+                        jsonify({"success": False, "message": denied.message}), denied.status
+                    )
+                agent = AgentsRepository(conn).get_by_id(ra.resource_id)
             if not agent:
                 return make_response(
                     jsonify({"success": False, "message": "Agent not found"}), 404
@@ -81,7 +89,7 @@ class AgentWebhook(Resource):
                 webhook_token = secrets.token_urlsafe(32)
                 with db_session() as conn:
                     AgentsRepository(conn).update(
-                        str(agent["id"]), user,
+                        str(agent["id"]), ra.owner_id,
                         {"incoming_webhook_token": webhook_token},
                     )
             base_url = settings.API_URL.rstrip("/")

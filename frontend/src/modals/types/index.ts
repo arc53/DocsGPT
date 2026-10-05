@@ -24,4 +24,7 @@ export type AvailableToolType = {
     description: string;
     parameters: object;
   }[];
+  /** `built_in`, `service` (a connector's tool) or `custom` (MCP / OpenAPI). */
+  group?: 'built_in' | 'service' | 'custom';
+  connector_key?: string | null;
 };

@@ -2,6 +2,9 @@ import logging
 import time
 from typing import Any, Dict
 
+from docsgpt.llm.tool_images import IMAGE_TOKENS
+from docsgpt.pricing import compute_cost_usd
+from docsgpt.tracing.llm import finish_llm_call, start_llm_span
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.session import db_session
 from docsgpt.utils import num_tokens_from_object_or_list, num_tokens_from_string
@@ -78,6 +81,9 @@ def _count_prompt_tokens(messages, tools=None, usage_attachments=None, **kwargs)
         prompt_tokens += _count_tokens(message.get("tool_call_id"))
         prompt_tokens += _count_tokens(message.get("function_call"))
         prompt_tokens += _count_tokens(message.get("function_response"))
+        images = message.get("images")
+        if isinstance(images, list):
+            prompt_tokens += IMAGE_TOKENS * len(images)
 
     # Count tool schema payload passed to the model.
     prompt_tokens += _count_tokens(tools)
@@ -92,7 +98,38 @@ def _count_prompt_tokens(messages, tools=None, usage_attachments=None, **kwargs)
     return prompt_tokens
 
 
-def _persist_call_usage(llm, call_usage):
+def _count_call_prompt(messages, tools, usage_attachments, dispatch, kwargs) -> int:
+    """Prompt tokens of one call, each attachment counted once.
+
+    An agent call carries an attachment dispatch: the files' text is already
+    in ``messages``, and the dispatch adds only what the token counter
+    cannot see there, the native parts (Files-API ids, images) at the size
+    the attachment plan gave them. Without one, ``usage_attachments`` is
+    counted as before.
+
+    Args:
+        messages: The messages sent.
+        tools: The tool schemas sent.
+        usage_attachments: Usage-only attachment rows (``_usage_attachments``).
+        dispatch: The agent's attachment dispatch (``_attachment_dispatch``).
+        kwargs: The remaining gen kwargs (structured-output payloads).
+
+    Returns:
+        The estimated prompt tokens.
+    """
+    if dispatch is None:
+        return _count_prompt_tokens(
+            messages, tools=tools, usage_attachments=usage_attachments, **kwargs
+        )
+    tokens = _count_prompt_tokens(messages, tools=tools, **kwargs)
+    try:
+        tokens += int(dispatch.usage_tokens(messages) or 0)
+    except Exception:
+        logger.debug("Could not size the call's native attachment parts", exc_info=True)
+    return tokens
+
+
+def _persist_call_usage(llm, call_usage, *, duration_ms=None, ttft_ms=None):
     """Write one ``token_usage`` row per LLM call. Always-on; no flag.
 
     Source defaults to ``agent_stream`` and can be overridden per
@@ -100,9 +137,19 @@ def _persist_call_usage(llm, call_usage):
     title / compression / rag_condense / fallback). A ``_request_id``
     stamped on the LLM lets ``count_in_range`` deduplicate the multiple
     rows produced by a single multi-tool agent run.
+
+    Args:
+        llm: The LLM instance the call ran on.
+        call_usage: The call's token counts.
+        duration_ms: Wall-clock for the call, measured by the wrapper.
+        ttft_ms: Time to the first streamed chunk; None for a non-streaming
+            call and for a stream that failed before yielding anything.
+
+    Returns:
+        The call's priced cost in USD, or None when no row was written.
     """
     if call_usage["prompt_tokens"] == 0 and call_usage["generated_tokens"] == 0:
-        return
+        return None
     decoded_token = getattr(llm, "decoded_token", None)
     user_id = (
         decoded_token.get("sub") if isinstance(decoded_token, dict) else None
@@ -118,7 +165,13 @@ def _persist_call_usage(llm, call_usage):
                 "source": getattr(llm, "_token_usage_source", "agent_stream"),
             },
         )
-        return
+        return None
+    model_id = getattr(llm, "_canonical_model_id", None)
+    # Bring-your-own models run on the user's own provider key: recorded, never priced.
+    if getattr(llm, "_is_byom", False):
+        cost = 0.0
+    else:
+        cost = _call_cost_usd(model_id, call_usage)
     try:
         with db_session() as conn:
             # ``timestamp`` is omitted so Postgres ``server_default
@@ -136,14 +189,33 @@ def _persist_call_usage(llm, call_usage):
                 # "0% cache hits".
                 cached_tokens=call_usage.get("cached_tokens"),
                 cache_write_tokens=call_usage.get("cache_write_tokens"),
+                cost=cost,
                 source=(
                     getattr(llm, "_token_usage_source", None) or "agent_stream"
                 ),
                 request_id=getattr(llm, "_request_id", None),
-                model_id=getattr(llm, "_canonical_model_id", None),
+                model_id=model_id,
+                duration_ms=duration_ms,
+                ttft_ms=ttft_ms,
             )
     except Exception:
         logger.exception("token_usage persist failed")
+    return cost
+
+
+def _call_cost_usd(model_id, call_usage) -> float:
+    """Price one call; a pricing failure records $0 rather than dropping the row."""
+    try:
+        return compute_cost_usd(
+            model_id,
+            call_usage["prompt_tokens"],
+            call_usage["generated_tokens"],
+            cached_tokens=call_usage.get("cached_tokens"),
+            cache_write_tokens=call_usage.get("cache_write_tokens"),
+        )
+    except Exception:
+        logger.exception("token_usage cost computation failed")
+        return 0.0
 
 
 def _prefer_provider_usage(llm: Any, call_usage: Dict[str, int]) -> Dict[str, int]:
@@ -218,15 +290,15 @@ def gen_token_usage(func):
     """
     def wrapper(self, model, messages, stream, tools, **kwargs):
         usage_attachments = kwargs.pop("_usage_attachments", None)
+        dispatch = kwargs.pop("_attachment_dispatch", None)
         call_usage = {"prompt_tokens": 0, "generated_tokens": 0}
-        call_usage["prompt_tokens"] += _count_prompt_tokens(
-            messages,
-            tools=tools,
-            usage_attachments=usage_attachments,
-            **kwargs,
+        call_usage["prompt_tokens"] += _count_call_prompt(
+            messages, tools, usage_attachments, dispatch, kwargs
         )
+        span = start_llm_span(self, model, stream=False, tools=tools)
         started_at = time.monotonic()
         error: BaseException | None = None
+        result = None
         try:
             result = func(self, model, messages, stream, tools, **kwargs)
             call_usage["generated_tokens"] += _count_tokens(result)
@@ -235,10 +307,24 @@ def gen_token_usage(func):
             error = exc
             raise
         finally:
+            duration_ms = int((time.monotonic() - started_at) * 1000)
+            estimated_usage = call_usage
             call_usage = _prefer_provider_usage(self, call_usage)
             self.token_usage["prompt_tokens"] += call_usage["prompt_tokens"]
             self.token_usage["generated_tokens"] += call_usage["generated_tokens"]
-            _persist_call_usage(self, call_usage)
+            # A non-streaming call has no first-token moment; ttft stays NULL.
+            cost = _persist_call_usage(self, call_usage, duration_ms=duration_ms)
+            finish_llm_call(
+                span,
+                self,
+                model,
+                call_usage,
+                duration_ms=duration_ms,
+                error=error,
+                cost_usd=cost,
+                estimated=call_usage is estimated_usage,
+                output=result if isinstance(result, str) else None,
+            )
             emit = getattr(self, "_emit_gen_finished_log", None)
             if callable(emit):
                 try:
@@ -246,7 +332,7 @@ def gen_token_usage(func):
                         model,
                         prompt_tokens=call_usage["prompt_tokens"],
                         completion_tokens=call_usage["generated_tokens"],
-                        latency_ms=int((time.monotonic() - started_at) * 1000),
+                        latency_ms=duration_ms,
                         cached_tokens=call_usage.get("cached_tokens"),
                         cache_write_tokens=call_usage.get("cache_write_tokens"),
                         error=error,
@@ -261,19 +347,41 @@ def stream_token_usage(func):
     """Stream variant of ``gen_token_usage``. Same persistence contract."""
     def wrapper(self, model, messages, stream, tools, **kwargs):
         usage_attachments = kwargs.pop("_usage_attachments", None)
+        dispatch = kwargs.pop("_attachment_dispatch", None)
         call_usage = {"prompt_tokens": 0, "generated_tokens": 0}
-        call_usage["prompt_tokens"] += _count_prompt_tokens(
-            messages,
-            tools=tools,
-            usage_attachments=usage_attachments,
-            **kwargs,
+        call_usage["prompt_tokens"] += _count_call_prompt(
+            messages, tools, usage_attachments, dispatch, kwargs
         )
         batch = []
         started_at = time.monotonic()
+        first_chunk_at: float | None = None
+        # Time spent waiting on the provider, accumulated across ``next()``
+        # calls. The wall clock cannot be used here: this is a generator, so
+        # every ``yield`` suspends until the consumer comes back, and the span
+        # from start to exhaustion includes the agent loop's tool handling and
+        # the SSE client's backpressure. A slow browser would otherwise record
+        # 30s for a 900ms call, and latency_summary would mix that with true
+        # non-streaming durations under one p50.
+        provider_seconds = 0.0
         error: BaseException | None = None
+        completed = False
+        # This body runs on the first ``next()``, not at ``gen_stream()``
+        # time, so the span starts when the provider call really does.
+        span = start_llm_span(self, model, stream=True, tools=tools)
         try:
             result = func(self, model, messages, stream, tools, **kwargs)
-            for r in result:
+            stream_iter = iter(result)
+            while True:
+                pull_started = time.monotonic()
+                try:
+                    r = next(stream_iter)
+                except StopIteration:
+                    provider_seconds += time.monotonic() - pull_started
+                    completed = True
+                    break
+                provider_seconds += time.monotonic() - pull_started
+                if first_chunk_at is None:
+                    first_chunk_at = pull_started + provider_seconds
                 batch.append(r)
                 yield r
         except Exception as exc:
@@ -283,12 +391,46 @@ def stream_token_usage(func):
             error = exc
             raise
         finally:
+            duration_ms = int(provider_seconds * 1000)
+            # NULL, not 0, when the stream failed before yielding: "no first
+            # token" must not read as an instant one in a p50.
+            ttft_ms = (
+                int((first_chunk_at - started_at) * 1000)
+                if first_chunk_at is not None
+                else None
+            )
+            # Join the text deltas into the string the client actually
+            # rendered before tokenizing: BPE merges across a chunk boundary,
+            # so tokenizing each delta on its own only ever adds tokens
+            # relative to the whole string, exactly like splitting "running"
+            # into "run" + "ning" costs an extra token neither half alone
+            # needed. Non-string chunks (tool-call/thought deltas) aren't
+            # contiguous text, so they keep being counted individually.
+            text = "".join(line for line in batch if isinstance(line, str))
+            call_usage["generated_tokens"] += _count_tokens(text)
             for line in batch:
-                call_usage["generated_tokens"] += _count_tokens(line)
+                if not isinstance(line, str):
+                    call_usage["generated_tokens"] += _count_tokens(line)
+            estimated_usage = call_usage
             call_usage = _prefer_provider_usage(self, call_usage)
             self.token_usage["prompt_tokens"] += call_usage["prompt_tokens"]
             self.token_usage["generated_tokens"] += call_usage["generated_tokens"]
-            _persist_call_usage(self, call_usage)
+            cost = _persist_call_usage(
+                self, call_usage, duration_ms=duration_ms, ttft_ms=ttft_ms
+            )
+            finish_llm_call(
+                span,
+                self,
+                model,
+                call_usage,
+                duration_ms=duration_ms,
+                error=error,
+                completed=completed,
+                ttft_ms=ttft_ms,
+                cost_usd=cost,
+                estimated=call_usage is estimated_usage,
+                output=batch,
+            )
             emit = getattr(self, "_emit_stream_finished_log", None)
             if callable(emit):
                 try:
@@ -296,6 +438,9 @@ def stream_token_usage(func):
                         model,
                         prompt_tokens=call_usage["prompt_tokens"],
                         completion_tokens=call_usage["generated_tokens"],
+                        # The log line has always meant end-to-end wall clock
+                        # for the streamed response; only the persisted column
+                        # isolates provider time.
                         latency_ms=int((time.monotonic() - started_at) * 1000),
                         cached_tokens=call_usage.get("cached_tokens"),
                         cache_write_tokens=call_usage.get("cache_write_tokens"),

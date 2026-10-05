@@ -5,7 +5,12 @@ import defusedxml.ElementTree as ET
 from bs4 import BeautifulSoup
 from docsgpt.parser.html_text import html_to_text
 
-from docsgpt.parser.remote.base import BaseRemote
+from docsgpt.parser.remote.base import (
+    BaseRemote,
+    dedupe_virtual_paths,
+    spans_multiple_hosts,
+    url_to_virtual_path,
+)
 from docsgpt.parser.schema.base import Document
 from docsgpt.core.url_validation import validate_url, SSRFError
 from docsgpt.security.safe_url import UnsafeUserUrlError, pinned_request
@@ -33,6 +38,7 @@ class SitemapLoader(BaseRemote):
             return []
 
         # Load content of extracted URLs
+        include_host = spans_multiple_hosts(urls)
         documents = []
         processed_urls = 0  # Counter for processed URLs
         for url in urls:
@@ -51,7 +57,13 @@ class SitemapLoader(BaseRemote):
                 documents.append(
                     Document(
                         html_to_text(soup),
-                        extra_info={"source": url},
+                        # Without file_path the worker had no tree key (no
+                        # title, key or doc_id), so sitemap pages never
+                        # appeared in the file tree.
+                        extra_info={
+                            "source": url,
+                            "file_path": url_to_virtual_path(url, include_host),
+                        },
                     )
                 )
                 processed_urls += 1  # Increment the counter after processing each URL
@@ -59,7 +71,7 @@ class SitemapLoader(BaseRemote):
                 logging.error(f"Error processing URL {url}: {e}", exc_info=True)
                 continue
 
-        return documents
+        return dedupe_virtual_paths(documents)
 
     def _extract_urls(self, sitemap_url):
         try:

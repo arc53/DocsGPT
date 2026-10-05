@@ -9,9 +9,16 @@ models:
   - id: gemini-3.1-pro-preview
     display_name: Gemini 3.1 Pro (preview)
     description: Most capable Gemini 3 model with advanced reasoning and agentic coding (preview)
+    # Priced at the >200k-token tier; long prompts are common with attachments.
+    input_cost_per_million: 4.0
+    output_cost_per_million: 18.0
   - id: gemini-3.5-flash
     display_name: Gemini 3.5 Flash
     description: Frontier-class Flash for sustained performance on agentic and coding tasks
+    input_cost_per_million: 1.5
+    output_cost_per_million: 9
   - id: gemini-3.1-flash-lite
     display_name: Gemini 3.1 Flash-Lite
     description: Cost-efficient frontier-class multimodal model for high-throughput workloads
+    input_cost_per_million: 0.25
+    output_cost_per_million: 1.5

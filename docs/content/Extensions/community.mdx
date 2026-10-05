@@ -1,0 +1,37 @@
+---
+title: Community Integrations
+description: Discord, Slack and Telegram bots and the docsgpt-cli terminal client - integrations that live in their own arc53 repositories and connect to DocsGPT with an agent API key.
+lastUpdated: 2026-09-30
+---
+
+import { Callout } from 'nextra/components'
+
+# Community Integrations
+
+These integrations are separate projects in the [arc53](https://github.com/arc53) organization. They aren't part of the DocsGPT server or its Docker images: you run each one yourself, next to your DocsGPT instance or DocsGPT Cloud, and it calls the DocsGPT API.
+
+| Project | What it does | Connects with |
+| --- | --- | --- |
+| [Discord bot](https://github.com/arc53/discord-docsgpt-extension) | Answers direct messages and `@mentions` in server channels, keeping the conversation for follow-up questions. | An agent API key |
+| [Slack bot](https://github.com/arc53/slack-bot-docsgpt-extenstion) | Answers mentions and direct messages in a Slack workspace over Socket Mode, keeping each thread's history. Can route to several agents. | An agent API key per agent |
+| [Telegram bot](https://github.com/arc53/tg-bot-docsgpt-extenstion) | Runs one or more Telegram bots with streamed answers, file and voice input, files the agent produces, group and inline modes. | An agent API key per agent |
+| [docsgpt-cli](https://github.com/arc53/DocsGPT-cli) | Chat with agents from a terminal, [benchmark agents](/Agents/benchmarking), and pair a machine as a [Remote Device](/Tools/remote-device) with `docsgpt-cli host`. | An agent API key; a [personal access token](/API/personal-access-tokens) for account commands; a pairing code for `host` mode |
+
+## Point a bot at your instance
+
+Each bot needs the API key of a published agent (see [Agent API keys](/API/agent-keys)) in its `API_KEY` setting. The bots call DocsGPT Cloud (`https://gptcloud.arc53.com`) unless you set `API_BASE` to your own instance's address, for example `API_BASE=https://docsgpt.example.com`. Each repository's README has the full list of settings and the Docker commands to run it.
+
+A bot answers as the agent, with the agent's prompt, sources and tools, and its usage counts against the agent's owner. Like any API key caller, it can't approve tool actions, so write actions on the owner's connected accounts run only if the owner allows them; see [Agent API keys](/API/agent-keys).
+
+<Callout type="info">
+  The Chrome extension that this section used to list is no longer available.
+</Callout>
+
+## Built into DocsGPT
+
+These integrations ship with DocsGPT and are documented on their own pages:
+
+- [Chat widget](/Extensions/chat-widget) and [search widget](/Extensions/search-widget) for React and HTML sites.
+- [Chatwoot extension](/Extensions/Chatwoot-extension), a bridge in `extensions/chatwoot` that answers Chatwoot conversations.
+- [OpenAI-compatible API](/API/openai-compatible), for any client or SDK that speaks the OpenAI chat completions format.
+- [MCP server](/API/mcp-server), which lets Claude, Cursor and other MCP clients search an agent's sources.

@@ -1,4 +1,4 @@
-import { SyntheticEvent } from 'react';
+import type { MenuOption } from '../ui/dropdown-menu';
 
 export interface FileNode {
   type?: string;
@@ -12,21 +12,6 @@ export interface DirectoryStructure {
   [key: string]: FileNode;
 }
 
-export interface SearchResult {
-  name: string;
-  path: string;
-  isFile: boolean;
-}
-
-export type TreeMenuOption = {
-  icon: string;
-  label: string;
-  onClick: (event: SyntheticEvent) => void;
-  variant: 'default' | 'destructive';
-  iconWidth?: number;
-  iconHeight?: number;
-};
-
 /**
  * Row context passed to consumers' getRowMenuOptions callbacks so they
  * can build per-row menus (e.g. add a Delete option for upload trees).
@@ -37,7 +22,7 @@ export interface RowMenuContext {
   itemId: string;
   displayName?: string;
   /** Default "View" option already provided by TreeBrowser. */
-  defaultViewOption: TreeMenuOption;
+  defaultViewOption: MenuOption;
 }
 
 /**

@@ -1,0 +1,89 @@
+---
+title: Using the Web App
+description: Find your way around the DocsGPT web app - the sidebar, conversation search with Ctrl/Cmd+K, the agent library with folders, pinning and templates, importing an agent from YAML, and the General settings for theme, language and the active prompt.
+lastUpdated: 2026-09-30
+---
+
+import { Callout } from 'nextra/components'
+
+# Using the Web App
+
+This page covers the everyday parts of the DocsGPT web app that aren't specific to agents, knowledge or tools.
+
+## The sidebar
+
+The sidebar holds:
+
+- **New Chat**: start a conversation. A chat without an agent uses the model you pick in the chat box, your active prompt and the default chat tools.
+- **Agents**: your pinned agents. With fewer than three pinned, your most recently used published agents fill the list up to three. Click one to chat with it. Hover over it to **Pin agent** or **Unpin agent**.
+- **Chats**: your conversations, newest first. Each has a menu with **Rename**, **Share** (see [Sharing conversations](/Using/sharing)) and **Delete**.
+- **Manage Agents**: the agent library.
+- **Settings**, grouped into **Personal** (**General**, **Access Tokens**), **Workspace** (**Knowledge**, **Connectors**, **Tools**, **Custom Models**, **Teams**) and **Insights** (**Analytics**, **Logs**). Admins also get **Admin**.
+
+## Search your conversations
+
+Press **Ctrl+K** (**Cmd+K** on macOS), or use the search button in the sidebar, to open **Search conversations**. It matches conversation names and the text of your questions and the answers, and shows a snippet of the match. Pick a result to open that conversation.
+
+## The agent library
+
+Open **Manage Agents** to see your agents in tabs:
+
+| Tab | Holds |
+| --- | --- |
+| **All** | Every tab's agents on one page. |
+| **Templates** | Agents provided by DocsGPT, seeded by your operator (see [Seeding premade agents](/Agents/basics#seeding-premade-agents-from-yaml)). |
+| **My agents** | Agents you created, published or imported, in your folders. |
+| **Team** | Agents your teammates shared with you (see [Teams and sharing](/Using/teams-and-sharing)). |
+| **Discovered** | Public agents you opened through a link. **Remove** takes one off the list. |
+
+**Search...** filters the agents by name and description. Each agent card has a menu with the actions your access allows: **Logs**, **Edit** (or **View**), **Export as YAML**, **Share with team**, **Pin agent**, **Move to folder** and **Delete**.
+
+### Use a template
+
+A template can't be edited directly. Choose **Duplicate** from its menu to get your own published copy in **My agents**, with a new API key. Tools you don't have access to are left off the copy, so check its tools before you use it.
+
+### Organize agents in folders
+
+Folders are in **My agents** only, and can be nested.
+
+1. Choose **New Folder**, type a name and press Enter.
+2. To file an agent, choose **Move to folder** from its menu, then pick a folder, or **No folder (root)** to take it out. You can create a folder from the same dialog.
+3. Open a folder by clicking it; the breadcrumb above the list takes you back up. A folder's menu has **Rename** and **Delete**. Deleting a folder moves the agents in it out of the folder; it doesn't delete them.
+
+Moving many agents at once is API-only: `POST /api/agents/folders/bulk_move` with a list of `agent_ids`. See the [REST API reference](/API/reference).
+
+### Pin agents
+
+**Pin agent**, from an agent's card menu or the sidebar, keeps the agent at the top of the sidebar's **Agents** list. Pins are per user, so pinning a shared agent changes only your sidebar.
+
+## Import an agent from YAML
+
+To bring in an agent exported from another instance (**Export as YAML**):
+
+1. In **Manage Agents**, choose **Import**.
+2. Drop a `.yaml` or `.yml` file on the dialog, or click to choose one, then choose **Review**.
+3. The dialog shows whether the file creates a new agent or updates one you already have, and how it will match **Sources**, **Tools** and **Models** to your account. For a source that isn't found, pick one of yours or **Leave unattached**. For a tool or custom model that needs a secret, enter it, or leave it blank to skip that item.
+4. Choose **Import**.
+
+A new agent is imported as a draft. Re-importing a file updates the matching agent and keeps its current status, so a published agent stays live. If something was skipped, the dialog lists it before **Continue to agent** opens the agent.
+
+<Callout type="warning">
+Importing a file that has no workflow over an existing workflow agent permanently deletes that agent's workflow, its run history and its artifacts. The review step warns you when this will happen.
+</Callout>
+
+For the same import over the API, see [Agent portability](/API/agent-api#agent-portability-export--import).
+
+## General settings
+
+**Settings → General** has:
+
+- **Theme**: **Light** or **Dark**. Until you pick one, the app follows your system setting.
+- **Language**: the language of menus and labels: English, Deutsch, Español, 日本語, 普通话, 繁體中文（臺灣） or Русский.
+- **Active prompt**: the system prompt for chats without an agent. Agents use their own. From here you can also add, edit, duplicate and delete your prompts; see [Prompts](/Agents/prompts).
+- **Delete all conversations**: permanently deletes every conversation in your account.
+
+Theme, language and active prompt are saved in your browser, so set them again on another browser or device.
+
+## Default tools in chats without an agent
+
+Chats without an agent get a few built-in tools by default, such as memory, reading a web page and scheduling (your operator sets the list with `DEFAULT_CHAT_TOOLS`). To stop one of them being used in your chats, open **Settings → Tools** and turn off its switch; it's marked **Built-in**. Tools you add yourself have the same switch.

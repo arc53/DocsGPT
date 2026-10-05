@@ -263,3 +263,61 @@ class TestAnswerResourcePost:
 def flask_app_context(client):
     """Helper to get app context from test client."""
     return client.application.app_context()
+
+
+@pytest.mark.unit
+class TestAnswerContextOverflow:
+    """``/api/answer`` reports a too-big turn as the curated error with its code."""
+
+    def test_pre_stream_overflow_is_a_400_with_the_code(self, answer_client, mock_stream_processor):
+        from docsgpt.agents.context_overflow import ContextOverflowError
+
+        mock_stream_processor.build_agent.side_effect = ContextOverflowError(
+            "raw internal text", needed_tokens=9_000, available_tokens=8_000, stage="pre_compression"
+        )
+        with patch(
+            "docsgpt.api.answer.routes.answer.AnswerResource.validate_request",
+            return_value=None,
+        ):
+            resp = answer_client.post(
+                "/api/answer",
+                data=json.dumps({"question": "test"}),
+                content_type="application/json",
+            )
+
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["code"] == "context_length_exceeded"
+        assert body["params"] == {"needed_tokens": 9_000, "available_tokens": 8_000}
+        assert "9,000" in body["error"]
+
+    def test_a_curated_stream_error_keeps_its_code(self, answer_client, mock_stream_processor):
+        with patch(
+            "docsgpt.api.answer.routes.answer.AnswerResource.validate_request",
+            return_value=None,
+        ), patch(
+            "docsgpt.api.answer.routes.answer.AnswerResource.check_usage",
+            return_value=None,
+        ), patch(
+            "docsgpt.api.answer.routes.answer.AnswerResource.complete_stream",
+            return_value=iter([]),
+        ), patch(
+            "docsgpt.api.answer.routes.answer.AnswerResource.process_response_stream",
+            return_value={
+                "conversation_id": None, "answer": None, "sources": None, "tool_calls": None,
+                "thought": None, "error": "Too big", "error_code": "context_length_exceeded",
+                "error_params": {"needed_tokens": 2, "available_tokens": 1},
+            },
+        ):
+            resp = answer_client.post(
+                "/api/answer",
+                data=json.dumps({"question": "test"}),
+                content_type="application/json",
+            )
+
+        assert resp.status_code == 400
+        assert resp.get_json() == {
+            "error": "Too big",
+            "code": "context_length_exceeded",
+            "params": {"needed_tokens": 2, "available_tokens": 1},
+        }

@@ -45,6 +45,7 @@ class WorkflowAgent(BaseAgent):
     ):
         super().__init__(*args, **kwargs)
         self.workflow_id = workflow_id
+        self.workflow_row: Optional[Dict[str, Any]] = None
         self.workflow_owner = workflow_owner
         self._workflow_data = workflow
         self._engine: Optional[WorkflowEngine] = None
@@ -195,6 +196,9 @@ class WorkflowAgent(BaseAgent):
                 if workflow_row is None:
                     logger.error(f"Workflow {self.workflow_id} not found or inaccessible for user {owner_id}")
                     return None
+                # Node tools/sources the owner can't use resolve through its
+                # ``resource_sponsors`` (see WorkflowEngine).
+                self.workflow_row = workflow_row
                 pg_workflow_id = str(workflow_row["id"])
                 graph_version = workflow_row.get("current_graph_version", 1)
                 try:
@@ -331,7 +335,7 @@ class WorkflowAgent(BaseAgent):
         from docsgpt.storage.storage_creator import StorageCreator
 
         storage = StorageCreator.get_storage()
-        max_bytes = int(getattr(settings, "ARTIFACT_MAX_BYTES", 0) or 0)
+        max_bytes = int(settings.ARTIFACT_MAX_BYTES or 0)
         dropped: List[str] = []
         if len(self.attachments) > _MAX_INPUT_DOCUMENTS:
             over = len(self.attachments) - _MAX_INPUT_DOCUMENTS

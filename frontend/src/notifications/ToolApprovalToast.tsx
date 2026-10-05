@@ -1,9 +1,18 @@
 import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useMatch, useNavigate } from 'react-router-dom';
 
-import WarnIcon from '../assets/warn.svg';
 import { Button } from '../components/ui/button';
+import {
+  Toast,
+  ToastActions,
+  ToastContent,
+  ToastHeader,
+  ToastItem,
+  ToastStatus,
+  ToastTitle,
+} from '../components/ui/toast';
 import type { RootState } from '../store';
 
 import {
@@ -17,9 +26,10 @@ import {
 const APPROVAL_EVENT_MAX_AGE_MS = 35 * 60 * 1000;
 
 /**
- * Surface ``tool.approval.required`` events as toasts that look like
- * ``UploadToast`` (same fixed bottom-right rail) — but only when the
- * user is NOT already on the conversation that needs the approval.
+ * Surface ``tool.approval.required`` events as toast cards in the shared
+ * ``ToastViewport`` (mounted in App.tsx, between the team notifications
+ * and ``UploadToast``) — but only when the user is NOT already on the
+ * conversation that needs the approval.
  *
  * - Dedup by ``conversation_id`` (the SSE ``scope.id``): keep only
  *   the newest pending event per conversation, so multiple paused
@@ -29,6 +39,7 @@ const APPROVAL_EVENT_MAX_AGE_MS = 35 * 60 * 1000;
  * - Clicking "Review" navigates to ``/c/<id>`` and dismisses.
  */
 export default function ToolApprovalToast() {
+  const { t } = useTranslation();
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const events = useSelector(selectRecentEvents);
@@ -98,74 +109,53 @@ export default function ToolApprovalToast() {
 
   const conversationName = (conversationId: string): string => {
     const found = conversations?.find((c) => c.id === conversationId);
-    return found?.name ?? 'Conversation';
+    return found?.name ?? t('notifications.toolApprovalFallbackName');
   };
 
   return (
-    // Sit above ``UploadToast`` (which owns ``bottom-4 right-4``)
-    // rather than overlapping it. ``bottom-24`` ≈ 96px clears one
-    // standard-height upload toast; multiple in-flight uploads will
-    // stack into the gap, at which point the approval toast still
-    // floats on top via ``z-50``. Acceptable v1 layout — the two
-    // surfaces are rarely competing.
-    <div
-      className="fixed right-4 bottom-24 z-50 flex max-w-md flex-col gap-2"
-      onMouseDown={(e) => e.stopPropagation()}
-      role="status"
-      aria-live="polite"
-      aria-atomic="true"
-    >
+    <>
       {Array.from(pendingByConversation.values()).map(
         ({ eventId, conversationId }) => (
-          <div
-            key={eventId}
-            className="border-border bg-card shadow-toast w-[271px] overflow-hidden rounded-2xl border"
-          >
-            <div className="bg-accent/50 dark:bg-muted flex items-center justify-between px-4 py-3">
-              <h3 className="dark:text-foreground text-sm leading-[16.5px] font-medium text-black">
-                Tool approval needed
-              </h3>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => dispatch(dismissToolApproval(eventId))}
-                className="h-8 w-8 p-0 text-black opacity-70 transition-opacity hover:bg-transparent hover:opacity-100 dark:text-white"
-                aria-label="Dismiss"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="flex items-center justify-between gap-3 px-5 py-3">
-              <div className="flex min-w-0 items-center gap-2">
-                <img
-                  src={WarnIcon}
-                  alt=""
-                  className="h-5 w-5 shrink-0"
-                  aria-hidden="true"
-                />
-                <p
-                  className="dark:text-muted-foreground max-w-[140px] truncate text-sm leading-[16.5px] font-normal text-black"
-                  title={conversationName(conversationId)}
+          <Toast key={eventId}>
+            <ToastHeader variant="warning">
+              <ToastTitle>{t('notifications.toolApprovalTitle')}</ToastTitle>
+              <ToastActions>
+                <Button
+                  type="button"
+                  variant="ghost-muted"
+                  size="icon-sm"
+                  onClick={() => dispatch(dismissToolApproval(eventId))}
+                  aria-label={t('notifications.dismiss')}
                 >
-                  {conversationName(conversationId)}
-                </p>
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => {
-                  dispatch(dismissToolApproval(eventId));
-                  navigate(`/c/${conversationId}`);
-                }}
-                className="h-auto rounded-full px-3 py-1 text-xs font-medium text-white shadow-sm"
+                  <X />
+                </Button>
+              </ToastActions>
+            </ToastHeader>
+            <ToastContent>
+              <ToastItem
+                icon={<ToastStatus status="warning" />}
+                label={
+                  <span title={conversationName(conversationId)}>
+                    {conversationName(conversationId)}
+                  </span>
+                }
               >
-                Review
-              </Button>
-            </div>
-          </div>
+                <Button
+                  type="button"
+                  size="xs"
+                  shape="pill"
+                  onClick={() => {
+                    dispatch(dismissToolApproval(eventId));
+                    navigate(`/c/${conversationId}`);
+                  }}
+                >
+                  {t('notifications.toolApprovalReview')}
+                </Button>
+              </ToastItem>
+            </ToastContent>
+          </Toast>
         ),
       )}
-    </div>
+    </>
   );
 }

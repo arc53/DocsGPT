@@ -873,3 +873,24 @@ class TestValidateFunctionNameEdgeCases:
     @pytest.mark.unit
     def test_with_slash(self):
         assert validate_function_name("path/to") is False
+
+
+@pytest.mark.unit
+def test_convert_pdf_to_images_from_a_later_page():
+    """A page range renders from ``first_page`` and numbers pages from it."""
+    mock_image = MagicMock()
+    mock_image.save = MagicMock(side_effect=lambda buf, format: buf.write(b"IMG"))
+    mock_module = MagicMock()
+    mock_module.convert_from_path.return_value = [mock_image, mock_image]
+    original_import = __import__
+
+    def patched_import(name, *args, **kwargs):
+        if name == "pdf2image":
+            return mock_module
+        return original_import(name, *args, **kwargs)
+
+    with patch("builtins.__import__", side_effect=patched_import):
+        result = convert_pdf_to_images("/some/file.pdf", first_page=7, max_pages=2)
+    kwargs = mock_module.convert_from_path.call_args.kwargs
+    assert (kwargs["first_page"], kwargs["last_page"]) == (7, 8)
+    assert [r["page"] for r in result] == [7, 8]

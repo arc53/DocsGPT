@@ -1,0 +1,22 @@
+/*
+ * Navbar brand mark. The docs app has no Tailwind build of its own (Nextra
+ * ships its utilities under an `x:` prefix and generates no `dark:` variants),
+ * so the light/dark swap of the monochrome logo is done here. Nextra's
+ * next-themes setup toggles `.dark` on <html>.
+ */
+.brand-logo {
+  height: 28px;
+  width: auto;
+}
+
+.brand-logo-dark {
+  display: none;
+}
+
+html.dark .brand-logo-light {
+  display: none;
+}
+
+html.dark .brand-logo-dark {
+  display: block;
+}

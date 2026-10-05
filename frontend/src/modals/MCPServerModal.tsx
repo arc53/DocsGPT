@@ -1,13 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import { baseURL } from '../api/client';
 import userService from '../api/services/userService';
-import Spinner from '../components/Spinner';
+import { Alert, AlertDescription } from '../components/ui/alert';
+import { Collapsible, CollapsibleTrigger } from '../components/ui/collapsible';
 import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
+import { FormField } from '../components/ui/form-field';
+import { ListRow, ListRows } from '../components/ui/list-row';
+import { SectionHeader } from '../components/ui/section-header';
 import {
   Select,
   SelectContent,
@@ -18,7 +22,25 @@ import {
 import { ActiveState } from '../models/misc';
 import { selectRecentEvents } from '../notifications/notificationsSlice';
 import { selectToken } from '../preferences/preferenceSlice';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
+import { formatCount } from '../utils/dateTimeUtils';
+
+/**
+ * A test result, or the OAuth handshake's progress: `waiting` while the
+ * sign-in runs (info), `popupBlocked` when the browser stopped the sign-in
+ * window (warning, with a link to open it by hand).
+ */
+type TestResult = {
+  success: boolean;
+  message: string;
+  status?: string;
+  notice?: 'waiting' | 'popupBlocked';
+  authorization_url?: string;
+  tools?: { name: string; description?: string }[];
+  tools_count?: number;
+};
+
+const NOTICE_VARIANT = { waiting: 'info', popupBlocked: 'warning' } as const;
 
 interface MCPServerModalProps {
   modalState: ActiveState;
@@ -26,6 +48,26 @@ interface MCPServerModalProps {
   server?: any;
   onServerSaved: () => void;
 }
+
+/**
+ * The origin (scheme, host, port) of a URL, or '' while it doesn't parse.
+ * Saved secrets follow the origin, like the server's rule: the same host over
+ * http would send them in cleartext, and another port can be another service.
+ */
+function originOf(url: string): string {
+  try {
+    return new URL(url.trim()).origin.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+// The saved secret each auth type keeps, named for the host-change notice.
+const SECRET_FIELDS: Record<string, { field: string; nameKey: string }> = {
+  api_key: { field: 'api_key', nameKey: 'apiKey' },
+  bearer: { field: 'bearer_token', nameKey: 'bearer' },
+  basic: { field: 'password', nameKey: 'password' },
+};
 
 export default function MCPServerModal({
   modalState,
@@ -61,14 +103,7 @@ export default function MCPServerModal({
 
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{
-    success: boolean;
-    message: string;
-    status?: string;
-    authorization_url?: string;
-    tools?: { name: string; description?: string }[];
-    tools_count?: number;
-  } | null>(null);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [discoveredTools, setDiscoveredTools] = useState<
     { name: string; description?: string }[]
   >([]);
@@ -91,6 +126,29 @@ export default function MCPServerModal({
   const popupOpenedRef = useRef(false);
   const [oauthCompleted, setOAuthCompleted] = useState(false);
   const [saveActive, setSaveActive] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const advancedId = useId();
+  // A timeout error opens the section so the message is never hidden.
+  const advancedOpen = showAdvanced || !!errors.timeout;
+
+  // A tool shared with the caller (an editor reconnecting the owner's
+  // server): its saved secrets stay hidden and a new entry replaces them.
+  const isShared = !!server?.access && server.access !== 'owner';
+  // Only the owner can change or re-run an OAuth server's sign-in (the tokens
+  // are theirs), so the modal is read-only for a teammate. The Tools menu
+  // doesn't offer it to them; this guards any other way in.
+  const oauthOwnerOnly = isShared && server?.auth_type === 'oauth';
+  const savedSecret = SECRET_FIELDS[formData.auth_type];
+  const hasSavedSecret =
+    !!server?.has_encrypted_credentials &&
+    !!savedSecret &&
+    formData.auth_type === server?.auth_type;
+  // The server clears the saved secret when the origin changes, so the key
+  // can't be pointed at another server, port or plain http.
+  const serverChanged =
+    hasSavedSecret &&
+    originOf(formData.server_url) !== originOf(server?.server_url || '');
+  const keepSavedSecret = hasSavedSecret && !serverChanged;
 
   const cleanupOAuthListener = useCallback(() => {
     setOauthTaskId(null);
@@ -164,17 +222,17 @@ export default function MCPServerModal({
 
     const authFieldChecks: { [key: string]: () => void } = {
       api_key: () => {
-        if (!formData.api_key.trim())
+        if (!formData.api_key.trim() && !keepSavedSecret)
           newErrors.api_key = t('settings.tools.mcp.errors.apiKeyRequired');
       },
       bearer: () => {
-        if (!formData.bearer_token.trim())
+        if (!formData.bearer_token.trim() && !keepSavedSecret)
           newErrors.bearer_token = t('settings.tools.mcp.errors.tokenRequired');
       },
       basic: () => {
         if (!formData.username.trim())
           newErrors.username = t('settings.tools.mcp.errors.usernameRequired');
-        if (!formData.password.trim())
+        if (!formData.password.trim() && !keepSavedSecret)
           newErrors.password = t('settings.tools.mcp.errors.passwordRequired');
       },
     };
@@ -247,9 +305,8 @@ export default function MCPServerModal({
    * Drive the OAuth handshake straight from the SSE stream:
    *
    * - ``mcp.oauth.awaiting_redirect`` → open the popup with the
-   *   ``authorization_url`` carried on the envelope. Previously this URL
-   *   came from polling ``/api/mcp_server/oauth_status/<task_id>``; the
-   *   worker now publishes it inline so we never need to poll.
+   *   ``authorization_url`` carried on the envelope. The worker publishes
+   *   it inline; there is no polling endpoint, so OAuth needs SSE push on.
    * - ``mcp.oauth.completed`` → enable Save, surface discovered tools,
    *   invoke ``onComplete`` (resolves ``testConnection``'s pending state).
    * - ``mcp.oauth.failed`` → surface the error and reset Save.
@@ -294,11 +351,9 @@ export default function MCPServerModal({
             // asynchronously, so a blocked popup is expected on
             // some browsers / configs.
             setTestResult({
-              success: true,
-              message: t('settings.tools.mcp.oauthPopupBlocked', {
-                defaultValue:
-                  'Popup blocked by browser. Click below to authorize:',
-              }),
+              success: false,
+              notice: 'popupBlocked',
+              message: t('settings.tools.mcp.oauthPopupBlocked'),
               authorization_url: authUrl,
             });
           }
@@ -366,7 +421,11 @@ export default function MCPServerModal({
     setOAuthCompleted(false);
     try {
       const config = buildToolConfig();
-      const response = await userService.testMCPConnection({ config }, token);
+      // The id lets the server test with the saved secret left empty.
+      const response = await userService.testMCPConnection(
+        { config, ...(server?.id && { id: server.id }) },
+        token,
+      );
       const result = await response.json();
 
       if (
@@ -375,7 +434,8 @@ export default function MCPServerModal({
         result.task_id
       ) {
         setTestResult({
-          success: true,
+          success: false,
+          notice: 'waiting',
           message: t('settings.tools.mcp.oauthInProgress'),
         });
         setSaveActive(false);
@@ -438,7 +498,10 @@ export default function MCPServerModal({
         resetForm();
       } else {
         setErrors({
-          general: result.error || t('settings.tools.mcp.errors.saveFailed'),
+          general:
+            result.message ||
+            result.error ||
+            t('settings.tools.mcp.errors.saveFailed'),
         });
       }
     } catch {
@@ -452,123 +515,90 @@ export default function MCPServerModal({
     switch (formData.auth_type) {
       case 'api_key':
         return (
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="api_key">
-                {t('settings.tools.mcp.placeholders.apiKey')}
-                <span className="text-red-500">*</span>
-              </Label>
+          <div className="flex flex-col gap-5">
+            <FormField
+              label={t('settings.tools.mcp.authTypes.apiKey')}
+              required
+              error={errors.api_key}
+              hint={
+                keepSavedSecret
+                  ? t('settings.tools.mcp.savedKeyHint')
+                  : undefined
+              }
+            >
               <Input
-                id="api_key"
-                type="text"
+                type="password"
+                autoComplete="off"
                 value={formData.api_key}
                 onChange={(e) => handleInputChange('api_key', e.target.value)}
                 placeholder={t('settings.tools.mcp.placeholders.apiKey')}
-                aria-invalid={!!errors.api_key || undefined}
-                className="rounded-xl"
               />
-              {errors.api_key && (
-                <p className="text-destructive text-xs">{errors.api_key}</p>
-              )}
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="header_name">
-                {t('settings.tools.mcp.headerName')}
-              </Label>
+            </FormField>
+            <FormField label={t('settings.tools.mcp.headerName')}>
               <Input
-                id="header_name"
                 type="text"
                 value={formData.header_name}
                 onChange={(e) =>
                   handleInputChange('header_name', e.target.value)
                 }
                 placeholder="X-API-Key"
-                className="rounded-xl"
               />
-            </div>
+            </FormField>
           </div>
         );
       case 'bearer':
         return (
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="bearer_token">
-              {t('settings.tools.mcp.placeholders.bearerToken')}
-              <span className="text-red-500">*</span>
-            </Label>
+          <FormField
+            label={t('settings.tools.mcp.authTypes.bearer')}
+            required
+            error={errors.bearer_token}
+            hint={
+              keepSavedSecret ? t('settings.tools.mcp.savedKeyHint') : undefined
+            }
+          >
             <Input
-              id="bearer_token"
-              type="text"
+              type="password"
+              autoComplete="off"
               value={formData.bearer_token}
               onChange={(e) =>
                 handleInputChange('bearer_token', e.target.value)
               }
               placeholder={t('settings.tools.mcp.placeholders.bearerToken')}
-              aria-invalid={!!errors.bearer_token || undefined}
-              className="rounded-xl"
             />
-            {errors.bearer_token && (
-              <p className="text-destructive text-xs">{errors.bearer_token}</p>
-            )}
-          </div>
+          </FormField>
         );
       case 'basic':
         return (
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="username">
-                {t('settings.tools.mcp.username')}
-                <span className="text-red-500">*</span>
-              </Label>
+          <div className="flex flex-col gap-5">
+            <FormField
+              label={t('settings.tools.mcp.username')}
+              required
+              error={errors.username}
+            >
               <Input
-                id="username"
                 type="text"
                 value={formData.username}
                 onChange={(e) => handleInputChange('username', e.target.value)}
-                placeholder={t('settings.tools.mcp.username')}
-                aria-invalid={!!errors.username || undefined}
-                className="rounded-xl"
+                placeholder={t('settings.tools.mcp.placeholders.username')}
               />
-              {errors.username && (
-                <p className="text-destructive text-xs">{errors.username}</p>
-              )}
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="password">
-                {t('settings.tools.mcp.password')}
-                <span className="text-red-500">*</span>
-              </Label>
+            </FormField>
+            <FormField
+              label={t('settings.tools.mcp.password')}
+              required
+              error={errors.password}
+              hint={
+                keepSavedSecret
+                  ? t('settings.tools.mcp.savedKeyHint')
+                  : undefined
+              }
+            >
               <Input
-                id="password"
                 type="password"
                 value={formData.password}
                 onChange={(e) => handleInputChange('password', e.target.value)}
-                placeholder={t('settings.tools.mcp.password')}
-                aria-invalid={!!errors.password || undefined}
-                className="rounded-xl"
+                placeholder={t('settings.tools.mcp.placeholders.password')}
               />
-              {errors.password && (
-                <p className="text-destructive text-xs">{errors.password}</p>
-              )}
-            </div>
-          </div>
-        );
-      case 'oauth':
-        return (
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="oauth_scopes">
-              {t('settings.tools.mcp.placeholders.oauthScopes') ||
-                'Scopes (comma separated)'}
-            </Label>
-            <Input
-              id="oauth_scopes"
-              type="text"
-              value={formData.oauth_scopes}
-              onChange={(e) =>
-                handleInputChange('oauth_scopes', e.target.value)
-              }
-              placeholder="read, write"
-              className="rounded-xl"
-            />
+            </FormField>
           </div>
         );
       default:
@@ -586,133 +616,208 @@ export default function MCPServerModal({
         }
       }}
       title={
-        server
-          ? t('settings.tools.mcp.reconnectServer', {
-              defaultValue: 'Reconnect Server',
+        server?.id
+          ? t('settings.tools.mcp.reconnectServer')
+          : server?.preset
+            ? t('settings.connectors.wizard.connectTitle', {
+                name: server.displayName,
+                interpolation: { escapeValue: false },
+              })
+            : t('settings.tools.mcp.addServer')
+      }
+      description={
+        isShared
+          ? t('settings.tools.mcp.sharedByEditor', {
+              interpolation: { escapeValue: false },
+              owner: server.owner_label || t('settings.tools.mcp.aTeammate'),
             })
-          : t('settings.tools.mcp.addServer')
+          : undefined
       }
       size="lg"
-      mobileVariant="sheet"
-      className="max-w-[600px] md:w-[80vw] lg:w-[60vw]"
+      footer={
+        <ModalActions
+          footerStart={
+            oauthOwnerOnly ? undefined : (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={testConnection}
+                loading={testing}
+                size="lg"
+                shape="pill"
+              >
+                {t('settings.tools.mcp.testConnection')}
+              </Button>
+            )
+          }
+          cancelLabel={t('settings.tools.mcp.cancel')}
+          onCancel={() => {
+            setModalState('INACTIVE');
+            resetForm();
+          }}
+          submitLabel={t('settings.tools.mcp.save')}
+          onSubmit={handleSave}
+          pending={loading}
+          disabled={!saveActive || oauthOwnerOnly}
+        />
+      }
     >
-      <div className="flex h-full flex-col">
-        <div className="flex-1 px-6">
-          <div className="flex flex-col gap-4 px-0.5 py-4">
-            {server?.has_encrypted_credentials &&
-              formData.auth_type !== 'oauth' && (
-                <div className="rounded-xl bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                  {t('settings.tools.mcp.reenterCredentials', {
-                    defaultValue:
-                      'Re-enter your credentials to test and update the connection.',
-                  })}
-                </div>
-              )}
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="mcp-name">
-                {t('settings.tools.mcp.serverName')}
-                <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="mcp-name"
-                type="text"
-                value={formData.name}
-                onChange={(e) => handleInputChange('name', e.target.value)}
-                placeholder={t('settings.tools.mcp.serverName')}
-                aria-invalid={!!errors.name || undefined}
-                className="rounded-xl"
-              />
-              {errors.name && (
-                <p className="text-destructive text-xs">{errors.name}</p>
-              )}
-            </div>
+      <div className="flex flex-col gap-5">
+        {errors.general && (
+          <Alert variant="destructive">
+            <AlertDescription>{errors.general}</AlertDescription>
+          </Alert>
+        )}
+        {!server?.preset && (
+          <Alert variant="warning" role="note">
+            <AlertDescription>
+              {t('settings.connectors.unverified')}
+            </AlertDescription>
+          </Alert>
+        )}
+        {isShared && (
+          <Alert variant="info" role="note">
+            <AlertDescription>
+              {t('settings.tools.mcp.sharedCredentialsNotice')}
+              {oauthOwnerOnly &&
+                ` ${t('settings.tools.mcp.sharedOAuthOwnerOnly')}`}
+            </AlertDescription>
+          </Alert>
+        )}
+        <FormField
+          label={t('settings.tools.mcp.serverName')}
+          required
+          error={errors.name}
+        >
+          <Input
+            type="text"
+            value={formData.name}
+            onChange={(e) => handleInputChange('name', e.target.value)}
+          />
+        </FormField>
 
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="mcp-url">
-                {t('settings.tools.mcp.serverUrl')}
-                <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="mcp-url"
-                type="text"
-                value={formData.server_url}
-                onChange={(e) =>
-                  handleInputChange('server_url', e.target.value)
-                }
-                placeholder="https://example.com/mcp"
-                aria-invalid={!!errors.server_url || undefined}
-                className="rounded-xl"
-              />
-              {errors.server_url && (
-                <p className="text-destructive text-xs">{errors.server_url}</p>
-              )}
-            </div>
+        <FormField
+          label={t('settings.tools.mcp.serverUrl')}
+          required
+          error={errors.server_url}
+        >
+          <Input
+            type="text"
+            value={formData.server_url}
+            onChange={(e) => handleInputChange('server_url', e.target.value)}
+            placeholder="https://example.com/mcp"
+            disabled={oauthOwnerOnly}
+          />
+        </FormField>
+        {serverChanged && (
+          <Alert variant="warning">
+            <AlertDescription>
+              {t('settings.tools.mcp.serverChangedNotice', {
+                interpolation: { escapeValue: false },
+                credential: t(
+                  `settings.tools.mcp.credentialNames.${savedSecret.nameKey}`,
+                ),
+              })}
+            </AlertDescription>
+          </Alert>
+        )}
 
-            <div className="flex flex-col gap-1.5">
-              <Label>{t('settings.tools.mcp.authType')}</Label>
-              <Select
-                value={formData.auth_type}
-                onValueChange={(v) => handleInputChange('auth_type', v)}
-              >
-                <SelectTrigger
-                  variant="ghost"
-                  size="lg"
-                  className="w-full rounded-xl"
+        <FormField label={t('settings.tools.mcp.authType')}>
+          <Select
+            value={formData.auth_type}
+            onValueChange={(v) => handleInputChange('auth_type', v)}
+            disabled={oauthOwnerOnly}
+          >
+            <SelectTrigger size="field" className="w-full">
+              <SelectValue placeholder={t('settings.tools.mcp.authType')} />
+            </SelectTrigger>
+            <SelectContent>
+              {authTypes.map((type) => (
+                <SelectItem key={type.value} value={type.value}>
+                  {type.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FormField>
+
+        {renderAuthFields()}
+
+        {/* Scopes and timeout rarely need changing: behind Advanced. The
+            20px gap sits inside the body, so it folds away with it. */}
+        <div>
+          <CollapsibleTrigger
+            open={advancedOpen}
+            onOpenChange={() => setShowAdvanced((open) => !open)}
+            controls={advancedId}
+            chevron="sm"
+          >
+            <span>{t('settings.tools.mcp.advanced')}</span>
+          </CollapsibleTrigger>
+          <Collapsible open={advancedOpen} id={advancedId}>
+            <div className="flex flex-col gap-5 pt-5">
+              {formData.auth_type === 'oauth' && (
+                <FormField
+                  label={t('settings.tools.mcp.placeholders.oauthScopes')}
                 >
-                  <SelectValue placeholder={t('settings.tools.mcp.authType')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {authTypes.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>
-                      {type.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {renderAuthFields()}
-
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="mcp-timeout">
-                {t('settings.tools.mcp.timeout')}
-              </Label>
-              <Input
-                id="mcp-timeout"
-                type="number"
-                value={formData.timeout}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  if (value === '') {
-                    handleInputChange('timeout', '');
-                  } else {
-                    const numValue = parseInt(value);
-                    if (!isNaN(numValue) && numValue >= 1) {
-                      handleInputChange('timeout', numValue);
+                  <Input
+                    type="text"
+                    value={formData.oauth_scopes}
+                    onChange={(e) =>
+                      handleInputChange('oauth_scopes', e.target.value)
                     }
-                  }
-                }}
-                placeholder="30"
-                min={1}
-                max={300}
-                aria-invalid={!!errors.timeout || undefined}
-                className="rounded-xl"
-              />
-              {errors.timeout && (
-                <p className="text-destructive text-xs">{errors.timeout}</p>
+                    placeholder="read, write"
+                    disabled={oauthOwnerOnly}
+                  />
+                </FormField>
               )}
-            </div>
-
-            {testResult && (
-              <div
-                className={`rounded-xl p-4 text-sm ${
-                  testResult.success
-                    ? 'bg-green-50 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                    : 'bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-                }`}
+              <FormField
+                label={t('settings.tools.mcp.timeout')}
+                error={errors.timeout}
               >
-                <p>{testResult.message}</p>
-                {testResult.authorization_url && (
+                <Input
+                  type="number"
+                  value={formData.timeout}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === '') {
+                      handleInputChange('timeout', '');
+                    } else {
+                      const numValue = parseInt(value);
+                      if (!isNaN(numValue) && numValue >= 1) {
+                        handleInputChange('timeout', numValue);
+                      }
+                    }
+                  }}
+                  placeholder="30"
+                  min={1}
+                  max={300}
+                />
+              </FormField>
+            </div>
+          </Collapsible>
+        </div>
+
+        {testResult && (
+          <Alert
+            variant={
+              testResult.notice
+                ? NOTICE_VARIANT[testResult.notice]
+                : testResult.success
+                  ? 'success'
+                  : 'destructive'
+            }
+          >
+            <AlertDescription>
+              <p>{testResult.message}</p>
+              {testResult.authorization_url && (
+                <Button
+                  variant="link"
+                  size="text"
+                  tone="current"
+                  asChild
+                  className="mt-1.5"
+                >
                   <a
                     href={testResult.authorization_url}
                     target="_blank"
@@ -726,107 +831,43 @@ export default function MCPServerModal({
                       );
                       if (popup) oauthPopupRef.current = popup;
                     }}
-                    className="mt-1.5 inline-block font-medium underline"
                   >
-                    {t('settings.tools.mcp.openAuthPage', {
-                      defaultValue: 'Open authorization page',
-                    })}
+                    {t('settings.tools.mcp.openAuthPage')}
                   </a>
-                )}
-              </div>
-            )}
-
-            {discoveredTools.length > 0 && testResult?.success && (
-              <div className="border-border dark:border-border rounded-xl border p-4">
-                <h4 className="mb-2 text-sm font-medium text-gray-900 dark:text-white">
-                  {t('settings.tools.mcp.discoveredTools', {
-                    count: discoveredTools.length,
-                    defaultValue: `Discovered Actions (${discoveredTools.length})`,
-                  })}
-                </h4>
-                <ul className="flex max-h-40 flex-col gap-1.5 overflow-y-auto">
-                  {discoveredTools.map((tool) => (
-                    <li
-                      key={tool.name}
-                      className="flex items-start gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm dark:bg-white/5"
-                    >
-                      <span className="text-primary mt-0.5">&#9679;</span>
-                      <div className="min-w-0">
-                        <span className="font-medium text-gray-900 dark:text-white">
-                          {tool.name}
-                        </span>
-                        {tool.description && (
-                          <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                            {tool.description}
-                          </p>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {errors.general && (
-              <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-300">
-                {errors.general}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="px-6 py-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={testConnection}
-              disabled={testing}
-              className="w-full rounded-3xl px-6 sm:w-auto"
-            >
-              {testing ? (
-                <div className="flex items-center justify-center">
-                  <Spinner size="small" />
-                  <span className="ml-2">
-                    {t('settings.tools.mcp.testing')}
-                  </span>
-                </div>
-              ) : (
-                t('settings.tools.mcp.testConnection')
+                </Button>
               )}
-            </Button>
+            </AlertDescription>
+          </Alert>
+        )}
 
-            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:gap-3">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setModalState('INACTIVE');
-                  resetForm();
-                }}
-                className="w-full rounded-3xl px-6 sm:w-auto"
-              >
-                {t('settings.tools.mcp.cancel')}
-              </Button>
-              <Button
-                type="button"
-                onClick={handleSave}
-                disabled={loading || !saveActive}
-                className="w-full rounded-3xl px-6 sm:w-auto"
-              >
-                {loading ? (
-                  <div className="flex items-center justify-center">
-                    <Spinner size="small" />
-                    <span className="ml-2">
-                      {t('settings.tools.mcp.saving')}
-                    </span>
-                  </div>
-                ) : (
-                  t('settings.tools.mcp.save')
-                )}
-              </Button>
-            </div>
+        {discoveredTools.length > 0 && testResult?.success && (
+          <div className="flex flex-col gap-2">
+            <SectionHeader
+              as="h3"
+              size="xs"
+              title={t('settings.tools.mcp.discoveredTools', {
+                count: discoveredTools.length,
+                formatted: formatCount(discoveredTools.length),
+              })}
+            />
+            <Card padding="none" className="overflow-hidden">
+              <ListRows>
+                {discoveredTools.map((tool) => (
+                  <ListRow
+                    key={tool.name}
+                    title={tool.name}
+                    description={tool.description}
+                  />
+                ))}
+              </ListRows>
+            </Card>
           </div>
-        </div>
+        )}
+        {!saveActive && !oauthOwnerOnly && (
+          <p className="text-muted-foreground text-xs">
+            {t('settings.tools.mcp.testBeforeSave')}
+          </p>
+        )}
       </div>
     </Modal>
   );

@@ -1,25 +1,32 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import userService from '../api/services/userService';
+import { canOpenAgentEditor } from '../agents/agentAccess';
 import SharedAgentCard from '../agents/SharedAgentCard';
 import { Agent } from '../agents/types';
-import ArtifactSidebar from '../components/ArtifactSidebar';
+import ArtifactPanel from '../components/ArtifactPanel';
 import ErrorBoundary from '../components/ErrorBoundary';
 import MessageInput from '../components/MessageInput';
+import { SidePanel } from '../components/ui/side-panel';
+import { agentChatPath, agentEditPathFor } from '../agents/paths';
 import { useMediaQuery } from '../hooks';
 import {
+  selectAgents,
   selectConversationId,
   selectSelectedAgent,
   selectToken,
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
+import { ChatCompanionContext, type AnswerSource } from './chatCompanion';
 import { handleSendFeedback } from './conversationHandlers';
 import ConversationMessages from './ConversationMessages';
+import SourcesPanel from './SourcesPanel';
 import { FEEDBACK, Query } from './conversationModels';
+import { composerSubmitTarget, resendPlan } from './turnSubmission';
 import { ToolCallsType } from './types';
 import {
   addQuery,
@@ -36,8 +43,15 @@ import { getSendReadiness } from '../components/message-input/armedSend';
 import {
   clearAttachments,
   selectAttachments,
-  selectCompletedAttachments,
+  selectSendableAttachments,
 } from '../upload/uploadSlice';
+import { cn } from '@/lib/utils';
+
+/** What the chat's one docked side panel shows (DESIGN.md "Side panels"). */
+type ChatCompanion =
+  | { kind: 'artifact'; id: string; toolName: string }
+  // `index` is the source whose reader shows; null shows the list.
+  | { kind: 'sources'; sources: AnswerSource[]; index: number | null };
 
 export default function Conversation() {
   const { t } = useTranslation();
@@ -59,7 +73,8 @@ export default function Conversation() {
   const status = useSelector(selectStatus);
   const conversationId = useSelector(selectConversationId);
   const selectedAgent = useSelector(selectSelectedAgent);
-  const completedAttachments = useSelector(selectCompletedAttachments);
+  const agents = useSelector(selectAgents);
+  const sendableAttachments = useSelector(selectSendableAttachments);
   const attachments = useSelector(selectAttachments);
   // A direct send (hero card) that must wait for pending attachments is
   // parked here; MessageInput consumes it into an armed composer send.
@@ -122,7 +137,7 @@ export default function Conversation() {
   useEffect(() => {
     if (!isNewChatRoute || !conversationId) return;
     const target = urlAgentId
-      ? `/agents/${urlAgentId}/c/${conversationId}`
+      ? agentChatPath(urlAgentId, conversationId)
       : `/c/${conversationId}`;
     navigate(target, { replace: true });
   }, [conversationId, isNewChatRoute, urlAgentId]);
@@ -139,40 +154,57 @@ export default function Conversation() {
   );
 
   const lastAutoOpenedArtifactId = useRef<string | null>(null);
-  const didInitArtifactAutoOpen = useRef(false);
-  const prevConversationId = useRef<string | null>(conversationId);
+  // The mount key the auto-open below last saw; a new one is a chat
+  // whose history must not open anything.
+  const autoOpenMountKey = useRef<number | null>(null);
 
-  const [openArtifact, setOpenArtifact] = useState<{
-    id: string;
-    toolName: string;
-  } | null>(null);
+  const [companion, setCompanion] = useState<ChatCompanion | null>(null);
+  // Keeps the last content on screen while the phone sheet slides out.
+  const [shownCompanion, setShownCompanion] = useState(companion);
+  if (companion && companion !== shownCompanion) setShownCompanion(companion);
+
+  // The first prompt sent while the chat had no id. The id the server then
+  // assigns belongs to that chat; a chat opened from the sidebar while the
+  // URL is still /c/new starts with another prompt.
+  const [unsavedFirstPrompt, setUnsavedFirstPrompt] = useState<string | null>(
+    null,
+  );
+  const firstPrompt = queries[0]?.prompt ?? null;
+  if (conversationId === null && unsavedFirstPrompt !== firstPrompt)
+    setUnsavedFirstPrompt(firstPrompt);
 
   const [conversationMountKey, setConversationMountKey] = useState(0);
   const [prevMountConversationId, setPrevMountConversationId] = useState<
     string | null
   >(conversationId);
-  if (prevMountConversationId !== conversationId) {
+  const [prevMountAgentId, setPrevMountAgentId] = useState(urlAgentId);
+  const conversationChanged = prevMountConversationId !== conversationId;
+  const agentChanged = prevMountAgentId !== urlAgentId;
+  if (conversationChanged || agentChanged) {
     const isServerAssignedId =
       prevMountConversationId === null &&
       conversationId !== null &&
-      isNewChatRoute;
+      isNewChatRoute &&
+      unsavedFirstPrompt !== null &&
+      unsavedFirstPrompt === firstPrompt;
+    // Another agent's new chat keeps the null id, so only the agent tells
+    // it apart; a draft or armed send must not carry over to that agent.
+    const isNewChatForAnotherAgent =
+      agentChanged && prevMountConversationId === null && !conversationId;
     setPrevMountConversationId(conversationId);
-    if (!isServerAssignedId) setConversationMountKey((k) => k + 1);
-  }
-
-  useEffect(() => {
-    const prevId = prevConversationId.current;
-    // Don't reset when the backend assigns the conversation id mid-stream (null -> id)
-    const isServerAssignedId =
-      prevId === null && conversationId !== null && status === 'loading';
-
-    if (!isServerAssignedId && prevId !== conversationId) {
-      setOpenArtifact(null);
-      lastAutoOpenedArtifactId.current = null;
+    setPrevMountAgentId(urlAgentId);
+    if (
+      (conversationChanged && !isServerAssignedId) ||
+      isNewChatForAnotherAgent
+    ) {
+      // Switching chats keeps this component mounted (a route change
+      // does not remount it), so the per-chat state resets here.
+      setConversationMountKey((k) => k + 1);
+      setQueuedQuestion(null);
+      setLastQueryReturnedErr(false);
+      setCompanion(null);
     }
-
-    prevConversationId.current = conversationId;
-  }, [conversationId, status]);
+  }
 
   const handleFetchAnswer = useCallback(
     ({
@@ -204,32 +236,37 @@ export default function Conversation() {
 
       if (index !== undefined) {
         // Retry/edit of an existing turn: re-send the ids bound to that
-        // row — the composer slice was consumed by the original send.
-        const rowAttachmentIds = (queries[index]?.attachments ?? []).map(
-          (a) => a.id,
-        );
+        // row — the composer slice was consumed by the original send —
+        // unless they went to Knowledge since.
+        const plan = resendPlan(queries[index], isRetry);
+        if (plan.dropRowAttachments) {
+          dispatch(
+            updateQuery({
+              index,
+              query: { attachments: undefined, attachmentsInKnowledge: false },
+            }),
+          );
+        }
         dispatch(
           resendQuery({
             index,
             prompt: trimmedQuestion,
-            keepIdempotencyKey: isRetry,
+            keepIdempotencyKey: plan.keepIdempotencyKey,
           }),
         );
         handleFetchAnswer({
           question: trimmedQuestion,
           index,
-          attachmentIds: rowAttachmentIds,
+          attachmentIds: plan.attachmentIds,
         });
       } else if (getSendReadiness(attachments).state !== 'ready') {
         // Direct new sends (hero suggestion cards) bypass MessageInput's
-        // submit gate. With files still uploading/parsing (or failed),
-        // sending now would silently drop them — route the question into
-        // the composer instead, where the armed-send banner takes over.
+        // submit gate. With files still uploading/parsing, sending now
+        // would silently drop them — route the question into the composer
+        // instead, where the armed-send banner takes over.
         setQueuedQuestion(trimmedQuestion);
       } else {
-        const filesAttached = completedAttachments
-          .filter((a) => a.id)
-          .map((a) => ({ id: a.id as string, fileName: a.fileName }));
+        const filesAttached = sendableAttachments;
 
         if (!isRetry)
           dispatch(
@@ -245,10 +282,12 @@ export default function Conversation() {
           index,
           attachmentIds: filesAttached.map((f) => f.id),
         });
-        if (filesAttached.length > 0) dispatch(clearAttachments());
+        // Clears the sent files and drops any failed ones, which never
+        // hold a send (nothing is pending here, so nothing else remains).
+        if (attachments.length > 0) dispatch(clearAttachments());
       }
     },
-    [dispatch, handleFetchAnswer, completedAttachments, attachments, queries],
+    [dispatch, handleFetchAnswer, sendableAttachments, attachments, queries],
   );
 
   const handleFeedback = (query: Query, feedback: FEEDBACK, index: number) => {
@@ -283,15 +322,18 @@ export default function Conversation() {
     if (updated === true) {
       handleQuestion({ question: question as string, index: indx });
     } else if (question && status !== 'loading') {
-      if (lastQueryReturnedErr && queries.length > 0) {
-        const retryIndex = queries.length - 1;
+      const target = composerSubmitTarget({
+        question,
+        queries,
+        lastQueryReturnedErr,
+        composerFileCount: sendableAttachments.length,
+      });
+      if (target.kind === 'retry') {
         // Different prompt = new logical action, fresh idempotency key.
-        const prevPrompt = queries[retryIndex].prompt;
-        const isSamePrompt = prevPrompt === question;
-        if (!isSamePrompt) {
+        if (!target.samePrompt) {
           dispatch(
             updateQuery({
-              index: retryIndex,
+              index: target.index,
               query: {
                 prompt: question,
               },
@@ -300,8 +342,8 @@ export default function Conversation() {
         }
         handleQuestion({
           question,
-          isRetry: isSamePrompt,
-          index: retryIndex,
+          isRetry: target.samePrompt,
+          index: target.index,
         });
       } else {
         handleQuestion({
@@ -310,6 +352,13 @@ export default function Conversation() {
       }
     }
   };
+
+  const handleKnowledgeAdded = useCallback(
+    (index: number) => {
+      dispatch(updateQuery({ index, query: { attachmentsInKnowledge: true } }));
+    },
+    [dispatch],
+  );
 
   useEffect(() => {
     if (queries.length) {
@@ -320,12 +369,6 @@ export default function Conversation() {
   }, [queries]);
 
   useEffect(() => {
-    // Avoid auto-opening an artifact from existing conversation history on first mount.
-    if (!didInitArtifactAutoOpen.current) {
-      didInitArtifactAutoOpen.current = true;
-      return;
-    }
-
     const isNotesOrTodoTool = (toolName?: string) => {
       const t = (toolName ?? '').toLowerCase();
       return t === 'notes' || t === 'todo_list' || t === 'todo';
@@ -344,134 +387,166 @@ export default function Conversation() {
       return null;
     };
 
-    const latest = findLatestCompletedArtifactCall(queries);
+    const found = findLatestCompletedArtifactCall(queries);
+    const latest =
+      found?.artifact_id && isNotesOrTodoTool(found.tool_name) ? found : null;
+
+    // A chat's existing history (first mount, or another chat loaded)
+    // opens nothing. Its latest artifact counts as seen, so the next send
+    // does not open it either; only a new one does.
+    if (autoOpenMountKey.current !== conversationMountKey) {
+      autoOpenMountKey.current = conversationMountKey;
+      lastAutoOpenedArtifactId.current = latest?.artifact_id ?? null;
+      return;
+    }
+
     if (!latest?.artifact_id) return;
-    if (!isNotesOrTodoTool(latest.tool_name)) return;
     if (latest.artifact_id === lastAutoOpenedArtifactId.current) return;
 
     lastAutoOpenedArtifactId.current = latest.artifact_id;
-    setOpenArtifact({
+    setCompanion({
+      kind: 'artifact',
       id: latest.artifact_id,
       toolName: latest.tool_name,
     });
-  }, [queries]);
+  }, [queries, conversationMountKey]);
 
   const handleOpenArtifact = useCallback(
     (artifact: { id: string; toolName: string }) => {
       lastAutoOpenedArtifactId.current = artifact.id;
-      setOpenArtifact(artifact);
+      setCompanion({ kind: 'artifact', ...artifact });
     },
     [],
   );
 
-  const handleCloseArtifact = useCallback(() => setOpenArtifact(null), []);
+  const companionContext = useMemo(
+    () => ({
+      openSources: (sources: AnswerSource[], index?: number) =>
+        setCompanion({ kind: 'sources', sources, index: index ?? null }),
+    }),
+    [],
+  );
 
-  const isSplitArtifactOpen = !isMobile && openArtifact !== null;
+  const isCompanionDocked = !isMobile && companion !== null;
+
+  const companionPanel =
+    shownCompanion?.kind === 'artifact' ? (
+      <ArtifactPanel
+        artifactId={shownCompanion.id}
+        toolName={shownCompanion.toolName}
+        conversationId={conversationId}
+      />
+    ) : shownCompanion?.kind === 'sources' ? (
+      <SourcesPanel
+        sources={shownCompanion.sources}
+        openIndex={shownCompanion.index}
+        onOpenIndexChange={(index) =>
+          setCompanion((current) =>
+            current?.kind === 'sources' ? { ...current, index } : current,
+          )
+        }
+      />
+    ) : null;
 
   return (
-    <div className="flex h-full">
-      <div
-        className={`flex h-full min-h-0 flex-col transition-all ${
-          isSplitArtifactOpen ? 'w-[60%] px-6' : 'w-full'
-        }`}
-      >
-        <div className="relative min-h-0 flex-1">
-          {/* A render crash in the message list must leave the composer
-              usable; the boundary resets on conversation switch. */}
-          <ErrorBoundary key={conversationMountKey}>
-            <ConversationMessages
-              handleQuestion={handleQuestion}
-              handleQuestionSubmission={handleQuestionSubmission}
-              handleFeedback={handleFeedback}
-              queries={queries}
-              status={status}
-              showHeroOnEmpty={selectedAgent ? false : true}
-              onOpenArtifact={handleOpenArtifact}
-              onToolAction={handleToolAction}
-              isSplitView={isSplitArtifactOpen}
-              agentId={selectedAgent?.id}
-              headerContent={
-                selectedAgent ? (
-                  <div className="flex w-full items-center justify-center py-4">
-                    <SharedAgentCard
-                      agent={selectedAgent}
-                      onEdit={
-                        selectedAgent.id
-                          ? () =>
-                              navigate(
-                                selectedAgent.agent_type === 'workflow'
-                                  ? `/agents/workflow/edit/${selectedAgent.id}`
-                                  : `/agents/edit/${selectedAgent.id}`,
-                              )
-                          : undefined
-                      }
-                    />
-                  </div>
-                ) : undefined
-              }
-            />
-          </ErrorBoundary>
-          <div
-            className={`from-background pointer-events-none absolute bottom-0 left-1/2 h-6 w-full -translate-x-1/2 rounded-t-2xl bg-linear-to-t to-transparent bg-clip-content px-2 ${
-              isSplitArtifactOpen
-                ? 'max-w-325'
-                : 'max-w-325 md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12'
-            }`}
-          />
-        </div>
-
-        {/* One notch narrower than the message column above it, which keeps its
-            own width. */}
+    <ChatCompanionContext.Provider value={companionContext}>
+      <div className="relative flex h-full overflow-hidden">
         <div
-          className={`bg-opacity-0 z-3 flex h-auto w-full flex-col items-end self-center rounded-2xl py-1 ${
-            isSplitArtifactOpen
-              ? 'max-w-290'
-              : 'max-w-290 md:w-10/12 lg:w-9/12 xl:w-8/12 2xl:w-7/12'
-          }`}
+          className={cn(
+            'relative flex h-full min-h-0 min-w-0 flex-1 flex-col transition-[padding] duration-300 ease-in-out',
+            isCompanionDocked && 'px-6',
+          )}
         >
-          <div className="flex w-full items-center rounded-full px-2">
-            <MessageInput
-              key={conversationMountKey}
-              onSubmit={(text) => {
-                handleQuestionSubmission(text);
-              }}
-              queuedQuestion={queuedQuestion}
-              onQueuedQuestionConsumed={() => setQueuedQuestion(null)}
-              loading={status === 'loading'}
-              showSourceButton={selectedAgent ? false : true}
-              showToolButton={selectedAgent ? false : true}
+          <div className="relative min-h-0 flex-1">
+            {/* A render crash in the message list must leave the composer
+              usable; the boundary resets on conversation switch. */}
+            <ErrorBoundary key={conversationMountKey}>
+              <ConversationMessages
+                handleQuestion={handleQuestion}
+                handleQuestionSubmission={handleQuestionSubmission}
+                handleFeedback={handleFeedback}
+                queries={queries}
+                status={status}
+                showHeroOnEmpty={selectedAgent ? false : true}
+                onOpenArtifact={handleOpenArtifact}
+                onToolAction={handleToolAction}
+                isSplitView={isCompanionDocked}
+                agentId={selectedAgent?.id}
+                // Same rule as the composer's Knowledge picker: an agent's
+                // sources are its own.
+                canAddToKnowledge={!selectedAgent}
+                onKnowledgeAdded={handleKnowledgeAdded}
+                headerContent={
+                  selectedAgent ? (
+                    <div className="flex w-full items-center justify-center py-4">
+                      <SharedAgentCard
+                        agent={selectedAgent}
+                        onEdit={
+                          // Only a role that may open the edit page gets Edit.
+                          canOpenAgentEditor(selectedAgent, agents)
+                            ? () => navigate(agentEditPathFor(selectedAgent))
+                            : undefined
+                        }
+                      />
+                    </div>
+                  ) : undefined
+                }
+              />
+            </ErrorBoundary>
+            <div
+              className={cn(
+                'from-background pointer-events-none absolute bottom-0 left-1/2 h-6 w-full -translate-x-1/2 rounded-t-2xl bg-linear-to-t to-transparent bg-clip-content px-2',
+                isCompanionDocked
+                  ? 'max-w-325'
+                  : 'max-w-325 md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12',
+              )}
             />
           </div>
 
-          <p className="text-muted-foreground hidden w-full self-center bg-transparent py-2 text-center text-xs md:inline">
-            {t('tagline')}
-          </p>
+          {/* One notch narrower than the message column above it, which keeps its
+            own width. */}
+          <div
+            className={cn(
+              'z-10 flex h-auto w-full flex-col items-end self-center rounded-2xl py-1',
+              isCompanionDocked
+                ? 'max-w-290'
+                : 'max-w-290 md:w-10/12 lg:w-9/12 xl:w-8/12 2xl:w-7/12',
+            )}
+          >
+            <div className="flex w-full items-center rounded-full px-2">
+              <MessageInput
+                key={conversationMountKey}
+                onSubmit={(text) => {
+                  handleQuestionSubmission(text);
+                }}
+                queuedQuestion={queuedQuestion}
+                onQueuedQuestionConsumed={() => setQueuedQuestion(null)}
+                loading={status === 'loading'}
+                showSourceButton={selectedAgent ? false : true}
+                showToolButton={selectedAgent ? false : true}
+              />
+            </div>
+
+            <p className="text-muted-foreground hidden w-full self-center bg-transparent py-2 text-center text-xs md:inline">
+              {t('tagline')}
+            </p>
+          </div>
         </div>
+
+        {/* One docked slot: an artifact or an answer's sources. */}
+        <SidePanel
+          variant="docked"
+          open={companion !== null}
+          onOpenChange={(open) => {
+            if (!open) setCompanion(null);
+          }}
+          expandable={
+            shownCompanion?.kind === 'artifact' ? 'artifact' : undefined
+          }
+        >
+          {companionPanel}
+        </SidePanel>
       </div>
-
-      {isSplitArtifactOpen && (
-        <div className="h-full min-h-0 w-[40%]">
-          <ArtifactSidebar
-            variant="split"
-            isOpen={true}
-            onClose={handleCloseArtifact}
-            artifactId={openArtifact?.id ?? null}
-            toolName={openArtifact?.toolName}
-            conversationId={conversationId}
-          />
-        </div>
-      )}
-
-      {isMobile && (
-        <ArtifactSidebar
-          variant="overlay"
-          isOpen={openArtifact !== null}
-          onClose={handleCloseArtifact}
-          artifactId={openArtifact?.id ?? null}
-          toolName={openArtifact?.toolName}
-          conversationId={conversationId}
-        />
-      )}
-    </div>
+    </ChatCompanionContext.Provider>
   );
 }

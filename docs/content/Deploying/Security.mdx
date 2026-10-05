@@ -1,0 +1,98 @@
+---
+title: Security Checklist
+description: Harden a DocsGPT install before other people or the internet can reach it - bind addresses, the choice of AUTH_TYPE, the secrets to set, outbound URL checks, prompt templates, the LLM cache and the version check.
+lastUpdated: 2026-09-30
+---
+
+import { Callout } from 'nextra/components'
+
+# Security Checklist
+
+A fresh DocsGPT install is set up for one person on one computer: nothing is published beyond it, and there is no sign-in. Work through this page before anyone else can reach the instance, whether over a LAN, a VPS or a public domain.
+
+## Decide who can reach it
+
+Each install path publishes DocsGPT on this machine only until you say otherwise.
+
+| Install | Default | To open it to other machines |
+| --- | --- | --- |
+| `docsgpt up` | `127.0.0.1:7091` | `docsgpt up --expose network` (plain HTTP on every interface) or `--domain docs.example.com` (HTTPS through Caddy). Both turn on `AUTH_TYPE=simple_jwt` unless you already chose a mode. |
+| Standalone Compose file | `127.0.0.1:7091` (`DOCSGPT_BIND`) | `DOCSGPT_BIND=0.0.0.0`, or the `https` profile with `DOCSGPT_DOMAIN`. See [Docker](/Deploying/Docker-Deploying#opening-it-from-other-machines). |
+| Checkout Compose files and `setup.sh`/`setup.ps1` | API `127.0.0.1:7091` and UI `127.0.0.1:5173` (`DOCSGPT_BIND`); Postgres and Redis on `127.0.0.1` only | `DOCSGPT_BIND=0.0.0.0` in `.env`, with `docker compose --env-file .env ...`. The setup scripts ask. These files are meant for local use and development. |
+| `docsgpt api` and `docsgpt up --native` | `127.0.0.1` | `docsgpt api --host 0.0.0.0`; the native services always bind `127.0.0.1`, so put a reverse proxy in front. |
+| Kubernetes | Inside the cluster only (`ClusterIP`); `kubectl port-forward` for a first look | Set `AUTH_TYPE` and `API_URL` in `docsgpt-secrets.yaml`, then publish through an Ingress with TLS (`deployment/k8s/ingress-example.yaml`). See [Kubernetes](/Deploying/Kubernetes-Deploying#publish-docsgpt). |
+
+Keep Postgres and Redis off the network in every case. Postgres holds all user data and the sealed credentials; Redis holds the task queue, event streams and [cached LLM answers](#llm-response-cache). Docker's published ports bypass host firewalls such as `ufw`, so a port you publish is open even when the firewall says otherwise (see [Air-Gapped](/Deploying/Air-Gapped)).
+
+The API accepts cross-origin requests from any site (CORS `*`). Without authentication, any web page a visitor opens could call an instance that visitor's browser can reach.
+
+## Choose an `AUTH_TYPE`
+
+| Mode | What it does | Use it for |
+| --- | --- | --- |
+| unset | No sign-in. Every visitor is the one user `local` and shares its conversations, sources, agents and connected services. | A single person on their own computer. |
+| `simple_jwt` | One shared access token, always meaning the user `local`. It works like a shared password. | A small group that is fine sharing one account. |
+| `session_jwt` | Every browser gets its own anonymous identity on its first visit, without credentials. It separates browsers; it does not keep anyone out. | Public demos where visitors should not see each other's chats. |
+| `oidc` | Sign-in through your identity provider, one account per person, with admins, teams, quotas and personal access tokens. | Any install that several people use or that faces the internet. |
+
+`simple_jwt` and `session_jwt` tokens do not expire and cannot be revoked one by one. Apart from a single-user install with `LOCAL_MODE_ADMIN`, only `oidc` supports an admin, so the [admin dashboard](/Deploying/Access-Control#admin-dashboard) and [usage quotas](/Deploying/Usage-Quotas) need it. Set up OIDC with [SSO with OIDC](/Deploying/OIDC-SSO); the modes are described in [Authentication Settings](/Deploying/DocsGPT-Settings#authentication-settings).
+
+Never set `LOCAL_MODE_ADMIN=true` on an install that anyone else can reach: it makes every no-auth visitor an admin.
+
+<a id="secrets"></a>
+
+## Set the secrets
+
+| Secret | Why |
+| --- | --- |
+| `INTERNAL_KEY` | Required. The worker uses it to hand indexes to the API; the same value on both. |
+| `JWT_SECRET_KEY` | Signs tokens. Set it whenever more than one process or container runs; `DEPLOYMENT_TYPE=production` makes a missing one fatal. |
+| `ENCRYPTION_SECRET_KEY` | Seals stored credentials. While it is the public default, DocsGPT refuses to create connections on the Connectors page when `AUTH_TYPE` is set, and tool secrets, MCP credentials and custom-model keys are stored sealed with the public key. |
+| `POSTGRES_PASSWORD` | `docsgpt up` and the standalone file: the database password, read when its volume is created. The checkout Compose files use the fixed password `docsgpt` and publish Postgres on `127.0.0.1` only. |
+
+`docsgpt up` and the setup scripts generate `INTERNAL_KEY`, `JWT_SECRET_KEY` and `ENCRYPTION_SECRET_KEY` on a fresh install and keep them when run again; `docsgpt up` also generates `POSTGRES_PASSWORD`. For a hand-written `.env`, and for rotating `ENCRYPTION_SECRET_KEY` on an install that already stores credentials, see [Secrets to set before going live](/Deploying/DocsGPT-Settings#secrets-to-set-before-going-live).
+
+<Callout type="warning" emoji="⚠️">
+Do not generate a new `ENCRYPTION_SECRET_KEY` over an existing one, or add one to an install that ran on the default, without keeping the old value in `ENCRYPTION_SECRET_KEY_PREVIOUS`: the credentials already stored would become unreadable. Rotate with `ENCRYPTION_SECRET_KEY_PREVIOUS` and `docsgpt connectors reencrypt` instead; once the command reports nothing unreadable, the previous key can go.
+</Callout>
+
+## Use HTTPS beyond a trusted network
+
+Tokens travel in the `Authorization` header, readable over plain HTTP. `docsgpt up --domain` and the standalone file's `https` profile run Caddy, which obtains and renews a certificate. Otherwise put your own TLS reverse proxy in front of port 7091, and point `API_URL`, `OIDC_FRONTEND_URL`, `OIDC_REDIRECT_URI` and `CONNECTOR_REDIRECT_BASE_URI` at the public HTTPS address. `API_URL` is where the links the backend hands out (agent images, webhooks, device pairing, MCP OAuth callbacks) point; `docsgpt up` sets it for `--domain` and `--expose network` unless you already set your own. Where the API and the worker share one `.env` (a pip install, `docsgpt up --native`), also set `WORKER_API_URL=http://127.0.0.1:7091`, or the worker sends its calls, with `INTERNAL_KEY`, out through the public address and back.
+
+## Outbound network access
+
+URLs that users supply are checked before DocsGPT fetches them, so that nobody can use the instance to reach internal services (server-side request forgery). Both checks refuse `localhost` and cloud metadata host names, and any address that is loopback, private (RFC 1918, `fc00::/7`), link-local (`169.254.0.0/16`, which includes cloud metadata endpoints), carrier-grade NAT (`100.64.0.0/10`), multicast, unspecified or reserved. They differ in how the connection is made:
+
+- **Checked and pinned.** Every address the host resolves to is checked, and the request is sent to the checked address, so a DNS change between the check and the request cannot redirect it:
+  - the [API Tool](/Tools/api-tool), which also does not follow redirects, and the ntfy tool (error: `URL validation error: ...`),
+  - the `read_webpage` tool,
+  - URL, crawler and sitemap sources,
+  - custom models that users add in **Settings → Custom Models** (their base URL).
+- **Checked, not pinned.** The host's address is checked once, and the client then connects on its own:
+  - [MCP servers](/Tools/mcp-tools) and custom MCP connectors (`Invalid server URL: <reason>` when you test or save one, `Invalid MCP server URL: <reason>` when a saved tool connects),
+  - S3 sources with a custom endpoint,
+  - API Tool URLs in an imported agent (unsafe ones are dropped with a warning; the imported tool is pinned when it runs).
+
+There is no allowlist and no setting that relaxes either check. That rules out services on your LAN, on the Docker host, and other services in the same Compose project (their addresses are private).
+
+To reach an internal service anyway, use a path the operator controls:
+
+- **Models**: set `OPENAI_BASE_URL` (see [Local Inference](/Models/local-inference)) or add a [model YAML](/Deploying/DocsGPT-Settings#adding-custom-models-models_config_dir). Operator settings are not checked.
+- **APIs and other systems**: write a [custom Python tool](/Tools/creating-a-tool); its code is not bound by the check.
+
+## LLM response cache
+
+Tool-less LLM answers are kept in Redis for `LLM_CACHE_TTL` seconds (default 30 minutes) and replayed for identical requests. Protect Redis accordingly, or set `LLM_CACHE_ENABLED=false`. What is cached and how to flush it: [LLM Response Cache](/Deploying/DocsGPT-Settings#llm-response-cache).
+
+## Prompt templates and passthrough
+
+Prompt templates render in a Jinja2 sandbox with autoescaping off, and `passthrough` values from API and widget callers are inserted verbatim. Treat them as untrusted input that can carry instructions for the model. See [Prompts](/Agents/prompts#security-considerations).
+
+## Version check and telemetry
+
+OpenTelemetry export is off unless you configure it. The version check is on: the worker sends its version, a random instance id, the Python version and the platform to `gptcloud.arc53.com` when it starts and every 7 hours, and logs any security advisory. Set `VERSION_CHECK=0` to turn it off. Details: [Observability](/Deploying/Observability); for an install without internet access, see [Air-Gapped](/Deploying/Air-Gapped).
+
+## Keep an audit trail
+
+Sign-ins, admin actions (users, roles, sessions, quotas, connector policies), personal access tokens and team changes are written to the audit log, which admins read and export from the [activity feed](/Deploying/Access-Control#admin-dashboard). It needs `AUTH_TYPE=oidc`, the mode with admins.

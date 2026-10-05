@@ -83,6 +83,52 @@ describe('ErrorBoundary', () => {
     expect(container.querySelector('[data-testid="child"]')).not.toBeNull();
   });
 
+  it('clears a caught error when resetKey changes', async () => {
+    await act(async () => {
+      root.render(
+        <ErrorBoundary resetKey="/a">
+          <Bomb armed={true} />
+        </ErrorBoundary>,
+      );
+    });
+    await act(async () => {
+      root.render(
+        <ErrorBoundary resetKey="/a">
+          <Bomb armed={false} />
+        </ErrorBoundary>,
+      );
+    });
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+
+    await act(async () => {
+      root.render(
+        <ErrorBoundary resetKey="/b">
+          <Bomb armed={false} />
+        </ErrorBoundary>,
+      );
+    });
+    expect(container.querySelector('[data-testid="child"]')).not.toBeNull();
+  });
+
+  it('keeps healthy children mounted when resetKey changes', async () => {
+    await act(async () => {
+      root.render(
+        <ErrorBoundary resetKey="/a">
+          <Bomb armed={false} />
+        </ErrorBoundary>,
+      );
+    });
+    const before = container.querySelector('[data-testid="child"]');
+    await act(async () => {
+      root.render(
+        <ErrorBoundary resetKey="/b">
+          <Bomb armed={false} />
+        </ErrorBoundary>,
+      );
+    });
+    expect(container.querySelector('[data-testid="child"]')).toBe(before);
+  });
+
   it('uses a custom fallback render prop when provided', async () => {
     await act(async () => {
       root.render(

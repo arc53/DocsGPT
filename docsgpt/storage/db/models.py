@@ -16,6 +16,7 @@ declarations to keep this file readable; the DB is the authority.
 """
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     CHAR,
@@ -28,6 +29,7 @@ from sqlalchemy import (
     Index,
     Integer,
     MetaData,
+    Numeric,
     PrimaryKeyConstraint,
     UniqueConstraint,
     Table,
@@ -67,6 +69,11 @@ auth_events_table = Table(
     metadata,
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
     Column("user_id", Text, nullable=False),
+    # Who performed the action, and (when the action is about a user) whom it
+    # was performed on. ``user_id`` predates both and is kept as the per-user
+    # feed key; see migration 0034.
+    Column("actor_id", Text, nullable=False),
+    Column("target_id", Text),
     Column("event", Text, nullable=False),
     Column("ip", Text),
     Column("user_agent", Text),
@@ -181,6 +188,23 @@ Index(
     team_resource_grants_table.c.resource_id,
 )
 
+# Per-asset sharing switches set by the owner (migration 0038). A missing row
+# means every switch is at its default; keys are validated in
+# ``docsgpt/api/user/resource_access.py``.
+resource_share_settings_table = Table(
+    "resource_share_settings",
+    metadata,
+    Column("resource_type", Text, primary_key=True),
+    Column("resource_id", UUID(as_uuid=True), primary_key=True),
+    Column("settings", JSONB, nullable=False, server_default="{}"),
+    Column("updated_by", Text),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint(
+        "resource_type IN ('agent', 'source', 'prompt', 'tool')",
+        name="resource_share_settings_type_check",
+    ),
+)
+
 
 prompts_table = Table(
     "prompts",
@@ -210,6 +234,27 @@ user_tools_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
+    Column(
+        "connection_id", UUID(as_uuid=True), ForeignKey("connector_sessions.id", ondelete="SET NULL"),
+    ),
+    # Whose account a shared resource runs with: the owner's, or each member's.
+    Column("credential_mode", Text, nullable=False, server_default="owner"),
+)
+
+# A grantee's personal "In my chats" switch for a tool shared with them
+# (migration 0038). The owner's own switch stays ``user_tools.status``.
+user_tool_preferences_table = Table(
+    "user_tool_preferences",
+    metadata,
+    Column("user_id", Text, primary_key=True),
+    Column(
+        "tool_id",
+        UUID(as_uuid=True),
+        ForeignKey("user_tools.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("in_chat", Boolean, nullable=False, server_default="false"),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
 token_usage_table = Table(
@@ -241,6 +286,16 @@ token_usage_table = Table(
     # cache activity, so hit-rate queries stay honest across providers.
     Column("cached_tokens", Integer),
     Column("cache_write_tokens", Integer),
+    # Added in ``0033_quotas``. USD cost of the call at write time; 0 for
+    # unpriced and bring-your-own models.
+    Column("cost", Numeric(12, 8), nullable=False, server_default="0"),
+    # Added in ``0035_token_usage_latency``. Time spent waiting on the
+    # provider (a stream excludes consumer backpressure; see ``usage.py``),
+    # and time to the first streamed chunk. ``ttft_ms`` is NULL for
+    # non-streaming calls and for streams that failed before yielding --
+    # "no first token", not 0.
+    Column("duration_ms", Integer),
+    Column("ttft_ms", Integer),
 )
 
 user_logs_table = Table(
@@ -322,6 +377,13 @@ sources_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
+    Column(
+        "connection_id", UUID(as_uuid=True), ForeignKey("connector_sessions.id", ondelete="SET NULL"),
+    ),
+    # Whose account a shared resource runs with: the owner's, or each member's.
+    Column("credential_mode", Text, nullable=False, server_default="owner"),
+    # A wiki's owner lets API-key and widget runs edit it (off: read only).
+    Column("wiki_outside_edits", Boolean, nullable=False, server_default="false"),
 )
 
 agents_table = Table(
@@ -351,6 +413,9 @@ agents_table = Table(
     # Per-agent behavior contract (AgentConfig — guardrails today). Empty
     # ``{}`` parses to guardrails-disabled.
     Column("config", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    # ``"<type>:<id>" -> user_id`` of the editor vouching for a referenced
+    # resource the owner can't use (migration 0039, see resource_access.py).
+    Column("resource_sponsors", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
     Column("default_model_id", Text),
     Column("folder_id", UUID(as_uuid=True), ForeignKey("agent_folders.id", ondelete="SET NULL")),
     Column("workflow_id", UUID(as_uuid=True), ForeignKey("workflows.id", ondelete="SET NULL")),
@@ -414,6 +479,23 @@ attachments_table = Table(
     Column("metadata", JSONB),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
+    # sha256 of the original bytes; indexed with user_id so an identical
+    # re-upload reuses the parsed text (0044).
+    Column("content_hash", Text),
+)
+# Mirrors the partial index created in migration 0044.
+Index(
+    "attachments_user_content_hash_idx",
+    attachments_table.c.user_id,
+    attachments_table.c.content_hash,
+    postgresql_where=attachments_table.c.content_hash.isnot(None),
+)
+# Mirrors the partial index created in migration 0045: zips whose members
+# are still parsing, for the reconciler's stuck-member sweep.
+Index(
+    "attachments_archive_processing_idx",
+    attachments_table.c.created_at,
+    postgresql_where=text("(metadata->'archive'->>'status') = 'processing'"),
 )
 
 # Identity row, one per logical artifact. The stable ``id`` is the handle passed
@@ -569,6 +651,34 @@ connector_sessions_table = Table(
     Column("expires_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
+    # Added in ``0040_connections``: each row is a connection (one signed-in
+    # account, one MCP server or one set of API credentials).
+    Column("connector_key", Text),
+    Column("display_name", Text),
+    Column("account_label", Text),
+    Column("auth_kind", Text),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # Every secret of the connection, as one owner-bound v2 envelope.
+    Column("encrypted_credentials", Text),
+    Column("has_refresh_token", Boolean, nullable=False, server_default="false"),
+    Column("scopes", JSONB, nullable=False, server_default="[]"),
+    Column("last_error", Text),
+    Column("last_used_at", DateTime(timezone=True)),
+    # Added in ``0041_connection_account_name``: what the user calls the
+    # account; ``account_label`` stays its identity.
+    Column("account_name", Text),
+)
+
+
+connector_policies_table = Table(
+    "connector_policies",
+    metadata,
+    Column("connector_key", Text, primary_key=True),
+    # NULL: on when the connector has its server settings (see connectors.service).
+    Column("enabled", Boolean),
+    Column("credential_mode", Text, nullable=False, server_default="choose"),
+    Column("updated_by", Text),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
 
@@ -704,12 +814,15 @@ pending_tool_state_table = Table(
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
     Column("conversation_id", UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False),
     Column("user_id", Text, nullable=False),
-    Column("messages", JSONB, nullable=False),
-    Column("pending_tool_calls", JSONB, nullable=False),
-    Column("tools_dict", JSONB, nullable=False),
-    Column("tool_schemas", JSONB, nullable=False),
-    Column("agent_config", JSONB, nullable=False),
-    Column("client_tools", JSONB),
+    # ``json``, not ``jsonb`` (``0046_pending_tool_state_json``): these are
+    # replayed to the model on resume, and ``jsonb`` re-sorts object keys,
+    # which changed the tools block and broke the provider prompt cache.
+    Column("messages", JSON, nullable=False),
+    Column("pending_tool_calls", JSON, nullable=False),
+    Column("tools_dict", JSON, nullable=False),
+    Column("tool_schemas", JSON, nullable=False),
+    Column("agent_config", JSON, nullable=False),
+    Column("client_tools", JSON),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("expires_at", DateTime(timezone=True), nullable=False),
     # Added in ``0004_durability_foundation``. ``status`` is the
@@ -809,6 +922,47 @@ Index(
 Index("ix_guardrail_events_message", guardrail_events_table.c.message_id)
 Index("ix_guardrail_events_created", guardrail_events_table.c.created_at)
 
+# One execution trace per request (chat turn, continuation, scheduled or
+# webhook run, search, graph extraction): the span tree as a JSONB array,
+# rendered as a waterfall in the Logs UI. ``message_id`` cascades; deleting a
+# conversation also deletes its traces by ``conversation_id``. Migration 0037.
+request_traces_table = Table(
+    "request_traces",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True),
+    Column("request_id", Text),
+    Column(
+        "message_id",
+        UUID(as_uuid=True),
+        ForeignKey("conversation_messages.id", ondelete="CASCADE"),
+    ),
+    Column("conversation_id", UUID(as_uuid=True)),
+    Column("activity_id", Text),
+    Column("workflow_run_id", UUID(as_uuid=True)),
+    Column("user_id", Text),
+    Column("agent_id", UUID(as_uuid=True)),
+    Column("source", Text, nullable=False),
+    Column("name", Text),
+    # ok | error | paused | cancelled
+    Column("status", Text, nullable=False),
+    Column("started_at", DateTime(timezone=True), nullable=False),
+    Column("duration_ms", Integer, nullable=False, server_default="0"),
+    Column("span_count", Integer, nullable=False, server_default="0"),
+    Column("dropped_spans", Integer, nullable=False, server_default="0"),
+    Column("summary", JSONB, nullable=False, server_default="{}"),
+    Column("spans", JSONB, nullable=False, server_default="[]"),
+    Column("otel_trace_id", Text),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+Index(
+    "request_traces_user_source_started_idx",
+    request_traces_table.c.user_id,
+    request_traces_table.c.source,
+    request_traces_table.c.started_at,
+)
+Index("request_traces_created_idx", request_traces_table.c.created_at)
+
 tool_call_attempts_table = Table(
     "tool_call_attempts",
     metadata,
@@ -868,6 +1022,8 @@ workflows_table = Table(
     Column("name", Text, nullable=False),
     Column("description", Text),
     Column("current_graph_version", Integer, nullable=False, server_default="1"),
+    # Same shape as ``agents.resource_sponsors``, for node tools and sources.
+    Column("resource_sponsors", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
@@ -1078,4 +1234,85 @@ device_auto_approve_patterns_table = Table(
     Column("pattern", Text, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     UniqueConstraint("device_id", "user_id", "pattern", name="device_auto_approve_uidx"),
+)
+
+# --- Personal access tokens (migration 0032) --------------------------------
+# Scoped user-level API credentials. Only the SHA-256 of the secret is stored.
+
+personal_access_tokens_table = Table(
+    "personal_access_tokens",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    Column("name", Text, nullable=False),
+    Column("token_hash", Text, nullable=False),
+    Column("token_prefix", Text, nullable=False),
+    Column("scopes", ARRAY(Text), nullable=False, server_default="{}"),
+    Column("resource_filter", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("status", Text, nullable=False, server_default="active"),
+    Column("expires_at", DateTime(timezone=True)),
+    Column("last_used_at", DateTime(timezone=True)),
+    Column("last_used_ip", Text),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("regenerated_at", DateTime(timezone=True)),
+    Column("revoked_at", DateTime(timezone=True)),
+    Column("revoke_reason", Text),
+    CheckConstraint("status IN ('active', 'revoked')", name="personal_access_tokens_status_check"),
+)
+
+Index(
+    "personal_access_tokens_hash_uidx",
+    personal_access_tokens_table.c.token_hash,
+    unique=True,
+)
+Index(
+    "personal_access_tokens_user_name_uidx",
+    personal_access_tokens_table.c.user_id,
+    personal_access_tokens_table.c.name,
+    unique=True,
+    postgresql_where=personal_access_tokens_table.c.status == "active",
+)
+Index(
+    "personal_access_tokens_user_idx",
+    personal_access_tokens_table.c.user_id,
+    personal_access_tokens_table.c.created_at.desc(),
+)
+
+# --- Usage quotas (migration 0033) ------------------------------------------
+# Admin-set limits at three layers: instance (``subject_id`` NULL), team
+# per-member allowance (``teams.id``) and user override (auth ``sub``). Per
+# budget a row sets a limit, marks it unlimited, or defers to the next layer.
+
+quota_policies_table = Table(
+    "quota_policies",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("scope", Text, nullable=False),
+    Column("subject_id", Text),
+    Column("bucket", Text, nullable=False, server_default="all"),
+    Column("token_limit", BigInteger),
+    Column("token_unlimited", Boolean, nullable=False, server_default="false"),
+    Column("cost_limit_usd", Numeric(12, 4)),
+    Column("cost_unlimited", Boolean, nullable=False, server_default="false"),
+    Column("enabled", Boolean, nullable=False, server_default="true"),
+    Column("note", Text),
+    Column("created_by", Text),
+    Column("updated_by", Text),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint("scope IN ('instance', 'team', 'user')", name="quota_policies_scope_check"),
+    CheckConstraint("bucket IN ('all', 'direct', 'agent')", name="quota_policies_bucket_check"),
+    CheckConstraint("token_limit >= 0", name="quota_policies_token_limit_check"),
+    CheckConstraint("cost_limit_usd >= 0", name="quota_policies_cost_limit_check"),
+    CheckConstraint("(scope = 'instance') = (subject_id IS NULL)", name="quota_policies_subject_chk"),
+    CheckConstraint("NOT (token_unlimited AND token_limit IS NOT NULL)", name="quota_policies_token_chk"),
+    CheckConstraint("NOT (cost_unlimited AND cost_limit_usd IS NOT NULL)", name="quota_policies_cost_chk"),
+)
+
+Index(
+    "quota_policies_subject_uidx",
+    quota_policies_table.c.scope,
+    func.coalesce(quota_policies_table.c.subject_id, ""),
+    quota_policies_table.c.bucket,
+    unique=True,
 )

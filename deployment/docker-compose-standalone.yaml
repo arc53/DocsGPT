@@ -1,12 +1,15 @@
 # DocsGPT from pre-built images, with no git checkout.
 #
 #   curl -fsSLO https://raw.githubusercontent.com/arc53/DocsGPT/main/deployment/docker-compose-standalone.yaml
-#   printf 'LLM_PROVIDER=docsgpt\nVITE_API_STREAMING=true\nINTERNAL_KEY=%s\n' "$(openssl rand -hex 16)" > .env
+#   printf 'LLM_PROVIDER=docsgpt\nVITE_API_STREAMING=true\nINTERNAL_KEY=%s\nENCRYPTION_SECRET_KEY=%s\n' \
+#     "$(openssl rand -hex 16)" "$(openssl rand -hex 32)" > .env
 #   docker compose -f docker-compose-standalone.yaml up -d
 #   open http://localhost:7091
 #
 # INTERNAL_KEY is the shared secret the worker uses to hand finished indexes to
 # the API; without it every ingest fails with a 401 (setup.sh generates one).
+# ENCRYPTION_SECRET_KEY seals the credentials of connected services; set it on a
+# fresh install only, since stored credentials are sealed with the current key.
 #
 # The backend image serves the web UI and the API on one port. Every release
 # also attaches this file as an asset, and `docsgpt up` runs it from the Python
@@ -33,8 +36,13 @@
 #                          compatible); the code default stays mpnet for upgrades.
 #
 # HTTPS for a public domain: point the domain's DNS at this machine, open ports
-# 80 and 443, then
+# 80 and 443, turn on authentication (a public instance is otherwise open to
+# anyone), then
+#   printf 'AUTH_TYPE=simple_jwt\nJWT_SECRET_KEY=%s\n' "$(openssl rand -hex 32)" >> .env
 #   DOCSGPT_DOMAIN=docs.example.com docker compose -f docker-compose-standalone.yaml --profile https up -d
+# simple_jwt is one shared access token (the backend log prints it); use
+# AUTH_TYPE=oidc for separate user accounts. With AUTH_TYPE set, connecting
+# services also needs ENCRYPTION_SECRET_KEY (above).
 # Caddy obtains and renews the certificate and proxies to the backend. Putting
 # DOCSGPT_DOMAIN and COMPOSE_PROFILES=https in .env instead makes every later
 # `up`, `down` and `logs` include Caddy without the flag.

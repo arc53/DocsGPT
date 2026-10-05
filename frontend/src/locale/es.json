@@ -7,6 +7,8 @@
   "tagline": "DocsGPT utiliza GenAI, por favor revisa información crítica utilizando fuentes.",
   "sourceDocs": "Fuente",
   "none": "Ninguno",
+  "loading": "Cargando...",
+  "retry": "Reintentar",
   "cancel": "Cancelar",
   "help": "Asistencia",
   "emailUs": "Envíanos un correo",
@@ -20,9 +22,12 @@
     "memberAddedTitle": "Añadido a un equipo",
     "memberAddedBody": "Te añadieron a {{team}} como {{role}}",
     "sharedTitle": "Compartido contigo",
-    "sharedBody": "{{type}} compartido con tu equipo: {{name}} ({{access}})",
-    "sharedBodyNoName": "Se compartió un {{type}} con tu equipo ({{access}})",
-    "dismiss": "Descartar"
+    "sharedBody": "Se compartió con tu equipo: {{type}} «{{name}}» ({{access}})",
+    "sharedBodyNoName": "Se compartió con tu equipo: {{type}} ({{access}})",
+    "dismiss": "Descartar",
+    "toolApprovalTitle": "Se requiere aprobar una herramienta",
+    "toolApprovalReview": "Revisar",
+    "toolApprovalFallbackName": "Conversación"
   },
   "demo": [
     {
@@ -55,14 +60,23 @@
     "label": "Configuración",
     "general": {
       "label": "General",
-      "selectTheme": "Seleccionar Tema",
+      "subtitle": "Elige el aspecto de DocsGPT, el idioma que usa y el prompt de tus chats.",
+      "sections": {
+        "appearance": "Apariencia",
+        "chat": "Chat",
+        "dangerZone": "Zona de peligro"
+      },
+      "theme": "Tema",
+      "themeDescription": "Interfaz clara u oscura.",
+      "language": "Idioma",
+      "languageDescription": "Idioma de los menús y las etiquetas.",
       "light": "Claro",
       "dark": "Oscuro",
-      "selectLanguage": "Seleccionar Idioma",
       "chunks": "Fragmentos procesados por consulta",
       "prompt": "Prompt Activo",
+      "promptDescription": "El prompt del sistema para los chats sin agente. Los agentes usan el suyo.",
       "deleteAllLabel": "Eliminar todas las conversaciones",
-      "deleteAllBtn": "Eliminar todo",
+      "deleteAllDescription": "Elimina de forma permanente todas las conversaciones de tu cuenta. No se puede deshacer.",
       "addNew": "Añadir Nuevo",
       "convHistory": "Historial de conversaciones",
       "none": "Ninguno",
@@ -71,30 +85,41 @@
       "high": "Alto",
       "unlimited": "Ilimitado",
       "default": "Predeterminado",
-      "add": "Añadir"
+      "add": "Añadir",
+      "promptActions": {
+        "select": "Selecciona un prompt",
+        "edit": "Editar prompt",
+        "view": "Ver prompt",
+        "duplicate": "Duplicar prompt",
+        "delete": "Eliminar prompt",
+        "deleteFailed": "No se pudo eliminar este prompt.",
+        "saveFailed": "No se pudo guardar este prompt.",
+        "editConflict": "Otra persona cambió este prompt. Vuelve a abrirlo para ver su versión."
+      }
     },
     "sources": {
       "title": "Aquí puedes gestionar todos los archivos fuente que están disponibles para ti y los que has subido.",
-      "subtitle": "Sube y gestiona los documentos y fuentes de conocimiento que impulsan tus respuestas",
-      "label": "Fuentes",
+      "subtitle": "Contenido que DocsGPT puede buscar y citar: archivos subidos, sitios web, wikis y contenido sincronizado desde tus conexiones.",
+      "label": "Conocimiento",
       "name": "Nombre de la Fuente",
       "date": "Fecha de Vector",
       "type": "Tipo",
       "tokenUsage": "Uso de Tokens",
-      "noData": "No hay fuentes existentes",
+      "noData": "Aún no hay conocimiento",
       "searchPlaceholder": "Buscar...",
       "addNew": "Agregar Nuevo",
-      "addSource": "Agregar Fuente",
+      "addSource": "Añadir conocimiento",
       "addChunk": "Agregar Fragmento",
       "preLoaded": "Precargado",
       "private": "Privado",
       "sync": "Sincronizar",
+      "syncDone": "Listo",
       "syncNow": "Sincronizar ahora",
       "syncing": "Sincronizando...",
       "reingest": "Reindexar",
       "ingestFailed": "Error de indexación",
       "ingestProcessing": "Indexando...",
-      "syncConfirmation": "¿Estás seguro de que deseas sincronizar \"{{sourceName}}\"? Esto actualizará el contenido con tu almacenamiento en la nube y puede anular cualquier edición que hayas realizado en fragmentos individuales.",
+      "syncConfirmation": "¿Sincronizar \"{{sourceName}}\"?",
       "syncFrequency": {
         "never": "Nunca",
         "daily": "Diario",
@@ -109,15 +134,10 @@
         "selectPage": "Selecciona una página para ver su contenido.",
         "edit": "Editar",
         "save": "Guardar",
-        "cancel": "Cancelar",
-        "saving": "Guardando…",
         "saveFailed": "No se pudo guardar la página. Inténtalo de nuevo.",
         "forbidden": "No tienes permiso para editar esta página.",
         "conflict": "Esta página cambió desde que la abriste y se ha recargado. Tus ediciones están abajo — vuelve a aplicarlas y guarda de nuevo.",
         "editPlaceholder": "Escribe la página en Markdown…",
-        "livingTitle": "Wiki viva.",
-        "livingExplainer": "Una fuente editable por agentes: las páginas se leen y reescriben mientras los agentes trabajan, y se expone a los agentes de forma predeterminada a través de la herramienta de búsqueda agéntica.",
-        "livingExplainerEditable": "Cualquier agente que use esta fuente puede editarla.",
         "stamp": {
           "editedBy": "Editado por {{who}}",
           "agent": "agente",
@@ -147,6 +167,27 @@
             "forbidden": "No tienes permiso para convertir esta fuente.",
             "conflict": "Esta fuente todavía se está indexando. Espera a que termine antes de convertirla."
           }
+        },
+        "badge": "Wiki vivo",
+        "byline_one": "{{pages}} página · {{tokens}} tokens",
+        "byline_other": "{{pages}} páginas · {{tokens}} tokens",
+        "explainer": "Los agentes leen y reescriben estas páginas mientras trabajan.",
+        "explainerEditable": "Los agentes leen y reescriben estas páginas mientras trabajan; cualquier agente que use esta fuente puede editarla.",
+        "home": "Inicio",
+        "filterPages": "Filtrar páginas",
+        "pagesTitle": "Páginas",
+        "loadFailed": "No se pudieron cargar las páginas del wiki.",
+        "pageLoadFailed": "No se pudo cargar esta página.",
+        "editTitle": "Editar página",
+        "settings": {
+          "action": "Configuración del wiki",
+          "title": "Configuración del wiki",
+          "outsideEdits": {
+            "label": "Permitir que los usuarios de la API y del widget editen este wiki",
+            "description": "Si está desactivado, quienes usan un agente mediante su clave de API o su widget pueden leer este wiki, pero no cambiarlo. Los visitantes de un enlace público solo pueden editar los wikis que ellos mismos pueden editar, y se les pregunta antes de cada cambio. Tú y los editores del wiki siempre pueden editarlo."
+          },
+          "loadError": "No se pudo cargar la configuración del wiki.",
+          "saveError": "No se pudo guardar el cambio. Inténtalo de nuevo."
         }
       },
       "graphrag": {
@@ -180,13 +221,57 @@
         "view": {
           "action": "Ver grafo",
           "title": "Grafo de conocimiento",
-          "explainer": "Los nodos son entidades y las aristas son sus relaciones. Haz clic en un nodo para ver su descripción y los fragmentos de los que se extrajo.",
-          "stats": "{{nodes}} entidades · {{edges}} relaciones",
+          "stats": "{{entities}} · {{relationships}}",
           "empty": "Aún no hay grafo — la extracción puede seguir en curso.",
           "selectNode": "Selecciona un nodo para ver sus detalles.",
-          "linkedChunks": "Fragmentos vinculados",
           "noChunks": "No hay fragmentos vinculados para esta entidad.",
-          "close": "Cerrar"
+          "tabs": {
+            "graph": "Grafo",
+            "entities": "Entidades",
+            "files": "Archivos"
+          },
+          "findEntity": "Buscar una entidad",
+          "entityName": "Nombre",
+          "noEntities": "No se encontraron entidades",
+          "showTop": "Mostrar los",
+          "byConnections": "por conexiones",
+          "typeFilter": "Filtrar por tipo",
+          "otherTypes": "Otros: {{types}}",
+          "otherTypesMore_one": "{{formatted}} más",
+          "otherTypesMore_other": "{{formatted}} más",
+          "untyped": "Sin tipo",
+          "loadFailed": "No se pudo cargar el grafo.",
+          "entitiesLoadFailed": "No se pudieron cargar las entidades.",
+          "nodeLoadFailed": "No se pudo cargar esta entidad.",
+          "loadingNode": "Cargando entidad",
+          "connections": "Conexiones",
+          "mentionedIn": "Mencionada en",
+          "showMore": "Mostrar más",
+          "showLess": "Mostrar menos",
+          "relationships": "Relaciones",
+          "relationshipsCapped_one": "Se muestran las {{shown}} más fuertes de {{total}} relación.",
+          "relationshipsCapped_other": "Se muestran las {{shown}} más fuertes de {{total}} relaciones.",
+          "noRelationships": "Esta entidad no tiene relaciones.",
+          "relatedTo": "relacionada con",
+          "showAll": "Mostrar las {{formatted}}",
+          "showFewer": "Mostrar menos",
+          "sourceChunks": "Fragmentos de origen",
+          "showInGraph": "Mostrar en el grafo",
+          "allTypes": "Todos los tipos",
+          "chunkCount_one": "{{formatted}} fragmento",
+          "chunkCount_other": "{{formatted}} fragmentos",
+          "entityCount_one": "{{formatted}} entidad",
+          "entityCount_other": "{{formatted}} entidades",
+          "entityRange_one": "{{from}}–{{to}} de {{formatted}} entidad",
+          "entityRange_other": "{{from}}–{{to}} de {{formatted}} entidades",
+          "relationshipCount_one": "{{formatted}} relación",
+          "relationshipCount_other": "{{formatted}} relaciones",
+          "chunk": "Fragmento",
+          "chunkMeta": "{{file}} · {{tokens}} tokens",
+          "chunkTokens": "{{tokens}} tokens",
+          "openInFiles": "Abrir en Archivos",
+          "editChunk": "Editar fragmento",
+          "chunkSaved": "Fragmento guardado"
         }
       },
       "testRetrieval": {
@@ -197,7 +282,8 @@
         "queryPlaceholder": "Pregunta algo que esta fuente debería responder...",
         "run": "Ejecutar",
         "notSavedHint": "Estos ajustes solo se usan para esta prueba — no se guardan en la fuente. Cámbialos en Configuración de la fuente para hacerlos permanentes.",
-        "resultSummary": "{{total}} fragmentos recuperados · {{retriever}}",
+        "resultSummary_one": "{{count}} fragmento recuperado · {{retriever}}",
+        "resultSummary_other": "{{count}} fragmentos recuperados · {{retriever}}",
         "latency": "{{ms}} ms",
         "empty": "No se recuperaron fragmentos para esta consulta.",
         "emptyWithThreshold": "Ningún fragmento alcanzó el umbral de puntuación ({{threshold}}). Bájalo para ver los que estuvieron cerca.",
@@ -216,15 +302,12 @@
       },
       "editConfig": "Configuración de la fuente",
       "shareWithTeam": "Compartir con el equipo",
-      "deleteWarning": "¿Estás seguro de que deseas eliminar \"{{name}}\"?",
-      "confirmDelete": "¿Estás seguro de que deseas eliminar este archivo? Esta acción no se puede deshacer.",
-      "backToAll": "Volver a todas las fuentes",
+      "deleteWarning": "¿Eliminar \"{{name}}\"?",
       "chunks": "Fragmentos",
       "noChunks": "No se encontraron fragmentos",
       "noChunksAlt": "No se encontraron fragmentos",
-      "goToSources": "Ir a Fuentes",
+      "goToSources": "Ir a Conocimiento",
       "uploadNew": "Subir nuevo",
-      "searchFiles": "Buscar archivos...",
       "noResults": "No se encontraron resultados",
       "fileName": "Nombre",
       "tokens": "Tokens",
@@ -241,7 +324,6 @@
       "addFile": "Añadir archivo",
       "uploadingFilesTitle": "Subiendo archivos...",
       "deletingTitle": "Eliminando...",
-      "deleteDirectoryWarning": "¿Está seguro de que desea eliminar el directorio \"{{name}}\" y todo su contenido? Esta acción no se puede deshacer.",
       "searchAlt": "Buscar",
       "retrievalOptions": {
         "title": "Configuración avanzada",
@@ -267,6 +349,19 @@
             "agentic_tool": "Herramienta de búsqueda bajo demanda"
           },
           "exposureHint": "Precarga esta fuente en el prompt, o deja que el agente la busque bajo demanda como herramienta."
+        },
+        "graphRetrieval": {
+          "title": "Recuperación por grafo",
+          "tag": "sin reingesta",
+          "seedStrategy": "Iniciar el recorrido desde",
+          "seedStrategyHint": "Las entidades funcionan para la mayoría de documentos. Las relaciones pueden llegar a una entidad que la pregunta no menciona; son ideales para contenido que describe cómo se conectan las cosas.",
+          "seedEntities": "Entidades (recomendado)",
+          "seedRelationships": "Relaciones",
+          "passageNodes": "Incluir fragmentos en el recorrido",
+          "passageNodesHint": "Un fragmento puede encontrarse por coincidir con la pregunta o por estar conectado con lo que coincide. Funciona mejor en grafos creados con esta versión.",
+          "blendVector": "Combinar con búsqueda vectorial",
+          "blendVectorHint": "Añade resultados de la búsqueda vectorial para no perder fragmentos que el grafo pase por alto.",
+          "agentToolHint": "Los agentes también pueden seguir estas relaciones por sí mismos cuando la exposición de esta fuente es «Herramienta de búsqueda bajo demanda» o cuando la usa un agente agéntico."
         },
         "prescreen": {
           "enable": "Habilitar preselección con LLM",
@@ -309,8 +404,6 @@
         "subtitle": "Configura cómo se fragmenta y recupera \"{{name}}\".",
         "subtitleGeneric": "Configura cómo se fragmenta y recupera esta fuente.",
         "save": "Guardar",
-        "saving": "Guardando…",
-        "readOnly": "Tienes acceso de solo lectura a esta fuente compartida y no puedes cambiar su configuración.",
         "chunkingChangeHint": "Cambiaste un ajuste de fragmentación. Al guardar será necesario reindexar esta fuente para que surta efecto.",
         "prescreenInvalidHint": "Revisa los valores de preselección: los candidatos a obtener deben ser al menos el número de fragmentos, y los fragmentos a conservar no deben superar los candidatos a obtener.",
         "reingestRequired": "Tus cambios se guardaron. Los ajustes de fragmentación que cambiaste solo surten efecto tras reindexar. ¿Reindexar ahora?",
@@ -319,17 +412,63 @@
           "forbidden": "No tienes permiso para editar la configuración de esta fuente.",
           "saveFailed": "No se pudo guardar la configuración. Inténtalo de nuevo."
         }
-      }
-    },
-    "apiKeys": {
-      "label": "Chatbots",
-      "name": "Nombre",
-      "key": "Clave de API",
-      "sourceDoc": "Documento Fuente",
-      "createNew": "Crear Nuevo",
-      "noData": "No hay chatbots existentes",
-      "deleteConfirmation": "¿Estás seguro de que quieres eliminar la clave API '{{name}}'?",
-      "description": "Aquí puede crear y gestionar sus chatbots. Los chatbots se pueden implementar en sitios web como widgets o utilizarse dentro de sus aplicaciones."
+      },
+      "chunkErrors": {
+        "add": "No se pudo añadir el fragmento",
+        "save": "No se pudo guardar el fragmento",
+        "delete": "No se pudo eliminar el fragmento",
+        "load": "No se pudieron cargar los fragmentos"
+      },
+      "chunkPosition": "Fragmento {{n}} de {{total}} · {{tokens}} tokens",
+      "chunkCrumb": "Fragmento {{n}}",
+      "chunkCrumbUnplaced": "Fragmento editado",
+      "chunkPositionUnplaced": "Fragmento editado · {{tokens}} tokens",
+      "editChunkDescriptionUnplaced": "{{file}} · fragmento editado · {{tokens}} tokens",
+      "chunkTileMeta": "#{{n}} · {{tokens}} tokens",
+      "copyText": "Copiar texto",
+      "chunkTitleHint": "El nombre con el que las respuestas citan este fragmento.",
+      "files": "Archivos",
+      "filesLoadError": "No se pudieron cargar los archivos",
+      "filesByline_one": "{{files}} archivo · {{tokens}} tokens",
+      "filesByline_other": "{{files}} archivos · {{tokens}} tokens",
+      "filterFiles": "Filtrar archivos",
+      "searchChunks": "Buscar fragmentos",
+      "chunkCount_one": "{{formatted}} fragmento",
+      "chunkCount_other": "{{formatted}} fragmentos",
+      "chunkRange_one": "{{from}}–{{to}} de {{formatted}} fragmento",
+      "chunkRange_other": "{{from}}–{{to}} de {{formatted}} fragmentos",
+      "pageRange_one": "{{from}}–{{to}} de {{formatted}} fuente",
+      "pageRange_other": "{{from}}–{{to}} de {{formatted}} fuentes",
+      "editor": {
+        "write": "Escribir",
+        "preview": "Vista previa",
+        "previewEmpty": "Aún no hay nada que mostrar.",
+        "cancel": "Cancelar",
+        "discardMessage": "¿Descartar los cambios sin guardar?",
+        "discard": "Descartar"
+      },
+      "editChunk": "Editar fragmento",
+      "editChunkDescription": "{{file}} · fragmento {{n}} · {{tokens}} tokens",
+      "previousChunk": "Fragmento anterior",
+      "nextChunk": "Fragmento siguiente",
+      "paused": "Sincronización en pausa. Reconecta {{name}} para reanudarla.",
+      "emptyHint": "Sube archivos, añade un sitio web o conecta un servicio para sincronizar su contenido.",
+      "viewConfig": "Ver ajustes de la fuente",
+      "errors": {
+        "forbidden": "No tienes permiso para hacer eso en esta fuente.",
+        "delete": "No se pudo eliminar la fuente.",
+        "sync": "No se pudo sincronizar la fuente.",
+        "syncFrequency": "No se pudo cambiar la frecuencia de sincronización.",
+        "reingest": "No se pudo iniciar la reingesta."
+      },
+      "viaConnection": "mediante {{name}}",
+      "loadError": "No se pudo cargar tu conocimiento.",
+      "delete": "Eliminar",
+      "deleteConsequence": "También se eliminan sus archivos y fragmentos. No se puede deshacer.",
+      "deleteFileConsequence": "También se eliminan sus fragmentos. No se puede deshacer.",
+      "deleteDirectoryConsequence": "También se elimina todo su contenido. No se puede deshacer.",
+      "syncConsequence": "Su contenido se actualiza desde tu almacenamiento en la nube, lo que puede sobrescribir los cambios que hiciste en fragmentos concretos.",
+      "deleteItemFailed": "No se pudo eliminar «{{name}}»."
     },
     "analytics": {
       "label": "Analítica",
@@ -366,12 +505,24 @@
       "failed": "Fallidas",
       "skipped": "Omitidas",
       "successful": "Exitosas",
+      "otherSeries": "Otros",
       "stats": {
         "messages": "Mensajes",
         "tokens": "Tokens",
         "toolCalls": "Llamadas a Herramientas",
         "runSuccess": "Éxito de Ejecución",
         "feedback": "Retroalimentación"
+      },
+      "quota": {
+        "title": "Tu cuota de uso",
+        "resets": "Se restablece el {{resetsAt}}",
+        "tokens": "Tokens",
+        "cost": "Coste",
+        "usedOf": "{{used}} de {{limit}}",
+        "scope": {
+          "direct": "Chat sin agente",
+          "agent": "A través de agentes"
+        }
       }
     },
     "logs": {
@@ -395,7 +546,9 @@
         "schedule": "Programado",
         "webhook": "Webhook",
         "workflow": "Flujo de trabajo",
-        "system": "Sistema"
+        "system": "Sistema",
+        "search": "Búsqueda",
+        "graph": "Creación de grafo"
       },
       "detail": {
         "agent": "Agente",
@@ -415,14 +568,119 @@
         "workflow": "Flujo de trabajo",
         "activity": "Actividad",
         "steps": "Pasos",
-        "result": "Resultado"
-      }
+        "result": "Resultado",
+        "source": "Origen"
+      },
+      "trace": {
+        "view": "Ver traza",
+        "viewRounds_one": "Ver traza ({{count}} ronda)",
+        "viewRounds_other": "Ver traza ({{count}} rondas)",
+        "title": "Traza de ejecución",
+        "empty": "No se registró ninguna traza para esta entrada.",
+        "failed": "No se pudo cargar la traza.",
+        "noSpans": "No se registró nada en esta ejecución.",
+        "round": "Ronda {{n}}",
+        "step": "Paso",
+        "toggleChildren": "Mostrar u ocultar pasos anidados",
+        "droppedSpans_one": "{{count}} paso más no se registró (límite de tamaño de la traza).",
+        "droppedSpans_other": "{{count}} pasos más no se registraron (límite de tamaño de la traza).",
+        "chips": {
+          "llmCalls_one": "{{count}} llamada al LLM",
+          "llmCalls_other": "{{count}} llamadas al LLM",
+          "tokens": "{{input}} entrada / {{output}} salida",
+          "toolCalls_one": "{{count}} llamada a herramienta",
+          "toolCalls_other": "{{count}} llamadas a herramientas",
+          "retrieval": "RAG {{duration}}",
+          "errors_one": "{{count}} error",
+          "errors_other": "{{count}} errores"
+        },
+        "headline": {
+          "tokens": "{{input}} → {{output}} tok",
+          "chunks_one": "{{count}} fragmento",
+          "chunks_other": "{{count}} fragmentos",
+          "hits_one": "{{count}} resultado",
+          "hits_other": "{{count}} resultados",
+          "cached": "en caché"
+        },
+        "status": {
+          "ok": "OK",
+          "error": "Error",
+          "cancelled": "Cancelado",
+          "paused": "En pausa",
+          "pending": "Esperando aprobación",
+          "denied": "Denegado",
+          "skipped": "Omitido"
+        },
+        "kinds": {
+          "agent": "Agente",
+          "llm": "Llamada al LLM",
+          "tool": "Llamada a herramienta",
+          "retrieval": "Recuperación",
+          "search": "Búsqueda vectorial",
+          "embedding": "Embedding",
+          "rerank": "Reordenación",
+          "guardrail": "Guardrail",
+          "step": "Paso"
+        },
+        "sources": {
+          "stream": "Chat",
+          "answer": "API de respuestas",
+          "v1": "API compatible con OpenAI",
+          "webhook": "Webhook",
+          "schedule": "Ejecución programada",
+          "search": "API de búsqueda",
+          "mcp": "Búsqueda MCP",
+          "graph_extraction": "Creación de grafo",
+          "headless": "Ejecución en segundo plano"
+        },
+        "fields": {
+          "status": "Estado",
+          "duration": "Duración",
+          "modelTime": "Tiempo del modelo",
+          "provider": "Proveedor",
+          "model": "Modelo",
+          "inputTokens": "Tokens de entrada",
+          "outputTokens": "Tokens de salida",
+          "cachedTokens": "Tokens en caché",
+          "timeToFirstToken": "Tiempo hasta el primer token",
+          "cost": "Coste",
+          "tokenSource": "Propósito",
+          "cacheHit": "Servido desde caché",
+          "estimatedUsage": "Tokens estimados",
+          "yes": "Sí",
+          "tool": "Herramienta",
+          "action": "Acción",
+          "callId": "ID de llamada",
+          "retriever": "Recuperador",
+          "sources": "Fuentes",
+          "topK": "Top K",
+          "chunks": "Fragmentos",
+          "candidates": "Candidatos",
+          "topScore": "Mejor puntuación",
+          "vectorStore": "Almacén vectorial",
+          "agentType": "Tipo de agente",
+          "toolCalls": "Llamadas a herramientas",
+          "stage": "Etapa",
+          "checks": "Comprobaciones",
+          "triggered": "Activadas",
+          "blocked": "Bloqueado",
+          "redacted": "Censurado",
+          "nodeType": "Tipo de nodo",
+          "phase": "Fase",
+          "query": "Consulta",
+          "arguments": "Argumentos",
+          "result": "Resultado",
+          "output": "Salida",
+          "retrievedChunks": "Fragmentos recuperados",
+          "allAttributes": "Todos los atributos"
+        }
+      },
+      "loadError": "No se pudieron cargar los registros."
     },
     "teams": {
       "label": "Equipos",
       "subtitle": "Gestiona tus equipos, miembros y recursos compartidos.",
       "newTeam": "Nuevo equipo",
-      "backToTeams": "Volver a equipos",
       "createTeam": "Crear un equipo",
       "createTeamDescription": "Dale un nombre a tu equipo. Podrás añadir miembros y compartir recursos una vez creado.",
       "editTeam": "Editar",
@@ -434,9 +692,6 @@
       "createTeamError": "No se pudo crear el equipo.",
       "noTeams": "Aún no hay equipos.",
       "noDescription": "Sin descripción",
-      "memberCountOne": "{{count}} miembro",
-      "memberCountOther": "{{count}} miembros",
-      "sharedCount": "{{count}} compartidos",
       "loadError": "No se pudieron cargar los equipos.",
       "roleAdmin": "admin",
       "roleMember": "miembro",
@@ -448,7 +703,7 @@
       "selectTeamTitle": "Ningún equipo seleccionado",
       "teamSubtitle": "Gestiona los miembros y los recursos compartidos con este equipo.",
       "deleteTeam": "Eliminar equipo",
-      "deleteTeamConfirmation": "¿Estás seguro de que deseas eliminar \"{{name}}\"? Esta acción no se puede deshacer.",
+      "deleteTeamConfirmation": "¿Eliminar \"{{name}}\"?",
       "members": "Miembros",
       "addMember": "Añadir miembro",
       "addMemberTitle": "Añadir un miembro",
@@ -459,7 +714,7 @@
       "memberRoleLabel": "Rol",
       "add": "Añadir",
       "remove": "Quitar",
-      "removeMemberConfirmation": "¿Quitar a este miembro del equipo?",
+      "removeMemberConfirmation": "¿Quitar a \"{{name}}\" de {{team}}?",
       "addMemberError": "No se pudo añadir al miembro (solo administradores del equipo).",
       "memberNotFound": "No hay ningún usuario con ese correo — primero debe iniciar sesión una vez.",
       "noMembers": "Aún no hay miembros. Usa “Añadir miembro” para invitar a alguien por correo.",
@@ -503,31 +758,256 @@
         "teamLabel": "Equipo",
         "viaTeam": "vía {{team}}",
         "removeAccess": "Quitar acceso",
-        "access": "Acceso"
-      }
+        "access": "Acceso",
+        "showAll": "Ver los {{formatted}}",
+        "andMore_one": "y {{formatted}} más",
+        "andMore_other": "y {{formatted}} más",
+        "allSummary": "{{name}} · Equipos: {{teams}} · Personas: {{people}}",
+        "searchAccess": "Buscar personas y equipos…",
+        "filterLabel": "Filtrar personas con acceso",
+        "filter": {
+          "all": "Todos",
+          "teams": "Equipos",
+          "people": "Personas",
+          "editors": "Editores"
+        },
+        "uses": {
+          "title": "Qué usa este agente",
+          "intro": "Todos los que usan este agente reciben estos elementos, cada uno con el acceso indicado.",
+          "stopped": "Detenido",
+          "writesOff": "No por API",
+          "writesNote": "Algunos cambios están desactivados para los usuarios de la API, el widget y el enlace.",
+          "writesNoteEditor": "Algunos cambios están desactivados para los usuarios de la API, el widget y el enlace. Pide al propietario que los permita en Detalles de acceso.",
+          "access": {
+            "member": "La propia cuenta de {{service}} de cada persona",
+            "memberNoService": "La propia cuenta de cada persona",
+            "runsAs": "Se ejecuta como {{person}}",
+            "runsAsYou": "Se ejecuta con tu acceso",
+            "runsAsOther": "Se ejecuta como otra persona"
+          },
+          "writesSomeOff": "No todo por API",
+          "adminOff": "Cambios desactivados por un administrador",
+          "openAccessDetails": "Abrir Detalles de acceso",
+          "accessDetailsNeedsKey": "Detalles de acceso muestra estos cambios cuando el agente tiene una clave de API.",
+          "reasonShort": {
+            "deleted": "Eliminado",
+            "ownerLostAccessYou": "Ya no puedes usarlo",
+            "ownerLostAccess": "El propietario ya no puede usarlo",
+            "sponsorCannotEditAgent": "{{person}} ya no puede editar el agente",
+            "sponsorCannotEditAgentOther": "Quien lo añadió ya no puede editar el agente",
+            "sponsorCannotEditItem": "{{person}} ya no puede editarlo",
+            "sponsorCannotEditItemYou": "Ya no puedes editarlo",
+            "sponsorCannotEditItemOther": "Quien lo añadió ya no puede editarlo",
+            "connectionNeedsReconnect": "Sesión de {{service}} cerrada",
+            "connectionNeedsReconnectNoService": "Sesión cerrada",
+            "connectionRemoved": "Cuenta de {{service}} eliminada",
+            "connectionRemovedNoService": "Cuenta eliminada",
+            "connectorDisabled": "{{service}} desactivado por un administrador",
+            "connectorDisabledNoService": "Desactivado por un administrador",
+            "unknown": "No se está ejecutando"
+          }
+        },
+        "removeConfirm": "¿Quitar el acceso a \"{{name}}\"?",
+        "removeConfirmTeam": "Todos en {{team}} pierden el acceso a \"{{resource}}\". Puedes volver a compartirlo en cualquier momento.",
+        "removeConfirmPerson": "{{name}} pierde el acceso a \"{{resource}}\" a través de {{team}}. Puedes volver a compartirlo en cualquier momento."
+      },
+      "memberCount_one": "{{formatted}} miembro",
+      "memberCount_other": "{{formatted}} miembros",
+      "sharedCount_one": "{{formatted}} compartido",
+      "sharedCount_other": "{{formatted}} compartidos",
+      "accessChangeError": "No se pudo cambiar el acceso.",
+      "accessSettings": {
+        "title": "Ajustes de acceso",
+        "saveError": "No se pudo guardar el ajuste de acceso.",
+        "agent": {
+          "editors_can_share": {
+            "label": "Los editores pueden compartir",
+            "description": "Añadir personas y equipos y cambiar su acceso."
+          },
+          "editors_can_delete": {
+            "label": "Los editores pueden eliminar",
+            "description": "Eliminar el agente para todos."
+          },
+          "editors_can_manage_access_details": {
+            "label": "Los editores pueden gestionar los datos de acceso",
+            "description": "Clave de API, webhook y enlace público."
+          },
+          "viewers_can_see_logs": {
+            "label": "Los lectores pueden ver los registros",
+            "description": "Conversaciones y analíticas de este agente."
+          }
+        },
+        "source": {
+          "editors_can_share": {
+            "label": "Los editores pueden compartir",
+            "description": "Añadir personas y equipos y cambiar su acceso."
+          },
+          "editors_can_delete": {
+            "label": "Los editores pueden eliminar",
+            "description": "Eliminar la fuente para todos."
+          },
+          "viewers_can_see_config": {
+            "label": "Los lectores pueden ver los ajustes",
+            "description": "Ajustes de fragmentación, recuperador y sincronización, solo lectura."
+          }
+        },
+        "tool": {
+          "editors_can_change_credentials": {
+            "label": "Los editores pueden cambiar credenciales y conexión",
+            "description": "Sustituyen los secretos guardados; nadie puede volver a leerlos."
+          },
+          "editors_can_share": {
+            "label": "Los editores pueden compartir",
+            "description": "Añadir personas y equipos y cambiar su acceso."
+          },
+          "viewers_can_use_in_agents": {
+            "label": "Los lectores pueden usarla en sus propios agentes",
+            "description": "Se ejecuta con tus credenciales.",
+            "descriptionMember": "Cada persona usa su propia cuenta."
+          }
+        },
+        "prompt": {
+          "editors_can_share": {
+            "label": "Los editores pueden compartir",
+            "description": "Añadir personas y equipos y cambiar su acceso."
+          },
+          "viewers_can_duplicate": {
+            "label": "Los lectores pueden duplicarlo",
+            "description": "Hacer su propia copia para editarla."
+          }
+        }
+      },
+      "editorHint": {
+        "agent": "Los editores pueden cambiarlo, incluidos los registros, las programaciones y los datos de acceso.",
+        "agentNoAccessDetails": "Los editores pueden cambiarlo, incluidos los registros y las programaciones, pero no los datos de acceso.",
+        "source": "Los editores pueden editar fragmentos y archivos, sincronizar y cambiar ajustes.",
+        "tool": "Los editores pueden cambiar acciones y sustituir credenciales, pero no pueden leer secretos.",
+        "toolNoCredentials": "Los editores pueden cambiar acciones, pero no las credenciales.",
+        "prompt": "Los editores pueden cambiar el texto.",
+        "noShareNoDelete": "No pueden compartirlo ni eliminarlo.",
+        "shareOnly": "También pueden compartirlo, pero no eliminarlo.",
+        "deleteOnly": "También pueden eliminarlo, pero no compartirlo.",
+        "shareAndDelete": "También pueden compartirlo y eliminarlo.",
+        "noShare": "No pueden compartirlo ni eliminarlo.",
+        "share": "También pueden compartirlo, pero no eliminarlo."
+      },
+      "capabilities": {
+        "agent": {
+          "viewers": "Lectores: chatear con él y fijarlo",
+          "editors": "Editores: editarlo, publicarlo, ver registros y gestionar programaciones"
+        },
+        "source": {
+          "viewers": "Lectores: explorar, buscar y usarla en sus agentes",
+          "editors": "Editores: editar fragmentos y archivos, sincronizar, cambiar ajustes"
+        },
+        "tool": {
+          "viewers": "Lectores: usarla dentro de los agentes del propietario",
+          "editors": "Editores: cambiar acciones y aprobaciones"
+        },
+        "prompt": {
+          "viewers": "Lectores: leerlo y usarlo en sus agentes",
+          "editors": "Editores: cambiar el texto"
+        },
+        "switch": {
+          "editors_can_share": {
+            "on": "Los editores pueden compartirlo",
+            "off": "Los editores no pueden compartirlo"
+          },
+          "editors_can_delete": {
+            "on": "Los editores pueden eliminarlo",
+            "off": "Los editores no pueden eliminarlo"
+          },
+          "editors_can_manage_access_details": {
+            "on": "Los editores pueden gestionar la clave de API, el webhook y el enlace público",
+            "off": "Los editores no pueden gestionar la clave de API, el webhook ni el enlace público"
+          },
+          "viewers_can_see_logs": {
+            "on": "Los lectores pueden ver los registros",
+            "off": "Los lectores no pueden ver los registros"
+          },
+          "viewers_can_see_config": {
+            "on": "Los lectores pueden ver sus ajustes",
+            "off": "Los lectores no pueden ver sus ajustes"
+          },
+          "editors_can_change_credentials": {
+            "on": "Los editores pueden sustituir credenciales",
+            "off": "Los editores no pueden cambiar credenciales"
+          },
+          "viewers_can_use_in_agents": {
+            "on": "Los lectores pueden usarla en sus propios agentes",
+            "off": "Los lectores no pueden usarla en sus propios agentes"
+          },
+          "viewers_can_duplicate": {
+            "on": "Los lectores pueden duplicarlo",
+            "off": "Los lectores no pueden duplicarlo"
+          }
+        }
+      },
+      "sharedList": {
+        "badgeWithEditors_one": "{{level}} · +{{formatted}} editor",
+        "badgeWithEditors_other": "{{level}} · +{{formatted}} editores",
+        "meta": "{{type}} · {{owner}}",
+        "filterLabel": "Filtrar recursos compartidos",
+        "filter": {
+          "all": "Todos",
+          "agent": "Agentes",
+          "source": "Fuentes",
+          "tool": "Herramientas",
+          "prompt": "Prompts"
+        },
+        "search": "Buscar compartidos…",
+        "noMatches": "No hay coincidencias.",
+        "pageRange_one": "{{from}}–{{to}} de {{formatted}} recurso",
+        "pageRange_other": "{{from}}–{{to}} de {{formatted}} recursos"
+      },
+      "drawer": {
+        "subtitle": "{{type}} · propiedad de {{owner}}",
+        "open": "Abrir {{type}}",
+        "manageSharing": "Gestionar uso compartido",
+        "owner": "Propietario",
+        "shared": "Compartido",
+        "sharedOnBy": "{{date}} por {{name}}",
+        "yourAccess": "Tu acceso",
+        "yourAccessLevel": {
+          "owner": "Propietario",
+          "editor": "Editor",
+          "viewer": "Lector",
+          "none": "Sin acceso"
+        },
+        "accessIn": "Acceso en {{team}}",
+        "everyone": "Todos en {{team}}",
+        "teamGrant": "Todo el equipo",
+        "memberGrant": "Solo esta persona",
+        "removeGrant": "Quitar acceso",
+        "otherTeamsHint": "¿También compartido con otros equipos? Esos accesos se gestionan en «Gestionar uso compartido».",
+        "whatPeopleCanDo": "Qué pueden hacer aquí",
+        "capabilitiesHint": "Según los ajustes de acceso del propietario. Solo lectura aquí."
+      },
+      "pageRange_one": "{{from}}–{{to}} de {{formatted}} equipo",
+      "pageRange_other": "{{from}}–{{to}} de {{formatted}} equipos",
+      "searchMembers": "Buscar miembros…",
+      "membersRange_one": "{{from}}–{{to}} de {{formatted}} miembro",
+      "membersRange_other": "{{from}}–{{to}} de {{formatted}} miembros",
+      "membersLoadError": "No se pudieron cargar los miembros.",
+      "deleteTeamConsequence": "Sus miembros pierden el acceso a todo lo que se compartió con él. No se puede deshacer.",
+      "delete": "Eliminar",
+      "removeMemberConsequence": "Pierde el acceso a todo lo que se compartió con {{team}}. Puedes volver a añadirlo en cualquier momento."
     },
     "tools": {
       "label": "Herramientas",
-      "subtitle": "Explora, conecta y configura las herramientas e integraciones que impulsan a tus agentes",
+      "subtitle": "Acciones que pueden realizar tus agentes. Aquí están las herramientas integradas. Las herramientas de un servicio conectado se agrupan bajo ese servicio.",
       "searchPlaceholder": "Buscar...",
-      "addTool": "Agregar Herramienta",
+      "addTool": "Añadir herramienta",
       "noToolsFound": "No se encontraron herramientas",
-      "selectToolSetup": "Seleccione una herramienta para configurar",
+      "selectToolSetup": "Añadir una herramienta",
       "settingsIconAlt": "Icono de configuración",
       "configureToolAria": "Configurar {{toolName}}",
-      "toggleToolAria": "Alternar {{toolName}}",
       "manageTools": "Ir a Herramientas",
       "edit": "Editar",
       "delete": "Eliminar",
       "reconnect": "Reconectar",
       "shareWithTeam": "Compartir con el equipo",
-      "builtIn": "Integrada",
-      "authStatus": {
-        "connected": "Conectado",
-        "needsAuth": "Requiere autenticación",
-        "configured": "Configurado"
-      },
-      "deleteWarning": "¿Estás seguro de que deseas eliminar la herramienta \"{{toolName}}\"?",
+      "deleteWarning": "¿Eliminar \"{{toolName}}\"?",
       "unsavedChanges": "Tienes cambios sin guardar que se perderán si sales sin guardar.",
       "leaveWithoutSaving": "Salir sin Guardar",
       "saveAndLeave": "Guardar y Salir",
@@ -547,17 +1027,22 @@
       "description": "Descripción",
       "descriptionPlaceholder": "Ingresa descripción",
       "bodyContentType": "Tipo de contenido del cuerpo",
+      "bodyTypeHint": {
+        "json": "El formato más común. Úsalo para APIs REST modernas.",
+        "formUrlencoded": "Formato estándar de envío de formularios. Ideal para APIs heredadas y formularios de inicio de sesión.",
+        "multipart": "Para APIs que requieren formato multipart. No se admite la subida de archivos a través del LLM.",
+        "text": "Datos de texto sin formato. Cada campo en una línea nueva.",
+        "xml": "Formato XML estructurado. Úsalo para APIs SOAP y empresariales.",
+        "octetStream": "Datos binarios sin procesar, codificados en base64 para su transmisión."
+      },
       "headers": "Encabezados",
       "queryParameters": "Parámetros de Consulta",
       "body": "Cuerpo",
-      "deleteActionWarning": "¿Estás seguro de que deseas eliminar la acción \"{{name}}\"?",
-      "backToAllTools": "Volver a todas las herramientas",
+      "deleteActionWarning": "¿Eliminar \"{{name}}\"?",
       "save": "Guardar",
-      "saving": "Guardando...",
       "saveFailed": "No se pudo guardar la configuración de la herramienta",
       "fieldName": "Nombre del campo",
       "fieldType": "Tipo de campo",
-      "filledByLLM": "Completado por LLM",
       "fieldDescription": "Descripción del campo",
       "value": "Valor",
       "addProperty": "Agregar propiedad",
@@ -568,56 +1053,93 @@
       "name": "Nombre",
       "type": "Tipo",
       "mcp": {
-        "addServer": "Add MCP Server",
-        "editServer": "Edit Server",
+        "addServer": "Añadir servidor MCP",
         "reconnectServer": "Reconectar servidor",
-        "reenterCredentials": "Vuelve a introducir tus credenciales para probar y actualizar la conexión.",
-        "serverName": "Server Name",
-        "serverUrl": "Server URL",
-        "headerName": "Header Name",
-        "timeout": "Timeout (seconds)",
-        "testConnection": "Test Connection",
-        "testing": "Testing",
-        "saving": "Saving",
-        "save": "Save",
-        "cancel": "Cancel",
-        "noAuth": "No Authentication",
-        "oauthInProgress": "Waiting for OAuth completion...",
-        "oauthCompleted": "OAuth completed successfully",
-        "oauthPopupBlocked": "El navegador bloqueó la ventana emergente. Haz clic abajo para autorizar:",
+        "serverName": "Nombre del servidor",
+        "serverUrl": "URL del servidor",
+        "headerName": "Nombre del encabezado",
+        "username": "Nombre de usuario",
+        "password": "Contraseña",
+        "timeout": "Tiempo de espera (segundos)",
+        "testConnection": "Probar conexión",
+        "save": "Guardar",
+        "cancel": "Cancelar",
+        "oauthInProgress": "Esperando a que termine el inicio de sesión con OAuth…",
+        "oauthCompleted": "Inicio de sesión con OAuth completado",
+        "oauthPopupBlocked": "El navegador bloqueó la ventana de inicio de sesión. Abre la página de autorización para continuar.",
         "openAuthPage": "Abrir página de autorización",
-        "authType": "Authentication Type",
-        "defaultServerName": "My MCP Server",
+        "authType": "Tipo de autenticación",
+        "defaultServerName": "Mi servidor MCP",
         "authTypes": {
-          "none": "No Authentication",
-          "apiKey": "API Key",
-          "bearer": "Bearer Token",
+          "none": "Sin autenticación",
+          "apiKey": "Clave de API",
+          "bearer": "Token de portador",
           "oauth": "OAuth",
-          "basic": "Basic Authentication"
+          "basic": "Autenticación básica"
         },
         "placeholders": {
-          "serverUrl": "https://api.example.com",
-          "apiKey": "Your secret API key",
-          "bearerToken": "Your secret token",
-          "username": "Your username",
-          "password": "Your password",
-          "oauthScopes": "OAuth scopes (comma separated)"
+          "apiKey": "Tu clave de API secreta",
+          "bearerToken": "Tu token secreto",
+          "username": "Tu nombre de usuario",
+          "password": "Tu contraseña",
+          "oauthScopes": "Ámbitos de OAuth (separados por comas)"
         },
         "errors": {
-          "nameRequired": "Server name is required",
-          "urlRequired": "Server URL is required",
-          "invalidUrl": "Please enter a valid URL",
-          "apiKeyRequired": "API key is required",
-          "tokenRequired": "Bearer token is required",
-          "usernameRequired": "Username is required",
-          "passwordRequired": "Password is required",
-          "testFailed": "Connection test failed",
-          "saveFailed": "Failed to save MCP server",
-          "oauthFailed": "OAuth process failed or was cancelled",
-          "oauthTimeout": "OAuth process timed out, please try again",
-          "timeoutRange": "Timeout must be between 1 and 300 seconds"
-        }
-      }
+          "nameRequired": "El nombre del servidor es obligatorio",
+          "urlRequired": "La URL del servidor es obligatoria",
+          "invalidUrl": "Introduce una URL válida",
+          "apiKeyRequired": "La clave de API es obligatoria",
+          "tokenRequired": "El token de portador es obligatorio",
+          "usernameRequired": "El nombre de usuario es obligatorio",
+          "passwordRequired": "La contraseña es obligatoria",
+          "testFailed": "La prueba de conexión falló",
+          "saveFailed": "No se pudo guardar el servidor MCP",
+          "oauthFailed": "El inicio de sesión con OAuth falló o se canceló",
+          "timeoutRange": "El tiempo de espera debe estar entre 1 y 300 segundos"
+        },
+        "sharedByEditor": "Compartido por {{owner}} · eres editor",
+        "aTeammate": "un compañero",
+        "sharedCredentialsNotice": "Las credenciales guardadas permanecen ocultas. Lo que introduzcas las reemplaza para todos los que usan esta herramienta.",
+        "serverChangedNotice": "El servidor cambió, así que se borrarán las credenciales guardadas ({{credential}}). Introdúcelas para el nuevo servidor para guardar.",
+        "credentialNames": {
+          "apiKey": "clave de API",
+          "bearer": "token",
+          "password": "contraseña"
+        },
+        "savedKeyHint": "Hay una clave guardada. Déjalo vacío para conservarla (solo mientras el servidor no cambie).",
+        "sharedOAuthOwnerOnly": "Solo el propietario puede cambiar la conexión de este servidor o volver a conectar su inicio de sesión. Aún puedes cambiarle el nombre y editar sus acciones.",
+        "advanced": "Configuración avanzada",
+        "testBeforeSave": "Prueba la conexión antes de guardar.",
+        "discoveredTools_one": "{{formatted}} acción encontrada",
+        "discoveredTools_other": "{{formatted}} acciones encontradas"
+      },
+      "configErrors": {
+        "required": "{{field}} es obligatorio",
+        "positiveNumber": "Debe ser un número positivo",
+        "maxTimeout": "El tiempo de espera máximo es de 300 segundos"
+      },
+      "headerValuePlaceholder": "p. ej., application/json",
+      "toolIconTitle": "Icono de {{name}}",
+      "groupBuiltIn": "Integradas",
+      "groupService": "De un servicio",
+      "off": "Desactivada",
+      "view": "Ver",
+      "inMyChats": "En mis chats",
+      "useInMyChatsAria": "Usar {{toolName}} en mis chats",
+      "statusUpdateFailed": "No se pudo cambiar si esta herramienta está en tus chats.",
+      "deleteFailed": "No se pudo eliminar esta herramienta.",
+      "sharedBy": "Compartido por {{team}}",
+      "savedSecretPlaceholder": "Guardado · introduce un valor nuevo para reemplazarlo",
+      "pageRange_one": "{{from}}–{{to}} de {{formatted}} herramienta",
+      "pageRange_other": "{{from}}–{{to}} de {{formatted}} herramientas",
+      "manageInConnectors": "Gestionar en Conectores",
+      "defaultBadge": "Predeterminada",
+      "noToolsYet": "Aún no hay herramientas",
+      "connectService": "Conectar un servicio",
+      "filledBy": "Completado por",
+      "loadError": "No se pudieron cargar tus herramientas.",
+      "deleteConsequence": "También se eliminan su configuración y sus acciones. No se puede deshacer.",
+      "deleteActionConsequence": "Se elimina cuando guardes la herramienta."
     },
     "devices": {
       "label": "Dispositivos",
@@ -626,7 +1148,7 @@
       "empty": "No hay dispositivos emparejados.",
       "revoke": "Revocar",
       "edit": "Editar",
-      "revokeWarning": "¿Revocar {{name}}? La CLI se desconectará.",
+      "revokeWarning": "¿Revocar \"{{name}}\"?",
       "approvalMode": "Modo de aprobación",
       "approvalAsk": "Preguntar",
       "approvalFull": "Acceso completo",
@@ -634,7 +1156,6 @@
       "offline": "Desconectado",
       "lastSeen": "Visto por última vez: {{time}}",
       "lastSeenLabel": "Visto por última vez",
-      "seenAgo": "visto hace {{time}}",
       "nameLabel": "Nombre del dispositivo",
       "descriptionLabel": "Descripción (visible para el agente)",
       "descriptionPlaceholder": "¿Para qué es esta máquina?",
@@ -668,10 +1189,15 @@
         "installLink": "¿No tienes docsgpt-cli? Instálalo",
         "stepTwo": "2. Introduce este código cuando se te pida:",
         "start": "Generar código",
-        "starting": "Procesando…",
         "waitingForCli": "Esperando a que la CLI canjee el código…",
         "cancel": "Cancelar"
-      }
+      },
+      "auditDurationValue": "{{value}} ms",
+      "fallbackName": "dispositivo",
+      "auditShow": "Mostrar comandos recientes",
+      "auditHide": "Ocultar comandos recientes",
+      "seen": "visto {{time}}",
+      "revokeConsequence": "La CLI de este dispositivo se desconecta y se elimina el emparejamiento. Vuelve a emparejarlo para reconectarlo."
     },
     "customModels": {
       "label": "Modelos personalizados",
@@ -683,13 +1209,11 @@
       "addTitle": "Añadir modelo personalizado",
       "editTitle": "Editar modelo personalizado",
       "save": "Guardar",
-      "saving": "Guardando",
       "testConnection": "Probar conexión",
-      "testing": "Probando",
       "testSuccess": "Conexión correcta.",
       "testHintNew": "Completa URL base, ID de modelo y clave API para habilitar las pruebas de conexión.",
       "disabledBadge": "Deshabilitado",
-      "deleteWarning": "¿Seguro que quieres eliminar el modelo personalizado \"{{modelName}}\"?",
+      "deleteWarning": "¿Eliminar \"{{modelName}}\"?",
       "actionsMenuAria": "Acciones para {{modelName}}",
       "modelsGroup": {
         "builtin": "Modelos de DocsGPT",
@@ -729,6 +1253,12 @@
         "reasoningEfforts": {
           "default": "Predeterminado del proveedor"
         },
+        "toolImages": "Imágenes de herramientas",
+        "toolImagesModes": {
+          "default": "Automático",
+          "native": "Dentro del resultado de la herramienta",
+          "follow_up": "Mensaje aparte"
+        },
         "chips": {
           "tools": "Herramientas",
           "structuredOutput": "Salida estructurada",
@@ -745,42 +1275,433 @@
         "contextWindowRange": "La ventana de contexto debe estar entre 1.000 y 10.000.000",
         "saveFailed": "No se pudo guardar el modelo personalizado",
         "testFailed": "La prueba de conexión falló"
-      }
+      },
+      "pageRange_one": "{{from}}–{{to}} de {{formatted}} modelo",
+      "pageRange_other": "{{from}}–{{to}} de {{formatted}} modelos",
+      "loadError": "No se pudieron cargar tus modelos."
     },
-    "scrollTabsLeft": "Desplazar pestañas a la izquierda",
-    "tabsAriaLabel": "Pestañas de configuración",
-    "scrollTabsRight": "Desplazar pestañas a la derecha"
+    "accessTokens": {
+      "label": "Tokens de acceso",
+      "subtitle": "Los tokens de acceso personal permiten que scripts, la CLI y pipelines de CI llamen a la API de DocsGPT en tu nombre. Da a cada token solo los permisos que necesite.",
+      "createToken": "Crear token",
+      "disabledNotice": "Los tokens de acceso personal no están disponibles en este servidor. Requieren inicio de sesión con cuenta y deben ser habilitados por tu administrador.",
+      "limitReached_one": "Has alcanzado el límite de {{count}} token activo. Revoca uno para crear otro.",
+      "limitReached_other": "Has alcanzado el límite de {{count}} tokens activos. Revoca uno para crear otro.",
+      "loadError": "No se pudieron cargar los tokens de acceso. Inténtalo de nuevo.",
+      "revokeError": "No se pudo revocar el token. Inténtalo de nuevo.",
+      "empty": "Aún no hay tokens de acceso",
+      "emptyHint": "Crea un token para usar la API de DocsGPT desde scripts y herramientas de línea de comandos.",
+      "name": "Nombre",
+      "scopes": "Permisos",
+      "resources": "Recursos",
+      "createdAt": "Creado",
+      "lastUsed": "Último uso",
+      "expires": "Caduca",
+      "actions": "Acciones",
+      "allResources": "Todos los recursos",
+      "never": "Nunca",
+      "expired": "Caducó el {{date}}",
+      "expiresSoon": "Caduca el {{date}}",
+      "moreScopes": "+{{count}} más",
+      "showLess": "Mostrar menos",
+      "revoke": "Revocar",
+      "revokeAria": "Revocar el token {{name}}",
+      "revokeWarning": "¿Revocar \"{{name}}\"?",
+      "restrictionCount": {
+        "agents_one": "{{count}} agente",
+        "agents_other": "{{count}} agentes",
+        "sources_one": "{{count}} fuente",
+        "sources_other": "{{count}} fuentes",
+        "prompts_one": "{{count}} prompt",
+        "prompts_other": "{{count}} prompts",
+        "tools_one": "{{count}} herramienta",
+        "tools_other": "{{count}} herramientas",
+        "workflows_one": "{{count}} flujo de trabajo",
+        "workflows_other": "{{count}} flujos de trabajo"
+      },
+      "families": {
+        "agents": "Agentes",
+        "sources": "Fuentes",
+        "prompts": "Prompts",
+        "tools": "Herramientas",
+        "models": "Modelos",
+        "workflows": "Flujos de trabajo",
+        "schedules": "Programaciones",
+        "conversations": "Conversaciones",
+        "analytics": "Analíticas",
+        "teams": "Equipos",
+        "chat": "Chat"
+      },
+      "create": {
+        "title": "Crear token de acceso",
+        "subtitle": "El token actúa en tu nombre, limitado a los permisos y recursos que elijas aquí.",
+        "name": "Nombre",
+        "namePlaceholder": "p. ej. Pipeline de CI",
+        "expiration": "Caducidad",
+        "expiryDays_one": "{{count}} día",
+        "expiryDays_other": "{{count}} días",
+        "noExpiration": "Sin caducidad",
+        "noExpirationHint": "Los tokens que nunca caducan son más peligrosos si se filtran. Es preferible fijar una fecha de caducidad.",
+        "expiresOn": "Caduca el {{date}}",
+        "scopes": "Permisos",
+        "scopesHint": "Elige qué puede hacer este token. El acceso de escritura incluye el de lectura.",
+        "impliedByWrite": "Incluido con el acceso de escritura",
+        "restrict": "Restringir a recursos específicos",
+        "restrictHint": "Opcional. Limita el token a los elementos que selecciones. Deja una lista vacía para permitirlos todos.",
+        "restrictNoFamilies": "Selecciona primero un permiso de agentes, fuentes, prompts, herramientas o chat para restringir sus recursos.",
+        "allSelected": "Todos (sin restricción)",
+        "noResources": "No se encontró nada.",
+        "searchResources": "Buscar...",
+        "resourcesError": "No se pudo cargar la lista.",
+        "retry": "Reintentar",
+        "cancel": "Cancelar",
+        "submit": "Crear token",
+        "error": "No se pudo crear el token. Inténtalo de nuevo."
+      },
+      "created": {
+        "title": "Token creado",
+        "subtitle": "Tu nuevo token \"{{name}}\" está listo.",
+        "warning": "Copia el token ahora y guárdalo en un lugar seguro. Por motivos de seguridad no se volverá a mostrar.",
+        "tokenLabel": "Tu token",
+        "usageTitle": "Cómo usarlo",
+        "usageHint": "Expórtalo como variable de entorno y envíalo como token Bearer en la cabecera Authorization.",
+        "done": "Listo"
+      },
+      "regenerate": {
+        "action": "Regenerar",
+        "aria": "Regenerar el token {{name}}",
+        "title": "Regenerar token",
+        "warning": "¿Generar un nuevo secreto para \"{{name}}\"? El secreto actual deja de funcionar de inmediato, así que todo lo que lo use debe actualizarse. El nombre, los permisos y las restricciones no cambian.",
+        "newExpiration": "Nueva caducidad",
+        "submit": "Regenerar",
+        "error": "No se pudo regenerar el token. Inténtalo de nuevo.",
+        "done": {
+          "title": "Token regenerado",
+          "subtitle": "El nuevo secreto de \"{{name}}\" está listo. El anterior ya no funciona."
+        }
+      },
+      "revokeConsequence": "Todo lo que aún lo use deja de funcionar de inmediato. No se puede deshacer."
+    },
+    "connectors": {
+      "label": "Conectores",
+      "subtitle": "Conecta DocsGPT a los servicios que usa tu equipo. Una conexión puede sincronizar contenido en Conocimiento y dar herramientas a los agentes.",
+      "search": "Buscar conectores...",
+      "addCustom": "Añadir herramienta propia",
+      "custom": {
+        "custom_mcp": "Servidor MCP",
+        "custom_openapi": "OpenAPI / REST"
+      },
+      "capability": {
+        "sync": "Sincronizar",
+        "read": "Leer",
+        "write": "Escribir"
+      },
+      "status": {
+        "connect": "Conectar",
+        "connected": "Conectado",
+        "connectedCount": "{{formatted}} conectadas",
+        "reconnect": "Reconectar",
+        "needsAdminSetup": "Requiere configuración del administrador",
+        "disabledByAdmin": "Desactivado por el administrador",
+        "custom": "Personalizado"
+      },
+      "connectionStatus": {
+        "connected": "Conectado",
+        "disconnected": "Desconectado",
+        "pending": "Esperando el inicio de sesión"
+      },
+      "publisher": {
+        "built_in": "Integrado",
+        "preset": "Predefinido",
+        "custom": "Personalizado"
+      },
+      "descriptions": {
+        "google_drive": "Sincroniza Docs, Hojas de cálculo y PDF en Conocimiento.",
+        "share_point": "Sincroniza archivos de sitios de SharePoint y OneDrive en Conocimiento.",
+        "confluence": "Sincroniza espacios y páginas de Confluence en Conocimiento.",
+        "s3": "Sincroniza documentos de un bucket de S3 en Conocimiento.",
+        "reddit": "Sincroniza publicaciones de Reddit que coinciden con tus búsquedas en Conocimiento.",
+        "brave": "Busca en la web e imágenes con la API de Brave Search.",
+        "telegram": "Envía mensajes e imágenes a un chat de Telegram.",
+        "ntfy": "Envía notificaciones push mediante un servidor ntfy.",
+        "postgres": "Lee el esquema y ejecuta SQL en una base de datos Postgres.",
+        "custom_mcp": "Conecta cualquier servidor remoto de Model Context Protocol.",
+        "custom_openapi": "Importa una especificación OpenAPI y usa sus endpoints como herramientas.",
+        "mcp_notion": "Busca, lee y actualiza páginas y bases de datos de Notion.",
+        "mcp_linear": "Sincroniza incidencias y documentos con Conocimiento y deja que los agentes busquen, creen y actualicen incidencias.",
+        "mcp_atlassian": "Busca y actualiza incidencias de Jira y páginas de Confluence.",
+        "mcp_sentry": "Consulta incidencias, eventos y versiones de Sentry.",
+        "mcp_stripe": "Consulta clientes, pagos y suscripciones en Stripe.",
+        "github": "Sincroniza repositorios con Conocimiento y deja que los agentes lean código, issues y pull requests."
+      },
+      "empty": "Aún no hay nada conectado. Conecta un servicio para sincronizar su contenido o dar nuevas herramientas a los agentes.",
+      "noMatches": "Ningún conector coincide con tu búsqueda.",
+      "loadFailed": "No se pudieron cargar los conectores.",
+      "askAdmin": "Pide a un administrador que lo configure.",
+      "setupSettings": "Define estos ajustes del servidor y reinicia DocsGPT:",
+      "setupGuide": "Guía de configuración",
+      "unverified": "DocsGPT no ha revisado este servidor. Conecta solo servidores de confianza.",
+      "detail": {
+        "accounts": "Cuentas",
+        "connectAnother": "Conectar otra cuenta",
+        "sources": "Conocimiento de esta conexión",
+        "tools": "Herramientas de esta conexión",
+        "noAccounts": "Aún no hay ninguna cuenta conectada.",
+        "failed": "No se pudo cargar esta conexión.",
+        "lastSync": "Sincronizado {{date}} · {{frequency}}",
+        "paused": "Sincronización en pausa",
+        "toolOn": "Activada",
+        "toolOff": "Desactivada",
+        "accountMenu": "Acciones de la cuenta",
+        "disconnect": "Desconectar",
+        "keyEnding": "Clave {{hint}}",
+        "syncMore": "Sincronizar más contenido",
+        "refreshTools": "Actualizar herramientas",
+        "noSources": "Aún no se ha sincronizado nada desde esta conexión.",
+        "remove": "Eliminar",
+        "refreshed": "Herramientas actualizadas: {{added}} añadidas, {{removed}} eliminadas.",
+        "refreshFailed": "No se pudieron actualizar las herramientas.",
+        "syncNow": "Sincronizar ahora",
+        "syncStarted": "Sincronizando {{name}}…",
+        "syncFailed": "No se pudo iniciar la sincronización. Inténtalo de nuevo.",
+        "toolSwitchFailed": "No se pudo cambiar la herramienta. Inténtalo de nuevo.",
+        "expired": "El inicio de sesión caducó. Reconecta para seguir usando esta conexión.",
+        "broken": "Esta conexión dejó de funcionar. Reconecta para intentarlo de nuevo.",
+        "addTools": "Añadir herramientas",
+        "noTools": "Todavía no hay herramientas de esta conexión.",
+        "addToolsFailed": "No se pudieron añadir las herramientas. Inténtalo de nuevo.",
+        "rename": "Cambiar nombre",
+        "toolsHint": "«Preguntar antes» te pregunta en el chat. Los cambios por API, widget y enlace se permiten por agente en Access details.",
+        "toolsUnavailable": "No se pudo acceder a las herramientas de {{name}}. Inténtalo de nuevo."
+      },
+      "permission": {
+        "always": "Permitir",
+        "ask": "Preguntar antes",
+        "off": "Desactivado",
+        "label": "Permiso para {{action}}",
+        "saveFailed": "No se pudo guardar el permiso. Inténtalo de nuevo.",
+        "groupLabel": "Permiso para todo en {{group}}",
+        "customize": "Personalizar"
+      },
+      "disconnect": {
+        "title": "¿Desconectar \"{{name}}\"?",
+        "failed": "No se pudo desconectar. Inténtalo de nuevo.",
+        "bodyBoth_one": "El elemento que sincronizó sigue en Conocimiento, pero deja de actualizarse. Las herramientas de esta conexión dejan de funcionar hasta que reconectes.",
+        "bodyBoth_other": "Los {{formatted}} elementos que sincronizó siguen en Conocimiento, pero dejan de actualizarse. Las herramientas de esta conexión dejan de funcionar hasta que reconectes.",
+        "bodyTools": "Las herramientas de esta conexión dejarán de funcionar hasta que vuelvas a conectarla.",
+        "bodySources_one": "El elemento que sincronizó sigue en Conocimiento, pero deja de actualizarse hasta que reconectes.",
+        "bodySources_other": "Los {{formatted}} elementos que sincronizó siguen en Conocimiento, pero dejan de actualizarse hasta que reconectes.",
+        "bodyNone": "Se olvida su inicio de sesión. Reconecta para volver a usar esta cuenta."
+      },
+      "fields": {
+        "token": "Clave de API",
+        "aws_access_key_id": "ID de clave de acceso",
+        "aws_secret_access_key": "Clave de acceso secreta",
+        "region": "Región",
+        "endpoint_url": "URL de endpoint personalizada",
+        "client_id": "ID de cliente",
+        "client_secret": "Secreto de cliente",
+        "user_agent": "User agent",
+        "bucket": "Bucket",
+        "prefix": "Prefijo de ruta",
+        "search_queries": "Consultas de búsqueda",
+        "number_posts": "Número de publicaciones",
+        "telegram_token": "Token del bot",
+        "ntfy_token": "Token de acceso",
+        "postgres_token": "Cadena de conexión",
+        "brave_token": "Clave de API",
+        "github_access_token": "Token de acceso personal",
+        "repo_url": "Repositorio",
+        "telegram_chat_id": "ID del chat predeterminado"
+      },
+      "wizard": {
+        "connectTitle": "Conectar {{name}}",
+        "reconnectTitle": "Reconectar {{name}}",
+        "signIn": "Iniciar sesión en {{name}}",
+        "syncFrequency": "Sincronizar",
+        "doneTitle": "{{name}} está conectado",
+        "doneSummaryNone": "Conectado como {{account}}.",
+        "sourcesCount_one": "{{formatted}} elemento",
+        "sourcesCount_other": "{{formatted}} elementos",
+        "toolsCount_one": "{{formatted}} herramienta",
+        "toolsCount_other": "{{formatted}} herramientas",
+        "toolsHeading": "Herramientas ({{formatted}})",
+        "tryInChat": "Probar en el chat",
+        "done": "Listo",
+        "connectFailed": "No se pudo conectar. Revisa los datos e inténtalo de nuevo.",
+        "syncFailed": "No se pudo iniciar la sincronización. Inténtalo de nuevo.",
+        "connectedWithKey": "Conectado con la clave que termina en {{hint}}.",
+        "doneCounts": "{{sources}} sincronizándose en Conocimiento, {{tools}} listas.",
+        "doneSources": "{{sources}} sincronizándose en Conocimiento.",
+        "doneTools": "{{tools}} listas.",
+        "waiting": "Termina de iniciar sesión en {{name}} en la ventana que se abrió.",
+        "openSignIn": "Abrir el inicio de sesión de {{name}}",
+        "methodLabel": "Cómo conectar",
+        "methodOauth": "Iniciar sesión con {{name}}",
+        "methodToken": "Usar un token de acceso",
+        "credentialsRejected": "{{name}} no aceptó estas credenciales. Revísalas e inténtalo de nuevo.",
+        "toolsUnavailable": "No se pudo acceder a las herramientas de {{name}}. Inténtalo de nuevo o desactívalas para continuar.",
+        "addTools": "Permitir que los agentes usen {{name}}",
+        "addToolsDescription": {
+          "read": "Los agentes pueden consultar información. No pueden cambiar nada.",
+          "readWrite": "Los agentes pueden consultar información y hacer cambios. Los cambios necesitan tu aprobación."
+        },
+        "accountName": "Nombre de esta cuenta",
+        "accountNameHint": "Se muestra a ti y a la IA para distinguir las cuentas; por ejemplo, Bot de alertas.",
+        "syncToKnowledge": "Sincronizar en Conocimiento",
+        "syncToKnowledgeDescription": "Elige contenido de {{name}} para que las respuestas lo busquen. Desactivado, solo se conecta; puedes sincronizar más tarde desde Conectores.",
+        "syncLater": "Aún no se sincroniza nada en Conocimiento. Para añadir contenido, abre {{name}} en Conectores y elige Sincronizar más contenido.",
+        "retrievalSettings": "Configuración avanzada de recuperación",
+        "chooseWhatToSetUpFor": "Elige qué configurar para {{name}}",
+        "chooseWhatToSyncFrom": "Elige qué sincronizar desde {{name}}",
+        "signedInAs": "Sesión iniciada como {{account}}.",
+        "finishSetup": "Terminar la configuración",
+        "account": "Cuenta"
+      },
+      "remove": {
+        "title": "¿Eliminar \"{{name}}\"?",
+        "description": "Se borra el inicio de sesión guardado. Elige qué pasa con lo que alimenta esta conexión.",
+        "sourcesLabel_one": "El elemento que sincronizó en Conocimiento",
+        "sourcesLabel_other": "Los {{formatted}} elementos que sincronizó en Conocimiento",
+        "keepSources": "Conservar el contenido (dejar de sincronizar)",
+        "deleteSources": "Eliminar",
+        "toolsLabel_one": "Su herramienta",
+        "toolsLabel_other": "Sus {{formatted}} herramientas",
+        "deleteTools": "Eliminar",
+        "keepTools": "Conservar, desactivadas",
+        "failed": "No se pudo eliminar la conexión. Inténtalo de nuevo."
+      },
+      "health": {
+        "reconnect": "Reconecta {{name}} para seguir sincronizando.",
+        "reconnectSources_one": "Reconecta {{name}}: {{formatted}} elemento dejó de sincronizarse en Conocimiento",
+        "reconnectSources_other": "Reconecta {{name}}: {{formatted}} elementos dejaron de sincronizarse en Conocimiento",
+        "reconnectTools": "Vuelve a conectar {{name}} para que los agentes puedan usarlo de nuevo",
+        "reconnectBoth_one": "Reconecta {{name}}: {{formatted}} elemento dejó de sincronizarse y los agentes no pueden usarlo",
+        "reconnectBoth_other": "Reconecta {{name}}: {{formatted}} elementos dejaron de sincronizarse y los agentes no pueden usarlo",
+        "navDot": "Una conexión necesita atención",
+        "signInAgain": "Vuelve a iniciar sesión",
+        "pickerNotice": "{{name}} necesita que vuelvas a iniciar sesión."
+      },
+      "error": {
+        "decrypt": "No se pudieron descifrar las credenciales guardadas. Reconecta para continuar.",
+        "defaultKey": "Un administrador debe definir ENCRYPTION_SECRET_KEY antes de poder conectar servicios."
+      },
+      "sharing": {
+        "owner": "Todos usan tu cuenta",
+        "member": "Cada persona conecta su propia cuenta",
+        "ownerShort": "Tu cuenta",
+        "memberShort": "La de cada persona",
+        "ownerShortShared": "La cuenta del propietario"
+      },
+      "share": {
+        "heading": "Con qué cuenta se ejecuta",
+        "ownerWarning": "Los miembros del equipo actuarán con tu cuenta de {{name}} ({{account}}).",
+        "ownerWarningShared": "Los miembros del equipo actuarán con la cuenta de {{name}} del propietario.",
+        "confirmWrite": "Entiendo que los miembros del equipo pueden realizar acciones con mi cuenta.",
+        "confirmWriteShared": "Entiendo que los miembros del equipo pueden realizar acciones con la cuenta de {{name}} del propietario.",
+        "memberNote": "Cada persona usa su propia cuenta de {{name}} y la conecta la primera vez que usa esta herramienta. A través de la clave de API o el widget de un agente, se usa la cuenta del propietario del agente.",
+        "forced": "Un administrador eligió esto para todos los recursos compartidos de este conector.",
+        "ownerChooses": "Solo el propietario puede cambiar esto.",
+        "saveFailed": "No se pudo guardar el cambio. Inténtalo de nuevo.",
+        "ownerWarningNoAccount": "Los miembros del equipo actuarán con tu cuenta de {{name}}."
+      },
+      "createFailed": "No se pudo añadir el conector. Inténtalo de nuevo.",
+      "capabilityFilter": {
+        "clear": "Mostrar todos los conectores"
+      },
+      "capabilityPlain": {
+        "sync": "Sincroniza en Conocimiento",
+        "read": "Consulta datos",
+        "write": "Realiza acciones"
+      },
+      "github": {
+        "writes": "Permitir también que los agentes hagan cambios (issues, comentarios, pull requests)",
+        "writesDescription": "Por defecto, cada cambio te pide aprobación primero. Tu token, o la GitHub App, necesita acceso de lectura y escritura a Issues y Pull requests.",
+        "writesForbidden": "Un administrador desactivó los cambios a través de GitHub.",
+        "writesFailed": "No se pudo cambiar lo que los agentes pueden hacer en GitHub.",
+        "chooseRepositories": "Elegir repositorios en GitHub",
+        "noAppRepositories": "DocsGPT aún no ve ningún repositorio. Elige en GitHub cuáles puede leer.",
+        "noTokenRepositories": "Este token no puede leer ningún repositorio. Dale acceso en GitHub y vuelve a conectar.",
+        "searchRepositories": "Buscar repositorios",
+        "repositories": "Repositorios",
+        "updated": "Actualizado {{date}}",
+        "loadFailed": "No se pudieron cargar tus repositorios."
+      },
+      "linear": {
+        "teams": "Equipos",
+        "teamsHint": "Sincroniza las incidencias de estos equipos.",
+        "projects": "Proyectos",
+        "projectsHint": "Sincroniza las incidencias de estos proyectos.",
+        "search": "Buscar equipos y proyectos",
+        "noMatches": "Ningún equipo ni proyecto coincide con tu búsqueda.",
+        "includeComments": "Incluir comentarios",
+        "includeCommentsDescription": "Añade a cada incidencia sus comentarios.",
+        "includeDocuments": "Incluir documentos de proyecto",
+        "includeDocumentsDescription": "Sincroniza los documentos de Linear de los proyectos que elijas.",
+        "loadFailed": "No se pudieron cargar tus equipos y proyectos de Linear.",
+        "empty": "Esta cuenta de Linear no tiene equipos ni proyectos que sincronizar."
+      },
+      "parameters": {
+        "show": "Parámetros",
+        "fixedCount_one": "{{formatted}} fijo",
+        "fixedCount_other": "{{formatted}} fijos",
+        "ai": "Que decida la IA",
+        "fixed": "Usar siempre",
+        "choiceLabel": "Cómo se rellena {{parameter}}",
+        "valueLabel": "Valor de {{parameter}}",
+        "save": "Guardar",
+        "saveFailed": "No se pudo guardar el valor. Inténtalo de nuevo.",
+        "fromAccount": "Definido en esta cuenta: {{value}}",
+        "fixedHint": "Se envía en cada llamada. La IA nunca lo ve.",
+        "showFor": "Parámetros de {{action}}"
+      },
+      "fieldHints": {
+        "telegram_chat_id": "Los mensajes van solo a este chat. Añade el bot, envíale un mensaje y busca el ID del chat con <link>getUpdates</link>.",
+        "github_access_token": "Detallado, con acceso de lectura a Contents y Metadata. Para que los agentes hagan cambios, también lectura y escritura en Issues y Pull requests. <link>Crear un token en GitHub</link>"
+      },
+      "rename": {
+        "title": "Cambiar el nombre de la cuenta",
+        "description": "El nombre distingue esta cuenta de tus otras cuentas del mismo servicio, para ti y para la IA. Déjalo vacío para mostrar la cuenta en sí.",
+        "label": "Nombre de la cuenta",
+        "save": "Guardar",
+        "failed": "No se pudo cambiar el nombre de la cuenta. Inténtalo de nuevo."
+      },
+      "browseAll": "Ver todos los conectores",
+      "filters": {
+        "all": "Todos",
+        "connected": "Conectados",
+        "disconnected": "Desconectados"
+      },
+      "filterLabel": "Filtrar conectores",
+      "capabilityChip": {
+        "sync": "Sincroniza en Conocimiento",
+        "tools": "Da herramientas a los agentes"
+      }
+    }
   },
   "modals": {
     "uploadDoc": {
-      "label": "Subir nuevo documento",
+      "label": "Añadir conocimiento",
       "select": "Elige cómo cargar tu documento en DocsGPT",
-      "selectSource": "Selecciona la forma de agregar tu fuente",
+      "selectSource": "Añadir conocimiento",
       "selectedFiles": "Archivos Seleccionados",
       "noFilesSelected": "No hay archivos seleccionados",
       "file": "Subir desde el dispositivo",
-      "back": "Atrás",
       "wait": "Por favor espera ...",
       "remote": "Recoger desde un sitio web",
       "start": "Comenzar a chatear",
       "name": "Nombre",
       "choose": "Seleccionar Archivos",
-      "info": "Por favor, sube archivos .pdf, .txt, .rst, .csv, .xlsx, .xlsm, .xlsb, .xls, .ods, .docx, .docm, .doc, .odt, .rtf, .md, .html, .xhtml, .png, .jpg, .jpeg, .epub, .json, .pptx, .pptm, .ppt, .pps, .ppsx, .ppsm, .pot, .odp, .zip limitados a 25MB",
+      "dropzoneText": "Haz clic para subir o arrastra y suelta",
+      "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, imágenes, audio, EPUB, JSON o ZIP, hasta 25 MB cada uno",
+      "filesRejected": "No se añadieron (más de 25 MB o tipo no admitido): {{files}}",
       "uploadedFiles": "Archivos Subidos",
       "cancel": "Cancelar",
-      "train": "Entrenar",
+      "train": "Añadir al conocimiento",
       "create": "Crear",
       "link": "Enlace",
       "urlLink": "Enlace URL",
       "repoUrl": "URL del Repositorio",
-      "reddit": {
-        "id": "ID del Cliente",
-        "secret": "Secreto del Cliente",
-        "agent": "Agente de usuario",
-        "searchQueries": "Consultas de búsqueda",
-        "numberOfPosts": "Número de publicaciones",
-        "addQuery": "Agregar Consulta"
-      },
       "drag": {
         "title": "Suelta los archivos adjuntos aquí",
         "description": "Suelta para subir tus archivos adjuntos"
@@ -799,10 +1720,9 @@
         "collapseDetails": "Contraer detalles de subida",
         "dismiss": "Descartar notificación de subida",
         "uploadProgress": "Progreso de subida {{progress}}%",
-        "clear": "Limpiar"
+        "clear": "Limpiar",
+        "ingestionFailed": "La ingesta falló."
       },
-      "showAdvanced": "Mostrar opciones avanzadas",
-      "hideAdvanced": "Ocultar opciones avanzadas",
       "ingestors": {
         "local_file": {
           "label": "Subir archivo",
@@ -820,26 +1740,6 @@
           "label": "GitHub",
           "heading": "Agregar contenido desde GitHub"
         },
-        "reddit": {
-          "label": "Reddit",
-          "heading": "Agregar contenido desde Reddit"
-        },
-        "google_drive": {
-          "label": "Google Drive",
-          "heading": "Subir desde Google Drive"
-        },
-        "s3": {
-          "label": "Amazon S3",
-          "heading": "Agregar contenido desde Amazon S3"
-        },
-        "share_point": {
-          "label": "SharePoint",
-          "heading": "Subir desde SharePoint"
-        },
-        "confluence": {
-          "label": "Confluence",
-          "heading": "Subir desde Confluence"
-        },
         "wiki": {
           "label": "Nueva wiki",
           "heading": "Crear una wiki viva"
@@ -847,51 +1747,33 @@
       },
       "connectors": {
         "auth": {
-          "connectedUser": "Usuario Conectado",
-          "authFailed": "Autenticación fallida",
-          "authUrlFailed": "Error al obtener la URL de autorización",
-          "popupBlocked": "Error al abrir la ventana de autenticación. Por favor, permita ventanas emergentes.",
-          "authCancelled": "Autenticación cancelada",
+          "connectedUser": "Usuario conectado",
+          "authFailed": "No se pudo iniciar sesión.",
+          "authUrlFailed": "No se pudo iniciar el inicio de sesión",
+          "popupBlocked": "No se pudo abrir la ventana de inicio de sesión. Permite las ventanas emergentes para este sitio e inténtalo de nuevo.",
+          "authCancelled": "Se canceló el inicio de sesión.",
           "connectedAs": "Conectado como {{email}}",
           "disconnect": "Desconectar"
         },
         "googleDrive": {
           "connect": "Conectar a Google Drive",
-          "sessionExpired": "Sesión expirada. Por favor, reconecte a Google Drive.",
-          "sessionExpiredGeneric": "Sesión expirada. Por favor, reconecte su cuenta.",
-          "validateFailed": "Error al validar la sesión. Por favor, reconecte.",
-          "noSession": "No se encontró una sesión válida. Por favor, reconecte a Google Drive.",
-          "noAccessToken": "No hay token de acceso disponible. Por favor, reconecte a Google Drive.",
-          "pickerFailed": "Error al abrir el selector de archivos. Por favor, inténtelo de nuevo.",
-          "selectedFiles": "Archivos Seleccionados",
-          "selectFiles": "Seleccionar Archivos",
-          "loading": "Cargando...",
-          "noFilesSelected": "No hay archivos o carpetas seleccionados",
-          "folders": "Carpetas",
-          "files": "Archivos",
-          "remove": "Eliminar",
-          "folderAlt": "Carpeta",
-          "fileAlt": "Archivo"
-        },
-        "sharePoint": {
-          "connect": "Conectar a SharePoint",
-          "sessionExpired": "Sesión expirada. Por favor, reconecte a SharePoint.",
-          "sessionExpiredGeneric": "Sesión expirada. Por favor, reconecte su cuenta.",
-          "validateFailed": "Error al validar la sesión. Por favor, reconecte.",
-          "noSession": "No se encontró una sesión válida. Por favor, reconecte a SharePoint.",
-          "noAccessToken": "No hay token de acceso disponible. Por favor, reconecte a SharePoint.",
-          "pickerFailed": "Error al abrir el selector de archivos. Por favor, inténtelo de nuevo.",
-          "selectedFiles": "Archivos Seleccionados",
-          "selectFiles": "Seleccionar Archivos",
-          "loading": "Cargando...",
-          "noFilesSelected": "No hay archivos o carpetas seleccionados",
-          "folders": "Carpetas",
-          "files": "Archivos",
-          "remove": "Eliminar",
-          "folderAlt": "Carpeta",
-          "fileAlt": "Archivo"
+          "validateFailed": "No se pudo comprobar el inicio de sesión. Inténtalo de nuevo.",
+          "pickerFailed": "No se pudo abrir el selector de archivos. Inténtalo de nuevo.",
+          "selectedFiles": "Archivos seleccionados",
+          "selectFiles": "Seleccionar archivos",
+          "noFilesSelected": "Aún no hay archivos ni carpetas seleccionados.",
+          "removeItem": "Quitar {{name}}"
         }
-      }
+      },
+      "fields": {
+        "url": "URL",
+        "initialContent": "Contenido inicial (opcional)"
+      },
+      "github": {
+        "privateHint": "¿Repositorio privado? Conecta tu cuenta de GitHub para sincronizarlo.",
+        "connect": "Conectar GitHub"
+      },
+      "fromService": "De un servicio"
     },
     "createAPIKey": {
       "label": "Crear Nueva Clave de API",
@@ -910,8 +1792,9 @@
       "apiKeyLabel": "API Key"
     },
     "deleteConv": {
-      "confirm": "¿Estás seguro de que deseas eliminar todas las conversaciones?",
-      "delete": "Eliminar"
+      "confirm": "¿Eliminar todas las conversaciones?",
+      "delete": "Eliminar",
+      "consequence": "Se eliminan todas las conversaciones de tu cuenta, con sus mensajes. No se puede deshacer."
     },
     "shareConv": {
       "label": "Crear una página pública para compartir",
@@ -927,11 +1810,14 @@
     "configTool": {
       "title": "Configuración de la Herramienta",
       "type": "Tipo",
-      "apiKeyLabel": "Clave API / OAuth",
-      "apiKeyPlaceholder": "Ingrese la Clave API / OAuth",
+      "apiKeyLabel": "Clave de API",
+      "apiKeyPlaceholder": "Introduce la clave de API",
       "addButton": "Agregar Herramienta",
       "closeButton": "Cerrar",
-      "customNamePlaceholder": "Enter custom name (optional)"
+      "customNamePlaceholder": "Enter custom name (optional)",
+      "fieldRequired": "{{field}} es obligatorio",
+      "positiveNumber": "Debe ser un número positivo",
+      "maxTimeout": "El tiempo de espera máximo es de 300 segundos"
     },
     "prompts": {
       "addPrompt": "Agregar Prompt",
@@ -948,7 +1834,7 @@
       "save": "Guardar",
       "cancel": "Cancelar",
       "nameExists": "El nombre ya existe",
-      "deleteConfirmation": "¿Estás seguro de que deseas eliminar el prompt '{{name}}'?",
+      "deleteConfirmation": "¿Eliminar \"{{name}}\"?",
       "placeholderText": "Escribe tu texto de prompt aquí...",
       "addExamplePlaceholder": "Por favor, resume este texto:",
       "variablesLabel": "Variables",
@@ -962,6 +1848,7 @@
         "sourceSummaries": "Alias del contenido (compatibilidad retroactiva)",
         "sourceDocuments": "Lista de objetos de documentos",
         "sourceCount": "Número de documentos recuperados",
+        "citationRules": "Reglas de citas ([n])",
         "systemDate": "Fecha actual (YYYY-MM-DD)",
         "systemTime": "Hora actual (HH:MM:SS)",
         "systemTimestamp": "Marca de tiempo ISO 8601",
@@ -972,7 +1859,8 @@
       "learnAboutPrompts": "Aprende sobre los Prompts →",
       "publicPromptEditDisabled": "Los prompts públicos no se pueden editar",
       "promptTypePublic": "público",
-      "promptTypePrivate": "privado"
+      "promptTypePrivate": "privado",
+      "delete": "Eliminar"
     },
     "chunk": {
       "add": "Agregar Fragmento",
@@ -983,9 +1871,8 @@
       "promptText": "Texto del prompt",
       "save": "Guardar",
       "close": "Cerrar",
-      "cancel": "Cancelar",
       "delete": "Eliminar",
-      "deleteConfirmation": "¿Estás seguro de que deseas eliminar este fragmento?"
+      "deleteConfirmation": "¿Eliminar este fragmento?"
     },
     "addAction": {
       "title": "New Action",
@@ -995,7 +1882,7 @@
       "addButton": "Add"
     },
     "agentDetails": {
-      "title": "Access Details",
+      "title": "Detalles de acceso",
       "publicLink": "Public Link",
       "apiKey": "API Key",
       "webhookUrl": "Webhook URL",
@@ -1003,7 +1890,22 @@
       "test": "Test",
       "learnMore": "Learn more",
       "resetKey": "Restablecer clave",
-      "resetKeyConfirm": "¿Seguro que quieres restablecer la clave de API? La clave actual dejará de funcionar de inmediato y esta acción no se puede deshacer."
+      "resetKeyConfirm": "¿Restablecer la clave de API de \"{{name}}\"?",
+      "apiWrites": {
+        "title": "Cambios de otros en tu nombre",
+        "description": "Nadie puede aprobarlos por ti a través de la API, el widget o un enlace público. Permítelos aquí.",
+        "saveFailed": "No se pudo guardar. Inténtalo de nuevo.",
+        "summaryNone": "Aún no hay nada permitido",
+        "summaryTools_one": "{{tools}} puede hacer cambios",
+        "summaryTools_other": "{{tools}} pueden hacer cambios",
+        "summaryCount": "{{allowed}} de {{formatted}} permitidos",
+        "toolLabel": "Permitir cambios por API, widget y enlaces públicos en {{tool}}",
+        "choose": "Elegir qué se permite"
+      },
+      "actionFailed": "No funcionó. Inténtalo de nuevo.",
+      "apiKeyAfterPublish": "Publica el agente para crear su clave de API.",
+      "resetKeyConsequence": "La clave actual deja de funcionar de inmediato, así que todo lo que la use debe actualizarse. No se puede deshacer.",
+      "reset": "Restablecer"
     },
     "importSpec": {
       "title": "Importar especificación de API",
@@ -1014,7 +1916,8 @@
       "parseError": "No se pudo analizar la especificación. Verifica el formato del archivo.",
       "version": "Versión",
       "baseUrl": "URL base",
-      "actionsFound": "{{count}} acciones encontradas",
+      "actionsFound_one": "{{count}} acción encontrada",
+      "actionsFound_other": "{{count}} acciones encontradas",
       "selectAll": "Seleccionar todo",
       "deselectAll": "Deseleccionar todo",
       "cancel": "Cancelar",
@@ -1052,26 +1955,41 @@
       "review": "Review",
       "import": "Import",
       "continueToAgent": "Continue to agent"
+    },
+    "jwt": {
+      "title": "Añadir token JWT",
+      "label": "Token JWT",
+      "save": "Guardar token"
     }
   },
   "sharedConv": {
     "subtitle": "Creado con",
     "button": "Comienza con DocsGPT",
-    "meta": "DocsGPT utiliza GenAI, por favor revisa la información crítica utilizando fuentes."
+    "meta": "DocsGPT utiliza GenAI, por favor revisa la información crítica utilizando fuentes.",
+    "metaDescription": "Conversaciones compartidas con DocsGPT"
   },
   "convTile": {
     "share": "Compartir",
+    "menu": "Acciones de la conversación",
     "delete": "Eliminar",
     "rename": "Renombrar",
-    "deleteWarning": "¿Está seguro de que desea eliminar esta conversación?"
+    "save": "Guardar",
+    "deleteWarning": "¿Eliminar \"{{name}}\"?",
+    "deleteWarningUnnamed": "¿Eliminar esta conversación?",
+    "deleteConsequence": "También se eliminan sus mensajes. No se puede deshacer."
   },
   "pagination": {
-    "rowsPerPage": "Filas por página",
+    "label": "Paginación",
+    "perPage": "Por página",
+    "range": "{{from}}–{{to}} de {{total}}",
     "pageOf": "Página {{currentPage}} de {{totalPages}}",
-    "firstPage": "Primera página",
+    "goToPage": "Página {{page}}",
     "previousPage": "Página anterior",
     "nextPage": "Página siguiente",
-    "lastPage": "Última página"
+    "loadingOlder": "Cargando anteriores…",
+    "noOlder": "No hay nada más antiguo",
+    "olderFailed": "No se pudieron cargar los elementos anteriores.",
+    "loadingMore": "Cargando más…"
   },
   "conversation": {
     "copy": "Copiar",
@@ -1081,23 +1999,76 @@
     "edit": {
       "update": "Actualizar",
       "cancel": "Cancelar",
-      "placeholder": "Ingrese la consulta actualizada..."
+      "placeholder": "Ingrese la consulta actualizada...",
+      "label": "Editar"
     },
     "sources": {
       "title": "Fuentes",
-      "text": "Elegir tus fuentes",
+      "text": "Elegir conocimiento",
       "link": "Enlace fuente",
-      "view_more": "Ver {{count}} más fuentes",
-      "noSourcesAvailable": "No hay fuentes disponibles",
-      "selectedCount": "{{count}} fuentes seleccionadas",
-      "groupOwn": "Tus fuentes",
-      "groupTeam": "Compartidas con el equipo"
+      "view_more_one": "Ver {{count}} fuente más",
+      "view_more_other": "Ver {{count}} fuentes más",
+      "noSourcesAvailable": "Aún no hay conocimiento",
+      "selectedCount": "{{count}} seleccionados",
+      "groupOwn": "Tuyos",
+      "groupTeam": "Compartidas con el equipo",
+      "fromConnector": "De {{name}}",
+      "fromConnectorTitle": "De {{name}}: {{title}}",
+      "knowledge": "Conocimiento",
+      "forAnswer_one": "{{count}} fuente para esta respuesta",
+      "forAnswer_other": "{{count}} fuentes para esta respuesta",
+      "open": "Abrir fuente {{num}}",
+      "reader": {
+        "back": "Todas las fuentes",
+        "knowledge": "Conocimiento",
+        "file": "Archivo",
+        "page": "Página",
+        "link": "Enlace",
+        "added": "Añadido",
+        "length": "Longitud",
+        "tokens": "{{tokens}} tokens",
+        "excerptOnly": "Para esta respuesta solo está disponible el extracto guardado.",
+        "missing": "Este pasaje ya no está en la fuente; puede que se haya editado o reindexado. Se muestra el extracto guardado con la respuesta.",
+        "forbidden": "Esta fuente se eliminó o ya no tienes acceso a ella. Se muestra el extracto guardado con la respuesta.",
+        "loadFailed": "No se pudo cargar el pasaje.",
+        "openLink": "Abrir enlace",
+        "openInKnowledge": "Abrir en Conocimiento"
+      }
     },
     "attachments": {
       "attach": "Adjuntar",
-      "remove": "Eliminar adjunto"
+      "remove": "Eliminar adjunto",
+      "uploadFailed": "Error al subir. No se pudo leer el archivo o se perdió la conexión.",
+      "tooLarge": "Demasiado grande para adjuntar (límite {{size}} MB)",
+      "attached": "Adjunto",
+      "failed": "Error",
+      "attachment": "Adjunto",
+      "knowledgeHint": "Estos archivos superan lo que el modelo puede leer de una vez. Leerá el resto cuando lo necesite.",
+      "knowledgeHintNoTools": "Estos archivos superan lo que el modelo puede leer de una vez. Algunos quedarán fuera.",
+      "addToKnowledge": "Añadir al conocimiento",
+      "knowledgeAdded": "Añadiendo estos archivos al conocimiento. Vuelve a preguntar cuando estén listos.",
+      "knowledgeFailed": "No se pudieron añadir estos archivos al conocimiento. Inténtalo de nuevo.",
+      "knowledgeName_one": "{{name}} y {{count}} más",
+      "knowledgeName_other": "{{name}} y {{count}} más",
+      "unsupportedType": "Tipo de archivo no compatible ({{extension}})",
+      "waitingToSend_one": "Se enviará cuando termine de procesarse {{count}} archivo…",
+      "waitingToSend_other": "Se enviará cuando terminen de procesarse {{count}} archivos…",
+      "cancelQueuedSend": "Cancelar",
+      "unreadableByModel": "{{model}} no puede leer {{name}}: cambia a un modelo compatible con imágenes o PDF",
+      "queued": "En espera para subir",
+      "uploading": "Subiendo",
+      "processing": "Procesando"
     },
     "retry": "Reintentar",
+    "failedTitle": "No se pudo generar una respuesta",
+    "errors": {
+      "contextLength": "Este mensaje y sus archivos adjuntos son demasiado grandes para la ventana de contexto del modelo. Envía menos archivos o archivos más pequeños.",
+      "contextLengthKnowledge": "Este mensaje y sus archivos adjuntos son demasiado grandes para la ventana de contexto del modelo. Envía menos archivos o archivos más pequeños, o usa «Añadir al conocimiento» para buscar en ellos en lugar de enviarlos completos.",
+      "contextLengthSized": "Este mensaje y sus archivos adjuntos necesitan unos {{needed, number}} tokens, más de los que admite el modelo ({{available, number}} tokens). Envía menos archivos o archivos más pequeños.",
+      "contextLengthSizedKnowledge": "Este mensaje y sus archivos adjuntos necesitan unos {{needed, number}} tokens, más de los que admite el modelo ({{available, number}} tokens). Envía menos archivos o archivos más pequeños, o usa «Añadir al conocimiento» para buscar en ellos en lugar de enviarlos completos.",
+      "serverError": "Inténtalo de nuevo más tarde. Disculpa las molestias.",
+      "clientDisconnect": "La respuesta se detuvo antes de producir nada. Inténtalo de nuevo."
+    },
     "reasoning": "Razonamiento",
     "wikiWrite": {
       "edited": "Wiki editada",
@@ -1127,7 +2098,41 @@
       "accessingMemory": "Accediendo a la memoria…",
       "runningCode": "Ejecutando código…",
       "creatingArtifact": "Creando un artefacto…",
-      "usingTool": "Usando {{tool}}…"
+      "usingTool": "Usando {{tool}}…",
+      "searchingConnector": "Buscando en {{name}}…",
+      "usingConnector": "Usando {{name}}…",
+      "attachmentsSearch": "Buscando «{{query}}» en los archivos…",
+      "attachmentsSearchGeneric": "Buscando en los archivos…",
+      "attachmentsRead": "Leyendo {{ref}}…",
+      "attachmentsReadPage": "Leyendo {{ref}} (página {{pages}})…",
+      "attachmentsReadPages": "Leyendo {{ref}} (páginas {{pages}})…",
+      "attachmentsReadRows": "Leyendo {{ref}} (filas {{rows}})…",
+      "attachmentsReadGeneric": "Leyendo un archivo…",
+      "attachmentsImage": "Viendo la imagen {{ref}}…",
+      "attachmentsList": "Listando archivos…",
+      "wikiList": "Listando páginas de la wiki…",
+      "wikiRead": "Leyendo la página de la wiki {{path}}…",
+      "todoAdd": "Añadiendo la tarea «{{title}}»…",
+      "todoList": "Listando tareas…",
+      "todoGet": "Leyendo la tarea #{{id}}…",
+      "todoUpdate": "Actualizando la tarea #{{id}}…",
+      "todoComplete": "Completando la tarea #{{id}}…",
+      "todoDelete": "Eliminando la tarea #{{id}}…",
+      "noteRead": "Leyendo la nota…",
+      "noteUpdate": "Actualizando la nota…",
+      "noteDelete": "Eliminando la nota…",
+      "memoryList": "Listando la memoria…",
+      "memoryRead": "Leyendo {{path}} de la memoria…",
+      "memorySave": "Guardando {{path}} en la memoria…",
+      "memoryDelete": "Eliminando {{path}} de la memoria…",
+      "memoryRename": "Renombrando {{path}} en la memoria…",
+      "cryptoPrice": "Consultando el precio de {{symbol}} en {{currency}}…",
+      "sentNotification": "Enviando una notificación…",
+      "telegramMessage": "Enviando un mensaje de Telegram…",
+      "telegramImage": "Enviando una imagen a Telegram…",
+      "sqlQuery": "Ejecutando una consulta SQL…",
+      "dbSchema": "Leyendo el esquema de la base de datos…",
+      "usedToolAction": "Usando {{tool}}: {{action}}…"
     },
     "toolChip": {
       "searchingWeb": "Buscado en la web · “{{query}}”",
@@ -1138,7 +2143,42 @@
       "accessingMemory": "Memoria consultada",
       "runningCode": "Código ejecutado",
       "creatingArtifact": "Artefacto creado",
-      "usingTool": "Usado {{tool}}"
+      "usingTool": "Usado {{tool}}",
+      "searchedConnector": "Buscó en {{name}}",
+      "readConnector": "Leyó de {{name}}",
+      "usedConnector": "Usó {{name}}: {{action}}",
+      "attachmentsSearch": "Buscó «{{query}}» en los archivos",
+      "attachmentsSearchGeneric": "Buscó en los archivos",
+      "attachmentsRead": "Leyó {{ref}}",
+      "attachmentsReadPage": "Leyó {{ref}} (página {{pages}})",
+      "attachmentsReadPages": "Leyó {{ref}} (páginas {{pages}})",
+      "attachmentsReadRows": "Leyó {{ref}} (filas {{rows}})",
+      "attachmentsReadGeneric": "Leyó un archivo",
+      "attachmentsImage": "Vio la imagen {{ref}}",
+      "attachmentsList": "Listó los archivos",
+      "wikiList": "Páginas de la wiki listadas",
+      "wikiRead": "Leída la página de la wiki {{path}}",
+      "todoAdd": "Tarea «{{title}}» añadida",
+      "todoList": "Tareas listadas",
+      "todoGet": "Leída la tarea #{{id}}",
+      "todoUpdate": "Tarea #{{id}} actualizada",
+      "todoComplete": "Tarea #{{id}} completada",
+      "todoDelete": "Tarea #{{id}} eliminada",
+      "noteRead": "Nota leída",
+      "noteUpdate": "Nota actualizada",
+      "noteDelete": "Nota eliminada",
+      "memoryList": "Memoria listada",
+      "memoryRead": "Leído {{path}} de la memoria",
+      "memorySave": "Guardado {{path}} en la memoria",
+      "memoryDelete": "Eliminado {{path}} de la memoria",
+      "memoryRename": "Renombrado {{path}} en la memoria",
+      "cryptoPrice": "Consultado el precio de {{symbol}} en {{currency}}",
+      "sentNotification": "Notificación enviada",
+      "telegramMessage": "Mensaje de Telegram enviado",
+      "telegramImage": "Imagen enviada a Telegram",
+      "sqlQuery": "Consulta SQL ejecutada",
+      "dbSchema": "Esquema de la base de datos leído",
+      "usedToolAction": "Usó {{tool}}: {{action}}"
     },
     "inlineSteps": {
       "arguments": "Argumentos",
@@ -1146,11 +2186,91 @@
       "running": "Ejecutando…",
       "denied": "Denegado por el usuario",
       "failed": "falló"
+    },
+    "quotaExceeded": {
+      "tokens": "Has usado {{used}} de tu cuota de {{limit}} tokens. Se restablece el {{resetsAt}}.",
+      "cost": "Has usado {{used}} de tu presupuesto de uso de {{limit}}. Se restablece el {{resetsAt}}."
+    },
+    "voice": {
+      "start": "Entrada de voz",
+      "stopRecording": "Detener grabación",
+      "transcribingAudio": "Transcribiendo audio",
+      "voice": "Voz",
+      "stop": "Detener",
+      "transcribing": "Transcribiendo",
+      "unavailable": "La entrada de voz no está disponible en este momento.",
+      "insecure": "La entrada de voz requiere una conexión segura (HTTPS o localhost).",
+      "unsupported": "La entrada de voz no está disponible en este navegador.",
+      "noWebAudio": "La entrada de voz requiere compatibilidad con Web Audio en este navegador.",
+      "micBlocked": "Se bloqueó el acceso al micrófono. Permite el acceso al micrófono e inténtalo de nuevo.",
+      "micNotFound": "No se encontró ningún micrófono en este dispositivo.",
+      "micBusy": "El micrófono no está disponible o ya está en uso.",
+      "micInterrupted": "El acceso al micrófono se interrumpió antes de empezar a grabar.",
+      "micDenied": "Se denegó el acceso al micrófono.",
+      "transcribeFailed": "No se pudo transcribir el audio.",
+      "finalizeFailed": "No se pudo finalizar la transcripción en vivo.",
+      "startFailed": "No se pudo iniciar la transcripción en vivo."
+    },
+    "selectModel": "Seleccionar modelo",
+    "question": {
+      "expand": "Mostrar mensaje completo",
+      "collapse": "Mostrar menos"
+    },
+    "exportMarkdown": "Exportar como Markdown",
+    "feedback": {
+      "like": "Me gusta",
+      "removeLike": "Quitar me gusta",
+      "dislike": "No me gusta",
+      "removeDislike": "Quitar no me gusta"
+    },
+    "toolApproval": {
+      "approve": "Aprobar",
+      "approveAlways": "Aprobar y no volver a preguntar",
+      "deny": "Denegar",
+      "details": "Detalles",
+      "denyReasonPlaceholder": "Motivo del rechazo (opcional)…",
+      "connectTitle": "Esta herramienta necesita tu cuenta de {{name}}.",
+      "connect": "Conectar {{name}}",
+      "continue": "Continuar",
+      "skip": "Omitir",
+      "title": "{{name}} · {{action}}",
+      "state": {
+        "approval": "Requiere aprobación",
+        "notConnected": "No conectado"
+      },
+      "connectTitleGeneric": "Esta herramienta necesita que primero conectes una cuenta.",
+      "reconnectGeneric": "La cuenta de esta herramienta necesita que vuelvas a iniciar sesión.",
+      "ownerReconnect": "Esta herramienta usa una cuenta de {{name}} compartida por {{owner}}. La cuenta necesita volver a iniciar sesión, así que pide a {{owner}} que la vuelva a conectar.",
+      "ownerReconnectGeneric": "Esta herramienta usa la cuenta de su propietario, que necesita volver a iniciar sesión. Pide al propietario que la vuelva a conectar.",
+      "connectedTitle": "{{name}} está conectado. Continúa para ejecutar la herramienta.",
+      "connectedGeneric": "La cuenta está conectada. Continúa para ejecutar la herramienta."
+    },
+    "research": {
+      "title": "Investigación",
+      "planning": "Planificando la investigación…",
+      "researching": "Investigando…",
+      "synthesizing": "Redactando el informe…",
+      "complete": "Completado",
+      "researched_one": "{{count}} tema investigado",
+      "researched_other": "{{count}} temas investigados"
+    },
+    "openFile": "Abrir archivo",
+    "stepGroup": {
+      "title": "Herramientas",
+      "failed": "{{count}} con error"
     }
   },
   "agents": {
     "title": "Agentes",
     "edit": "Editar",
+    "card": {
+      "pin": "Fijar agente",
+      "unpin": "Dejar de fijar agente",
+      "open": "Abrir",
+      "remove": "Quitar",
+      "draft": "Borrador",
+      "actions": "Acciones del agente"
+    },
     "description": "Descubre y crea versiones personalizadas de DocsGPT que combinan instrucciones, conocimiento adicional y cualquier combinación de habilidades",
     "newAgent": "Nuevo Agente",
     "importAgent": "Import",
@@ -1180,10 +2300,6 @@
       "byMe": "Por mí",
       "team": "Equipo",
       "shared": "Compartidos conmigo"
-    },
-    "teamBadge": {
-      "editor": "Editor",
-      "viewer": "Lector"
     },
     "sections": {
       "template": {
@@ -1221,25 +2337,26 @@
         "delete": "Eliminar",
         "logs": "Registros",
         "schedules": "Programaciones",
-        "accessDetails": "Detalles de Acceso",
+        "accessDetails": "Detalles de acceso",
         "add": "Agregar",
         "moreActions": "Más acciones"
       },
       "sections": {
-        "meta": "Meta",
-        "source": "Fuente",
         "prompt": "Prompt",
         "tools": "Herramientas",
         "agentType": "Tipo de agente",
         "models": "Modelos",
         "advanced": "Avanzado",
         "guardrails": "Guardrails",
-        "preview": "Vista previa"
+        "preview": "Vista previa",
+        "basics": "Básico",
+        "knowledge": "Conocimiento y comportamiento",
+        "model": "Modelo"
       },
       "placeholders": {
         "agentName": "Nombre del agente",
         "describeAgent": "Describe tu agente",
-        "selectSources": "Seleccionar fuentes",
+        "selectSources": "Seleccionar conocimiento",
         "chunksPerQuery": "Fragmentos por consulta",
         "selectType": "Seleccionar tipo",
         "selectTools": "Seleccionar herramientas",
@@ -1249,20 +2366,23 @@
         "enterRequestLimit": "Ingresar límite de solicitudes"
       },
       "sourcePopup": {
-        "title": "Seleccionar Fuentes",
-        "searchPlaceholder": "Buscar fuentes...",
-        "noOptionsMessage": "No hay fuentes disponibles",
+        "title": "Seleccionar conocimiento",
+        "searchPlaceholder": "Buscar conocimiento...",
+        "noOptionsMessage": "Aún no hay conocimiento",
         "groupOwn": "Tus fuentes",
         "groupTeam": "Compartidas con el equipo",
-        "noSourceHint": "Opcional. Sin una fuente, el agente responde solo con el modelo y sus herramientas."
+        "noSourceHint": "Opcional. Sin conocimiento, el agente responde solo con el modelo y sus herramientas."
       },
       "toolsPopup": {
         "title": "Seleccionar Herramientas",
         "searchPlaceholder": "Buscar herramientas...",
         "noOptionsMessage": "No hay herramientas disponibles",
         "groupBuiltin": "Integradas",
-        "groupDefault": "Predeterminadas",
-        "groupCustom": "Personalizadas"
+        "groupDefault": "Integradas",
+        "groupCustom": "Personalizadas",
+        "groupConnection": "{{name}} · {{account}}",
+        "groupAttached": "En este agente",
+        "attachedHint": "Lo añadió otra persona. Puedes quitarlo."
       },
       "modelsPopup": {
         "title": "Seleccionar Modelos",
@@ -1275,10 +2395,15 @@
       },
       "agentTypes": {
         "classic": "Clásico",
-        "react": "ReAct"
+        "react": "ReAct",
+        "research": "Investigación"
       },
       "labels": {
-        "defaultModel": "Modelo Predeterminado"
+        "defaultModel": "Modelo Predeterminado",
+        "name": "Nombre",
+        "description": "Descripción",
+        "sources": "Conocimiento",
+        "avatar": "Avatar"
       },
       "advanced": {
         "jsonSchema": "Esquema de respuesta JSON",
@@ -1293,7 +2418,10 @@
         "systemPromptOverrideDescription": "Permitir que los llamadores de la API v1 reemplacen el prompt del sistema de este agente"
       },
       "preview": {
-        "publishedPreview": "Los agentes publicados se pueden previsualizar aquí"
+        "savedVersion": "versión guardada",
+        "publishTitle": "Publica para probarlo",
+        "publishDescription": "La vista previa chatea con el agente publicado. Los borradores siguen siendo privados hasta que los publiques.",
+        "unsavedChanges": "Tienes cambios sin guardar. La vista previa usa la versión guardada hasta que guardes."
       },
       "dangerZone": {
         "heading": "Zona de peligro",
@@ -1331,12 +2459,12 @@
         "confidence": "Confidence threshold",
         "confidenceHint": "The judge must both flag the content and be at least this confident (default: 0.7)",
         "activeCount": "{{count}} active",
-        "needsSetup": "{{count}} need setup",
+        "needsSetup_one": "{{count}} necesita configuración",
+        "needsSetup_other": "{{count}} necesitan configuración",
         "setupRequired": "Fill in this check's settings before saving.",
         "pickAtLeastOne": "Pick at least one — the check cannot run with none selected.",
         "remove": "Remove",
         "instanceDisabled": "Guardrails are switched off for this instance, so nothing configured here will run. Ask your administrator to set GUARDRAILS_ENABLED.",
-        "ownerOnly": "Guardrails are set by the agent's owner. You can see this policy but only the owner can change it.",
         "floorNotice": "{{count}} control(s) are required by this instance and always apply.",
         "floorControl": "{{stage}}: {{action}} — required by the instance policy",
         "unknownCheck": "This agent uses a check that is not available here ({{check}}). It will still run if the check returns.",
@@ -1355,6 +2483,86 @@
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
         }
+      },
+      "byline": {
+        "new": "Configura el agente y publícalo para chatear con él."
+      },
+      "status": {
+        "published": "Publicado"
+      },
+      "sponsors": {
+        "addedBy": "Añadido por {{person}}",
+        "addedByOther": "Añadido por otra persona",
+        "unknownItem": "Elemento sin nombre",
+        "notAllowed": "No puedes añadir {{names}} a este agente. El propietario no puede usarlos y solo puedes compartir lo que es tuyo o puedes editar.",
+        "takeOver": "Ejecutar con mi acceso",
+        "takeOverPending": "{{name}} se ejecutará con tu acceso cuando guardes.",
+        "undoTakeOver": "Deshacer",
+        "confirmationOutdated": "Este agente cambió desde que confirmaste lo que se ejecuta con tu acceso. Revisa los avisos y vuelve a guardar.",
+        "takeOverLabel": "Ejecutar {{name}} con mi acceso",
+        "addedByYou": "Añadido por ti"
+      },
+      "resourceStates": {
+        "title": "Algunas herramientas, fuentes o prompts no se están ejecutando",
+        "reason": {
+          "deleted": "{{name}} se eliminó.",
+          "ownerLostAccessYou": "Ya no puedes usar {{name}}.",
+          "ownerLostAccess": "El propietario del agente ya no puede usar {{name}}.",
+          "sponsorCannotEditAgent": "{{name}} se ejecutaba con el acceso de {{person}}, que ya no puede editar este agente.",
+          "sponsorCannotEditAgentOther": "{{name}} se ejecutaba con el acceso de otra persona, que ya no puede editar este agente.",
+          "sponsorCannotEditItem": "{{name}} se ejecutaba con el acceso de {{person}}, que ya no puede editarlo.",
+          "sponsorCannotEditItemOther": "{{name}} se ejecutaba con el acceso de otra persona, que ya no puede editarlo.",
+          "connectionNeedsReconnect": "{{name}} necesita que su cuenta de {{service}} vuelva a iniciar sesión.",
+          "connectionRemoved": "Se eliminó la cuenta de {{service}} que usaba {{name}}.",
+          "connectorDisabled": "Un administrador desactivó {{service}}, así que {{name}} no puede ejecutarse.",
+          "unknown": "{{name}} no se está ejecutando.",
+          "sponsorCannotEditItemYou": "{{name}} se ejecutaba con tu acceso, y ya no puedes editarlo.",
+          "connectionNeedsReconnectNoService": "{{name}} necesita volver a iniciar sesión.",
+          "connectionRemovedNoService": "Se eliminó la cuenta que usaba {{name}}.",
+          "connectorDisabledNoService": "Un administrador desactivó {{name}}."
+        },
+        "ask": {
+          "shareAgain": "Pide a {{person}} que lo vuelva a compartir.",
+          "signInAgain": "Pide a {{person}} que vuelva a iniciar sesión.",
+          "connectAgain": "Pide a {{person}} que vuelva a conectar la cuenta.",
+          "admin": "Pide a un administrador que lo vuelva a activar.",
+          "shareAgainOwner": "Pide a su propietario que lo vuelva a compartir.",
+          "signInAgainOwner": "Pide a su propietario que vuelva a iniciar sesión.",
+          "connectAgainOwner": "Pide a su propietario que vuelva a conectar la cuenta."
+        },
+        "promptFallback": "Mientras tanto, el agente usa el prompt predeterminado.",
+        "remove": "Quitar",
+        "removeLabel": "Quitar {{name}}",
+        "reconnectLabel": "Reconectar {{name}}",
+        "unnamed": {
+          "tool": "Herramienta {{id}}",
+          "source": "Fuente {{id}}",
+          "prompt": "Prompt {{id}}"
+        },
+        "chip": "Sin ejecutar: {{formatted}}"
+      },
+      "sponsorConfirm": {
+        "title": "¿Ejecutar con tu acceso?",
+        "audienceTeams": "Miembros de {{teams}}",
+        "audienceApiKey": "Cualquiera con la clave API del agente, incluido su widget web",
+        "audiencePublicLink": "Cualquiera con el enlace público del agente",
+        "audienceWebhook": "Todo lo que llame al webhook del agente",
+        "audienceEditors": "Todos los que pueden abrir este agente",
+        "confirm": "Añadir con mi acceso",
+        "types": {
+          "tool": "Herramienta",
+          "source": "Fuente",
+          "prompt": "Prompt"
+        },
+        "description_one": "El propietario del agente no puede usarlo. Si lo añades, se ejecuta con tu acceso para todos los que usen este agente.",
+        "description_other": "El propietario del agente no puede usarlos. Si los añades, se ejecutan con tu acceso para todos los que usen este agente.",
+        "takeOverDescription_one": "El propietario del agente no puede usarlo. Se ejecutará con tu acceso para todos los que usen este agente.",
+        "takeOverDescription_other": "El propietario del agente no puede usarlos. Se ejecutarán con tu acceso para todos los que usen este agente.",
+        "takeOverConfirm": "Ejecutar con mi acceso",
+        "audienceTitle_one": "Quién puede usarlo a través de este agente",
+        "audienceTitle_other": "Quién puede usarlos a través de este agente",
+        "stopNote_one": "Deja de ejecutarse si pierdes el acceso de edición.",
+        "stopNote_other": "Dejan de ejecutarse si pierdes el acceso de edición."
       }
     },
     "logs": {
@@ -1365,7 +2573,6 @@
     },
     "schedules": {
       "title": "Programaciones del Agente",
-      "heading": "Programaciones",
       "newRecurring": "Nueva programación",
       "closeForm": "Cerrar formulario",
       "edit": "Editar",
@@ -1377,7 +2584,7 @@
       "resume": "Reanudar",
       "runNow": "Ejecutar ahora",
       "delete": "Eliminar",
-      "deleteConfirm": "¿Eliminar esta programación? También se eliminará su historial de ejecuciones. Esta acción no se puede deshacer.",
+      "deleteConfirm": "¿Eliminar \"{{name}}\"?",
       "cancel": "Cancelar",
       "showRuns": "Mostrar ejecuciones",
       "hideRuns": "Ocultar ejecuciones",
@@ -1401,11 +2608,17 @@
         "timezoneEmpty": "No se encontró la zona horaria.",
         "instructionsLabel": "Instrucciones",
         "instructionsPlaceholder": "Escribe el prompt aquí.",
+        "approvalTools": {
+          "label": "Herramientas que requieren aprobación",
+          "hint": "Durante una ejecución programada nadie puede aprobar, así que las acciones que requieren aprobación se rechazan salvo que marques aquí su herramienta. Las demás acciones se ejecutan igualmente.",
+          "warning": "Las acciones que requieren aprobación de una herramienta marcada se ejecutan sin preguntar cada vez que se ejecuta esta programación."
+        },
         "create": "Crear tarea",
         "save": "Guardar cambios",
         "errors": {
           "instructionRequired": "Las instrucciones son obligatorias.",
-          "runAtInPast": "Elige una fecha y hora en el futuro."
+          "runAtInPast": "Elige una fecha y hora en el futuro.",
+          "saveFailed": "No se pudo guardar la programación."
         },
         "days": {
           "mon": "Lun",
@@ -1430,22 +2643,127 @@
           "nov": "Nov",
           "dec": "Dic"
         }
-      }
+      },
+      "status": {
+        "active": "Activa",
+        "paused": "En pausa",
+        "completed": "Completada",
+        "cancelled": "Cancelada",
+        "success": "Correcta",
+        "failed": "Fallida",
+        "skipped": "Omitida",
+        "running": "En curso",
+        "pending": "Pendiente",
+        "timeout": "Tiempo agotado"
+      },
+      "trigger": {
+        "cron": "Programada",
+        "manual": "Manual"
+      },
+      "runDetails": {
+        "title": "Detalles de la ejecución",
+        "status": "Estado",
+        "scheduledFor": "Programada para",
+        "started": "Iniciada",
+        "finished": "Finalizada",
+        "tokens": "Tokens",
+        "tokensValue": "{{prompt}} de prompt · {{generated}} generados",
+        "trigger": "Origen",
+        "error": "Error",
+        "errorWithType": "Error ({{type}})",
+        "output": "Salida",
+        "truncated": "(truncada)"
+      },
+      "toolCard": {
+        "cancelFailed": "No se pudo cancelar",
+        "taskCancelled": "Tarea programada cancelada.",
+        "pendingCount_one": "{{count}} tarea programada pendiente",
+        "pendingCount_other": "{{count}} tareas programadas pendientes",
+        "schedulingFailed": "No se pudo programar",
+        "scheduling": "Programando…",
+        "scheduled": "Tarea programada"
+      },
+      "cron": {
+        "daily": "Diariamente a las {{time}}",
+        "weekly": "Semanalmente el {{day}} a las {{time}}",
+        "monthly": "Mensualmente el día {{day}} a las {{time}}",
+        "yearly": "Anualmente el {{day}} de {{month}} a las {{time}}",
+        "custom": "Personalizado: {{expression}}",
+        "dayNames": {
+          "sun": "domingo",
+          "mon": "lunes",
+          "tue": "martes",
+          "wed": "miércoles",
+          "thu": "jueves",
+          "fri": "viernes",
+          "sat": "sábado"
+        },
+        "monthNames": {
+          "jan": "enero",
+          "feb": "febrero",
+          "mar": "marzo",
+          "apr": "abril",
+          "may": "mayo",
+          "jun": "junio",
+          "jul": "julio",
+          "aug": "agosto",
+          "sep": "septiembre",
+          "oct": "octubre",
+          "nov": "noviembre",
+          "dec": "diciembre"
+        }
+      },
+      "runLog": {
+        "when": "Cuándo",
+        "details": "Detalles",
+        "empty": "Aún no hay ejecuciones registradas para esta programación.",
+        "duration": "Duración",
+        "loadFailed": "No se pudieron cargar las ejecuciones."
+      },
+      "actions": "Acciones de la programación",
+      "cancelTask": "Cancelar tarea",
+      "failureStreak_one": "{{count}} fallo seguido",
+      "failureStreak_other": "{{count}} fallos seguidos",
+      "meta": {
+        "nextRun": "Próxima ejecución {{time}}",
+        "runsAt": "Se ejecuta el {{time}}",
+        "lastRun": "Última ejecución {{time}}"
+      },
+      "stats": {
+        "active": "Programaciones activas",
+        "nextRun": "Próxima ejecución",
+        "runs": "Ejecuciones, últimos {{days}} días",
+        "tokens": "{{tokens}} tokens",
+        "failed": "Fallidas, últimos {{days}} días",
+        "latestFailure": "Última: {{status}}, {{date}}",
+        "paused_one": "{{count}} en pausa",
+        "paused_other": "{{count}} en pausa",
+        "overdue": "Atrasada"
+      },
+      "deleteFailed": "No se pudo eliminar esta programación.",
+      "deleteConsequence": "También se elimina su historial de ejecuciones. No se puede deshacer."
     },
     "shared": {
-      "notFound": "No se encontró el agente. Asegúrate de que el agente esté compartido."
+      "notFound": "No se encontró el agente. Asegúrate de que el agente esté compartido.",
+      "logoAlt": "Logotipo del agente",
+      "sharedBy": "por {{name}}",
+      "sharedOn": "Compartido el {{date}}",
+      "connectedTools": "Herramientas conectadas",
+      "toolIconTitle": "Icono de {{name}}",
+      "loadError": "No se pudo cargar este agente."
     },
     "preview": {
-      "testMessage": "Prueba tu agente aquí. Los agentes publicados se pueden usar en conversaciones."
+      "testMessage": "Prueba tu agente aquí. Los agentes publicados se pueden usar en conversaciones.",
+      "emptyTitle": "Prueba tu agente"
     },
-    "deleteConfirmation": "¿Estás seguro de que quieres eliminar este agente?",
+    "deleteConfirmation": "¿Eliminar \"{{name}}\"?",
     "folders": {
       "newFolder": "Nueva carpeta",
       "createFolder": "Crear carpeta",
       "folderName": "Nombre de la carpeta",
       "rename": "Renombrar",
       "delete": "Eliminar",
-      "deleteConfirm": "¿Estás seguro de que quieres eliminar esta carpeta? Los agentes serán movidos fuera de la carpeta.",
+      "deleteConfirm": "¿Eliminar \"{{name}}\"?",
       "empty": "Esta carpeta está vacía",
       "moveToFolder": "Mover a carpeta",
       "moveTo": "Mover",
@@ -1454,7 +2772,10 @@
       "backToRoot": "Volver",
       "currentFolder": "Esta carpeta",
       "noSubfolders": "Sin subcarpetas",
-      "noFolders": "No hay carpetas todavía"
+      "openFolder": "Abrir carpeta",
+      "noFolders": "No hay carpetas todavía",
+      "menuAriaLabel": "Acciones para {{folderName}}",
+      "deleteConsequence": "Los agentes que contiene salen de la carpeta; no se eliminan."
     },
     "guardrailEvents": {
       "heading": "Guardrail activity",
@@ -1476,9 +2797,224 @@
       "detail": "Detail",
       "empty": "No guardrail has fired on this agent yet.",
       "emptyForFilter": "No decisions match this filter.",
-      "truncated": "Showing the most recent {{count}} decisions.",
       "loadError": "Could not load guardrail activity"
-    }
+    },
+    "workflow": {
+      "artifacts": {
+        "previewUnsupported": "Este artefacto no se puede previsualizar",
+        "loadListFailed": "No se pudieron cargar los artefactos",
+        "loadFailed": "No se pudo cargar el artefacto",
+        "loading": "Cargando artefactos...",
+        "inProgress": "Ejecución en curso: los artefactos aparecen aquí a medida que los nodos los generan.",
+        "empty": "Esta ejecución no generó artefactos.",
+        "back": "Volver a los artefactos",
+        "untitled": "Artefacto {{id}}",
+        "fileKind": "archivo"
+      },
+      "builder": {
+        "deleteFailed": "No se pudo eliminar el agente de flujo de trabajo",
+        "updateWorkflowFailed": "No se pudo actualizar el flujo de trabajo",
+        "updateAgentFailed": "No se pudo actualizar el agente",
+        "createWorkflowFailed": "No se pudo crear el flujo de trabajo",
+        "createAgentFailed": "No se pudo crear el agente",
+        "saveFailed": "No se pudo guardar el flujo de trabajo",
+        "defaultDescription": "Agente de flujo de trabajo: {{name}}",
+        "newWorkflow": "Nuevo flujo de trabajo",
+        "workflowNamePlaceholder": "Introduce el nombre del flujo de trabajo",
+        "workflowDescriptionPlaceholder": "Describe qué hace este flujo de trabajo",
+        "unablePreview": "No se puede previsualizar el flujo de trabajo",
+        "unableSave": "No se puede guardar el flujo de trabajo",
+        "unablePublish": "No se puede publicar el flujo de trabajo",
+        "coreNodes": "Nodos principales",
+        "logicNodes": "Lógica y datos",
+        "aiAgent": "Agente de IA",
+        "setStateHint": "Modifica las variables del flujo de trabajo",
+        "conditionHint": "Ramificación condicional",
+        "codeHint": "Ejecuta código en un entorno aislado",
+        "paletteHint": "Arrástralo al lienzo o haz clic para añadirlo.",
+        "nodeActions": "Acciones del nodo",
+        "duplicateNode": "Duplicar",
+        "copyNodeId": "Copiar ID del nodo",
+        "knowledge": "Conocimiento",
+        "output": "Salida",
+        "streamToUserDescription": "Muestra la respuesta de este nodo en el chat mientras se escribe",
+        "advancedSettings": "Configuración avanzada",
+        "conditionMode": "Modo de condición",
+        "branchName": "Nombre de la rama",
+        "variable": "Variable",
+        "value": "Valor",
+        "valueCel": "Valor (CEL)",
+        "addCondition": "Añadir condición",
+        "assignment": "Asignación {{index}}",
+        "addAssignment": "Añadir asignación",
+        "startNode": "Nodo de inicio",
+        "endNode": "Nodo final",
+        "stateTitle": "Establecer variables globales",
+        "nodeId": "ID del nodo",
+        "title": "Título",
+        "titlePlaceholder": "Introduce el título del nodo",
+        "agentType": "Tipo de agente",
+        "agentTypePlaceholder": "Selecciona el tipo de agente",
+        "model": "Modelo",
+        "modelPlaceholder": "Selecciona un modelo",
+        "systemPrompt": "Prompt del sistema",
+        "systemPromptPlaceholder": "Prompt del sistema para el agente",
+        "promptTemplate": "Plantilla de prompt",
+        "promptTemplatePlaceholder": "Usa {{example}} para contenido dinámico",
+        "outputVariable": "Variable de salida",
+        "outputVariablePlaceholder": "Nombre de la variable de salida",
+        "streamToUser": "Transmitir la salida al usuario",
+        "sources": "Conocimiento",
+        "documents": "Documentos",
+        "documentsHint": "Documentos que se pasan a este agente desde cargas o nodos anteriores.",
+        "filePassing": "Paso de archivos",
+        "filePassingHint": "Auto: envía el archivo nativo si el modelo lo admite; si no, extrae el texto.",
+        "structuredOutput": "Salida estructurada (esquema JSON)",
+        "modelNoStructuredOutput": "El modelo seleccionado no admite salida estructurada.",
+        "validSchema": "Esquema JSON válido",
+        "invalidSchema": "Esquema JSON no válido: {{error}}",
+        "noteContent": "Contenido de la nota",
+        "noteContentPlaceholder": "Introduce el contenido de la nota",
+        "stateIntro": "Asigna valores a las variables de estado del flujo de trabajo.",
+        "assignValue": "Asignar valor",
+        "celHint": "Usa Common Expression Language para crear una expresión personalizada. Haz referencia al estado por su nombre sin llaves (<code>query</code>), no <code>{{braced}}</code>.",
+        "learnMore": "Más información",
+        "toVariable": "A la variable",
+        "conditionIntro": "Crea condiciones para ramificar tu flujo de trabajo",
+        "modeSimple": "Simple",
+        "modeAdvanced": "Avanzado",
+        "caseNamePlaceholder": "Nombre del caso (opcional)",
+        "variablePlaceholder": "Variable",
+        "valuePlaceholder": "Valor",
+        "operator": "Operador",
+        "examplePlaceholder": "p. ej. {{example}}",
+        "opContains": "contiene",
+        "opStartsWith": "empieza",
+        "conditionPlaceholder": "Introduce una condición, p. ej. query.contains(\"refund\")",
+        "codeIntro": "Ejecuta código en el entorno aislado del flujo de trabajo. Los archivos generados se guardan como artefactos.",
+        "inputFiles": "Archivos de entrada",
+        "inputFilesHint": "Artefactos o referencias anteriores que se colocan como archivos en el entorno aislado (cada uno pasa a ser inputs/<name>).",
+        "timeout": "Tiempo límite (segundos)",
+        "optional": "Opcional",
+        "cannotDeleteStart": "No se puede eliminar el nodo de inicio",
+        "deleteNode": "Eliminar nodo",
+        "deleteConfirmUnnamed": "¿Eliminar este agente de flujo de trabajo?",
+        "detailsTitle": "Detalles del flujo de trabajo",
+        "detailsDescription": "Nombre, descripción e imagen que se muestran en la tarjeta del agente.",
+        "unsavedChanges": "Cambios sin guardar",
+        "editDetailsMenu": "Editar detalles"
+      },
+      "validation": {
+        "nameRequired": "El nombre del flujo de trabajo es obligatorio",
+        "oneStart": "El flujo de trabajo debe tener exactamente un nodo de inicio",
+        "needEnd": "El flujo de trabajo debe tener al menos un nodo final",
+        "needAgent": "El flujo de trabajo debe tener al menos un nodo de agente de IA",
+        "agentModel": "El agente «{{name}}» debe tener un modelo seleccionado",
+        "agentStructuredOutput": "El modelo seleccionado para el agente «{{name}}» no admite salida estructurada",
+        "agentSchema": "Esquema JSON del agente «{{name}}»: {{error}}",
+        "startConnected": "El nodo de inicio debe estar conectado a otro nodo",
+        "endIncoming": "El nodo final «{{name}}» debe tener una conexión entrante",
+        "edgeSource": "Una conexión hace referencia a un nodo de origen inexistente",
+        "edgeTarget": "Una conexión hace referencia a un nodo de destino inexistente",
+        "conditionNeedsCase": "La condición «{{name}}» debe tener al menos un caso con una expresión",
+        "conditionCaseNoHandle": "La condición «{{name}}» tiene un caso sin identificador de rama",
+        "conditionDuplicateHandle": "La condición «{{name}}» tiene el identificador de caso duplicado «{{handle}}»",
+        "conditionTwoOutgoing": "La condición «{{name}}» debe tener al menos 2 conexiones salientes",
+        "conditionEdgeNoHandle": "La condición «{{name}}» tiene una conexión sin identificador de rama",
+        "conditionUnknownBranch": "La condición «{{name}}» tiene una conexión desde la rama desconocida «{{handle}}»",
+        "conditionMultipleEdges": "La condición «{{name}}» tiene varias conexiones desde la rama «{{handle}}»",
+        "conditionNeedsElse": "La condición «{{name}}» debe tener una rama Si no",
+        "caseNoConnection": "En la condición «{{name}}», el caso «{{handle}}» tiene una expresión pero no una conexión de rama",
+        "caseNoExpression": "En la condición «{{name}}», el caso «{{handle}}» tiene una conexión de rama pero no una expresión",
+        "caseNoVariable": "En la condición «{{name}}», el caso «{{handle}}» debe indicar una variable en el modo simple",
+        "branchReachEnd": "La rama «{{handle}}» de la condición «{{name}}» debe llegar finalmente a un nodo final",
+        "codeRequired": "El nodo de código «{{name}}» debe tener código que ejecutar",
+        "codeSchema": "Esquema JSON del nodo de código «{{name}}»: {{error}}"
+      },
+      "schema": {
+        "notObject": "debe ser un objeto JSON válido",
+        "missingType": "debe incluir un campo \"type\" o \"schema\"",
+        "invalidJson": "debe ser JSON válido"
+      },
+      "filePassing": {
+        "auto": "Automático",
+        "native": "Nativo",
+        "extract": "Extraer"
+      },
+      "mobileBlocker": {
+        "title": "Se requiere un ordenador",
+        "body": "El creador de flujos de trabajo necesita una pantalla más grande para ofrecer la mejor experiencia. Abre esta página en un ordenador de sobremesa o portátil."
+      },
+      "nodes": {
+        "start": "Inicio",
+        "startHint": "Punto de entrada del flujo de trabajo",
+        "end": "Fin",
+        "endHint": "Finalización del flujo de trabajo",
+        "agent": "Agente",
+        "note": "Nota",
+        "condition": "Si / Si no",
+        "code": "Código",
+        "setState": "Establecer estado",
+        "output": "Salida: {{variable}}",
+        "noCode": "Aún no hay código",
+        "modeSimple": "simple",
+        "modeAdvanced": "avanzado",
+        "if": "Si",
+        "elseIf": "Si no, si",
+        "else": "Si no",
+        "operationCount_one": "{{count}} operación",
+        "operationCount_other": "{{count}} operaciones",
+        "variableCount_one": "{{count}} variable",
+        "variableCount_other": "{{count}} variables",
+        "variableTitle": "Variable: {{name}}",
+        "valueTitle": "Valor: {{value}}"
+      },
+      "preview": {
+        "executionDetails": "Detalles de la ejecución",
+        "stepCount_one": "({{count}} paso)",
+        "stepCount_other": "({{count}} pasos)",
+        "outputLabel": "Salida:",
+        "errorLabel": "Error:",
+        "artifacts": "Artefactos",
+        "minimapHeading": "Flujo de trabajo",
+        "emptyTitle": "Prueba el flujo de trabajo",
+        "unsavedDraftAttachments": "Guarda el flujo de trabajo antes de adjuntar documentos en la vista previa."
+      },
+      "documents": {
+        "modeAll": "Todos los documentos de entrada",
+        "modeNone": "Ninguno",
+        "modeChoose": "Elegir…",
+        "selectPlaceholder": "Selecciona documentos...",
+        "searchPlaceholder": "Buscar variables...",
+        "empty": "No hay documentos anteriores",
+        "refPlaceholder": "Añadir referencia (p. ej. A1)"
+      },
+      "variables": {
+        "globalContext": "Contexto global",
+        "workflowInput": "Entrada del flujo de trabajo",
+        "searchPlaceholder": "Buscar variables...",
+        "empty": "No se encontraron variables",
+        "addContext": "Añadir contexto"
+      },
+      "zoomIn": "Acercar",
+      "zoomOut": "Alejar",
+      "fitView": "Ajustar vista"
+    },
+    "typeModal": {
+      "title": "Crear un agente nuevo",
+      "description": "Elige el tipo de agente que quieres crear",
+      "classicTitle": "Agente clásico",
+      "classicDescription": "Crea un agente de IA estándar con un solo modelo, herramientas y fuentes de conocimiento",
+      "workflowTitle": "Agente de flujo de trabajo",
+      "workflowDescription": "Diseña flujos de trabajo complejos de varios pasos con distintos modelos, lógica condicional y gestión de estado"
+    },
+    "view": "Ver",
+    "deleteFailed": "No se pudo eliminar el agente. Inténtalo de nuevo.",
+    "showAll_one": "Ver los {{formatted}}",
+    "showAll_other": "Ver los {{formatted}}",
+    "pageRange_one": "{{from}}–{{to}} de {{formatted}} agente",
+    "pageRange_other": "{{from}}–{{to}} de {{formatted}} agentes",
+    "deleteConsequence": "También se eliminan sus programaciones y su historial de ejecuciones. No se puede deshacer."
   },
   "components": {
     "fileUpload": {
@@ -1486,7 +3022,44 @@
       "dropFiles": "Drop the files here",
       "fileTypes": "PNG, JPG, JPEG up to",
       "sizeLimitUnit": "MB",
-      "fileSizeError": "File exceeds {{size}}MB limit"
+      "fileSizeError": "File exceeds {{size}}MB limit",
+      "preview": "Vista previa de la imagen",
+      "remove": "Quitar archivo"
+    },
+    "artifact": {
+      "types": {
+        "todoList": "Lista de tareas",
+        "note": "Nota",
+        "memory": "Memoria"
+      },
+      "fallbackTitle": "Artefacto",
+      "todo": {
+        "done": "{{count}} hechas",
+        "open": "{{count}} pendientes",
+        "empty": "Aún no hay tareas"
+      },
+      "note": {
+        "lines_one": "{{count}} línea",
+        "lines_other": "{{count}} líneas",
+        "empty": "Nota vacía"
+      },
+      "notFound": "Artefacto no encontrado",
+      "loadFailed": "No se pudo cargar el artefacto",
+      "fetchFailed": "No se pudo obtener el artefacto",
+      "preview": "Vista previa del artefacto",
+      "download": "Descargar",
+      "restore": "Restaurar",
+      "version": "Versión {{version}}",
+      "versionCurrent": "Versión {{version}} (actual)",
+      "downloadFailed": "Error en la descarga",
+      "restoreFailed": "Error al restaurar"
+    },
+    "profile": {
+      "avatarAlt": "Avatar del usuario"
+    },
+    "multiSelect": {
+      "more_one": "+{{count}} más",
+      "more_other": "+{{count}} más"
     }
   },
   "pageNotFound": {
@@ -1495,14 +3068,23 @@
     "goHome": "Go Back Home"
   },
   "filePicker": {
-    "searchPlaceholder": "Buscar archivos y carpetas...",
-    "itemsSelected": "{{count}} seleccionados",
-    "name": "Nombre",
-    "lastModified": "Última modificación",
-    "size": "Tamaño",
+    "searchPlaceholder": "Buscar archivos y carpetas",
+    "itemsSelected": "Seleccionados: {{formatted}}",
     "myFiles": "Mis archivos",
     "sharedWithMe": "Compartido conmigo",
-    "loadingMore": "Cargando más archivos..."
+    "myDrive": "Mi unidad",
+    "spaces": "Espacios",
+    "root": "Raíz",
+    "shared": "Compartido",
+    "connectTo": "Conectar a {{provider}}",
+    "folder": "Carpeta",
+    "folderMeta": "Carpeta · Actualizada el {{date}}",
+    "fileMeta": "Actualizado el {{date}} · {{size}}",
+    "updated": "Actualizado el {{date}}",
+    "openFolder": "Abrir {{name}}",
+    "emptyFolder": "Esta carpeta está vacía.",
+    "noMatches": "Ningún archivo ni carpeta coincide con tu búsqueda.",
+    "loadFailed": "No se pudieron cargar los archivos."
   },
   "actionButtons": {
     "openNewChat": "Abrir nuevo chat",
@@ -1513,10 +3095,34 @@
     "viewCode": "Ver código",
     "decreaseZoom": "Reducir zoom",
     "resetZoom": "Restablecer zoom",
-    "increaseZoom": "Aumentar zoom"
+    "increaseZoom": "Aumentar zoom",
+    "download": "Descargar",
+    "downloadAs": "Descargar como {{format}}",
+    "code": "Código",
+    "loading": "Cargando diagrama...",
+    "codeTitle": "Código Mermaid",
+    "renderFailed": "No se pudo renderizar el diagrama: {{message}}"
   },
   "navigation": {
-    "agents": "Agentes"
+    "agents": "Agentes",
+    "backToApp": "Volver a la app",
+    "backToAgents": "Volver a agentes",
+    "sections": {
+      "groups": {
+        "personal": "Personal",
+        "workspace": "Espacio de trabajo",
+        "insights": "Estadísticas",
+        "administration": "Administración"
+      }
+    },
+    "openSidebar": "Abrir barra lateral",
+    "closeSidebar": "Cerrar barra lateral",
+    "editAgent": "Editar agente",
+    "social": {
+      "discord": "Únete a la comunidad de Discord",
+      "x": "Síguenos en X",
+      "github": "Ver en GitHub"
+    }
   },
   "teams": {
     "switcher": {
@@ -1525,8 +3131,9 @@
       "personalSubtitle": "Espacio de trabajo personal",
       "roleAdmin": "Admin",
       "roleMember": "Miembro",
-      "manageTeam": "Gestionar equipo",
-      "createTeam": "Crear equipo"
+      "manageTeams": "Gestionar equipos",
+      "createTeam": "Crear equipo",
+      "logoAlt": "Logotipo de DocsGPT"
     }
   },
   "notification": {
@@ -1535,5 +3142,25 @@
   },
   "prompts": {
     "textAriaLabel": "Texto del prompt"
-  }
+  },
+  "connectHero": {
+    "title": "Conecta tus datos",
+    "body": "Chatea con {{names}}.",
+    "more": "más"
+  },
+  "common": {
+    "close": "Cerrar",
+    "viewOnlyNotice": "Puedes ver esto, pero tu rol no puede cambiarlo.",
+    "credentialsLockedNotice": "Solo el propietario puede cambiar las credenciales de esta herramienta.",
+    "savedSecretHint": "Guardado. Déjalo vacío para conservarlo.",
+    "actionFailed": "Algo salió mal. Inténtalo de nuevo.",
+    "cantUndo": "No se puede deshacer."
+  },
+  "sidePanel": {
+    "close": "Cerrar",
+    "expand": "Ampliar",
+    "collapse": "Reducir",
+    "back": "Atrás"
+  },
+  "close": "Cerrar"
 }

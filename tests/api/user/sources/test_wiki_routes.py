@@ -106,6 +106,24 @@ class TestCreateWikiSource:
         mock_ingest.assert_not_called()
         mock_reingest.assert_not_called()
 
+    def test_new_wiki_gets_the_same_config_as_a_converted_one(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import CreateWikiSource
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.source_config import SourceConfig
+
+        user = "u-wiki-exposure"
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sources/wiki", method="POST", json={"name": "Handbook"}
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = CreateWikiSource().post()
+
+        assert response.status_code == 200
+        row = SourcesRepository(pg_conn).get_any(response.json["source_id"], user)
+        assert row["config"]["retrieval"]["exposure"] == "agentic_tool"
+        assert row["config"] == SourceConfig().wiki_enabled()
+
     def test_seed_page_roundtrips_and_only_seed_reembeds(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import (
             CreateWikiSource,
@@ -606,3 +624,114 @@ class TestWikiPageEdit:
 
         assert response.status_code == 403
         mock_reembed.assert_not_called()
+
+
+def _settings_call(app, pg_conn, sid, user, method="GET", body=None):
+    from docsgpt.api.user.sources.routes import WikiSettings
+
+    with _patch_db(pg_conn), app.test_request_context(
+        f"/api/sources/{sid}/wiki/settings", method=method, json=body
+    ):
+        from flask import request
+        request.decoded_token = {"sub": user} if user else None
+        resource = WikiSettings()
+        return resource.get(sid) if method == "GET" else resource.put(sid)
+
+
+class TestWikiSettings:
+    def _wiki(self, pg_conn, owner, kind="wiki"):
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        src = SourcesRepository(pg_conn).create(
+            "wiki", user_id=owner, type=kind, config={"kind": kind}
+        )
+        return str(src["id"])
+
+    def _stored(self, pg_conn, sid):
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        return SourcesRepository(pg_conn).get_by_id(sid)["wiki_outside_edits"]
+
+    def test_returns_401_unauthenticated(self, app, pg_conn):
+        assert _settings_call(app, pg_conn, str(uuid.uuid4()), None).status_code == 401
+        assert _settings_call(app, pg_conn, str(uuid.uuid4()), None, "PUT", {}).status_code == 401
+
+    def test_defaults_to_off(self, app, pg_conn):
+        sid = self._wiki(pg_conn, "alice-ws")
+        response = _settings_call(app, pg_conn, sid, "alice-ws")
+        assert response.status_code == 200
+        assert response.json["allow_outside_edits"] is False
+        assert "manage_settings" in response.json["allowed_actions"]
+
+    def test_owner_turns_it_on_and_off(self, app, pg_conn):
+        sid = self._wiki(pg_conn, "alice-ws-on")
+        response = _settings_call(
+            app, pg_conn, sid, "alice-ws-on", "PUT", {"allow_outside_edits": True}
+        )
+        assert response.status_code == 200
+        assert response.json["allow_outside_edits"] is True
+        assert self._stored(pg_conn, sid) is True
+        assert _settings_call(app, pg_conn, sid, "alice-ws-on").json["allow_outside_edits"] is True
+        _settings_call(app, pg_conn, sid, "alice-ws-on", "PUT", {"allow_outside_edits": False})
+        assert self._stored(pg_conn, sid) is False
+
+    def test_change_is_audited(self, app, pg_conn):
+        from sqlalchemy import text
+
+        sid = self._wiki(pg_conn, "alice-ws-audit")
+        _settings_call(app, pg_conn, sid, "alice-ws-audit", "PUT", {"allow_outside_edits": True})
+        row = pg_conn.execute(
+            text("SELECT metadata FROM auth_events WHERE event = 'source.wiki_settings_updated' AND actor_id = :a"),
+            {"a": "alice-ws-audit"},
+        ).fetchone()
+        assert row is not None
+        assert row[0]["source_id"] == sid and row[0]["allow_outside_edits"] is True
+
+    @pytest.mark.parametrize("level", ["editor", "viewer"])
+    def test_team_member_reads_but_cannot_change(self, app, pg_conn, level):
+        owner, member = f"alice-ws-{level}", f"bob-ws-{level}"
+        sid = self._wiki(pg_conn, owner)
+        _grant_team_access(pg_conn, owner, member, sid, level)
+        read = _settings_call(app, pg_conn, sid, member)
+        assert read.status_code == 200
+        assert read.json["allow_outside_edits"] is False
+        assert "manage_settings" not in read.json["allowed_actions"]
+        response = _settings_call(
+            app, pg_conn, sid, member, "PUT", {"allow_outside_edits": True}
+        )
+        assert response.status_code == 403
+        assert self._stored(pg_conn, sid) is False
+
+    def test_stranger_gets_404(self, app, pg_conn):
+        sid = self._wiki(pg_conn, "alice-ws-404")
+        assert _settings_call(app, pg_conn, sid, "eve-ws").status_code == 404
+        response = _settings_call(app, pg_conn, sid, "eve-ws", "PUT", {"allow_outside_edits": True})
+        assert response.status_code == 404
+        assert self._stored(pg_conn, sid) is False
+
+    @pytest.mark.parametrize("body", [{}, {"allow_outside_edits": "yes"}, {"allow_outside_edits": 1}])
+    def test_bad_body_is_400(self, app, pg_conn, body):
+        sid = self._wiki(pg_conn, "alice-ws-400")
+        response = _settings_call(app, pg_conn, sid, "alice-ws-400", "PUT", body)
+        assert response.status_code == 400
+        assert self._stored(pg_conn, sid) is False
+
+    def test_not_a_wiki_is_400(self, app, pg_conn):
+        sid = self._wiki(pg_conn, "alice-ws-classic", kind="classic")
+        response = _settings_call(
+            app, pg_conn, sid, "alice-ws-classic", "PUT", {"allow_outside_edits": True}
+        )
+        assert response.status_code == 400
+        assert self._stored(pg_conn, sid) is False
+
+    def test_no_row_updated_is_404(self, app, pg_conn):
+        sid = self._wiki(pg_conn, "alice-ws-gone")
+        with patch(
+            "docsgpt.storage.db.repositories.sources.SourcesRepository.set_wiki_outside_edits",
+            return_value=False,
+        ):
+            response = _settings_call(
+                app, pg_conn, sid, "alice-ws-gone", "PUT", {"allow_outside_edits": True}
+            )
+        assert response.status_code == 404
+        assert response.json["success"] is False

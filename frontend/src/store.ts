@@ -1,6 +1,7 @@
 import { configureStore } from '@reduxjs/toolkit';
 
 import agentPreviewReducer from './agents/agentPreviewSlice';
+import connectorsReducer from './connectors/connectorsSlice';
 import schedulesReducer from './agents/schedules/schedulesSlice';
 import workflowPreviewReducer from './agents/workflow/workflowPreviewSlice';
 import {
@@ -8,6 +9,7 @@ import {
   conversationSlice,
 } from './conversation/conversationSlice';
 import { sharedConversationSlice } from './conversation/sharedConversationSlice';
+import actionToastReducer from './notifications/actionToastSlice';
 import notificationsReducer from './notifications/notificationsSlice';
 import { getStoredRecentDocs } from './preferences/preferenceApi';
 import {
@@ -37,7 +39,7 @@ const preloadedState: { preference: Preference } = {
       { name: 'creative', id: 'creative', type: 'public' },
       { name: 'strict', id: 'strict', type: 'public' },
     ],
-    chunks: JSON.parse(chunks ?? '2').toString(),
+    chunks: JSON.parse(chunks ?? '6').toString(),
     selectedDocs: getStoredRecentDocs(),
     conversations: {
       data: null,
@@ -58,6 +60,7 @@ const preloadedState: { preference: Preference } = {
     rolesResolved: false,
     ttsAvailable: true,
     sttAvailable: true,
+    attachmentBudgetShare: null,
   },
 };
 const store = configureStore({
@@ -70,9 +73,11 @@ const store = configureStore({
     agentPreview: agentPreviewReducer,
     workflowPreview: workflowPreviewReducer,
     notifications: notificationsReducer,
+    actionToast: actionToastReducer,
     schedules: schedulesReducer,
     teams: teamsReducer,
     graphBuild: graphBuildReducer,
+    connectors: connectorsReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(

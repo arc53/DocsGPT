@@ -42,7 +42,7 @@ function MessageScrollerViewport({
       className={cn(
         // Registry default also has: scroll-fade-b scrollbar-thin
         // scrollbar-gutter-stable data-autoscrolling:scrollbar-none.
-        // scrollbar-thin is a real @utility here (index.css) and would thin
+        // scrollbar-thin (Tailwind's scrollbar-width: thin) would thin
         // the chat scrollbar; the fade would double Conversation's gradient.
         'size-full min-h-0 min-w-0 overflow-y-auto overscroll-contain contain-content',
         className,

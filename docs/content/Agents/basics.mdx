@@ -1,12 +1,13 @@
 ---
-title: Understanding DocsGPT Agents
+title: Agent Basics
 description: Learn about DocsGPT Agents, their types, how to create and manage them, and how they can enhance your interaction with documents and tools.
+lastUpdated: 2026-09-30
 ---
 
 import { Callout } from 'nextra/components';
 import Image from 'next/image'; // Assuming you might want to embed images later, like the ones you uploaded.
 
-# Understanding DocsGPT Agents 🤖
+# Agent Basics
 
 DocsGPT Agents are advanced, configurable AI entities designed to go beyond simple question-answering. They act as specialized assistants or workers that combine instructions (prompts), knowledge (document sources), and capabilities (tools) to perform a wide range of tasks, automate workflows, and provide tailored interactions.
 
@@ -33,14 +34,14 @@ When you create or configure an agent, you'll work with these key components:
 
 **Source:**
     * **Select source:** The knowledge base for the agent. You can select from previously uploaded documents or data sources. This is what the agent will "know."
-    * **Chunks per query:** A numerical value determining how many relevant text chunks from the selected source are sent to the LLM with each query. This helps manage context length and relevance.
+    * **Chunks:** How many relevant text chunks are sent to the LLM with each query, in total across the agent's sources (default 6). The agent form doesn't show it; set `chunks` when creating or updating the agent through the API, or in an imported agent YAML file (see [Agents API](/API/agent-api)).
 
 **Prompt:**
-The main set of instructions or system [prompt](/Guides/Customising-prompts) that defines the agent's persona, objectives, constraints, and how it should behave or respond.
+The main set of instructions or system [prompt](/Agents/prompts) that defines the agent's persona, objectives, constraints, and how it should behave or respond.
 
 **Tools:** A selection of available [DocsGPT Tools](/Tools/basics) that the agent can use to perform actions or access external information.
 
-**Agent type:** The underlying operational logic or architecture the agent uses. DocsGPT supports different types of agents, each suited for different kinds of tasks.
+**Agent type:** The underlying operational logic or architecture the agent uses. DocsGPT supports different types of agents, each suited for different kinds of tasks. The agent form offers **Classic** and **Research**; workflow agents are chosen when you create the agent, and the Agentic type is set through the API or an imported YAML file.
 
 ## Understanding Agent Types
 
@@ -50,13 +51,17 @@ DocsGPT supports several agent types, each with a distinct way of processing inf
 
 The Classic Agent follows a traditional Retrieval Augmented Generation (RAG) approach: it retrieves relevant document chunks, augments the prompt context with them, and generates a response. It can also use configured tools if the LLM decides they are necessary.
 
+A Classic agent can search on demand too: a source whose [exposure](/Sources/Per-source-configuration#exposure-prefetch-vs-agentic-tool) is set to `agentic_tool` is offered to the model as an `internal_search` tool instead of being pre-fetched. This is how you get on-demand search from the agent form.
+
 **Best for:** Direct question-answering over a specific set of documents and straightforward tool use.
 
 ### 2. Agentic Agent
 
-Unlike Classic which pre-fetches documents into the prompt, the Agentic Agent gives the LLM an `internal_search` tool so it can decide **when, what, and whether** to search. This means the LLM controls its own retrieval — it can search multiple times, refine queries, or skip retrieval entirely if the question doesn't need it.
+Unlike Classic which pre-fetches documents into the prompt, the Agentic Agent gives the LLM an `internal_search` tool for all of its sources so it can decide **when, what, and whether** to search. This means the LLM controls its own retrieval — it can search multiple times, refine queries, or skip retrieval entirely if the question doesn't need it.
 
 **Best for:** Tasks where the agent needs to dynamically decide how to gather information, use multiple tools in sequence, or combine retrieval with external tool calls.
+
+The agent form doesn't offer the Agentic type. Set `agent_type: agentic` when creating or updating the agent through the [Agents API](/API/agent-api) or in an imported agent YAML file.
 
 ### 3. Research Agent
 
@@ -68,11 +73,13 @@ A multi-phase agent designed for in-depth research tasks:
 
 Includes budget controls for max steps, timeout, and token limits to keep research bounded.
 
+Research steps can't stop to ask you anything, so a tool action that needs approval, a connection or the user's app isn't run there; the step is told why and carries on. The same goes for actions an API, widget or public-link user can't take on the owner's accounts.
+
 **Best for:** Complex questions that require multi-step investigation, gathering information from multiple sources, and producing structured reports with citations.
 
 ### 4. Workflow Agent
 
-Executes predefined workflows composed of connected nodes (AI Agent, Set State, Condition). See the [Workflow Nodes](/Agents/nodes) page for details on building workflows.
+Executes predefined workflows composed of connected nodes: AI Agent, Set State, If / Else (Condition), Code and Note, between a Start node and one or more End nodes. See the [Workflow Nodes](/Agents/nodes) page for details on building workflows.
 
 **Best for:** Structured, multi-step processes with branching logic and shared state between steps.
 
@@ -86,13 +93,32 @@ You can easily access and manage your agents through the DocsGPT user interface.
 
 ### Creating a New Agent
 
+<video
+  autoPlay
+  muted
+  loop
+  playsInline
+  controls
+  width={1440}
+  height={900}
+  poster="/create-agent-poster.png"
+  aria-label="Screen recording: creating, publishing and testing a Classic agent in DocsGPT"
+  style={{ width: '100%', height: 'auto', borderRadius: '0.5rem' }}
+>
+  <source src="/create-agent.mp4" type="video/mp4" />
+</video>
+
+*The recording clicks **New Agent** on the Agents page and chooses **Classic Agent**. It names the agent "Espresso support", adds a description, picks the "Espresso One handbook" knowledge source, the **Read Webpage (browser)** tool and the "Espresso support" prompt, then clicks **Publish**. Publishing opens **Access Details** with the agent's new API key; the same dialog is under the **⋯** menu later. Finally it opens **Preview**, asks how often to descale the machine, and the agent answers from the handbook with the source listed.*
+
 1.  Navigate to the "Agents" page.
-2.  Click the **"New Agent"** button.
-3.  You will be presented with the "New Agent" configuration screen:
+2.  Click the **"New Agent"** button. The **Create New Agent** dialog asks which kind of agent you want:
+    * **Classic Agent** opens the agent form. Its **Agent type** field then offers **Classic** or **Research**.
+    * **Workflow Agent** opens the workflow builder; see [Workflow Nodes](/Agents/nodes).
+3.  For a Classic agent you will be presented with the "New Agent" configuration screen:
 
 <Image
   src="/new-agent.png"
-  alt="API Tool configuration example for phone validation"
+  alt="The New Agent configuration form"
   width={800}
   height={450}
   style={{ margin: '1em auto', display: 'block', borderRadius: '8px' }}
@@ -106,12 +132,15 @@ You can easily access and manage your agents through the DocsGPT user interface.
 Once an agent is created, you can:
 
 * **Chat with it:** Select the agent to start an interaction.
-* **View Logs:** Access usage statistics, monitor token consumption per interaction, and review user message feedbacks. This is crucial for understanding how your agent is being used and performing.
+* **View Logs:** Access usage statistics, monitor token consumption per interaction, and review user message feedbacks. This is crucial for understanding how your agent is being used and performing. See [Analytics and Logs](/Using/analytics-and-logs).
 * **Edit an Agent:**
     * Modify any of its configuration settings (name, description, source, prompt, tools, type).
-    * **Generate a Public Link:** From the edit screen, you can create a shareable public link that allows others to import and use your agent.
-    * **Get a Webhook URL:** You can also obtain a Webhook URL for the agent. This allows external applications or services to trigger the agent and receive responses programmatically, enabling powerful integrations and automations.
-* **Use it via API:** Every agent exposes an API key that can be used with the native [Agent API](/Agents/api) or the [OpenAI-Compatible API](/Agents/openai-compatible) so you can drop DocsGPT Agents into any tool that already speaks the chat completions protocol.
+    * **Open Access Details:** On a published agent, open the **⋯** menu beside the agent's name on the edit screen and choose **Access Details**. It holds the agent's **Public Link**, its API key (with **Reset key**) and its **Webhook URL**. A draft has none of these: publish the agent to create its API key. The public link and webhook URL don't exist until you click **Generate** next to each in that dialog.
+    * **Public Link:** Anyone with the link can open the agent and chat with it; it then appears under **Discovered** on their Agents page. They use your agent as it is; they don't get a copy.
+    * **Webhook URL:** Lets external applications or services trigger the agent and receive responses programmatically. See [Webhooks](/API/webhooks).
+    * On a team-shared agent, editors can manage Access Details too, unless the owner turns off **Editors can manage access details**.
+* **Share it with a team:** Viewers chat with it; editors can also change it. The share dialog lists what the agent uses and whose access each item runs with. See [Sharing agents and what they use](/Deploying/Access-Control#sharing-agents-and-what-they-use).
+* **Use it via API:** Every published agent has an API key (in **Access Details**) that can be used with the native [Agent API](/API/agent-api) or the [OpenAI-Compatible API](/API/openai-compatible) so you can drop DocsGPT Agents into any tool that already speaks the chat completions protocol.
 
 ## Seeding Premade Agents from YAML
 
@@ -121,4 +150,4 @@ You can bootstrap a fresh DocsGPT deployment with a curated set of agents by see
 2. **Ensure dependencies are running** – Postgres must be reachable using `POSTGRES_URI` from `.env` (schema applied via `python scripts/db/init_postgres.py`), and a Celery worker should be available if any agent sources need to be ingested via `ingest_remote`.
 3. **Execute the seeder** – run `python -m docsgpt.seed.commands init`. Add `--force` when you need to reseed an existing environment.
 
-The seeder keeps templates under the `system` user so they appear in the UI for anyone to clone or customize. Environment variable placeholders such as `${MY_TOKEN}` inside tool configs are resolved during the seeding process.
+The seeded agents are owned by the `__system__` user. They appear under **Templates** on the Agents page, where users can adopt a copy to use and customize. Environment variable placeholders such as `${MY_TOKEN}` inside tool configs are resolved during the seeding process.

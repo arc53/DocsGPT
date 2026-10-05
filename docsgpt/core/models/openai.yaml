@@ -12,9 +12,28 @@ models:
     context_window: 1050000
     api_flavor: responses
     reasoning_effort: medium
+    # Short-context rates. Prompts over 272K tokens bill at $10 / $45 (cached $1).
+    input_cost_per_million: 5.0
+    output_cost_per_million: 30.0
+    cached_input_cost_per_million: 0.5
   - id: gpt-5.4-mini
     display_name: GPT-5.4 Mini
     description: Cost-efficient GPT-5.4-class model for high-volume coding, computer use, and subagent workloads
+    input_cost_per_million: 0.75
+    output_cost_per_million: 4.5
+    cached_input_cost_per_million: 0.075
   - id: gpt-5.4-nano
     display_name: GPT-5.4 Nano
     description: Cheapest GPT-5.4-class model, optimized for simple high-volume tasks where speed and cost matter most
+    input_cost_per_million: 0.2
+    output_cost_per_million: 1.25
+    cached_input_cost_per_million: 0.02
+  - id: gpt-5.6-sol
+    display_name: GPT-5.6 Sol
+    description: Latest GPT-5.6 generation flagship for long-horizon reasoning and agentic work
+    context_window: 1050000
+    api_flavor: responses
+    reasoning_effort: medium
+    input_cost_per_million: 5.0
+    output_cost_per_million: 30.0
+    cached_input_cost_per_million: 0.5

@@ -3,12 +3,7 @@ export type ScheduleTriggerType = 'once' | 'recurring';
 export type ScheduleStatus = 'active' | 'paused' | 'completed' | 'cancelled';
 
 export type ScheduleRunStatus =
-  | 'pending'
-  | 'running'
-  | 'success'
-  | 'failed'
-  | 'skipped'
-  | 'timeout';
+  'pending' | 'running' | 'success' | 'failed' | 'skipped' | 'timeout';
 
 // Mirrors the schedule_runs.error_type CHECK constraint (migrations 0010, 0027).
 export type ScheduleRunErrorType =
@@ -42,7 +37,7 @@ export type Schedule = {
   model_id?: string | null;
   token_budget?: number | null;
   origin_conversation_id?: string | null;
-  created_via: 'chat' | 'ui';
+  created_via: 'chat' | 'ui' | 'api';
   consecutive_failure_count: number;
   created_at: string;
   updated_at: string;
@@ -73,6 +68,19 @@ export type ScheduleRun = {
 };
 
 export type ScheduleListResponse = { schedules: Schedule[] };
+
+/** Run totals for an agent's schedules over the last `days` days. */
+export type ScheduleStats = {
+  days: number;
+  runs: number;
+  failed: number;
+  tokens: number;
+  latest_failure: {
+    scheduled_for: string;
+    status: ScheduleRunStatus;
+    error_type?: ScheduleRunErrorType | null;
+  } | null;
+};
 export type ScheduleResponse = { schedule: Schedule };
 export type ScheduleRunListResponse = {
   runs: ScheduleRun[];

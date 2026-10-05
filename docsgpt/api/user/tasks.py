@@ -10,6 +10,7 @@ from docsgpt.parser.file.base_parser import DocumentParseError
 from docsgpt.worker import (
     AttachmentRejectedError,
     agent_webhook_worker,
+    archive_member_worker,
     attachment_worker,
     ingest_worker,
     mcp_oauth,
@@ -79,6 +80,12 @@ DURABLE_TASK = dict(
 )
 
 
+def _connection_unavailable():
+    from docsgpt.connectors.service import ConnectionUnavailable
+
+    return ConnectionUnavailable
+
+
 def durable_task(**overrides) -> Dict:
     """Return ``DURABLE_TASK`` with per-task overrides applied.
 
@@ -146,6 +153,7 @@ def ingest(
     config=None,
     idempotency_key=None,
     source_id=None,
+    copy_files=None,
 ):
     resp = ingest_worker(
         self,
@@ -159,6 +167,8 @@ def ingest(
         config=config,
         idempotency_key=idempotency_key,
         source_id=source_id,
+        # Only when given, so the worker's call shape is unchanged otherwise.
+        **({"copy_files": copy_files} if copy_files else {}),
     )
     return resp
 
@@ -167,13 +177,16 @@ def ingest(
 @with_idempotency(task_name="ingest_remote", on_poison=_emit_ingest_poison_event)
 def ingest_remote(
     self, source_data, job_name, user, loader,
-    config=None, idempotency_key=None, source_id=None,
+    config=None, idempotency_key=None, source_id=None, connection_id=None,
+    sync_frequency="never",
 ):
     resp = remote_worker(
         self, source_data, job_name, user, loader,
+        sync_frequency=sync_frequency,
         config=config,
         idempotency_key=idempotency_key,
         source_id=source_id,
+        connection_id=connection_id,
     )
     return resp
 
@@ -249,6 +262,15 @@ def schedule_syncs(self, frequency):
     return resp
 
 
+@celery.task(bind=True, acks_late=True, autoretry_for=(Exception,), max_retries=3, retry_backoff=60,
+             dont_autoretry_for=(_connection_unavailable(),))
+def sync_connector_source(self, source_id):
+    """Re-sync one connector source from its connection, with no browser involved."""
+    from docsgpt.worker import sync_connector_source as run
+
+    return run(self, source_id)
+
+
 @celery.task(bind=True)
 def sync_source(
     self,
@@ -259,6 +281,7 @@ def sync_source(
     sync_frequency,
     retriever,
     doc_id,
+    connection_id=None,
 ):
     resp = sync(
         self,
@@ -269,6 +292,7 @@ def sync_source(
         sync_frequency,
         retriever,
         doc_id,
+        connection_id=connection_id,
     )
     return resp
 
@@ -288,18 +312,28 @@ def _emit_attachment_poison_event(task_name, bound):
     if not user or not attachment_id:
         return
     from docsgpt.events.publisher import publish_user_event
-    from docsgpt.worker import record_attachment_failure
-
-    record_attachment_failure(
-        user, file_info, "Attachment processing stopped after repeated failures."
+    from docsgpt.parser.file.constants import is_attachment_archive
+    from docsgpt.worker import (
+        ATTACHMENT_FAILURE_MESSAGES,
+        record_archive_task_failure,
+        record_attachment_failure,
     )
+
+    error = ATTACHMENT_FAILURE_MESSAGES["repeated_failures"]
+    if is_attachment_archive(file_info.get("filename")):
+        # Keeps the zip's member bookkeeping, which a plain failure row
+        # would overwrite.
+        record_archive_task_failure(user, file_info, error)
+    else:
+        record_attachment_failure(user, file_info, error)
     publish_user_event(
         user,
         "attachment.failed",
         {
             "attachment_id": str(attachment_id),
             "filename": file_info.get("filename") or "",
-            "error": "Attachment processing stopped after repeated failures.",
+            "code": "repeated_failures",
+            "error": error,
         },
         scope={"kind": "attachment", "id": str(attachment_id)},
     )
@@ -321,6 +355,38 @@ def _emit_attachment_poison_event(task_name, bound):
 def store_attachment(self, file_info, user, idempotency_key=None):
     resp = attachment_worker(self, file_info, user)
     return resp
+
+
+def _emit_archive_member_poison_event(task_name, bound):
+    """Fail a zip member whose task keeps dying, so the zip still completes.
+
+    The poison guard returns before the worker runs; without this the member
+    never gets an outcome and its zip never reports ``attachment.completed``.
+    The zip, not the member, reports to the browser.
+    """
+    user = bound.get("user")
+    member_info = bound.get("member_info") or {}
+    if not user or not member_info.get("attachment_id"):
+        return
+    from docsgpt.worker import record_archive_member_failure
+
+    record_archive_member_failure(user, member_info, "Processing stopped after repeated failures.")
+
+
+# One member of a zip attachment, dispatched by the zip's own task (at most
+# ATTACHMENT_ARCHIVE_PARALLELISM at a time per zip). Same deterministic
+# failures as store_attachment skip the retries; a member's final failure is
+# recorded on its zip rather than raised, so the zip still completes.
+@celery.task(
+    **durable_task(
+        dont_autoretry_for=(DataError, AttachmentRejectedError, DocumentParseError),
+    )
+)
+@with_idempotency(
+    task_name="store_archive_member", on_poison=_emit_archive_member_poison_event,
+)
+def store_archive_member(self, member_info, user, idempotency_key=None):
+    return archive_member_worker(self, member_info, user)
 
 
 @celery.task(**DURABLE_TASK)
@@ -346,9 +412,9 @@ def parse_timeout_for_size(size_bytes: Optional[int]) -> float:
     """
     from docsgpt.core.settings import settings
 
-    base = float(getattr(settings, "DOCUMENT_PARSE_TIMEOUT", 120) or 120)
-    per_mib = float(getattr(settings, "DOCUMENT_PARSE_TIMEOUT_PER_MB", 0) or 0)
-    ceiling = float(getattr(settings, "DOCUMENT_PARSE_TIMEOUT_MAX", base) or base)
+    base = float(settings.DOCUMENT_PARSE_TIMEOUT or 120)
+    per_mib = float(settings.DOCUMENT_PARSE_TIMEOUT_PER_MB or 0)
+    ceiling = float(settings.DOCUMENT_PARSE_TIMEOUT_MAX or base)
     size = float(size_bytes) if isinstance(size_bytes, (int, float)) else 0.0
     scaled = base + per_mib * max(size, 0.0) / (1024 * 1024)
     return min(ceiling, max(base, scaled))
@@ -408,7 +474,9 @@ except Exception:
     pass
 
 
-@celery.task(**DURABLE_TASK)
+# A revoked or disconnected connection will not heal by retrying; the
+# service has already paused the source and told its owner to reconnect.
+@celery.task(**durable_task(dont_autoretry_for=(DocumentParseError, _connection_unavailable())))
 @with_idempotency(
     task_name="ingest_connector_task", on_poison=_emit_ingest_poison_event,
 )
@@ -428,6 +496,7 @@ def ingest_connector_task(
     config=None,
     idempotency_key=None,
     source_id=None,
+    connection_id=None,
 ):
     from docsgpt.worker import ingest_connector
 
@@ -437,6 +506,7 @@ def ingest_connector_task(
         user,
         source_type,
         session_token=session_token,
+        connection_id=connection_id,
         file_ids=file_ids,
         folder_ids=folder_ids,
         recursive=recursive,
@@ -607,6 +677,11 @@ def setup_periodic_tasks(sender, **kwargs):
         timedelta(hours=24),
         cleanup_guardrail_events.s(),
         name="cleanup-guardrail-events",
+    )
+    sender.add_periodic_task(
+        timedelta(hours=24),
+        cleanup_traces.s(),
+        name="cleanup-traces",
     )
     sender.add_periodic_task(
         timedelta(hours=24),
@@ -824,6 +899,30 @@ def cleanup_guardrail_events(self):
     engine = get_engine()
     with engine.begin() as conn:
         deleted = GuardrailEventsRepository(conn).purge_older_than(ttl_days)
+    return {"deleted": deleted, "ttl_days": ttl_days}
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_traces(self):
+    """Delete ``request_traces`` rows older than ``TRACES_RETENTION_DAYS``.
+
+    Every chat turn, scheduled run and search writes a trace, and each one
+    carries content previews, so the table is bounded by a retention window
+    like the other per-request journals.
+    """
+    from docsgpt.core.settings import settings
+    if not settings.POSTGRES_URI:
+        return {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    from docsgpt.storage.db.engine import get_engine
+    from docsgpt.storage.db.repositories.request_traces import (
+        RequestTracesRepository,
+    )
+
+    ttl_days = settings.TRACES_RETENTION_DAYS
+    engine = get_engine()
+    with engine.begin() as conn:
+        deleted = RequestTracesRepository(conn).purge_older_than(ttl_days)
     return {"deleted": deleted, "ttl_days": ttl_days}
 
 

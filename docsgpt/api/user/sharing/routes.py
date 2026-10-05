@@ -205,7 +205,7 @@ class ShareConversation(Resource):
 
                 if is_promptable:
                     prompt_id_raw = data.get("prompt_id", "default")
-                    chunks_raw = data.get("chunks", "2")
+                    chunks_raw = data.get("chunks", "6")
                     try:
                         chunks_int = int(chunks_raw) if chunks_raw not in (None, "") else None
                     except (TypeError, ValueError):
@@ -339,6 +339,8 @@ class GetPubliclySharedConversations(Resource):
                         "thought": msg.get("thought"),
                         "sources": msg.get("sources") or [],
                         "tool_calls": msg.get("tool_calls") or [],
+                        # Only the order, not the rest of the private metadata.
+                        "segments": (msg.get("metadata") or {}).get("segments"),
                         "timestamp": (
                             msg["timestamp"].isoformat()
                             if hasattr(msg.get("timestamp"), "isoformat")

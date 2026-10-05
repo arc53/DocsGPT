@@ -1,0 +1,72 @@
+---
+title: Background Jobs and Data Retention
+description: The periodic tasks the Celery beat scheduler runs in DocsGPT - source syncs, scheduled agent runs, reconciliation and cleanups - what each one trims and when, what is kept until someone deletes it, and how to make sure beat is running.
+lastUpdated: 2026-09-30
+---
+
+import { Callout } from 'nextra/components'
+
+# Background Jobs and Data Retention
+
+Besides the API and the worker, DocsGPT needs a **Celery beat scheduler**. Beat puts periodic tasks on the queue, and the worker runs them: source syncs, scheduled agent runs, the reconciliation of stuck work, and the cleanups that keep Postgres from growing without bound. Without beat none of this happens, and nothing tells you so.
+
+## Running beat
+
+At least one beat scheduler must run. Beat uses RedBeat, which keeps its schedule and a lock in Redis, so only the instance holding the lock schedules anything. Starting beat in more than one worker is therefore safe: the extra instances wait and take over if the lock holder stops.
+
+| Install | How beat runs |
+| --- | --- |
+| `docsgpt up` and the one-line installer | Embedded in the `worker` container (`celery ... worker -B`). Nothing to do. |
+| `docsgpt up --native`, `docsgpt worker` | Embedded (`-B`) by default. `docsgpt worker --no-beat` leaves it out; then run `docsgpt beat` as its own process. |
+| Checkout Compose files (`docker-compose.yaml`, `docker-compose-hub.yaml`, `docker-compose-standalone.yaml`) | Embedded in the `worker` service with `-B`. |
+| Kubernetes manifests | Embedded in `docsgpt-worker` with `-B`, safe on every replica. |
+| Development | `celery -A docsgpt.app.celery worker -l INFO -B`, or `docsgpt worker`. See [Development Environment](/Deploying/Development-Environment). |
+| Windows | The worker can't embed beat. Run `docsgpt beat` (or `celery -A docsgpt.app.celery beat -l INFO`) in a separate process. |
+
+If you write your own worker command, keep `-B` on it or run `celery -A docsgpt.app.celery beat -l INFO` next to it. Signs that beat isn't running: scheduled agent runs and source syncs never fire, and a request stuck after a crash is never marked failed.
+
+## Periodic tasks
+
+Beat schedules these tasks. Each runs on the worker, so the worker must also be running and consuming the `docsgpt` queue. The cleanups skip themselves when `POSTGRES_URI` is not set.
+
+| Task | Every | What it does | Controlled by |
+| --- | --- | --- | --- |
+| `schedule-syncs-daily` | day | Re-ingests sources whose sync frequency is **Daily**. | The source's **Sync** setting in Knowledge. |
+| `schedule-syncs-weekly` | week | The same for **Weekly** sources. | The source's **Sync** setting. |
+| `schedule-syncs-monthly` | 30 days | The same for **Monthly** sources. | The source's **Sync** setting. |
+| `dispatch-scheduled-runs` | 30 s | Queues [scheduled agent runs](/Agents/schedules) that are due. | `SCHEDULE_DISPATCHER_INTERVAL` (`30`, minimum 15 s). |
+| `cleanup-schedule-runs` | day | Deletes scheduled-run records and their output older than the retention window, keeping the 50 most recent runs of each schedule. | `SCHEDULE_RUN_OUTPUT_RETENTION_DAYS` (`90`). |
+| `reconciliation` | 30 s | Marks stuck work as failed and logs an alert: answers that stopped streaming, tool calls left mid-way, stalled ingests, stuck idempotency claims and scheduled runs. | None. |
+| `cleanup-pending-tool-state` | 60 s | Deletes paused conversations waiting for a tool approval or a client-side tool result once they expire (30 minutes), and clears their approval prompts. | None. |
+| `cleanup-idempotency-dedup` | hour | Deletes idempotency keys for uploads, tasks and webhooks older than 24 hours. | None. |
+| `cleanup-message-events` | day | Deletes the per-chunk stream journal that lets a client reconnect to an answer, and the markers left by regenerated answers. Conversations themselves are kept. | `MESSAGE_EVENTS_RETENTION_DAYS` (`14`). |
+| `cleanup-guardrail-events` | day | Deletes [guardrail](/Agents/guardrails) events. | `GUARDRAILS_EVENTS_RETENTION_DAYS` (`30`). |
+| `cleanup-traces` | day | Deletes request traces (the trace viewer and per-agent logs). | `TRACES_RETENTION_DAYS` (`30`). |
+| `cleanup-orphan-memories` | day | Deletes memory entries whose tool was deleted. | None. |
+| `reap-sandbox-sessions` | 60 s | Closes [sandbox](/Deploying/Sandbox) sessions in the worker that have been idle longer than their keep-alive time. | `SANDBOX_MAX_TTL` (`1200`) caps the keep-alive. |
+| `reap-stale-workflow-runs` | 5 min | Marks workflow runs still `running` after a disconnect or crash as failed. | `WORKFLOW_RUN_STALE_SECONDS` (`3600`). |
+| `version-check` | 7 hours | Checks gptcloud.arc53.com for security advisories for your version and logs any it finds. | `VERSION_CHECK` (`true`); set `false` to turn it off. |
+
+All the settings above are listed in the [Settings Reference](/Deploying/Settings-Reference).
+
+## Kept until deleted
+
+No task trims the following. They grow for as long as the instance runs, and they are removed only when a user, an admin or you delete them:
+
+- **Conversations and their messages.** Users delete them one by one or all at once in the web app.
+- **Token usage** (`token_usage`). Quotas and analytics read it.
+- **Request logs** (`stack_logs`, `user_logs`). The Logs pages and analytics read `stack_logs`.
+- **The audit logs**: `auth_events` (sign-ins, access and configuration changes) and `device_audit_log` (remote-device commands).
+- **Tool call records** (`tool_call_attempts`) and **workflow runs** (`workflow_runs`).
+- **Sources, attachments and artifacts**, including their files in storage and their vectors.
+- **Agents, prompts, tools, memories, notes and todos.**
+
+<Callout type="info">
+  If you need a retention limit on any of these, for example for GDPR, delete old rows yourself on a schedule, such as `DELETE FROM stack_logs WHERE timestamp < now() - interval '180 days'`. Back up the database first, and keep `token_usage` as long as your quota periods need it.
+</Callout>
+
+## Related
+
+- [Maintenance scripts](/upgrading#maintenance-scripts) for one-off data fixes after an upgrade.
+- [Observability](/Deploying/Observability) for traces and logs.
+- [Agent schedules](/Agents/schedules) for the scheduled runs that beat dispatches.

@@ -43,6 +43,10 @@ class TokenCounter:
                 for item in content:
                     if isinstance(item, dict):
                         total_tokens += TokenCounter._count_content_part(item)
+            # Images a tool returned ride beside its text (``tool_images``).
+            images = message.get("images")
+            if isinstance(images, list):
+                total_tokens += TokenCounter._IMAGE_PART_TOKEN_ESTIMATE * len(images)
         return total_tokens
 
     @staticmethod

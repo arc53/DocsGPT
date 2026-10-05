@@ -97,7 +97,7 @@ export const useAttachments = ({
         if (controller.signal.aborted) return;
 
         if (outcome.state === 'completed') {
-          // No id means nothing to send, whatever the task status said.
+          // Without an attachment id there is nothing to send.
           if (outcome.attachmentId)
             patch(id, {
               status: 'completed',
@@ -129,8 +129,7 @@ export const useAttachments = ({
         const id = generateId();
         const extension = fileExtension(file.name);
 
-        // A rejected file still gets a chip: mobile pickers ignore
-        // `accept`, and a silent drop looks broken.
+        // Mobile pickers ignore accept, so rejected files still get a chip.
         if (!acceptedExtensions.includes(extension)) {
           setAttachments((prev) => [
             ...prev,

@@ -14,6 +14,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from flask import Flask
 
+from tests.connectors.conftest import _oauth_connectors_configured  # noqa: F401,E402  (autouse)
+
 
 @pytest.fixture
 def app():
@@ -30,6 +32,10 @@ def _patch_db(conn):
         "docsgpt.api.connector.routes.db_session", _yield
     ), patch(
         "docsgpt.api.connector.routes.db_readonly", _yield
+    ), patch(
+        "docsgpt.connectors.service.db_session", _yield
+    ), patch(
+        "docsgpt.connectors.service.db_readonly", _yield
     ):
         yield
 
@@ -484,14 +490,34 @@ class TestConnectorSync:
             r = ConnectorSync().post()
         assert r.status_code == 401
 
-    def test_returns_400_missing_fields(self, app):
+    def test_returns_400_missing_source_id(self, app):
         from docsgpt.api.connector.routes import ConnectorSync
 
+        # The source's own connection is used when none is named, so only
+        # the source id is required.
         with app.test_request_context(
-            "/api/connectors/sync", method="POST", json={"source_id": "x"}
+            "/api/connectors/sync", method="POST", json={"session_token": "y"}
         ):
             from flask import request
             request.decoded_token = {"sub": "u"}
+            r = ConnectorSync().post()
+        assert r.status_code == 400
+
+    def test_owner_without_a_connection_returns_400(self, app, pg_conn):
+        # The owner names a connection (or the source has its own); team
+        # editors don't send one (their sync uses the owner's connection).
+        from docsgpt.api.connector.routes import ConnectorSync
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-sync-notoken"
+        src = SourcesRepository(pg_conn).create(
+            "s", user_id=user, remote_data={"provider": "github"}
+        )
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/connectors/sync", method="POST", json={"source_id": str(src["id"])}
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
             r = ConnectorSync().post()
         assert r.status_code == 400
 

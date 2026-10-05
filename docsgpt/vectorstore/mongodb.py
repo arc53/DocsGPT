@@ -2,7 +2,7 @@ import logging
 from functools import cached_property
 
 from docsgpt.core.settings import settings
-from docsgpt.vectorstore.base import BaseVectorStore
+from docsgpt.vectorstore.base import BaseVectorStore, InvalidChunkMetadataError
 from docsgpt.vectorstore.document_class import Document
 
 
@@ -187,27 +187,31 @@ class MongoDBVectorStore(BaseVectorStore):
 
     def get_chunks(self):
         try:
-            chunks = []
-            cursor = self._collection.find({"source_id": self._source_id})
-            for doc in cursor:
-                doc_id = str(doc.get("_id"))
-                text = doc.get(self._text_key)
-                metadata = {
-                    k: v
-                    for k, v in doc.items()
-                    if k
-                    not in ["_id", self._text_key, self._embedding_key, "source_id"]
-                }
-
-                if text:
-                    chunks.append(
-                        {"doc_id": doc_id, "text": text, "metadata": metadata}
-                    )
-
-            return chunks
+            return self._scan_chunks()
         except Exception as e:
             logging.error(f"Error getting chunks: {e}", exc_info=True)
             return []
+
+    def _scan_chunks(self):
+        """Every chunk of this source; a store error raises."""
+        chunks = []
+        cursor = self._collection.find({"source_id": self._source_id})
+        for doc in cursor:
+            doc_id = str(doc.get("_id"))
+            text = doc.get(self._text_key)
+            metadata = {
+                k: v
+                for k, v in doc.items()
+                if k
+                not in ["_id", self._text_key, self._embedding_key, "source_id"]
+            }
+
+            if text:
+                chunks.append(
+                    {"doc_id": doc_id, "text": text, "metadata": metadata}
+                )
+
+        return chunks
 
     def add_chunk(self, text, metadata=None):
         metadata = metadata or {}
@@ -223,6 +227,68 @@ class MongoDBVectorStore(BaseVectorStore):
         }
         result = self._collection.insert_one(chunk_data)
         return str(result.inserted_id)
+
+    def update_chunk(self, chunk_id: str, text: str, metadata: dict) -> str:
+        """Rewrite a chunk's document in place, keeping its ``_id``.
+
+        Metadata lives as top-level fields, so the new metadata is ``$set``
+        and any field the record carries but the new metadata lacks is
+        ``$unset``; the record then holds exactly the new metadata. ``_id``,
+        the text, the embedding and ``source_id`` are reserved and cannot be
+        overwritten through ``metadata``. The embedding is computed before
+        anything is written.
+
+        Args:
+            chunk_id: Id of the chunk to replace.
+            text: The chunk's new text.
+            metadata: The chunk's complete new metadata.
+
+        Returns:
+            ``chunk_id``, unchanged.
+
+        Raises:
+            KeyError: If this source has no chunk with that id.
+            InvalidChunkMetadataError: If a metadata key is empty, contains
+                ``.`` or starts with ``$``. Mongo reads those as a path or an
+                operator, so ``$set`` would fail or write a nested field.
+            ValueError: If no embedding could be generated.
+        """
+        from bson.objectid import ObjectId
+
+        for key in metadata or {}:
+            if not isinstance(key, str) or not key or "." in key or key.startswith("$"):
+                raise InvalidChunkMetadataError(
+                    f"Metadata key {key!r} is not allowed: keys must be non-empty, "
+                    "contain no '.' and not start with '$'"
+                )
+
+        query = {"_id": ObjectId(chunk_id), "source_id": self._source_id}
+        existing = self._collection.find_one(query)
+        if existing is None:
+            raise KeyError(f"Chunk {chunk_id} not found for source {self._source_id}")
+
+        embeddings = self._embedding.embed_documents([text])
+        if not embeddings:
+            raise ValueError("Could not generate embedding for chunk")
+
+        reserved = {"_id", self._text_key, self._embedding_key, "source_id"}
+        fields = {k: v for k, v in (metadata or {}).items() if k not in reserved}
+        update = {
+            "$set": {
+                self._text_key: text,
+                self._embedding_key: embeddings[0],
+                "source_id": self._source_id,
+                **fields,
+            }
+        }
+        stale = {k: "" for k in existing if k not in reserved and k not in fields}
+        if stale:
+            update["$unset"] = stale
+
+        result = self._collection.update_one(query, update)
+        if result.matched_count == 0:
+            raise KeyError(f"Chunk {chunk_id} not found for source {self._source_id}")
+        return chunk_id
 
     def delete_chunk(self, chunk_id):
         try:

@@ -1,11 +1,12 @@
 ---
-title: DocsGPT Settings
+title: App Configuration
 description: Configure your DocsGPT application by understanding the basic settings.
+lastUpdated: 2026-09-30
 ---
 
 import { Callout } from 'nextra/components'
 
-# DocsGPT Settings
+# App Configuration
 
 DocsGPT is highly configurable, allowing you to tailor it to your specific needs and preferences. You can control various aspects of the application, from choosing the Large Language Model (LLM) provider to selecting embedding models and vector stores.
 
@@ -17,23 +18,37 @@ There are two primary ways to configure DocsGPT settings:
 
 ### 1. Configuration via `.env` file (Recommended)
 
-The easiest and recommended way to configure basic settings is by using a `.env` file. This file should be located in the **root directory** of your DocsGPT project (the same directory where `setup.sh` is located).
+The easiest and recommended way to configure basic settings is by using a `.env` file. Where that file lives depends on how you installed DocsGPT:
+
+| Install | `.env` location | How to change a setting |
+| --- | --- | --- |
+| Installer, `docsgpt up` (Docker or `--native`) | `~/.docsgpt/server/.env` (`/opt/docsgpt/.env` when installed as root on Linux) | `docsgpt env set KEY=VALUE`, then `docsgpt up` to apply (a running `--native` install restarts by itself). `docsgpt env` prints the file's path and `docsgpt env get KEY` one value. |
+| pip install (`docsgpt api` / `docsgpt worker`) | `~/.docsgpt/server/.env`, whatever directory you run the commands from | Edit the file, then restart `docsgpt api` and `docsgpt worker`. |
+| Source checkout (`setup.sh`, checkout Compose files, development) | `.env` in the repository root, next to `setup.sh` | Edit the file, then restart the services. Compose commands need `--env-file .env`; see [Docker Deployment](/Deploying/Docker-Deploying). |
+| Kubernetes | No file: the `docsgpt-secrets` Secret and the Deployment `env` | Edit `deployment/k8s/docsgpt-secrets.yaml` and re-apply; see [Kubernetes](/Deploying/Kubernetes-Deploying). |
+
+DocsGPT resolves the file in this order:
+
+1. `DOCSGPT_ENV_FILE`, when set, names the `.env` file directly.
+2. Otherwise it reads `<DOCSGPT_HOME>/.env`. The **data home** `DOCSGPT_HOME` is also where `inputs/`, `indexes/` and downloaded models live. When `DOCSGPT_HOME` is unset, the data home is the source checkout the code runs from, else `~/.docsgpt/server` (`/opt/docsgpt` for root on Linux).
+
+`DOCSGPT_HOME` and `DOCSGPT_ENV_FILE` must be set in the process environment (your shell, the service unit), not in `.env`, because they decide which `.env` is read. The Docker image sets `DOCSGPT_HOME=/app`; containers get their settings from Compose's `env_file`, not from a file inside the image. `docsgpt api`, `docsgpt worker` and `docsgpt migrate` print the data home and env file they use when they start. Process environment variables override `.env`.
 
 **Example `.env` file structure:**
 
 ```
 LLM_PROVIDER=openai
 API_KEY=YOUR_OPENAI_API_KEY
-LLM_NAME=gpt-4o
+LLM_NAME=gpt-5.5
 ```
 
-### 2. Configuration via `settings.py` file (Advanced)
+### 2. Configuration in code (Advanced)
 
-For more advanced configurations or if you prefer to manage settings directly in code, you can modify the `settings.py` file. This file is located in the `docsgpt/core` directory of your DocsGPT project.
+Every setting is defined in the `docsgpt/core/settings/` package, one module per domain (`auth.py`, `llm.py`, `embeddings.py`, ...). If you prefer to manage defaults directly in code, change them there; the `.env` file and the process environment still override whatever the code says.
 
-While modifying `settings.py` offers more flexibility, it's generally recommended to use the `.env` file for basic settings and reserve `settings.py` for more complex adjustments or when you need to configure settings programmatically.
+Using the `.env` file is recommended for day-to-day configuration. Reserve code changes for new settings or for defaults you want every deployment of your fork to share.
 
-**Location of `settings.py`:** `docsgpt/core/settings.py`
+The [Settings Reference](/Deploying/Settings-Reference) lists every setting with its type, default and description, generated from those definitions.
 
 ## Basic Settings Explained
 
@@ -44,16 +59,16 @@ Here are some of the most fundamental settings you'll likely want to configure:
   - **Common values:**
     - `docsgpt`: Use the DocsGPT Public API Endpoint (simple and free, as offered in `setup.sh` option 1).
     - `openai`: Use OpenAI's API (requires an API key).
-    - `google`: Use Google's Vertex AI or Gemini models.
+    - `google`: Use Google Gemini models with an AI Studio API key (Vertex AI is not supported).
     - `anthropic`: Use Anthropic's Claude models.
     - `groq`: Use Groq's models.
-    - `huggingface`: Use HuggingFace Inference API.
+    - `openrouter`, `novita`: Use OpenRouter or Novita.
     - `openai` (when using local inference engines like Ollama, Llama.cpp, TGI, etc.): This signals DocsGPT to use an OpenAI-compatible API format, even if the actual LLM is running locally.
 
-- **`LLM_NAME`**: Specifies the specific model to use from the chosen LLM provider. The available models depend on the `LLM_PROVIDER` you've selected.
+- **`LLM_NAME`**: The default model. For a cloud provider it must be a model id from the [model catalog](https://github.com/arc53/DocsGPT/tree/main/docsgpt/core/models) or from a [custom model YAML](#adding-custom-models-models_config_dir); any other name is ignored, with a warning in the log, and the provider's first model is used. With `OPENAI_BASE_URL` it is required and names the model(s) your server serves, comma-separated. See [Default Model Selection](/Models/local-inference#default-model-selection).
 
   - **Examples:**
-    - For `LLM_PROVIDER=openai`: `gpt-4o`
+    - For `LLM_PROVIDER=openai`: `gpt-5.5`
     - For `LLM_PROVIDER=google`: `gemini-3.5-flash`
     - For local models (e.g., Ollama): `llama3.2:1b` (or any model name available in your setup).
 
@@ -63,7 +78,7 @@ Here are some of the most fundamental settings you'll likely want to configure:
   - **Other options:** Any FastEmbed built-in model, or any Hugging Face repository shipping an ONNX export. See [Embeddings](/Models/embeddings).
   - **Changing it on an existing index requires re-embedding** — same-width models swap without any error and silently degrade retrieval. Run `python -m docsgpt.scripts.reembed`.
 
-- **`API_KEY`**: Required for most cloud-based LLM providers. This is your authentication key to access the LLM provider's API. You'll need to obtain this key from your chosen provider's platform.
+- **`API_KEY`**: Required for most cloud-based LLM providers. This is your authentication key for the provider named in `LLM_PROVIDER`. Each provider also has its own variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, ...); see [Provider API keys](/Models/cloud-providers#provider-api-keys).
 
 - **`OPENAI_BASE_URL`**: Specifically used when `LLM_PROVIDER` is set to `openai` but you are connecting to a local inference engine (like Ollama, Llama.cpp, etc.) that exposes an OpenAI-compatible API. This setting tells DocsGPT where to find your local LLM server.
 
@@ -71,7 +86,11 @@ Here are some of the most fundamental settings you'll likely want to configure:
 
 - **`TTS_PROVIDER`**: Selects the text-to-speech provider behind the Speak button on answers: `google_tts` (default) or `elevenlabs`. Both are hosted services. Set it to `none` to switch text-to-speech off and hide the button.
 
-- **`SERVE_UI`**: Whether the API process serves the web UI shipped in the Python package (`pip install docsgpt`). Defaults to `true`; set `false` when a separate frontend, such as the Docker frontend image, serves the UI. Has no effect in the backend Docker image, which carries no UI build.
+- **`SERVE_UI`**: Whether the API process serves the web UI shipped in the Python package (`pip install docsgpt`). Defaults to `true`; the backend Docker image ships the same build, so it serves the UI on port 7091 too. Set `false` when a separate frontend, such as the `arc53/docsgpt-fe` image in `docker-compose-hub.yaml` or the frontend that `docker-compose.yaml` builds, serves the UI.
+
+- **`API_URL`**: The address of the API, default `http://localhost:7091`. The worker calls the API at it to hand over finished indexes, and the API builds the agent image, agent webhook, device pairing and MCP OAuth callback links it gives to browsers and other clients from it. With Docker Compose the two need different values: the Compose files set the worker's to `http://backend:7091`, which takes precedence over `.env`, so `.env` sets the backend's. When other machines open DocsGPT, set it to the address they use (`http://<server-address>:7091`, or the public `https://` address behind a proxy). `docsgpt up` and the setup scripts write it when DocsGPT is exposed; see [Docker](/Deploying/Docker-Deploying#opening-it-from-other-machines) and [Kubernetes](/Deploying/Kubernetes-Deploying#publish-docsgpt).
+
+- **`WORKER_API_URL`**: The address the worker uses for its own calls into the API; unset, it falls back to `API_URL`. Set it when the API and the worker read one `.env` (a pip install, `docsgpt up --native`) and `API_URL` is a public address, so the worker's calls stay on the machine: `WORKER_API_URL=http://127.0.0.1:7091`. `docsgpt up --native` sets it. Docker Compose and the Kubernetes manifests give the worker its own `API_URL` instead, so leave it unset there.
 
 ## Configuration Examples
 
@@ -79,12 +98,12 @@ Let's look at some concrete examples of how to configure these settings in your 
 
 ### Example for Cloud API Provider (OpenAI)
 
-To use OpenAI's `gpt-4o` model, you would configure your `.env` file like this:
+To use OpenAI's `gpt-5.5` model, you would configure your `.env` file like this:
 
 ```
 LLM_PROVIDER=openai
 API_KEY=YOUR_OPENAI_API_KEY  # Replace with your actual OpenAI API key
-LLM_NAME=gpt-4o
+LLM_NAME=gpt-5.5
 ```
 
 Make sure to replace `YOUR_OPENAI_API_KEY` with your actual OpenAI API key.
@@ -107,7 +126,7 @@ In this case, even though you are using Ollama locally, `LLM_PROVIDER` is set to
 
 DocsGPT ships with a built-in catalog of models for the providers it
 supports out of the box (OpenAI, Anthropic, Google, Groq, OpenRouter,
-Novita, Hugging Face, DocsGPT). To add **your own
+Novita, DeepSeek, Alibaba Qwen, Z.ai, DocsGPT). To add **your own
 models** without forking the repo — for example, a Mistral or Together
 account, a self-hosted vLLM endpoint, or any other OpenAI-compatible
 API — point `MODELS_CONFIG_DIR` at a directory of YAML files.
@@ -206,7 +225,7 @@ worker index transfers use their own trusted service boundary.
 ## Document Parsing
 
 Uploaded sources and chat attachments are converted to Markdown before
-chunking or prompting. See the [Document Parsing and OCR](/Guides/ocr) guide
+chunking or prompting. See the [Document Parsing and OCR](/Sources/ocr) guide
 for the engines and flows.
 
 | Setting | Default | Description |
@@ -214,18 +233,23 @@ for the engines and flows.
 | `DOC_PARSER_ENGINE` | `anydoc` | Parser engine: `anydoc` (fast Rust converter, no ML models) or `docling` (layout/table models, structured output). Files anydoc cannot read fall back to Docling when installed. Docling is an optional extra: `pip install -r docsgpt/requirements-docling.txt`, or Docker builds with `--build-arg INSTALL_DOCLING=true`. |
 | `OCR_ENABLED` | `false` | OCR for source ingestion. Alias: `DOCLING_OCR_ENABLED`. |
 | `OCR_ATTACHMENTS_ENABLED` | `false` | OCR for chat attachments. Alias: `DOCLING_OCR_ATTACHMENTS_ENABLED`. |
-| `OCR_BACKEND` | `auto` | Who performs OCR: `auto` (Docling when installed, else native), `native` (pypdfium2 + Pillow rendering into tesseract or DeepSeek-OCR; no docling needed), or `docling` (layout-model hybrid OCR). See the [OCR guide](/Guides/ocr#ocr-backends). |
+| `OCR_BACKEND` | `auto` | Who performs OCR: `auto` (Docling when installed, else native), `native` (pypdfium2 + Pillow rendering into tesseract or DeepSeek-OCR; no docling needed), or `docling` (layout-model hybrid OCR). See the [OCR guide](/Sources/ocr#ocr-backends). |
 | `ATTACHMENT_PDF_TEXT_FAST_PATH` | `true` | Under the `docling` engine, read PDF attachments through their text layer (pypdfium2) and only hand scans to Docling. Not needed under `anydoc`. |
 | `DOCLING_TABULAR_MAX_BYTES` | `2000000` | Docling engine: CSV/XLSX larger than this (by content) use the lightweight tabular parsers. |
 | `DOCLING_MARKUP_MAX_BYTES` | `8000000` | Docling engine: HTML/VTT larger than this are head-truncated before parsing. |
 | `MARKUP_MAX_BYTES` | `8000000` | anydoc engine: HTML/XHTML larger than this are head-truncated before the `markdownify` parser runs (its tree costs ~50x the input). `0` disables the gate. |
 | `PDF_TRUST_CHECK` | `true` | Trust-check anydoc's PDF output for the two silent-loss classes (Type0 fonts without ToUnicode, CJK-declaring PDFs with CJK-less text). Flagged files re-parse on Docling when installed, else carry `parse_warnings` metadata. |
 | `ANYDOC_TABLEIZE` | `false` | Rewrite dot-leader / whitespace-aligned table runs in anydoc's PDF markdown into GFM tables. |
-| `OCR_ENGINE` | `tesseract` | OCR engine when OCR is on: `tesseract` (recommended, both backends; optional system package — build with `INSTALL_TESSERACT=true` or `apt`/`brew` install it), `deepseek` (VLM endpoint, both backends), or the Docling-only `auto`, `ocrmac`, `rapidocr`. Unavailable engines degrade with a warning. See the [OCR guide](/Guides/ocr). |
+| `OCR_ENGINE` | `tesseract` | OCR engine when OCR is on: `tesseract` (recommended, both backends; optional system package — build with `INSTALL_TESSERACT=true` or `apt`/`brew` install it), `deepseek` (DeepSeek-OCR on a local or hosted endpoint; always the native backend), or the Docling-only `auto`, `ocrmac`, `rapidocr`. Unavailable engines degrade with a warning. See the [OCR guide](/Sources/ocr). |
 | `OCR_LANGS` | `eng` | Tesseract language packs, `+`-separated (e.g. `eng+chi_sim+deu`). |
-| `OCR_DEEPSEEK_URL` | `http://localhost:11434/v1/chat/completions` | OpenAI-compatible endpoint for `OCR_ENGINE=deepseek` (Ollama or vLLM). |
-| `OCR_DEEPSEEK_MODEL` | `deepseek-ocr:3b` | Model name at that endpoint. |
-| `OCR_DEEPSEEK_TIMEOUT` | `300` | Seconds allowed per page request to the DeepSeek endpoint, on both backends (the native backend sends pages one at a time). |
+| `OCR_DEEPSEEK_PROVIDER` | `ollama` | Where DeepSeek-OCR runs: `ollama`, `vllm`, `novita`, `deepinfra` or `custom`. Each preset supplies the URL, model and concurrency. See [DeepSeek-OCR](/Sources/ocr#deepseek-ocr). |
+| `OCR_DEEPSEEK_URL` | preset | Chat-completions URL; overrides the preset's. |
+| `OCR_DEEPSEEK_MODEL` | preset | Model name at that endpoint; overrides the preset's. |
+| `OCR_DEEPSEEK_API_KEY` | unset | Bearer token. Required by `novita` (falls back to `NOVITA_API_KEY`) and `deepinfra`. |
+| `OCR_DEEPSEEK_CONCURRENCY` | preset | Page requests in flight per file: 4 for `vllm`, `novita`, `deepinfra`; 1 for `ollama`, `custom`. |
+| `OCR_DEEPSEEK_MAX_RETRIES` | `3` | Retries per page after a 429, 5xx or refused connection, with backoff honouring `Retry-After`. |
+| `OCR_DEEPSEEK_TIMEOUT` | `300` | Seconds allowed per page request. |
+| `OCR_DEEPSEEK_PROMPT` | `Free OCR.` | Instruction sent with each page. |
 | `OCR_RENDER_DPI` | `200` | Native backend: resolution at which pages without a text layer are rendered before OCR (clamped to 72-600). |
 | `OCR_MIN_CHARS_PER_PAGE` | `20` | Chars-per-page floor for the OCR dropout guard: a multi-page parse whose OCR returns nothing fails loudly instead of indexing an empty document (docling retries once on full-page OCR first); output below the floor but non-empty is indexed with a warning. `0` disables. Alias: `DOCLING_OCR_MIN_CHARS_PER_PAGE`. |
 
@@ -283,36 +307,71 @@ rejected. These limits apply before the image is written to local or S3 storage.
 | `AGENT_IMAGE_MAX_BYTES` | `5000000` | Maximum encoded avatar file size in bytes. |
 | `AGENT_IMAGE_MAX_PIXELS` | `16777216` | Maximum decoded width × height, limiting decompression-bomb images. |
 
+## Secrets to set before going live
+
+Three secrets protect a DocsGPT install. `setup.sh`, `setup.ps1` and `docsgpt up` generate them on a fresh install and keep them when run again; set them yourself when you write `.env` by hand, and keep them out of version control. Generate each with `openssl rand -hex 32`.
+
+The database password is separate: `docsgpt up` generates `POSTGRES_PASSWORD`, and the standalone Compose file reads it from `.env`, but the checkout Compose files (and so the setup scripts) use the fixed password `docsgpt`, which is why they publish Postgres on `127.0.0.1` only.
+
+| Setting | What it protects | If it is missing |
+| --- | --- | --- |
+| `INTERNAL_KEY` | The worker hands finished indexes and files to the API with it. **Required**, with the same value on the API and the worker. | The API rejects the worker's uploads, so every ingest fails after parsing. |
+| `JWT_SECRET_KEY` | Signs login tokens in every `AUTH_TYPE`, and agent-avatar URLs in every mode. Same value on every API and worker process. | With `DEPLOYMENT_TYPE=production` (or `cloud`), startup fails. Otherwise the API generates `.jwt_secret_key` in the data home, which suits one local process only: separate containers each generate their own key, and a recreated container gets a new one, which signs everyone out and, under `session_jwt`, loses sight of their data. |
+| `ENCRYPTION_SECRET_KEY` | Seals stored credentials: connector tokens, MCP credentials, tool secrets and custom-model API keys. | It falls back to a public default, and DocsGPT logs a warning at startup. With any `AUTH_TYPE` set, it refuses to create connections on the Connectors page (OAuth sign-ins and connector keys); tool secrets, MCP server credentials and custom-model keys are still stored, sealed with the public key. |
+
+```env
+INTERNAL_KEY=<openssl rand -hex 32>
+JWT_SECRET_KEY=<openssl rand -hex 32>
+ENCRYPTION_SECRET_KEY=<openssl rand -hex 32>
+# Optional: fail at startup instead of generating a local JWT key
+DEPLOYMENT_TYPE=production
+```
+
+<Callout type="warning" emoji="⚠️">
+Set `ENCRYPTION_SECRET_KEY` before anyone connects a service, and never just replace it: stored credentials are sealed with the key they were saved under. The installers never overwrite an existing value. `docsgpt up` on Docker adds one only to a fresh install. The setup scripts add one when there is no `.env` yet, and `docsgpt up --native` adds one on its first run; both also set `ENCRYPTION_SECRET_KEY_PREVIOUS` to the public default, since a kept Docker volume or the database it points at may already hold credentials sealed with it. Reseal them with `docsgpt connectors reencrypt`, then remove `ENCRYPTION_SECRET_KEY_PREVIOUS`.
+</Callout>
+
+To change `ENCRYPTION_SECRET_KEY` on an install that already stores credentials (including one that ran on the public default, `default-docsgpt-encryption-key`):
+
+1. Move the current value to `ENCRYPTION_SECRET_KEY_PREVIOUS` and put the new one in `ENCRYPTION_SECRET_KEY`, on the API and the worker.
+2. Restart them, then run `docsgpt connectors reencrypt` with the same settings. It rewrites every connection, every secret saved on a tool (API Tool secrets, MCP credentials kept on the tool) and every custom-model API key with the new key. Connections neither key opens are marked **Reconnect needed**; tool and custom-model secrets neither key opens are left unchanged and counted. Running it again changes nothing. In Docker, run it in the backend container of your Compose file:
+   - `docsgpt up`: `docker compose -f ~/.docsgpt/server/docker-compose.yaml exec backend python -m docsgpt connectors reencrypt` (or the stack directory you chose)
+   - standalone file: `docker compose -f docker-compose-standalone.yaml exec backend python -m docsgpt connectors reencrypt`
+   - checkout: `docker compose --env-file .env -f deployment/docker-compose-hub.yaml exec backend python -m docsgpt connectors reencrypt` (or `deployment/docker-compose.yaml`)
+   - Kubernetes: `kubectl exec deploy/docsgpt-worker -- python -m docsgpt connectors reencrypt`
+3. Remove `ENCRYPTION_SECRET_KEY_PREVIOUS` once the command reports nothing unreadable (it says so on its last line).
+
+While the previous key is set, DocsGPT reads every stored credential with either key, so the install keeps working between steps 1 and 2. See [Connectors: Encryption key](/Sources/Connectors#encryption-key).
+
 ## Authentication Settings
 
-DocsGPT includes a JWT (JSON Web Token) based authentication feature for managing sessions or securing local deployments while allowing access.
+`AUTH_TYPE` decides who can use a DocsGPT instance and whether users are told apart. Only `oidc` gives each person their own account behind a real sign-in; choose it for any install that more than one person uses or that is reachable from the internet. See the [security checklist](/Deploying/Security) before exposing an install.
 
 ### `AUTH_TYPE` Overview
 
-The `AUTH_TYPE` setting in your `.env` file or `settings.py` determines the authentication method used by DocsGPT. This allows you to control how users authenticate with your DocsGPT instance.
+| Value | Who gets in | Users told apart | Admin, quotas and personal access tokens |
+| --- | --- | --- | --- |
+| unset (default) | Anyone who can reach the instance. | No: every visitor is the one user `local` and shares its conversations, sources, agents and connected services. | Personal access tokens, for the one user. Admin and quotas only with `LOCAL_MODE_ADMIN=true`, for a single-user local install. |
+| `simple_jwt` | Anyone holding the one shared access token. | No: the token always means the user `local`. It is a shared password, not user accounts. | None. |
+| `session_jwt` | Anyone who can reach the instance: the page asks `/api/generate_token` for a token, and the endpoint gives one to every caller. | Per browser: each token gets its own random user id, so browsers do not see each other's data. This separates sessions; it does not control access. | None. |
+| `oidc` | People your identity provider (Authentik, Keycloak, Okta, ...) signs in, optionally limited to groups. | Yes, one account per person. | All of them. See [SSO with OIDC](/Deploying/OIDC-SSO). |
 
-| Value         | Description                                                                                 |
-| ------------- | ------------------------------------------------------------------------------------------- |
-| `None`        | No authentication is used. Anyone can access the app.                                       |
-| `simple_jwt`  | A single, long-lived JWT token is generated at startup. All requests use this shared token. |
-| `session_jwt` | Unique JWT tokens are generated for each session/user.                                      |
-| `oidc`        | Users sign in through an external OpenID Connect provider (Authentik, Keycloak, Okta, ...). See [SSO with OIDC](/Deploying/OIDC-SSO). |
+`simple_jwt` and `session_jwt` tokens never expire and cannot be revoked one by one; changing `JWT_SECRET_KEY` invalidates all of them (and, under `session_jwt`, orphans every browser's data). [Teams](/Deploying/Access-Control#teams) work in every mode, but only mean something when users are told apart.
 
 #### How to Configure
 
-Add the following to your `.env` file (or set in `settings.py`):
+Add the following to your `.env` file:
 
 ```env
-# Shared signing key (required in production for every authentication mode)
+# Signing key: set it whenever more than one process or container runs
 JWT_SECRET_KEY=<long-random-value>
 
-# No authentication (default)
-AUTH_TYPE=None
+# No authentication (default): leave AUTH_TYPE unset
 
-# OR: Simple JWT (shared token)
+# OR: one shared access token for everyone
 AUTH_TYPE=simple_jwt
 
-# OR: Session JWT (per-user/session tokens)
+# OR: a separate anonymous identity per browser (no access control)
 AUTH_TYPE=session_jwt
 
 # OR: SSO via an OpenID Connect provider (Authentik, Keycloak, Okta, ...)
@@ -323,23 +382,23 @@ OIDC_FRONTEND_URL=https://docsgpt.example.com
 ```
 
 - `JWT_SECRET_KEY` signs authentication tokens where applicable and opaque agent-avatar capabilities in every authentication mode, including no-auth mode.
-- Cloud and production deployments must set a strong `JWT_SECRET_KEY`, shared unchanged by every API and worker replica. Startup fails rather than creating replica-local keys when it is missing.
-- Local development may omit it. DocsGPT atomically generates an owner-readable `.jwt_secret_key` in the project root and reuses it on later starts.
+- Deployments with more than one API or worker process, container or replica must set a strong `JWT_SECRET_KEY`, the same on each. With `DEPLOYMENT_TYPE=production` (or `cloud`), startup fails rather than creating a key of its own when it is missing.
+- A single local process may omit it. DocsGPT then atomically generates an owner-readable `.jwt_secret_key` in the data home (`DOCSGPT_HOME`, the checkout, or `~/.docsgpt/server`) and reuses it on later starts. A key an older version wrote to the working directory is copied there (an empty one is ignored), so tokens it signed stay valid. The API and the worker each resolve the key when they start; start the process that holds the old file first, or one started elsewhere generates a new key before the old one is copied.
 
 #### How Each Method Works
 
-- **None**: No authentication. All API and UI access is open.
+- **None**: No authentication. All API and UI access is open, and everyone is the same user.
 - **simple_jwt**:
-  - A single JWT token is generated at startup and printed to the console.
+  - The token is `{"sub": "local"}` signed with `JWT_SECRET_KEY`, so it stays the same until you change the key. The API prints it at startup (`Generated Simple JWT Token: ...` in the backend log), and `docsgpt token` prints it for a `docsgpt up` install.
   - Use this token in the `Authorization` header for all API requests:
     ```http
     Authorization: Bearer <SIMPLE_JWT_TOKEN>
     ```
   - The frontend will prompt for this token if not already set.
 - **session_jwt**:
-  - Clients can request a new token from `/api/generate_token`.
+  - The frontend requests a token from `/api/generate_token` on its first visit. The endpoint needs no credentials, so anyone who can reach it gets a token.
   - Use the received token in the `Authorization` header for subsequent requests.
-  - Each user/session gets a unique token.
+  - Each token carries a new random user id; clearing the browser's storage starts a new, empty identity.
 - **oidc**:
   - The frontend redirects users to your identity provider to sign in (OAuth2 Authorization Code + PKCE).
   - After a successful sign-in, DocsGPT issues its own session JWT; API requests carry it in the `Authorization` header like the other modes.
@@ -351,6 +410,7 @@ OIDC_FRONTEND_URL=https://docsgpt.example.com
 - Always keep your `JWT_SECRET_KEY` secure and private.
 - If you set it manually, use a strong, random string.
 - Keep the value stable. Rotating it invalidates active JWTs and previously generated agent-avatar URLs.
+- `simple_jwt` and `session_jwt` travel as bearer tokens; outside a trusted network, serve DocsGPT over HTTPS.
 
 #### Checking Current Auth Type
 
@@ -358,7 +418,7 @@ OIDC_FRONTEND_URL=https://docsgpt.example.com
 
 #### Frontend Token Input for `simple_jwt`
 
-If you have configured `AUTH_TYPE=simple_jwt`, the DocsGPT frontend will prompt you to enter the JWT token if it's not already set or is invalid. Paste the `SIMPLE_JWT_TOKEN` (printed to your console when the backend starts) into this field to access the application.
+If you have configured `AUTH_TYPE=simple_jwt`, the DocsGPT frontend will prompt you to enter the JWT token if it's not already set or is invalid. Paste the `SIMPLE_JWT_TOKEN` (printed to the backend log when it starts, or by `docsgpt token`) into this field to access the application.
 
 <img
   src="/jwt-input.png"
@@ -423,6 +483,7 @@ DocsGPT stores user data — conversations, agents, prompts, sources, attachment
 | `POSTGRES_URI` | SQLAlchemy-compatible Postgres URI. Any standard `postgresql://` form works — DocsGPT normalizes it internally to the `psycopg` v3 dialect. | — |
 | `AUTO_CREATE_DB` | On startup, connect to the server's `postgres` maintenance DB and issue `CREATE DATABASE` if the target is missing. Requires `CREATEDB` or superuser. No-op when the database already exists. Disable in production. | `true` |
 | `AUTO_MIGRATE` | On startup, run `alembic upgrade head` against the target database. Idempotent and serialized across workers via `alembic_version`. Disable in production in favor of an explicit migration step. | `true` |
+| `AUTO_VECTOR_SCHEMA` | On startup, with `VECTOR_STORE=pgvector`, create the vector `documents` table (and the GraphRAG tables) and check its embedding width. No Alembic migration covers the vector database. Disable it too when the runtime role must not run DDL. | `true` |
 
 Example:
 
@@ -435,15 +496,18 @@ With the defaults, the app applies the schema automatically on first
 boot. To run it explicitly instead (e.g., in CI/CD or a k8s `Job`):
 
 ```bash
-python scripts/db/init_postgres.py
+python -m docsgpt migrate --no-create
 ```
+
+`--no-create` fails instead of creating a missing database. Images up to 0.21.0 have no
+`python -m docsgpt`; run `python -m docsgpt.cli migrate --no-create` there.
 
 The default Docker Compose file bundles a `postgres` service, and the
 app auto-bootstraps the database on boot, so containerized deployments
 need no manual migration step. See
 [PostgreSQL for User Data](/Deploying/Postgres-Migration#production-hardening)
-for the recommended production flow (both flags `false`, migrations
-gated by CI/CD).
+for the recommended production flow (`AUTO_CREATE_DB`, `AUTO_MIGRATE`
+and `AUTO_VECTOR_SCHEMA` set to `false`, migrations gated by CI/CD).
 
 <Callout type="info" emoji="ℹ️">
   `MONGO_URI` is **opt-in**. It is only consulted when you select the
@@ -461,11 +525,11 @@ These control how sources are retrieved and whether the advanced RAG features ar
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `RETRIEVERS_ENABLED` | `["classic", "default"]` | Allow-list of retrievers usable instance-wide. Valid keys: `classic`, `default`, `hybrid`, `graphrag`. A per-source `retriever` must be within this list. |
 | `PER_SOURCE_RETRIEVAL_ENABLED` | `true` | Master switch for per-source retrieval config. When `false`, all sources fall back to the classic retriever regardless of their stored config. |
 | `GRAPHRAG_ENABLED` | `false` | Enable [GraphRAG](/Sources/GraphRAG). Requires `VECTOR_STORE=pgvector`. |
-| `GRAPHRAG_EXTRACTION_MODEL` | unset | Model used for ingest-time graph extraction. Unset reuses the instance default model. |
-| `GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION` | `2000` | Hard cap on chunks extracted per source (cost control). |
+| `GRAPHRAG_EXTRACTION_MODEL` | unset | Model used for ingest-time graph extraction. Unset falls back to `LLM_NAME` (on its registry provider, else `LLM_PROVIDER`). |
+| `GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION` | `2000` | Hard cap on chunks extracted per source (cost control). `0` extracts nothing. |
+| `GRAPHRAG_EXTRACTION_WORKERS` | `8` | Concurrent extraction calls during ingest (1–32). Model calls run in parallel while graph writes stay serial; `1` is fully serial. |
 
 ## Embeddings Settings
 
@@ -510,9 +574,32 @@ See [Access Control, Roles & Teams](/Deploying/Access-Control) for the full mode
 | `V1_SESSION_TTL_SECONDS` | `86400` | Redis correlation lifetime, in seconds, for OpenAI-compatible client sessions. Raw external session IDs are hashed and never stored. |
 | `TITLE_MODEL_ID` | unset | Optional model ID used for asynchronous first-party conversation titles. When unset, the answer model is used. Hidden API conversations never invoke title generation. |
 
+## LLM Response Cache
+
+DocsGPT keeps LLM answers in Redis (`CACHE_REDIS_URL`) and replays a cached answer when an identical request comes in: same model, same messages, same generation parameters. This holds at any temperature, so an identical request gets the identical answer while the entry lives.
+
+- **What is cached**: the text of calls made without tools. Ordinary chat passes the [default chat tools](/Tools/basics#default-chat-tools), so it mostly bypasses the cache; tool-less agents, models without tool support, and helper calls such as query rephrasing, compression and guardrail checks are cached.
+- **Never cached**: calls that pass tools, calls chained to provider-side state (`previous_response_id`), and streams that produced no text.
+- **How long**: `LLM_CACHE_TTL` seconds (default `1800`, 30 minutes), then Redis drops the entry.
+- **Privacy**: cached entries hold answer text in Redis for that long, so protect Redis like the database.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `LLM_CACHE_ENABLED` | `true` | Set `false` to send every call to the provider and store nothing. |
+| `LLM_CACHE_TTL` | `1800` | Seconds a cached answer is kept. |
+
+To flush the cache, delete its keys from the Redis database in `CACHE_REDIS_URL` (database `2` in the Compose files). Other state shares that database, so delete only the cache's `gen:` and `stream:` keys:
+
+```bash
+redis-cli -n 2 --scan --pattern 'gen:*' | xargs -r redis-cli -n 2 del
+redis-cli -n 2 --scan --pattern 'stream:*' | xargs -r redis-cli -n 2 del
+```
+
+In Docker, run the same commands through `docker compose exec redis sh -c '...'`.
+
 ## Realtime Events Settings
 
-The realtime notifications channel has its own settings — see [Realtime Events & Notifications](/Agents/notifications) (`ENABLE_SSE_PUSH`, `EVENTS_STREAM_MAXLEN`, `SSE_MAX_CONCURRENT_PER_USER`, and related).
+The realtime notifications channel has its own settings — see [Realtime Events & Notifications](/API/realtime-events) (`ENABLE_SSE_PUSH`, `EVENTS_STREAM_MAXLEN`, `SSE_MAX_CONCURRENT_PER_USER`, and related).
 
 ## Vector indexes on pgvector
 
@@ -547,11 +634,10 @@ recovers.
 
 ## Exploring More Settings
 
-These are just the basic settings to get you started. The `settings.py` file contains many more advanced options that you can explore to further customize DocsGPT, such as:
+These are just the basic settings to get you started. DocsGPT has many more advanced options, such as:
 
-- Vector store configuration (`VECTOR_STORE`, Qdrant, Milvus, LanceDB settings) If you're looking for an easy way to set up a vector store with pgvector, try [Neon](https://get.neon.com/docsgpt).
-- Retriever settings (`RETRIEVERS_ENABLED`)
-- Cache settings (`CACHE_REDIS_URL`)
-- And many more!
+- Vector store configuration (`VECTOR_STORE`, Qdrant, Milvus settings) If you're looking for an easy way to set up a vector store with pgvector, try [Neon](https://get.neon.com/docsgpt).
+- Redis connection settings (`CACHE_REDIS_URL`); for the LLM answer cache see [LLM Response Cache](#llm-response-cache)
+- Sandbox, scheduler, guardrails and event-stream tuning
 
-For a complete list of available settings and their descriptions, refer to the `settings.py` file in `docsgpt/core`. Remember to restart your Docker containers after making changes to your `.env` file or `settings.py` for the changes to take effect.
+The [Settings Reference](/Deploying/Settings-Reference) lists every setting with its type, default and description. Remember to restart your Docker containers after making changes to your `.env` file for the changes to take effect.

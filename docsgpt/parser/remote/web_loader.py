@@ -4,7 +4,12 @@ from bs4 import BeautifulSoup
 from docsgpt.parser.html_text import html_to_text
 
 from docsgpt.core.url_validation import SSRFError, validate_url
-from docsgpt.parser.remote.base import BaseRemote
+from docsgpt.parser.remote.base import (
+    BaseRemote,
+    dedupe_virtual_paths,
+    spans_multiple_hosts,
+    url_to_virtual_path,
+)
 from docsgpt.parser.schema.base import Document
 from docsgpt.security.safe_url import pinned_request
 
@@ -25,15 +30,17 @@ class WebLoader(BaseRemote):
         urls = inputs
         if isinstance(urls, str):
             urls = [urls]
-        documents = []
+        valid_urls = []
         for url in urls:
             try:
-                url = validate_url(url)
+                valid_urls.append(validate_url(url))
             except SSRFError as e:
                 logging.warning(
                     f"Skipping URL due to SSRF validation failure: {url} - {e}"
                 )
-                continue
+        include_host = spans_multiple_hosts(valid_urls)
+        documents = []
+        for url in valid_urls:
             try:
                 response = pinned_request("GET", url, headers=headers, timeout=30)
                 response.raise_for_status()
@@ -46,6 +53,9 @@ class WebLoader(BaseRemote):
                 html_tag = soup.find("html")
                 if html_tag and html_tag.get("lang"):
                     metadata["language"] = html_tag.get("lang")
+                # The worker keys the file tree by file_path; without it the
+                # tree fell back to the title, which the chunks view can't match.
+                metadata["file_path"] = url_to_virtual_path(url, include_host)
                 documents.append(
                     Document(
                         html_to_text(soup),
@@ -55,4 +65,4 @@ class WebLoader(BaseRemote):
             except Exception as e:
                 logging.error(f"Error processing URL {url}: {e}", exc_info=True)
                 continue
-        return documents
+        return dedupe_virtual_paths(documents)

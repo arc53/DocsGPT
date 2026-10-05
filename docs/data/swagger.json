@@ -1,0 +1,6301 @@
+{
+  "basePath": "/",
+  "consumes": [
+    "application/json"
+  ],
+  "definitions": {
+    "AddChunkModel": {
+      "properties": {
+        "id": {
+          "description": "Document ID",
+          "type": "string"
+        },
+        "metadata": {
+          "description": "Metadata associated with the chunk",
+          "type": "object"
+        },
+        "text": {
+          "description": "Text of the chunk",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "type": "object"
+    },
+    "AnswerModel": {
+      "properties": {
+        "active_docs": {
+          "description": "Active documents",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Agent ID",
+          "type": "string"
+        },
+        "api_key": {
+          "description": "API key",
+          "type": "string"
+        },
+        "chunks": {
+          "default": 6,
+          "description": "Number of chunks",
+          "type": "integer"
+        },
+        "conversation_id": {
+          "description": "Existing conversation ID (loads history)",
+          "type": "string"
+        },
+        "history": {
+          "description": "Conversation history (only for new conversations)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "isNoneDoc": {
+          "description": "Flag indicating if no document is used",
+          "type": "boolean"
+        },
+        "model_id": {
+          "description": "Model ID to use for this request",
+          "type": "string"
+        },
+        "passthrough": {
+          "description": "Dynamic parameters to inject into prompt template",
+          "type": "object"
+        },
+        "prompt_id": {
+          "default": "default",
+          "description": "Prompt ID",
+          "type": "string"
+        },
+        "question": {
+          "description": "Question to be asked",
+          "type": "string"
+        },
+        "retriever": {
+          "description": "Retriever type",
+          "type": "string"
+        },
+        "save_conversation": {
+          "description": "Deprecated, no effect: conversations always persist. Use `visibility` to control sidebar listing.",
+          "type": "boolean"
+        },
+        "visibility": {
+          "default": "hidden",
+          "description": "'listed' shows the conversation in the owner's sidebar; any other value (or omitting it) persists it hidden.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "type": "object"
+    },
+    "AttachmentModel": {
+      "properties": {
+        "api_key": {
+          "description": "API key (optional)",
+          "type": "string"
+        },
+        "file": {
+          "description": "File(s) to upload",
+          "type": "object"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "type": "object"
+    },
+    "BulkMoveAgents": {
+      "properties": {
+        "agent_ids": {
+          "description": "List of agent IDs",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "folder_id": {
+          "description": "Target folder ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_ids"
+      ],
+      "type": "object"
+    },
+    "ConnectorDisconnectModel": {
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "session_token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "type": "object"
+    },
+    "ConnectorFilesModel": {
+      "properties": {
+        "connection_id": {
+          "type": "string"
+        },
+        "folder_id": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "page_token": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "search_query": {
+          "type": "string"
+        },
+        "session_token": {
+          "description": "Legacy; use connection_id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "type": "object"
+    },
+    "ConnectorSyncModel": {
+      "properties": {
+        "connection_id": {
+          "description": "Connection to sync with; defaults to the source's own (ignored for team editors, whose sync uses the owner's connection)",
+          "type": "string"
+        },
+        "session_token": {
+          "description": "Legacy; use connection_id",
+          "type": "string"
+        },
+        "source_id": {
+          "description": "Source ID to sync",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id"
+      ],
+      "type": "object"
+    },
+    "ConnectorValidateSessionModel": {
+      "properties": {
+        "connection_id": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "session_token": {
+          "description": "Legacy; use connection_id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "type": "object"
+    },
+    "CreateAgentModel": {
+      "properties": {
+        "agent_type": {
+          "description": "Type of the agent (classic, react, workflow). Defaults to 'classic' for backwards compatibility.",
+          "type": "string"
+        },
+        "allow_system_prompt_override": {
+          "description": "Allow API callers to override the system prompt via the v1 endpoint",
+          "type": "boolean"
+        },
+        "chunks": {
+          "description": "Chunks count",
+          "type": "integer"
+        },
+        "default_model_id": {
+          "description": "Default model ID for this agent",
+          "type": "string"
+        },
+        "description": {
+          "description": "Description of the agent",
+          "type": "string"
+        },
+        "folder_id": {
+          "description": "Folder ID to organize the agent",
+          "type": "string"
+        },
+        "image": {
+          "description": "Image file upload",
+          "type": "object"
+        },
+        "json_schema": {
+          "description": "JSON schema for enforcing structured output format",
+          "type": "object"
+        },
+        "limited_request_mode": {
+          "description": "Whether the agent is in limited request mode",
+          "type": "boolean"
+        },
+        "limited_token_mode": {
+          "description": "Whether the agent is in limited token mode",
+          "type": "boolean"
+        },
+        "models": {
+          "description": "List of available model IDs for this agent",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "name": {
+          "description": "Name of the agent",
+          "type": "string"
+        },
+        "prompt_id": {
+          "description": "Prompt ID",
+          "type": "string"
+        },
+        "request_limit": {
+          "description": "Request limit for the agent in limited mode",
+          "type": "integer"
+        },
+        "retriever": {
+          "description": "Retriever ID",
+          "type": "string"
+        },
+        "source": {
+          "description": "Source ID (legacy single source)",
+          "type": "string"
+        },
+        "sources": {
+          "description": "List of source identifiers for multiple sources",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "status": {
+          "description": "Status of the agent (draft or published)",
+          "type": "string"
+        },
+        "token_limit": {
+          "description": "Token limit for the agent in limited mode",
+          "type": "integer"
+        },
+        "tools": {
+          "description": "List of tool identifiers",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "workflow": {
+          "description": "Workflow ID for workflow-type agents",
+          "type": "string"
+        }
+      },
+      "required": [
+        "description",
+        "name",
+        "status"
+      ],
+      "type": "object"
+    },
+    "CreateFolder": {
+      "properties": {
+        "name": {
+          "description": "Folder name",
+          "type": "string"
+        },
+        "parent_id": {
+          "description": "Parent folder ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "CreatePromptModel": {
+      "properties": {
+        "content": {
+          "description": "Content of the prompt",
+          "type": "string"
+        },
+        "name": {
+          "description": "Name of the prompt",
+          "type": "string"
+        }
+      },
+      "required": [
+        "content",
+        "name"
+      ],
+      "type": "object"
+    },
+    "CreateToolModel": {
+      "properties": {
+        "config": {
+          "description": "Configuration of the tool",
+          "type": "object"
+        },
+        "customName": {
+          "description": "Custom name for the tool",
+          "type": "string"
+        },
+        "description": {
+          "description": "Tool description",
+          "type": "string"
+        },
+        "displayName": {
+          "description": "Display name for the tool",
+          "type": "string"
+        },
+        "name": {
+          "description": "Name of the tool",
+          "type": "string"
+        },
+        "status": {
+          "description": "Status of the tool",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "config",
+        "description",
+        "displayName",
+        "name",
+        "status"
+      ],
+      "type": "object"
+    },
+    "CreateWikiModel": {
+      "properties": {
+        "initial_content": {
+          "description": "Optional markdown seed for /index.md",
+          "type": "string"
+        },
+        "name": {
+          "description": "Wiki source name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "DeletePromptModel": {
+      "properties": {
+        "id": {
+          "description": "Prompt ID to delete",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "DeleteToolModel": {
+      "properties": {
+        "id": {
+          "description": "Tool ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "FeedbackModel": {
+      "properties": {
+        "answer": {
+          "description": "The AI answer",
+          "type": "string"
+        },
+        "api_key": {
+          "description": "Optional API key",
+          "type": "string"
+        },
+        "conversation_id": {
+          "description": "id of the particular conversation",
+          "type": "string"
+        },
+        "feedback": {
+          "description": "User feedback",
+          "type": "string"
+        },
+        "question": {
+          "description": "The user question",
+          "type": "string"
+        },
+        "question_index": {
+          "description": "The question number in that particular conversation",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "conversation_id",
+        "feedback",
+        "question_index"
+      ],
+      "type": "object"
+    },
+    "GetFeedbackAnalyticsModel": {
+      "properties": {
+        "api_key_id": {
+          "description": "API Key ID",
+          "type": "string"
+        },
+        "filter_option": {
+          "default": "last_30_days",
+          "description": "Filter option for analytics",
+          "enum": [
+            "last_hour",
+            "last_24_hour",
+            "last_7_days",
+            "last_15_days",
+            "last_30_days"
+          ],
+          "example": "last_hour",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "GetMessageAnalyticsModel": {
+      "properties": {
+        "api_key_id": {
+          "description": "API Key ID",
+          "type": "string"
+        },
+        "filter_option": {
+          "default": "last_30_days",
+          "description": "Filter option for analytics",
+          "enum": [
+            "last_hour",
+            "last_24_hour",
+            "last_7_days",
+            "last_15_days",
+            "last_30_days"
+          ],
+          "example": "last_hour",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "GetScheduleAnalyticsModel": {
+      "properties": {
+        "api_key_id": {
+          "description": "API Key ID",
+          "type": "string"
+        },
+        "filter_option": {
+          "default": "last_30_days",
+          "description": "Filter option for analytics",
+          "enum": [
+            "last_hour",
+            "last_24_hour",
+            "last_7_days",
+            "last_15_days",
+            "last_30_days"
+          ],
+          "example": "last_hour",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "GetTokenAnalyticsModel": {
+      "properties": {
+        "api_key_id": {
+          "description": "API Key ID",
+          "type": "string"
+        },
+        "filter_option": {
+          "default": "last_30_days",
+          "description": "Filter option for analytics",
+          "enum": [
+            "last_hour",
+            "last_24_hour",
+            "last_7_days",
+            "last_15_days",
+            "last_30_days"
+          ],
+          "example": "last_hour",
+          "type": "string"
+        },
+        "group_by": {
+          "default": "none",
+          "description": "Second grouping dimension for the series",
+          "enum": [
+            "none",
+            "model",
+            "agent",
+            "source"
+          ],
+          "example": "none",
+          "type": "string"
+        },
+        "include_side_channel": {
+          "default": true,
+          "description": "Include non-user-initiated token usage (title generation, compression, RAG condensing, fallback)",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "GetToolAnalyticsModel": {
+      "properties": {
+        "api_key_id": {
+          "description": "API Key ID",
+          "type": "string"
+        },
+        "filter_option": {
+          "default": "last_30_days",
+          "description": "Filter option for analytics",
+          "enum": [
+            "last_hour",
+            "last_24_hour",
+            "last_7_days",
+            "last_15_days",
+            "last_30_days"
+          ],
+          "example": "last_hour",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "GetUserLogsModel": {
+      "properties": {
+        "api_key_id": {
+          "description": "API Key ID",
+          "type": "string"
+        },
+        "event_type": {
+          "description": "Filter by event source",
+          "enum": [
+            "chat",
+            "schedule",
+            "webhook",
+            "workflow",
+            "system",
+            "search",
+            "graph"
+          ],
+          "example": "chat",
+          "type": "string"
+        },
+        "level": {
+          "description": "Filter by log level",
+          "enum": [
+            "info",
+            "error",
+            "warning"
+          ],
+          "example": "info",
+          "type": "string"
+        },
+        "page": {
+          "default": 1,
+          "description": "Page number for pagination",
+          "type": "integer"
+        },
+        "page_size": {
+          "default": 10,
+          "description": "Number of logs per page",
+          "type": "integer"
+        },
+        "search": {
+          "description": "Substring filter on the summary",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "LiveSpeechToTextChunkModel": {
+      "properties": {
+        "chunk_index": {
+          "description": "Sequential chunk index",
+          "type": "integer"
+        },
+        "file": {
+          "description": "Audio chunk",
+          "type": "object"
+        },
+        "is_silence": {
+          "description": "Whether the latest capture window was mostly silence",
+          "type": "boolean"
+        },
+        "session_id": {
+          "description": "Live transcription session ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "chunk_index",
+        "file",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "MCPServerCallbackModel": {
+      "properties": {
+        "code": {
+          "description": "Authorization code",
+          "type": "string"
+        },
+        "error": {
+          "description": "Error message (if any)",
+          "type": "string"
+        },
+        "state": {
+          "description": "State parameter",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "state"
+      ],
+      "type": "object"
+    },
+    "MCPServerSaveModel": {
+      "properties": {
+        "config": {
+          "description": "MCP server configuration",
+          "type": "object"
+        },
+        "displayName": {
+          "description": "Display name for the MCP server",
+          "type": "string"
+        },
+        "id": {
+          "description": "Tool ID for updates (optional)",
+          "type": "string"
+        },
+        "status": {
+          "default": true,
+          "description": "Tool status",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "config",
+        "displayName"
+      ],
+      "type": "object"
+    },
+    "MCPServerTestModel": {
+      "properties": {
+        "config": {
+          "description": "MCP server configuration to test",
+          "type": "object"
+        },
+        "id": {
+          "description": "Stored tool to test with (empty secrets reuse its stored ones)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "config"
+      ],
+      "type": "object"
+    },
+    "ManageSourceFilesModel": {
+      "properties": {
+        "directory_path": {
+          "description": "Directory path to remove (for remove_directory operation)",
+          "type": "string"
+        },
+        "file": {
+          "description": "Files to add (for add operation)",
+          "type": "object"
+        },
+        "file_paths": {
+          "description": "File paths to remove (for remove operation)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "operation": {
+          "description": "Operation: 'add', 'remove', or 'remove_directory'",
+          "type": "string"
+        },
+        "parent_dir": {
+          "description": "Parent directory path relative to source root",
+          "type": "string"
+        },
+        "source_id": {
+          "description": "Source ID to modify",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "source_id"
+      ],
+      "type": "object"
+    },
+    "ManageSyncModel": {
+      "properties": {
+        "source_id": {
+          "description": "Source ID",
+          "type": "string"
+        },
+        "sync_frequency": {
+          "description": "Sync frequency (never, daily, weekly, monthly)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "sync_frequency"
+      ],
+      "type": "object"
+    },
+    "MoveAgent": {
+      "properties": {
+        "agent_id": {
+          "description": "Agent ID to move",
+          "type": "string"
+        },
+        "folder_id": {
+          "description": "Target folder ID (null to remove from folder)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_id"
+      ],
+      "type": "object"
+    },
+    "ReingestSourceModel": {
+      "properties": {
+        "source_id": {
+          "description": "Source ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id"
+      ],
+      "type": "object"
+    },
+    "RemoteUploadModel": {
+      "properties": {
+        "data": {
+          "description": "Data to process",
+          "type": "string"
+        },
+        "name": {
+          "description": "Job name",
+          "type": "string"
+        },
+        "repo_url": {
+          "description": "GitHub repository URL",
+          "type": "string"
+        },
+        "source": {
+          "description": "Source of the data",
+          "type": "string"
+        },
+        "user": {
+          "description": "User ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "data",
+        "name",
+        "source",
+        "user"
+      ],
+      "type": "object"
+    },
+    "ScheduleCreate": {
+      "properties": {
+        "cron": {
+          "description": "Required when trigger_type == 'recurring'",
+          "type": "string"
+        },
+        "end_at": {
+          "description": "ISO 8601",
+          "type": "string"
+        },
+        "instruction": {
+          "type": "string"
+        },
+        "model_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "run_at": {
+          "description": "ISO 8601 — required when trigger_type == 'once'",
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "token_budget": {
+          "type": "integer"
+        },
+        "tool_allowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "trigger_type": {
+          "description": "'recurring' (default) or 'once'",
+          "type": "string"
+        }
+      },
+      "required": [
+        "instruction"
+      ],
+      "type": "object"
+    },
+    "SearchModel": {
+      "properties": {
+        "api_key": {
+          "description": "API key for authentication",
+          "type": "string"
+        },
+        "chunks": {
+          "default": 5,
+          "description": "Number of results to return",
+          "type": "integer"
+        },
+        "question": {
+          "description": "Search query",
+          "type": "string"
+        }
+      },
+      "required": [
+        "api_key",
+        "question"
+      ],
+      "type": "object"
+    },
+    "ShareAgentModel": {
+      "properties": {
+        "id": {
+          "description": "ID of the agent",
+          "type": "string"
+        },
+        "shared": {
+          "description": "Share or unshare the agent",
+          "type": "boolean"
+        },
+        "username": {
+          "description": "Name of the user",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "shared"
+      ],
+      "type": "object"
+    },
+    "ShareConversationModel": {
+      "properties": {
+        "chunks": {
+          "description": "Chunks count (optional)",
+          "type": "integer"
+        },
+        "conversation_id": {
+          "description": "Conversation ID",
+          "type": "string"
+        },
+        "prompt_id": {
+          "description": "Prompt ID (optional)",
+          "type": "string"
+        },
+        "user": {
+          "description": "User ID (optional)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "conversation_id"
+      ],
+      "type": "object"
+    },
+    "SourceConfigModel": {
+      "properties": {
+        "chunking": {
+          "description": "Ingest-time chunking config",
+          "type": "object"
+        },
+        "kind": {
+          "description": "Behavior selector (e.g. classic)",
+          "type": "string"
+        },
+        "retrieval": {
+          "description": "Query-time retrieval config",
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "SourceFromAttachmentsModel": {
+      "properties": {
+        "attachment_ids": {
+          "description": "Ids of the caller's chat attachments, in the order to list them",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "name": {
+          "description": "Name of the new source; defaults to the first file's name and a count",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attachment_ids"
+      ],
+      "type": "object"
+    },
+    "SourceSearchModel": {
+      "properties": {
+        "query": {
+          "description": "The query to retrieve for",
+          "type": "string"
+        },
+        "retrieval": {
+          "description": "Ad-hoc retrieval config to test with. Omit to use the source's saved config. Never persisted.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "SpeechToTextModel": {
+      "properties": {
+        "file": {
+          "description": "Audio file",
+          "type": "object"
+        },
+        "language": {
+          "description": "Optional transcription language hint",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "type": "object"
+    },
+    "StreamModel": {
+      "properties": {
+        "active_docs": {
+          "description": "Active documents",
+          "type": "string"
+        },
+        "agent_id": {
+          "description": "Agent ID",
+          "type": "string"
+        },
+        "api_key": {
+          "description": "API key",
+          "type": "string"
+        },
+        "attachments": {
+          "description": "List of attachment IDs",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "chunks": {
+          "default": 6,
+          "description": "Number of chunks",
+          "type": "integer"
+        },
+        "conversation_id": {
+          "description": "Existing conversation ID (loads history)",
+          "type": "string"
+        },
+        "history": {
+          "description": "Conversation history (only for new conversations)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "index": {
+          "description": "Index of the query to update",
+          "type": "integer"
+        },
+        "isNoneDoc": {
+          "description": "Flag indicating if no document is used",
+          "type": "boolean"
+        },
+        "model_id": {
+          "description": "Model ID to use for this request",
+          "type": "string"
+        },
+        "passthrough": {
+          "description": "Dynamic parameters to inject into prompt template",
+          "type": "object"
+        },
+        "prompt_id": {
+          "default": "default",
+          "description": "Prompt ID",
+          "type": "string"
+        },
+        "question": {
+          "description": "Question to be asked",
+          "type": "string"
+        },
+        "retriever": {
+          "description": "Retriever type",
+          "type": "string"
+        },
+        "save_conversation": {
+          "description": "Deprecated, no effect: conversations always persist. Use `visibility` to control sidebar listing.",
+          "type": "boolean"
+        },
+        "visibility": {
+          "default": "hidden",
+          "description": "'listed' shows the conversation in the owner's sidebar; any other value (or omitting it) persists it hidden.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "type": "object"
+    },
+    "SyncSourceModel": {
+      "properties": {
+        "source_id": {
+          "description": "Source ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id"
+      ],
+      "type": "object"
+    },
+    "TaskStatusModel": {
+      "properties": {
+        "task_id": {
+          "description": "Task ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
+    "TextToSpeechModel": {
+      "properties": {
+        "text": {
+          "description": "Text to be synthesized as audio",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "UpdateAgentModel": {
+      "properties": {
+        "agent_type": {
+          "description": "Type of the agent (classic, react, workflow). Defaults to 'classic' for backwards compatibility.",
+          "type": "string"
+        },
+        "allow_system_prompt_override": {
+          "description": "Allow API callers to override the system prompt via the v1 endpoint",
+          "type": "boolean"
+        },
+        "chunks": {
+          "description": "Chunks count",
+          "type": "integer"
+        },
+        "default_model_id": {
+          "description": "Default model ID for this agent",
+          "type": "string"
+        },
+        "description": {
+          "description": "New description of the agent",
+          "type": "string"
+        },
+        "folder_id": {
+          "description": "Folder ID to organize the agent",
+          "type": "string"
+        },
+        "image": {
+          "description": "Image file upload",
+          "type": "object"
+        },
+        "json_schema": {
+          "description": "JSON schema for enforcing structured output format",
+          "type": "object"
+        },
+        "limited_request_mode": {
+          "description": "Whether the agent is in limited request mode",
+          "type": "boolean"
+        },
+        "limited_token_mode": {
+          "description": "Whether the agent is in limited token mode",
+          "type": "boolean"
+        },
+        "models": {
+          "description": "List of available model IDs for this agent",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "name": {
+          "description": "New name of the agent",
+          "type": "string"
+        },
+        "prompt_id": {
+          "description": "Prompt ID",
+          "type": "string"
+        },
+        "request_limit": {
+          "description": "Request limit for the agent in limited mode",
+          "type": "integer"
+        },
+        "retriever": {
+          "description": "Retriever ID",
+          "type": "string"
+        },
+        "source": {
+          "description": "Source ID (legacy single source)",
+          "type": "string"
+        },
+        "sources": {
+          "description": "List of source identifiers for multiple sources",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "status": {
+          "description": "Status of the agent (draft or published)",
+          "type": "string"
+        },
+        "token_limit": {
+          "description": "Token limit for the agent in limited mode",
+          "type": "integer"
+        },
+        "tools": {
+          "description": "List of tool identifiers",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "workflow": {
+          "description": "Workflow ID for workflow-type agents",
+          "type": "string"
+        }
+      },
+      "required": [
+        "description",
+        "name",
+        "status"
+      ],
+      "type": "object"
+    },
+    "UpdateChunkModel": {
+      "properties": {
+        "chunk_id": {
+          "description": "Chunk ID to update",
+          "type": "string"
+        },
+        "id": {
+          "description": "Document ID",
+          "type": "string"
+        },
+        "metadata": {
+          "description": "Updated metadata associated with the chunk",
+          "type": "object"
+        },
+        "text": {
+          "description": "New text of the chunk",
+          "type": "string"
+        }
+      },
+      "required": [
+        "chunk_id",
+        "id"
+      ],
+      "type": "object"
+    },
+    "UpdateConversationModel": {
+      "properties": {
+        "id": {
+          "description": "Conversation ID",
+          "type": "string"
+        },
+        "name": {
+          "description": "New name of the conversation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "UpdatePromptModel": {
+      "properties": {
+        "content": {
+          "description": "New content of the prompt",
+          "type": "string"
+        },
+        "id": {
+          "description": "Prompt ID to update",
+          "type": "string"
+        },
+        "name": {
+          "description": "New name of the prompt",
+          "type": "string"
+        }
+      },
+      "required": [
+        "content",
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "UpdateToolActionsModel": {
+      "properties": {
+        "actions": {
+          "description": "Actions the tool can perform",
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "id": {
+          "description": "Tool ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "actions",
+        "id"
+      ],
+      "type": "object"
+    },
+    "UpdateToolConfigModel": {
+      "properties": {
+        "config": {
+          "description": "Configuration of the tool",
+          "type": "object"
+        },
+        "id": {
+          "description": "Tool ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "config",
+        "id"
+      ],
+      "type": "object"
+    },
+    "UpdateToolModel": {
+      "properties": {
+        "actions": {
+          "description": "Actions the tool can perform",
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "config": {
+          "description": "Configuration of the tool",
+          "type": "object"
+        },
+        "customName": {
+          "description": "Custom name for the tool",
+          "type": "string"
+        },
+        "description": {
+          "description": "Tool description",
+          "type": "string"
+        },
+        "displayName": {
+          "description": "Display name for the tool",
+          "type": "string"
+        },
+        "id": {
+          "description": "Tool ID",
+          "type": "string"
+        },
+        "name": {
+          "description": "Name of the tool",
+          "type": "string"
+        },
+        "status": {
+          "description": "Status of the tool",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "UpdateToolStatusModel": {
+      "properties": {
+        "id": {
+          "description": "Tool ID",
+          "type": "string"
+        },
+        "status": {
+          "description": "Status of the tool",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "status"
+      ],
+      "type": "object"
+    },
+    "UploadModel": {
+      "properties": {
+        "file": {
+          "description": "File(s) to upload",
+          "type": "object"
+        },
+        "name": {
+          "description": "Job name",
+          "type": "string"
+        },
+        "user": {
+          "description": "User ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file",
+        "name",
+        "user"
+      ],
+      "type": "object"
+    },
+    "WikiPageEditModel": {
+      "properties": {
+        "content": {
+          "description": "Markdown content",
+          "type": "string"
+        },
+        "expected_version": {
+          "description": "Optimistic-lock version from the last read",
+          "type": "integer"
+        },
+        "path": {
+          "description": "Page path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "content",
+        "path"
+      ],
+      "type": "object"
+    }
+  },
+  "info": {
+    "description": "API for DocsGPT",
+    "title": "DocsGPT API",
+    "version": "1.0"
+  },
+  "paths": {
+    "/api/add_chunk": {
+      "post": {
+        "description": "Adds a new chunk to the document",
+        "operationId": "post_add_chunk",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/AddChunkModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/admin/activity": {
+      "get": {
+        "operationId": "get_admin_activity_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Merged audit feed, newest first, with filters and a total",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/activity/events": {
+      "get": {
+        "description": "The filter UI offers these instead of a free-text box, so an operator\nnever has to guess that denied logins are ``oidc_login_denied``.",
+        "operationId": "get_admin_activity_catalogue_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Distinct ``(event, category)`` pairs this instance has recorded",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/activity/export": {
+      "get": {
+        "description": "Streamed, not buffered: a compliance export of a busy instance should\nnot be built in memory first. Capped at ``_EXPORT_MAX_ROWS``, and the\n``X-Export-Max-Rows`` header reports the cap that was in effect so a\ntruncated export is not mistaken for a complete one.",
+        "operationId": "get_admin_activity_export_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Stream the filtered feed as CSV or NDJSON",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/admins": {
+      "get": {
+        "operationId": "get_admin_admins_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "List all admins with earliest grant time + grant sources",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/audit": {
+      "get": {
+        "description": "Filter by event/user/since.",
+        "operationId": "get_admin_audit_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Global auth-events feed, newest first",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/connectors": {
+      "get": {
+        "operationId": "get_admin_connectors_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Every connector with its policy, setup state and connection count",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      },
+      "put": {
+        "operationId": "put_admin_connectors_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Update policies: {policies: {key: {enabled?, credential_mode?, allow_writes?}}, allow_custom_mcp?}",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/devices/audit": {
+      "get": {
+        "description": "Filter by decision/user/since.",
+        "operationId": "get_admin_device_audit_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Global remote-device command audit feed",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/overview": {
+      "get": {
+        "operationId": "get_admin_overview_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Top-line KPIs for the dashboard home",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/quotas": {
+      "get": {
+        "description": "Query args (all optional; without them every row is returned):\n    teams_q: Case-insensitive substring of the team name or slug.\n    users_q: Case-insensitive substring of the user's subject id or email.\n    teams_page / users_page: 1-based page of that list; only a list whose\n        page arg is given is paginated.\n    page_size: Teams or users per page, clamped to 1-100 (default 20); a\n        page carries every bucket row of each of them.\n\n``teams_total`` and ``users_total`` count the teams and users after\nfiltering and before paging. Rows keep the repository order (subject,\nthen bucket).",
+        "operationId": "get_admin_quotas_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Every stored policy, grouped by layer, plus the models cost limits cannot see",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/quotas/instance": {
+      "delete": {
+        "operationId": "delete_admin_instance_quota_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Remove the instance default for ``?bucket=``, or for every bucket",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      },
+      "put": {
+        "operationId": "put_admin_instance_quota_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Set the instance default for one bucket",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/quotas/teams/{team_id}": {
+      "delete": {
+        "operationId": "delete_admin_team_quota_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Remove the team's allowance for ``?bucket=``, or for every bucket",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      },
+      "get": {
+        "operationId": "get_admin_team_quota_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "The per-member allowance of one team",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "team_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "put": {
+        "operationId": "put_admin_team_quota_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Set the allowance each member of the team gets",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/quotas/users/{user_id}": {
+      "delete": {
+        "operationId": "delete_admin_user_quota_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Remove the user's override for ``?bucket=``, or for every bucket",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      },
+      "get": {
+        "operationId": "get_admin_user_quota_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "A user's overrides and the limits and usage they resolve to",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "user_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "put": {
+        "operationId": "put_admin_user_quota_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Set one user's override, which beats team allowances and the default",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/teams": {
+      "get": {
+        "description": "With no query args every team is returned. Any of these switches to a\nbounded search (same row shape):\n    q: Case-insensitive substring of the team name or slug.\n    without_quota: ``1`` keeps only teams with no team ``all``-bucket\n        quota policy.\n    limit: The most rows to return, clamped to 1-100 (default 20).",
+        "operationId": "get_all_teams",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Global-admin oversight: every team with member counts, or a picker search",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/tokens/{token_id}": {
+      "delete": {
+        "operationId": "delete_admin_token",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Revoke any user's token",
+        "tags": [
+          "tokens"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "token_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/admin/usage": {
+      "get": {
+        "description": "Every bucket carries both tokens and USD cost. Quota policies have\nalways been settable in dollars; until now nothing showed the spend\nthey were capping.",
+        "operationId": "get_admin_usage_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Global usage: time-bucketed series, totals, spend, latency, top users",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "description": "Each row carries ``last_seen`` (max auth-event time). Admin status is\nintentionally not joined here; the dashboard cross-references\nGET /api/admin/admins for badges.",
+        "operationId": "get_admin_users_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "List users, paginated, most-recently-seen first",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/users/{user_id}": {
+      "get": {
+        "operationId": "get_admin_user_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Per-user drill-down: profile, roles, recent auth events, counts",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "user_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "patch": {
+        "description": "Deactivation also revokes live sessions.",
+        "operationId": "patch_admin_user_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Activate/deactivate a user",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/users/{user_id}/revoke-sessions": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "user_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "operationId": "post_admin_user_sessions_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Force-logout: revoke the user's live OIDC sessions (best-effort)",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/users/{user_id}/role": {
+      "delete": {
+        "description": "Refuses to remove the last admin.",
+        "operationId": "delete_admin_user_role_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Revoke the manual admin grant",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "user_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Idempotent.",
+        "operationId": "post_admin_user_role_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Grant the admin role to ``user_id`` (manual source)",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/users/{user_id}/tokens": {
+      "get": {
+        "operationId": "get_admin_user_tokens",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "List a user's tokens, revoked ones included",
+        "tags": [
+          "tokens"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "user_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/admin/users/{user_id}/usage": {
+      "get": {
+        "operationId": "get_admin_user_usage_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "One user's spend: daily series plus a split by model and by flow",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "user_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/adopt_agent": {
+      "post": {
+        "description": "Adopt an agent by ID",
+        "operationId": "post_adopt_agent",
+        "parameters": [
+          {
+            "description": "Agent ID",
+            "in": "query",
+            "name": "id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-scopes": [
+          "agents:write"
+        ]
+      }
+    },
+    "/api/agent_webhook": {
+      "get": {
+        "description": "Generate webhook URL for the agent",
+        "operationId": "get_agent_webhook",
+        "parameters": [
+          {
+            "description": "ID of the agent",
+            "in": "query",
+            "name": "id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-scopes": [
+          "agents:keys"
+        ]
+      }
+    },
+    "/api/agents/folders/": {
+      "get": {
+        "description": "Get all folders for the user",
+        "operationId": "get_agent_folders",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents_folders"
+        ],
+        "x-pat-scopes": [
+          "agents:read"
+        ]
+      },
+      "post": {
+        "description": "Create a new folder",
+        "operationId": "post_agent_folders",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CreateFolder"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents_folders"
+        ],
+        "x-pat-scopes": [
+          "agents:write"
+        ]
+      }
+    },
+    "/api/agents/folders/bulk_move": {
+      "post": {
+        "description": "Move multiple agents to a folder",
+        "operationId": "post_bulk_move_agents",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/BulkMoveAgents"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents_folders"
+        ],
+        "x-pat-scopes": [
+          "agents:write"
+        ]
+      }
+    },
+    "/api/agents/folders/move_agent": {
+      "post": {
+        "description": "Move an agent to a folder or remove from folder",
+        "operationId": "post_move_agent_to_folder",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/MoveAgent"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents_folders"
+        ],
+        "x-pat-scopes": [
+          "agents:write"
+        ]
+      }
+    },
+    "/api/agents/folders/{folder_id}": {
+      "delete": {
+        "description": "Delete a folder",
+        "operationId": "delete_agent_folder",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents_folders"
+        ],
+        "x-pat-scopes": [
+          "agents:write"
+        ]
+      },
+      "get": {
+        "description": "Get a specific folder with its agents",
+        "operationId": "get_agent_folder",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents_folders"
+        ],
+        "x-pat-scopes": [
+          "agents:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "folder_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "put": {
+        "description": "Update a folder",
+        "operationId": "put_agent_folder",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents_folders"
+        ],
+        "x-pat-scopes": [
+          "agents:write"
+        ]
+      }
+    },
+    "/api/agents/{agent_id}/schedules": {
+      "get": {
+        "description": "List schedules for an agent (recurring + one-time).",
+        "operationId": "get_agent_schedules",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "schedules"
+        ],
+        "x-pat-scopes": [
+          "schedules:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "agent_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Create a schedule (recurring or one-time) for an agent.",
+        "operationId": "post_agent_schedules",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ScheduleCreate"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "schedules"
+        ],
+        "x-pat-scopes": [
+          "schedules:write"
+        ]
+      }
+    },
+    "/api/agents/{agent_id}/schedules/stats": {
+      "get": {
+        "description": "Run stats for an agent's schedules over a recent window.\nArgs:\n    agent_id: Agent id from the URL.\n\nReturns:\n    A Flask response with ``days``, ``runs``, ``failed``, ``tokens``\n    and ``latest_failure`` (or an error envelope).",
+        "operationId": "get_agent_schedule_stats",
+        "parameters": [
+          {
+            "description": "Window in days (default 30, clamped to 1..365)",
+            "in": "query",
+            "name": "days",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Return run count, failures, tokens and latest failure for an agent",
+        "tags": [
+          "schedules"
+        ],
+        "x-pat-scopes": [
+          "schedules:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "agent_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/answer": {
+      "post": {
+        "description": "Provide a response based on the question and retriever",
+        "operationId": "post_answer_resource",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/AnswerModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "answer"
+        ],
+        "x-pat-scopes": [
+          "chat:run"
+        ]
+      }
+    },
+    "/api/artifact/{artifact_id}": {
+      "get": {
+        "description": "Get artifact data by artifact ID. Returns all todos for the tool when fetching a todo artifact.",
+        "operationId": "get_get_artifact",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "tools"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "artifact_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/artifacts": {
+      "get": {
+        "description": "List artifacts for a conversation, workflow run, or the caller",
+        "operationId": "get_list_artifacts",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "artifacts"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/artifacts/{artifact_id}": {
+      "delete": {
+        "description": "Delete an artifact and all its versions (owner only)",
+        "operationId": "delete_get_artifact",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "artifacts"
+        ],
+        "x-pat-denied": true
+      },
+      "get": {
+        "description": "Get an artifact's metadata, version list, and current spec",
+        "operationId": "get_get_artifact",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "artifacts"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "artifact_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/artifacts/{artifact_id}/restore": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "artifact_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Restore a prior version by appending it as the new current version",
+        "operationId": "post_restore_artifact",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "artifacts"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/artifacts/{artifact_id}/versions/{version}": {
+      "get": {
+        "description": "Get a single artifact version's metadata and spec",
+        "operationId": "get_get_artifact_version",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "artifacts"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "artifact_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "in": "path",
+          "name": "version",
+          "required": true,
+          "type": "integer"
+        }
+      ]
+    },
+    "/api/available_tools": {
+      "get": {
+        "description": "Get available tools for a user",
+        "operationId": "get_available_tools",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "tools"
+        ],
+        "x-pat-scopes": [
+          "tools:read"
+        ]
+      }
+    },
+    "/api/combine": {
+      "get": {
+        "description": "Redirects /api/combine to /api/sources for backward compatibility",
+        "operationId": "get_redirect_to_sources",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/connections": {
+      "get": {
+        "description": "The caller's connections with status and linked resource counts",
+        "operationId": "get_connections_list",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connections"
+        ],
+        "x-pat-denied": true
+      },
+      "post": {
+        "description": "Create a connection from pasted credentials: {connector_key, credentials, label?}. Same credentials reuse the same connection.",
+        "operationId": "post_connections_list",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connections"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/connections/claim": {
+      "post": {
+        "description": "One-time link of a legacy browser session token ({provider, session_token}) to the caller's connection. Removed next release.",
+        "operationId": "post_connection_claim",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connections"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/connections/tools/{tool_id}/credential-mode": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "tool_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "put": {
+        "description": "Whose account a shared connection-backed tool uses: {mode: owner | member}. Owner only; refused when an admin forces a mode for the connector.",
+        "operationId": "put_tool_credential_mode",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connections"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/connections/{connection_id}": {
+      "delete": {
+        "description": "Remove a connection: {sources: keep | delete, tools: delete | keep}. Kept sources keep their content and stop syncing.",
+        "operationId": "delete_connection_detail",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connections"
+        ],
+        "x-pat-denied": true
+      },
+      "get": {
+        "description": "One connection with the sources it syncs and the tools it provides",
+        "operationId": "get_connection_detail",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connections"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "connection_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "patch": {
+        "description": "Name an account: {name}. An empty name clears it. Owner only.",
+        "operationId": "patch_connection_detail",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connections"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/connections/{connection_id}/disconnect": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "connection_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Delete a connection's stored credentials; its sources and tools stay",
+        "operationId": "post_connection_disconnect",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connections"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/connections/{connection_id}/linear": {
+      "get": {
+        "description": "Linear: the teams and projects the connection can see, for the sync picker. Read through Linear's MCP server with the connection's sign-in.",
+        "operationId": "get_linear_workspace",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connections"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "connection_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/connections/{connection_id}/picker-token": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "connection_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "A short-lived access token for a browser-side file picker. Owner only; never a refresh token.",
+        "operationId": "post_connection_picker_token",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connections"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/connections/{connection_id}/reconnect": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "connection_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "OAuth: returns an authorization URL for the same account. API key: accepts {credentials} and replaces the stored ones.",
+        "operationId": "post_connection_reconnect",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connections"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/connections/{connection_id}/refresh-tools": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "connection_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "MCP: re-scan the server's actions and return what was added and removed",
+        "operationId": "post_connection_refresh_tools",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connections"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/connections/{connection_id}/repositories": {
+      "get": {
+        "description": "GitHub: the repositories the connection can read, for the sync picker. install_url is where a GitHub App sign-in chooses more repositories.",
+        "operationId": "get_connection_repositories",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connections"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "connection_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/connections/{connection_id}/setup": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "connection_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Apply the connect wizard's choices: {create_tools, allow_writes?, tool_permissions?, sync?: {items, frequency, name?, config?}}. allow_writes points GitHub's tool at its write endpoint. config is the synced source's retrieval settings, validated like an upload's. Honours an Idempotency-Key header for the sync.",
+        "operationId": "post_connection_setup",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connections"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/connections/{connection_id}/tools/{tool_id}/parameters": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "connection_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "in": "path",
+          "name": "tool_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "put": {
+        "description": "Fix or release an action's parameters: {action, parameters: {name: value | null}}. A value is sent on every call and hidden from the model; null lets the model decide. Owner only.",
+        "operationId": "put_connection_tool_parameters",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connections"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/connections/{connection_id}/tools/{tool_id}/permissions": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "connection_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "in": "path",
+          "name": "tool_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "put": {
+        "description": "Set per-action permissions: {permissions: {action: always | ask | off}}",
+        "operationId": "put_connection_tool_permissions",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connections"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/connections/{connection_id}/writes": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "connection_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "put": {
+        "description": "GitHub: let agents make changes through this connection, or only read: {allow}. Re-reads the tool's actions from the matching endpoint. Owner only.",
+        "operationId": "put_connection_writes",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connections"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/connectors/auth": {
+      "get": {
+        "description": "Get connector OAuth authorization URL",
+        "operationId": "get_connector_auth",
+        "parameters": [
+          {
+            "description": "Connector provider (e.g., google_drive)",
+            "in": "query",
+            "name": "provider",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connectors"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/connectors/callback": {
+      "get": {
+        "description": "Handle OAuth callback for external connectors",
+        "operationId": "get_connectors_callback",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Handle OAuth callback for external connectors",
+        "tags": [
+          "connectors"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/connectors/callback-status": {
+      "get": {
+        "description": "Return HTML page with connector authentication status",
+        "operationId": "get_connector_callback_status",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Return HTML page with connector authentication status",
+        "tags": [
+          "connectors"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/connectors/catalog": {
+      "get": {
+        "description": "Every connector with its availability and the caller's connection summary",
+        "operationId": "get_connector_catalog",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connections"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/connectors/disconnect": {
+      "post": {
+        "description": "Disconnect a connector session",
+        "operationId": "post_connector_disconnect",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ConnectorDisconnectModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connectors"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/connectors/files": {
+      "post": {
+        "description": "List files from a connector provider (supports pagination and search)",
+        "operationId": "post_connector_files",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ConnectorFilesModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connectors"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/connectors/sync": {
+      "post": {
+        "description": "Sync connector source to check for modifications",
+        "operationId": "post_connector_sync",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ConnectorSyncModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connectors"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/connectors/validate-session": {
+      "post": {
+        "description": "Validate a connection and return the account and a short-lived access token",
+        "operationId": "post_connector_validate_session",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ConnectorValidateSessionModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connectors"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/create_agent": {
+      "post": {
+        "description": "Create a new agent",
+        "operationId": "post_create_agent",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CreateAgentModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-scopes": [
+          "agents:write"
+        ]
+      }
+    },
+    "/api/create_prompt": {
+      "post": {
+        "description": "Create a new prompt",
+        "operationId": "post_create_prompt",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CreatePromptModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "prompts"
+        ],
+        "x-pat-scopes": [
+          "prompts:write"
+        ]
+      }
+    },
+    "/api/create_tool": {
+      "post": {
+        "description": "Create a new tool",
+        "operationId": "post_create_tool",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CreateToolModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "tools"
+        ],
+        "x-pat-scopes": [
+          "tools:write"
+        ]
+      }
+    },
+    "/api/delete_agent": {
+      "delete": {
+        "description": "Delete an agent by ID",
+        "operationId": "delete_delete_agent",
+        "parameters": [
+          {
+            "description": "ID of the agent",
+            "in": "query",
+            "name": "id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-scopes": [
+          "agents:write"
+        ]
+      }
+    },
+    "/api/delete_all_conversations": {
+      "get": {
+        "description": "Deletes all conversations for a specific user",
+        "operationId": "get_delete_all_conversations",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "conversations"
+        ],
+        "x-pat-scopes": [
+          "conversations:write"
+        ]
+      }
+    },
+    "/api/delete_chunk": {
+      "delete": {
+        "description": "Deletes a specific chunk from the document.",
+        "operationId": "delete_delete_chunk",
+        "parameters": [
+          {
+            "description": "The document ID",
+            "in": "query",
+            "name": "id",
+            "type": "string"
+          },
+          {
+            "description": "The ID of the chunk to delete",
+            "in": "query",
+            "name": "chunk_id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/delete_conversation": {
+      "post": {
+        "description": "Deletes a conversation by ID",
+        "operationId": "post_delete_conversation",
+        "parameters": [
+          {
+            "description": "The ID of the conversation to delete",
+            "in": "query",
+            "name": "id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "conversations"
+        ],
+        "x-pat-scopes": [
+          "conversations:write"
+        ]
+      }
+    },
+    "/api/delete_old": {
+      "get": {
+        "description": "Deletes old indexes and associated files",
+        "operationId": "get_delete_old_indexes",
+        "parameters": [
+          {
+            "description": "The source ID to delete",
+            "in": "query",
+            "name": "source_id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/delete_prompt": {
+      "post": {
+        "description": "Delete a prompt by ID",
+        "operationId": "post_delete_prompt",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DeletePromptModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "prompts"
+        ],
+        "x-pat-scopes": [
+          "prompts:write"
+        ]
+      }
+    },
+    "/api/delete_tool": {
+      "post": {
+        "description": "Delete a tool by ID",
+        "operationId": "post_delete_tool",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DeleteToolModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "tools"
+        ],
+        "x-pat-scopes": [
+          "tools:write"
+        ]
+      }
+    },
+    "/api/directory_structure": {
+      "get": {
+        "description": "Get the directory structure for a document",
+        "operationId": "get_directory_structure",
+        "parameters": [
+          {
+            "description": "The document ID",
+            "in": "query",
+            "name": "id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:read"
+        ]
+      }
+    },
+    "/api/export_agent": {
+      "get": {
+        "description": "Export an agent as YAML",
+        "operationId": "get_export_agent",
+        "parameters": [
+          {
+            "description": "Agent ID",
+            "in": "query",
+            "name": "id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-scopes": [
+          "agents:read"
+        ]
+      }
+    },
+    "/api/feedback": {
+      "post": {
+        "description": "Submit feedback for a conversation",
+        "operationId": "post_submit_feedback",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/FeedbackModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "conversations"
+        ],
+        "x-pat-scopes": [
+          "conversations:write"
+        ]
+      }
+    },
+    "/api/get_agent": {
+      "get": {
+        "description": "Get agent by ID",
+        "operationId": "get_get_agent",
+        "parameters": [
+          {
+            "description": "Agent ID",
+            "in": "query",
+            "name": "id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-scopes": [
+          "agents:read"
+        ]
+      }
+    },
+    "/api/get_agents": {
+      "get": {
+        "description": "Retrieve agents for the user",
+        "operationId": "get_get_agents",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-scopes": [
+          "agents:read"
+        ]
+      }
+    },
+    "/api/get_chunks": {
+      "get": {
+        "description": "Retrieves chunks from a document, optionally filtered by file path and search term",
+        "operationId": "get_get_chunks",
+        "parameters": [
+          {
+            "description": "The document ID",
+            "in": "query",
+            "name": "id",
+            "type": "string"
+          },
+          {
+            "description": "Page number for pagination",
+            "in": "query",
+            "name": "page",
+            "type": "string"
+          },
+          {
+            "description": "Number of chunks per page",
+            "in": "query",
+            "name": "per_page",
+            "type": "string"
+          },
+          {
+            "description": "Optional: Filter chunks by relative file path",
+            "in": "query",
+            "name": "path",
+            "type": "string"
+          },
+          {
+            "description": "Optional: Search term to filter chunks by title or content",
+            "in": "query",
+            "name": "search",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:read"
+        ]
+      }
+    },
+    "/api/get_conversations": {
+      "get": {
+        "description": "Retrieve the user's sidebar conversations (visibility = listed), newest first, ordered by ``date`` DESC then ``id`` DESC. Each item carries ``date`` (ISO-8601). To page older conversations, pass the last item's ``date`` and ``id`` as ``before`` and ``before_id``. Invalid params are ignored.",
+        "operationId": "get_get_conversations",
+        "parameters": [
+          {
+            "description": "Maximum number of results (default 30, clamped to 1-100)",
+            "in": "query",
+            "name": "limit",
+            "type": "string"
+          },
+          {
+            "description": "Keyset cursor: ISO-8601 ``date`` of the last item seen (needs before_id)",
+            "in": "query",
+            "name": "before",
+            "type": "string"
+          },
+          {
+            "description": "Keyset cursor: ``id`` of the last item seen (needs before)",
+            "in": "query",
+            "name": "before_id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "conversations"
+        ],
+        "x-pat-scopes": [
+          "conversations:read"
+        ]
+      }
+    },
+    "/api/get_feedback_analytics": {
+      "post": {
+        "description": "Get feedback analytics data",
+        "operationId": "post_get_feedback_analytics",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/GetFeedbackAnalyticsModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "analytics"
+        ],
+        "x-pat-scopes": [
+          "analytics:read"
+        ]
+      }
+    },
+    "/api/get_message_analytics": {
+      "post": {
+        "description": "Get message analytics based on filter option",
+        "operationId": "post_get_message_analytics",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/GetMessageAnalyticsModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "analytics"
+        ],
+        "x-pat-scopes": [
+          "analytics:read"
+        ]
+      }
+    },
+    "/api/get_prompts": {
+      "get": {
+        "description": "Get all prompts for the user",
+        "operationId": "get_get_prompts",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "prompts"
+        ],
+        "x-pat-scopes": [
+          "prompts:read"
+        ]
+      }
+    },
+    "/api/get_schedule_analytics": {
+      "post": {
+        "description": "Get scheduled agent run outcomes over time",
+        "operationId": "post_get_schedule_analytics",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/GetScheduleAnalyticsModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "analytics"
+        ],
+        "x-pat-scopes": [
+          "analytics:read"
+        ]
+      }
+    },
+    "/api/get_single_conversation": {
+      "get": {
+        "description": "Retrieve a single conversation by ID",
+        "operationId": "get_get_single_conversation",
+        "parameters": [
+          {
+            "description": "The conversation ID",
+            "in": "query",
+            "name": "id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "conversations"
+        ],
+        "x-pat-scopes": [
+          "conversations:read"
+        ]
+      }
+    },
+    "/api/get_single_prompt": {
+      "get": {
+        "description": "Get a single prompt by ID",
+        "operationId": "get_get_single_prompt",
+        "parameters": [
+          {
+            "description": "ID of the prompt",
+            "in": "query",
+            "name": "id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "prompts"
+        ],
+        "x-pat-scopes": [
+          "prompts:read"
+        ]
+      }
+    },
+    "/api/get_token_analytics": {
+      "post": {
+        "description": "Get token analytics data",
+        "operationId": "post_get_token_analytics",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/GetTokenAnalyticsModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "analytics"
+        ],
+        "x-pat-scopes": [
+          "analytics:read"
+        ]
+      }
+    },
+    "/api/get_tool_analytics": {
+      "post": {
+        "description": "Get tool call analytics from the tool execution journal",
+        "operationId": "post_get_tool_analytics",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/GetToolAnalyticsModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "analytics"
+        ],
+        "x-pat-scopes": [
+          "analytics:read"
+        ]
+      }
+    },
+    "/api/get_tools": {
+      "get": {
+        "description": "Get tools created by a user",
+        "operationId": "get_get_tools",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "tools"
+        ],
+        "x-pat-scopes": [
+          "tools:read"
+        ]
+      }
+    },
+    "/api/get_user_logs": {
+      "post": {
+        "description": "Get user activity logs with pagination. Merges chat answers (user_logs), request errors (stack_logs) and scheduled agent runs (schedule_runs) into one timeline.",
+        "operationId": "post_get_user_logs",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/GetUserLogsModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "analytics"
+        ],
+        "x-pat-scopes": [
+          "analytics:read"
+        ]
+      }
+    },
+    "/api/guardrails/catalog": {
+      "get": {
+        "description": "List available guardrail checks and their capabilities",
+        "operationId": "get_guardrail_catalog",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "guardrails"
+        ],
+        "x-pat-scopes": [
+          "agents:read"
+        ]
+      }
+    },
+    "/api/guardrails/events": {
+      "get": {
+        "description": "List guardrail decisions recorded for an agent",
+        "operationId": "get_guardrail_events",
+        "parameters": [
+          {
+            "description": "Agent ID",
+            "in": "query",
+            "name": "agent_id",
+            "type": "string"
+          },
+          {
+            "description": "Max rows (default 100)",
+            "in": "query",
+            "name": "limit",
+            "type": "string"
+          },
+          {
+            "description": "Row offset",
+            "in": "query",
+            "name": "offset",
+            "type": "string"
+          },
+          {
+            "description": "Trailing window in days, clamped to 1-365 (optional; invalid values are ignored)",
+            "in": "query",
+            "name": "days",
+            "type": "string"
+          },
+          {
+            "description": "Exact check name (optional)",
+            "in": "query",
+            "name": "check",
+            "type": "string"
+          },
+          {
+            "description": "One of block, redact, flag, not_evaluated (optional; unknown values are ignored)",
+            "in": "query",
+            "name": "outcome",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "guardrails"
+        ],
+        "x-pat-scopes": [
+          "agents:read"
+        ]
+      }
+    },
+    "/api/guardrails/summary": {
+      "get": {
+        "description": "Aggregate guardrail activity for the caller",
+        "operationId": "get_guardrail_summary",
+        "parameters": [
+          {
+            "description": "Trailing window in days (default 30)",
+            "in": "query",
+            "name": "days",
+            "type": "string"
+          },
+          {
+            "description": "Scope the aggregate to one agent (optional)",
+            "in": "query",
+            "name": "agent_id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "guardrails"
+        ],
+        "x-pat-scopes": [
+          "agents:read"
+        ]
+      }
+    },
+    "/api/images/{agent_id}/{capability}": {
+      "get": {
+        "description": "Serve an agent image using an opaque capability URL",
+        "operationId": "get_serve_image",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "attachments"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "agent_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "in": "path",
+          "name": "capability",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/import_agent": {
+      "post": {
+        "description": "Import an agent from YAML: create a draft, or update the agent matched by id or slug",
+        "operationId": "post_import_agent",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-scopes": [
+          "agents:write"
+        ]
+      }
+    },
+    "/api/import_agent/plan": {
+      "post": {
+        "description": "Dry-run an agent YAML import and return the resolution plan",
+        "operationId": "post_import_agent_plan",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-scopes": [
+          "agents:write"
+        ]
+      }
+    },
+    "/api/manage_source_files": {
+      "post": {
+        "description": "Add files, remove files, or remove directories from an existing source",
+        "operationId": "post_manage_source_files",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ManageSourceFilesModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/manage_sync": {
+      "post": {
+        "description": "Manage sync frequency for sources",
+        "operationId": "post_manage_sync",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ManageSyncModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/mcp_server/auth_status": {
+      "get": {
+        "description": "Batch check auth status for all MCP tools. Lightweight DB-only check — no network calls to MCP servers.",
+        "operationId": "get_mcp_auth_status",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "tools"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/mcp_server/callback": {
+      "get": {
+        "description": "Handle OAuth callback by providing the authorization code and state",
+        "operationId": "get_mcpo_auth_callback",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/MCPServerCallbackModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "tools"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/mcp_server/save": {
+      "post": {
+        "description": "Create or update MCP server with automatic tool discovery",
+        "operationId": "post_mcp_server_save",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/MCPServerSaveModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "tools"
+        ],
+        "x-pat-scopes": [
+          "tools:write"
+        ]
+      }
+    },
+    "/api/mcp_server/test": {
+      "post": {
+        "description": "Test MCP server connection with provided configuration",
+        "operationId": "post_test_mcp_server_config",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/MCPServerTestModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "tools"
+        ],
+        "x-pat-scopes": [
+          "tools:write"
+        ]
+      }
+    },
+    "/api/messages/{message_id}/tail": {
+      "get": {
+        "description": "Current state of one conversation_messages row, scoped to the authenticated user. Used to reconnect to an in-flight stream after a refresh.",
+        "operationId": "get_get_message_tail",
+        "parameters": [
+          {
+            "description": "Message UUID",
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "conversations"
+        ],
+        "x-pat-scopes": [
+          "chat:run",
+          "conversations:read"
+        ]
+      }
+    },
+    "/api/models": {
+      "get": {
+        "description": "When the request is authenticated, the response includes the\nuser's own BYOM registrations alongside the built-in catalog.",
+        "operationId": "get_models_list_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Get list of available models with their capabilities",
+        "tags": [
+          "models"
+        ],
+        "x-pat-scopes": [
+          "chat:run",
+          "models:read"
+        ]
+      }
+    },
+    "/api/parse_spec": {
+      "post": {
+        "description": "Parse an API specification (OpenAPI 3.x or Swagger 2.0) and return actions",
+        "operationId": "post_parse_spec",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "tools"
+        ],
+        "x-pat-scopes": [
+          "tools:write"
+        ]
+      }
+    },
+    "/api/pin_agent": {
+      "post": {
+        "description": "Pin or unpin an agent",
+        "operationId": "post_pin_agent",
+        "parameters": [
+          {
+            "description": "ID of the agent",
+            "in": "query",
+            "name": "id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-scopes": [
+          "agents:write"
+        ]
+      }
+    },
+    "/api/pinned_agents": {
+      "get": {
+        "description": "Get pinned agents for the user",
+        "operationId": "get_pinned_agents",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-scopes": [
+          "agents:read"
+        ]
+      }
+    },
+    "/api/regenerate_agent_key/{agent_id}": {
+      "post": {
+        "description": "Rotate an agent's API key. The previous key is invalidated immediately and a fresh key is returned once. Historical logging and usage records are re-pointed to the new key so analytics stay intact. Owner only.",
+        "operationId": "post_regenerate_agent_key",
+        "parameters": [
+          {
+            "description": "ID of the agent",
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-scopes": [
+          "agents:keys"
+        ]
+      }
+    },
+    "/api/remote": {
+      "post": {
+        "description": "Uploads remote source for vectorization. Honors an optional ``Idempotency-Key`` header: a repeat request with the same key within 24h returns the original cached response without re-enqueuing.",
+        "operationId": "post_upload_remote",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/RemoteUploadModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/remove_shared_agent": {
+      "delete": {
+        "description": "Remove a shared agent from the current user's shared list",
+        "operationId": "delete_remove_shared_agent",
+        "parameters": [
+          {
+            "description": "ID of the shared agent",
+            "in": "query",
+            "name": "id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-scopes": [
+          "agents:write"
+        ]
+      }
+    },
+    "/api/resource_settings": {
+      "get": {
+        "description": "Anyone with access may read them.\n\nQuery: ``resource_type``, ``resource_id``. Returns ``settings`` as\n``[{key, value, default}]`` in display order, plus the caller's\n``access`` and ``allowed_actions``.",
+        "operationId": "get_resource_settings",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "A resource's sharing switches",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-scopes": [
+          "teams:read"
+        ]
+      },
+      "put": {
+        "description": "Needs ``manage_settings`` (owner).\n\nBody: ``{\"resource_type\", \"resource_id\", \"settings\": {key: bool}}``.\nAn unknown key or a non-boolean value is a 400. Returns the GET shape.",
+        "operationId": "put_resource_settings",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Change a resource's sharing switches",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/resource_shares": {
+      "get": {
+        "description": "Needs ``share`` on it.\n\nPowers the share dialog (current shares + unshare), so only someone who\nmay change the sharing can enumerate it: 404 when the resource isn't\nvisible, 403 when the caller's role can't share.",
+        "operationId": "get_resource_shares",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "List the teams a resource is shared with",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-scopes": [
+          "teams:read"
+        ]
+      }
+    },
+    "/api/schedules/{schedule_id}": {
+      "delete": {
+        "description": "Cancel / delete a schedule.",
+        "operationId": "delete_schedule_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "schedules"
+        ],
+        "x-pat-scopes": [
+          "schedules:write"
+        ]
+      },
+      "get": {
+        "description": "Get schedule by id.",
+        "operationId": "get_schedule_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "schedules"
+        ],
+        "x-pat-scopes": [
+          "schedules:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "schedule_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "patch": {
+        "description": "Pause / resume a schedule.",
+        "operationId": "patch_schedule_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "schedules"
+        ],
+        "x-pat-scopes": [
+          "schedules:write"
+        ]
+      },
+      "put": {
+        "description": "Edit a schedule's editable fields.",
+        "operationId": "put_schedule_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "schedules"
+        ],
+        "x-pat-scopes": [
+          "schedules:write"
+        ]
+      }
+    },
+    "/api/schedules/{schedule_id}/run": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "schedule_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Run a schedule immediately (trigger_source='manual').",
+        "operationId": "post_schedule_run_now",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "schedules"
+        ],
+        "x-pat-scopes": [
+          "schedules:write"
+        ]
+      }
+    },
+    "/api/schedules/{schedule_id}/runs": {
+      "get": {
+        "description": "Paginated run log for a schedule.",
+        "operationId": "get_schedule_run_list",
+        "parameters": [
+          {
+            "description": "Page size (default 50)",
+            "in": "query",
+            "name": "limit",
+            "type": "string"
+          },
+          {
+            "description": "Page offset",
+            "in": "query",
+            "name": "offset",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "schedules"
+        ],
+        "x-pat-scopes": [
+          "schedules:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "schedule_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/schedules/{schedule_id}/runs/{run_id}": {
+      "get": {
+        "description": "Full output / error for a single run.",
+        "operationId": "get_schedule_run_detail",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "schedules"
+        ],
+        "x-pat-scopes": [
+          "schedules:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "schedule_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "in": "path",
+          "name": "run_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/search": {
+      "post": {
+        "description": "Search for relevant documents based on query",
+        "operationId": "post_search_resource",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/SearchModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "answer"
+        ],
+        "x-pat-scopes": [
+          "chat:run"
+        ]
+      }
+    },
+    "/api/search_conversations": {
+      "get": {
+        "description": "Search the authenticated user's conversations by name or message content (case-insensitive substring match). Mirrors the visibility filter and response shape of /get_conversations, and additionally returns ``match_field`` (``name``, ``prompt`` or ``response``) and ``match_snippet`` (a short excerpt of the matched text centered on the query) for each result.",
+        "operationId": "get_search_conversations",
+        "parameters": [
+          {
+            "description": "Search term (required)",
+            "in": "query",
+            "name": "q",
+            "type": "string"
+          },
+          {
+            "description": "Maximum number of results to return (default 30, max 100)",
+            "in": "query",
+            "name": "limit",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "conversations"
+        ],
+        "x-pat-scopes": [
+          "conversations:read"
+        ]
+      }
+    },
+    "/api/share": {
+      "post": {
+        "description": "Share a conversation",
+        "operationId": "post_share_conversation",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ShareConversationModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sharing"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/share_agent": {
+      "put": {
+        "description": "Share or unshare an agent",
+        "operationId": "put_share_agent",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ShareAgentModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-scopes": [
+          "agents:write"
+        ]
+      }
+    },
+    "/api/shared_agent": {
+      "get": {
+        "description": "Get a shared agent by token or ID",
+        "operationId": "get_shared_agent",
+        "parameters": [
+          {
+            "description": "Shared token of the agent",
+            "in": "query",
+            "name": "token",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/shared_agents": {
+      "get": {
+        "description": "Get shared agents explicitly shared with the user",
+        "operationId": "get_shared_agents",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-scopes": [
+          "agents:read"
+        ]
+      }
+    },
+    "/api/shared_conversation/{identifier}": {
+      "get": {
+        "description": "Get publicly shared conversations by identifier",
+        "operationId": "get_get_publicly_shared_conversations",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sharing"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "identifier",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/sources": {
+      "get": {
+        "description": "Provide JSON file with combined available indexes",
+        "operationId": "get_combined_json",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:read"
+        ]
+      }
+    },
+    "/api/sources/from_attachments": {
+      "post": {
+        "description": "Creates a Knowledge source from chat attachments the caller already uploaded. The stored originals are copied into a new source and ingested like an upload (a zip contributes its files); the files together may not exceed the upload request limit (413). Returns the source id and the ingest task id; progress arrives as ``source.ingest.*`` events for that source id. Honors an optional ``Idempotency-Key`` header: a repeat request with the same key within 24h returns the first request's source and task ids without copying the files or queueing a second ingest.",
+        "operationId": "post_source_from_attachments",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/SourceFromAttachmentsModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/sources/paginated": {
+      "get": {
+        "description": "Get document with pagination, sorting and filtering",
+        "operationId": "get_paginated_sources",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:read"
+        ]
+      }
+    },
+    "/api/sources/reingest": {
+      "post": {
+        "description": "Re-run ingestion for a source — e.g. to recover a stalled embed flagged by the reconciler.",
+        "operationId": "post_reingest_source",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ReingestSourceModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/sources/wiki": {
+      "post": {
+        "description": "Create an LLM-editable wiki source. No ingestion task is enqueued; pages are authored via the WikiTool. An optional initial_content seeds /index.md and triggers its per-page re-embed.",
+        "operationId": "post_create_wiki_source",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CreateWikiModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/sources/{source_id}/chunk": {
+      "get": {
+        "description": "The chunk behind a citation, found by its content key, else by its excerpt, with what the reader needs about its source. 404 when the caller cannot see the source, or with reason chunk_missing when neither finds the chunk (the source was edited); 501 with reason unsupported when the vector store cannot look chunks up.\nArgs:\n    source_id: The source the citation names.\n\nReturns:\n    Response: ``{\"success\", \"chunk\", \"source\", \"page_path\"}``, or an\n    error with ``reason`` ``chunk_missing`` (404) or ``unsupported``\n    (501) the reader tells apart from a source out of reach.",
+        "operationId": "get_chunk_by_key",
+        "parameters": [
+          {
+            "description": "The citation's ``chunk_key``: the MD5 of the chunk text",
+            "in": "query",
+            "name": "chunk_key",
+            "type": "string"
+          },
+          {
+            "description": "Optional: the start of the cited passage, searched when the key misses",
+            "in": "query",
+            "name": "excerpt",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Return the cited chunk and its source",
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "source_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/sources/{source_id}/config": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "source_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "patch": {
+        "description": "Edit a source's behavior config. Retrieval-time fields take effect live; chunking changes require an explicit re-ingest (surfaced as requires_reingest).",
+        "operationId": "patch_source_config_resource",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/SourceConfigModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/sources/{source_id}/graph": {
+      "get": {
+        "description": "Bounded knowledge-graph overview for a graphrag source: top nodes by degree and the edges among them (read access: owner or shared). Returns empty lists when no graph has been built yet.",
+        "operationId": "get_source_graph",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "source_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/sources/{source_id}/graph/node/{node_id}": {
+      "get": {
+        "description": "A graph node's description and its linked chunks (read access: owner or shared).",
+        "operationId": "get_source_graph_node",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "source_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "in": "path",
+          "name": "node_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/sources/{source_id}/graph/nodes": {
+      "get": {
+        "description": "Paged, searchable list of a graphrag source's nodes, highest degree first, plus type facets over all its nodes (read access: owner or shared). Query params: q (name substring), type (type key), page (1-based), per_page (1-100, default 25).\nArgs:\n    source_id: The source id from the URL.\n\nReturns:\n    Response: ``{success, nodes, total, page, per_page, types}``, or\n    401/404/400 on missing auth, no read access or a failure. ``page``\n    is clamped to ``1..GRAPH_NODE_LIST_MAX_PAGE`` and ``per_page`` to\n    ``1..GRAPH_NODE_LIST_MAX_LIMIT``. A graph store that is not\n    configured or has no tables yet reads as an empty page, like the\n    overview; any other store query failure is a 400, never an empty\n    200.",
+        "operationId": "get_source_graph_nodes",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "List one page of a source's graph nodes with type facets",
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "source_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/sources/{source_id}/graphrag/enable": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "source_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Enable GraphRAG on a source: flips its config to graphrag mode and enqueues graph extraction over its embedded chunks. Requires VECTOR_STORE=pgvector and GRAPHRAG_ENABLED. Write access required (owner/editor). The config kind cannot be set to graphrag via the config PATCH endpoint.",
+        "operationId": "post_enable_source_graph_rag",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/sources/{source_id}/search": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "source_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Run the real retrieval pipeline against one source and return the ranked chunks it produces, optionally under an ad-hoc retrieval config. Read-only: nothing is saved.",
+        "operationId": "post_source_search",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/SourceSearchModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "chat:run"
+        ]
+      }
+    },
+    "/api/sources/{source_id}/wiki/convert": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "source_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Convert an ingested source into a wiki. A blank source is enabled inline; a source with files runs a conversion task (poll its status for the per-file summary). Write access required (owner/editor).",
+        "operationId": "post_convert_source_to_wiki",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/sources/{source_id}/wiki/page": {
+      "get": {
+        "description": "Fetch a single wiki page's content fresh from storage.",
+        "operationId": "get_wiki_page",
+        "parameters": [
+          {
+            "description": "Page path (e.g. /index.md)",
+            "in": "query",
+            "name": "path",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "source_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "put": {
+        "description": "Create or overwrite a wiki page (human edit). Write access required; a stale expected_version returns 409.",
+        "operationId": "put_wiki_page",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/WikiPageEditModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/sources/{source_id}/wiki/pages": {
+      "get": {
+        "description": "List a wiki source's pages (read access: owner or shared).",
+        "operationId": "get_wiki_pages",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "source_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/sources/{source_id}/wiki/settings": {
+      "get": {
+        "description": "A wiki's settings. Anyone who can see the wiki may read them; returns allow_outside_edits plus the caller's access.",
+        "operationId": "get_wiki_settings",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "source_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "put": {
+        "description": "Change a wiki's settings (owner only, manage_settings). Body: {\"allow_outside_edits\": bool}: whether runs from an agent's API key or widget may edit the wiki.",
+        "operationId": "put_wiki_settings",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/store_attachment": {
+      "post": {
+        "description": "Stores one or multiple attachments without vectorization or training. Supports user or API key authentication.",
+        "operationId": "post_store_attachment",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/AttachmentModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "attachments"
+        ],
+        "x-pat-scopes": [
+          "chat:run"
+        ]
+      }
+    },
+    "/api/stt": {
+      "post": {
+        "description": "Transcribe an uploaded audio file",
+        "operationId": "post_speech_to_text",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/SpeechToTextModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "attachments"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/stt/live/chunk": {
+      "post": {
+        "description": "Transcribe a chunk for a live speech-to-text session",
+        "operationId": "post_live_speech_to_text_chunk",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/LiveSpeechToTextChunkModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "attachments"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/stt/live/finish": {
+      "post": {
+        "description": "Finish a live speech-to-text session",
+        "operationId": "post_live_speech_to_text_finish",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "attachments"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/stt/live/start": {
+      "post": {
+        "description": "Start a live speech-to-text session",
+        "operationId": "post_live_speech_to_text_start",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "attachments"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/sync_source": {
+      "post": {
+        "description": "Trigger an immediate sync for a source",
+        "operationId": "post_sync_source",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/SyncSourceModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/task_status": {
+      "get": {
+        "description": "Get celery job status",
+        "operationId": "get_task_status",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/TaskStatusModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "chat:run",
+          "sources:read",
+          "sources:write"
+        ]
+      }
+    },
+    "/api/teams": {
+      "get": {
+        "operationId": "get_teams",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "List the teams the caller belongs to, each annotated with their role",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-scopes": [
+          "teams:read"
+        ]
+      },
+      "post": {
+        "description": "The creator becomes its first team_admin.",
+        "operationId": "post_teams",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Create a team (self-serve)",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/teams/{team_id}": {
+      "delete": {
+        "description": "Owner-only (a global admin overrides).",
+        "operationId": "delete_team",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Delete the team",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-denied": true
+      },
+      "get": {
+        "description": "Requires membership.",
+        "operationId": "get_team",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Team detail with members and the caller's role",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-scopes": [
+          "teams:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "team_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "put": {
+        "description": "Requires team_admin.",
+        "operationId": "put_team",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Update team name/description",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/teams/{team_id}/grants": {
+      "delete": {
+        "description": "Allowed with ``share`` on the resource — no membership needed, so an\nowner who left the team can still pull their resource back — or for a\nteam_admin of this team. ``target_user_id`` picks one member's grant\n(absent → the whole-team grant). Identifiers come from query params\n(some proxies strip DELETE bodies), with a JSON-body fallback.",
+        "operationId": "delete_team_grants",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Unshare a resource from this team",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-denied": true
+      },
+      "get": {
+        "description": "Requires membership.\n\nEach row carries the resource's name, owner and people labels (email\nwhen on file, else null) and ``caller`` — the caller's own live\n``{access, allowed_actions}`` on that resource (null if none). A plain\nmember sees whole-team grants and grants aimed at them; a team_admin,\nor someone with ``share`` on the resource, sees every grant.",
+        "operationId": "get_team_grants",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "List resources shared with this team",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-scopes": [
+          "teams:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "team_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Needs ``share`` on the resource (the owner, or an editor when the owner\nturned on ``editors_can_share``) and membership of the team. The grant\nrecords the real owner as ``owner_id`` and the caller as ``granted_by``.",
+        "operationId": "post_team_grants",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Share a resource with this team, or change an existing grant's level",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/teams/{team_id}/members": {
+      "get": {
+        "description": "Requires membership.\n\nOptional query args: ``q`` (case-insensitive substring over email and\nuser id), ``page`` (1-based) and ``page_size`` (1..100; paginates only\nwhen given). ``total`` is the row count after the ``q`` filter.",
+        "operationId": "get_team_members",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "List members",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-scopes": [
+          "teams:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "team_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Requires team_admin.",
+        "operationId": "post_team_members",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Add a member by email (preferred) or raw user_id",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/teams/{team_id}/members/{member_id}": {
+      "delete": {
+        "description": "team_admin removes anyone; a member may remove self\n(leave). Guards the last admin.",
+        "operationId": "delete_team_member",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Remove a member",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "team_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "in": "path",
+          "name": "member_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "put": {
+        "description": "Requires team_admin. Guards the last admin.",
+        "operationId": "put_team_member",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Change a member's role",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/teams/{team_id}/transfer_owner": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "team_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Owner-only (global admin overrides).\n\nThe new owner must already be a member; they are promoted to team_admin.",
+        "operationId": "post_team_owner_transfer",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Transfer team ownership",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/template_agents": {
+      "get": {
+        "description": "Get template/premade agents",
+        "operationId": "get_get_template_agents",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-scopes": [
+          "agents:read"
+        ]
+      }
+    },
+    "/api/traces": {
+      "get": {
+        "description": "Stored execution traces (span timelines) for one Logs row. Pass exactly one of message_id, request_id, activity_id, workflow_run_id or id; api_key_id scopes to an agent you own.",
+        "operationId": "get_get_traces",
+        "parameters": [
+          {
+            "description": "Assistant message id",
+            "in": "query",
+            "name": "message_id",
+            "type": "string"
+          },
+          {
+            "description": "Request id (chat turn, scheduled run)",
+            "in": "query",
+            "name": "request_id",
+            "type": "string"
+          },
+          {
+            "description": "Agent activity id (webhook and system rows)",
+            "in": "query",
+            "name": "activity_id",
+            "type": "string"
+          },
+          {
+            "description": "Workflow run id",
+            "in": "query",
+            "name": "workflow_run_id",
+            "type": "string"
+          },
+          {
+            "description": "Trace id",
+            "in": "query",
+            "name": "id",
+            "type": "string"
+          },
+          {
+            "description": "Agent id to scope to",
+            "in": "query",
+            "name": "api_key_id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "analytics"
+        ],
+        "x-pat-scopes": [
+          "analytics:read"
+        ]
+      }
+    },
+    "/api/tts": {
+      "post": {
+        "description": "Synthesize audio speech from text",
+        "operationId": "post_text_to_speech",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/TextToSpeechModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "attachments"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/update_agent/{agent_id}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "agent_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "put": {
+        "description": "Update an existing agent",
+        "operationId": "put_update_agent",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UpdateAgentModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-scopes": [
+          "agents:write"
+        ]
+      }
+    },
+    "/api/update_chunk": {
+      "put": {
+        "description": "Updates an existing chunk in the document.",
+        "operationId": "put_update_chunk",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UpdateChunkModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/update_conversation_name": {
+      "post": {
+        "description": "Updates the name of a conversation",
+        "operationId": "post_update_conversation_name",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UpdateConversationModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "conversations"
+        ],
+        "x-pat-scopes": [
+          "conversations:write"
+        ]
+      }
+    },
+    "/api/update_prompt": {
+      "post": {
+        "description": "Update an existing prompt",
+        "operationId": "post_update_prompt",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UpdatePromptModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "prompts"
+        ],
+        "x-pat-scopes": [
+          "prompts:write"
+        ]
+      }
+    },
+    "/api/update_tool": {
+      "post": {
+        "description": "Update a tool by ID\nThe tool type (``name``) never changes. ``actions`` are checked\nagainst the stored ones like ``/api/update_tool_actions``: nothing\nis added and fixed values are the owner's. A connection-backed MCP\nserver is moved only through ``/api/mcp_server/save``.\n\nReturns:\n    ``{\"success\": true}``, or 400 / 403 / 404 with a message.",
+        "operationId": "post_update_tool",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UpdateToolModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Update a tool's names, actions, config or chat switch",
+        "tags": [
+          "tools"
+        ],
+        "x-pat-scopes": [
+          "tools:write"
+        ]
+      }
+    },
+    "/api/update_tool_actions": {
+      "post": {
+        "description": "Update the actions of a tool",
+        "operationId": "post_update_tool_actions",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UpdateToolActionsModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "tools"
+        ],
+        "x-pat-scopes": [
+          "tools:write"
+        ]
+      }
+    },
+    "/api/update_tool_config": {
+      "post": {
+        "description": "Update the configuration of a tool\nA connection-backed tool's new key goes to its connection (the\nowner's to change) and its server cannot be moved here; an api_tool's\nfixed values are the owner's.\n\nReturns:\n    ``{\"success\": true}``, or 400 / 403 / 404 with a message.",
+        "operationId": "post_update_tool_config",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UpdateToolConfigModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Replace a tool's config, keeping stored secrets the client left out",
+        "tags": [
+          "tools"
+        ],
+        "x-pat-scopes": [
+          "tools:write"
+        ]
+      }
+    },
+    "/api/update_tool_status": {
+      "post": {
+        "description": "Update the status of a tool",
+        "operationId": "post_update_tool_status",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UpdateToolStatusModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "tools"
+        ],
+        "x-pat-scopes": [
+          "tools:write"
+        ]
+      }
+    },
+    "/api/upload": {
+      "post": {
+        "description": "Uploads a file to be vectorized and indexed. Honors an optional ``Idempotency-Key`` header: a repeat request with the same key within 24h returns the original cached response without re-enqueuing.",
+        "operationId": "post_upload_file",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UploadModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/user/me": {
+      "get": {
+        "operationId": "get_me_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Return ``{user_id, roles, email?, name?, picture?}`` for the caller",
+        "tags": [
+          "me"
+        ],
+        "x-pat-scopes": []
+      }
+    },
+    "/api/user/models": {
+      "get": {
+        "description": "List the current user's BYOM custom models",
+        "operationId": "get_user_models_collection_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "models"
+        ],
+        "x-pat-scopes": [
+          "models:read"
+        ]
+      },
+      "post": {
+        "description": "Register a new BYOM custom model",
+        "operationId": "post_user_models_collection_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "models"
+        ],
+        "x-pat-scopes": [
+          "models:write"
+        ]
+      }
+    },
+    "/api/user/models/test": {
+      "post": {
+        "description": "Test an arbitrary BYOM payload (display_name / model id / base_url / api_key) without saving. Used by the UI's 'Test connection' button so the user can validate before they Save. Uses the selected API protocol with the same SSRF guard and 5s timeout as the by-id variant.",
+        "operationId": "post_user_model_test_payload_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "models"
+        ],
+        "x-pat-scopes": [
+          "models:write"
+        ]
+      }
+    },
+    "/api/user/models/{model_id}": {
+      "delete": {
+        "description": "Delete a BYOM custom model",
+        "operationId": "delete_user_model_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "models"
+        ],
+        "x-pat-scopes": [
+          "models:write"
+        ]
+      },
+      "get": {
+        "description": "Get one BYOM custom model",
+        "operationId": "get_user_model_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "models"
+        ],
+        "x-pat-scopes": [
+          "models:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "model_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "patch": {
+        "description": "Update a BYOM custom model (partial)",
+        "operationId": "patch_user_model_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "models"
+        ],
+        "x-pat-scopes": [
+          "models:write"
+        ]
+      }
+    },
+    "/api/user/models/{model_id}/test": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "model_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Test a saved BYOM record. Defaults to the stored base_url / upstream_model_id / encrypted api_key, but any of those can be overridden via the request body so the UI can test in-flight edits before saving. Used by the 'Test connection' button in edit mode.",
+        "operationId": "post_user_model_test_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "models"
+        ],
+        "x-pat-scopes": [
+          "models:write"
+        ]
+      }
+    },
+    "/api/user/quota": {
+      "get": {
+        "operationId": "get_my_quota_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Return the caller's limited buckets: ``{bucket, tokens, cost, resets_at}`` each",
+        "tags": [
+          "me"
+        ],
+        "x-pat-scopes": []
+      }
+    },
+    "/api/user/tokens": {
+      "get": {
+        "operationId": "get_personal_access_tokens",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "List the caller's tokens with the scope catalog and the server's token policy",
+        "tags": [
+          "tokens"
+        ],
+        "x-pat-denied": true
+      },
+      "post": {
+        "description": "The plaintext ``token`` is returned here and never again.",
+        "operationId": "post_personal_access_tokens",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Create a token",
+        "tags": [
+          "tokens"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/user/tokens/{token_id}": {
+      "delete": {
+        "description": "Takes effect on the next request.",
+        "operationId": "delete_personal_access_token",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Revoke one of the caller's tokens",
+        "tags": [
+          "tokens"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "token_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/user/tokens/{token_id}/regenerate": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "token_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Name, scopes and restrictions stay; the old secret stops working at\nonce. ``expires_in_days`` is optional and defaults to the lifetime the\ntoken was last issued with. An expired token can be renewed this way; a\nrevoked one cannot. The plaintext ``token`` is returned here and never again.",
+        "operationId": "post_personal_access_token_regenerate",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Issue a new secret for a token and reset its expiry",
+        "tags": [
+          "tokens"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/webhooks/agents/{webhook_token}": {
+      "get": {
+        "description": "Webhook listener for agent events (GET). Uses URL query parameters as payload to trigger processing. Honors an optional ``Idempotency-Key`` header: a repeat request with the same key within 24h returns the original cached response and does not re-enqueue the task.",
+        "operationId": "get_agent_webhook_listener",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "webhook_token",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Webhook listener for agent events (POST). Expects JSON payload, which is used to trigger processing. Honors an optional ``Idempotency-Key`` header: a repeat request with the same key within 24h returns the original cached response and does not re-enqueue the task.",
+        "operationId": "post_agent_webhook_listener",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/workflows": {
+      "post": {
+        "operationId": "post_workflow_list",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Create a new workflow with nodes and edges",
+        "tags": [
+          "workflows"
+        ],
+        "x-pat-scopes": [
+          "workflows:write"
+        ]
+      }
+    },
+    "/api/workflows/{workflow_id}": {
+      "delete": {
+        "operationId": "delete_workflow_detail",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Delete workflow and its graph",
+        "tags": [
+          "workflows"
+        ],
+        "x-pat-scopes": [
+          "workflows:write"
+        ]
+      },
+      "get": {
+        "operationId": "get_workflow_detail",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Get workflow details with nodes and edges",
+        "tags": [
+          "workflows"
+        ],
+        "x-pat-scopes": [
+          "workflows:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workflow_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "put": {
+        "operationId": "put_workflow_detail",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Update workflow and replace nodes/edges",
+        "tags": [
+          "workflows"
+        ],
+        "x-pat-scopes": [
+          "workflows:write"
+        ]
+      }
+    },
+    "/stream": {
+      "post": {
+        "description": "Stream a response based on the question and retriever",
+        "operationId": "post_stream_resource",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/StreamModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "answer"
+        ],
+        "x-pat-scopes": [
+          "chat:run"
+        ]
+      }
+    }
+  },
+  "produces": [
+    "application/json"
+  ],
+  "responses": {
+    "MaskError": {
+      "description": "When any error occurs on mask"
+    },
+    "ParseError": {
+      "description": "When a mask can't be parsed"
+    },
+    "RequestEntityTooLarge": {
+      "description": "Keep Flask-RESTX from replacing the configured upload-limit response"
+    }
+  },
+  "swagger": "2.0",
+  "tags": [
+    {
+      "description": "Default namespace",
+      "name": "default"
+    },
+    {
+      "description": "Answer related operations",
+      "name": "answer"
+    },
+    {
+      "description": "Analytics and reporting operations",
+      "name": "analytics"
+    },
+    {
+      "description": "Artifact operations",
+      "name": "artifacts"
+    },
+    {
+      "description": "File attachments and media operations",
+      "name": "attachments"
+    },
+    {
+      "description": "Conversation management operations",
+      "name": "conversations"
+    },
+    {
+      "description": "Current user identity and roles",
+      "name": "me"
+    },
+    {
+      "description": "Available models",
+      "name": "models"
+    },
+    {
+      "description": "Agent management operations",
+      "name": "agents"
+    },
+    {
+      "description": "Agent management operations",
+      "name": "agents"
+    },
+    {
+      "description": "Agent management operations",
+      "name": "agents"
+    },
+    {
+      "description": "Agent folder management",
+      "name": "agents_folders"
+    },
+    {
+      "description": "Agent import/export operations",
+      "name": "agents"
+    },
+    {
+      "description": "Agent guardrail configuration and audit",
+      "name": "guardrails"
+    },
+    {
+      "description": "Prompt management operations",
+      "name": "prompts"
+    },
+    {
+      "description": "Agent schedule management",
+      "name": "schedules"
+    },
+    {
+      "description": "Conversation sharing operations",
+      "name": "sharing"
+    },
+    {
+      "description": "Source document management operations",
+      "name": "sources"
+    },
+    {
+      "description": "Source document management operations",
+      "name": "sources"
+    },
+    {
+      "description": "Source retrieval testing",
+      "name": "sources"
+    },
+    {
+      "description": "Source document management operations",
+      "name": "sources"
+    },
+    {
+      "description": "Team management and resource sharing",
+      "name": "teams"
+    },
+    {
+      "description": "Tool management operations",
+      "name": "tools"
+    },
+    {
+      "description": "Tool management operations",
+      "name": "tools"
+    },
+    {
+      "name": "workflows"
+    },
+    {
+      "description": "Connector operations",
+      "name": "connectors"
+    },
+    {
+      "description": "Connectors and connections",
+      "name": "connections"
+    },
+    {
+      "description": "Admin-only management endpoints",
+      "name": "admin"
+    },
+    {
+      "description": "Personal access tokens",
+      "name": "tokens"
+    }
+  ]
+}

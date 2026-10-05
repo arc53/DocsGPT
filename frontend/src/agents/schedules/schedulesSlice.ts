@@ -13,9 +13,14 @@ import type {
   ScheduleUpdatePayload,
 } from '../types/schedule';
 
+/** Runs per request; a shorter page means the log has reached its oldest run. */
+export const RUNS_PAGE_SIZE = 50;
+
 export type SchedulesState = {
   byAgent: Record<string, Schedule[]>;
   runsBySchedule: Record<string, ScheduleRun[]>;
+  /** True once a schedule's oldest run is loaded. */
+  runsEndBySchedule: Record<string, boolean>;
   loading: boolean;
   error: string | null;
 };
@@ -23,6 +28,7 @@ export type SchedulesState = {
 const initialState: SchedulesState = {
   byAgent: {},
   runsBySchedule: {},
+  runsEndBySchedule: {},
   loading: false,
   error: null,
 };
@@ -71,7 +77,9 @@ export const deleteSchedule = createAsyncThunk<
   string,
   { id: string; token: string | null }
 >('schedules/delete', async ({ id, token }) => {
-  await schedulesService.remove(id, token);
+  const result = await schedulesService.remove(id, token);
+  // A refused delete answers `success: false`; reject so the row stays.
+  if (result?.success === false) throw new Error('Failed to delete schedule');
   return id;
 });
 
@@ -84,7 +92,7 @@ export const runScheduleNow = createAsyncThunk<
 });
 
 export const loadRunsForSchedule = createAsyncThunk<
-  { scheduleId: string; runs: ScheduleRun[] },
+  { scheduleId: string; runs: ScheduleRun[]; offset: number; limit: number },
   {
     id: string;
     limit?: number;
@@ -92,8 +100,15 @@ export const loadRunsForSchedule = createAsyncThunk<
     token: string | null;
   }
 >('schedules/loadRuns', async ({ id, limit, offset, token }) => {
-  const r = await schedulesService.listRuns(id, limit, offset, token);
-  return { scheduleId: id, runs: r.runs };
+  const pageLimit = limit ?? RUNS_PAGE_SIZE;
+  const pageOffset = offset ?? 0;
+  const r = await schedulesService.listRuns(id, pageLimit, pageOffset, token);
+  return {
+    scheduleId: id,
+    runs: r.runs,
+    offset: pageOffset,
+    limit: pageLimit,
+  };
 });
 
 const upsert = (list: Schedule[], next: Schedule): Schedule[] => {
@@ -229,6 +244,7 @@ const schedulesSlice = createSlice({
           state.byAgent[agentId] = removeFrom(state.byAgent[agentId], id);
         });
         delete state.runsBySchedule[id];
+        delete state.runsEndBySchedule[id];
       })
       .addCase(runScheduleNow.fulfilled, (state, action) => {
         const { scheduleId, run } = action.payload;
@@ -236,8 +252,20 @@ const schedulesSlice = createSlice({
         state.runsBySchedule[scheduleId] = [run, ...list];
       })
       .addCase(loadRunsForSchedule.fulfilled, (state, action) => {
-        const { scheduleId, runs } = action.payload;
-        state.runsBySchedule[scheduleId] = runs;
+        const { scheduleId, runs, offset, limit } = action.payload;
+        if (offset === 0) {
+          state.runsBySchedule[scheduleId] = runs;
+        } else {
+          // Runs that arrived over SSE shift the window, so an older page
+          // can repeat the last rows already listed.
+          const list = state.runsBySchedule[scheduleId] ?? [];
+          const seen = new Set(list.map((run) => run.id));
+          state.runsBySchedule[scheduleId] = [
+            ...list,
+            ...runs.filter((run) => !seen.has(run.id)),
+          ];
+        }
+        state.runsEndBySchedule[scheduleId] = runs.length < limit;
       })
       // SSE envelopes from scheduler_worker.py; unknown shapes are no-ops.
       .addMatcher(
@@ -333,12 +361,23 @@ const schedulesSlice = createSlice({
 export const { applyEvent, resetSchedules } = schedulesSlice.actions;
 export default schedulesSlice.reducer;
 
+// Shared fallbacks: a fresh [] per call would change identity on every render
+// and re-run any effect that depends on the selected list.
+const NO_SCHEDULES: Schedule[] = [];
+const NO_RUNS: ScheduleRun[] = [];
+
 export const selectSchedulesForAgent = (
   state: { schedules: SchedulesState },
   agentId: string,
-): Schedule[] => state.schedules.byAgent[agentId] ?? [];
+): Schedule[] => state.schedules.byAgent[agentId] ?? NO_SCHEDULES;
 
 export const selectRunsForSchedule = (
   state: { schedules: SchedulesState },
   scheduleId: string,
-): ScheduleRun[] => state.schedules.runsBySchedule[scheduleId] ?? [];
+): ScheduleRun[] => state.schedules.runsBySchedule[scheduleId] ?? NO_RUNS;
+
+/** Whether a schedule's run log has loaded its oldest run. */
+export const selectRunsEnd = (
+  state: { schedules: SchedulesState },
+  scheduleId: string,
+): boolean => state.schedules.runsEndBySchedule?.[scheduleId] ?? false;

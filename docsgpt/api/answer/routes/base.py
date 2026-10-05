@@ -1,14 +1,19 @@
 import datetime
+import functools
+import inspect
 import json
 import logging
 import threading
 import time
+import traceback
 import uuid
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any, Callable, Dict, Generator, List, Optional
 
 from flask import jsonify, make_response, Response
 from flask_restx import Namespace
 
+from docsgpt import tracing
+from docsgpt.api.answer.segments import AnswerSegments
 from docsgpt.api.answer.services.continuation_service import ContinuationService
 from docsgpt.api.answer.services.conversation_service import (
     ConversationService,
@@ -21,8 +26,10 @@ from docsgpt.core.model_utils import (
 )
 
 from docsgpt.core.settings import settings
-from docsgpt.error import sanitize_api_error
+from docsgpt.error import bounded_error_text, sanitize_api_error, user_facing_error
 from docsgpt.llm.llm_creator import LLMCreator
+from docsgpt.quotas.http import quota_exceeded_response
+from docsgpt.quotas.service import QuotaService
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.conversations import (
     HeartbeatState,
@@ -52,6 +59,15 @@ STREAM_HEARTBEAT_INTERVAL = 30
 STREAM_HEARTBEAT_MAX_SECONDS = 3600
 
 
+class ClientDisconnected(GeneratorExit):
+    """Raised inside a stream whose client the route saw go away.
+
+    Handled exactly as the generator being closed by a disconnect (the
+    partial answer is saved, the row marked aborted), except that the
+    stream then ends instead of re-raising: nobody closed it.
+    """
+
+
 class StreamSuperseded(Exception):
     """Raised to unwind a stream whose message row was deleted mid-flight.
 
@@ -63,6 +79,95 @@ class StreamSuperseded(Exception):
 
 answer_ns = Namespace("answer", description="Answer related operations", path="/")
 
+
+def _traced_stream(
+    method: Callable[..., Generator[str, None, None]],
+) -> Callable[..., Generator[str, None, None]]:
+    """Record ``complete_stream`` as the request's execution trace.
+
+    The stream runs in the SSE pump thread, not the request thread, so the
+    trace the route started is activated here for the whole stream and written
+    exactly once when the stream ends -- normally, paused, failed or
+    abandoned. The request id is resolved here too so the trace and the
+    stream agree on it.
+    """
+    signature = inspect.signature(method)
+
+    @functools.wraps(method)
+    def wrapper(*args: Any, **kwargs: Any) -> Generator[str, None, None]:
+        bound = signature.bind(*args, **kwargs)
+        arguments = bound.arguments
+        continuation = arguments.get("_continuation")
+        request_id = (
+            continuation.get("request_id") if continuation else None
+        ) or arguments.get("request_id") or str(uuid.uuid4())
+        arguments["request_id"] = request_id
+        trace = arguments.get("trace")
+        if not isinstance(trace, tracing.Trace):
+            agent = arguments.get("agent")
+            trace = tracing.start_trace(
+                source=str(getattr(agent, "endpoint", None) or "stream"),
+                capture_otel_context=False,
+            )
+        arguments["trace"] = trace
+        if trace is not None:
+            decoded_token = arguments.get("decoded_token")
+            trace.bind(
+                request_id=request_id,
+                user_id=decoded_token.get("sub") if isinstance(decoded_token, dict) else None,
+                agent_id=arguments.get("agent_id"),
+            )
+        with tracing.activate(trace):
+            try:
+                yield from method(*bound.args, **bound.kwargs)
+            finally:
+                # Written on a writer thread so the stream's connection closes
+                # without waiting on the OTel replay and the INSERT.
+                tracing.flush(trace, background=True)
+
+    return wrapper
+
+
+
+
+def _client_gone(agent: Any) -> bool:
+    """Whether the route flagged the agent's client as disconnected."""
+    event = getattr(agent, "client_disconnected", None)
+    return isinstance(event, threading.Event) and event.is_set()
+
+def _record_answered_by(agent: Any, query_metadata: Dict[str, Any]) -> None:
+    """Keep the models that answered on the message, once a fallback answered.
+
+    ``BaseLLM.answered_by`` lists every switch of answering model in the
+    turn. A turn the configured model answered alone adds nothing (the
+    message's ``model_id`` already says it); one a fallback answered any part
+    of stores the list as ``metadata.answered_by``.
+
+    Args:
+        agent: The agent running the turn.
+        query_metadata: The message metadata being collected; updated in place.
+    """
+    entries = getattr(getattr(agent, "llm", None), "answered_by", None)
+    if not isinstance(entries, list):
+        return
+    entries = [dict(e) for e in entries if isinstance(e, dict)]
+    if any(e.get("fallback") for e in entries):
+        query_metadata["answered_by"] = entries
+
+
+def _native_image_names(agent: Any) -> List[str]:
+    """Files the turn sent to the model as images, for a provider's image refusal."""
+    plan = getattr(agent, "attachment_plan", None)
+    names: List[str] = []
+    try:
+        for planned in getattr(plan, "files", None) or []:
+            if getattr(planned, "native", False) is True and str(getattr(planned, "mime_type", "")).startswith(
+                "image/"
+            ):
+                names.append(str(planned.filename))
+    except Exception:
+        return []
+    return names
 
 class BaseAnswerResource:
     """Shared base class for answer endpoints"""
@@ -91,6 +196,79 @@ class BaseAnswerResource:
             return missing_fields
         return None
 
+    def _persist_turn_log(
+        self,
+        *,
+        decoded_token: Dict[str, Any],
+        user_api_key: Optional[str],
+        agent_id: Optional[str],
+        question: str,
+        response: str,
+        sources: List[Dict[str, Any]],
+        tool_calls: Any,
+        attachment_ids: Optional[List[str]],
+        request_id: Optional[str],
+        message_id: Optional[str],
+        error: Optional[str] = None,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Write the turn's ``user_logs`` row: its Logs entry, linked to its trace.
+
+        Written for every finished turn, failed ones included (``level`` is
+        ``error`` then), so a failed chat shows up as a chat entry. A failure
+        to write is logged, never raised.
+
+        Args:
+            decoded_token: The caller's token.
+            user_api_key: The agent API key the request used, if any.
+            agent_id: The agent that answered.
+            question: The question as stored (after input redaction).
+            response: The answer, or what streamed before a failure.
+            sources: Retrieved sources.
+            tool_calls: The turn's tool calls, before log truncation.
+            attachment_ids: Attached file ids.
+            request_id: The turn's request id (links its trace).
+            message_id: The reserved message id.
+            error: What failed the turn, if it failed.
+            extra: More fields for the row (structured-output details).
+        """
+        log_data: Dict[str, Any] = {
+            "action": "stream_answer",
+            "level": "error" if error else "info",
+            "user": decoded_token.get("sub"),
+            "api_key": user_api_key,
+            "agent_id": agent_id,
+            "question": question,
+            "response": response,
+            "sources": sources,
+            "tool_calls": self._prepare_tool_calls_for_logging(tool_calls),
+            "attachments": attachment_ids,
+            "timestamp": datetime.datetime.now(datetime.timezone.utc),
+            # Links the Logs row to this turn's execution trace.
+            "request_id": request_id,
+            "message_id": message_id,
+        }
+        if error:
+            log_data["error"] = error
+        if extra:
+            log_data.update(extra)
+        # Clean up text fields to be no longer than 10000 characters.
+        for key, value in log_data.items():
+            if isinstance(value, str) and len(value) > 10000:
+                log_data[key] = value[:10000]
+        try:
+            with db_session() as conn:
+                UserLogsRepository(conn).insert(
+                    user_id=log_data.get("user"),
+                    endpoint="stream_answer",
+                    data=log_data,
+                )
+        except Exception as log_err:
+            logger.error(
+                f"Failed to persist stream_answer user log: {log_err}",
+                exc_info=True,
+            )
+
     @staticmethod
     def _prepare_tool_calls_for_logging(
         tool_calls: Optional[List[Dict[str, Any]]], max_chars: int = 10000
@@ -112,17 +290,34 @@ class BaseAnswerResource:
             prepared.append(item)
         return prepared
 
-    def check_usage(self, agent_config: Dict) -> Optional[Response]:
-        """Check if there is a usage limit and if it is exceeded
+    def check_usage(
+        self,
+        agent_config: Dict,
+        decoded_token: Optional[Dict] = None,
+        agent_id: Optional[str] = None,
+    ) -> Optional[Response]:
+        """Refuse the request when a usage limit is exhausted.
+
+        The billable user's quota is checked first, for every request; the
+        agent's own 24h token and request limits then apply to traffic that
+        runs through an agent.
 
         Args:
             agent_config: The config dict of agent instance
+            decoded_token: The request's resolved identity; its ``sub`` is the
+                billable user.
+            agent_id: The agent the request runs through. A draft agent has no
+                key, but its usage rows carry the agent id, so it is agent traffic.
 
         Returns:
             None or Response if either of limits exceeded.
 
         """
         api_key = agent_config.get("user_api_key")
+        user_id = (decoded_token or {}).get("sub") or agent_config.get("user_id")
+        exceeded = QuotaService.check(user_id, "agent" if api_key or agent_id else "direct")
+        if exceeded is not None:
+            return quota_exceeded_response(exceeded)
         if not api_key:
             return None
         with db_readonly() as conn:
@@ -197,6 +392,35 @@ class BaseAnswerResource:
             )
         return None
 
+    def check_usage_on_resume(self, processor: Any, conversation_id: Any) -> Optional[Response]:
+        """Run ``check_usage`` for a tool continuation, releasing its claim on refusal.
+
+        ``resume_from_tool_actions`` has already claimed the paused turn by the
+        time the limits can be checked (the agent config comes from the claimed
+        state). A refusal returns before ``complete_stream`` and its cleanup, so
+        the claim is released here; otherwise retries get a 409 until the stale
+        claim is reverted.
+
+        Args:
+            processor: The ``StreamProcessor`` that resumed the turn.
+            conversation_id: The conversation whose pending state was claimed.
+
+        Returns:
+            None, or the refusal Response.
+        """
+        error = self.check_usage(
+            processor.agent_config, processor.decoded_token, agent_id=processor.agent_id
+        )
+        if error is None or not conversation_id:
+            return error
+        user = processor.initial_user_id or (processor.decoded_token or {}).get("sub")
+        try:
+            ContinuationService().release_claim(str(conversation_id), user)
+        except Exception:
+            logger.exception("Failed to release resume claim after a usage refusal")
+        return error
+
+    @_traced_stream
     def complete_stream(
         self,
         question: str,
@@ -216,6 +440,8 @@ class BaseAnswerResource:
         model_user_id: Optional[str] = None,
         _continuation: Optional[Dict] = None,
         finalize_tool_pause_as_complete: bool = False,
+        request_id: Optional[str] = None,
+        trace: Optional["tracing.Trace"] = None,
     ) -> Generator[str, None, None]:
         """
         Generator function that streams the complete conversation response.
@@ -239,6 +465,14 @@ class BaseAnswerResource:
             shared_token: Token for shared agent
             model_id: Model ID used for the request
             retrieved_docs: Pre-fetched documents for sources (optional)
+            request_id: The request's id, minted by the route before the
+                agent was built so pre-fetch retrieval shares it. A
+                continuation's saved id takes precedence; absent both, a new
+                one is minted.
+            trace: The execution trace the route started (it already holds
+                the pre-fetch retrieval); :func:`_traced_stream` activates it
+                and writes it when the stream ends. A new one is started when
+                omitted.
             finalize_tool_pause_as_complete: Stateless-tool-round mode for
                 the OpenAI-compatible ``/v1/chat/completions`` endpoint.
                 OpenAI clients resume a tool call by re-POSTing the full
@@ -268,6 +502,9 @@ class BaseAnswerResource:
         schema_info = None
         structured_chunks = []
         query_metadata: Dict[str, Any] = {}
+        # The order text, thought and tool calls arrived in, saved under
+        # ``query_metadata["segments"]`` so a reload renders the turn as it streamed.
+        segments = AnswerSegments(query_metadata)
         paused = False
         # Set when the agent *yields* a terminal ``error`` event instead of
         # raising. Workflow node failures take that route (the engine catches
@@ -289,10 +526,10 @@ class BaseAnswerResource:
         pending_pause_event: Optional[dict] = None
 
         # One id shared across the WAL row, primary LLM (token_usage
-        # attribution), the SSE event, and resumed continuations.
+        # attribution), the SSE event, resumed continuations and the trace.
         request_id = (
             _continuation.get("request_id") if _continuation else None
-        ) or str(uuid.uuid4())
+        ) or request_id or str(uuid.uuid4())
 
         # Reserve the placeholder row before the LLM call so a crash
         # mid-stream still leaves the question queryable. Continuations
@@ -358,6 +595,17 @@ class BaseAnswerResource:
         primary_llm = getattr(agent, "llm", None)
         if primary_llm is not None:
             primary_llm._request_id = request_id
+        # Side-channel LLMs built later (guardrail judge, retrievers the agent
+        # creates for its search tools) read the id off the agent.
+        if getattr(agent, "request_id", None) is None:
+            try:
+                agent.request_id = request_id
+            except Exception:
+                logger.debug("Could not stamp request_id on the agent")
+        tracing.bind(
+            message_id=reserved_message_id,
+            conversation_id=str(conversation_id) if conversation_id else None,
+        )
 
         # Flipped to ``streaming`` on the first ``answer``/``sources`` chunk;
         # the reconciler reads ``status`` to tell "never started" from "in
@@ -633,11 +881,17 @@ class BaseAnswerResource:
                 # nothing and is only cancelled when that call returns.
                 if stream_cancelled.is_set():
                     raise StreamSuperseded(reserved_message_id or "")
+                # A client that cannot rejoin the stream went away (``/v1``):
+                # stop the agent here and save what there is, as an abort.
+                if _client_gone(agent):
+                    raise ClientDisconnected()
+                _record_answered_by(agent, query_metadata)
                 if "metadata" in line:
                     query_metadata.update(line["metadata"])
                 elif "answer" in line:
                     _mark_streaming_once()
                     response_full += str(line["answer"])
+                    segments.answer(line["answer"])
                     if line.get("structured"):
                         is_structured = True
                         schema_info = line.get("schema")
@@ -668,6 +922,7 @@ class BaseAnswerResource:
                     yield _emit({"type": "tool_calls", "tool_calls": tool_calls})
                 elif "thought" in line:
                     thought += line["thought"]
+                    segments.thought(line["thought"])
                     yield _emit({"type": "thought", "thought": line["thought"]})
                 elif "type" in line:
                     if line.get("type") == "tool_calls_pending":
@@ -684,8 +939,18 @@ class BaseAnswerResource:
                         # "quota" and rewrite it into a misleading rate-limit message, so
                         # emit it verbatim; sanitize only raw/technical errors.
                         error_text = line.get("error", "An error occurred")
+                        error_extra: Dict[str, Any] = {}
                         if not line.get("user_facing"):
                             error_text = sanitize_api_error(error_text)
+                        elif line.get("code"):
+                            # A curated error's code and params travel with it, so
+                            # the client can word it (context_length_exceeded).
+                            error_extra["code"] = line["code"]
+                            if line.get("params"):
+                                error_extra["params"] = line["params"]
+                            query_metadata["error_code"] = line["code"]
+                            if line.get("params"):
+                                query_metadata["error_params"] = line["params"]
                         stream_error = error_text
                         guardrail_meta = line.get("guardrail")
                         if guardrail_meta:
@@ -700,6 +965,7 @@ class BaseAnswerResource:
                             # it only on reload.
                             response_full = error_text
                             thought = ""
+                            segments.reset()
                             structured_chunks.clear()
                             is_structured = False
                             query_metadata["guardrail"] = guardrail_meta
@@ -710,7 +976,10 @@ class BaseAnswerResource:
                                     "retract": True,
                                 }
                             )
-                        yield _emit({"type": "error", "error": error_text})
+                        yield _emit({"type": "error", "error": error_text, **error_extra})
+                    elif line.get("type") == "tool_call":
+                        segments.tool_call(line.get("data"))
+                        yield _emit(line)
                     elif line.get("type") == "notice":
                         # Non-fatal, non-terminal notice (e.g. some workflow input
                         # documents were dropped). Forwarded verbatim so the client can
@@ -727,6 +996,7 @@ class BaseAnswerResource:
                         yield _emit(line)
                     else:
                         yield _emit(line)
+            _record_answered_by(agent, query_metadata)
             if is_structured and structured_chunks:
                 yield _emit(
                     {
@@ -744,10 +1014,20 @@ class BaseAnswerResource:
             # error silently — the exact shape of the bug being fixed here.
             if stream_error:
                 query_metadata.setdefault("error", stream_error)
+                # A yielded error (e.g. a failed workflow node) ends the
+                # generator normally, so no span raised; the user still saw
+                # the turn fail, and its trace should say so. A pause below
+                # overrides this, as it does for the message row.
+                trace = tracing.current_trace()
+                if trace is not None:
+                    trace.outcome = tracing.STATUS_ERROR
 
             # ---- Paused: save continuation state and end stream early ----
             if paused:
                 continuation = getattr(agent, "_pending_continuation", None)
+                trace = tracing.current_trace()
+                if trace is not None:
+                    trace.outcome = tracing.STATUS_PAUSED
 
                 # ---- Stateless-tool-round mode (OpenAI-compatible /v1) ----
                 # OpenAI clients resume by re-POSTing the whole message
@@ -783,6 +1063,12 @@ class BaseAnswerResource:
                     return
 
                 if continuation:
+                    # The sources the resumed turn starts from, copied before
+                    # ``save_conversation`` below trims their text in place.
+                    paused_sources = [
+                        dict(doc) if isinstance(doc, dict) else doc
+                        for doc in source_log_docs
+                    ]
                     # First-turn pause needs a conversation row to attach to.
                     if not conversation_id and should_persist:
                         try:
@@ -854,10 +1140,29 @@ class BaseAnswerResource:
                                     "llm_name": getattr(agent, "llm_name", settings.LLM_PROVIDER),
                                     "api_key": getattr(agent, "api_key", None),
                                     "user_api_key": user_api_key,
+                                    # An API-key caller stays one after a
+                                    # resume (owner-account write rules).
+                                    "external_api_caller": getattr(
+                                        agent.tool_executor, "external_caller", False,
+                                    ),
+                                    "public_link_caller": getattr(
+                                        agent.tool_executor, "public_link_caller", False,
+                                    ),
+                                    "api_write_allowlist": sorted(
+                                        getattr(agent.tool_executor, "api_write_allowlist", set()),
+                                    ),
                                     "agent_id": agent_id,
                                     "agent_type": agent.__class__.__name__,
+                                    # The sources so far, in full and in
+                                    # citation order: the resumed agent
+                                    # starts from them, so a hit after the
+                                    # resume continues their ``[n]`` numbers.
+                                    "retrieved_docs": paused_sources,
                                     "prompt": getattr(agent, "prompt", ""),
                                     "json_schema": getattr(agent, "json_schema", None),
+                                    # Kept with the schema: a resume that sends
+                                    # no response_format reuses both.
+                                    "json_schema_strict": getattr(agent, "json_schema_strict", True),
                                     "retriever_config": getattr(agent, "retriever_config", None),
                                     # Guardrails must survive the pause: a
                                     # resumed turn is still the same turn.
@@ -1169,44 +1474,27 @@ class BaseAnswerResource:
                     )
             yield _emit({"type": "id", "id": str(conversation_id)})
 
-            tool_calls_for_logging = self._prepare_tool_calls_for_logging(
-                getattr(agent, "tool_calls", tool_calls) or tool_calls
-            )
-
-            log_data = {
-                "action": "stream_answer",
-                "level": "info",
-                "user": decoded_token.get("sub"),
-                "api_key": user_api_key,
-                "agent_id": agent_id,
-                "question": question,
-                "response": response_full,
-                "sources": source_log_docs,
-                "tool_calls": tool_calls_for_logging,
-                "attachments": attachment_ids,
-                "timestamp": datetime.datetime.now(datetime.timezone.utc),
-            }
+            extra: Dict[str, Any] = {}
             if is_structured:
-                log_data["structured_output"] = True
+                extra["structured_output"] = True
                 if schema_info:
-                    log_data["schema"] = schema_info
-            # Clean up text fields to be no longer than 10000 characters
-
-            for key, value in log_data.items():
-                if isinstance(value, str) and len(value) > 10000:
-                    log_data[key] = value[:10000]
-            try:
-                with db_session() as conn:
-                    UserLogsRepository(conn).insert(
-                        user_id=log_data.get("user"),
-                        endpoint="stream_answer",
-                        data=log_data,
-                    )
-            except Exception as log_err:
-                logger.error(
-                    f"Failed to persist stream_answer user log: {log_err}",
-                    exc_info=True,
-                )
+                    extra["schema"] = schema_info
+            self._persist_turn_log(
+                decoded_token=decoded_token,
+                user_api_key=user_api_key,
+                agent_id=agent_id,
+                question=question,
+                response=response_full,
+                sources=source_log_docs,
+                tool_calls=getattr(agent, "tool_calls", tool_calls) or tool_calls,
+                attachment_ids=attachment_ids,
+                request_id=request_id,
+                message_id=reserved_message_id,
+                # A yielded error (a failed workflow node) ends the turn
+                # normally but still failed it.
+                error=stream_error,
+                extra=extra,
+            )
 
             yield _emit({"type": "end"})
             # Drain the journal buffer so the terminal ``end`` event is
@@ -1216,7 +1504,7 @@ class BaseAnswerResource:
             # sitting in memory.
             if journal_writer is not None:
                 journal_writer.close()
-        except GeneratorExit:
+        except GeneratorExit as stream_exit:
             logger.info(f"Stream aborted by client for question: {question[:50]}... ")
             # Drain any buffered events before the terminal one-shot
             # ``record_event`` below — keeps the journal's seq order
@@ -1402,6 +1690,9 @@ class BaseAnswerResource:
                         f"Failed to journal terminal event on abort: {journal_err}",
                         exc_info=True,
                     )
+            if isinstance(stream_exit, ClientDisconnected):
+                # Raised here, not by a close(): the generator ends normally.
+                return
             raise
         except StreamSuperseded as e:
             # Deliberately ahead of the generic handler below: this is not a
@@ -1422,9 +1713,29 @@ class BaseAnswerResource:
             )
             if journal_writer is not None:
                 journal_writer.close()
+            # The user replaced this turn; its trace describes nothing kept.
+            tracing.discard(tracing.current_trace())
             return
         except Exception as e:
-            logger.error(f"Error in stream: {str(e)}", exc_info=True)
+            # Bounded and without the exception attached: a provider error can
+            # echo the request, base64 file parts included. The frames still
+            # say where it failed.
+            logger.error(
+                "Error in stream: %s\n%s",
+                bounded_error_text(e),
+                "".join(traceback.format_tb(e.__traceback__)),
+            )
+            # What the user is told and what the failed row keeps: curated
+            # text with a code, never the exception (a provider error can echo
+            # the request, base64 file parts included).
+            public_error = user_facing_error(
+                e,
+                surface="v1" if getattr(agent, "is_v1", False) is True else "chat",
+                image_names=_native_image_names(agent),
+            )
+            trace = tracing.current_trace()
+            if trace is not None:
+                trace.outcome = tracing.STATUS_ERROR
             # This process took the resume claim, so it owns releasing it. The
             # only other way back is ``revert_stale_resuming``'s 600 s grace,
             # which leaves the user locked out of their own conversation for
@@ -1460,6 +1771,10 @@ class BaseAnswerResource:
                 # ``update_message_by_id`` lets that second answer through,
                 # exactly as it already does for the reconciler's own marker.
                 failure_metadata = dict(query_metadata or {})
+                failure_metadata["error"] = public_error.message
+                failure_metadata["error_code"] = public_error.code
+                if public_error.params:
+                    failure_metadata["error_params"] = public_error.params
                 if claim_released:
                     failure_metadata["resume_retryable"] = True
                 try:
@@ -1479,10 +1794,28 @@ class BaseAnswerResource:
                         f"Failed to finalize errored message: {fin_err}",
                         exc_info=True,
                     )
+            # A failed turn is still a chat turn: log it as one (level
+            # ``error``), with its trace link, instead of leaving only the
+            # agent's system error row.
+            self._persist_turn_log(
+                decoded_token=decoded_token,
+                user_api_key=user_api_key,
+                agent_id=agent_id,
+                question=question,
+                response=response_full,
+                sources=source_log_docs,
+                tool_calls=getattr(agent, "tool_calls", tool_calls) or tool_calls,
+                attachment_ids=attachment_ids,
+                request_id=request_id,
+                message_id=reserved_message_id,
+                error=bounded_error_text(e),
+            )
             yield _emit(
                 {
                     "type": "error",
-                    "error": "Please try again later. We apologize for any inconvenience.",
+                    "error": public_error.message,
+                    "code": public_error.code,
+                    **({"params": public_error.params} if public_error.params else {}),
                 }
             )
             # Drain the terminal ``error`` event we just yielded so a
@@ -1650,6 +1983,8 @@ class BaseAnswerResource:
                         "tool_calls": None,
                         "thought": None,
                         "error": event["error"],
+                        "error_code": event.get("code"),
+                        "error_params": event.get("params"),
                     }
                 elif event["type"] == "end":
                     stream_ended = True
@@ -1687,3 +2022,18 @@ class BaseAnswerResource:
     def error_stream_generate(self, err_response):
         data = json.dumps({"type": "error", "error": err_response})
         yield f"data: {data}\n\n"
+
+    def curated_error_stream_generate(self, error: BaseException):
+        """One SSE ``error`` event with the curated message, code and params.
+
+        Args:
+            error: What failed the turn before its stream began.
+
+        Yields:
+            The event, worded as :func:`user_facing_error` words it.
+        """
+        public = user_facing_error(error)
+        payload: Dict[str, Any] = {"type": "error", "error": public.message, "code": public.code}
+        if public.params:
+            payload["params"] = public.params
+        yield f"data: {json.dumps(payload)}\n\n"

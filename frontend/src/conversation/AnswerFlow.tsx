@@ -1,23 +1,23 @@
+import { ChevronDown, Cloud } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import SchedulerToolCallCard from '../agents/schedules/SchedulerToolCallCard';
-import ChevronDown from '../assets/chevron-down.svg?react';
-import Cloud from '../assets/cloud.svg';
-import CopyButton from '../components/CopyButton';
-import ToolIcon from '../components/ToolIcon';
 import { Button } from '../components/ui/button';
 import { usePacedText } from '../hooks';
 import {
   getToolChipLabel,
   isToolCallRunning,
 } from '../utils/streamingStatusUtils';
+import { layoutAnswer } from './answerLayout';
 import { AnswerSegment, getAnswerSegments } from './answerSegments';
 import MarkdownAnswer from './MarkdownAnswer';
 import { type SandboxArtifact } from './sandboxLinks';
+import StepGroup, { StepIcon, ToolCallDetail } from './StepGroup';
 import StreamingStatusLine from './StreamingStatusLine';
 import { ToolCallsType } from './types';
 import { isWikiWriteCall } from './wikiToolCall';
+import { cn } from '@/lib/utils';
 
 type AnswerFlowProps = {
   message?: string;
@@ -26,6 +26,10 @@ type AnswerFlowProps = {
   // Absent on reload, where the order is synthesized from the flat fields.
   segments?: AnswerSegment[];
   isStreaming?: boolean;
+  /** How many sources the answer can cite; see `MarkdownAnswer`. */
+  sourceCount?: number;
+  /** Opens a cited source's reader; see `MarkdownAnswer`. */
+  onOpenSource?: (index: number) => void;
   agentId?: string;
   /** Set when the bubble already carries its own progress UI (a research run). */
   suppressStatusLine?: boolean;
@@ -42,8 +46,11 @@ type AnswerFlowProps = {
 };
 
 /**
- * Never splits the answer with a step, which is what keeps a streaming answer and
- * the same answer fetched back rendering identically.
+ * The answer column in the order its parts streamed: answer text, reasoning,
+ * single steps, and step groups for runs of three or more calls (see
+ * ``layoutAnswer``). The order is saved with the message, so a streaming answer
+ * and the same answer fetched back render identically; without a saved order
+ * the steps come first and the answer after them.
  */
 export default function AnswerFlow({
   message,
@@ -51,6 +58,8 @@ export default function AnswerFlow({
   toolCalls,
   segments,
   isStreaming,
+  sourceCount,
+  onOpenSource,
   agentId,
   suppressStatusLine,
   artifacts,
@@ -59,38 +68,81 @@ export default function AnswerFlow({
   renderApproval,
   renderWikiWrite,
 }: AnswerFlowProps) {
-  const steps = getAnswerSegments({ thought, tool_calls: toolCalls, segments });
+  const steps = getAnswerSegments({
+    thought,
+    tool_calls: toolCalls,
+    segments,
+    response: message,
+  });
   const callById = new Map((toolCalls ?? []).map((c) => [c.call_id, c]));
-  const lastIndex = steps.length - 1;
+  const items = layoutAnswer(steps, callById);
+  const lastStep = steps.length - 1;
+  const lastItem = items.length - 1;
 
   // One derivation of "something here is already announcing activity": every
   // chip shimmers off this, and the status line below fills only the gaps it
   // leaves. Deriving it a second time from the flat fields let the two disagree,
   // which showed up as no indicator at all between a settled step and the answer.
-  const liveSteps = steps.map((step, index) => {
-    if (!isStreaming) return false;
-    if (step.kind === 'thought') return index === lastIndex && !message;
+  const isLiveThought = (index: number) =>
+    Boolean(isStreaming) && index === lastStep;
+  const isLiveCall = (call: ToolCallsType) =>
+    Boolean(isStreaming) && isToolCallRunning(call);
+  const hasLiveStep = steps.some((step, index) => {
+    if (step.kind === 'thought') return isLiveThought(index);
+    if (step.kind !== 'tool') return false;
     const call = callById.get(step.call_id);
-    return Boolean(call && isToolCallRunning(call));
+    return Boolean(call && isLiveCall(call));
   });
-  const hasLiveStep = liveSteps.some(Boolean);
 
   return (
     <>
-      {steps.map((step, index) => {
-        if (step.kind === 'thought') {
+      {items.map((item, position) => {
+        if (item.kind === 'thought')
           return (
             <InlineThoughtChip
-              key={`thought-${index}`}
-              thought={step.text}
-              isActive={liveSteps[index]}
+              key={`thought-${item.index}`}
+              thought={item.text}
+              isActive={isLiveThought(item.index)}
             />
           );
-        }
 
-        const call = callById.get(step.call_id);
-        if (!call) return null;
+        if (item.kind === 'group')
+          return (
+            <StepGroup
+              key={`group-${item.index}`}
+              entries={item.entries}
+              isLive={Boolean(isStreaming) && position === lastItem}
+              isStreaming={Boolean(isStreaming)}
+            />
+          );
 
+        if (item.kind === 'text')
+          return (
+            <div
+              key={`text-${item.index}`}
+              className="flex w-full min-w-0 flex-col"
+            >
+              {/* ``ml-6`` is the answer's text column: step labels sit at the
+                  same offset, with their icons in the gutter to its left.
+                  Stretched, not ``self-start max-w-full``: a shrink-to-fit box
+                  sizes to its longest code line, and ``max-w-full`` caps it at
+                  100% before the margins land on top, so the chat scrolled
+                  sideways on a phone. */}
+              <div className="animate-in fade-in slide-in-from-bottom-1.5 my-2 mr-5 ml-6 flex min-w-0 flex-col duration-260 ease-out motion-reduce:animate-none">
+                <MarkdownAnswer
+                  content={item.text}
+                  isStreaming={Boolean(isStreaming) && position === lastItem}
+                  sourceCount={sourceCount}
+                  onOpenSource={onOpenSource}
+                  artifacts={artifacts}
+                  turnArtifacts={turnArtifacts}
+                  onOpenArtifact={onOpenArtifact}
+                />
+              </div>
+            </div>
+          );
+
+        const call = item.call;
         if (call.status === 'awaiting_approval')
           return (
             <Fragment key={`approval-${call.call_id}`}>
@@ -101,7 +153,7 @@ export default function AnswerFlow({
         if (isWikiWriteCall(call))
           return (
             <Fragment key={`wiki-${call.call_id}`}>
-              {renderWikiWrite(call, liveSteps[index])}
+              {renderWikiWrite(call, isLiveCall(call))}
             </Fragment>
           );
 
@@ -121,25 +173,10 @@ export default function AnswerFlow({
           <InlineToolCallChip
             key={`tool-${call.call_id}`}
             toolCall={call}
-            isLive={liveSteps[index]}
+            isLive={isLiveCall(call)}
           />
         );
       })}
-      {message && (
-        <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-          {/* ``ml-6`` is the answer's text column: step labels sit at the same
-              offset, with their icons in the gutter to its left. */}
-          <div className="fade-in-bubble my-2 mr-5 ml-6 flex max-w-full flex-col">
-            <MarkdownAnswer
-              content={message}
-              isStreaming={isStreaming}
-              artifacts={artifacts}
-              turnArtifacts={turnArtifacts}
-              onOpenArtifact={onOpenArtifact}
-            />
-          </div>
-        </div>
-      )}
       {isStreaming && !hasLiveStep && !suppressStatusLine && (
         <StreamingStatusLine
           hasAnswerText={Boolean(message)}
@@ -180,31 +217,32 @@ function InlineThoughtChip({
         variant="ghost"
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
-        // ml-4 plus the button's own px-2 puts the icon on the answer's ml-6
-        // text column. has-[>svg]:px-2 restates that padding under the same
-        // variant the button's own has-[>svg]:px-3 uses; a plain px-2 does not
-        // override it, and the chevron makes it match.
-        className="hover:bg-muted/60 ml-4 flex h-auto w-fit max-w-full items-center justify-start gap-2 rounded-lg bg-transparent px-2 py-1.5 text-sm font-normal has-[>svg]:px-2"
+        size="sm"
+        // ml-3.5 plus size sm's own has-[>svg]:px-2.5 (the chevron is a direct
+        // svg child) puts the icon on the answer's ml-6 text column.
+        className="ml-3.5 w-fit max-w-full justify-start"
       >
-        <img src={Cloud} alt="" aria-hidden className="h-4 w-4 shrink-0" />
+        <Cloud className="text-muted-foreground" aria-hidden />
         <span
-          className={`min-w-0 truncate text-left ${
-            isActive ? 'shimmer-text' : 'text-muted-foreground'
-          }`}
+          className={cn(
+            'min-w-0 truncate text-left',
+            isActive ? 'shimmer-text' : 'text-muted-foreground',
+          )}
         >
           {t('conversation.reasoning')}
         </span>
         <ChevronDown
           aria-hidden
-          className={`text-muted-foreground h-4 w-4 shrink-0 transform transition-transform duration-200 ${
-            isOpen ? 'rotate-180' : ''
-          }`}
+          className={cn(
+            'text-muted-foreground shrink-0 transition-transform duration-200',
+            isOpen ? 'rotate-180' : '',
+          )}
         />
       </Button>
       {showLiveWindow && (
         <div
           ref={liveRef}
-          className="text-muted-foreground mt-1 ml-6 h-24 overflow-hidden scroll-smooth mask-[linear-gradient(to_bottom,transparent,black_40%)] text-sm leading-normal motion-reduce:scroll-auto"
+          className="text-muted-foreground mt-1 ml-6 h-24 overflow-hidden scroll-smooth mask-t-from-60% text-sm leading-normal motion-reduce:scroll-auto"
         >
           <div className="flex min-h-full flex-col justify-end wrap-break-word whitespace-pre-wrap">
             {pacedThought}
@@ -217,7 +255,7 @@ function InlineThoughtChip({
         </p>
       )}
       {isOpen && (
-        <p className="fade-in text-muted-foreground mt-0.5 ml-6 text-sm leading-normal wrap-break-word whitespace-pre-wrap">
+        <p className="animate-in fade-in text-muted-foreground mt-0.5 ml-6 text-sm leading-normal wrap-break-word whitespace-pre-wrap duration-160 ease-out motion-reduce:animate-none">
           {thought}
         </p>
       )}
@@ -234,9 +272,8 @@ function InlineToolCallChip({
 }) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
-  // Liveness is what animates; running is what the call's own status means, so
-  // a call left pending by a dropped stream still reads in the present tense.
-  const isRunning = isToolCallRunning(toolCall);
+  // Liveness is what animates; the label's tense follows the call's own
+  // status, so a call left pending by a dropped stream still reads as running.
   const label = getToolChipLabel(toolCall, t);
 
   return (
@@ -246,29 +283,18 @@ function InlineToolCallChip({
         variant="ghost"
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
-        // ml-4 plus the button's own px-2 puts the icon on the answer's ml-6
-        // text column. has-[>svg]:px-2 restates that padding under the same
-        // variant the button's own has-[>svg]:px-3 uses; a plain px-2 does not
-        // override it, and the chevron makes it match.
-        className="hover:bg-muted/60 ml-4 flex h-auto w-fit max-w-full items-center justify-start gap-2 rounded-lg bg-transparent px-2 py-1.5 text-sm font-normal has-[>svg]:px-2"
+        size="sm"
+        // ml-3.5 plus size sm's own has-[>svg]:px-2.5 (the chevron is a direct
+        // svg child) puts the icon on the answer's ml-6 text column.
+        className="ml-3.5 w-fit max-w-full justify-start"
       >
-        {/* ToolIcon renders nothing for a tool with no bundled icon, so the
-            dot below stands in via ``only:block`` to keep the row aligned. */}
+        <StepIcon call={toolCall} pulse={isLive} />
         <span
-          className={`flex h-4 w-4 shrink-0 items-center justify-center ${
-            isLive ? 'animate-pulse' : ''
-          }`}
-        >
-          <ToolIcon
-            name={toolCall.tool_name}
-            className="text-muted-foreground h-4 w-4"
-          />
-          <span className="bg-muted-foreground/50 hidden h-1.5 w-1.5 rounded-full only:block" />
-        </span>
-        <span
-          className={`min-w-0 truncate text-left ${
-            isLive ? 'shimmer-text' : 'text-muted-foreground'
-          }`}
+          title={label}
+          className={cn(
+            'min-w-0 truncate text-left',
+            isLive ? 'shimmer-text' : 'text-muted-foreground',
+          )}
         >
           {label}
         </span>
@@ -279,78 +305,19 @@ function InlineToolCallChip({
         )}
         <ChevronDown
           aria-hidden
-          className={`text-muted-foreground h-4 w-4 shrink-0 transform transition-transform duration-200 ${
-            isOpen ? 'rotate-180' : ''
-          }`}
+          className={cn(
+            'text-muted-foreground shrink-0 transition-transform duration-200',
+            isOpen ? 'rotate-180' : '',
+          )}
         />
       </Button>
       {isOpen && (
-        <div className="fade-in mt-2 mr-5 ml-6 flex flex-col gap-2">
-          <ToolCallPanel
-            title={t('conversation.inlineSteps.arguments')}
-            copyText={JSON.stringify(toolCall.arguments ?? {}, null, 2)}
-          >
-            <p className="max-h-80 overflow-y-auto font-mono text-xs whitespace-pre-wrap">
-              {JSON.stringify(toolCall.arguments ?? {}, null, 2)}
-            </p>
-          </ToolCallPanel>
-          <ToolCallPanel
-            title={t('conversation.inlineSteps.response')}
-            copyText={
-              toolCall.status === 'error'
-                ? (toolCall.error ?? '')
-                : JSON.stringify(toolCall.result ?? {}, null, 2)
-            }
-          >
-            {isRunning && (
-              <p
-                className={`text-xs ${isLive ? 'shimmer-text' : 'text-muted-foreground'}`}
-              >
-                {t('conversation.inlineSteps.running')}
-              </p>
-            )}
-            {toolCall.status === 'error' && (
-              <p className="text-destructive font-mono text-xs whitespace-pre-wrap">
-                {toolCall.error}
-              </p>
-            )}
-            {toolCall.status === 'denied' && (
-              <p className="text-muted-foreground text-xs">
-                {t('conversation.inlineSteps.denied')}
-              </p>
-            )}
-            {!isRunning &&
-              toolCall.status !== 'error' &&
-              toolCall.status !== 'denied' && (
-                <p className="max-h-80 overflow-y-auto font-mono text-xs whitespace-pre-wrap">
-                  {JSON.stringify(toolCall.result ?? {}, null, 2)}
-                </p>
-              )}
-          </ToolCallPanel>
-        </div>
+        <ToolCallDetail
+          toolCall={toolCall}
+          isLive={isLive}
+          className="mt-2 mr-5 ml-6"
+        />
       )}
-    </div>
-  );
-}
-
-function ToolCallPanel({
-  title,
-  copyText,
-  children,
-}: {
-  title: string;
-  copyText: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="bg-muted/50 dark:bg-answer-bubble overflow-hidden rounded-xl">
-      <div className="flex items-center justify-between px-3 py-1.5">
-        <span className="text-muted-foreground text-xs font-medium">
-          {title}
-        </span>
-        <CopyButton textToCopy={copyText} />
-      </div>
-      <div className="px-3 pb-2">{children}</div>
     </div>
   );
 }

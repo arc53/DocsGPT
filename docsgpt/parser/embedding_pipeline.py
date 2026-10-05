@@ -53,7 +53,7 @@ def _resolve_batch_size() -> int:
     Returns:
         Chunks per embed request, always >= 1.
     """
-    raw = getattr(settings, "EMBEDDINGS_BATCH_SIZE", None)
+    raw = settings.EMBEDDINGS_BATCH_SIZE
     # Explicit type check rather than a bare ``int(raw)``: ``int(MagicMock())``
     # succeeds and yields 1, which would silently drop ingest back to the
     # per-chunk behaviour this batching replaces.
@@ -326,7 +326,7 @@ def embed_and_store_documents(
             store = VectorCreator.create_vectorstore(
                 settings.VECTOR_STORE,
                 source_id=source_id,
-                embeddings_key=os.getenv("EMBEDDINGS_KEY"),
+                embeddings_key=settings.EMBEDDINGS_KEY,
             )
             loop_start = resume_index
         else:
@@ -336,7 +336,7 @@ def embed_and_store_documents(
                 settings.VECTOR_STORE,
                 docs_init=[docs[0]],
                 source_id=source_id,
-                embeddings_key=os.getenv("EMBEDDINGS_KEY"),
+                embeddings_key=settings.EMBEDDINGS_KEY,
             )
             # Record the seeded chunk so single-doc ingests don't fail
             # ``assert_index_complete`` — the loop never runs for
@@ -351,7 +351,7 @@ def embed_and_store_documents(
         store = VectorCreator.create_vectorstore(
             settings.VECTOR_STORE,
             source_id=source_id,
-            embeddings_key=os.getenv("EMBEDDINGS_KEY"),
+            embeddings_key=settings.EMBEDDINGS_KEY,
         )
         # Only wipe the index on a fresh run — a resume must keep the
         # chunks that earlier attempts already embedded.

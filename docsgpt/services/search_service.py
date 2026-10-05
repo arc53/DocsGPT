@@ -10,10 +10,12 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+from docsgpt import tracing
 from docsgpt.core.settings import settings
 from docsgpt.retriever.fanout import fetch_per_source
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.session import db_readonly
+from docsgpt.tracing.retrieval import describe_documents, start_retrieval_span
 from docsgpt.vectorstore.vector_creator import VectorCreator
 
 logger = logging.getLogger(__name__)
@@ -46,7 +48,7 @@ def _collect_source_ids(agent: Dict[str, Any]) -> List[str]:
 
 
 def _authorized_source_ids(conn, agent: Dict[str, Any], source_ids: List[str]) -> List[str]:
-    """Drop source ids the agent's owner may not read.
+    """Drop source ids the agent may not read.
 
     ``_collect_source_ids`` trusts whatever the agent row carries, and this
     service searches those ids directly. That made it the second half of a
@@ -62,20 +64,24 @@ def _authorized_source_ids(conn, agent: Dict[str, Any], source_ids: List[str]) -
         agent: The agent row resolved from the API key.
         source_ids: Ids extracted from that row.
 
+    A source the owner can't read still searches while the editor who
+    attached it (its sponsor) can edit the agent and still owns or edits
+    the source.
+
     Returns:
-        list: The subset the agent's owner may read.
+        list: The subset the agent's owner (or a live sponsor) may read.
     """
     owner = agent.get("user_id")
     if not owner:
         logger.warning("Agent %s has no owner; refusing to search its sources.", agent.get("id"))
         return []
 
-    from docsgpt.api.user.team_sharing import can_access
+    from docsgpt.api.user.resource_access import ref_principal
 
     allowed = []
     for sid in source_ids:
         try:
-            permitted = can_access(conn, "source", str(sid), owner)
+            permitted = ref_principal(conn, "agent", agent, "source", str(sid)) is not None
         except Exception:
             # Fail closed, matching the answer path.
             logger.warning("Access check failed for source %s; dropping it.", sid)
@@ -219,14 +225,21 @@ def _search_sources(
     return results[:chunks]
 
 
-def search(api_key: str, query: str, chunks: int = 5) -> List[Dict[str, Any]]:
+def search(
+    api_key: str, query: str, chunks: int = 5, *, source: str = "search"
+) -> List[Dict[str, Any]]:
     """Resolve an agent by API key and search its sources.
+
+    Every search that reaches the sources is recorded as an execution trace
+    owned by the agent's owner, under ``source``.
 
     Args:
         api_key: Agent API key (the opaque string stored on
             ``agents.key`` in Postgres).
         query: Free-text search query.
         chunks: Max number of hits to return.
+        source: Trace source name: ``search`` for ``/api/search``, ``mcp``
+            for the MCP ``search_docs`` tool.
 
     Returns:
         List of hit dicts with ``text``, ``title``, ``source`` keys.
@@ -256,4 +269,20 @@ def search(api_key: str, query: str, chunks: int = 5) -> List[Dict[str, Any]]:
     if not source_ids:
         return []
 
-    return _search_sources(query, source_ids, chunks)
+    trace = tracing.start_trace(
+        source=source,
+        user_id=agent.get("user_id"),
+        agent_id=str(agent.get("id")) if agent.get("id") else None,
+    )
+    with tracing.activate(trace):
+        try:
+            with start_retrieval_span(
+                f"retrieval {source}",
+                sources=source_ids,
+                **{"docsgpt.top_k": chunks},
+            ) as span:
+                results = _search_sources(query, source_ids, chunks)
+                describe_documents(span, results, query=query)
+            return results
+        finally:
+            tracing.flush(trace)
