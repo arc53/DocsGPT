@@ -1,7 +1,7 @@
 ---
 title: Artifacts and Code Execution
 description: Generate editable documents, run sandboxed code, and read files with the DocsGPT artifact, code executor, and read document tools.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-05
 ---
 
 import { Callout } from 'nextra/components';
@@ -30,7 +30,7 @@ sandbox runner, so on a deployment without one they would fail on every call.
 
 An **artifact** is a file the assistant produces that you can open, download, and edit later. Artifacts are versioned: every edit appends a new version at the same artifact, so you can review or restore an earlier one. Bytes are stored on the server and are never passed through the model, so large files stay fast and cheap to work with.
 
-In a normal chat, a produced artifact appears as a chip under the assistant's reply (for example, "Artifact"). Open it to:
+In a normal chat, a produced artifact appears as a chip under the assistant's reply (for example, "Artifact"). A chip opens the artifact's current version, so a chip under an earlier reply shows the latest edit. Open it to:
 
 - preview the content in a side panel (HTML and similar kinds render inline),
 - download the file,
@@ -54,14 +54,17 @@ Supported kinds are presentation (.pptx), document (.docx), spreadsheet (.xlsx),
 
 ## Code Executor
 
-The Code Executor runs Python in a sandboxed, stateful session bound to your conversation (or to a workflow run). Files the code writes into the workspace are captured as artifacts automatically, so a script that produces `report.csv` gives you a downloadable artifact with no extra steps.
+The Code Executor runs Python in a sandboxed session bound to your conversation (or to a workflow run). Files the code writes into the workspace are captured as artifacts automatically, so a script that produces `report.csv` gives you a downloadable artifact with no extra steps.
 
 Key points:
 
-- A session is closed after each run unless the model asks to keep it alive. When it does, variables, imports, and files persist between calls in the same conversation (or workflow run) until the session has been idle for the time the model asked for, at most `SANDBOX_MAX_TTL` (1200 seconds by default).
+- The session stays open between runs until it has been idle for `SANDBOX_MAX_TTL` seconds (1200 by default) or a shorter time the model asks for. The model can pass `persist=false` to close it after a run.
+- What carries over to the next run depends on the backend. On the Jupyter runner, variables, imports, files, and installed packages all do. On Daytona, files and installed packages do, but each run starts a new Python interpreter, so the model re-imports and re-loads what it needs and passes data between runs through files.
+- Each result tells the model whether the session is `new` (nothing from earlier runs is left, for example after it idled out) or `reused`, so it knows when to rebuild its files.
 - Only a compact summary is returned to the model (an output tail plus artifact references), never raw file bytes.
 - Each run is limited to `SANDBOX_EXEC_TIMEOUT` seconds of wall-clock time (60 by default). For longer work, the model starts the job in the background and checks back with more calls.
-- Every file a run creates or changes is saved as an artifact, except files under `tmp/`. The model can instead name the files or globs to keep.
+- Every file a run creates or changes in the workspace is saved as an artifact, except files under `scratch/` (or `tmp/`), where the model puts previews and intermediate files. The model can instead name the files or globs to keep. Files written outside the workspace, such as under `/tmp`, are never saved.
+- Saving a file under a name the Code Executor already used in the conversation (or workflow run) adds a new version of that artifact instead of a second artifact, and saving identical bytes again adds nothing. Files from workflow Code nodes are always new artifacts.
 - Install packages from inside the code itself when you need them.
 
 <Callout type="warning">
@@ -78,7 +81,7 @@ You can pass files into a run. Each input accepts a short reference returned by 
 
 When the model reads images, it can look at what its tools produce instead of guessing:
 
-- Charts a run displays with `plt.show()` are saved as artifacts and shown to the model with the run's result. On Daytona this needs a snapshot that includes matplotlib.
+- Charts a run displays with `plt.show()` are shown to the model with the run's result. They are saved as artifacts too, unless the run also saved an image file of its own (with `savefig`), so a chart the code both saves and shows is saved once. On Daytona this needs a snapshot that includes matplotlib.
 - A `view_image` tool is added next to the Code Executor and Read Webpage. It shows the model an image artifact by its reference (such as `A2`) or an image URL, such as one on a page Read Webpage returned.
 - Images an MCP server returns are shown to the model as images too.
 
@@ -129,6 +132,6 @@ The snapshot also includes `pandas`, `openpyxl` and `matplotlib`, which the mode
 - `SANDBOX_BACKEND`: `jupyter` or `daytona`.
 - `SANDBOX_GATEWAY_URL`, `SANDBOX_GATEWAY_AUTH_TOKEN`, `SANDBOX_KERNEL_NAME`: where the Jupyter runner is, its shared token, and the kernel each session uses (`docsgpt-python`, which strips secrets from the kernel environment).
 - `SANDBOX_EXEC_TIMEOUT`: per-run wall-clock cap in seconds.
-- `SANDBOX_MAX_TTL`: upper bound on how long a kept-alive session lives.
+- `SANDBOX_MAX_TTL`: how long an idle session is kept before it is closed.
 - `DAYTONA_API_KEY`, `DAYTONA_TARGET`, `DAYTONA_SNAPSHOT`: Daytona Cloud settings.
 - Per-user artifact quotas bound how many artifacts and how much storage each user can hold.

@@ -9,6 +9,7 @@ from typing import Dict, List, Optional
 from docsgpt.sandbox.base import (
     CodeSandbox,
     ExecResult,
+    OpenedSession,
     Plot,
     SandboxGoneError,
 )
@@ -186,6 +187,14 @@ class DaytonaSandbox(CodeSandbox):
     # -- Lifecycle -------------------------------------------------------
 
     def open(self, session_id: str) -> str:
+        """Reattach to or create the Daytona sandbox for ``session_id``; see ``open_session``.
+
+        Returns:
+            str: The live sandbox id, already registered for this session.
+        """
+        return self.open_session(session_id).handle
+
+    def open_session(self, session_id: str) -> OpenedSession:
         """Reattach to or create the Daytona sandbox for ``session_id`` and prime its workspace.
 
         Reattach order: an in-memory handle, then (across process restarts) a live cloud
@@ -193,7 +202,10 @@ class DaytonaSandbox(CodeSandbox):
         ``max_sandboxes`` so a flood of sessions cannot run up unbounded paid resources.
 
         Returns:
-            str: The live sandbox id, already registered for this session.
+            OpenedSession: The live sandbox id, already registered for this session, and
+            ``created`` True only for a fresh ``create``. A cached or reattached sandbox
+            keeps its filesystem, so it counts as reused even though every ``exec``
+            starts a new interpreter.
 
         Raises:
             SandboxGoneError: The sandbox was confirmed gone before its workspace
@@ -208,7 +220,7 @@ class DaytonaSandbox(CodeSandbox):
                 self._create_cv.wait()
             existing = self._handles.get(session_id)
             if existing is not None:
-                return existing.sandbox_id
+                return OpenedSession(existing.sandbox_id, False)
             self._creating.add(session_id)
         try:
             # Cross-restart reattach: an earlier process may have created (and labelled)
@@ -217,7 +229,7 @@ class DaytonaSandbox(CodeSandbox):
             reattached = self._reattach_existing(session_id)
             if reattached is not None:
                 if self._prime(reattached):
-                    return reattached.sandbox_id
+                    return OpenedSession(reattached.sandbox_id, False)
                 # The labelled sandbox is gone in the cloud (deleted between the
                 # list and its first use — seen in prod as toolbox 404 "it has
                 # been deleted"). Forget it and fall through to a fresh create.
@@ -266,7 +278,7 @@ class DaytonaSandbox(CodeSandbox):
                 raise SandboxGoneError(
                     f"Daytona sandbox {sandbox_id} vanished during workspace prime"
                 )
-            return sandbox_id
+            return OpenedSession(sandbox_id, True)
         finally:
             with self._create_cv:
                 self._creating.discard(session_id)

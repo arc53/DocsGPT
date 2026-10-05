@@ -1074,3 +1074,58 @@ def test_put_file_alive_sandbox_keeps_plain_ioerror_and_handle(sandbox):
         sandbox.put_file("conv-1", "data.csv", b"x")
     assert not isinstance(exc.value, SandboxGoneError)
     assert "conv-1" in sandbox._handles
+
+
+# --- Session status: created vs reattached -------------------------------
+
+
+def test_open_session_reports_a_fresh_create(sandbox):
+    opened = sandbox.open_session("conv-1")
+    assert opened.handle == "sbx-1"
+    assert opened.created is True
+
+
+def test_open_session_reports_a_cached_handle_as_reused(sandbox):
+    sandbox.open_session("conv-1")
+    again = sandbox.open_session("conv-1")
+    assert again.created is False
+    assert sandbox._client.create.call_count == 1
+
+
+def test_open_session_reports_a_reattached_sandbox_as_reused(sandbox):
+    """A live labelled sandbox (another process made it) keeps its files: reused, not new."""
+    prior = _FakeSandbox(sandbox_id="sbx-prior", labels={"docsgpt_session_id": "conv-1"}, state="stopped")
+    sandbox._client.existing = [prior]
+    opened = sandbox.open_session("conv-1")
+    assert opened.handle == "sbx-prior"
+    assert opened.created is False
+
+
+def test_open_session_reports_a_create_after_a_gone_reattach_as_new(fake_sdk):
+    from docsgpt.sandbox.daytona import DaytonaSandbox
+
+    box = DaytonaSandbox(api_key="dtn_test", language="python")
+    ghost = _FakeSandbox("sbx-ghost", labels={"docsgpt_session_id": "conv-1"})
+    ghost.fs.create_folder = mock.Mock(side_effect=RuntimeError("not found: sandbox sbx-ghost"))
+    box._client.existing.append(ghost)
+    box._client.get = mock.Mock(side_effect=KeyError("gone"))
+
+    opened = box.open_session("conv-1")
+
+    assert opened.handle == "sbx-1"
+    assert opened.created is True
+
+
+def test_open_returns_the_bare_sandbox_id(sandbox):
+    handle = sandbox.open("conv-1")
+    assert handle == "sbx-1"
+
+
+def test_manager_reports_reattach_through_open_session(fake_sdk):
+    from docsgpt.sandbox.daytona import DaytonaSandbox
+    from docsgpt.sandbox.manager import SandboxManager
+
+    box = DaytonaSandbox(api_key="dtn_test", language="python")
+    box._client.existing = [_FakeSandbox("sbx-prior", labels={"docsgpt_session_id": "conv-1"})]
+    mgr = SandboxManager(box, max_ttl=600)
+    assert mgr.open_session("conv-1").created is False

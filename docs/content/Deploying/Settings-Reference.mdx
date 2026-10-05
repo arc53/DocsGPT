@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-05
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -1703,7 +1703,7 @@ Kernelspec per session. The env-scrubbing docsgpt-python spec keeps kernel code 
 
 Type `int`, default `1200`.
 
-Hard cap (s) on agent-selectable keep-alive TTL.
+Seconds an idle session is kept before it is closed, and the cap on a keep-alive TTL the model asks for. Code Executor sessions stay open between calls until then.
 
 ### `SANDBOX_MAX_SESSIONS`
 
