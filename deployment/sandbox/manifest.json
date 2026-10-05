@@ -32,9 +32,24 @@
       "use": "PowerPoint .pptx"
     },
     {
-      "spec": "reportlab==4.2.5",
+      "spec": "reportlab==4.4.10",
       "import": "reportlab",
       "use": "PDF generation"
+    },
+    {
+      "spec": "uharfbuzz==0.56.2",
+      "import": "uharfbuzz",
+      "use": "text shaping for reportlab (Indic scripts)"
+    },
+    {
+      "spec": "arabic-reshaper==3.0.1",
+      "import": "arabic_reshaper",
+      "use": "join Arabic letters for reportlab"
+    },
+    {
+      "spec": "python-bidi==0.6.11",
+      "import": "bidi",
+      "use": "right-to-left display order for reportlab"
     },
     {
       "spec": "lxml==6.1.3",
@@ -307,6 +322,118 @@
       "scripts": "Chinese, Japanese, Korean",
       "path": "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
       "reportlab": false
+    }
+  ],
+  "pdf_fonts": [
+    {
+      "script": "base",
+      "regular": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+      "bold": "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    },
+    {
+      "script": "arabic",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
+      "bold": "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf"
+    },
+    {
+      "script": "hebrew",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansHebrew-Regular.ttf",
+      "bold": "/usr/share/fonts/truetype/noto/NotoSansHebrew-Bold.ttf"
+    },
+    {
+      "script": "syriac",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansSyriac-Regular.ttf",
+      "bold": ""
+    },
+    {
+      "script": "devanagari",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf",
+      "bold": "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf"
+    },
+    {
+      "script": "bengali",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansBengali-Regular.ttf",
+      "bold": "/usr/share/fonts/truetype/noto/NotoSansBengali-Bold.ttf"
+    },
+    {
+      "script": "gurmukhi",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansGurmukhi-Regular.ttf",
+      "bold": "/usr/share/fonts/truetype/noto/NotoSansGurmukhi-Bold.ttf"
+    },
+    {
+      "script": "gujarati",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansGujarati-Regular.ttf",
+      "bold": "/usr/share/fonts/truetype/noto/NotoSansGujarati-Bold.ttf"
+    },
+    {
+      "script": "oriya",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansOriya-Regular.ttf",
+      "bold": "/usr/share/fonts/truetype/noto/NotoSansOriya-Bold.ttf"
+    },
+    {
+      "script": "tamil",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansTamil-Regular.ttf",
+      "bold": "/usr/share/fonts/truetype/noto/NotoSansTamil-Bold.ttf"
+    },
+    {
+      "script": "telugu",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansTelugu-Regular.ttf",
+      "bold": "/usr/share/fonts/truetype/noto/NotoSansTelugu-Bold.ttf"
+    },
+    {
+      "script": "kannada",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansKannada-Regular.ttf",
+      "bold": "/usr/share/fonts/truetype/noto/NotoSansKannada-Bold.ttf"
+    },
+    {
+      "script": "malayalam",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansMalayalam-Regular.ttf",
+      "bold": "/usr/share/fonts/truetype/noto/NotoSansMalayalam-Bold.ttf"
+    },
+    {
+      "script": "sinhala",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansSinhala-Regular.ttf",
+      "bold": "/usr/share/fonts/truetype/noto/NotoSansSinhala-Bold.ttf"
+    },
+    {
+      "script": "thai",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansThai-Regular.ttf",
+      "bold": "/usr/share/fonts/truetype/noto/NotoSansThai-Bold.ttf"
+    },
+    {
+      "script": "lao",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansLao-Regular.ttf",
+      "bold": "/usr/share/fonts/truetype/noto/NotoSansLao-Bold.ttf"
+    },
+    {
+      "script": "khmer",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansKhmer-Regular.ttf",
+      "bold": "/usr/share/fonts/truetype/noto/NotoSansKhmer-Bold.ttf"
+    },
+    {
+      "script": "myanmar",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansMyanmar-Regular.ttf",
+      "bold": "/usr/share/fonts/truetype/noto/NotoSansMyanmar-Bold.ttf"
+    },
+    {
+      "script": "ethiopic",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansEthiopic-Regular.ttf",
+      "bold": "/usr/share/fonts/truetype/noto/NotoSansEthiopic-Bold.ttf"
+    },
+    {
+      "script": "symbols",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansMath-Regular.ttf",
+      "bold": ""
+    },
+    {
+      "script": "symbols",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
+      "bold": ""
+    },
+    {
+      "script": "symbols",
+      "regular": "/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf",
+      "bold": ""
     }
   ],
   "helpers": {

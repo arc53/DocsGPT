@@ -11,7 +11,9 @@ model-written code sees::
 
 It reads manifest.json (written from docsgpt/sandbox/manifest.py, next to this
 script in the image) and checks that every Python package imports, every
-command is on PATH, every font file exists and the image environment is set.
+command is on PATH, every font file exists (the pdf artifact renderer's too,
+with HarfBuzz shaping, Arabic joining and bidi working) and the image
+environment is set.
 Then it converts real files: docx and pptx to PDF with office-convert, HTML to
 PDF and PNG with headless Chromium, OCR of a rendered image, pdftotext and
 pdfplumber on a generated PDF, Node and npm, an animated GIF and WebP through
@@ -102,6 +104,34 @@ def check_fonts(manifest: Dict) -> str:
     for number, font in enumerate(f for f in manifest["fonts"] if f.get("reportlab")):
         TTFont(f"smoke{number}", font["path"])
     return f"{len(manifest['fonts'])} font files"
+
+
+def check_pdf_scripts(manifest: Dict) -> str:
+    """The pdf artifact renderer's fonts load, and reportlab can shape, join and reorder text."""
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont, shapeStr
+
+    missing, loaded = [], 0
+    for number, font in enumerate(manifest["pdf_fonts"]):
+        for role in ("regular", "bold"):
+            if not font[role]:
+                continue
+            if not Path(font[role]).is_file():
+                missing.append(font[role])
+                continue
+            pdfmetrics.registerFont(TTFont(f"smokepdf{number}{role}", font[role]))
+            loaded += 1
+    _expect(not missing, "missing pdf renderer fonts: " + ", ".join(missing))
+    deva = next(f["regular"] for f in manifest["pdf_fonts"] if f["script"] == "devanagari")
+    pdfmetrics.registerFont(TTFont("smokeshape", deva))
+    # HarfBuzz turns the three code points of the conjunct ksha into one glyph.
+    _expect(len(shapeStr("क्ष", "smokeshape", 10)) == 1, "reportlab did not shape Devanagari (uharfbuzz)")
+    import arabic_reshaper
+    from bidi import get_display
+
+    shown = get_display(arabic_reshaper.reshape("سلام"))
+    _expect(shown == "\ufee1\ufefc\ufeb3", f"Arabic came out as {shown!r}, not joined and reordered")
+    return f"{loaded} font files, shaping, reshaping and bidi"
 
 
 def check_env(manifest: Dict) -> str:
@@ -303,6 +333,7 @@ def _checks(manifest: Dict, work: Path, with_pip: bool) -> List[Tuple[str, Calla
         ("imports", lambda: check_imports(manifest)),
         ("commands on PATH", lambda: check_binaries(manifest)),
         ("fonts", lambda: check_fonts(manifest)),
+        ("pdf renderer scripts", lambda: check_pdf_scripts(manifest)),
         ("environment", lambda: check_env(manifest)),
         ("writable HOME", lambda: check_writable_home(manifest)),
         ("office-convert docx -> pdf", lambda: check_office_docx_to_pdf(sub("docx"))),

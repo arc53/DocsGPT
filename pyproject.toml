@@ -171,6 +171,10 @@ dev = [
   "jupyter-client>=8.0",
   "python-docx>=1.1",
   "reportlab>=5.0.1,<6",
+  # The pdf artifact renderer's right-to-left and shaping paths (the sandbox has them).
+  "arabic-reshaper>=3.0.1",
+  "python-bidi>=0.6.11",
+  "uharfbuzz>=0.56.2",
   "ruff",
 ]
 

@@ -284,6 +284,48 @@ def test_pdf_renderer_escapes_markup_and_does_not_execute():
     assert os.path.getsize(out_path) > 0
 
 
+def _pdf_font_names(path: str) -> set:
+    from pypdf import PdfReader
+
+    names = set()
+    for page in PdfReader(path).pages:
+        for font in page["/Resources"]["/Font"].values():
+            names.add(str(font.get_object()["/BaseFont"]).lstrip("/").split("+")[-1])
+    return names
+
+
+def test_pdf_renderer_draws_non_latin_text_in_a_font_that_has_it():
+    """Helvetica drew CJK, Cyrillic and symbols as blanks; the renderer now picks fonts per script."""
+    from pypdf import PdfReader
+
+    spec = {"title": "Report", "blocks": [{"type": "paragraph", "text": "季度报告 summary"}]}
+    out_path = _render_in_process("pdf", spec)
+    assert "STSong-Light" in _pdf_font_names(out_path)
+    assert "季度报告" in PdfReader(out_path).pages[0].extract_text()
+
+
+def test_pdf_renderer_hands_the_manifest_font_table_to_the_sandbox():
+    from docsgpt.sandbox.manifest import PDF_FONTS
+
+    program = _RENDERERS["pdf"].format(spec_path="artifacts/t/spec.json", out_path="artifacts/t/out.pdf")
+    assert "['render_pdf_spec']('artifacts/t/spec.json', 'artifacts/t/out.pdf'," in program
+    for entry in PDF_FONTS:
+        assert repr(entry["regular"]) in program
+    compile(program, "<pdf renderer>", "exec")
+
+
+def test_pdf_renderer_leaves_the_shared_kernel_namespace_alone(tmp_path):
+    """The session kernel is shared with run_code: the renderer must not leave its helpers behind."""
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps({"blocks": [{"type": "paragraph", "text": "x"}]}))
+    program = _RENDERERS["pdf"].format(spec_path=str(spec_path), out_path=str(tmp_path / "out.pdf"))
+    namespace: dict = {"spec": "the model's own variable"}
+    exec(compile(program, "<renderer>", "exec"), namespace, namespace)  # noqa: S102
+    assert set(namespace) == {"__builtins__", "spec"}
+    assert namespace["spec"] == "the model's own variable"
+    assert (tmp_path / "out.pdf").stat().st_size > 0
+
+
 # ---------------------------------------------------------------------------
 # html kind: schema, renderer injection safety, output escaping
 # ---------------------------------------------------------------------------

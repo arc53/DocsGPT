@@ -232,6 +232,36 @@ def test_fonts_name_scripts_and_a_path_under_the_font_dirs():
         assert script in covered
 
 
+def test_pdf_fonts_start_with_the_base_family_and_come_from_installed_packages():
+    fonts = manifest.PDF_FONTS
+    assert fonts[0]["script"] == "base"
+    assert fonts[0]["regular"] == "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    packages = {"dejavu": "fonts-dejavu-core", "noto": "fonts-noto-core"}
+    for font in fonts:
+        for path in filter(None, (font["regular"], font["bold"])):
+            assert path.startswith("/usr/share/fonts/truetype/") and path.endswith(".ttf"), path
+            assert packages[path.split("/")[5]] in manifest.apt_package_names(), path
+    scripts = [f["script"] for f in fonts if f["script"] not in ("base", "symbols")]
+    assert len(scripts) == len(set(scripts))
+    assert {"arabic", "hebrew", "devanagari"} <= set(scripts)
+
+
+def test_pdf_fonts_agree_with_the_fonts_the_model_is_told_about():
+    """The model-facing FONTS table and the renderer's table name the same file for a shared script."""
+    model_paths = {f["path"] for f in manifest.FONTS if f["reportlab"]}
+    for script in ("base", "arabic", "devanagari"):
+        regular = next(f["regular"] for f in manifest.PDF_FONTS if f["script"] == script)
+        assert regular in model_paths, regular
+
+
+def test_reportlab_can_shape_and_lay_out_right_to_left_text():
+    """reportlab 4.4 added HarfBuzz shaping; the renderer joins Arabic and reorders RTL itself."""
+    specs = dict(spec.split("==") for spec in manifest.pip_specs())
+    major, minor = (int(part) for part in specs["reportlab"].split(".")[:2])
+    assert (major, minor) >= (4, 4)
+    assert {"uharfbuzz", "arabic-reshaper", "python-bidi"} <= set(specs)
+
+
 # -- Environment, binaries, alternatives ---------------------------------------
 
 
@@ -376,6 +406,7 @@ def test_manifest_json_carries_what_the_smoke_test_checks():
     assert data["env"] == manifest.ENV
     assert {b["name"] for b in data["binaries"]} == {b["name"] for b in manifest.BINARIES}
     assert [f["path"] for f in data["fonts"]] == [f["path"] for f in manifest.FONTS]
+    assert data["pdf_fonts"] == [dict(f) for f in manifest.PDF_FONTS]
     assert data["node"]["version"] == manifest.NODE["version"]
 
 
