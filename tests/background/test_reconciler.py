@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from docsgpt.background import jobs, reconciler
+from docsgpt.background import jobs, reconciler, sandbox_runner
 from docsgpt.background.context import BackgroundContext
 from docsgpt.background.results import LOST_NOTE
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
@@ -43,13 +43,44 @@ class TestSweep:
         assert _get(bg_db, fresh["id"])["status"] == "working"
         assert [row["id"] for row in delivered] == [stale["id"]]
 
-    def test_a_sandbox_job_is_not_lost_by_its_heartbeat(self, bg_db, conversation, monkeypatch):
+    def test_a_stale_sandbox_job_is_polled_again(self, bg_db, conversation, monkeypatch):
         monkeypatch.setattr(jobs, "_deliver", lambda row: None)
+        polls = []
+        monkeypatch.setattr(sandbox_runner, "_enqueue_poll", lambda job_id, countdown: polls.append(job_id))
         conversation_id, message_id = conversation
         row = _job(conversation_id, message_id, runner="sandbox")
         _set(bg_db, row["id"], "heartbeat_at = now() - interval '5 minutes'")
+        summary = reconciler.sweep()
+        assert summary["lost"] == 0
+        assert summary["revived"] == 1
+        assert polls == [row["id"]]
+        revived = _get(bg_db, row["id"])
+        assert revived["status"] == "working"
+        assert revived["attempts"] == 1
+        # The revive stamped the heartbeat: the next tick leaves it alone.
+        assert reconciler.sweep()["revived"] == 0
+
+    def test_a_sandbox_job_revived_too_often_is_lost(self, bg_db, conversation, monkeypatch):
+        monkeypatch.setattr(jobs, "_deliver", lambda row: None)
+        monkeypatch.setattr(sandbox_runner, "_enqueue_poll", lambda job_id, countdown: None)
+        stopped = []
+        monkeypatch.setattr(sandbox_runner, "cancel_detached", stopped.append)
+        conversation_id, message_id = conversation
+        row = _job(conversation_id, message_id, runner="sandbox")
+        _set(bg_db, row["id"], f"attempts = {sandbox_runner.MAX_REVIVES}, heartbeat_at = now() - interval '5 minutes'")
+        assert reconciler.sweep()["lost"] == 1
+        assert _get(bg_db, row["id"])["status"] == "lost"
+        assert [r["id"] for r in stopped] == [row["id"]]
+
+    def test_a_queued_celery_job_gets_longer_before_it_is_lost(self, bg_db, conversation, monkeypatch):
+        monkeypatch.setattr(jobs, "_deliver", lambda row: None)
+        conversation_id, message_id = conversation
+        row = _job(conversation_id, message_id, runner="celery")
+        assert row["lease_owner"] is None
+        _set(bg_db, row["id"], "heartbeat_at = now() - interval '5 minutes'")
         assert reconciler.sweep()["lost"] == 0
-        assert _get(bg_db, row["id"])["status"] == "working"
+        _set(bg_db, row["id"], "heartbeat_at = now() - interval '20 minutes'")
+        assert reconciler.sweep()["lost"] == 1
 
     def test_a_job_past_its_deadline_fails(self, bg_db, conversation, monkeypatch):
         monkeypatch.setattr(jobs, "_deliver", lambda row: None)

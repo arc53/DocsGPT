@@ -100,7 +100,8 @@ def create_job(
             kind=job_kind(tool_name),
             args=redact_args(arguments),
             runner=runner,
-            lease_owner=pool.lease_owner() if runner in ("inprocess", "celery") else None,
+            # A celery job takes its lease when a worker starts it.
+            lease_owner=pool.lease_owner() if runner == "inprocess" else None,
             auto_resume=context.auto_resume(),
             watch=watch,
             external=external,

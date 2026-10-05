@@ -977,6 +977,10 @@ class ToolExecutor:
                 params = self._build_tool_parameters(
                     action, hidden=set(self._connection_parameters(tools_dict[tool_id])),
                 )
+                if self.background is not None:
+                    from docsgpt.background.schema import add_background_params
+
+                    add_background_params(tool_name, params)
 
             description = action.get("description", "")
             if account:
@@ -1865,6 +1869,12 @@ class ToolExecutor:
         outcome = None
         try:
             if background_eligible:
+                explicit = handoff.wants_background(controls)
+                worker_payload = None
+                if explicit:
+                    from docsgpt.background.celery_runner import worker_payload as build_worker_payload
+
+                    worker_payload = build_worker_payload(self, tool_data, action_name, tool_args)
                 outcome = handoff.run_call(
                     self.background,
                     handoff.CallSpec(
@@ -1874,10 +1884,11 @@ class ToolExecutor:
                         arguments=tool_args,
                         parameters=parameters,
                         controls=controls,
+                        worker_payload=worker_payload,
                     ),
                     tool,
                     _invoke,
-                    yield_seconds=0 if handoff.wants_background(controls) else None,
+                    explicit=explicit,
                 )
                 result = None if outcome.handed_off else outcome.value
             else:

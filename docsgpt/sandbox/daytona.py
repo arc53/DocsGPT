@@ -1,17 +1,21 @@
 """Daytona Cloud sandbox: managed, strongly isolated runtimes via the Apache-2.0 Daytona SDK."""
 
+import base64
 import contextlib
 import logging
 import posixpath
 import re
+import shlex
 import threading
-from typing import Dict, Iterator, List, Optional
+import time
+from typing import Any, Dict, Iterator, List, Optional
 
+from docsgpt.sandbox import detached
 from docsgpt.sandbox.base import (
     CodeSandbox,
+    DetachedState,
     ExecResult,
     OpenedSession,
-    Plot,
     SandboxGoneError,
 )
 
@@ -30,59 +34,13 @@ _SESSION_LABEL = "docsgpt_session_id"
 # Run before the code: once the code imports pyplot, ``plt.show()`` prints each
 # open figure as a PNG between chart markers and closes it. Daytona's own chart
 # extraction (behind the backend's show) drops bar charts and fails every run
-# that shows a chart on matplotlib < 3.10; this replaces it.
-# A run returns at most ``MAX_CHARTS`` charts of at most ``MAX_CHART_PIXELS``
-# and ``MAX_CHART_BYTES`` each; the rest are closed without being rendered or printed.
-MAX_CHARTS = 4
-MAX_CHART_PIXELS = 16_000_000
-MAX_CHART_BYTES = 2_000_000
-_CHART_PRELUDE = f"""\
-import sys as _dg_sys
-
-_dg_left = [{MAX_CHARTS}]
-
-
-def _dg_show(*args, **kwargs):
-    import base64, io
-    plt = _dg_sys.modules["matplotlib.pyplot"]
-    for number in plt.get_fignums():
-        if _dg_left[0] <= 0:
-            break
-        figure = plt.figure(number)
-        width, height = figure.get_size_inches() * figure.dpi
-        if width * height > {MAX_CHART_PIXELS}:
-            continue
-        buffer = io.BytesIO()
-        figure.savefig(buffer, format="png", bbox_inches="tight")
-        if buffer.tell() <= {MAX_CHART_BYTES}:
-            _dg_left[0] -= 1
-            print("<<docsgpt-chart:" + base64.b64encode(buffer.getvalue()).decode() + ">>")
-    plt.close("all")
-
-
-class _DgPyplotHook:
-    def find_spec(self, name, path=None, target=None):
-        if name != "matplotlib.pyplot":
-            return None
-        _dg_sys.meta_path.remove(self)
-        import importlib.util
-        spec = importlib.util.find_spec(name)
-        exec_module = spec.loader.exec_module
-
-        def _exec(module):
-            exec_module(module)
-            module.show = _dg_show
-
-        spec.loader.exec_module = _exec
-        return spec
-
-
-if "matplotlib.pyplot" in _dg_sys.modules:
-    _dg_sys.modules["matplotlib.pyplot"].show = _dg_show
-else:
-    _dg_sys.meta_path.insert(0, _DgPyplotHook())
-"""
-_CHART_RE = re.compile(r"<<docsgpt-chart:([A-Za-z0-9+/=]+)>>\n?")
+# that shows a chart on matplotlib < 3.10; this replaces it. Shared with
+# detached runs (docsgpt/sandbox/detached.py), which read charts the same way.
+MAX_CHARTS = detached.MAX_CHARTS
+MAX_CHART_PIXELS = detached.MAX_CHART_PIXELS
+MAX_CHART_BYTES = detached.MAX_CHART_BYTES
+_CHART_PRELUDE = detached.CHART_PRELUDE
+_CHART_RE = detached.CHART_RE
 
 
 # What the toolbox daemon answers when a code_run outlives its timeout: HTTP 408
@@ -93,7 +51,11 @@ _EXEC_TIMEOUT_CODE = "PROCESS_EXECUTION_TIMEOUT"
 # Exit codes of a process killed by SIGKILL: 128 + 9 through a shell, -9 from
 # the process itself. In the sandbox that is the kernel's OOM killer; the
 # timeout path answers 408 instead.
-_SIGKILL_EXIT_CODES = frozenset({137, -9})
+_SIGKILL_EXIT_CODES = detached.SIGKILL_EXIT_CODES
+
+# Longest base64 script passed inline on a detached run's command line; Linux
+# caps one argument at 128 KiB, so a longer script is uploaded instead.
+_INLINE_SCRIPT_MAX_CHARS = 96_000
 
 
 def _is_exec_timeout(exc: BaseException) -> bool:
@@ -653,26 +615,7 @@ class DaytonaSandbox(CodeSandbox):
         generated snippets); the common ``from __future__ import annotations`` first-line case
         is handled. Everything from the first real statement onward stays in ``rest``.
         """
-        lines = code.splitlines(keepends=True)
-        saw_future = False
-        split_at = 0
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped == "" or stripped.startswith("#"):
-                continue  # blank/comment: part of the leading run
-            if stripped.startswith("from __future__ import"):
-                saw_future = True
-                continue
-            split_at = i  # first real statement: the leading run ends here
-            break
-        else:
-            split_at = len(lines)  # whole snippet was blank/comment/future
-        if not saw_future:
-            return "", code
-        hoisted = "".join(lines[:split_at])
-        if hoisted and not hoisted.endswith("\n"):
-            hoisted += "\n"
-        return hoisted, "".join(lines[split_at:])
+        return detached.split_leading_future_imports(code)
 
     def _to_result(self, response) -> ExecResult:
         """Map a Daytona ``ExecuteResponse`` into the shared ``ExecResult`` shape.
@@ -687,39 +630,191 @@ class DaytonaSandbox(CodeSandbox):
             stdout = artifacts.stdout
         else:
             stdout = getattr(response, "result", "") or ""
-        # Charts the code showed come back on stdout; take them out before the cap.
-        charts = _CHART_RE.findall(stdout)
-        stdout = _CHART_RE.sub("", stdout)
-
-        truncated = False
-        if self._max_output_bytes and len(stdout.encode("utf-8", "ignore")) > self._max_output_bytes:
-            stdout = stdout.encode("utf-8", "ignore")[: self._max_output_bytes].decode("utf-8", "ignore")
-            stdout += f"\n[output truncated at {self._max_output_bytes} bytes]"
-            truncated = True
-
-        result = ExecResult(
-            status="ok" if exit_code == 0 else "error",
-            stdout=stdout,
-            exit_code=exit_code,
-            truncated=truncated,
-        )
-        if exit_code in _SIGKILL_EXIT_CODES:
-            result.error_name = "ExecutionError"
-            result.error_value = (
-                f"the process was killed (exit code {exit_code}), most likely for using more memory than the "
-                "sandbox allows"
-            )
-            result.out_of_memory = True
-        elif exit_code != 0:
-            result.error_name = "ExecutionError"
-            result.error_value = stdout or f"exited with code {exit_code}"
-        result.plots = [Plot(format="png", content_base64=png) for png in charts]
+        extra = []
         if artifacts is not None:
-            for chart in getattr(artifacts, "charts", None) or []:
-                png = getattr(chart, "png", None)
-                if png:
-                    result.plots.append(Plot(format="png", content_base64=png))
-        return result
+            extra = [getattr(chart, "png", None) for chart in getattr(artifacts, "charts", None) or []]
+        return detached.result_from_output(
+            stdout, exit_code, max_output_bytes=self._max_output_bytes, extra_pngs=[png for png in extra if png]
+        )
+
+    # -- Detached runs ---------------------------------------------------
+
+    def start_detached(self, session_id: str, code: str, timeout: Optional[float], key: str) -> Dict[str, Any]:
+        """Start ``code`` as its own process in a Daytona session command and return at once.
+
+        The script is fed to ``python3`` on stdin, as ``code_run`` does, so a
+        traceback names ``<stdin>`` exactly as a foreground run's does; stdout
+        and stderr are merged as ``code_run`` reports them. A script too long
+        for one command line is uploaded to ``scratch/jobs/<key>/main.py``
+        first. Each run gets its own process session, so cancelling it
+        (``delete_session``) stops only this run.
+
+        Args:
+            session_id: The DocsGPT session (sandbox) to run in.
+            code: The source.
+            timeout: Wall-clock cap in seconds (the default exec cap when None).
+            key: A unique key for this run (the job directory and process session name).
+
+        Returns:
+            The run's handle: everything a poller in another process needs.
+
+        Raises:
+            Exception: The sandbox could not take the run (after one wake-and-retry).
+        """
+        handle = self._get_handle(session_id)
+        wall = int(timeout or self._default_timeout)
+        directory = detached.job_dir(key)
+        script = detached.script_for(handle.workspace, code).encode("utf-8")
+        encoded = base64.b64encode(script).decode("ascii")
+        uploaded = len(encoded) > _INLINE_SCRIPT_MAX_CHARS
+        run_python = f"timeout -k 5 {wall} python3 -u -"
+        if uploaded:
+            self.put_file(session_id, f"{directory}/main.py", script)
+            pipeline = f"{run_python} < {shlex.quote(directory + '/main.py')} 2>&1"
+        else:
+            pipeline = f"echo {encoded} | base64 -d | {run_python} 2>&1"
+        command = f"cd {shlex.quote(handle.workspace)} && {pipeline}"
+        process_session = f"docsgpt-job-{key}"
+        try:
+            cmd_id = self._launch(handle, process_session, command)
+        except Exception:
+            if not self._ensure_started(handle):
+                raise
+            cmd_id = self._launch(handle, process_session, command)
+        return {
+            "backend": "daytona",
+            "sandbox_id": handle.sandbox_id,
+            "workspace": handle.workspace,
+            "process_session": process_session,
+            "cmd_id": cmd_id,
+            "job_dir": directory if uploaded else None,
+            "wall": wall,
+            "started_at": time.time(),
+        }
+
+    def _launch(self, handle: "_Handle", process_session: str, command: str) -> str:
+        """Create the run's process session and start ``command`` in it asynchronously."""
+        from daytona import SessionExecuteRequest
+
+        process = handle.sandbox.process
+        process.create_session(process_session, request_timeout=self._default_timeout)
+        response = process.execute_session_command(
+            process_session,
+            SessionExecuteRequest(command=command, run_async=True),
+            timeout=int(self._default_timeout),
+        )
+        return str(response.cmd_id)
+
+    def poll_detached(self, session_id: str, run: Dict[str, Any], *, with_output: bool = False) -> DetachedState:
+        """Check a detached run; once it exited, read its output and clean up its process session.
+
+        Args:
+            session_id: The DocsGPT session the run belongs to.
+            run: The handle ``start_detached`` returned.
+            with_output: Also read the output of a run still going (watch patterns).
+
+        Returns:
+            The run's state. A sandbox that no longer exists ends the run with an error.
+
+        Raises:
+            Exception: A transient failure talking to the sandbox; poll again later.
+        """
+        handle = self._get_handle(session_id)
+        process = handle.sandbox.process
+        try:
+            command = process.get_session_command(
+                run["process_session"], run["cmd_id"], request_timeout=self._default_timeout
+            )
+        except Exception:
+            if self._sandbox_gone(handle):
+                self._forget_handle(session_id, handle)
+                result = ExecResult(
+                    status="error",
+                    error_name="SandboxGoneError",
+                    error_value="the sandbox running this job no longer exists",
+                    exit_code=-1,
+                    runtime_invalidated=True,
+                )
+                return DetachedState(done=True, result=result, gone=True)
+            raise
+        exit_code = getattr(command, "exit_code", None)
+        if exit_code is None:
+            output = ""
+            if with_output:
+                output = self._command_output(process, run)
+            return DetachedState(done=False, output=detached.tail_bytes(output))
+        output = self._command_output(process, run)
+        result = detached.finished_result(
+            output,
+            exit_code,
+            elapsed=time.time() - float(run.get("started_at") or 0),
+            wall=float(run.get("wall") or self._default_timeout),
+            max_output_bytes=self._max_output_bytes,
+        )
+        # Off the reply path: the turn waiting on this run should not wait for its cleanup too.
+        threading.Thread(
+            target=self._cleanup_detached, args=(handle, run), daemon=True, name="daytona-job-cleanup"
+        ).start()
+        return DetachedState(done=True, result=result, output=detached.tail_bytes(output))
+
+    def _command_output(self, process: Any, run: Dict[str, Any]) -> str:
+        """The run's merged output so far (stdout carries stderr through ``2>&1``)."""
+        logs = process.get_session_command_logs(
+            run["process_session"], run["cmd_id"], request_timeout=self._default_timeout
+        )
+        stdout = getattr(logs, "stdout", None) or ""
+        stderr = getattr(logs, "stderr", None) or ""
+        return stdout + stderr
+
+    def _cleanup_detached(self, handle: "_Handle", run: Dict[str, Any]) -> None:
+        """Remove a finished run's process session and script directory (best-effort)."""
+        try:
+            handle.sandbox.process.delete_session(run["process_session"], request_timeout=self._default_timeout)
+        except Exception as exc:  # noqa: BLE001 - cleanup is best-effort
+            logger.debug("Daytona: deleting job session %s failed: %s", run.get("process_session"), exc)
+        if not run.get("job_dir"):
+            return
+        try:
+            self._delete_remote(handle, self._remote_path(handle.workspace, run["job_dir"]))
+        except Exception as exc:  # noqa: BLE001 - cleanup is best-effort
+            logger.debug("Daytona: removing job dir %s failed: %s", run.get("job_dir"), exc)
+
+    def cancel_detached(self, session_id: str, run: Dict[str, Any]) -> None:
+        """Stop a detached run: deleting its process session kills the process."""
+        handle = self._get_handle(session_id)
+        self._cleanup_detached(handle, run)
+
+    def refresh_activity(self, session_id: str) -> None:
+        """Count a detached run's poll as sandbox activity, so auto-stop does not cut it off."""
+        handle = self._get_handle(session_id)
+        refresh = getattr(handle.sandbox, "refresh_activity", None)
+        if callable(refresh):
+            refresh(request_timeout=self._default_timeout)
+
+    def adopt(self, session_id: str, run: Dict[str, Any]) -> Dict[str, Any]:
+        """Register the sandbox a detached run lives in, without priming or creating anything.
+
+        A poller in another process reaches the run through an adopted handle;
+        it never closes it, so the session's own process keeps owning the sandbox.
+
+        Args:
+            session_id: The DocsGPT session.
+            run: The run's handle (``sandbox_id``, ``workspace``).
+
+        Returns:
+            Handle fields to persist (none for Daytona).
+        """
+        sandbox = self._client.get(run["sandbox_id"], request_timeout=self._default_timeout)
+        with self._lock:
+            self._handles[session_id] = _Handle(sandbox, run["sandbox_id"], run.get("workspace") or _WORKSPACE_ROOT)
+        return {}
+
+    def release_adopted(self, session_id: str, run: Dict[str, Any]) -> None:
+        """Drop an adopted handle without touching the sandbox."""
+        with self._lock:
+            handle = self._handles.get(session_id)
+            if handle is not None and handle.sandbox_id == run.get("sandbox_id"):
+                self._handles.pop(session_id, None)
 
     # -- File transfer ---------------------------------------------------
 

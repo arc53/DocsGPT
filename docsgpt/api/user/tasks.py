@@ -636,6 +636,41 @@ def sweep_background_jobs(self):
         return {"error": True}
 
 
+@celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)
+def poll_background_sandbox_job(self, job_id):
+    """One poll of a background job's detached sandbox run; re-queues itself until the run ends.
+
+    Never retried by Celery: a failed poll re-queues itself with a backoff,
+    and the background sweep restarts a chain that broke.
+    """
+    from docsgpt.background.sandbox_runner import poll_job
+
+    return poll_job(job_id)
+
+
+@celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)
+def run_background_tool_call(self, job_id, payload):
+    """Run an explicit ``background=true`` tool call in this worker and finish its job.
+
+    At most once (``acks_late=False``, no retries): a tool call may have side
+    effects, so a worker that dies mid-call leaves the job to be reported
+    lost, never re-run.
+    """
+    from docsgpt.background.celery_runner import run_job
+
+    return run_job(job_id, payload)
+
+
+# The background call gets the job lifetime, plus a margin to record the timeout.
+try:
+    from docsgpt.core.settings import settings as _background_settings
+
+    run_background_tool_call.soft_time_limit = int(_background_settings.BACKGROUND_JOB_MAX_SECONDS) + 30
+    run_background_tool_call.time_limit = run_background_tool_call.soft_time_limit + 60
+except Exception:
+    pass
+
+
 @celery.task(bind=True, acks_late=False)
 def cleanup_background_jobs(self):
     """Delete finished background jobs and settled wakes past ``BACKGROUND_RESULT_RETENTION_DAYS``."""

@@ -164,16 +164,72 @@ class TestExecutorHandOff:
             ).scalar()
         assert journal == "confirmed"
 
-    def test_explicit_background_hands_off_without_waiting(
-        self, bg_db, conversation, monkeypatch, no_delivery
-    ):
+    def test_explicit_background_runs_in_a_worker(self, bg_db, conversation, monkeypatch, no_delivery):
+        from docsgpt.background import celery_runner
+
         conversation_id, message_id = conversation
-        gate = threading.Event()
-        executor = _executor(conversation_id, message_id, _SlowTool(0, gate), monkeypatch)
+        queued = []
+        monkeypatch.setattr(celery_runner, "enqueue", lambda job_id, payload: queued.append((job_id, payload)) or True)
+        tool = _SlowTool(0)
+        executor = _executor(conversation_id, message_id, tool, monkeypatch)
         started = time.monotonic()
         _events, (result, _) = _drain(executor.execute(_TOOLS, _call({"url": "c", "background": True}), "OpenAILLM"))
         assert time.monotonic() - started < 1
         assert result["status"] == "running"
+        # Nothing ran in the turn: the worker runs the whole call.
+        assert tool.calls == []
+        job = _job_for(bg_db, conversation_id)
+        assert job["runner"] == "celery"
+        assert job["lease_owner"] is None
+        job_id, payload = queued[0]
+        assert job_id == job["id"]
+        assert payload["arguments"] == {"url": "c"}
+        assert payload["tool_row_id"] == _TOOL_ROW_ID
+
+        # The worker side, in this process: rebuild the executor, run, finish.
+        monkeypatch.setattr(ToolExecutor, "get_tools", lambda self: _TOOLS)
+        monkeypatch.setattr(ToolExecutor, "_get_or_load_tool", lambda self, *a, **k: tool)
+        summary = celery_runner.run_job(job_id, payload)
+        assert summary["state"] == "finished"
+        finished = _job_for(bg_db, conversation_id)
+        assert finished["status"] == "completed"
+        assert finished["result"]["text"] == "page for c"
+        assert tool.calls == [{"url": "c"}]
+
+    def test_a_job_that_cannot_be_queued_runs_in_the_turn(self, bg_db, conversation, monkeypatch, no_delivery):
+        from docsgpt.api.user import tasks
+
+        conversation_id, message_id = conversation
+
+        def refuse(*args, **kwargs):
+            raise ConnectionError("broker down")
+
+        monkeypatch.setattr(tasks.run_background_tool_call, "apply_async", refuse)
+        tool = _SlowTool(0)
+        executor = _executor(conversation_id, message_id, tool, monkeypatch)
+        _events, (result, _) = _drain(executor.execute(_TOOLS, _call({"url": "e", "background": True}), "OpenAILLM"))
+        # The pool path takes over: a fast call returns its result as before.
+        assert result == "page for e" or result["status"] == "running"
+        refused = [j for j in self._jobs(bg_db, conversation_id) if j["runner"] == "celery"]
+        assert refused and refused[0]["status"] == "failed"
+        assert refused[0]["delivery_state"] == "suppressed"
+
+    @staticmethod
+    def _jobs(engine, conversation_id):
+        with engine.connect() as conn:
+            return BackgroundJobsRepository(conn).list_for_conversation(conversation_id, "u1")
+
+    def test_explicit_background_on_a_detachable_tool_hands_off_at_once(
+        self, bg_db, conversation, monkeypatch, no_delivery
+    ):
+        conversation_id, message_id = conversation
+        gate = threading.Event()
+        tool = _SlowTool(0, gate)
+        tool.supports_detached = lambda: True
+        executor = _executor(conversation_id, message_id, tool, monkeypatch)
+        _events, (result, _) = _drain(executor.execute(_TOOLS, _call({"url": "f", "background": True}), "OpenAILLM"))
+        assert result["status"] == "running"
+        assert _job_for(bg_db, conversation_id)["runner"] == "inprocess"
         gate.set()
         assert _wait_for(lambda: (j := _job_for(bg_db, conversation_id)) and j["status"] == "completed")
 
@@ -184,3 +240,22 @@ class TestExecutorHandOff:
         executor.background = None
         _drain(executor.execute(_TOOLS, _call({"url": "d"}), "OpenAILLM"))
         assert tool.calls == [{"url": "d"}]
+
+
+class TestBackgroundParameter:
+    def _schema(self, executor):
+        tools = executor.prepare_tools_for_llm(
+            {**_TOOLS, "t2": {"id": "x2", "name": "notes", "config": {}, "actions": [
+                {"name": "view", "description": "V", "parameters": {"properties": {}}}
+            ]}}
+        )
+        return {t["function"]["name"]: t["function"]["parameters"]["properties"] for t in tools}
+
+    def test_offered_only_in_a_background_capable_turn(self):
+        executor = ToolExecutor(user="u1")
+        assert "background" not in self._schema(executor)["read"]
+        executor.background = BackgroundContext(user_id="u1", conversation_id="c")
+        schema = self._schema(executor)
+        assert schema["read"]["background"]["type"] == "boolean"
+        # Quick tools are not offered it.
+        assert "background" not in schema["view"]

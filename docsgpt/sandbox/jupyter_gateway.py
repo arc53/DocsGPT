@@ -8,14 +8,16 @@ import re
 import threading
 import time
 import uuid
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse, urlunparse
 
 import requests
 import websocket
 
+from docsgpt.sandbox import detached
 from docsgpt.sandbox.base import (
     CodeSandbox,
+    DetachedState,
     DisplayData,
     ExecResult,
     OpenedSession,
@@ -804,6 +806,199 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
         if start == -1 or end == -1:
             return []
         return json.loads(out[start + len(_FILE_BEGIN):end])
+
+
+    # -- Detached runs ---------------------------------------------------
+
+    _JOB_BEGIN = "<<<DOCSGPT_JOB_BEGIN>>>"
+    _JOB_END = "<<<DOCSGPT_JOB_END>>>"
+
+    def start_detached(self, session_id: str, code: str, timeout: Optional[float], key: str) -> Dict[str, Any]:
+        """Start ``code`` as a separate Python process in the runner and return at once.
+
+        The process runs ``scratch/jobs/<key>/main.py`` from the session
+        workspace under ``timeout``, in its own session (``setsid``) so it
+        outlives the kernel call that launched it. It does NOT share the
+        kernel's variables or imports, only the workspace files. Output goes to
+        ``out.log`` and the exit status to ``exit`` in the job directory.
+
+        Args:
+            session_id: The session whose workspace and kernel launch the run.
+            code: The source.
+            timeout: Wall-clock cap in seconds (the default exec cap when None).
+            key: A unique key for this run.
+
+        Returns:
+            The run's handle.
+
+        Raises:
+            IOError: The launch failed.
+        """
+        kernel = self._get_kernel(session_id)
+        wall = int(timeout or self._default_timeout)
+        directory = detached.job_dir(key)
+        self.put_file(session_id, f"{directory}/main.py", detached.script_for(kernel.workspace, code).encode("utf-8"))
+        launcher = (
+            "import json as _json, os as _os, subprocess as _sp, sys as _sys\n"
+            f"_job = _os.path.join({kernel.workspace!r}, {directory!r})\n"
+            "_cmd = ('timeout -k 5 ' + str(" + str(wall) + ") + ' \"$0\" -u \"$1/main.py\" > \"$1/out.log\" 2>&1; '\n"
+            "        'echo $? > \"$1/exit.tmp\" && mv \"$1/exit.tmp\" \"$1/exit\"')\n"
+            "_p = _sp.Popen(['sh', '-c', _cmd, _sys.executable, _job], "
+            f"cwd={kernel.workspace!r}, start_new_session=True, "
+            "stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)\n"
+            # Reap the run when it exits, so a cancelled one does not linger as a zombie.
+            "__import__('threading').Thread(target=_p.wait, daemon=True).start()\n"
+            f"print({self._JOB_BEGIN!r} + _json.dumps({{'pid': _p.pid}}) + {self._JOB_END!r})\n"
+        )
+        result = self._run(kernel, launcher, self._default_timeout)
+        payload = detached.decode_marker_json(result.stdout, self._JOB_BEGIN, self._JOB_END) if result.ok else None
+        if payload is None:
+            raise self._file_op_error("start_detached", result)
+        return {
+            "backend": "jupyter",
+            "kernel_id": kernel.kernel_id,
+            "workspace": kernel.workspace,
+            "job_dir": directory,
+            "pid": int(json.loads(payload)["pid"]),
+            "wall": wall,
+            "started_at": time.time(),
+        }
+
+    def poll_detached(self, session_id: str, run: Dict[str, Any], *, with_output: bool = False) -> DetachedState:
+        """Check a detached run through the session's (or an adopted observer) kernel.
+
+        Args:
+            session_id: The session the run belongs to.
+            run: The handle ``start_detached`` returned.
+            with_output: Also read the output of a run still going.
+
+        Returns:
+            The run's state; once it exited, its full result.
+
+        Raises:
+            IOError: The kernel could not be reached; poll again later.
+        """
+        kernel = self._get_kernel(session_id)
+        probe = (
+            "import json as _json, os as _os\n"
+            f"_d = _os.path.join({kernel.workspace!r}, {run['job_dir']!r})\n"
+            "_code = None\n"
+            "_done = _os.path.exists(_os.path.join(_d, 'exit'))\n"
+            "if _done:\n"
+            "    try:\n"
+            "        _code = int(open(_os.path.join(_d, 'exit')).read().strip() or '0')\n"
+            "    except (OSError, ValueError):\n"
+            "        _code = -1\n"
+            "else:\n"
+            "    try:\n"
+            f"        _os.killpg({int(run['pid'])}, 0)\n"
+            "    except ProcessLookupError:\n"
+            "        _done, _code = True, 137\n"
+            "    except PermissionError:\n"
+            "        pass\n"
+            "_tail = ''\n"
+            f"if _done or {bool(with_output)!r}:\n"
+            "    try:\n"
+            "        with open(_os.path.join(_d, 'out.log'), 'rb') as _f:\n"
+            "            _f.seek(0, 2)\n"
+            f"            _f.seek(max(0, _f.tell() - {detached.RUNNING_OUTPUT_BYTES}))\n"
+            "            _tail = _f.read().decode('utf-8', 'replace')\n"
+            "    except OSError:\n"
+            "        pass\n"
+            f"print({self._JOB_BEGIN!r} + _json.dumps({{'done': _done, 'exit': _code, 'tail': _tail}}) "
+            f"+ {self._JOB_END!r})\n"
+        )
+        result = self._run(kernel, probe, self._default_timeout)
+        payload = detached.decode_marker_json(result.stdout, self._JOB_BEGIN, self._JOB_END) if result.ok else None
+        if payload is None:
+            raise self._file_op_error("poll_detached", result)
+        state = json.loads(payload)
+        if not state.get("done"):
+            return DetachedState(done=False, output=detached.tail_bytes(state.get("tail") or ""))
+        try:
+            output = self.get_file(session_id, f"{run['job_dir']}/out.log").decode("utf-8", "replace")
+        except (IOError, ValueError):
+            # Too large or unreadable: the tail is what the run reports.
+            output = state.get("tail") or ""
+        result = detached.finished_result(
+            output,
+            state.get("exit"),
+            elapsed=time.time() - float(run.get("started_at") or 0),
+            wall=float(run.get("wall") or self._default_timeout),
+            max_output_bytes=self._max_output_bytes,
+        )
+        self._remove_job_dir(kernel, run)
+        return DetachedState(done=True, result=result, output=detached.tail_bytes(output))
+
+    def _remove_job_dir(self, kernel: _Kernel, run: Dict[str, Any]) -> None:
+        """Delete a finished run's job directory (best-effort)."""
+        code = (
+            "import os as _os, shutil as _sh\n"
+            f"_sh.rmtree(_os.path.join({kernel.workspace!r}, {run['job_dir']!r}), ignore_errors=True)\n"
+        )
+        try:
+            self._run(kernel, code, self._http_timeout)
+        except Exception:  # noqa: BLE001 - cleanup is best-effort
+            logger.debug("removing job dir %s failed", run.get("job_dir"), exc_info=True)
+
+    def cancel_detached(self, session_id: str, run: Dict[str, Any]) -> None:
+        """Stop a detached run: SIGTERM its process group (the ``timeout`` wrapper escalates to SIGKILL)."""
+        kernel = self._get_kernel(session_id)
+        code = (
+            "import os as _os, signal as _sig\n"
+            "try:\n"
+            f"    _os.killpg({int(run['pid'])}, _sig.SIGTERM)\n"
+            "except (ProcessLookupError, PermissionError):\n"
+            "    pass\n"
+        )
+        self._run(kernel, code, self._http_timeout)
+
+    def refresh_activity(self, session_id: str) -> None:
+        """No-op: a polled kernel counts as active on the gateway."""
+        return None
+
+    def adopt(self, session_id: str, run: Dict[str, Any]) -> Dict[str, Any]:
+        """Reach a detached run from another process through an observer kernel.
+
+        The session's own kernel belongs to the process that opened it, and
+        executing in it from here would queue behind (and on a timeout,
+        interrupt) the user's next run. A separate observer kernel reads the
+        session workspace by path instead; it is never primed, so the
+        workspace is never wiped. Its id is kept on the run so later polls
+        reuse it.
+
+        Args:
+            session_id: The session the run belongs to.
+            run: The run's handle; ``observer_kernel_id`` when one exists.
+
+        Returns:
+            ``{"observer_kernel_id": ...}`` when a new observer was started.
+        """
+        observer = run.get("observer_kernel_id")
+        created: Dict[str, Any] = {}
+        if not observer or not self._kernel_alive(observer):
+            resp = requests.post(
+                f"{self._base_url}/api/kernels",
+                headers=self._headers(),
+                data=json.dumps({"name": self._kernel_name}),
+                timeout=self._http_timeout,
+            )
+            resp.raise_for_status()
+            observer = resp.json()["id"]
+            created["observer_kernel_id"] = observer
+        with self._lock:
+            self._kernels[session_id] = _Kernel(observer, run.get("workspace") or "", session_id)
+        return created
+
+    def release_adopted(self, session_id: str, run: Dict[str, Any]) -> None:
+        """Delete the observer kernel once its run is over (never the session's own kernel)."""
+        observer = run.get("observer_kernel_id")
+        with self._lock:
+            kernel = self._kernels.get(session_id)
+            if kernel is not None and kernel.kernel_id == observer:
+                self._kernels.pop(session_id, None)
+        if observer and observer != run.get("kernel_id"):
+            self._delete_kernel(observer)
 
 
 def _error_result(name: str, value: str) -> ExecResult:

@@ -8,6 +8,8 @@ import hashlib
 import logging
 import math
 import re
+import time
+from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlsplit
 
@@ -93,6 +95,54 @@ def _tail(stream: Optional[str]) -> str:
     if len(stream) <= _OUTPUT_TAIL_BYTES:
         return stream
     return stream[-_OUTPUT_TAIL_BYTES:]
+
+
+# Characters of the submitted code a detached run keeps for the fix hints.
+_STATE_CODE_MAX_CHARS = 20_000
+
+
+def detached_marker() -> Any:
+    """The value ``execute_action`` returns when a background job took the run over."""
+    from docsgpt.background.handoff import DETACHED
+
+    return DETACHED
+
+
+@dataclass
+class PreparedRun:
+    """A run_code call once its session is open and its inputs staged.
+
+    Serializable (``to_state`` / ``from_state``) so a background job's poller
+    in another process can finish a detached run exactly as the turn would.
+    """
+
+    session_id: str
+    code: str
+    timeout: float
+    clamped: bool = False
+    asked_timeout: Optional[int] = None
+    should_capture: bool = True
+    outputs: Optional[List[str]] = None
+    pre_signatures: Dict[str, Tuple[int, Optional[str]]] = field(default_factory=dict)
+    inputs_loaded: List[str] = field(default_factory=list)
+    session_created: bool = False
+    keep_alive: bool = True
+
+    def to_state(self) -> Dict[str, Any]:
+        """A JSON-safe copy (the code is kept to ``_STATE_CODE_MAX_CHARS`` for the hints)."""
+        state = asdict(self)
+        state["code"] = self.code[:_STATE_CODE_MAX_CHARS]
+        state["pre_signatures"] = {path: list(sig) for path, sig in self.pre_signatures.items()}
+        return state
+
+    @classmethod
+    def from_state(cls, state: Dict[str, Any]) -> "PreparedRun":
+        """Rebuild a run from ``to_state``."""
+        fields = dict(state)
+        fields["pre_signatures"] = {
+            path: (int(sig[0]), sig[1]) for path, sig in (state.get("pre_signatures") or {}).items()
+        }
+        return cls(**fields)
 
 
 class CodeExecutorTool(Tool):
@@ -380,6 +430,7 @@ class CodeExecutorTool(Tool):
         if opened.created:
             self._make_scratch_dir(manager, session_id)
 
+        detached_run = False
         try:
             materialized = self._materialize_inputs(manager, session_id, inputs)
             if materialized.get("error"):
@@ -389,52 +440,195 @@ class CodeExecutorTool(Tool):
             if should_capture:
                 pre_signatures = self._snapshot_signatures(manager, session_id)
 
-            try:
-                result = manager.exec(session_id, code, timeout=timeout)
-            except Exception as exc:
-                logger.exception("code_executor: exec raised")
-                return {
-                    "status": "error",
-                    "error": f"execution failed: {type(exc).__name__}: {exc}",
-                    "session": session_state,
-                }
-
-            # Capture even on error/timeout while the runtime remains reachable
-            # so partial outputs aren't lost; capture never masks the run status.
-            artifacts: List[Dict[str, Any]] = []
-            if should_capture and not result.runtime_invalidated:
-                try:
-                    artifacts = self._capture_artifacts(manager, session_id, pre_signatures, outputs)
-                except Exception:
-                    logger.exception("code_executor: artifact capture failed")
-            # A run that saved an image file (savefig) already gave the user its chart;
-            # saving the displayed copy as well left a duplicate ``chart-<sha8>.png``.
-            saved_image = any(str(a.get("mime_type") or "").startswith("image/") for a in artifacts)
-            charts = self._show_charts(result, should_capture and not saved_image)
-
-            payload = self._shape_payload(
-                result,
-                artifacts + charts,
-                materialized.get("loaded", []),
-                session=session_state,
-                environment=self._environment_summary() if opened.created else None,
+            run = PreparedRun(
+                session_id=session_id,
+                code=code,
                 timeout=timeout,
+                clamped=clamped,
+                asked_timeout=self._timeout_number(kwargs.get("timeout")) if clamped else None,
+                should_capture=bool(should_capture),
+                outputs=outputs,
+                pre_signatures=pre_signatures,
+                inputs_loaded=list(materialized.get("loaded", [])),
+                session_created=bool(opened.created),
+                keep_alive=keep_alive,
             )
-            if clamped:
-                asked = self._timeout_number(kwargs.get("timeout"))
-                payload["timeout"] = f"ran with {int(timeout)}s, the maximum; {asked}s was asked for"
-            if self._native_queue:
-                payload["charts_shown"] = [part["label"] for part in self._native_queue]
-            hints = self._hints(session_id, code, result, artifacts + charts, opened.created, timeout, should_capture)
-            if hints:
-                payload["hint"] = hints
-            return payload
+            call = self._background_call()
+            if call is not None and self._can_detach(manager, call):
+                outcome = self._run_detached(manager, run, call)
+                if outcome is detached_marker():
+                    # A background job's poller finishes this run, and closes the session if asked.
+                    detached_run = True
+                    return outcome
+                if isinstance(outcome, dict):
+                    return outcome
+                result = outcome
+            else:
+                try:
+                    result = manager.exec(session_id, code, timeout=timeout)
+                except Exception as exc:
+                    logger.exception("code_executor: exec raised")
+                    return {
+                        "status": "error",
+                        "error": f"execution failed: {type(exc).__name__}: {exc}",
+                        "session": session_state,
+                    }
+            return self.finish_run(manager, run, result)
         finally:
-            if not keep_alive:
+            if not keep_alive and not detached_run:
                 try:
                     manager.close(session_id)
                 except Exception:
                     logger.exception("code_executor: session close failed")
+
+    def finish_run(self, files: Any, run: "PreparedRun", result: ExecResult) -> Dict[str, Any]:
+        """Turn a finished run into the model's payload: capture its files, show its charts, add hints.
+
+        Shared by a run that finished in the turn and one a background job's
+        poller finished in another process, so both report the same payload.
+
+        Args:
+            files: The session's file access (the manager, or an adopted backend).
+            run: The run as prepared.
+            result: What the run returned.
+
+        Returns:
+            The payload the model sees.
+        """
+        # Capture even on error/timeout while the runtime remains reachable
+        # so partial outputs aren't lost; capture never masks the run status.
+        artifacts: List[Dict[str, Any]] = []
+        if run.should_capture and not result.runtime_invalidated:
+            try:
+                artifacts = self._capture_artifacts(files, run.session_id, run.pre_signatures, run.outputs)
+            except Exception:
+                logger.exception("code_executor: artifact capture failed")
+        # A run that saved an image file (savefig) already gave the user its chart;
+        # saving the displayed copy as well left a duplicate ``chart-<sha8>.png``.
+        saved_image = any(str(a.get("mime_type") or "").startswith("image/") for a in artifacts)
+        charts = self._show_charts(result, run.should_capture and not saved_image)
+
+        payload = self._shape_payload(
+            result,
+            artifacts + charts,
+            run.inputs_loaded,
+            session="new" if run.session_created else "reused",
+            environment=self._environment_summary() if run.session_created else None,
+            timeout=run.timeout,
+        )
+        if run.clamped:
+            payload["timeout"] = f"ran with {int(run.timeout)}s, the maximum; {run.asked_timeout}s was asked for"
+        if self._native_queue:
+            payload["charts_shown"] = [part["label"] for part in self._native_queue]
+        hints = self._hints(
+            run.session_id, run.code, result, artifacts + charts, run.session_created, run.timeout, run.should_capture
+        )
+        if hints:
+            payload["hint"] = hints
+        return payload
+
+    # ------------------------------------------------------------------
+    # Detached runs (background jobs)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _background_call() -> Any:
+        """The background call this run belongs to, when the turn may hand it off."""
+        from docsgpt.background.handoff import current_call
+
+        return current_call()
+
+    def supports_detached(self) -> bool:
+        """Whether this deployment's sandbox can run code detached (a background job survives the turn)."""
+        try:
+            return SandboxCreator.get_manager().supports_detached()
+        except Exception:
+            return False
+
+    def _can_detach(self, manager: Any, call: Any) -> bool:
+        """Run detached on Daytona always (no kernel state to lose); on Jupyter only for ``background``.
+
+        A Jupyter run in the kernel keeps its variables for the next call, so
+        only an explicit background run gives that up for a separate process.
+        """
+        if not manager.supports_detached():
+            return False
+        return self._backend() == "daytona" or bool(getattr(call, "explicit", False))
+
+    def _run_detached(self, manager: Any, run: "PreparedRun", call: Any) -> Any:
+        """Start the run detached and follow it until it ends or the turn hands it off.
+
+        Args:
+            manager: The sandbox manager.
+            run: The prepared run.
+            call: The background call handle.
+
+        Returns:
+            The ``ExecResult`` of a run that ended here, the detached marker when a
+            background job took it over, or an error payload when it could not start.
+        """
+        try:
+            handle = manager.start_detached(run.session_id, run.code, run.timeout, call.key)
+        except Exception as exc:
+            logger.exception("code_executor: detached start failed")
+            return {
+                "status": "error",
+                "error": f"execution failed: {type(exc).__name__}: {exc}",
+                "session": "new" if run.session_created else "reused",
+            }
+        # Tight polls first, so a short run returns about as soon as a foreground one would.
+        interval = 0.05
+        failures = 0
+        # The wrapper enforces the run's own cap; this bounds a poll loop whose sandbox stopped answering.
+        deadline = time.monotonic() + float(run.timeout) + 60
+        while True:
+            if call.handoff_requested() and call.detach(self._detached_state(run, handle)):
+                return detached_marker()
+            try:
+                state = manager.poll_detached(run.session_id, handle)
+                failures = 0
+            except Exception:
+                failures += 1
+                logger.warning("code_executor: polling a detached run failed (%d)", failures, exc_info=True)
+                if failures >= 5:
+                    self._cancel_quietly(manager, run, handle)
+                    return ExecResult(
+                        status="error",
+                        error_name="SandboxError",
+                        error_value="lost contact with the sandbox while the code ran",
+                        exit_code=-1,
+                    )
+            else:
+                if state.done and state.result is not None:
+                    return state.result
+            if time.monotonic() > deadline:
+                self._cancel_quietly(manager, run, handle)
+                return ExecResult(
+                    status="error", error_name="TimeoutError", error_value=f"execution exceeded {int(run.timeout)}s",
+                    exit_code=-1,
+                )
+            call.wait(interval)
+            interval = min(interval * 1.3, 1.0)
+
+    @staticmethod
+    def _cancel_quietly(manager: Any, run: "PreparedRun", handle: Dict[str, Any]) -> None:
+        try:
+            manager.cancel_detached(run.session_id, handle)
+        except Exception:
+            logger.warning("code_executor: stopping a detached run failed", exc_info=True)
+
+    def _detached_state(self, run: "PreparedRun", handle: Dict[str, Any]) -> Dict[str, Any]:
+        """What a poller in another process needs to finish this run: the handle, the run, this tool."""
+        config = {
+            key: self.config.get(key)
+            for key in ("tool_id", "conversation_id", "workflow_run_id", "message_id", "require_approval")
+            if self.config.get(key) is not None
+        }
+        return {
+            "session_id": run.session_id,
+            "run": handle,
+            "finish": run.to_state(),
+            "tool": {"config": config, "user_id": self.user_id},
+        }
 
     @staticmethod
     def _make_scratch_dir(manager: Any, session_id: str) -> None:

@@ -17,9 +17,11 @@ side owns the result.
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import threading
 import time
+import uuid
 from concurrent.futures import TimeoutError as FuturesTimeout
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional, Tuple
@@ -40,6 +42,19 @@ CONTROL_ARGS = ("background", "watch")
 
 #: How long a finished pool thread waits for the request thread to write the job row.
 _JOB_READY_TIMEOUT = 300.0
+
+#: Returned by a tool whose work a background job's poller took over (a
+#: detached sandbox run): the pool thread then has nothing left to finish.
+DETACHED = object()
+
+_current_call: contextvars.ContextVar[Optional["CallHandle"]] = contextvars.ContextVar(
+    "docsgpt_background_call", default=None
+)
+
+
+def current_call() -> Optional["CallHandle"]:
+    """The background call the running tool belongs to, or None outside a hand-off-able call."""
+    return _current_call.get()
 
 
 def split_controls(arguments: Any) -> Tuple[Any, Dict[str, Any]]:
@@ -96,6 +111,8 @@ class CallSpec:
         arguments: The model's arguments (stored redacted on the job).
         parameters: The resolved parameters the tool runs with.
         controls: ``background`` / ``watch`` as the model passed them.
+        worker_payload: What a Celery worker needs to run the call itself
+            (explicit ``background`` on a tool that can't detach).
     """
 
     tool_name: str
@@ -104,6 +121,7 @@ class CallSpec:
     arguments: Any
     parameters: Dict[str, Any] = field(default_factory=dict)
     controls: Dict[str, Any] = field(default_factory=dict)
+    worker_payload: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -130,9 +148,68 @@ class _Flight:
         self.lock = threading.Lock()
         self.finished = False
         self.handed_off = False
+        self.detached = False
         self.job_id: Optional[str] = None
         self.job_ready = threading.Event()
         self.started = time.monotonic()
+
+
+class CallHandle:
+    """What a running tool sees of its background call (``current_call()``).
+
+    A tool that can run detached (``code_executor``) polls its run and, once
+    the turn handed the call off, moves it to a poller with :meth:`detach`
+    instead of holding a pool thread for the rest of the run.
+
+    Attributes:
+        key: A unique key for this call's detached run.
+        explicit: The model asked for ``background=true``.
+    """
+
+    def __init__(self, flight: _Flight, *, explicit: bool, watch: Optional[dict]) -> None:
+        self._flight = flight
+        self.key = uuid.uuid4().hex[:12]
+        self.explicit = explicit
+        self.watch = watch
+
+    def handoff_requested(self) -> bool:
+        """True once the turn handed this call off and its job row exists."""
+        return self._flight.job_ready.is_set() and self._flight.job_id is not None
+
+    def wait(self, seconds: float) -> None:
+        """Sleep up to ``seconds``, waking early when the call is handed off."""
+        if self._flight.job_ready.is_set():
+            time.sleep(seconds)
+        else:
+            self._flight.job_ready.wait(seconds)
+
+    def detach(self, external: Dict[str, Any]) -> bool:
+        """Hand the rest of the run to the sandbox poller; True when it took it.
+
+        Args:
+            external: Everything the poller needs (run handle, finish state).
+
+        Returns:
+            False when the job could not be moved (keep polling here).
+        """
+        job_id = self._flight.job_id
+        if job_id is None:
+            return False
+        from docsgpt.background.sandbox_runner import detach_job
+
+        if not detach_job(job_id, external):
+            return False
+        self._flight.detached = True
+        return True
+
+
+def _detaches(tool: Any) -> bool:
+    """Whether the tool can move a running call to a sandbox poller (``code_executor``)."""
+    supports = getattr(tool, "supports_detached", None)
+    try:
+        return bool(callable(supports) and supports())
+    except Exception:
+        return False
 
 
 def run_call(
@@ -142,6 +219,7 @@ def run_call(
     invoke: Callable[[], Any],
     *,
     yield_seconds: Optional[float] = None,
+    explicit: bool = False,
 ) -> Outcome:
     """Run one tool call, handing it off to a background job if it outlives the yield window.
 
@@ -151,6 +229,8 @@ def run_call(
         tool: The loaded tool instance (finishes the job's result shaping).
         invoke: Runs the call: ``tool.execute_action(...)`` with its arguments.
         yield_seconds: Override of the yield window; 0 hands off at once.
+        explicit: The model asked for ``background=true``. A tool that can't
+            detach then runs in a Celery worker from the start.
 
     Returns:
         The outcome; ``Outcome.value`` carries the tool's result when it was not handed off.
@@ -158,15 +238,27 @@ def run_call(
     Raises:
         Exception: Whatever the tool raised, when the call was not handed off.
     """
+    if explicit:
+        if not _detaches(tool) and spec.worker_payload is not None:
+            queued = _run_in_worker(context, spec)
+            if queued is not None:
+                return queued
+        yield_seconds = 0
+
     flight = _Flight()
+    watch = spec.controls.get("watch") if isinstance(spec.controls.get("watch"), dict) else None
+    handle = CallHandle(flight, explicit=explicit, watch=watch)
 
     def _work() -> Any:
+        token = _current_call.set(handle)
         value: Any = None
         error: Optional[BaseException] = None
         try:
             value = invoke()
         except BaseException as exc:  # noqa: BLE001 - re-raised or recorded on the job below
             error = exc
+        finally:
+            _current_call.reset(token)
         with flight.lock:
             handed_off = flight.handed_off
             if not handed_off:
@@ -177,6 +269,8 @@ def run_call(
             if error is not None:
                 raise error
             return value
+        if value is DETACHED and error is None:
+            return None
         jobs.complete_from_tool(
             flight.job_id,
             tool=tool,
@@ -191,6 +285,19 @@ def run_call(
     if future is None:
         # Every pool slot is busy: run inline, exactly as before.
         return Outcome(False, value=invoke())
+    return _await_or_hand_off(context, spec, flight, future, window_override=yield_seconds)
+
+
+def _await_or_hand_off(
+    context: BackgroundContext,
+    spec: CallSpec,
+    flight: _Flight,
+    future: Any,
+    *,
+    window_override: Optional[float],
+) -> Outcome:
+    """Wait out the yield window, then hand the call off if it is still running."""
+    yield_seconds = window_override
     window = context.yield_seconds if yield_seconds is None else max(0.0, float(yield_seconds))
     try:
         return Outcome(False, value=future.result(timeout=window))
@@ -222,7 +329,7 @@ def run_call(
             action_name=spec.action_name,
             journal_key=spec.journal_key,
             arguments=spec.arguments,
-            watch=spec.controls.get("watch") if isinstance(spec.controls.get("watch"), dict) else None,
+            watch=_watch_of(spec),
         )
     except Exception:
         logger.exception("background job could not be written; the call stays in the foreground")
@@ -242,4 +349,47 @@ def run_call(
         "tool call handed off to background job",
         extra={"job_id": flight.job_id, "tool_name": spec.tool_name, "action_name": spec.action_name},
     )
+    return Outcome(True, payload=payload, job=job)
+
+
+def _watch_of(spec: CallSpec) -> Optional[dict]:
+    """The call's ``watch`` spec when it is a dict."""
+    watch = spec.controls.get("watch")
+    return watch if isinstance(watch, dict) else None
+
+
+def _run_in_worker(context: BackgroundContext, spec: CallSpec) -> Optional[Outcome]:
+    """Queue an explicit background call to a Celery worker; None to run it here instead.
+
+    The job row is written first (runner ``celery``, no lease until a worker
+    starts it); a call that can't be queued keeps the old behaviour.
+
+    Args:
+        context: The turn's background context.
+        spec: The call; ``worker_payload`` says how to rebuild it in the worker.
+
+    Returns:
+        The hand-off outcome, or None (over the cap, or the queue refused it).
+    """
+    try:
+        if not jobs.within_caps(context):
+            return None
+        job, created = jobs.create_job(
+            context,
+            tool_name=spec.tool_name,
+            action_name=spec.action_name,
+            journal_key=spec.journal_key,
+            arguments=spec.arguments,
+            runner="celery",
+            watch=_watch_of(spec),
+        )
+    except Exception:
+        logger.exception("background job could not be written; the call runs here")
+        return None
+    if created:
+        from docsgpt.background.celery_runner import enqueue
+
+        if not enqueue(str(job["id"]), spec.worker_payload or {}):
+            return None
+    payload = running_payload(str(job["id"]), auto_resume=bool(job.get("auto_resume")), elapsed_s=0)
     return Outcome(True, payload=payload, job=job)

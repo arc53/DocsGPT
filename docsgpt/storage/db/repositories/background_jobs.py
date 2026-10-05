@@ -449,16 +449,34 @@ class BackgroundJobsRepository:
     # ------------------------------------------------------------------
 
     def find_stale_working(
-        self, *, stale_seconds: int, runners: Iterable[str] = ALL_RUNNERS, limit: int = 100
+        self,
+        *,
+        stale_seconds: int,
+        runners: Iterable[str] = ALL_RUNNERS,
+        unstarted_stale_seconds: Optional[int] = None,
+        limit: int = 100,
     ) -> list[dict]:
-        """Lock running jobs whose heartbeat is older than ``stale_seconds``."""
+        """Lock running jobs whose heartbeat is older than ``stale_seconds``.
+
+        Args:
+            stale_seconds: Heartbeat age of a job some process holds.
+            runners: Runners to look at.
+            unstarted_stale_seconds: Heartbeat age of a job no process holds yet
+                (a queued ``celery`` job); defaults to ``stale_seconds``.
+            limit: Rows to lock.
+
+        Returns:
+            The locked rows.
+        """
+        unstarted = int(unstarted_stale_seconds if unstarted_stale_seconds is not None else stale_seconds)
         rows = self._conn.execute(
             text(
                 "SELECT * FROM background_jobs WHERE status = 'working' AND runner = ANY(:runners) "
-                "AND heartbeat_at < now() - make_interval(secs => :stale) "
+                "AND ((lease_owner IS NOT NULL AND heartbeat_at < now() - make_interval(secs => :stale)) "
+                "OR (lease_owner IS NULL AND heartbeat_at < now() - make_interval(secs => :unstarted))) "
                 "ORDER BY heartbeat_at ASC LIMIT :limit FOR UPDATE SKIP LOCKED"
             ),
-            {"stale": int(stale_seconds), "runners": list(runners), "limit": int(limit)},
+            {"stale": int(stale_seconds), "unstarted": unstarted, "runners": list(runners), "limit": int(limit)},
         ).fetchall()
         return [row_to_dict(r) for r in rows]
 
