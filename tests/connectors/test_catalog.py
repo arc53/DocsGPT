@@ -165,3 +165,37 @@ def test_atlassian_preset_is_part_of_confluence():
     assert atlassian.part_of == "confluence"
     assert atlassian.to_dict()["part_of"] == "confluence"
     assert catalog.get_definition("confluence").to_dict()["part_of"] is None
+
+
+def test_posthog_preset_is_available_in_catalog():
+    from docsgpt.connectors import catalog
+
+    posthog = catalog.get_definition("mcp:posthog")
+    assert posthog is not None
+    preset = posthog.to_dict()
+    assert {
+        key: preset[key]
+        for key in (
+            "key",
+            "name",
+            "description",
+            "icon",
+            "category",
+            "auth_kind",
+            "capabilities",
+            "mcp_url",
+            "publisher",
+            "docs_url",
+        )
+    } == {
+        "key": "mcp:posthog",
+        "name": "PostHog",
+        "description": "Explore product analytics, feature flags and experiments in PostHog.",
+        "icon": "posthog",
+        "category": "dev",
+        "auth_kind": "mcp_oauth",
+        "capabilities": ["read", "write"],
+        "mcp_url": "https://mcp.posthog.com/mcp",
+        "publisher": "preset",
+        "docs_url": "https://posthog.com/docs/model-context-protocol",
+    }
