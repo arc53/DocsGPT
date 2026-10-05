@@ -27,6 +27,7 @@ import { EventStreamProvider } from './events/EventStreamProvider';
 import { useDarkTheme, useMediaQuery } from './hooks';
 import useDataInitializer from './hooks/useDataInitializer';
 import useTokenAuth from './hooks/useTokenAuth';
+import ApprovalPage from './monitors/ApprovalPage';
 import Navigation from './Navigation';
 import { outletBoundaryKey } from './navigation/outletBoundaryKey';
 import { getSectionForPath } from './navigation/sections';
@@ -155,7 +156,8 @@ export default function App() {
   // embedded / shared externally and shouldn't carry product chrome.
   const isPublicShareRoute =
     location.pathname.startsWith('/share/') ||
-    location.pathname.startsWith('/shared/');
+    location.pathname.startsWith('/shared/') ||
+    location.pathname.startsWith('/approve/');
   if (!componentMounted) {
     return <div />;
   }
@@ -204,6 +206,8 @@ export default function App() {
         </Route>
         <Route path="/share/:identifier" element={<SharedConversation />} />
         <Route path="/shared/agent/:agentId" element={<SharedAgentGate />} />
+        {/* Public: a human approval link (the token is the credential). */}
+        <Route path="/approve/:token" element={<ApprovalPage />} />
         {DesignSystem && (
           <Route
             path="/design"

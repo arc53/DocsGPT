@@ -3207,5 +3207,24 @@
     "collapse": "Collapse",
     "back": "Back"
   },
-  "close": "Close"
+  "close": "Close",
+  "approval": {
+    "logoAlt": "DocsGPT",
+    "untitled": "Approval requested",
+    "missingTitle": "This link doesn't work",
+    "missingDescription": "It may have expired or been cancelled, or the address is incomplete.",
+    "loadError": "Couldn't load this request",
+    "options": {
+      "approve": "Approve",
+      "reject": "Reject"
+    },
+    "commentLabel": "Comment (optional)",
+    "commentPlaceholder": "Anything the requester should know",
+    "onceOnly": "Your choice is final: only the first decision counts.",
+    "thanks": "Thanks. You chose “{{decision}}”, and the assistant that asked has been told.",
+    "alreadyDecided": "This request was already decided: {{decision}}.",
+    "notWaiting": "This request is no longer waiting for a decision.",
+    "rateLimited": "Too many attempts. Wait a minute and try again.",
+    "submitError": "Your decision couldn't be sent. Try again."
+  }
 }

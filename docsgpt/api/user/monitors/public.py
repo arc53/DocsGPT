@@ -67,3 +67,48 @@ class TriggerLink(Resource):
     @api.doc(description="Not a page: a trigger link takes POST only, so this answers 405.", security=[])
     def get(self, token: str):
         return Response(_GET_TEXT, status=405, mimetype="text/plain", headers={"Allow": "POST"})
+
+
+approvals_ns = Namespace("approvals", description="Public human approval links of monitors", path="/api")
+
+#: Largest decision body accepted (a decision and a comment).
+_MAX_DECISION_BYTES = 16 * 1024
+
+
+@approvals_ns.route("/approvals/<string:token>")
+class ApprovalLink(Resource):
+    @api.doc(
+        description=(
+            "What an approval link asks: its title, question, details, options and whether it was decided. "
+            "Public (the token is the credential); reading it changes nothing."
+        ),
+        params={"token": "The link's token."},
+        security=[],
+    )
+    def get(self, token: str):
+        status, body = triggers.approval_view(token)
+        return _reply(status, body)
+
+    @api.doc(
+        description=(
+            "Decide an approval link: {decision, comment?}, where decision is one of its options. The first "
+            "decision wins and resumes the conversation that asked; later ones get 409. 404 for an unknown, "
+            "expired or revoked link, 400 for an option it doesn't offer, 429 when rate limited."
+        ),
+        params={"token": "The link's token."},
+        security=[],
+    )
+    def post(self, token: str):
+        if request.content_length is not None and request.content_length > _MAX_DECISION_BYTES:
+            return _reply(413, {"error": "the decision is too large"})
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            data = request.form.to_dict() if request.form else {}
+        try:
+            status, body = triggers.decide(
+                token, decision=data.get("decision"), comment=data.get("comment"), headers=dict(request.headers)
+            )
+        except Exception:
+            logger.exception("approval decision failed")
+            return _reply(500, {"error": "the decision could not be recorded; try again"})
+        return _reply(status, body)

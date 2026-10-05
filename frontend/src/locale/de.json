@@ -3162,5 +3162,24 @@
     "collapse": "Verkleinern",
     "back": "Zurück"
   },
-  "close": "Schließen"
+  "close": "Schließen",
+  "approval": {
+    "logoAlt": "DocsGPT",
+    "untitled": "Freigabe angefragt",
+    "missingTitle": "Dieser Link funktioniert nicht",
+    "missingDescription": "Er ist vielleicht abgelaufen oder wurde abgebrochen, oder die Adresse ist unvollständig.",
+    "loadError": "Diese Anfrage konnte nicht geladen werden",
+    "options": {
+      "approve": "Freigeben",
+      "reject": "Ablehnen"
+    },
+    "commentLabel": "Kommentar (optional)",
+    "commentPlaceholder": "Was die anfragende Person wissen sollte",
+    "onceOnly": "Ihre Wahl ist endgültig: Nur die erste Entscheidung zählt.",
+    "thanks": "Danke. Sie haben „{{decision}}“ gewählt, und der Assistent, der gefragt hat, wurde informiert.",
+    "alreadyDecided": "Über diese Anfrage wurde bereits entschieden: {{decision}}.",
+    "notWaiting": "Diese Anfrage wartet nicht mehr auf eine Entscheidung.",
+    "rateLimited": "Zu viele Versuche. Warten Sie eine Minute und versuchen Sie es erneut.",
+    "submitError": "Ihre Entscheidung konnte nicht gesendet werden. Versuchen Sie es erneut."
+  }
 }

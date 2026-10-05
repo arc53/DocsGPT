@@ -3150,5 +3150,24 @@
     "collapse": "收合",
     "back": "返回"
   },
-  "close": "關閉"
+  "close": "關閉",
+  "approval": {
+    "logoAlt": "DocsGPT",
+    "untitled": "請求審核",
+    "missingTitle": "此連結無法使用",
+    "missingDescription": "它可能已過期或被取消，或者網址不完整。",
+    "loadError": "無法載入此請求",
+    "options": {
+      "approve": "核准",
+      "reject": "拒絕"
+    },
+    "commentLabel": "備註（選填）",
+    "commentPlaceholder": "需要讓請求者知道的事",
+    "onceOnly": "你的選擇是最終的：只有第一個決定有效。",
+    "thanks": "謝謝。你選擇了「{{decision}}」，提出請求的助理已收到通知。",
+    "alreadyDecided": "此請求已有決定：{{decision}}。",
+    "notWaiting": "此請求已不再等待決定。",
+    "rateLimited": "嘗試次數過多。請等一分鐘後再試。",
+    "submitError": "無法送出你的決定。請再試一次。"
+  }
 }

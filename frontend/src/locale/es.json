@@ -3162,5 +3162,24 @@
     "collapse": "Reducir",
     "back": "Atrás"
   },
-  "close": "Cerrar"
+  "close": "Cerrar",
+  "approval": {
+    "logoAlt": "DocsGPT",
+    "untitled": "Aprobación solicitada",
+    "missingTitle": "Este enlace no funciona",
+    "missingDescription": "Puede que haya caducado o se haya cancelado, o que la dirección esté incompleta.",
+    "loadError": "No se pudo cargar esta solicitud",
+    "options": {
+      "approve": "Aprobar",
+      "reject": "Rechazar"
+    },
+    "commentLabel": "Comentario (opcional)",
+    "commentPlaceholder": "Lo que deba saber quien lo pide",
+    "onceOnly": "Tu elección es definitiva: solo cuenta la primera decisión.",
+    "thanks": "Gracias. Elegiste “{{decision}}” y se ha avisado al asistente que lo pidió.",
+    "alreadyDecided": "Esta solicitud ya se decidió: {{decision}}.",
+    "notWaiting": "Esta solicitud ya no espera una decisión.",
+    "rateLimited": "Demasiados intentos. Espera un minuto y vuelve a intentarlo.",
+    "submitError": "No se pudo enviar tu decisión. Inténtalo de nuevo."
+  }
 }

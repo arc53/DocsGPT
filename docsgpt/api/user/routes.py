@@ -20,7 +20,7 @@ from .background_jobs import background_jobs_ns
 from .conversations import conversations_ns
 from .me import me_ns
 from .models import models_ns
-from .monitors import triggers_ns
+from .monitors import approvals_ns, triggers_ns
 from .prompts import prompts_ns
 from .schedules import schedules_ns
 from .sharing import sharing_ns
@@ -68,6 +68,7 @@ api.add_namespace(agents_guardrails_ns)
 
 # Monitors: public trigger and approval links, and the Monitors page
 api.add_namespace(triggers_ns)
+api.add_namespace(approvals_ns)
 
 # Prompts
 api.add_namespace(prompts_ns)

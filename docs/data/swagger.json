@@ -2277,6 +2277,54 @@
         ]
       }
     },
+    "/api/approvals/{token}": {
+      "get": {
+        "description": "What an approval link asks: its title, question, details, options and whether it was decided. Public (the token is the credential); reading it changes nothing.",
+        "operationId": "get_approval_link",
+        "parameters": [
+          {
+            "description": "The link's token.",
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "security": [],
+        "tags": [
+          "approvals"
+        ],
+        "x-pat-denied": true
+      },
+      "post": {
+        "description": "Decide an approval link: {decision, comment?}, where decision is one of its options. The first decision wins and resumes the conversation that asked; later ones get 409. 404 for an unknown, expired or revoked link, 400 for an option it doesn't offer, 429 when rate limited.",
+        "operationId": "post_approval_link",
+        "parameters": [
+          {
+            "description": "The link's token.",
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "security": [],
+        "tags": [
+          "approvals"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/artifact/{artifact_id}": {
       "get": {
         "description": "Get artifact data by artifact ID. Returns all todos for the tool when fetching a todo artifact.",
@@ -6368,6 +6416,10 @@
     {
       "description": "Public webhook trigger links of monitors",
       "name": "triggers"
+    },
+    {
+      "description": "Public human approval links of monitors",
+      "name": "approvals"
     },
     {
       "description": "Prompt management operations",

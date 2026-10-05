@@ -792,7 +792,7 @@ def process_hit(hit_id: str, attempt: int = 0) -> Dict[str, Any]:
                 source="trigger",
                 key=f"hit:{claimed['dedupe_key']}",
                 summary="the webhook link received a delivery",
-                extra={"delivery": payload.get("body"), "content_type": payload.get("content_type")},
+                extra={k: v for k, v in (("delivery", payload.get("body")), ("event", payload.get("event"))) if v is not None},
             )
         except Exception as exc:
             logger.exception("trigger hit %s: processing failed", hit_id)

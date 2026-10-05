@@ -3149,5 +3149,24 @@
     "collapse": "收起",
     "back": "返回"
   },
-  "close": "关闭"
+  "close": "关闭",
+  "approval": {
+    "logoAlt": "DocsGPT",
+    "untitled": "请求审批",
+    "missingTitle": "此链接无法使用",
+    "missingDescription": "它可能已过期或被取消，或者地址不完整。",
+    "loadError": "无法加载此请求",
+    "options": {
+      "approve": "批准",
+      "reject": "拒绝"
+    },
+    "commentLabel": "备注（可选）",
+    "commentPlaceholder": "需要告知请求者的内容",
+    "onceOnly": "你的选择是最终的：只有第一个决定有效。",
+    "thanks": "谢谢。你选择了“{{decision}}”，发起请求的助手已收到通知。",
+    "alreadyDecided": "此请求已有决定：{{decision}}。",
+    "notWaiting": "此请求已不再等待决定。",
+    "rateLimited": "尝试次数过多。请等一分钟后重试。",
+    "submitError": "无法发送你的决定。请重试。"
+  }
 }

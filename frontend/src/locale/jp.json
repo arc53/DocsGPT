@@ -3150,5 +3150,24 @@
     "collapse": "縮小",
     "back": "戻る"
   },
-  "close": "閉じる"
+  "close": "閉じる",
+  "approval": {
+    "logoAlt": "DocsGPT",
+    "untitled": "承認のリクエスト",
+    "missingTitle": "このリンクは使用できません",
+    "missingDescription": "期限切れかキャンセル済みか、アドレスが不完全な可能性があります。",
+    "loadError": "このリクエストを読み込めませんでした",
+    "options": {
+      "approve": "承認",
+      "reject": "却下"
+    },
+    "commentLabel": "コメント（任意）",
+    "commentPlaceholder": "依頼者に伝えたいこと",
+    "onceOnly": "選択は取り消せません。最初の判断だけが有効です。",
+    "thanks": "ありがとうございます。「{{decision}}」を選択しました。依頼したアシスタントに通知されました。",
+    "alreadyDecided": "このリクエストはすでに判断されています: {{decision}}。",
+    "notWaiting": "このリクエストはもう判断を待っていません。",
+    "rateLimited": "試行回数が多すぎます。1分待ってからもう一度お試しください。",
+    "submitError": "判断を送信できませんでした。もう一度お試しください。"
+  }
 }
