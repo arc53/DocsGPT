@@ -27,7 +27,7 @@ _FK_BOUND_TOOLS = frozenset({"notes", "todo_list"})
 _HEADLESS_EXCLUDED_TOOLS = frozenset({"scheduler", "check_job"})
 
 # Default tools that exist only while their feature is on.
-_FEATURE_GATED_TOOLS = {"check_job": "BACKGROUND_JOBS_ENABLED"}
+_FEATURE_GATED_TOOLS = {"check_job": "BACKGROUND_JOBS_ENABLED", "monitor": "MONITORS_ENABLED"}
 
 
 def _feature_enabled(tool_name: str) -> bool:
@@ -51,6 +51,7 @@ BUILTIN_AGENT_TOOLS: tuple = (
     "read_document",
     "code_executor",
     "artifact_generator",
+    "monitor",
 )
 
 # Builtins shown only in the workflow-node tool picker, never the classic
@@ -363,6 +364,8 @@ def builtin_agent_tools_for_management() -> List[Dict[str, Any]]:
     """Return every loaded agent-builtin tool for the agent picker (no per-user state)."""
     rows: List[Dict[str, Any]] = []
     for name in loaded_builtin_agent_tools():
+        if not _feature_enabled(name):
+            continue
         row = synthesize_builtin_agent_tool(name)
         if row is None:
             continue

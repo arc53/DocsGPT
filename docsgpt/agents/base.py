@@ -676,6 +676,9 @@ class BaseAgent(ABC):
                 }
 
             if action.get("decision") == "approved":
+                approved = getattr(self.tool_executor, "approved_call_ids", None)
+                if isinstance(approved, set):
+                    approved.add(call_id)
                 # Execute the tool server-side
                 tc = ToolCall(
                     id=call_id,

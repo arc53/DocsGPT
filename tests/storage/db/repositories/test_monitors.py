@@ -139,7 +139,14 @@ class TestLifecycle:
         row = _create(repo, conv)
         pg_conn.execute(text("DELETE FROM conversations WHERE id = CAST(:id AS uuid)"), {"id": conv})
         assert repo.get_internal(row["id"]) is None
-        assert SchedulesRepository(pg_conn).get_internal(row["id"]) is not None
+        # The schedule goes with it, so nothing is left counting against the cap.
+        assert SchedulesRepository(pg_conn).get_internal(row["id"]) is None
+        assert repo.count_live_for_user("u1") == 0
+
+    def test_lock_user_is_reentrant_within_a_transaction(self, pg_conn):
+        repo = MonitorsRepository(pg_conn)
+        repo.lock_user("u1")
+        repo.lock_user("u1")
 
 
 class TestSchedulesLeaveMonitorsOut:
@@ -154,3 +161,8 @@ class TestSchedulesLeaveMonitorsOut:
         _create(MonitorsRepository(pg_conn), conv, agent_id=str(agent))
         assert schedules.list_for_agent(str(agent), "u1") == []
         assert len(schedules.list_for_agent(str(agent), "u1", trigger_type="monitor")) == 1
+
+    def test_the_schedule_dispatcher_never_claims_a_monitor(self, pg_conn):
+        conv = _conversation(pg_conn)
+        _create(MonitorsRepository(pg_conn), conv, next_run_at=datetime.now(timezone.utc) - timedelta(minutes=1))
+        assert SchedulesRepository(pg_conn).list_due() == []

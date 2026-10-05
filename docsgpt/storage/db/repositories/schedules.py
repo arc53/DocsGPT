@@ -223,12 +223,13 @@ class SchedulesRepository:
         return int(scalar or 0)
 
     def list_due(self, *, limit: int = 100) -> list[dict]:
-        """Lock and return schedules with ``next_run_at <= now()``."""
+        """Lock and return schedules with ``next_run_at <= now()`` (monitors tick through their own dispatch)."""
         rows = self._conn.execute(
             text(
                 """
                 SELECT * FROM schedules
                 WHERE status = 'active'
+                  AND trigger_type <> 'monitor'
                   AND next_run_at IS NOT NULL
                   AND next_run_at <= now()
                   AND (end_at IS NULL OR next_run_at <= end_at)

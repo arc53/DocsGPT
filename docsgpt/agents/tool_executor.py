@@ -627,6 +627,11 @@ class ToolExecutor:
         self._connections: Dict[str, Any] = {}
         # Tool parameters those connections set (Telegram's default chat).
         self._connection_params: Dict[str, Dict] = {}
+        # Calls the user approved on an approval card (set by the resume
+        # path), and the call running now: ``monitor`` binds an approval only
+        # when the call that creates it was really approved.
+        self.approved_call_ids: set = set()
+        self.current_call_id: Optional[str] = None
 
     def get_tools(self) -> Dict[str, Dict]:
         """Load tool configs from DB based on user context.
@@ -1257,6 +1262,12 @@ class ToolExecutor:
                 )
                 or require_approval
             )
+        elif tool_data.get("name") == "monitor":
+            # A monitor that replays an approval-gated call asks for that
+            # approval once, when it is created.
+            from docsgpt.monitors.service import create_needs_approval
+
+            require_approval = create_needs_approval(self, action_name, arguments) or require_approval
 
         # An admin forbade changes through this connector (GitHub): its tool
         # already calls the read-only endpoint, so say why instead of failing.
@@ -1866,6 +1877,8 @@ class ToolExecutor:
         def _invoke():
             return tool.execute_action(action_name, **call_kwargs)
 
+        self.current_call_id = call_id
+
         outcome = None
         try:
             if background_eligible:
@@ -2136,6 +2149,10 @@ class ToolExecutor:
                 if self.external_caller:
                     # Its runs act as the owner for an API-key caller.
                     tool_config["created_via"] = "api"
+            if tool_data["name"] == "monitor":
+                # The monitor tool resolves its source among this caller's
+                # tools and checks the approval of the call creating it.
+                tool_config["executor"] = self
             if tool_data["name"] == "mcp_tool":
                 tool_config["query_mode"] = True
                 # The stored schemas carry the server's ``x-mcp-header``

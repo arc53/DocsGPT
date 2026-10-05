@@ -20,7 +20,8 @@ encrypted at rest, and the approval question or its decision.
 ``trigger_hits`` keeps accepted webhook deliveries, bounded, unique per
 link and dedupe key, until a worker has run them through the check.
 
-Rows cascade with the schedule and with the conversation. Idempotent both
+Rows cascade with the schedule and with the conversation; deleting a monitor row
+(its conversation went) deletes its schedule too, by trigger. Idempotent both
 ways; downgrade folds monitor schedules away before narrowing the check.
 
 Revision ID: 0048_monitors_and_trigger_links
@@ -129,9 +130,30 @@ def upgrade() -> None:
         "FOR EACH ROW EXECUTE FUNCTION set_updated_at(); "
         "END IF; END $$;"
     )
+    # A monitor row goes with its conversation; its schedule must go too, or
+    # it would stay 'active' with nothing to run and count against the cap.
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION monitors_drop_schedule() RETURNS trigger AS $$
+        BEGIN
+            DELETE FROM schedules WHERE id = OLD.schedule_id AND trigger_type = 'monitor';
+            RETURN OLD;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+    op.execute(
+        "DO $$ BEGIN "
+        "IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'monitors_drop_schedule') THEN "
+        "CREATE TRIGGER monitors_drop_schedule AFTER DELETE ON monitors "
+        "FOR EACH ROW EXECUTE FUNCTION monitors_drop_schedule(); "
+        "END IF; END $$;"
+    )
 
 
 def downgrade() -> None:
+    op.execute("DROP TRIGGER IF EXISTS monitors_drop_schedule ON monitors;")
+    op.execute("DROP FUNCTION IF EXISTS monitors_drop_schedule();")
     op.execute("DROP TABLE IF EXISTS trigger_hits;")
     op.execute("DROP TABLE IF EXISTS trigger_links;")
     op.execute("DROP TABLE IF EXISTS monitors;")

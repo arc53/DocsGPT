@@ -223,12 +223,19 @@ class MonitorsRepository:
         sql += " ORDER BY m.created_at DESC LIMIT :limit"
         return [row_to_dict(r) for r in self._conn.execute(text(sql), params).fetchall()]
 
+    def lock_user(self, user_id: str) -> None:
+        """Serialize monitor creation for one user until the transaction ends (the per-user cap)."""
+        self._conn.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended('monitors:' || :user_id, 0))"),
+            {"user_id": user_id},
+        )
+
     def count_live_for_user(self, user_id: str) -> int:
         """Active or paused monitors the user has (the per-user cap)."""
         value = self._conn.execute(
             text(
-                "SELECT COUNT(*) FROM schedules WHERE user_id = :user_id AND trigger_type = 'monitor' "
-                "AND status IN ('active', 'paused')"
+                "SELECT COUNT(*) FROM schedules s JOIN monitors m ON m.schedule_id = s.id "
+                "WHERE s.user_id = :user_id AND s.trigger_type = 'monitor' AND s.status IN ('active', 'paused')"
             ),
             {"user_id": user_id},
         ).scalar()
