@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-from docsgpt.sandbox.base import CodeSandbox, ExecResult, SandboxGoneError
+from docsgpt.sandbox.base import CodeSandbox, ExecResult, OpenedSession, SandboxGoneError
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ class SandboxCapacityError(RuntimeError):
 class _Session:
     """Bookkeeping for one bound sandbox session: its TTL, access timestamps, and backend handle.
 
-    ``handle`` is the backend handle id returned by ``backend.open``; ``None`` while a
+    ``handle`` is the backend handle id the backend open returned; ``None`` while a
     slot is RESERVED (a placeholder occupying a cap slot during a cold backend open that
     runs outside the lock). ``ready`` is False for such a placeholder so reuse/reap/evict
     skip it until the backend open finalizes it. ``pending_close`` marks a session whose
@@ -72,37 +72,74 @@ class SandboxManager:
         return min(ttl, self._max_ttl)
 
     def open(self, session_id: str, ttl: Optional[float] = None) -> str:
+        """Open (or reuse) the sandbox for ``session_id`` and return its handle id.
+
+        See ``open_session``, which also reports whether the runtime is new.
+
+        Args:
+            session_id: The session to open.
+            ttl: Requested idle keep-alive in seconds, clamped to ``max_ttl``.
+
+        Returns:
+            The backend handle id.
+        """
+        return self.open_session(session_id, ttl=ttl).handle
+
+    def open_session(self, session_id: str, ttl: Optional[float] = None) -> OpenedSession:
         """Open (or reuse) the sandbox for ``session_id`` with a clamped TTL.
 
         The lock guards ONLY the in-memory registry and refcounts; the (potentially
         ~60s) cold backend open runs WITHOUT the lock held so it can never serialize
         other lock-taking methods. Flow:
 
-        1. Under the lock: if the session already exists and is ready, refresh it and
-           return its cached handle (reuse never does backend I/O). Otherwise reap
-           idle-expired sessions, evict an LRU-idle victim if at capacity, then RESERVE
-           a placeholder slot for ``session_id`` so concurrent opens can't overshoot
-           the cap.
-        2. Outside the lock: call ``backend.open`` (cold start) and close any reaped /
-           evicted victims' captured backend resources.
+        1. Under the lock: if the session already exists, is ready and has not been
+           idle past its TTL, refresh it and return its cached handle (reuse never
+           does backend I/O). An idle-expired session is retired instead, as a reap
+           would have done. Otherwise reap idle-expired sessions, evict an LRU-idle
+           victim if at capacity, then RESERVE a placeholder slot for ``session_id``
+           so concurrent opens can't overshoot the cap.
+        2. Outside the lock: close any reaped / evicted victims' captured backend
+           resources, then call ``backend.open_session`` (cold start).
         3. Under the lock: finalize the placeholder into a ready session. On failure,
            free the reserved slot and re-raise.
+
+        Args:
+            session_id: The session to open.
+            ttl: Requested idle keep-alive in seconds, clamped to ``max_ttl``. On
+                reuse it only ever extends the session's TTL.
+
+        Returns:
+            The handle id, and ``created`` True when this open started a fresh
+            runtime (nothing from earlier calls survives). A cached session is
+            reused (False); a cold open reports what the backend did, so a
+            runtime reattached across processes also counts as reused.
         """
         with self._lock:
             session = self._sessions.get(session_id)
             now = time.monotonic()
+            retired: Optional[Tuple[str, Optional[str]]] = None
+            if session is not None and session.ready and session.in_use == 0 and session.is_expired(now):
+                # Idle past its TTL: the session is over even though no reap has run
+                # yet (API processes reap only when another session opens). Reusing it
+                # would claim state the TTL says is discarded, and on the Jupyter runner
+                # the gateway may already have culled the kernel behind the handle.
+                self._sessions.pop(session_id, None)
+                retired = (session_id, session.handle)
+                session = None
             if session is not None and session.ready:
                 session.last_access = now
                 # Reuse must honor an explicit longer keep-alive: a run_code
-                # persist/ttl on a session first opened by another tool (e.g.
+                # keep-alive on a session first opened by another tool (e.g.
                 # artifact_generator at the 60s exec timeout) would otherwise be
                 # dropped, and the kernel + its background state reaped early.
                 # Extend only (never shrink) so a default reuse can't cut short a
                 # session another caller kept alive.
                 if ttl is not None:
                     session.ttl = max(session.ttl, self._clamp_ttl(ttl))
-                return session.handle
+                return OpenedSession(session.handle, False)
             reaped = self._reap_locked(now)
+            if retired is not None:
+                reaped.append(retired)
             if session is None:
                 # Genuinely new key: evict an LRU-idle victim if at capacity (may
                 # raise SandboxCapacityError), then RESERVE a placeholder slot so
@@ -119,7 +156,7 @@ class SandboxManager:
                 # (another thread is mid cold-open). Overwriting the same key adds no
                 # slot, so do NOT call _make_room_locked here -- it would wrongly evict
                 # an innocent LRU-idle session or raise SandboxCapacityError. Refresh
-                # in place; both threads call the (idempotent) backend.open and the
+                # in place; both threads call the (idempotent) backend open and the
                 # finalize step re-checks before binding the handle.
                 evicted = None
                 session.last_access = now
@@ -131,7 +168,7 @@ class SandboxManager:
         if evicted is not None:
             self._close_backend(evicted[0], evicted[1])
         try:
-            handle = self._backend.open(session_id)
+            handle, created = self._backend.open_session(session_id)
         except Exception:
             # Free the reserved slot so a failed cold open never leaks a cap slot.
             with self._lock:
@@ -153,7 +190,7 @@ class SandboxManager:
                 stale = None
         if stale is not None:
             self._close_backend(session_id, stale)
-        return handle
+        return OpenedSession(handle, created)
 
     def _make_room_locked(self) -> Optional[Tuple[str, Optional[str]]]:
         """Evict the LRU-idle ready session when at capacity; return (id, handle) to close, else None.

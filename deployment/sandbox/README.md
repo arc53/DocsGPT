@@ -169,6 +169,22 @@ k8s these are added to the `docsgpt-api` and `docsgpt-worker` deployments when
 enabling the opt-in `sandbox-deploy.yaml` (the default `docsgpt-deploy.yaml`
 omits them); see that manifest's header for the exact env and the token Secret.
 
+## Session lifetime
+
+The app keeps a session's kernel between `run_code` calls, so variables, files
+and installed packages carry over, and retires it once it has been idle for
+`SANDBOX_MAX_TTL` seconds (1200 by default). Each process retires only its own
+sessions, so a kernel held by an API or worker process that restarted would
+otherwise live until the runner restarts. `gateway-launch.sh` therefore has the
+gateway shut down any kernel idle for `SANDBOX_KERNEL_IDLE_TIMEOUT` seconds
+(1800 by default); keep it above `SANDBOX_MAX_TTL`. The compose overlay passes
+the variable through.
+
+Warm kernels count against the runner's memory: an idle kernel takes about
+50-60 MB, more once code has loaded data, and session workspaces live on the
+`/tmp` tmpfs. Size `SANDBOX_MEMORY` (1g by default) for the conversations that
+run code at the same time, or lower `SANDBOX_MAX_TTL`.
+
 ## Artifact rendering on Daytona (snapshot)
 
 The `artifact` tool renders `presentation` / `document` / `spreadsheet` / `pdf`

@@ -66,6 +66,9 @@ services:
       # The gateway REQUIRES this and fails closed if unset (see gateway-launch.sh).
       # Do NOT add `env_file: ../.env` here -- the runner needs no other app secret.
       - SANDBOX_GATEWAY_AUTH_TOKEN=${SANDBOX_GATEWAY_AUTH_TOKEN:?set SANDBOX_GATEWAY_AUTH_TOKEN to a shared gateway token}
+      # Idle seconds before the gateway shuts a kernel down; keep it above the
+      # app's SANDBOX_MAX_TTL (see gateway-launch.sh).
+      - SANDBOX_KERNEL_IDLE_TIMEOUT=${SANDBOX_KERNEL_IDLE_TIMEOUT:-1800}
       # Keep Jupyter's runtime/connection files on the writable tmpfs.
       - JUPYTER_RUNTIME_DIR=/tmp/jupyter-runtime
       - JUPYTER_DATA_DIR=/tmp/jupyter-data

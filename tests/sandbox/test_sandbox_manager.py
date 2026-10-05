@@ -790,3 +790,88 @@ def test_sandbox_gone_during_file_op_drops_session_and_next_open_is_cold():
     new_handle = mgr.open("conv-1")
     assert new_handle != old_handle
     assert backend.open_calls == ["conv-1", "conv-1"]
+
+
+# ---------------------------------------------------------------------------
+# Session status: did this open create a fresh runtime?
+# ---------------------------------------------------------------------------
+
+
+def test_open_session_reports_a_cold_open_as_created_then_reuse(backend):
+    mgr = SandboxManager(backend, max_ttl=600)
+    first = mgr.open_session("conv-1")
+    second = mgr.open_session("conv-1")
+    assert first.created is True
+    assert second.created is False
+    assert first.handle == second.handle
+    assert backend.open_calls == ["conv-1"]
+
+
+def test_open_still_returns_the_bare_handle(backend):
+    mgr = SandboxManager(backend, max_ttl=600)
+    handle = mgr.open("conv-1")
+    assert isinstance(handle, str) and handle.startswith("handle-conv-1")
+
+
+def test_open_session_passes_through_a_backend_reattach():
+    """A cold open in this process may still find the runtime alive (Daytona reattach)."""
+    from docsgpt.sandbox.base import OpenedSession
+
+    class _ReattachingBackend(FakeBackend):
+        def open_session(self, session_id):
+            return OpenedSession(self.open(session_id), False)
+
+    mgr = SandboxManager(_ReattachingBackend(), max_ttl=600)
+    assert mgr.open_session("conv-1").created is False
+
+
+def test_backend_default_open_session_reports_created(backend):
+    # A backend that cannot tell a reattach from a create reports every open as fresh,
+    # so the model rebuilds state rather than trusting state that may be gone.
+    opened = backend.open_session("conv-1")
+    assert opened.created is True
+    assert opened.handle == "handle-conv-1-1"
+
+
+def test_open_session_after_runtime_invalidation_is_created():
+    class _InvalidatingBackend(FakeBackend):
+        def exec(self, session_id, code, timeout=None):
+            self._handles.pop(session_id, None)
+            return ExecResult(status="error", error_name="TimeoutError", runtime_invalidated=True)
+
+    mgr = SandboxManager(_InvalidatingBackend(), max_ttl=600)
+    mgr.open_session("conv-1")
+    mgr.exec("conv-1", "while True: pass")
+    assert mgr.open_session("conv-1").created is True
+
+
+def test_an_expired_session_is_closed_and_reopened_not_reused(backend, monkeypatch):
+    """Past its idle TTL a session is gone, even if no other open reaped it yet.
+
+    Reusing it would report state that the TTL contract says is discarded, and on the
+    Jupyter runner the gateway may already have culled the kernel behind the handle.
+    """
+    clock = {"t": 1000.0}
+    monkeypatch.setattr("docsgpt.sandbox.manager.time.monotonic", lambda: clock["t"])
+    mgr = SandboxManager(backend, max_ttl=600)
+    old = mgr.open_session("conv-1", ttl=50)
+    clock["t"] = 1051.0  # 51s idle > 50s ttl
+    fresh = mgr.open_session("conv-1")
+    assert fresh.created is True
+    assert fresh.handle != old.handle
+    assert backend.open_calls == ["conv-1", "conv-1"]
+    assert ("conv-1", old.handle) in backend.closed_handles
+
+
+def test_an_expired_but_busy_session_is_still_reused(backend, monkeypatch):
+    clock = {"t": 1000.0}
+    monkeypatch.setattr("docsgpt.sandbox.manager.time.monotonic", lambda: clock["t"])
+    mgr = SandboxManager(backend, max_ttl=600)
+    mgr.open_session("conv-1", ttl=50)
+    held = mgr._enter("conv-1")  # an op is in flight on the session
+    clock["t"] = 1100.0
+    try:
+        assert mgr.open_session("conv-1").created is False
+        assert backend.open_calls == ["conv-1"]
+    finally:
+        mgr._leave("conv-1", expected=held)
