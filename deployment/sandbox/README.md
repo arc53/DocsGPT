@@ -252,12 +252,14 @@ Where `HOME` goes, first match wins:
 Docker mounts a compose `tmpfs:` entry `noexec,nosuid` unless told otherwise,
 so a package with compiled code pip-installed under `/tmp/home` failed to load
 with `failed to map segment from shared object`; pure-Python packages worked.
-The separate home mount allows exec for that one directory only: `/tmp`, where
-the session workspaces live, stays `noexec`, and `nosuid,nodev` still refuse
-setuid binaries and device files. Kernel code can already run anything through
-the Python interpreter, so exec on its own home adds no new capability beyond
-loading the extensions it installed. Both mounts are RAM and count against the
-container's memory limit as they fill.
+Under compose the separate home mount allows exec for that one directory only:
+`/tmp`, where the session workspaces live, stays `noexec`, and `nosuid,nodev`
+still refuse setuid binaries and device files. Both compose mounts are RAM and
+count against the container's memory limit as they fill. On Kubernetes `/tmp` is
+the `scratch` `emptyDir` (node disk, not `noexec`) and only `/sandbox-home` is
+memory-backed, counting against the pod's memory limit. Either way kernel code
+can already run anything through the Python interpreter, so exec on its own
+home adds no new capability beyond loading the extensions it installed.
 
 ipykernel sets `FORCE_COLOR=1` and `CLICOLOR_FORCE=1` once the kernel is up, so
 Node, npm and pip coloured their output even into a pipe and the model read
