@@ -1,7 +1,7 @@
 ---
 title: Background Jobs and Auto-Resume
-description: How DocsGPT hands slow tool calls off to background jobs, resumes the conversation with their results, and how check_job and watch work.
-lastUpdated: 2026-10-05
+description: How DocsGPT hands slow tool calls off to background jobs, resumes the conversation with their results, notifies the user (toasts, unread marks, Web Push), and how check_job and watch work.
+lastUpdated: 2026-10-06
 ---
 
 import { Callout } from 'nextra/components';
@@ -129,8 +129,104 @@ The app's event stream (`/api/events`) carries:
 
 A continuation's message carries `metadata.wake = {source, ref_id, dedupe_key}`. Jobs can be read and cancelled
 through `GET /api/background_jobs?conversation_id=…`, `GET /api/background_jobs/<id>` and
-`POST /api/background_jobs/<id>/cancel`. The chat does not show a job card with live progress yet; until it
-does, a handed-off call's entry shows as running and takes the job's outcome once the job ends.
+`POST /api/background_jobs/<id>/cancel`.
+
+## In the chat
+
+- **Job card.** A handed-off call shows as a card in place of its tool call: running, with the elapsed time,
+  the progress and the latest output line from `watch`, and a **Cancel** button; then finished, failed (with
+  the error), cancelled or interrupted. It follows `job.updated` live, and polls the conversation's job list
+  every 10 seconds while the event stream is down.
+- **Woken turns.** A continuation's prompt is the event that woke the agent, not something the user wrote. It
+  shows as a one-line event row ("Background job finished", "Monitor matched", "Webhook received", "Approval
+  received", "Background job interrupted") with the event text behind a toggle, never as a user message. A
+  failed continuation offers no Retry, which would send the event as the user's own words. Shared
+  conversations show it the same way, without the internal ids.
+- **Live.** The new answer appears in an open conversation without a reload. If the user's own answer is
+  streaming at that moment, it appears when that stream ends.
+
+## Notifications
+
+When a continuation answers (never for `NO_REPLY`), the user is notified according to where they are:
+
+1. **Watching the conversation** (a visible tab shows it): nothing; the chat updates.
+2. **A DocsGPT tab open elsewhere**: a toast with an **Open** button that goes to the conversation. A hidden tab
+   also shows a system notification, if the browser allows it.
+3. **No tab open**: a Web Push notification to the browsers the user turned it on in, if the operator set it
+   up (below).
+
+Unless the user is watching, the conversation is also marked **unread** in the sidebar until they open it.
+
+Tabs report what they show to `POST /api/presence` (`{tab_id, conversation_id, visible, closing?}`) when their
+route or visibility changes and every 20 seconds while visible; a report counts for 45 seconds, and a closing
+tab says so. When Redis is unavailable, the user counts as away, so the notification still goes out.
+
+The toast and the push lead with the kind of event:
+
+| Kind | Heading |
+| --- | --- |
+| `job` | Background job finished |
+| `lost` | Background job interrupted |
+| `monitor` | Monitor matched |
+| `monitor_paused` | Monitor paused |
+| `trigger` | Webhook received |
+| `approval` | Approval received |
+
+The event's title and the start of the answer follow. Any other kind shows its own title. Toasts are
+translated; Web Push is sent in English, since the server does not know the browser's language.
+
+### Setting up Web Push
+
+Web Push is off until you give the server a VAPID key pair. Without it, users with no tab open get the unread
+mark only.
+
+1. **Generate a key pair**, in the raw base64url format browsers use. Either command works:
+
+   ```bash
+   npx web-push generate-vapid-keys
+   ```
+
+   ```bash
+   python -c "import base64; from cryptography.hazmat.primitives import serialization as s; from cryptography.hazmat.primitives.asymmetric import ec; k = ec.generate_private_key(ec.SECP256R1()); b = lambda r: base64.urlsafe_b64encode(r).rstrip(b'=').decode(); print('WEBPUSH_VAPID_PRIVATE_KEY=' + b(k.private_numbers().private_value.to_bytes(32, 'big'))); print('WEBPUSH_VAPID_PUBLIC_KEY=' + b(k.public_key().public_bytes(s.Encoding.X962, s.PublicFormat.UncompressedPoint)))"
+   ```
+
+2. **Set them** on the API and the worker (both read them; the worker sends):
+
+   ```bash
+   WEBPUSH_VAPID_PRIVATE_KEY=<private key>
+   WEBPUSH_VAPID_PUBLIC_KEY=<public key>   # optional: derived from the private key when unset
+   WEBPUSH_VAPID_SUBJECT=mailto:ops@example.com
+   ```
+
+   `WEBPUSH_VAPID_SUBJECT` is how the push services reach you. Apple rejects pushes without a real `mailto:`
+   or `https:` contact; unset, the public API URL is used when it is https. A key that doesn't parse, or a
+   public key that doesn't match the private one, turns Web Push off and logs an error.
+
+3. **Serve the app over HTTPS.** Browsers allow service workers and push only in a secure context (`localhost`
+   counts, for development). The service worker is `/sw.js`, served from the UI's origin root by Vite, the
+   nginx image and the API's built-in UI (`SERVE_UI`) alike. It shows notifications only: it never caches or
+   intercepts requests. A UI served under a sub-path can't register it.
+
+4. **Let the worker reach the push services**: `fcm.googleapis.com`, `*.push.services.mozilla.com`,
+   `*.push.apple.com` and `*.notify.windows.com` over https. The server posts only to these hosts (plus
+   `WEBPUSH_EXTRA_ALLOWED_HOSTS`, for a self-hosted push service or tests), never to an arbitrary endpoint a
+   browser hands it, and never follows a redirect.
+
+The browser asks for permission only in context: the first time a job goes to the background, a monitor or
+link is set up, or a notification arrives, a "Get notified when it's done?" toast offers **Enable** or **Not
+now**. The page never asks on load, and the answer is remembered in that browser. Signing out removes the
+browser's subscription.
+
+| Browser | Web Push |
+| --- | --- |
+| Chrome, Edge, Opera, Samsung Internet (desktop and Android) | Yes |
+| Firefox (desktop and Android) | Yes |
+| Safari 16.1+ on macOS 13+ | Yes |
+| Safari on iOS and iPadOS 16.4+ | Only once DocsGPT is added to the Home Screen |
+
+Rotating the key pair invalidates every subscription; browsers that allowed notifications subscribe again on
+their next visit. A subscription the push service reports gone (404 or 410) is deleted, and one that keeps
+failing is dropped.
 
 ## Running it
 
@@ -154,6 +250,10 @@ does, a handed-off call's entry shows as running and takes the job's outcome onc
 | `AUTO_RESUME_ENABLED` | `true` | Resume conversations with finished results |
 | `AUTO_RESUME_MAX_RESULT_CHARS` | `16000` | Result length a continuation sees (head and tail kept) |
 | `AUTO_RESUME_MAX_CONSECUTIVE` | `5` | Continuations in a row without a user message |
+| `WEBPUSH_VAPID_PRIVATE_KEY` | unset | VAPID private key; unset, Web Push is off |
+| `WEBPUSH_VAPID_PUBLIC_KEY` | unset | VAPID public key; derived from the private key when unset |
+| `WEBPUSH_VAPID_SUBJECT` | unset | Contact for the push services (`mailto:` or `https:`) |
+| `WEBPUSH_EXTRA_ALLOWED_HOSTS` | empty | Push service hosts to accept besides the known ones |
 
 Keep `BACKGROUND_JOB_MAX_SECONDS` below `SANDBOX_MAX_TTL`, so an idle sandbox session is not closed under a
 running job. See the [Settings Reference](/Deploying/Settings-Reference) for every setting.
