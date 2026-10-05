@@ -523,10 +523,12 @@ def ingest_connector_task(
 
 @celery.task(bind=True, acks_late=False)
 def dispatch_scheduled_runs(self):
-    """Beat-driven scheduler poller (body in scheduler_dispatcher)."""
+    """Beat-driven scheduler poller (body in scheduler_dispatcher); monitors tick on the same beat."""
     from docsgpt.api.user.scheduler_dispatcher import dispatch_due_runs
+    from docsgpt.monitors.tasks import dispatch_monitors_safely
 
-    return dispatch_due_runs()
+    counts = dispatch_due_runs()
+    return {**counts, "monitors": dispatch_monitors_safely()}
 
 
 @celery.task(
@@ -686,6 +688,43 @@ continue_conversation.soft_time_limit = max(30, int(_background_settings.SCHEDUL
 continue_conversation.time_limit = continue_conversation.soft_time_limit + 60
 
 
+@celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)
+def run_monitor_tick(self, monitor_id):
+    """Check one polled monitor (body in docsgpt.monitors.tick); at most once, the next slot is the retry."""
+    from docsgpt.monitors.tick import run_tick
+
+    return run_tick(monitor_id)
+
+
+# A tick may replay a remote command (up to 10 minutes) or wait on a slow page.
+run_monitor_tick.soft_time_limit = 720
+run_monitor_tick.time_limit = 780
+
+
+@celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0, soft_time_limit=180, time_limit=240)
+def process_trigger_hit(self, hit_id, attempt=0):
+    """Run one accepted webhook delivery through its monitor's check, judge and wake."""
+    from docsgpt.monitors.tick import process_hit
+
+    return process_hit(hit_id, attempt)
+
+
+@celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0, soft_time_limit=180, time_limit=240)
+def process_monitor_event(self, monitor_id, event, attempt=0):
+    """Run an ingest event through the monitor watching that source."""
+    from docsgpt.monitors.tick import process_event
+
+    return process_event(monitor_id, event, attempt)
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_trigger_hits(self):
+    """Delete settled webhook deliveries past ``BACKGROUND_RESULT_RETENTION_DAYS``."""
+    from docsgpt.monitors.tasks import cleanup_hits
+
+    return cleanup_hits()
+
+
 @celery.task(bind=True, acks_late=False)
 def cleanup_background_jobs(self):
     """Delete finished background jobs and settled wakes past ``BACKGROUND_RESULT_RETENTION_DAYS``."""
@@ -799,6 +838,7 @@ def setup_periodic_tasks(sender, **kwargs):
         cleanup_background_jobs.s(),
         name="cleanup-background-jobs",
     )
+    sender.add_periodic_task(timedelta(hours=24), cleanup_trigger_hits.s(), name="cleanup-trigger-hits")
 
 
 # Bound time limits so a hung OAuth discovery (user never finishes the

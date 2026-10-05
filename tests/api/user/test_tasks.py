@@ -326,7 +326,7 @@ class TestSetupPeriodicTasks:
 
         setup_periodic_tasks(sender)
 
-        assert sender.add_periodic_task.call_count == 17
+        assert sender.add_periodic_task.call_count == 18
 
         calls = sender.add_periodic_task.call_args_list
 
