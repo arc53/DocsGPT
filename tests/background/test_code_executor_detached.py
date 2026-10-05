@@ -212,3 +212,12 @@ class TestCallHandle:
     def test_detach_without_a_job_is_refused(self):
         call = handoff.CallHandle(handoff._Flight(), explicit=False, watch=None)
         assert call.detach({}) is False
+
+
+def test_a_timeout_in_a_background_capable_turn_points_to_background():
+    tool = CodeExecutorTool({}, "u1")
+    timed_out = ExecResult(status="error", error_name="TimeoutError", error_value="execution exceeded 60s")
+    plain = tool._shape_payload(timed_out, [], [], timeout=60.0)["error"]
+    capable = tool._shape_payload(timed_out, [], [], timeout=60.0, background_capable=True)["error"]
+    assert "nohup" in plain
+    assert "background=true" in capable and "nohup" not in capable

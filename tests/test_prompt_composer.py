@@ -136,3 +136,22 @@ class TestAttachmentsFragment:
 
     def test_absent_without_attachments(self):
         assert "## Attached files" not in self._render([], set())
+
+
+class TestLongRunningWorkSection:
+    def _render(self):
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
+
+        return PromptRenderer().render_prompt(prompt_content=compose_preset("agentic_default"))
+
+    def test_present_while_background_jobs_are_on(self, monkeypatch):
+        monkeypatch.setattr("docsgpt.core.settings.settings.BACKGROUND_JOBS_ENABLED", True)
+        rendered = self._render()
+        section = rendered.split("## Long-running work", 1)[1]
+        assert "never guess or predict its result" in section
+        assert "don't poll" in section
+        assert "verify side effects before retrying" in section
+
+    def test_absent_when_off(self, monkeypatch):
+        monkeypatch.setattr("docsgpt.core.settings.settings.BACKGROUND_JOBS_ENABLED", False)
+        assert "## Long-running work" not in self._render()

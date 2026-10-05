@@ -1,0 +1,164 @@
+---
+title: Background Jobs and Auto-Resume
+description: How DocsGPT hands slow tool calls off to background jobs, resumes the conversation with their results, and how check_job and watch work.
+lastUpdated: 2026-10-05
+---
+
+import { Callout } from 'nextra/components';
+
+# Background Jobs and Auto-Resume
+
+A chat turn no longer waits on slow work. When a tool call takes longer than a short window, it becomes a
+**background job**: the turn ends normally, the work keeps going, and when it finishes the agent comes back to
+the same conversation with the result, whether or not the user is still looking.
+
+## How a call becomes a job
+
+Every server-side tool call in a chat turn runs in a small per-process pool. The turn waits up to
+`BACKGROUND_YIELD_SECONDS` (30 by default):
+
+- A call that finishes in time behaves exactly as before, with the same result.
+- A call still running becomes a job. The model gets a result like this instead of the tool's output:
+
+```json
+{
+  "status": "running",
+  "job_id": "4f6c…",
+  "started_as": "background",
+  "elapsed_s": 30,
+  "note": "Still running as background job 4f6c…. Do NOT run it again. You will be resumed automatically…"
+}
+```
+
+The model is told not to run the call again and not to guess its result, and usually ends its turn by telling
+the user the work is running. In the chat, the call's entry shows it as running until the job ends.
+
+The model can also start a call as a job at once with `background=true`. The argument is offered on
+`code_executor`, MCP tools, API tools and `read_webpage`, in chat turns only.
+
+Some calls are never handed off: client-side tools (the `/v1` client tool calls), calls inside workflow nodes,
+scheduled and webhook runs, and continuation turns (below). A tool that needs approval starts its clock only
+after it is approved.
+
+### Where a job runs
+
+| Runner | When | Survives an API restart |
+| --- | --- | --- |
+| Sandbox | Every `code_executor` run on Daytona; a `background=true` run on the Jupyter runner | Yes |
+| Worker | `background=true` on other tools: the whole call runs in a Celery worker | Until the worker dies |
+| In-process | Any other call that outlived the window (and Jupyter runs, which keep their kernel variables) | No |
+
+A **sandbox** job is a separate process in the sandbox. A Celery poller follows it, keeps the sandbox from
+auto-stopping, captures the files it writes as artifacts and reports the same result the turn would have.
+On Daytona every chat run starts this way (about 60 ms more than before for a trivial run), so a hand-off
+costs nothing. On the Jupyter runner a normal run stays in the kernel, so variables persist; a `background=true`
+run is a separate Python process that **does not share the kernel's variables**, only the workspace files.
+
+A job that a process was running when the process died is marked **lost** within about two minutes. The agent
+is resumed with a note that the work may or may not have taken effect and should be verified before retrying.
+
+## Auto-resume
+
+When a job finishes, the conversation is resumed with a **continuation turn**: a headless turn of the same agent
+and model, given the result as an event that is marked as not coming from the user. It answers in the same
+conversation, and a `conversation.continued` event tells open tabs about the new message.
+
+- **One delivery.** A result reaches the model once. If the model already read it with `check_job`, or the user
+  wrote before it was delivered, the continuation does not repeat it.
+- **Defer while busy.** If a reply is streaming in the conversation, or a tool call is waiting for approval, the
+  continuation waits and retries.
+- **Folded into the user's message.** If the user writes first, the result is put in front of their message for
+  the model (their message itself is stored unchanged).
+- **Batched.** Results that land together, up to eight, are answered in one turn.
+- **Silence is allowed.** If nothing is worth telling the user, the model answers `NO_REPLY` and nothing is
+  added to the conversation.
+- **Safe by default.** A continuation can't use tools that need approval, and data from tools and outside
+  services is presented to the model as data, never as instructions.
+- **Bounded.** At most `AUTO_RESUME_MAX_CONSECUTIVE` continuations follow one another without a user message.
+
+Continuations are billed to the conversation's owner like any turn, and only run in conversations the owner
+holds outright. Conversations through the OpenAI-compatible `/v1` API, an agent API key or the widget, a
+shared agent's public link, or an agent someone else owns get **poll-only** jobs: the running result says so,
+and the result waits for `check_job` or the next message.
+
+## check_job
+
+Every chat turn that can hand calls off has a `check_job` tool (it is also in the default
+`DEFAULT_CHAT_TOOLS`):
+
+```
+check_job(job_id?, action="get" | "cancel", wait_seconds=0)
+```
+
+- `get` returns the result of a finished job (and takes it, so the conversation is not resumed with it again),
+  or the job's progress and latest output while it runs. `wait_seconds` waits up to 30 seconds for it to finish.
+- Without a `job_id`, it lists this conversation's jobs. It never sees other conversations' jobs.
+- `cancel` asks the job to stop. A sandbox run is stopped; an in-process call can't be interrupted and ends
+  `cancelled` when it returns. A step already under way may still complete.
+
+Statuses follow MCP Tasks: `working`, `completed`, `failed`, `cancelled`. A lost job reads as `failed` with the
+lost note.
+
+## watch
+
+A `code_executor` call can carry a `watch` spec for what its output may do while it runs:
+
+```json
+"watch": {"patterns": ["Traceback|Error|Killed"], "progress_regex": "PROGRESS (\\d+)%", "heartbeat_s": 0}
+```
+
+- `patterns` (up to five) resume the agent while the job still runs, with the matching line: at most one wake
+  every 15 seconds, and after three dropped matches or eight wakes only completion wakes it.
+- `progress_regex` updates the job's progress shown in the chat. It never wakes the model.
+- `heartbeat_s` (0 for off, else at least 60) resumes the agent with the output printed since the last
+  heartbeat, at most 2000 characters, skipped when nothing new was printed.
+
+Completion and failure always resume the agent. Output during a run is available for sandbox jobs only; for
+other jobs `progress_regex` is applied to the final result.
+
+## Events
+
+The app's event stream (`/api/events`) carries:
+
+- `job.updated`: `{job_id, conversation_id, status, progress, tool_name, action_name}`
+- `conversation.continued`: `{conversation_id, message_id, source}`
+- `notification.created`: `{kind, title, body, url, conversation_id}`
+
+A continuation's message carries `metadata.wake = {source, ref_id, dedupe_key}`. The chat's job card reads
+`GET /api/background_jobs?conversation_id=…`, `GET /api/background_jobs/<id>` and
+`POST /api/background_jobs/<id>/cancel`.
+
+## Running it
+
+<Callout type="info">
+  Background jobs need a Celery worker and the beat scheduler. The worker runs continuations, sandbox pollers
+  and `background=true` calls; beat runs the sweep that reports lost jobs and redelivers results. See
+  [Development Environment](/Deploying/Development-Environment).
+</Callout>
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `BACKGROUND_JOBS_ENABLED` | `true` | Hand slow calls off at all |
+| `BACKGROUND_YIELD_SECONDS` | `30` | How long a turn waits before handing a call off |
+| `BACKGROUND_JOB_MAX_SECONDS` | `1000` | Hard lifetime of a job |
+| `BACKGROUND_MAX_JOBS_PER_CONVERSATION` | `2` | Running jobs per conversation; over it a call stays in the foreground |
+| `BACKGROUND_MAX_JOBS_PER_USER` | `5` | Running jobs per user |
+| `BACKGROUND_RESULT_RETENTION_DAYS` | `7` | How long finished jobs are kept |
+| `BACKGROUND_POOL_SIZE` | `16` | Pool threads per process; a full pool runs calls inline as before |
+| `BACKGROUND_LEASE_STALE_SECONDS` | `60` | Heartbeat age after which a job is lost |
+| `BACKGROUND_RECONCILE_INTERVAL_SECONDS` | `60` | How often the sweep runs |
+| `AUTO_RESUME_ENABLED` | `true` | Resume conversations with finished results |
+| `AUTO_RESUME_MAX_RESULT_CHARS` | `16000` | Result length a continuation sees (head and tail kept) |
+| `AUTO_RESUME_MAX_CONSECUTIVE` | `5` | Continuations in a row without a user message |
+
+Keep `BACKGROUND_JOB_MAX_SECONDS` below `SANDBOX_MAX_TTL`, so an idle sandbox session is not closed under a
+running job. See the [Settings Reference](/Deploying/Settings-Reference) for every setting.
+
+### Limits
+
+- The tool-result guardrail stage runs on results inside a turn; a background result reaches the model in a
+  continuation turn, as event data, without that stage.
+- Images a tool shows the model (charts) are shown only in the turn the call ran in; a job's charts are saved as
+  artifacts instead.
+- MCP Tasks (an MCP server running a tool as an upstream task) are not used yet; such calls hand off like any
+  other.

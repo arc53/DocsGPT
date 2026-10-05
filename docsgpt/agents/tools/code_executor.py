@@ -127,6 +127,8 @@ class PreparedRun:
     inputs_loaded: List[str] = field(default_factory=list)
     session_created: bool = False
     keep_alive: bool = True
+    # The run is in a turn that can hand calls off: a timeout points to background=true.
+    background_capable: bool = False
 
     def to_state(self) -> Dict[str, Any]:
         """A JSON-safe copy (the code is kept to ``_STATE_CODE_MAX_CHARS`` for the hints)."""
@@ -454,6 +456,7 @@ class CodeExecutorTool(Tool):
                 keep_alive=keep_alive,
             )
             call = self._background_call()
+            run.background_capable = call is not None
             if call is not None and self._can_detach(manager, call):
                 outcome = self._run_detached(manager, run, call)
                 if outcome is detached_marker():
@@ -515,6 +518,7 @@ class CodeExecutorTool(Tool):
             session="new" if run.session_created else "reused",
             environment=self._environment_summary() if run.session_created else None,
             timeout=run.timeout,
+            background_capable=run.background_capable,
         )
         if run.clamped:
             payload["timeout"] = f"ran with {int(run.timeout)}s, the maximum; {run.asked_timeout}s was asked for"
@@ -921,6 +925,7 @@ class CodeExecutorTool(Tool):
         session: Optional[str] = None,
         environment: Optional[str] = None,
         timeout: Optional[float] = None,
+        background_capable: bool = False,
     ) -> Dict[str, Any]:
         """Build the compact LLM-facing payload; raw bytes never appear here.
 
@@ -934,6 +939,7 @@ class CodeExecutorTool(Tool):
             session: ``"new"`` or ``"reused"``, reported right after the status.
             environment: The environment summary, given for a new session only.
             timeout: The cap this call ran with; the default cap when None.
+            background_capable: The turn could hand the run off as a background job.
 
         Returns:
             The payload the model sees.
@@ -953,7 +959,7 @@ class CodeExecutorTool(Tool):
             if result.out_of_memory:
                 payload["error"] = self._out_of_memory_text(result)
             elif self._is_timeout(result):
-                payload["error"] = self._timeout_text(timeout)
+                payload["error"] = self._timeout_text(timeout, background_capable=background_capable)
             else:
                 payload["error"] = self._error_text(result)
         if inputs_loaded:
@@ -961,22 +967,31 @@ class CodeExecutorTool(Tool):
         return payload
 
     @classmethod
-    def _timeout_text(cls, timeout: Optional[float]) -> str:
+    def _timeout_text(cls, timeout: Optional[float], *, background_capable: bool = False) -> str:
         """Explain a run that hit its wall-clock cap, and how to give the work more room.
 
         Args:
             timeout: The cap the run had; the default cap when None.
+            background_capable: The turn can run code as a background job, which
+                beats a hand-rolled background process polled with more calls.
 
         Returns:
             The error line the model sees.
         """
         cap = int(timeout if timeout is not None else cls._exec_timeout())
         most = int(cls._max_exec_timeout())
-        background = (
-            "start it in the background (e.g. launch a subprocess or `nohup ... &` and write progress to a file) "
-            "and return immediately, then poll with additional run_code calls to check on it. The session, with "
-            "the background process and its files, stays alive between calls unless you pass persist=false."
-        )
+        if background_capable:
+            background = (
+                "run it again with background=true and a larger `timeout`: it then runs as a background job and "
+                "you are resumed with its result when it ends."
+            )
+        else:
+            background = (
+                "start it in the background (e.g. launch a subprocess or `nohup ... &` and write progress to a "
+                "file) and return immediately, then poll with additional run_code calls to check on it. The "
+                "session, with the background process and its files, stays alive between calls unless you pass "
+                "persist=false."
+            )
         if cap < most:
             return (
                 f"Execution timed out after {cap}s. If the work needs longer, pass a larger `timeout` (up to "
