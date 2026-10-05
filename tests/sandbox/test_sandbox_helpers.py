@@ -377,3 +377,19 @@ def test_html_render_takes_its_mode_from_the_command_name(html, monkeypatch):
     monkeypatch.setattr(html.sys, "argv", ["/usr/local/bin/html-screenshot", "https://example.com", "s.png"])
     html.main()
     assert seen["mode"] == "screenshot"
+
+
+@pytest.mark.parametrize("as_url", [False, True])
+def test_html_render_refuses_to_overwrite_its_input(html, tmp_path, monkeypatch, capsys, as_url):
+    """``html-to-pdf page.html page.html`` must not delete the page before rendering it."""
+    page = tmp_path / "page.html"
+    page.write_text("<p>keep me</p>")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(html, "find_browser", lambda: "chromium")
+    fake = _FakeRun(_browser_effect)
+    monkeypatch.setattr(html, "run", fake)
+    target = page.resolve().as_uri() if as_url else "page.html"
+    assert html.main([target, str(page)], prog="html-to-pdf") == 2
+    assert "overwrite" in capsys.readouterr().err
+    assert page.read_text() == "<p>keep me</p>"
+    assert fake.calls == []

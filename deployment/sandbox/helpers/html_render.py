@@ -30,6 +30,7 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional
 from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 # Tried in order; the image ships chromium-headless-shell.
 BROWSERS = ("chromium-headless-shell", "chromium", "chromium-browser", "google-chrome", "chrome")
@@ -139,6 +140,14 @@ def to_url(target: str) -> str:
     return path.as_uri()
 
 
+def _local_path(url: str) -> Optional[Path]:
+    """Return the resolved file a ``file://`` URL names, or None for any other URL."""
+    parsed = urlparse(url)
+    if parsed.scheme.lower() != "file":
+        return None
+    return Path(url2pathname(parsed.path)).resolve()
+
+
 def run(cmd: List[str], timeout: float) -> subprocess.CompletedProcess:
     """Run ``cmd`` in its own process group, killing the whole group on timeout.
 
@@ -217,11 +226,14 @@ def _render(mode: str, prog: str, argv: Optional[List[str]]) -> int:
     except ValueError as exc:
         print(f"{prog}: {exc}", file=sys.stderr)
         return 2
+    output = Path(args.output).expanduser().resolve()
+    if _local_path(url) == output:
+        print(f"{prog}: the output would overwrite the input {args.input}; choose another output file", file=sys.stderr)
+        return 2
     browser = find_browser()
     if browser is None:
         print(f"{prog}: Chromium is not installed", file=sys.stderr)
         return 127
-    output = Path(args.output).expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     # A stale file from an earlier run must not pass for this run's output.
     output.unlink(missing_ok=True)
