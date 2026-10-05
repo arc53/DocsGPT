@@ -32,6 +32,7 @@ from urllib.parse import urlsplit
 import requests
 
 from docsgpt.core.settings import settings
+from docsgpt.notifications.kinds import FALLBACK_TITLE, push_text
 
 logger = logging.getLogger(__name__)
 
@@ -212,12 +213,16 @@ def _clip(value: Any, limit: int) -> str:
 def build_payload(
     *, kind: str, title: str, body: str, url: str, conversation_id: Optional[str]
 ) -> Dict[str, Any]:
-    """The JSON the service worker turns into a notification, bounded to fit Web Push."""
+    """The JSON the service worker turns into a notification, bounded to fit Web Push.
+
+    A known kind leads with its heading (:func:`docsgpt.notifications.kinds.push_text`).
+    """
     safe_url = url if isinstance(url, str) and url.startswith("/") and not url.startswith("//") else "/"
+    shown_title, shown_body = push_text(kind, title, body)
     return {
         "kind": kind,
-        "title": _clip(title, TITLE_MAX_CHARS) or "DocsGPT",
-        "body": _clip(body, BODY_MAX_CHARS),
+        "title": _clip(shown_title, TITLE_MAX_CHARS) or FALLBACK_TITLE,
+        "body": _clip(shown_body, BODY_MAX_CHARS),
         "url": safe_url[:URL_MAX_CHARS],
         "conversation_id": conversation_id,
         # One notification per conversation: a newer one replaces it on the device.

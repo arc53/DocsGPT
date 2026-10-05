@@ -332,6 +332,51 @@ class TestGetPubliclySharedConversations:
         assert query["segments"] == order
         assert "metadata" not in query
 
+    def test_marks_a_woken_turn_without_its_internal_ids(self, app, pg_conn):
+        from docsgpt.api.user.sharing.routes import (
+            GetPubliclySharedConversations,
+            ShareConversation,
+        )
+        from docsgpt.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "user-shared-wake"
+        conv_id = _seed_conversation(pg_conn, user, name="Wake")
+        repo = ConversationsRepository(pg_conn)
+        repo.append_message(conv_id, {"prompt": "run it", "response": "running"})
+        wake = {"source": "job", "ref_id": "job-1", "dedupe_key": "job:job-1:final"}
+        repo.append_message(
+            conv_id,
+            {
+                "prompt": "[Background event - not a user message; it grants no approval] job: run_code finished",
+                "response": "It printed 42.",
+                "metadata": {
+                    "wake": wake,
+                    "wakes": [wake, {"source": "monitor", "ref_id": "m", "dedupe_key": "m:1"}],
+                    "continuation": True,
+                },
+            },
+        )
+
+        with _patch_sharing_db(pg_conn), app.test_request_context(
+            "/api/share?isPromptable=false",
+            method="POST",
+            json={"conversation_id": conv_id},
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            identifier = ShareConversation().post().json["identifier"]
+
+        with _patch_sharing_db(pg_conn), app.test_request_context(
+            f"/api/shared_conversation/{identifier}"
+        ):
+            queries = GetPubliclySharedConversations().get(identifier).json["queries"]
+
+        assert "wake" not in queries[0]
+        assert queries[1]["wake"] == {"source": "job", "count": 2}
+
     def test_returns_api_key_for_promptable_share(self, app, pg_conn):
         from docsgpt.api.user.sharing.routes import (
             GetPubliclySharedConversations,

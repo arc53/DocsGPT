@@ -395,10 +395,11 @@ def _append(conversation: Dict[str, Any], wakes: List[Dict[str, Any]], outcome: 
 
 
 def _notify(conversation: Dict[str, Any], wakes: List[Dict[str, Any]], answer: str) -> None:
+    from docsgpt.notifications.kinds import user_title
     from docsgpt.notifications.notify import notify_user
 
     first = wakes[0]
-    title = first.get("title") or "Your assistant has an update"
+    title = user_title(first.get("title")) or "Your assistant has an update"
     if len(wakes) > 1:
         title = f"{title} (+{len(wakes) - 1} more)"
     notify_user(

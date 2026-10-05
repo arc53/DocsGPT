@@ -67,7 +67,8 @@ def _err(message: str, status: int):
 
 
 def _json() -> Any:
-    return request.get_json(silent=True)
+    # ``force``: a closing tab's ``navigator.sendBeacon`` report arrives as text/plain.
+    return request.get_json(silent=True, force=True)
 
 
 @notifications_ns.route("/presence")

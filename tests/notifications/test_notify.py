@@ -229,3 +229,15 @@ class TestContinuationCallsIt:
                 "url": "/c/c1",
             }
         ]
+
+    def test_the_title_drops_the_job_id(self, monkeypatch):
+        from docsgpt.background import continuation
+
+        calls = []
+        monkeypatch.setattr("docsgpt.notifications.notify.notify_user", lambda **kw: calls.append(kw))
+        job_id = "5f0c2a8e-1b7d-4e6a-9c3f-2d8b7a6e5f41"
+        continuation._notify(
+            {"user_id": "u1", "id": "c1"}, [{"source": "job", "title": f"run_code finished (job {job_id})"}], "42"
+        )
+        assert calls[0]["title"] == "run_code finished"
+        assert calls[0]["kind"] == "job"

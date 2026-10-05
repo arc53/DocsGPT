@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+from typing import Any, Dict, Optional
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, inputs, Namespace, Resource
@@ -283,6 +284,30 @@ class ShareConversation(Resource):
             return make_response(jsonify({"success": False}), 400)
 
 
+def _shared_wake(metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """``{"wake": {source, count}}`` for a continuation turn, else ``{}``.
+
+    A woken turn's prompt is the background event, not something the user
+    wrote; the share says so, without the internal ids (``ref_id``,
+    ``dedupe_key``) the owner's metadata keeps.
+
+    Args:
+        metadata: The message's ``message_metadata``.
+
+    Returns:
+        The keys to merge into the shared query.
+    """
+    if not isinstance(metadata, dict):
+        return {}
+    wake = metadata.get("wake")
+    if not isinstance(wake, dict) and metadata.get("continuation") is not True:
+        return {}
+    source = wake.get("source") if isinstance(wake, dict) else None
+    wakes = metadata.get("wakes")
+    count = len(wakes) if isinstance(wakes, list) and wakes else 1
+    return {"wake": {"source": str(source) if source else "event", "count": count}}
+
+
 @sharing_ns.route("/shared_conversation/<string:identifier>")
 class GetPubliclySharedConversations(Resource):
     @api.doc(description="Get publicly shared conversations by identifier")
@@ -341,6 +366,8 @@ class GetPubliclySharedConversations(Resource):
                         "tool_calls": msg.get("tool_calls") or [],
                         # Only the order, not the rest of the private metadata.
                         "segments": (msg.get("metadata") or {}).get("segments"),
+                        # What woke the agent, so the prompt reads as an event row.
+                        **_shared_wake(msg.get("metadata")),
                         "timestamp": (
                             msg["timestamp"].isoformat()
                             if hasattr(msg.get("timestamp"), "isoformat")

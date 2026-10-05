@@ -90,6 +90,14 @@ class TestPresenceRoute:
     def test_needs_a_user(self, app):
         assert _call(app, routes.Presence, "post", user=None, json={"tab_id": "t"}).status_code == 401
 
+    def test_a_beacon_sent_as_text_plain(self, app, fake_redis):
+        presence.report("u1", "t1", CID, True)
+        body = '{"tab_id": "t1", "conversation_id": null, "visible": false, "closing": true}'
+        with app.test_request_context("/x", method="POST", data=body, content_type="text/plain"):
+            request.decoded_token = {"sub": "u1"}
+            assert routes.Presence().post().status_code == 200
+        assert presence.tabs("u1") == []
+
     def test_redis_down_still_answers(self, app, fake_redis):
         fake_redis.fail = True
         response = _call(app, routes.Presence, "post", json={"tab_id": "t", "visible": True})
