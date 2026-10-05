@@ -155,6 +155,13 @@ def poll_job(job_id: str) -> Dict[str, Any]:
         repo.merge_external(job_id, {"polls": polls, "poll_failures": 0})
 
     if not state.done:
+        if watch:
+            from docsgpt.background.watch import observe_output
+
+            try:
+                observe_output(row, state.output, state.output_size)
+            except Exception:
+                logger.exception("background job %s: applying its watch failed", job_id)
         enqueue_poll(job_id, next_delay(polls))
         return {"state": "running"}
 
@@ -195,6 +202,7 @@ def finish_detached(row: Dict[str, Any], backend: Any, state: Any) -> Optional[D
         except Exception:
             logger.warning("background job %s: closing the session failed", row.get("id"), exc_info=True)
     status = "completed" if payload.get("status") == "ok" else "failed"
+    jobs.record_final_progress(row, state.output or "")
     return jobs.finalize(
         str(row["id"]),
         status=status,

@@ -135,6 +135,7 @@ class TestDaytonaDetached:
         state = backend.poll_detached("conv", run, with_output=True)
         assert state.done is False
         assert state.output == "so far\n"
+        assert state.output_size == 7
 
         sbx.process.get_session_command.return_value = _Cmd(0)
         sbx.process.get_session_command_logs.return_value = _Logs("done\n")
@@ -241,9 +242,11 @@ class TestJupyterDetached:
 
     def test_poll_running_and_finished(self, jupyter):
         run = {"job_dir": "scratch/jobs/abc", "pid": 77, "wall": 30, "started_at": time.time()}
-        with mock.patch.object(jupyter, "_run", return_value=_marker({"done": False, "exit": None, "tail": "1\n"})):
+        running = _marker({"done": False, "exit": None, "tail": "1\n", "size": 120})
+        with mock.patch.object(jupyter, "_run", return_value=running):
             state = jupyter.poll_detached("conv", run, with_output=True)
         assert state.done is False and state.output == "1\n"
+        assert state.output_size == 120
 
         outputs = iter([_marker({"done": True, "exit": 0, "tail": "1\n2\n"}), ExecResult()])
         with mock.patch.object(jupyter, "_run", side_effect=lambda *a, **k: next(outputs)), mock.patch.object(

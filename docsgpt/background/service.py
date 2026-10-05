@@ -15,7 +15,8 @@ from docsgpt.storage.db.session import db_session
 logger = logging.getLogger(__name__)
 
 
-def _parse(value: Any) -> Optional[datetime]:
+def parse_time(value: Any) -> Optional[datetime]:
+    """A row timestamp (datetime or ISO string) as a datetime, or None."""
     if isinstance(value, datetime):
         return value
     if isinstance(value, str) and value:
@@ -28,10 +29,10 @@ def _parse(value: Any) -> Optional[datetime]:
 
 def elapsed_seconds(job: Dict[str, Any]) -> int:
     """Seconds the job has run, or ran (start to finish)."""
-    started = _parse(job.get("started_at"))
+    started = parse_time(job.get("started_at"))
     if started is None:
         return 0
-    finished = _parse(job.get("finished_at")) or datetime.now(timezone.utc)
+    finished = parse_time(job.get("finished_at")) or datetime.now(timezone.utc)
     return max(0, int((finished - started).total_seconds()))
 
 

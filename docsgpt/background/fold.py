@@ -49,8 +49,9 @@ def claim_for_turn(conversation_id: Optional[str], user_id: Optional[str]) -> Li
                 events.append(
                     {"source": "lost" if job.get("status") == "lost" else "job", "ref_id": str(job["id"]), **event}
                 )
-            # Other sources (monitors, links); a job's own wake was superseded above.
-            for row in wakes_repo.fold_pending(str(conversation_id), str(user_id), exclude_sources=("job", "lost")):
+            # Everything else (watch wakes, monitors, links); a final job wake whose
+            # job was not claimable here is stale and left to the continuation to drop.
+            for row in wakes_repo.fold_pending(str(conversation_id), str(user_id), exclude_key_suffix=":final"):
                 events.append(
                     {
                         "source": row.get("source"),

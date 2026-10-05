@@ -259,3 +259,14 @@ class TestBackgroundParameter:
         assert schema["read"]["background"]["type"] == "boolean"
         # Quick tools are not offered it.
         assert "background" not in schema["view"]
+
+
+def test_code_executor_is_offered_watch():
+    from docsgpt.background.schema import add_background_params
+
+    params = {"properties": {"code": {"type": "string"}}}
+    add_background_params("code_executor", params)
+    assert set(params["properties"]) == {"code", "background", "watch"}
+    other = {"properties": {}}
+    add_background_params("read_webpage", other)
+    assert set(other["properties"]) == {"background"}

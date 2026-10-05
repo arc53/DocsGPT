@@ -89,6 +89,15 @@ def generation_active(conn: Connection, conversation_id: str) -> bool:
     return row is not None
 
 
+def is_final_job_event(event: Dict[str, Any]) -> bool:
+    """Whether a wake carries a job's final result (a watch wake comes while the job still runs)."""
+    return (
+        event.get("source") in ("job", "lost")
+        and bool(event.get("ref_id"))
+        and str(event.get("dedupe_key") or "").endswith(":final")
+    )
+
+
 def consecutive_continuations(messages: List[Dict[str, Any]]) -> int:
     """How many continuation messages close the conversation, with no user message after them."""
     count = 0
@@ -137,7 +146,7 @@ def _take_job_results(wakes: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]]
     with db_session() as conn:
         jobs_repo = BackgroundJobsRepository(conn)
         for event in wakes:
-            if event.get("source") in ("job", "lost") and event.get("ref_id"):
+            if is_final_job_event(event):
                 if jobs_repo.claim_delivery(str(event["ref_id"]), "resumed") is None:
                     dropped.append(event)
                     continue
@@ -154,7 +163,7 @@ def _settle(wakes: List[Dict[str, Any]], status: str, *, message_id: Optional[st
         ConversationWakesRepository(conn).mark([w["id"] for w in wakes], status, message_id=message_id, error=error)
         jobs_repo = BackgroundJobsRepository(conn)
         for event in wakes:
-            if event.get("source") not in ("job", "lost") or not event.get("ref_id"):
+            if not is_final_job_event(event):
                 continue
             job_id = str(event["ref_id"])
             if job_state == "pending":
@@ -171,7 +180,7 @@ def _release(wakes: List[Dict[str, Any]]) -> None:
         ConversationWakesRepository(conn).release([w["id"] for w in wakes])
         jobs_repo = BackgroundJobsRepository(conn)
         for event in wakes:
-            if event.get("source") in ("job", "lost") and event.get("ref_id"):
+            if is_final_job_event(event):
                 jobs_repo.release_delivery(str(event["ref_id"]), "resumed")
 
 

@@ -169,3 +169,20 @@ def test_next_delay_grows_to_the_cap():
     assert delays[0] == sandbox_runner.FIRST_POLL_SECONDS
     assert delays == sorted(delays)
     assert delays[-1] == sandbox_runner.MAX_POLL_SECONDS
+
+
+def test_a_watched_run_applies_its_watch_each_poll(bg_db, conversation, polls, delivered, monkeypatch):
+    job_id = _sandbox_job(*conversation)
+    with bg_db.begin() as conn:
+        conn.execute(
+            text("UPDATE background_jobs SET watch = CAST(:w AS jsonb) WHERE id = CAST(:id AS uuid)"),
+            {"w": json.dumps({"patterns": ["Error"]}), "id": job_id},
+        )
+    seen = []
+    monkeypatch.setattr(
+        "docsgpt.background.watch.observe_output", lambda row, output, size: seen.append((row["id"], output, size))
+    )
+    backend = _Backend([DetachedState(done=False, output="Error: x\n", output_size=9)])
+    monkeypatch.setattr(sandbox_runner, "_poll_backend", lambda: backend)
+    assert sandbox_runner.poll_job(job_id) == {"state": "running"}
+    assert seen == [(job_id, "Error: x\n", 9)]

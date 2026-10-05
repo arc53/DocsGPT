@@ -721,7 +721,9 @@ referencing==0.37.0
     #   jsonschema-specifications
     #   openapi3-parser
 regex==2026.9.10
-    # via tiktoken
+    # via
+    #   docsgpt
+    #   tiktoken
 requests==2.34.2
     # via
     #   docsgpt

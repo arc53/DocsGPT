@@ -148,18 +148,39 @@ class ConversationWakesRepository:
         return result.rowcount or 0
 
     def fold_pending(
-        self, conversation_id: str, user_id: str, *, exclude_sources: Sequence[str] = ()
+        self,
+        conversation_id: str,
+        user_id: str,
+        *,
+        exclude_sources: Sequence[str] = (),
+        exclude_key_suffix: Optional[str] = None,
     ) -> List[dict]:
-        """Take every pending wake of a conversation for the user's new message."""
+        """Take every pending wake of a conversation for the user's new message.
+
+        Args:
+            conversation_id: The conversation.
+            user_id: Its owner.
+            exclude_sources: Sources to leave queued.
+            exclude_key_suffix: Leave queued the wakes whose dedupe key ends with this.
+
+        Returns:
+            The folded rows, oldest first.
+        """
         if not looks_like_uuid(conversation_id):
             return []
         rows = self._conn.execute(
             text(
                 "UPDATE conversation_wakes SET status = 'folded', delivered_at = now() "
                 "WHERE conversation_id = CAST(:conversation_id AS uuid) AND user_id = :user_id "
-                "AND status = 'pending' AND NOT (source = ANY(:exclude)) RETURNING *"
+                "AND status = 'pending' AND NOT (source = ANY(:exclude)) "
+                "AND (CAST(:suffix AS text) IS NULL OR right(dedupe_key, length(:suffix)) <> :suffix) RETURNING *"
             ),
-            {"conversation_id": str(conversation_id), "user_id": user_id, "exclude": list(exclude_sources)},
+            {
+                "conversation_id": str(conversation_id),
+                "user_id": user_id,
+                "exclude": list(exclude_sources),
+                "suffix": exclude_key_suffix,
+            },
         ).fetchall()
         return sorted((row_to_dict(r) for r in rows), key=lambda r: str(r.get("created_at") or ""))
 

@@ -896,17 +896,18 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
             "        _done, _code = True, 137\n"
             "    except PermissionError:\n"
             "        pass\n"
-            "_tail = ''\n"
+            "_tail, _size = '', 0\n"
             f"if _done or {bool(with_output)!r}:\n"
             "    try:\n"
             "        with open(_os.path.join(_d, 'out.log'), 'rb') as _f:\n"
             "            _f.seek(0, 2)\n"
-            f"            _f.seek(max(0, _f.tell() - {detached.RUNNING_OUTPUT_BYTES}))\n"
+            "            _size = _f.tell()\n"
+            f"            _f.seek(max(0, _size - {detached.RUNNING_OUTPUT_BYTES}))\n"
             "            _tail = _f.read().decode('utf-8', 'replace')\n"
             "    except OSError:\n"
             "        pass\n"
-            f"print({self._JOB_BEGIN!r} + _json.dumps({{'done': _done, 'exit': _code, 'tail': _tail}}) "
-            f"+ {self._JOB_END!r})\n"
+            "print(" + repr(self._JOB_BEGIN) + " + _json.dumps({'done': _done, 'exit': _code, 'tail': _tail, "
+            "'size': _size}) + " + repr(self._JOB_END) + ")\n"
         )
         result = self._run(kernel, probe, self._default_timeout)
         payload = detached.decode_marker_json(result.stdout, self._JOB_BEGIN, self._JOB_END) if result.ok else None
@@ -914,7 +915,9 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
             raise self._file_op_error("poll_detached", result)
         state = json.loads(payload)
         if not state.get("done"):
-            return DetachedState(done=False, output=detached.tail_bytes(state.get("tail") or ""))
+            return DetachedState(
+                done=False, output=detached.tail_bytes(state.get("tail") or ""), output_size=int(state.get("size") or 0)
+            )
         try:
             output = self.get_file(session_id, f"{run['job_dir']}/out.log").decode("utf-8", "replace")
         except (IOError, ValueError):
@@ -928,7 +931,9 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
             max_output_bytes=self._max_output_bytes,
         )
         self._remove_job_dir(kernel, run)
-        return DetachedState(done=True, result=result, output=detached.tail_bytes(output))
+        return DetachedState(
+            done=True, result=result, output=detached.tail_bytes(output), output_size=int(state.get("size") or 0)
+        )
 
     def _remove_job_dir(self, kernel: _Kernel, run: Dict[str, Any]) -> None:
         """Delete a finished run's job directory (best-effort)."""

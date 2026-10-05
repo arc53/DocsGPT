@@ -246,8 +246,7 @@ def run_call(
         yield_seconds = 0
 
     flight = _Flight()
-    watch = spec.controls.get("watch") if isinstance(spec.controls.get("watch"), dict) else None
-    handle = CallHandle(flight, explicit=explicit, watch=watch)
+    handle = CallHandle(flight, explicit=explicit, watch=_watch_of(spec))
 
     def _work() -> Any:
         token = _current_call.set(handle)
@@ -353,9 +352,10 @@ def _await_or_hand_off(
 
 
 def _watch_of(spec: CallSpec) -> Optional[dict]:
-    """The call's ``watch`` spec when it is a dict."""
-    watch = spec.controls.get("watch")
-    return watch if isinstance(watch, dict) else None
+    """The call's ``watch`` spec, cleaned (invalid patterns dropped), or None."""
+    from docsgpt.background.watch import normalize
+
+    return normalize(spec.controls.get("watch"))
 
 
 def _run_in_worker(context: BackgroundContext, spec: CallSpec) -> Optional[Outcome]:

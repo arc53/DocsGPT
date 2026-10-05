@@ -858,6 +858,7 @@ referencing==0.37.0
     #   openapi3-parser
 regex==2026.9.10
     # via
+    #   docsgpt
     #   tiktoken
     #   transformers
 requests==2.34.2

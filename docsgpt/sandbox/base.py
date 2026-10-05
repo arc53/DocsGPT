@@ -69,13 +69,16 @@ class DetachedState:
     Attributes:
         done: The process exited (or the runtime is gone).
         result: The run's result once ``done``, shaped as ``exec`` returns it.
-        output: Output so far (bounded), for progress and watch patterns.
+        output: Output so far (its tail, bounded), for progress and watch patterns.
+        output_size: The output's total size so far; what is new since the last
+            poll is measured against it.
         gone: The runtime behind the run no longer exists.
     """
 
     done: bool = False
     result: Optional[ExecResult] = None
     output: str = ""
+    output_size: int = 0
     gone: bool = False
 
 

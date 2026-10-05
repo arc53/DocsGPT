@@ -742,7 +742,7 @@ class DaytonaSandbox(CodeSandbox):
             output = ""
             if with_output:
                 output = self._command_output(process, run)
-            return DetachedState(done=False, output=detached.tail_bytes(output))
+            return DetachedState(done=False, output=detached.tail_bytes(output), output_size=len(output))
         output = self._command_output(process, run)
         result = detached.finished_result(
             output,
@@ -755,7 +755,7 @@ class DaytonaSandbox(CodeSandbox):
         threading.Thread(
             target=self._cleanup_detached, args=(handle, run), daemon=True, name="daytona-job-cleanup"
         ).start()
-        return DetachedState(done=True, result=result, output=detached.tail_bytes(output))
+        return DetachedState(done=True, result=result, output=detached.tail_bytes(output), output_size=len(output))
 
     def _command_output(self, process: Any, run: Dict[str, Any]) -> str:
         """The run's merged output so far (stdout carries stderr through ``2>&1``)."""

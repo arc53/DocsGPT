@@ -8,6 +8,7 @@ origin message's tool-call entry so a reload shows the outcome, publishes
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -203,13 +204,41 @@ def complete_from_tool(
         )
     result = sanitize_tool_result(value)
     artifact_id, artifacts = tool_outputs(tool, action_name, parameters)
-    text_value = bound_result_full(str(result))
+    text_value = bound_result_full(result_text(result))
     in_band = result_status(result)
+    with db_readonly() as conn:
+        row = BackgroundJobsRepository(conn).get(job_id)
+    if row is not None:
+        record_final_progress(row, text_value)
     return finalize(
         job_id,
         status="completed" if in_band == "completed" else "failed",
         result=stored_result(text_value, status=in_band, artifacts=artifacts, artifact_id=artifact_id),
     )
+
+
+def result_text(result: Any) -> str:
+    """A tool result as text for the job row: JSON for structured results, as models read them."""
+    if isinstance(result, (dict, list)):
+        try:
+            return json.dumps(result, ensure_ascii=False, default=str)
+        except (TypeError, ValueError):
+            return str(result)
+    return str(result)
+
+
+def record_final_progress(job: Dict[str, Any], output: str) -> None:
+    """Apply a job's ``progress_regex`` to its final output (the only output a non-detached job has)."""
+    from docsgpt.background.watch import progress_from
+
+    progress = progress_from(job.get("watch") if isinstance(job.get("watch"), dict) else None, output)
+    if progress is None:
+        return
+    try:
+        with db_session() as conn:
+            BackgroundJobsRepository(conn).update_progress(str(job["id"]), progress=progress)
+    except Exception:
+        logger.exception("background job %s: recording progress failed", job.get("id"))
 
 
 def finalize(
