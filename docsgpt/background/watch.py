@@ -131,12 +131,18 @@ def progress_from(spec: Optional[Dict[str, Any]], text: str) -> Optional[Dict[st
     if last is None:
         return None
     progress: Dict[str, Any] = {"last": last.group(0)[:200]}
-    if last.groups():
-        try:
-            progress["percent"] = max(0, min(100, int(float(last.group(1)))))
-        except (TypeError, ValueError):
-            pass
+    percent = _percent(last.group(1)) if last.groups() else None
+    if percent is not None:
+        progress["percent"] = percent
     return progress
+
+
+def _percent(value: Any) -> Optional[int]:
+    """A progress group as a 0-100 percent, or None when it isn't a number (``step two``)."""
+    try:
+        return max(0, min(100, int(float(value))))
+    except (TypeError, ValueError):
+        return None
 
 
 def _line_of(text: str, start: int) -> str:
