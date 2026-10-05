@@ -1,6 +1,8 @@
 import { configureStore } from '@reduxjs/toolkit';
 
 import agentPreviewReducer from './agents/agentPreviewSlice';
+import { backgroundListenerMiddleware } from './backgroundJobs/backgroundListener';
+import backgroundReducer from './backgroundJobs/backgroundSlice';
 import connectorsReducer from './connectors/connectorsSlice';
 import schedulesReducer from './agents/schedules/schedulesSlice';
 import workflowPreviewReducer from './agents/workflow/workflowPreviewSlice';
@@ -78,11 +80,13 @@ const store = configureStore({
     teams: teamsReducer,
     graphBuild: graphBuildReducer,
     connectors: connectorsReducer,
+    background: backgroundReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(
       prefListenerMiddleware.middleware,
       conversationListenerMiddleware.middleware,
+      backgroundListenerMiddleware.middleware,
     ),
 });
 

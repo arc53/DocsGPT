@@ -19,6 +19,7 @@ import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { useOutsideAlerter } from '../hooks';
+import UnreadDot from '../backgroundJobs/UnreadDot';
 
 interface ConversationProps {
   name: string;
@@ -209,6 +210,7 @@ export default function ConversationTile({
               <span className="truncate" title={conversationName}>
                 {conversationName}
               </span>
+              <UnreadDot conversationId={conversation.id} />
             </Link>
           </Button>
         )}

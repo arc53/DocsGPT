@@ -29,6 +29,58 @@
     "toolApprovalReview": "Revisar",
     "toolApprovalFallbackName": "Conversación"
   },
+  "backgroundJobs": {
+    "unread": "No leído",
+    "card": {
+      "status": {
+        "working": "En segundo plano",
+        "completed": "Terminado",
+        "failed": "Falló",
+        "cancelled": "Cancelado",
+        "lost": "Interrumpido"
+      },
+      "cancel": "Cancelar",
+      "cancelling": "Cancelando…",
+      "cancelFailed": "No se pudo cancelar la tarea",
+      "progress": "{{percent}} % completado",
+      "willResume": "Recibirás el resultado en este chat cuando termine.",
+      "pollOnly": "Pide el resultado en este chat cuando termine.",
+      "lostHint": "La tarea se interrumpió y puede que no haya terminado. El asistente lo comprueba antes de reintentar.",
+      "durationSeconds": "{{s}} s",
+      "durationMinutes": "{{m}} min {{s}} s",
+      "durationHours": "{{h}} h {{m}} min"
+    },
+    "notify": {
+      "title": {
+        "job": "Tarea en segundo plano terminada",
+        "lost": "Tarea en segundo plano interrumpida",
+        "monitor": "El monitor detectó un cambio",
+        "trigger": "Webhook recibido",
+        "approval": "Aprobación recibida",
+        "monitor_paused": "Monitor en pausa",
+        "default": "Nueva respuesta"
+      },
+      "open": "Abrir",
+      "fallbackTitle": "Tu asistente tiene novedades"
+    },
+    "push": {
+      "promptTitle": "¿Te avisamos cuando termine?",
+      "promptBody": "Recibe una notificación del navegador cuando termine el trabajo en segundo plano mientras no estás.",
+      "enable": "Activar",
+      "notNow": "Ahora no",
+      "blocked": "Las notificaciones están bloqueadas para este sitio. Permítelas en la configuración del sitio de tu navegador.",
+      "failed": "No se pudieron activar las notificaciones"
+    },
+    "wake": {
+      "job": "Tarea en segundo plano terminada",
+      "lost": "Tarea en segundo plano interrumpida",
+      "monitor": "El monitor detectó un cambio",
+      "trigger": "Webhook recibido",
+      "approval": "Aprobación recibida",
+      "default": "Evento en segundo plano",
+      "more": "+{{count}} más"
+    }
+  },
   "demo": [
     {
       "header": "Aprende sobre DocsGPT",

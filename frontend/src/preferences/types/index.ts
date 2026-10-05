@@ -6,6 +6,8 @@ export type ConversationSummary = {
   date?: string;
   match_field?: 'name' | 'prompt' | 'response' | null;
   match_snippet?: string | null;
+  /** A message landed the user has not seen (a background job's follow-up). */
+  unread?: boolean;
 };
 
 export type GetConversationsResult = {

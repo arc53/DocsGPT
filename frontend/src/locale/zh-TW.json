@@ -29,6 +29,58 @@
     "toolApprovalReview": "檢視",
     "toolApprovalFallbackName": "對話"
   },
+  "backgroundJobs": {
+    "unread": "未讀",
+    "card": {
+      "status": {
+        "working": "背景執行中",
+        "completed": "已完成",
+        "failed": "失敗",
+        "cancelled": "已取消",
+        "lost": "已中斷"
+      },
+      "cancel": "取消",
+      "cancelling": "正在取消…",
+      "cancelFailed": "無法取消此工作",
+      "progress": "已完成 {{percent}}%",
+      "willResume": "完成後，結果會出現在此對話中。",
+      "pollOnly": "完成後，請在此對話中詢問結果。",
+      "lostHint": "工作已中斷，可能尚未完成。助理會在重試前先確認。",
+      "durationSeconds": "{{s}} 秒",
+      "durationMinutes": "{{m}} 分 {{s}} 秒",
+      "durationHours": "{{h}} 小時 {{m}} 分"
+    },
+    "notify": {
+      "title": {
+        "job": "背景工作已完成",
+        "lost": "背景工作已中斷",
+        "monitor": "監控條件已觸發",
+        "trigger": "已收到 Webhook",
+        "approval": "已收到審核結果",
+        "monitor_paused": "監控已暫停",
+        "default": "新回覆"
+      },
+      "open": "開啟",
+      "fallbackTitle": "你的助理有新消息"
+    },
+    "push": {
+      "promptTitle": "完成時通知你？",
+      "promptBody": "你離開期間背景工作完成時，會收到瀏覽器通知。",
+      "enable": "啟用",
+      "notNow": "暫不",
+      "blocked": "此網站的通知已被封鎖。請在瀏覽器的網站設定中允許通知。",
+      "failed": "無法啟用通知"
+    },
+    "wake": {
+      "job": "背景工作已完成",
+      "lost": "背景工作已中斷",
+      "monitor": "監控條件已觸發",
+      "trigger": "已收到 Webhook",
+      "approval": "已收到審核結果",
+      "default": "背景事件",
+      "more": "另有 {{count}} 則"
+    }
+  },
   "demo": [
     {
       "header": "了解 DocsGPT",

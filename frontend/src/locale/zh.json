@@ -29,6 +29,58 @@
     "toolApprovalReview": "查看",
     "toolApprovalFallbackName": "对话"
   },
+  "backgroundJobs": {
+    "unread": "未读",
+    "card": {
+      "status": {
+        "working": "后台运行中",
+        "completed": "已完成",
+        "failed": "失败",
+        "cancelled": "已取消",
+        "lost": "已中断"
+      },
+      "cancel": "取消",
+      "cancelling": "正在取消…",
+      "cancelFailed": "无法取消该任务",
+      "progress": "已完成 {{percent}}%",
+      "willResume": "完成后，结果会出现在此对话中。",
+      "pollOnly": "完成后，请在此对话中询问结果。",
+      "lostHint": "任务被中断，可能尚未完成。助手会在重试前先确认。",
+      "durationSeconds": "{{s}} 秒",
+      "durationMinutes": "{{m}} 分 {{s}} 秒",
+      "durationHours": "{{h}} 小时 {{m}} 分"
+    },
+    "notify": {
+      "title": {
+        "job": "后台任务已完成",
+        "lost": "后台任务已中断",
+        "monitor": "监控条件已触发",
+        "trigger": "收到 Webhook",
+        "approval": "已收到审批结果",
+        "monitor_paused": "监控已暂停",
+        "default": "新回复"
+      },
+      "open": "打开",
+      "fallbackTitle": "你的助手有新消息"
+    },
+    "push": {
+      "promptTitle": "完成后通知你？",
+      "promptBody": "你离开期间后台工作完成时，会收到浏览器通知。",
+      "enable": "开启",
+      "notNow": "暂不",
+      "blocked": "此网站的通知已被阻止。请在浏览器的网站设置中允许通知。",
+      "failed": "无法开启通知"
+    },
+    "wake": {
+      "job": "后台任务已完成",
+      "lost": "后台任务已中断",
+      "monitor": "监控条件已触发",
+      "trigger": "收到 Webhook",
+      "approval": "已收到审批结果",
+      "default": "后台事件",
+      "more": "另有 {{count}} 条"
+    }
+  },
   "demo": [
     {
       "header": "了解 DocsGPT",

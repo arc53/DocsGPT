@@ -33,6 +33,58 @@
     "toolApprovalReview": "Review",
     "toolApprovalFallbackName": "Conversation"
   },
+  "backgroundJobs": {
+    "unread": "Unread",
+    "card": {
+      "status": {
+        "working": "In background",
+        "completed": "Finished",
+        "failed": "Failed",
+        "cancelled": "Cancelled",
+        "lost": "Interrupted"
+      },
+      "cancel": "Cancel",
+      "cancelling": "Cancelling…",
+      "cancelFailed": "Couldn't cancel the job",
+      "progress": "{{percent}}% done",
+      "willResume": "You'll get the result in this chat when it finishes.",
+      "pollOnly": "Ask in this chat for the result once it finishes.",
+      "lostHint": "The job was interrupted and may or may not have finished. The assistant checks before retrying.",
+      "durationSeconds": "{{s}}s",
+      "durationMinutes": "{{m}}m {{s}}s",
+      "durationHours": "{{h}}h {{m}}m"
+    },
+    "notify": {
+      "title": {
+        "job": "Background job finished",
+        "lost": "Background job interrupted",
+        "monitor": "Monitor matched",
+        "trigger": "Webhook received",
+        "approval": "Approval received",
+        "monitor_paused": "Monitor paused",
+        "default": "New reply"
+      },
+      "open": "Open",
+      "fallbackTitle": "Your assistant has an update"
+    },
+    "push": {
+      "promptTitle": "Get notified when it's done?",
+      "promptBody": "Get a browser notification when background work finishes while you're away.",
+      "enable": "Enable",
+      "notNow": "Not now",
+      "blocked": "Notifications are blocked for this site. Allow them in your browser's site settings.",
+      "failed": "Couldn't turn on notifications"
+    },
+    "wake": {
+      "job": "Background job finished",
+      "lost": "Background job interrupted",
+      "monitor": "Monitor matched",
+      "trigger": "Webhook received",
+      "approval": "Approval received",
+      "default": "Background event",
+      "more": "+{{count}} more"
+    }
+  },
   "demo": [
     {
       "header": "Learn about DocsGPT",
