@@ -368,5 +368,5 @@ def test_resaving_one_file_versions_one_artifact_end_to_end(pg_engine, tmp_path,
     assert [v["version"] for v in versions] == [1, 2]
     assert [v["sha256"] for v in versions] == [hashlib.sha256(b"draft").hexdigest(),
                                                 hashlib.sha256(b"final").hexdigest()]
-    stored = LocalStorage(base_dir=str(tmp_path)).get_file(versions[-1]["storage_path"]).read()
-    assert stored == b"final"
+    with LocalStorage(base_dir=str(tmp_path)).get_file(versions[-1]["storage_path"]) as stored:
+        assert stored.read() == b"final"

@@ -1117,7 +1117,8 @@ def test_open_session_reports_a_create_after_a_gone_reattach_as_new(fake_sdk):
 
 
 def test_open_returns_the_bare_sandbox_id(sandbox):
-    assert sandbox.open("conv-1") == "sbx-1"
+    handle = sandbox.open("conv-1")
+    assert handle == "sbx-1"
 
 
 def test_manager_reports_reattach_through_open_session(fake_sdk):

@@ -875,3 +875,55 @@ def test_an_expired_but_busy_session_is_still_reused(backend, monkeypatch):
         assert backend.open_calls == ["conv-1"]
     finally:
         mgr._leave("conv-1", expected=held)
+
+
+def test_a_concurrent_open_waits_for_an_expired_sessions_teardown(monkeypatch):
+    """A second open of an id being retired must not reuse the runtime being torn down.
+
+    Backends reuse a runtime they still have registered (Jupyter keeps its kernel in a
+    per-session registry), so an open that reached the backend before the retired
+    handle's close finished would get the dying runtime back, reported as reused.
+    """
+    from docsgpt.sandbox.base import OpenedSession
+
+    class _ReusingBackend(FakeBackend):
+        def __init__(self) -> None:
+            super().__init__()
+            self.blocked_handle = None
+            self.close_started = threading.Event()
+            self.release_close = threading.Event()
+
+        def open_session(self, session_id):
+            if session_id in self._handles:
+                return OpenedSession(self._handles[session_id], False)
+            return OpenedSession(self.open(session_id), True)
+
+        def close_handle(self, session_id, handle):
+            if handle == self.blocked_handle:
+                self.close_started.set()
+                assert self.release_close.wait(timeout=5)
+            super().close_handle(session_id, handle)
+
+    clock = {"t": 1000.0}
+    monkeypatch.setattr("docsgpt.sandbox.manager.time.monotonic", lambda: clock["t"])
+    backend = _ReusingBackend()
+    mgr = SandboxManager(backend, max_ttl=600)
+    old = mgr.open_session("conv-1", ttl=50).handle
+    backend.blocked_handle = old
+    clock["t"] = 1051.0  # expired
+
+    results = {}
+    retiring = threading.Thread(target=lambda: results.__setitem__("a", mgr.open_session("conv-1")))
+    retiring.start()
+    assert backend.close_started.wait(timeout=5)
+    second = threading.Thread(target=lambda: results.__setitem__("b", mgr.open_session("conv-1")))
+    second.start()
+    second.join(timeout=0.3)
+    assert second.is_alive(), "the second open must wait for the retired handle's teardown"
+    backend.release_close.set()
+    retiring.join(timeout=5)
+    second.join(timeout=5)
+
+    assert old not in (results["a"].handle, results["b"].handle)
+    assert results["a"].handle == results["b"].handle == backend._handles["conv-1"]
+    assert sorted(r.created for r in results.values()) == [False, True]

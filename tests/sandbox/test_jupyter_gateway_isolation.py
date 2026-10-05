@@ -625,7 +625,8 @@ def test_open_session_reports_a_new_kernel_then_reuse(monkeypatch):
     assert first.handle == "k-1" and first.created is True
     assert second.handle == "k-1" and second.created is False
     assert len(posts) == 1
-    assert sb.open("session-x") == "k-1"  # ``open`` still returns the bare kernel id
+    bare = sb.open("session-x")
+    assert bare == "k-1"  # ``open`` still returns the bare kernel id
 
 
 def test_concurrent_open_session_reports_one_creator(monkeypatch):

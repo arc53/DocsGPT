@@ -61,6 +61,8 @@ class SandboxManager:
         self._default_ttl = default_ttl if default_ttl is not None else max_ttl
         self._max_sessions = max_sessions if max_sessions and max_sessions > 0 else None
         self._sessions: Dict[str, _Session] = {}
+        # Ids whose expired session is being torn down; same-id opens wait on the event.
+        self._retiring: Dict[str, threading.Event] = {}
         self._lock = threading.Lock()
 
     def _clamp_ttl(self, ttl: Optional[float]) -> float:
@@ -95,7 +97,8 @@ class SandboxManager:
         1. Under the lock: if the session already exists, is ready and has not been
            idle past its TTL, refresh it and return its cached handle (reuse never
            does backend I/O). An idle-expired session is retired instead, as a reap
-           would have done. Otherwise reap idle-expired sessions, evict an LRU-idle
+           would have done, and other opens of the same id wait until its teardown
+           has finished. Otherwise reap idle-expired sessions, evict an LRU-idle
            victim if at capacity, then RESERVE a placeholder slot for ``session_id``
            so concurrent opens can't overshoot the cap.
         2. Outside the lock: close any reaped / evicted victims' captured backend
@@ -114,55 +117,72 @@ class SandboxManager:
             reused (False); a cold open reports what the backend did, so a
             runtime reattached across processes also counts as reused.
         """
-        with self._lock:
-            session = self._sessions.get(session_id)
-            now = time.monotonic()
-            retired: Optional[Tuple[str, Optional[str]]] = None
-            if session is not None and session.ready and session.in_use == 0 and session.is_expired(now):
-                # Idle past its TTL: the session is over even though no reap has run
-                # yet (API processes reap only when another session opens). Reusing it
-                # would claim state the TTL says is discarded, and on the Jupyter runner
-                # the gateway may already have culled the kernel behind the handle.
-                self._sessions.pop(session_id, None)
-                retired = (session_id, session.handle)
-                session = None
-            if session is not None and session.ready:
-                session.last_access = now
-                # Reuse must honor an explicit longer keep-alive: a run_code
-                # keep-alive on a session first opened by another tool (e.g.
-                # artifact_generator at the 60s exec timeout) would otherwise be
-                # dropped, and the kernel + its background state reaped early.
-                # Extend only (never shrink) so a default reuse can't cut short a
-                # session another caller kept alive.
-                if ttl is not None:
-                    session.ttl = max(session.ttl, self._clamp_ttl(ttl))
-                return OpenedSession(session.handle, False)
-            reaped = self._reap_locked(now)
-            if retired is not None:
-                reaped.append(retired)
-            if session is None:
-                # Genuinely new key: evict an LRU-idle victim if at capacity (may
-                # raise SandboxCapacityError), then RESERVE a placeholder slot so
-                # concurrent opens can't overshoot the cap.
-                evicted = self._make_room_locked()
-                self._sessions[session_id] = _Session(
-                    session_id=session_id,
-                    ttl=self._clamp_ttl(ttl),
-                    created_at=now,
-                    last_access=now,
-                )
-            else:
-                # A not-yet-ready placeholder for THIS id already occupies a cap slot
-                # (another thread is mid cold-open). Overwriting the same key adds no
-                # slot, so do NOT call _make_room_locked here -- it would wrongly evict
-                # an innocent LRU-idle session or raise SandboxCapacityError. Refresh
-                # in place; both threads call the (idempotent) backend open and the
-                # finalize step re-checks before binding the handle.
-                evicted = None
-                session.last_access = now
-                session.ttl = self._clamp_ttl(ttl)
+        while True:
+            with self._lock:
+                retiring = self._retiring.get(session_id)
+                if retiring is None:
+                    session = self._sessions.get(session_id)
+                    now = time.monotonic()
+                    retired: Optional[Tuple[str, Optional[str]]] = None
+                    if session is not None and session.ready and session.in_use == 0 and session.is_expired(now):
+                        # Idle past its TTL: the session is over even though no reap has run
+                        # yet (API processes reap only when another session opens). Reusing it
+                        # would claim state the TTL says is discarded, and on the Jupyter runner
+                        # the gateway may already have culled the kernel behind the handle.
+                        # Popping it frees a cap slot, so _make_room_locked below cannot
+                        # raise and strand the retiring marker set here.
+                        self._sessions.pop(session_id, None)
+                        retired = (session_id, session.handle)
+                        retiring = threading.Event()
+                        self._retiring[session_id] = retiring
+                        session = None
+                    if session is not None and session.ready:
+                        session.last_access = now
+                        # Reuse must honor an explicit longer keep-alive: a run_code
+                        # keep-alive on a session first opened by another tool (e.g.
+                        # artifact_generator at the 60s exec timeout) would otherwise be
+                        # dropped, and the kernel + its background state reaped early.
+                        # Extend only (never shrink) so a default reuse can't cut short a
+                        # session another caller kept alive.
+                        if ttl is not None:
+                            session.ttl = max(session.ttl, self._clamp_ttl(ttl))
+                        return OpenedSession(session.handle, False)
+                    reaped = self._reap_locked(now)
+                    if session is None:
+                        # Genuinely new key: evict an LRU-idle victim if at capacity (may
+                        # raise SandboxCapacityError), then RESERVE a placeholder slot so
+                        # concurrent opens can't overshoot the cap.
+                        evicted = self._make_room_locked()
+                        self._sessions[session_id] = _Session(
+                            session_id=session_id,
+                            ttl=self._clamp_ttl(ttl),
+                            created_at=now,
+                            last_access=now,
+                        )
+                    else:
+                        # A not-yet-ready placeholder for THIS id already occupies a cap slot
+                        # (another thread is mid cold-open). Overwriting the same key adds no
+                        # slot, so do NOT call _make_room_locked here -- it would wrongly evict
+                        # an innocent LRU-idle session or raise SandboxCapacityError. Refresh
+                        # in place; both threads call the (idempotent) backend open and the
+                        # finalize step re-checks before binding the handle.
+                        evicted = None
+                        session.last_access = now
+                        session.ttl = self._clamp_ttl(ttl)
+                    break
+            # An expired session for this id is being torn down. Opening now could hand
+            # back the runtime being deleted (backends reuse what they still have
+            # registered), so wait for the teardown and start over.
+            retiring.wait()
 
         # Cold backend open and victim teardown run OUTSIDE the lock.
+        if retired is not None:
+            try:
+                self._close_backend(*retired)
+            finally:
+                with self._lock:
+                    self._retiring.pop(session_id, None)
+                retiring.set()
         for sid, handle in reaped:
             self._close_backend(sid, handle)
         if evicted is not None:
