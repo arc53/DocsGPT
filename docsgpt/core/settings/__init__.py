@@ -20,6 +20,7 @@ from docsgpt.core.paths import env_file, home_dir
 from docsgpt.core.settings._shared import SettingsGroup, normalize_secret
 from docsgpt.core.settings.agents import AgentSettings
 from docsgpt.core.settings.auth import AuthSettings
+from docsgpt.core.settings.background import BackgroundSettings
 from docsgpt.core.settings.connectors import ConnectorSettings
 from docsgpt.core.settings.database import DatabaseSettings
 from docsgpt.core.settings.embeddings import EmbeddingsSettings
@@ -59,6 +60,7 @@ SETTINGS_GROUPS: tuple[tuple[str, type[SettingsGroup]], ...] = (
     ("Execution traces", TracingSettings),
     ("Quotas", QuotaSettings),
     ("Scheduler", SchedulerSettings),
+    ("Background jobs", BackgroundSettings),
     ("Sandbox", SandboxSettings),
     ("Speech", SpeechSettings),
 )

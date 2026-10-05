@@ -1316,3 +1316,105 @@ Index(
     quota_policies_table.c.bucket,
     unique=True,
 )
+
+
+# --- Background jobs and conversation wakes (migration 0047) ----------------
+# A tool call a turn handed off, and the queue of events that resume a
+# conversation (a finished job, later monitors, trigger and approval links).
+
+background_jobs_table = Table(
+    "background_jobs",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    Column("conversation_id", UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE")),
+    Column("workflow_run_id", UUID(as_uuid=True)),
+    Column("origin_message_id", UUID(as_uuid=True)),
+    # The turn-scoped call key (``<message_id>:<call_id>``), as in tool_call_attempts.
+    Column("tool_call_id", Text),
+    Column("agent_id", UUID(as_uuid=True)),
+    Column("tool_name", Text, nullable=False),
+    Column("action_name", Text, nullable=False),
+    Column("kind", Text, nullable=False, server_default="tool_call"),
+    Column("args", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("status", Text, nullable=False, server_default="working"),
+    Column("status_message", Text),
+    Column("progress", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("output_tail", Text),
+    Column("result", JSONB),
+    Column("error", JSONB),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("started_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("last_updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("finished_at", DateTime(timezone=True)),
+    Column("deadline_at", DateTime(timezone=True), nullable=False),
+    Column("expires_at", DateTime(timezone=True)),
+    Column("runner", Text, nullable=False, server_default="inprocess"),
+    Column("lease_owner", Text),
+    Column("heartbeat_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("attempts", Integer, nullable=False, server_default="0"),
+    Column("cancel_requested_at", DateTime(timezone=True)),
+    Column("auto_resume", Boolean, nullable=False, server_default="true"),
+    Column("delivery_state", Text, nullable=False, server_default="pending"),
+    Column("delivered_at", DateTime(timezone=True)),
+    Column("followup_message_id", UUID(as_uuid=True)),
+    Column("watch", JSONB),
+    Column("external", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    CheckConstraint(
+        "kind IN ('tool_call', 'code_exec', 'mcp_task', 'monitor_tick')", name="background_jobs_kind_chk"
+    ),
+    CheckConstraint(
+        "status IN ('working', 'completed', 'failed', 'cancelled', 'lost')", name="background_jobs_status_chk"
+    ),
+    CheckConstraint("runner IN ('inprocess', 'celery', 'sandbox', 'mcp')", name="background_jobs_runner_chk"),
+    CheckConstraint(
+        "delivery_state IN ('pending', 'claimed_by_poll', 'resumed', 'folded', 'suppressed', 'failed')",
+        name="background_jobs_delivery_state_chk",
+    ),
+    UniqueConstraint("conversation_id", "tool_call_id", name="background_jobs_conversation_call_uidx"),
+)
+
+Index("background_jobs_user_status_idx", background_jobs_table.c.user_id, background_jobs_table.c.status)
+Index("background_jobs_conversation_idx", background_jobs_table.c.conversation_id)
+Index("background_jobs_status_heartbeat_idx", background_jobs_table.c.status, background_jobs_table.c.heartbeat_at)
+
+conversation_wakes_table = Table(
+    "conversation_wakes",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    Column(
+        "conversation_id",
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("source", Text, nullable=False),
+    Column("ref_id", Text),
+    Column("title", Text, nullable=False, server_default=""),
+    Column("body", Text, nullable=False, server_default=""),
+    Column("payload", JSONB),
+    Column("dedupe_key", Text, nullable=False),
+    Column("status", Text, nullable=False, server_default="pending"),
+    Column("attempts", Integer, nullable=False, server_default="0"),
+    Column("error", Text),
+    Column("message_id", UUID(as_uuid=True)),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("claimed_at", DateTime(timezone=True)),
+    Column("delivered_at", DateTime(timezone=True)),
+    CheckConstraint(
+        "source IN ('job', 'monitor', 'trigger', 'approval', 'lost')", name="conversation_wakes_source_chk"
+    ),
+    CheckConstraint(
+        "status IN ('pending', 'claimed', 'delivered', 'folded', 'suppressed', 'superseded', 'failed')",
+        name="conversation_wakes_status_chk",
+    ),
+    UniqueConstraint("dedupe_key", name="conversation_wakes_dedupe_uidx"),
+)
+
+Index(
+    "conversation_wakes_conversation_status_idx",
+    conversation_wakes_table.c.conversation_id,
+    conversation_wakes_table.c.status,
+)
+Index("conversation_wakes_status_created_idx", conversation_wakes_table.c.status, conversation_wakes_table.c.created_at)
