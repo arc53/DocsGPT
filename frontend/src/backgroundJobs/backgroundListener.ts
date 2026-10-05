@@ -56,7 +56,7 @@ type NotificationPayload = {
  *   notifications, shows a system notification: the server sent a toast
  *   because a tab is open, but nobody is looking at it.
  * - A job that just went to the background (`job.updated` working), a
- *   monitor or link that was just set up (`monitor.updated`), or a fresh
+ *   monitor or link that was just set up (`monitor.updated` active), or a fresh
  *   `notification.created` (a job, monitor or link reporting back) opens the
  *   Web Push prompt, if the user was never asked: the moment it is clear
  *   what the notifications would be for.
@@ -94,11 +94,12 @@ backgroundListenerMiddleware.startListening({
       }
     }
 
+    // A job or monitor that is running now (a monitor that was cancelled or
+    // paused has nothing to report), or something reporting back.
+    const status = (event.payload as { status?: string } | undefined)?.status;
     const offersPush =
-      (event.type === 'job.updated' &&
-        (event.payload as { status?: string } | undefined)?.status ===
-          'working') ||
-      event.type === 'monitor.updated' ||
+      (event.type === 'job.updated' && status === 'working') ||
+      (event.type === 'monitor.updated' && status === 'active') ||
       event.type === 'notification.created';
     if (
       offersPush &&

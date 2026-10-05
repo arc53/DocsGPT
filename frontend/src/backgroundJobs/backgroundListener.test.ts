@@ -200,7 +200,12 @@ describe('background listener', () => {
     it('opens on a monitor update and on a notification', async () => {
       const a = makeStore();
       a.dispatch(
-        sseEventReceived({ id: 'm', ts: now(), type: 'monitor.updated' }),
+        sseEventReceived({
+          id: 'm',
+          ts: now(),
+          type: 'monitor.updated',
+          payload: { monitor_id: 'm1', status: 'active' },
+        }),
       );
       await flush();
       expect(selectPushPromptOpen(a.getState())).toBe(true);
@@ -210,7 +215,7 @@ describe('background listener', () => {
       expect(selectPushPromptOpen(b.getState())).toBe(true);
     });
 
-    it('not for a finished job, replayed backlog, or other events', async () => {
+    it('not for a finished job, a cancelled monitor, replayed backlog, or other events', async () => {
       const store = makeStore();
       store.dispatch(
         sseEventReceived({
@@ -229,6 +234,14 @@ describe('background listener', () => {
         }),
       );
       store.dispatch(sseEventReceived({ id: 'e3', ts: now(), type: 'other' }));
+      store.dispatch(
+        sseEventReceived({
+          id: 'e4',
+          ts: now(),
+          type: 'monitor.updated',
+          payload: { monitor_id: 'm1', status: 'cancelled' },
+        }),
+      );
       await flush();
       expect(selectPushPromptOpen(store.getState())).toBe(false);
     });
