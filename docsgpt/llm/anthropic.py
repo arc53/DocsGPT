@@ -112,13 +112,20 @@ def _json_type(value: Any) -> Optional[str]:
     return None
 
 
+def _matches_type(value: Any, type_name: str) -> bool:
+    """Whether ``value`` is an instance of the JSON Schema type ``type_name``."""
+    value_type = _json_type(value)
+    return value_type == type_name or (type_name == "number" and value_type == "integer")
+
+
 def _normalize_schema(schema: Any, root: bool = False) -> Any:
     """Rewrite JSON Schema spellings ``transform_schema`` cannot read.
 
     Returns a copy (the input is not mutated) where a list-valued ``type``
-    becomes an ``anyOf`` of single types, ``const`` becomes a one-value
-    ``enum``, an ``enum`` with no ``type`` gets the type of its values, and
-    draft-07 ``definitions`` become ``$defs``.
+    becomes an ``anyOf`` of single types (each keeping only the ``enum``
+    values of its own type), ``const`` becomes a one-value ``enum``, an
+    ``enum`` with no ``type`` gets the type of its values, and draft-07
+    ``definitions`` become ``$defs``.
 
     Args:
         schema: A schema node; non-dict values are returned unchanged.
@@ -126,6 +133,10 @@ def _normalize_schema(schema: Any, root: bool = False) -> Any:
 
     Returns:
         The rewritten schema node.
+
+    Raises:
+        ValueError: A list-valued ``type`` whose ``enum`` has no value of
+            any listed type, so no answer could match.
     """
     if not isinstance(schema, dict):
         return schema
@@ -160,10 +171,22 @@ def _normalize_schema(schema: Any, root: bool = False) -> Any:
     if isinstance(types, list):
         node.pop("type")
         outer = {key: node.pop(key) for key in ("description", "title") if key in node}
-        branches = [
-            {"type": "null"} if name == "null" else {**node, "type": name}
-            for name in types
-        ]
+        enum = node.pop("enum", None)
+        branches = []
+        for name in types:
+            branch = {"type": "null"} if name == "null" else {**node, "type": name}
+            if isinstance(enum, list):
+                # A branch admits only its own type's values and is dropped
+                # when it has none, so a bare ``null`` branch cannot reopen
+                # what the enum excluded.
+                values = [value for value in enum if _matches_type(value, name)]
+                if not values:
+                    continue
+                if name != "null":
+                    branch["enum"] = values
+            branches.append(branch)
+        if not branches:
+            raise ValueError(f"enum {enum!r} has no value of type {types!r}")
         if len(branches) == 1:
             return {**outer, **branches[0]}
         return {**outer, "anyOf": branches}

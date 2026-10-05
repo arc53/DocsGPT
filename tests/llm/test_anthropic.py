@@ -1114,6 +1114,78 @@ class TestStructuredOutput:
         assert note["description"] == "Optional note"
         assert {branch["type"] for branch in note["anyOf"]} == {"string", "null"}
 
+    def test_prepare_type_list_enum_without_null_drops_null_branch(self, llm):
+        """A bare ``null`` branch would let the model answer ``null`` although
+        the enum excludes it."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "status": {"type": ["string", "null"], "enum": ["open", "closed"]},
+            },
+        }
+
+        status = llm.prepare_structured_output_format(schema)["schema"]["properties"]["status"]
+
+        assert status == {"type": "string", "enum": ["open", "closed"]}
+
+    def test_prepare_type_list_splits_enum_values_by_type(self, llm):
+        schema = {
+            "type": "object",
+            "properties": {
+                "status": {"type": ["string", "null"], "enum": ["open", None]},
+                "code": {"type": ["integer", "string"], "enum": [1, "a"]},
+            },
+        }
+
+        props = llm.prepare_structured_output_format(schema)["schema"]["properties"]
+
+        assert props["status"]["anyOf"] == [
+            {"type": "string", "enum": ["open"]},
+            {"type": "null"},
+        ]
+        assert props["code"]["anyOf"] == [
+            {"type": "integer", "enum": [1]},
+            {"type": "string", "enum": ["a"]},
+        ]
+
+    def test_prepare_type_list_enum_matching_no_type_returns_none(self, llm):
+        """No value satisfies such a schema; it goes out unenforced rather
+        than as an empty ``anyOf``."""
+        schema = {
+            "type": "object",
+            "properties": {"x": {"type": ["string", "null"], "enum": [1]}},
+        }
+
+        assert llm.prepare_structured_output_format(schema) is None
+
+    def test_prepare_normalizes_inside_combinators(self, llm):
+        schema = {
+            "type": "object",
+            "properties": {
+                "kind": {"anyOf": [{"const": "a"}, {"type": ["integer", "null"]}]},
+            },
+        }
+
+        kind = llm.prepare_structured_output_format(schema)["schema"]["properties"]["kind"]
+
+        assert kind["anyOf"][0] == {"type": "string", "enum": ["a"]}
+        assert {branch["type"] for branch in kind["anyOf"][1]["anyOf"]} == {"integer", "null"}
+
+    def test_prepare_typeless_enum_of_containers_returns_none(self, llm):
+        """Enum values with no JSON scalar type leave ``type`` unset, which
+        the API cannot express."""
+        schema = {
+            "type": "object",
+            "properties": {"pair": {"enum": [[1, 2], [3, 4]]}},
+        }
+
+        assert llm.prepare_structured_output_format(schema) is None
+
+    def test_prepare_boolean_subschema_returns_none(self, llm):
+        schema = {"type": "object", "properties": {"anything": True}}
+
+        assert llm.prepare_structured_output_format(schema) is None
+
     def test_prepare_const_becomes_single_value_enum(self, llm):
         schema = {
             "type": "object",
