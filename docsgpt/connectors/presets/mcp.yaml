@@ -65,3 +65,13 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://docs.stripe.com/mcp
+
+- key: mcp:fireflies
+  name: Fireflies
+  description: Search transcripts and summaries, and manage meetings with Fireflies tools.
+  icon: fireflies
+  category: knowledge
+  mcp_url: https://api.fireflies.ai/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://docs.fireflies.ai/getting-started/mcp-configuration
