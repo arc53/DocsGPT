@@ -65,3 +65,13 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://docs.stripe.com/mcp
+
+- key: mcp:supabase
+  name: Supabase
+  description: List tables, run SQL, read logs and manage Supabase projects.
+  icon: supabase
+  category: database
+  mcp_url: https://mcp.supabase.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://supabase.com/docs/guides/getting-started/mcp
