@@ -86,21 +86,35 @@ spec:
               value: /tmp/jupyter-runtime
             - name: JUPYTER_DATA_DIR
               value: /tmp/jupyter-data
+          # Same budget as the compose overlay's SANDBOX_MEMORY default: the
+          # gateway, the warm session kernels, and the LibreOffice (~170 MB) and
+          # headless Chromium (~110 MB) processes they start, plus the /tmp
+          # emptyDir if it is memory-backed. SANDBOX_MAX_SESSIONS caps each API
+          # and worker process separately; raise the limit (or lower that cap or
+          # SANDBOX_MAX_TTL) when many processes keep kernels warm at once.
           resources:
             limits:
-              memory: "1Gi"
+              memory: "4Gi"
               cpu: "1"
             requests:
-              memory: "256Mi"
+              memory: "512Mi"
               cpu: "250m"
           volumeMounts:
-            # Per-session workspaces + Jupyter runtime files on an emptyDir;
-            # the root FS stays read-only everywhere else.
+            # Per-session workspaces, kernel HOME (/tmp/home) and Jupyter
+            # runtime files on an emptyDir; the root FS stays read-only
+            # everywhere else.
             - name: scratch
               mountPath: /tmp
+            # A larger /dev/shm for Chromium (the container default is 64 MB).
+            - name: dshm
+              mountPath: /dev/shm
       volumes:
         - name: scratch
           emptyDir: {}
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
 ---
 apiVersion: v1
 kind: Service

@@ -38,3 +38,8 @@ jobs:
           uv lock --check
           bash scripts/export_requirements.sh
           git diff --exit-code -- docsgpt/requirements.txt docsgpt/requirements-docling.txt docsgpt/requirements-milvus.txt
+
+      # deployment/sandbox/{requirements.txt,install-system.sh,sandbox.env,manifest.json}
+      # are generated from docsgpt/sandbox/manifest.py (stdlib only, no install needed).
+      - name: Sandbox image files match the manifest
+        run: python3 scripts/export_sandbox_manifest.py --check

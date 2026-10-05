@@ -620,6 +620,44 @@ def test_description_lists_jupyter_preinstalled_packages(monkeypatch):
         assert pkg in desc
 
 
+def test_description_renders_the_sandbox_manifest(monkeypatch):
+    """The package, command and font lists come from the manifest both images are built from."""
+    from docsgpt.core import settings as settings_module
+    from docsgpt.sandbox import manifest
+
+    monkeypatch.setattr(settings_module.settings, "SANDBOX_BACKEND", "jupyter", raising=False)
+    desc = _tool().get_actions_metadata()[0]["description"]
+    assert manifest.preinstalled_summary() in desc
+    for text in (
+        "python-docx (import docx)",
+        "beautifulsoup4 (import bs4)",
+        "pdfplumber",
+        "office-convert FILE --to pdf",
+        "html-to-pdf",
+        "tesseract",
+        "ffmpeg",
+        "node",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ):
+        assert text in desc, text
+    assert "pip install anything else" in desc
+
+
+def test_environment_note_lists_every_manifest_package(monkeypatch):
+    from docsgpt.agents.tools.code_executor import CodeExecutorTool
+    from docsgpt.core import settings as settings_module
+    from docsgpt.sandbox import manifest
+
+    monkeypatch.setattr(settings_module.settings, "SANDBOX_BACKEND", "jupyter", raising=False)
+    note = CodeExecutorTool._environment_note()
+    for pkg in manifest.PIP_PACKAGES:
+        assert manifest.dist_name(pkg["spec"]) in note
+    for binary in manifest.BINARIES:
+        assert binary["name"] in note
+    for font in manifest.FONTS:
+        assert font["path"] in note
+
+
 def test_description_warns_bare_daytona_image(monkeypatch):
     from docsgpt.core import settings as settings_module
 
@@ -627,37 +665,34 @@ def test_description_warns_bare_daytona_image(monkeypatch):
     monkeypatch.setattr(settings_module.settings, "DAYTONA_SNAPSHOT", None, raising=False)
     desc = _tool().get_actions_metadata()[0]["description"]
     assert "Only the Python stdlib is preinstalled" in desc
+    # Without a snapshot none of the image's tools exist; do not advertise them.
+    for absent in ("office-convert", "tesseract", "DejaVuSans.ttf", "pdfplumber"):
+        assert absent not in desc
 
 
 def test_description_lists_daytona_snapshot_packages(monkeypatch):
     from docsgpt.core import settings as settings_module
+    from docsgpt.sandbox import manifest
 
     monkeypatch.setattr(settings_module.settings, "SANDBOX_BACKEND", "daytona", raising=False)
     monkeypatch.setattr(
-        settings_module.settings, "DAYTONA_SNAPSHOT", "docsgpt-sandbox-py312", raising=False
+        settings_module.settings, "DAYTONA_SNAPSHOT", "docsgpt-sandbox-py312-v2", raising=False
     )
     desc = _tool().get_actions_metadata()[0]["description"]
     for pkg in ("python-pptx", "pandas", "openpyxl", "matplotlib"):
         assert pkg in desc
-    # A snapshot built before pandas was added still works: the model is told to pip install on import failure.
+    assert manifest.preinstalled_summary() in desc
+    # A snapshot built by an older script lacks some of this: the model is told to pip install on import failure.
+    assert "If an import fails" in desc
     assert "pip install" in desc
 
 
 def test_daytona_snapshot_bakes_the_spreadsheet_libraries():
-    """Spreadsheets reach the sandbox by ref; the snapshot must be able to open and chart them."""
-    import importlib.util
-    from pathlib import Path
+    """Spreadsheets reach the sandbox by ref; both images must be able to open and chart them."""
+    from docsgpt.sandbox import manifest
 
-    path = Path(__file__).resolve().parents[1] / "scripts" / "build_daytona_snapshot.py"
-    spec = importlib.util.spec_from_file_location("build_daytona_snapshot", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    names = {pin.split("==")[0] for pin in module.SNAPSHOT_PINS}
-    assert {"pandas", "openpyxl", "matplotlib"} <= names
-    dockerfile = (Path(__file__).resolve().parents[1] / "deployment" / "sandbox" / "Dockerfile").read_text()
-    for pin in module.SNAPSHOT_PINS:
-        if pin.split("==")[0] in ("pandas", "openpyxl", "matplotlib", "python-pptx", "python-docx", "reportlab"):
-            assert pin in dockerfile, f"{pin} drifted from the runner image"
+    names = {manifest.dist_name(spec) for spec in manifest.pip_specs()}
+    assert {"pandas", "openpyxl", "matplotlib", "python-pptx", "python-docx", "reportlab"} <= names
 
 
 # ---------------------------------------------------------------------------

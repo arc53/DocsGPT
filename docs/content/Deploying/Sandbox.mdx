@@ -50,7 +50,7 @@ The overlay sets these on `backend` and `worker`, so you don't add them yourself
 - `SANDBOX_KERNEL_NAME=docsgpt-python`, the kernel that strips secrets from the environment
 - `SANDBOX_GATEWAY_AUTH_TOKEN`, from your `.env`
 
-The runner has no published port. It reaches the API and worker over an internal `sandbox-net` network and reaches the internet over its own `sandbox-egress` network. Its container is read-only, limited to 256 processes, and capped by `SANDBOX_MEMORY` (default `1g`) and `SANDBOX_CPUS` (default `1.0`).
+The runner has no published port. It reaches the API and worker over an internal `sandbox-net` network and reaches the internet over its own `sandbox-egress` network. Its container is read-only, limited to 1024 processes, has a 256 MB `/dev/shm` for Chromium, and is capped by `SANDBOX_MEMORY` (default `4g`) and `SANDBOX_CPUS` (default `1.0`). The memory covers the warm session kernels (about 50-60 MB each when idle) and the LibreOffice and Chromium processes they start; if you set `SANDBOX_MEMORY` yourself from an older `1g` default, raise it.
 
 ### Block private networks (egress overlay)
 
@@ -103,7 +103,18 @@ Use the same `<version>` as your DocsGPT release. `develop` tracks the main bran
 
 ## Daytona Cloud
 
-Set `SANDBOX_BACKEND=daytona`, `DAYTONA_API_KEY`, and optionally `DAYTONA_TARGET` for the region. Nothing runs next to DocsGPT. Daytona's default image lacks the libraries that render presentations, documents, spreadsheets and PDFs, so build a snapshot once and set `DAYTONA_SNAPSHOT`. See [Render libraries on Daytona](/Tools/artifacts-and-code-execution#render-libraries-on-daytona).
+Set `SANDBOX_BACKEND=daytona`, `DAYTONA_API_KEY`, and optionally `DAYTONA_TARGET` for the region. Nothing runs next to DocsGPT. Daytona's default image lacks the libraries that render presentations, documents, spreadsheets and PDFs, and the sandbox's command-line tools, so build a snapshot once with `scripts/build_daytona_snapshot.py`, then set `DAYTONA_SNAPSHOT` to its name yourself: `DAYTONA_SNAPSHOT=docsgpt-sandbox-py312-v2` for the script's default. DocsGPT uses Daytona's plain image until you do. See [Daytona snapshot](/Tools/artifacts-and-code-execution#daytona-snapshot).
+
+## What the sandbox image contains
+
+The runner image and the Daytona snapshot hold the same Python libraries, command-line tools (headless LibreOffice and Chromium, tesseract, poppler, ffmpeg, Node.js 24) and fonts. [What the sandbox has installed](/Tools/artifacts-and-code-execution#what-the-sandbox-has-installed) lists them. To check an image, run its smoke test, which converts real files with each tool:
+
+```bash
+docker run --rm --read-only --tmpfs /tmp arc53/docsgpt-sandbox:<version> \
+  /opt/docsgpt/kernel-env.sh python /opt/docsgpt/smoke_test.py
+```
+
+Licenses: the Python libraries, Node.js, Chromium and tesseract are permissive (MIT, BSD or Apache-2.0), LibreOffice is MPL-2.0, and the fonts are under the SIL Open Font License or the Bitstream Vera license. poppler-utils and ffmpeg are Debian's GPL builds, run only as separate programs. Debian publishes their source, so if you redistribute the image, pass that offer on. PyMuPDF (AGPL) is not included.
 
 ## Enable the tools
 
@@ -126,7 +137,7 @@ To check the setup, ask an agent with Code Executor to run `print(1 + 1)`. An er
 | `SANDBOX_EXEC_TIMEOUT` | `60` | Wall-clock limit in seconds for one run. |
 | `SANDBOX_MAX_TTL` | `1200` | Seconds an idle session is kept before it is closed. Sessions stay open between runs until then. |
 | `SANDBOX_MAX_SESSIONS` | `32` | Live sessions per API or worker process. At the limit, the least recently used idle session is closed. |
-| `SANDBOX_MEMORY`, `SANDBOX_CPUS` | `1g`, `1.0` | Resource caps for the Compose runner container. |
+| `SANDBOX_MEMORY`, `SANDBOX_CPUS` | `4g`, `1.0` | Resource caps for the Compose runner container. |
 | `SANDBOX_KERNEL_IDLE_TIMEOUT` | `1800` | Set on the runner, not on DocsGPT. Seconds an idle kernel may live before the runner shuts it down, which catches kernels a restarted API or worker process left behind. Keep it above `SANDBOX_MAX_TTL`. |
 
 On the Jupyter runner every conversation that ran code keeps its kernel until the session has been idle for `SANDBOX_MAX_TTL`. An idle kernel takes about 50-60 MB, and more once code has loaded data, and its workspace files sit on the runner's in-memory `/tmp`. Size `SANDBOX_MEMORY` for the conversations you expect to run code at the same time, or lower `SANDBOX_MAX_TTL` or `SANDBOX_MAX_SESSIONS`. On Daytona each session is its own sandbox, which Daytona also stops after `DAYTONA_AUTO_STOP_INTERVAL` idle minutes.

@@ -1,7 +1,7 @@
 ---
 title: 'Changelog'
 description: What changed in each DocsGPT release, with links to the upgrade steps an existing deployment needs.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-05
 ---
 
 import { Callout } from 'nextra/components'
@@ -40,6 +40,10 @@ Entries start at 0.17.0; see GitHub for earlier releases.
   - `LLM_PATH`, `HUGGINGFACE_API_KEY`, `LANCEDB_*`, `RETRIEVERS_ENABLED` and `DEFAULT_MAX_HISTORY`
     are no longer read; delete them from `.env`. `SAGEMAKER_*` still works as the S3 credentials
     fallback but is deprecated in favour of `S3_*`.
+  - The code sandbox image grew (LibreOffice, Chromium, OCR, ffmpeg, Node.js): rebuild the runner
+    image and raise a hand-set `SANDBOX_MEMORY` to `4g`. On Daytona, build the new
+    `docsgpt-sandbox-py312-v2` snapshot and point `DAYTONA_SNAPSHOT` at it. See
+    [Daytona snapshot](/Tools/artifacts-and-code-execution#daytona-snapshot).
 </Callout>
 
 ### Connectors
@@ -79,6 +83,12 @@ Answers render math, and the chat widget is published at 0.8.0.
 - A new [Code Execution Sandbox](/Deploying/Sandbox) page covers running the sandbox the Artifact and
   Code Executor tools need, and `scripts/build_daytona_snapshot.py` pins the runner image's render
   library versions.
+- The runner image and the Daytona snapshot are built from one package list and now carry PDF,
+  HTML and YAML libraries (pypdf, pdfplumber, requests, beautifulsoup4, PyYAML), tesseract OCR,
+  poppler, ffmpeg, headless LibreOffice and Chromium with `office-convert`, `html-to-pdf` and
+  `html-screenshot` helpers, Node.js 24, and fonts for Arabic, Devanagari and CJK text.
+  `pip install` inside the self-hosted runner now works; its read-only filesystem made it fail.
+  See [What the sandbox has installed](/Tools/artifacts-and-code-execution#what-the-sandbox-has-installed).
 
 ### API
 

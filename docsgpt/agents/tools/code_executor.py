@@ -34,6 +34,7 @@ from docsgpt.sandbox.artifacts_capture import (
     kind_for_mime as _kind_for_mime,
 )
 from docsgpt.sandbox.base import ExecResult
+from docsgpt.sandbox.manifest import preinstalled_summary
 from docsgpt.sandbox.sandbox_creator import SandboxCreator
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.session import db_readonly
@@ -99,26 +100,21 @@ class CodeExecutorTool(Tool):
 
         Without this the model discovers the environment by failing: importing
         pandas on a bare image, or pip-installing libraries that are already
-        baked in. Keep the package lists in sync with deployment/sandbox/Dockerfile
-        (jupyter) and scripts/build_daytona_snapshot.py (daytona snapshot).
+        baked in. The lists come from docsgpt/sandbox/manifest.py, which both the
+        runner image (deployment/sandbox/Dockerfile) and the Daytona snapshot
+        (scripts/build_daytona_snapshot.py) are built from.
         """
         backend = str(settings.SANDBOX_BACKEND or "jupyter").lower()
-        if backend == "daytona":
-            if settings.DAYTONA_SNAPSHOT:
-                return (
-                    "Preinstalled beyond the stdlib: pandas, matplotlib, openpyxl, python-pptx, "
-                    "python-docx, reportlab, lxml, pillow. If an import fails, pip install the package from "
-                    "within the code; pip install anything else the same way before importing it."
-                )
+        if backend == "daytona" and not settings.DAYTONA_SNAPSHOT:
             return (
                 "Only the Python stdlib is preinstalled. pip install any third-party "
                 "package (pandas, python-docx, ...) from within the code before importing it."
             )
-        return (
-            "Preinstalled beyond the stdlib: pandas, matplotlib, python-pptx, python-docx, "
-            "openpyxl, reportlab. pip install anything else from within the code before "
-            "importing it."
-        )
+        note = preinstalled_summary() + " pip install anything else from within the code before importing it."
+        if backend == "daytona":
+            # The snapshot is whatever the operator built; an older one lacks newer packages.
+            note += " If an import fails, pip install that package the same way."
+        return note
 
     @staticmethod
     def _persistence_note() -> str:
