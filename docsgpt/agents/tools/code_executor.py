@@ -191,20 +191,32 @@ class CodeExecutorTool(Tool):
         python = f"Python {manifest.PYTHON_SERIES}" if cls._full_image() else "Python"
         timeout = int(cls._exec_timeout())
         lines = [
-            f"Run {python} in this conversation's sandbox for real computation, parsing, data work, charts and "
-            "files; not for arithmetic you can do inline.",
-            f"Session: {cls._persistence_note()} After {cls._idle_minutes()} min idle or a restart it resets and "
-            "the result says `session: new`: rebuild what you need.",
-            "Files: the working directory is the workspace; every file written there, except under `scratch/`, "
-            "becomes a download for the user; files elsewhere (e.g. /tmp) are never saved. Save each deliverable "
-            "once under its final name (re-saving that name adds a new version). Put previews, test renders and "
-            "intermediate data in `scratch/`.",
-            "Charts: plt.show() to look at one yourself; savefig() what the user should get. In your answer name "
-            "saved files; never write links or sandbox paths.",
-            "Inputs: pass an earlier artifact or upload by ref (`A1`, `F3`) in `inputs`; it appears at "
-            "`inputs/<name>`. Artifact and app URLs can't be downloaded from inside the sandbox.",
-            f"Limits: {timeout}s per call, hard; split longer work, or run it in the background writing progress "
-            "to scratch/ and check back next call. Network: usually open for pip and public sites.",
+            (
+                f"Run {python} in this conversation's sandbox for real computation, parsing, data work, charts and "
+                "files; not for arithmetic you can do inline."
+            ),
+            (
+                f"Session: {cls._persistence_note()} After {cls._idle_minutes()} min idle or a restart it resets and "
+                "the result says `session: new`: rebuild what you need."
+            ),
+            (
+                "Files: the working directory is the workspace; every file written there, except under `scratch/`, "
+                "becomes a download for the user; files elsewhere (e.g. /tmp) are never saved. Save each deliverable "
+                "once under its final name (re-saving that name adds a new version). Put previews, test renders and "
+                "intermediate data in `scratch/`."
+            ),
+            (
+                "Charts: plt.show() to look at one yourself; savefig() what the user should get. In your answer name "
+                "saved files; never write links or sandbox paths."
+            ),
+            (
+                "Inputs: pass an earlier artifact or upload by ref (`A1`, `F3`) in `inputs`; it appears at "
+                "`inputs/<name>`. Artifact and app URLs can't be downloaded from inside the sandbox."
+            ),
+            (
+                f"Limits: {timeout}s per call, hard; split longer work, or run it in the background writing progress "
+                "to scratch/ and check back next call. Network: usually open for pip and public sites."
+            ),
             cls._environment_note(),
             "Documents the user will keep editing fit artifact_generator (if available) better.",
             cls._closing_rule(),

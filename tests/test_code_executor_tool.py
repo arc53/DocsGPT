@@ -861,10 +861,9 @@ def test_app_hosts_come_from_the_deployment_urls(monkeypatch):
     monkeypatch.setattr(settings_module.settings, "API_URL", "https://api.example.com", raising=False)
     monkeypatch.setattr(settings_module.settings, "PUBLIC_API_BASE_URL", "http://localhost:7091", raising=False)
     monkeypatch.setattr(settings_module.settings, "OIDC_FRONTEND_URL", "https://app.example.com/", raising=False)
-    hosts = CodeExecutorTool._app_hosts()
-    assert "api.example.com" in hosts and "app.example.com" in hosts
+    monkeypatch.setattr(settings_module.settings, "CONNECTOR_REDIRECT_BASE_URI", None, raising=False)
     # A loopback host counts only with its port: code may run its own server on localhost.
-    assert "localhost:7091" in hosts and "localhost" not in hosts
+    assert CodeExecutorTool._app_hosts() == ("api.example.com", "localhost:7091", "app.example.com")
 
 
 def test_a_failing_hint_builder_never_breaks_the_result(monkeypatch, fresh_failures):

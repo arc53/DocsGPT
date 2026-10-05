@@ -150,8 +150,10 @@ def test_missing_module_on_a_bare_daytona_image_says_pip_install():
     "code",
     [
         "import subprocess\nsubprocess.run(['pip', 'install', 'pandas', 'openpyxl'])",
-        "import subprocess, sys\n"
-        "subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', 'pandas', 'openpyxl'])",
+        (
+            "import subprocess, sys\n"
+            "subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', 'pandas', 'openpyxl'])"
+        ),
         "!pip install -q pandas openpyxl",
         "%pip install --upgrade pandas==2.2.3 openpyxl",
         "import os\nos.system('pip install pandas openpyxl >/dev/null')",
