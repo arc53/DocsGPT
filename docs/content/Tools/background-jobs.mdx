@@ -31,7 +31,7 @@ Every server-side tool call in a chat turn runs in a small per-process pool. The
 ```
 
 The model is told not to run the call again and not to guess its result, and usually ends its turn by telling
-the user the work is running. In the chat, the call's entry shows it as running until the job ends.
+the user the work is running. The call's entry in the conversation shows as running until the job ends.
 
 The model can also start a call as a job at once with `background=true`. The argument is offered on
 `code_executor`, MCP tools, API tools and `read_webpage`, in chat turns only.
@@ -59,7 +59,8 @@ is resumed with a note that the work may or may not have taken effect and should
 
 ## Auto-resume
 
-When a job finishes, the conversation is resumed with a **continuation turn**: a headless turn of the same agent
+When a job finishes in a conversation auto-resume applies to (see below for the poll-only ones), the
+conversation is resumed with a **continuation turn**: a headless turn of the same agent
 and model, given the result as an event that is marked as not coming from the user. It answers in the same
 conversation, and a `conversation.continued` event tells open tabs about the new message.
 
@@ -109,12 +110,14 @@ A `code_executor` call can carry a `watch` spec for what its output may do while
 
 - `patterns` (up to five) resume the agent while the job still runs, with the matching line: at most one wake
   every 15 seconds, and after three dropped matches or eight wakes only completion wakes it.
-- `progress_regex` updates the job's progress shown in the chat. It never wakes the model.
+- `progress_regex` updates the job's progress (sent in `job.updated`). It never wakes the model.
 - `heartbeat_s` (0 for off, else at least 60) resumes the agent with the output printed since the last
   heartbeat, at most 2000 characters, skipped when nothing new was printed.
 
-Completion and failure always resume the agent. Output during a run is available for sandbox jobs only; for
-other jobs `progress_regex` is applied to the final result.
+In a conversation that auto-resume applies to, completion and failure always resume the agent; in a poll-only
+one (see above) the result waits for `check_job` or the next message, and watch patterns and heartbeats wake
+nothing. Output during a run is available for sandbox jobs only; for other jobs `progress_regex` is applied to
+the final result.
 
 ## Events
 
@@ -124,9 +127,10 @@ The app's event stream (`/api/events`) carries:
 - `conversation.continued`: `{conversation_id, message_id, source}`
 - `notification.created`: `{kind, title, body, url, conversation_id}`
 
-A continuation's message carries `metadata.wake = {source, ref_id, dedupe_key}`. The chat's job card reads
-`GET /api/background_jobs?conversation_id=…`, `GET /api/background_jobs/<id>` and
-`POST /api/background_jobs/<id>/cancel`.
+A continuation's message carries `metadata.wake = {source, ref_id, dedupe_key}`. Jobs can be read and cancelled
+through `GET /api/background_jobs?conversation_id=…`, `GET /api/background_jobs/<id>` and
+`POST /api/background_jobs/<id>/cancel`. The chat does not show a job card with live progress yet; until it
+does, a handed-off call's entry shows as running and takes the job's outcome once the job ends.
 
 ## Running it
 

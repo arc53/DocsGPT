@@ -239,7 +239,8 @@ def fenced(payload: Any, limit: int) -> str:
             rendered += f"\nFiles: {', '.join(str(f) for f in files)}"
     else:
         rendered = head_tail(json.dumps(payload, ensure_ascii=False, default=str, indent=1), limit)
-    return f"«\n{rendered.replace('»', '>>')}\n»"
+    # Neither fence character may appear inside, so the data can't close or open a fence.
+    return f"«\n{rendered.replace('»', '>>').replace('«', '<<')}\n»"
 
 
 def event_blocks(events: Iterable[Dict[str, Any]]) -> List[str]:

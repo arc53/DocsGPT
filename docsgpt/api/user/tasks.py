@@ -662,13 +662,10 @@ def run_background_tool_call(self, job_id, payload):
 
 
 # The background call gets the job lifetime, plus a margin to record the timeout.
-try:
-    from docsgpt.core.settings import settings as _background_settings
+from docsgpt.core.settings import settings as _background_settings  # noqa: E402
 
-    run_background_tool_call.soft_time_limit = int(_background_settings.BACKGROUND_JOB_MAX_SECONDS) + 30
-    run_background_tool_call.time_limit = run_background_tool_call.soft_time_limit + 60
-except Exception:
-    pass
+run_background_tool_call.soft_time_limit = int(_background_settings.BACKGROUND_JOB_MAX_SECONDS) + 30
+run_background_tool_call.time_limit = run_background_tool_call.soft_time_limit + 60
 
 
 @celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)
@@ -685,13 +682,8 @@ def continue_conversation(self, conversation_id, attempt=0):
 
 
 # A continuation is an agent turn: the same time limit as a scheduled run.
-try:
-    from docsgpt.core.settings import settings as _continuation_settings
-
-    continue_conversation.soft_time_limit = max(30, int(_continuation_settings.SCHEDULE_RUN_TIMEOUT))
-    continue_conversation.time_limit = continue_conversation.soft_time_limit + 60
-except Exception:
-    pass
+continue_conversation.soft_time_limit = max(30, int(_background_settings.SCHEDULE_RUN_TIMEOUT))
+continue_conversation.time_limit = continue_conversation.soft_time_limit + 60
 
 
 @celery.task(bind=True, acks_late=False)

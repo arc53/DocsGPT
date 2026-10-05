@@ -93,8 +93,8 @@ def daytona(monkeypatch):
     client = types.SimpleNamespace(get=mock.Mock(return_value=sandbox_obj))
     module = types.ModuleType("daytona")
     module.Daytona = lambda config: client
-    module.DaytonaConfig = lambda **kwargs: types.SimpleNamespace(**kwargs)
-    module.SessionExecuteRequest = lambda **kwargs: types.SimpleNamespace(**kwargs)
+    module.DaytonaConfig = types.SimpleNamespace
+    module.SessionExecuteRequest = types.SimpleNamespace
     monkeypatch.setitem(sys.modules, "daytona", module)
     from docsgpt.sandbox.daytona import DaytonaSandbox, _Handle
 
@@ -319,10 +319,11 @@ def test_jupyter_probe_rereads_exit_when_the_group_is_gone(tmp_path):
     # Simulate the race: no exit file at the first check, written before the re-read.
     namespace = {}
     original_exists = os.path.exists
+    seen = []
 
-    def exists_once(path, _seen=[]):
-        if path.endswith("/exit") and not _seen:
-            _seen.append(1)
+    def exists_once(path):
+        if path.endswith("/exit") and not seen:
+            seen.append(1)
             (job / "exit").write_text("0")
             return False
         return original_exists(path)
