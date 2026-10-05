@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, NamedTuple, Optional
 
 
 @dataclass
@@ -47,6 +47,18 @@ class ExecResult:
         return self.status == "ok"
 
 
+class OpenedSession(NamedTuple):
+    """Result of opening a session: the runtime handle and whether it is fresh.
+
+    ``created`` is True when the open started a new runtime, so nothing an earlier
+    call left behind (files, installed packages, kernel state) is there. It is False
+    when an existing runtime was reused or reattached.
+    """
+
+    handle: str
+    created: bool
+
+
 class SandboxGoneError(IOError):
     """The cloud runtime behind a session no longer exists (deleted upstream).
 
@@ -64,6 +76,22 @@ class CodeSandbox(ABC):
     @abstractmethod
     def open(self, session_id: str) -> str:
         """Create the underlying runtime for ``session_id`` and return its handle id."""
+
+    def open_session(self, session_id: str) -> OpenedSession:
+        """Open like ``open`` and report whether a fresh runtime was created.
+
+        Backends that can reuse or reattach to a live runtime override this. The
+        default cannot tell the two apart, so it reports every open as created:
+        callers then rebuild state they may still have, rather than trust state
+        that is gone.
+
+        Args:
+            session_id: The session to open.
+
+        Returns:
+            The handle id and whether the runtime is new.
+        """
+        return OpenedSession(self.open(session_id), True)
 
     @abstractmethod
     def attach(self, session_id: str) -> str:

@@ -21,7 +21,7 @@ from sqlalchemy import text
 from docsgpt.agents.tools.artifact_ref import make_ref
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
-from docsgpt.storage.db.session import db_session
+from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.storage_creator import StorageCreator
 from docsgpt.utils import safe_filename
 
@@ -41,10 +41,12 @@ MAX_CAPTURED_FILES = 64
 MAX_SCANNED_FILES = 256
 
 # Auto-capture skips scratch/intermediate workspace paths so install steps, extracted
-# archives, and temp files don't each become a downloadable artifact. Agents write
-# throwaway files under ``tmp/``; an explicit ``outputs`` list bypasses this skip (the
-# agent is then naming exactly what to keep).
-_SCRATCH_PREFIXES = ("tmp/",)
+# archives, and temp files don't each become a downloadable artifact. Agents are told
+# to write previews and intermediates under ``scratch/``; ``tmp/`` is still skipped for
+# runs that use it. An explicit ``outputs`` list bypasses this skip (the agent is then
+# naming exactly what to keep).
+_SCRATCH_DIRS = ("scratch", "tmp")
+_SCRATCH_PREFIXES = tuple(f"{name}/" for name in _SCRATCH_DIRS)
 _SCRATCH_SUFFIXES = (".tmp", ".lock", ".pyc", ".pyo")
 
 _DEFAULT_KIND = "file"
@@ -99,7 +101,7 @@ def kind_for_mime(mime: str) -> str:
 
 def _is_scratch(rel_path: str) -> bool:
     """True for scratch/junk workspace paths excluded from auto-capture."""
-    if rel_path == "tmp" or rel_path.startswith(_SCRATCH_PREFIXES):
+    if rel_path in _SCRATCH_DIRS or rel_path.startswith(_SCRATCH_PREFIXES):
         return True
     if any(part == "__pycache__" or part.startswith(".") for part in rel_path.split("/")):
         return True
@@ -160,7 +162,9 @@ def capture_artifacts(
 
     When ``outputs`` is given, capture only files matching those globs (the caller is
     naming exactly what to keep). Otherwise auto-capture every produced file except
-    scratch/intermediate paths (``tmp/`` and obvious junk; see ``_is_scratch``).
+    scratch/intermediate paths (``scratch/``, ``tmp/`` and obvious junk; see
+    ``_is_scratch``). A file re-saved under a name the same tool already used in this
+    parent becomes a new version of that artifact (see ``persist_artifact``).
     Returns one artifact reference per captured file: ``{artifact_id, version,
     filename, mime_type, size}`` (JSON primitives only; never bytes).
     """
@@ -227,12 +231,71 @@ def persist_artifact(
     message_id: Optional[str] = None,
     produced_by: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Store a captured workspace file as a new artifact (kind/mime inferred from its name)."""
+    """Store a captured workspace file as an artifact (kind/mime inferred from its name).
+
+    A file whose name matches the current version of an artifact the same tool made
+    for the same user in this parent is saved as that artifact's next version, and
+    one whose bytes equal that current version is reported as it, with nothing
+    written. Saving ``report.docx`` three times then leaves one artifact, not three
+    artifacts that each sit at v1. Without a ``produced_by.tool`` (workflow code
+    nodes record a node instead), a user or a parent, every file is a new artifact.
+
+    Args:
+        rel_path: The file's workspace-relative path; only its name is kept.
+        data: The file's bytes.
+        user_id: The owner (quota and ownership).
+        conversation_id: Conversation parent.
+        workflow_run_id: Workflow-run parent.
+        message_id: The message a NEW artifact is attached to (share-link scope).
+        produced_by: Provenance stored on the version; ``tool`` keys the match.
+
+    Returns:
+        The artifact reference ``{artifact_id, version, filename, mime_type, size}``
+        plus ``ref`` when one resolves, or None when the write failed.
+
+    Raises:
+        QuotaExceeded: The write would breach the user's artifact quota.
+    """
     # The sandbox filename is display-only; mime/kind are inferred from it, and
     # the storage key is derived from server-controlled values downstream.
     display_name = rel_path.rsplit("/", 1)[-1]
     filename = safe_filename(display_name)
     mime_type = infer_mime(filename)
+    tool = produced_by.get("tool") if isinstance(produced_by, dict) else None
+    if tool and user_id and (conversation_id or workflow_run_id):
+        match = _find_same_name_artifact(
+            filename,
+            user_id=user_id,
+            tool=str(tool),
+            conversation_id=conversation_id,
+            workflow_run_id=workflow_run_id,
+        )
+        if match is not None:
+            artifact, current, ref = match
+            artifact_id = str(artifact["id"])
+            if current.get("sha256") == hashlib.sha256(data).hexdigest():
+                # Same bytes as the version the user already has: adding a version
+                # would only bury it under an identical copy.
+                payload: Dict[str, Any] = {
+                    "artifact_id": artifact_id,
+                    "version": int(current.get("version") or artifact["current_version"]),
+                    "filename": current.get("filename") or filename,
+                    "mime_type": current.get("mime_type") or mime_type,
+                    "size": current["size"] if current.get("size") is not None else len(data),
+                }
+                if ref is not None:
+                    payload["ref"] = ref
+                return payload
+            return append_artifact_version(
+                user_id=user_id,
+                artifact_id=artifact_id,
+                data=data,
+                filename=filename,
+                mime_type=mime_type,
+                produced_by=produced_by,
+                conversation_id=conversation_id,
+                workflow_run_id=workflow_run_id,
+            )
     return persist_new_artifact(
         user_id=user_id,
         kind=kind_for_mime(mime_type),
@@ -245,6 +308,57 @@ def persist_artifact(
         message_id=message_id,
         produced_by=produced_by,
     )
+
+
+def _find_same_name_artifact(
+    filename: str,
+    *,
+    user_id: str,
+    tool: str,
+    conversation_id: Optional[str],
+    workflow_run_id: Optional[str],
+) -> Optional[Tuple[Dict[str, Any], Dict[str, Any], Optional[str]]]:
+    """Find the artifact a re-saved file belongs to.
+
+    Args:
+        filename: The sanitized filename the current version must carry.
+        user_id: The owner the artifact must belong to.
+        tool: The ``produced_by.tool`` the current version must carry.
+        conversation_id: Conversation parent.
+        workflow_run_id: Workflow-run parent.
+
+    Returns:
+        ``(artifact, current_version, ref)`` for the newest match, or None when there
+        is none. A failed lookup is logged and also returns None, so the file is
+        saved as a new artifact rather than lost.
+    """
+    try:
+        with db_readonly() as conn:
+            repo = ArtifactsRepository(conn)
+            artifact = repo.find_by_current_filename(
+                filename,
+                user_id=user_id,
+                produced_by_tool=tool,
+                conversation_id=conversation_id,
+                workflow_run_id=workflow_run_id,
+            )
+            if artifact is None:
+                return None
+            artifact_id = str(artifact["id"])
+            current = repo.get_version(artifact_id, artifact["current_version"]) or {}
+            ref = _ref_for(
+                repo,
+                artifact_id,
+                conversation_id=conversation_id,
+                workflow_run_id=workflow_run_id,
+                metadata=artifact.get("metadata"),
+            )
+    except Exception:
+        logger.warning(
+            "artifacts_capture: same-name artifact lookup failed; saving a new artifact", exc_info=True
+        )
+        return None
+    return artifact, current, ref
 
 
 def _storage_key(user_id: str, artifact_id: str, version: int, filename: str) -> str:

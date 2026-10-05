@@ -855,8 +855,8 @@ class ArtifactGeneratorTool(Tool):
             return {"error": f"render failed: {type(exc).__name__}: {exc}"}
         finally:
             # Drop this render's scratch dir, but do NOT close the session: it is the
-            # shared conversation/run session that code_executor(persist=True) keeps
-            # warm. A render is self-contained (it builds a document from the artifact
+            # shared conversation/run session that code_executor keeps warm between
+            # calls. A render is self-contained (it builds a document from the artifact
             # spec, not from prior kernel state) and does not own that session -- its
             # lifecycle belongs to the manager's TTL reaper / the conversation.
             manager.remove_path(session_id, token_dir)

@@ -130,15 +130,19 @@ class TestViewImage:
 
 
 class TestCodeExecutorCharts:
-    def _run(self, monkeypatch, plots, **kwargs):
+    def _run(self, monkeypatch, plots, captured=None, **kwargs):
         from docsgpt.agents.tools import code_executor as ce
         from tests.test_code_executor_tool import _FakeManager, _tool
 
         manager = _FakeManager(ExecResult(status="ok", stdout="ok", plots=plots))
         monkeypatch.setattr(ce.SandboxCreator, "get_manager", lambda: manager)
-        persist = Mock(side_effect=lambda **kw: {"artifact_id": "art-1", "version": 1, "ref": "A3",
-                                                 "filename": kw["filename"], "mime_type": kw["mime_type"]})
-        monkeypatch.setattr(ce, "persist_new_artifact", persist)
+        if captured is not None:
+            monkeypatch.setattr(ce.CodeExecutorTool, "_capture_artifacts", lambda self, *a, **k: captured)
+        persist = Mock(side_effect=lambda rel_path, data, **kw: {
+            "artifact_id": "art-1", "version": 1, "ref": "A3",
+            "filename": rel_path, "mime_type": "image/png",
+        })
+        monkeypatch.setattr(ce, "persist_artifact", persist)
         tool = _tool()
         return tool, persist, tool.execute_action("run_code", code="plt.show()", **kwargs)
 
@@ -146,9 +150,13 @@ class TestCodeExecutorCharts:
         png = base64.b64encode(_png()).decode()
         tool, persist, payload = self._run(monkeypatch, [Plot(format="png", content_base64=png)])
 
-        filename = persist.call_args.kwargs["filename"]
+        filename = persist.call_args.args[0]
         assert filename.startswith("chart-") and filename.endswith(".png")
-        assert persist.call_args.kwargs["mime_type"] == "image/png"
+        assert persist.call_args.args[1] == _png()
+        # Saved through the same path as captured files, so showing the same chart
+        # again reuses its artifact instead of adding another.
+        assert persist.call_args.kwargs["produced_by"]["tool"] == "code_executor"
+        assert persist.call_args.kwargs["conversation_id"] == "conv-1"
         assert payload["artifacts"][0]["ref"] == "A3"
         assert payload["charts_shown"] == [f"A3 {filename}"]
         assert tool.get_artifacts("run_code")[0]["id"] == "art-1"
@@ -167,6 +175,30 @@ class TestCodeExecutorCharts:
         tool._native_queue = [{"label": "stale"}]
         tool.execute_action("run_code", code="print(1)", capture_artifacts=False)
         assert tool.drain_native_parts() == []
+
+    def test_a_chart_is_not_saved_twice_when_the_run_saved_an_image(self, monkeypatch):
+        # savefig + plt.show() gave the user the file AND a chart-<sha8>.png copy.
+        saved = [{"artifact_id": "art-0", "version": 1, "ref": "A1",
+                  "filename": "trends.png", "mime_type": "image/png"}]
+        png = base64.b64encode(_png()).decode()
+        tool, persist, payload = self._run(monkeypatch, [Plot(format="png", content_base64=png)], captured=saved)
+
+        persist.assert_not_called()
+        assert [a["filename"] for a in payload["artifacts"]] == ["trends.png"]
+        # The model still sees the chart it displayed, labelled without a ref.
+        (part,) = tool.drain_native_parts()
+        assert part["label"].startswith("chart-")
+        assert payload["charts_shown"] == [part["label"]]
+
+    def test_a_chart_is_still_saved_when_the_run_saved_only_other_files(self, monkeypatch):
+        saved = [{"artifact_id": "art-0", "version": 1, "ref": "A1",
+                  "filename": "data.csv", "mime_type": "text/csv"}]
+        png = base64.b64encode(_png()).decode()
+        _, persist, payload = self._run(monkeypatch, [Plot(format="png", content_base64=png)], captured=saved)
+
+        persist.assert_called_once()
+        assert [a["filename"] for a in payload["artifacts"]][0] == "data.csv"
+        assert len(payload["artifacts"]) == 2
 
     def test_no_charts_no_change(self, monkeypatch):
         tool, persist, payload = self._run(monkeypatch, [])

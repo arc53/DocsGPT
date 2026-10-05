@@ -595,3 +595,190 @@ def test_prime_sweeps_stale_workspace_before_recreate(tmp_path, monkeypatch):
 
     assert kernel.initialized
     assert not (workspace / "stale.txt").exists()  # stale file swept on re-open
+
+
+# -- Session status: created vs reused ------------------------------------------
+
+
+class _KernelResp:
+    def __init__(self, kernel_id):
+        self._kernel_id = kernel_id
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return {"id": self._kernel_id}
+
+
+def test_open_session_reports_a_new_kernel_then_reuse(monkeypatch):
+    sb = JupyterKernelGatewaySandbox(gateway_url="http://unused")
+    posts = []
+    monkeypatch.setattr(
+        jupyter_gateway.requests, "post", lambda url, **kw: posts.append(url) or _KernelResp("k-1")
+    )
+    monkeypatch.setattr(sb, "_prime", lambda kernel: None)
+
+    first = sb.open_session("session-x")
+    second = sb.open_session("session-x")
+
+    assert first.handle == "k-1" and first.created is True
+    assert second.handle == "k-1" and second.created is False
+    assert len(posts) == 1
+    bare = sb.open("session-x")
+    assert bare == "k-1"  # ``open`` still returns the bare kernel id
+
+
+def test_concurrent_open_session_reports_one_creator(monkeypatch):
+    import threading
+
+    sb = JupyterKernelGatewaySandbox(gateway_url="http://unused")
+    start = threading.Event()
+
+    def _fake_post(url, **kwargs):
+        start.wait(timeout=2)
+        return _KernelResp("k-1")
+
+    monkeypatch.setattr(jupyter_gateway.requests, "post", _fake_post)
+    monkeypatch.setattr(sb, "_prime", lambda kernel: None)
+    results = {}
+    threads = [
+        threading.Thread(target=lambda i=i: results.__setitem__(i, sb.open_session("session-x")))
+        for i in range(2)
+    ]
+    for t in threads:
+        t.start()
+    start.set()
+    for t in threads:
+        t.join(timeout=5)
+
+    assert sorted(r.created for r in results.values()) == [False, True]
+
+
+# -- A kernel the gateway no longer has ----------------------------------------
+
+
+def _gone_ws(*args, **kwargs):
+    import websocket
+
+    raise websocket.WebSocketBadStatusException("Handshake status %d %s", 404, "Not Found")
+
+
+def test_exec_on_a_kernel_the_gateway_lost_invalidates_the_runtime(monkeypatch):
+    """Culled or lost with a gateway restart: the cached kernel must not be retried forever."""
+    sb = JupyterKernelGatewaySandbox(gateway_url="http://unused")
+    sb._kernels["session-x"] = _Kernel("k-gone", "/tmp/x", "session-x")
+    monkeypatch.setattr(jupyter_gateway.websocket, "create_connection", _gone_ws)
+
+    result = sb.exec("session-x", "print(1)")
+
+    assert result.ok is False
+    assert result.runtime_invalidated is True
+    assert result.error_name == "KernelGoneError" and "new session" in result.error_value
+    assert "session-x" not in sb._kernels
+
+
+def test_file_op_on_a_kernel_the_gateway_lost_raises_sandbox_gone(monkeypatch):
+    from docsgpt.sandbox.base import SandboxGoneError
+
+    sb = JupyterKernelGatewaySandbox(gateway_url="http://unused")
+    sb._kernels["session-x"] = _Kernel("k-gone", "/tmp/x", "session-x")
+    monkeypatch.setattr(jupyter_gateway.websocket, "create_connection", _gone_ws)
+
+    with pytest.raises(SandboxGoneError):
+        sb.list_files("session-x")
+    assert "session-x" not in sb._kernels
+
+
+def test_a_lost_kernel_does_not_drop_its_replacement(monkeypatch):
+    sb = JupyterKernelGatewaySandbox(gateway_url="http://unused")
+    stale = _Kernel("k-gone", "/tmp/x", "session-x")
+    replacement = _Kernel("k-new", "/tmp/x", "session-x")
+    sb._kernels["session-x"] = replacement
+    monkeypatch.setattr(jupyter_gateway.websocket, "create_connection", _gone_ws)
+
+    result = sb._run(stale, "print(1)", 5)
+
+    assert result.runtime_invalidated is True
+    assert sb._kernels["session-x"] is replacement
+
+
+def test_other_connect_failures_keep_the_kernel(monkeypatch):
+    sb = JupyterKernelGatewaySandbox(gateway_url="http://unused")
+    sb._kernels["session-x"] = _Kernel("k-1", "/tmp/x", "session-x")
+
+    def _refused(*args, **kwargs):
+        raise ConnectionRefusedError("gateway restarting")
+
+    monkeypatch.setattr(jupyter_gateway.websocket, "create_connection", _refused)
+    result = sb.exec("session-x", "print(1)")
+    assert result.ok is False and result.runtime_invalidated is False
+    assert "session-x" in sb._kernels
+
+
+def test_gateway_culls_idle_kernels_only_after_the_app_ttl():
+    """The runner's idle cull is the backstop for kernels an app process orphaned.
+
+    It must outlast SANDBOX_MAX_TTL so the app always retires a session itself
+    before the gateway pulls the kernel out from under it.
+    """
+    import re
+
+    from docsgpt.core.settings import Settings
+
+    launch = (_SANDBOX_DIR / "gateway-launch.sh").read_text()
+    assert "--MappingKernelManager.cull_idle_timeout=" in launch
+    match = re.search(r"SANDBOX_KERNEL_IDLE_TIMEOUT:-(\d+)", launch)
+    assert match is not None
+    assert int(match.group(1)) > Settings.model_fields["SANDBOX_MAX_TTL"].default
+
+
+@pytest.mark.parametrize(
+    "op",
+    [
+        lambda sb: sb.put_file("session-x", "a.txt", b"x"),
+        lambda sb: sb.get_file("session-x", "a.txt"),
+    ],
+    ids=["put_file", "get_file"],
+)
+def test_put_and_get_on_a_lost_kernel_raise_sandbox_gone(monkeypatch, op):
+    from docsgpt.sandbox.base import SandboxGoneError
+
+    sb = JupyterKernelGatewaySandbox(gateway_url="http://unused")
+    sb._kernels["session-x"] = _Kernel("k-gone", "/tmp/x", "session-x")
+    monkeypatch.setattr(jupyter_gateway.websocket, "create_connection", _gone_ws)
+
+    with pytest.raises(SandboxGoneError):
+        op(sb)
+
+
+def test_a_file_op_that_merely_failed_stays_a_plain_ioerror(monkeypatch):
+    from docsgpt.sandbox.base import SandboxGoneError
+
+    sb = JupyterKernelGatewaySandbox(gateway_url="http://unused")
+    sb._kernels["session-x"] = _Kernel("k-1", "/tmp/x", "session-x")
+    monkeypatch.setattr(
+        sb, "_run", lambda *a, **k: ExecResult(status="error", error_name="OSError", error_value="disk full")
+    )
+
+    with pytest.raises(IOError) as exc:
+        sb.list_files("session-x")
+    assert not isinstance(exc.value, SandboxGoneError)
+    assert "disk full" in str(exc.value)
+    assert "session-x" in sb._kernels
+
+
+def test_open_session_reuses_a_replacement_once_an_old_quarantine_clears(monkeypatch):
+    """A live kernel next to a quarantined predecessor is reused, not reported as new."""
+    sb = JupyterKernelGatewaySandbox(gateway_url="http://unused")
+    sb._kernels["session-x"] = _Kernel("k-live", "/tmp/x", "session-x")
+    sb._quarantined_kernels["k-old"] = "session-x"
+    monkeypatch.setattr(sb, "_delete_kernel", lambda kernel_id: True)
+
+    def _no_post(*a, **k):
+        raise AssertionError("a live kernel must not be replaced")
+
+    monkeypatch.setattr(jupyter_gateway.requests, "post", _no_post)
+    opened = sb.open_session("session-x")
+    assert opened.handle == "k-live" and opened.created is False
+    assert sb._quarantined_kernels == {}
