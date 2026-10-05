@@ -1743,9 +1743,9 @@ Cap on an input document staged into a sandbox session.
 
 ### `SANDBOX_MEMORY`
 
-Type `str`, default `1g`.
+Type `str`, default `4g`.
 
-Docker mem_limit for the runner container. Consumed by the docsgpt-sandbox compose service, not the app; part of the untrusted-code security boundary.
+Docker mem_limit for the runner container: the gateway, the warm session kernels and the LibreOffice and Chromium processes they start. Consumed by the docsgpt-sandbox compose service, not the app; part of the untrusted-code security boundary.
 
 ### `SANDBOX_CPUS`
 
@@ -1775,7 +1775,7 @@ Daytona region/target, e.g. "us".
 
 Type `str`, default unset.
 
-Image for new sandboxes; build one with the render and spreadsheet libs via scripts/build_daytona_snapshot.py.
+Snapshot for new sandboxes; build one with the sandbox's libraries, tools and fonts via scripts/build_daytona_snapshot.py (default name docsgpt-sandbox-py312-v2).
 
 ### `DAYTONA_LANGUAGE`
 

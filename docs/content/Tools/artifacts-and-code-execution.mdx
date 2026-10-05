@@ -65,13 +65,24 @@ Key points:
 - Each run is limited to `SANDBOX_EXEC_TIMEOUT` seconds of wall-clock time (60 by default). For longer work, the model starts the job in the background and checks back with more calls.
 - Every file a run creates or changes in the workspace is saved as an artifact, except files under `scratch/` (or `tmp/`), where the model puts previews and intermediate files. The model can instead name the files or globs to keep. Files written outside the workspace, such as under `/tmp`, are never saved.
 - Saving a file under a name the Code Executor already used in the conversation (or workflow run) adds a new version of that artifact instead of a second artifact, and saving identical bytes again adds nothing. Files from workflow Code nodes are always new artifacts.
-- Install packages from inside the code itself when you need them.
+- Install other packages from inside the code itself when you need them.
 
 <Callout type="warning">
   By default the Code Executor runs model-authored code without an approval
   prompt. Turn on per-action approval on the agent if you want a human to
   confirm each run.
 </Callout>
+
+### What the sandbox has installed
+
+The self-hosted runner image and the Daytona snapshot hold the same set, listed in `docsgpt/sandbox/manifest.py`, and the Code Executor tells the model what is there so it doesn't have to find out by failing:
+
+- **Python libraries:** pandas, numpy, matplotlib, openpyxl, python-docx, python-pptx, reportlab, lxml, Pillow, requests, beautifulsoup4, PyYAML, pypdf, PyPDF2, pdfplumber, pdfminer.six, pypdfium2, pytesseract and imageio.
+- **Commands:** headless LibreOffice, headless Chromium, tesseract OCR (English), poppler's `pdftotext` and `pdftoppm`, `ffmpeg` and `ffprobe`, and Node.js 24 with `npm` and `npx`.
+- **Conversion helpers:** `office-convert FILE --to pdf` (also `docx`, `xlsx`, `pptx`, `png` and more) converts office documents with LibreOffice; `html-to-pdf` and `html-screenshot` render an HTML file or URL with Chromium.
+- **Fonts:** DejaVu, Liberation and Carlito/Caladea (metric-compatible with Arial, Times New Roman, Courier New, Calibri and Cambria), Noto for Arabic, Devanagari and other scripts, and Noto CJK for Chinese, Japanese and Korean.
+
+imageio writes animated GIF and WebP; for MP4 and other video the code runs `ffmpeg`. PyMuPDF (`fitz`) is not installed because of its AGPL license; pdfplumber, pypdf and pypdfium2 cover PDF reading.
 
 ### Run inputs
 
@@ -81,7 +92,7 @@ You can pass files into a run. Each input accepts a short reference returned by 
 
 When the model reads images, it can look at what its tools produce instead of guessing:
 
-- Charts a run displays with `plt.show()` are shown to the model with the run's result. They are saved as artifacts too, unless the run also saved an image file of its own (with `savefig`), so a chart the code both saves and shows is saved once. On Daytona this needs a snapshot that includes matplotlib.
+- Charts a run displays with `plt.show()` are shown to the model with the run's result. They are saved as artifacts too, unless the run also saved an image file of its own (with `savefig`), so a chart the code both saves and shows is saved once. On Daytona this needs a snapshot that includes matplotlib (see [Daytona snapshot](#daytona-snapshot)).
 - A `view_image` tool is added next to the Code Executor and Read Webpage. It shows the model an image artifact by its reference (such as `A2`) or an image URL, such as one on a page Read Webpage returned.
 - Images an MCP server returns are shown to the model as images too.
 
@@ -112,20 +123,20 @@ Code execution and rendering run inside a sandbox. DocsGPT ships two backends, s
 
 [Code Execution Sandbox](/Deploying/Sandbox) has the setup steps for each.
 
-### Render libraries on Daytona
+### Daytona snapshot
 
-Artifact rendering imports `python-pptx`, `python-docx`, `openpyxl`, and `reportlab` inside the sandbox. The self-hosted runner already has them. Daytona's default image does not, so presentation, document, spreadsheet, and pdf rendering fail there until you point Daytona at an image that includes them. HTML artifacts need no extra libraries and work on any image.
-
-Build a snapshot with the libraries once, then set `DAYTONA_SNAPSHOT` to it:
+Daytona's default image is plain Python: presentation, document, spreadsheet and PDF rendering fail there, and none of the commands above exist. HTML artifacts need no extra libraries and work on any image. Build a snapshot with the sandbox's contents once, then set `DAYTONA_SNAPSHOT` to it:
 
 ```bash
 # Reads DAYTONA_API_KEY / DAYTONA_API_URL / DAYTONA_TARGET from your environment:
 python scripts/build_daytona_snapshot.py
 # then set in your environment:
-#   DAYTONA_SNAPSHOT=docsgpt-sandbox-py312
+#   DAYTONA_SNAPSHOT=docsgpt-sandbox-py312-v2
 ```
 
-The snapshot also includes `pandas`, `openpyxl` and `matplotlib`, which the model uses to open and chart spreadsheets attached to a chat. A snapshot built by an earlier version of the script (`docsgpt-artifacts-py312`) has no pandas or matplotlib; build the new one and switch `DAYTONA_SNAPSHOT` to it.
+Sandboxes made from the snapshot get 2 vCPUs, 2 GiB of memory and 6 GiB of disk, double Daytona's default, because LibreOffice and Chromium need the room. Change them with `--cpu`, `--memory` and `--disk`. `--smoke` runs the image's smoke test in a sandbox from the new snapshot, and `--dockerfile` prints the image definition without calling Daytona.
+
+A snapshot can't change once it's built, so a new version of the contents comes with a new name. Snapshots built by earlier versions of the script (`docsgpt-artifacts-py312`, `docsgpt-sandbox-py312`) lack most of the tools above: build the new one and switch `DAYTONA_SNAPSHOT` to it.
 
 ### Useful settings
 
