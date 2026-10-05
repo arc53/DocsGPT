@@ -61,6 +61,13 @@ export interface Query {
   attachments?: SentAttachment[];
 }
 
+/**
+ * The credit line under the chat and the search results. `true` (the
+ * default) shows "Powered by DocsGPT", `false` hides it, and an object
+ * replaces it, e.g. `{ label: 'Powered by Acme', href: 'https://acme.com' }`.
+ */
+export type PoweredBy = boolean | { label: string; href?: string };
+
 export interface WidgetProps {
   apiHost?: string;
   apiKey?: string;
@@ -104,6 +111,7 @@ export interface WidgetProps {
    * sent to the browser vendor's speech service.
    */
   showMicButton?: boolean;
+  poweredBy?: PoweredBy;
 }
 export interface WidgetCoreProps extends WidgetProps {
   widgetRef?: React.RefObject<HTMLDivElement> | null;
@@ -118,7 +126,7 @@ export interface WidgetCoreProps extends WidgetProps {
  */
 export interface SearchBarProps extends Pick<
   WidgetProps,
-  'allowedFileExtensions' | 'showMicButton'
+  'allowedFileExtensions' | 'showMicButton' | 'avatar' | 'poweredBy'
 > {
   apiHost?: string;
   apiKey?: string;
@@ -126,6 +134,13 @@ export interface SearchBarProps extends Pick<
   placeholder?: string;
   width?: string;
   buttonText?: string;
+  /** `pill` (default) or `rounded`, the app's 8px field corners. */
+  shape?: 'pill' | 'rounded';
+  /**
+   * `modal` (default) opens a search dialog from a button; `dropdown` is a
+   * field you type into, with the results in a panel under it.
+   */
+  variant?: 'modal' | 'dropdown';
 }
 
 export interface Result {

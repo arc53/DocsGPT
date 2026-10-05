@@ -1,4 +1,4 @@
-import { css } from 'styled-components';
+import { createGlobalStyle, css } from 'styled-components';
 
 /**
  * Colour tokens shared by the chat widget and the search bar. Names and values
@@ -39,6 +39,8 @@ export const themes = {
     ringSoft: 'rgba(125, 84, 209, 0.5)',
     answerSurface: '#f6f6f6',
     scrollbarThumb: '#e2e8f0',
+    /** overlayScrim: black/25 under a dialog. */
+    scrim: 'rgba(0, 0, 0, 0.25)',
     /** The empty composer's send button: muted. */
     sendIdle: '#f6f6f6',
     /** The swept status text: muted-foreground with a border-coloured sweep. */
@@ -88,6 +90,8 @@ export const themes = {
     ringSoft: 'rgba(151, 106, 243, 0.5)',
     answerSurface: '#2e303e',
     scrollbarThumb: '#949494',
+    /** black/50 in dark. */
+    scrim: 'rgba(0, 0, 0, 0.5)',
     /** accent in dark, where muted would vanish into the card. */
     sendIdle: '#3e3f45',
     shimmer: {
@@ -147,5 +151,22 @@ export const focusRing = css`
 
   &:focus-visible {
     box-shadow: 0 0 0 3px ${(props) => props.theme.ringSoft};
+  }
+`;
+
+/**
+ * Inter, the app's face, as a 48 KB Latin variable font. Declared only once
+ * a panel mounts, so a page that never opens the chat downloads nothing.
+ */
+const INTER_URL =
+  'https://cdn.jsdelivr.net/npm/@fontsource-variable/inter@5/files/inter-latin-wght-normal.woff2';
+
+export const InterFontFace = createGlobalStyle`
+  @font-face {
+    font-family: 'DocsGPT Inter';
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url('${INTER_URL}') format('woff2');
   }
 `;

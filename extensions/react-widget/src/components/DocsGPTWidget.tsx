@@ -1,11 +1,6 @@
 import React, { useRef } from 'react';
 import DOMPurify from 'dompurify';
-import styled, {
-  keyframes,
-  css,
-  createGlobalStyle,
-  ThemeProvider,
-} from 'styled-components';
+import styled, { keyframes, css, ThemeProvider } from 'styled-components';
 import {
   FEEDBACK,
   MESSAGE_TYPE,
@@ -24,7 +19,7 @@ import {
 import { useBackDismiss } from '../hooks/useBackDismiss';
 import { useDictation } from '../hooks/useDictation';
 import { useVisualViewportBounds } from '../hooks/useVisualViewportBounds';
-import { isTouchPrimary } from '../utils/helper';
+import { isTouchPrimary, isWebSource } from '../utils/helper';
 import { renderAnswer } from '../utils/markdown';
 import {
   AttachButton,
@@ -38,6 +33,7 @@ import {
   SentAttachments,
   VoiceWaveform,
 } from './ComposerControls';
+import { AgentAvatar, PoweredBy } from './Branding';
 import {
   ArrowDown,
   Check,
@@ -46,7 +42,6 @@ import {
   CloudUpload,
   Copy,
   Database,
-  DocsGPTMark,
   ExternalLink,
   FileText,
   Globe,
@@ -59,7 +54,14 @@ import {
   ThumbsUp,
   X,
 } from './icons';
-import { focusRing, fonts, radii, shadows, themes } from './tokens';
+import {
+  focusRing,
+  fonts,
+  InterFontFace,
+  radii,
+  shadows,
+  themes,
+} from './tokens';
 import {
   prettifyName,
   toolNames,
@@ -67,31 +69,12 @@ import {
   type StreamEvent,
 } from '../utils/streamEvents';
 
-/**
- * Inter, the app's face, as a 48 KB Latin variable font. Declared only once
- * the panel mounts, so a page that never opens the chat downloads nothing.
- */
-const INTER_URL =
-  'https://cdn.jsdelivr.net/npm/@fontsource-variable/inter@5/files/inter-latin-wght-normal.woff2';
-
-const InterFontFace = createGlobalStyle`
-  @font-face {
-    font-family: 'DocsGPT Inter';
-    font-style: normal;
-    font-weight: 100 900;
-    font-display: swap;
-    src: url('${INTER_URL}') format('woff2');
-  }
-`;
-
 /** What the stream's catch block shows when the request itself failed. */
 const CONNECTION_ERROR =
   'Something went wrong. Check your connection and try again.';
 
 /** How long a source a citation opened stays highlighted. */
 const SOURCE_HIGHLIGHT_MS = 2000;
-
-const isWebSource = (source: string) => /^https?:\/\//i.test(source);
 
 /** `example.com/faq` for a source's URL; the URL itself if it won't parse. */
 const sourceHost = (source: string) => {
@@ -405,79 +388,6 @@ const Header = styled.div`
   padding: 16px 16px 12px 16px;
   border-bottom: 1px solid ${(props) => props.theme.border};
 `;
-
-const AvatarImage = styled.img<{ $size: number }>`
-  width: ${(props) => props.$size}px;
-  height: ${(props) => props.$size}px;
-  flex-shrink: 0;
-  border-radius: ${radii.full};
-  object-fit: cover;
-`;
-
-// A white glyph on the brand circle: the stand-in when no image is set.
-const AvatarMark = styled.span<{ $size: number }>`
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  overflow: hidden;
-  width: ${(props) => props.$size}px;
-  height: ${(props) => props.$size}px;
-  border-radius: ${radii.full};
-  background-color: ${(props) => props.theme.primary};
-  color: ${(props) => props.theme.primaryForeground};
-`;
-
-// The generic person, filling the circle the way the old default image did.
-const PersonGlyph = ({ size }: { size: number }) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width={size}
-    height={size}
-    viewBox="0 0 40 40"
-    fill="currentColor"
-    aria-hidden="true"
-    focusable="false"
-  >
-    <circle cx="20" cy="16" r="7" />
-    <ellipse cx="20" cy="39.5" rx="18" ry="12.5" />
-  </svg>
-);
-
-/**
- * The embedder's image, or a stand-in on the brand circle when none is set
- * or it fails to load: the generic person, or the DocsGPT mark.
- */
-const AgentAvatar = ({
-  src,
-  size,
-  fallback,
-}: {
-  src?: string;
-  size: number;
-  fallback: 'person' | 'mark';
-}) => {
-  const [failed, setFailed] = React.useState(false);
-  React.useEffect(() => setFailed(false), [src]);
-  if (!src || failed)
-    return (
-      <AvatarMark $size={size} aria-hidden="true">
-        {fallback === 'mark' ? (
-          <DocsGPTMark size={Math.round(size * 0.55)} />
-        ) : (
-          <PersonGlyph size={size} />
-        )}
-      </AvatarMark>
-    );
-  return (
-    <AvatarImage
-      $size={size}
-      src={src}
-      alt=""
-      onError={() => setFailed(true)}
-    />
-  );
-};
 
 const ContentWrapper = styled.div`
   display: flex;
@@ -1325,24 +1235,6 @@ const HeroDescription = styled.p`
   -webkit-box-orient: vertical;
   overflow: hidden;
 `;
-const Hyperlink = styled.a`
-  color: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  border-radius: ${radii.sm};
-  transition: color 0.15s ease;
-  &:hover {
-    color: ${(props) => props.theme.foreground};
-  }
-  ${focusRing}
-`;
-const Tagline = styled.div`
-  text-align: center;
-  display: block;
-  color: ${(props) => props.theme.mutedForeground};
-  padding: 8px 12px;
-  font-size: 12px;
-`;
 
 // Sources: a ghost toggle row over one answer-surface well listing them all.
 const SourcesBlock = styled.div`
@@ -1626,6 +1518,7 @@ export const WidgetCore = ({
   prefilledQuery = '',
   allowedFileExtensions,
   showMicButton = false,
+  poweredBy = true,
 }: WidgetCoreProps) => {
   const [prompt, setPrompt] = React.useState<string>('');
   const [mounted, setMounted] = React.useState(false);
@@ -2596,16 +2489,7 @@ export const WidgetCore = ({
                   {composerNote.text}
                 </ComposerNote>
               )}
-              <Tagline>
-                Powered by&nbsp;
-                <Hyperlink
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  href="https://www.docsgpt.cloud/"
-                >
-                  DocsGPT
-                </Hyperlink>
-              </Tagline>
+              <PoweredBy value={poweredBy} />
             </Composer>
             {isDraggingFiles && (
               <DropOverlay>

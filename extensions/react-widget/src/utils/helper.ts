@@ -174,3 +174,9 @@ export const processMarkdownString = (
 
   return firstLine ? [firstLine] : [];
 };
+
+/**
+ * Whether a source or search result points at a web page. A file's `source`
+ * is its path in the library, which no visitor can open.
+ */
+export const isWebSource = (source: string) => /^https?:\/\//i.test(source);
