@@ -19,7 +19,7 @@ import {
 import { useBackDismiss } from '../hooks/useBackDismiss';
 import { useDictation } from '../hooks/useDictation';
 import { useVisualViewportBounds } from '../hooks/useVisualViewportBounds';
-import { isTouchPrimary, isWebSource } from '../utils/helper';
+import { isTouchPrimary, isWebSource, sourceLabel } from '../utils/helper';
 import { renderAnswer } from '../utils/markdown';
 import {
   AttachButton,
@@ -1459,7 +1459,9 @@ const SourcesComponent = ({
             >
               <FileText size={16} />
               <SourceText>
-                <span className="dgpt-source-title">{source.title}</span>
+                <span className="dgpt-source-title">
+                  {sourceLabel(source.title, source.source)}
+                </span>
                 {source.text && (
                   <span className="dgpt-source-detail">{source.text}</span>
                 )}

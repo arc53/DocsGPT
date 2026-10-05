@@ -180,3 +180,16 @@ export const processMarkdownString = (
  * is its path in the library, which no visitor can open.
  */
 export const isWebSource = (source: string) => /^https?:\/\//i.test(source);
+
+/**
+ * A source's name for display: its title, else the last part of its URL or
+ * library path (a file name, never the whole path), else the raw value.
+ */
+export const sourceLabel = (title: string | undefined, source: string) =>
+  title?.trim() ||
+  source
+    .replace(/[?#].*$/, '')
+    .replace(/\/+$/, '')
+    .split('/')
+    .pop() ||
+  source;

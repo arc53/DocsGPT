@@ -30,6 +30,7 @@ import {
   isTouchPrimary,
   isWebSource,
   processMarkdownString,
+  sourceLabel,
 } from '../utils/helper';
 import DOMPurify from 'dompurify';
 
@@ -855,7 +856,9 @@ export const SearchBar = ({
               <Row key={key}>
                 <FileText size={16} />
                 <RowText>
-                  <RowTitle>{result.title}</RowTitle>
+                  <RowTitle>
+                    {sourceLabel(result.title, result.source)}
+                  </RowTitle>
                   {renderSnippet(lines)}
                 </RowText>
               </Row>
@@ -879,7 +882,9 @@ export const SearchBar = ({
               >
                 <Globe size={16} />
                 <RowText>
-                  <RowTitle>{result.title}</RowTitle>
+                  <RowTitle>
+                    {sourceLabel(result.title, result.source)}
+                  </RowTitle>
                   {renderSnippet(lines)}
                 </RowText>
                 <ExternalLink size={12} className="dgpt-row-external" />
