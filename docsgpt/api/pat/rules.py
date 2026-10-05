@@ -301,6 +301,12 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/delete_all_conversations", "GET"): _rule("conversations:write", blocked_by=_ALL_FAMILIES),
     ("/api/update_conversation_name", "POST"): _rule("conversations:write", blocked_by=_ALL_FAMILIES),
     ("/api/feedback", "POST"): _rule("conversations:write", blocked_by=_ALL_FAMILIES),
+    # Background jobs of the caller's conversations (the chat's job card).
+    ("/api/background_jobs", "GET"): _rule("conversations:read", blocked_by=_ALL_FAMILIES),
+    ("/api/background_jobs/<string:job_id>", "GET"): _rule("conversations:read", blocked_by=_ALL_FAMILIES),
+    ("/api/background_jobs/<string:job_id>/cancel", "POST"): _rule(
+        "conversations:write", blocked_by=_ALL_FAMILIES
+    ),
     ("/api/get_message_analytics", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     ("/api/get_token_analytics", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     ("/api/get_feedback_analytics", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),

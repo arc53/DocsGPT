@@ -1412,9 +1412,9 @@ Per-agent default quotas: tokens and requests.
 
 ### `DEFAULT_CHAT_TOOLS`
 
-Type `list[str]`, default `["memory", "read_webpage", "scheduler"]`.
+Type `list[str]`, default `["memory", "read_webpage", "scheduler", "check_job"]`.
 
-Config-free tools on by default in agentless chats, as a JSON list of tool names (["memory","scheduler"]) or comma-separated names. none (or []) turns them all off; an empty value keeps the default. scheduler is dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add code_executor and artifact_generator once a sandbox runner is configured; both execute through it and would fail on every call without one.
+Config-free tools on by default in agentless chats, as a JSON list of tool names (["memory","scheduler"]) or comma-separated names. none (or []) turns them all off; an empty value keeps the default. scheduler is dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add code_executor and artifact_generator once a sandbox runner is configured; both execute through it and would fail on every call without one. check_job is offered only while BACKGROUND_JOBS_ENABLED is on, and every chat turn that can hand calls off gets it whether or not it is listed here.
 
 ### `ENABLE_TOOL_PREFETCH`
 
@@ -1710,6 +1710,18 @@ Running background jobs one user may have, across conversations; same over-cap r
 Type `int`, default `7`, must be `> 0`.
 
 Days a finished background job and its result are kept.
+
+### `BACKGROUND_LEASE_STALE_SECONDS`
+
+Type `int`, default `60`, must be `>= 20`.
+
+Heartbeat age after which a job whose process stopped reporting is marked lost. Jobs are stamped every 10 s, so this allows several missed beats.
+
+### `BACKGROUND_RECONCILE_INTERVAL_SECONDS`
+
+Type `int`, default `60`, must be `>= 10`.
+
+Seconds between beat sweeps that mark lost jobs, fail jobs past their deadline and resume conversations whose results were not delivered.
 
 ### `BACKGROUND_POOL_SIZE`
 

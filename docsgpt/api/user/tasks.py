@@ -625,7 +625,7 @@ def reap_stale_workflow_runs(self):
 def sweep_background_jobs(self):
     """Mark background jobs whose process died ``lost`` and fail the ones past their deadline.
 
-    On a 30 s beat like the reconciler; the next tick is the retry.
+    On a ``BACKGROUND_RECONCILE_INTERVAL_SECONDS`` beat; the next tick is the retry.
     """
     from docsgpt.background.reconciler import sweep
 
@@ -772,10 +772,10 @@ def setup_periodic_tasks(sender, **kwargs):
         reap_stale_workflow_runs.s(),
         name="reap-stale-workflow-runs",
     )
-    # Background jobs: lost leases and blown deadlines every 30 s (a lost job
-    # is reported within about a minute), retention once a day.
+    # Background jobs: lost leases and blown deadlines every
+    # BACKGROUND_RECONCILE_INTERVAL_SECONDS, retention once a day.
     sender.add_periodic_task(
-        timedelta(seconds=30),
+        timedelta(seconds=max(10, int(settings.BACKGROUND_RECONCILE_INTERVAL_SECONDS))),
         sweep_background_jobs.s(),
         name="sweep-background-jobs",
     )

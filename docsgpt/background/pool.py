@@ -9,7 +9,7 @@ Jobs a process runs itself (``inprocess`` and ``celery`` runners) carry this
 process's lease. One daemon thread stamps their ``heartbeat_at`` every
 :data:`HEARTBEAT_SECONDS`; a process that dies stops stamping, and the
 reconciler marks its jobs ``lost`` once the heartbeat is
-:data:`STALE_SECONDS` old.
+``BACKGROUND_LEASE_STALE_SECONDS`` old.
 """
 
 from __future__ import annotations
@@ -28,8 +28,12 @@ logger = logging.getLogger(__name__)
 #: Seconds between heartbeats of the jobs this process holds.
 HEARTBEAT_SECONDS = 10
 
-#: Heartbeat age after which the reconciler declares a held job lost.
-STALE_SECONDS = 60
+
+def stale_seconds() -> int:
+    """Heartbeat age after which the reconciler declares a held job lost (``BACKGROUND_LEASE_STALE_SECONDS``)."""
+    from docsgpt.core.settings import settings
+
+    return int(settings.BACKGROUND_LEASE_STALE_SECONDS)
 
 _lock = threading.Lock()
 _pid: Optional[int] = None
@@ -146,5 +150,5 @@ def _heartbeat_loop() -> None:
         try:
             beat_once()
         except Exception:
-            # A missed beat is retried in HEARTBEAT_SECONDS; STALE_SECONDS allows several misses.
+            # A missed beat is retried in HEARTBEAT_SECONDS; the stale threshold allows several misses.
             logger.warning("background job heartbeat failed", exc_info=True)

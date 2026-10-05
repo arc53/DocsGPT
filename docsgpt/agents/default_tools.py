@@ -24,7 +24,16 @@ _FK_BOUND_TOOLS = frozenset({"notes", "todo_list"})
 # ``scheduler`` only makes sense from an interactive chat — letting an LLM
 # call ``schedule_task`` from a scheduled run chains new schedules each fire,
 # bounded only by ``SCHEDULE_MAX_PER_USER`` (cost foot-gun, confusing UX).
-_HEADLESS_EXCLUDED_TOOLS = frozenset({"scheduler"})
+_HEADLESS_EXCLUDED_TOOLS = frozenset({"scheduler", "check_job"})
+
+# Default tools that exist only while their feature is on.
+_FEATURE_GATED_TOOLS = {"check_job": "BACKGROUND_JOBS_ENABLED"}
+
+
+def _feature_enabled(tool_name: str) -> bool:
+    """False for a default tool whose feature setting is off (``check_job`` without background jobs)."""
+    flag = _FEATURE_GATED_TOOLS.get(tool_name)
+    return flag is None or bool(getattr(settings, flag, True))
 
 # Agent-selectable builtins: hidden from the Add-Tool catalog (internal=True)
 # and exposed to the agent picker via the same synthetic-id machinery as
@@ -316,7 +325,7 @@ def synthesized_default_tools(
     disabled = set(disabled_default_tools(user_doc))
     rows: List[Dict[str, Any]] = []
     for name in loaded_default_tools():
-        if name in disabled:
+        if name in disabled or not _feature_enabled(name):
             continue
         if headless and name in _HEADLESS_EXCLUDED_TOOLS:
             continue
@@ -340,6 +349,8 @@ def default_tools_for_management(
     disabled = set(disabled_default_tools(user_doc))
     rows: List[Dict[str, Any]] = []
     for name in loaded_default_tools():
+        if not _feature_enabled(name):
+            continue
         row = synthesize_default_tool(name)
         if row is None:
             continue

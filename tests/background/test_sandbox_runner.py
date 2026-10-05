@@ -52,7 +52,7 @@ class _Backend:
 @pytest.fixture()
 def polls(monkeypatch):
     queued = []
-    monkeypatch.setattr(sandbox_runner, "_enqueue_poll", lambda job_id, countdown: queued.append((job_id, countdown)))
+    monkeypatch.setattr(sandbox_runner, "enqueue_poll", lambda job_id, countdown: queued.append((job_id, countdown)))
     return queued
 
 

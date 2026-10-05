@@ -51,6 +51,22 @@ class BackgroundSettings(SettingsGroup):
         gt=0,
         description="Days a finished background job and its result are kept.",
     )
+    BACKGROUND_LEASE_STALE_SECONDS: int = Field(
+        default=60,
+        ge=20,
+        description=(
+            "Heartbeat age after which a job whose process stopped reporting is marked lost. Jobs are stamped "
+            "every 10 s, so this allows several missed beats."
+        ),
+    )
+    BACKGROUND_RECONCILE_INTERVAL_SECONDS: int = Field(
+        default=60,
+        ge=10,
+        description=(
+            "Seconds between beat sweeps that mark lost jobs, fail jobs past their deadline and resume "
+            "conversations whose results were not delivered."
+        ),
+    )
     BACKGROUND_POOL_SIZE: int = Field(
         default=16,
         ge=1,

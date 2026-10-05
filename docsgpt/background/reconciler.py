@@ -53,13 +53,13 @@ def sweep() -> Dict[str, int]:
 
     stale = _pick(
         lambda repo: repo.find_stale_working(
-            stale_seconds=pool.STALE_SECONDS,
+            stale_seconds=pool.stale_seconds(),
             runners=_LEASED_RUNNERS,
             unstarted_stale_seconds=UNSTARTED_STALE_SECONDS,
         )
     )
     for row in stale:
-        if _mark_lost(row, stale_seconds=pool.STALE_SECONDS if row.get("lease_owner") else UNSTARTED_STALE_SECONDS):
+        if _mark_lost(row, stale_seconds=pool.stale_seconds() if row.get("lease_owner") else UNSTARTED_STALE_SECONDS):
             summary["lost"] += 1
 
     # A sandbox job's process runs on in the sandbox; a stale heartbeat means

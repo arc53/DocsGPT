@@ -40,6 +40,7 @@ class ToolManager:
                         "code_executor",
                         "artifact_generator",
                         "read_document",
+                        "check_job",
                     }
                     and user_id
                 ):

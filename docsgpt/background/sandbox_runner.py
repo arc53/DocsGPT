@@ -80,11 +80,11 @@ def detach_job(job_id: str, external: Dict[str, Any]) -> bool:
     if not moved:
         return False
     pool.release(job_id)
-    _enqueue_poll(job_id, FIRST_POLL_SECONDS)
+    enqueue_poll(job_id, FIRST_POLL_SECONDS)
     return True
 
 
-def _enqueue_poll(job_id: str, countdown: float) -> None:
+def enqueue_poll(job_id: str, countdown: float) -> None:
     """Queue the next poll; a failure is left to the reconciler, which restarts stale chains."""
     try:
         from docsgpt.api.user.tasks import poll_background_sandbox_job
@@ -155,7 +155,7 @@ def poll_job(job_id: str) -> Dict[str, Any]:
         repo.merge_external(job_id, {"polls": polls, "poll_failures": 0})
 
     if not state.done:
-        _enqueue_poll(job_id, next_delay(polls))
+        enqueue_poll(job_id, next_delay(polls))
         return {"state": "running"}
 
     result = finish_detached(row, backend, state)
@@ -223,7 +223,7 @@ def _poll_failed(job_id: str, external: Dict[str, Any], exc: BaseException) -> D
         _merge(job_id, {"poll_failures": failures})
     except Exception:
         logger.debug("background job %s: recording a failed poll failed", job_id, exc_info=True)
-    _enqueue_poll(job_id, next_delay(failures))
+    enqueue_poll(job_id, next_delay(failures))
     return {"state": "retry"}
 
 
@@ -276,5 +276,5 @@ def revive(row: Dict[str, Any]) -> bool:
         return False
     with db_session() as conn:
         BackgroundJobsRepository(conn).bump_attempts(str(row["id"]))
-    _enqueue_poll(str(row["id"]), 0)
+    enqueue_poll(str(row["id"]), 0)
     return True

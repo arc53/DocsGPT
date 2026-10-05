@@ -2420,6 +2420,81 @@
         ]
       }
     },
+    "/api/background_jobs": {
+      "get": {
+        "description": "List the caller's background jobs of one conversation, newest first.",
+        "operationId": "get_background_jobs",
+        "parameters": [
+          {
+            "description": "The conversation whose jobs to list (required).",
+            "in": "query",
+            "name": "conversation_id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "background_jobs"
+        ],
+        "x-pat-scopes": [
+          "conversations:read"
+        ]
+      }
+    },
+    "/api/background_jobs/{job_id}": {
+      "get": {
+        "description": "One background job: its state, progress and, once finished, a result preview.",
+        "operationId": "get_background_job",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "background_jobs"
+        ],
+        "x-pat-scopes": [
+          "conversations:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "job_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/background_jobs/{job_id}/cancel": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "job_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Ask a running background job to stop. It ends as cancelled once its work really stops; a step already under way may still complete.",
+        "operationId": "post_cancel_background_job",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "background_jobs"
+        ],
+        "x-pat-scopes": [
+          "conversations:write"
+        ]
+      }
+    },
     "/api/combine": {
       "get": {
         "description": "Redirects /api/combine to /api/sources for backward compatibility",
@@ -6201,6 +6276,10 @@
     {
       "description": "File attachments and media operations",
       "name": "attachments"
+    },
+    {
+      "description": "Background jobs of tool calls",
+      "name": "background_jobs"
     },
     {
       "description": "Conversation management operations",

@@ -132,7 +132,7 @@ class TestValidators:
         assert loaded.OCR_MIN_CHARS_PER_PAGE == 7
 
 
-DEFAULT_TOOLS = ["memory", "read_webpage", "scheduler"]
+DEFAULT_TOOLS = ["memory", "read_webpage", "scheduler", "check_job"]
 
 
 def _list_fields() -> list[str]:
