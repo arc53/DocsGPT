@@ -703,6 +703,8 @@ conversations_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
+    # Set when a message arrived the owner has not seen; opening the chat clears it. See migration 0048.
+    Column("unread_at", DateTime(timezone=True)),
 )
 
 conversation_messages_table = Table(
@@ -1418,3 +1420,27 @@ Index(
     conversation_wakes_table.c.status,
 )
 Index("conversation_wakes_status_created_idx", conversation_wakes_table.c.status, conversation_wakes_table.c.created_at)
+
+
+# --- Web Push subscriptions (migration 0048) ---------------------------------
+# One browser's push subscription: the push service endpoint and the keys the
+# payload is encrypted with. The endpoint is unique; re-registering it moves it.
+
+push_subscriptions_table = Table(
+    "push_subscriptions",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    Column("endpoint", Text, nullable=False),
+    Column("p256dh", Text, nullable=False),
+    Column("auth", Text, nullable=False),
+    Column("user_agent", Text),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("last_success_at", DateTime(timezone=True)),
+    Column("last_failure_at", DateTime(timezone=True)),
+    Column("failure_count", Integer, nullable=False, server_default="0"),
+    UniqueConstraint("endpoint", name="push_subscriptions_endpoint_uidx"),
+)
+
+Index("push_subscriptions_user_idx", push_subscriptions_table.c.user_id)
