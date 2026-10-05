@@ -3,7 +3,7 @@ import json
 import logging
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
-from anthropic import Anthropic
+from anthropic import Anthropic, transform_schema
 
 from docsgpt.core.settings import settings
 from docsgpt.llm.base import BaseLLM, optional_int
@@ -85,13 +85,118 @@ _STOP_REASON_MAP = {
     "refusal": "stop",
 }
 
+# Root-level meta keywords that carry no constraint. ``transform_schema``
+# would fold them into the root description, so they are dropped instead.
+_SCHEMA_META_KEYWORDS = ("$schema", "$id", "$comment")
+
+# JSON types of enum/const values, for schemas that leave ``type`` implied.
+# ``bool`` precedes ``int`` because it is a subclass of it.
+_JSON_TYPES = (
+    (bool, "boolean"),
+    (int, "integer"),
+    (float, "number"),
+    (str, "string"),
+    (type(None), "null"),
+)
+
 # ``image/jpg`` is accepted by our upload path but is not a media type the
 # Messages API recognises — it 400s. Normalise on the way out.
 _MEDIA_TYPE_ALIASES = {"image/jpg": "image/jpeg"}
 
 
+def _json_type(value: Any) -> Optional[str]:
+    """JSON Schema type name of a Python value, or None for containers."""
+    for python_type, name in _JSON_TYPES:
+        if isinstance(value, python_type):
+            return name
+    return None
+
+
+def _matches_type(value: Any, type_name: str) -> bool:
+    """Whether ``value`` is an instance of the JSON Schema type ``type_name``."""
+    value_type = _json_type(value)
+    return value_type == type_name or (type_name == "number" and value_type == "integer")
+
+
+def _normalize_schema(schema: Any, root: bool = False) -> Any:
+    """Rewrite JSON Schema spellings ``transform_schema`` cannot read.
+
+    Returns a copy (the input is not mutated) where a list-valued ``type``
+    becomes an ``anyOf`` of single types (each keeping only the ``enum``
+    values of its own type), ``const`` becomes a one-value ``enum``, an
+    ``enum`` with no ``type`` gets the type of its values, and draft-07
+    ``definitions`` become ``$defs``.
+
+    Args:
+        schema: A schema node; non-dict values are returned unchanged.
+        root: Whether this is the top-level schema.
+
+    Returns:
+        The rewritten schema node.
+
+    Raises:
+        ValueError: A list-valued ``type`` whose ``enum`` has no value of
+            any listed type, so no answer could match.
+    """
+    if not isinstance(schema, dict):
+        return schema
+    node = dict(schema)
+    if root:
+        for key in _SCHEMA_META_KEYWORDS:
+            node.pop(key, None)
+        if "definitions" in node and "$defs" not in node:
+            node["$defs"] = node.pop("definitions")
+
+    ref = node.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/definitions/"):
+        node["$ref"] = "#/$defs/" + ref[len("#/definitions/"):]
+
+    if "const" in node and "enum" not in node:
+        node["enum"] = [node.pop("const")]
+    if "type" not in node and isinstance(node.get("enum"), list):
+        value_types = {_json_type(value) for value in node["enum"]}
+        if len(value_types) == 1 and None not in value_types:
+            node["type"] = value_types.pop()
+
+    for key in ("properties", "$defs"):
+        if isinstance(node.get(key), dict):
+            node[key] = {name: _normalize_schema(sub) for name, sub in node[key].items()}
+    if isinstance(node.get("items"), dict):
+        node["items"] = _normalize_schema(node["items"])
+    for key in ("anyOf", "oneOf", "allOf"):
+        if isinstance(node.get(key), list):
+            node[key] = [_normalize_schema(sub) for sub in node[key]]
+
+    types = node.get("type")
+    if isinstance(types, list):
+        node.pop("type")
+        outer = {key: node.pop(key) for key in ("description", "title") if key in node}
+        enum = node.pop("enum", None)
+        branches = []
+        for name in types:
+            branch = {"type": "null"} if name == "null" else {**node, "type": name}
+            if isinstance(enum, list):
+                # A branch admits only its own type's values and is dropped
+                # when it has none, so a bare ``null`` branch cannot reopen
+                # what the enum excluded.
+                values = [value for value in enum if _matches_type(value, name)]
+                if not values:
+                    continue
+                if name != "null":
+                    branch["enum"] = values
+            branches.append(branch)
+        if not branches:
+            raise ValueError(f"enum {enum!r} has no value of type {types!r}")
+        if len(branches) == 1:
+            return {**outer, **branches[0]}
+        return {**outer, "anyOf": branches}
+    return node
+
+
 class AnthropicLLM(BaseLLM):
     provider_name = "anthropic"
+    # Internal gen kwarg; ``_build_request`` sends it as ``output_config.format``.
+    structured_output_kwarg = "output_format"
 
     def __init__(self, api_key=None, user_api_key=None, base_url=None, *args, **kwargs):
 
@@ -498,6 +603,12 @@ class AnthropicLLM(BaseLLM):
             if cleaned_tools:
                 params["tools"] = cleaned_tools
 
+        # Defense-in-depth, as for tools: a model whose registry entry denies
+        # structured output never gets a format it would 400 on.
+        output_format = kwargs.get("output_format")
+        if output_format and self._supports_structured_output():
+            params["output_config"] = {"format": output_format}
+
         for key in _PASSTHROUGH_PARAMS:
             if kwargs.get(key) is not None:
                 params[key] = kwargs[key]
@@ -695,6 +806,56 @@ class AnthropicLLM(BaseLLM):
         if self.capabilities is not None:
             return bool(self.capabilities.supports_tools)
         return True
+
+    def _supports_structured_output(self) -> bool:
+        """Whether this model may be sent a JSON schema to enforce.
+
+        Returns:
+            The registry capability flag when one is attached, otherwise
+            True: every current Claude model supports structured outputs.
+        """
+        if self.capabilities is not None:
+            return bool(self.capabilities.supports_structured_output)
+        return True
+
+    def prepare_structured_output_format(
+        self, json_schema: Optional[Dict[str, Any]], strict: bool = True
+    ) -> Optional[Dict[str, Any]]:
+        """Build the ``output_config.format`` value for ``json_schema``.
+
+        The Messages API accepts a subset of JSON Schema: every object must
+        set ``additionalProperties: false``, and numeric, length and most
+        array constraints are rejected. The SDK's ``transform_schema`` moves
+        those constraints into field descriptions as hints (workflow nodes
+        still validate the answer against the original schema). It cannot
+        read a few common spellings, which ``_normalize_schema`` rewrites
+        first.
+
+        Anthropic has no lenient schema mode, so ``strict`` only rides along
+        in the recorded source for a cross-provider fallback.
+
+        Args:
+            json_schema: The JSON Schema the answer must match, or None.
+            strict: The caller's OpenAI-style strictness flag.
+
+        Returns:
+            ``{"type": "json_schema", "schema": ...}``, or None when there is
+            no schema or it cannot be expressed for the API.
+        """
+        # Recorded so a cross-provider fallback can re-prepare the raw schema.
+        self._structured_output_source = (json_schema, strict) if json_schema else None
+        if not json_schema:
+            return None
+        try:
+            schema = _normalize_schema(json_schema, root=True)
+            return {"type": "json_schema", "schema": transform_schema(schema)}
+        except Exception as exc:
+            logger.warning(
+                "AnthropicLLM: schema cannot be sent as structured output; "
+                "the answer will not be schema-constrained: %s",
+                exc,
+            )
+            return None
 
     def get_supported_attachment_types(self) -> List[str]:
         """

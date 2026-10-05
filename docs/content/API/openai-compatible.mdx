@@ -1,7 +1,7 @@
 ---
 title: OpenAI-Compatible API
 description: Connect any OpenAI-compatible client to DocsGPT Agents via /v1/chat/completions — streaming, structured output, files and images, tool calling, reasoning, and idempotent retries.
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-05
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -143,6 +143,7 @@ You can force the model to return JSON matching a schema, using either the OpenA
 
 - `response_format` follows OpenAI Structured Outputs. `strict` defaults to `true`; set `strict: false` to relax enforcement.
 - `response_format: {"type": "json_object"}` requests JSON without a fixed schema (the model is steered by the prompt).
+- On Claude models the schema is always enforced, even with `strict: false`. Constraints Claude cannot enforce, such as `minimum` or `maxLength`, are passed to the model as hints in the field description. `json_object` has no Claude equivalent and is ignored.
 - `response_schema` is a DocsGPT convenience: pass a raw JSON Schema object (or a `{"schema": {...}}` wrapper) directly.
 
 ## Files and Images

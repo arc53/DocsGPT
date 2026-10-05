@@ -1811,13 +1811,14 @@ class BaseAgent(ABC):
         declaration so the cross-provider fallback adapter can read it too.
 
         Returns:
-            ``"response_format"``, ``"response_schema"``, or None when the
-            provider has no structured-output kwarg.
+            ``"response_format"``, ``"response_schema"``,
+            ``"output_format"``, or None when the provider has no
+            structured-output kwarg.
         """
         # ``type(self.llm)`` — an instance attribute on a test double would
         # otherwise leak a truthy Mock into the gen kwargs.
         kwarg = getattr(type(self.llm), "structured_output_kwarg", None)
-        return kwarg if kwarg in ("response_format", "response_schema") else None
+        return kwarg if kwarg in ("response_format", "response_schema", "output_format") else None
 
     def _llm_gen(
         self,

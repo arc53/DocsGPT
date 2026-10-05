@@ -14,6 +14,7 @@ import sys
 import types
 
 import pytest
+from anthropic import transform_schema as _real_transform_schema
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +165,8 @@ class _FakeAnthropic:
 def patch_anthropic():
     fake = types.ModuleType("anthropic")
     fake.Anthropic = _FakeAnthropic
+    # The real schema transformer: pure, and it is what pins the wire shape.
+    fake.transform_schema = _real_transform_schema
 
     modules_to_remove = [key for key in sys.modules if key.startswith("anthropic")]
     for key in modules_to_remove:
@@ -1014,6 +1017,310 @@ class TestCapabilities:
     def test_supports_tools_respects_capabilities(self, llm):
         llm.capabilities = types.SimpleNamespace(supports_tools=False)
         assert llm._supports_tools() is False
+
+    def test_supports_structured_output_default(self, llm):
+        assert llm._supports_structured_output() is True
+
+    def test_supports_structured_output_respects_capabilities(self, llm):
+        llm.capabilities = types.SimpleNamespace(supports_structured_output=False)
+        assert llm._supports_structured_output() is False
+
+
+# ---------------------------------------------------------------------------
+# Structured output (output_config.format)
+# ---------------------------------------------------------------------------
+
+
+ORDER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "order_id": {"type": "string"},
+        "total": {"type": "number"},
+    },
+    "required": ["order_id"],
+}
+
+
+@pytest.mark.unit
+class TestStructuredOutput:
+
+    def test_declares_output_format_kwarg(self):
+        from docsgpt.llm.anthropic import AnthropicLLM
+
+        assert AnthropicLLM.structured_output_kwarg == "output_format"
+
+    def test_prepare_builds_json_schema_format(self, llm):
+        prepared = llm.prepare_structured_output_format(ORDER_SCHEMA)
+
+        assert prepared["type"] == "json_schema"
+        schema = prepared["schema"]
+        assert schema["additionalProperties"] is False
+        assert set(schema["properties"]) == {"order_id", "total"}
+        # Anthropic does not need every property required (unlike OpenAI strict).
+        assert schema["required"] == ["order_id"]
+
+    def test_prepare_closes_nested_objects(self, llm):
+        schema = {
+            "type": "object",
+            "properties": {
+                "customer": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {"sku": {"type": "string"}},
+                    },
+                },
+            },
+        }
+
+        sent = llm.prepare_structured_output_format(schema)["schema"]
+
+        assert sent["properties"]["customer"]["additionalProperties"] is False
+        assert sent["properties"]["lines"]["items"]["additionalProperties"] is False
+
+    def test_prepare_moves_unsupported_constraints_into_description(self, llm):
+        """Numeric/length constraints 400 on the API; they become hints."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "qty": {"type": "integer", "minimum": 1, "description": "Units"},
+                "code": {"type": "string", "maxLength": 8},
+            },
+        }
+
+        props = llm.prepare_structured_output_format(schema)["schema"]["properties"]
+
+        assert "minimum" not in props["qty"]
+        assert "minimum: 1" in props["qty"]["description"]
+        assert props["qty"]["description"].startswith("Units")
+        assert "maxLength" not in props["code"]
+        assert "maxLength: 8" in props["code"]["description"]
+
+    def test_prepare_nullable_type_list_becomes_any_of(self, llm):
+        """``"type": [T, "null"]`` crashes the SDK transformer; split it."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "note": {"type": ["string", "null"], "description": "Optional note"},
+            },
+        }
+
+        note = llm.prepare_structured_output_format(schema)["schema"]["properties"]["note"]
+
+        assert note["description"] == "Optional note"
+        assert {branch["type"] for branch in note["anyOf"]} == {"string", "null"}
+
+    def test_prepare_type_list_enum_without_null_drops_null_branch(self, llm):
+        """A bare ``null`` branch would let the model answer ``null`` although
+        the enum excludes it."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "status": {"type": ["string", "null"], "enum": ["open", "closed"]},
+            },
+        }
+
+        status = llm.prepare_structured_output_format(schema)["schema"]["properties"]["status"]
+
+        assert status == {"type": "string", "enum": ["open", "closed"]}
+
+    def test_prepare_type_list_splits_enum_values_by_type(self, llm):
+        schema = {
+            "type": "object",
+            "properties": {
+                "status": {"type": ["string", "null"], "enum": ["open", None]},
+                "code": {"type": ["integer", "string"], "enum": [1, "a"]},
+            },
+        }
+
+        props = llm.prepare_structured_output_format(schema)["schema"]["properties"]
+
+        assert props["status"]["anyOf"] == [
+            {"type": "string", "enum": ["open"]},
+            {"type": "null"},
+        ]
+        assert props["code"]["anyOf"] == [
+            {"type": "integer", "enum": [1]},
+            {"type": "string", "enum": ["a"]},
+        ]
+
+    def test_prepare_type_list_enum_matching_no_type_returns_none(self, llm):
+        """No value satisfies such a schema; it goes out unenforced rather
+        than as an empty ``anyOf``."""
+        schema = {
+            "type": "object",
+            "properties": {"x": {"type": ["string", "null"], "enum": [1]}},
+        }
+
+        assert llm.prepare_structured_output_format(schema) is None
+
+    def test_prepare_normalizes_inside_combinators(self, llm):
+        schema = {
+            "type": "object",
+            "properties": {
+                "kind": {"anyOf": [{"const": "a"}, {"type": ["integer", "null"]}]},
+            },
+        }
+
+        kind = llm.prepare_structured_output_format(schema)["schema"]["properties"]["kind"]
+
+        assert kind["anyOf"][0] == {"type": "string", "enum": ["a"]}
+        assert {branch["type"] for branch in kind["anyOf"][1]["anyOf"]} == {"integer", "null"}
+
+    def test_prepare_typeless_enum_of_containers_returns_none(self, llm):
+        """Enum values with no JSON scalar type leave ``type`` unset, which
+        the API cannot express."""
+        schema = {
+            "type": "object",
+            "properties": {"pair": {"enum": [[1, 2], [3, 4]]}},
+        }
+
+        assert llm.prepare_structured_output_format(schema) is None
+
+    def test_prepare_boolean_subschema_returns_none(self, llm):
+        schema = {"type": "object", "properties": {"anything": True}}
+
+        assert llm.prepare_structured_output_format(schema) is None
+
+    def test_prepare_const_becomes_single_value_enum(self, llm):
+        schema = {
+            "type": "object",
+            "properties": {"kind": {"const": "invoice"}},
+        }
+
+        kind = llm.prepare_structured_output_format(schema)["schema"]["properties"]["kind"]
+
+        assert kind["enum"] == ["invoice"]
+        assert kind["type"] == "string"
+
+    def test_prepare_typeless_enum_gets_its_type(self, llm):
+        schema = {
+            "type": "object",
+            "properties": {"status": {"enum": ["open", "closed"]}},
+        }
+
+        status = llm.prepare_structured_output_format(schema)["schema"]["properties"]["status"]
+
+        assert status == {"type": "string", "enum": ["open", "closed"]}
+
+    def test_prepare_definitions_become_defs(self, llm):
+        """Draft-07 ``definitions`` would otherwise land in a description and
+        leave every ``$ref`` dangling."""
+        schema = {
+            "type": "object",
+            "properties": {"address": {"$ref": "#/definitions/Address"}},
+            "definitions": {
+                "Address": {
+                    "type": "object",
+                    "properties": {"city": {"type": "string"}},
+                }
+            },
+        }
+
+        sent = llm.prepare_structured_output_format(schema)["schema"]
+
+        assert "definitions" not in sent
+        assert sent["properties"]["address"] == {"$ref": "#/$defs/Address"}
+        assert sent["$defs"]["Address"]["additionalProperties"] is False
+
+    def test_prepare_drops_meta_keywords(self, llm):
+        schema = {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            **ORDER_SCHEMA,
+        }
+
+        sent = llm.prepare_structured_output_format(schema)["schema"]
+
+        assert "$schema" not in sent
+        assert "description" not in sent
+
+    def test_prepare_does_not_mutate_the_callers_schema(self, llm):
+        import copy
+
+        schema = {
+            "type": "object",
+            "properties": {"note": {"type": ["string", "null"], "minLength": 2}},
+            "definitions": {"X": {"type": "object", "properties": {}}},
+        }
+        snapshot = copy.deepcopy(schema)
+
+        llm.prepare_structured_output_format(schema)
+
+        assert schema == snapshot
+
+    def test_prepare_records_source(self, llm):
+        llm.prepare_structured_output_format(ORDER_SCHEMA, strict=False)
+        assert llm._structured_output_source == (ORDER_SCHEMA, False)
+
+        assert llm.prepare_structured_output_format(None) is None
+        assert llm._structured_output_source is None
+
+    def test_prepare_unconvertible_schema_returns_none(self, llm, caplog):
+        """A schema the API cannot express goes out unenforced (the caller
+        still validates the answer) rather than failing the request."""
+        import logging
+
+        schema = {"type": "object", "properties": {"anything": {}}}
+
+        with caplog.at_level(logging.WARNING, logger="docsgpt.llm.anthropic"):
+            assert llm.prepare_structured_output_format(schema) is None
+        assert "structured output" in caplog.text
+        # The source is still recorded so a fallback can try its own format.
+        assert llm._structured_output_source == (schema, True)
+
+    def test_format_sent_as_output_config(self, llm):
+        output_format = llm.prepare_structured_output_format(ORDER_SCHEMA)
+
+        llm._raw_gen(
+            llm,
+            model="m",
+            messages=[{"role": "user", "content": "hi"}],
+            output_format=output_format,
+        )
+
+        sent = _sent(llm)
+        assert sent["output_config"] == {"format": output_format}
+        assert "output_format" not in sent
+
+    def test_format_sent_on_stream_path_with_tools(self, llm):
+        output_format = llm.prepare_structured_output_format(ORDER_SCHEMA)
+
+        list(
+            llm._raw_gen_stream(
+                llm,
+                model="m",
+                messages=[{"role": "user", "content": "hi"}],
+                tools=TOOLS,
+                output_format=output_format,
+            )
+        )
+
+        sent = _sent(llm)
+        assert sent["output_config"] == {"format": output_format}
+        assert sent["tools"]
+
+    def test_no_output_config_without_format(self, llm):
+        llm._raw_gen(llm, model="m", messages=[{"role": "user", "content": "hi"}])
+        assert "output_config" not in _sent(llm)
+
+    def test_format_dropped_when_capabilities_deny(self, llm):
+        output_format = llm.prepare_structured_output_format(ORDER_SCHEMA)
+        llm.capabilities = types.SimpleNamespace(
+            supports_tools=True, supports_structured_output=False
+        )
+
+        llm._raw_gen(
+            llm,
+            model="m",
+            messages=[{"role": "user", "content": "hi"}],
+            output_format=output_format,
+        )
+
+        assert "output_config" not in _sent(llm)
 
 
 # ---------------------------------------------------------------------------
