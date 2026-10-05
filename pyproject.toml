@@ -104,6 +104,7 @@ dependencies = [
   "python-dotenv>=1.2.3,<2",
   "python-jose>=3.5.0,<4",
   "python-pptx>=1.0.2,<2",
+  "pywebpush>=2.5.0,<3",
   "PyYAML>=6.0.3,<7",
   "qdrant-client>=1.19.0,<2",
   "redis>=8.1.0,<9",
