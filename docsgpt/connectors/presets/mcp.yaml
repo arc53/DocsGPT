@@ -65,3 +65,15 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://docs.stripe.com/mcp
+
+# draw.io as a connector
+- key: mcp:drawio
+  name: draw.io
+  description: Create editable flowcharts and other diagrams with draw.io.
+  icon: drawio
+  category: projects
+  mcp_url: https://mcp.draw.io/mcp
+  auth_kind: mcp
+  capabilities: [read]
+  docs_url: https://github.com/jgraph/drawio-mcp
+
