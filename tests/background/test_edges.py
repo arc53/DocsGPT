@@ -91,7 +91,12 @@ class TestEventsAndNotify:
     def test_notify_user(self):
         from docsgpt.notifications import notify
 
-        with patch.object(notify, "publish_user_event") as publish:
+        # A tab is open elsewhere, so the notification is the toast event.
+        with patch.object(notify, "publish_user_event") as publish, patch.object(
+            notify.presence, "is_watching", return_value=False
+        ), patch.object(notify.presence, "has_open_tab", return_value=True), patch.object(
+            notify, "_mark_unread"
+        ):
             notify.notify_user(user_id="u", conversation_id="c", kind="job", title="t", body="b", url="/c/c")
             notify.notify_user(user_id="", conversation_id="c", kind="job", title="t", body="b", url="/c/c")
         publish.assert_called_once()
