@@ -36,11 +36,7 @@ _SESSION_LABEL = "docsgpt_session_id"
 # extraction (behind the backend's show) drops bar charts and fails every run
 # that shows a chart on matplotlib < 3.10; this replaces it. Shared with
 # detached runs (docsgpt/sandbox/detached.py), which read charts the same way.
-MAX_CHARTS = detached.MAX_CHARTS
-MAX_CHART_PIXELS = detached.MAX_CHART_PIXELS
-MAX_CHART_BYTES = detached.MAX_CHART_BYTES
 _CHART_PRELUDE = detached.CHART_PRELUDE
-_CHART_RE = detached.CHART_RE
 
 
 # What the toolbox daemon answers when a code_run outlives its timeout: HTTP 408
@@ -51,8 +47,6 @@ _EXEC_TIMEOUT_CODE = "PROCESS_EXECUTION_TIMEOUT"
 # Exit codes of a process killed by SIGKILL: 128 + 9 through a shell, -9 from
 # the process itself. In the sandbox that is the kernel's OOM killer; the
 # timeout path answers 408 instead.
-_SIGKILL_EXIT_CODES = detached.SIGKILL_EXIT_CODES
-
 # Longest base64 script passed inline on a detached run's command line; Linux
 # caps one argument at 128 KiB, so a longer script is uploaded instead.
 _INLINE_SCRIPT_MAX_CHARS = 96_000

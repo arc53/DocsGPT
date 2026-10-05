@@ -134,14 +134,18 @@ class ConversationWakesRepository:
         message_id: Optional[str] = None,
         error: Optional[str] = None,
     ) -> int:
-        """Settle wakes: ``delivered``, ``suppressed``, ``superseded`` or ``failed``."""
+        """Settle claimed wakes: ``delivered``, ``suppressed``, ``superseded`` or ``failed``.
+
+        Only wakes still ``claimed`` change, so a claim the sweep handed back
+        (and someone else took) is never overwritten; the count tells.
+        """
         ids = [str(i) for i in wake_ids]
         if not ids:
             return 0
         result = self._conn.execute(
             text(
                 "UPDATE conversation_wakes SET status = :status, message_id = CAST(:message_id AS uuid), "
-                "error = :error, delivered_at = now() WHERE id = ANY(CAST(:ids AS uuid[]))"
+                "error = :error, delivered_at = now() WHERE id = ANY(CAST(:ids AS uuid[])) AND status = 'claimed'"
             ),
             {"ids": ids, "status": status, "message_id": message_id, "error": error},
         )

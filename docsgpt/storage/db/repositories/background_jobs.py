@@ -417,14 +417,18 @@ class BackgroundJobsRepository:
         )
         return (result.rowcount or 0) > 0
 
-    def set_delivery_state(self, job_id: str, state: str) -> bool:
-        """Overwrite a job's delivery state (a continuation's final verdict on it)."""
+    def set_delivery_state(self, job_id: str, state: str, *, from_state: str) -> bool:
+        """Move a job's delivery state on from the state the caller claimed (a continuation's verdict).
+
+        Returns:
+            False when the row moved on meanwhile (its claim was lost).
+        """
         result = self._conn.execute(
             text(
                 "UPDATE background_jobs SET delivery_state = :state, delivered_at = COALESCE(delivered_at, now()) "
-                "WHERE id = CAST(:id AS uuid)"
+                "WHERE id = CAST(:id AS uuid) AND delivery_state = :from_state"
             ),
-            {"id": str(job_id), "state": state},
+            {"id": str(job_id), "state": state, "from_state": from_state},
         )
         return (result.rowcount or 0) > 0
 

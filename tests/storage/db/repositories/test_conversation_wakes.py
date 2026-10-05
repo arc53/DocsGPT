@@ -139,8 +139,9 @@ class TestSweeps:
         repo = ConversationWakesRepository(pg_conn)
         conversation_id = _conversation(pg_conn)
         old = _wake(repo, conversation_id, "old")
+        repo.claim_batch(conversation_id)
         pending = _wake(repo, conversation_id, "pending")
-        repo.mark([old["id"]], "delivered")
+        assert repo.mark([old["id"]], "delivered") == 1
         pg_conn.execute(
             text(
                 "UPDATE conversation_wakes SET created_at = now() - interval '30 days' "
@@ -150,3 +151,18 @@ class TestSweeps:
         )
         assert repo.cleanup_older_than(7) == 1
         assert repo.get(pending["id"]) is not None
+
+
+class TestMarkIsConditional:
+    def test_only_claimed_wakes_settle(self, pg_conn):
+        repo = ConversationWakesRepository(pg_conn)
+        conversation_id = _conversation(pg_conn)
+        row = _wake(repo, conversation_id, "k")
+        assert repo.mark([row["id"]], "delivered") == 0
+        repo.claim_batch(conversation_id)
+        repo.release([row["id"]])
+        folded = repo.fold_pending(conversation_id, "u1")
+        assert [r["id"] for r in folded] == [row["id"]]
+        # A continuation whose claim was handed back can't overwrite the fold.
+        assert repo.mark([row["id"]], "delivered") == 0
+        assert repo.get(row["id"])["status"] == "folded"

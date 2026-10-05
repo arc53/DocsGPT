@@ -169,7 +169,7 @@ def _settle(wakes: List[Dict[str, Any]], status: str, *, message_id: Optional[st
             if job_state == "pending":
                 jobs_repo.release_delivery(job_id, "resumed")
             elif job_state:
-                jobs_repo.set_delivery_state(job_id, job_state)
+                jobs_repo.set_delivery_state(job_id, job_state, from_state="resumed")
             if message_id:
                 jobs_repo.set_followup(job_id, message_id)
 

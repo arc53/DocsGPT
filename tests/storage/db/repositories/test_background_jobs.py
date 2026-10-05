@@ -275,3 +275,14 @@ class TestRetention:
         row, _ = _job(repo, conversation_id)
         ConversationsRepository(pg_conn).delete(conversation_id, "u1")
         assert repo.get(row["id"]) is None
+
+
+def test_set_delivery_state_is_conditional(pg_conn):
+    repo = BackgroundJobsRepository(pg_conn)
+    row, _ = _job(repo, _conversation(pg_conn))
+    repo.finish(row["id"], status="completed", retention_days=7)
+    repo.claim_delivery(row["id"], "resumed")
+    repo.release_delivery(row["id"], "resumed")
+    repo.claim_delivery(row["id"], "claimed_by_poll")
+    assert repo.set_delivery_state(row["id"], "suppressed", from_state="resumed") is False
+    assert repo.get(row["id"])["delivery_state"] == "claimed_by_poll"
