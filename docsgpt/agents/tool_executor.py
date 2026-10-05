@@ -1,4 +1,5 @@
 import copy
+import json
 import logging
 import re
 import uuid
@@ -608,6 +609,10 @@ class ToolExecutor:
         self.context_room_tokens: Optional[int] = None
         self.context_epoch = 0
         self.client_tools: Optional[List[Dict]] = None
+        # Set by the chat turn (``docsgpt.background.context.bind_turn``): a
+        # slow call may then be handed off to a background job. None runs
+        # every call in the foreground.
+        self.background = None
         self._name_to_tool: Dict[str, Tuple[str, str]] = {}
         # Per-NAME failure counts for invented tool names this turn. After
         # ``UNRESOLVABLE_CALL_LIMIT`` the model is handed a directive message
@@ -1759,6 +1764,14 @@ class ToolExecutor:
             self.tool_calls.append(tool_call_data)
             return error_message, call_id
         yield {"type": "tool_call", "data": {**tool_call_data, "status": "pending"}}
+        # ``background`` / ``watch`` steer a hand-off; the tool never sees them.
+        from docsgpt.background import handoff
+
+        background_eligible = handoff.eligible(self, tool_data)
+        controls: Dict[str, Any] = {}
+        tool_args = call_args
+        if background_eligible:
+            tool_args, controls = handoff.split_controls(call_args)
         action_data = (
             api_tool_action_with_secrets(tool_data, action_name, self.user)
             if tool_data["name"] == "api_tool"
@@ -1771,13 +1784,13 @@ class ToolExecutor:
             tool_call_data["access"] = action_access(tool_data.get("name"), action_data)
 
         # Fixed values win over whatever the model sent for the same key.
-        sections = resolve_arguments(action_data, call_args, self._connection_parameters(tool_data))
+        sections = resolve_arguments(action_data, tool_args, self._connection_parameters(tool_data))
         query_params, headers = sections["query_params"], sections["headers"]
         body, parameters = sections["body"], sections["parameters"]
         # The chat shows what was sent; ``arguments`` keeps what the model
         # asked for, which is what a later turn replays to it.
-        sent = sent_arguments(action_data, call_args, self._connection_parameters(tool_data))
-        if sent != (call_args if isinstance(call_args, dict) else {}):
+        sent = sent_arguments(action_data, tool_args, self._connection_parameters(tool_data))
+        if sent != (tool_args if isinstance(tool_args, dict) else {}):
             tool_call_data["sent_arguments"] = sent
 
         # Load tool (with caching)
@@ -1829,23 +1842,47 @@ class ToolExecutor:
             if tool_data["name"] == "api_tool"
             else parameters
         )
+        if tool_data["name"] == "api_tool":
+            logger.debug(
+                "Executing api: %s with query_params: %s, headers: %s, body: %s",
+                action_name,
+                _redact_args_for_log(query_params),
+                _redact_args_for_log(headers),
+                _redact_args_for_log(body),
+            )
+            call_kwargs = body
+        else:
+            logger.debug(
+                "Executing tool: %s with args: %s",
+                action_name,
+                _redact_args_for_log(call_args),
+            )
+            call_kwargs = parameters
+
+        def _invoke():
+            return tool.execute_action(action_name, **call_kwargs)
+
+        outcome = None
         try:
-            if tool_data["name"] == "api_tool":
-                logger.debug(
-                    "Executing api: %s with query_params: %s, headers: %s, body: %s",
-                    action_name,
-                    _redact_args_for_log(query_params),
-                    _redact_args_for_log(headers),
-                    _redact_args_for_log(body),
+            if background_eligible:
+                outcome = handoff.run_call(
+                    self.background,
+                    handoff.CallSpec(
+                        tool_name=tool_data["name"],
+                        action_name=action_name,
+                        journal_key=_journal_key(call_id, self.message_id),
+                        arguments=tool_args,
+                        parameters=parameters,
+                        controls=controls,
+                    ),
+                    tool,
+                    _invoke,
+                    yield_seconds=0 if handoff.wants_background(controls) else None,
                 )
-                result = tool.execute_action(action_name, **body)
+                result = None if outcome.handed_off else outcome.value
             else:
-                logger.debug(
-                    "Executing tool: %s with args: %s",
-                    action_name,
-                    _redact_args_for_log(call_args),
-                )
-                result = tool.execute_action(action_name, **parameters)
+                result = _invoke()
+            if tool_data["name"] != "api_tool" and not (outcome and outcome.handed_off):
                 result = self._collect_native_parts(tool, result, tool_call_data)
         except Exception as exc:
             if proposed_ok:
@@ -1853,6 +1890,11 @@ class ToolExecutor:
                     call_id, str(exc), message_id=self.message_id, user_id=self.user
                 )
             raise
+
+        if outcome is not None and outcome.handed_off:
+            return (
+                yield from self._handed_off(tool_data, tool_id, call_id, tool_call_data, resolved_arguments, outcome)
+            )
 
         # Single fan-out point: from here ``result`` reaches the LLM copy,
         # the conversation row, tool_call_attempts, and the stream event —
@@ -1940,6 +1982,34 @@ class ToolExecutor:
         self.tool_calls.append(tool_call_data)
 
         return result, call_id
+
+    def _handed_off(self, tool_data, tool_id, call_id, tool_call_data, resolved_arguments, outcome):
+        """Report a call that became a background job: its entry shows it running.
+
+        The journal row stays ``proposed`` until the job finishes and settles
+        it. The tool instance is dropped from the cache, since the job's
+        thread still uses it.
+
+        Yields:
+            The call's ``tool_call`` event.
+
+        Returns:
+            ``(running_payload, call_id)``.
+        """
+        self._loaded_tools.pop(f"{tool_data['name']}:{tool_id}:{self.user or ''}", None)
+        payload = outcome.payload or {}
+        text = json.dumps(payload)
+        tool_call_data["job_id"] = str(outcome.job["id"]) if outcome.job else payload.get("job_id")
+        tool_call_data["resolved_arguments"] = resolved_arguments
+        tool_call_data["result_full"] = text
+        tool_call_data["result"] = truncate_tool_result(text)
+        tool_call_data["status"] = "pending"
+        stream_tool_call_data = {
+            key: value for key, value in tool_call_data.items() if key not in {"result_full", "resolved_arguments"}
+        }
+        yield {"type": "tool_call", "data": {**stream_tool_call_data}}
+        self.tool_calls.append(tool_call_data)
+        return payload, call_id
 
     def _get_or_load_tool(
         self,
@@ -2154,6 +2224,7 @@ class ToolExecutor:
     # call does not grow null columns in every persisted row.
     _PRESERVED_TOOL_CALL_KEYS = (
         "artifacts", "device_id", "connector_key", "connector_name", "access", "sent_arguments", "images",
+        "job_id",
     )
 
     def _collect_native_parts(self, tool: Any, result: Any, tool_call_data: Dict) -> Any:

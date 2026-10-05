@@ -114,8 +114,10 @@ class ReconciliationRepository:
         run up to ``SANDBOX_EXEC_MAX_TIMEOUT``) is ``proposed`` the whole time.
         The stream stamps ``last_heartbeat_at`` every 30 s from an in-process
         thread, so a heartbeat fresher than ``age_minutes`` on a non-terminal
-        message means the owning stream is alive. Calls without a message, or
-        whose stream died, are swept as before.
+        message means the owning stream is alive. A call handed off to a
+        running background job is alive too: the job settles the row when it
+        finishes, and the background sweep reports a lost one. Calls without a
+        message, or whose stream died, are swept as before.
 
         Args:
             age_minutes: Staleness threshold for the row and for the heartbeat.
@@ -139,6 +141,12 @@ class ReconciliationRepository:
                         AND cm.status NOT IN ('complete', 'failed')
                         AND (cm.message_metadata->>'last_heartbeat_at')::timestamptz
                             > now() - make_interval(mins => :age)
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM background_jobs bj
+                      WHERE bj.tool_call_id = tca.call_id
+                        AND bj.status = 'working'
                   )
                 ORDER BY tca.attempted_at ASC
                 LIMIT :limit

@@ -303,6 +303,7 @@ class BackgroundJobsRepository:
         error: Optional[dict] = None,
         status_message: Optional[str] = None,
         output_tail: Optional[str] = None,
+        stale_seconds: Optional[int] = None,
     ) -> Optional[dict]:
         """Write a running job's final state, once.
 
@@ -314,6 +315,8 @@ class BackgroundJobsRepository:
             error: What went wrong, for a failed or lost job.
             status_message: A short human-readable state.
             output_tail: The last output seen.
+            stale_seconds: Only finish a job whose heartbeat is at least this old
+                (the reconciler declaring it lost re-checks under the write).
 
         Returns:
             The finished row, or None when the job was not running (already final).
@@ -336,11 +339,13 @@ class BackgroundJobsRepository:
                     last_updated_at = now(),
                     expires_at = now() + make_interval(days => :retention_days)
                 WHERE id = CAST(:id AS uuid) AND status = 'working'
+                  AND (CAST(:stale AS integer) IS NULL OR heartbeat_at < now() - make_interval(secs => :stale))
                 RETURNING *
                 """
             ),
             {
                 "id": str(job_id),
+                "stale": int(stale_seconds) if stale_seconds is not None else None,
                 "status": status,
                 "result": _dump(result),
                 "error": _dump(error),

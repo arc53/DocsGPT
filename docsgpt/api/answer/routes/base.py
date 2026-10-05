@@ -14,6 +14,7 @@ from flask_restx import Namespace
 
 from docsgpt import tracing
 from docsgpt.api.answer.segments import AnswerSegments
+from docsgpt.background.context import bind_turn as bind_background_turn
 from docsgpt.api.answer.services.continuation_service import ContinuationService
 from docsgpt.api.answer.services.conversation_service import (
     ConversationService,
@@ -765,6 +766,15 @@ class BaseAnswerResource:
                 logger.debug(
                     "Could not set tool_executor.conversation_id post-reserve",
                 )
+        # A slow tool call in this turn may be handed off to a background job.
+        bind_background_turn(
+            getattr(agent, "tool_executor", None),
+            conversation_id=conversation_id,
+            message_id=reserved_message_id,
+            decoded_token=decoded_token,
+            agent_id=agent_id,
+            api_route=finalize_tool_pause_as_complete,
+        )
 
         # Per-stream monotonic SSE event id. Allocated by ``_emit`` and
         # threaded through both the wire format (``id: <seq>\\n``) and

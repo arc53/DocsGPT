@@ -621,6 +621,29 @@ def reap_stale_workflow_runs(self):
     return {"reaped": reaped}
 
 
+@celery.task(bind=True, acks_late=False)
+def sweep_background_jobs(self):
+    """Mark background jobs whose process died ``lost`` and fail the ones past their deadline.
+
+    On a 30 s beat like the reconciler; the next tick is the retry.
+    """
+    from docsgpt.background.reconciler import sweep
+
+    try:
+        return sweep()
+    except Exception:  # noqa: BLE001 - housekeeping must never crash the beat loop
+        logger.exception("sweep_background_jobs failed; the next beat retries")
+        return {"error": True}
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_background_jobs(self):
+    """Delete finished background jobs and settled wakes past ``BACKGROUND_RESULT_RETENTION_DAYS``."""
+    from docsgpt.background.reconciler import cleanup
+
+    return cleanup()
+
+
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
     from docsgpt.core.settings import settings
@@ -713,6 +736,18 @@ def setup_periodic_tasks(sender, **kwargs):
         timedelta(seconds=300),
         reap_stale_workflow_runs.s(),
         name="reap-stale-workflow-runs",
+    )
+    # Background jobs: lost leases and blown deadlines every 30 s (a lost job
+    # is reported within about a minute), retention once a day.
+    sender.add_periodic_task(
+        timedelta(seconds=30),
+        sweep_background_jobs.s(),
+        name="sweep-background-jobs",
+    )
+    sender.add_periodic_task(
+        timedelta(hours=24),
+        cleanup_background_jobs.s(),
+        name="cleanup-background-jobs",
     )
 
 

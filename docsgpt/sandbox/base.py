@@ -62,6 +62,23 @@ class OpenedSession(NamedTuple):
     created: bool
 
 
+@dataclass
+class DetachedState:
+    """Where a detached run (``start_detached``) stands.
+
+    Attributes:
+        done: The process exited (or the runtime is gone).
+        result: The run's result once ``done``, shaped as ``exec`` returns it.
+        output: Output so far (bounded), for progress and watch patterns.
+        gone: The runtime behind the run no longer exists.
+    """
+
+    done: bool = False
+    result: Optional[ExecResult] = None
+    output: str = ""
+    gone: bool = False
+
+
 class SandboxGoneError(IOError):
     """The cloud runtime behind a session no longer exists (deleted upstream).
 

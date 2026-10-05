@@ -1220,6 +1220,46 @@ class ConversationsRepository:
         """Stamp the heartbeat; True when an in-flight row was updated."""
         return self.heartbeat_message_state(message_id) is HeartbeatState.STAMPED
 
+    def patch_tool_call(self, message_id: str, job_id: str, patch: dict) -> bool:
+        """Merge ``patch`` into the message's tool-call entry for a background job.
+
+        A turn that handed a call off persisted its entry as running; when the
+        job finishes the entry takes the outcome, so a reload shows it. The
+        entry is matched by ``job_id``, which is unique, never by the call id,
+        which providers reuse.
+
+        Args:
+            message_id: The turn's message.
+            job_id: The job the entry carries.
+            patch: Keys to set on the entry.
+
+        Returns:
+            True when an entry was updated.
+        """
+        if not looks_like_uuid(message_id):
+            return False
+        result = self._conn.execute(
+            text(
+                """
+                UPDATE conversation_messages SET tool_calls = (
+                    SELECT jsonb_agg(
+                        CASE WHEN elem->>'job_id' = :job_id THEN elem || CAST(:patch AS jsonb) ELSE elem END
+                        ORDER BY ord
+                    )
+                    FROM jsonb_array_elements(tool_calls) WITH ORDINALITY AS t(elem, ord)
+                )
+                WHERE id = CAST(:mid AS uuid)
+                  AND jsonb_typeof(tool_calls) = 'array'
+                  AND EXISTS (
+                      SELECT 1 FROM jsonb_array_elements(tool_calls) AS e(elem)
+                      WHERE e.elem->>'job_id' = :job_id
+                  )
+                """
+            ),
+            {"mid": message_id, "job_id": str(job_id), "patch": json.dumps(patch, cls=PGNativeJSONEncoder)},
+        )
+        return (result.rowcount or 0) > 0
+
     def confirm_executed_tool_calls(self, message_id: str) -> int:
         """Flip ``tool_call_attempts.status='executed' → 'confirmed'`` for the message."""
         if not looks_like_uuid(message_id):
