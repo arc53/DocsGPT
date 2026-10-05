@@ -28,6 +28,7 @@ from docsgpt.core.settings.events import EventsSettings
 from docsgpt.core.settings.guardrails import GuardrailSettings
 from docsgpt.core.settings.ingestion import IngestionSettings
 from docsgpt.core.settings.llm import LLMSettings
+from docsgpt.core.settings.monitors import MonitorSettings
 from docsgpt.core.settings.ocr import OCRSettings
 from docsgpt.core.settings.quotas import QuotaSettings
 from docsgpt.core.settings.retrieval import RetrievalSettings
@@ -61,6 +62,7 @@ SETTINGS_GROUPS: tuple[tuple[str, type[SettingsGroup]], ...] = (
     ("Quotas", QuotaSettings),
     ("Scheduler", SchedulerSettings),
     ("Background jobs", BackgroundSettings),
+    ("Monitors and trigger links", MonitorSettings),
     ("Sandbox", SandboxSettings),
     ("Speech", SpeechSettings),
 )
