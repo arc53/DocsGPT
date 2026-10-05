@@ -332,3 +332,52 @@ def test_jupyter_probe_rereads_exit_when_the_group_is_gone(tmp_path):
     state = json.loads(printed.call_args[0][0].split("<<<DOCSGPT_JOB_BEGIN>>>")[1].split("<<<DOCSGPT_JOB_END>>>")[0])
     assert state["done"] is True
     assert state["exit"] == 0
+
+
+class TestManagerDetached:
+    class _Backend:
+        def __init__(self):
+            self.calls = []
+            self.state = None
+
+        def open_session(self, session_id):
+            from docsgpt.sandbox.base import OpenedSession
+
+            return OpenedSession("h", True)
+
+        def start_detached(self, session_id, code, timeout, key):
+            self.calls.append(("start", key))
+            return {"cmd_id": "c"}
+
+        def poll_detached(self, session_id, run, with_output=False):
+            self.calls.append(("poll", with_output))
+            return self.state
+
+        def cancel_detached(self, session_id, run):
+            self.calls.append(("cancel",))
+
+        def close(self, session_id):
+            pass
+
+    def test_wraps_the_backend_and_drops_an_invalidated_session(self):
+        from docsgpt.sandbox.base import DetachedState
+        from docsgpt.sandbox.manager import SandboxManager
+
+        backend = self._Backend()
+        manager = SandboxManager(backend, max_ttl=60)
+        assert manager.supports_detached() is True
+        manager.open_session("s")
+        assert manager.start_detached("s", "x", 5, "k") == {"cmd_id": "c"}
+        backend.state = DetachedState(done=False)
+        assert manager.poll_detached("s", {}, with_output=True).done is False
+        manager.cancel_detached("s", {})
+        gone = ExecResult(status="error", runtime_invalidated=True)
+        backend.state = DetachedState(done=True, result=gone, gone=True)
+        assert manager.poll_detached("s", {}).gone is True
+        assert manager.has_session("s") is False
+        assert backend.calls == [("start", "k"), ("poll", True), ("cancel",), ("poll", False)]
+
+    def test_a_backend_without_detached_runs(self):
+        from docsgpt.sandbox.manager import SandboxManager
+
+        assert SandboxManager(object(), max_ttl=60).supports_detached() is False

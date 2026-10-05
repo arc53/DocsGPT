@@ -196,3 +196,33 @@ class TestRoutes:
         done = self._call(app, BackgroundJob, "get", "/x", job_id=job["id"]).get_json()
         assert done["status"] == "cancelled"
         assert len(done["result"]) <= 2000
+
+
+class TestRouteFailures:
+    def test_database_errors_answer_500(self, monkeypatch):
+        from flask import Flask, request
+
+        from docsgpt.api.user.background_jobs import routes
+
+        app = Flask(__name__)
+        monkeypatch.setattr(routes, "db_readonly", lambda: (_ for _ in ()).throw(RuntimeError("db")))
+        monkeypatch.setattr(routes, "cancel_job", lambda *a: (_ for _ in ()).throw(RuntimeError("db")))
+        with app.test_request_context("/api/background_jobs?conversation_id=00000000-0000-0000-0000-000000000000"):
+            request.decoded_token = {"sub": "u1"}
+            assert routes.BackgroundJobs().get().status_code == 500
+            assert routes.BackgroundJob().get("j").status_code == 500
+            assert routes.CancelBackgroundJob().post("j").status_code == 500
+        with app.test_request_context("/x"):
+            request.decoded_token = None
+            assert routes.BackgroundJob().get("j").status_code == 401
+            assert routes.CancelBackgroundJob().post("j").status_code == 401
+
+    def test_cancel_unknown_job_is_404(self, bg_db):
+        from flask import Flask, request
+
+        from docsgpt.api.user.background_jobs import routes
+
+        app = Flask(__name__)
+        with app.test_request_context("/x"):
+            request.decoded_token = {"sub": "u1"}
+            assert routes.CancelBackgroundJob().post("00000000-0000-0000-0000-000000000000").status_code == 404
