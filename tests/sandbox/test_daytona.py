@@ -669,6 +669,24 @@ def test_exec_wakes_auto_stopped_sandbox_and_retries(sandbox):
     assert created.process.code_run.call_count == 2
 
 
+def test_a_failed_retry_reports_the_retry_error(sandbox):
+    """The retry's own failure (a timeout, say) is the one to report, not the stopped-sandbox error before it."""
+
+    class DaytonaTimeoutError(Exception):
+        pass
+
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    created.state = "stopped"
+    created.process.code_run.side_effect = [
+        RuntimeError("sandbox is stopped"),
+        DaytonaTimeoutError("execution exceeded 60s"),
+    ]
+    res = sandbox.exec("conv-1", "while True: pass")
+    assert res.error_name == "DaytonaTimeoutError"
+    assert res.error_value == "execution exceeded 60s"
+
+
 def test_exec_does_not_retry_when_started(sandbox):
     """A started sandbox that raises is a genuine transport fault: no wake, no spurious retry."""
     sandbox.open("conv-1")

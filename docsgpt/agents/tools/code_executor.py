@@ -8,6 +8,7 @@ import hashlib
 import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlsplit
 
 from docsgpt.agents.tools.artifact_ref import resolve_artifact_id
 from docsgpt.agents.tools.attachment_bridge import (
@@ -17,6 +18,17 @@ from docsgpt.agents.tools.attachment_bridge import (
     too_large_message,
 )
 from docsgpt.agents.tools.base import Tool
+from docsgpt.agents.tools.code_executor_hints import (
+    GENERIC_ERROR_NAMES,
+    MAX_HINTS,
+    REPEATED_FAILURE_HINT,
+    FailureMemory,
+    RunFacts,
+    clean_output,
+    error_signature,
+    exception_of,
+    fix_hints,
+)
 from docsgpt.core.settings import settings
 from docsgpt.llm.tool_images import image_ref
 from docsgpt.sandbox.artifacts_capture import (
@@ -34,7 +46,7 @@ from docsgpt.sandbox.artifacts_capture import (
     kind_for_mime as _kind_for_mime,
 )
 from docsgpt.sandbox.base import ExecResult
-from docsgpt.sandbox.manifest import preinstalled_summary
+from docsgpt.sandbox import manifest
 from docsgpt.sandbox.sandbox_creator import SandboxCreator
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.session import db_readonly
@@ -60,6 +72,17 @@ _SESSION_ID_RE = re.compile(r"[^A-Za-z0-9_-]+")
 
 # ``persist`` values (models often send strings) that ask to close the session.
 _CLOSE_VALUES = frozenset({"false", "0", "no"})
+
+# Longest error message returned to the model; the full output is in the tails.
+_ERROR_MAX_CHARS = 1000
+
+# Hosts that only answer on a given port when they appear in a deployment URL:
+# sandbox code may run its own server on localhost.
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "0.0.0.0"})  # nosec B104 - matched, never bound
+
+# The last failure of each session, to notice the same failure twice in a row.
+# Process-wide because a tool instance lives for one request only.
+_FAILURES = FailureMemory()
 
 
 def _tail(stream: Optional[str]) -> str:
@@ -95,46 +118,121 @@ class CodeExecutorTool(Tool):
     # Tool ABC
     # ------------------------------------------------------------------
     @staticmethod
-    def _environment_note() -> str:
+    def _backend() -> str:
+        """Return the configured sandbox backend, ``jupyter`` or ``daytona``."""
+        return str(settings.SANDBOX_BACKEND or "jupyter").lower()
+
+    @classmethod
+    def _full_image(cls) -> bool:
+        """True when the sandbox runs the manifest's image; a Daytona sandbox without a snapshot is bare Python."""
+        return not (cls._backend() == "daytona" and not settings.DAYTONA_SNAPSHOT)
+
+    @staticmethod
+    def _idle_minutes() -> int:
+        """Minutes of inactivity after which a session is closed (SANDBOX_MAX_TTL)."""
+        return max(1, round(int(settings.SANDBOX_MAX_TTL) / 60))
+
+    @classmethod
+    def _environment_note(cls) -> str:
         """Backend-specific note on what the sandbox has preinstalled.
 
         Without this the model discovers the environment by failing: importing
         pandas on a bare image, or pip-installing libraries that are already
         baked in. The lists come from docsgpt/sandbox/manifest.py, which both the
         runner image (deployment/sandbox/Dockerfile) and the Daytona snapshot
-        (scripts/build_daytona_snapshot.py) are built from.
+        (scripts/build_daytona_snapshot.py) are built from. Font paths and command
+        usage are left to the new-session ``environment`` summary.
         """
-        backend = str(settings.SANDBOX_BACKEND or "jupyter").lower()
-        if backend == "daytona" and not settings.DAYTONA_SNAPSHOT:
+        if not cls._full_image():
             return (
-                "Only the Python stdlib is preinstalled. pip install any third-party "
-                "package (pandas, python-docx, ...) from within the code before importing it."
+                "Only the Python stdlib is preinstalled: pip install third-party packages (pandas, python-docx, "
+                "...) in the same code before importing them."
             )
-        note = preinstalled_summary() + " pip install anything else from within the code before importing it."
-        if backend == "daytona":
-            # The snapshot is whatever the operator built; an older one lacks newer packages.
-            note += " If an import fails, pip install that package the same way."
-        return note
+        return (
+            manifest.description_note()
+            + " A new session's first result lists fonts and command usage in `environment`."
+        )
 
-    @staticmethod
-    def _persistence_note() -> str:
+    @classmethod
+    def _persistence_note(cls) -> str:
         """Backend-specific note on what survives from one ``run_code`` call to the next.
 
         The Jupyter runner keeps one kernel per session, so interpreter state
         carries over. Daytona runs every call in a new interpreter: only the
         sandbox filesystem (and so pip installs) outlives a call.
         """
-        backend = str(settings.SANDBOX_BACKEND or "jupyter").lower()
-        if backend == "daytona":
+        if cls._backend() == "daytona":
             return (
-                "The session stays warm between calls until it idles out: files and pip-installed "
-                "packages carry over to the next run_code call, but each call runs in a fresh Python "
-                "interpreter, so variables and imports do NOT carry over. Re-import and re-load what "
-                "you need in every call, and pass data between calls through files. "
+                "files and installed packages persist while warm; each call is a fresh interpreter, so "
+                "re-import and re-load from files every call."
             )
+        return "variables, imports, files and installed packages persist while warm."
+
+    @classmethod
+    def _closing_rule(cls) -> str:
+        """The install rule that ends the description, per image."""
+        if not cls._full_image():
+            return ""
+        if cls._backend() == "daytona":
+            # The snapshot is whatever the operator built; an older one lacks newer packages.
+            return (
+                "Prefer a listed library over installing another; pip-install a listed one only if its import "
+                "fails; don't apt-get."
+            )
+        return "Prefer a listed library over installing another; never pip-install a listed one; don't apt-get."
+
+    @classmethod
+    def _description(cls) -> str:
+        """Return the ``run_code`` description.
+
+        It depends only on deployment settings and the manifest, never on the call
+        or conversation, so providers can cache the tool schema.
+        """
+        python = f"Python {manifest.PYTHON_SERIES}" if cls._full_image() else "Python"
+        timeout = int(cls._exec_timeout())
+        lines = [
+            (
+                f"Run {python} in this conversation's sandbox for real computation, parsing, data work, charts and "
+                "files; not for arithmetic you can do inline."
+            ),
+            (
+                f"Session: {cls._persistence_note()} After {cls._idle_minutes()} min idle or a restart it resets and "
+                "the result says `session: new`: rebuild what you need."
+            ),
+            (
+                "Files: the working directory is the workspace; every file written there, except under `scratch/`, "
+                "becomes a download for the user; files elsewhere (e.g. /tmp) are never saved. Save each deliverable "
+                "once under its final name (re-saving that name adds a new version). Put previews, test renders and "
+                "intermediate data in `scratch/`."
+            ),
+            (
+                "Charts: plt.show() to look at one yourself; savefig() what the user should get. In your answer name "
+                "saved files; never write links or sandbox paths."
+            ),
+            (
+                "Inputs: pass an earlier artifact or upload by ref (`A1`, `F3`) in `inputs`; it appears at "
+                "`inputs/<name>`. Artifact and app URLs can't be downloaded from inside the sandbox."
+            ),
+            (
+                f"Limits: {timeout}s per call, hard; split longer work, or run it in the background writing progress "
+                "to scratch/ and check back next call. Network: usually open for pip and public sites."
+            ),
+            cls._environment_note(),
+            "Documents the user will keep editing fit artifact_generator (if available) better.",
+            cls._closing_rule(),
+        ]
+        return "\n".join(line for line in lines if line)
+
+    def _environment_summary(self) -> str:
+        """Return the compact environment summary a new session's first result carries."""
+        timeout = int(self._exec_timeout())
+        idle = self._idle_minutes()
+        if self._full_image():
+            return manifest.environment_summary(timeout=timeout, idle_minutes=idle)
         return (
-            "The session stays warm between calls until it idles out: variables, imports, files and "
-            "installed packages carry over to the next run_code call. "
+            "Python with only the stdlib preinstalled; pip install what you need. Working directory = workspace: "
+            "files there become downloads, except scratch/; inputs/ holds passed files; /tmp is not kept. "
+            f"Limits: {timeout}s per call; resets after {idle} min idle."
         )
 
     def get_actions_metadata(self) -> List[Dict[str, Any]]:
@@ -142,32 +240,7 @@ class CodeExecutorTool(Tool):
         return [
             {
                 "name": "run_code",
-                "description": (
-                    "Execute Python in a sandboxed session bound to this conversation. Use it for real "
-                    "computation, data processing, file parsing or conversion, and "
-                    "charts rather than estimating or writing results by hand; each run is "
-                    "time-limited, so start long work in the background and check on it with "
-                    "another run. Do NOT use it for arithmetic you can do inline. "
-                    + self._persistence_note()
-                    + "Every result has a `session` field: `new` means a fresh session where nothing "
-                    "from earlier calls exists, so rebuild what you need; `reused` means what earlier calls "
-                    "left is still there. "
-                    "Files the code writes in the workspace (the working directory) are saved as "
-                    "downloadable artifacts, and saving a file again under the same name adds a new "
-                    "version of it. Put previews, test renders and intermediate files under `scratch/`, "
-                    "which is never saved, or pass `outputs` to save only specific files. Absolute paths "
-                    "such as /tmp are outside the workspace: files there are never saved, so do not rely on "
-                    "them later. "
-                    "Only a compact summary (output tail + artifact references) is returned, never raw bytes. "
-                    "Charts the code displays (plt.show()) are shown to you as images when you can read "
-                    "images: show a chart to check it yourself, and savefig the chart the user should get. "
-                    "A displayed chart is saved for the user only when the run saved no image file. "
-                    "Each saved file appears to the user as a download button: name it in your answer, "
-                    "never write a link or sandbox path to it. "
-                    "Each call is capped at ~60s of wall-clock; for longer work, start it in the "
-                    "background and poll with additional run_code calls. "
-                    + self._environment_note()
-                ),
+                "description": self._description(),
                 "active": True,
                 "require_approval": self._require_approval,
                 "parameters": {
@@ -175,8 +248,8 @@ class CodeExecutorTool(Tool):
                     "properties": {
                         "code": {
                             "type": "string",
-                            "description": "Python source to execute in the session. Install packages from "
-                            "within the code itself (e.g. subprocess pip install) if needed.",
+                            "description": "Python source to run in the session. If a package really is "
+                            "missing, pip install it from within this code (e.g. with subprocess) before importing it.",
                         },
                         "inputs": {
                             "type": "array",
@@ -287,6 +360,8 @@ class CodeExecutorTool(Tool):
             return {"status": "error", "error": f"sandbox unavailable: {type(exc).__name__}: {exc}"}
         # Tells the model whether earlier files/installs/variables can still be there.
         session_state = "new" if opened.created else "reused"
+        if opened.created:
+            self._make_scratch_dir(manager, session_id)
 
         try:
             materialized = self._materialize_inputs(manager, session_id, inputs)
@@ -321,10 +396,17 @@ class CodeExecutorTool(Tool):
             charts = self._show_charts(result, should_capture and not saved_image)
 
             payload = self._shape_payload(
-                result, artifacts + charts, materialized.get("loaded", []), session=session_state
+                result,
+                artifacts + charts,
+                materialized.get("loaded", []),
+                session=session_state,
+                environment=self._environment_summary() if opened.created else None,
             )
             if self._native_queue:
                 payload["charts_shown"] = [part["label"] for part in self._native_queue]
+            hints = self._hints(session_id, code, result, artifacts + charts, opened.created, timeout, should_capture)
+            if hints:
+                payload["hint"] = hints
             return payload
         finally:
             if not keep_alive:
@@ -332,6 +414,18 @@ class CodeExecutorTool(Tool):
                     manager.close(session_id)
                 except Exception:
                     logger.exception("code_executor: session close failed")
+
+    @staticmethod
+    def _make_scratch_dir(manager: Any, session_id: str) -> None:
+        """Create ``scratch/`` in a new session's workspace.
+
+        The description sends previews there, and commands such as pdftoppm fail
+        on an output directory that does not exist.
+        """
+        try:
+            manager.put_file(session_id, "scratch/.keep", b"")
+        except Exception:
+            logger.warning("code_executor: could not create scratch/ in the workspace", exc_info=True)
 
     # ------------------------------------------------------------------
     # Inputs / outputs
@@ -557,20 +651,71 @@ class CodeExecutorTool(Tool):
         parts, self._native_queue = self._native_queue, []
         return parts
 
+    def _hints(
+        self,
+        session_id: str,
+        code: str,
+        result: ExecResult,
+        artifacts: List[Dict[str, Any]],
+        session_new: bool,
+        timeout: float,
+        capture: Any,
+    ) -> List[str]:
+        """Return the fix hints for this run, the repeated-failure warning first.
+
+        Args:
+            session_id: The sandbox session, which keys the repeated-failure memory.
+            code: The submitted source.
+            result: The run's result.
+            artifacts: References of the files and charts the run saved.
+            session_new: The call started a fresh session.
+            timeout: The per-call cap in seconds.
+            capture: The call's ``capture_artifacts`` flag.
+
+        Returns:
+            At most ``MAX_HINTS`` short hints.
+        """
+        facts = RunFacts(
+            code=code,
+            result=result,
+            artifacts=artifacts,
+            session_new=session_new,
+            backend=self._backend(),
+            full_image=self._full_image(),
+            timed_out=not result.ok and self._is_timeout(result),
+            timeout=int(timeout),
+            app_hosts=self._app_hosts(),
+            capture=bool(capture),
+            charts_shown=len(self._native_queue),
+        )
+        try:
+            hints = fix_hints(facts)
+        except Exception:
+            logger.exception("code_executor: building fix hints failed")
+            hints = []
+        if _FAILURES.repeated(session_id, error_signature(result)):
+            hints = [REPEATED_FAILURE_HINT, *hints]
+        return hints[:MAX_HINTS]
+
     def _shape_payload(
         self,
         result: ExecResult,
         artifacts: List[Dict[str, Any]],
         inputs_loaded: List[str],
         session: Optional[str] = None,
+        environment: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Build the compact LLM-facing payload; raw bytes never appear here.
+
+        Output is cleaned (colour codes and pip's routine lines removed) before it
+        is tailed, so the tail holds what the model needs.
 
         Args:
             result: The run's result.
             artifacts: References of the files and charts the run saved.
             inputs_loaded: Workspace paths the inputs were staged at.
             session: ``"new"`` or ``"reused"``, reported right after the status.
+            environment: The environment summary, given for a new session only.
 
         Returns:
             The payload the model sees.
@@ -579,9 +724,11 @@ class CodeExecutorTool(Tool):
         payload: Dict[str, Any] = {"status": status}
         if session is not None:
             payload["session"] = session
-        payload["stdout_tail"] = _tail(result.stdout)
+        if environment:
+            payload["environment"] = environment
+        payload["stdout_tail"] = _tail(clean_output(result.stdout))
         payload["artifacts"] = artifacts
-        stderr_tail = _tail(result.stderr)
+        stderr_tail = _tail(clean_output(result.stderr))
         if stderr_tail:
             payload["stderr_tail"] = stderr_tail
         if not result.ok:
@@ -596,14 +743,33 @@ class CodeExecutorTool(Tool):
                     "persist=false."
                 )
             else:
-                payload["error"] = (
-                    f"{result.error_name}: {result.error_value}"
-                    if result.error_name
-                    else (result.error_value or "execution error")
-                )
+                payload["error"] = self._error_text(result)
         if inputs_loaded:
             payload["inputs_loaded"] = inputs_loaded
         return payload
+
+    @staticmethod
+    def _error_text(result: ExecResult) -> str:
+        """Name a failed run's error in one bounded line.
+
+        Daytona reports every failure as ``ExecutionError`` with the whole output as
+        its message; the output is already in ``stdout_tail``, so the exception on
+        its last traceback line is named instead.
+        """
+        if result.error_name in GENERIC_ERROR_NAMES:
+            name, message = exception_of(result)
+            if name and name not in GENERIC_ERROR_NAMES:
+                text = f"{name}: {message}" if message else name
+            else:
+                text = f"{result.error_name}: exited with code {result.exit_code}"
+        elif result.error_name:
+            text = f"{result.error_name}: {clean_output(result.error_value)}"
+        else:
+            text = clean_output(result.error_value) or "execution error"
+        text = text.strip()
+        if len(text) > _ERROR_MAX_CHARS:
+            text = text[:_ERROR_MAX_CHARS] + " [...]"
+        return text
 
     # ------------------------------------------------------------------
     # Helpers
@@ -634,9 +800,44 @@ class CodeExecutorTool(Tool):
 
     @staticmethod
     def _is_timeout(result: ExecResult) -> bool:
-        """True when a failed exec looks like a wall-clock timeout (any backend's naming/message)."""
-        blob = f"{result.error_name or ''} {result.error_value or ''}".lower()
-        return "timeout" in blob or "timed out" in blob
+        """True when a failed exec hit the sandbox's wall-clock cap.
+
+        The Jupyter runner names it ``TimeoutError`` and the Daytona SDK raises a
+        ``Daytona...TimeoutError``. A process that failed on its own
+        (``ExecutionError``) or a library's timeout such as requests' ``ReadTimeout``
+        is not the cap, even though its output mentions timeouts.
+        """
+        name = result.error_name or ""
+        if name:
+            return name == "TimeoutError" or (name.startswith("Daytona") and "Timeout" in name)
+        value = (result.error_value or "").lower()
+        return "timeout" in value or "timed out" in value
+
+    @staticmethod
+    def _app_hosts() -> Tuple[str, ...]:
+        """Return this deployment's own hosts, which sandbox code cannot fetch without the user's session.
+
+        A loopback host is kept only with its port (``localhost:7091``): code may run
+        a server of its own on localhost.
+        """
+        hosts: List[str] = []
+        for name in ("API_URL", "PUBLIC_API_BASE_URL", "OIDC_FRONTEND_URL", "CONNECTOR_REDIRECT_BASE_URI"):
+            url = getattr(settings, name, None)
+            if not url:
+                continue
+            try:
+                parts = urlsplit(str(url))
+                host, port = (parts.hostname or "").lower(), parts.port
+            except ValueError:
+                continue
+            if not host:
+                continue
+            if host in _LOOPBACK_HOSTS:
+                if port is not None:
+                    hosts.append(f"{host}:{port}")
+            else:
+                hosts.append(host)
+        return tuple(dict.fromkeys(hosts))
 
     @staticmethod
     def _keep_alive(persist: Any, ttl: Optional[int]) -> bool:

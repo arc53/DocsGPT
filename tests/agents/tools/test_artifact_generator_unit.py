@@ -407,6 +407,13 @@ def test_create_and_rewrite_metadata_embed_spec_synopsis():
     assert _SPEC_SYNOPSIS in rewrite_spec["description"]
 
 
+def test_create_description_leaves_conversions_and_data_files_to_run_code():
+    """The two sandbox tools split the work the same way in both descriptions."""
+    description = {a["name"]: a for a in _tool().get_actions_metadata()}["create_artifact"]["description"]
+    assert "run_code" in description
+    assert "convert" in description.lower()
+
+
 # ---------------------------------------------------------------------------
 # spec_append: additive edits that don't clobber arrays
 # ---------------------------------------------------------------------------

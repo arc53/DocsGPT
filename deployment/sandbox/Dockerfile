@@ -73,8 +73,10 @@ RUN if [ "$INSTALL_DOCLING" = "true" ]; then \
 #
 # kernel-env.sh does the scrubbing and gives kernels a writable HOME under /tmp
 # (the root FS is read-only); sandbox.env is the image environment it passes on.
+# kernel-startup.py runs inside each kernel and drops the FORCE_COLOR ipykernel sets.
 COPY kernel-env.sh /opt/docsgpt/kernel-env.sh
 COPY kernel-launch.sh /opt/docsgpt/kernel-launch.sh
+COPY kernel-startup.py /opt/docsgpt/kernel-startup.py
 COPY gateway-launch.sh /opt/docsgpt/gateway-launch.sh
 COPY sandbox.env /opt/docsgpt/sandbox.env
 COPY kernels/docsgpt-python/kernel.json /usr/local/share/jupyter/kernels/docsgpt-python/kernel.json
@@ -90,7 +92,8 @@ COPY smoke_test.py /opt/docsgpt/smoke_test.py
 COPY manifest.json /opt/docsgpt/manifest.json
 RUN chmod 0555 /opt/docsgpt/kernel-env.sh /opt/docsgpt/kernel-launch.sh /opt/docsgpt/gateway-launch.sh \
         /usr/local/bin/office-convert /usr/local/bin/html-to-pdf /usr/local/bin/html-screenshot \
-    && chmod 0444 /opt/docsgpt/sandbox.env /opt/docsgpt/smoke_test.py /opt/docsgpt/manifest.json
+    && chmod 0444 /opt/docsgpt/sandbox.env /opt/docsgpt/kernel-startup.py /opt/docsgpt/smoke_test.py \
+        /opt/docsgpt/manifest.json
 
 # Numeric UID (not the name) so a kubelet with `runAsNonRoot: true` can verify
 # the user is non-root without resolving /etc/passwd. This uid MUST match
