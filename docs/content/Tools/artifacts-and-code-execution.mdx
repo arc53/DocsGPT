@@ -52,6 +52,17 @@ The Artifact tool keeps a structured spec as the source of truth and renders the
 
 Supported kinds are presentation (.pptx), document (.docx), spreadsheet (.xlsx), pdf, and html.
 
+#### Non-Latin text in PDF artifacts
+
+The pdf kind draws text with the fonts installed in the sandbox, so text in other scripts renders instead of showing as boxes or blanks:
+
+- Latin, Greek, Cyrillic and most symbols (such as `−`, `→` and `≤`) use DejaVu Sans.
+- Arabic, Persian, Hebrew, Devanagari and the other Indic scripts, Thai, Khmer, Ethiopic and a few more use the matching Noto font. A paragraph can mix scripts: each run of text gets a font that has its characters.
+- Chinese, Japanese and Korean use the standard PDF CJK fonts (STSong-Light, HeiseiKakuGo-W5 and HYGothic-Medium). They aren't embedded, so the PDF viewer supplies the glyphs, and they have no bold weight.
+- Right-to-left paragraphs are joined, put in display order and right-aligned. Devanagari, Bengali, Tamil, Thai and similar scripts are shaped with HarfBuzz, so conjuncts and vowel signs sit where they belong; text copied out of a shaped word can contain private-use characters.
+
+A sandbox image without these fonts falls back to matplotlib's copy of DejaVu Sans, then to Helvetica, which covers Latin only. For a layout the pdf kind can't express, the model can build the file in the Code Executor and convert HTML with `html-to-pdf`.
+
 ## Code Executor
 
 The Code Executor runs Python in a sandboxed session bound to your conversation (or to a workflow run). Files the code writes into the workspace are captured as artifacts automatically, so a script that produces `report.csv` gives you a downloadable artifact with no extra steps.
@@ -77,7 +88,7 @@ Key points:
 
 The self-hosted runner image and the Daytona snapshot hold the same set, listed in `docsgpt/sandbox/manifest.py`, and the Code Executor tells the model what is there so it doesn't have to find out by failing:
 
-- **Python libraries:** pandas, numpy, matplotlib, openpyxl, python-docx, python-pptx, reportlab, lxml, Pillow, requests, beautifulsoup4, PyYAML, pypdf, PyPDF2, pdfplumber, pdfminer.six, pypdfium2, pytesseract and imageio.
+- **Python libraries:** pandas, numpy, matplotlib, openpyxl, python-docx, python-pptx, reportlab (with uharfbuzz for shaping, and arabic-reshaper and python-bidi for right-to-left text), lxml, Pillow, requests, beautifulsoup4, PyYAML, pypdf, PyPDF2, pdfplumber, pdfminer.six, pypdfium2, pytesseract and imageio.
 - **Commands:** headless LibreOffice, headless Chromium, tesseract OCR (English), poppler's `pdftotext` and `pdftoppm`, `ffmpeg` and `ffprobe`, and Node.js 24 with `npm` and `npx`.
 - **Conversion helpers:** `office-convert FILE --to pdf` (also `docx`, `xlsx`, `pptx`, `png` and more) converts office documents with LibreOffice; `html-to-pdf` and `html-screenshot` render an HTML file or URL with Chromium.
 - **Fonts:** DejaVu, Liberation and Carlito/Caladea (metric-compatible with Arial, Times New Roman, Courier New, Calibri and Cambria), Noto for Arabic, Devanagari and other scripts, and Noto CJK for Chinese, Japanese and Korean.

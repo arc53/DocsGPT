@@ -14,10 +14,12 @@
 # sandbox.env, manifest.json; edit the manifest and run
 # `python scripts/export_sandbox_manifest.py`, never these files.
 #
-# LICENSES. The Python libraries are permissive (MIT, BSD, Apache-2.0, HPND for
-# Pillow), and so are Node.js (MIT, unpacked from the official nodejs.org
-# tarball and checked against the SHA-256 pinned in the manifest), Chromium
-# (BSD-3-Clause plus its bundled third-party code) and tesseract (Apache-2.0).
+# LICENSES. The Python libraries but one are permissive (MIT, BSD, Apache-2.0,
+# HPND for Pillow; uharfbuzz bundles HarfBuzz, MIT), and so are Node.js (MIT,
+# unpacked from the official nodejs.org tarball and checked against the SHA-256
+# pinned in the manifest), Chromium (BSD-3-Clause plus its bundled third-party
+# code) and tesseract (Apache-2.0). The one is python-bidi, LGPL-3.0: an
+# unmodified wheel installed as its own package and imported at runtime.
 # LibreOffice is MPL-2.0. The fonts are under the Bitstream Vera (DejaVu) and
 # SIL OFL-1.1 (Liberation, Carlito, Caladea, Noto) licenses. Two packages are
 # GPL and are only ever run as separate programs, never linked into the Python
