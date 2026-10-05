@@ -8,6 +8,7 @@ import sys
 import types
 
 import pytest
+from anthropic import transform_schema as _real_transform_schema
 
 
 class _FakeUsage:
@@ -75,6 +76,7 @@ class _FakeAnthropic:
 def patch_anthropic():
     fake = types.ModuleType("anthropic")
     fake.Anthropic = _FakeAnthropic
+    fake.transform_schema = _real_transform_schema
 
     modules_to_remove = [key for key in sys.modules if key.startswith("anthropic")]
     for key in modules_to_remove:
