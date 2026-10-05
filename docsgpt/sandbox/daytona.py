@@ -506,15 +506,17 @@ class DaytonaSandbox(CodeSandbox):
             # A cached handle may point at a sandbox Daytona auto-stopped; wake it and
             # retry once. Genuine code errors return a nonzero-exit response (they do
             # NOT raise), so this only retries transport/stopped faults.
+            failure: Exception = exc
             if self._ensure_started(handle):
                 try:
                     return self._to_result(handle.sandbox.process.code_run(wrapped, timeout=wall))
-                except Exception:  # noqa: BLE001 - second failure -> error result below
-                    pass
+                except Exception as retry_exc:  # noqa: BLE001 - second failure -> error result below
+                    # The retry ran on the woken sandbox; its error (a timeout, say) is the one to report.
+                    failure = retry_exc
             result = ExecResult(
                 status="error",
-                error_name=type(exc).__name__,
-                error_value=str(exc) or "code_run failed",
+                error_name=type(failure).__name__,
+                error_value=str(failure) or "code_run failed",
                 exit_code=-1,
             )
             # An auto-DELETED sandbox (vs a merely stopped one, handled above) can't be
