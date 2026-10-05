@@ -1506,6 +1506,7 @@
         "mcp_zapier": "Use the actions enabled in your Zapier MCP account to read or update connected apps.",
         "mcp_trello": "Find Trello boards and cards, and create and update cards.",
         "mcp_miro": "Find Miro boards, read content and comments, create diagrams, and reply to comments.",
+        "mcp_resend": "Send emails and manage contacts, audiences and domains.",
         "github": "Sync repositories into Knowledge and let agents read code, issues and pull requests."
       },
       "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",
