@@ -195,7 +195,8 @@
     "PIP_ROOT_USER_ACTION": "ignore",
     "PIP_DISABLE_PIP_VERSION_CHECK": "1",
     "OMP_THREAD_LIMIT": "1",
-    "IMAGEIO_FFMPEG_EXE": "/usr/bin/ffmpeg"
+    "IMAGEIO_FFMPEG_EXE": "/usr/bin/ffmpeg",
+    "NO_COLOR": "1"
   },
   "binaries": [
     {
@@ -268,37 +269,44 @@
     {
       "name": "DejaVu Sans",
       "scripts": "Latin, Greek, Cyrillic",
-      "path": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+      "path": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+      "reportlab": true
     },
     {
       "name": "Liberation Sans/Serif/Mono",
       "scripts": "Latin, Greek, Cyrillic; Arial, Times New Roman and Courier New metrics",
-      "path": "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"
+      "path": "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+      "reportlab": true
     },
     {
       "name": "Carlito",
       "scripts": "Latin; Calibri metrics",
-      "path": "/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf"
+      "path": "/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf",
+      "reportlab": true
     },
     {
       "name": "Caladea",
       "scripts": "Latin; Cambria metrics",
-      "path": "/usr/share/fonts/truetype/crosextra/Caladea-Regular.ttf"
+      "path": "/usr/share/fonts/truetype/crosextra/Caladea-Regular.ttf",
+      "reportlab": true
     },
     {
       "name": "Noto Sans Arabic",
       "scripts": "Arabic, Persian, Urdu",
-      "path": "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf"
+      "path": "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
+      "reportlab": true
     },
     {
       "name": "Noto Sans Devanagari",
       "scripts": "Devanagari: Hindi, Marathi, Nepali",
-      "path": "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf"
+      "path": "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf",
+      "reportlab": true
     },
     {
       "name": "Noto Sans CJK",
       "scripts": "Chinese, Japanese, Korean",
-      "path": "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+      "path": "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+      "reportlab": false
     }
   ],
   "helpers": {

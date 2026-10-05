@@ -26,6 +26,7 @@ _REPO = Path(__file__).resolve().parents[2]
 _SANDBOX_DIR = _REPO / "deployment" / "sandbox"
 _KERNEL_ENV = _SANDBOX_DIR / "kernel-env.sh"
 _KERNEL_LAUNCH = _SANDBOX_DIR / "kernel-launch.sh"
+_KERNEL_STARTUP = _SANDBOX_DIR / "kernel-startup.py"
 _DOCKERFILE = _SANDBOX_DIR / "Dockerfile"
 _COMPOSE = _REPO / "deployment" / "optional" / "docker-compose.optional.sandbox.yaml"
 _K8S = _REPO / "deployment" / "k8s" / "deployments" / "sandbox-deploy.yaml"
@@ -181,6 +182,38 @@ def test_kernel_launch_runs_ipykernel_under_kernel_env(tmp_path):
     assert "LEAK=\n" in proc.stdout or proc.stdout.rstrip().endswith("LEAK=")
 
 
+def test_kernel_launch_runs_the_startup_file_in_every_kernel(tmp_path):
+    """ipykernel sets FORCE_COLOR=1 after the environment is built; the startup file undoes it in the kernel."""
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "python").write_text('#!/bin/sh\necho "ARGS: $*"\n')
+    (fake / "python").chmod(0o755)
+    proc = _run_kernel_env(
+        tmp_path, "-f", "/tmp/conn.json", script=_KERNEL_LAUNCH, PATH=f"{fake}:{os.environ.get('PATH', '')}"
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert f"--IPKernelApp.exec_files={_KERNEL_STARTUP}" in proc.stdout
+
+
+def test_kernel_startup_drops_forced_colour_and_leaves_no_names(monkeypatch):
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    monkeypatch.setenv("CLICOLOR_FORCE", "1")
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    namespace: Dict[str, object] = {}
+    exec(compile(_KERNEL_STARTUP.read_text(), str(_KERNEL_STARTUP), "exec"), namespace)
+    assert "FORCE_COLOR" not in os.environ
+    assert "CLICOLOR_FORCE" not in os.environ
+    assert os.environ["NO_COLOR"] == "1"
+    # It runs in the user's namespace: nothing of it may be left there.
+    assert [name for name in namespace if name != "__builtins__"] == []
+
+
+def test_kernel_startup_is_plain_python_without_imports_beyond_os():
+    text = _KERNEL_STARTUP.read_text()
+    imports = {line.split()[1] for line in text.splitlines() if line.startswith(("import ", "from "))}
+    assert imports <= {"os"}
+
+
 @pytest.mark.parametrize("script", [_KERNEL_ENV, _KERNEL_LAUNCH, _SANDBOX_DIR / "install-system.sh"])
 def test_shell_scripts_parse(script):
     proc = subprocess.run(["sh", "-n", str(script)], capture_output=True, text=True)
@@ -216,7 +249,14 @@ def test_dockerfile_puts_every_helper_on_path():
 
 def test_dockerfile_ships_the_kernel_env_and_smoke_test():
     text = _DOCKERFILE.read_text()
-    for name in ("kernel-env.sh", "kernel-launch.sh", "sandbox.env", "smoke_test.py", "manifest.json"):
+    for name in (
+        "kernel-env.sh",
+        "kernel-launch.sh",
+        "kernel-startup.py",
+        "sandbox.env",
+        "smoke_test.py",
+        "manifest.json",
+    ):
         assert f"/opt/docsgpt/{name}" in text, name
 
 

@@ -6,4 +6,8 @@
 # it) for a minimal allowlist plus a writable HOME; see that script. The
 # {connection_file} the gateway passes is forwarded via "$@" so loopback ZMQ
 # reachability is preserved -- do NOT drop or rewrite those args.
-exec sh "$(dirname "$0")/kernel-env.sh" python -m ipykernel_launcher "$@"
+#
+# kernel-startup.py runs in each kernel once ipykernel has set its environment,
+# to undo the FORCE_COLOR it sets (see that file).
+dir="$(dirname "$0")"
+exec sh "$dir/kernel-env.sh" python -m ipykernel_launcher "$@" "--IPKernelApp.exec_files=$dir/kernel-startup.py"

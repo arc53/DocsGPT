@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
 from docsgpt.agents.tools.code_executor import (
     CodeExecutorTool,
     _infer_mime,
@@ -27,6 +29,7 @@ class _FakeManager:
         self._created = created
         self.closed: list = []
         self.opened: list = []
+        self.put_files: list = []
         self.list_calls = 0
 
     def open(self, session_id, ttl=None):
@@ -45,6 +48,9 @@ class _FakeManager:
 
     def close(self, session_id):
         self.closed.append(session_id)
+
+    def put_file(self, session_id, dest_path, data):
+        self.put_files.append(dest_path)
 
 
 def _tool() -> CodeExecutorTool:
@@ -601,8 +607,23 @@ def test_materialize_inputs_dedupes_same_filename(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Metadata: workspace contract and preinstalled packages
+# Description: what the model is told, per backend
 # ---------------------------------------------------------------------------
+def _configure(monkeypatch, backend: str = "jupyter", snapshot=None, ttl: int = 1200, timeout: int = 60) -> None:
+    from docsgpt.core import settings as settings_module
+
+    monkeypatch.setattr(settings_module.settings, "SANDBOX_BACKEND", backend, raising=False)
+    monkeypatch.setattr(settings_module.settings, "DAYTONA_SNAPSHOT", snapshot, raising=False)
+    monkeypatch.setattr(settings_module.settings, "SANDBOX_MAX_TTL", ttl, raising=False)
+    monkeypatch.setattr(settings_module.settings, "SANDBOX_EXEC_TIMEOUT", timeout, raising=False)
+
+
+def _description(monkeypatch, backend: str = "jupyter", **kwargs) -> str:
+    _configure(monkeypatch, backend, **kwargs)
+    return _tool().get_actions_metadata()[0]["description"]
+
+
+_SNAPSHOT = "docsgpt-sandbox-py312-v2"
 
 
 def test_inputs_metadata_names_the_staging_path():
@@ -611,80 +632,90 @@ def test_inputs_metadata_names_the_staging_path():
     assert "inputs_loaded" in props["inputs"]["description"]
 
 
-def test_description_lists_jupyter_preinstalled_packages(monkeypatch):
-    from docsgpt.core import settings as settings_module
-
-    monkeypatch.setattr(settings_module.settings, "SANDBOX_BACKEND", "jupyter", raising=False)
-    desc = _tool().get_actions_metadata()[0]["description"]
-    for pkg in ("pandas", "matplotlib", "python-docx"):
-        assert pkg in desc
+@pytest.mark.parametrize("backend, snapshot", [("jupyter", None), ("daytona", _SNAPSHOT), ("daytona", None)])
+def test_description_stays_short(monkeypatch, backend, snapshot):
+    """About 250 words: the long lists moved to the new-session environment summary."""
+    words = len(_description(monkeypatch, backend, snapshot=snapshot).split())
+    assert words <= 300, words
 
 
-def test_description_renders_the_sandbox_manifest(monkeypatch):
-    """The package, command and font lists come from the manifest both images are built from."""
-    from docsgpt.core import settings as settings_module
+def test_description_is_the_same_for_every_call_and_conversation(monkeypatch):
+    """No per-call content, so a provider can cache the tool schema."""
+    _configure(monkeypatch)
+    first = CodeExecutorTool({"conversation_id": "c1"}, user_id="u1").get_actions_metadata()
+    second = CodeExecutorTool({"conversation_id": "c2", "workflow_run_id": "r"}, user_id="u2").get_actions_metadata()
+    assert first == second
+
+
+def test_description_renders_the_manifest_and_settings(monkeypatch):
     from docsgpt.sandbox import manifest
 
-    monkeypatch.setattr(settings_module.settings, "SANDBOX_BACKEND", "jupyter", raising=False)
-    desc = _tool().get_actions_metadata()[0]["description"]
-    assert manifest.preinstalled_summary() in desc
-    for text in (
-        "python-docx (import docx)",
-        "beautifulsoup4 (import bs4)",
-        "pdfplumber",
-        "office-convert FILE --to pdf",
-        "html-to-pdf",
-        "tesseract",
-        "ffmpeg",
-        "node",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ):
-        assert text in desc, text
-    assert "pip install anything else" in desc
+    desc = _description(monkeypatch, ttl=900, timeout=45)
+    assert manifest.description_note() in desc
+    assert f"Python {manifest.PYTHON_SERIES}" in desc
+    assert "15 min idle" in desc
+    assert "45s per call" in desc
+    assert "`environment`" in desc
 
 
-def test_environment_note_lists_every_manifest_package(monkeypatch):
-    from docsgpt.agents.tools.code_executor import CodeExecutorTool
-    from docsgpt.core import settings as settings_module
-    from docsgpt.sandbox import manifest
+def test_description_states_the_workspace_contract(monkeypatch):
+    for backend, snapshot in (("jupyter", None), ("daytona", _SNAPSHOT)):
+        desc = _description(monkeypatch, backend, snapshot=snapshot)
+        for text in (
+            "`session: new`",
+            "scratch/",
+            "/tmp",
+            "new version",
+            "final name",
+            "plt.show()",
+            "savefig()",
+            "never write links or sandbox paths",
+            "`inputs/<name>`",
+            "`A1`",
+            "`F3`",
+            "can't be downloaded from inside the sandbox",
+            "in the background",
+            "Network:",
+            "artifact_generator",
+            "don't apt-get",
+        ):
+            assert text in desc, (backend, text)
+        # Showing a saved chart no longer saves it twice, so both are allowed.
+        assert "never both" not in desc.lower()
 
-    monkeypatch.setattr(settings_module.settings, "SANDBOX_BACKEND", "jupyter", raising=False)
-    note = CodeExecutorTool._environment_note()
-    for pkg in manifest.PIP_PACKAGES:
-        assert manifest.dist_name(pkg["spec"]) in note
-    for binary in manifest.BINARIES:
-        assert binary["name"] in note
-    for font in manifest.FONTS:
-        assert font["path"] in note
+
+def test_jupyter_description_says_variables_carry_over(monkeypatch):
+    desc = _description(monkeypatch, "jupyter")
+    assert "variables, imports, files and installed packages persist" in desc
+    assert "fresh interpreter" not in desc
+    assert "never pip-install a listed one" in desc
 
 
-def test_description_warns_bare_daytona_image(monkeypatch):
-    from docsgpt.core import settings as settings_module
+def test_daytona_description_says_each_call_is_a_fresh_interpreter(monkeypatch):
+    desc = _description(monkeypatch, "daytona", snapshot=_SNAPSHOT)
+    assert "files and installed packages persist" in desc
+    assert "fresh interpreter" in desc and "re-import" in desc
+    # An operator's older snapshot can lack a newer package.
+    assert "only if its import fails" in desc
 
-    monkeypatch.setattr(settings_module.settings, "SANDBOX_BACKEND", "daytona", raising=False)
-    monkeypatch.setattr(settings_module.settings, "DAYTONA_SNAPSHOT", None, raising=False)
-    desc = _tool().get_actions_metadata()[0]["description"]
+
+def test_bare_daytona_description_advertises_nothing_it_lacks(monkeypatch):
+    desc = _description(monkeypatch, "daytona", snapshot=None)
     assert "Only the Python stdlib is preinstalled" in desc
-    # Without a snapshot none of the image's tools exist; do not advertise them.
-    for absent in ("office-convert", "tesseract", "DejaVuSans.ttf", "pdfplumber"):
+    for absent in ("office-convert", "tesseract", "pdfplumber", "never pip-install", "Python 3.12"):
         assert absent not in desc
 
 
-def test_description_lists_daytona_snapshot_packages(monkeypatch):
-    from docsgpt.core import settings as settings_module
-    from docsgpt.sandbox import manifest
+def test_description_no_longer_asks_for_persist_to_keep_state(monkeypatch):
+    meta = _tool().get_actions_metadata()[0]
+    assert "persist=true" not in meta["description"]
+    persist = meta["parameters"]["properties"]["persist"]["description"]
+    assert "default" in persist.lower() and "false" in persist.lower()
 
-    monkeypatch.setattr(settings_module.settings, "SANDBOX_BACKEND", "daytona", raising=False)
-    monkeypatch.setattr(
-        settings_module.settings, "DAYTONA_SNAPSHOT", "docsgpt-sandbox-py312-v2", raising=False
-    )
-    desc = _tool().get_actions_metadata()[0]["description"]
-    for pkg in ("python-pptx", "pandas", "openpyxl", "matplotlib"):
-        assert pkg in desc
-    assert manifest.preinstalled_summary() in desc
-    # A snapshot built by an older script lacks some of this: the model is told to pip install on import failure.
-    assert "If an import fails" in desc
-    assert "pip install" in desc
+
+def test_outputs_parameter_mentions_scratch():
+    outputs = _tool().get_actions_metadata()[0]["parameters"]["properties"]["outputs"]["description"]
+    assert "scratch/" in outputs
 
 
 def test_daytona_snapshot_bakes_the_spreadsheet_libraries():
@@ -696,40 +727,192 @@ def test_daytona_snapshot_bakes_the_spreadsheet_libraries():
 
 
 # ---------------------------------------------------------------------------
-# Description: what persists between calls, per backend
+# Environment summary on a new session
 # ---------------------------------------------------------------------------
-def _description(monkeypatch, backend: str) -> str:
+def test_a_new_session_result_carries_the_environment_summary(monkeypatch):
+    from docsgpt.sandbox import manifest
+
+    _configure(monkeypatch, ttl=1200, timeout=60)
+    manager = _FakeManager(ExecResult(status="ok", stdout="ok"), created=True)
+    payload = _run_with_fake_manager(monkeypatch, manager, code="print(1)", capture_artifacts=False)
+    assert payload["environment"] == manifest.environment_summary(timeout=60, idle_minutes=20)
+    # It comes right after the session marker, before the output.
+    assert list(payload)[:3] == ["status", "session", "environment"]
+
+
+def test_a_reused_session_result_has_no_environment_summary(monkeypatch):
+    _configure(monkeypatch)
+    manager = _FakeManager(ExecResult(status="ok", stdout="ok"), created=False)
+    payload = _run_with_fake_manager(monkeypatch, manager, code="print(1)", capture_artifacts=False)
+    assert "environment" not in payload
+
+
+def test_a_bare_daytona_session_summary_says_stdlib_only(monkeypatch):
+    _configure(monkeypatch, "daytona", snapshot=None)
+    manager = _FakeManager(ExecResult(status="ok", stdout="ok"), created=True)
+    env = _run_with_fake_manager(monkeypatch, manager, code="print(1)", capture_artifacts=False)["environment"]
+    assert "only the stdlib" in env and "office-convert" not in env
+
+
+# ---------------------------------------------------------------------------
+# Hints and output hygiene in the result
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def fresh_failures(monkeypatch):
+    from docsgpt.agents.tools import code_executor as ce
+    from docsgpt.agents.tools.code_executor_hints import FailureMemory
+
+    memory = FailureMemory()
+    monkeypatch.setattr(ce, "_FAILURES", memory)
+    return memory
+
+
+def test_result_carries_fix_hints(monkeypatch, fresh_failures):
+    _configure(monkeypatch)
+    manager = _FakeManager(ExecResult(status="error", error_name="ModuleNotFoundError",
+                                      error_value="No module named 'fitz'"), created=False)
+    payload = _run_with_fake_manager(monkeypatch, manager, code="import fitz", capture_artifacts=False)
+    assert any("fitz (PyMuPDF) is not installed" in h for h in payload["hint"])
+
+
+def test_result_without_a_recognized_mistake_has_no_hint_key(monkeypatch, fresh_failures):
+    _configure(monkeypatch)
+    manager = _FakeManager(ExecResult(status="ok", stdout="42\n"), created=False)
+    payload = _run_with_fake_manager(monkeypatch, manager, code="print(42)", capture_artifacts=False)
+    assert "hint" not in payload
+
+
+def test_the_same_failure_twice_in_a_conversation_says_change_approach(monkeypatch, fresh_failures):
+    from docsgpt.agents.tools.code_executor_hints import REPEATED_FAILURE_HINT
+
+    _configure(monkeypatch)
+    failing = ExecResult(status="error", error_name="KeyError", error_value="'total'")
+    # Each request builds a new tool instance; the memory spans them.
+    first = _run_with_fake_manager(monkeypatch, _FakeManager(failing, created=False), code="df['total']")
+    second = _run_with_fake_manager(monkeypatch, _FakeManager(failing, created=False), code="df['total']")
+    assert REPEATED_FAILURE_HINT not in first.get("hint", [])
+    assert second["hint"][0] == REPEATED_FAILURE_HINT
+
+
+def test_a_success_between_failures_resets_the_repeat_guard(monkeypatch, fresh_failures):
+    from docsgpt.agents.tools.code_executor_hints import REPEATED_FAILURE_HINT
+
+    _configure(monkeypatch)
+    failing = ExecResult(status="error", error_name="KeyError", error_value="'total'")
+    _run_with_fake_manager(monkeypatch, _FakeManager(failing, created=False), code="x")
+    _run_with_fake_manager(monkeypatch, _FakeManager(ExecResult(status="ok", stdout="1"), created=False), code="y")
+    third = _run_with_fake_manager(monkeypatch, _FakeManager(failing, created=False), code="x")
+    assert REPEATED_FAILURE_HINT not in third.get("hint", [])
+
+
+def test_timeout_keeps_the_guidance_and_adds_the_lost_work_hint(monkeypatch, fresh_failures):
+    _configure(monkeypatch)
+    timed_out = ExecResult(status="error", error_name="TimeoutError", error_value="execution exceeded 60.0s")
+    payload = _run_with_fake_manager(monkeypatch, _FakeManager(timed_out, created=False), code="train()")
+    assert "background" in payload["error"] and "60s" in payload["error"]
+    assert any("interrupted" in h and "scratch/" in h for h in payload["hint"])
+
+
+def test_output_tails_drop_colour_codes_and_pip_noise(monkeypatch, fresh_failures):
+    _configure(monkeypatch)
+    stdout = "Requirement already satisfied: pandas in /usr/lib (2.2.3)\n\x1b[32mdone\x1b[0m\n"
+    stderr = "\x1b[33mWARNING: Running pip as the 'root' user can result in broken permissions\x1b[0m\n"
+    result = ExecResult(status="ok", stdout=stdout, stderr=stderr)
+    payload = _run_with_fake_manager(monkeypatch, _FakeManager(result, created=False), code="print('done')")
+    assert payload["stdout_tail"] == "done\n"
+    assert "stderr_tail" not in payload
+
+
+def test_daytona_error_names_the_exception_instead_of_repeating_stdout(monkeypatch, fresh_failures):
+    _configure(monkeypatch, "daytona", snapshot=_SNAPSHOT)
+    stdout = "x" * 20000 + "\nTraceback (most recent call last):\nKeyError: 'total'\n"
+    result = ExecResult(status="error", stdout=stdout, error_name="ExecutionError", error_value=stdout, exit_code=1)
+    payload = _run_with_fake_manager(monkeypatch, _FakeManager(result, created=False), code="df['total']")
+    assert payload["error"] == "KeyError: 'total'"
+    assert payload["stdout_tail"].endswith("KeyError: 'total'\n")
+
+
+def test_daytona_error_without_a_traceback_reports_the_exit_code(monkeypatch, fresh_failures):
+    _configure(monkeypatch, "daytona", snapshot=_SNAPSHOT)
+    result = ExecResult(status="error", stdout="", error_name="ExecutionError",
+                        error_value="exited with code 2", exit_code=2)
+    payload = _run_with_fake_manager(monkeypatch, _FakeManager(result, created=False), code="import sys; sys.exit(2)")
+    assert payload["error"] == "ExecutionError: exited with code 2"
+
+
+def test_a_long_error_message_is_bounded():
+    tool = _tool()
+    result = ExecResult(status="error", error_name="ValueError", error_value="v" * 50000)
+    assert len(tool._shape_payload(result, [], [])["error"]) <= 1100
+
+
+def test_is_timeout_ignores_a_process_that_failed_on_its_own():
+    """A Daytona traceback through urllib3 mentions timeouts; only the sandbox's own cap is a timeout."""
+    noisy = ExecResult(status="error", error_name="ExecutionError",
+                       error_value="ConnectionError: ... (timeout=10) ... timed out")
+    assert not CodeExecutorTool._is_timeout(noisy)
+    assert not CodeExecutorTool._is_timeout(ExecResult(error_name="ReadTimeout", error_value="read timed out"))
+    assert CodeExecutorTool._is_timeout(ExecResult(error_name="DaytonaProcessExecutionTimeoutError"))
+
+
+def test_app_hosts_come_from_the_deployment_urls(monkeypatch):
     from docsgpt.core import settings as settings_module
 
-    monkeypatch.setattr(settings_module.settings, "SANDBOX_BACKEND", backend, raising=False)
-    return _tool().get_actions_metadata()[0]["description"]
+    monkeypatch.setattr(settings_module.settings, "API_URL", "https://api.example.com", raising=False)
+    monkeypatch.setattr(settings_module.settings, "PUBLIC_API_BASE_URL", "http://localhost:7091", raising=False)
+    monkeypatch.setattr(settings_module.settings, "OIDC_FRONTEND_URL", "https://app.example.com/", raising=False)
+    hosts = CodeExecutorTool._app_hosts()
+    assert "api.example.com" in hosts and "app.example.com" in hosts
+    # A loopback host counts only with its port: code may run its own server on localhost.
+    assert "localhost:7091" in hosts and "localhost" not in hosts
 
 
-def test_description_no_longer_asks_for_persist_to_keep_state(monkeypatch):
-    meta = _tool().get_actions_metadata()[0]
-    assert "persist=true" not in meta["description"]
-    persist = meta["parameters"]["properties"]["persist"]["description"]
-    assert "default" in persist.lower() and "false" in persist.lower()
+def test_a_failing_hint_builder_never_breaks_the_result(monkeypatch, fresh_failures):
+    from docsgpt.agents.tools import code_executor as ce
+
+    def _boom(facts):
+        raise RuntimeError("bug")
+
+    _configure(monkeypatch)
+    monkeypatch.setattr(ce, "fix_hints", _boom)
+    payload = _run_with_fake_manager(monkeypatch, _FakeManager(ExecResult(status="ok", stdout=""), created=False),
+                                     code="x = 1")
+    assert payload["status"] == "ok" and "hint" not in payload
 
 
-def test_jupyter_description_says_variables_carry_over(monkeypatch):
-    desc = _description(monkeypatch, "jupyter")
-    assert "variables" in desc and "carry over" in desc
-    assert "fresh Python interpreter" not in desc
+def test_an_error_without_a_name_keeps_its_cleaned_message():
+    tool = _tool()
+    assert tool._shape_payload(ExecResult(status="error", error_value="\x1b[31mboom\x1b[0m"), [], [])["error"] == "boom"
+    assert tool._shape_payload(ExecResult(status="error"), [], [])["error"] == "execution error"
 
 
-def test_daytona_description_says_variables_do_not_carry_over(monkeypatch):
-    desc = _description(monkeypatch, "daytona")
-    assert "fresh Python interpreter" in desc
-    assert "re-import" in desc.lower() and "through files" in desc
+def test_app_hosts_skip_unparseable_and_hostless_urls(monkeypatch):
+    from docsgpt.core import settings as settings_module
+
+    monkeypatch.setattr(settings_module.settings, "API_URL", "http://[::1", raising=False)
+    monkeypatch.setattr(settings_module.settings, "PUBLIC_API_BASE_URL", "not a url", raising=False)
+    monkeypatch.setattr(settings_module.settings, "OIDC_FRONTEND_URL", "http://localhost/", raising=False)
+    monkeypatch.setattr(settings_module.settings, "CONNECTOR_REDIRECT_BASE_URI", None, raising=False)
+    assert CodeExecutorTool._app_hosts() == ()
 
 
-def test_description_explains_the_session_field_and_paths(monkeypatch):
-    for backend in ("jupyter", "daytona"):
-        desc = _description(monkeypatch, backend)
-        assert "`session`" in desc and "`new`" in desc
-        assert "scratch/" in desc and "/tmp" in desc
-        assert "new version" in desc
-        assert "savefig" in desc
-    outputs = _tool().get_actions_metadata()[0]["parameters"]["properties"]["outputs"]["description"]
-    assert "scratch/" in outputs
+def test_a_new_session_gets_a_scratch_directory(monkeypatch):
+    """Commands such as pdftoppm do not create directories; scratch/ must exist before the code runs."""
+    _configure(monkeypatch)
+    fresh = _FakeManager(ExecResult(status="ok", stdout="ok"), created=True)
+    _run_with_fake_manager(monkeypatch, fresh, code="print(1)", capture_artifacts=False)
+    assert fresh.put_files == ["scratch/.keep"]
+    reused = _FakeManager(ExecResult(status="ok", stdout="ok"), created=False)
+    _run_with_fake_manager(monkeypatch, reused, code="print(1)", capture_artifacts=False)
+    assert reused.put_files == []
+
+
+def test_a_failed_scratch_setup_does_not_stop_the_run(monkeypatch):
+    class _PutFails(_FakeManager):
+        def put_file(self, session_id, dest_path, data):
+            raise IOError("down")
+
+    _configure(monkeypatch)
+    payload = _run_with_fake_manager(monkeypatch, _PutFails(ExecResult(status="ok", stdout="ok"), created=True),
+                                     code="print(1)", capture_artifacts=False)
+    assert payload["status"] == "ok"

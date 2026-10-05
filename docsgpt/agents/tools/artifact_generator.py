@@ -471,7 +471,9 @@ class ArtifactGeneratorTool(Tool):
                     "or path to it. Any URL you write for it is dead and reads to the user as a "
                     "failed download.\n"
                     "Do NOT use it for a short snippet the user only wants to read inline, or to "
-                    "change a file you already made — use edit_artifact for that."
+                    "change a file you already made — use edit_artifact for that. To convert an "
+                    "existing file, or to build a file from data with code (charts, analysis results), "
+                    "use run_code when it is available."
                 ),
                 "active": True,
                 "parameters": {
