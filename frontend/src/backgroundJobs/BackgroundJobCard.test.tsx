@@ -23,6 +23,7 @@ import notificationsReducer, {
   sseEventReceived,
 } from '../notifications/notificationsSlice';
 import BackgroundJobCard, {
+  noticeText,
   effectiveJobStatus,
   elapsedSeconds,
   formatElapsed,
@@ -228,6 +229,41 @@ describe('BackgroundJobCard', () => {
     expect(container.textContent).toContain('backgroundJobs.card.willResume');
   });
 
+  it('explains a device job its client interrupted, with the pid, instead of the generic hint', async () => {
+    service.getJob.mockResolvedValue({
+      job_id: 'j1',
+      status: 'lost',
+      finished_at: new Date().toISOString(),
+      notices: [
+        { code: 'device_interrupted', pid: 4242 },
+        { code: 'output_truncated' },
+      ],
+    });
+    await render();
+    expect(
+      container.querySelector('[data-testid="job-notice-device_interrupted"]')
+        ?.textContent,
+    ).toBe('backgroundJobs.card.noticeDeviceInterrupted:{"pid":4242}');
+    expect(
+      container.querySelector('[data-testid="job-notice-output_truncated"]'),
+    ).not.toBeNull();
+    expect(container.textContent).not.toContain('backgroundJobs.card.lostHint');
+  });
+
+  it('says at once when a device job could not be cancelled on its device', async () => {
+    service.getJob.mockResolvedValue({
+      job_id: 'j1',
+      status: 'cancelled',
+      finished_at: new Date().toISOString(),
+      notices: [{ code: 'cancel_unsupported' }],
+    });
+    await render();
+    expect(
+      container.querySelector('[data-testid="job-notice-cancel_unsupported"]')
+        ?.textContent,
+    ).toBe('backgroundJobs.card.noticeCancelUnsupported');
+  });
+
   it('follows job.updated: progress, then the final state', async () => {
     const store = await render();
     await act(async () => {
@@ -380,5 +416,27 @@ describe('BackgroundJobCard', () => {
       vi.advanceTimersByTime(JOB_POLL_MS * 2);
     });
     expect(service.listJobs).not.toHaveBeenCalled();
+  });
+});
+
+describe('noticeText', () => {
+  const t = (key: string, opts?: Record<string, unknown>) =>
+    opts ? `${key}:${JSON.stringify(opts)}` : key;
+  it('names every notice, with the pid when there is one', () => {
+    expect(noticeText({ code: 'device_interrupted', pid: 7 }, t)).toBe(
+      'backgroundJobs.card.noticeDeviceInterrupted:{"pid":7}',
+    );
+    expect(noticeText({ code: 'device_interrupted' }, t)).toBe(
+      'backgroundJobs.card.noticeDeviceInterruptedNoPid',
+    );
+    expect(noticeText({ code: 'device_shutdown' }, t)).toBe(
+      'backgroundJobs.card.noticeDeviceShutdown',
+    );
+    expect(
+      noticeText(
+        { code: 'unknown' } as unknown as Parameters<typeof noticeText>[0],
+        t,
+      ),
+    ).toBeNull();
   });
 });

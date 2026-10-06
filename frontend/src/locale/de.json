@@ -47,6 +47,11 @@
       "pollOnly": "Frag in diesem Chat nach dem Ergebnis, sobald der Job fertig ist.",
       "waitingForDevice": "Warte darauf, dass sich das Gerät wieder verbindet. Der Befehl läuft dort möglicherweise noch.",
       "lostHint": "Der Job wurde unterbrochen und ist vielleicht nicht fertig geworden. Der Assistent prüft das, bevor er es erneut versucht.",
+      "noticeCancelUnsupported": "Die docsgpt-cli dieses Geräts kann laufende Befehle nicht abbrechen; der Befehl läuft dort möglicherweise noch. Aktualisiere docsgpt-cli auf diesem Rechner.",
+      "noticeDeviceInterrupted": "Der Client des Geräts wurde neu gestartet; der Befehl läuft möglicherweise noch auf dem Rechner (PID {{pid}}). Prüfe das, bevor du ihn wiederholst.",
+      "noticeDeviceInterruptedNoPid": "Der Client des Geräts wurde neu gestartet; der Befehl läuft möglicherweise noch auf dem Rechner. Prüfe das, bevor du ihn wiederholst.",
+      "noticeDeviceShutdown": "Der Client des Geräts wurde beendet und hat den Befehl gestoppt; er ist möglicherweise teilweise gelaufen.",
+      "noticeOutputTruncated": "Die Ausgabe wurde gekürzt: Das Gerät hat einen Teil verworfen, während es den Server nicht erreichen konnte.",
       "durationSeconds": "{{s}} s",
       "durationMinutes": "{{m}} min {{s}} s",
       "durationHours": "{{h}} h {{m}} min"

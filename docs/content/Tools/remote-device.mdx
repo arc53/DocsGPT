@@ -112,7 +112,8 @@ line and a **Cancel** button.
 - **Approvals are unchanged.** The approval mode, the auto-approved patterns and the denylist are applied before
   the command starts, and an approved command's clock starts after the approval.
 - **When the device goes offline.** A device not heard from for 90 seconds counts as offline: the card says
-  **Waiting for the device**, and the job picks up the output again when the device reconnects.
+  **Waiting for the device**, and the job picks up the output again when the device reconnects. A client that keeps
+  its report (`outbox`) gets ten minutes past the command's timeout to send it, instead of two.
 - **When the result never arrives.** The job ends **interrupted** (lost), with a note that the command may or may
   not have run and should be verified before retrying, when the device is revoked, when it is connected but
   never reports past the command's own timeout (or never picks the command up), or when the job's lifetime ends
@@ -120,15 +121,29 @@ line and a **Cancel** button.
   fails as timed out.
 - **Cancel.** A command the device has not picked up yet is taken off its queue and never runs. A running one is
   sent a cancel; if the device doesn't confirm within 30 seconds, the job ends cancelled with a note to check
-  the machine.
+  the machine. A client that can't cancel ends the job at once, saying so.
 
-<Callout type="warning">
-  Today's `docsgpt-cli` keeps a command running when its connection to DocsGPT drops and reconnects, and reports
-  the exit code if it can reach the server when the command ends. It does not yet resend output posted while
-  the network was down, act on a cancel, or hold off an auto-update while a command runs, so a command whose
-  report is lost ends as interrupted, and a cancelled one may keep running. Those changes are tracked in
-  [arc53/DocsGPT-cli#13](https://github.com/arc53/DocsGPT-cli/issues/13).
+<Callout type="info">
+  How much of this the machine's `docsgpt-cli` supports depends on its version. Clients that send
+  `X-Device-Capabilities: cancel,outbox` ([arc53/DocsGPT-cli#14](https://github.com/arc53/DocsGPT-cli/pull/14)) keep a
+  command's report until DocsGPT has it, stop a cancelled command and its child processes, and never restart in the
+  middle of a command. Older clients report only if they can reach the server when the command ends, so a report lost
+  on a network drop leaves the job interrupted, and they can't stop a running command: cancelling then says so at once
+  and asks you to update the CLI.
 </Callout>
+
+What the job card can say about a device job besides its status:
+
+- **The device's client restarted** (interrupted). The client crashed or was killed while the command ran and can't tell
+  how it ended; the command may still be running on the machine, and the card gives its process id. Check before
+  retrying.
+- **The device's client shut down** (failed). The client was stopped and stopped the command, which may have partly run.
+- **Output was truncated.** The device kept at most 1 MiB of unsent output while it couldn't reach the server and dropped
+  the oldest; the exit code is still exact.
+- **This device's client can't cancel** (cancelled). The command may still be running; update `docsgpt-cli`.
+
+A client that resends its report numbers every chunk, and DocsGPT keeps each chunk once, so a report sent twice after a
+lost response never duplicates output.
 
 Scheduled runs and monitor checks keep running commands in the foreground.
 

@@ -51,6 +51,11 @@
       "pollOnly": "Ask in this chat for the result once it finishes.",
       "waitingForDevice": "Waiting for the device to reconnect. The command may still be running there.",
       "lostHint": "The job was interrupted and may or may not have finished. The assistant checks before retrying.",
+      "noticeCancelUnsupported": "This device's docsgpt-cli can't cancel a running command, so it may still be running there. Update docsgpt-cli on that machine.",
+      "noticeDeviceInterrupted": "The device's client restarted; the command may still be running on the machine (pid {{pid}}). Verify before retrying.",
+      "noticeDeviceInterruptedNoPid": "The device's client restarted; the command may still be running on the machine. Verify before retrying.",
+      "noticeDeviceShutdown": "The device's client shut down and stopped the command; it may have partly run.",
+      "noticeOutputTruncated": "Output was truncated: the device dropped some of it while it couldn't reach the server.",
       "durationSeconds": "{{s}}s",
       "durationMinutes": "{{m}}m {{s}}s",
       "durationHours": "{{h}}h {{m}}m"

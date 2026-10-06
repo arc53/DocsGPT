@@ -47,6 +47,11 @@
       "pollOnly": "Pide el resultado en este chat cuando termine.",
       "waitingForDevice": "Esperando a que el dispositivo se vuelva a conectar. Es posible que el comando siga ejecutándose allí.",
       "lostHint": "La tarea se interrumpió y puede que no haya terminado. El asistente lo comprueba antes de reintentar.",
+      "noticeCancelUnsupported": "El docsgpt-cli de este dispositivo no puede cancelar un comando en curso, así que puede que siga ejecutándose allí. Actualiza docsgpt-cli en esa máquina.",
+      "noticeDeviceInterrupted": "El cliente del dispositivo se reinició; puede que el comando siga ejecutándose en la máquina (pid {{pid}}). Compruébalo antes de reintentar.",
+      "noticeDeviceInterruptedNoPid": "El cliente del dispositivo se reinició; puede que el comando siga ejecutándose en la máquina. Compruébalo antes de reintentar.",
+      "noticeDeviceShutdown": "El cliente del dispositivo se cerró y detuvo el comando; puede que se haya ejecutado en parte.",
+      "noticeOutputTruncated": "La salida se truncó: el dispositivo descartó parte mientras no podía conectar con el servidor.",
       "durationSeconds": "{{s}} s",
       "durationMinutes": "{{m}} min {{s}} s",
       "durationHours": "{{h}} h {{m}} min"

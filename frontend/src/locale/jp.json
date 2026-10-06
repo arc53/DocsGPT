@@ -47,6 +47,11 @@
       "pollOnly": "完了したら、このチャットで結果を尋ねてください。",
       "waitingForDevice": "デバイスの再接続を待っています。コマンドはデバイス上でまだ実行中の可能性があります。",
       "lostHint": "ジョブが中断されたため、完了していない可能性があります。アシスタントは再試行の前に確認します。",
+      "noticeCancelUnsupported": "このデバイスの docsgpt-cli は実行中のコマンドをキャンセルできないため、コマンドはまだ実行中の可能性があります。そのマシンの docsgpt-cli を更新してください。",
+      "noticeDeviceInterrupted": "デバイスのクライアントが再起動しました。コマンドはまだマシン上で実行中の可能性があります (pid {{pid}})。再試行する前に確認してください。",
+      "noticeDeviceInterruptedNoPid": "デバイスのクライアントが再起動しました。コマンドはまだマシン上で実行中の可能性があります。再試行する前に確認してください。",
+      "noticeDeviceShutdown": "デバイスのクライアントが終了し、コマンドを停止しました。一部だけ実行された可能性があります。",
+      "noticeOutputTruncated": "出力は切り詰められました。サーバーに接続できない間に、デバイスが一部を破棄しました。",
       "durationSeconds": "{{s}}秒",
       "durationMinutes": "{{m}}分{{s}}秒",
       "durationHours": "{{h}}時間{{m}}分"

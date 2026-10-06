@@ -47,6 +47,11 @@
       "pollOnly": "完成后，请在此对话中询问结果。",
       "waitingForDevice": "正在等待设备重新连接。命令可能仍在设备上运行。",
       "lostHint": "任务被中断，可能尚未完成。助手会在重试前先确认。",
+      "noticeCancelUnsupported": "此设备的 docsgpt-cli 无法取消正在运行的命令，命令可能仍在运行。请在该机器上更新 docsgpt-cli。",
+      "noticeDeviceInterrupted": "设备的客户端已重启；命令可能仍在机器上运行 (pid {{pid}})。重试前请先确认。",
+      "noticeDeviceInterruptedNoPid": "设备的客户端已重启；命令可能仍在机器上运行。重试前请先确认。",
+      "noticeDeviceShutdown": "设备的客户端已关闭并停止了命令；命令可能已部分执行。",
+      "noticeOutputTruncated": "输出已截断：设备在无法连接服务器期间丢弃了部分输出。",
       "durationSeconds": "{{s}} 秒",
       "durationMinutes": "{{m}} 分 {{s}} 秒",
       "durationHours": "{{h}} 小时 {{m}} 分"

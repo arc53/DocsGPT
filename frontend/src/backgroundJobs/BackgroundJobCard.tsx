@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
-import type { BackgroundJobStatus } from '../api/services/backgroundService';
+import type {
+  BackgroundJobNotice,
+  BackgroundJobStatus,
+} from '../api/services/backgroundService';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Progress } from '../components/ui/progress';
@@ -54,6 +57,27 @@ export function effectiveJobStatus(
   if (toolCall.status === 'completed') return 'completed';
   if (toolCall.status === 'error') return 'failed';
   return 'working';
+}
+
+/** The card's line for a notice the server attached to a job. */
+export function noticeText(
+  notice: BackgroundJobNotice,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string | null {
+  switch (notice.code) {
+    case 'cancel_unsupported':
+      return t('backgroundJobs.card.noticeCancelUnsupported');
+    case 'device_interrupted':
+      return notice.pid
+        ? t('backgroundJobs.card.noticeDeviceInterrupted', { pid: notice.pid })
+        : t('backgroundJobs.card.noticeDeviceInterruptedNoPid');
+    case 'device_shutdown':
+      return t('backgroundJobs.card.noticeDeviceShutdown');
+    case 'output_truncated':
+      return t('backgroundJobs.card.noticeOutputTruncated');
+    default:
+      return null;
+  }
 }
 
 /** `1h 4m`, `3m 12s`, `45s`. */
@@ -196,6 +220,16 @@ export default function BackgroundJobCard({
   const percent = job?.progress?.percent;
   const lastLine = job?.progress?.last?.trim();
   const waitingForDevice = running && job?.progress?.waiting_for === 'device';
+  const notices = (job?.notices ?? [])
+    .map((notice) => ({ code: notice.code, text: noticeText(notice, t) }))
+    .filter(
+      (notice): notice is { code: BackgroundJobNotice['code']; text: string } =>
+        Boolean(notice.text),
+    );
+  // A device job interrupted by its client says why itself; the generic hint would repeat it.
+  const deviceExplained = notices.some(
+    (notice) => notice.code === 'device_interrupted',
+  );
   const cancelRequested = Boolean(job?.cancel_requested) || cancelling;
 
   return (
@@ -279,6 +313,15 @@ export default function BackgroundJobCard({
                 : t('backgroundJobs.card.willResume')}
             </p>
           )}
+        {notices.map((notice) => (
+          <p
+            key={notice.code}
+            className="text-muted-foreground mt-1 text-xs"
+            data-testid={`job-notice-${notice.code}`}
+          >
+            {notice.text}
+          </p>
+        ))}
         {status === 'failed' && job?.error && (
           <p
             className="text-destructive mt-1 line-clamp-3 font-mono text-xs wrap-break-word"
@@ -287,7 +330,7 @@ export default function BackgroundJobCard({
             {job.error}
           </p>
         )}
-        {status === 'lost' && (
+        {status === 'lost' && !deviceExplained && (
           <p className="text-muted-foreground text-xs">
             {t('backgroundJobs.card.lostHint')}
           </p>
