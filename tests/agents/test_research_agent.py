@@ -325,16 +325,19 @@ class TestResearchAgentClarification:
         mock_llm_creator,
         mock_llm_handler_creator,
     ):
-        response = Mock()
-        response.choices = [Mock()]
-        response.choices[0].message = Mock()
-        response.choices[0].message.content = json.dumps(
+        from docsgpt.llm.handlers.openai import OpenAILLMHandler
+
+        # The Choice object OpenAI's gen returns when tools are passed.
+        response = Mock(spec=["message", "finish_reason"])
+        response.message = Mock(spec=["content"])
+        response.message.content = json.dumps(
             {"needs_clarification": False, "reason": "Clear enough"}
         )
         mock_llm.gen = Mock(return_value=response)
         mock_llm.token_usage = {"prompt_tokens": 10, "generated_tokens": 5}
 
         agent = ResearchAgent(**agent_base_params)
+        agent.llm_handler = OpenAILLMHandler()
         result = agent._clarification_phase("What is Python?")
         assert result is None
 
@@ -456,14 +459,16 @@ class TestResearchAgentPlanning:
             "complexity": "simple",
             "steps": [{"query": f"q{i}", "rationale": f"r{i}"} for i in range(10)],
         })
-        response = Mock()
-        response.choices = [Mock()]
-        response.choices[0].message = Mock()
-        response.choices[0].message.content = plan_json
+        from docsgpt.llm.handlers.openai import OpenAILLMHandler
+
+        response = Mock(spec=["message", "finish_reason"])
+        response.message = Mock(spec=["content"])
+        response.message.content = plan_json
         mock_llm.gen = Mock(return_value=response)
         mock_llm.token_usage = {"prompt_tokens": 10, "generated_tokens": 5}
 
         agent = ResearchAgent(**agent_base_params)
+        agent.llm_handler = OpenAILLMHandler()
         steps, complexity = agent._planning_phase("Simple question")
 
         assert complexity == "simple"
@@ -534,66 +539,74 @@ class TestResearchAgentPlanning:
 
 @pytest.mark.unit
 class TestResearchAgentExtractText:
-
-    def _make_agent(
-        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
-    ):
-        return ResearchAgent(**agent_base_params)
+    """``_extract_text`` reads a reply with the handler of the model that answered,
+    as the chat loop does, instead of sniffing provider shapes itself."""
 
     def test_extract_from_string(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
     ):
-        agent = self._make_agent(
-            agent_base_params, mock_llm_creator, mock_llm_handler_creator
-        )
+        agent = ResearchAgent(**agent_base_params)
         assert agent._extract_text("hello") == "hello"
 
-    def test_extract_from_openai_response(
+    def test_extract_from_openai_choice(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
     ):
-        agent = self._make_agent(
-            agent_base_params, mock_llm_creator, mock_llm_handler_creator
-        )
-        response = Mock()
-        response.choices = [Mock()]
-        response.choices[0].message = Mock()
-        response.choices[0].message.content = "OpenAI content"
-        response.message = None
-        response.content = None
+        from docsgpt.llm.handlers.openai import OpenAILLMHandler
+
+        agent = ResearchAgent(**agent_base_params)
+        agent.llm_handler = OpenAILLMHandler()
+        response = Mock(spec=["message", "finish_reason"])
+        response.message = Mock(spec=["content"])
+        response.message.content = "OpenAI content"
         assert agent._extract_text(response) == "OpenAI content"
 
-    def test_extract_from_anthropic_response(
+    def test_extract_from_anthropic_message(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
     ):
-        agent = self._make_agent(
-            agent_base_params, mock_llm_creator, mock_llm_handler_creator
+        from types import SimpleNamespace
+
+        from docsgpt.llm.handlers.anthropic import AnthropicLLMHandler
+
+        agent = ResearchAgent(**agent_base_params)
+        agent.llm_handler = AnthropicLLMHandler()
+        response = SimpleNamespace(
+            content=[SimpleNamespace(type="text", text="Anthropic content")], stop_reason="end_turn"
         )
-        text_block = Mock()
-        text_block.text = "Anthropic content"
-        response = Mock()
-        response.content = [text_block]
-        response.message = None
-        response.choices = None
         assert agent._extract_text(response) == "Anthropic content"
 
-    def test_extract_from_message_content(
-        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    def test_extract_uses_the_responding_providers_parser(
+        self, agent_base_params, mock_llm, mock_llm_creator
     ):
-        agent = self._make_agent(
-            agent_base_params, mock_llm_creator, mock_llm_handler_creator
-        )
-        response = Mock()
-        response.message = Mock()
-        response.message.content = "From message"
-        assert agent._extract_text(response) == "From message"
+        """A fallback to another provider returns that provider's shape."""
+        from google.genai import types as gt
+
+        from docsgpt.llm.handlers.openai import OpenAILLMHandler
+
+        agent = ResearchAgent(**agent_base_params)
+        agent.llm_handler = OpenAILLMHandler()
+        mock_llm._responding_provider = "google"
+        response = gt.GenerateContentResponse(candidates=[gt.Candidate(content=gt.Content(
+            role="model", parts=[gt.Part(text="Gemini content")],
+        ))])
+        assert agent._extract_text(response) == "Gemini content"
 
     def test_extract_from_none(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
     ):
-        agent = self._make_agent(
-            agent_base_params, mock_llm_creator, mock_llm_handler_creator
-        )
+        agent = ResearchAgent(**agent_base_params)
         assert agent._extract_text(None) == ""
+
+    def test_extract_without_text_is_empty(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        from docsgpt.llm.handlers.openai import OpenAILLMHandler
+
+        agent = ResearchAgent(**agent_base_params)
+        agent.llm_handler = OpenAILLMHandler()
+        response = Mock(spec=["message", "finish_reason"])
+        response.message = Mock(spec=["content"])
+        response.message.content = None
+        assert agent._extract_text(response) == ""
 
 
 # =====================================================================
@@ -1292,6 +1305,28 @@ class TestResearchStep:
 
         report = agent._research_step("query", {})
         assert report == "Research step completed."
+
+    def test_research_step_summary_reads_a_fallback_providers_reply(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_creator,
+    ):
+        """The closing summary is read like every other reply: with the parser of the model that answered."""
+        from google.genai import types as gt
+
+        from docsgpt.llm.handlers.openai import OpenAILLMHandler
+
+        agent = ResearchAgent(max_sub_iterations=0, **agent_base_params)
+        agent.llm_handler = OpenAILLMHandler()
+        agent._start_time = time.monotonic()
+        mock_llm.token_usage = {"prompt_tokens": 10, "generated_tokens": 5}
+        mock_llm._responding_provider = "google"
+        mock_llm.gen = Mock(return_value=gt.GenerateContentResponse(candidates=[gt.Candidate(content=gt.Content(
+            role="model", parts=[gt.Part(text="Summary from the backup model.")],
+        ))]))
+
+        assert agent._research_step("query", {}) == "Summary from the backup model."
 
     def test_research_step_parses_a_fallback_providers_reply(
         self,

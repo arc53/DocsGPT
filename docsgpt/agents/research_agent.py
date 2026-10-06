@@ -807,16 +807,22 @@ class ResearchAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     def _extract_text(self, response) -> str:
-        """Extract text content from a non-streaming LLM response."""
+        """Extract the text of a non-streaming LLM reply.
+
+        Reads it with the handler of the model that answered, as the chat
+        loop does: a fallback to another provider returns that provider's
+        shape. A provider that was asked for no tools may hand back the
+        text itself.
+
+        Args:
+            response: The reply ``self.llm.gen`` returned.
+
+        Returns:
+            The reply's text, or an empty string when it has none.
+        """
+        if response is None:
+            return ""
         if isinstance(response, str):
             return response
-        if hasattr(response, "message") and hasattr(response.message, "content"):
-            return response.message.content or ""
-        if hasattr(response, "choices") and response.choices:
-            choice = response.choices[0]
-            if hasattr(choice, "message") and hasattr(choice.message, "content"):
-                return choice.message.content or ""
-        if hasattr(response, "content") and isinstance(response.content, list):
-            if response.content and hasattr(response.content[0], "text"):
-                return response.content[0].text or ""
-        return str(response) if response else ""
+        content = self.llm_handler._parse_for_response(self, response).content
+        return content if isinstance(content, str) else ""
