@@ -151,6 +151,7 @@ class RunFacts:
         app_hosts: This deployment's own hosts, ``host`` or ``host:port``.
         capture: Saving files for the user was on.
         charts_shown: Charts the run displayed to the model.
+        background: The run was a background job (a timeout is reported, not retried).
     """
 
     code: str
@@ -165,6 +166,7 @@ class RunFacts:
     app_hosts: Tuple[str, ...] = ()
     capture: bool = True
     charts_shown: int = 0
+    background: bool = False
 
 
 def _commands() -> str:
@@ -385,7 +387,7 @@ def _timeout_hint(facts: RunFacts) -> Optional[str]:
 
 
 def _larger_timeout_hint(facts: RunFacts) -> Optional[str]:
-    if not facts.timed_out or facts.timeout >= facts.max_timeout:
+    if not facts.timed_out or facts.timeout >= facts.max_timeout or facts.background:
         return None
     return (
         f"This call had {facts.timeout}s. If the job is long by nature (video, OCR of many pages, a big "

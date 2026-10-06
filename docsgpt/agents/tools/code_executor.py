@@ -129,6 +129,8 @@ class PreparedRun:
     keep_alive: bool = True
     # The run is in a turn that can hand calls off: a timeout points to background=true.
     background_capable: bool = False
+    # The run is a background job (asked for, or handed off): a timeout is reported, never re-run unasked.
+    background: bool = False
 
     def to_state(self) -> Dict[str, Any]:
         """A JSON-safe copy (the code is kept to ``_STATE_CODE_MAX_CHARS`` for the hints)."""
@@ -457,6 +459,7 @@ class CodeExecutorTool(Tool):
             )
             call = self._background_call()
             run.background_capable = call is not None
+            run.background = bool(call is not None and call.explicit)
             if call is not None and self._can_detach(manager, call):
                 outcome = self._run_detached(manager, run, call)
                 if outcome is detached_marker():
@@ -476,6 +479,9 @@ class CodeExecutorTool(Tool):
                         "error": f"execution failed: {type(exc).__name__}: {exc}",
                         "session": session_state,
                     }
+            # A run the turn handed off while it ran is finished here, as a background job.
+            if call is not None and call.handoff_requested():
+                run.background = True
             return self.finish_run(manager, run, result)
         finally:
             if not keep_alive and not detached_run:
@@ -519,13 +525,21 @@ class CodeExecutorTool(Tool):
             environment=self._environment_summary() if run.session_created else None,
             timeout=run.timeout,
             background_capable=run.background_capable,
+            background=run.background,
         )
         if run.clamped:
             payload["timeout"] = f"ran with {int(run.timeout)}s, the maximum; {run.asked_timeout}s was asked for"
         if self._native_queue:
             payload["charts_shown"] = [part["label"] for part in self._native_queue]
         hints = self._hints(
-            run.session_id, run.code, result, artifacts + charts, run.session_created, run.timeout, run.should_capture
+            run.session_id,
+            run.code,
+            result,
+            artifacts + charts,
+            run.session_created,
+            run.timeout,
+            run.should_capture,
+            background=run.background,
         )
         if hints:
             payload["hint"] = hints
@@ -879,6 +893,7 @@ class CodeExecutorTool(Tool):
         session_new: bool,
         timeout: float,
         capture: Any,
+        background: bool = False,
     ) -> List[str]:
         """Return the fix hints for this run, the repeated-failure warning first.
 
@@ -890,6 +905,7 @@ class CodeExecutorTool(Tool):
             session_new: The call started a fresh session.
             timeout: The per-call cap in seconds.
             capture: The call's ``capture_artifacts`` flag.
+            background: The run was a background job.
 
         Returns:
             At most ``MAX_HINTS`` short hints.
@@ -907,6 +923,7 @@ class CodeExecutorTool(Tool):
             app_hosts=self._app_hosts(),
             capture=bool(capture),
             charts_shown=len(self._native_queue),
+            background=background,
         )
         try:
             hints = fix_hints(facts)
@@ -926,6 +943,7 @@ class CodeExecutorTool(Tool):
         environment: Optional[str] = None,
         timeout: Optional[float] = None,
         background_capable: bool = False,
+        background: bool = False,
     ) -> Dict[str, Any]:
         """Build the compact LLM-facing payload; raw bytes never appear here.
 
@@ -940,6 +958,7 @@ class CodeExecutorTool(Tool):
             environment: The environment summary, given for a new session only.
             timeout: The cap this call ran with; the default cap when None.
             background_capable: The turn could hand the run off as a background job.
+            background: The run was a background job.
 
         Returns:
             The payload the model sees.
@@ -959,7 +978,9 @@ class CodeExecutorTool(Tool):
             if result.out_of_memory:
                 payload["error"] = self._out_of_memory_text(result)
             elif self._is_timeout(result):
-                payload["error"] = self._timeout_text(timeout, background_capable=background_capable)
+                payload["error"] = self._timeout_text(
+                    timeout, background_capable=background_capable, background=background
+                )
             else:
                 payload["error"] = self._error_text(result)
         if inputs_loaded:
@@ -967,19 +988,32 @@ class CodeExecutorTool(Tool):
         return payload
 
     @classmethod
-    def _timeout_text(cls, timeout: Optional[float], *, background_capable: bool = False) -> str:
+    def _timeout_text(
+        cls, timeout: Optional[float], *, background_capable: bool = False, background: bool = False
+    ) -> str:
         """Explain a run that hit its wall-clock cap, and how to give the work more room.
+
+        A run that was already a background job is reported, not retried: it
+        may have done part of its work, and nobody is in the turn to agree to
+        a second run.
 
         Args:
             timeout: The cap the run had; the default cap when None.
             background_capable: The turn can run code as a background job, which
                 beats a hand-rolled background process polled with more calls.
+            background: The run was a background job.
 
         Returns:
             The error line the model sees.
         """
         cap = int(timeout if timeout is not None else cls._exec_timeout())
         most = int(cls._max_exec_timeout())
+        if background:
+            return (
+                f"The background run hit its {cap}s timeout and was stopped; what it did before then may have "
+                "taken effect. Tell the user how far it got; run it again only if the user asks, with a `timeout` "
+                "above the expected duration."
+            )
         if background_capable:
             background = (
                 "run it again with background=true and a larger `timeout`: it then runs as a background job and "

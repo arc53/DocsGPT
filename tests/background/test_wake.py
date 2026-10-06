@@ -122,6 +122,13 @@ class TestRendering:
         assert '"price": 1' in out
         assert out.rstrip().endswith("reply exactly NO_REPLY.")
 
+    def test_the_instruction_forbids_rerunning_or_extending_on_its_own(self):
+        out = wake.render_events([{"source": "job", "title": "t", "body": "b", "payload": None}])
+        assert "never re-run a failed, timed-out or interrupted job" in out
+        assert "unless the user asks or it only reads data" in out
+        assert "offer extras instead of doing them" in out
+        assert "finish any outstanding work" not in out
+
     @pytest.mark.parametrize("answer", ["NO_REPLY", " no_reply. ", "`NO_REPLY`", '"NO_REPLY"'])
     def test_no_reply(self, answer):
         assert wake.is_no_reply(answer)

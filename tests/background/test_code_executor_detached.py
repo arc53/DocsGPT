@@ -221,3 +221,31 @@ def test_a_timeout_in_a_background_capable_turn_points_to_background():
     capable = tool._shape_payload(timed_out, [], [], timeout=60.0, background_capable=True)["error"]
     assert "nohup" in plain
     assert "background=true" in capable and "nohup" not in capable
+
+
+def _timed_out():
+    return ExecResult(status="error", error_name="TimeoutError", error_value="execution exceeded 60s")
+
+
+class TestBackgroundRunTimeouts:
+    """A run already in the background that hits its cap is reported, never re-run on the model's own."""
+
+    def test_a_background_run_that_timed_out_is_reported_not_rerun(self, tool, monkeypatch):
+        manager = _Manager(_timed_out())
+        _use(monkeypatch, manager, call=_Call(manager=manager, explicit=True))
+        out = tool.execute_action("run_code", code="import time; time.sleep(999)", timeout=60, capture_artifacts=False)
+        assert "only if the user asks" in out["error"]
+        assert "run it again with background=true" not in out["error"]
+        assert not any("rerun it with a larger" in hint for hint in out.get("hint", []))
+
+    def test_a_handed_off_run_finished_by_the_poller_is_a_background_run(self, tool):
+        run = PreparedRun(session_id="s", code="x", timeout=60.0, background_capable=True, background=True)
+        out = tool.finish_run(_Manager(_timed_out()), run, _timed_out())
+        assert "only if the user asks" in out["error"]
+        assert not any("rerun it with a larger" in hint for hint in out.get("hint", []))
+
+    def test_a_foreground_timeout_still_offers_more_room(self, tool):
+        run = PreparedRun(session_id="s", code="x", timeout=60.0, background_capable=True)
+        out = tool.finish_run(_Manager(_timed_out()), run, _timed_out())
+        assert "background=true" in out["error"]
+        assert any("rerun it with a larger" in hint for hint in out.get("hint", []))

@@ -187,6 +187,8 @@ def finish_detached(row: Dict[str, Any], backend: Any, state: Any) -> Optional[D
     tool_state = external.get("tool") or {}
     tool = CodeExecutorTool(tool_config=dict(tool_state.get("config") or {}), user_id=tool_state.get("user_id"))
     prepared = PreparedRun.from_state(external.get("finish") or {})
+    # Whatever started it, a run this poller finishes was handed off: it is a background job.
+    prepared.background = True
     try:
         payload = tool.finish_run(backend, prepared, state.result)
     except Exception as exc:

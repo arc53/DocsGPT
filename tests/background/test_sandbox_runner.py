@@ -126,6 +126,17 @@ class TestPollJob:
         assert row["status"] == "failed"
         assert json.loads(row["result"]["text"])["error"].startswith("ValueError")
 
+    def test_a_timed_out_run_is_reported_as_a_background_run(self, bg_db, conversation, polls, delivered, monkeypatch):
+        """The poller finishes a run that was handed off: its timeout must not invite a re-run."""
+        job_id = _sandbox_job(*conversation)
+        timed_out = ExecResult(status="error", error_name="TimeoutError", error_value="execution exceeded 60s")
+        backend = _Backend([DetachedState(done=True, result=timed_out)])
+        monkeypatch.setattr(sandbox_runner, "_poll_backend", lambda: backend)
+        sandbox_runner.poll_job(job_id)
+        payload = json.loads(_get(bg_db, job_id)["result"]["text"])
+        assert "only if the user asks" in payload["error"]
+        assert "run it again with background=true" not in payload["error"]
+
     def test_persist_false_closes_the_session_after_the_run(self, bg_db, conversation, polls, delivered, monkeypatch):
         job_id = _sandbox_job(*conversation, keep_alive=False)
         backend = _Backend([DetachedState(done=True, result=ExecResult(stdout=""))])
