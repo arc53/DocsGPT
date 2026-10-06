@@ -8,9 +8,42 @@ from google.genai import types
 from docsgpt.core.settings import settings
 
 from docsgpt.llm.base import BaseLLM
+from docsgpt.llm.credential_scope import GOOGLE_BASE_URL, check_credential_scope
 from docsgpt.llm.handlers.google import _decode_thought_signature
 from docsgpt.llm.tool_images import follow_up_note, native_tool_images, reads_images, tool_result
 from docsgpt.storage.storage_creator import StorageCreator
+
+
+#: Finish reasons of a candidate Gemini stopped under a safety or content policy.
+_BLOCKED_FINISH_REASONS = frozenset({"SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "IMAGE_SAFETY"})
+
+
+class ContentBlockedError(RuntimeError):
+    """Gemini blocked the prompt or the answer under its safety or content policy.
+
+    Carries ``code = "content_filter"``, the code OpenAI-wire providers use for
+    the same refusal, so callers can recognise it the same way.
+    """
+
+    code = "content_filter"
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"blocked by the provider's content policy ({reason})")
+        self.reason = reason
+
+
+def _block_reason(response) -> str:
+    """Why Gemini blocked a response (the prompt's block reason or a candidate's safety finish), or ""."""
+    feedback = getattr(response, "prompt_feedback", None)
+    reason = getattr(feedback, "block_reason", None) if feedback is not None else None
+    if reason:
+        return str(getattr(reason, "name", reason))
+    for candidate in getattr(response, "candidates", None) or []:
+        finish = getattr(candidate, "finish_reason", None)
+        name = str(getattr(finish, "name", finish) or "")
+        if name in _BLOCKED_FINISH_REASONS:
+            return name
+    return ""
 
 
 class GoogleLLM(BaseLLM):
@@ -21,10 +54,23 @@ class GoogleLLM(BaseLLM):
         self, api_key=None, user_api_key=None, decoded_token=None, *args, **kwargs
     ):
         super().__init__(decoded_token=decoded_token, *args, **kwargs)
-        self.api_key = api_key or settings.GOOGLE_API_KEY or settings.API_KEY
+        # ``API_KEY`` is Google's only when LLM_PROVIDER says so.
+        self.api_key = (
+            api_key
+            or settings.GOOGLE_API_KEY
+            or (settings.API_KEY if settings.LLM_PROVIDER == "google" else None)
+        )
         self.user_api_key = user_api_key
+        check_credential_scope(self.api_key, GOOGLE_BASE_URL, self.provider_name)
 
-        self.client = genai.Client(api_key=self.api_key)
+        # Pin the client to the endpoint just checked. Left to itself the SDK
+        # takes GOOGLE_GEMINI_BASE_URL, or switches to Vertex AI on
+        # GOOGLE_GENAI_USE_VERTEXAI, and sends the key there.
+        self.client = genai.Client(
+            api_key=self.api_key,
+            vertexai=False,
+            http_options={"base_url": GOOGLE_BASE_URL},
+        )
         self.storage = StorageCreator.get_storage()
 
     def get_supported_attachment_types(self):
@@ -634,8 +680,13 @@ class GoogleLLM(BaseLLM):
 
         if tools:
             return response
-        else:
-            return response.text
+        text = response.text
+        if text is None:
+            blocked = _block_reason(response)
+            if blocked:
+                # A blocked prompt or answer has no text; say why instead of returning None.
+                raise ContentBlockedError(blocked)
+        return text
 
     def _raw_gen_stream(
         self,

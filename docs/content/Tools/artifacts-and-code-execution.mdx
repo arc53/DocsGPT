@@ -1,7 +1,7 @@
 ---
 title: Artifacts and Code Execution
 description: Generate editable documents, run sandboxed code, and read files with the DocsGPT artifact, code executor, and read document tools.
-lastUpdated: 2026-10-01
+lastUpdated: 2026-10-06
 ---
 
 import { Callout } from 'nextra/components';
@@ -20,7 +20,7 @@ If your deployment runs a sandbox and you want these available in every chat
 rather than per agent, add them to `DEFAULT_CHAT_TOOLS`:
 
 ```env
-DEFAULT_CHAT_TOOLS=["memory","read_webpage","scheduler","code_executor","artifact_generator"]
+DEFAULT_CHAT_TOOLS=["memory","read_webpage","scheduler","monitor","code_executor","artifact_generator"]
 ```
 
 They are left out of the shipped default deliberately: both execute through the
@@ -30,7 +30,7 @@ sandbox runner, so on a deployment without one they would fail on every call.
 
 An **artifact** is a file the assistant produces that you can open, download, and edit later. Artifacts are versioned: every edit appends a new version at the same artifact, so you can review or restore an earlier one. Bytes are stored on the server and are never passed through the model, so large files stay fast and cheap to work with.
 
-In a normal chat, a produced artifact appears as a chip under the assistant's reply (for example, "Artifact"). Open it to:
+In a normal chat, a produced artifact appears as a chip under the assistant's reply (for example, "Artifact"). A chip opens the artifact's current version, so a chip under an earlier reply shows the latest edit. Open it to:
 
 - preview the content in a side panel (HTML and similar kinds render inline),
 - download the file,
@@ -52,23 +52,90 @@ The Artifact tool keeps a structured spec as the source of truth and renders the
 
 Supported kinds are presentation (.pptx), document (.docx), spreadsheet (.xlsx), pdf, and html.
 
+#### Non-Latin text in PDF artifacts
+
+The pdf kind draws text with the fonts installed in the sandbox, so text in other scripts renders instead of showing as boxes or blanks:
+
+- Latin, Greek, Cyrillic and most symbols (such as `−`, `→` and `≤`) use DejaVu Sans.
+- Arabic, Persian, Hebrew, Devanagari and the other Indic scripts, Thai, Khmer, Ethiopic and a few more use the matching Noto font. A paragraph can mix scripts: each run of text gets a font that has its characters.
+- Chinese, Japanese and Korean use the standard PDF CJK fonts (STSong-Light, HeiseiKakuGo-W5 and HYGothic-Medium). They aren't embedded, so the PDF viewer supplies the glyphs, and they have no bold weight.
+- Right-to-left paragraphs are joined, put in display order and right-aligned. Devanagari, Bengali, Tamil, Thai and similar scripts are shaped with HarfBuzz, so conjuncts and vowel signs sit where they belong; text copied out of a shaped word can contain private-use characters.
+
+A sandbox image without these fonts falls back to matplotlib's copy of DejaVu Sans, then to Helvetica, which covers Latin only. For a layout the pdf kind can't express, the model can build the file in the Code Executor and convert HTML with `html-to-pdf`.
+
 ## Code Executor
 
-The Code Executor runs Python in a sandboxed, stateful session bound to your conversation (or to a workflow run). Files the code writes into the workspace are captured as artifacts automatically, so a script that produces `report.csv` gives you a downloadable artifact with no extra steps.
+The Code Executor runs Python in a sandboxed session bound to your conversation (or to a workflow run). Files the code writes into the workspace are captured as artifacts automatically, so a script that produces `report.csv` gives you a downloadable artifact with no extra steps.
 
 Key points:
 
-- A session is closed after each run unless the model asks to keep it alive. When it does, variables, imports, and files persist between calls in the same conversation (or workflow run) until the session has been idle for the time the model asked for, at most `SANDBOX_MAX_TTL` (1200 seconds by default).
+- The session stays open between runs until it has been idle for `SANDBOX_MAX_TTL` seconds (1200 by default) or a shorter time the model asks for. The model can pass `persist=false` to close it after a run.
+- What carries over to the next run depends on the backend. On the Jupyter runner, variables, imports, files, and installed packages all do. On Daytona, files and installed packages do, but each run starts a new Python interpreter, so the model re-imports and re-loads what it needs and passes data between runs through files.
+- Each result tells the model whether the session is `new` (nothing from earlier runs is left, for example after it idled out) or `reused`, so it knows when to rebuild its files.
 - Only a compact summary is returned to the model (an output tail plus artifact references), never raw file bytes.
-- Each run is limited to `SANDBOX_EXEC_TIMEOUT` seconds of wall-clock time (60 by default). For longer work, the model starts the job in the background and checks back with more calls.
-- Every file a run creates or changes is saved as an artifact, except files under `tmp/`. The model can instead name the files or globs to keep.
-- Install packages from inside the code itself when you need them.
+- Each run is limited to `SANDBOX_EXEC_TIMEOUT` seconds of wall-clock time (60 by default). For a long job, such as a video render, OCR of many pages or converting a large deck, the model can pass a `timeout` of up to `SANDBOX_EXEC_MAX_TIMEOUT` seconds (1000 by default); a larger value is cut to the maximum and the result says so. In a chat, a run that is still going after `BACKGROUND_YIELD_SECONDS` (30 by default) becomes a [background job](/Tools/background-jobs): the turn ends, the run keeps going in the sandbox, and the agent comes back with the result when it finishes (in conversations through the API, a widget or a shared link the result waits for `check_job` or the next message instead). The model can also pass `background=true` to start a run as a job right away; without a `timeout`, such a run may take up to `BACKGROUND_JOB_MAX_SECONDS` (still within `SANDBOX_EXEC_MAX_TIMEOUT`).
+- When a run uses more memory than the sandbox allows, the result says it ran out of memory rather than timed out, with a hint to load and process less at once.
+- Every file a run creates or changes in the workspace is saved as an artifact, except files under `scratch/` (or `tmp/`), where the model puts previews and intermediate files. The model can instead name the files or globs to keep. Files written outside the workspace, such as under `/tmp`, are never saved.
+- Saving a file under a name the Code Executor already used in the conversation (or workflow run) adds a new version of that artifact instead of a second artifact, and saving identical bytes again adds nothing. Files from workflow Code nodes are always new artifacts.
+- Install other packages from inside the code itself when you need them.
 
 <Callout type="warning">
   By default the Code Executor runs model-authored code without an approval
   prompt. Turn on per-action approval on the agent if you want a human to
   confirm each run.
 </Callout>
+
+### What the sandbox has installed
+
+The self-hosted runner image and the Daytona snapshot hold the same set, listed in `docsgpt/sandbox/manifest.py`, and the Code Executor tells the model what is there so it doesn't have to find out by failing:
+
+- **Python libraries:** pandas, numpy, matplotlib, openpyxl, python-docx, python-pptx, reportlab (with uharfbuzz for shaping, and arabic-reshaper and python-bidi for right-to-left text), lxml, Pillow, requests, beautifulsoup4, PyYAML, pypdf, PyPDF2, pdfplumber, pdfminer.six, pypdfium2, pytesseract and imageio.
+- **Commands:** headless LibreOffice, headless Chromium, tesseract OCR (English), poppler's `pdftotext` and `pdftoppm`, `ffmpeg` and `ffprobe`, and Node.js 24 with `npm` and `npx`.
+- **Conversion helpers:** `office-convert FILE --to pdf` (also `docx`, `xlsx`, `pptx`, `png` and more) converts office documents with LibreOffice; `html-to-pdf` and `html-screenshot` render an HTML file or URL with Chromium.
+- **Fonts:** DejaVu, Liberation and Carlito/Caladea (metric-compatible with Arial, Times New Roman, Courier New, Calibri and Cambria), Noto for Arabic, Devanagari and other scripts, and Noto CJK for Chinese, Japanese and Korean.
+
+imageio writes animated GIF and WebP; for MP4 and other video the code runs `ffmpeg`. PyMuPDF (`fitz`) is not installed because of its AGPL license; pdfplumber, pypdf and pypdfium2 cover PDF reading.
+
+### What the model is told
+
+The Code Executor's tool description is under 300 words and depends only on the deployment (backend, `SANDBOX_EXEC_TIMEOUT`, `SANDBOX_EXEC_MAX_TIMEOUT`, `SANDBOX_MAX_TTL` and the manifest), never on the conversation, so providers can cache it. It tells the model:
+
+- what carries over between calls on this backend, and that a result marked `session: new` means it starts again;
+- that every file it writes in the working directory becomes a download, except under `scratch/`, that files elsewhere (such as `/tmp`) are never saved, and to save each deliverable once under its final name;
+- to show a chart with `plt.show()` to check it and `savefig()` the one the user should get, and to name saved files in its answer rather than link them;
+- to pass earlier files by reference (`A1`, `F3`) in `inputs` rather than download artifact URLs, which need the user's session;
+- the default time cap, that it can pass a `timeout` up to the maximum for long jobs, and to prefer splitting work. The `timeout` parameter gives rough budgets: about 120 seconds for installing a big package or converting a large deck, 2-3 seconds per page of OCR, and a video render in proportion to its frames;
+- the preinstalled libraries by import name, the commands, and which library makes which format: reportlab for PDF (`html-to-pdf` for non-Latin text), python-docx, openpyxl and python-pptx for Office files, `office-convert` for conversions and `ffmpeg` for video;
+- to use the Artifact tool for documents the user will keep editing;
+- not to pip-install a listed library or run `apt-get`.
+
+The first result of a new session also carries an `environment` field, under 120 words: the packages with their import names, how to call `office-convert`, `html-to-pdf` and `html-screenshot`, the other commands, each font's file and the scripts it covers, the workspace paths, and the limits. A reused session's results leave it out. A new session also starts with an empty `scratch/` directory, so commands that don't create directories (such as `pdftoppm`) can write there.
+
+### Hints in results
+
+When a run shows a mistake the Code Executor recognizes, the result gets a `hint` list with a line or two for each. Package, command and font names in the hints come from the manifest.
+
+| The run shows | The hint says |
+| --- | --- |
+| An import of a package that isn't installed | Which preinstalled library or command to use instead (for example pdfplumber for `fitz`), or to install the package in the same call |
+| `pip install` of a preinstalled package | It is already installed; drop the pip step |
+| `apt-get`, `apt` or `sudo` in the code | System packages can't be installed; the commands that exist |
+| A missing file or variable in a new session | Earlier files and variables are gone; recreate them or pass them as inputs |
+| A missing variable on Daytona | Each call is a new interpreter; re-import and reload from files |
+| A missing file under `/tmp` | `/tmp` isn't kept; use `scratch/` or the workspace |
+| The time cap | Work not written before the cap is lost; split it and write partial results to `scratch/`. Below the maximum, also to rerun with a larger `timeout`, except for a background run, which is reported and re-run only if the user asks |
+| Running out of memory: the kernel or process killed for memory, a `MemoryError`, or a subprocess killed with `SIGKILL` | Load less at once: read in chunks, one page or frame at a time, at a lower resolution |
+| A missing command (`wkhtmltopdf`, `pdftk`, `google-chrome`, ...) | The replacement (`html-to-pdf`, pypdf, ...) and the commands that exist |
+| A 401, 403 or connection error fetching this deployment's URLs or `/api/artifacts/` | Pass the file in `inputs` instead |
+| A PDF, Office file, image, CSV, HTML, MP4 or ZIP written to an absolute path outside the workspace | It was not saved; save it in the workspace |
+| More than three images saved, or files named like preview, test, tmp, debug or check | Which files the user got; put previews in `scratch/` |
+| A font file that can't be opened, or missing glyphs | The installed fonts with their files and scripts |
+| reportlab with non-Latin text in its built-in fonts, or with the Noto CJK collection (which it can't load) | Use `html-to-pdf`, which embeds the fonts and shapes Arabic and Devanagari, or a font reportlab can load |
+| A package installed at runtime whose compiled code won't load (only on a runner started without its `/sandbox-home` mount, where the home falls back to the `noexec` `/tmp`) | Use a preinstalled or pure-Python library |
+| A successful run with no output and no files | Print what it needs to see |
+| The same error twice in a row in one conversation | Change approach instead of retrying |
+
+Before the output is cut to its last 4,000 characters, colour codes and pip's routine lines ("Requirement already satisfied", the root-user warning, upgrade notices, download progress) are removed. The runner image also stops ipykernel from forcing colour on the programs code starts, so Node and npm print plain text. On Daytona, a failed run's `error` names the exception from the last traceback line instead of repeating the whole output.
 
 ### Run inputs
 
@@ -78,7 +145,7 @@ You can pass files into a run. Each input accepts a short reference returned by 
 
 When the model reads images, it can look at what its tools produce instead of guessing:
 
-- Charts a run displays with `plt.show()` are saved as artifacts and shown to the model with the run's result. On Daytona this needs a snapshot that includes matplotlib.
+- Charts a run displays with `plt.show()` are shown to the model with the run's result. They are saved as artifacts too, unless the run also saved an image file of its own (with `savefig`), so a chart the code both saves and shows is saved once. On Daytona this needs a snapshot that includes matplotlib (see [Daytona snapshot](#daytona-snapshot)).
 - A `view_image` tool is added next to the Code Executor and Read Webpage. It shows the model an image artifact by its reference (such as `A2`) or an image URL, such as one on a page Read Webpage returned.
 - Images an MCP server returns are shown to the model as images too.
 
@@ -109,26 +176,33 @@ Code execution and rendering run inside a sandbox. DocsGPT ships two backends, s
 
 [Code Execution Sandbox](/Deploying/Sandbox) has the setup steps for each.
 
-### Render libraries on Daytona
+### Daytona snapshot
 
-Artifact rendering imports `python-pptx`, `python-docx`, `openpyxl`, and `reportlab` inside the sandbox. The self-hosted runner already has them. Daytona's default image does not, so presentation, document, spreadsheet, and pdf rendering fail there until you point Daytona at an image that includes them. HTML artifacts need no extra libraries and work on any image.
-
-Build a snapshot with the libraries once, then set `DAYTONA_SNAPSHOT` to it:
+Daytona's default image is plain Python: presentation, document, spreadsheet and PDF rendering fail there, and none of the commands above exist. HTML artifacts need no extra libraries and work on any image. Build a snapshot with the sandbox's contents once, then set `DAYTONA_SNAPSHOT` to it:
 
 ```bash
 # Reads DAYTONA_API_KEY / DAYTONA_API_URL / DAYTONA_TARGET from your environment:
 python scripts/build_daytona_snapshot.py
 # then set in your environment:
-#   DAYTONA_SNAPSHOT=docsgpt-sandbox-py312
+#   DAYTONA_SNAPSHOT=docsgpt-sandbox-py312-v2
 ```
 
-The snapshot also includes `pandas`, `openpyxl` and `matplotlib`, which the model uses to open and chart spreadsheets attached to a chat. A snapshot built by an earlier version of the script (`docsgpt-artifacts-py312`) has no pandas or matplotlib; build the new one and switch `DAYTONA_SNAPSHOT` to it.
+Sandboxes made from the snapshot get 2 vCPUs, 2 GiB of memory and 6 GiB of disk, double Daytona's default, because LibreOffice and Chromium need the room. Change them with `--cpu`, `--memory` and `--disk`. `--smoke` runs the image's smoke test in a sandbox from the new snapshot, and `--dockerfile` prints the image definition without calling Daytona.
+
+A snapshot can't change once it's built, so a new version of the contents comes with a new name. Snapshots built by earlier versions of the script (`docsgpt-artifacts-py312`, `docsgpt-sandbox-py312`) lack most of the tools above: build the new one and switch `DAYTONA_SNAPSHOT` to it.
 
 ### Useful settings
 
 - `SANDBOX_BACKEND`: `jupyter` or `daytona`.
 - `SANDBOX_GATEWAY_URL`, `SANDBOX_GATEWAY_AUTH_TOKEN`, `SANDBOX_KERNEL_NAME`: where the Jupyter runner is, its shared token, and the kernel each session uses (`docsgpt-python`, which strips secrets from the kernel environment).
-- `SANDBOX_EXEC_TIMEOUT`: per-run wall-clock cap in seconds.
-- `SANDBOX_MAX_TTL`: upper bound on how long a kept-alive session lives.
+- `SANDBOX_EXEC_TIMEOUT`: per-run wall-clock cap in seconds when the model doesn't pass a `timeout`.
+- `SANDBOX_EXEC_MAX_TIMEOUT`: the largest `timeout` the model may pass.
+- `SANDBOX_MAX_TTL`: how long an idle session is kept before it is closed.
+- `SANDBOX_MAX_FILE_BYTES` (10 MiB): the largest workspace file saved as an artifact. A bigger one is not saved,
+  and the run's result names it (`not_saved`: "race.mp4 (38.9 MB) is over the 10 MB limit and was not saved;
+  compress, downscale or split it"), so the model can say so or shrink it. Capture reads each file whole into
+  memory (on the Jupyter runner as base64 over the kernel's output), so the default stays at 10 MiB; raise it only
+  if the API and worker have the memory, and never above `ARTIFACT_MAX_BYTES` (50 MiB), which caps any stored
+  artifact.
 - `DAYTONA_API_KEY`, `DAYTONA_TARGET`, `DAYTONA_SNAPSHOT`: Daytona Cloud settings.
 - Per-user artifact quotas bound how many artifacts and how much storage each user can hold.

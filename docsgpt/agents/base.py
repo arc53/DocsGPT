@@ -676,6 +676,9 @@ class BaseAgent(ABC):
                 }
 
             if action.get("decision") == "approved":
+                approved = getattr(self.tool_executor, "approved_call_ids", None)
+                if isinstance(approved, set):
+                    approved.add(call_id)
                 # Execute the tool server-side
                 tc = ToolCall(
                     id=call_id,
@@ -815,6 +818,14 @@ class BaseAgent(ABC):
         # A vision model can look at the images its tools point to.
         if self._llm_supports_tools() and reads_images(self.llm):
             add_view_image_tool(tools_dict)
+        # A turn that can hand calls off to background jobs can also check on
+        # them, whatever the user's or agent's tool settings say.
+        if self._llm_supports_tools() and getattr(self.tool_executor, "background", None) is not None:
+            from docsgpt.agents.tools.check_job import add_check_job_tool
+            from docsgpt.background.handoff import eligible
+
+            if any(isinstance(t, dict) and eligible(self.tool_executor, t) for t in tools_dict.values()):
+                add_check_job_tool(tools_dict)
         # The executor gates tool calls itself, so it needs this run's engine.
         self.tool_executor.guardrail_engine = self.guardrails
         self.tools = self.tool_executor.prepare_tools_for_llm(tools_dict)
@@ -1811,13 +1822,14 @@ class BaseAgent(ABC):
         declaration so the cross-provider fallback adapter can read it too.
 
         Returns:
-            ``"response_format"``, ``"response_schema"``, or None when the
-            provider has no structured-output kwarg.
+            ``"response_format"``, ``"response_schema"``,
+            ``"output_format"``, or None when the provider has no
+            structured-output kwarg.
         """
         # ``type(self.llm)`` — an instance attribute on a test double would
         # otherwise leak a truthy Mock into the gen kwargs.
         kwarg = getattr(type(self.llm), "structured_output_kwarg", None)
-        return kwarg if kwarg in ("response_format", "response_schema") else None
+        return kwarg if kwarg in ("response_format", "response_schema", "output_format") else None
 
     def _llm_gen(
         self,

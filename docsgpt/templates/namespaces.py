@@ -46,6 +46,13 @@ class NamespaceBuilder(ABC):
         pass
 
 
+def _background_jobs_enabled() -> bool:
+    """Whether slow tool calls can become background jobs (gates the prompt's long-running-work section)."""
+    from docsgpt.core.settings import settings
+
+    return bool(settings.BACKGROUND_JOBS_ENABLED)
+
+
 class SystemNamespace(NamespaceBuilder):
     """System metadata namespace: {{ system.* }}"""
 
@@ -81,6 +88,8 @@ class SystemNamespace(NamespaceBuilder):
             "user_id": user_id,
             "api_base_url": api_base_url,
             "platform": platform,
+            # Slow tool calls become background jobs that resume the conversation.
+            "background_jobs": _background_jobs_enabled(),
             # Operator-authored persona, injected as a VALUE: braces inside it
             # are inert, so a custom prompt can never break the skeleton or
             # reach the template sandbox.

@@ -31,7 +31,13 @@ class SandboxSettings(SettingsGroup):
             "verbatim and must not be used with untrusted code."
         ),
     )
-    SANDBOX_MAX_TTL: int = Field(default=1200, description="Hard cap (s) on agent-selectable keep-alive TTL.")
+    SANDBOX_MAX_TTL: int = Field(
+        default=1200,
+        description=(
+            "Seconds an idle session is kept before it is closed, and the cap on a keep-alive TTL the model asks "
+            "for. Code Executor sessions stay open between calls until then."
+        ),
+    )
     SANDBOX_MAX_SESSIONS: int = Field(
         default=32,
         description=(
@@ -40,6 +46,16 @@ class SandboxSettings(SettingsGroup):
         ),
     )
     SANDBOX_EXEC_TIMEOUT: int = Field(default=60, description="Default wall-clock cap (s) per exec call.")
+    SANDBOX_EXEC_MAX_TIMEOUT: int = Field(
+        default=1000,
+        ge=1,
+        description=(
+            "Longest wall-clock cap (s) the model may ask for on one run_code call, for long jobs such as video "
+            "renders or OCR of many pages; a larger request is clamped to it. Never below SANDBOX_EXEC_TIMEOUT. "
+            "On the Jupyter runner keep SANDBOX_KERNEL_IDLE_TIMEOUT above SANDBOX_MAX_TTL; a busy kernel is "
+            "never culled."
+        ),
+    )
     SANDBOX_HTTP_TIMEOUT: int = Field(
         default=10, description="Fixed cap (s) for REST control calls (create/delete/alive/interrupt)."
     )
@@ -54,10 +70,19 @@ class SandboxSettings(SettingsGroup):
     )
     # Runner container caps, consumed by the docsgpt-sandbox compose service, not the app.
     SANDBOX_MEMORY: str = Field(
+        default="4g",
+        description=(
+            "Docker mem_limit for the runner container: the gateway, the warm session kernels and the "
+            "LibreOffice and Chromium processes they start. Consumed by the docsgpt-sandbox compose service, not "
+            "the app; part of the untrusted-code security boundary."
+        ),
+    )
+    SANDBOX_HOME_SIZE: str = Field(
         default="1g",
         description=(
-            "Docker mem_limit for the runner container. Consumed by the docsgpt-sandbox compose service, not "
-            "the app; part of the untrusted-code security boundary."
+            "Size of the runner's /sandbox-home tmpfs: the kernels' HOME, where runtime pip installs and caches "
+            "go. It allows exec so compiled packages load (/tmp stays noexec) and counts against SANDBOX_MEMORY "
+            "as it fills. Consumed by the docsgpt-sandbox compose service, not the app."
         ),
     )
     SANDBOX_CPUS: str = Field(
@@ -77,7 +102,10 @@ class SandboxSettings(SettingsGroup):
     DAYTONA_TARGET: Optional[str] = Field(default=None, description='Daytona region/target, e.g. "us".')
     DAYTONA_SNAPSHOT: Optional[str] = Field(
         default=None,
-        description="Image for new sandboxes; build one with the render and spreadsheet libs via scripts/build_daytona_snapshot.py.",
+        description=(
+            "Snapshot for new sandboxes; build one with the sandbox's libraries, tools and fonts via "
+            "scripts/build_daytona_snapshot.py (default name docsgpt-sandbox-py312-v2)."
+        ),
     )
     DAYTONA_LANGUAGE: str = Field(default="python", description="Default runtime language for created sandboxes.")
     DAYTONA_AUTO_STOP_INTERVAL: int = Field(

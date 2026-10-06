@@ -1,0 +1,236 @@
+---
+title: Monitors, Trigger Links and Approval Links
+description: How the monitor tool watches a web page or any tool, wakes the conversation on ingests, webhook trigger links and human approval links, and how its checks, limits and safety rules work.
+lastUpdated: 2026-10-06
+---
+
+import { Callout } from 'nextra/components';
+
+# Monitors, Trigger Links and Approval Links
+
+A **monitor** lets the agent wait for something outside the chat and come back to the same conversation when it
+happens, whether or not the user is still looking: a price crossing a threshold, a new issue in a repository, a
+CI run finishing, a document finishing its ingest, or a person approving a draft. The user asks ("tell me when
+ACMEB drops below $90"); the agent creates the monitor and ends its turn; a later event resumes it the way a
+finished [background job](/Tools/background-jobs) does.
+
+The `monitor` tool is in the default chat tools (`DEFAULT_CHAT_TOOLS`) while `MONITORS_ENABLED` is on, and can be
+added to an agent like any built-in tool. It has three actions: `monitor_create`, `monitor_list` and
+`monitor_cancel`.
+
+## What a monitor can watch
+
+| Source | What it does | How it fires |
+| --- | --- | --- |
+| `webpage` | Fetches a page (optionally only the part a `css_selector` picks) | Polled on an interval |
+| `tool` | Replays one call of any tool the chat can use: an MCP or API action, `read_webpage`, a search, a `remote_device` command | Polled on an interval |
+| `ingest` | Watches one of the user's sources | When its ingest finishes or fails |
+| `webhook` | Returns a trigger link, `POST /api/triggers/<token>` | On each delivery |
+| `approval` | Returns a human approval page, `/approve/<token>` | When the person decides |
+
+A monitor's source only **reads** state: a status, a list of new items, a page, a file or a metric. What to do
+when it fires goes in `on_match`, and the woken agent does it with its normal approval rules.
+
+## Checks before any model call
+
+A polled check is cheap before it is expensive:
+
+1. The source is fetched (30 s timeout; a page is cut at 1 MiB and its text at 256 KiB) and normalized: HTML is
+   reduced to its readable text, JSON is parsed with sorted keys, a remote command keeps only its exit code and
+   output.
+2. The result is hashed. An unchanged source is a **quiet check**: it only counts the check. No model runs and
+   no run row is written.
+3. On a change, the deterministic `check` (below) runs against what the monitor stored last time.
+4. Only when the check fires and the monitor has a natural-language `condition`, a **judge** model decides. It
+   has no tools, reads at most 8,000 characters of the content, marked as untrusted data, and answers whether the
+   condition holds. It is called like a chat turn's model: the catalog entry resolves to its provider, key and
+   upstream model name. Its tokens are recorded in `token_usage` with `source = 'monitor_judge'` and billed to the
+   user; `MONITOR_JUDGE_TOKEN_BUDGET` caps one monitor's total. If the judge fails `SCHEDULE_AUTOPAUSE_FAILURES`
+   times in a row on a match, the match wakes the agent anyway, marked as not checked against the condition, so a
+   broken judge never hides it (it counts toward `max_wakes` like any wake). A content-policy refusal from the
+   judge's provider (Azure OpenAI's `content_filter`, for a page that carries injection text, say) does the same at
+   once: the same content would be refused again.
+5. A match wakes the conversation once per fact (what it found passes the agent's `tool_result` guardrails before
+   it is queued, as a tool result in the chat does): the monitor keeps the keys of what it reported, so the same
+   price drop or the same item is never reported twice. The first check, taken when the monitor is created, is
+   the baseline and never wakes; `monitor_create` returns it ("currently $95.10").
+
+Webhook deliveries and ingest events run the same check and judge on the delivered data, each event on its own.
+
+### The checks
+
+| `check` | Fires when |
+| --- | --- |
+| `changed` | The content changed (the default) |
+| `new_items` (`items_path`, `id_field`) | A list holds ids the monitor has not seen (the last 1000 are kept) |
+| `regex` (`pattern`, `when`) | A new match appears (`match`), or the pattern stops matching (`no_match`) |
+| `threshold` (`value_path`, `op`, `value`) | The value starts meeting the comparison |
+| `status` (`value_path`, `terminal`) | The value enters one of the listed terminal states; list them all, success and failure |
+
+Paths are dotted, with `[index]` for lists (`data.items[0].price`); on text content a threshold reads the first
+number. A check is edge-triggered: a price that stays below the threshold doesn't fire again until it has gone
+above and come back.
+
+On a webhook the check reads each delivered body, and without one every call wakes the agent, progress calls
+included; the agent picks the body's shape when it gives the user the command to send, so for "tell me when the
+deploy finishes" it uses a `status` check and says which field and values to send. An `approval` or `ingest`
+monitor takes no check (the decision, or the ingest ending, is the event): one given anyway is ignored, and the
+result says so in `notes`.
+
+### Tool sources and approval
+
+A tool source replays one exact call, with no model, as the monitor's owner. If that call would need approval in
+the chat (the tool's own setting, a remote device's approval mode, a shared connection), creating the monitor
+shows the normal approval card for it. The approval is bound to the tool, the action and the arguments as written,
+and lets each check run exactly that call unattended until the monitor is cancelled or expires. Calls that never
+need approval, such as MCP actions marked `readOnlyHint`, skip this step.
+
+Everything else is decided again on every check: a remote device's command denylist, whether its pairing is
+still active, an admin's switch that turns off changes through a connector. A check that is refused pauses the
+monitor and tells the agent.
+
+String arguments may hold placeholders that are filled in on every check: `{{now}}`, `{{last_checked_at}}`,
+`{{last_changed_at}}` (ISO 8601, UTC) and `{{last_checked_date}}` (`YYYY/MM/DD`, for queries such as Gmail's
+`after:`). The approval covers the arguments with the placeholders, not their values.
+
+### When the source can't be reached
+
+An unreachable source (a device that is offline, a server that is down, a timeout, a 5xx or 429 answer) is a
+skipped check, never a change. After `MONITOR_UNREACHABLE_GRACE_SECONDS` of it the agent is told once and the
+monitor pauses. Any other error (a 404, a page that no longer has the selected part, content that no longer fits
+the check) counts toward `SCHEDULE_AUTOPAUSE_FAILURES`, after which the agent is told once and
+the monitor pauses. A monitor that would wake the agent more than `MONITOR_MAX_WAKES_PER_HOUR` times in an hour is
+paused the same way. A monitor that expires without ever firing says so once. Silence is never taken for success.
+
+## Trigger links
+
+A `webhook` monitor returns an absolute URL built from `PUBLIC_API_BASE_URL` (else `API_URL`) and an
+`example_curl`:
+
+```json
+{
+  "monitor_id": "8c1e…",
+  "url": "https://docs.example.com/api/triggers/trg_…",
+  "method": "POST",
+  "signature": "github",
+  "secret": "hidden from you; the user reveals it on the link card in this chat",
+  "reachable_from_internet": true
+}
+```
+
+The model never sees a signed link's secret, so it never reaches the provider, the conversation, the tool-call
+journal, the logs or the traces. The chat shows the link as a card with the URL and, for a signed link, a
+**Reveal secret** button for the conversation's owner; the `example_curl` reads the secret from
+`$DOCSGPT_WEBHOOK_SECRET`. The button calls `GET /api/monitors/<id>/secret`, which only the owner's own session
+may use (never an access token). It is rate limited, audited as `monitor.secret_revealed` and never cached, and
+it answers `404` once the link has ended. The secret is stored only encrypted, in `trigger_links`.
+
+- **Unsigned is the default, and fine.** The URL is a 256-bit secret with an expiry, a hit limit
+  (`max_hits`) and a rate limit (while Redis is reachable; see the limits below), and it can be revoked, so an unsigned link suits senders that can't sign: curl
+  or CI scripts on a device, iOS Shortcuts, Zapier- or IFTTT-style tools, form tools. Use a signature only
+  when the sender signs natively: `github` for GitHub, `standard_webhooks` for Svix-style senders, and
+  `hmac_sha256` for a custom sender that can compute it.
+- **POST only.** `GET` answers `405` with a short note, because link previews and mail scanners fetch links.
+- **Order.** On a signed link the signature is checked before a request counts against the link's rate, so
+  junk from someone who has the URL can't use up the sender's budget; unverified requests have a looser cap of
+  their own (four times the rate). A GitHub `ping` (sent when the hook is added) is acknowledged with `202` and
+  does nothing else.
+- **Signatures.** `standard_webhooks` verifies `webhook-id`, `webhook-timestamp` and `webhook-signature` (any
+  `v1` signature in the list) with a `whsec_` secret and a five-minute tolerance; `github` verifies
+  `X-Hub-Signature-256`; `hmac_sha256` verifies `X-Signature: sha256=<hex>` over the raw body. Comparisons are
+  constant-time, and the secret is stored encrypted.
+- **Answers.** `202 {"accepted": true}` once the delivery is stored; `404` for an unknown, expired, revoked or
+  used-up link (all look the same); `401` for a missing or wrong signature; `413` over
+  `TRIGGER_MAX_PAYLOAD_BYTES`; `429` over `TRIGGER_RATE_PER_MINUTE` for that link.
+- **Duplicates.** A delivery is stored once per `Idempotency-Key`, `webhook-id` or `X-GitHub-Delivery`. Without
+  one, the same body counts once within `TRIGGER_DEDUPE_WINDOW_SECONDS` (10 minutes); sent again later (a nightly
+  job's constant body) it is a new event. A repeat answers `202` and does nothing. The `example_curl` body carries
+  a `sent_at` time, so each example call is new.
+- **Calls that don't fit.** When a call lacks what the check reads (the `value_path` of a status check, say), the
+  agent is woken once to tell the user what was missing; it doesn't count as a match, and later calls that don't
+  fit stay silent.
+- No model runs in the request: the delivery is queued for the worker, which runs the check and wakes the
+  conversation.
+
+If the base URL is `localhost`, a private address or a bare container hostname, the result says so
+(`reachable_from_internet: false` with a note), and the agent tells the user that outside services can't reach
+the link until the instance has a public `PUBLIC_API_BASE_URL`.
+
+## Approval links
+
+An `approval` monitor returns a link to a small public page, `/approve/<token>`, that shows the question, the
+details to review (a draft, a plan), the buttons (Approve and Reject, or the options the agent set), with an
+optional comment, and when the request expires. The monitor's description, written for the requester's chat, is
+not shown.
+
+- Opening the page changes nothing. Only pressing a button sends the decision.
+- The first decision wins; any later one gets `409`. The page then shows the decision.
+- The decision resumes the conversation with `{decision, comment}`, marked as coming from the person through the
+  link, not from the user.
+- The agent can't decide its own link: the tool result gives it only the page link to forward, and requests from
+  the instance's own fetchers are refused.
+
+The page is served by the web UI. When the API serves the built UI (`SERVE_UI`), the link uses the API's address;
+when the UI runs elsewhere (the Vite dev server on `http://localhost:5173`, a separate host), set
+`PUBLIC_APP_URL`. The page reads `GET /api/approvals/<token>` and posts to `POST /api/approvals/<token>`.
+
+## Where it works
+
+A monitor reports back only by resuming its conversation, so `monitor_create` refuses where that can't happen:
+conversations through the OpenAI-compatible `/v1` API, an agent API key or the widget, a shared agent's public
+link, an agent someone else owns, workflow nodes, and scheduled or continuation runs. The result tells the model
+why, so it doesn't promise to report back.
+
+## Managing monitors
+
+**Settings → Monitors** lists the user's monitors: what each watches, how often, when it last checked, the wakes
+left and the expiry, with pause, resume and cancel. Cancelling stops the checks, revokes its links and withdraws
+the approval its source was given. A conversation with an active monitor shows a small watching mark in the
+sidebar. In the chat, the agent can list and cancel the conversation's monitors itself.
+
+The app's event stream carries `monitor.updated`:
+`{monitor_id, status, wakes_left, last_checked_at, conversation_id, check_count, last_error}`. A woken message
+carries `metadata.wake = {source, ref_id, dedupe_key}` with `source` `monitor`, `trigger` or `approval`, or
+`monitor_paused` when a monitor tells the agent it paused itself, or `monitor_expired` when it (or a link) ran out
+of time without firing.
+
+The same data is available through `GET /api/monitors` (`conversation_id`, `status=live`) and
+`POST /api/monitors/<id>/pause|resume|cancel`.
+
+## Settings
+
+<Callout type="info">
+  Monitors need a Celery worker and the beat scheduler: due monitors are checked on the schedule dispatcher's beat
+  (`SCHEDULE_DISPATCHER_INTERVAL`), and the worker runs the checks and the continuation turns. They also need
+  `AUTO_RESUME_ENABLED`.
+</Callout>
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `MONITORS_ENABLED` | `true` | Offer the monitor tool |
+| `MONITOR_JUDGE_MODEL` | unset | Model that judges conditions; unset uses the default model |
+| `MONITOR_DEFAULT_INTERVAL_SECONDS` | `900` | Interval when none is given |
+| `MONITOR_MIN_INTERVAL_SECONDS` | `300` | Shortest interval; a shorter request is raised to it (accepts down to 60) |
+| `MONITOR_DEFAULT_TTL_DAYS` | `7` | Lifetime when none is given |
+| `MONITOR_MAX_TTL_DAYS` | `30` | Longest lifetime |
+| `MONITOR_DEFAULT_MAX_WAKES` | `1` | Wakes when none is given |
+| `MONITOR_MAX_WAKES` | `20` | Most wakes one monitor may ask for |
+| `MONITOR_MAX_ACTIVE_PER_USER` | `5` | Active or paused monitors per user; `0` turns creating them off |
+| `MONITOR_MAX_WAKES_PER_HOUR` | `5` | Circuit breaker |
+| `MONITOR_UNREACHABLE_GRACE_SECONDS` | `3600` | How long a source may stay unreachable before the monitor pauses |
+| `MONITOR_JUDGE_TOKEN_BUDGET` | `100000` | Judge tokens one monitor may use; `0` means no limit |
+| `PUBLIC_APP_URL` | unset | Base URL of the web UI for approval pages |
+| `TRIGGER_RATE_PER_MINUTE` | `30` | Requests one trigger link accepts per minute |
+| `TRIGGER_MAX_PAYLOAD_BYTES` | `65536` | Largest delivery body |
+| `TRIGGER_DEDUPE_WINDOW_SECONDS` | `600` | How long the same body (with no delivery id) counts as a repeat |
+
+Checks are spread out: each next check is jittered and never lands on the hour or half hour. See the
+[Settings Reference](/Deploying/Settings-Reference) for every setting.
+
+### Limits
+
+- A monitor checks one call; it doesn't run a sequence of steps or an agent turn on each check.
+- Sandbox code (`code_executor`) can't be a monitor source.
+- Email delivery and provider push subscriptions (such as Gmail's watch) are not used; a mailbox is watched by
+  polling a search with `{{last_checked_date}}`.
+- Without Redis the per-link rate limit is off; `max_hits` and the payload cap still apply.

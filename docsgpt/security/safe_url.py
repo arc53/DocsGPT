@@ -392,13 +392,16 @@ def pinned_fetch_bytes(
     headers: dict[str, str] | None = None,
     timeout: float = 10.0,
     allow_redirects: bool = False,
+    truncate: bool = False,
 ) -> tuple[bytes, requests.Response]:
     """GET ``url`` with SSRF pinning, streaming at most ``max_bytes`` of body.
 
     The size limit is enforced twice: a declared ``Content-Length`` above
     the ceiling is rejected before any body is read, and the streamed
     read itself stops the moment the ceiling is crossed — a server that
-    lies about (or omits) ``Content-Length`` cannot bypass the cap.
+    lies about (or omits) ``Content-Length`` cannot bypass the cap. With
+    ``truncate`` the read stops at the ceiling and returns the first
+    ``max_bytes`` instead of raising (a page watched for changes).
 
     Returns:
         Tuple of the body bytes and the (already-closed) ``Response``,
@@ -427,7 +430,7 @@ def pinned_fetch_bytes(
             if response.status_code >= 400:
                 return b"", response
             declared = response.headers.get("Content-Length")
-            if declared and declared.isdigit() and int(declared) > max_bytes:
+            if not truncate and declared and declared.isdigit() and int(declared) > max_bytes:
                 raise ResponseTooLargeError(
                     f"response declares {declared} bytes, over the "
                     f"{max_bytes}-byte limit"
@@ -436,6 +439,9 @@ def pinned_fetch_bytes(
             received = 0
             for chunk in response.iter_content(chunk_size=65536):
                 received += len(chunk)
+                if received > max_bytes and truncate:
+                    chunks.append(chunk[: max_bytes - (received - len(chunk))])
+                    break
                 if received > max_bytes:
                     raise ResponseTooLargeError(
                         f"response body exceeds the {max_bytes}-byte limit"

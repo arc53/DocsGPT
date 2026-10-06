@@ -56,6 +56,8 @@ This file maps the DocsGPT documentation for LLMs and coding agents. It is gener
 - [API Tool](https://docs.docsgpt.cloud/Tools/api-tool): Learn how to configure and use the API Tool in DocsGPT to connect with any RESTful API without writing custom code.
 - [MCP Tools](https://docs.docsgpt.cloud/Tools/mcp-tools): Connect external tools to DocsGPT agents using the Model Context Protocol (MCP) standard.
 - [Artifacts and Code Execution](https://docs.docsgpt.cloud/Tools/artifacts-and-code-execution): Generate editable documents, run sandboxed code, and read files with the DocsGPT artifact, code executor, and read document tools.
+- [Background Jobs](https://docs.docsgpt.cloud/Tools/background-jobs): How DocsGPT hands slow tool calls off to background jobs, resumes the conversation with their results, notifies the user (toasts, unread marks, Web Push), and how check_job and watch work.
+- [Monitors and Links](https://docs.docsgpt.cloud/Tools/monitors): How the monitor tool watches a web page or any tool, wakes the conversation on ingests, webhook trigger links and human approval links, and how its checks, limits and safety rules work.
 - [Remote Device](https://docs.docsgpt.cloud/Tools/remote-device): Run shell commands on a paired remote machine from a DocsGPT agent using docsgpt-cli host.
 - [Creating a Custom Tool](https://docs.docsgpt.cloud/Tools/creating-a-tool): Learn how to create custom Python tools to extend DocsGPT's functionality and integrate with various services or perform specific actions.
 
@@ -98,7 +100,7 @@ This file maps the DocsGPT documentation for LLMs and coding agents. It is gener
 - [App Configuration](https://docs.docsgpt.cloud/Deploying/DocsGPT-Settings): Configure your DocsGPT application by understanding the basic settings.
 - [Settings Reference](https://docs.docsgpt.cloud/Deploying/Settings-Reference): Every DocsGPT setting, grouped by domain, with its type, default and purpose.
 - [Security Checklist](https://docs.docsgpt.cloud/Deploying/Security): Harden a DocsGPT install before other people or the internet can reach it - bind addresses, the choice of AUTH_TYPE, the secrets to set, outbound URL checks, prompt templates, the LLM cache and the version check.
-- [SSO with OIDC](https://docs.docsgpt.cloud/Deploying/OIDC-SSO): Sign users into DocsGPT through any OpenID Connect identity provider (Authentik, Keycloak, Okta, ...) — with group allowlists, silent session renewal, back-channel logout, and SCIM provisioning.
+- [SSO with OIDC](https://docs.docsgpt.cloud/Deploying/OIDC-SSO): Sign users into DocsGPT through any OpenID Connect identity provider (Authentik, Keycloak, Microsoft Entra ID, Okta, ...) — with group allowlists, silent session renewal, back-channel logout, and SCIM provisioning.
 - [Access Control & Teams](https://docs.docsgpt.cloud/Deploying/Access-Control): How DocsGPT models permissions — global admin/user roles (RBAC), the admin dashboard, teams with per-team roles, and sharing agents, sources, prompts, and tools.
 - [Usage Quotas](https://docs.docsgpt.cloud/Deploying/Usage-Quotas): Cap how many tokens or dollars each user may spend per day, week or month, with an instance default, per-team allowances and per-user overrides.
 - [Observability](https://docs.docsgpt.cloud/Deploying/Observability): Send traces, metrics, and logs from DocsGPT to any OpenTelemetry-compatible backend (Axiom, Honeycomb, Grafana, Datadog, Jaeger, etc.).

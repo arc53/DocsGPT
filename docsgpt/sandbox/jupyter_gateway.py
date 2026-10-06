@@ -8,17 +8,22 @@ import re
 import threading
 import time
 import uuid
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse, urlunparse
 
 import requests
 import websocket
 
+from docsgpt.sandbox import detached
 from docsgpt.sandbox.base import (
     CodeSandbox,
+    DetachedState,
     DisplayData,
     ExecResult,
+    FileTooLargeError,
+    OpenedSession,
     Plot,
+    SandboxGoneError,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,6 +53,44 @@ _CONTAINMENT_SNIPPET = (
     "        raise ValueError('path escapes the session workspace')\n"
     "    return _rp\n"
 )
+
+
+# Where a container's cgroup counts its OOM kills: cgroup v2, then v1. The
+# counter covers every process in the runner container.
+_OOM_COUNTER_PATHS = ("/sys/fs/cgroup/memory.events", "/sys/fs/cgroup/memory/memory.oom_control")
+_OOM_MARKER_RE = re.compile(r"<<<DOCSGPT_OOM_KILLS:(-?\d+)>>>")
+
+# Kernel-side program that prints the container's OOM-kill count, or -1 when no
+# counter is readable (not in a container, or a cgroup layout without one).
+_OOM_KILLS_SNIPPET = (
+    "_docsgpt_n = -1\n"
+    f"for _docsgpt_p in {_OOM_COUNTER_PATHS!r}:\n"
+    "    try:\n"
+    "        with open(_docsgpt_p) as _docsgpt_f:\n"
+    "            for _docsgpt_l in _docsgpt_f:\n"
+    "                if _docsgpt_l.startswith('oom_kill '):\n"
+    "                    _docsgpt_n = int(_docsgpt_l.split()[1])\n"
+    "    except (OSError, ValueError, IndexError):\n"
+    "        pass\n"
+    "    if _docsgpt_n >= 0:\n"
+    "        break\n"
+    "print('<<<DOCSGPT_OOM_KILLS:%d>>>' % _docsgpt_n)\n"
+    "del _docsgpt_n, _docsgpt_p\n"
+)
+
+# ``status`` values the gateway sends, with no parent message, when the kernel
+# process died: ``restarting`` (it starts a fresh process under the same kernel
+# id) or ``dead`` (it could not).
+_KERNEL_DEATH_STATES = frozenset({"restarting", "dead"})
+
+
+def _parse_oom_kills(stdout: str) -> Optional[int]:
+    """Read the OOM-kill count ``_OOM_KILLS_SNIPPET`` printed; None when it had none."""
+    match = _OOM_MARKER_RE.search(stdout or "")
+    if not match:
+        return None
+    count = int(match.group(1))
+    return count if count >= 0 else None
 
 
 class _Kernel:
@@ -92,6 +135,9 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
         # Timed-out kernels whose DELETE could not yet be confirmed. Immutable
         # ids stay retryable here and are never reused as active runtimes.
         self._quarantined_kernels: Dict[str, Optional[str]] = {}
+        # The container's OOM-kill count when each kernel was primed (None when
+        # unreadable). A kernel that dies after the count rose was OOM-killed.
+        self._oom_baseline: Dict[str, Optional[int]] = {}
         self._lock = threading.Lock()
         # Session ids with a create in flight; a second open() for the same id
         # waits on this CV and reuses the result instead of double-creating a
@@ -134,11 +180,20 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
     # -- Lifecycle -------------------------------------------------------
 
     def open(self, session_id: str) -> str:
+        """Start (or reuse) the kernel for ``session_id``; see ``open_session``."""
+        return self.open_session(session_id).handle
+
+    def open_session(self, session_id: str) -> OpenedSession:
         """Start a fresh kernel for ``session_id`` and prime its workspace cwd.
 
         Idempotent under concurrency: if another thread is already creating a kernel
         for this session, wait for it and reuse the result rather than POSTing a
         second kernel that would orphan on the gateway.
+
+        Returns:
+            OpenedSession: The kernel id, and ``created`` True only when this call
+            started the kernel. A new kernel also starts on an emptied workspace
+            (see ``_prime``), so nothing from an earlier kernel survives.
         """
         self._validate_session_id(session_id)
         with self._create_cv:
@@ -149,7 +204,7 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
                 owner == session_id for owner in self._quarantined_kernels.values()
             )
             if existing is not None and not has_quarantine:
-                return existing.kernel_id
+                return OpenedSession(existing.kernel_id, False)
             self._creating.add(session_id)
         try:
             unresolved = self._retry_quarantined_kernels(session_id)
@@ -158,7 +213,7 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
                 # deletion of an older exact id remains pending.
                 existing = self._kernels.get(session_id)
             if existing is not None:
-                return existing.kernel_id
+                return OpenedSession(existing.kernel_id, False)
             if unresolved:
                 raise RuntimeError(
                     f"Previous timed-out kernel for {session_id!r} could not be terminated"
@@ -176,7 +231,7 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
             with self._lock:
                 self._kernels[session_id] = kernel
             self._prime(kernel)
-            return kernel_id
+            return OpenedSession(kernel_id, True)
         finally:
             with self._create_cv:
                 self._creating.discard(session_id)
@@ -235,6 +290,8 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
 
     def _delete_kernel(self, kernel_id: str) -> bool:
         """Best-effort DELETE of a gateway kernel, retrying once and never raising."""
+        with self._lock:
+            self._oom_baseline.pop(kernel_id, None)
         last_error = "unknown error"
         for _attempt in range(2):
             try:
@@ -341,6 +398,23 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
                 self._quarantined_kernels.pop(kernel_id, None)
         return deleted
 
+    def _forget_kernel(self, kernel_id: str) -> None:
+        """Drop registry entries still bound to ``kernel_id``; a replacement kernel is kept."""
+        with self._lock:
+            for session_id, registered in list(self._kernels.items()):
+                if registered.kernel_id == kernel_id:
+                    self._kernels.pop(session_id, None)
+
+    @staticmethod
+    def _file_op_error(op: str, result: ExecResult) -> IOError:
+        """Build the error for a failed file op; a lost runtime is a ``SandboxGoneError``."""
+        if result.runtime_invalidated:
+            return SandboxGoneError(f"{op} failed: kernel gone ({result.error_name})")
+        too_large = FileTooLargeError.from_message(result.error_value)
+        if too_large is not None:
+            return too_large
+        return IOError(f"{op} failed: {result.error_value}")
+
     def _prime(self, kernel: _Kernel) -> None:
         """Create the per-session workspace (mode 0700) and chdir the kernel into it."""
         # 0700 on the root and the per-session dir is defense-in-depth only: every
@@ -350,7 +424,7 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
         # prior kernel for the same session id left behind (else artifacts_capture
         # would re-read those files every exec). Only genuine new-kernel creation
         # reaches here -- open() on a live kernel returns early -- so a warm
-        # persist=true session is never wiped mid-computation.
+        # session is never wiped mid-computation.
         setup = (
             "import os as _os, shutil as _sh\n"
             f"_os.makedirs({_WORKSPACE_ROOT!r}, mode=0o700, exist_ok=True)\n"
@@ -359,10 +433,13 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
             f"_os.makedirs({kernel.workspace!r}, mode=0o700, exist_ok=True)\n"
             f"_os.chmod({kernel.workspace!r}, 0o700)\n"
             f"_os.chdir({kernel.workspace!r})\n"
+            + _OOM_KILLS_SNIPPET
         )
         result = self._run(kernel, setup, self._default_timeout)
         if not result.ok:
             raise RuntimeError(f"Sandbox workspace setup failed: {result.error_value}")
+        with self._lock:
+            self._oom_baseline[kernel.kernel_id] = _parse_oom_kills(result.stdout)
         kernel.initialized = True
 
     # -- Execution -------------------------------------------------------
@@ -385,12 +462,26 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
         (file-transfer execs raise it so a multi-MB base64 payload is not truncated).
         """
         try:
+            # The handshake is bounded by the default exec cap, not a long run's
+            # timeout: it waits only for the gateway to answer (and for a
+            # starting kernel's info reply), never for the code. ``_collect``
+            # sets each read's timeout from the run's own deadline.
             ws = websocket.create_connection(
                 self._ws_url(kernel.kernel_id),
-                timeout=timeout,
+                timeout=min(timeout, max(self._default_timeout, self._http_timeout)),
                 header=self._ws_headers(),
             )
         except Exception as exc:  # noqa: BLE001 - connect failure -> error result, never raise
+            if isinstance(exc, websocket.WebSocketBadStatusException) and exc.status_code == 404:
+                # The gateway no longer has this kernel: culled after idling, or lost
+                # with a gateway restart. Retrying the cached id would fail the same
+                # way on every call, so forget it and let the next open start fresh.
+                self._forget_kernel(kernel.kernel_id)
+                result = _error_result(
+                    "KernelGoneError", "the session's kernel no longer exists; the next call starts a new session"
+                )
+                result.runtime_invalidated = True
+                return result
             return _error_result(type(exc).__name__, str(exc) or "failed to open kernel channel")
         try:
             msg_id = uuid.uuid4().hex
@@ -486,11 +577,15 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
             except json.JSONDecodeError as exc:
                 self._fail(result, "ProtocolError", f"malformed kernel frame: {exc}")
                 break
-            if msg.get("parent_header", {}).get("msg_id") != msg_id:
-                continue
-
             msg_type = msg.get("msg_type") or msg.get("header", {}).get("msg_type")
             content = msg.get("content", {})
+            if msg.get("parent_header", {}).get("msg_id") != msg_id:
+                if msg_type == "status" and content.get("execution_state") in _KERNEL_DEATH_STATES:
+                    # The kernel process died mid-run. The reply will never
+                    # come, so stop now instead of waiting out the deadline.
+                    self._kernel_died(result, content.get("execution_state"), kernel_id, session_id)
+                    break
+                continue
 
             if msg_type == "stream":
                 if not truncated:
@@ -542,6 +637,52 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
         result.stdout = "".join(stdout_parts)
         result.stderr = "".join(stderr_parts)
         return result
+
+    def _kernel_died(
+        self, result: ExecResult, state: str, kernel_id: str, session_id: Optional[str]
+    ) -> None:
+        """Fail a run whose kernel process died, and retire the kernel.
+
+        The gateway restarts a dead kernel under the same id, but the new
+        process has none of the session's variables and is no longer in the
+        session's workspace, so the kernel is deleted and the next call opens a
+        new session. When the container's OOM-kill count rose since the kernel
+        was primed, the run is marked out of memory.
+
+        Args:
+            result: The run's result, failed in place.
+            state: The status the gateway sent, ``restarting`` or ``dead``.
+            kernel_id: The kernel that died.
+            session_id: The session it served, for the quarantine record.
+        """
+        with self._lock:
+            baseline = self._oom_baseline.pop(kernel_id, None)
+        oom_killed = False
+        if state == "restarting" and baseline is not None:
+            now = self._oom_kills_now(kernel_id, session_id)
+            oom_killed = now is not None and now > baseline
+        if oom_killed:
+            message = "the kernel was killed for using more memory than the sandbox allows"
+        else:
+            message = (
+                "the kernel process died while running this code (most often because it ran out of memory)"
+            )
+        self._fail(result, "KernelDiedError", message + "; the next call starts a new session")
+        result.out_of_memory = oom_killed
+        logger.warning(
+            "Kernel %s died mid-run (%s, oom_killed=%s); retiring it", kernel_id, state, oom_killed
+        )
+        self._invalidate_kernel(kernel_id, session_id)
+        result.runtime_invalidated = True
+
+    def _oom_kills_now(self, kernel_id: str, session_id: Optional[str]) -> Optional[int]:
+        """Read the container's OOM-kill count through the restarted kernel; None when unreadable."""
+        try:
+            probe = self._run(_Kernel(kernel_id, _WORKSPACE_ROOT, session_id), _OOM_KILLS_SNIPPET, self._http_timeout)
+        except Exception:  # noqa: BLE001 - the probe is best-effort
+            logger.debug("OOM-kill probe failed for kernel %s", kernel_id, exc_info=True)
+            return None
+        return _parse_oom_kills(probe.stdout) if probe.ok else None
 
     @staticmethod
     def _fail(result: ExecResult, name: str, value: str) -> None:
@@ -614,7 +755,7 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
             code = "import base64 as _b64, os as _os\n" + _CONTAINMENT_SNIPPET + body
             result = self._run(kernel, code, self._default_timeout)
             if not result.ok:
-                raise IOError(f"put_file failed: {result.error_value}")
+                raise self._file_op_error("put_file", result)
             offset += self._PUT_CHUNK_BYTES
             first = False
 
@@ -635,7 +776,7 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
         )
         result = self._run(kernel, code, self._default_timeout, max_output_bytes=self._file_transfer_budget())
         if not result.ok:
-            raise IOError(f"get_file failed: {result.error_value}")
+            raise self._file_op_error("get_file", result)
         out = result.stdout
         start = out.find(_FILE_BEGIN)
         end = out.find(_FILE_END)
@@ -662,13 +803,216 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
         )
         result = self._run(kernel, code, self._default_timeout, max_output_bytes=self._file_transfer_budget())
         if not result.ok:
-            raise IOError(f"list_files failed: {result.error_value}")
+            raise self._file_op_error("list_files", result)
         out = result.stdout
         start = out.find(_FILE_BEGIN)
         end = out.find(_FILE_END)
         if start == -1 or end == -1:
             return []
         return json.loads(out[start + len(_FILE_BEGIN):end])
+
+
+    # -- Detached runs ---------------------------------------------------
+
+    _JOB_BEGIN = "<<<DOCSGPT_JOB_BEGIN>>>"
+    _JOB_END = "<<<DOCSGPT_JOB_END>>>"
+
+    def start_detached(self, session_id: str, code: str, timeout: Optional[float], key: str) -> Dict[str, Any]:
+        """Start ``code`` as a separate Python process in the runner and return at once.
+
+        The process runs ``scratch/jobs/<key>/main.py`` from the session
+        workspace under ``timeout``, in its own session (``setsid``) so it
+        outlives the kernel call that launched it. It does NOT share the
+        kernel's variables or imports, only the workspace files. Output goes to
+        ``out.log`` and the exit status to ``exit`` in the job directory.
+
+        Args:
+            session_id: The session whose workspace and kernel launch the run.
+            code: The source.
+            timeout: Wall-clock cap in seconds (the default exec cap when None).
+            key: A unique key for this run.
+
+        Returns:
+            The run's handle.
+
+        Raises:
+            IOError: The launch failed.
+        """
+        kernel = self._get_kernel(session_id)
+        wall = int(timeout or self._default_timeout)
+        directory = detached.job_dir(key)
+        self.put_file(session_id, f"{directory}/main.py", detached.script_for(kernel.workspace, code).encode("utf-8"))
+        launcher = (
+            "import json as _json, os as _os, subprocess as _sp, sys as _sys\n"
+            f"_job = _os.path.join({kernel.workspace!r}, {directory!r})\n"
+            "_cmd = ('timeout -k 5 ' + str(" + str(wall) + ") + ' \"$0\" -u \"$1/main.py\" > \"$1/out.log\" 2>&1; '\n"
+            "        'echo $? > \"$1/exit.tmp\" && mv \"$1/exit.tmp\" \"$1/exit\"')\n"
+            "_p = _sp.Popen(['sh', '-c', _cmd, _sys.executable, _job], "
+            f"cwd={kernel.workspace!r}, start_new_session=True, "
+            "stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)\n"
+            # Reap the run when it exits, so a cancelled one does not linger as a zombie.
+            "__import__('threading').Thread(target=_p.wait, daemon=True).start()\n"
+            f"print({self._JOB_BEGIN!r} + _json.dumps({{'pid': _p.pid}}) + {self._JOB_END!r})\n"
+        )
+        result = self._run(kernel, launcher, self._default_timeout)
+        payload = detached.decode_marker_json(result.stdout, self._JOB_BEGIN, self._JOB_END) if result.ok else None
+        if payload is None:
+            raise self._file_op_error("start_detached", result)
+        return {
+            "backend": "jupyter",
+            "kernel_id": kernel.kernel_id,
+            "workspace": kernel.workspace,
+            "job_dir": directory,
+            "pid": int(json.loads(payload)["pid"]),
+            "wall": wall,
+            "started_at": time.time(),
+        }
+
+    def poll_detached(self, session_id: str, run: Dict[str, Any], *, with_output: bool = False) -> DetachedState:
+        """Check a detached run through the session's (or an adopted observer) kernel.
+
+        Args:
+            session_id: The session the run belongs to.
+            run: The handle ``start_detached`` returned.
+            with_output: Also read the output of a run still going.
+
+        Returns:
+            The run's state; once it exited, its full result.
+
+        Raises:
+            IOError: The kernel could not be reached; poll again later.
+        """
+        kernel = self._get_kernel(session_id)
+        probe = (
+            "import json as _json, os as _os\n"
+            f"_d = _os.path.join({kernel.workspace!r}, {run['job_dir']!r})\n"
+            "_code = None\n"
+            "_done = _os.path.exists(_os.path.join(_d, 'exit'))\n"
+            "if _done:\n"
+            "    try:\n"
+            "        _code = int(open(_os.path.join(_d, 'exit')).read().strip() or '0')\n"
+            "    except (OSError, ValueError):\n"
+            "        _code = -1\n"
+            "else:\n"
+            "    try:\n"
+            f"        _os.killpg({int(run['pid'])}, 0)\n"
+            "    except ProcessLookupError:\n"
+            # It may have written ``exit`` and been reaped between the two checks.
+            "        _done, _code = True, 137\n"
+            "        try:\n"
+            "            _code = int(open(_os.path.join(_d, 'exit')).read().strip() or '0')\n"
+            "        except (OSError, ValueError):\n"
+            "            pass\n"
+            "    except PermissionError:\n"
+            "        pass\n"
+            "_tail, _size = '', 0\n"
+            f"if _done or {bool(with_output)!r}:\n"
+            "    try:\n"
+            "        with open(_os.path.join(_d, 'out.log'), 'rb') as _f:\n"
+            "            _f.seek(0, 2)\n"
+            "            _size = _f.tell()\n"
+            f"            _f.seek(max(0, _size - {detached.RUNNING_OUTPUT_BYTES}))\n"
+            "            _tail = _f.read().decode('utf-8', 'replace')\n"
+            "    except OSError:\n"
+            "        pass\n"
+            "print(" + repr(self._JOB_BEGIN) + " + _json.dumps({'done': _done, 'exit': _code, 'tail': _tail, "
+            "'size': _size}) + " + repr(self._JOB_END) + ")\n"
+        )
+        result = self._run(kernel, probe, self._default_timeout)
+        payload = detached.decode_marker_json(result.stdout, self._JOB_BEGIN, self._JOB_END) if result.ok else None
+        if payload is None:
+            raise self._file_op_error("poll_detached", result)
+        state = json.loads(payload)
+        if not state.get("done"):
+            return DetachedState(
+                done=False, output=detached.tail_bytes(state.get("tail") or ""), output_size=int(state.get("size") or 0)
+            )
+        try:
+            output = self.get_file(session_id, f"{run['job_dir']}/out.log").decode("utf-8", "replace")
+        except (IOError, ValueError):
+            # Too large or unreadable: the tail is what the run reports.
+            output = state.get("tail") or ""
+        result = detached.finished_result(
+            output,
+            state.get("exit"),
+            elapsed=time.time() - float(run.get("started_at") or 0),
+            wall=float(run.get("wall") or self._default_timeout),
+            max_output_bytes=self._max_output_bytes,
+        )
+        self._remove_job_dir(kernel, run)
+        return DetachedState(
+            done=True, result=result, output=detached.tail_bytes(output), output_size=int(state.get("size") or 0)
+        )
+
+    def _remove_job_dir(self, kernel: _Kernel, run: Dict[str, Any]) -> None:
+        """Delete a finished run's job directory (best-effort)."""
+        code = (
+            "import os as _os, shutil as _sh\n"
+            f"_sh.rmtree(_os.path.join({kernel.workspace!r}, {run['job_dir']!r}), ignore_errors=True)\n"
+        )
+        try:
+            self._run(kernel, code, self._http_timeout)
+        except Exception:  # noqa: BLE001 - cleanup is best-effort
+            logger.debug("removing job dir %s failed", run.get("job_dir"), exc_info=True)
+
+    def cancel_detached(self, session_id: str, run: Dict[str, Any]) -> None:
+        """Stop a detached run: SIGTERM its process group (the ``timeout`` wrapper escalates to SIGKILL)."""
+        kernel = self._get_kernel(session_id)
+        code = (
+            "import os as _os, signal as _sig\n"
+            "try:\n"
+            f"    _os.killpg({int(run['pid'])}, _sig.SIGTERM)\n"
+            "except (ProcessLookupError, PermissionError):\n"
+            "    pass\n"
+        )
+        self._run(kernel, code, self._http_timeout)
+
+    def refresh_activity(self, session_id: str) -> None:
+        """No-op: a polled kernel counts as active on the gateway."""
+        return None
+
+    def adopt(self, session_id: str, run: Dict[str, Any]) -> Dict[str, Any]:
+        """Reach a detached run from another process through an observer kernel.
+
+        The session's own kernel belongs to the process that opened it, and
+        executing in it from here would queue behind (and on a timeout,
+        interrupt) the user's next run. A separate observer kernel reads the
+        session workspace by path instead; it is never primed, so the
+        workspace is never wiped. Its id is kept on the run so later polls
+        reuse it.
+
+        Args:
+            session_id: The session the run belongs to.
+            run: The run's handle; ``observer_kernel_id`` when one exists.
+
+        Returns:
+            ``{"observer_kernel_id": ...}`` when a new observer was started.
+        """
+        observer = run.get("observer_kernel_id")
+        created: Dict[str, Any] = {}
+        if not observer or not self._kernel_alive(observer):
+            resp = requests.post(
+                f"{self._base_url}/api/kernels",
+                headers=self._headers(),
+                data=json.dumps({"name": self._kernel_name}),
+                timeout=self._http_timeout,
+            )
+            resp.raise_for_status()
+            observer = resp.json()["id"]
+            created["observer_kernel_id"] = observer
+        with self._lock:
+            self._kernels[session_id] = _Kernel(observer, run.get("workspace") or "", session_id)
+        return created
+
+    def release_adopted(self, session_id: str, run: Dict[str, Any]) -> None:
+        """Delete the observer kernel once its run is over (never the session's own kernel)."""
+        observer = run.get("observer_kernel_id")
+        with self._lock:
+            kernel = self._kernels.get(session_id)
+            if kernel is not None and kernel.kernel_id == observer:
+                self._kernels.pop(session_id, None)
+        if observer and observer != run.get("kernel_id"):
+            self._delete_kernel(observer)
 
 
 def _error_result(name: str, value: str) -> ExecResult:

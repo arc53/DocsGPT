@@ -108,7 +108,7 @@ celery -A docsgpt.app.celery worker -l INFO -B
 `docsgpt worker` (or `python -m docsgpt worker`) runs the same thing: it adds
 `-B` itself (`--no-beat` drops it) and picks the solo pool on macOS and Windows.
 
-**Beat must run somewhere.** It fires scheduled agent runs, source syncs,
+**Beat must run somewhere.** It fires scheduled agent runs, source syncs, background-job sweeps,
 reconciliation, retention cleanups and the version check; without it they
 silently never happen. Extra beat instances are safe (RedBeat holds a lock in
 Redis). Celery rejects `-B` on Windows: drop it there and run

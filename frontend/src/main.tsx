@@ -6,6 +6,7 @@ import { Provider } from 'react-redux';
 import store from './store';
 import { TooltipProvider } from './components/ui/tooltip';
 import './index.css';
+import { installChunkReload } from './utils/chunkReload';
 
 // Show scrollbar on scroll for scrollbar-overlay elements, hide after 1s idle
 const scrollTimers = new WeakMap<Element, ReturnType<typeof setTimeout>>();
@@ -67,6 +68,11 @@ document.addEventListener(
   },
   { passive: true },
 );
+
+// A deploy replaced the hashed chunks this tab expects: reload once to get
+// the new index.html. Registered before the first render so it also covers
+// chunks that load during it.
+installChunkReload();
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>

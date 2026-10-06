@@ -29,6 +29,63 @@
     "toolApprovalReview": "Revisar",
     "toolApprovalFallbackName": "Conversación"
   },
+  "backgroundJobs": {
+    "unread": "No leído",
+    "card": {
+      "status": {
+        "working": "En segundo plano",
+        "completed": "Terminado",
+        "failed": "Falló",
+        "cancelled": "Cancelado",
+        "lost": "Interrumpido"
+      },
+      "cancel": "Cancelar",
+      "cancelling": "Cancelando…",
+      "cancelFailed": "No se pudo cancelar la tarea",
+      "progress": "{{percent}} % completado",
+      "willResume": "Recibirás el resultado en este chat cuando termine.",
+      "pollOnly": "Pide el resultado en este chat cuando termine.",
+      "lostHint": "La tarea se interrumpió y puede que no haya terminado. El asistente lo comprueba antes de reintentar.",
+      "durationSeconds": "{{s}} s",
+      "durationMinutes": "{{m}} min {{s}} s",
+      "durationHours": "{{h}} h {{m}} min"
+    },
+    "notify": {
+      "title": {
+        "job": "Tarea en segundo plano terminada",
+        "lost": "Tarea en segundo plano interrumpida",
+        "monitor": "El monitor detectó un cambio",
+        "trigger": "Webhook recibido",
+        "approval": "Aprobación recibida",
+        "monitor_paused": "Monitor en pausa",
+        "monitor_expired": "Monitor caducado",
+        "schedule": "Tarea programada terminada",
+        "default": "Nueva respuesta"
+      },
+      "open": "Abrir",
+      "fallbackTitle": "Tu asistente tiene novedades"
+    },
+    "push": {
+      "promptTitle": "¿Te avisamos cuando termine?",
+      "promptBody": "Recibe una notificación del navegador cuando termine el trabajo en segundo plano mientras no estás.",
+      "enable": "Activar",
+      "notNow": "Ahora no",
+      "blocked": "Las notificaciones están bloqueadas para este sitio. Permítelas en la configuración del sitio de tu navegador.",
+      "failed": "No se pudieron activar las notificaciones"
+    },
+    "wake": {
+      "job": "Tarea en segundo plano terminada",
+      "lost": "Tarea en segundo plano interrumpida",
+      "monitor": "El monitor detectó un cambio",
+      "trigger": "Webhook recibido",
+      "approval": "Aprobación recibida",
+      "monitor_paused": "Monitor en pausa",
+      "monitor_expired": "Monitor caducado",
+      "default": "Evento en segundo plano",
+      "more": "+{{count}} más",
+      "cancelled": "Tarea en segundo plano cancelada"
+    }
+  },
   "demo": [
     {
       "header": "Aprende sobre DocsGPT",
@@ -1432,6 +1489,7 @@
         "mcp_atlassian": "Busca y actualiza incidencias de Jira y páginas de Confluence.",
         "mcp_sentry": "Consulta incidencias, eventos y versiones de Sentry.",
         "mcp_stripe": "Consulta clientes, pagos y suscripciones en Stripe.",
+        "mcp_clickup": "Busca, lee y actualiza tareas, documentos y listas de ClickUp, y añade comentarios.",
         "github": "Sincroniza repositorios con Conocimiento y deja que los agentes lean código, issues y pull requests."
       },
       "empty": "Aún no hay nada conectado. Conecta un servicio para sincronizar su contenido o dar nuevas herramientas a los agentes.",
@@ -3162,5 +3220,97 @@
     "collapse": "Reducir",
     "back": "Atrás"
   },
-  "close": "Cerrar"
+  "close": "Cerrar",
+  "approval": {
+    "logoAlt": "DocsGPT",
+    "untitled": "Aprobación solicitada",
+    "missingTitle": "Este enlace no funciona",
+    "missingDescription": "Puede que haya caducado o se haya cancelado, o que la dirección esté incompleta.",
+    "loadError": "No se pudo cargar esta solicitud",
+    "options": {
+      "approve": "Aprobar",
+      "reject": "Rechazar"
+    },
+    "commentLabel": "Comentario (opcional)",
+    "commentPlaceholder": "Lo que deba saber quien lo pide",
+    "onceOnly": "Tu elección es definitiva: solo cuenta la primera decisión.",
+    "thanks": "Gracias. Elegiste “{{decision}}” y se ha avisado al asistente que lo pidió.",
+    "alreadyDecided": "Esta solicitud ya se decidió: {{decision}}.",
+    "notWaiting": "Esta solicitud ya no espera una decisión.",
+    "rateLimited": "Demasiados intentos. Espera un minuto y vuelve a intentarlo.",
+    "submitError": "No se pudo enviar tu decisión. Inténtalo de nuevo.",
+    "expiresAt": "Esta solicitud caduca el {{date}}.",
+    "yourComment": "Tu comentario: «{{comment}}»"
+  },
+  "monitors": {
+    "label": "Monitores",
+    "subtitle": "Lo que el asistente vigila por ti: páginas, herramientas, enlaces webhook y enlaces de aprobación. Cada uno retoma su conversación cuando pasa algo.",
+    "empty": "Aún no hay monitores",
+    "emptyHint": "Pide al asistente en un chat que vigile algo, como “avísame cuando el precio baje de 90 $”.",
+    "loadError": "No se pudieron cargar tus monitores",
+    "actionError": "No funcionó. Inténtalo de nuevo.",
+    "untitled": "Monitor",
+    "watching": "Vigilando cambios",
+    "every": "Cada {{interval}}",
+    "onEvent": "Cuando ocurra",
+    "openConversation": "Abrir conversación",
+    "pause": "Pausar",
+    "resume": "Reanudar",
+    "cancel": "Cancelar monitor",
+    "menu": "Acciones de {{name}}",
+    "pausedBecause": "En pausa: {{reason}}",
+    "lastError": "Último problema: {{error}}",
+    "cancelConfirm": "¿Cancelar “{{name}}”?",
+    "cancelConsequence": "Deja de comprobar, sus enlaces dejan de funcionar y se retira cualquier aprobación que se le diera.",
+    "status": {
+      "active": "Activo",
+      "paused": "En pausa",
+      "completed": "Terminado",
+      "cancelled": "Cancelado"
+    },
+    "source": {
+      "webpage": "Página web",
+      "tool": "Herramienta",
+      "ingest": "Ingesta de conocimiento",
+      "webhook": "Enlace webhook",
+      "approval": "Enlace de aprobación"
+    },
+    "columns": {
+      "monitor": "Monitor",
+      "status": "Estado",
+      "interval": "Comprobaciones",
+      "lastChecked": "Última comprobación",
+      "wakesLeft": "Avisos restantes",
+      "expires": "Caduca",
+      "actions": "Acciones"
+    },
+    "linkCard": {
+      "title": "Enlace webhook",
+      "copyUrl": "Copiar enlace",
+      "revealSecret": "Mostrar secreto",
+      "hideSecret": "Ocultar secreto",
+      "copySecret": "Copiar secreto",
+      "secretNote": "Solo tú puedes ver el secreto de firma; el asistente nunca lo ve. Defínelo como DOCSGPT_WEBHOOK_SECRET para ejecutar el comando de ejemplo, o pégalo en el campo de secreto del remitente.",
+      "revealFailed": "No se pudo cargar el secreto. Inténtalo de nuevo.",
+      "revealLimited": "Demasiadas solicitudes. Inténtalo de nuevo en un minuto.",
+      "revealMissing": "Este enlace ya no tiene secreto: terminó o se canceló.",
+      "approvalTitle": "Enlace de aprobación",
+      "expires": "Caduca el {{date}}",
+      "state": {
+        "pending": "Esperando una decisión",
+        "decided": "Decidido",
+        "ended": "Enlace finalizado",
+        "active": "Activo"
+      }
+    },
+    "finished": {
+      "decided": "Terminado: se tomó la decisión",
+      "usedAllWakes": "Terminado: avisó todas las veces previstas",
+      "expired": "Terminado: caducó",
+      "cancelledByUser": "Cancelado por ti",
+      "cancelledFromChat": "Cancelado desde el chat",
+      "conversationGone": "Terminado: su conversación ya no se puede reanudar"
+    },
+    "endedBecause": "Terminado: {{reason}}"
+  }
 }

@@ -104,9 +104,11 @@ dependencies = [
   "python-dotenv>=1.2.3,<2",
   "python-jose>=3.5.0,<4",
   "python-pptx>=1.0.2,<2",
+  "pywebpush>=2.5.0,<3",
   "PyYAML>=6.0.3,<7",
   "qdrant-client>=1.19.0,<2",
   "redis>=8.1.0,<9",
+  "regex>=2024.11.6",
   "requests>=2.34.2,<3",
   "retry>=0.9.2,<0.10",
   "sqlalchemy>=2.0,<3",
@@ -171,6 +173,10 @@ dev = [
   "jupyter-client>=8.0",
   "python-docx>=1.1",
   "reportlab>=5.0.1,<6",
+  # The pdf artifact renderer's right-to-left and shaping paths (the sandbox has them).
+  "arabic-reshaper>=3.0.1",
+  "python-bidi>=0.6.11",
+  "uharfbuzz>=0.56.2",
   "ruff",
 ]
 

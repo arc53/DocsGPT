@@ -86,21 +86,47 @@ spec:
               value: /tmp/jupyter-runtime
             - name: JUPYTER_DATA_DIR
               value: /tmp/jupyter-data
+          # Same budget as the compose overlay's SANDBOX_MEMORY default: the
+          # gateway, the warm session kernels, and the LibreOffice (~170 MB) and
+          # headless Chromium (~110 MB) processes they start, plus what the
+          # memory-backed /sandbox-home holds (up to its 1Gi sizeLimit).
+          # SANDBOX_MAX_SESSIONS caps each API and worker process separately;
+          # raise the limit (or lower that cap or SANDBOX_MAX_TTL) when many
+          # processes keep kernels warm at once.
           resources:
             limits:
-              memory: "1Gi"
+              memory: "4Gi"
               cpu: "1"
             requests:
-              memory: "256Mi"
+              memory: "512Mi"
               cpu: "250m"
           volumeMounts:
-            # Per-session workspaces + Jupyter runtime files on an emptyDir;
+            # Per-session workspaces and Jupyter runtime files on an emptyDir;
             # the root FS stays read-only everywhere else.
             - name: scratch
               mountPath: /tmp
+            # A larger /dev/shm for Chromium (the container default is 64 MB).
+            - name: dshm
+              mountPath: /dev/shm
+            # The kernels' HOME (/sandbox-home/home): runtime pip installs,
+            # pip's cache and the LibreOffice/Chromium dot-dirs. An emptyDir is
+            # never mounted noexec, so compiled packages installed at runtime
+            # load; the pod's allowPrivilegeEscalation=false and dropped
+            # capabilities still apply. Memory-backed to match the compose
+            # tmpfs: it counts against the memory limit as it fills.
+            - name: sandbox-home
+              mountPath: /sandbox-home
       volumes:
         - name: scratch
           emptyDir: {}
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+        - name: sandbox-home
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
 ---
 apiVersion: v1
 kind: Service

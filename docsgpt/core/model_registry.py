@@ -18,11 +18,18 @@ Redis-side version counter; other processes notice the bump on their
 next access (after the local TTL window) and reload from Postgres. If
 Redis is unreachable the per-process TTL still bounds staleness — pure
 TTL semantics, no regression.
+
+Thread safety: the catalog is loaded once per process, under a lock, and the
+singleton is published only once it is fully loaded. Concurrent first requests
+after a restart therefore all wait for the same load and all see the whole
+catalog; none can observe an empty registry, which would leave it without a
+default model and send it down the provider-fallback path with the wrong key.
 """
 
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -45,34 +52,52 @@ _USER_VERSION_KEY_PREFIX = "byom:registry_version:"
 
 
 class ModelRegistry:
-    """Singleton registry of available models."""
+    """Singleton registry of available models.
+
+    The first call builds the instance and loads the catalog while holding
+    ``_lock``; concurrent callers wait for it. ``_instance`` is assigned only
+    after the load succeeded, so a caller never gets a half-loaded registry,
+    and a load that raises publishes nothing and is retried by the next call.
+    """
 
     _instance: Optional["ModelRegistry"] = None
     _initialized: bool = False
+    _lock = threading.Lock()
 
     def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
+        instance = cls._instance
+        if instance is not None and cls._initialized:
+            return instance
+        with cls._lock:
+            if cls._instance is None or not cls._initialized:
+                instance = super().__new__(cls)
+                instance._setup()
+                cls._instance = instance
+                cls._initialized = True
+            return cls._instance
 
     def __init__(self):
-        if not ModelRegistry._initialized:
-            self.models: Dict[str, AvailableModel] = {}
-            self.default_model_id: Optional[str] = None
-            # Per-user BYOM cache. Each entry is
-            # ``(layer, version_at_load, loaded_at_monotonic)``:
-            #   * ``layer`` — {model_id: AvailableModel}
-            #   * ``version_at_load`` — Redis-side counter snapshot at
-            #     reload time, or ``None`` if Redis was unreachable
-            #   * ``loaded_at_monotonic`` — for TTL bookkeeping
-            # Populated lazily, evicted by TTL + cross-process
-            # invalidation (see ``invalidate_user``).
-            self._user_models: Dict[
-                str,
-                Tuple[Dict[str, AvailableModel], Optional[int], float],
-            ] = {}
-            self._load_models()
-            ModelRegistry._initialized = True
+        # Everything happens in ``__new__`` under the lock; ``__init__`` runs
+        # on every ``ModelRegistry()`` call and must not touch shared state.
+        pass
+
+    def _setup(self) -> None:
+        """Initialise the per-instance state and load the catalog."""
+        self.models: Dict[str, AvailableModel] = {}
+        self.default_model_id: Optional[str] = None
+        # Per-user BYOM cache. Each entry is
+        # ``(layer, version_at_load, loaded_at_monotonic)``:
+        #   * ``layer`` — {model_id: AvailableModel}
+        #   * ``version_at_load`` — Redis-side counter snapshot at
+        #     reload time, or ``None`` if Redis was unreachable
+        #   * ``loaded_at_monotonic`` — for TTL bookkeeping
+        # Populated lazily, evicted by TTL + cross-process
+        # invalidation (see ``invalidate_user``).
+        self._user_models: Dict[
+            str,
+            Tuple[Dict[str, AvailableModel], Optional[int], float],
+        ] = {}
+        self._load_models()
 
     @classmethod
     def get_instance(cls) -> "ModelRegistry":
@@ -81,8 +106,9 @@ class ModelRegistry:
     @classmethod
     def reset(cls) -> None:
         """Clear the singleton. Intended for test fixtures."""
-        cls._instance = None
-        cls._initialized = False
+        with cls._lock:
+            cls._instance = None
+            cls._initialized = False
 
     @classmethod
     def invalidate_user(cls, user_id: str) -> None:
@@ -140,9 +166,11 @@ class ModelRegistry:
     def _load_models(self) -> None:
         from docsgpt.core.settings import settings
 
-        self.models.clear()
-        self.models.update(load_catalog_models(settings))
-        self.default_model_id = resolve_default_model_id(settings, self.models)
+        # Build first, then publish: the catalog and its default always
+        # describe the same load.
+        models = load_catalog_models(settings)
+        self.default_model_id = resolve_default_model_id(settings, models)
+        self.models = models
 
         logger.info(
             "ModelRegistry loaded %d models, default: %s",

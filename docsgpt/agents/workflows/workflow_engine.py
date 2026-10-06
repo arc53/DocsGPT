@@ -382,10 +382,12 @@ class WorkflowEngine:
             user_id=node_user_id,
             fallback=self.agent.llm_name,
         )
-        # Resolve the key from the normalized name: get_api_key_for_provider
-        # silently returns settings.API_KEY for names it does not know, so a
-        # label here would leak the deployment key to the wrong endpoint.
-        node_api_key = get_api_key_for_provider(node_llm_name) or self.agent.api_key
+        # Resolve the key from the normalized name. The parent agent's key
+        # belongs to the parent's provider, so it only stands in when the
+        # node runs on that same provider.
+        node_api_key = get_api_key_for_provider(node_llm_name) or (
+            self.agent.api_key if node_llm_name == self.agent.llm_name else None
+        )
 
         # Structured output gates on the model's registry capability flags;
         # fetch them only when a node json_schema needs the check.

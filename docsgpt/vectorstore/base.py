@@ -1,4 +1,5 @@
 import logging
+import threading
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
@@ -195,7 +196,14 @@ def _get_embeddings_wrapper():
 
 
 class EmbeddingsSingleton:
+    """Process-wide cache of embedding runners, one per model (or remote endpoint).
+
+    Each runner is built once, under ``_lock``: concurrent first requests
+    would otherwise each load the model, holding several copies in memory.
+    """
+
     _instances = {}
+    _lock = threading.Lock()
 
     @staticmethod
     def _remote_instance(embeddings_name, embeddings_key=None):
@@ -217,23 +225,36 @@ class EmbeddingsSingleton:
         """
         api_key = embeddings_key if embeddings_key is not None else settings.EMBEDDINGS_KEY
         cache_key = f"remote_{settings.EMBEDDINGS_BASE_URL}_{embeddings_name}"
-        if cache_key not in EmbeddingsSingleton._instances:
-            EmbeddingsSingleton._instances[cache_key] = RemoteEmbeddings(
+        return EmbeddingsSingleton._get_or_create(
+            cache_key,
+            lambda: RemoteEmbeddings(
                 api_url=settings.EMBEDDINGS_BASE_URL,
                 model_name=embeddings_name,
                 api_key=api_key,
-            )
-        return EmbeddingsSingleton._instances[cache_key]
+            ),
+        )
+
+    @staticmethod
+    def _get_or_create(cache_key, factory):
+        """Return the cached runner for ``cache_key``, building it once under the lock."""
+        instance = EmbeddingsSingleton._instances.get(cache_key)
+        if instance is not None:
+            return instance
+        with EmbeddingsSingleton._lock:
+            instance = EmbeddingsSingleton._instances.get(cache_key)
+            if instance is None:
+                instance = factory()
+                EmbeddingsSingleton._instances[cache_key] = instance
+            return instance
 
     @staticmethod
     def get_instance(embeddings_name, *args, **kwargs):
         if settings.EMBEDDINGS_BASE_URL:
             return EmbeddingsSingleton._remote_instance(embeddings_name)
-        if embeddings_name not in EmbeddingsSingleton._instances:
-            EmbeddingsSingleton._instances[embeddings_name] = (
-                EmbeddingsSingleton._create_instance(embeddings_name, *args, **kwargs)
-            )
-        return EmbeddingsSingleton._instances[embeddings_name]
+        return EmbeddingsSingleton._get_or_create(
+            embeddings_name,
+            lambda: EmbeddingsSingleton._create_instance(embeddings_name, *args, **kwargs),
+        )
 
     @staticmethod
     def _create_instance(embeddings_name, *args, **kwargs):

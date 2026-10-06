@@ -151,6 +151,27 @@ class TestToolExecutorGetTools:
         headless = ToolExecutor(user="alice", agent_id=str(agent["id"]), headless=True).get_tools()
         assert {t["name"] for t in headless.values()} == {"ntfy"}
 
+    def test_a_saved_check_job_is_not_the_agents_choice(self, pg_conn, monkeypatch, caplog):
+        """check_job, once pickable, is attached by the server; a saved id resolves to nothing, quietly."""
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.core.settings import settings
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        # Even an operator who still lists it in DEFAULT_CHAT_TOOLS.
+        monkeypatch.setattr(settings, "DEFAULT_CHAT_TOOLS", ["memory", "check_job"])
+        agent = AgentsRepository(pg_conn).create(
+            user_id="alice", name="draft", status="draft",
+            tools=[default_tool_id("check_job"), default_tool_id("memory")],
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
+        with caplog.at_level("INFO"):
+            tools = ToolExecutor(user="alice", agent_id=str(agent["id"])).get_tools()
+        assert {t["name"] for t in tools.values()} == {"memory"}
+        assert "check_job" not in caplog.text
+        agentless = ToolExecutor(user="alice").get_tools()
+        assert "check_job" not in {t["name"] for t in agentless.values()}
+
     def test_draft_agent_resolves_tools_as_its_owner(self, pg_conn, monkeypatch):
         """A teammate running someone's draft gets the agent's tools, never their own."""
         from docsgpt.storage.db.repositories.agents import AgentsRepository

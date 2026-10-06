@@ -159,7 +159,8 @@ def _schedule_for(conn, schedule_id: str, user_id: str) -> tuple[Dict[str, Any],
         AccessDenied: 404 when not visible, 403 when the role can't manage it.
     """
     row = SchedulesRepository(conn).get_internal(schedule_id)
-    if row is None:
+    # A monitor is managed from /api/monitors, never as a schedule.
+    if row is None or row.get("trigger_type") == "monitor":
         raise AccessDenied(404, "schedule not found")
     if row.get("user_id") == user_id:
         return row, user_id

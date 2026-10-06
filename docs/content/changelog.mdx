@@ -1,7 +1,7 @@
 ---
 title: 'Changelog'
 description: What changed in each DocsGPT release, with links to the upgrade steps an existing deployment needs.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-06
 ---
 
 import { Callout } from 'nextra/components'
@@ -32,6 +32,11 @@ Entries start at 0.17.0; see GitHub for earlier releases.
     with the key in `API_KEY` now really uses OpenAI instead of the hosted API. Set
     `LLM_NAME=docsgpt-local` to keep the hosted model. See
     [Default model](/upgrading#default-model-llm_provider-alone-picks-it).
+  - Each API key now goes only to the endpoint it was configured for. `API_KEY` belongs to
+    `LLM_PROVIDER` alone, and an unset `FALLBACK_LLM_API_KEY` now means the fallback provider's own
+    key (say `ANTHROPIC_API_KEY`) instead of `API_KEY`. A request whose model DocsGPT cannot resolve
+    to its own endpoint now fails with `Model '<id>' is not available` instead of going to OpenAI.
+    See [API keys stay with their provider](/upgrading#api-keys-stay-with-their-provider).
   - `LLM_PROVIDER=llama.cpp` and `LLM_PROVIDER=huggingface` are gone; neither ever answered.
     Reach llama.cpp through its OpenAI-compatible server with `OPENAI_BASE_URL` and `LLM_NAME`.
     `VECTOR_STORE=lancedb` could never start and is gone from the setup scripts.
@@ -40,6 +45,10 @@ Entries start at 0.17.0; see GitHub for earlier releases.
   - `LLM_PATH`, `HUGGINGFACE_API_KEY`, `LANCEDB_*`, `RETRIEVERS_ENABLED` and `DEFAULT_MAX_HISTORY`
     are no longer read; delete them from `.env`. `SAGEMAKER_*` still works as the S3 credentials
     fallback but is deprecated in favour of `S3_*`.
+  - The code sandbox image grew (LibreOffice, Chromium, OCR, ffmpeg, Node.js): rebuild the runner
+    image and raise a hand-set `SANDBOX_MEMORY` to `4g`. On Daytona, build the new
+    `docsgpt-sandbox-py312-v2` snapshot and point `DAYTONA_SNAPSHOT` at it. See
+    [Daytona snapshot](/Tools/artifacts-and-code-execution#daytona-snapshot).
 </Callout>
 
 ### Connectors
@@ -79,6 +88,18 @@ Answers render math, and the chat widget is published at 0.8.0.
 - A new [Code Execution Sandbox](/Deploying/Sandbox) page covers running the sandbox the Artifact and
   Code Executor tools need, and `scripts/build_daytona_snapshot.py` pins the runner image's render
   library versions.
+- The runner image and the Daytona snapshot are built from one package list and now carry PDF,
+  HTML and YAML libraries (pypdf, pdfplumber, requests, beautifulsoup4, PyYAML), tesseract OCR,
+  poppler, ffmpeg, headless LibreOffice and Chromium with `office-convert`, `html-to-pdf` and
+  `html-screenshot` helpers, Node.js 24, and fonts for Arabic, Devanagari and CJK text.
+  `pip install` inside the self-hosted runner now works; its read-only filesystem made it fail.
+  See [What the sandbox has installed](/Tools/artifacts-and-code-execution#what-the-sandbox-has-installed).
+- The Code Executor's description is shorter and states what each backend keeps between calls,
+  where files must go to reach the user, and which library makes each format. A new session's
+  first result lists the environment, results carry `hint` lines for common mistakes (a missing
+  import, `apt-get`, files written to `/tmp`, the app's own URLs, missing fonts, the same error
+  twice), and output tails drop colour codes and pip noise. See
+  [Hints in results](/Tools/artifacts-and-code-execution#hints-in-results).
 
 ### API
 
@@ -226,6 +247,18 @@ stored secrets and upload its documents again: see
   setting's old and new value.
 - The URL check for MCP servers, S3 endpoints and imported agents also refuses carrier-grade NAT
   addresses (`100.64.0.0/10`).
+- A provider's API key could reach another provider. Right after a restart, two requests at once
+  could find the model registry empty; one then fell back to `LLM_PROVIDER` with no model and the
+  OpenAI client sent the configured key to `api.openai.com` (a DeepSeek key, in the case seen). The
+  registry now loads once under a lock, a request whose model has no endpoint of its own is refused,
+  and an LLM client refuses a configured key for any host it was not configured for. The Anthropic
+  and Gemini clients are pinned to the endpoint that check sees, so `ANTHROPIC_BASE_URL`,
+  `GOOGLE_GEMINI_BASE_URL` and `GOOGLE_GENAI_USE_VERTEXAI` no longer redirect them. A configured key
+  goes over plain `http` only to a host on your own network; `LLM_ALLOW_PLAINTEXT_ENDPOINTS` allows
+  other internal names. See [Plain http and your API key](/Models/local-inference#plain-http-and-your-api-key). See
+  [Keys stay with their provider](/Models/cloud-providers#keys-stay-with-their-provider).
+- The sandbox manager and the embedding models are also built once per process under a lock, so
+  concurrent first requests no longer create a second sandbox session registry or load a model twice.
 - A new [security checklist](/Deploying/Security) covers bind addresses, the choice of `AUTH_TYPE`,
   the secrets to set, outbound URL checks, prompt templates, the LLM cache and the version check.
 

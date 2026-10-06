@@ -44,6 +44,18 @@ def _iso_now() -> str:
     )
 
 
+def _notify_monitors(user_id: str, event_type: str, payload: dict[str, Any]) -> None:
+    """Let ingest monitors see a source's ingest end (whether or not SSE is on); never raises."""
+    if not event_type.startswith("source.ingest."):
+        return
+    try:
+        from docsgpt.monitors.tick import on_ingest_event
+
+        on_ingest_event(user_id, event_type, payload)
+    except Exception:
+        logger.exception("ingest monitors hook failed for %s", event_type)
+
+
 def publish_user_event(
     user_id: str,
     event_type: str,
@@ -64,6 +76,7 @@ def publish_user_event(
             event_type,
         )
         return None
+    _notify_monitors(user_id, event_type, payload)
     if not settings.ENABLE_SSE_PUSH:
         return None
 

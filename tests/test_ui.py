@@ -64,6 +64,16 @@ class TestRouting:
         assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
         assert "javascript" in response.headers["content-type"]
 
+    def test_missing_asset_is_a_404_not_the_index(self, client):
+        # A tab opened before an upgrade asks for chunks the new build renamed.
+        # index.html in their place reads as a script with an HTML MIME type.
+        response = client.get("/assets/missing-abc123.js")
+        assert response.status_code == 404
+        assert "ui" not in response.text
+        assert "text/html" not in response.headers.get("content-type", "")
+        assert response.headers["cache-control"] == "no-store"
+        assert client.head("/assets/missing-abc123.js").status_code == 404
+
     def test_font_has_a_media_type(self, client):
         assert client.get("/fonts/inter.woff2").headers["content-type"] == "font/woff2"
 

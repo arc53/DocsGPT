@@ -790,3 +790,210 @@ def test_sandbox_gone_during_file_op_drops_session_and_next_open_is_cold():
     new_handle = mgr.open("conv-1")
     assert new_handle != old_handle
     assert backend.open_calls == ["conv-1", "conv-1"]
+
+
+# ---------------------------------------------------------------------------
+# Session status: did this open create a fresh runtime?
+# ---------------------------------------------------------------------------
+
+
+def test_open_session_reports_a_cold_open_as_created_then_reuse(backend):
+    mgr = SandboxManager(backend, max_ttl=600)
+    first = mgr.open_session("conv-1")
+    second = mgr.open_session("conv-1")
+    assert first.created is True
+    assert second.created is False
+    assert first.handle == second.handle
+    assert backend.open_calls == ["conv-1"]
+
+
+def test_open_still_returns_the_bare_handle(backend):
+    mgr = SandboxManager(backend, max_ttl=600)
+    handle = mgr.open("conv-1")
+    assert isinstance(handle, str) and handle.startswith("handle-conv-1")
+
+
+def test_open_session_passes_through_a_backend_reattach():
+    """A cold open in this process may still find the runtime alive (Daytona reattach)."""
+    from docsgpt.sandbox.base import OpenedSession
+
+    class _ReattachingBackend(FakeBackend):
+        def open_session(self, session_id):
+            return OpenedSession(self.open(session_id), False)
+
+    mgr = SandboxManager(_ReattachingBackend(), max_ttl=600)
+    assert mgr.open_session("conv-1").created is False
+
+
+def test_backend_default_open_session_reports_created(backend):
+    # A backend that cannot tell a reattach from a create reports every open as fresh,
+    # so the model rebuilds state rather than trusting state that may be gone.
+    opened = backend.open_session("conv-1")
+    assert opened.created is True
+    assert opened.handle == "handle-conv-1-1"
+
+
+def test_open_session_after_runtime_invalidation_is_created():
+    class _InvalidatingBackend(FakeBackend):
+        def exec(self, session_id, code, timeout=None):
+            self._handles.pop(session_id, None)
+            return ExecResult(status="error", error_name="TimeoutError", runtime_invalidated=True)
+
+    mgr = SandboxManager(_InvalidatingBackend(), max_ttl=600)
+    mgr.open_session("conv-1")
+    mgr.exec("conv-1", "while True: pass")
+    assert mgr.open_session("conv-1").created is True
+
+
+def test_an_expired_session_is_closed_and_reopened_not_reused(backend, monkeypatch):
+    """Past its idle TTL a session is gone, even if no other open reaped it yet.
+
+    Reusing it would report state that the TTL contract says is discarded, and on the
+    Jupyter runner the gateway may already have culled the kernel behind the handle.
+    """
+    clock = {"t": 1000.0}
+    monkeypatch.setattr("docsgpt.sandbox.manager.time.monotonic", lambda: clock["t"])
+    mgr = SandboxManager(backend, max_ttl=600)
+    old = mgr.open_session("conv-1", ttl=50)
+    clock["t"] = 1051.0  # 51s idle > 50s ttl
+    fresh = mgr.open_session("conv-1")
+    assert fresh.created is True
+    assert fresh.handle != old.handle
+    assert backend.open_calls == ["conv-1", "conv-1"]
+    assert ("conv-1", old.handle) in backend.closed_handles
+
+
+def test_an_expired_but_busy_session_is_still_reused(backend, monkeypatch):
+    clock = {"t": 1000.0}
+    monkeypatch.setattr("docsgpt.sandbox.manager.time.monotonic", lambda: clock["t"])
+    mgr = SandboxManager(backend, max_ttl=600)
+    mgr.open_session("conv-1", ttl=50)
+    held = mgr._enter("conv-1")  # an op is in flight on the session
+    clock["t"] = 1100.0
+    try:
+        assert mgr.open_session("conv-1").created is False
+        assert backend.open_calls == ["conv-1"]
+    finally:
+        mgr._leave("conv-1", expected=held)
+
+
+def test_a_concurrent_open_waits_for_an_expired_sessions_teardown(monkeypatch):
+    """A second open of an id being retired must not reuse the runtime being torn down.
+
+    Backends reuse a runtime they still have registered (Jupyter keeps its kernel in a
+    per-session registry), so an open that reached the backend before the retired
+    handle's close finished would get the dying runtime back, reported as reused.
+    """
+    from docsgpt.sandbox.base import OpenedSession
+
+    class _ReusingBackend(FakeBackend):
+        def __init__(self) -> None:
+            super().__init__()
+            self.blocked_handle = None
+            self.close_started = threading.Event()
+            self.release_close = threading.Event()
+
+        def open_session(self, session_id):
+            if session_id in self._handles:
+                return OpenedSession(self._handles[session_id], False)
+            return OpenedSession(self.open(session_id), True)
+
+        def close_handle(self, session_id, handle):
+            if handle == self.blocked_handle:
+                self.close_started.set()
+                assert self.release_close.wait(timeout=5)
+            super().close_handle(session_id, handle)
+
+    clock = {"t": 1000.0}
+    monkeypatch.setattr("docsgpt.sandbox.manager.time.monotonic", lambda: clock["t"])
+    backend = _ReusingBackend()
+    mgr = SandboxManager(backend, max_ttl=600)
+    old = mgr.open_session("conv-1", ttl=50).handle
+    backend.blocked_handle = old
+    clock["t"] = 1051.0  # expired
+
+    results = {}
+    retiring = threading.Thread(target=lambda: results.__setitem__("a", mgr.open_session("conv-1")))
+    retiring.start()
+    assert backend.close_started.wait(timeout=5)
+    second = threading.Thread(target=lambda: results.__setitem__("b", mgr.open_session("conv-1")))
+    second.start()
+    second.join(timeout=0.3)
+    assert second.is_alive(), "the second open must wait for the retired handle's teardown"
+    backend.release_close.set()
+    retiring.join(timeout=5)
+    second.join(timeout=5)
+
+    assert old not in (results["a"].handle, results["b"].handle)
+    assert results["a"].handle == results["b"].handle == backend._handles["conv-1"]
+    assert sorted(r.created for r in results.values()) == [False, True]
+
+
+# ---------------------------------------------------------------------------
+# A run longer than the idle TTL
+# ---------------------------------------------------------------------------
+
+
+class _SlowBackend(FakeBackend):
+    """An exec that blocks until released, standing in for a run of up to SANDBOX_EXEC_MAX_TIMEOUT."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.timeouts: List[float] = []
+
+    def exec(self, session_id, code, timeout=None) -> ExecResult:
+        self.timeouts.append(timeout)
+        self.started.set()
+        assert self.release.wait(5)
+        return ExecResult(status="ok", stdout="rendered")
+
+
+def test_a_run_longer_than_the_idle_ttl_is_never_reaped_evicted_or_retired(monkeypatch):
+    """A 1000 s run outlives a 1200 s TTL's idle clock only if busy sessions are left alone; they are."""
+    clock = {"t": 1000.0}
+    monkeypatch.setattr("docsgpt.sandbox.manager.time.monotonic", lambda: clock["t"])
+    backend = _SlowBackend()
+    mgr = SandboxManager(backend, max_ttl=1200, max_sessions=1)
+    mgr.open("long", ttl=1200)
+    results = []
+    runner = threading.Thread(target=lambda: results.append(mgr.exec("long", "render()", timeout=1000)))
+    runner.start()
+    assert backend.started.wait(5)
+    try:
+        clock["t"] += 5000  # far past the idle TTL while the run is still going
+        # The beat reaper leaves it alone.
+        assert mgr.reap_expired() == []
+        # A new session at the cap cannot evict it.
+        with pytest.raises(SandboxCapacityError):
+            mgr.open("other")
+        # The same conversation's next call reuses it instead of retiring it as expired.
+        assert mgr.open_session("long").created is False
+        assert backend.torn_down == []
+    finally:
+        backend.release.set()
+        runner.join(5)
+    assert results[0].stdout == "rendered"
+    assert backend.timeouts == [1000]
+    # The idle clock restarts when the run ends, so the session gets its full TTL afterwards.
+    clock["t"] += 1100
+    assert mgr.reap_expired() == []
+    clock["t"] += 200
+    assert mgr.reap_expired() == ["long"]
+
+
+def test_a_close_during_a_long_run_waits_for_it(monkeypatch):
+    backend = _SlowBackend()
+    mgr = SandboxManager(backend, max_ttl=1200)
+    mgr.open("long")
+    results = []
+    runner = threading.Thread(target=lambda: results.append(mgr.exec("long", "render()", timeout=1000)))
+    runner.start()
+    assert backend.started.wait(5)
+    mgr.close("long")  # e.g. a persist=false call from another stream
+    assert backend.torn_down == []
+    backend.release.set()
+    runner.join(5)
+    assert results[0].ok
+    assert backend.torn_down == ["long"]

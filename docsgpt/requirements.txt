@@ -20,6 +20,7 @@ aiohttp==3.14.3
     #   daytona-api-client-async
     #   daytona-toolbox-api-client-async
     #   python-socketio
+    #   pywebpush
 aiohttp-retry==2.9.1
     # via
     #   daytona-analytics-api-client-async
@@ -131,9 +132,12 @@ cryptography==50.0.1
     #   authlib
     #   docsgpt
     #   google-auth
+    #   http-ece
     #   joserfc
     #   msal
+    #   py-vapid
     #   pyjwt
+    #   pywebpush
     #   secretstorage
 cyclopts==4.25.2
     # via fastmcp-slim
@@ -263,6 +267,8 @@ hf-xet==1.6.0 ; platform_machine == 'AMD64' or platform_machine == 'aarch64' or 
     # via huggingface-hub
 hpack==4.2.0
     # via h2
+http-ece==1.2.1
+    # via pywebpush
 httpcore==1.0.9
     # via
     #   httpx
@@ -603,6 +609,8 @@ py-key-value-aio==0.4.5
     # via fastmcp-slim
 py-rust-stemmers==0.1.8
     # via fastembed
+py-vapid==1.9.4
+    # via pywebpush
 pyasn1==0.6.4
     # via
     #   pyasn1-modules
@@ -692,6 +700,8 @@ python-pptx==1.0.2
     # via docsgpt
 python-socketio==5.16.4
     # via daytona
+pywebpush==2.5.0
+    # via docsgpt
 pywin32==312 ; sys_platform == 'win32'
     # via
     #   mcp
@@ -721,7 +731,9 @@ referencing==0.37.0
     #   jsonschema-specifications
     #   openapi3-parser
 regex==2026.9.10
-    # via tiktoken
+    # via
+    #   docsgpt
+    #   tiktoken
 requests==2.34.2
     # via
     #   docsgpt
@@ -735,6 +747,7 @@ requests==2.34.2
     #   opentelemetry-exporter-otlp-proto-http
     #   prawcore
     #   python-socketio
+    #   pywebpush
     #   requests-file
     #   requests-oauthlib
     #   tiktoken

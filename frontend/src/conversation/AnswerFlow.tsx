@@ -3,8 +3,10 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import SchedulerToolCallCard from '../agents/schedules/SchedulerToolCallCard';
+import BackgroundJobCard from '../backgroundJobs/BackgroundJobCard';
 import { Button } from '../components/ui/button';
 import { usePacedText } from '../hooks';
+import MonitorLinkCard, { parseMonitorLink } from '../monitors/MonitorLinkCard';
 import {
   getToolChipLabel,
   isToolCallRunning,
@@ -157,6 +159,11 @@ export default function AnswerFlow({
             </Fragment>
           );
 
+        if (call.job_id)
+          return (
+            <BackgroundJobCard key={`job-${call.call_id}`} toolCall={call} />
+          );
+
         if (call.tool_name === 'scheduler')
           return (
             <div key={`scheduler-${call.call_id}`} className="my-2 mr-5 ml-6">
@@ -167,6 +174,16 @@ export default function AnswerFlow({
                 agentId={agentId}
               />
             </div>
+          );
+
+        const monitorLink =
+          call.tool_name === 'monitor' ? parseMonitorLink(call.result) : null;
+        if (monitorLink)
+          return (
+            <MonitorLinkCard
+              key={`monitor-link-${call.call_id}`}
+              link={monitorLink}
+            />
           );
 
         return (

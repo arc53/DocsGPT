@@ -113,6 +113,9 @@ function HeroModelSelect() {
            Approved exceptions). */
         className="bg-muted dark:bg-card text-foreground hover:bg-muted dark:hover:bg-card w-full justify-between rounded-4xl border-0 px-6 py-4 text-base shadow-none data-[state=open]:rounded-b-none md:text-base"
         size="field"
+        /* Model names are product names, and a page translator rewrapping
+           this text as the model list loads breaks React's next commit. */
+        translate="no"
       >
         <SelectValue placeholder={t('conversation.selectModel')} />
       </SelectTrigger>
@@ -121,6 +124,7 @@ function HeroModelSelect() {
            The hero picker's menu hangs from its trigger as one muted
            shape (DESIGN.md, Approved exceptions). */
         className="bg-muted dark:bg-card rounded-t-none rounded-b-4xl border-0 shadow-md data-[side=bottom]:translate-y-0"
+        translate="no"
       >
         {hasModels ? (
           availableModels?.map((model: Model) => (

@@ -57,8 +57,10 @@ What this slice does close:
 
 - **Env-secret exfil is closed.** The custom kernelspec
   (`kernels/docsgpt-python/kernel.json` → `/opt/docsgpt/kernel-launch.sh`)
-  re-execs ipykernel under a minimal allowlisted env (`env -i` keeping only
-  `PATH`, `HOME`, `LANG`, `JUPYTER_RUNTIME_DIR`, `JUPYTER_DATA_DIR`). The image
+  re-execs ipykernel through `kernel-env.sh` under a minimal allowlisted env
+  (`env -i` keeping only `PATH`, `LANG`, `JUPYTER_RUNTIME_DIR` and
+  `JUPYTER_DATA_DIR`, plus a writable `HOME` and the image variables from
+  `sandbox.env`; see *Kernel environment*). The image
   installs this spec under the **distinct name `docsgpt-python`** and the app
   selects it via `SANDBOX_KERNEL_NAME=docsgpt-python`; because the name is
   distinct, it is **never shadowed** by the stock ipykernel `python3` spec
@@ -133,8 +135,11 @@ the **stock** `python3` kernelspec, so session creation fails until you do one
 of these:
 
 - Install the scrubbing spec: copy `kernels/docsgpt-python/kernel.json`
-  (pointing `argv` at a local copy of `kernel-launch.sh`) into a Jupyter data
-  dir on the kernelspec search path. The default kernel name then works.
+  (pointing `argv` at a local copy of `kernel-launch.sh`, with `kernel-env.sh`,
+  `kernel-startup.py` and `sandbox.env` copied next to it) into a Jupyter data dir on the
+  kernelspec search path. The default kernel name then works. Kernels get
+  `HOME=/sandbox-home/home` when that mount exists and allows exec, otherwise
+  `/tmp/home`, unless you set `SANDBOX_KERNEL_HOME` on the gateway.
 - Or set `SANDBOX_KERNEL_NAME=python3` in the app's `.env`. The stock spec
   inherits the gateway's full env (no secret scrubbing), so use it only for
   single-trust dev.
@@ -169,38 +174,182 @@ k8s these are added to the `docsgpt-api` and `docsgpt-worker` deployments when
 enabling the opt-in `sandbox-deploy.yaml` (the default `docsgpt-deploy.yaml`
 omits them); see that manifest's header for the exact env and the token Secret.
 
-## Artifact rendering on Daytona (snapshot)
+## What the image contains
 
-The `artifact` tool renders `presentation` / `document` / `spreadsheet` / `pdf`
-specs by running a fixed renderer **inside the sandbox** that imports
-`python-pptx`, `python-docx`, `openpyxl`, and `reportlab` (HTML needs no
-library). The self-hosted Jupyter runner image bakes these in
-(`deployment/sandbox/Dockerfile`), but Daytona's default snapshot is a plain
-Python image — so under `SANDBOX_BACKEND=daytona` those renders fail with
-`render failed: ExecutionError` (a `ModuleNotFoundError` raised inside the
-sandbox). HTML still works.
+`docsgpt/sandbox/manifest.py` is the single list of what the sandbox holds. The
+Daytona snapshot (`scripts/build_daytona_snapshot.py`) builds from it directly,
+and `code_executor` tells the model what is installed from it. This image
+installs from files generated from it, next to the Dockerfile:
+`requirements.txt`, `install-system.sh`, `sandbox.env` and `manifest.json`.
+Edit the manifest, never those files, then regenerate them (CI fails when they
+are stale):
 
-Bake the libraries into a Daytona snapshot once, then point `DAYTONA_SNAPSHOT`
-at it:
+```bash
+python scripts/export_sandbox_manifest.py
+```
+
+What is in it:
+
+- **Python libraries:** pandas, numpy, matplotlib, openpyxl, python-docx,
+  python-pptx, reportlab, lxml, Pillow, requests, beautifulsoup4, PyYAML, pypdf,
+  PyPDF2, pdfplumber, pdfminer.six, pypdfium2, pytesseract and imageio, at the
+  exact versions in the manifest.
+- **Commands:** headless LibreOffice (`soffice`), headless Chromium
+  (`chromium-headless-shell`), `tesseract` (English), poppler's `pdftotext`
+  and `pdftoppm`, `ffmpeg` and `ffprobe`, and Node.js 24 (`node`, `npm`,
+  `npx`) from the official nodejs.org tarball, checked against the SHA-256
+  pinned in the manifest.
+- **Helpers on PATH** (`helpers/`):
+  - `office-convert FILE [--to pdf|docx|xlsx|pptx|png|...] [--outdir DIR]`
+    runs LibreOffice with a throwaway profile per call (a shared profile makes
+    a second soffice exit 0 having written nothing), a timeout, and a non-zero
+    exit with a message when no output appears.
+  - `html-to-pdf IN.html|URL OUT.pdf` and
+    `html-screenshot IN.html|URL OUT.png [--width W --height H]` render with
+    headless Chromium (`--no-sandbox --disable-gpu --disable-dev-shm-usage`,
+    no PDF header or footer).
+- **Fonts:** DejaVu, Liberation (Arial, Times New Roman and Courier New
+  metrics), Carlito and Caladea (Calibri and Cambria metrics), Noto (Arabic,
+  Devanagari, Hebrew, Thai and more) and Noto CJK.
+
+imageio writes GIF and WebP through Pillow. It has no MP4 writer here, because
+that needs the `imageio-ffmpeg` package, whose wheels bundle a static GPL
+ffmpeg; code runs the `ffmpeg` command with `subprocess` for video instead.
+
+### Licenses
+
+The Python libraries, Node.js (MIT), Chromium (BSD-3-Clause) and tesseract
+(Apache-2.0) are permissive. LibreOffice is MPL-2.0, and the fonts are under
+the Bitstream Vera (DejaVu) and SIL OFL-1.1 licenses. Two packages are GPL:
+poppler-utils and Debian's ffmpeg build. Both are unmodified Debian packages
+that run only as separate programs, never linked into the Python code, and
+Debian publishes their corresponding source (`apt-get source poppler ffmpeg`,
+or sources.debian.org). PyMuPDF (AGPL) is deliberately not installed; use
+pdfplumber, pypdf or pypdfium2.
+
+### Kernel environment
+
+The root filesystem is read-only (compose `read_only: true`, k8s
+`readOnlyRootFilesystem`), so `kernel-env.sh` gives every kernel a writable
+`HOME` and points `XDG_CONFIG_HOME`, `XDG_CACHE_HOME` and `PYTHONUSERBASE` into
+it. LibreOffice, Chromium, fontconfig, npm and `pip install` (which falls back
+to a user install, with its cache under `XDG_CACHE_HOME`) all write there. The
+script also creates the user site-packages directory before the kernel starts,
+so a package installed from a running kernel imports without a restart. All
+sessions share that `HOME`, like the rest of the container (see *Isolation
+model*).
+
+Where `HOME` goes, first match wins:
+
+1. `SANDBOX_KERNEL_HOME`, when set on the runner.
+2. `/sandbox-home/home`, when `/sandbox-home` (`SANDBOX_HOME_MOUNT`) is a
+   writable mount that is not `noexec`. The compose overlay mounts it as a
+   tmpfs with `rw,exec,nosuid,nodev,size=${SANDBOX_HOME_SIZE:-1g},uid=10001,gid=10001,mode=0700`;
+   the k8s manifest mounts a memory-backed `emptyDir` (1Gi `sizeLimit`), which
+   is never `noexec`.
+3. `/tmp/home` (`SANDBOX_TMP_HOME`), with one line on the gateway's stderr.
+
+Docker mounts a compose `tmpfs:` entry `noexec,nosuid` unless told otherwise,
+so a package with compiled code pip-installed under `/tmp/home` failed to load
+with `failed to map segment from shared object`; pure-Python packages worked.
+Under compose the separate home mount allows exec for that one directory only:
+`/tmp`, where the session workspaces live, stays `noexec`, and `nosuid,nodev`
+still refuse setuid binaries and device files. Both compose mounts are RAM and
+count against the container's memory limit as they fill. On Kubernetes `/tmp` is
+the `scratch` `emptyDir` (node disk, not `noexec`) and only `/sandbox-home` is
+memory-backed, counting against the pod's memory limit. Either way kernel code
+can already run anything through the Python interpreter, so exec on its own
+home adds no new capability beyond loading the extensions it installed.
+
+ipykernel sets `FORCE_COLOR=1` and `CLICOLOR_FORCE=1` once the kernel is up, so
+Node, npm and pip coloured their output even into a pipe and the model read
+escape codes. `kernel-launch.sh` runs `kernel-startup.py` in every kernel
+(`--IPKernelApp.exec_files`), which drops both and sets `NO_COLOR=1`.
+
+### Smoke test
+
+`smoke_test.py` runs inside the image: it imports every manifest package,
+checks every command and font, and converts real files (docx and pptx to PDF,
+HTML to PDF and PNG, OCR, pdftotext, Node, an animated GIF and WebP, and an
+H.264 MP4 checked with ffprobe). `--pip` also pip-installs a pure-Python
+package and one with a compiled extension (`ujson`) and imports them, the
+second in a new process. Run it the way kernels run, with the compose mounts:
+
+```bash
+docker build -t docsgpt-sandbox deployment/sandbox
+docker run --rm --read-only --tmpfs /tmp \
+  --tmpfs /sandbox-home:rw,exec,nosuid,nodev,size=1g,uid=10001,gid=10001,mode=0700 \
+  docsgpt-sandbox \
+  /opt/docsgpt/kernel-env.sh python /opt/docsgpt/smoke_test.py --pip
+```
+
+The `Verify the sandbox image` workflow runs the same command on every change
+under `deployment/sandbox/`, then checks that the image without the home mount
+falls back to `/tmp/home`.
+
+For the Daytona snapshot, `python scripts/build_daytona_snapshot.py --smoke`
+runs it in a sandbox made from the snapshot.
+
+## Session lifetime
+
+The app keeps a session's kernel between `run_code` calls, so variables, files
+and installed packages carry over, and retires it once it has been idle for
+`SANDBOX_MAX_TTL` seconds (1200 by default). Each process retires only its own
+sessions, so a kernel held by an API or worker process that restarted would
+otherwise live until the runner restarts. `gateway-launch.sh` therefore has the
+gateway shut down any kernel idle for `SANDBOX_KERNEL_IDLE_TIMEOUT` seconds
+(1800 by default); keep it above `SANDBOX_MAX_TTL`. The compose overlay passes
+the variable through. A run's length does not add to it: a run may last up to
+`SANDBOX_EXEC_MAX_TIMEOUT` seconds (1000 by default) when the model asks, but
+the gateway never culls a busy kernel or one with an open connection, the app
+never reaps a session while an exec holds it, and both idle clocks start again
+when the run ends.
+
+A kernel that dies mid-run (the container's OOM killer, usually) is restarted
+by the gateway, which announces it on the kernel channel. The app ends the call
+at once instead of waiting out the timeout, deletes the kernel (the restarted
+process has lost the session's variables and working directory) and reports
+"out of memory" when the container's OOM-kill counter (`memory.events`, or
+`memory.oom_control` on cgroup v1) rose since the kernel started.
+
+Warm kernels count against the runner's memory: an idle kernel takes about
+50-60 MB, more once code has loaded data, and session workspaces live on the
+`/tmp` tmpfs. A LibreOffice conversion takes about 170 MB more and a headless
+Chromium render about 110 MB on small documents (more on large ones). Size
+`SANDBOX_MEMORY` (4g by default; it was 1g before the image carried LibreOffice
+and Chromium) for the conversations that run code at the same time, or lower
+`SANDBOX_MAX_TTL`. Runtime pip installs live on the `/sandbox-home` tmpfs
+(`SANDBOX_HOME_SIZE`, 1g by default) and count too. `SANDBOX_MAX_SESSIONS`
+(32) caps each API and worker process on its own, not the runner as a whole,
+so several processes at their cap can hold more warm kernels than 4g fits. The compose overlay also sets `shm_size: 256m` and
+`pids_limit: 1024` for Chromium; the k8s manifest mounts a 256 Mi memory-backed
+`/dev/shm` and limits memory to 4 Gi.
+
+## Daytona snapshot
+
+Daytona's default snapshot is a plain Python image: under
+`SANDBOX_BACKEND=daytona` the `artifact` tool's presentation, document,
+spreadsheet and PDF renders fail with `render failed: ExecutionError` (a
+`ModuleNotFoundError` inside the sandbox), and none of the commands above
+exist. `scripts/build_daytona_snapshot.py` builds a snapshot with the same
+contents as this image from the same manifest, with 2 vCPU, 2 GiB RAM and 6 GiB
+disk per sandbox (Daytona's default is 1/1/3):
 
 ```bash
 # Reads DAYTONA_API_KEY / DAYTONA_API_URL / DAYTONA_TARGET from .env:
-python scripts/build_daytona_snapshot.py        # builds "docsgpt-sandbox-py312"
+python scripts/build_daytona_snapshot.py          # builds "docsgpt-sandbox-py312-v2"
+python scripts/build_daytona_snapshot.py --smoke  # and runs smoke_test.py in a sandbox from it
+python scripts/build_daytona_snapshot.py --dockerfile  # prints the image; no API call
 # then in .env:
-#   DAYTONA_SNAPSHOT=docsgpt-sandbox-py312
+#   DAYTONA_SNAPSHOT=docsgpt-sandbox-py312-v2
 ```
 
-The snapshot also carries `pandas`, `openpyxl` and `matplotlib`, so
-spreadsheets a chat hands to `code_executor` can be opened and charted
-there. A snapshot built by an earlier version of the script
-(`docsgpt-artifacts-py312`) has no pandas or matplotlib: build the new name
-and switch `DAYTONA_SNAPSHOT` to it.
-
-The snapshot lives in **your** Daytona account, so each deployment builds its
-own — the script is idempotent and skips if the name already exists. Keep the
-pins in `scripts/build_daytona_snapshot.py` in sync with the runner's
-`deployment/sandbox/Dockerfile` so the Daytona render output matches the
-Jupyter-backend output.
+`--cpu`, `--memory` and `--disk` change the resources. A snapshot's contents
+and resources are fixed once built, so a manifest change needs a new snapshot
+name: snapshots from earlier versions of the script (`docsgpt-artifacts-py312`,
+`docsgpt-sandbox-py312`) lack most of these tools. The snapshot lives in
+**your** Daytona account, so each deployment builds its own; the script skips a
+name that already exists.
 
 ## Document reading (parsing worker — not the sandbox)
 
@@ -303,7 +452,7 @@ The gVisor `runsc` runtime (kernel isolation for untrusted code), seccomp
 profile, read-only root FS, non-root, and cgroup CPU/mem/PID caps (wired from
 `SANDBOX_MEMORY` / `SANDBOX_CPUS`) are deployment-level concerns. The compose
 service in `deployment/optional/docker-compose.optional.sandbox.yaml` already
-sets `read_only`, `mem_limit`, `cpus`, and `pids_limit`; the k8s
+sets `read_only`, `mem_limit`, `cpus`, `pids_limit` and `shm_size`; the k8s
 `sandbox-deploy.yaml` sets the
 equivalent `securityContext` + resource limits and has a commented
 `runtimeClassName: gvisor` to enable on nodes with the `runsc` RuntimeClass

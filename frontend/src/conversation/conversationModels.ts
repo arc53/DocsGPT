@@ -96,6 +96,14 @@ export interface Query {
   lastHeartbeatAt?: string;
   // Persisted so Retry can re-send the same key for server-side dedup.
   idempotencyKey?: string;
+  // Set on a continuation turn: its prompt is the background event that woke
+  // the agent, shown as a system row instead of a user bubble.
+  wake?: {
+    source: string;
+    count: number;
+    /** Each event as a person reads it (label, status, short detail). */
+    events?: { label?: string; status?: string; detail?: string }[];
+  };
 }
 
 export interface RetrievalPayload {

@@ -175,6 +175,9 @@ class GetConversations(Resource):
                     "is_shared_usage": conversation.get("is_shared_usage", False),
                     "shared_token": conversation.get("shared_token", None),
                     "date": conversation.get("date"),
+                    # A message landed the user has not seen (cleared by
+                    # POST /api/conversations/<id>/read).
+                    "unread": conversation.get("unread_at") is not None,
                 }
                 for conversation in conversations
             ]

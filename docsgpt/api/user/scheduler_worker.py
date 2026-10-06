@@ -166,6 +166,27 @@ def _publish_message_appended(
         )
 
 
+def _notify_appended(schedule: Dict[str, Any], message: Dict[str, Any], outcome: Dict[str, Any]) -> None:
+    """Tell the user a one-time run answered in its conversation (a toast, a push or an unread mark).
+
+    Like a continuation's answer: nothing while the user watches that
+    conversation (``notify_user`` decides). Never raises.
+    """
+    from docsgpt.notifications.kinds import plain_preview
+    from docsgpt.notifications.notify import notify_user
+
+    conversation_id = str(message["conversation_id"])
+    title = (schedule.get("name") or "").strip() or plain_preview(schedule.get("instruction") or "", 120)
+    notify_user(
+        user_id=str(schedule.get("user_id")),
+        conversation_id=conversation_id,
+        kind="schedule",
+        title=title or "Scheduled task",
+        body=plain_preview(outcome.get("answer") or ""),
+        url=f"/c/{conversation_id}",
+    )
+
+
 def _append_one_time_turn(
     schedule: Dict[str, Any],
     run: Dict[str, Any],
@@ -504,6 +525,7 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
                 str(schedule["id"]),
                 run_id,
             )
+            _notify_appended(schedule, appended, outcome)
 
     if new_status == "success":
         _publish_run_event("schedule.run.completed", updated_run or run, schedule)

@@ -183,7 +183,11 @@ export default function TestRetrievalModal({
       title={tr('title')}
       description={
         document?.name
-          ? tr('subtitle', { name: document.name })
+          ? tr('subtitle', {
+              name: document.name,
+              // React escapes the text; i18next escaping it too shows "&amp;".
+              interpolation: { escapeValue: false },
+            })
           : tr('subtitleGeneric')
       }
       // xl, like PromptsModal, so the two large modals read as one family.

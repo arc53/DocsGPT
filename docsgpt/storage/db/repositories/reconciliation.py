@@ -106,18 +106,51 @@ class ReconciliationRepository:
     def find_and_lock_proposed_tool_calls(
         self, *, age_minutes: int = 5, limit: int = 100,
     ) -> list[dict]:
-        """Lock tool_call_attempts that never advanced past ``proposed``."""
+        """Lock tool_call_attempts that never advanced past ``proposed``.
+
+        A call whose message is still in flight and heartbeating is left alone:
+        the row is written just before the tool starts and flips to
+        ``executed`` only when it returns, so a long call (a ``run_code`` may
+        run up to ``SANDBOX_EXEC_MAX_TIMEOUT``) is ``proposed`` the whole time.
+        The stream stamps ``last_heartbeat_at`` every 30 s from an in-process
+        thread, so a heartbeat fresher than ``age_minutes`` on a non-terminal
+        message means the owning stream is alive. A call handed off to a
+        running background job is alive too: the job settles the row when it
+        finishes, and the background sweep reports a lost one. Calls without a
+        message, or whose stream died, are swept as before.
+
+        Args:
+            age_minutes: Staleness threshold for the row and for the heartbeat.
+            limit: Maximum rows to lock per tick.
+
+        Returns:
+            The locked rows as dicts.
+        """
         result = self._conn.execute(
             text(
                 """
                 SELECT call_id, message_id, tool_id, tool_name, action_name,
                        arguments, attempted_at, updated_at
-                FROM tool_call_attempts
-                WHERE status = 'proposed'
-                  AND attempted_at < now() - make_interval(mins => :age)
-                ORDER BY attempted_at ASC
+                FROM tool_call_attempts tca
+                WHERE tca.status = 'proposed'
+                  AND tca.attempted_at < now() - make_interval(mins => :age)
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM conversation_messages cm
+                      WHERE cm.id = tca.message_id
+                        AND cm.status NOT IN ('complete', 'failed')
+                        AND (cm.message_metadata->>'last_heartbeat_at')::timestamptz
+                            > now() - make_interval(mins => :age)
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM background_jobs bj
+                      WHERE bj.tool_call_id = tca.call_id
+                        AND bj.status = 'working'
+                  )
+                ORDER BY tca.attempted_at ASC
                 LIMIT :limit
-                FOR UPDATE SKIP LOCKED
+                FOR UPDATE OF tca SKIP LOCKED
                 """
             ),
             {"age": age_minutes, "limit": limit},

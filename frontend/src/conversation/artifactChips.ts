@@ -25,12 +25,22 @@ export function formatToolName(toolName: string | undefined): string {
 
 /**
  * One entry per artifact, not per tool call: a single call (``run_code``) can
- * write several files, and only the first was reachable before.
+ * write several files, and only the first was reachable before. An artifact
+ * that several calls saved (each save adds a version) gets one chip, placed
+ * where it first appeared and described by the latest call.
  *
  * Lives here rather than inside ``ConversationBubble`` so the regression test
  * exercises this function instead of a copy of it.
  */
 export function deriveArtifactChips(
+  toolCalls: ToolCallsType[] | undefined,
+): ArtifactChip[] {
+  const chips = new Map<string, ArtifactChip>();
+  for (const chip of collectArtifactChips(toolCalls)) chips.set(chip.id, chip);
+  return [...chips.values()];
+}
+
+function collectArtifactChips(
   toolCalls: ToolCallsType[] | undefined,
 ): ArtifactChip[] {
   return (toolCalls ?? [])
