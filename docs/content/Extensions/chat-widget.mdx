@@ -1,7 +1,7 @@
 ---
 title: Chat Widget
 description: Embed the DocsGPT Widget in your React, HTML, or Nextra projects to provide AI-powered chat functionality to your users.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-05
 ---
 import { Callout, Tabs } from 'nextra/components'
 
@@ -38,8 +38,8 @@ import { DocsGPTWidget } from "docsgpt";
   into. For DocsGPT Cloud that is `https://gptcloud.arc53.com` — which is also the widget's
   built-in default, so you can omit the prop entirely. Self-hosting? Use your
   own API URL (`http://localhost:7091` by default), not the frontend URL. A
-  `Network Error` or a CORS message in the console almost always means this is
-  pointing at the frontend instead of the API.
+  "Couldn't generate a response" error in the chat or a CORS message in the
+  console almost always means this is pointing at the frontend instead of the API.
 </Callout>
 
 Now, you can embed the widget within your React component's JSX:
@@ -166,21 +166,23 @@ The DocsGPT Widget offers a range of customizable properties that allow you to t
 |--------------------|------------------|-------------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
 | **`apiHost`**      | `string`         | `"https://gptcloud.arc53.com"`                              | The URL of your DocsGPT API backend (DocsGPT Cloud by default). Self-hosted: your API URL, e.g. `http://localhost:7091`. |
 | **`apiKey`**       | `string`         | a DocsGPT demo agent's key                                  | The API key of your published agent (see [Agent API keys](/API/agent-keys)). If you omit it, the widget answers from a public DocsGPT demo agent, not your documents. Always set it. |
-| **`avatar`**       | `string`         | built-in placeholder                                        | URL for the avatar image shown in the chatbot header. Defaults to a neutral silhouette drawn inline, so no image is fetched unless you supply one. |
+| **`avatar`**       | `string`         | built-in placeholder                                        | URL for the avatar image shown in the chatbot header. Defaults to a person on the brand-colour circle, drawn inline, so no image is fetched unless you supply one. |
+| **`heroIcon`**     | `string`         | the DocsGPT mark                                            | URL for the image on the welcome card shown before the first question. Defaults to the DocsGPT mark on the brand-colour circle, drawn inline. It is separate from `avatar`, so setting one leaves the other as it is. |
 | **`title`**        | `string`         | `"Get AI assistance"`                                       | Title text shown in the chatbot header.                                                              |
 | **`description`**  | `string`         | `"DocsGPT's AI Chatbot is here to help"`                     | Sub-title or descriptive text displayed below the title in the chatbot header.                       |
 | **`heroTitle`**    | `string`         | `"Welcome to DocsGPT !"`                                    | Welcome message displayed when the chatbot is initially opened.                                     |
 | **`heroDescription`** | `string`     | `"This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources."` | Introductory text providing context or disclaimers about the chatbot.                                 |
 | **`theme`**        | `"dark" \| "light"` | `"dark"`                                                  | Color theme of the widget interface.                                                                 |
-| **`buttonIcon`**   | `string`         | `"https://d3dg1063dc54p9.cloudfront.net/widget/chat.svg"`   | URL for the icon image used in the widget's launch button.                                          |
+| **`buttonIcon`**   | `string`         | a chat-bubble icon                                          | URL for the icon image used in the widget's launch button. Defaults to a chat-bubble icon drawn inline. |
 | **`buttonText`**   | `string`         | `"Ask a question"`                                          | Label of the widget's launch button.                                                                 |
-| **`buttonBg`**     | `string`         | `"linear-gradient(to bottom right, #8860DB, #6D42C5)"`      | Background of the widget's launch button. Accepts any CSS background value.                          |
+| **`buttonBg`**     | `string`         | the theme's brand colour                                    | Background of the widget's launch button: `#7d54d1` in the light theme, `#8855f1` in the dark one. Accepts any CSS background value. |
 | **`size`**         | `"small" \| "medium" \| "large" \| { custom: { width, height, maxWidth?, maxHeight? } }` | `"medium"` | Size of the chat panel: `small` is 320px × 400px, `medium` is 400px × 80vh, and `large` opens a centered 666px × 75vh modal. `custom` takes CSS sizes. |
-| **`showSources`**  | `boolean`        | `true`                                                      | Shows the sources an answer was based on. Set `false` to hide them.                                  |
+| **`showSources`**  | `boolean`        | `true`                                                      | Shows the sources an answer was based on, and turns the answer's `[n]` citations into links to them. Set `false` to hide both. See [Sources and citations](#sources-and-citations). |
 | **`collectFeedback`** | `boolean`     | `true`                                                      | Shows like/dislike buttons on answers and sends the feedback to DocsGPT.                             |
 | **`defaultOpen`**  | `boolean`        | `false`                                                     | Opens the chat panel on page load instead of showing only the launch button.                         |
 | **`allowedFileExtensions`** | `string[]` | _unset_                                        | File extensions the composer accepts, e.g. `['.pdf', '.docx', '.md', '.png']`. Setting it turns on attachments: an Attach button, drag-and-drop onto the panel, and paste-to-attach. Leave it unset to keep attachments off. |
 | **`showMicButton`**       | `boolean` | `false`                                              | Adds a microphone that dictates a question into the input using the browser's Web Speech API. No backend STT provider needed; hides itself where the browser lacks the API.   |
+| **`poweredBy`**    | `boolean \| { label: string; href?: string }` | `true`                     | The credit line under the input. `true` shows "Powered by DocsGPT", `false` hides it, and an object replaces it. See [Branding](#branding). |
 
 ---
 
@@ -203,6 +205,38 @@ Browser support is uneven, and the microphone hides itself where it cannot work.
   apiKey="your-agent-api-key"
   allowedFileExtensions={['.pdf', '.docx', '.md', '.png']}
   showMicButton
+/>
+```
+
+---
+
+## Sources and citations
+
+Each answer that used your documents shows a **Sources** row with the number of sources. It starts collapsed, so the answer comes first; selecting it opens the list.
+
+- A source that is a web page, such as a page ingested with the crawler or sitemap loader, is a link that opens the page in a new tab.
+- A source that is an uploaded file shows its title and the passage that was used. It is not a link, because a visitor has no way to open a file from your library.
+
+When the agent cites its sources with `[1]`, `[2]` and so on, each number becomes a small button in the answer. Selecting it opens the Sources list, scrolls to that source and highlights it. A grouped citation such as `[1, 3]` becomes one button per number. To get numbered citations, ask for them in the agent's prompt; see [Citations](/Agents/prompts#citations) in Customizing Prompts.
+
+Links in an answer open in a new tab, so the visitor stays on your page. A plain web address the model writes out, such as `https://example.com`, becomes a link too.
+
+---
+
+## Branding
+
+Three properties change what the widget shows of DocsGPT:
+
+- `avatar` sets the image in the chat header.
+- `heroIcon` sets the image on the welcome card. It defaults to the DocsGPT mark.
+- `poweredBy` sets the credit line under the input. Pass `false` to hide it, or an object with your own `label` and `href`. When the label starts with "Powered by", only the name after it becomes the link.
+
+```jsx
+<DocsGPTWidget
+  apiKey="your-agent-api-key"
+  avatar="https://your-cdn/assistant.png"
+  heroIcon="https://your-cdn/logo.png"
+  poweredBy={{ label: 'Powered by Acme', href: 'https://acme.example' }}
 />
 ```
 
