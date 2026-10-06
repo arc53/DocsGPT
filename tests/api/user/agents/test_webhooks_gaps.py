@@ -299,7 +299,7 @@ class TestAgentWebhookListener:
 
 @pytest.mark.unit
 class TestWebhookPayloadIsNotLogged:
-    """The enqueue log line carries the payload's size and keys, not its content.
+    """The enqueue log line carries the payload's size and key count, nothing it holds.
 
     It used to log the whole payload at INFO, shipping full PR diffs and any
     secret a caller put in the body to the log pipeline.
@@ -315,7 +315,7 @@ class TestWebhookPayloadIsNotLogged:
                     AgentWebhookListener()._enqueue_webhook_task("a1", payload, "POST")
         return [r.getMessage() for r in caplog.records if "webhook" in r.getMessage().lower()]
 
-    def test_logs_size_and_keys_only(self, app, caplog):
+    def test_logs_size_and_key_count_only(self, app, caplog):
         import json
 
         payload = {"token": "sk-very-secret", "pr": {"diff_excerpt": "+" * 500}}
@@ -324,18 +324,16 @@ class TestWebhookPayloadIsNotLogged:
         assert messages
         assert not any("sk-very-secret" in m or "+++" in m for m in messages)
         line = next(m for m in messages if "Enqueuing" in m)
-        assert f"{len(json.dumps(payload))} characters" in line
-        assert "keys: pr, token" in line
+        assert f"{len(json.dumps(payload))} characters, 2 keys" in line
 
-    def test_key_names_that_are_not_identifiers_are_only_counted(self, app, caplog):
-        """Callers choose key names, so one can itself be personal data."""
-        payload = {"alice@example.com": 1, "Jane Doe": 2, "action": "opened"}
+    def test_key_names_are_never_logged(self, app, caplog):
+        """The sender chooses key names, so any of them can be personal data or a secret."""
+        payload = {"alice@example.com": 1, "alice.smith": 2, "sk_live_abc123": 3}
         messages = self._enqueue(app, payload, caplog)
 
         line = next(m for m in messages if "Enqueuing" in m)
-        assert "alice@example.com" not in line
-        assert "Jane Doe" not in line
-        assert "keys: action (+2 other)" in line
+        assert not any(key in line for key in payload)
+        assert "3 keys" in line
 
     def test_a_list_payload_reports_its_length(self, app, caplog):
         messages = self._enqueue(app, [{"text": "private"}, {"text": "data"}], caplog)
