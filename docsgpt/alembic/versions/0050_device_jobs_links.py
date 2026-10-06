@@ -3,6 +3,9 @@
 * ``background_jobs.runner`` takes ``device``: a ``remote_device`` command a
   turn handed off, followed by a Celery poll chain that reads the device's
   output from the broker until the command reports its exit code.
+* ``devices.capabilities``: what the paired client said it can do on its
+  last request (``X-Device-Capabilities``: ``cancel``, ``outbox``); null
+  until it has reported.
 * ``trigger_links.ref``: a signed link's short reference id, unique per
   user. The model is given ``{{link_secret:REF}}`` instead of the secret,
   and the executor fills the value into tool calls the user approves.
@@ -67,6 +70,7 @@ def _schemes(values: str) -> None:
 
 def upgrade() -> None:
     _runners(_RUNNERS_AFTER)
+    op.execute("ALTER TABLE devices ADD COLUMN IF NOT EXISTS capabilities TEXT;")
     op.execute("ALTER TABLE trigger_links ADD COLUMN IF NOT EXISTS ref TEXT;")
     op.execute("ALTER TABLE trigger_links ADD COLUMN IF NOT EXISTS expose_secret BOOLEAN NOT NULL DEFAULT false;")
     op.execute(
@@ -110,6 +114,7 @@ def downgrade() -> None:
     )
     op.execute("UPDATE background_jobs SET runner = 'inprocess' WHERE runner = 'device';")
     _runners(_RUNNERS_BEFORE)
+    op.execute("ALTER TABLE devices DROP COLUMN IF EXISTS capabilities;")
     # A link signed a new way would be left unsigned (open) by narrowing the check: revoke it instead.
     op.execute(
         "UPDATE trigger_links SET revoked_at = COALESCE(revoked_at, now()), signature_scheme = 'hmac_sha256' "

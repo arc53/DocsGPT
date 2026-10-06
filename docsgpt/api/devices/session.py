@@ -120,7 +120,14 @@ def ack_invocation(session_id: str, invocation_id: str) -> Response:
 
 
 def submit_output(session_id: str, invocation_id: str) -> Response:
-    """CLI streams stdout/stderr/control chunks (NDJSON, gzip-aware)."""
+    """CLI streams stdout/stderr/control chunks (NDJSON, gzip-aware; one or more lines per POST).
+
+    A client that resends (``X-Device-Capabilities: outbox``) may post the
+    same batch twice when a response is lost: its chunks are deduplicated by
+    ``seq``, and the closing control chunk is taken once for every client.
+    The response counts what was new (``received``) and what was a repeat
+    (``duplicates``); both are a 200, so the client stops resending.
+    """
     device, err = verify_device_session()
     if err is not None:
         return err
@@ -140,7 +147,11 @@ def submit_output(session_id: str, invocation_id: str) -> Response:
                 jsonify({"success": False, "error": "invalid_gzip"}), 400
             )
 
+    from docsgpt.devices import capabilities
+
+    dedupe = capabilities.has(capabilities.from_headers(request.headers), capabilities.OUTBOX)
     received = 0
+    duplicates = 0
     control_chunk = None
     for line in io.BytesIO(body):
         line = line.strip()
@@ -152,9 +163,13 @@ def submit_output(session_id: str, invocation_id: str) -> Response:
             continue
         if not isinstance(chunk, dict):
             continue
+        outcome = broker.accept_output_chunk(invocation_id, chunk, dedupe=dedupe)
+        if outcome == "duplicate":
+            duplicates += 1
+            continue
         if chunk.get("stream") == "control":
+            # Only the control chunk the broker took is the outcome; a resent one changes nothing.
             control_chunk = chunk
-        broker.submit_output_chunk(invocation_id, chunk)
         received += 1
 
     # Persist the outcome when the closing control chunk arrived in this POST.
@@ -178,13 +193,13 @@ def submit_output(session_id: str, invocation_id: str) -> Response:
                     duration_ms=_as_opt_int(control_chunk.get("duration_ms")),
                     stdout_bytes=(snap.stdout_bytes if snap is not None else 0),
                     stderr_bytes=(snap.stderr_bytes if snap is not None else 0),
-                    error=control_chunk.get("error"),
+                    error=_audit_error(control_chunk),
                 )
         except Exception:
             logger.exception("audit record_result failed for %s", invocation_id)
 
     return make_response(
-        jsonify({"success": True, "received": received}), 200
+        jsonify({"success": True, "received": received, "duplicates": duplicates}), 200
     )
 
 
@@ -196,3 +211,12 @@ def _as_opt_int(value) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _audit_error(chunk: dict) -> str | None:
+    """The control chunk's error for the audit row, with its detail (``interrupted``: the pid)."""
+    error = chunk.get("error")
+    if not error:
+        return None
+    detail = chunk.get("detail")
+    return f"{error}: {detail}"[:500] if detail else str(error)[:500]

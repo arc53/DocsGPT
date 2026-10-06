@@ -61,7 +61,7 @@ def test_me_returns_device_record_on_valid_token(app):
         def find_by_token_hash(self, _token_hash):
             return self._row
 
-        def touch_last_seen(self, _device_id):
+        def touch_last_seen(self, _device_id, capabilities=None):
             pass
 
     class _Ctx:

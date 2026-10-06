@@ -105,11 +105,23 @@ class DevicesRepository:
         )
         return result.rowcount > 0
 
-    def touch_last_seen(self, device_id: str) -> None:
-        """Bump ``last_seen_at`` to now(). Called on every poll/SSE open."""
+    def touch_last_seen(self, device_id: str, capabilities: Optional[str] = None) -> None:
+        """Bump ``last_seen_at`` to now(). Called on every authenticated device request.
+
+        Args:
+            device_id: The device.
+            capabilities: What the client said it can do on this request
+                (``docsgpt.devices.capabilities``); None leaves it unchanged.
+        """
+        if capabilities is None:
+            self._conn.execute(
+                text("UPDATE devices SET last_seen_at = now() WHERE id = :id"),
+                {"id": device_id},
+            )
+            return
         self._conn.execute(
-            text("UPDATE devices SET last_seen_at = now() WHERE id = :id"),
-            {"id": device_id},
+            text("UPDATE devices SET last_seen_at = now(), capabilities = :caps WHERE id = :id"),
+            {"id": device_id, "caps": capabilities},
         )
 
     def revoke(

@@ -60,7 +60,13 @@ def device(bg_db):
             DEVICE_ID, "u1", "build box", machine_pubkey_fingerprint="fp", token_hash="th"
         )
     _seen(bg_db, seconds_ago=1)
+    _caps(bg_db, "cancel")
     return DEVICE_ID
+
+
+def _caps(engine, value):
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE devices SET capabilities = :c WHERE id = :id"), {"c": value, "id": DEVICE_ID})
 
 
 def _seen(engine, *, seconds_ago):
@@ -582,3 +588,85 @@ class TestEdges:
 
         monkeypatch.setattr(device_runner, "_merge", boom)
         assert device_runner._poll_failed(job_id, {}, ConnectionError("x")) == {"state": "retry"}
+
+
+
+class TestClientReports:
+    """What docsgpt-cli 2 reports on the control chunk (arc53/DocsGPT-cli#14)."""
+
+    def _report(self, bg_db, conversation, broker, **control):
+        job_id = _start(bg_db, conversation, broker)
+        broker.submit_ack("inv_1", "accepted")
+        broker.accept_output_chunk("inv_1", {"stream": "stdout", "chunk": "partial\n", "seq": 0}, dedupe=True)
+        broker.accept_output_chunk("inv_1", {"stream": "control", "seq": 1, **control}, dedupe=True)
+        device_runner.poll_job(job_id)
+        return _job(bg_db, job_id)
+
+    def test_an_interrupted_command_is_lost_with_its_pid(self, bg_db, conversation, device, broker, polls,
+                                                         delivered):
+        from docsgpt.background.results import job_notices
+        from docsgpt.background.wake import job_event
+
+        job = self._report(
+            bg_db, conversation, broker, exit_code=-1, error="interrupted",
+            detail="host restarted while it ran; process 4242 may still be running",
+        )
+        assert job["status"] == "lost"
+        assert job["error"]["type"] == "DeviceInterrupted" and job["error"]["pid"] == 4242
+        assert "may still be running on the machine (pid 4242)" in job["error"]["message"]
+        assert json.loads(job["result"]["text"])["stdout"] == "partial\n"
+        assert job_notices(job) == [{"code": "device_interrupted", "pid": 4242}]
+        event = job_event(job)
+        assert "pid 4242" in event["body"] and "verify before retrying" in event["body"].lower()
+
+    def test_an_interrupted_report_without_a_pid(self, bg_db, conversation, device, broker, polls, delivered):
+        job = self._report(bg_db, conversation, broker, exit_code=-1, error="interrupted")
+        assert job["status"] == "lost" and "pid" not in job["error"]
+
+    def test_a_host_shutdown_fails_the_job(self, bg_db, conversation, device, broker, polls, delivered):
+        from docsgpt.background.results import job_notices
+
+        job = self._report(bg_db, conversation, broker, exit_code=143, error="host_shutdown")
+        assert job["status"] == "failed" and job["error"]["type"] == "HostShutdown"
+        assert job_notices(job) == [{"code": "device_shutdown"}]
+
+    def test_a_command_cancelled_on_the_device_is_cancelled(self, bg_db, conversation, device, broker, polls,
+                                                            delivered):
+        job = self._report(bg_db, conversation, broker, exit_code=-1, error="cancelled")
+        assert job["status"] == "cancelled"
+
+    def test_truncated_output_is_flagged(self, bg_db, conversation, device, broker, polls, delivered):
+        from docsgpt.background.results import job_notices
+        from docsgpt.background.service import job_summary
+
+        job = self._report(bg_db, conversation, broker, exit_code=0, truncated=True)
+        assert job["status"] == "completed" and job["result"]["truncated"] is True
+        assert json.loads(job["result"]["text"])["truncated"] is True
+        assert job_notices(job) == [{"code": "output_truncated"}]
+        assert job_summary(job)["notices"] == [{"code": "output_truncated"}]
+
+    def test_a_device_whose_client_cant_cancel_says_so_at_once(
+        self, bg_db, conversation, device, broker, fake_redis, polls, delivered
+    ):
+        from docsgpt.background.service import cancel_job
+
+        _caps(bg_db, "")
+        job_id = _start(bg_db, conversation, broker)
+        broker.submit_ack("inv_1", "accepted")
+        cancel_job(job_id, "u1")
+        assert device_runner.poll_job(job_id) == {"state": "cancelled"}
+        job = _job(bg_db, job_id)
+        assert job["status"] == "cancelled" and job["error"]["type"] == "CancelUnsupported"
+        assert "Update docsgpt-cli" in job["error"]["message"]
+
+    def test_an_outbox_client_gets_longer_to_send_a_late_report(
+        self, bg_db, conversation, device, broker, fake_redis, polls, delivered
+    ):
+        _caps(bg_db, "cancel,outbox")
+        job_id = _start(bg_db, conversation, broker, timeout_ms=1000,
+                        dispatched_ago=device_runner.OUTBOX_REPORT_GRACE_SECONDS + 10)
+        broker.submit_ack("inv_1", "accepted")
+        _started(fake_redis, seconds_ago=device_runner.REPORT_GRACE_SECONDS + 10)
+        assert device_runner.poll_job(job_id) == {"state": "running"}
+        _started(fake_redis, seconds_ago=device_runner.OUTBOX_REPORT_GRACE_SECONDS + 10)
+        assert device_runner.poll_job(job_id) == {"state": "lost"}

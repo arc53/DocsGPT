@@ -78,6 +78,41 @@ return 0
 """
 
 
+#: What :meth:`DeviceBroker.accept_output_chunk` did with a chunk.
+CHUNK_ACCEPTED = "accepted"
+CHUNK_DUPLICATE = "duplicate"
+CHUNK_UNKNOWN = "unknown"
+
+# Takes one output chunk, once. KEYS: the invocation hash, its output stream.
+# ARGV: seq to deduplicate on ("" for none), "1" for the control chunk, the
+# chunk's JSON, the stream's MAXLEN, the TTL. Returns -1 for an unknown
+# invocation, 0 for a repeat, 1 when appended. One step, so two copies of a
+# resent batch racing each other can't both get in.
+_ACCEPT_CHUNK_LUA = """
+-- accept_chunk
+if redis.call('EXISTS', KEYS[1]) == 0 then
+    return -1
+end
+if ARGV[1] ~= '' then
+    local last = redis.call('HGET', KEYS[1], 'last_seq')
+    if last and tonumber(ARGV[1]) <= tonumber(last) then
+        return 0
+    end
+end
+if ARGV[2] == '1' then
+    if redis.call('HSETNX', KEYS[1], 'control_seen', '1') == 0 then
+        return 0
+    end
+end
+if ARGV[1] ~= '' then
+    redis.call('HSET', KEYS[1], 'last_seq', ARGV[1])
+end
+redis.call('XADD', KEYS[2], 'MAXLEN', '~', ARGV[4], '*', 'c', ARGV[3])
+redis.call('EXPIRE', KEYS[2], ARGV[5])
+return 1
+"""
+
+
 def _inv_key(invocation_id: str) -> str:
     return f"dev:inv:{invocation_id}"
 
@@ -112,6 +147,8 @@ class Invocation:
     stdout_bytes: int = 0
     stderr_bytes: int = 0
     decision: Optional[str] = None
+    detail: Optional[str] = None
+    truncated: bool = False
 
     @property
     def acked(self) -> bool:
@@ -452,6 +489,8 @@ class DeviceBroker:
             stdout_bytes=_to_int(h.get("stdout_bytes")) or 0,
             stderr_bytes=_to_int(h.get("stderr_bytes")) or 0,
             decision=h.get("decision") or None,
+            detail=h.get("detail") or None,
+            truncated=h.get("truncated") == "1",
         )
 
     def extend_invocation(self, invocation_id: str, ttl_seconds: int) -> bool:
@@ -571,39 +610,77 @@ class DeviceBroker:
     def submit_output_chunk(
         self, invocation_id: str, chunk: Dict[str, Any]
     ) -> bool:
-        """Forward one CLI output chunk to the dispatching process's drain.
+        """Forward one CLI output chunk; ``False`` for an unknown invocation (see :meth:`accept_output_chunk`)."""
+        return self.accept_output_chunk(invocation_id, chunk) != CHUNK_UNKNOWN
 
-        Updates the metadata hash (byte counts; result fields on the closing
-        ``control`` chunk) and XADDs the chunk to the invocation's output
-        stream. Returns ``False`` for an unknown invocation.
+    def accept_output_chunk(
+        self, invocation_id: str, chunk: Dict[str, Any], *, dedupe: bool = False
+    ) -> str:
+        """Forward one CLI output chunk to the dispatching process's poller or drain, once.
+
+        One Lua step decides and appends: a chunk already accepted is dropped,
+        else it is XADDed to the invocation's output stream. Two rules make a
+        resent batch harmless:
+
+        * with ``dedupe`` (a client that resends: ``X-Device-Capabilities:
+          outbox``), a chunk whose ``seq`` is at or below the highest accepted
+          one is a repeat. Such a client sends its chunks in ``seq`` order from
+          one sender. An older client posts stdout and stderr concurrently,
+          out of order, and never resends, so it is not deduplicated;
+        * the closing ``control`` chunk is taken once, whatever the client: a
+          second one (the same report resent) changes nothing.
+
+        Then the metadata hash is updated (byte counts; result fields on the
+        control chunk), after the append, so a reader that sees
+        ``completed=1`` finds every chunk already on the stream.
+
+        Args:
+            invocation_id: The invocation.
+            chunk: One NDJSON line from the client.
+            dedupe: Drop chunks whose ``seq`` was already accepted.
+
+        Returns:
+            ``accepted``, ``duplicate``, or ``unknown`` (no such invocation,
+            or Redis failed: the client should retry or give up).
         """
         redis = get_redis_instance()
         if redis is None:
-            return False
+            return CHUNK_UNKNOWN
         key = _inv_key(invocation_id)
         try:
             device_id, stored_ttl = redis.hmget(key, ["device_id", "ttl"])
         except Exception:
             logger.exception("submit_output_chunk read failed for %s", invocation_id)
-            return False
+            return CHUNK_UNKNOWN
         if device_id is None:
-            return False
+            return CHUNK_UNKNOWN
         device_id = _as_str(device_id)
         ttl = self._ttl_of({"ttl": _as_str(stored_ttl) if stored_ttl is not None else ""})
         now = time.time()
         stream = chunk.get("stream")
+        seq = chunk.get("seq")
+        seq_arg = str(int(seq)) if dedupe and isinstance(seq, int) and not isinstance(seq, bool) else ""
         try:
-            # Append to the output stream BEFORE flipping completion state, so a
-            # reader that observes completed=1 is guaranteed the chunk (and every
-            # earlier one) is already on the stream — otherwise drain could see
-            # completion and stop before the control chunk lands.
-            redis.xadd(
+            taken = redis.eval(
+                _ACCEPT_CHUNK_LUA,
+                2,
+                key,
                 _out_key(invocation_id),
-                {"c": json.dumps(chunk)},
-                maxlen=self._out_maxlen(),
-                approximate=True,
+                seq_arg,
+                "1" if stream == "control" else "0",
+                json.dumps(chunk),
+                str(self._out_maxlen()),
+                str(ttl),
             )
-            redis.expire(_out_key(invocation_id), ttl)
+        except Exception:
+            logger.exception("submit_output_chunk append failed for %s", invocation_id)
+            return CHUNK_UNKNOWN
+        taken = int(taken or 0)
+        if taken < 0:
+            return CHUNK_UNKNOWN
+        if taken == 0:
+            return CHUNK_DUPLICATE
+        try:
             if stream in ("stdout", "stderr"):
                 text = chunk.get("chunk")
                 if isinstance(text, str):
@@ -612,24 +689,29 @@ class DeviceBroker:
             elif stream == "control":
                 redis.hsetnx(key, "started_at", repr(now))
                 mapping = {"completed": "1", "finished_at": repr(now)}
-                if chunk.get("exit_code") is not None:
-                    mapping["exit_code"] = str(int(chunk["exit_code"]))
-                if chunk.get("duration_ms") is not None:
-                    mapping["duration_ms"] = str(int(chunk["duration_ms"]))
+                exit_code = _coerce_int(chunk.get("exit_code"))
+                if exit_code is not None:
+                    mapping["exit_code"] = str(exit_code)
+                duration = _coerce_int(chunk.get("duration_ms"))
+                if duration is not None:
+                    mapping["duration_ms"] = str(duration)
                 if chunk.get("error"):
-                    mapping["error"] = _as_str(chunk["error"])
+                    mapping["error"] = _as_str(chunk["error"])[:200]
+                if chunk.get("detail"):
+                    mapping["detail"] = _as_str(chunk["detail"])[:500]
+                if chunk.get("truncated") is True:
+                    mapping["truncated"] = "1"
                 redis.hset(key, mapping=mapping)
             redis.expire(key, ttl)
         except Exception:
-            logger.exception("submit_output_chunk failed for %s", invocation_id)
-            return False
+            logger.exception("submit_output_chunk bookkeeping failed for %s", invocation_id)
         # Keep a co-located SSE session alive while output flows (single-worker
         # web tier); a cross-worker session relies on its own keepalive.
         with self._lock:
             sess = self._sessions_by_device.get(device_id)
         if sess is not None:
             sess.last_activity_at = now
-        return True
+        return CHUNK_ACCEPTED
 
     def submit_ack(
         self,
@@ -809,6 +891,16 @@ def _decode_chunk(fields: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(chunk, dict) or chunk.get("stream") not in ("stdout", "stderr", "control"):
         return None
     return chunk
+
+
+def _coerce_int(value: Any) -> Optional[int]:
+    """A client-sent JSON number as an int; None for null, a bool or junk."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _to_int(value: Optional[str]) -> Optional[int]:

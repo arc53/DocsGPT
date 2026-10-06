@@ -90,12 +90,33 @@ class FakeRedis:
             self.ttls[key] = int(ttl)
         return True
 
-    def eval(self, _script, _numkeys, key, expected):
-        """Model the broker's one Lua script: delete ``key`` iff it holds ``expected``."""
+    def eval(self, script, _numkeys, *args):
+        """Model the broker's Lua scripts: the ticket redeem and the output chunk accept."""
+        if "-- accept_chunk" in script:
+            return self._accept_chunk(*args)
+        key, expected = args
         with self._lock:
             if self.kv.get(key) != _b(expected):
                 return 0
             del self.kv[key]
+            return 1
+
+    def _accept_chunk(self, inv_key, out_key, seq, is_control, chunk_json, maxlen, ttl):
+        """Mirror of ``_ACCEPT_CHUNK_LUA``, under the lock as Redis runs a script."""
+        with self._lock:
+            h = self.hashes.get(inv_key)
+            if not h:
+                return -1
+            if seq != "" and h.get("last_seq") is not None and int(seq) <= int(h["last_seq"]):
+                return 0
+            if is_control == "1":
+                if "control_seen" in h:
+                    return 0
+                h["control_seen"] = b"1"
+            if seq != "":
+                h["last_seq"] = _b(seq)
+            self.xadd(out_key, {"c": chunk_json}, maxlen=int(maxlen))
+            self.expire(out_key, int(ttl))
             return 1
 
     # -- lists --------------------------------------------------------

@@ -138,3 +138,96 @@ class TestStrictRead:
         assert broker.get_invocation("inv_1").acked is False
         broker.submit_ack("inv_1", "accepted")
         assert broker.get_invocation("inv_1").acked is True
+
+
+def _stream(fake, invocation_id="inv_1"):
+    return [json.loads(fields[b"c"]) for _id, fields in fake.streams.get(f"dev:out:{invocation_id}", [])]
+
+
+@pytest.mark.unit
+class TestResentReports:
+    """docsgpt-cli's outbox delivers at least once: a batch whose 200 was lost is sent again."""
+
+    def test_an_outbox_clients_chunks_count_once_by_seq(self, broker_env):
+        broker, fake = broker_env
+        _dispatch(broker)
+        batch = [{"stream": "stdout", "chunk": f"line {n}\n", "seq": n} for n in range(3)]
+        assert [broker.accept_output_chunk("inv_1", c, dedupe=True) for c in batch] == ["accepted"] * 3
+        # The same batch again, then a batch overlapping it.
+        assert [broker.accept_output_chunk("inv_1", c, dedupe=True) for c in batch] == ["duplicate"] * 3
+        overlap = batch[2:] + [{"stream": "stderr", "chunk": "warn\n", "seq": 3}]
+        assert [broker.accept_output_chunk("inv_1", c, dedupe=True) for c in overlap] == ["duplicate", "accepted"]
+        assert [c["seq"] for c in _stream(fake)] == [0, 1, 2, 3]
+        assert broker.get_invocation("inv_1").stdout_bytes == len("line 0\nline 1\nline 2\n")
+
+    def test_an_older_client_is_not_deduplicated_by_seq(self, broker_env):
+        # It posts stdout and stderr from two goroutines, so its seqs can arrive out of order; it never resends.
+        broker, fake = broker_env
+        _dispatch(broker)
+        assert broker.accept_output_chunk("inv_1", {"stream": "stderr", "chunk": "b", "seq": 5}) == "accepted"
+        assert broker.accept_output_chunk("inv_1", {"stream": "stdout", "chunk": "a", "seq": 4}) == "accepted"
+        assert [c["chunk"] for c in _stream(fake)] == ["b", "a"]
+
+    def test_the_final_report_is_taken_once_whatever_the_client(self, broker_env):
+        broker, fake = broker_env
+        _dispatch(broker)
+        first = {"stream": "control", "exit_code": 2, "duration_ms": 10, "seq": 9}
+        assert broker.accept_output_chunk("inv_1", first) == "accepted"
+        assert broker.accept_output_chunk("inv_1", {**first, "exit_code": 0}) == "duplicate"
+        assert broker.accept_output_chunk("inv_1", {**first, "seq": 10}, dedupe=True) == "duplicate"
+        inv = broker.get_invocation("inv_1")
+        assert inv.completed and inv.exit_code == 2
+        assert [c["stream"] for c in _stream(fake)] == ["control"]
+
+    def test_a_device_report_after_a_server_side_denial_still_lands(self, broker_env):
+        broker, fake = broker_env
+        _dispatch(broker)
+        broker.submit_ack("inv_1", "denied", "denied_by_safety")
+        control = {"stream": "control", "exit_code": 0, "error": "command_blocked_by_denylist", "seq": 0}
+        assert broker.accept_output_chunk("inv_1", control, dedupe=True) == "accepted"
+        assert [c.get("error") for c in _stream(fake)] == ["denied", "command_blocked_by_denylist"]
+
+    def test_truncation_and_detail_are_kept_on_the_invocation(self, broker_env):
+        broker, _ = broker_env
+        _dispatch(broker)
+        broker.accept_output_chunk("inv_1", {
+            "stream": "control", "exit_code": -1, "error": "interrupted", "truncated": True,
+            "detail": "daemon restarted; process 4242 may still be running", "seq": 3,
+        })
+        inv = broker.get_invocation("inv_1")
+        assert inv.truncated is True and "4242" in inv.detail and inv.error == "interrupted"
+
+    def test_junk_numbers_do_not_break_a_report(self, broker_env):
+        broker, _ = broker_env
+        _dispatch(broker)
+        assert broker.accept_output_chunk(
+            "inv_1", {"stream": "control", "exit_code": "nope", "duration_ms": True}
+        ) == "accepted"
+        inv = broker.get_invocation("inv_1")
+        assert inv.completed and inv.exit_code is None and inv.duration_ms is None
+
+    def test_an_unknown_invocation_or_no_redis_is_unknown(self, broker_env, monkeypatch):
+        broker, _ = broker_env
+        assert broker.accept_output_chunk("inv_x", {"stream": "stdout", "chunk": "a"}) == "unknown"
+        assert broker.submit_output_chunk("inv_x", {"stream": "stdout", "chunk": "a"}) is False
+        monkeypatch.setattr("docsgpt.devices.broker.get_redis_instance", lambda: None)
+        assert broker.accept_output_chunk("inv_1", {"stream": "stdout", "chunk": "a"}) == "unknown"
+
+    def test_two_copies_of_a_batch_racing_land_once(self, broker_env):
+        import threading
+
+        broker, fake = broker_env
+        _dispatch(broker)
+        batch = [{"stream": "stdout", "chunk": f"{n}\n", "seq": n} for n in range(50)]
+        batch.append({"stream": "control", "exit_code": 0, "seq": 50})
+
+        def send():
+            for chunk in batch:
+                broker.accept_output_chunk("inv_1", chunk, dedupe=True)
+
+        threads = [threading.Thread(target=send) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert [c["seq"] for c in _stream(fake)] == list(range(51))

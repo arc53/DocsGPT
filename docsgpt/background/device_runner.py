@@ -27,6 +27,7 @@ A lost job's delivery is the verify-before-retrying note, like any other.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -51,6 +52,10 @@ OFFLINE_AFTER_SECONDS = 90
 
 #: Seconds past the command's own timeout (or a connected device not picking it up) before the report is lost.
 REPORT_GRACE_SECONDS = 120
+
+#: The same for a client that resends its report (``outbox``): a late report is on its way, retrying with up to a
+#: minute's backoff, so it is given longer before the job is declared lost.
+OUTBOX_REPORT_GRACE_SECONDS = 600
 
 #: Seconds a cancelled command has to confirm it stopped.
 CANCEL_CONFIRM_SECONDS = 30
@@ -167,12 +172,17 @@ def _timestamp(value: Any) -> Optional[float]:
     return None
 
 
-def device_state(row: Dict[str, Any], *, now: Optional[float] = None) -> str:
-    """Where the job's device stands: ``online``, ``offline`` or ``gone`` (unpaired or deleted).
+def device_info(row: Dict[str, Any], *, now: Optional[float] = None) -> tuple:
+    """Where the job's device stands, and what its client said it can do.
 
     Args:
         row: The job row (``external.device_id``, ``user_id``).
         now: The current Unix time (for tests).
+
+    Returns:
+        ``(state, capabilities)``: ``online``, ``offline`` or ``gone``
+        (unpaired or deleted), and the client's capabilities list ("" when
+        it reported none).
     """
     from docsgpt.storage.db.repositories.devices import DevicesRepository
 
@@ -180,12 +190,18 @@ def device_state(row: Dict[str, Any], *, now: Optional[float] = None) -> str:
     with db_readonly() as conn:
         device = DevicesRepository(conn).get(str(external.get("device_id") or ""), user_id=str(row.get("user_id")))
     if device is None or device.get("status") != "active":
-        return "gone"
+        return "gone", ""
+    caps = str(device.get("capabilities") or "")
     seen = _timestamp(device.get("last_seen_at"))
     current = time.time() if now is None else now
     if seen is None or current - seen > OFFLINE_AFTER_SECONDS:
-        return "offline"
-    return "online"
+        return "offline", caps
+    return "online", caps
+
+
+def device_state(row: Dict[str, Any], *, now: Optional[float] = None) -> str:
+    """Where the job's device stands: ``online``, ``offline`` or ``gone`` (see :func:`device_info`)."""
+    return device_info(row, now=now)[0]
 
 
 def poll_job(job_id: str) -> Dict[str, Any]:
@@ -212,7 +228,7 @@ def poll_job(job_id: str) -> Dict[str, Any]:
     try:
         invocation = broker.get_invocation(invocation_id, strict=True)
         chunks, cursor = broker.read_output(invocation_id, str(external.get("cursor") or "0-0"))
-        state = device_state(row)
+        state, caps = device_info(row)
     except Exception as exc:
         return _poll_failed(job_id, external, exc)
 
@@ -257,7 +273,12 @@ def poll_job(job_id: str) -> Dict[str, Any]:
         fields["online_since"] = now
         _set_waiting(row, False)
     online_since = _timestamp(fields.get("online_since") or external.get("online_since")) or 0.0
-    lost = _report_lost(external, invocation, now=now, online_since=online_since)
+    from docsgpt.devices import capabilities
+
+    lost = _report_lost(
+        external, invocation, now=now, online_since=online_since,
+        outbox=capabilities.has(caps, capabilities.OUTBOX),
+    )
     if lost:
         _merge(job_id, fields)
         if not invocation.acked:
@@ -271,7 +292,9 @@ def poll_job(job_id: str) -> Dict[str, Any]:
     return {"state": "running"}
 
 
-def _report_lost(external: Dict[str, Any], invocation: Any, *, now: float, online_since: float) -> Optional[str]:
+def _report_lost(
+    external: Dict[str, Any], invocation: Any, *, now: float, online_since: float, outbox: bool = False
+) -> Optional[str]:
     """Why a connected device's command will never report, or None while it still may.
 
     Args:
@@ -279,6 +302,8 @@ def _report_lost(external: Dict[str, Any], invocation: Any, *, now: float, onlin
         invocation: The broker snapshot.
         now: The current Unix time.
         online_since: When the device was seen coming back (0 when it never left).
+        outbox: The client keeps and resends its report (``outbox``), so a
+            connected device that is late gets :data:`OUTBOX_REPORT_GRACE_SECONDS`.
 
     Returns:
         A short reason, or None.
@@ -293,7 +318,8 @@ def _report_lost(external: Dict[str, Any], invocation: Any, *, now: float, onlin
     started = max(float(invocation.started_at or 0), float(external.get("dispatched_at") or 0))
     # A device that just came back gets the grace to send what it held while offline.
     expected_by = max(started + timeout_s, online_since)
-    if started and now - expected_by > REPORT_GRACE_SECONDS:
+    grace = OUTBOX_REPORT_GRACE_SECONDS if outbox else REPORT_GRACE_SECONDS
+    if started and now - expected_by > grace:
         return "the device is connected but never reported how the command ended"
     return None
 
@@ -361,12 +387,62 @@ def finish(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     text_value = bound_result_full(jobs.result_text(value))
     in_band = result_status(value)
     jobs.record_final_progress(row, output)
+    result = stored_result(text_value, status=in_band)
+    if value.get("truncated"):
+        result["truncated"] = True
+    status, error, message = _outcome(value, in_band)
     return jobs.finalize(
         str(row["id"]),
-        status="completed" if in_band == "completed" else "failed",
-        result=stored_result(text_value, status=in_band),
+        status=status,
+        result=result,
+        error=error,
+        status_message=message,
         output_tail=tail_of(output) or None,
     )
+
+
+#: ``detail`` of an ``interrupted`` report names the process that may still run ("...; process 4242 may ...").
+_PID = re.compile(r"(?:process|pid)\D{0,3}(\d{1,10})", re.IGNORECASE)
+
+
+def interrupted_message(pid: Optional[int]) -> str:
+    """What an ``interrupted`` report means, for the model and the job card's English fallback."""
+    where = f" (pid {pid})" if pid else ""
+    return (
+        f"The device's client restarted; the command may still be running on the machine{where}. Verify before "
+        "retrying, and never re-run a non-idempotent command blindly."
+    )
+
+
+def _outcome(value: Dict[str, Any], in_band: str) -> tuple:
+    """``(status, error, status_message)`` for a reported command, from the client's control ``error``.
+
+    * ``interrupted``: the client crashed and restarted, and can't tell how the
+      command ended; it may still run. Lost, with the pid to check.
+    * ``host_shutdown``: the client was stopped and stopped the command; failed.
+    * ``cancelled``: the command was cancelled on the device; cancelled.
+    * anything else: completed, or failed for an in-band error.
+    """
+    error = value.get("error")
+    if error == "interrupted":
+        match = _PID.search(str(value.get("detail") or ""))
+        pid = int(match.group(1)) if match else None
+        err: Dict[str, Any] = {"type": "DeviceInterrupted", "message": interrupted_message(pid)}
+        if pid:
+            err["pid"] = pid
+        return "lost", err, "interrupted: the device's client restarted"
+    if error == "host_shutdown":
+        return (
+            "failed",
+            {
+                "type": "HostShutdown",
+                "message": "The device's client shut down and stopped the command; it may have partly run.",
+            },
+            "stopped: the device's client shut down",
+        )
+    if error == "cancelled":
+        return "cancelled", None, "cancelled on the device"
+    return ("completed" if in_band == "completed" else "failed"), None, None
 
 
 def redact_result(row: Dict[str, Any], value: Any) -> Any:
@@ -491,6 +567,16 @@ def _cancel_step(row: Dict[str, Any]) -> Dict[str, Any]:
             message = "cancelled before the device started it" if outcome == "unqueued" else "cancelled"
             jobs.finalize(job_id, status="cancelled", status_message=message)
             return {"state": "cancelled"}
+        if not _can_cancel(row):
+            # Say so now rather than wait out the confirmation: this client never stops a running command.
+            broker.retire_invocation(invocation_id)
+            jobs.finalize(
+                job_id,
+                status="cancelled",
+                error={"type": "CancelUnsupported", "message": CANCEL_UNSUPPORTED_NOTE},
+                status_message="cancelled; the device's client can't stop a running command",
+            )
+            return {"state": "cancelled"}
         _merge(job_id, {"cancel_sent_at": now})
         _touch(job_id)
         enqueue_poll(job_id, CANCEL_POLL_SECONDS)
@@ -514,6 +600,25 @@ def _cancel_step(row: Dict[str, Any]) -> Dict[str, Any]:
     _touch(job_id)
     enqueue_poll(job_id, CANCEL_POLL_SECONDS)
     return {"state": "cancelling"}
+
+
+#: Why a cancelled command may still be running: the device's client predates cancel.
+CANCEL_UNSUPPORTED_NOTE = (
+    "This device's docsgpt-cli can't cancel a running command, so it may still be running on the machine. "
+    "Update docsgpt-cli on that machine to cancel commands from DocsGPT."
+)
+
+
+def _can_cancel(row: Dict[str, Any]) -> bool:
+    """Whether the job's device client acts on a cancel (``X-Device-Capabilities: cancel``); True when unknown."""
+    from docsgpt.devices import capabilities
+
+    try:
+        _state, caps = device_info(row)
+    except Exception:
+        logger.debug("background job %s: reading the device's capabilities failed", row.get("id"), exc_info=True)
+        return True
+    return capabilities.has(caps, capabilities.CANCEL)
 
 
 def cancel_detached(row: Dict[str, Any]) -> None:

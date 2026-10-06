@@ -1195,6 +1195,7 @@ devices_table = Table(
     Column("paired_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("last_seen_at", DateTime(timezone=True)),
     Column("revoked_at", DateTime(timezone=True)),
+    Column("capabilities", Text),
     Column("revoke_reason", Text),
     UniqueConstraint("user_id", "name", name="devices_user_name_uidx"),
 )

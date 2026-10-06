@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
 from docsgpt.background.events import publish_job_updated
-from docsgpt.background.results import model_status
+from docsgpt.background.results import job_notices, model_status
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 from docsgpt.storage.db.repositories.conversation_wakes import ConversationWakesRepository
 from docsgpt.storage.db.session import db_session
@@ -45,7 +45,7 @@ def job_summary(job: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         ``{job_id, conversation_id, tool_name, action_name, status, status_message,
         progress, output_tail, elapsed_s, started_at, finished_at, delivery_state,
-        cancel_requested}``.
+        cancel_requested, notices}``.
     """
     return {
         "job_id": str(job.get("id")),
@@ -62,6 +62,7 @@ def job_summary(job: Dict[str, Any]) -> Dict[str, Any]:
         "delivery_state": job.get("delivery_state"),
         "auto_resume": bool(job.get("auto_resume")),
         "cancel_requested": bool(job.get("cancel_requested_at")),
+        "notices": job_notices(job),
     }
 
 

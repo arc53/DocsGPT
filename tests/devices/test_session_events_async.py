@@ -74,7 +74,7 @@ def device(monkeypatch):
         def find_by_token_hash(self, token_hash):
             return row if token_hash == auth_module.hash_session_token(TOKEN) else None
 
-        def touch_last_seen(self, device_id):
+        def touch_last_seen(self, device_id, capabilities=None):
             touched.append(device_id)
 
     monkeypatch.setattr(auth_module, "DevicesRepository", _Repo)

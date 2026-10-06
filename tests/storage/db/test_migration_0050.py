@@ -47,6 +47,12 @@ def _device_job(conn, conversation_id: str) -> str:
 class TestMigration0050RoundTrip:
     def test_head_takes_a_device_job(self, pg_engine):
         with pg_engine.begin() as conn:
+            assert conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.columns WHERE table_name = 'devices' "
+                    "AND column_name = 'capabilities'"
+                )
+            ).fetchone() is not None
             job_id = _device_job(conn, _conversation(conn))
             assert conn.execute(
                 text("SELECT runner FROM background_jobs WHERE id = CAST(:id AS uuid)"), {"id": job_id}

@@ -42,7 +42,7 @@ class _Repo:
     def find_by_token_hash(self, _token_hash):
         return _device_row()
 
-    def touch_last_seen(self, _device_id):
+    def touch_last_seen(self, _device_id, capabilities=None):
         pass
 
 
@@ -82,6 +82,9 @@ class _RaceBroker:
 
     def submit_output_chunk(self, _invocation_id, _chunk):
         return True
+
+    def accept_output_chunk(self, _invocation_id, _chunk, **_kwargs):
+        return "accepted"
 
     def submit_ack(self, _invocation_id, _decision, _reason=None):
         return True

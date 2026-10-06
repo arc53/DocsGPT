@@ -459,7 +459,8 @@ def command_result(
         }
     stdout: list = []
     stderr: list = []
-    exit_code = duration_ms = error = None
+    exit_code = duration_ms = error = detail = None
+    truncated = False
     saw_control = False
     cursor = "0-0"
     while True:
@@ -470,11 +471,14 @@ def command_result(
                 stdout.append(chunk.get("chunk", ""))
             elif stream == "stderr":
                 stderr.append(chunk.get("chunk", ""))
-            elif stream == "control":
+            elif stream == "control" and not saw_control:
+                # The first control chunk is the outcome (a synthetic "denied" one, or the client's).
                 saw_control = True
                 exit_code = chunk.get("exit_code")
                 duration_ms = chunk.get("duration_ms")
                 error = chunk.get("error") or error
+                detail = chunk.get("detail") or None
+                truncated = chunk.get("truncated") is True
         if next_cursor == cursor:
             break
         cursor = next_cursor
@@ -485,9 +489,11 @@ def command_result(
             exit_code = final.exit_code
             duration_ms = final.duration_ms
             error = final.error or error
+            detail = final.detail
+            truncated = final.truncated
     if not saw_control and exit_code is None and not error:
         error = "device did not respond (timed out)"
-    return {
+    result = {
         "exit_code": exit_code,
         "stdout": "".join(str(part) for part in stdout),
         "stderr": "".join(str(part) for part in stderr),
@@ -495,3 +501,10 @@ def command_result(
         "device_name": device_name,
         "error": error,
     }
+    if detail:
+        result["detail"] = str(detail)[:500]
+    if truncated:
+        # The client dropped output it could not keep while the server was unreachable.
+        result["truncated"] = True
+        result["note"] = "output was truncated: the device dropped some of it while it could not reach the server"
+    return result
