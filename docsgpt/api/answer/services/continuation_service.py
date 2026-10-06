@@ -39,6 +39,7 @@ __all__ = [
     "RETIRED_EXPIRED",
     "RETIRED_MOVED_ON",
     "ResumeInProgressError",
+    "ended_on_retired_pause",
     "retire_paused_message",
 ]
 
@@ -72,6 +73,9 @@ RETIRED_MOVED_ON = "moved_on"
 
 #: A pause retired because its TTL ran out before anyone answered it.
 RETIRED_EXPIRED = "expired"
+
+#: The message metadata key a retired pause's message carries: why it was retired.
+PAUSE_RETIRED_KEY = "pause_retired"
 
 #: What the model and the chat read for a call that never ran, by (waiting on the client, why).
 _NOT_RUN_TEXT = {
@@ -130,6 +134,26 @@ def not_run_entry(pending: Mapping[str, Any], reason: str) -> Dict[str, Any]:
     return entry
 
 
+def ended_on_retired_pause(turn: Mapping[str, Any]) -> bool:
+    """Whether a stored turn ended on a pause nobody answered (see :func:`retire_paused_message`).
+
+    Its ``response`` is then the text written before its calls, not an answer
+    written after their results. The message's ``pause_retired`` metadata marks
+    it; a call carrying ``not_run`` (written in the same update) marks it too,
+    for a turn whose metadata did not travel with it.
+
+    Args:
+        turn: A history entry or a message row (``metadata``, ``tool_calls``).
+
+    Returns:
+        True when the turn was retired.
+    """
+    metadata = turn.get("metadata")
+    if isinstance(metadata, Mapping) and metadata.get(PAUSE_RETIRED_KEY):
+        return True
+    return any(isinstance(call, Mapping) and call.get("not_run") for call in turn.get("tool_calls") or [])
+
+
 def retire_paused_message(conn: Connection, state: Mapping[str, Any], reason: str) -> Optional[str]:
     """Finalize the message of a pause nobody answered, from its saved state and stream journal.
 
@@ -183,7 +207,7 @@ def retire_paused_message(conn: Connection, state: Mapping[str, Any], reason: st
         if isinstance(source.get("text"), str):
             source["text"] = source["text"][:1000]
 
-    metadata: Dict[str, Any] = {"pause_retired": reason}
+    metadata: Dict[str, Any] = {PAUSE_RETIRED_KEY: reason}
     if partial["segments"]:
         metadata["segments"] = partial["segments"]
     fields = strip_null_bytes(

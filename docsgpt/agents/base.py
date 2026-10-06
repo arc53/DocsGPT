@@ -98,6 +98,27 @@ def _epoch_text(value: Any) -> Optional[str]:
     return str(value)
 
 
+def _unique_reasoning_items(items: List[Any]) -> List[Any]:
+    """Responses reasoning items in order, each id once (an item without an id is kept as is).
+
+    Args:
+        items: Reasoning items gathered for one replayed assistant message.
+
+    Returns:
+        The items without repeats; the provider rejects a duplicated id.
+    """
+    seen: set = set()
+    unique: List[Any] = []
+    for item in items:
+        item_id = item.get("id") if isinstance(item, dict) else None
+        if item_id and item_id in seen:
+            continue
+        if item_id:
+            seen.add(item_id)
+        unique.append(item)
+    return unique
+
+
 class BaseAgent(ABC):
     # Inert defaults: an instance built without __init__ still resolves these.
     _guardrail_engine = None
@@ -1505,6 +1526,8 @@ class BaseAgent(ABC):
             available_for_history,
         )
 
+        from docsgpt.api.answer.services.continuation_service import ended_on_retired_pause
+
         messages = [{"role": "system", "content": system_prompt}]
 
         for i in working_history:
@@ -1513,14 +1536,22 @@ class BaseAgent(ABC):
                 messages.append({"role": "user", "content": i["prompt"]})
             state = self._compatible_responses_state(i.get("metadata"))
             historical_tool_calls = i.get("tool_calls") or []
+            # A turn retired while it waited on an approval has no answer
+            # written after its tools: its text came before its calls. It
+            # rides on the message carrying the calls, ahead of their results;
+            # replayed after them, models read it as a plan that never ran.
+            narrated_before_calls = (
+                has_completed_turn
+                and bool(historical_tool_calls)
+                and ended_on_retired_pause(i)
+            )
             if historical_tool_calls:
                 tool_message: Dict[str, Any] = {
                     "role": "assistant",
                     "content": None,
                     "tool_calls": [],
                 }
-                call_reasoning: List[Dict[str, Any]] = []
-                seen_reasoning_ids = set()
+                reasoning_items: List[Any] = []
                 used_replay_call_ids: set[str] = set()
                 call_id_occurrences: Dict[str, int] = {}
                 for tool_call in historical_tool_calls:
@@ -1556,21 +1587,21 @@ class BaseAgent(ABC):
                         },
                     })
                     if state:
-                        for reasoning_item in (
+                        reasoning_items.extend(
                             state.get("reasoning_for_calls", {}).get(
                                 source_call_id, []
                             )
-                        ):
-                            reasoning_id = (
-                                reasoning_item.get("id")
-                                if isinstance(reasoning_item, dict)
-                                else None
-                            )
-                            if reasoning_id and reasoning_id in seen_reasoning_ids:
-                                continue
-                            if reasoning_id:
-                                seen_reasoning_ids.add(reasoning_id)
-                            call_reasoning.append(reasoning_item)
+                        )
+                if narrated_before_calls:
+                    if i["response"]:
+                        tool_message["content"] = i["response"]
+                    if i.get("thought"):
+                        tool_message["reasoning_content"] = i["thought"]
+                    # The turn's last response is the one that made the
+                    # calls it paused on, so its reasoning precedes them.
+                    if state:
+                        reasoning_items.extend(state.get("reasoning_items") or [])
+                call_reasoning = _unique_reasoning_items(reasoning_items)
                 if call_reasoning:
                     tool_message["responses_reasoning_items"] = call_reasoning
                 messages.append(tool_message)
@@ -1582,7 +1613,7 @@ class BaseAgent(ABC):
                         "tool_call_id": emitted_call["id"],
                         "content": replayed_result(tool_call),
                     })
-            if has_completed_turn:
+            if has_completed_turn and not narrated_before_calls:
                 asst_msg: Dict[str, Any] = {
                     "role": "assistant",
                     "content": i["response"],

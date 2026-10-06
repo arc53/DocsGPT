@@ -106,11 +106,20 @@ class CompressionPromptBuilder:
         Returns:
             Formatted conversation text
         """
+        from docsgpt.api.answer.services.continuation_service import ended_on_retired_pause
+
         conversation_lines = []
 
         for i, query in enumerate(queries):
             conversation_lines.append(f"--- Message {i + 1} ---")
             conversation_lines.append(f"User: {query.get('prompt', '')}")
+
+            # A turn retired while it waited on an approval wrote its text
+            # before its calls, and nothing after them: keep that order, or
+            # the summary reads the text as a plan that never ran.
+            narrated_first = ended_on_retired_pause(query)
+            if narrated_first:
+                self._append_thought_and_response(conversation_lines, query)
 
             # Add tool calls if present
             tool_calls = query.get("tool_calls", [])
@@ -131,13 +140,8 @@ class CompressionPromptBuilder:
                         f"[{status}] → {result}"
                     )
 
-            # Add agent thought if present
-            thought = query.get("thought", "")
-            if thought:
-                conversation_lines.append(f"\nAgent Thought: {thought}")
-
-            # Add assistant response
-            conversation_lines.append(f"\nAssistant: {query.get('response', '')}")
+            if not narrated_first:
+                self._append_thought_and_response(conversation_lines, query)
 
             # Add sources if present
             sources = query.get("sources", [])
@@ -147,3 +151,16 @@ class CompressionPromptBuilder:
             conversation_lines.append("")  # Empty line between messages
 
         return "\n".join(conversation_lines)
+
+    @staticmethod
+    def _append_thought_and_response(conversation_lines: List[str], query: Dict[str, Any]) -> None:
+        """Add a turn's thought (when present) and its assistant text to the formatted conversation.
+
+        Args:
+            conversation_lines: The lines built so far; appended to in place.
+            query: The turn.
+        """
+        thought = query.get("thought", "")
+        if thought:
+            conversation_lines.append(f"\nAgent Thought: {thought}")
+        conversation_lines.append(f"\nAssistant: {query.get('response', '')}")

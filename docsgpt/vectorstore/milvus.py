@@ -39,7 +39,7 @@ class MilvusStore(BaseVectorStore):
 
     score_kind = "cosine_similarity"
 
-    def __init__(self, source_id: str = "", embeddings_key: str = "embeddings"):
+    def __init__(self, source_id: str = "", embeddings_key: Optional[str] = None):
         super().__init__()
         with _without_milvus_uri_env():
             pymilvus = require("pymilvus", "VECTOR_STORE=milvus")

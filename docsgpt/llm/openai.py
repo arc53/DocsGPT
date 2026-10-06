@@ -743,7 +743,9 @@ class OpenAILLM(BaseLLM):
                     })
                 cleaned_assistant: dict = {
                     "role": "assistant",
-                    "content": None,
+                    # Text the model wrote with the calls (a replayed turn that
+                    # ended on a pause) stays ahead of their results.
+                    "content": content if isinstance(content, str) and content else None,
                     "tool_calls": cleaned_tcs,
                 }
                 if reasoning_content:
@@ -1239,6 +1241,12 @@ class OpenAILLM(BaseLLM):
             message_reasoning = message.get("responses_reasoning_items") or []
             tool_calls = message.get("tool_calls")
             if tool_calls and role == "assistant":
+                # Text written with the calls goes first: the calls stay
+                # right behind their reasoning items, as the model emitted
+                # them, and the text survives when every call is dropped.
+                text_parts = self._responses_content_parts(role, message.get("content"))
+                if text_parts:
+                    input_items.append({"role": role, "content": text_parts})
                 kept_calls = [
                     tc
                     for tc in tool_calls
