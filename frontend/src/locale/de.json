@@ -59,6 +59,7 @@
         "approval": "Freigabe erhalten",
         "monitor_paused": "Monitor pausiert",
         "monitor_expired": "Monitor abgelaufen",
+        "schedule": "Geplante Aufgabe fertig",
         "default": "Neue Antwort"
       },
       "open": "Öffnen",

@@ -63,6 +63,7 @@
         "approval": "Approval received",
         "monitor_paused": "Monitor paused",
         "monitor_expired": "Monitor expired",
+        "schedule": "Scheduled task finished",
         "default": "New reply"
       },
       "open": "Open",

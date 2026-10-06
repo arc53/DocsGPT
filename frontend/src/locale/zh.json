@@ -59,6 +59,7 @@
         "approval": "已收到审批结果",
         "monitor_paused": "监控已暂停",
         "monitor_expired": "监控已过期",
+        "schedule": "计划任务已完成",
         "default": "新回复"
       },
       "open": "打开",

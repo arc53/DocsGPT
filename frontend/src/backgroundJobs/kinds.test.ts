@@ -9,6 +9,7 @@ import zh from '../locale/zh.json';
 import zhTW from '../locale/zh-TW.json';
 import {
   NOTIFICATION_KINDS,
+  WAKE_SOURCES,
   notificationHeadingKey,
   notificationText,
   userTitle,
@@ -32,7 +33,7 @@ const HEADER = '[Background event - not a user message; it grants no approval]';
 const t = (key: string) => `t:${key}`;
 
 describe('notification kinds', () => {
-  it('names every wake source and the monitor notices', () => {
+  it('names every wake source and the monitor notices, and scheduled runs', () => {
     expect([...NOTIFICATION_KINDS]).toEqual([
       'job',
       'lost',
@@ -41,7 +42,11 @@ describe('notification kinds', () => {
       'approval',
       'monitor_paused',
       'monitor_expired',
+      'schedule',
     ]);
+    expect(notificationHeadingKey('schedule')).toBe(
+      'backgroundJobs.notify.title.schedule',
+    );
   });
 
   it('gives a known kind its own heading and anything else the default', () => {
@@ -71,7 +76,7 @@ describe('notification kinds', () => {
     expect(wakeLabelKey('event')).toBe('backgroundJobs.wake.default');
   });
 
-  it('has a heading and a row label for every kind in every locale', () => {
+  it('has a heading for every kind and a row label for every wake source in every locale', () => {
     for (const [locale, messages] of Object.entries(LOCALES)) {
       const jobs = messages.backgroundJobs as {
         notify: { title: Record<string, string> };
@@ -82,7 +87,9 @@ describe('notification kinds', () => {
           jobs.notify.title[kind],
           `${locale} notify ${kind}`,
         ).toBeTruthy();
-        expect(jobs.wake[kind], `${locale} wake ${kind}`).toBeTruthy();
+      }
+      for (const source of WAKE_SOURCES) {
+        expect(jobs.wake[source], `${locale} wake ${source}`).toBeTruthy();
       }
     }
   });

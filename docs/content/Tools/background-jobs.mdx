@@ -161,7 +161,8 @@ through `GET /api/background_jobs?conversation_id=…`, `GET /api/background_job
 
 ## Notifications
 
-When a continuation answers (never for `NO_REPLY`), the user is notified according to where they are:
+When a continuation answers (never for `NO_REPLY`), or a one-time scheduled task (a reminder) answers in its
+conversation, the user is notified according to where they are:
 
 1. **Watching the conversation** (a visible tab shows it): nothing; the chat updates.
 2. **A DocsGPT tab open elsewhere**: a toast with an **Open** button that goes to the conversation. A hidden tab
@@ -186,6 +187,7 @@ The toast and the push lead with the kind of event:
 | `monitor_expired` | Monitor expired |
 | `trigger` | Webhook received |
 | `approval` | Approval received |
+| `schedule` | Scheduled task finished |
 
 The event's title and the start of the answer follow. Any other kind shows its own title. Toasts are
 translated; Web Push is sent in English, since the server does not know the browser's language.

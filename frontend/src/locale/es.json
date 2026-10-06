@@ -59,6 +59,7 @@
         "approval": "Aprobación recibida",
         "monitor_paused": "Monitor en pausa",
         "monitor_expired": "Monitor caducado",
+        "schedule": "Tarea programada terminada",
         "default": "Nueva respuesta"
       },
       "open": "Abrir",

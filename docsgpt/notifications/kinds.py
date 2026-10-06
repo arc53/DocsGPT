@@ -3,7 +3,8 @@
 ``notify_user`` takes a ``kind``: a continuation turn passes the source of
 the event that woke it (``job``, ``lost``, ``monitor``, ``trigger``,
 ``approval``, and the monitor notices ``monitor_paused`` and
-``monitor_expired``); another caller may pass its own word. A known kind gets
+``monitor_expired``), and a one-time scheduled run that answered in its
+conversation passes ``schedule``; another caller may pass its own word. A known kind gets
 a fixed heading: the web app shows its translated heading on the toast
 (``backgroundJobs.notify.title.<kind>``) and Web Push, which the server words
 in English, leads with :data:`KIND_HEADINGS`. An unknown kind reads as the
@@ -24,6 +25,7 @@ KIND_HEADINGS: Dict[str, str] = {
     "monitor_expired": "Monitor expired",
     "trigger": "Webhook received",
     "approval": "Approval received",
+    "schedule": "Scheduled task finished",
 }
 
 #: The push title when there is neither a known kind nor a title.
@@ -32,6 +34,56 @@ FALLBACK_TITLE = "DocsGPT"
 # The wake title names the job for the model ("run_code finished (job <uuid>)");
 # the user needs no id.
 _JOB_ID_SUFFIX = re.compile(r"\s*\(job [0-9a-fA-F-]{8,}\)")
+
+
+# Markdown a notification can't show: removed (code, tables, rules) or reduced to its text.
+_FENCE = re.compile(r"```.*?(?:```|\Z)", re.S)
+_TABLE_ROW = re.compile(r"^[ \t]*\|.*$", re.M)
+_RULE = re.compile(r"^[ \t]*(?:-{3,}|\*{3,}|_{3,})[ \t]*$", re.M)
+_HEADING = re.compile(r"^[ \t]{0,3}#{1,6}[ \t]*", re.M)
+_QUOTE = re.compile(r"^[ \t]{0,3}>[ \t]?", re.M)
+_LIST = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+", re.M)
+_IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
+_LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+_BOLD = re.compile(r"(\*\*|__)(.+?)\1", re.S)
+_ITALIC = re.compile(r"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])")
+_CODE = re.compile(r"`([^`]*)`")
+
+#: Characters of an answer a notification shows.
+PREVIEW_CHARS = 280
+
+
+def plain_preview(text: Optional[str], limit: int = PREVIEW_CHARS) -> str:
+    """An answer as a notification shows it: Markdown reduced to plain text, cut at a word boundary.
+
+    Code blocks, table rows and rules are dropped; headings, quotes, list
+    markers, emphasis, inline code and links keep only their text.
+
+    Args:
+        text: The answer (Markdown).
+        limit: The longest string returned, the trailing ellipsis included.
+
+    Returns:
+        One line of plain text.
+    """
+    value = str(text or "")
+    for pattern in (_FENCE, _TABLE_ROW, _RULE):
+        value = pattern.sub(" ", value)
+    for pattern in (_HEADING, _QUOTE, _LIST):
+        value = pattern.sub("", value)
+    value = _IMAGE.sub(r"\1", value)
+    value = _LINK.sub(r"\1", value)
+    value = _BOLD.sub(r"\2", value)
+    value = _ITALIC.sub(r"\1", value)
+    value = _CODE.sub(r"\1", value)
+    value = " ".join(value.split())
+    if len(value) <= limit:
+        return value
+    cut = value[: max(limit - 1, 0)]
+    space = cut.rfind(" ")
+    if space > limit // 2:
+        cut = cut[:space]
+    return cut.rstrip(" ,;:-") + "…"
 
 
 def heading(kind: Optional[str]) -> Optional[str]:

@@ -50,8 +50,9 @@ def notify_user(
         user_id: Who to notify.
         conversation_id: The conversation it is about, if any.
         kind: What happened: a wake source (``job``, ``lost``, ``monitor``,
-            ``trigger``, ``approval``) or any other short word; the app shows
-            a generic label for kinds it does not know.
+            ``monitor_paused``, ``monitor_expired``, ``trigger``, ``approval``),
+            ``schedule`` for a scheduled run's answer, or any other short word;
+            the app shows a generic label for kinds it does not know.
         title: One short line.
         body: A short preview.
         url: Where Open goes, relative to the app (``/c/<conversation_id>``).

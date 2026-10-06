@@ -20,6 +20,7 @@ class TestHeading:
             ("monitor_expired", "Monitor expired"),
             ("trigger", "Webhook received"),
             ("approval", "Approval received"),
+            ("schedule", "Scheduled task finished"),
         ],
     )
     def test_known_kinds(self, kind, heading):
@@ -33,6 +34,32 @@ class TestHeading:
         from docsgpt.background.wake import WAKE_SOURCES
 
         assert set(WAKE_SOURCES) <= set(kinds.KIND_HEADINGS)
+
+
+class TestPlainPreview:
+    def test_strips_markdown_to_plain_text(self):
+        text = (
+            "## Done\n\n**ACMEB dropped below $90.**\n\n- **Price:** $88.00 (`ACMEB`)\n"
+            "| Field | Value |\n|---|---|\n| price | 88 |\n\nSee [the page](https://x.example/p) for more."
+        )
+        assert kinds.plain_preview(text) == (
+            "Done ACMEB dropped below $90. Price: $88.00 (ACMEB) See the page for more."
+        )
+
+    def test_drops_code_blocks_and_keeps_snake_case(self):
+        text = "Ran it:\n```python\nprint('x')\n```\nThe file_name is out_put.csv."
+        assert kinds.plain_preview(text) == "Ran it: The file_name is out_put.csv."
+
+    def test_cuts_at_a_word_boundary(self):
+        text = "word " * 100
+        preview = kinds.plain_preview(text, limit=23)
+        assert preview == "word word word word…"
+        assert len(preview) <= 23
+
+    def test_short_and_empty(self):
+        assert kinds.plain_preview("Hi there.") == "Hi there."
+        assert kinds.plain_preview("") == ""
+        assert kinds.plain_preview(None) == ""
 
 
 class TestUserTitle:

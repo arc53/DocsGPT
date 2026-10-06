@@ -21,10 +21,11 @@ export const WAKE_SOURCES = [
 
 /**
  * `notify_user` kinds with their own heading: every wake source (a
- * continuation notifies with the source of the event that woke it). Others
- * read generically. Mirrors `docsgpt/notifications/kinds.py`.
+ * continuation notifies with the source of the event that woke it), and
+ * `schedule` (a one-time scheduled run that answered in its conversation).
+ * Others read generically. Mirrors `docsgpt/notifications/kinds.py`.
  */
-export const NOTIFICATION_KINDS = WAKE_SOURCES;
+export const NOTIFICATION_KINDS = [...WAKE_SOURCES, 'schedule'] as const;
 
 const isIn = (list: readonly string[], value: unknown): value is string =>
   typeof value === 'string' && list.includes(value);
