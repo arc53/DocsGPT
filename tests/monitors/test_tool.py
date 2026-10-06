@@ -43,11 +43,24 @@ class TestSchema:
             "tell the user which field and values to send",
             "take no check",
             "No need to read the source first",
-            '"github" for a GitHub webhook',
-            '"standard_webhooks" for a sender that follows Standard Webhooks',
-            '"hmac_sha256" only for a custom sender',
         ):
             assert needle in text, needle
+
+    def test_description_says_unsigned_links_are_fine(self):
+        """The link is a secret URL with limits; a signature is for senders that sign natively, not a nudge."""
+        create = MonitorTool().get_actions_metadata()[0]
+        text = create["description"]
+        for needle in (
+            "default unsigned link is right for senders that can't sign",
+            "curl or CI scripts, iOS Shortcuts, Zapier/IFTTT-style tools, forms",
+            "only for a sender that signs natively",
+            '"github" for GitHub',
+            '"standard_webhooks" for Svix-style senders',
+            '"hmac_sha256" for a custom sender that computes it',
+        ):
+            assert needle in text, needle
+        signature = create["parameters"]["properties"]["source"]["properties"]["signature"]
+        assert signature["description"].startswith("webhook: how calls are signed. Default none, right for any sender")
 
     def test_check_fields_are_described(self):
         check = MonitorTool().get_actions_metadata()[0]["parameters"]["properties"]["check"]

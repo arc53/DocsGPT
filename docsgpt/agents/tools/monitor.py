@@ -16,9 +16,11 @@ _CREATE_DESCRIPTION = (
     "you to.\n"
     "Sources: `webpage` (url, optional css_selector); `tool` (any tool this chat can call, by the exact function "
     "name you would call, with its args: a search, an API or MCP action, read_webpage, a remote_device "
-    "run_command); `ingest` (a source_id; fires when its ingest finishes or fails); `webhook` (returns a POST url; "
-    "`signature` \"github\" for a GitHub webhook, \"standard_webhooks\" for a sender that follows Standard "
-    "Webhooks (Svix-style), \"hmac_sha256\" only for a custom sender); `approval` (returns a page link where a person "
+    "run_command); `ingest` (a source_id; fires when its ingest finishes or fails); `webhook` (returns a POST url that is "
+    "itself a secret, with an expiry and hit and rate limits, so the default unsigned link is right for senders "
+    "that can't sign: curl or CI scripts, iOS Shortcuts, Zapier/IFTTT-style tools, forms. Set `signature` only "
+    "for a sender that signs natively: \"github\" for GitHub, \"standard_webhooks\" for Svix-style senders, "
+    "\"hmac_sha256\" for a custom sender that computes it); `approval` (returns a page link where a person "
     "approves or rejects your question; you are woken with the decision and any comment).\n"
     "A source only reads state: check a status, list new items, read a page, file or metric. Put the action in "
     "`on_match` and do it when you are woken, asking for approval as usual. A tool source that would need "
@@ -122,9 +124,9 @@ class MonitorTool(Tool):
                                     "type": "string",
                                     "enum": ["none", "standard_webhooks", "github", "hmac_sha256"],
                                     "description": (
-                                        "webhook: how calls are signed (default none): github for GitHub, "
-                                        "standard_webhooks for Standard Webhooks senders (Svix-style), "
-                                        "hmac_sha256 only for a custom sender."
+                                        "webhook: how calls are signed. Default none, right for any sender "
+                                        "that can't sign; github for GitHub, standard_webhooks for Svix-style "
+                                        "senders, hmac_sha256 only for a custom sender that computes it."
                                     ),
                                 },
                                 "question": {**string, "description": "approval: what the person decides."},
