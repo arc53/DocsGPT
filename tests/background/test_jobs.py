@@ -122,6 +122,7 @@ class TestFinalize:
         assert entry["status"] == "completed"
         assert entry["job_status"] == "completed"
         assert entry["artifact_id"] == "art-1"
+        assert entry["job_started_at"] and entry["job_finished_at"] >= entry["job_started_at"]
 
     def test_a_tool_can_shape_what_its_job_keeps(self, bg_db, conversation, monkeypatch):
         """code_executor drops its environment banner and session from a background result (job_result)."""

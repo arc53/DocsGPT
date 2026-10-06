@@ -376,6 +376,11 @@ def patch_origin_entry(conn: Any, row: Dict[str, Any]) -> None:
         "status": "completed" if row.get("status") == "completed" and in_band != "error" else "error",
         "job_status": row.get("status"),
     }
+    # So a reload shows how long it ran without fetching the job.
+    for key in ("started_at", "finished_at"):
+        value = row.get(key)
+        if value is not None:
+            patch[f"job_{key}"] = value.isoformat() if hasattr(value, "isoformat") else str(value)
     if isinstance(result, dict):
         if result.get("artifacts"):
             patch["artifacts"] = result["artifacts"]

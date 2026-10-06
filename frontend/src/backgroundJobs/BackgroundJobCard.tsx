@@ -70,12 +70,23 @@ export function formatElapsed(
   return t('backgroundJobs.card.durationSeconds', { s });
 }
 
-/** Seconds the job has run: from its start to its finish, or to now. */
+/**
+ * Seconds the job has run: from its start to its finish, or to now. A
+ * finished call reloaded from the conversation has no job in the store; its
+ * entry carries the job's start and finish instead.
+ */
 export function elapsedSeconds(
   job: BackgroundJob | undefined,
   now: number,
+  toolCall?: ToolCallsType,
 ): number | null {
-  if (!job) return null;
+  if (!job) {
+    const started = Date.parse(toolCall?.job_started_at ?? '');
+    const finished = Date.parse(toolCall?.job_finished_at ?? '');
+    return Number.isFinite(started) && Number.isFinite(finished)
+      ? Math.max(0, (finished - started) / 1000)
+      : null;
+  }
   const started = job.started_at ? Date.parse(job.started_at) : NaN;
   if (Number.isFinite(started)) {
     const finished = job.finished_at ? Date.parse(job.finished_at) : NaN;
@@ -181,7 +192,7 @@ export default function BackgroundJobCard({
     { ...toolCall, status: running ? 'pending' : 'completed' },
     t,
   );
-  const elapsed = elapsedSeconds(job, now);
+  const elapsed = elapsedSeconds(job, now, toolCall);
   const percent = job?.progress?.percent;
   const lastLine = job?.progress?.last?.trim();
   const cancelRequested = Boolean(job?.cancel_requested) || cancelling;
@@ -221,14 +232,25 @@ export default function BackgroundJobCard({
         }
       >
         {running && typeof percent === 'number' && (
-          <Progress
-            size="sm"
-            variant="info"
-            value={percent}
-            aria-label={t('backgroundJobs.card.progress', {
-              percent: Math.round(percent),
-            })}
-          />
+          <div className="flex items-center gap-2">
+            <Progress
+              size="sm"
+              variant="info"
+              value={percent}
+              className="flex-1"
+              aria-label={t('backgroundJobs.card.progress', {
+                percent: Math.round(percent),
+              })}
+            />
+            <span
+              className="text-muted-foreground shrink-0 text-xs tabular-nums"
+              data-testid="job-percent"
+            >
+              {t('backgroundJobs.card.progress', {
+                percent: Math.round(percent),
+              })}
+            </span>
+          </div>
         )}
         {running && lastLine && (
           <p

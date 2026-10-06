@@ -130,7 +130,9 @@ def progress_from(spec: Optional[Dict[str, Any]], text: str) -> Optional[Dict[st
         return None
     if last is None:
         return None
-    progress: Dict[str, Any] = {"last": last.group(0)[:200]}
+    # The whole printed line ("PROGRESS 43% batch 3/7"), not just the part the regex matched.
+    scanned = text[-SCAN_CHARS:]
+    progress: Dict[str, Any] = {"last": _line_of(scanned, last.start()).strip()[:200]}
     percent = _percent(last.group(1)) if last.groups() else None
     if percent is not None:
         progress["percent"] = percent

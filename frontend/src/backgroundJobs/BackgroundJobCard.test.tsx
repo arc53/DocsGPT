@@ -107,6 +107,13 @@ describe('BackgroundJobCard helpers', () => {
       elapsedSeconds(job({ elapsed_s: 10, receivedAt: start }), start + 5_000),
     ).toBe(15);
     expect(elapsedSeconds(undefined, start)).toBeNull();
+    expect(
+      elapsedSeconds(undefined, start, {
+        ...CALL,
+        job_started_at: '2026-10-06T10:00:00Z',
+        job_finished_at: '2026-10-06T10:00:45Z',
+      }),
+    ).toBe(45);
   });
 });
 
@@ -211,6 +218,10 @@ describe('BackgroundJobCard', () => {
     });
     expect(container.querySelector('[role="progressbar"]')).not.toBeNull();
     expect(container.textContent).toContain('PROGRESS 42%');
+    // The percent is said in words next to the bar, not only in its aria-label.
+    expect(
+      container.querySelector('[data-testid="job-percent"]')?.textContent,
+    ).toBe('backgroundJobs.card.progress:{"percent":42}');
 
     service.getJob.mockResolvedValue({
       job_id: 'j1',
@@ -290,6 +301,20 @@ describe('BackgroundJobCard', () => {
     expect(service.getJob).not.toHaveBeenCalled();
     expect(container.textContent).toContain(
       'backgroundJobs.card.status.completed',
+    );
+  });
+
+  it("keeps a finished job's duration after a reload, from its saved entry", async () => {
+    await render({
+      ...CALL,
+      status: 'completed',
+      job_status: 'completed',
+      job_started_at: '2026-10-06T10:00:00Z',
+      job_finished_at: '2026-10-06T10:01:23Z',
+    });
+    expect(service.getJob).not.toHaveBeenCalled();
+    expect(container.textContent).toContain(
+      'backgroundJobs.card.durationMinutes:{"m":1,"s":23}',
     );
   });
 

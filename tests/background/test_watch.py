@@ -35,6 +35,9 @@ class TestProgress:
         spec = {"progress_regex": "PROGRESS (\\d+)%"}
         progress = watch.progress_from(spec, "PROGRESS 10%\nwork\nPROGRESS 55%\n")
         assert progress == {"last": "PROGRESS 55%", "percent": 55}
+        # The whole printed line, not only the match.
+        full = watch.progress_from(spec, "PROGRESS 43% batch 3/7 processed\nmore\n")
+        assert full == {"last": "PROGRESS 43% batch 3/7 processed", "percent": 43}
         assert watch.progress_from(spec, "nothing") is None
         assert watch.progress_from({"progress_regex": "step \\w+"}, "step one") == {"last": "step one"}
 

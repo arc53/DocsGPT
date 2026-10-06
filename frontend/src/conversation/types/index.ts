@@ -48,6 +48,9 @@ export type ToolCallsType = {
   job_id?: string;
   // The job's final status, patched onto the saved call when the job ends.
   job_status?: string;
+  /** When the job behind a handed-off call started and finished (patched on when it ends). */
+  job_started_at?: string;
+  job_finished_at?: string;
 };
 
 /** The arguments to show for a call: what it sends, not what the model asked. */
