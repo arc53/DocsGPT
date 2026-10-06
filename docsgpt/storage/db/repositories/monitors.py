@@ -117,7 +117,10 @@ class MonitorsRepository:
                 "name": strip_null_bytes(description)[:200],
                 "next_run_at": next_run_at,
                 "end_at": end_at,
-                "allowlist": json.dumps([approval["tool_id"]] if approval and approval.get("tool_id") else []),
+                # Only a call the user approved may run approval-gated, unattended.
+                "allowlist": json.dumps(
+                    [approval["tool_id"]] if approval and approval.get("tool_id") and approval.get("required") else []
+                ),
                 "token_budget": token_budget,
                 "conversation_id": str(conversation_id),
             },

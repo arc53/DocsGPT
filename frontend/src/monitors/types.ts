@@ -2,11 +2,7 @@
 export type MonitorStatus = 'active' | 'paused' | 'completed' | 'cancelled';
 
 export type MonitorSourceType =
-  | 'webpage'
-  | 'tool'
-  | 'ingest'
-  | 'webhook'
-  | 'approval';
+  'webpage' | 'tool' | 'ingest' | 'webhook' | 'approval';
 
 export interface MonitorLink {
   id: string;
@@ -26,6 +22,8 @@ export interface Monitor {
   status: MonitorStatus;
   source_type: MonitorSourceType;
   watching: string;
+  /** The URL, tool call or source id watched; none for links. */
+  target: string | null;
   interval: string | null;
   interval_seconds: number | null;
   conversation_id: string | null;

@@ -3181,5 +3181,48 @@
     "notWaiting": "Esta solicitud ya no espera una decisión.",
     "rateLimited": "Demasiados intentos. Espera un minuto y vuelve a intentarlo.",
     "submitError": "No se pudo enviar tu decisión. Inténtalo de nuevo."
+  },
+  "monitors": {
+    "label": "Monitores",
+    "subtitle": "Lo que el asistente vigila por ti: páginas, herramientas, enlaces webhook y enlaces de aprobación. Cada uno retoma su conversación cuando pasa algo.",
+    "empty": "Aún no hay monitores",
+    "emptyHint": "Pide al asistente en un chat que vigile algo, como “avísame cuando el precio baje de 90 $”.",
+    "loadError": "No se pudieron cargar tus monitores",
+    "actionError": "No funcionó. Inténtalo de nuevo.",
+    "untitled": "Monitor",
+    "watching": "Vigilando cambios",
+    "every": "Cada {{interval}}",
+    "onEvent": "Cuando ocurra",
+    "openConversation": "Abrir conversación",
+    "pause": "Pausar",
+    "resume": "Reanudar",
+    "cancel": "Cancelar monitor",
+    "menu": "Acciones de {{name}}",
+    "pausedBecause": "En pausa: {{reason}}",
+    "lastError": "Último problema: {{error}}",
+    "cancelConfirm": "¿Cancelar “{{name}}”?",
+    "cancelConsequence": "Deja de comprobar, sus enlaces dejan de funcionar y se retira cualquier aprobación que se le diera.",
+    "status": {
+      "active": "Activo",
+      "paused": "En pausa",
+      "completed": "Terminado",
+      "cancelled": "Cancelado"
+    },
+    "source": {
+      "webpage": "Página web",
+      "tool": "Herramienta",
+      "ingest": "Ingesta de conocimiento",
+      "webhook": "Enlace webhook",
+      "approval": "Enlace de aprobación"
+    },
+    "columns": {
+      "monitor": "Monitor",
+      "status": "Estado",
+      "interval": "Comprobaciones",
+      "lastChecked": "Última comprobación",
+      "wakesLeft": "Avisos restantes",
+      "expires": "Caduca",
+      "actions": "Acciones"
+    }
   }
 }

@@ -56,7 +56,8 @@ const monitorsService = {
         decision?: string | null;
         error?: string;
       }>(r);
-      if (r.ok) return { state: 'decided', decision: body?.decision ?? decision };
+      if (r.ok)
+        return { state: 'decided', decision: body?.decision ?? decision };
       if (r.status === 409)
         return { state: 'already', decision: body?.decision ?? null };
       if (r.status === 404) return { state: 'missing' };

@@ -69,7 +69,10 @@ describe('monitorsService management', () => {
     expect(await monitorsService.list('t', 'c 1')).toEqual([
       { monitor_id: 'm1' },
     ]);
-    expect(get).toHaveBeenCalledWith('/api/monitors?conversation_id=c%201', 't');
+    expect(get).toHaveBeenCalledWith(
+      '/api/monitors?conversation_id=c%201',
+      't',
+    );
   });
 
   it('rejects a failed action with the server message', async () => {

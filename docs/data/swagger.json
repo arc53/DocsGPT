@@ -4155,6 +4155,90 @@
         ]
       }
     },
+    "/api/monitors": {
+      "get": {
+        "description": "The caller's monitors, newest first: what each watches, its interval, last check, wakes left, expiry and links (never tokens or secrets).",
+        "operationId": "get_monitors",
+        "parameters": [
+          {
+            "description": "Only this conversation's monitors.",
+            "in": "query",
+            "name": "conversation_id",
+            "type": "string"
+          },
+          {
+            "description": "live (active and paused) or all (the default).",
+            "in": "query",
+            "name": "status",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "monitors"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/monitors/{monitor_id}": {
+      "get": {
+        "description": "One of the caller's monitors.",
+        "operationId": "get_monitor_detail",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "monitors"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "monitor_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/monitors/{monitor_id}/{action}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "monitor_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Pause, resume or cancel one of the caller's monitors. Cancelling revokes its links and any approval its source was given; resuming a polled monitor checks it again right away. 409 when the monitor is not in a state the action applies to.",
+        "operationId": "post_monitor_action",
+        "parameters": [
+          {
+            "description": "pause, resume or cancel",
+            "in": "path",
+            "name": "action",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "monitors"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/parse_spec": {
       "post": {
         "description": "Parse an API specification (OpenAPI 3.x or Swagger 2.0) and return actions",
@@ -6420,6 +6504,10 @@
     {
       "description": "Public human approval links of monitors",
       "name": "approvals"
+    },
+    {
+      "description": "The caller's monitors (Settings > Monitors)",
+      "name": "monitors"
     },
     {
       "description": "Prompt management operations",

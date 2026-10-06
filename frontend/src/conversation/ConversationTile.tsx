@@ -19,6 +19,7 @@ import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { useOutsideAlerter } from '../hooks';
+import WatchingMark from '../monitors/WatchingMark';
 
 interface ConversationProps {
   name: string;
@@ -209,6 +210,7 @@ export default function ConversationTile({
               <span className="truncate" title={conversationName}>
                 {conversationName}
               </span>
+              <WatchingMark conversationId={conversation.id} />
             </Link>
           </Button>
         )}

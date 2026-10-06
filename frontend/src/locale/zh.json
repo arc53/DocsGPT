@@ -3168,5 +3168,48 @@
     "notWaiting": "此请求已不再等待决定。",
     "rateLimited": "尝试次数过多。请等一分钟后重试。",
     "submitError": "无法发送你的决定。请重试。"
+  },
+  "monitors": {
+    "label": "监控",
+    "subtitle": "助手为你关注的内容：网页、工具、Webhook 链接和审批链接。一旦有事发生，就会在对应的对话中继续。",
+    "empty": "还没有监控",
+    "emptyHint": "在聊天中请助手关注某件事，例如“价格低于 90 美元时告诉我”。",
+    "loadError": "无法加载你的监控",
+    "actionError": "操作失败，请重试。",
+    "untitled": "监控",
+    "watching": "正在关注变化",
+    "every": "每 {{interval}}",
+    "onEvent": "发生时",
+    "openConversation": "打开对话",
+    "pause": "暂停",
+    "resume": "恢复",
+    "cancel": "取消监控",
+    "menu": "{{name}} 的操作",
+    "pausedBecause": "已暂停：{{reason}}",
+    "lastError": "最近的问题：{{error}}",
+    "cancelConfirm": "取消“{{name}}”？",
+    "cancelConsequence": "它将停止检查，链接将失效，已授予的批准也会撤回。",
+    "status": {
+      "active": "运行中",
+      "paused": "已暂停",
+      "completed": "已完成",
+      "cancelled": "已取消"
+    },
+    "source": {
+      "webpage": "网页",
+      "tool": "工具",
+      "ingest": "知识导入",
+      "webhook": "Webhook 链接",
+      "approval": "审批链接"
+    },
+    "columns": {
+      "monitor": "监控",
+      "status": "状态",
+      "interval": "检查频率",
+      "lastChecked": "上次检查",
+      "wakesLeft": "剩余唤醒次数",
+      "expires": "到期",
+      "actions": "操作"
+    }
   }
 }

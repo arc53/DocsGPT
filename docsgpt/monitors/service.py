@@ -191,6 +191,18 @@ def source_summary(source: Dict[str, Any]) -> str:
     return "a decision on an approval link"
 
 
+def source_target(source: Dict[str, Any]) -> Optional[str]:
+    """The non-secret thing a monitor points at: a URL, a tool call or a source id (links have none)."""
+    kind = source.get("type")
+    if kind == "webpage":
+        return source.get("url")
+    if kind == "tool":
+        return str(source.get("tool") or "") + (f".{source['action']}" if source.get("action") else "") or None
+    if kind == "ingest":
+        return source.get("source_id")
+    return None
+
+
 def _baseline_summary(request: MonitorRequest, content: Content, evaluation) -> Dict[str, Any]:
     out: Dict[str, Any] = {"summary": evaluation.summary}
     if "value" in evaluation.detail:
@@ -447,6 +459,7 @@ def view(monitor: Dict[str, Any], *, links_rows: Optional[List[Dict[str, Any]]] 
         "status": monitor.get("status"),
         "source_type": monitor.get("source_type"),
         "watching": source_summary(source),
+        "target": source_target(source),
         "check": spec.get("check"),
         "condition": spec.get("condition"),
         "on_match": monitor.get("on_match"),

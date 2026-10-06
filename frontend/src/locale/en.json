@@ -3226,5 +3226,48 @@
     "notWaiting": "This request is no longer waiting for a decision.",
     "rateLimited": "Too many attempts. Wait a minute and try again.",
     "submitError": "Your decision couldn't be sent. Try again."
+  },
+  "monitors": {
+    "label": "Monitors",
+    "subtitle": "Things the assistant is watching for you: pages, tools, webhook links and approval links. Each one resumes its conversation when something happens.",
+    "empty": "No monitors yet",
+    "emptyHint": "Ask the assistant in a chat to watch something, like “tell me when the price drops below $90”.",
+    "loadError": "Couldn't load your monitors",
+    "actionError": "That didn't work. Try again.",
+    "untitled": "Monitor",
+    "watching": "Watching for changes",
+    "every": "Every {{interval}}",
+    "onEvent": "When it happens",
+    "openConversation": "Open conversation",
+    "pause": "Pause",
+    "resume": "Resume",
+    "cancel": "Cancel monitor",
+    "menu": "Actions for {{name}}",
+    "pausedBecause": "Paused: {{reason}}",
+    "lastError": "Last problem: {{error}}",
+    "cancelConfirm": "Cancel “{{name}}”?",
+    "cancelConsequence": "It stops checking, its links stop working, and any approval it was given is withdrawn.",
+    "status": {
+      "active": "Active",
+      "paused": "Paused",
+      "completed": "Finished",
+      "cancelled": "Cancelled"
+    },
+    "source": {
+      "webpage": "Web page",
+      "tool": "Tool",
+      "ingest": "Knowledge ingest",
+      "webhook": "Webhook link",
+      "approval": "Approval link"
+    },
+    "columns": {
+      "monitor": "Monitor",
+      "status": "Status",
+      "interval": "Checks",
+      "lastChecked": "Last checked",
+      "wakesLeft": "Wakes left",
+      "expires": "Expires",
+      "actions": "Actions"
+    }
   }
 }

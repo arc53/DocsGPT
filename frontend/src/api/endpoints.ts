@@ -235,8 +235,7 @@ const endpoints = {
         : '/api/monitors',
     MONITOR_ACTION: (id: string, action: 'pause' | 'resume' | 'cancel') =>
       `/api/monitors/${encodeURIComponent(id)}/${action}`,
-    APPROVAL: (token: string) =>
-      `/api/approvals/${encodeURIComponent(token)}`,
+    APPROVAL: (token: string) => `/api/approvals/${encodeURIComponent(token)}`,
   },
   V1: {
     CHAT_COMPLETIONS: '/v1/chat/completions',

@@ -120,14 +120,14 @@ export default function ApprovalPage() {
   return shell(
     <Card variant="outline" padding="lg" className="gap-5">
       <SectionHeader
-        as="h1"
+        as="h2"
         size="title"
         title={view.question || t('approval.untitled')}
         description={view.title || undefined}
       />
       {view.details && (
         <p
-          className="text-foreground text-sm whitespace-pre-wrap wrap-break-word"
+          className="text-foreground text-sm wrap-break-word whitespace-pre-wrap"
           data-testid="approval-details"
         >
           {view.details}

@@ -38,7 +38,7 @@ def _create(repo, conversation_id, **overrides):
 class TestCreateAndRead:
     def test_create_joins_the_schedule(self, pg_conn):
         repo = MonitorsRepository(pg_conn)
-        row = _create(repo, _conversation(pg_conn), approval={"tool_id": "t1", "args_hash": "h"})
+        row = _create(repo, _conversation(pg_conn), approval={"tool_id": "t1", "args_hash": "h", "required": True})
         assert row["id"] == row["schedule_id"]
         assert row["status"] == "active"
         assert row["on_match"] == "tell me the price"
@@ -47,6 +47,11 @@ class TestCreateAndRead:
         schedule = SchedulesRepository(pg_conn).get_internal(row["id"])
         assert schedule["trigger_type"] == "monitor"
         assert schedule["tool_allowlist"] == ["t1"]
+
+    def test_a_call_that_needs_no_approval_is_not_allowlisted(self, pg_conn):
+        repo = MonitorsRepository(pg_conn)
+        row = _create(repo, _conversation(pg_conn), approval={"tool_id": "t1", "args_hash": "h", "required": False})
+        assert SchedulesRepository(pg_conn).get_internal(row["id"])["tool_allowlist"] == []
 
     def test_get_is_owner_scoped(self, pg_conn):
         repo = MonitorsRepository(pg_conn)

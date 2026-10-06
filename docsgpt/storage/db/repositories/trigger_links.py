@@ -113,6 +113,23 @@ class TriggerLinksRepository:
         ).fetchall()
         return [row_to_dict(r) for r in rows]
 
+    def list_for_monitors(self, monitor_ids: List[str]) -> Dict[str, List[dict]]:
+        """Links of several monitors at once, keyed by monitor id (oldest first)."""
+        ids = [str(i) for i in monitor_ids if looks_like_uuid(str(i))]
+        if not ids:
+            return {}
+        rows = self._conn.execute(
+            text(
+                "SELECT * FROM trigger_links WHERE monitor_id = ANY(CAST(:ids AS uuid[])) ORDER BY created_at"
+            ),
+            {"ids": ids},
+        ).fetchall()
+        out: Dict[str, List[dict]] = {}
+        for row in rows:
+            link = row_to_dict(row)
+            out.setdefault(str(link["monitor_id"]), []).append(link)
+        return out
+
     def count_hit(self, link_id: str) -> Optional[dict]:
         """Count one accepted request on a live link; None when it no longer works."""
         row = self._conn.execute(

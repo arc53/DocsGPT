@@ -12,6 +12,7 @@ from docsgpt.core.settings import settings
 from docsgpt.monitors import judge, tick
 from docsgpt.monitors.checks import Content
 from docsgpt.monitors.fetch import SourceError, SourceRevoked, SourceUnreachable
+from docsgpt.monitors.spec import parse_iso
 from docsgpt.storage.db.repositories.monitors import MonitorsRepository
 from docsgpt.storage.db.repositories.trigger_links import TriggerHitsRepository, TriggerLinksRepository
 
@@ -98,10 +99,10 @@ class TestDispatch:
         later = make_monitor(mon_db, conversation_id, next_run_at=datetime.now(timezone.utc) + timedelta(hours=1))
         counts = tick.dispatch_due_monitors()
         assert counts["ticked"] == 1 and queued["ticks"] == [[due["id"]]]
-        advanced = reload(mon_db, due["id"])["next_run_at"]
+        advanced = parse_iso(reload(mon_db, due["id"])["next_run_at"])
         assert advanced > datetime.now(timezone.utc) + timedelta(minutes=14)
         assert advanced.minute not in (0, 30)
-        assert reload(mon_db, later["id"])["next_run_at"] > datetime.now(timezone.utc)
+        assert parse_iso(reload(mon_db, later["id"])["next_run_at"]) > datetime.now(timezone.utc)
         # The same slot is never handed out twice.
         assert tick.dispatch_due_monitors()["ticked"] == 0
 
