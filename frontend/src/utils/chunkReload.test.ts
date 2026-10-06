@@ -58,9 +58,16 @@ describe('installChunkReload', () => {
 
   it('reloads once when a chunk fails to load', () => {
     const { reload, fire } = setup();
-    const event = fire();
-    expect(event.defaultPrevented).toBe(true);
+    fire();
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('never cancels the event, so the original chunk error still throws', () => {
+    // preventDefault() makes Vite resolve the import to undefined, which
+    // React.lazy turns into a different, unrecognisable error until the
+    // reload lands.
+    const { fire } = setup();
+    expect(fire().defaultPrevented).toBe(false);
   });
 
   it('lets the error surface on a second failure within a minute', () => {
@@ -74,7 +81,7 @@ describe('installChunkReload', () => {
   it('reloads again once the minute has passed', () => {
     const { reload, fire, storage } = setup();
     storage.setItem('docsgpt:chunk-reload-at', String(Date.now() - 61_000));
-    expect(fire().defaultPrevented).toBe(true);
+    fire();
     expect(reload).toHaveBeenCalledTimes(1);
   });
 

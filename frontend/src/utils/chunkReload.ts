@@ -60,7 +60,7 @@ export function installChunkReload(
   win: ReloadWindow = window,
   storage: ReloadStorage = sessionStore,
 ): void {
-  win.addEventListener('vite:preloadError', (event) => {
+  win.addEventListener('vite:preloadError', () => {
     try {
       const last = Number(storage.getItem(RELOAD_KEY) ?? 0);
       if (Date.now() - last < RELOAD_GUARD_MS) return;
@@ -68,7 +68,8 @@ export function installChunkReload(
     } catch {
       return;
     }
-    event.preventDefault();
+    // Not preventDefault(): that makes Vite resolve the import to undefined,
+    // and React.lazy would report a different error until the reload lands.
     win.location.reload();
   });
 }
