@@ -1887,7 +1887,7 @@ class TestTextToSpeech:
         with app.test_request_context("/api/tts", method="POST", json={"text": None}):
             response = TextToSpeech().post()
             assert _get_response_status(response) == 400
-            assert _get_response_json(response) == {"success": False}
+            assert _get_response_json(response) == {"success": False, "message": "Text is required"}
         mock_create_tts.assert_not_called()
 
     @patch("docsgpt.api.user.attachments.routes.TTSCreator.create_tts")
