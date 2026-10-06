@@ -1404,6 +1404,76 @@ class TestExecuteStepToolsWithRefinement:
 
         assert was_empty is False
 
+    def test_raising_tool_becomes_error_result_and_batch_continues(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_handler,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+    ):
+        """A tool that raises answers its call with an error; the next call still runs."""
+        agent = ResearchAgent(**agent_base_params)
+
+        from docsgpt.llm.handlers.base import ToolCall
+
+        broken = ToolCall(id="tc1", name="api__fetch", arguments={"url": "x"})
+        working = ToolCall(id="tc2", name="internal__search", arguments={"query": "q"})
+
+        def gen_execute(tools_dict, tc, llm_class):
+            yield {"type": "tool_call", "data": {"action_name": tc.name, "status": "pending"}}
+            if tc.id == "tc1":
+                raise RuntimeError("upstream 502")
+            return ("Search result text", "tc2")
+
+        agent.tool_executor.execute = gen_execute
+        mock_llm_handler.create_tool_message = Mock(
+            side_effect=lambda call, result: {"role": "tool", "tool_call_id": call.id, "content": result}
+        )
+
+        messages, _ = agent._execute_step_tools_with_refinement(
+            [broken, working], {}, [{"role": "user", "content": "query"}], agent.tool_executor, False
+        )
+
+        declared = [m["tool_calls"][0]["id"] for m in messages if m.get("role") == "assistant"]
+        tool_msgs = [m for m in messages if m.get("role") == "tool"]
+        assert declared == ["tc1", "tc2"]
+        assert [m["tool_call_id"] for m in tool_msgs] == ["tc1", "tc2"]
+        assert "upstream 502" in tool_msgs[0]["content"]
+        assert tool_msgs[1]["content"] == "Search result text"
+
+    def test_raising_tool_without_call_id_gets_a_matching_id(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_handler,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+    ):
+        """A provider call with no id still gets the same id on its call and its error result."""
+        agent = ResearchAgent(**agent_base_params)
+
+        from docsgpt.llm.handlers.base import ToolCall
+
+        call = ToolCall(id="", name="api__fetch", arguments={})
+
+        def gen_execute(tools_dict, tc, llm_class):
+            raise RuntimeError("boom")
+            yield  # noqa: B901 - makes it a generator
+
+        agent.tool_executor.execute = gen_execute
+        mock_llm_handler.create_tool_message = Mock(
+            side_effect=lambda call, result: {"role": "tool", "tool_call_id": call.id, "content": result}
+        )
+
+        messages, _ = agent._execute_step_tools_with_refinement(
+            [call], {}, [], agent.tool_executor, False
+        )
+
+        assistant_id = messages[0]["tool_calls"][0]["id"]
+        assert assistant_id
+        assert messages[1]["tool_call_id"] == assistant_id
+
 
 # =====================================================================
 # _planning_phase extended (edge cases in JSON parsing)

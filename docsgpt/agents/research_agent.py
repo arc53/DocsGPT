@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from typing import Any, Dict, Generator, List, Optional
 
 from docsgpt import tracing
@@ -11,7 +12,7 @@ from docsgpt.agents.tools.graph_search import add_graph_search_tool
 from docsgpt.agents.tools.internal_search import add_internal_search_tool
 from docsgpt.agents.tools.wiki import add_wiki_tool
 from docsgpt.agents.tools.think import THINK_TOOL_ENTRY, THINK_TOOL_ID
-from docsgpt.llm.handlers.base import take_tool_images
+from docsgpt.llm.handlers.base import ToolCall, take_tool_images
 from docsgpt.logging import LogContext
 
 logger = logging.getLogger(__name__)
@@ -599,24 +600,7 @@ class ResearchAgent(BaseAgent):
             if refusal is not None:
                 result, call_id = refusal
             else:
-                gen = executor.execute(
-                    tools_dict, call, self.llm.__class__.__name__
-                )
-                result = None
-                call_id = None
-                while True:
-                    try:
-                        event = next(gen)
-                        # Log tool_call status events instead of discarding them
-                        if isinstance(event, dict) and event.get("type") == "tool_call":
-                            logger.debug(
-                                "Tool %s status: %s",
-                                event.get("data", {}).get("action_name", ""),
-                                event.get("data", {}).get("status", ""),
-                            )
-                    except StopIteration as e:
-                        result, call_id = e.value
-                        break
+                result, call_id = self._run_step_tool(tools_dict, call, executor)
 
             # Detect empty search results for refinement
             is_search = "search" in (call.name or "").lower()
@@ -648,9 +632,44 @@ class ResearchAgent(BaseAgent):
                     "function": {"name": call.name, "arguments": args_str},
                 }],
             })
-            tool_message = self.llm_handler.create_tool_message(call, result)
+            # Answer the id declared above, not the raw ``call.id``, which a
+            # provider may leave empty (the executor then mints one).
+            resolved_call = ToolCall(id=call_id, name=call.name, arguments=call.arguments)
+            tool_message = self.llm_handler.create_tool_message(resolved_call, result)
             messages.append(take_tool_images(executor, tool_message))
         return messages, search_returned_empty
+
+    def _run_step_tool(self, tools_dict: Dict, call, executor: ToolExecutor) -> tuple[Any, str]:
+        """Run one tool call for a research step, turning a raised error into its result.
+
+        As in the chat handler, a failing tool answers its call with the error
+        so the model can work around it, instead of ending the whole run.
+
+        Args:
+            tools_dict: The step's tools.
+            call: The model's tool call.
+            executor: The run's executor.
+
+        Returns:
+            ``(tool result, call id)``.
+        """
+        gen = executor.execute(tools_dict, call, self.llm.__class__.__name__)
+        try:
+            while True:
+                try:
+                    event = next(gen)
+                except StopIteration as e:
+                    return e.value
+                # Log tool_call status events instead of discarding them
+                if isinstance(event, dict) and event.get("type") == "tool_call":
+                    logger.debug(
+                        "Tool %s status: %s",
+                        event.get("data", {}).get("action_name", ""),
+                        event.get("data", {}).get("status", ""),
+                    )
+        except Exception as e:
+            logger.error(f"Research step tool {call.name} failed: {e}", exc_info=True)
+            return f"Error executing tool: {e}", call.id or str(uuid.uuid4())
 
     def _refuse_paused_call(
         self, tools_dict: Dict, call, executor: ToolExecutor
