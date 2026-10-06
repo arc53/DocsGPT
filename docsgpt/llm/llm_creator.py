@@ -1,8 +1,27 @@
 import logging
+import uuid
 
 from docsgpt.llm.providers import PROVIDERS_BY_NAME
 
 logger = logging.getLogger(__name__)
+
+
+class ModelNotAvailableError(ValueError):
+    """The requested model is not registered, so it has no endpoint to call."""
+
+    def __init__(self, model_id, reason: str = "") -> None:
+        message = f"Model {model_id!r} is not available" if model_id else "No model is available"
+        super().__init__(f"{message}{': ' + reason if reason else '.'}")
+        self.model_id = model_id
+
+
+def _is_custom_model_id(model_id) -> bool:
+    """True for ids shaped like a user's custom-model record (a UUID)."""
+    try:
+        uuid.UUID(str(model_id))
+    except ValueError:
+        return False
+    return True
 
 
 class LLMCreator:
@@ -28,6 +47,20 @@ class LLMCreator:
         for shared-agent dispatch, where the agent's stored
         ``default_model_id`` is the owner's BYOM UUID but
         ``decoded_token`` represents the caller.
+
+        A registered model decides its own provider, key and endpoint
+        together; the caller's ``type`` and ``api_key`` only stand in for a
+        model the registry does not know, and only for a provider whose LLM
+        class has a fixed endpoint of its own.
+
+        Raises:
+            ModelNotAvailableError: ``model_id`` is not registered and the
+                request has no endpoint of its own to go to: the provider is
+                ``openai_compatible`` (each of its models carries its own
+                endpoint and key), or the id is a custom model's that does not
+                resolve. Also raised for ``openai_compatible`` with no model.
+            ValueError: ``type`` is not a dispatchable provider, or a custom
+                model cannot be dispatched safely.
         """
         from docsgpt.core.model_registry import ModelRegistry
         from docsgpt.security.safe_url import (
@@ -60,7 +93,42 @@ class LLMCreator:
                     (decoded_token or {}).get("sub") if decoded_token else None
                 )
             model = ModelRegistry.get_instance().get_model(model_id, user_id=user_id)
-            if model is not None:
+            if model is None:
+                # Fail closed. Without a registered model there is no
+                # endpoint to pair the key with: the OpenAI client would
+                # fall back to OPENAI_BASE_URL or api.openai.com and
+                # authenticate with whatever key the caller resolved.
+                if plugin.name == "openai_compatible":
+                    raise ModelNotAvailableError(
+                        model_id,
+                        "it is not in the model registry, so it has no endpoint or key of its own.",
+                    )
+                if _is_custom_model_id(model_id):
+                    raise ModelNotAvailableError(
+                        model_id,
+                        "no custom model with this id is available to this user.",
+                    )
+            else:
+                model_provider = getattr(model, "provider", None)
+                model_plugin = PROVIDERS_BY_NAME.get(str(getattr(model_provider, "value", model_provider)))
+                if (
+                    model_plugin is not None
+                    and model_plugin is not plugin
+                    and model_plugin.llm_class is not None
+                ):
+                    # The caller resolved another provider (a stale stored
+                    # llm_name, a display label, LLM_PROVIDER). The model's
+                    # own provider decides, and the caller's key, resolved
+                    # for the other provider, is not sent.
+                    logger.info(
+                        "Model %s belongs to provider %s, not %s; dispatching it through %s.",
+                        model_id,
+                        model_plugin.name,
+                        plugin.name,
+                        model_plugin.name,
+                    )
+                    plugin = model_plugin
+                    api_key = model_plugin.get_api_key(_settings()) or None
                 # Forward registry caps so the LLM enforces them at
                 # dispatch (built-in classes hard-code True otherwise).
                 capabilities = getattr(model, "capabilities", None)
@@ -77,6 +145,10 @@ class LLMCreator:
                     )
                 if model.api_key:
                     api_key = model.api_key
+                elif plugin.name == "openai_compatible":
+                    # Its key travels with its endpoint; a keyless one
+                    # (a local server) gets none rather than the caller's.
+                    api_key = None
                 if model.base_url:
                     base_url = model.base_url
                 # For BYOM the registry id is a UUID; the upstream API
@@ -110,6 +182,12 @@ class LLMCreator:
                                 f"Refusing to dispatch model {model_id!r}: {e}"
                             ) from e
 
+        elif plugin.name == "openai_compatible":
+            raise ModelNotAvailableError(
+                None,
+                "openai_compatible needs a model id; its models each carry their own endpoint and key.",
+            )
+
         # Forward model_user_id so backup/fallback resolves under the
         # owner's scope on shared-agent dispatch.
         llm = plugin.llm_class(
@@ -135,3 +213,10 @@ class LLMCreator:
         # Calls to a user's own model are recorded at $0 (see ``docsgpt/usage.py``).
         llm._is_byom = model is not None and getattr(model, "source", "builtin") == "user"
         return llm
+
+
+def _settings():
+    """The process settings (imported lazily, as the rest of this module does)."""
+    from docsgpt.core.settings import settings
+
+    return settings

@@ -508,16 +508,14 @@ class TestSecurityDispatchSSRFGuard:
         with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
             uuid = "0b7e0f4c-1234-5678-9abc-deadbeef0102"
-            reg._builtin_models = {
-                uuid: AvailableModel(
-                    id=uuid,
-                    provider=ModelProvider.OPENAI_COMPATIBLE,
-                    display_name="builtin",
-                    base_url=None,
-                    upstream_model_id="gpt-4",
-                    source="builtin",
-                )
-            }
+            reg.models[uuid] = AvailableModel(
+                id=uuid,
+                provider=ModelProvider.OPENAI_COMPATIBLE,
+                display_name="builtin",
+                base_url=None,
+                upstream_model_id="gpt-4",
+                source="builtin",
+            )
 
             from docsgpt.llm.llm_creator import LLMCreator
             from docsgpt.llm.providers import PROVIDERS_BY_NAME

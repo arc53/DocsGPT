@@ -8,6 +8,7 @@ from google.genai import types
 from docsgpt.core.settings import settings
 
 from docsgpt.llm.base import BaseLLM
+from docsgpt.llm.credential_scope import GOOGLE_BASE_URL, check_credential_scope
 from docsgpt.llm.handlers.google import _decode_thought_signature
 from docsgpt.llm.tool_images import follow_up_note, native_tool_images, reads_images, tool_result
 from docsgpt.storage.storage_creator import StorageCreator
@@ -53,10 +54,23 @@ class GoogleLLM(BaseLLM):
         self, api_key=None, user_api_key=None, decoded_token=None, *args, **kwargs
     ):
         super().__init__(decoded_token=decoded_token, *args, **kwargs)
-        self.api_key = api_key or settings.GOOGLE_API_KEY or settings.API_KEY
+        # ``API_KEY`` is Google's only when LLM_PROVIDER says so.
+        self.api_key = (
+            api_key
+            or settings.GOOGLE_API_KEY
+            or (settings.API_KEY if settings.LLM_PROVIDER == "google" else None)
+        )
         self.user_api_key = user_api_key
+        check_credential_scope(self.api_key, GOOGLE_BASE_URL, self.provider_name)
 
-        self.client = genai.Client(api_key=self.api_key)
+        # Pin the client to the endpoint just checked. Left to itself the SDK
+        # takes GOOGLE_GEMINI_BASE_URL, or switches to Vertex AI on
+        # GOOGLE_GENAI_USE_VERTEXAI, and sends the key there.
+        self.client = genai.Client(
+            api_key=self.api_key,
+            vertexai=False,
+            http_options={"base_url": GOOGLE_BASE_URL},
+        )
         self.storage = StorageCreator.get_storage()
 
     def get_supported_attachment_types(self):
