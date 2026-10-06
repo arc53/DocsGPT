@@ -135,6 +135,12 @@ export const SETTINGS_SECTION: Section = {
           icon: Wrench,
         },
         {
+          key: 'monitors',
+          path: '/settings/monitors',
+          labelKey: 'monitors.label',
+          icon: Radar,
+        },
+        {
           key: 'customModels',
           path: '/settings/custom-models',
           labelKey: 'settings.customModels.label',
@@ -163,12 +169,6 @@ export const SETTINGS_SECTION: Section = {
           path: '/settings/logs',
           labelKey: 'settings.logs.label',
           icon: ScrollText,
-        },
-        {
-          key: 'monitors',
-          path: '/settings/monitors',
-          labelKey: 'monitors.label',
-          icon: Radar,
         },
       ],
     },

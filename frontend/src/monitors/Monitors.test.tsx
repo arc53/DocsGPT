@@ -94,6 +94,52 @@ describe('Monitors page', () => {
     expect(text).toContain('monitors.pausedBecause');
   });
 
+  it('says why a monitor ended, and shows a problem only when there is one', async () => {
+    service.list.mockResolvedValue([
+      sampleMonitor({
+        monitor_id: 'decided',
+        status: 'completed',
+        paused_reason: 'decided',
+        last_error: null,
+      }),
+      sampleMonitor({
+        monitor_id: 'odd',
+        status: 'cancelled',
+        paused_reason: 'something new',
+        last_error: null,
+      }),
+      sampleMonitor({ monitor_id: 'broken', last_error: 'HTTP 404' }),
+    ]);
+    await render();
+    const lines = Array.from(
+      container.querySelectorAll('tbody [data-testid="monitor-status-line"]'),
+    ).map((p) => p.textContent);
+    expect(lines).toEqual([
+      'monitors.finished.decided',
+      'monitors.endedBecause',
+    ]);
+    const errors = container.querySelectorAll(
+      'tbody [data-testid="monitor-last-error"]',
+    );
+    expect(errors).toHaveLength(1);
+  });
+
+  it("shows the expiry in the reader's locale with its time zone", async () => {
+    service.list.mockResolvedValue([
+      sampleMonitor({ expires_at: '2026-10-20T09:44:00Z' }),
+    ]);
+    await render();
+    const expected = new Intl.DateTimeFormat(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short',
+    }).format(new Date('2026-10-20T09:44:00Z'));
+    expect(container.querySelector('tbody')?.textContent).toContain(expected);
+  });
+
   it('shows the empty state', async () => {
     service.list.mockResolvedValue([]);
     await render();

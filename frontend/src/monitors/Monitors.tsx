@@ -31,7 +31,7 @@ import type { AppDispatch } from '@/store';
 import {
   EMPTY_VALUE,
   formatCount,
-  formatDateTime,
+  formatDeadline,
   formatRelative,
 } from '@/utils/dateTimeUtils';
 
@@ -52,6 +52,17 @@ const STATUS_VARIANT: Record<MonitorStatus, 'success' | 'warning' | 'neutral'> =
   };
 
 const LIVE: ReadonlySet<MonitorStatus> = new Set(['active', 'paused']);
+
+/** Why a monitor ended (`paused_reason` on a finished one), as the server words it. */
+const FINISH_REASON_KEYS: Record<string, string> = {
+  decided: 'monitors.finished.decided',
+  'used all its wakes': 'monitors.finished.usedAllWakes',
+  expired: 'monitors.finished.expired',
+  'cancelled by the user': 'monitors.finished.cancelledByUser',
+  'cancelled from the chat': 'monitors.finished.cancelledFromChat',
+  'its conversation can no longer be resumed':
+    'monitors.finished.conversationGone',
+};
 
 /** Live monitors first, then finished ones; newest first within each. */
 const ordered = (monitors: Monitor[]) => [
@@ -126,7 +137,27 @@ export default function Monitors() {
     `${formatCount(monitor.wakes_left)} / ${formatCount(monitor.max_wakes)}`;
 
   const expires = (monitor: Monitor) =>
-    monitor.expires_at ? formatDateTime(monitor.expires_at) : EMPTY_VALUE;
+    monitor.expires_at ? formatDeadline(monitor.expires_at) : EMPTY_VALUE;
+
+  /** The paused or finished reason, as a status line; nothing for a running monitor. */
+  const statusLine = (monitor: Monitor): string | null => {
+    const reason = monitor.paused_reason;
+    if (!reason) return null;
+    if (monitor.status === 'paused') {
+      return t('monitors.pausedBecause', {
+        reason,
+        interpolation: { escapeValue: false },
+      });
+    }
+    if (LIVE.has(monitor.status)) return null;
+    const key = FINISH_REASON_KEYS[reason];
+    return key
+      ? t(key)
+      : t('monitors.endedBecause', {
+          reason,
+          interpolation: { escapeValue: false },
+        });
+  };
 
   const menu = (monitor: Monitor): MenuOption[] => {
     const options: MenuOption[] = [];
@@ -185,20 +216,24 @@ export default function Monitors() {
           </>
         ) : null}
       </p>
-      {(monitor.paused_reason || monitor.last_error) && (
+      {statusLine(monitor) && (
         <p
           className="text-muted-foreground text-xs wrap-break-word"
-          title={monitor.last_error ?? undefined}
+          data-testid="monitor-status-line"
         >
-          {monitor.status === 'paused' && monitor.paused_reason
-            ? t('monitors.pausedBecause', {
-                reason: monitor.paused_reason,
-                interpolation: { escapeValue: false },
-              })
-            : t('monitors.lastError', {
-                error: monitor.last_error,
-                interpolation: { escapeValue: false },
-              })}
+          {statusLine(monitor)}
+        </p>
+      )}
+      {monitor.last_error && (
+        <p
+          className="text-muted-foreground text-xs wrap-break-word"
+          title={monitor.last_error}
+          data-testid="monitor-last-error"
+        >
+          {t('monitors.lastError', {
+            error: monitor.last_error,
+            interpolation: { escapeValue: false },
+          })}
         </p>
       )}
     </div>

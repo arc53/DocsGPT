@@ -3291,6 +3291,15 @@
       "revealFailed": "No se pudo cargar el secreto. Inténtalo de nuevo.",
       "revealLimited": "Demasiadas solicitudes. Inténtalo de nuevo en un minuto.",
       "revealMissing": "Este enlace ya no tiene secreto: terminó o se canceló."
-    }
+    },
+    "finished": {
+      "decided": "Terminado: se tomó la decisión",
+      "usedAllWakes": "Terminado: avisó todas las veces previstas",
+      "expired": "Terminado: caducó",
+      "cancelledByUser": "Cancelado por ti",
+      "cancelledFromChat": "Cancelado desde el chat",
+      "conversationGone": "Terminado: su conversación ya no se puede reanudar"
+    },
+    "endedBecause": "Terminado: {{reason}}"
   }
 }

@@ -3291,6 +3291,15 @@
       "revealFailed": "Das Geheimnis konnte nicht geladen werden. Versuch es noch einmal.",
       "revealLimited": "Zu viele Anfragen. Versuch es in einer Minute noch einmal.",
       "revealMissing": "Dieser Link hat kein Geheimnis mehr: Er ist abgelaufen oder wurde beendet."
-    }
+    },
+    "finished": {
+      "decided": "Beendet: Die Entscheidung ist gefallen",
+      "usedAllWakes": "Beendet: Alles Vorgesehene wurde gemeldet",
+      "expired": "Beendet: abgelaufen",
+      "cancelledByUser": "Von dir beendet",
+      "cancelledFromChat": "Im Chat beendet",
+      "conversationGone": "Beendet: Die Unterhaltung kann nicht mehr fortgesetzt werden"
+    },
+    "endedBecause": "Beendet: {{reason}}"
   }
 }

@@ -3278,6 +3278,15 @@
       "revealFailed": "无法加载密钥，请重试。",
       "revealLimited": "请求过多，请一分钟后再试。",
       "revealMissing": "此链接已没有密钥：它已结束或已被取消。"
-    }
+    },
+    "finished": {
+      "decided": "已结束：已做出决定",
+      "usedAllWakes": "已结束：已完成所有预定通知",
+      "expired": "已结束：已过期",
+      "cancelledByUser": "已由你取消",
+      "cancelledFromChat": "已在对话中取消",
+      "conversationGone": "已结束：其对话已无法继续"
+    },
+    "endedBecause": "已结束：{{reason}}"
   }
 }

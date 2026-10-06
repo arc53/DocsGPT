@@ -3279,6 +3279,15 @@
       "revealFailed": "無法載入密鑰，請再試一次。",
       "revealLimited": "請求過多，請一分鐘後再試。",
       "revealMissing": "此連結已沒有密鑰：它已結束或已被取消。"
-    }
+    },
+    "finished": {
+      "decided": "已結束：已做出決定",
+      "usedAllWakes": "已結束：已完成所有預定通知",
+      "expired": "已結束：已過期",
+      "cancelledByUser": "已由你取消",
+      "cancelledFromChat": "已在對話中取消",
+      "conversationGone": "已結束：其對話已無法繼續"
+    },
+    "endedBecause": "已結束：{{reason}}"
   }
 }

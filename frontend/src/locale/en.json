@@ -3336,6 +3336,15 @@
       "revealFailed": "Couldn't load the secret. Try again.",
       "revealLimited": "Too many requests. Try again in a minute.",
       "revealMissing": "This link has no secret any more: it ended or was cancelled."
-    }
+    },
+    "finished": {
+      "decided": "Finished: the decision was made",
+      "usedAllWakes": "Finished: it reported everything it was set up to",
+      "expired": "Finished: it expired",
+      "cancelledByUser": "Cancelled by you",
+      "cancelledFromChat": "Cancelled from the chat",
+      "conversationGone": "Ended: its conversation can no longer be resumed"
+    },
+    "endedBecause": "Ended: {{reason}}"
   }
 }

@@ -76,6 +76,18 @@ describe('getActiveItem', () => {
   });
 });
 
+describe('monitors in settings', () => {
+  it('sit with the workspace tools, not under insights', () => {
+    const groups = getVisibleGroups(SETTINGS_SECTION, { isAdmin: false });
+    const workspace = groups.find((group) => group.key === 'workspace');
+    const insights = groups.find((group) => group.key === 'insights');
+    expect(workspace?.items.map((i) => i.key)).toContain('monitors');
+    expect(insights?.items.map((i) => i.key)).not.toContain('monitors');
+    const keys = workspace?.items.map((i) => i.key) ?? [];
+    expect(keys.indexOf('monitors')).toBe(keys.indexOf('tools') + 1);
+  });
+});
+
 describe('getVisibleGroups', () => {
   it('hides admin-only entries and the group left empty by them', () => {
     const groups = getVisibleGroups(SETTINGS_SECTION, { isAdmin: false });

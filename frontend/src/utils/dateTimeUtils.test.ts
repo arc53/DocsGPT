@@ -6,6 +6,7 @@ import {
   formatDate,
   formatDateOnly,
   formatDateTime,
+  formatDeadline,
   formatTimestamp,
 } from './dateTimeUtils';
 
@@ -135,5 +136,20 @@ describe('formatTimestamp', () => {
     expect(formatTimestamp(null)).toBe('—');
     expect(formatTimestamp(undefined)).toBe('—');
     expect(formatTimestamp('')).toBe('—');
+  });
+});
+
+describe('formatDeadline', () => {
+  it("uses the reader's locale and names the time zone", () => {
+    const us = formatDeadline('2026-10-20T09:44:00Z', 'en-US');
+    expect(us).toMatch(/^Oct 20, 2026/);
+    expect(us).toMatch(/(UTC|GMT|[A-Z]{2,5})/);
+    expect(formatDeadline('2026-10-20T09:44:00Z', 'en-GB')).toMatch(
+      /^20 Oct 2026/,
+    );
+  });
+
+  it('leaves a value that does not parse unchanged', () => {
+    expect(formatDeadline('soon')).toBe('soon');
   });
 });

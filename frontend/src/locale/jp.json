@@ -3279,6 +3279,15 @@
       "revealFailed": "シークレットを読み込めませんでした。もう一度お試しください。",
       "revealLimited": "リクエストが多すぎます。1 分後にもう一度お試しください。",
       "revealMissing": "このリンクにはもうシークレットがありません。終了したか、中止されました。"
-    }
+    },
+    "finished": {
+      "decided": "終了: 判断が下されました",
+      "usedAllWakes": "終了: 予定した回数をすべて通知しました",
+      "expired": "終了: 期限切れ",
+      "cancelledByUser": "あなたが中止しました",
+      "cancelledFromChat": "チャットから中止しました",
+      "conversationGone": "終了: 会話を再開できなくなりました"
+    },
+    "endedBecause": "終了: {{reason}}"
   }
 }
