@@ -500,3 +500,18 @@ class TestSenderSecrets:
         )
         service.end(signed["monitor_id"], "u1", "cancelled")
         assert service.set_secret(signed["monitor_id"], "u1", "a-long-enough-secret-value") is None
+
+
+    def test_a_link_that_ends_before_the_write_saves_nothing(
+        self, mon_db, conversation_id, public_url, events, monkeypatch
+    ):
+        result = service.create(
+            _caller(conversation_id),
+            {"description": "CI3", "source": {"type": "webhook", "signature": "github"}, "on_match": "tell me"},
+        )
+        monkeypatch.setattr(TriggerLinksRepository, "set_secret", lambda self, link_id, sealed: False)
+        assert service.set_secret(result["monitor_id"], "u1", "a-long-enough-secret-value") is None
+        with mon_db.connect() as conn:
+            assert conn.execute(
+                text("SELECT count(*) FROM auth_events WHERE event = 'monitor.secret_set'")
+            ).scalar() == 0

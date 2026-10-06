@@ -418,7 +418,9 @@ def set_secret(monitor_id: str, user_id: str, secret: Any) -> Optional[Dict[str,
         if link is None or (link.get("signature_scheme") or "none") == "none":
             return None
         value = links.check_owner_secret(str(link["signature_scheme"]), secret)
-        repo.set_secret(str(link["id"]), links.seal_secret(value, user_id))
+        if not repo.set_secret(str(link["id"]), links.seal_secret(value, user_id)):
+            # The link ended between the lookup and the write.
+            return None
         record_event(conn, "monitor.secret_set", actor=user_id, monitor_id=str(monitor["id"]),
                      link_id=str(link["id"]), signature=link.get("signature_scheme"))
     return {"saved": True, "signature": link.get("signature_scheme")}
