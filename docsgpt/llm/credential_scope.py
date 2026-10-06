@@ -8,7 +8,11 @@ of those keys belongs to the endpoints it was configured for, and to nothing
 else.
 
 The LLM classes call :func:`check_credential_scope` while they build their API
-client, before any request is sent. A key the deployment configured may only
+client, before any request is sent, with the endpoint they then pass to the
+SDK explicitly: an SDK's own base-URL environment variable
+(``OPENAI_BASE_URL`` read by the SDK rather than settings,
+``ANTHROPIC_BASE_URL``, ``GOOGLE_GEMINI_BASE_URL``, the Vertex AI switch)
+never decides where a key goes. A key the deployment configured may only
 go to a host it was configured for; anything else raises
 :class:`CredentialScopeError` instead of sending it. Keys the deployment did
 not configure (a user's own model key, the keyless placeholder, the public
@@ -19,7 +23,6 @@ model carries its own endpoint, which ``LLMCreator`` pins.
 from __future__ import annotations
 
 import logging
-import os
 from typing import Dict, Optional, Set
 from urllib.parse import urlsplit
 
@@ -28,10 +31,12 @@ logger = logging.getLogger(__name__)
 #: Endpoint the OpenAI client talks to when neither the model nor
 #: ``OPENAI_BASE_URL`` names one.
 OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
-#: The Anthropic SDK's default endpoint (``ANTHROPIC_BASE_URL`` overrides it).
+#: Endpoint the Anthropic client is given when the model names none. Passed
+#: explicitly, so the SDK's own ``ANTHROPIC_BASE_URL`` variable never applies.
 ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com"
-#: The Gemini API endpoint the ``google-genai`` client calls.
-GOOGLE_BASE_URL = "https://generativelanguage.googleapis.com"
+#: The Gemini API endpoint the ``google-genai`` client is pinned to, so the
+#: SDK's ``GOOGLE_GEMINI_BASE_URL`` and Vertex AI switches never apply.
+GOOGLE_BASE_URL = "https://generativelanguage.googleapis.com/"
 
 # Settings that hold an LLM provider credential. Every value set here is a
 # deployment credential, even when no endpoint claims it: such a key may not
@@ -94,7 +99,7 @@ def provider_endpoint(provider: str, settings) -> Optional[str]:
             return base_url
         return OPENAI_DEFAULT_BASE_URL
     if provider == "anthropic":
-        return os.environ.get("ANTHROPIC_BASE_URL") or ANTHROPIC_DEFAULT_BASE_URL
+        return ANTHROPIC_DEFAULT_BASE_URL
     if provider == "google":
         return GOOGLE_BASE_URL
     if provider == "groq":

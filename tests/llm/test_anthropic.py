@@ -227,10 +227,11 @@ class TestAnthropicConstructor:
         instance = AnthropicLLM(api_key="k", base_url="https://custom.api")
         assert instance.anthropic.base_url == "https://custom.api"
 
-    def test_no_base_url(self):
+    def test_no_base_url_pins_the_anthropic_endpoint(self):
+        # Passed explicitly so the SDK never reads ANTHROPIC_BASE_URL.
         from docsgpt.llm.anthropic import AnthropicLLM
 
-        assert AnthropicLLM(api_key="k").anthropic.base_url is None
+        assert AnthropicLLM(api_key="k").anthropic.base_url == "https://api.anthropic.com"
 
     def test_provider_name(self):
         from docsgpt.llm.anthropic import AnthropicLLM

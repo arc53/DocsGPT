@@ -251,7 +251,9 @@ stored secrets and upload its documents again: see
   could find the model registry empty; one then fell back to `LLM_PROVIDER` with no model and the
   OpenAI client sent the configured key to `api.openai.com` (a DeepSeek key, in the case seen). The
   registry now loads once under a lock, a request whose model has no endpoint of its own is refused,
-  and an LLM client refuses a configured key for any host it was not configured for. See
+  and an LLM client refuses a configured key for any host it was not configured for. The Anthropic
+  and Gemini clients are pinned to the endpoint that check sees, so `ANTHROPIC_BASE_URL`,
+  `GOOGLE_GEMINI_BASE_URL` and `GOOGLE_GENAI_USE_VERTEXAI` no longer redirect them. See
   [Keys stay with their provider](/Models/cloud-providers#keys-stay-with-their-provider).
 - The sandbox manager and the embedding models are also built once per process under a lock, so
   concurrent first requests no longer create a second sandbox session registry or load a model twice.

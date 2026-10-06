@@ -31,7 +31,14 @@ class GoogleLLM(BaseLLM):
         self.user_api_key = user_api_key
         check_credential_scope(self.api_key, GOOGLE_BASE_URL, self.provider_name)
 
-        self.client = genai.Client(api_key=self.api_key)
+        # Pin the client to the endpoint just checked. Left to itself the SDK
+        # takes GOOGLE_GEMINI_BASE_URL, or switches to Vertex AI on
+        # GOOGLE_GENAI_USE_VERTEXAI, and sends the key there.
+        self.client = genai.Client(
+            api_key=self.api_key,
+            vertexai=False,
+            http_options={"base_url": GOOGLE_BASE_URL},
+        )
         self.storage = StorageCreator.get_storage()
 
     def get_supported_attachment_types(self):

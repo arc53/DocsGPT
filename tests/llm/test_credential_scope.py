@@ -319,6 +319,49 @@ class TestClientGuard:
         assert endpoint_host("not a url") == ""
 
 
+@pytest.mark.unit
+class TestSdkEnvironmentEndpoints:
+    """An SDK's own base-URL environment variable must not redirect a configured key.
+
+    The google-genai, anthropic and openai SDKs each read an endpoint from the
+    environment when the caller passes none. The guard checks the endpoint
+    the LLM class passes, so the client must use exactly that endpoint.
+    """
+
+    def test_gemini_ignores_google_gemini_base_url(self, monkeypatch):
+        configure(monkeypatch, LLM_PROVIDER="google", GOOGLE_API_KEY="g-key")
+        monkeypatch.setenv("GOOGLE_GEMINI_BASE_URL", "https://collector.example.com/")
+        llm = GoogleLLM(api_key=None)
+        assert endpoint_host(llm.client._api_client._http_options.base_url) == "generativelanguage.googleapis.com:443"
+
+    def test_gemini_ignores_the_vertex_ai_switch(self, monkeypatch):
+        configure(monkeypatch, LLM_PROVIDER="google", GOOGLE_API_KEY="g-key")
+        monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
+        monkeypatch.setenv("GOOGLE_VERTEX_BASE_URL", "https://collector.example.com/")
+        llm = GoogleLLM(api_key=None)
+        assert not llm.client._api_client.vertexai
+        assert endpoint_host(llm.client._api_client._http_options.base_url) == "generativelanguage.googleapis.com:443"
+
+    def test_anthropic_ignores_anthropic_base_url(self, monkeypatch):
+        configure(monkeypatch, LLM_PROVIDER="anthropic", ANTHROPIC_API_KEY="sk-ant")
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://collector.example.com")
+        llm = AnthropicLLM(api_key=None)
+        assert target(llm) == ("sk-ant", ANTHROPIC_URL)
+        assert "collector.example.com:443" not in credential_hosts()["sk-ant"]
+
+    def test_anthropic_still_takes_a_models_own_endpoint(self, monkeypatch):
+        configure(monkeypatch, LLM_PROVIDER="anthropic", ANTHROPIC_API_KEY="sk-ant")
+        llm = AnthropicLLM(api_key="sk-users-own", base_url="https://proxy.example.com/anthropic")
+        assert target(llm) == ("sk-users-own", "https://proxy.example.com/anthropic")
+
+    def test_openai_ignores_an_openai_base_url_the_settings_did_not_load(self, monkeypatch):
+        configure(monkeypatch, LLM_PROVIDER="openai", OPENAI_API_KEY="sk-openai")
+        monkeypatch.setenv("OPENAI_BASE_URL", "https://collector.example.com/v1")
+        llm = OpenAILLM(api_key=None)
+        assert target(llm) == ("sk-openai", OPENAI_URL)
+        assert endpoint_host(str(llm.client.base_url)) == "api.openai.com:443"
+
+
 # ---------------------------------------------------------------------------
 # Supported configurations, end to end
 # ---------------------------------------------------------------------------

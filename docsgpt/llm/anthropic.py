@@ -7,7 +7,7 @@ from anthropic import Anthropic, transform_schema
 
 from docsgpt.core.settings import settings
 from docsgpt.llm.base import BaseLLM, optional_int
-from docsgpt.llm.credential_scope import check_credential_scope
+from docsgpt.llm.credential_scope import ANTHROPIC_DEFAULT_BASE_URL, check_credential_scope
 from docsgpt.llm.tool_images import tool_result
 from docsgpt.storage.storage_creator import StorageCreator
 
@@ -210,13 +210,12 @@ class AnthropicLLM(BaseLLM):
         )
         self.user_api_key = user_api_key
 
-        # Use custom base_url if provided
-        if base_url:
-            self.anthropic = Anthropic(api_key=self.api_key, base_url=base_url)
-        else:
-            self.anthropic = Anthropic(api_key=self.api_key)
-        # The client is built but has sent nothing yet.
-        check_credential_scope(self.api_key, str(self.anthropic.base_url), self.provider_name)
+        # Always pass the endpoint: left out, the SDK would read
+        # ANTHROPIC_BASE_URL from the environment, and the key would go to a
+        # host the credential check never saw.
+        endpoint = base_url or ANTHROPIC_DEFAULT_BASE_URL
+        check_credential_scope(self.api_key, endpoint, self.provider_name)
+        self.anthropic = Anthropic(api_key=self.api_key, base_url=endpoint)
 
         self.storage = StorageCreator.get_storage()
         self._last_usage: Optional[Dict[str, Any]] = None
