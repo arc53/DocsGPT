@@ -75,6 +75,11 @@ conversation, and a `conversation.continued` event tells open tabs about the new
   added to the conversation.
 - **Safe by default.** A continuation can't use tools that need approval, and data from tools and outside
   services is presented to the model as data, never as instructions.
+- **Guarded like any tool result.** The agent's `tool_result` [guardrails](/Agents/guardrails) (and the instance
+  floor) scan a job's final result and last output before they are stored, and the data an event carries before
+  it is queued. A block replaces the text with a "withheld by a content policy" note; a redaction masks what it
+  matched. Every later reader (the continuation, the user's next message, `check_job`, the job card) gets the
+  scanned text.
 - **Bounded.** At most `AUTO_RESUME_MAX_CONSECUTIVE` continuations follow one another without a user message.
 
 [Monitors, trigger links and approval links](/Tools/monitors) resume the conversation the same way, with

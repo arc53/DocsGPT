@@ -62,6 +62,7 @@ def wake_conversation(
     body: str,
     payload: Optional[Dict[str, Any]],
     dedupe_key: str,
+    guarded: bool = False,
 ) -> None:
     """Resume the agent in a conversation because something happened; never raises.
 
@@ -80,12 +81,20 @@ def wake_conversation(
         body: What happened, written for the agent.
         payload: Untrusted data that came with the event (shown fenced off as data).
         dedupe_key: Unique per event; reporting the same key again does nothing.
+        guarded: ``payload`` already passed the tool-result guardrails (a job's
+            stored result); otherwise it is scanned here, before it is queued.
     """
     if source not in WAKE_SOURCES:
         logger.error("wake_conversation: unknown source %r", source)
         return
     if not user_id or not conversation_id or not dedupe_key:
         return
+    if payload and not guarded:
+        from docsgpt.background.guard import guard_payload
+
+        payload = guard_payload(
+            user_id=str(user_id), conversation_id=str(conversation_id), source=source, payload=payload
+        )
     try:
         with db_session() as conn:
             row = ConversationWakesRepository(conn).enqueue(
@@ -223,6 +232,8 @@ def on_job_finished(job: Dict[str, Any]) -> None:
         body=event["body"],
         payload=event["payload"],
         dedupe_key=f"job:{job['id']}:final",
+        # The stored result passed the guardrails when the job finished (jobs.finalize).
+        guarded=True,
     )
 
 

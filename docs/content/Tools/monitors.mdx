@@ -45,7 +45,8 @@ A polled check is cheap before it is expensive:
    has no tools, reads at most 8,000 characters of the content, marked as untrusted data, and answers whether the
    condition holds. Its tokens are recorded in `token_usage` with `source = 'monitor_judge'` and billed to the
    user; `MONITOR_JUDGE_TOKEN_BUDGET` caps one monitor's total.
-5. A match wakes the conversation once per fact: the monitor keeps the keys of what it reported, so the same
+5. A match wakes the conversation once per fact (what it found passes the agent's `tool_result` guardrails before
+   it is queued, as a tool result in the chat does): the monitor keeps the keys of what it reported, so the same
    price drop or the same item is never reported twice. The first check, taken when the monitor is created, is
    the baseline and never wakes; `monitor_create` returns it ("currently $95.10").
 

@@ -271,6 +271,7 @@ def finalize(
         The finished row, or None when another path finished it first.
     """
     pool.release(job_id)
+    result, output_tail = _guard_final(job_id, result, output_tail)
     try:
         with db_session() as conn:
             repo = BackgroundJobsRepository(conn)
@@ -295,6 +296,44 @@ def finalize(
     if deliver:
         _deliver(row)
     return row
+
+
+def _guard_final(
+    job_id: str, result: Optional[dict], output_tail: Optional[str]
+) -> Tuple[Optional[dict], Optional[str]]:
+    """Run the agent's tool-result guardrails on what a finishing job keeps, before it is stored.
+
+    The stored result is what every later reader gets (the continuation turn,
+    a fold into the user's next message, ``check_job``, the job card), so it
+    is scanned once, here, as a foreground result is scanned before it fans
+    out. A job that is no longer running is left alone: the write below
+    finds nothing to finish.
+
+    Args:
+        job_id: The job.
+        result: The result about to be stored (``text`` is scanned).
+        output_tail: The last output about to be stored.
+
+    Returns:
+        ``(result, output_tail)`` as they may be stored.
+    """
+    text_value = result.get("text") if isinstance(result, dict) else None
+    if not (isinstance(text_value, str) and text_value) and not output_tail:
+        return result, output_tail
+    from docsgpt.background.guard import guard_job_texts
+
+    try:
+        with db_readonly() as conn:
+            job = BackgroundJobsRepository(conn).get(job_id)
+    except Exception:
+        logger.exception("background job %s: reading the job for its guardrail scan failed", job_id)
+        return result, output_tail
+    if job is None or job.get("status") != "working":
+        return result, output_tail
+    guarded_text, guarded_tail = guard_job_texts(job, text_value, output_tail)
+    if guarded_text != text_value:
+        result = {**result, "text": guarded_text}
+    return result, guarded_tail
 
 
 def _settle_journal(conn: Any, row: Dict[str, Any]) -> None:
