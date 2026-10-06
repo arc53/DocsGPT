@@ -38,6 +38,8 @@ class TestRunningPayload:
         assert len(payload["output_tail"]) == 2000
         assert "resumed automatically" in payload["note"]
         assert "Do NOT run it again" in payload["note"]
+        assert "wait on it with check_job" in payload["note"]
+        assert "leave out the job id" in payload["note"]
 
     def test_poll_only_note(self):
         payload = running_payload("j1", auto_resume=False, elapsed_s=0)

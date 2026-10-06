@@ -129,6 +129,11 @@ class TestRendering:
         assert "offer extras instead of doing them" in out
         assert "finish any outstanding work" not in out
 
+    def test_the_instruction_leads_with_the_result(self):
+        out = wake.render_events([{"source": "job", "title": "t", "body": "b", "payload": None}])
+        assert "Start with the result itself; your first sentence is also the notification preview" in out
+        assert "mention a job's or monitor's own state only if the user must act on it" in out
+
     def test_the_instruction_asks_for_grounded_claims(self):
         out = wake.render_events([{"source": "job", "title": "t", "body": "b", "payload": None}])
         assert "Every number and explanation must come from the data above or a tool you ran in this turn" in out

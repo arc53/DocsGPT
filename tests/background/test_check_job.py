@@ -69,7 +69,8 @@ class TestCheckJob:
         tool = _tool(conversation_id)
         first = tool.execute_action("check_job", job_id=job["id"])
         assert first["status"] == "running"
-        assert first["retry_after_s"] == 30
+        # With auto-resume on, a retry hint reads as an invitation to poll.
+        assert "retry_after_s" not in first
         assert "not an error" in first["note"]
         for _ in range(9):
             last = tool.execute_action("check_job", job_id=job["id"])
@@ -105,6 +106,28 @@ class TestCheckJob:
         timer.start()
         out = _tool(conversation_id).execute_action("check_job", job_id=job["id"], wait_seconds=5)
         assert out["status"] == "completed"
+
+    def test_a_poll_only_job_still_says_when_to_look_again(self, bg_db, conversation):
+        conversation_id, message_id = conversation
+        job = _job(conversation_id, message_id, auto_resume=False)
+        assert _tool(conversation_id).execute_action("check_job", job_id=job["id"])["retry_after_s"] == 30
+
+    def test_a_job_started_in_this_turn_is_never_waited_on(self, bg_db, conversation):
+        """Waiting right after a hand-off only holds the turn: the result resumes the conversation anyway."""
+        import time
+
+        conversation_id, message_id = conversation
+        job = _job(conversation_id, message_id)
+        tool = CheckJobTool({"conversation_id": conversation_id, "message_id": message_id}, "u1")
+        started = time.monotonic()
+        out = tool.execute_action("check_job", job_id=job["id"], wait_seconds=30)
+        assert time.monotonic() - started < 5
+        assert out["status"] == "running"
+        assert "started in this turn" in out["note"] and "end your turn" in out["note"]
+
+    def test_the_wait_description_discourages_waiting(self):
+        params = CheckJobTool().get_actions_metadata()[0]["parameters"]["properties"]
+        assert "never wait on a job you just started" in params["wait_seconds"]["description"]
 
     def test_wait_is_clamped(self):
         assert CheckJobTool._wait_seconds(999) == 30

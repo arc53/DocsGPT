@@ -151,6 +151,8 @@ class TestLongRunningWorkSection:
         assert "never guess or predict its result" in section
         assert "don't poll" in section
         assert "verify side effects before retrying" in section
+        assert "Job ids, being resumed and how work is handed off are for you, not the user" in section
+        assert "mention a running job only if asked or if something about it changed" in section
 
     def test_absent_when_off(self, monkeypatch):
         monkeypatch.setattr("docsgpt.core.settings.settings.BACKGROUND_JOBS_ENABLED", False)

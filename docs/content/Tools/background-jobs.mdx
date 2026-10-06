@@ -26,12 +26,12 @@ Every server-side tool call in a chat turn runs in a small per-process pool. The
   "job_id": "4f6c…",
   "started_as": "background",
   "elapsed_s": 30,
-  "note": "Still running as background job 4f6c…. Do NOT run it again. You will be resumed automatically…"
+  "note": "Still running as background job 4f6c…; you are resumed automatically with its result when it finishes. Do NOT run it again…"
 }
 ```
 
-The model is told not to run the call again and not to guess its result, and usually ends its turn by telling
-the user the work is running. The call's entry in the conversation shows as running until the job ends.
+The model is told not to run the call again, not to wait on it and not to guess its result, and usually ends
+its turn by telling the user in plain words that the work is running (without the job id or how it is resumed). The call's entry in the conversation shows as running until the job ends.
 
 The model can also start a call as a job at once with `background=true`. The argument is offered on
 `code_executor`, MCP tools, API tools and `read_webpage`, in chat turns only. A `code_executor` run started
@@ -106,7 +106,9 @@ check_job(job_id?, action="get" | "cancel", wait_seconds=0)
 ```
 
 - `get` returns the result of a finished job (and takes it, so the conversation is not resumed with it again),
-  or the job's progress and latest output while it runs. `wait_seconds` waits up to 30 seconds for it to finish.
+  or the job's progress and latest output while it runs. `wait_seconds` waits up to 30 seconds for it to finish,
+  except for a job the same turn started: that one answers at once, since its result resumes the conversation
+  anyway.
 - Without a `job_id`, it lists this conversation's jobs. It never sees other conversations' jobs.
 - `cancel` asks the job to stop. A sandbox run is stopped; an in-process call can't be interrupted and ends
   `cancelled` when it returns. A step already under way may still complete.

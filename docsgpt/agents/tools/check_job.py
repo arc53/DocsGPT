@@ -88,7 +88,8 @@ class CheckJobTool(Tool):
                         "wait_seconds": {
                             "type": "integer",
                             "description": f"With get, wait up to this long (max {MAX_WAIT_SECONDS}) for it to "
-                            "finish. Default 0.",
+                            "finish. Default 0; keep it unless the job is about to finish and the user waits on "
+                            "it in this turn, and never wait on a job you just started.",
                         },
                     },
                     "required": [],
@@ -119,7 +120,18 @@ class CheckJobTool(Tool):
             return {"status": "error", "error": f"No job {job_id} in this conversation."}
         if action == "cancel":
             return self._cancel(job)
-        return self._get(job, conversation_id, self._wait_seconds(kwargs.get("wait_seconds")))
+        wait = self._wait_seconds(kwargs.get("wait_seconds"))
+        if self._started_this_turn(job):
+            # Waiting here only holds the turn: the finished job resumes the conversation by itself.
+            wait = 0
+        return self._get(job, conversation_id, wait)
+
+    def _started_this_turn(self, job: Dict[str, Any]) -> bool:
+        """Whether this turn handed the job off and the job resumes the conversation when it ends."""
+        message_id = self.config.get("message_id")
+        return bool(
+            message_id and job.get("auto_resume") and str(job.get("origin_message_id") or "") == str(message_id)
+        )
 
     # ------------------------------------------------------------------
 
@@ -189,7 +201,13 @@ class CheckJobTool(Tool):
         else:
             seen["count"], seen["signature"] = 1, signature
         auto_resume = bool(job.get("auto_resume"))
-        if seen["count"] >= POLLS_BEFORE_STOP:
+        if self._started_this_turn(job):
+            note = (
+                "Still running; it was started in this turn, and you are resumed with its result when it "
+                "finishes. Tell the user in plain words that it is running and end your turn unless other work "
+                "remains."
+            )
+        elif seen["count"] >= POLLS_BEFORE_STOP:
             note = "Stop polling. End your turn" + (
                 "; you will be resumed when it finishes." if auto_resume else " and check again later."
             )
@@ -203,13 +221,11 @@ class CheckJobTool(Tool):
                 "Still running; this is not an error. This conversation is not resumed automatically: check "
                 "again later, or tell the user it is running."
             )
-        out: Dict[str, Any] = {
-            "job_id": job_id,
-            "status": "running",
-            "elapsed_s": elapsed_seconds(job),
-            "retry_after_s": 30,
-            "note": note,
-        }
+        out: Dict[str, Any] = {"job_id": job_id, "status": "running", "elapsed_s": elapsed_seconds(job)}
+        if not auto_resume:
+            # Only a poll-only job needs telling when to look again; otherwise the hint invites polling.
+            out["retry_after_s"] = 30
+        out["note"] = note
         if progress:
             out["progress"] = progress
         if job.get("output_tail"):

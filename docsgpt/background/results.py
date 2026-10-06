@@ -57,14 +57,15 @@ def running_note(job_id: str, auto_resume: bool) -> str:
     """The instruction that comes with a handed-off call's ``running`` result."""
     if auto_resume:
         return (
-            f"Still running as background job {job_id}. Do NOT run it again. You will be resumed automatically "
-            "with the result when it finishes. If nothing else needs doing now, tell the user it is running and "
-            "end your turn; don't poll and never guess the result."
+            f"Still running as background job {job_id}; you are resumed automatically with its result when it "
+            "finishes. Do NOT run it again or wait on it with check_job. If nothing else needs doing, tell the user "
+            "in plain words that it is running and that you'll follow up here, then end your turn; leave out the "
+            "job id and how you are resumed. Never guess the result."
         )
     return (
         f"Still running as background job {job_id}. Do NOT run it again. This conversation is not resumed "
         "automatically: check on it with check_job when the result is needed, or tell the user it is running "
-        "and that they can ask for the result later. Never guess the result."
+        "and that they can ask for the result later (leave out the job id). Never guess the result."
     )
 
 
