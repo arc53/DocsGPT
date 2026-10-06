@@ -80,6 +80,11 @@ class TestTheNextTurnSeesTheCallsAsNotRun:
         assert tool_results["call-1"] == '{"monitor_id": "m-1"}'
         assert tool_results["call-5"].startswith("Not run:")
 
+        # The text the turn wrote before its calls leads them; nothing follows the results.
+        assert [m["role"] for m in messages] == ["system", "user", "assistant", *["tool"] * 5, "user"]
+        assert messages[2]["content"] == "I'll set this up as a signed webhook."
+        assert [c["id"] for c in messages[2]["tool_calls"]] == ["call-1", "call-2", "call-3", "call-4", "call-5"]
+
 
 class TestOnlyARealNewTurnRetiresThePause:
     @pytest.mark.unit
