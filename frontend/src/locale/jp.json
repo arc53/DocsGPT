@@ -29,6 +29,63 @@
     "toolApprovalReview": "確認",
     "toolApprovalFallbackName": "会話"
   },
+  "backgroundJobs": {
+    "unread": "未読",
+    "card": {
+      "status": {
+        "working": "バックグラウンドで実行中",
+        "completed": "完了",
+        "failed": "失敗",
+        "cancelled": "キャンセル済み",
+        "lost": "中断"
+      },
+      "cancel": "キャンセル",
+      "cancelling": "キャンセル中…",
+      "cancelFailed": "ジョブをキャンセルできませんでした",
+      "progress": "{{percent}}% 完了",
+      "willResume": "完了すると、このチャットに結果が届きます。",
+      "pollOnly": "完了したら、このチャットで結果を尋ねてください。",
+      "lostHint": "ジョブが中断されたため、完了していない可能性があります。アシスタントは再試行の前に確認します。",
+      "durationSeconds": "{{s}}秒",
+      "durationMinutes": "{{m}}分{{s}}秒",
+      "durationHours": "{{h}}時間{{m}}分"
+    },
+    "notify": {
+      "title": {
+        "job": "バックグラウンドジョブが完了しました",
+        "lost": "バックグラウンドジョブが中断されました",
+        "monitor": "モニターが条件に一致しました",
+        "trigger": "Webhook を受信しました",
+        "approval": "承認の回答が届きました",
+        "monitor_paused": "モニターが一時停止されました",
+        "monitor_expired": "モニターの期限が切れました",
+        "schedule": "予定したタスクが完了しました",
+        "default": "新しい返信"
+      },
+      "open": "開く",
+      "fallbackTitle": "アシスタントからのお知らせ"
+    },
+    "push": {
+      "promptTitle": "完了したら通知しますか？",
+      "promptBody": "離れている間にバックグラウンドの処理が終わったら、ブラウザーの通知でお知らせします。",
+      "enable": "有効にする",
+      "notNow": "今はしない",
+      "blocked": "このサイトの通知はブロックされています。ブラウザーのサイト設定で許可してください。",
+      "failed": "通知を有効にできませんでした"
+    },
+    "wake": {
+      "job": "バックグラウンドジョブが完了しました",
+      "lost": "バックグラウンドジョブが中断されました",
+      "monitor": "モニターが条件に一致しました",
+      "trigger": "Webhook を受信しました",
+      "approval": "承認の回答が届きました",
+      "monitor_paused": "モニターが一時停止されました",
+      "monitor_expired": "モニターの期限が切れました",
+      "default": "バックグラウンドイベント",
+      "more": "ほか{{count}}件",
+      "cancelled": "バックグラウンドジョブをキャンセルしました"
+    }
+  },
   "demo": [
     {
       "header": "DocsGPTについて学ぶ",
@@ -1432,6 +1489,7 @@
         "mcp_sentry": "Sentry の課題、イベント、リリースを調べます。",
         "mcp_stripe": "Stripe の顧客、支払い、サブスクリプションを調べます。",
         "mcp_drawio": "draw.io で編集可能なフローチャートやその他の図を作成します。",
+        "mcp_clickup": "ClickUp のタスク、ドキュメント、リストを検索、閲覧、更新し、コメントを追加します。",
         "github": "リポジトリをナレッジに同期し、エージェントがコード、Issue、プルリクエストを読めるようにします。"
       },
       "empty": "まだ何も接続されていません。サービスを接続すると、コンテンツを同期したり、エージェントに新しいツールを提供したりできます。",
@@ -3151,5 +3209,97 @@
     "collapse": "縮小",
     "back": "戻る"
   },
-  "close": "閉じる"
+  "close": "閉じる",
+  "approval": {
+    "logoAlt": "DocsGPT",
+    "untitled": "承認のリクエスト",
+    "missingTitle": "このリンクは使用できません",
+    "missingDescription": "期限切れかキャンセル済みか、アドレスが不完全な可能性があります。",
+    "loadError": "このリクエストを読み込めませんでした",
+    "options": {
+      "approve": "承認",
+      "reject": "却下"
+    },
+    "commentLabel": "コメント（任意）",
+    "commentPlaceholder": "依頼者に伝えたいこと",
+    "onceOnly": "選択は取り消せません。最初の判断だけが有効です。",
+    "thanks": "ありがとうございます。「{{decision}}」を選択しました。依頼したアシスタントに通知されました。",
+    "alreadyDecided": "このリクエストはすでに判断されています: {{decision}}。",
+    "notWaiting": "このリクエストはもう判断を待っていません。",
+    "rateLimited": "試行回数が多すぎます。1分待ってからもう一度お試しください。",
+    "submitError": "判断を送信できませんでした。もう一度お試しください。",
+    "expiresAt": "このリクエストの有効期限は {{date}} です。",
+    "yourComment": "あなたのコメント:「{{comment}}」"
+  },
+  "monitors": {
+    "label": "モニター",
+    "subtitle": "アシスタントが見守っているもの: ページ、ツール、Webhook リンク、承認リンク。何か起きると、それぞれの会話が再開されます。",
+    "empty": "モニターはまだありません",
+    "emptyHint": "チャットでアシスタントに見守りを頼んでください。例:「価格が 90 ドルを下回ったら教えて」。",
+    "loadError": "モニターを読み込めませんでした",
+    "actionError": "うまくいきませんでした。もう一度お試しください。",
+    "untitled": "モニター",
+    "watching": "変化を見守り中",
+    "every": "{{interval}} ごと",
+    "onEvent": "発生時",
+    "openConversation": "会話を開く",
+    "pause": "一時停止",
+    "resume": "再開",
+    "cancel": "モニターを中止",
+    "menu": "{{name}} の操作",
+    "pausedBecause": "一時停止中: {{reason}}",
+    "lastError": "直近の問題: {{error}}",
+    "cancelConfirm": "「{{name}}」を中止しますか?",
+    "cancelConsequence": "確認が止まり、リンクは使えなくなり、与えた承認は取り消されます。",
+    "status": {
+      "active": "有効",
+      "paused": "一時停止",
+      "completed": "完了",
+      "cancelled": "中止"
+    },
+    "source": {
+      "webpage": "Web ページ",
+      "tool": "ツール",
+      "ingest": "ナレッジの取り込み",
+      "webhook": "Webhook リンク",
+      "approval": "承認リンク"
+    },
+    "columns": {
+      "monitor": "モニター",
+      "status": "状態",
+      "interval": "確認間隔",
+      "lastChecked": "最終確認",
+      "wakesLeft": "残り通知回数",
+      "expires": "期限",
+      "actions": "操作"
+    },
+    "linkCard": {
+      "title": "Webhook リンク",
+      "copyUrl": "リンクをコピー",
+      "revealSecret": "シークレットを表示",
+      "hideSecret": "シークレットを隠す",
+      "copySecret": "シークレットをコピー",
+      "secretNote": "署名シークレットを見られるのはあなただけで、アシスタントには見えません。サンプルコマンドを実行するには DOCSGPT_WEBHOOK_SECRET に設定するか、送信元のシークレット欄に貼り付けてください。",
+      "revealFailed": "シークレットを読み込めませんでした。もう一度お試しください。",
+      "revealLimited": "リクエストが多すぎます。1 分後にもう一度お試しください。",
+      "revealMissing": "このリンクにはもうシークレットがありません。終了したか、中止されました。",
+      "approvalTitle": "承認リンク",
+      "expires": "有効期限: {{date}}",
+      "state": {
+        "pending": "判断待ち",
+        "decided": "判断済み",
+        "ended": "リンク終了",
+        "active": "有効"
+      }
+    },
+    "finished": {
+      "decided": "終了: 判断が下されました",
+      "usedAllWakes": "終了: 予定した回数をすべて通知しました",
+      "expired": "終了: 期限切れ",
+      "cancelledByUser": "あなたが中止しました",
+      "cancelledFromChat": "チャットから中止しました",
+      "conversationGone": "終了: 会話を再開できなくなりました"
+    },
+    "endedBecause": "終了: {{reason}}"
+  }
 }

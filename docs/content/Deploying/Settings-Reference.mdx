@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-05
+lastUpdated: 2026-10-06
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -258,6 +258,12 @@ Type `str`, default unset.
 
 Base URL for OpenAI-compatible model servers.
 
+### `LLM_ALLOW_PLAINTEXT_ENDPOINTS`
+
+Type `bool`, default `false`.
+
+Allow a configured LLM API key to be sent over plain http to any host. Off, plain http is accepted only for loopback, private and link-local addresses, single-label hosts (Docker service names), host.docker.internal and names ending in .local, .svc, .internal or .localhost; every other endpoint needs https.
+
 ### `FALLBACK_LLM_PROVIDER`
 
 Type `str`, default unset.
@@ -274,7 +280,7 @@ Model name for the fallback LLM.
 
 Type `str`, default unset.
 
-API key for the fallback LLM; unset sends API_KEY. Set it whenever FALLBACK_LLM_PROVIDER differs from LLM_PROVIDER, or the primary provider's key goes to the fallback provider.
+API key for the fallback LLM. Unset uses the fallback provider's own key (e.g. ANTHROPIC_API_KEY), or API_KEY when FALLBACK_LLM_PROVIDER is LLM_PROVIDER; the primary provider's key never goes to another provider.
 
 ### `TITLE_MODEL_ID`
 
@@ -1394,6 +1400,35 @@ Type `int`, default `10000`.
 Cap on buffered output entries per remote-device invocation stream.
 
 
+## Notifications
+
+The VAPID key pair Web Push is signed with, and which push services may be sent to.
+
+### `WEBPUSH_VAPID_PUBLIC_KEY`
+
+Type `str`, default unset.
+
+VAPID public key for Web Push, raw base64url (the uncompressed P-256 point, as `npx web-push generate-vapid-keys` prints it). Browsers subscribe with it. Derived from the private key when unset; when both are set they must belong together.
+
+### `WEBPUSH_VAPID_PRIVATE_KEY`
+
+Type `str`, default unset.
+
+VAPID private key for Web Push, raw base64url. Unset, Web Push is off: users with no tab open get only the unread mark. Changing the key pair invalidates every browser's subscription; browsers subscribe again on their next visit.
+
+### `WEBPUSH_VAPID_SUBJECT`
+
+Type `str`, default unset.
+
+Contact the push services can reach the operator at: a `mailto:` or `https:` URL. Apple rejects pushes without a real one. Unset, the public API URL is used when it is https.
+
+### `WEBPUSH_EXTRA_ALLOWED_HOSTS`
+
+Type `list[str]`, default `[]`.
+
+Push service hosts to accept besides the known ones (Google FCM, Mozilla, Apple, Windows), as a comma list or JSON list. `*.example.com` matches subdomains. Subscription endpoints must be https on an allowed host, so the server never posts to an arbitrary URL; this is for self-hosted push services and tests.
+
+
 ## Agents
 
 What an agent may do per turn and how its context is kept within budget.
@@ -1412,9 +1447,9 @@ Per-agent default quotas: tokens and requests.
 
 ### `DEFAULT_CHAT_TOOLS`
 
-Type `list[str]`, default `["memory", "read_webpage", "scheduler"]`.
+Type `list[str]`, default `["memory", "read_webpage", "scheduler", "monitor"]`.
 
-Config-free tools on by default in agentless chats, as a JSON list of tool names (["memory","scheduler"]) or comma-separated names. none (or []) turns them all off; an empty value keeps the default. scheduler is dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add code_executor and artifact_generator once a sandbox runner is configured; both execute through it and would fail on every call without one.
+Config-free tools on by default in agentless chats, as a JSON list of tool names (["memory","scheduler"]) or comma-separated names. none (or []) turns them all off; an empty value keeps the default. scheduler is dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add code_executor and artifact_generator once a sandbox runner is configured; both execute through it and would fail on every call without one. check_job is never listed or toggled (an entry is ignored): every turn that can hand calls off to a background job gets it. monitor is offered only while MONITORS_ENABLED is on.
 
 ### `ENABLE_TOOL_PREFETCH`
 
@@ -1671,6 +1706,184 @@ Type `int`, default `90`, must be `> 0`.
 Days scheduled-run output is kept.
 
 
+## Background jobs
+
+How long a turn waits on a tool call, what a handed-off job may use, and when the agent is resumed.
+
+### `BACKGROUND_JOBS_ENABLED`
+
+Type `bool`, default `true`.
+
+Hand a slow tool call off to a background job instead of keeping the turn waiting on it. Off, every call runs in the foreground until its own timeout, as before.
+
+### `BACKGROUND_YIELD_SECONDS`
+
+Type `int`, default `30`, must be `>= 1`.
+
+Seconds a chat turn waits on a server-side tool call before handing it off to a background job. A call that finishes sooner behaves exactly as before.
+
+### `BACKGROUND_JOB_MAX_SECONDS`
+
+Type `int`, default `1000`, must be `>= 1`.
+
+Hard lifetime of one background job in seconds; past it the job is failed. Matches SANDBOX_EXEC_MAX_TIMEOUT by default.
+
+### `BACKGROUND_MAX_JOBS_PER_CONVERSATION`
+
+Type `int`, default `2`, must be `>= 0`.
+
+Running background jobs one conversation may have. Over the cap a slow call keeps running in the foreground; it never fails because of the cap.
+
+### `BACKGROUND_MAX_JOBS_PER_USER`
+
+Type `int`, default `5`, must be `>= 0`.
+
+Running background jobs one user may have, across conversations; same over-cap rule.
+
+### `BACKGROUND_RESULT_RETENTION_DAYS`
+
+Type `int`, default `7`, must be `> 0`.
+
+Days a finished background job and its result are kept.
+
+### `BACKGROUND_LEASE_STALE_SECONDS`
+
+Type `int`, default `60`, must be `>= 20`.
+
+Heartbeat age after which a job whose process stopped reporting is marked lost. Jobs are stamped every 10 s, so this allows several missed beats.
+
+### `BACKGROUND_RECONCILE_INTERVAL_SECONDS`
+
+Type `int`, default `60`, must be `>= 10`.
+
+Seconds between beat sweeps that mark lost jobs, fail jobs past their deadline and resume conversations whose results were not delivered.
+
+### `BACKGROUND_POOL_SIZE`
+
+Type `int`, default `16`, must be `>= 1`.
+
+Threads per API or worker process that run tool calls a turn may hand off. A call that finds the pool full runs inline, as before.
+
+### `AUTO_RESUME_ENABLED`
+
+Type `bool`, default `true`.
+
+Resume the agent in the same conversation when a background job finishes, so the result reaches the user without them asking. Off, results wait for check_job or the user's next message.
+
+### `AUTO_RESUME_MAX_RESULT_CHARS`
+
+Type `int`, default `16000`, must be `>= 500`.
+
+Characters of one job result a continuation turn sees; longer results keep their head and tail.
+
+### `AUTO_RESUME_MAX_CONSECUTIVE`
+
+Type `int`, default `5`, must be `>= 1`.
+
+Continuation turns a conversation may get in a row without a user message in between. Past it, results wait for check_job or the user's next message, so a job that starts a job cannot loop.
+
+
+## Monitors and trigger links
+
+What the ``monitor`` tool may watch, how often, for how long, and how trigger and approval links behave.
+
+### `MONITORS_ENABLED`
+
+Type `bool`, default `true`.
+
+Offer the monitor tool: polled checks of a webpage or any tool, ingest events, webhook trigger links and human approval links that resume the conversation when something happens. Needs AUTO_RESUME_ENABLED, since a monitor reports back by resuming the conversation.
+
+### `MONITOR_JUDGE_MODEL`
+
+Type `str`, default unset.
+
+Model that judges a monitor's natural-language condition, only after its deterministic check passed (or on a change when it has none). Unset uses the deployment's default model.
+
+### `MONITOR_DEFAULT_INTERVAL_SECONDS`
+
+Type `int`, default `900`, must be `>= 60`.
+
+Seconds between checks of a polled monitor that names no interval.
+
+### `MONITOR_MIN_INTERVAL_SECONDS`
+
+Type `int`, default `300`, must be `>= 60`.
+
+Shortest interval a polled monitor may use, in seconds; a shorter request is raised to it.
+
+### `MONITOR_DEFAULT_TTL_DAYS`
+
+Type `int`, default `7`, must be `>= 1`.
+
+Days a monitor (and its trigger or approval link) lives when none is named.
+
+### `MONITOR_MAX_TTL_DAYS`
+
+Type `int`, default `30`, must be `>= 1`.
+
+Longest lifetime a monitor may ask for, in days.
+
+### `MONITOR_DEFAULT_MAX_WAKES`
+
+Type `int`, default `1`, must be `>= 1`.
+
+Times a monitor may wake the agent when none is named; at 0 left it finishes.
+
+### `MONITOR_MAX_WAKES`
+
+Type `int`, default `20`, must be `>= 1`.
+
+Most wakes one monitor may ask for.
+
+### `MONITOR_MAX_ACTIVE_PER_USER`
+
+Type `int`, default `5`, must be `>= 0`.
+
+Active or paused monitors one user may have; 0 turns creating them off.
+
+### `MONITOR_MAX_WAKES_PER_HOUR`
+
+Type `int`, default `5`, must be `>= 1`.
+
+Circuit breaker: a monitor that would wake the agent more often than this in an hour is paused, and the conversation is told why.
+
+### `MONITOR_UNREACHABLE_GRACE_SECONDS`
+
+Type `int`, default `3600`, must be `>= 60`.
+
+How long a monitor's source may stay unreachable (device offline, server down, timeout, 5xx) before the agent is told once and the monitor pauses. Unreachable checks are skipped, never a change.
+
+### `MONITOR_JUDGE_TOKEN_BUDGET`
+
+Type `int`, default `100000`, must be `>= 0`.
+
+Tokens one monitor's condition judge may use over its lifetime; past it the monitor pauses and says so. 0 means no limit.
+
+### `PUBLIC_APP_URL`
+
+Type `str`, default unset.
+
+Public address of the web UI, used for human approval links (/approve/&lt;token>). Unset uses PUBLIC_API_BASE_URL, then API_URL: the API serves the UI itself when SERVE_UI is on. Set it when the UI runs elsewhere, e.g. http://localhost:5173 for the Vite dev server.
+
+### `TRIGGER_RATE_PER_MINUTE`
+
+Type `int`, default `30`, must be `>= 1`.
+
+Requests one trigger link accepts per minute; more get 429.
+
+### `TRIGGER_MAX_PAYLOAD_BYTES`
+
+Type `int`, default `65536`, must be `>= 1024`.
+
+Largest request body a trigger link accepts, in bytes; larger gets 413.
+
+### `TRIGGER_DEDUPE_WINDOW_SECONDS`
+
+Type `int`, default `600`, must be `>= 1`.
+
+Seconds in which a trigger link delivery with the same body as an earlier one (and no Idempotency-Key, webhook-id or X-GitHub-Delivery) counts as a repeat. The same body sent later, such as a nightly job's, is a new event.
+
+
 ## Sandbox
 
 The app is a CLIENT of an always-on runner; defaults are safe so app import never fails unconfigured.
@@ -1717,6 +1930,12 @@ Type `int`, default `60`.
 
 Default wall-clock cap (s) per exec call.
 
+### `SANDBOX_EXEC_MAX_TIMEOUT`
+
+Type `int`, default `1000`, must be `>= 1`.
+
+Longest wall-clock cap (s) the model may ask for on one run_code call, for long jobs such as video renders or OCR of many pages; a larger request is clamped to it. Never below SANDBOX_EXEC_TIMEOUT. On the Jupyter runner keep SANDBOX_KERNEL_IDLE_TIMEOUT above SANDBOX_MAX_TTL; a busy kernel is never culled.
+
 ### `SANDBOX_HTTP_TIMEOUT`
 
 Type `int`, default `10`.
@@ -1746,6 +1965,12 @@ Cap on an input document staged into a sandbox session.
 Type `str`, default `4g`.
 
 Docker mem_limit for the runner container: the gateway, the warm session kernels and the LibreOffice and Chromium processes they start. Consumed by the docsgpt-sandbox compose service, not the app; part of the untrusted-code security boundary.
+
+### `SANDBOX_HOME_SIZE`
+
+Type `str`, default `1g`.
+
+Size of the runner's /sandbox-home tmpfs: the kernels' HOME, where runtime pip installs and caches go. It allows exec so compiled packages load (/tmp stays noexec) and counts against SANDBOX_MEMORY as it fills. Consumed by the docsgpt-sandbox compose service, not the app.
 
 ### `SANDBOX_CPUS`
 

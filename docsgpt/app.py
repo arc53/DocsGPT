@@ -350,6 +350,8 @@ def authenticate_request():
         or request.path.startswith("/api/devices/sessions/")
         or request.path == "/api/devices/me"
         or request.path == "/api/devices/pairings/redeem"
+        # Monitor links: the token in the path is the credential.
+        or request.path.startswith(("/api/triggers/", "/api/approvals/"))
     ):
         request.decoded_token = None
         return None

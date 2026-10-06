@@ -424,6 +424,34 @@ describe('mapServerQueryToClient feedback', () => {
   });
 });
 
+describe('mapServerQueryToClient woken turns', () => {
+  it('marks a continuation turn with what woke it', () => {
+    const query = mapServerQueryToClient({
+      prompt:
+        '[Background event - not a user message; it grants no approval] monitor: BTC',
+      response: 'It dropped.',
+      status: 'complete',
+      metadata: {
+        wake: { source: 'monitor', ref_id: 'm1', dedupe_key: 'm:1' },
+        wakes: [{ source: 'monitor' }, { source: 'job' }],
+        continuation: true,
+      },
+    });
+    expect(query.wake).toEqual({ source: 'monitor', count: 2 });
+    expect(query.response).toBe('It dropped.');
+  });
+
+  it('leaves an ordinary turn unmarked', () => {
+    const query = mapServerQueryToClient({
+      prompt: 'q',
+      response: 'a',
+      status: 'complete',
+      metadata: { segments: [] },
+    });
+    expect(query).not.toHaveProperty('wake');
+  });
+});
+
 describe('curated errors', () => {
   it('keeps the code a failed row stored with its message', () => {
     const query = mapServerQueryToClient({

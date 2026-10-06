@@ -326,7 +326,7 @@ class TestSetupPeriodicTasks:
 
         setup_periodic_tasks(sender)
 
-        assert sender.add_periodic_task.call_count == 15
+        assert sender.add_periodic_task.call_count == 18
 
         calls = sender.add_periodic_task.call_args_list
 
@@ -370,6 +370,11 @@ class TestSetupPeriodicTasks:
         # stale workflow-run reaper (5m)
         assert calls[14][0][0] == timedelta(seconds=300)
         assert calls[14][1].get("name") == "reap-stale-workflow-runs"
+        # background jobs: lost leases and deadlines (60s), retention (24h)
+        assert calls[15][0][0] == timedelta(seconds=60)
+        assert calls[15][1].get("name") == "sweep-background-jobs"
+        assert calls[16][0][0] == timedelta(hours=24)
+        assert calls[16][1].get("name") == "cleanup-background-jobs"
 
 
 class TestMcpOauthTask:

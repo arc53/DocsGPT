@@ -79,7 +79,8 @@ services:
       # Do NOT add `env_file: ../.env` here -- the runner needs no other app secret.
       - SANDBOX_GATEWAY_AUTH_TOKEN=${SANDBOX_GATEWAY_AUTH_TOKEN:?set SANDBOX_GATEWAY_AUTH_TOKEN to a shared gateway token}
       # Idle seconds before the gateway shuts a kernel down; keep it above the
-      # app's SANDBOX_MAX_TTL (see gateway-launch.sh).
+      # app's SANDBOX_MAX_TTL (see gateway-launch.sh). A kernel running code is
+      # never culled, so long runs (SANDBOX_EXEC_MAX_TIMEOUT) need no more.
       - SANDBOX_KERNEL_IDLE_TIMEOUT=${SANDBOX_KERNEL_IDLE_TIMEOUT:-1800}
       # Keep Jupyter's runtime/connection files on the writable tmpfs.
       - JUPYTER_RUNTIME_DIR=/tmp/jupyter-runtime
@@ -87,7 +88,16 @@ services:
     tmpfs:
       # Per-session workspaces (/tmp/docsgpt-sandbox/<session_id>) and Jupyter
       # runtime files live on tmpfs; the root FS is read-only everywhere else.
+      # Docker mounts this one noexec,nosuid: nothing on /tmp can be run.
       - /tmp
+      # The kernels' HOME (/sandbox-home/home): `pip install --user` packages,
+      # pip's cache and the LibreOffice/Chromium/fontconfig dot-dirs. Unlike
+      # /tmp it allows exec, so a compiled package pip-installed at runtime can
+      # map its .so files; nosuid and nodev still refuse setuid binaries and
+      # device files. Owned by the sandbox uid with mode 0700. It is RAM: what
+      # is written here counts against mem_limit, up to SANDBOX_HOME_SIZE. A
+      # runner started without this mount falls back to a home under /tmp.
+      - /sandbox-home:rw,exec,nosuid,nodev,size=${SANDBOX_HOME_SIZE:-1g},uid=10001,gid=10001,mode=0700
     networks:
       # Reachable by backend/worker over the internal sandbox-net; internet egress
       # (runtime pip install, etc.) via the dedicated sandbox-egress net. NOT on

@@ -10,21 +10,57 @@
 #
 # Kept: PATH (find python), LANG (encoding) and the Jupyter runtime/data dirs
 # (writable tmpfs paths). Set here:
-#   HOME, XDG_CONFIG_HOME, XDG_CACHE_HOME, PYTHONUSERBASE -- a writable home
-#     under /tmp (SANDBOX_KERNEL_HOME), because the root filesystem is read-only
-#     and LibreOffice, Chromium, fontconfig, npm and `pip install --user` all
+#   HOME, XDG_CONFIG_HOME, XDG_CACHE_HOME, PYTHONUSERBASE -- a writable home,
+#     because the root filesystem is read-only and LibreOffice, Chromium,
+#     fontconfig, npm and `pip install --user` (packages and pip's cache) all
 #     write under HOME. Its .local/bin is appended to PATH for pip-installed
 #     commands.
 #   Every NAME=value line of sandbox.env next to this script -- the image
 #     environment from docsgpt/sandbox/manifest.py (generated; do not edit it).
 #
+# Where HOME goes, first match wins:
+#   1. SANDBOX_KERNEL_HOME, when set.
+#   2. $SANDBOX_HOME_MOUNT/home (default /sandbox-home/home) when that mount is
+#      there, writable and not noexec. Compose and Kubernetes mount it as a
+#      tmpfs that allows exec (still nosuid,nodev), so a compiled package
+#      pip-installed at runtime can map its .so files. /tmp stays noexec.
+#   3. $SANDBOX_TMP_HOME (default /tmp/home), with a one-line note on stderr:
+#      the image was started without the mount (an older compose file, a plain
+#      `docker run`). Everything works except compiled packages installed at
+#      runtime, which fail with "failed to map segment from shared object".
+# SANDBOX_PROC_MOUNTS (default /proc/mounts) is where the mount options are read.
+#
 # The image's smoke test runs the same way:
-#   docker run --rm --read-only --tmpfs /tmp IMAGE \
+#   docker run --rm --read-only --tmpfs /tmp \
+#     --tmpfs /sandbox-home:rw,exec,nosuid,nodev,size=1g,uid=10001,gid=10001,mode=0700 IMAGE \
 #     /opt/docsgpt/kernel-env.sh python /opt/docsgpt/smoke_test.py
 set -eu
 
-KERNEL_HOME="${SANDBOX_KERNEL_HOME:-/tmp/home}"
+HOME_MOUNT="${SANDBOX_HOME_MOUNT:-/sandbox-home}"
+TMP_HOME="${SANDBOX_TMP_HOME:-/tmp/home}"
+PROC_MOUNTS="${SANDBOX_PROC_MOUNTS:-/proc/mounts}"
 ENV_FILE="$(dirname "$0")/sandbox.env"
+
+# True when $1 is a writable directory whose mount does not forbid exec.
+exec_mount() {
+    [ -d "$1" ] && [ -w "$1" ] || return 1
+    [ -r "$PROC_MOUNTS" ] || return 0
+    # Field 2 is the mount point, field 4 its options; the last entry for a path wins.
+    options="$(awk -v dir="$1" '$2 == dir { opts = $4 } END { print opts }' "$PROC_MOUNTS")"
+    case ",$options," in
+        *,noexec,*) return 1 ;;
+    esac
+    return 0
+}
+
+if [ -n "${SANDBOX_KERNEL_HOME:-}" ]; then
+    KERNEL_HOME="$SANDBOX_KERNEL_HOME"
+elif exec_mount "$HOME_MOUNT"; then
+    KERNEL_HOME="$HOME_MOUNT/home"
+else
+    KERNEL_HOME="$TMP_HOME"
+    echo "kernel-env: no writable exec-enabled $HOME_MOUNT mount; HOME is $KERNEL_HOME, where compiled packages pip-installed at runtime fail to load if it is noexec (as /tmp is under compose)" >&2
+fi
 
 mkdir -p -m 0700 "$KERNEL_HOME"
 mkdir -p "$KERNEL_HOME/.config" "$KERNEL_HOME/.cache" "$KERNEL_HOME/.local/bin"

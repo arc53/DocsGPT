@@ -370,3 +370,59 @@ def test_resaving_one_file_versions_one_artifact_end_to_end(pg_engine, tmp_path,
                                                 hashlib.sha256(b"final").hexdigest()]
     with LocalStorage(base_dir=str(tmp_path)).get_file(versions[-1]["storage_path"]) as stored:
         assert stored.read() == b"final"
+
+
+class _BigFileMgr(_FakeMgr):
+    """A workspace where some files are over the backend's file cap."""
+
+    def __init__(self, files, big):
+        super().__init__(files)
+        self._big = big
+
+    def list_files(self, _sid):
+        return list(self._files) + list(self._big)
+
+    def get_file(self, _sid, path):
+        from docsgpt.sandbox.base import FileTooLargeError
+
+        if path in self._big:
+            raise FileTooLargeError(self._big[path], 10 * 1024 * 1024)
+        return self._files[path]
+
+
+@pytest.mark.unit
+class TestFilesOverTheCap:
+    def test_a_file_over_the_cap_is_reported_without_a_traceback(self, monkeypatch, caplog):
+        monkeypatch.setattr(ac, "persist_artifact", lambda rel_path, data, **kw: {"artifact_id": rel_path})
+        too_large = []
+        with caplog.at_level(logging.WARNING):
+            captured = ac.capture_artifacts(
+                _BigFileMgr({"chart.png": b"p"}, {"out/race.mp4": 38925591}), "sid", {}, user_id="u",
+                too_large=too_large,
+            )
+        assert [c["artifact_id"] for c in captured] == ["chart.png"]
+        assert too_large == [{"path": "out/race.mp4", "size": 38925591, "limit": 10485760}]
+        assert not [r for r in caplog.records if r.levelno >= logging.ERROR or r.exc_info]
+        assert any("over the" in r.getMessage() for r in caplog.records)
+
+    def test_an_unchanged_big_file_from_before_the_run_is_not_reported(self, monkeypatch):
+        monkeypatch.setattr(ac, "persist_artifact", lambda rel_path, data, **kw: {"artifact_id": rel_path})
+        manager = _BigFileMgr({}, {"old.mp4": 20_000_000})
+        pre = ac.snapshot_signatures(manager, "sid")
+        assert pre == {"old.mp4": (20_000_000, None)}
+        too_large = []
+        ac.capture_artifacts(manager, "sid", pre, user_id="u", too_large=too_large)
+        assert too_large == []
+
+
+@pytest.mark.unit
+def test_a_kernels_too_large_error_is_typed():
+    from docsgpt.sandbox.base import ExecResult, FileTooLargeError
+    from docsgpt.sandbox.jupyter_gateway import JupyterKernelGatewaySandbox
+
+    error = JupyterKernelGatewaySandbox._file_op_error(
+        "get_file", ExecResult(status="error", error_name="ValueError", error_value="file too large: 99 > 3 bytes")
+    )
+    assert isinstance(error, FileTooLargeError) and (error.size, error.limit) == (99, 3)
+    other = JupyterKernelGatewaySandbox._file_op_error("get_file", ExecResult(status="error", error_value="nope"))
+    assert not isinstance(other, FileTooLargeError) and isinstance(other, IOError)

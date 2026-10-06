@@ -1,7 +1,7 @@
 ---
 title: Agent Guardrails
 description: Scan user input, retrieved sources, tool results and answers with built-in checks — PII, secrets, banned terms, link policy, prompt injection, groundedness and an LLM judge — and choose to flag, redact or block. Includes the audit journal, instance floor and API reference.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-06
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -24,7 +24,7 @@ An agent turn passes through four intervention points. A control attached to a s
 | --- | --- | --- | --- |
 | `input` | The user's question, before anything is sent to the model | The model and the stored conversation both receive the masked question | The turn ends immediately with the block message; nothing reaches the model |
 | `retrieval` | The retrieved document chunks, formatted as they will appear in the prompt | Masked in the prompt **and** in the sources shown to the user and stored with the conversation | The model is told the sources were withheld by policy; the user sees `[Withheld by a content policy.]` in place of each source |
-| `tool_result` | Each tool's result string, before it fans out to the model, the UI and the journal | The masked result is what the model and the user see | The result is replaced with a note telling the model it could not be used and must not speculate about its contents |
+| `tool_result` | Each tool's result string, before it fans out to the model, the UI and the journal; also a [background job](/Tools/background-jobs)'s result and the data a background event (a monitor, a webhook, an approval) carries, before it is stored | The masked result is what the model and the user see | The result is replaced with a note telling the model it could not be used and must not speculate about its contents |
 | `output` | The answer as it streams from the model | Masked **before** the text leaves the server | The stream stops with the block message; any tokens already delivered are retracted from the client and the stored message |
 
 A few details worth knowing:

@@ -19,13 +19,15 @@ class AgentSettings(SettingsGroup):
         description="Per-agent default quotas: tokens and requests.",
     )
     DEFAULT_CHAT_TOOLS: Annotated[list[str], NoDecode, EnvList(none_is_empty=True)] = Field(
-        default=["memory", "read_webpage", "scheduler"],
+        default=["memory", "read_webpage", "scheduler", "monitor"],
         description=(
             'Config-free tools on by default in agentless chats, as a JSON list of tool names (["memory","scheduler"]) '
             "or comma-separated names. none (or []) turns them all off; an empty value keeps the default. scheduler is "
             "dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add "
             "code_executor and artifact_generator once a sandbox runner is configured; both execute through "
-            "it and would fail on every call without one."
+            "it and would fail on every call without one. check_job is never listed or toggled (an entry is ignored): "
+            "every turn that can hand calls off to a background job gets it. monitor is offered only while "
+            "MONITORS_ENABLED is on."
         ),
     )
     ENABLE_TOOL_PREFETCH: bool = Field(default=True, description="Pre-fetch retrieval before the agent's first turn.")

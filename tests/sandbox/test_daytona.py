@@ -546,8 +546,11 @@ def test_get_file_too_large_rejected(sandbox):
     s.open("conv-1")
     _, created = s._client.created[0]
     created.fs.get_file_info.return_value = _FakeFileInfo("a.txt", size=99)
-    with pytest.raises(IOError):
+    from docsgpt.sandbox.base import FileTooLargeError
+
+    with pytest.raises(FileTooLargeError) as caught:
         s.get_file("conv-1", "a.txt")
+    assert (caught.value.size, caught.value.limit) == (99, 3)
 
 
 def test_get_file_post_download_size_guard(sandbox):
@@ -1147,3 +1150,193 @@ def test_manager_reports_reattach_through_open_session(fake_sdk):
     box._client.existing = [_FakeSandbox("sbx-prior", labels={"docsgpt_session_id": "conv-1"})]
     mgr = SandboxManager(box, max_ttl=600)
     assert mgr.open_session("conv-1").created is False
+
+
+# --- Long runs: timeouts, OOM kills and the auto-stop timer --------------
+
+
+class _ToolboxApiException(Exception):
+    """Shape of daytona_toolbox_api_client's ApiException, which code_run raises unwrapped."""
+
+    def __init__(self, status, body):
+        super().__init__(f"({status})\nReason: Request Timeout\nHTTP response body: {body}")
+        self.status = status
+        self.body = body
+        self.reason = "Request Timeout"
+
+
+# What Daytona answered when a code_run outlived its timeout (probed live, SDK 0.211.2).
+_DAYTONA_408_BODY = (
+    '{"statusCode":408,"message":"command execution timeout","source":"DAYTONA_DAEMON",'
+    '"code":"PROCESS_EXECUTION_TIMEOUT","path":"/process/code-run","method":"POST"}'
+)
+
+
+def test_exec_passes_the_requested_timeout_to_code_run(sandbox):
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    sandbox.exec("conv-1", "render()", timeout=900)
+    assert created.process.code_run.call_args.kwargs["timeout"] == 900
+
+
+def test_a_code_run_timeout_is_reported_as_a_timeout_without_a_wake_retry(sandbox):
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    created.process.code_run.side_effect = _ToolboxApiException(408, _DAYTONA_408_BODY)
+    res = sandbox.exec("conv-1", "while True: pass", timeout=30)
+    assert res.status == "error"
+    assert res.error_name == "TimeoutError" and res.error_value == "execution exceeded 30s"
+    assert res.runtime_invalidated is False
+    # A timeout is not a stopped sandbox: no refresh, no wake, no second run.
+    assert created.process.code_run.call_count == 1
+    sandbox._client.get.assert_not_called()
+
+
+def test_the_real_toolbox_exception_is_recognized_as_a_timeout():
+    from daytona_toolbox_api_client.exceptions import ApiException
+
+    from docsgpt.sandbox.daytona import _is_exec_timeout
+
+    exc = ApiException(status=408, reason="Request Timeout", body=_DAYTONA_408_BODY)
+    assert _is_exec_timeout(exc)
+    assert not _is_exec_timeout(ApiException(status=500, reason="boom", body="{}"))
+    assert not _is_exec_timeout(RuntimeError("read timed out"))
+    # The daemon's code alone is enough, whatever the status says.
+    assert _is_exec_timeout(_ToolboxApiException(504, _DAYTONA_408_BODY))
+
+
+def test_a_retry_that_times_out_is_reported_as_a_timeout(sandbox):
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    created.state = "stopped"
+    created.process.code_run.side_effect = [
+        RuntimeError("sandbox is stopped"),
+        _ToolboxApiException(408, _DAYTONA_408_BODY),
+    ]
+    res = sandbox.exec("conv-1", "while True: pass", timeout=45)
+    assert res.error_name == "TimeoutError" and res.error_value == "execution exceeded 45s"
+
+
+@pytest.mark.parametrize("exit_code", [137, -9])
+def test_a_process_killed_by_sigkill_is_reported_as_out_of_memory(sandbox, exit_code):
+    """Probed live: a code_run that outgrew the sandbox's memory came back with exit code 137."""
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    created.process.code_run.return_value = _FakeExecuteResponse(
+        exit_code=exit_code, artifacts=_FakeArtifacts(stdout="alloc\n")
+    )
+    res = sandbox.exec("conv-1", "b = bytearray(10**12)")
+    assert res.status == "error" and res.out_of_memory is True
+    assert res.stdout == "alloc\n"
+    assert "memory" in res.error_value
+
+
+def test_an_ordinary_failure_is_not_out_of_memory(sandbox):
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    created.process.code_run.return_value = _FakeExecuteResponse(exit_code=1, artifacts=_FakeArtifacts(stdout="x"))
+    assert sandbox.exec("conv-1", "raise SystemExit(1)").out_of_memory is False
+
+
+def test_sdk_code_run_request_timeout_outlasts_the_exec_timeout():
+    """Pin the SDK: code_run's HTTP request timeout is the exec timeout plus a margin, never unbounded.
+
+    The prod 16-minute hang came from a toolbox call with no client timeout; a
+    long run must not reintroduce one.
+    """
+    from daytona._sync.process import Process
+
+    api = mock.Mock()
+    api.code_run.return_value = types.SimpleNamespace(
+        result="ok", artifacts=None, exit_code=0, additional_properties={}
+    )
+    process = Process("python", api_client=api, http_client=None)
+    process.code_run("print(1)", timeout=1000)
+    request_timeout = api.code_run.call_args.kwargs["_request_timeout"]
+    assert request_timeout is not None and 1000 < request_timeout <= 1030
+
+
+class _ActivitySandbox(_FakeSandbox):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.refreshes = []
+        self.refresh_activity = mock.Mock(side_effect=lambda request_timeout=None: self.refreshes.append(1))
+
+
+def _daytona(fake_sdk, **kwargs):
+    from docsgpt.sandbox.daytona import DaytonaSandbox
+
+    return DaytonaSandbox(api_key="dtn_test", language="python", **kwargs)
+
+
+def test_a_long_exec_keeps_the_sandbox_active(fake_sdk, monkeypatch):
+    """A run longer than half the auto-stop interval refreshes the sandbox's activity while it runs."""
+    import threading
+
+    from docsgpt.sandbox import daytona as daytona_module
+
+    sb = _daytona(fake_sdk, auto_stop_interval=15)
+    sandbox_obj = _ActivitySandbox()
+    sb._handles["conv-1"] = daytona_module._Handle(sandbox_obj, sandbox_obj.id, "/w")
+    monkeypatch.setattr(daytona_module, "_activity_interval", lambda auto_stop_minutes: 0.01)
+    release = threading.Event()
+
+    def _slow_run(code, timeout=None):
+        release.wait(0.3)
+        return _FakeExecuteResponse(exit_code=0, artifacts=_FakeArtifacts(stdout="done\n"))
+
+    sandbox_obj.process.code_run.side_effect = _slow_run
+    res = sb.exec("conv-1", "render()", timeout=1000)
+    assert res.ok
+    assert len(sandbox_obj.refreshes) >= 2
+    count = len(sandbox_obj.refreshes)
+    # The refresher stops with the run.
+    release.wait(0.1)
+    assert len(sandbox_obj.refreshes) == count
+    assert sandbox_obj.refresh_activity.call_args.kwargs["request_timeout"] > 0
+
+
+@pytest.mark.parametrize("auto_stop, timeout", [(15, 60), (15, 450), (0, 1000)])
+def test_a_short_exec_or_disabled_auto_stop_needs_no_refresh(fake_sdk, monkeypatch, auto_stop, timeout):
+    from docsgpt.sandbox import daytona as daytona_module
+
+    sb = _daytona(fake_sdk, auto_stop_interval=auto_stop)
+    sandbox_obj = _ActivitySandbox()
+    sb._handles["conv-1"] = daytona_module._Handle(sandbox_obj, sandbox_obj.id, "/w")
+    monkeypatch.setattr(daytona_module, "_activity_interval", lambda auto_stop_minutes: 0.001)
+
+    def _run(code, timeout=None):
+        import time
+
+        time.sleep(0.05)
+        return _FakeExecuteResponse(exit_code=0, artifacts=_FakeArtifacts(stdout=""))
+
+    sandbox_obj.process.code_run.side_effect = _run
+    assert sb.exec("conv-1", "x()", timeout=timeout).ok
+    assert sandbox_obj.refreshes == []
+
+
+def test_a_failing_activity_refresh_never_breaks_the_run(fake_sdk, monkeypatch):
+    from docsgpt.sandbox import daytona as daytona_module
+
+    sb = _daytona(fake_sdk, auto_stop_interval=15)
+    sandbox_obj = _ActivitySandbox()
+    sandbox_obj.refresh_activity.side_effect = RuntimeError("api down")
+    sb._handles["conv-1"] = daytona_module._Handle(sandbox_obj, sandbox_obj.id, "/w")
+    monkeypatch.setattr(daytona_module, "_activity_interval", lambda auto_stop_minutes: 0.005)
+
+    def _run(code, timeout=None):
+        import time
+
+        time.sleep(0.05)
+        return _FakeExecuteResponse(exit_code=0, artifacts=_FakeArtifacts(stdout="ok\n"))
+
+    sandbox_obj.process.code_run.side_effect = _run
+    assert sb.exec("conv-1", "x()", timeout=1000).stdout == "ok\n"
+
+
+def test_activity_interval_is_a_third_of_the_auto_stop_window():
+    from docsgpt.sandbox.daytona import _activity_interval
+
+    assert _activity_interval(15) == 300
+    assert _activity_interval(1) == 30  # never hammer the API

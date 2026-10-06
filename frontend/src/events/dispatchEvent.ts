@@ -47,6 +47,13 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set([
   // A connection's sign-in stopped working (connectors/service.py);
   // consumed by ConnectionHealthToast via selectRecentEvents.
   'connection.reconnect_needed',
+  // A monitor checked, woke the agent, paused or ended; consumed by monitorsSlice.
+  'monitor.updated',
+  // Background jobs and notifications (docsgpt/background, docsgpt/notifications);
+  // consumed by backgroundJobs/ and the conversation listener.
+  'job.updated',
+  'conversation.continued',
+  'notification.created',
 ]);
 
 /**

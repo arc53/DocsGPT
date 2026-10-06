@@ -635,12 +635,14 @@ def description_note() -> str:
 _FONT_ROOT = "/usr/share/fonts/"
 
 
-def environment_summary(timeout: int, idle_minutes: int) -> str:
+def environment_summary(timeout: int, idle_minutes: int, max_timeout: Optional[int] = None) -> str:
     """Summarize the sandbox for the first result of a new session.
 
     Args:
-        timeout: The per-call wall-clock cap in seconds.
+        timeout: The default per-call wall-clock cap in seconds.
         idle_minutes: Minutes of inactivity after which the session resets.
+        max_timeout: The longest cap a call may ask for; omitted when None or
+            not above ``timeout``.
 
     Returns:
         A compact paragraph: paths, packages with import names, commands with the
@@ -654,11 +656,12 @@ def environment_summary(timeout: int, idle_minutes: int) -> str:
         f"({f['scripts'].split(';')[0]})"
         for f in FONTS
     )
+    longer = f", `timeout` up to {max_timeout}s" if max_timeout and max_timeout > timeout else ""
     return (
         f"Python {PYTHON_SERIES}. Working directory = workspace: files there become downloads, except "
         "scratch/; inputs/ holds passed files; /tmp is not kept. "
         f"Packages: {packages}. "
         f"Commands: {helpers}; {others}. "
         f"Fonts ({_FONT_ROOT}): {fonts}. "
-        f"Limits: {timeout}s per call; resets after {idle_minutes} min idle."
+        f"Limits: {timeout}s per call by default{longer}; resets after {idle_minutes} min idle."
     )

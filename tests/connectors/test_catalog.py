@@ -177,3 +177,17 @@ def test_atlassian_preset_is_part_of_confluence():
     assert atlassian.part_of == "confluence"
     assert atlassian.to_dict()["part_of"] == "confluence"
     assert catalog.get_definition("confluence").to_dict()["part_of"] is None
+
+
+def test_clickup_is_a_remote_oauth_preset():
+    clickup = catalog.get_definition("mcp:clickup")
+
+    assert clickup.name == "ClickUp"
+    assert clickup.icon == "clickup"
+    assert clickup.category == "projects"
+    assert clickup.auth_kind == "mcp_oauth"
+    assert clickup.mcp_base_url == "https://mcp.clickup.com"
+    assert clickup.capabilities == ("read", "write")
+    assert clickup.docs_url == (
+        "https://developer.clickup.com/docs/connect-an-ai-assistant-to-clickups-mcp-server"
+    )

@@ -327,12 +327,32 @@ function ActionMenu({
   menuWidth = 'default',
 }: ActionMenuProps) {
   const toolbar = size === 'toolbar';
+  // Closing the menu hands focus back to the trigger, which would reopen its
+  // tooltip over the next row; that one focus doesn't show it.
+  const [tipOpen, setTipOpen] = React.useState(false);
+  const skipTip = React.useRef(false);
   return (
-    <DropdownMenu open={open} onOpenChange={onOpenChange}>
+    <DropdownMenu
+      open={open}
+      onOpenChange={(next) => {
+        if (next) setTipOpen(false);
+        else skipTip.current = true;
+        onOpenChange?.(next);
+      }}
+    >
       {trigger ? (
         <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       ) : (
-        <Tooltip>
+        <Tooltip
+          open={tipOpen}
+          onOpenChange={(next) => {
+            if (next && skipTip.current) {
+              skipTip.current = false;
+              return;
+            }
+            setTipOpen(next);
+          }}
+        >
           {/* Menu trigger outermost, so the button keeps its data-slot. */}
           <DropdownMenuTrigger asChild>
             <TooltipTrigger asChild>

@@ -14,6 +14,8 @@ from flask_restx import Namespace
 
 from docsgpt import tracing
 from docsgpt.api.answer.segments import AnswerSegments
+from docsgpt.background.context import bind_turn as bind_background_turn
+from docsgpt.background.fold import fold_turn as fold_background_turn
 from docsgpt.api.answer.services.continuation_service import ContinuationService
 from docsgpt.api.answer.services.conversation_service import (
     ConversationService,
@@ -765,6 +767,15 @@ class BaseAnswerResource:
                 logger.debug(
                     "Could not set tool_executor.conversation_id post-reserve",
                 )
+        # A slow tool call in this turn may be handed off to a background job.
+        bind_background_turn(
+            getattr(agent, "tool_executor", None),
+            conversation_id=conversation_id,
+            message_id=reserved_message_id,
+            decoded_token=decoded_token,
+            agent_id=agent_id,
+            api_route=finalize_tool_pause_as_complete,
+        )
 
         # Per-stream monotonic SSE event id. Allocated by ``_emit`` and
         # threaded through both the wire format (``id: <seq>\\n``) and
@@ -851,7 +862,15 @@ class BaseAnswerResource:
                 # applies the redaction to what it sends the model. Handing it
                 # the already-redacted question would make that a second scan
                 # over different text, and a remote check would be paid twice.
-                gen_iter = agent.gen(query=raw_question)
+                # Background results that finished unseen go in front of it.
+                model_question = raw_question
+                if wal_eligible and conversation_id:
+                    model_question, folded = fold_background_turn(
+                        str(conversation_id), (decoded_token or {}).get("sub"), raw_question
+                    )
+                    if folded:
+                        query_metadata["folded_background"] = folded
+                gen_iter = agent.gen(query=model_question)
 
             # Seed a liveness heartbeat the moment generation starts, before
             # the first chunk. The row is still ``pending`` here; this stamps a
@@ -890,15 +909,19 @@ class BaseAnswerResource:
                     query_metadata.update(line["metadata"])
                 elif "answer" in line:
                     _mark_streaming_once()
-                    response_full += str(line["answer"])
-                    segments.answer(line["answer"])
+                    chunk = str(line["answer"])
+                    if not line.get("structured"):
+                        # Text after a tool call starts a new paragraph, live and stored alike.
+                        chunk = segments.join(response_full, chunk)
+                    response_full += chunk
+                    segments.answer(chunk)
                     if line.get("structured"):
                         is_structured = True
                         schema_info = line.get("schema")
                         structured_chunks.append(line["answer"])
                     else:
                         yield _emit(
-                            {"type": "answer", "answer": line["answer"]}
+                            {"type": "answer", "answer": chunk}
                         )
                 elif "sources" in line:
                     _mark_streaming_once()

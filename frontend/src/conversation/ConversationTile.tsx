@@ -19,6 +19,8 @@ import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { useOutsideAlerter } from '../hooks';
+import WatchingMark from '../monitors/WatchingMark';
+import UnreadDot from '../backgroundJobs/UnreadDot';
 
 interface ConversationProps {
   name: string;
@@ -206,8 +208,21 @@ export default function ConversationTile({
                 if (!isCurrent) selectConversation(conversation.id);
               }}
             >
-              <span className="truncate" title={conversationName}>
+              <span
+                className="min-w-0 flex-1 truncate"
+                title={conversationName}
+              >
                 {conversationName}
+              </span>
+              {/* Pinned to the row's right end, just before the menu slot that
+                  pr-10 keeps clear, so a long name truncates before them and
+                  they never move when the menu shows on hover. */}
+              <span
+                className="flex shrink-0 items-center gap-1.5"
+                data-testid="conversation-marks"
+              >
+                <WatchingMark conversationId={conversation.id} />
+                <UnreadDot conversationId={conversation.id} />
               </span>
             </Link>
           </Button>

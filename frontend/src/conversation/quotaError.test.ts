@@ -50,4 +50,14 @@ describe('quotaErrorMessage', () => {
     );
     expect(message.endsWith('|')).toBe(true);
   });
+
+  it('takes app language codes that are not BCP 47 tags', () => {
+    // i18n.language is an app code: "zhTW" alone makes Intl throw.
+    const message = quotaErrorMessage(
+      { dimension: 'tokens', usage: 1234, limit: 1000 },
+      t,
+      'zhTW',
+    );
+    expect(message).toBe('conversation.quotaExceeded.tokens|1,234|1,000|');
+  });
 });
