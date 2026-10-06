@@ -921,7 +921,7 @@ websockets==16.1.1
     #   fastmcp-slim
     #   google-genai
     #   uvicorn
-werkzeug==3.1.8
+werkzeug==3.1.9
     # via
     #   docsgpt
     #   flask
