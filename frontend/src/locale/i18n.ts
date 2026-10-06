@@ -38,6 +38,11 @@ i18n
       },
     },
     fallbackLng: 'en',
+    // Detection skips codes outside this list (a stored "undefined" from old
+    // builds) and maps a region to its language (ru-RU -> ru); the detector
+    // then caches the result over the stored value. A new language goes here
+    // as well as in `resources`.
+    supportedLngs: ['en', 'es', 'jp', 'zh', 'zhTW', 'ru', 'de'],
     detection: {
       order: ['localStorage', 'navigator'],
       caches: ['localStorage'],

@@ -8,6 +8,7 @@ import {
   formatDateTime,
   formatDeadline,
   formatTimestamp,
+  intlLocale,
 } from './dateTimeUtils';
 
 describe('dateTimeUtils', () => {
@@ -151,5 +152,22 @@ describe('formatDeadline', () => {
 
   it('leaves a value that does not parse unchanged', () => {
     expect(formatDeadline('soon')).toBe('soon');
+  });
+});
+
+describe('intlLocale', () => {
+  it('maps app codes to BCP 47 tags', () => {
+    expect(intlLocale('ru-RU')).toBe('ru-RU');
+    expect(intlLocale('jp')).toBe('ja');
+    expect(intlLocale('zhTW')).toBe('zh-TW');
+  });
+
+  it('falls back to en for values Intl rejects', () => {
+    // Old builds stored the string "undefined" as the language.
+    expect(intlLocale('undefined')).toBe('en');
+    expect(intlLocale('')).toBe('en');
+    expect(intlLocale('not a tag')).toBe('en');
+    expect(() => new Intl.ListFormat(intlLocale('undefined'))).not.toThrow();
+    expect(formatCount(1234, 'undefined')).toBe('1,234');
   });
 });
