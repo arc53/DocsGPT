@@ -225,9 +225,12 @@ class TestOwnKeysOnly:
 class TestClientGuard:
     def test_a_catalog_key_cannot_go_to_the_openai_default_endpoint(self, monkeypatch):
         configure(monkeypatch, LLM_PROVIDER="openai_compatible", DEEPSEEK_API_KEY="sk-ds")
-        with pytest.raises(CredentialScopeError) as excinfo:
+        with pytest.raises(
+            CredentialScopeError,
+            match=r"request to api\.openai\.com:443: .* configured for api\.deepseek\.com:443\.",
+        ) as excinfo:
             OpenAILLM(api_key="sk-ds")
-        assert "api.openai.com" in str(excinfo.value)
+        # The message names hosts, never the key.
         assert "sk-ds" not in str(excinfo.value)
 
     def test_the_benchmark_pairing_is_refused_before_any_request(self, monkeypatch):

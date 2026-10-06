@@ -24,14 +24,14 @@ def _together(target) -> List[object]:
     """Run ``target`` on ``THREADS`` threads released together; return results."""
     barrier = threading.Barrier(THREADS)
     results: List[object] = []
-    errors: List[BaseException] = []
+    errors: List[Exception] = []
     lock = threading.Lock()
 
     def worker():
         barrier.wait()
         try:
             value = target()
-        except BaseException as exc:  # noqa: BLE001 - reported below
+        except Exception as exc:  # noqa: BLE001 - reported below
             with lock:
                 errors.append(exc)
             return

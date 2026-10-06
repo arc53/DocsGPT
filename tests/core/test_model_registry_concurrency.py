@@ -79,14 +79,14 @@ def _run_together(target) -> List[Dict[str, Any]]:
     """Run ``target`` on ``THREADS`` threads released together by a barrier."""
     barrier = threading.Barrier(THREADS)
     results: List[Dict[str, Any]] = []
-    errors: List[BaseException] = []
+    errors: List[Exception] = []
     lock = threading.Lock()
 
     def worker():
         barrier.wait()
         try:
             outcome = target()
-        except BaseException as exc:  # noqa: BLE001 - reported below
+        except Exception as exc:  # noqa: BLE001 - reported below
             with lock:
                 errors.append(exc)
             return
