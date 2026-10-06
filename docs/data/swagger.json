@@ -790,6 +790,63 @@
       ],
       "type": "object"
     },
+    "PresenceReport": {
+      "properties": {
+        "closing": {
+          "description": "The tab is closing; forget it",
+          "type": "boolean"
+        },
+        "conversation_id": {
+          "description": "The conversation the tab shows, or null",
+          "type": "string"
+        },
+        "tab_id": {
+          "description": "The tab's own random id (1-64 of A-Z a-z 0-9 _ . : -)",
+          "type": "string"
+        },
+        "visible": {
+          "description": "Whether the tab is visible",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "tab_id",
+        "visible"
+      ],
+      "type": "object"
+    },
+    "PushSubscription": {
+      "properties": {
+        "endpoint": {
+          "description": "The push service URL (https, a known push service)",
+          "type": "string"
+        },
+        "expirationTime": {
+          "description": "Ignored",
+          "type": "object"
+        },
+        "keys": {
+          "description": "{p256dh, auth}, base64url, as the browser gives them",
+          "type": "object"
+        }
+      },
+      "required": [
+        "endpoint",
+        "keys"
+      ],
+      "type": "object"
+    },
+    "PushUnsubscribe": {
+      "properties": {
+        "endpoint": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "endpoint"
+      ],
+      "type": "object"
+    },
     "ReingestSourceModel": {
       "properties": {
         "source_id": {
@@ -2277,6 +2334,54 @@
         ]
       }
     },
+    "/api/approvals/{token}": {
+      "get": {
+        "description": "What an approval link asks: its title, question, details, options and whether it was decided. Public (the token is the credential); reading it changes nothing.",
+        "operationId": "get_approval_link",
+        "parameters": [
+          {
+            "description": "The link's token.",
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "security": [],
+        "tags": [
+          "approvals"
+        ],
+        "x-pat-denied": true
+      },
+      "post": {
+        "description": "Decide an approval link: {decision, comment?}, where decision is one of its options. The first decision wins and resumes the conversation that asked; later ones get 409. 404 for an unknown, expired or revoked link, 400 for an option it doesn't offer, 429 when rate limited.",
+        "operationId": "post_approval_link",
+        "parameters": [
+          {
+            "description": "The link's token.",
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "security": [],
+        "tags": [
+          "approvals"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/artifact/{artifact_id}": {
       "get": {
         "description": "Get artifact data by artifact ID. Returns all todos for the tool when fetching a todo artifact.",
@@ -2417,6 +2522,82 @@
         ],
         "x-pat-scopes": [
           "tools:read"
+        ]
+      }
+    },
+    "/api/background_jobs": {
+      "get": {
+        "description": "List the caller's background jobs of one conversation, newest first (no result bodies).",
+        "operationId": "get_background_jobs",
+        "parameters": [
+          {
+            "description": "The conversation whose jobs to list.",
+            "in": "query",
+            "name": "conversation_id",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "background_jobs"
+        ],
+        "x-pat-scopes": [
+          "conversations:read"
+        ]
+      }
+    },
+    "/api/background_jobs/{job_id}": {
+      "get": {
+        "description": "One background job: its state, progress and, once finished, a result preview.",
+        "operationId": "get_background_job",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "background_jobs"
+        ],
+        "x-pat-scopes": [
+          "conversations:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "job_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/background_jobs/{job_id}/cancel": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "job_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Ask a running background job to stop. It ends as cancelled once its work really stops; a step already under way may still complete.",
+        "operationId": "post_cancel_background_job",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "background_jobs"
+        ],
+        "x-pat-scopes": [
+          "conversations:write"
         ]
       }
     },
@@ -2958,6 +3139,29 @@
         },
         "tags": [
           "connectors"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/conversations/{conversation_id}/read": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "conversation_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Clear the conversation's unread mark (the user opened it). Idempotent.",
+        "operationId": "post_conversation_read",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "notifications"
         ],
         "x-pat-denied": true
       }
@@ -4031,6 +4235,119 @@
         ]
       }
     },
+    "/api/monitors": {
+      "get": {
+        "description": "The caller's monitors, newest first: what each watches, its interval, last check, wakes left, expiry and links (never tokens or secrets).",
+        "operationId": "get_monitors",
+        "parameters": [
+          {
+            "description": "Only this conversation's monitors.",
+            "in": "query",
+            "name": "conversation_id",
+            "type": "string"
+          },
+          {
+            "description": "live (active and paused) or all (the default).",
+            "in": "query",
+            "name": "status",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "monitors"
+        ],
+        "x-pat-scopes": [
+          "conversations:read"
+        ]
+      }
+    },
+    "/api/monitors/{monitor_id}": {
+      "get": {
+        "description": "One of the caller's monitors.",
+        "operationId": "get_monitor_detail",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "monitors"
+        ],
+        "x-pat-scopes": [
+          "conversations:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "monitor_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/monitors/{monitor_id}/secret": {
+      "get": {
+        "description": "The signing secret of one of the caller's webhook monitors, so the owner can configure the sender. Only the owner's session may read it (never an access token); the model only ever sees a placeholder. Rate limited, audited, never cached or logged. 404 when the monitor has no live signed link.",
+        "operationId": "get_monitor_secret",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "monitors"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "monitor_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/monitors/{monitor_id}/{action}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "monitor_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Pause, resume or cancel one of the caller's monitors. Cancelling revokes its links and any approval its source was given; resuming a polled monitor checks it again right away. 409 when the monitor is not in a state the action applies to.",
+        "operationId": "post_monitor_action",
+        "parameters": [
+          {
+            "description": "pause, resume or cancel",
+            "in": "path",
+            "name": "action",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "monitors"
+        ],
+        "x-pat-scopes": [
+          "conversations:write"
+        ]
+      }
+    },
     "/api/parse_spec": {
       "post": {
         "description": "Parse an API specification (OpenAPI 3.x or Swagger 2.0) and return actions",
@@ -4088,6 +4405,100 @@
         "x-pat-scopes": [
           "agents:read"
         ]
+      }
+    },
+    "/api/presence": {
+      "post": {
+        "description": "Report what one tab shows: sent when its visibility or route changes and every ~20 s while visible. A report counts for 45 s; `closing: true` forgets the tab at once. A user is not notified about a conversation a visible tab of theirs shows.",
+        "operationId": "post_presence",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PresenceReport"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "notifications"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/push/public_key": {
+      "get": {
+        "description": "Whether Web Push is configured, and the VAPID public key browsers subscribe with (`applicationServerKey`, raw base64url).",
+        "operationId": "get_push_public_key",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "notifications"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/push/subscriptions": {
+      "delete": {
+        "description": "Forget this browser's Web Push subscription: `{endpoint}` in the body, or `?endpoint=`.",
+        "operationId": "delete_push_subscriptions",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PushUnsubscribe"
+            }
+          },
+          {
+            "description": "The subscription's endpoint, when not in the body",
+            "in": "query",
+            "name": "endpoint",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "notifications"
+        ],
+        "x-pat-denied": true
+      },
+      "post": {
+        "description": "Save this browser's Web Push subscription (the browser's `PushSubscription` JSON) for the caller. The endpoint must be https on a known push service. Saving a known endpoint moves it to the caller. 503 when Web Push is not configured.",
+        "operationId": "post_push_subscriptions",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PushSubscription"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "notifications"
+        ],
+        "x-pat-denied": true
       }
     },
     "/api/regenerate_agent_key/{agent_id}": {
@@ -5516,6 +5927,53 @@
         ]
       }
     },
+    "/api/triggers/{token}": {
+      "get": {
+        "description": "Not a page: a trigger link takes POST only, so this answers 405.",
+        "operationId": "get_trigger_link",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "security": [],
+        "tags": [
+          "triggers"
+        ],
+        "x-pat-denied": true
+      },
+      "post": {
+        "description": "Deliver an event to a monitor's webhook trigger link. Public: the token is the credential. Accepts JSON, form or text up to TRIGGER_MAX_PAYLOAD_BYTES. Signed links verify Standard Webhooks (webhook-id/webhook-timestamp/webhook-signature, 5 minute tolerance), GitHub X-Hub-Signature-256, or X-Signature: sha256=<hex>. Deduplicated on Idempotency-Key, webhook-id or X-GitHub-Delivery, else the body hash. 202 when accepted; 404 for an unknown, expired, revoked or used-up link; 401 for a bad signature; 413 for a large body; 429 past TRIGGER_RATE_PER_MINUTE.",
+        "operationId": "post_trigger_link",
+        "parameters": [
+          {
+            "description": "The link's token.",
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "security": [],
+        "tags": [
+          "triggers"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/tts": {
       "post": {
         "description": "Synthesize audio speech from text",
@@ -6203,6 +6661,10 @@
       "name": "attachments"
     },
     {
+      "description": "Background jobs of tool calls",
+      "name": "background_jobs"
+    },
+    {
       "description": "Conversation management operations",
       "name": "conversations"
     },
@@ -6213,6 +6675,10 @@
     {
       "description": "Available models",
       "name": "models"
+    },
+    {
+      "description": "Presence, Web Push subscriptions and unread conversations",
+      "name": "notifications"
     },
     {
       "description": "Agent management operations",
@@ -6237,6 +6703,18 @@
     {
       "description": "Agent guardrail configuration and audit",
       "name": "guardrails"
+    },
+    {
+      "description": "Public webhook trigger links of monitors",
+      "name": "triggers"
+    },
+    {
+      "description": "Public human approval links of monitors",
+      "name": "approvals"
+    },
+    {
+      "description": "The caller's monitors (Settings > Monitors)",
+      "name": "monitors"
     },
     {
       "description": "Prompt management operations",

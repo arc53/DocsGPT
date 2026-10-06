@@ -7,6 +7,31 @@ UTF-16 code units so the browser can slice ``response`` / ``thought`` with ``Str
 
 from typing import Any, Dict, List, Optional
 
+#: Blank lines between answer text written before a tool call and text written after it.
+_PARAGRAPH_BREAK = 2
+
+
+def separated(previous: str, chunk: str, *, after_tool: bool) -> str:
+    """``chunk`` as it should follow ``previous``: as a new paragraph when a tool call came between them.
+
+    Models write "I'll check the page." before a call and "Done: ..." after
+    it; concatenated, the stored answer read "page.Done". The web UI splits
+    the text by its segments, but the stored answer also reaches the API, the
+    model's own history, shares and notifications.
+
+    Args:
+        previous: The answer text so far.
+        chunk: The next answer chunk.
+        after_tool: A tool call was recorded since the last text.
+
+    Returns:
+        ``chunk``, led by the newlines that make it a new paragraph when needed.
+    """
+    if not after_tool or not previous.strip() or not chunk.strip():
+        return chunk
+    have = (len(previous) - len(previous.rstrip("\n"))) + (len(chunk) - len(chunk.lstrip("\n")))
+    return "\n" * max(0, _PARAGRAPH_BREAK - have) + chunk
+
 
 def utf16_length(text: str) -> int:
     """Return the length of ``text`` as JavaScript counts it.
@@ -37,6 +62,7 @@ class AnswerSegments:
         """
         self._metadata = metadata
         self._seen_calls: set = set()
+        self._tool_since_text = False
         self.items: List[Dict[str, Any]] = []
 
     def _append(self, item: Dict[str, Any]) -> None:
@@ -55,8 +81,14 @@ class AnswerSegments:
         else:
             self._append({"kind": kind, "length": length})
 
+    def join(self, previous: str, chunk: Any) -> str:
+        """The answer chunk to append after ``previous``: a new paragraph when a tool call came between."""
+        return separated(previous, str(chunk), after_tool=self._tool_since_text)
+
     def answer(self, text: Any) -> None:
         """Record an answer chunk, as ``response_full`` appends it."""
+        if str(text).strip():
+            self._tool_since_text = False
         self._grow("text", str(text))
 
     def thought(self, text: Any) -> None:
@@ -72,6 +104,7 @@ class AnswerSegments:
         call_id = (data or {}).get("call_id")
         if not call_id or call_id in self._seen_calls:
             return
+        self._tool_since_text = True
         self._seen_calls.add(call_id)
         self._append({"kind": "tool", "call_id": str(call_id)})
 
@@ -79,3 +112,4 @@ class AnswerSegments:
         """Forget the order, when the stream retracts what it emitted (a guardrail trip)."""
         self.items.clear()
         self._seen_calls.clear()
+        self._tool_since_text = False

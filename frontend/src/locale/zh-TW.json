@@ -29,6 +29,63 @@
     "toolApprovalReview": "檢視",
     "toolApprovalFallbackName": "對話"
   },
+  "backgroundJobs": {
+    "unread": "未讀",
+    "card": {
+      "status": {
+        "working": "背景執行中",
+        "completed": "已完成",
+        "failed": "失敗",
+        "cancelled": "已取消",
+        "lost": "已中斷"
+      },
+      "cancel": "取消",
+      "cancelling": "正在取消…",
+      "cancelFailed": "無法取消此工作",
+      "progress": "已完成 {{percent}}%",
+      "willResume": "完成後，結果會出現在此對話中。",
+      "pollOnly": "完成後，請在此對話中詢問結果。",
+      "lostHint": "工作已中斷，可能尚未完成。助理會在重試前先確認。",
+      "durationSeconds": "{{s}} 秒",
+      "durationMinutes": "{{m}} 分 {{s}} 秒",
+      "durationHours": "{{h}} 小時 {{m}} 分"
+    },
+    "notify": {
+      "title": {
+        "job": "背景工作已完成",
+        "lost": "背景工作已中斷",
+        "monitor": "監控條件已觸發",
+        "trigger": "已收到 Webhook",
+        "approval": "已收到審核結果",
+        "monitor_paused": "監控已暫停",
+        "monitor_expired": "監控已過期",
+        "schedule": "排程工作已完成",
+        "default": "新回覆"
+      },
+      "open": "開啟",
+      "fallbackTitle": "你的助理有新消息"
+    },
+    "push": {
+      "promptTitle": "完成時通知你？",
+      "promptBody": "你離開期間背景工作完成時，會收到瀏覽器通知。",
+      "enable": "啟用",
+      "notNow": "暫不",
+      "blocked": "此網站的通知已被封鎖。請在瀏覽器的網站設定中允許通知。",
+      "failed": "無法啟用通知"
+    },
+    "wake": {
+      "job": "背景工作已完成",
+      "lost": "背景工作已中斷",
+      "monitor": "監控條件已觸發",
+      "trigger": "已收到 Webhook",
+      "approval": "已收到審核結果",
+      "monitor_paused": "監控已暫停",
+      "monitor_expired": "監控已過期",
+      "default": "背景事件",
+      "more": "另有 {{count}} 則",
+      "cancelled": "背景工作已取消"
+    }
+  },
   "demo": [
     {
       "header": "了解 DocsGPT",
@@ -3151,5 +3208,97 @@
     "collapse": "收合",
     "back": "返回"
   },
-  "close": "關閉"
+  "close": "關閉",
+  "approval": {
+    "logoAlt": "DocsGPT",
+    "untitled": "請求審核",
+    "missingTitle": "此連結無法使用",
+    "missingDescription": "它可能已過期或被取消，或者網址不完整。",
+    "loadError": "無法載入此請求",
+    "options": {
+      "approve": "核准",
+      "reject": "拒絕"
+    },
+    "commentLabel": "備註（選填）",
+    "commentPlaceholder": "需要讓請求者知道的事",
+    "onceOnly": "你的選擇是最終的：只有第一個決定有效。",
+    "thanks": "謝謝。你選擇了「{{decision}}」，提出請求的助理已收到通知。",
+    "alreadyDecided": "此請求已有決定：{{decision}}。",
+    "notWaiting": "此請求已不再等待決定。",
+    "rateLimited": "嘗試次數過多。請等一分鐘後再試。",
+    "submitError": "無法送出你的決定。請再試一次。",
+    "expiresAt": "此請求將於 {{date}} 到期。",
+    "yourComment": "你的備註:「{{comment}}」"
+  },
+  "monitors": {
+    "label": "監控",
+    "subtitle": "助理為你留意的內容：網頁、工具、Webhook 連結和審核連結。一有動靜，就會在對應的對話中繼續。",
+    "empty": "還沒有監控",
+    "emptyHint": "在聊天中請助理留意某件事，例如「價格低於 90 美元時告訴我」。",
+    "loadError": "無法載入你的監控",
+    "actionError": "操作失敗，請再試一次。",
+    "untitled": "監控",
+    "watching": "正在留意變化",
+    "every": "每 {{interval}}",
+    "onEvent": "發生時",
+    "openConversation": "開啟對話",
+    "pause": "暫停",
+    "resume": "繼續",
+    "cancel": "取消監控",
+    "menu": "{{name}} 的操作",
+    "pausedBecause": "已暫停：{{reason}}",
+    "lastError": "最近的問題：{{error}}",
+    "cancelConfirm": "取消「{{name}}」？",
+    "cancelConsequence": "它將停止檢查，連結將失效，已給予的核准也會撤回。",
+    "status": {
+      "active": "執行中",
+      "paused": "已暫停",
+      "completed": "已完成",
+      "cancelled": "已取消"
+    },
+    "source": {
+      "webpage": "網頁",
+      "tool": "工具",
+      "ingest": "知識匯入",
+      "webhook": "Webhook 連結",
+      "approval": "審核連結"
+    },
+    "columns": {
+      "monitor": "監控",
+      "status": "狀態",
+      "interval": "檢查頻率",
+      "lastChecked": "上次檢查",
+      "wakesLeft": "剩餘喚醒次數",
+      "expires": "到期",
+      "actions": "操作"
+    },
+    "linkCard": {
+      "title": "Webhook 連結",
+      "copyUrl": "複製連結",
+      "revealSecret": "顯示密鑰",
+      "hideSecret": "隱藏密鑰",
+      "copySecret": "複製密鑰",
+      "secretNote": "只有你能看到簽章密鑰，助理看不到。將它設為 DOCSGPT_WEBHOOK_SECRET 即可執行範例指令，或貼到傳送方的密鑰欄位。",
+      "revealFailed": "無法載入密鑰，請再試一次。",
+      "revealLimited": "請求過多，請一分鐘後再試。",
+      "revealMissing": "此連結已沒有密鑰：它已結束或已被取消。",
+      "approvalTitle": "審核連結",
+      "expires": "{{date}} 到期",
+      "state": {
+        "pending": "等待決定",
+        "decided": "已決定",
+        "ended": "連結已結束",
+        "active": "有效"
+      }
+    },
+    "finished": {
+      "decided": "已結束：已做出決定",
+      "usedAllWakes": "已結束：已完成所有預定通知",
+      "expired": "已結束：已過期",
+      "cancelledByUser": "已由你取消",
+      "cancelledFromChat": "已在對話中取消",
+      "conversationGone": "已結束：其對話已無法繼續"
+    },
+    "endedBecause": "已結束：{{reason}}"
+  }
 }

@@ -260,6 +260,37 @@ class SandboxManager:
         finally:
             self._leave(session_id, expected=session)
 
+    def supports_detached(self) -> bool:
+        """Whether the backend can run code as a detached process (``start_detached``)."""
+        return callable(getattr(self._backend, "start_detached", None))
+
+    def start_detached(self, session_id: str, code: str, timeout: Optional[float], key: str) -> dict:
+        """Start ``code`` detached in the bound session; returns the run's handle (see the backend)."""
+        session = self._enter(session_id)
+        try:
+            return self._backend.start_detached(session_id, code, timeout, key)
+        finally:
+            self._leave(session_id, expected=session)
+
+    def poll_detached(self, session_id: str, run: dict, *, with_output: bool = False):
+        """Check a detached run in the bound session; returns a ``DetachedState``."""
+        session = self._enter(session_id)
+        try:
+            state = self._backend.poll_detached(session_id, run, with_output=with_output)
+            if state.done and state.result is not None and state.result.runtime_invalidated:
+                self._drop_invalidated_session(session_id, session)
+            return state
+        finally:
+            self._leave(session_id, expected=session)
+
+    def cancel_detached(self, session_id: str, run: dict) -> None:
+        """Stop a detached run in the bound session (best-effort)."""
+        session = self._enter(session_id)
+        try:
+            self._backend.cancel_detached(session_id, run)
+        finally:
+            self._leave(session_id, expected=session)
+
     def put_file(self, session_id: str, dest_path: str, data: bytes) -> None:
         """Write ``data`` into the bound session's workspace."""
         session = self._enter(session_id)

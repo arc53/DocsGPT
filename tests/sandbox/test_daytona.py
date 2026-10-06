@@ -546,8 +546,11 @@ def test_get_file_too_large_rejected(sandbox):
     s.open("conv-1")
     _, created = s._client.created[0]
     created.fs.get_file_info.return_value = _FakeFileInfo("a.txt", size=99)
-    with pytest.raises(IOError):
+    from docsgpt.sandbox.base import FileTooLargeError
+
+    with pytest.raises(FileTooLargeError) as caught:
         s.get_file("conv-1", "a.txt")
+    assert (caught.value.size, caught.value.limit) == (99, 3)
 
 
 def test_get_file_post_download_size_guard(sandbox):

@@ -1,6 +1,8 @@
+import { configureStore } from '@reduxjs/toolkit';
 import i18n from 'i18next';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nextProvider, initReactI18next } from 'react-i18next';
+import { Provider } from 'react-redux';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import en from '../locale/en.json';
@@ -46,6 +48,37 @@ const render = (props: {
   );
 
 describe('AnswerFlow', () => {
+  it('shows the webhook link a monitor made as its link card, with Reveal secret when signed', () => {
+    const store = configureStore({
+      reducer: { preference: () => ({ token: null }) },
+    });
+    const call = search({
+      tool_name: 'monitor',
+      action_name: 'monitor_create',
+      result: {
+        monitor_id: 'm-1',
+        url: 'https://docs.example.com/api/triggers/trg_abc',
+        signature: 'github',
+        secret:
+          'hidden from you; the user reveals it on the link card in this chat',
+      },
+    });
+    const html = renderToStaticMarkup(
+      <Provider store={store}>
+        <I18nextProvider i18n={testI18n}>
+          <AnswerFlow
+            toolCalls={[call]}
+            renderApproval={() => null}
+            renderWikiWrite={() => null}
+          />
+        </I18nextProvider>
+      </Provider>,
+    );
+    expect(html).toContain('Webhook link');
+    expect(html).toContain('https://docs.example.com/api/triggers/trg_abc');
+    expect(html).toContain('Reveal secret');
+  });
+
   it('renders the same markup whether the steps arrived live or were fetched', () => {
     const live = render({
       message: 'part one part two',

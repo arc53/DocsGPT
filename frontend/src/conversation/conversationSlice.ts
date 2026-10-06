@@ -22,6 +22,7 @@ import {
   clearAttachments,
   selectSendableAttachmentIds,
 } from '../upload/uploadSlice';
+import { wakeFromMetadata } from '../backgroundJobs/kinds';
 import { newIdempotencyKey } from '../utils/idempotency';
 import {
   appendAnswerText,
@@ -113,6 +114,9 @@ export function mapServerQueryToClient(raw: any): Query {
     requestId: raw?.request_id ?? undefined,
     lastHeartbeatAt: raw?.last_heartbeat_at ?? undefined,
   };
+
+  const wake = wakeFromMetadata(metadata);
+  if (wake) query.wake = wake;
 
   if (isTerminalComplete) {
     query.response = raw?.response ?? '';
@@ -1302,13 +1306,22 @@ export default conversationSlice.reducer;
 
 // Listener (not a reducer) so a scheduled message appended to the open
 // chat can dispatch loadConversation + sidebar refresh.
+/** How long a continuation that landed mid-stream waits for the stream to end. */
+export const CONTINUATION_REFRESH_WAIT_MS = 10 * 60 * 1000;
+
 export const conversationListenerMiddleware = createListenerMiddleware();
 
 conversationListenerMiddleware.startListening({
   actionCreator: sseEventReceived,
   effect: async (action: PayloadAction<SSEEvent>, listenerApi) => {
     const envelope = action.payload;
-    if (envelope.type !== 'schedule.message.appended') return;
+    // A one-time scheduled run, or a continuation turn after a background
+    // job (or a monitor, a trigger or an approval) woke the agent.
+    if (
+      envelope.type !== 'schedule.message.appended' &&
+      envelope.type !== 'conversation.continued'
+    )
+      return;
     const payload = (envelope.payload || {}) as Record<string, unknown>;
     const conversationId =
       (payload.conversation_id as string | undefined) || '';
@@ -1320,6 +1333,9 @@ conversationListenerMiddleware.startListening({
     // Skip mid-stream: loadConversation -> updateConversationId flips status
     // to 'idle', and the next SSE chunk dies on the 'idle' guard in
     // updateStreamingQuery. Defer the refresh to the user's next navigation.
+    const streamingHere =
+      state.conversation.conversationId === conversationId &&
+      state.conversation.status === 'loading';
     if (
       state.conversation.conversationId === conversationId &&
       state.conversation.status !== 'loading'
@@ -1334,10 +1350,23 @@ conversationListenerMiddleware.startListening({
       const fetched = await getConversations(token);
       listenerApi.dispatch(receiveConversations(fetched));
     } catch (error) {
-      console.error(
-        'schedule.message.appended: conversations refresh failed',
-        error,
+      console.error(`${envelope.type}: conversations refresh failed`, error);
+    }
+
+    // A continuation that landed while the user's own answer streamed shows
+    // once that stream ends, if the chat is still open.
+    if (streamingHere && envelope.type === 'conversation.continued') {
+      const ended = await listenerApi.condition(
+        (_, current) =>
+          (current as RootState).conversation.status !== 'loading',
+        CONTINUATION_REFRESH_WAIT_MS,
       );
+      const after = listenerApi.getState() as RootState;
+      if (ended && after.conversation.conversationId === conversationId) {
+        listenerApi.dispatch(
+          loadConversation({ id: conversationId, force: true }),
+        );
+      }
     }
   },
 });

@@ -273,6 +273,27 @@ class TestFindAndLockProposedToolCalls:
         rows = repo.find_and_lock_proposed_tool_calls()
         assert all(r["call_id"] != "p-3" for r in rows)
 
+    def test_excludes_a_call_handed_off_to_a_running_job(self, pg_conn):
+        from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
+
+        _seed_tool_call(pg_conn, call_id="m:p-4", status="proposed", age_minutes=20)
+        _seed_tool_call(pg_conn, call_id="m:p-5", status="proposed", age_minutes=20)
+        conversation_id = str(ConversationsRepository(pg_conn).create("u", "c")["id"])
+        jobs = BackgroundJobsRepository(pg_conn)
+        running, _ = jobs.create(
+            user_id="u", conversation_id=conversation_id, tool_name="t", action_name="a",
+            tool_call_id="m:p-4", max_seconds=600,
+        )
+        finished, _ = jobs.create(
+            user_id="u", conversation_id=conversation_id, tool_name="t", action_name="a",
+            tool_call_id="m:p-5", max_seconds=600,
+        )
+        jobs.finish(finished["id"], status="lost", retention_days=7)
+        rows = ReconciliationRepository(pg_conn).find_and_lock_proposed_tool_calls()
+        ids = {r["call_id"] for r in rows}
+        assert "m:p-4" not in ids
+        assert "m:p-5" in ids
+
 
 class TestFindAndLockExecutedToolCalls:
     def test_returns_stuck_executed(self, pg_conn):

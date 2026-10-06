@@ -99,6 +99,34 @@ export function intlLocale(language: string = i18next.language): string {
 }
 
 /**
+ * A deadline as the reader's own clock shows it: their browser's locale and
+ * time zone, with the zone named ("Oct 20, 2026, 9:44 AM GMT+2").
+ *
+ * The exception to the app's en-GB dates: an expiry someone has to act before
+ * (an approval link, a monitor's end) is read by people in other countries,
+ * so day/month order and the zone must be theirs and visible.
+ *
+ * Args:
+ *   value: an ISO timestamp.
+ *   locale: the locale to format for; the browser's by default.
+ *
+ * Returns:
+ *   The formatted time, or `value` unchanged when it doesn't parse.
+ */
+export function formatDeadline(value: string, locale?: string): string {
+  const parsed = parseDateValue(value);
+  if (!parsed) return value;
+  return new Intl.DateTimeFormat(locale, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  }).format(parsed);
+}
+
+/**
  * A count with the UI language's digit grouping ("1,234", "1.234", "1 234").
  *
  * Args:

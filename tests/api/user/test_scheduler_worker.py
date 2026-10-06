@@ -62,6 +62,12 @@ def patched_engine(pg_engine, monkeypatch):
     yield pg_engine
 
 
+@pytest.fixture(autouse=True)
+def quiet_notifications(monkeypatch):
+    """No test here reaches presence, the unread mark or Web Push unless it records them itself."""
+    monkeypatch.setattr("docsgpt.notifications.notify.notify_user", lambda **kw: None)
+
+
 @pytest.fixture
 def stub_events(monkeypatch):
     captured: list[tuple] = []
@@ -616,6 +622,67 @@ class TestExecuteScheduledRunBody:
         meta = messages[0]._mapping["message_metadata"]
         assert meta.get("scheduled") is True
         assert "schedule.message.appended" in {e[0] for e in stub_events}
+
+
+class TestOneTimeRunNotifies:
+    """A reminder lands in its conversation while the user may be elsewhere: they are notified like a wake."""
+
+    def _once(self, conn, *, name=None):
+        agent_id = _make_agent(conn)
+        schedule = SchedulesRepository(conn).create(
+            user_id="u1", agent_id=agent_id, trigger_type="once", name=name,
+            instruction="remind me to stretch", run_at=_now() + timedelta(seconds=5), next_run_at=_now(),
+        )
+        conv_id = conn.execute(
+            text(
+                "INSERT INTO conversations (user_id, agent_id, name) "
+                "VALUES ('u1', CAST(:a AS uuid), 'origin') RETURNING id"
+            ),
+            {"a": agent_id},
+        ).fetchone()[0]
+        SchedulesRepository(conn).update_internal(str(schedule["id"]), {"origin_conversation_id": str(conv_id)})
+        run = ScheduleRunsRepository(conn).record_pending(str(schedule["id"]), "u1", agent_id, _now())
+        return str(conv_id), run
+
+    def _execute(self, run, answer):
+        outcome = {
+            "answer": answer, "tool_calls": [], "sources": [], "thought": "", "prompt_tokens": 1,
+            "generated_tokens": 1, "denied": [], "error_type": None, "model_id": "fake",
+        }
+        with patch("docsgpt.api.user.scheduler_worker.run_agent_headless", return_value=outcome):
+            execute_scheduled_run_body(str(run["id"]), "celery-7")
+
+    def test_the_appended_reminder_is_notified(self, pg_engine, patched_engine, stub_events, monkeypatch):
+        notified = []
+        monkeypatch.setattr("docsgpt.notifications.notify.notify_user", lambda **kw: notified.append(kw))
+        with pg_engine.begin() as conn:
+            conv_id, run = self._once(conn, name="Stretch break")
+        self._execute(run, "**Time to stretch!**\n\n- Stand up\n- Roll your shoulders")
+        assert len(notified) == 1
+        sent = notified[0]
+        assert sent["kind"] == "schedule"
+        assert sent["user_id"] == "u1"
+        assert sent["conversation_id"] == conv_id
+        assert sent["url"] == f"/c/{conv_id}"
+        assert sent["title"] == "Stretch break"
+        assert sent["body"] == "Time to stretch! Stand up Roll your shoulders"
+
+    def test_an_unnamed_schedule_is_titled_by_its_instruction(self, pg_engine, patched_engine, stub_events,
+                                                              monkeypatch):
+        notified = []
+        monkeypatch.setattr("docsgpt.notifications.notify.notify_user", lambda **kw: notified.append(kw))
+        with pg_engine.begin() as conn:
+            _conv_id, run = self._once(conn)
+        self._execute(run, "Stretch now.")
+        assert notified[0]["title"] == "remind me to stretch"
+
+    def test_a_run_that_appends_nothing_notifies_nobody(self, pg_engine, patched_engine, stub_events, monkeypatch):
+        notified = []
+        monkeypatch.setattr("docsgpt.notifications.notify.notify_user", lambda **kw: notified.append(kw))
+        with pg_engine.begin() as conn:
+            _schedule, run, _agent = _make_pending_run(conn)
+        self._execute(run, "recurring output")
+        assert notified == []
 
 
 class TestRunAsOwnerAccessRecheck:

@@ -20,6 +20,7 @@ import Connectors from './Connectors';
 import CustomModels from './CustomModels';
 import General from './General';
 import Logs from './Logs';
+import Monitors from '../monitors/Monitors';
 import PersonalAccessTokens from './PersonalAccessTokens';
 import Sources from './Sources';
 import Tools from './Tools';
@@ -96,6 +97,7 @@ export default function Settings() {
         />
         <Route path="analytics" element={<Analytics />} />
         <Route path="logs" element={<Logs />} />
+        <Route path="monitors" element={<Monitors />} />
         <Route path="connectors" element={<Connectors />} />
         <Route path="tools" element={<Tools />} />
         <Route

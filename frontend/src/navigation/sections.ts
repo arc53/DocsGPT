@@ -12,6 +12,7 @@ import {
   LayoutGrid,
   LayoutTemplate,
   Plug,
+  Radar,
   ScrollText,
   Settings2,
   ShieldCheck,
@@ -132,6 +133,12 @@ export const SETTINGS_SECTION: Section = {
           path: '/settings/tools',
           labelKey: 'settings.tools.label',
           icon: Wrench,
+        },
+        {
+          key: 'monitors',
+          path: '/settings/monitors',
+          labelKey: 'monitors.label',
+          icon: Radar,
         },
         {
           key: 'customModels',

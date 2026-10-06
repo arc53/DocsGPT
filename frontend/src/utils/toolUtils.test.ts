@@ -6,6 +6,7 @@ import {
   isChatPickerToolVisible,
   isChatToolVisible,
   isClassicAgentToolVisible,
+  isServerAttachedTool,
   isSharedOAuthMcp,
   toolInChat,
 } from './toolUtils';
@@ -147,5 +148,27 @@ describe('isAgentPickerToolVisible', () => {
       isAgentPickerToolVisible({ access: 'viewer', allowed_actions: ['use'] }),
     ).toBe(false);
     expect(isAgentPickerToolVisible({ workflow_only: true })).toBe(false);
+  });
+});
+
+describe('server-attached tools (check_job)', () => {
+  const checkJob = { name: 'check_job', default: true, status: true };
+
+  it('are never offered as a choice: composer, Settings > Tools, agent picker', () => {
+    expect(isServerAttachedTool(checkJob)).toBe(true);
+    expect(isChatToolVisible(checkJob)).toBe(false);
+    expect(isChatPickerToolVisible(checkJob)).toBe(false);
+    expect(isClassicAgentToolVisible(checkJob)).toBe(false);
+    expect(isAgentPickerToolVisible(checkJob)).toBe(false);
+  });
+
+  it('leave monitor and the other defaults where they were', () => {
+    const monitor = { name: 'monitor', default: true, builtin: true };
+    expect(isServerAttachedTool(monitor)).toBe(false);
+    expect(isChatPickerToolVisible(monitor)).toBe(true);
+    expect(isAgentPickerToolVisible(monitor)).toBe(true);
+    expect(isChatPickerToolVisible({ name: 'scheduler', default: true })).toBe(
+      true,
+    );
   });
 });
