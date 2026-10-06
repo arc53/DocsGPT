@@ -86,6 +86,22 @@ class ConversationService:
             logger.error(f"Error fetching conversation: {str(e)}", exc_info=True)
             return None
 
+    def abandon_pending_approval(self, conversation_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+        """Retire the turn still waiting on the user's approval, for the turn they started instead.
+
+        See :meth:`ContinuationService.abandon_pending`.
+
+        Args:
+            conversation_id: The conversation the new turn is in.
+            user_id: The user starting it.
+
+        Returns:
+            The retired pause state, or None when none was waiting.
+        """
+        from docsgpt.api.answer.services.continuation_service import ContinuationService
+
+        return ContinuationService().abandon_pending(conversation_id, user_id)
+
     def save_conversation(
         self,
         conversation_id: Optional[str],

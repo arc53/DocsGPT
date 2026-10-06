@@ -2258,7 +2258,10 @@
       "response": "Response",
       "running": "Running…",
       "denied": "Denied by user",
-      "failed": "failed"
+      "failed": "failed",
+      "notRun": "not run",
+      "notRunMovedOn": "Not run: the conversation moved on before this was approved.",
+      "notRunExpired": "Not run: the approval request expired."
     },
     "quotaExceeded": {
       "tokens": "You've used {{used}} of your {{limit}} token quota. It resets {{resetsAt}}.",

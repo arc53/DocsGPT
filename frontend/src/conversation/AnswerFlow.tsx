@@ -15,7 +15,7 @@ import { layoutAnswer } from './answerLayout';
 import { AnswerSegment, getAnswerSegments } from './answerSegments';
 import MarkdownAnswer from './MarkdownAnswer';
 import { type SandboxArtifact } from './sandboxLinks';
-import StepGroup, { StepIcon, ToolCallDetail } from './StepGroup';
+import StepGroup, { NotRunBadge, StepIcon, ToolCallDetail } from './StepGroup';
 import StreamingStatusLine from './StreamingStatusLine';
 import { ToolCallsType } from './types';
 import { isWikiWriteCall } from './wikiToolCall';
@@ -320,6 +320,7 @@ function InlineToolCallChip({
             {t('conversation.inlineSteps.failed')}
           </span>
         )}
+        <NotRunBadge toolCall={toolCall} />
         <ChevronDown
           aria-hidden
           className={cn(

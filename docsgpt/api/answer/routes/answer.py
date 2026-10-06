@@ -10,7 +10,10 @@ from docsgpt.api import api
 from docsgpt.api.answer.routes.base import answer_ns, BaseAnswerResource
 
 from docsgpt.api.answer.services.continuation_service import (
+    NOT_PENDING_CODE,
+    NOT_PENDING_MESSAGE,
     RESUME_IN_PROGRESS_MESSAGE,
+    ContinuationNotPendingError,
     ResumeInProgressError,
 )
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
@@ -199,6 +202,17 @@ class AnswerResource(Resource, BaseAnswerResource):
             if public.params:
                 body["params"] = public.params
             return make_response(body, 400)
+        except ContinuationNotPendingError:
+            # A decision for a pause that is over (decided, moved past by a new
+            # turn, or expired). Nothing ran.
+            logger.info(
+                "/api/answer - tool actions for a pause no longer pending in conversation %s",
+                data.get("conversation_id"),
+            )
+            return make_response(
+                {"error": NOT_PENDING_MESSAGE, "code": NOT_PENDING_CODE},
+                409,
+            )
         except ResumeInProgressError as e:
             # Another request already owns this conversation's continuation
             # claim. Same contract as ``/stream`` and ``/v1/chat/completions``:

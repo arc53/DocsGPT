@@ -698,6 +698,12 @@ export const fetchAnswer = createAsyncThunk<
 const TAIL_POLL_INTERVAL_MS = 2000;
 const TAIL_MAX_POLL_DURATION_MS = 10 * 60 * 1000;
 
+/** The error code of a decision for an approval that is no longer waiting. */
+export const NOT_PENDING_CODE = 'tool_call_not_pending';
+
+/** Why a ``tool.approval.cleared`` means the open chat shows a stale approval. */
+const APPROVAL_RETIRED_REASONS = new Set(['moved_on', 'expired']);
+
 /** Whether a turn's calls include one paused for the user to decide or run. */
 export function isWaitingOnUser(toolCalls: unknown): boolean {
   return (
@@ -883,6 +889,10 @@ export const submitToolActions = createAsyncThunk<
             }),
           );
         }
+      } else if (data.type === 'error' && data.code === NOT_PENDING_CODE) {
+        // The approval is over (another tab moved on, decided it, or it
+        // expired); nothing ran. Show the turn as it ended, not a failure.
+        dispatch(loadConversation({ id: conversationId, force: true }));
       } else if (data.type === 'error') {
         dispatch(conversationSlice.actions.setStatus('failed'));
         dispatch(
@@ -1283,6 +1293,17 @@ export const conversationSlice = createSlice({
     builder
       .addCase(fetchAnswer.pending, (state) => {
         state.status = 'loading';
+        // Sending a new message moves past a turn still waiting on an
+        // approval: the server records those calls as never run, and so does
+        // this view, so the card can't be approved after the fact.
+        state.queries.forEach((query) => {
+          query.tool_calls?.forEach((call) => {
+            if (isWaitingOnUser([call])) {
+              call.status = 'denied';
+              call.not_run = 'moved_on';
+            }
+          });
+        });
       })
       .addCase(fetchAnswer.rejected, (state, action) => {
         if (action.meta.aborted) {
@@ -1396,5 +1417,35 @@ conversationListenerMiddleware.startListening({
         );
       }
     }
+  },
+});
+
+// A turn this chat shows waiting on an approval was moved past in another tab
+// (or the request expired): reload it so the card becomes the call that never
+// ran. Never mid-stream: a reload then would drop the stream's later chunks,
+// so it waits for the stream (or a tail that may still hold the old turn) to end.
+conversationListenerMiddleware.startListening({
+  actionCreator: sseEventReceived,
+  effect: async (action: PayloadAction<SSEEvent>, listenerApi) => {
+    const envelope = action.payload;
+    if (envelope.type !== 'tool.approval.cleared') return;
+    const payload = (envelope.payload || {}) as Record<string, unknown>;
+    if (!APPROVAL_RETIRED_REASONS.has(String(payload.reason ?? ''))) return;
+    const conversationId =
+      (payload.conversation_id as string | undefined) || envelope.scope?.id;
+    const state = listenerApi.getState() as RootState;
+    if (!conversationId || state.conversation.conversationId !== conversationId)
+      return;
+    if (state.conversation.status === 'loading') {
+      const ended = await listenerApi.condition(
+        (_, current) =>
+          (current as RootState).conversation.status !== 'loading',
+        CONTINUATION_REFRESH_WAIT_MS,
+      );
+      const after = listenerApi.getState() as RootState;
+      if (!ended || after.conversation.conversationId !== conversationId)
+        return;
+    }
+    listenerApi.dispatch(loadConversation({ id: conversationId, force: true }));
   },
 });

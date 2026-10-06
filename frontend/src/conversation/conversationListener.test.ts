@@ -297,6 +297,109 @@ describe('conversation listener — conversation.continued', () => {
   });
 });
 
+describe('conversation listener — tool.approval.cleared', () => {
+  // Another tab moved past (or outwaited) the approval this tab still shows:
+  // reload the open chat so the card becomes the call that never ran.
+  const CLEARED = (reason: string, conversationId = 'conv-1'): SSEEvent => ({
+    id: 'evt-clear-1',
+    ts: '2026-10-06T10:00:00Z',
+    type: 'tool.approval.cleared',
+    payload: {
+      conversation_id: conversationId,
+      message_id: 'msg-1',
+      reason,
+    },
+    scope: { kind: 'conversation', id: conversationId },
+  });
+
+  const settle = async () => {
+    for (let i = 0; i < 4; i += 1) await new Promise((r) => setTimeout(r, 0));
+  };
+
+  beforeEach(() => {
+    (conversationService.getConversation as unknown as Mock).mockReset();
+    (preferenceApi.getConversations as unknown as Mock).mockReset();
+    (conversationService.getConversation as unknown as Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        queries: [
+          {
+            prompt: 'make a webhook',
+            response: 'Set it up.',
+            status: 'complete',
+            tool_calls: [
+              {
+                call_id: 'c5',
+                tool_name: 'remote_device',
+                action_name: 'run_command',
+                arguments: {},
+                status: 'denied',
+                not_run: 'moved_on',
+              },
+            ],
+          },
+          { prompt: 'now the sender', response: 'Done.', status: 'complete' },
+        ],
+      }),
+    });
+  });
+
+  it.each(['moved_on', 'expired'])(
+    'reloads the open chat waiting on that approval (%s)',
+    async (reason) => {
+      const store = makeStore('conv-1', 'awaiting_tool_actions');
+      store.dispatch(sseEventReceived(CLEARED(reason)));
+      await settle();
+      expect(conversationService.getConversation).toHaveBeenCalledWith(
+        'conv-1',
+        'tok-1',
+      );
+      const queries = store.getState().conversation.queries;
+      expect(queries[0].tool_calls?.[0].status).toBe('denied');
+      expect(store.getState().conversation.status).toBe('idle');
+    },
+  );
+
+  it('leaves a decided approval to the stream that resumed it', async () => {
+    const store = makeStore('conv-1', 'awaiting_tool_actions');
+    store.dispatch(sseEventReceived(CLEARED('decided')));
+    await settle();
+    expect(conversationService.getConversation).not.toHaveBeenCalled();
+  });
+
+  it('never interrupts a stream, and reloads once it ends', async () => {
+    const store = makeStore('conv-1', 'loading');
+    store.dispatch(sseEventReceived(CLEARED('moved_on')));
+    await settle();
+    expect(conversationService.getConversation).not.toHaveBeenCalled();
+    expect(store.getState().conversation.status).toBe('loading');
+
+    store.dispatch(conversationSlice.actions.setStatus('idle'));
+    await settle();
+    expect(conversationService.getConversation).toHaveBeenCalledWith(
+      'conv-1',
+      'tok-1',
+    );
+  });
+
+  it('not after a stream if the user left that conversation meanwhile', async () => {
+    const store = makeStore('conv-1', 'loading');
+    store.dispatch(sseEventReceived(CLEARED('expired')));
+    await settle();
+    store.dispatch(conversationSlice.actions.setConversationId('conv-2'));
+    store.dispatch(conversationSlice.actions.setStatus('idle'));
+    await settle();
+    expect(conversationService.getConversation).not.toHaveBeenCalled();
+  });
+
+  it('ignores another conversation', async () => {
+    const store = makeStore('conv-2', 'idle');
+    store.dispatch(sseEventReceived(CLEARED('moved_on')));
+    await settle();
+    expect(conversationService.getConversation).not.toHaveBeenCalled();
+  });
+});
+
 describe('listener middleware export hygiene', () => {
   it('exports the listener middleware so the store can wire it', () => {
     expect(conversationListenerMiddleware).toBeDefined();

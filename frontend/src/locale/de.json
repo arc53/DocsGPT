@@ -2258,7 +2258,10 @@
       "response": "Antwort",
       "running": "Läuft…",
       "denied": "Vom Benutzer abgelehnt",
-      "failed": "fehlgeschlagen"
+      "failed": "fehlgeschlagen",
+      "notRun": "nicht ausgeführt",
+      "notRunMovedOn": "Nicht ausgeführt: Das Gespräch ging weiter, bevor dies genehmigt wurde.",
+      "notRunExpired": "Nicht ausgeführt: Die Genehmigungsanfrage ist abgelaufen."
     },
     "quotaExceeded": {
       "tokens": "Sie haben {{used}} von Ihrem Kontingent von {{limit}} Tokens verbraucht. Es wird am {{resetsAt}} zurückgesetzt.",

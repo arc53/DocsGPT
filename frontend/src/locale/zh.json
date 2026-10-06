@@ -2247,7 +2247,10 @@
       "response": "响应",
       "running": "正在运行…",
       "denied": "已被用户拒绝",
-      "failed": "失败"
+      "failed": "失败",
+      "notRun": "未运行",
+      "notRunMovedOn": "未运行：在批准之前，对话已继续。",
+      "notRunExpired": "未运行：批准请求已过期。"
     },
     "quotaExceeded": {
       "tokens": "您已使用 {{limit}} 令牌配额中的 {{used}}。配额将于 {{resetsAt}} 重置。",

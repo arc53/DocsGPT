@@ -1754,3 +1754,59 @@ class TestToolCallsAcrossApprovalRounds:
         ]
         # The reference stays as the model wrote it; nothing resolved it on the way.
         assert stored[1]["arguments"]["command"] == "echo {{link_secret:ABCDEF}}"
+
+    def test_a_finished_resume_drops_only_its_own_pause(self, pg_conn, flask_app):
+        """A later turn may have paused while this one resumed: its pause must survive."""
+        import uuid as _uuid
+
+        from sqlalchemy import text as sql_text
+
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        user_id = "u-rounds3"
+        conv_id = _uuid.uuid4()
+        message_id = _uuid.uuid4()
+        pg_conn.execute(sql_text("INSERT INTO users (user_id) VALUES (:u)"), {"u": user_id})
+        pg_conn.execute(
+            sql_text("INSERT INTO conversations (id, user_id, name) VALUES (:id, :u, 'c')"),
+            {"id": conv_id, "u": user_id},
+        )
+        pg_conn.execute(
+            sql_text(
+                "INSERT INTO conversation_messages (id, conversation_id, user_id, position, prompt, status) "
+                "VALUES (:id, :c, :u, 0, 'q', 'streaming')"
+            ),
+            {"id": message_id, "c": conv_id, "u": user_id},
+        )
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            agent = MagicMock()
+            agent.gen_continuation.return_value = iter([{"answer": "done"}, {"tool_calls": []}])
+            agent.tool_calls = []
+            agent.compression_metadata = None
+            agent.compression_saved = False
+            agent.tool_executor = None
+            with _patch_db_session(pg_conn), patch(
+                "docsgpt.api.answer.services.continuation_service.ContinuationService.delete_state",
+            ) as delete_state:
+                list(
+                    resource.complete_stream(
+                        question="",
+                        agent=agent,
+                        conversation_id=str(conv_id),
+                        user_api_key=None,
+                        decoded_token={"sub": user_id},
+                        should_persist=True,
+                        model_id="gpt-4",
+                        _continuation={
+                            "messages": [],
+                            "tools_dict": {},
+                            "pending_tool_calls": [],
+                            "tool_actions": [],
+                            "reserved_message_id": str(message_id),
+                            "request_id": "req-own",
+                            "prior_tool_calls": [],
+                        },
+                    )
+                )
+        delete_state.assert_called_once_with(str(conv_id), user_id, message_id=str(message_id))

@@ -132,13 +132,17 @@ def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) ->
                 # dies with the message, so the durable
                 # ``tool.approval.required`` envelope must be cleared or the
                 # UI toast lingers on reconnect. Only emit when a row was
-                # actually deleted so non-approval failures stay quiet.
+                # actually deleted so non-approval failures stay quiet. Only
+                # this message's pause: the row is per conversation, and a
+                # later turn's live pause must survive an earlier turn's sweep.
                 user_id = msg.get("user_id")
                 conversation_id = msg.get("conversation_id")
                 if (
                     user_id
                     and conversation_id
-                    and pt_repo.delete_state(str(conversation_id), str(user_id))
+                    and pt_repo.delete_state(
+                        str(conversation_id), str(user_id), message_id=str(msg["id"])
+                    )
                 ):
                     # Mark the row as having had its approval revoked. A late
                     # finalize is allowed to reclaim a reconciler-failed row
