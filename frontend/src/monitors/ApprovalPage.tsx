@@ -189,6 +189,7 @@ export default function ApprovalPage() {
                 {' '}
                 {t('approval.expiresAt', {
                   date: formatDateTime(view.expires_at),
+                  interpolation: { escapeValue: false },
                 })}
               </>
             )}
