@@ -29,6 +29,7 @@ from docsgpt.core.settings.guardrails import GuardrailSettings
 from docsgpt.core.settings.ingestion import IngestionSettings
 from docsgpt.core.settings.llm import LLMSettings
 from docsgpt.core.settings.monitors import MonitorSettings
+from docsgpt.core.settings.notifications import NotificationSettings
 from docsgpt.core.settings.ocr import OCRSettings
 from docsgpt.core.settings.quotas import QuotaSettings
 from docsgpt.core.settings.retrieval import RetrievalSettings
@@ -56,6 +57,7 @@ SETTINGS_GROUPS: tuple[tuple[str, type[SettingsGroup]], ...] = (
     ("Connectors", ConnectorSettings),
     ("Server", ServerSettings),
     ("Events and devices", EventsSettings),
+    ("Notifications", NotificationSettings),
     ("Agents", AgentSettings),
     ("Guardrails", GuardrailSettings),
     ("Execution traces", TracingSettings),

@@ -20,6 +20,7 @@ import { cn } from '../lib/utils';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { useOutsideAlerter } from '../hooks';
 import WatchingMark from '../monitors/WatchingMark';
+import UnreadDot from '../backgroundJobs/UnreadDot';
 
 interface ConversationProps {
   name: string;
@@ -211,6 +212,7 @@ export default function ConversationTile({
                 {conversationName}
               </span>
               <WatchingMark conversationId={conversation.id} />
+              <UnreadDot conversationId={conversation.id} />
             </Link>
           </Button>
         )}

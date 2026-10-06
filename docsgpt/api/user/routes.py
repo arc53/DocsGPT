@@ -21,6 +21,7 @@ from .conversations import conversations_ns
 from .me import me_ns
 from .models import models_ns
 from .monitors import approvals_ns, monitors_ns, triggers_ns
+from .notifications import notifications_ns
 from .prompts import prompts_ns
 from .schedules import schedules_ns
 from .sharing import sharing_ns
@@ -57,6 +58,9 @@ api.add_namespace(me_ns)
 
 # Models
 api.add_namespace(models_ns)
+
+# Notifications (presence, Web Push subscriptions, unread marks)
+api.add_namespace(notifications_ns)
 
 # Agents (main, sharing, webhooks, folders, import/export)
 api.add_namespace(agents_ns)

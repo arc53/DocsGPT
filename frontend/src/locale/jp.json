@@ -29,6 +29,58 @@
     "toolApprovalReview": "確認",
     "toolApprovalFallbackName": "会話"
   },
+  "backgroundJobs": {
+    "unread": "未読",
+    "card": {
+      "status": {
+        "working": "バックグラウンドで実行中",
+        "completed": "完了",
+        "failed": "失敗",
+        "cancelled": "キャンセル済み",
+        "lost": "中断"
+      },
+      "cancel": "キャンセル",
+      "cancelling": "キャンセル中…",
+      "cancelFailed": "ジョブをキャンセルできませんでした",
+      "progress": "{{percent}}% 完了",
+      "willResume": "完了すると、このチャットに結果が届きます。",
+      "pollOnly": "完了したら、このチャットで結果を尋ねてください。",
+      "lostHint": "ジョブが中断されたため、完了していない可能性があります。アシスタントは再試行の前に確認します。",
+      "durationSeconds": "{{s}}秒",
+      "durationMinutes": "{{m}}分{{s}}秒",
+      "durationHours": "{{h}}時間{{m}}分"
+    },
+    "notify": {
+      "title": {
+        "job": "バックグラウンドジョブが完了しました",
+        "lost": "バックグラウンドジョブが中断されました",
+        "monitor": "モニターが条件に一致しました",
+        "trigger": "Webhook を受信しました",
+        "approval": "承認の回答が届きました",
+        "monitor_paused": "モニターが一時停止されました",
+        "default": "新しい返信"
+      },
+      "open": "開く",
+      "fallbackTitle": "アシスタントからのお知らせ"
+    },
+    "push": {
+      "promptTitle": "完了したら通知しますか？",
+      "promptBody": "離れている間にバックグラウンドの処理が終わったら、ブラウザーの通知でお知らせします。",
+      "enable": "有効にする",
+      "notNow": "今はしない",
+      "blocked": "このサイトの通知はブロックされています。ブラウザーのサイト設定で許可してください。",
+      "failed": "通知を有効にできませんでした"
+    },
+    "wake": {
+      "job": "バックグラウンドジョブが完了しました",
+      "lost": "バックグラウンドジョブが中断されました",
+      "monitor": "モニターが条件に一致しました",
+      "trigger": "Webhook を受信しました",
+      "approval": "承認の回答が届きました",
+      "default": "バックグラウンドイベント",
+      "more": "ほか{{count}}件"
+    }
+  },
   "demo": [
     {
       "header": "DocsGPTについて学ぶ",

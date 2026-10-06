@@ -790,6 +790,63 @@
       ],
       "type": "object"
     },
+    "PresenceReport": {
+      "properties": {
+        "closing": {
+          "description": "The tab is closing; forget it",
+          "type": "boolean"
+        },
+        "conversation_id": {
+          "description": "The conversation the tab shows, or null",
+          "type": "string"
+        },
+        "tab_id": {
+          "description": "The tab's own random id (1-64 of A-Z a-z 0-9 _ . : -)",
+          "type": "string"
+        },
+        "visible": {
+          "description": "Whether the tab is visible",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "tab_id",
+        "visible"
+      ],
+      "type": "object"
+    },
+    "PushSubscription": {
+      "properties": {
+        "endpoint": {
+          "description": "The push service URL (https, a known push service)",
+          "type": "string"
+        },
+        "expirationTime": {
+          "description": "Ignored",
+          "type": "object"
+        },
+        "keys": {
+          "description": "{p256dh, auth}, base64url, as the browser gives them",
+          "type": "object"
+        }
+      },
+      "required": [
+        "endpoint",
+        "keys"
+      ],
+      "type": "object"
+    },
+    "PushUnsubscribe": {
+      "properties": {
+        "endpoint": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "endpoint"
+      ],
+      "type": "object"
+    },
     "ReingestSourceModel": {
       "properties": {
         "source_id": {
@@ -3086,6 +3143,29 @@
         "x-pat-denied": true
       }
     },
+    "/api/conversations/{conversation_id}/read": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "conversation_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Clear the conversation's unread mark (the user opened it). Idempotent.",
+        "operationId": "post_conversation_read",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "notifications"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/create_agent": {
       "post": {
         "description": "Create a new agent",
@@ -4302,6 +4382,100 @@
         "x-pat-scopes": [
           "agents:read"
         ]
+      }
+    },
+    "/api/presence": {
+      "post": {
+        "description": "Report what one tab shows: sent when its visibility or route changes and every ~20 s while visible. A report counts for 45 s; `closing: true` forgets the tab at once. A user is not notified about a conversation a visible tab of theirs shows.",
+        "operationId": "post_presence",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PresenceReport"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "notifications"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/push/public_key": {
+      "get": {
+        "description": "Whether Web Push is configured, and the VAPID public key browsers subscribe with (`applicationServerKey`, raw base64url).",
+        "operationId": "get_push_public_key",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "notifications"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/push/subscriptions": {
+      "delete": {
+        "description": "Forget this browser's Web Push subscription: `{endpoint}` in the body, or `?endpoint=`.",
+        "operationId": "delete_push_subscriptions",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PushUnsubscribe"
+            }
+          },
+          {
+            "description": "The subscription's endpoint, when not in the body",
+            "in": "query",
+            "name": "endpoint",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "notifications"
+        ],
+        "x-pat-denied": true
+      },
+      "post": {
+        "description": "Save this browser's Web Push subscription (the browser's `PushSubscription` JSON) for the caller. The endpoint must be https on a known push service. Saving a known endpoint moves it to the caller. 503 when Web Push is not configured.",
+        "operationId": "post_push_subscriptions",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PushSubscription"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "notifications"
+        ],
+        "x-pat-denied": true
       }
     },
     "/api/regenerate_agent_key/{agent_id}": {
@@ -6478,6 +6652,10 @@
     {
       "description": "Available models",
       "name": "models"
+    },
+    {
+      "description": "Presence, Web Push subscriptions and unread conversations",
+      "name": "notifications"
     },
     {
       "description": "Agent management operations",

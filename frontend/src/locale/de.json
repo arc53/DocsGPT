@@ -29,6 +29,58 @@
     "toolApprovalReview": "Prüfen",
     "toolApprovalFallbackName": "Unterhaltung"
   },
+  "backgroundJobs": {
+    "unread": "Ungelesen",
+    "card": {
+      "status": {
+        "working": "Im Hintergrund",
+        "completed": "Fertig",
+        "failed": "Fehlgeschlagen",
+        "cancelled": "Abgebrochen",
+        "lost": "Unterbrochen"
+      },
+      "cancel": "Abbrechen",
+      "cancelling": "Wird abgebrochen…",
+      "cancelFailed": "Der Job konnte nicht abgebrochen werden",
+      "progress": "{{percent}} % erledigt",
+      "willResume": "Das Ergebnis erscheint in diesem Chat, sobald der Job fertig ist.",
+      "pollOnly": "Frag in diesem Chat nach dem Ergebnis, sobald der Job fertig ist.",
+      "lostHint": "Der Job wurde unterbrochen und ist vielleicht nicht fertig geworden. Der Assistent prüft das, bevor er es erneut versucht.",
+      "durationSeconds": "{{s}} s",
+      "durationMinutes": "{{m}} min {{s}} s",
+      "durationHours": "{{h}} h {{m}} min"
+    },
+    "notify": {
+      "title": {
+        "job": "Hintergrund-Job fertig",
+        "lost": "Hintergrund-Job unterbrochen",
+        "monitor": "Monitor hat angeschlagen",
+        "trigger": "Webhook empfangen",
+        "approval": "Freigabe erhalten",
+        "monitor_paused": "Monitor pausiert",
+        "default": "Neue Antwort"
+      },
+      "open": "Öffnen",
+      "fallbackTitle": "Dein Assistent hat Neuigkeiten"
+    },
+    "push": {
+      "promptTitle": "Benachrichtigen, wenn es fertig ist?",
+      "promptBody": "Erhalte eine Browser-Benachrichtigung, wenn Arbeit im Hintergrund fertig wird, während du weg bist.",
+      "enable": "Aktivieren",
+      "notNow": "Nicht jetzt",
+      "blocked": "Benachrichtigungen sind für diese Website blockiert. Erlaube sie in den Website-Einstellungen deines Browsers.",
+      "failed": "Benachrichtigungen konnten nicht aktiviert werden"
+    },
+    "wake": {
+      "job": "Hintergrund-Job fertig",
+      "lost": "Hintergrund-Job unterbrochen",
+      "monitor": "Monitor hat angeschlagen",
+      "trigger": "Webhook empfangen",
+      "approval": "Freigabe erhalten",
+      "default": "Hintergrundereignis",
+      "more": "+{{count}} weitere"
+    }
+  },
   "demo": [
     {
       "header": "Über DocsGPT lernen",

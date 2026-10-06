@@ -44,6 +44,10 @@ export type ToolCallsType = {
   connector_key?: string | null;
   connector_name?: string | null;
   access?: 'read' | 'write' | null;
+  // Set when the call became a background job; the chat shows a job card.
+  job_id?: string;
+  // The job's final status, patched onto the saved call when the job ends.
+  job_status?: string;
 };
 
 /** The arguments to show for a call: what it sends, not what the model asked. */

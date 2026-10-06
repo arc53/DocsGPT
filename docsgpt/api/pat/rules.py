@@ -381,6 +381,11 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/sources/<string:source_id>/wiki/settings": ("PUT",),
     "/swagger.json": ("*",),
     "/api/docs": ("*",),
+    # Notifications: the web app reporting on its own tab and browser.
+    "/api/presence": ("*",),
+    "/api/push/public_key": ("*",),
+    "/api/push/subscriptions": ("*",),
+    "/api/conversations/<string:conversation_id>/read": ("*",),
 }
 DENIED_PREFIXES = (
     "/api/admin/",
