@@ -126,7 +126,7 @@ may use (never an access token). It is rate limited, audited as `monitor.secret_
 it answers `404` once the link has ended. The secret is stored only encrypted, in `trigger_links`.
 
 - **Unsigned is the default, and fine.** The URL is a 256-bit secret with an expiry, a hit limit
-  (`max_hits`), a rate limit, and it can be revoked, so an unsigned link suits senders that can't sign: curl
+  (`max_hits`) and a rate limit (while Redis is reachable; see the limits below), and it can be revoked, so an unsigned link suits senders that can't sign: curl
   or CI scripts on a device, iOS Shortcuts, Zapier- or IFTTT-style tools, form tools. Use a signature only
   when the sender signs natively: `github` for GitHub, `standard_webhooks` for Svix-style senders, and
   `hmac_sha256` for a custom sender that can compute it.
