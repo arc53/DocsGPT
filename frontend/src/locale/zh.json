@@ -45,6 +45,7 @@
       "progress": "已完成 {{percent}}%",
       "willResume": "完成后，结果会出现在此对话中。",
       "pollOnly": "完成后，请在此对话中询问结果。",
+      "waitingForDevice": "正在等待设备重新连接。命令可能仍在设备上运行。",
       "lostHint": "任务被中断，可能尚未完成。助手会在重试前先确认。",
       "durationSeconds": "{{s}} 秒",
       "durationMinutes": "{{m}} 分 {{s}} 秒",

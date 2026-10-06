@@ -3,7 +3,10 @@
 * A job held by a process (``inprocess`` / ``celery``) whose heartbeat stopped
   is ``lost``: the process died with the call in it. Its delivery is the lost
   note, so the agent learns the work may or may not have happened.
-* A job past its deadline is failed, whichever runner holds it.
+* A job past its deadline is failed, whichever runner holds it; a device job
+  whose device can't be reached to stop the command is lost instead.
+* A ``sandbox`` or ``device`` job whose poll chain stopped is polled again
+  (its work runs on elsewhere) before it is given up as lost.
 * Finished jobs and settled wakes past retention are deleted (daily).
 
 Locks are taken only to pick rows; each job is finished in its own
@@ -16,7 +19,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
-from docsgpt.background import jobs, pool, sandbox_runner
+from docsgpt.background import device_runner, jobs, pool, sandbox_runner
 from docsgpt.background.results import LOST_NOTE
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
@@ -84,8 +87,33 @@ def sweep() -> Dict[str, int]:
         if _mark_lost(row, stale_seconds=sandbox_runner.POLL_STALE_SECONDS):
             summary["lost"] += 1
 
+    # Likewise a device job: the command runs on, on the device, whatever happened to its poll chain.
+    adrift = _pick(
+        lambda repo: repo.find_stale_working(stale_seconds=device_runner.POLL_STALE_SECONDS, runners=("device",))
+    )
+    for row in adrift:
+        if device_runner.revive(row):
+            summary["revived"] += 1
+            continue
+        _cancel_remote(row)
+        if _mark_lost(row, stale_seconds=device_runner.POLL_STALE_SECONDS):
+            summary["lost"] += 1
+
     late = _pick(lambda repo: repo.find_past_deadline(grace_seconds=DEADLINE_GRACE_SECONDS))
     for row in late:
+        if row.get("runner") == "device":
+            # Its poll chain normally ends it at the deadline; this is the backstop. Lost or timed out
+            # depends on whether the device is there to stop the command.
+            try:
+                done = device_runner.on_deadline(row)
+            except Exception:
+                logger.exception("background job %s: ending the device job at its deadline failed", row.get("id"))
+                continue
+            if done is not None and done.get("status") == "failed":
+                summary["timed_out"] += 1
+            elif done is not None:
+                summary["lost"] += 1
+            continue
         _cancel_remote(row)
         limit = int(settings.BACKGROUND_JOB_MAX_SECONDS)
         done = jobs.finalize(
@@ -140,13 +168,17 @@ def _mark_lost(row: Dict[str, Any], *, stale_seconds: int) -> bool:
 
 
 def _cancel_remote(row: Dict[str, Any]) -> None:
-    """Stop the work behind a job when its runner can (a detached sandbox command)."""
-    if row.get("runner") != "sandbox":
+    """Stop the work behind a job when its runner can (a detached sandbox run, a device command)."""
+    runner = row.get("runner")
+    if runner not in ("sandbox", "device"):
         return
     try:
-        sandbox_runner.cancel_detached(row)
+        if runner == "sandbox":
+            sandbox_runner.cancel_detached(row)
+        else:
+            device_runner.cancel_detached(row)
     except Exception:
-        logger.exception("background job %s: stopping the sandbox command failed", row.get("id"))
+        logger.exception("background job %s: stopping the %s command failed", row.get("id"), runner)
 
 
 def cleanup() -> Dict[str, int]:

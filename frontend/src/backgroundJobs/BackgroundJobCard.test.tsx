@@ -201,6 +201,33 @@ describe('BackgroundJobCard', () => {
     expect(container.textContent).toContain('backgroundJobs.card.pollOnly');
   });
 
+  it('says when a device job waits for its device, and stops once it is back', async () => {
+    const store = await render();
+    const update = (progress: Record<string, unknown>) =>
+      act(async () => {
+        store.dispatch(
+          sseEventReceived({
+            id: `e-${String(progress.waiting_for)}`,
+            type: 'job.updated',
+            payload: { job_id: 'j1', status: 'working', progress },
+          }),
+        );
+      });
+    await update({ waiting_for: 'device' });
+    expect(
+      container.querySelector('[data-testid="job-waiting-device"]')
+        ?.textContent,
+    ).toBe('backgroundJobs.card.waitingForDevice');
+    expect(container.textContent).not.toContain(
+      'backgroundJobs.card.willResume',
+    );
+    await update({ waiting_for: null });
+    expect(
+      container.querySelector('[data-testid="job-waiting-device"]'),
+    ).toBeNull();
+    expect(container.textContent).toContain('backgroundJobs.card.willResume');
+  });
+
   it('follows job.updated: progress, then the final state', async () => {
     const store = await render();
     await act(async () => {

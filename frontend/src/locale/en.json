@@ -49,6 +49,7 @@
       "progress": "{{percent}}% done",
       "willResume": "You'll get the result in this chat when it finishes.",
       "pollOnly": "Ask in this chat for the result once it finishes.",
+      "waitingForDevice": "Waiting for the device to reconnect. The command may still be running there.",
       "lostHint": "The job was interrupted and may or may not have finished. The assistant checks before retrying.",
       "durationSeconds": "{{s}}s",
       "durationMinutes": "{{m}}m {{s}}s",

@@ -45,6 +45,7 @@
       "progress": "{{percent}} % completado",
       "willResume": "Recibirás el resultado en este chat cuando termine.",
       "pollOnly": "Pide el resultado en este chat cuando termine.",
+      "waitingForDevice": "Esperando a que el dispositivo se vuelva a conectar. Es posible que el comando siga ejecutándose allí.",
       "lostHint": "La tarea se interrumpió y puede que no haya terminado. El asistente lo comprueba antes de reintentar.",
       "durationSeconds": "{{s}} s",
       "durationMinutes": "{{m}} min {{s}} s",

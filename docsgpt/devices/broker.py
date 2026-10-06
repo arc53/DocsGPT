@@ -26,6 +26,13 @@ Lifecycle:
    chunks to the invocation's output stream and updates the hash.
 4. A ``control`` chunk closes the invocation; ``drain_output`` (in the
    dispatching process) reads the stream from the start and stops on it.
+
+A command handed off to a background job (``docsgpt.background.device_runner``)
+is followed by a poll chain instead of a drain: ``read_output`` reads the
+stream from a cursor without blocking, and the invocation carries its own
+``ttl`` so its keys outlive the job. ``request_cancel`` stops it: a command
+the device never picked up is taken off the queue, a running one gets a
+cancel envelope the session stream sends as ``event: cancel``.
 """
 
 from __future__ import annotations
@@ -104,6 +111,12 @@ class Invocation:
     finished_at: Optional[float] = None
     stdout_bytes: int = 0
     stderr_bytes: int = 0
+    decision: Optional[str] = None
+
+    @property
+    def acked(self) -> bool:
+        """The device took the command (accepted, auto-approved or denied it)."""
+        return bool(self.decision)
 
 
 @dataclass
@@ -236,6 +249,7 @@ class DeviceBroker:
         # cleaned up) after it was queued, so a command the user already saw
         # fail can't still run on the device. Best-effort — it narrows but does
         # not fully close the BLPOP-vs-cleanup window (see cleanup_invocation).
+        # A cancel envelope for a reaped invocation has nothing left to stop.
         inv_id = envelope.get("invocation_id")
         if inv_id and self.get_invocation(inv_id) is None:
             logger.debug("dropping reaped invocation %s", inv_id)
@@ -341,12 +355,22 @@ class DeviceBroker:
         device_id: str,
         user_id: str,
         envelope: Dict[str, Any],
+        *,
+        ttl_seconds: Optional[int] = None,
     ) -> Invocation:
         """Queue an invocation for ``device_id`` and record its metadata.
 
         Writes the metadata hash, then RPUSHes the envelope onto the
         device's command list. A live SSE session draining the list picks it
         up immediately; otherwise it waits for the next poll-issued ticket.
+
+        Args:
+            device_id: The device.
+            user_id: Its owner.
+            envelope: What the device receives.
+            ttl_seconds: How long the invocation's keys live when it must
+                outlast the default (a background command); every later
+                write re-applies it.
         """
         invocation_id = envelope["invocation_id"]
         inv = Invocation(invocation_id=invocation_id, device_id=device_id)
@@ -356,21 +380,22 @@ class DeviceBroker:
             inv.completed = True
             return inv
         envelope_json = json.dumps(envelope)
+        ttl = max(int(ttl_seconds or 0), self._inv_ttl())
+        mapping = {
+            "device_id": device_id,
+            "user_id": user_id,
+            "envelope": envelope_json,
+            "completed": "0",
+            "stdout_bytes": "0",
+            "stderr_bytes": "0",
+        }
+        if ttl_seconds:
+            mapping["ttl"] = str(ttl)
         try:
-            redis.hset(
-                _inv_key(invocation_id),
-                mapping={
-                    "device_id": device_id,
-                    "user_id": user_id,
-                    "envelope": envelope_json,
-                    "completed": "0",
-                    "stdout_bytes": "0",
-                    "stderr_bytes": "0",
-                },
-            )
-            redis.expire(_inv_key(invocation_id), self._inv_ttl())
+            redis.hset(_inv_key(invocation_id), mapping=mapping)
+            redis.expire(_inv_key(invocation_id), ttl)
             redis.rpush(_cmd_key(device_id), envelope_json)
-            redis.expire(_cmd_key(device_id), self._cmd_ttl())
+            redis.expire(_cmd_key(device_id), max(ttl, self._cmd_ttl()))
         except Exception:
             logger.exception("dispatch_invocation failed for %s", invocation_id)
             # Don't strand the metadata hash (it holds the plaintext command)
@@ -385,14 +410,31 @@ class DeviceBroker:
             inv.completed = True
         return inv
 
-    def get_invocation(self, invocation_id: str) -> Optional[Invocation]:
-        """Read an invocation's current metadata snapshot from Redis."""
+    def get_invocation(self, invocation_id: str, *, strict: bool = False) -> Optional[Invocation]:
+        """Read an invocation's current metadata snapshot from Redis.
+
+        Args:
+            invocation_id: The invocation.
+            strict: Raise when Redis is unavailable or fails, instead of
+                returning None, so a caller can tell "gone" from "can't tell".
+
+        Returns:
+            The snapshot, or None when the invocation doesn't exist.
+
+        Raises:
+            RuntimeError: ``strict`` and Redis is unavailable.
+            Exception: ``strict`` and the read failed.
+        """
         redis = get_redis_instance()
         if redis is None:
+            if strict:
+                raise RuntimeError("device broker unavailable")
             return None
         try:
             raw = redis.hgetall(_inv_key(invocation_id))
         except Exception:
+            if strict:
+                raise
             logger.exception("get_invocation failed for %s", invocation_id)
             return None
         if not raw:
@@ -409,7 +451,119 @@ class DeviceBroker:
             finished_at=_to_float(h.get("finished_at")),
             stdout_bytes=_to_int(h.get("stdout_bytes")) or 0,
             stderr_bytes=_to_int(h.get("stderr_bytes")) or 0,
+            decision=h.get("decision") or None,
         )
+
+    def extend_invocation(self, invocation_id: str, ttl_seconds: int) -> bool:
+        """Make an invocation's keys (and its device's queue) live at least ``ttl_seconds``.
+
+        A command handed off to a background job may run far longer than the
+        default TTL; the stored ``ttl`` is re-applied on every later write, so
+        output arriving later can't shorten it again.
+
+        Returns:
+            False when the invocation is gone or Redis is unavailable.
+        """
+        redis = get_redis_instance()
+        if redis is None:
+            return False
+        key = _inv_key(invocation_id)
+        ttl = max(int(ttl_seconds), self._inv_ttl())
+        try:
+            device_id = redis.hget(key, "device_id")
+            if device_id is None:
+                return False
+            redis.hset(key, mapping={"ttl": str(ttl)})
+            redis.expire(key, ttl)
+            redis.expire(_out_key(invocation_id), ttl)
+            redis.expire(_cmd_key(_as_str(device_id)), max(ttl, self._cmd_ttl()))
+        except Exception:
+            logger.exception("extend_invocation failed for %s", invocation_id)
+            return False
+        return True
+
+    def retire_invocation(self, invocation_id: str) -> None:
+        """Let an invocation's keys expire on the default TTL instead of a background job's long one.
+
+        Used once its job ended without the command reporting (cancelled,
+        lost): a cancel envelope still queued for it needs the keys a little
+        longer, so they are not deleted outright.
+        """
+        redis = get_redis_instance()
+        if redis is None:
+            return
+        key = _inv_key(invocation_id)
+        ttl = self._inv_ttl()
+        try:
+            if not redis.exists(key):
+                return
+            redis.hset(key, mapping={"ttl": str(ttl)})
+            redis.expire(key, ttl)
+            redis.expire(_out_key(invocation_id), ttl)
+        except Exception:
+            logger.exception("retire_invocation failed for %s", invocation_id)
+
+    def request_cancel(self, invocation_id: str) -> str:
+        """Stop an invocation: take it off the queue, or ask the device to kill it.
+
+        Returns:
+            ``unqueued`` when the command was still waiting for the device and
+            was removed (it will never run); ``sent`` when a cancel envelope
+            was queued for a command the device already took; ``gone`` when
+            the invocation no longer exists (or Redis is unavailable).
+        """
+        redis = get_redis_instance()
+        if redis is None:
+            return "gone"
+        key = _inv_key(invocation_id)
+        try:
+            raw = redis.hgetall(key)
+            if not raw:
+                return "gone"
+            h = {_as_str(k): _as_str(v) for k, v in raw.items()}
+            device_id = h.get("device_id") or ""
+            queued = h.get("envelope")
+            if queued and not h.get("decision") and redis.lrem(_cmd_key(device_id), 0, queued):
+                return "unqueued"
+            cancel = json.dumps({"type": "cancel", "action": "cancel", "invocation_id": invocation_id})
+            redis.rpush(_cmd_key(device_id), cancel)
+            redis.expire(_cmd_key(device_id), max(self._ttl_of(h), self._cmd_ttl()))
+        except Exception:
+            logger.exception("request_cancel failed for %s", invocation_id)
+            return "gone"
+        return "sent"
+
+    def read_output(
+        self, invocation_id: str, cursor: str = "0-0", count: int = 500
+    ) -> tuple[list[Dict[str, Any]], str]:
+        """Read output chunks after ``cursor`` without blocking.
+
+        Args:
+            invocation_id: The invocation.
+            cursor: The last stream id already read (``0-0`` for the start).
+            count: Most chunks returned.
+
+        Returns:
+            ``(chunks, cursor)``: the stdout/stderr/control chunks, and the id
+            of the last entry read (unchanged when nothing new arrived).
+        """
+        redis = get_redis_instance()
+        if redis is None:
+            return [], cursor
+        try:
+            resp = redis.xread({_out_key(invocation_id): cursor or "0-0"}, count=int(count), block=None)
+        except Exception:
+            logger.exception("read_output failed for %s", invocation_id)
+            return [], cursor
+        chunks: list[Dict[str, Any]] = []
+        last = cursor or "0-0"
+        for _stream_key, entries in resp or []:
+            for entry_id, fields in entries:
+                last = _as_str(entry_id)
+                chunk = _decode_chunk(fields)
+                if chunk is not None:
+                    chunks.append(chunk)
+        return chunks, last
 
     # ------------------------------------------------------------------
     # Output streaming (web process / CLI side)
@@ -428,13 +582,14 @@ class DeviceBroker:
             return False
         key = _inv_key(invocation_id)
         try:
-            device_id = redis.hget(key, "device_id")
+            device_id, stored_ttl = redis.hmget(key, ["device_id", "ttl"])
         except Exception:
             logger.exception("submit_output_chunk read failed for %s", invocation_id)
             return False
         if device_id is None:
             return False
         device_id = _as_str(device_id)
+        ttl = self._ttl_of({"ttl": _as_str(stored_ttl) if stored_ttl is not None else ""})
         now = time.time()
         stream = chunk.get("stream")
         try:
@@ -448,7 +603,7 @@ class DeviceBroker:
                 maxlen=self._out_maxlen(),
                 approximate=True,
             )
-            redis.expire(_out_key(invocation_id), self._inv_ttl())
+            redis.expire(_out_key(invocation_id), ttl)
             if stream in ("stdout", "stderr"):
                 text = chunk.get("chunk")
                 if isinstance(text, str):
@@ -464,7 +619,7 @@ class DeviceBroker:
                 if chunk.get("error"):
                     mapping["error"] = _as_str(chunk["error"])
                 redis.hset(key, mapping=mapping)
-            redis.expire(key, self._inv_ttl())
+            redis.expire(key, ttl)
         except Exception:
             logger.exception("submit_output_chunk failed for %s", invocation_id)
             return False
@@ -488,15 +643,17 @@ class DeviceBroker:
             return False
         key = _inv_key(invocation_id)
         try:
-            if not redis.exists(key):
+            device_id, stored_ttl = redis.hmget(key, ["device_id", "ttl"])
+            if device_id is None:
                 return False
+            ttl = self._ttl_of({"ttl": _as_str(stored_ttl) if stored_ttl is not None else ""})
             now = time.time()
             mapping = {"decision": decision}
             if reason:
                 mapping["decision_reason"] = reason
             redis.hset(key, mapping=mapping)
             redis.hsetnx(key, "started_at", repr(now))
-            redis.expire(key, self._inv_ttl())
+            redis.expire(key, ttl)
             if decision == "denied":
                 # XADD the synthetic control chunk BEFORE marking completed, so a
                 # racing drain that observes completed=1 always finds the chunk
@@ -509,7 +666,7 @@ class DeviceBroker:
                     maxlen=self._out_maxlen(),
                     approximate=True,
                 )
-                redis.expire(_out_key(invocation_id), self._inv_ttl())
+                redis.expire(_out_key(invocation_id), ttl)
                 redis.hset(
                     key,
                     mapping={
@@ -576,19 +733,10 @@ class DeviceBroker:
             for _stream_key, entries in resp:
                 for entry_id, fields in entries:
                     last_id = _as_str(entry_id)
-                    raw = fields.get(b"c")
-                    if raw is None:
-                        raw = fields.get("c")
-                    if raw is None:
+                    chunk = _decode_chunk(fields)
+                    if chunk is None:
                         continue
-                    try:
-                        chunk = json.loads(_as_str(raw))
-                    except (TypeError, ValueError):
-                        continue
-                    if not isinstance(chunk, dict):
-                        continue
-                    if chunk.get("stream") in ("stdout", "stderr", "control"):
-                        yield chunk
+                    yield chunk
                     if chunk.get("stream") == "control":
                         return
 
@@ -633,6 +781,11 @@ class DeviceBroker:
     def _inv_ttl() -> int:
         return int(settings.REMOTE_DEVICE_INVOCATION_TTL_SECONDS)
 
+    @classmethod
+    def _ttl_of(cls, fields: Dict[str, str]) -> int:
+        """The invocation's own TTL (a background command's), never below the default."""
+        return max(_to_int(fields.get("ttl")) or 0, cls._inv_ttl())
+
     @staticmethod
     def _cmd_ttl() -> int:
         return int(settings.REMOTE_DEVICE_CMD_QUEUE_TTL_SECONDS)
@@ -640,6 +793,22 @@ class DeviceBroker:
     @staticmethod
     def _out_maxlen() -> int:
         return int(settings.REMOTE_DEVICE_OUTPUT_STREAM_MAXLEN)
+
+
+def _decode_chunk(fields: Any) -> Optional[Dict[str, Any]]:
+    """One output stream entry as its chunk dict; None for anything malformed or unknown."""
+    raw = fields.get(b"c")
+    if raw is None:
+        raw = fields.get("c")
+    if raw is None:
+        return None
+    try:
+        chunk = json.loads(_as_str(raw))
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(chunk, dict) or chunk.get("stream") not in ("stdout", "stderr", "control"):
+        return None
+    return chunk
 
 
 def _to_int(value: Optional[str]) -> Optional[int]:

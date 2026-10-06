@@ -1368,7 +1368,9 @@ background_jobs_table = Table(
     CheckConstraint(
         "status IN ('working', 'completed', 'failed', 'cancelled', 'lost')", name="background_jobs_status_chk"
     ),
-    CheckConstraint("runner IN ('inprocess', 'celery', 'sandbox', 'mcp')", name="background_jobs_runner_chk"),
+    CheckConstraint(
+        "runner IN ('inprocess', 'celery', 'sandbox', 'mcp', 'device')", name="background_jobs_runner_chk"
+    ),
     CheckConstraint(
         "delivery_state IN ('pending', 'claimed_by_poll', 'resumed', 'folded', 'suppressed', 'failed')",
         name="background_jobs_delivery_state_chk",

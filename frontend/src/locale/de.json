@@ -45,6 +45,7 @@
       "progress": "{{percent}} % erledigt",
       "willResume": "Das Ergebnis erscheint in diesem Chat, sobald der Job fertig ist.",
       "pollOnly": "Frag in diesem Chat nach dem Ergebnis, sobald der Job fertig ist.",
+      "waitingForDevice": "Warte darauf, dass sich das Gerät wieder verbindet. Der Befehl läuft dort möglicherweise noch.",
       "lostHint": "Der Job wurde unterbrochen und ist vielleicht nicht fertig geworden. Der Assistent prüft das, bevor er es erneut versucht.",
       "durationSeconds": "{{s}} s",
       "durationMinutes": "{{m}} min {{s}} s",

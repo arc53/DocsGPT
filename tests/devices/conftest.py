@@ -5,8 +5,9 @@ in-memory double covering only the commands ``DeviceBroker`` issues. It is
 deliberately *not* faithful in several ways, so tests must not lean on them:
 - blocking ops (``blpop`` / ``xread``) don't truly block — they return
   immediately (or after a tiny sleep) so tests stay fast;
-- TTL is not modeled — ``set(ex=)`` and ``expire`` are no-ops, so expiry must
-  be simulated by an explicit ``delete``;
+- TTL is not modeled — ``set(ex=)`` and ``expire`` never expire anything, so
+  expiry must be simulated by an explicit ``delete``; ``expire`` records the
+  last TTL set per key in ``ttls`` so tests can check what was asked for;
 - ``xadd`` trims to an EXACT ``maxlen`` and ignores ``approximate``, whereas
   real Redis with ``approximate=True`` only trims past a slack.
 One ``FakeRedis`` shared by two ``DeviceBroker`` instances models two
@@ -49,6 +50,7 @@ class FakeRedis:
         self.lists: dict = {}
         self.hashes: dict = {}
         self.streams: dict = {}
+        self.ttls: dict = {}
         self._seq = 0
 
     # -- strings ------------------------------------------------------
@@ -83,7 +85,9 @@ class FakeRedis:
             )
             return 1 if present else 0
 
-    def expire(self, key, ttl):  # TTL is not simulated.
+    def expire(self, key, ttl):  # TTL is recorded, not simulated.
+        with self._lock:
+            self.ttls[key] = int(ttl)
         return True
 
     def eval(self, _script, _numkeys, key, expected):
@@ -154,6 +158,13 @@ class FakeRedis:
     def hget(self, key, field):
         with self._lock:
             return self.hashes.get(key, {}).get(field)
+
+    def hmget(self, key, fields, *more):
+        names = list(fields) if isinstance(fields, (list, tuple)) else [fields]
+        names.extend(more)
+        with self._lock:
+            h = self.hashes.get(key, {})
+            return [h.get(name) for name in names]
 
     def hgetall(self, key):
         with self._lock:

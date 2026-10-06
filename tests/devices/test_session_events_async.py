@@ -251,6 +251,16 @@ class TestStream:
         r = _open(_ticket(b))
         assert ": heartbeat\n\n" in r.text
 
+    def test_a_cancel_goes_out_as_its_own_event(self, device, broker):
+        # An old CLI ignores an event name it doesn't know; as an ``invocation`` it would run as a command.
+        b, fake = broker
+        ticket = _ticket(b)
+        b.submit_ack("inv_1", "accepted")
+        assert b.request_cancel("inv_1") == "sent"
+        records = _records(_open(ticket).text)
+        assert [rec["event"] for rec in records] == ["invocation", "cancel", "session_end"]
+        assert records[1]["data"] == {"type": "cancel", "action": "cancel", "invocation_id": "inv_1"}
+
     def test_reaped_invocation_is_not_delivered(self, device, broker):
         b, fake = broker
         ticket = _ticket(b)

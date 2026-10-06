@@ -1,5 +1,9 @@
 """``GET /api/devices/sessions/{session_id}/events`` — a paired device's command stream.
 
+Each queued envelope goes out as ``event: invocation`` (a command to run), or
+as ``event: cancel`` (``{"type": "cancel", "invocation_id"}``: stop that
+command) when a background job's command is cancelled.
+
 A native-async Starlette route mounted ahead of Flask in ``docsgpt/asgi.py``.
 The CLI holds this stream open while it waits for commands, so it runs on the
 event loop: the token check and ticket claim run in worker threads, then
@@ -96,8 +100,17 @@ async def _session_stream(broker: DeviceBroker, sess: SessionState) -> AsyncIter
             continue
         sess.last_event_id += 1
         sess.last_activity_at = time.time()
-        yield _sse_event("invocation", envelope, sess.last_event_id)
+        yield _sse_event(_event_name(envelope), envelope, sess.last_event_id)
         last_keepalive = time.time()
+
+
+def _event_name(envelope: dict) -> str:
+    """``cancel`` for a cancel envelope, else ``invocation``.
+
+    A cancel goes out under its own event name: a CLI that predates it ignores
+    an event it doesn't know, where an ``invocation`` would run as a command.
+    """
+    return "cancel" if envelope.get("type") == "cancel" else "invocation"
 
 
 async def device_session_events(request: Request) -> Response:

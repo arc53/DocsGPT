@@ -24,6 +24,8 @@ export type BackgroundJobProgress = {
   percent?: number;
   last?: string;
   updated_at?: string;
+  /** Set while a device job's device is offline. */
+  waiting_for?: 'device' | null;
 };
 
 /** `job_summary` on the backend (`docsgpt/background/service.py`). */

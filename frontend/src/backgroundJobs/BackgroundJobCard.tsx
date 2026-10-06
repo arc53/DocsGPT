@@ -195,6 +195,7 @@ export default function BackgroundJobCard({
   const elapsed = elapsedSeconds(job, now, toolCall);
   const percent = job?.progress?.percent;
   const lastLine = job?.progress?.last?.trim();
+  const waitingForDevice = running && job?.progress?.waiting_for === 'device';
   const cancelRequested = Boolean(job?.cancel_requested) || cancelling;
 
   return (
@@ -260,13 +261,24 @@ export default function BackgroundJobCard({
             {lastLine}
           </p>
         )}
-        {running && !lastLine && typeof percent !== 'number' && (
-          <p className="text-muted-foreground text-xs">
-            {job?.auto_resume === false
-              ? t('backgroundJobs.card.pollOnly')
-              : t('backgroundJobs.card.willResume')}
+        {waitingForDevice && (
+          <p
+            className="text-muted-foreground mt-1 text-xs"
+            data-testid="job-waiting-device"
+          >
+            {t('backgroundJobs.card.waitingForDevice')}
           </p>
         )}
+        {running &&
+          !waitingForDevice &&
+          !lastLine &&
+          typeof percent !== 'number' && (
+            <p className="text-muted-foreground text-xs">
+              {job?.auto_resume === false
+                ? t('backgroundJobs.card.pollOnly')
+                : t('backgroundJobs.card.willResume')}
+            </p>
+          )}
         {status === 'failed' && job?.error && (
           <p
             className="text-destructive mt-1 line-clamp-3 font-mono text-xs wrap-break-word"

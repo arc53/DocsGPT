@@ -97,9 +97,11 @@ def claim_for_poll(job_id: str) -> Tuple[Optional[Dict[str, Any]], bool]:
 def cancel_job(job_id: str, user_id: str) -> Optional[Dict[str, Any]]:
     """Ask a job to stop; it reaches ``cancelled`` once its work really stops.
 
-    A detached sandbox run is stopped on its next poll (queued now); a queued
-    worker call never starts; an in-process call can't be interrupted, so it
-    ends ``cancelled`` when it returns.
+    A detached sandbox run is stopped on its next poll (queued now), and so is
+    a device command (the device is told to kill it; one it never picked up
+    is taken off its queue); a queued worker call never starts; an
+    in-process call can't be interrupted, so it ends ``cancelled`` when it
+    returns.
 
     Args:
         job_id: The job.
@@ -116,5 +118,9 @@ def cancel_job(job_id: str, user_id: str) -> Optional[Dict[str, Any]]:
         from docsgpt.background.sandbox_runner import enqueue_poll
 
         enqueue_poll(str(row["id"]), 0)
+    elif row.get("status") == "working" and row.get("runner") == "device":
+        from docsgpt.background.device_runner import enqueue_poll as enqueue_device_poll
+
+        enqueue_device_poll(str(row["id"]), 0)
     publish_job_updated(row)
     return row
