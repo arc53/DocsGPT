@@ -27,7 +27,10 @@ class ReconciliationRepository:
         across ticks. Liveness exemption covers both ``pending`` (paused
         waiting for resume) and ``resuming`` (actively executing)
         ``pending_tool_state`` rows so a paused message survives until
-        the PT row's own TTL retires it.
+        the PT row's own TTL retires it. The PT row must name this message
+        as its ``agent_config.reserved_message_id``: the row is keyed per
+        conversation, so a later turn sent while an earlier one waits on
+        approval would otherwise borrow that pause.
 
         A second exemption covers **server-executed** tools.
         ``pending_tool_state`` is only written on the pause path (client-side
@@ -73,6 +76,7 @@ class ReconciliationRepository:
                       FROM pending_tool_state pts
                       WHERE pts.conversation_id = cm.conversation_id
                         AND pts.user_id = cm.user_id
+                        AND pts.agent_config->>'reserved_message_id' = cm.id::text
                         AND (
                             (pts.status = 'pending'
                              AND pts.expires_at > now())
@@ -194,6 +198,7 @@ class ReconciliationRepository:
                       JOIN pending_tool_state pts
                         ON pts.conversation_id = cm.conversation_id
                        AND pts.user_id = cm.user_id
+                       AND pts.agent_config->>'reserved_message_id' = cm.id::text
                       WHERE cm.id = tca.message_id
                         AND cm.status IN ('pending', 'streaming')
                         AND (
