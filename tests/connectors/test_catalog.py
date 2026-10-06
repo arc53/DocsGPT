@@ -101,6 +101,20 @@ class TestRowMapping:
 
 
 class TestPresets:
+    def test_trello_preset(self):
+        definition = catalog.get_definition("mcp:trello")
+
+        assert definition.name == "Trello"
+        assert definition.description == "Find Trello boards and cards, and create and update cards."
+        assert definition.icon == "trello"
+        assert definition.category == "projects"
+        assert definition.mcp_url == "https://mcp.trello.com/v1"
+        assert definition.auth_kind == "mcp_oauth"
+        assert definition.capabilities == ("read", "write")
+        assert definition.docs_url == (
+            "https://support.atlassian.com/trello/docs/connect-trello-to-ai-assistants-with-trello-mcp/"
+        )
+
     def test_presets_load_from_yaml(self, tmp_path, monkeypatch):
         presets = tmp_path / "mcp.yaml"
         presets.write_text(
@@ -199,3 +213,15 @@ def test_clickup_is_a_remote_oauth_preset():
     assert clickup.docs_url == (
         "https://developer.clickup.com/docs/connect-an-ai-assistant-to-clickups-mcp-server"
     )
+
+
+def test_zapier_preset_uses_remote_oauth_catalog_contract():
+    zapier = catalog.get_definition("mcp:zapier")
+
+    assert zapier.name == "Zapier"
+    assert zapier.icon == "zapier"
+    assert zapier.category == "business"
+    assert zapier.mcp_url == "https://mcp.zapier.com/api/v1/connect"
+    assert zapier.auth_kind == "mcp_oauth"
+    assert zapier.capabilities == ("read", "write")
+    assert zapier.docs_url == "https://docs.zapier.com/mcp/get-started/connect"
