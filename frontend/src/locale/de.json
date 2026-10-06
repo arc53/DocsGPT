@@ -10,6 +10,10 @@
   "loading": "Wird geladen...",
   "retry": "Erneut versuchen",
   "cancel": "Abbrechen",
+  "errorBoundary": {
+    "message": "Beim Anzeigen dieses Inhalts ist ein Fehler aufgetreten.",
+    "tryAgain": "Erneut versuchen"
+  },
   "help": "Hilfe",
   "emailUs": "E-Mail senden",
   "documentation": "Dokumentation",
@@ -181,7 +185,8 @@
         "never": "Nie",
         "daily": "Täglich",
         "weekly": "Wöchentlich",
-        "monthly": "Monatlich"
+        "monthly": "Monatlich",
+        "option": "Synchronisierung: {{frequency}}"
       },
       "actions": "Aktionen",
       "view": "Anzeigen",
@@ -566,6 +571,7 @@
       "stats": {
         "messages": "Nachrichten",
         "tokens": "Tokens",
+        "tokensHint": "Alle vom LLM abgerechneten Tokens. Agenten senden bei jedem Tool-Schritt den Gesprächskontext erneut, daher verbrauchen Chats mit vielen Tool-Aufrufen ein Vielfaches der Tokens, die die sichtbaren Nachrichten vermuten lassen.",
         "toolCalls": "Werkzeugaufrufe",
         "runSuccess": "Erfolgsquote",
         "feedback": "Feedback"
@@ -2249,6 +2255,10 @@
       "tokens": "Sie haben {{used}} von Ihrem Kontingent von {{limit}} Tokens verbraucht. Es wird am {{resetsAt}} zurückgesetzt.",
       "cost": "Sie haben {{used}} von Ihrem Nutzungsbudget von {{limit}} verbraucht. Es wird am {{resetsAt}} zurückgesetzt."
     },
+    "send": "Senden",
+    "viewArtifact": "Artefakt anzeigen",
+    "stopSpeaking": "Vorlesen beenden",
+    "loadingAudio": "Audio wird geladen",
     "voice": {
       "start": "Spracheingabe",
       "stopRecording": "Aufnahme beenden",
@@ -2473,7 +2483,9 @@
         "requestLimiting": "Anfrage-Limitierung",
         "requestLimitingDescription": "Begrenze die täglich an diesen Agenten gestellten Anfragen",
         "systemPromptOverride": "Prompt-Überschreibung erlauben",
-        "systemPromptOverrideDescription": "Erlaubt v1-API-Aufrufern, den System-Prompt dieses Agenten zu ersetzen"
+        "systemPromptOverrideDescription": "Erlaubt v1-API-Aufrufern, den System-Prompt dieses Agenten zu ersetzen",
+        "tokenLimit": "Token-Limit",
+        "requestLimit": "Anfragelimit"
       },
       "preview": {
         "savedVersion": "gespeicherte Version",
@@ -2700,7 +2712,9 @@
           "oct": "Okt",
           "nov": "Nov",
           "dec": "Dez"
-        }
+        },
+        "frequencyLabel": "Häufigkeit",
+        "dayOfWeek": "Wochentag"
       },
       "status": {
         "active": "Aktiv",
@@ -2832,6 +2846,7 @@
       "noSubfolders": "Keine Unterordner",
       "openFolder": "Ordner öffnen",
       "noFolders": "Noch keine Ordner",
+      "moveTitle": "„{{name}}“ verschieben nach",
       "menuAriaLabel": "Aktionen für {{folderName}}",
       "deleteConsequence": "Die Agenten darin werden aus dem Ordner verschoben, nicht gelöscht."
     },
@@ -2858,6 +2873,15 @@
       "loadError": "Could not load guardrail activity"
     },
     "workflow": {
+      "expressionRow": "Ausdruck {{index}}",
+      "conditionRow": "Bedingung {{index}}",
+      "conditionNameRow": "Name von Bedingung {{index}}",
+      "conditionVariableRow": "Variable von Bedingung {{index}}",
+      "conditionValueRow": "Wert von Bedingung {{index}}",
+      "undo": "Rückgängig",
+      "undoHint": "Rückgängig (Strg+Z)",
+      "redo": "Wiederholen",
+      "redoHint": "Wiederholen (Strg+Umschalt+Z)",
       "artifacts": {
         "previewUnsupported": "Dieses Artefakt kann nicht in der Vorschau angezeigt werden",
         "loadListFailed": "Artefakte konnten nicht geladen werden",
@@ -3056,7 +3080,9 @@
       },
       "zoomIn": "Vergrößern",
       "zoomOut": "Verkleinern",
-      "fitView": "Ansicht anpassen"
+      "fitView": "Ansicht anpassen",
+      "removeAssignment": "Zuweisung {{index}} entfernen",
+      "removeCondition": "Bedingung {{index}} entfernen"
     },
     "typeModal": {
       "title": "Neuen Agenten erstellen",
