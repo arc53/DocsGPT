@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next';
 
-import { formatDateTime } from '../utils/dateTimeUtils';
+import { formatDateTime, intlLocale } from '../utils/dateTimeUtils';
 
 export type QuotaErrorBody = {
   error_code?: string;
@@ -25,13 +25,15 @@ export function quotaErrorMessage(
   locale?: string,
 ): string {
   const isCost = body.dimension === 'cost';
+  // `locale` is an app code (i18n.language); "zhTW" alone makes Intl throw.
+  const tag = locale ? intlLocale(locale) : undefined;
   const amount = (value?: number) =>
     isCost
-      ? new Intl.NumberFormat(locale, {
+      ? new Intl.NumberFormat(tag, {
           style: 'currency',
           currency: 'USD',
         }).format(value ?? 0)
-      : new Intl.NumberFormat(locale).format(value ?? 0);
+      : new Intl.NumberFormat(tag).format(value ?? 0);
   const reset = body.resets_at ? new Date(body.resets_at) : null;
   const resetsAt =
     reset && !Number.isNaN(reset.getTime())
