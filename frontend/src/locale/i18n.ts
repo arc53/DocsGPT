@@ -2,6 +2,8 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 
+import { intlLocale } from '../utils/dateTimeUtils';
+
 import en from './en.json'; //English
 import es from './es.json'; //Spanish
 import jp from './jp.json'; //Japanese
@@ -51,5 +53,16 @@ i18n
   });
 
 i18n.changeLanguage(i18n.language);
+
+// Declare the UI language on <html>. A Spanish page marked lang="en" makes the
+// browser offer to translate it, and the translator's DOM rewrites break
+// React's next commit (removeChild / insertBefore NotFoundError).
+const syncHtmlLang = (lng: string) => {
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = intlLocale(lng);
+  }
+};
+i18n.on('languageChanged', syncHtmlLang);
+syncHtmlLang(i18n.language);
 
 export default i18n;
