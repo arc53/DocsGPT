@@ -76,6 +76,17 @@ Admin > Connectors, and synced sources run as their connection without a browser
 
 Answers render math, and the chat widget is published at 0.8.0.
 
+- A turn waiting on a tool approval no longer stays "streaming" when you send a new message
+  instead of answering, or when the approval expires. The turn is saved with its text and the
+  calls that ran; the calls it waited on show as **not run**, the model reads them that way on the
+  next turn, and the approval clears in your other tabs. Approving it later from a stale tab does
+  nothing and reloads the chat. See [Tools that need approval](/API/agent-api#tools-that-need-approval).
+- A tool call the server refuses (a secret reference a tool can't take, a write an admin turned
+  off, an API caller's write on the owner's account) stays on the message as a failed call with its
+  reason after a reload, and is no longer worded as a headless run in an interactive chat. On the
+  API its `tool_call` event now reports `"status": "error"` (it was `"denied"`), still with
+  `"error_type": "tool_not_allowed"`.
+
 ### Tools and list settings
 
 - `DEFAULT_CHAT_TOOLS`, `GUARDRAILS_CHECKS_ENABLED` and `QUOTA_UNPRICED_RATE_PER_MILLION` accept a JSON
