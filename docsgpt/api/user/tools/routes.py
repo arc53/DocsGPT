@@ -596,7 +596,12 @@ def transform_actions(actions_metadata):
         action["active"] = True
         if "parameters" in action:
             props = action["parameters"].get("properties", {})
+            if not isinstance(props, dict):
+                transformed.append(action)
+                continue
             for param_details in props.values():
+                if not isinstance(param_details, dict):
+                    continue
                 param_details["filled_by_llm"] = True
                 param_details["value"] = ""
         transformed.append(action)
