@@ -236,19 +236,22 @@ def _notice(monitor: Dict[str, Any], *, kind: str, title: str, body: str, payloa
 
 
 def pause_with_notice(monitor: Dict[str, Any], *, kind: str, reason: str, detail: str,
-                      payload: Optional[Dict[str, Any]] = None) -> None:
+                      payload: Optional[Dict[str, Any]] = None, error: Optional[str] = None) -> None:
     """Pause a monitor and wake the agent once to say why (the user can resume it from Settings > Monitors).
 
     Args:
         monitor: The monitor row.
         kind: ``unreachable``, ``errors``, ``breaker``, ``revoked`` or ``budget`` (part of the dedupe key).
         reason: Short reason stored on the monitor (the Monitors page shows it).
-        detail: What happened, for the agent.
+        detail: What happened, for the agent: only text this code wrote, never outside text.
         payload: Outside data that came with it (fenced as data).
+        error: The error message (it can quote a tool or a server, so it goes in the fenced data).
     """
     paused = _finish(str(monitor["id"]), "paused", reason)
     if paused is None:
         return
+    if error:
+        payload = {**(payload or {}), "error": error}
     body = (
         f'Monitor {monitor["id"]} ("{monitor.get("description")}", watching {source_label(monitor)}) is paused: '
         f"{detail} It checks nothing until the user resumes it in Settings > Monitors. Tell the user what "
@@ -314,11 +317,12 @@ def _recent_wakes(state: Dict[str, Any], now: datetime) -> List[str]:
     return out
 
 
-def _wake_body(monitor: Dict[str, Any], summary: str, *, left: int) -> str:
+def _wake_body(monitor: Dict[str, Any], *, left: int) -> str:
+    """The wake's trusted text: which monitor fired and what to do; what it found is in the fenced data."""
     on_match = (monitor.get("on_match") or "").strip()
     lines = [
-        f'Monitor {monitor["id"]} ("{monitor.get("description")}", watching {source_label(monitor)}) fired: '
-        f"{summary}.",
+        f'Monitor {monitor["id"]} ("{monitor.get("description")}", watching {source_label(monitor)}) fired. '
+        "What it found is in the data below (its summary first).",
         f"What to do now (the instruction you wrote when it was set up): {on_match}" if on_match else "",
         (
             f"It may wake you {left} more time(s)."
@@ -376,8 +380,7 @@ def deliver(
             reason="woke too often",
             detail=(
                 f"it fired {len(recent) + 1} times within an hour, more than the {settings.MONITOR_MAX_WAKES_PER_HOUR} "
-                "allowed, so it was stopped before flooding the conversation. The latest match was: "
-                f"{summary}."
+                "allowed, so it was stopped before flooding the conversation. The latest match is in the data below."
             ),
             payload=payload,
         )
@@ -389,7 +392,7 @@ def deliver(
         source=source,
         ref_id=monitor_id,
         title=str(monitor.get("description") or "Monitor"),
-        body=_wake_body(monitor, summary, left=max(0, left_after)),
+        body=_wake_body(monitor, left=max(0, left_after)),
         payload=payload,
         dedupe_key=dedupe_key,
     )
@@ -439,7 +442,8 @@ def _unreachable(monitor: Dict[str, Any], exc: SourceError, now: datetime) -> st
             monitor,
             kind="unreachable",
             reason=f"unreachable since {_iso(since)}",
-            detail=f"its source can't be reached since {_iso(since)} (latest: {message}).",
+            detail=f"its source can't be reached since {_iso(since)} (the latest error is in the data below).",
+            error=message,
         )
         return "paused"
     return "unreachable"
@@ -461,7 +465,8 @@ def _failed(monitor: Dict[str, Any], message: str) -> str:
             monitor,
             kind="errors",
             reason="repeated errors",
-            detail=f"its last {count} checks failed. The latest error was: {message}",
+            detail=f"its last {count} checks failed (the latest error is in the data below).",
+            error=message,
         )
         return "paused"
     return "error"
@@ -564,6 +569,14 @@ def _payload(evaluation: Evaluation, content: Content, summary: str, extra: Opti
 # ----------------------------------------------------------------------
 
 
+def _resumable(monitor: Dict[str, Any]) -> bool:
+    """Whether the monitor's conversation still takes wakes (it was shared, or its agent changed hands)."""
+    from docsgpt.background.context import auto_resume_allowed
+
+    with db_readonly() as conn:
+        return auto_resume_allowed(conn, str(monitor["conversation_id"]), str(monitor["user_id"]))
+
+
 def _fetch(monitor: Dict[str, Any], now: datetime) -> Content:
     source = (monitor.get("monitor_spec") or {}).get("source") or {}
     if source.get("type") == "webpage":
@@ -616,10 +629,19 @@ def _tick(monitor_id: str) -> str:
     if end_at is not None and now >= end_at:
         expire(monitor_id, now=now)
         return "expired"
+    if not _resumable(monitor):
+        _finish(monitor_id, "cancelled", "its conversation can no longer be resumed")
+        return "cancelled"
     try:
         content = _fetch(monitor, now)
     except SourceRevoked as exc:
-        pause_with_notice(monitor, kind="revoked", reason="source no longer allowed", detail=f"{exc}.")
+        pause_with_notice(
+            monitor,
+            kind="revoked",
+            reason="source no longer allowed",
+            detail="its source call is no longer allowed or available.",
+            error=str(exc),
+        )
         return "paused"
     except SourceUnreachable as exc:
         return _unreachable(monitor, exc, now)
@@ -792,7 +814,11 @@ def process_hit(hit_id: str, attempt: int = 0) -> Dict[str, Any]:
                 source="trigger",
                 key=f"hit:{claimed['dedupe_key']}",
                 summary="the webhook link received a delivery",
-                extra={k: v for k, v in (("delivery", payload.get("body")), ("event", payload.get("event"))) if v is not None},
+                extra={
+                    key: value
+                    for key, value in (("delivery", payload.get("body")), ("event", payload.get("event")))
+                    if value is not None
+                },
             )
         except Exception as exc:
             logger.exception("trigger hit %s: processing failed", hit_id)
