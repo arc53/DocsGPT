@@ -180,6 +180,8 @@ describe('MonitorLinkCard', () => {
     expect(container.textContent).toContain(
       'monitors.linkCard.senderSecretNote',
     );
+    // No secret yet, so nothing to reveal.
+    expect(button('monitors.linkCard.revealSecret')).toBeUndefined();
     await act(async () => button('monitors.linkCard.setSecret')!.click());
     const input = container.querySelector(
       'input[type="password"]',
@@ -204,6 +206,8 @@ describe('MonitorLinkCard', () => {
       'monitors.linkCard.secretSaved',
     );
     expect(container.textContent).not.toContain('whsec_from_stripe');
+    // Saved: now it can be revealed.
+    expect(button('monitors.linkCard.revealSecret')).toBeDefined();
   });
 
   it('says why a pasted secret was refused', async () => {

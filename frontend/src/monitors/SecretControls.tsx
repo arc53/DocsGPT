@@ -20,6 +20,20 @@ export const SENDER_SECRET_SCHEMES: ReadonlySet<string> = new Set([
 export const isSigned = (signature: string | null | undefined): boolean =>
   Boolean(signature) && signature !== 'none';
 
+/**
+ * Whether the link has a secret to reveal or show: a Stripe or Slack link
+ * has none until the owner pastes it in.
+ */
+export const secretExists = (controls: {
+  signature: string;
+  hasSecret?: boolean;
+  saved: boolean;
+}): boolean =>
+  controls.hasSecret === true ||
+  controls.saved ||
+  (!SENDER_SECRET_SCHEMES.has(controls.signature) &&
+    controls.hasSecret !== false);
+
 type Problem =
   'failed' | 'limited' | 'missing' | 'saveFailed' | 'saveInvalid' | null;
 
@@ -141,24 +155,37 @@ export function SecretActions({ controls }: { controls: SecretControlsState }) {
           {t('monitors.linkCard.setSecret')}
         </Button>
       )}
-      <Button
-        type="button"
-        variant="outline"
-        size="xs"
-        shape="pill"
-        disabled={busy}
-        onClick={controls.toggleReveal}
-      >
-        {secret
-          ? t('monitors.linkCard.hideSecret')
-          : t('monitors.linkCard.revealSecret')}
-      </Button>
+      {secretExists(controls) && (
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          shape="pill"
+          disabled={busy}
+          onClick={controls.toggleReveal}
+        >
+          {secret
+            ? t('monitors.linkCard.hideSecret')
+            : t('monitors.linkCard.revealSecret')}
+        </Button>
+      )}
     </>
   );
 }
 
-/** The revealed secret, the form that sets one, and what went wrong. */
-export function SecretPanel({ controls }: { controls: SecretControlsState }) {
+/**
+ * The revealed secret, the form that sets one, and what went wrong.
+ *
+ * @param place - Where it shows: the chat's link card (which has the example
+ *   command) or the Monitors page (which doesn't).
+ */
+export function SecretPanel({
+  controls,
+  place = 'chat',
+}: {
+  controls: SecretControlsState;
+  place?: 'chat' | 'settings';
+}) {
   const { t } = useTranslation();
   const { secret, editing, problem, signature } = controls;
   const senderCreated = SENDER_SECRET_SCHEMES.has(signature);
@@ -178,7 +205,7 @@ export function SecretPanel({ controls }: { controls: SecretControlsState }) {
         )}
       {editing && (
         <form
-          className="flex min-w-0 items-center gap-2"
+          className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center"
           onSubmit={(e) => {
             e.preventDefault();
             void controls.save();
@@ -190,29 +217,31 @@ export function SecretPanel({ controls }: { controls: SecretControlsState }) {
             spellCheck={false}
             size="sm"
             variant="filled"
-            className="min-w-0 flex-1"
+            className="w-full min-w-0 sm:flex-1"
             value={controls.draft}
             placeholder={t('monitors.linkCard.secretPlaceholder')}
             aria-label={t('monitors.linkCard.secretPlaceholder')}
             onChange={(e) => controls.setDraft(e.target.value)}
           />
-          <Button
-            type="submit"
-            size="xs"
-            shape="pill"
-            disabled={controls.busy || !controls.draft.trim()}
-          >
-            {t('monitors.linkCard.saveSecret')}
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            shape="pill"
-            onClick={controls.cancelEditing}
-          >
-            {t('monitors.linkCard.cancelSecret')}
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              type="submit"
+              size="xs"
+              shape="pill"
+              disabled={controls.busy || !controls.draft.trim()}
+            >
+              {t('monitors.linkCard.saveSecret')}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              shape="pill"
+              onClick={controls.cancelEditing}
+            >
+              {t('monitors.linkCard.cancelSecret')}
+            </Button>
+          </div>
         </form>
       )}
       {controls.saved && !editing && (
@@ -222,7 +251,7 @@ export function SecretPanel({ controls }: { controls: SecretControlsState }) {
       )}
       {secret && (
         <>
-          <div className="flex min-w-0 items-start gap-1">
+          <div className="flex w-full min-w-0 items-start gap-1">
             <CodeBlock
               surface="subtle"
               wrap="anywhere"
@@ -235,8 +264,13 @@ export function SecretPanel({ controls }: { controls: SecretControlsState }) {
               copyLabel={t('monitors.linkCard.copySecret')}
             />
           </div>
-          <p className="text-muted-foreground text-xs">
-            {t('monitors.linkCard.secretNote')}
+          <p
+            className="text-muted-foreground text-xs"
+            data-testid="monitor-secret-note"
+          >
+            {place === 'settings'
+              ? t('monitors.linkCard.secretNoteSettings')
+              : t('monitors.linkCard.secretNote')}
           </p>
         </>
       )}
@@ -283,14 +317,14 @@ function LinkSecretControls({
 }) {
   const controls = useSecretControls(monitorId, signature, hasSecret);
   return (
-    <div className="mt-1 flex min-w-0 flex-col gap-2">
+    <div className="mt-1 flex w-full min-w-0 flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <SecretActions controls={controls} />
-        {hasSecret !== false && (
+        {secretExists(controls) && (
           <ExposureToggle monitorId={monitorId} initial={exposed} />
         )}
       </div>
-      <SecretPanel controls={controls} />
+      <SecretPanel controls={controls} place="settings" />
     </div>
   );
 }

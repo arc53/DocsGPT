@@ -196,7 +196,10 @@ class TestApprovalGate:
         pause = executor.check_pause(tools, _call(_hook_args(created)), "OpenAILLM")
         assert pause["pause_type"] == "awaiting_approval"
         assert pause["secret_refs"] == [created["secret_ref"]]
+        # The card names the link by its monitor, not by the bare id.
+        assert pause["secret_ref_labels"] == {created["secret_ref"]: "Pushes to acme/app"}
         assert executor.check_pause(tools, _call({"owner": "acme", "repo": "app"}), "OpenAILLM") is None
+        assert secret_refs.labels("u2", [created["secret_ref"]]) == {}
 
     def test_a_full_access_device_still_asks(self, mon_db, conversation_id, webhook, monkeypatch):
         created, _secret = webhook

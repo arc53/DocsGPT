@@ -140,6 +140,21 @@ class TriggerLinksRepository:
         ).fetchall()
         return [row_to_dict(r) for r in rows]
 
+    def labels_for_refs(self, user_id: str, refs: List[str]) -> Dict[str, str]:
+        """``{ref: monitor description}`` for the user's links with these reference ids (for an approval card)."""
+        wanted = [str(ref).upper() for ref in refs if ref]
+        if not wanted:
+            return {}
+        rows = self._conn.execute(
+            text(
+                "SELECT l.ref, m.description FROM trigger_links l "
+                "JOIN monitors m ON m.schedule_id = l.monitor_id "
+                "WHERE l.user_id = :u AND l.ref = ANY(:refs)"
+            ),
+            {"u": user_id, "refs": wanted},
+        ).fetchall()
+        return {str(row[0]): str(row[1]) for row in rows if row[1]}
+
     def get_live_signed(self, monitor_id: str) -> Optional[dict]:
         """A monitor's live signed webhook link (its secret is what the owner may reveal), or None."""
         if not looks_like_uuid(str(monitor_id)):

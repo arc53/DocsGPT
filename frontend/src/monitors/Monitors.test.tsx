@@ -105,6 +105,11 @@ describe('Monitors page', () => {
       container.querySelector('[data-testid="monitor-link-secret"]')
         ?.textContent,
     ).toBe('s3cret');
+    // This page has no example command; the note says what applies here.
+    expect(
+      container.querySelector('[data-testid="monitor-secret-note"]')
+        ?.textContent,
+    ).toBe('monitors.linkCard.secretNoteSettings');
     await act(async () => buttons('monitors.linkCard.hideSecret')[0].click());
     expect(container.textContent).not.toContain('s3cret');
   });
@@ -130,6 +135,28 @@ describe('Monitors page', () => {
     expect(
       container.textContent?.split('monitors.linkCard.senderSecretNote').length,
     ).toBe(3);
+    // Nothing to reveal or show until the secret is set: only the Slack link offers them.
+    expect(buttons('monitors.linkCard.revealSecret')).toHaveLength(2);
+    expect(buttons('monitors.linkCard.exposeSecret')).toHaveLength(2);
+  });
+
+  it('stacks the set-secret field full width on a narrow screen', async () => {
+    service.list.mockResolvedValue([
+      sampleMonitor({
+        monitor_id: 'stripe',
+        source_type: 'webhook',
+        interval: null,
+        links: [webhookLink({ signature: 'stripe', has_secret: false })],
+      }),
+    ]);
+    await render();
+    await act(async () => buttons('monitors.linkCard.setSecret')[0].click());
+    const input = container.querySelector(
+      'input[type="password"]',
+    ) as HTMLInputElement;
+    expect(input.className).toContain('w-full');
+    expect(input.closest('form')?.className).toContain('flex-col');
+    expect(input.closest('form')?.className).toContain('sm:flex-row');
   });
 
   it('shows a secret to the assistant only after the owner confirms the warning', async () => {

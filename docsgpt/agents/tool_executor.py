@@ -1489,6 +1489,10 @@ class ToolExecutor:
             # The card says approving fills these link secrets in.
             if secret_plan is not None:
                 payload["secret_refs"] = list(secret_plan.refs)
+                # Named by its monitor: a bare id means nothing to the user.
+                ref_labels = secret_refs.labels(str(self.user or ""), secret_plan.refs) if self.user else {}
+                if ref_labels:
+                    payload["secret_ref_labels"] = ref_labels
             return payload
 
         return None

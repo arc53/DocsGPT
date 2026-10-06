@@ -131,58 +131,64 @@ export default function MonitorLinkCard({ link }: { link: MonitorLink }) {
   const expiresAt = monitor?.expires_at ?? link.expiresAt;
 
   return (
-    <div className="my-2 mr-5 ml-6" data-testid="monitor-link-card">
-      <ToolCallCard
-        icon={
-          link.kind === 'approval' ? (
-            <ShieldCheck className="text-muted-foreground size-4" aria-hidden />
-          ) : (
-            <Webhook className="text-muted-foreground size-4" aria-hidden />
-          )
-        }
-        title={t(
-          link.kind === 'approval'
-            ? 'monitors.linkCard.approvalTitle'
-            : 'monitors.linkCard.title',
-        )}
-        actions={signed ? <SecretActions controls={controls} /> : null}
-      >
-        <div className="flex flex-col gap-2">
-          {link.question && (
-            <p className="text-foreground text-sm">{link.question}</p>
+    // Stretched to the column (see BackgroundJobCard) so it never spills on a phone.
+    <div className="w-full min-w-0" data-testid="monitor-link-card">
+      <div className="my-2 mr-5 ml-6 min-w-0">
+        <ToolCallCard
+          icon={
+            link.kind === 'approval' ? (
+              <ShieldCheck
+                className="text-muted-foreground size-4"
+                aria-hidden
+              />
+            ) : (
+              <Webhook className="text-muted-foreground size-4" aria-hidden />
+            )
+          }
+          title={t(
+            link.kind === 'approval'
+              ? 'monitors.linkCard.approvalTitle'
+              : 'monitors.linkCard.title',
           )}
-          <div className="flex min-w-0 items-start gap-1">
-            <CodeBlock
-              surface="subtle"
-              wrap="anywhere"
-              className="min-w-0 flex-1"
-            >
-              {link.url}
-            </CodeBlock>
-            <CopyButton
-              textToCopy={link.url}
-              copyLabel={t('monitors.linkCard.copyUrl')}
-            />
-          </div>
-          {signed && <SecretPanel controls={controls} />}
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <Badge
-              variant={STATE_BADGE[status]}
-              data-testid="monitor-link-state"
-            >
-              {t(`monitors.linkCard.state.${status}`)}
-            </Badge>
-            {expiresAt && !ended && (
-              <span className="text-muted-foreground">
-                {t('monitors.linkCard.expires', {
-                  date: formatDeadline(expiresAt),
-                  interpolation: { escapeValue: false },
-                })}
-              </span>
+          actions={signed ? <SecretActions controls={controls} /> : null}
+        >
+          <div className="flex flex-col gap-2">
+            {link.question && (
+              <p className="text-foreground text-sm">{link.question}</p>
             )}
+            <div className="flex min-w-0 items-start gap-1">
+              <CodeBlock
+                surface="subtle"
+                wrap="anywhere"
+                className="min-w-0 flex-1"
+              >
+                {link.url}
+              </CodeBlock>
+              <CopyButton
+                textToCopy={link.url}
+                copyLabel={t('monitors.linkCard.copyUrl')}
+              />
+            </div>
+            {signed && <SecretPanel controls={controls} />}
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <Badge
+                variant={STATE_BADGE[status]}
+                data-testid="monitor-link-state"
+              >
+                {t(`monitors.linkCard.state.${status}`)}
+              </Badge>
+              {expiresAt && !ended && (
+                <span className="text-muted-foreground">
+                  {t('monitors.linkCard.expires', {
+                    date: formatDeadline(expiresAt),
+                    interpolation: { escapeValue: false },
+                  })}
+                </span>
+              )}
+            </div>
           </div>
-        </div>
-      </ToolCallCard>
+        </ToolCallCard>
+      </div>
     </div>
   );
 }

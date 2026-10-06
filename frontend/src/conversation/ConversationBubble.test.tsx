@@ -339,6 +339,32 @@ describe('ConversationBubble', () => {
         buttonByText(tr('conversation.toolApproval.approveAlways')),
       ).toBeUndefined();
 
+      // Named by its monitor when the server knows it.
+      await render(
+        <ConversationBubble
+          type="ANSWER"
+          toolCalls={[
+            {
+              ...deviceCall,
+              secret_refs: ['K7QX2M'],
+              secret_ref_labels: { K7QX2M: 'Pushes to acme/app' },
+            },
+          ]}
+          onToolAction={() => {}}
+        />,
+      );
+      expect(
+        container.querySelector('[data-testid="approval-secret-refs"]')
+          ?.textContent,
+      ).toBe(
+        tr('conversation.toolApproval.secretRefs').replace(
+          '{{refs}}',
+          tr('conversation.toolApproval.secretRefLabel')
+            .replace('{{label}}', 'Pushes to acme/app')
+            .replace('{{ref}}', 'K7QX2M'),
+        ),
+      );
+
       await render(
         <ConversationBubble
           type="ANSWER"

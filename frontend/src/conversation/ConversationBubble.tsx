@@ -871,7 +871,18 @@ function ToolCallApprovalBar({
           data-testid="approval-secret-refs"
         >
           {t('conversation.toolApproval.secretRefs', {
-            refs: secretRefs.join(', '),
+            refs: secretRefs
+              .map((ref) => {
+                const label = toolCall.secret_ref_labels?.[ref];
+                return label
+                  ? t('conversation.toolApproval.secretRefLabel', {
+                      label,
+                      ref,
+                      interpolation: { escapeValue: false },
+                    })
+                  : ref;
+              })
+              .join(', '),
             interpolation: { escapeValue: false },
           })}
         </p>

@@ -1567,6 +1567,8 @@ class LLMHandler(ABC):
                 # Link secrets approving this call fills in (the card says so).
                 if pause_info.get("secret_refs"):
                     pause_data["secret_refs"] = pause_info["secret_refs"]
+                if pause_info.get("secret_ref_labels"):
+                    pause_data["secret_ref_labels"] = pause_info["secret_ref_labels"]
                 # What will be sent once fixed values replace the model's.
                 if pause_info.get("sent_arguments") is not None:
                     pause_data["sent_arguments"] = pause_info["sent_arguments"]

@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from docsgpt.background import pool
 from docsgpt.background.context import BackgroundContext
 from docsgpt.background.events import publish_job_updated
-from docsgpt.background.results import LOST_NOTE, stored_result, tail_of
+from docsgpt.background.results import LOST_NOTE, job_notices, stored_result, tail_of
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.redaction import redact_secrets
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
@@ -375,6 +375,8 @@ def patch_origin_entry(conn: Any, row: Dict[str, Any]) -> None:
     patch: Dict[str, Any] = {
         "status": "completed" if row.get("status") == "completed" and in_band != "error" else "error",
         "job_status": row.get("status"),
+        # So a reload still says why (a device's pid, dropped output) without fetching the job.
+        "job_notices": job_notices(row),
     }
     # So a reload shows how long it ran without fetching the job.
     for key in ("started_at", "finished_at"):

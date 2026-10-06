@@ -192,6 +192,17 @@ describe('BackgroundJobCard', () => {
     expect(button('backgroundJobs.card.cancel')).toBeDefined();
   });
 
+  it('stretches to the chat column so a long title truncates instead of spilling on a phone', async () => {
+    await render();
+    const card = container.querySelector(
+      '[data-testid="background-job-card"]',
+    ) as HTMLElement;
+    expect(card.className).toContain('w-full');
+    expect(card.className).toContain('min-w-0');
+    expect(container.querySelector('.truncate')).not.toBeNull();
+    expect(container.querySelector('.whitespace-nowrap')).not.toBeNull();
+  });
+
   it('says when the result has to be asked for', async () => {
     service.getJob.mockResolvedValue({
       job_id: 'j1',
@@ -219,10 +230,20 @@ describe('BackgroundJobCard', () => {
       container.querySelector('[data-testid="job-waiting-device"]')
         ?.textContent,
     ).toBe('backgroundJobs.card.waitingForDevice');
+    expect(
+      container.querySelector('[data-testid="job-badge-waiting-device"]')
+        ?.textContent,
+    ).toBe('backgroundJobs.card.waitingBadge');
+    expect(container.textContent).not.toContain(
+      'backgroundJobs.card.status.working',
+    );
     expect(container.textContent).not.toContain(
       'backgroundJobs.card.willResume',
     );
     await update({ waiting_for: null });
+    expect(container.textContent).toContain(
+      'backgroundJobs.card.status.working',
+    );
     expect(
       container.querySelector('[data-testid="job-waiting-device"]'),
     ).toBeNull();
@@ -360,7 +381,12 @@ describe('BackgroundJobCard', () => {
   });
 
   it('a call saved with its outcome needs no fetch', async () => {
-    await render({ ...CALL, status: 'completed', job_status: 'completed' });
+    await render({
+      ...CALL,
+      status: 'completed',
+      job_status: 'completed',
+      job_notices: [],
+    });
     expect(service.getJob).not.toHaveBeenCalled();
     expect(container.textContent).toContain(
       'backgroundJobs.card.status.completed',
@@ -374,6 +400,7 @@ describe('BackgroundJobCard', () => {
       job_status: 'completed',
       job_started_at: '2026-10-06T10:00:00Z',
       job_finished_at: '2026-10-06T10:01:23Z',
+      job_notices: [],
     });
     expect(service.getJob).not.toHaveBeenCalled();
     expect(container.textContent).toContain(
@@ -381,8 +408,43 @@ describe('BackgroundJobCard', () => {
     );
   });
 
-  it('explains an interrupted job', async () => {
+  it("keeps a device's pid after a reload, from the saved entry", async () => {
+    await render({
+      ...CALL,
+      status: 'error',
+      job_status: 'lost',
+      job_notices: [{ code: 'device_interrupted', pid: 1373 }],
+    });
+    expect(service.getJob).not.toHaveBeenCalled();
+    expect(
+      container.querySelector('[data-testid="job-notice-device_interrupted"]')
+        ?.textContent,
+    ).toBe('backgroundJobs.card.noticeDeviceInterrupted:{"pid":1373}');
+    expect(container.textContent).not.toContain('backgroundJobs.card.lostHint');
+  });
+
+  it('fetches the notices once for a call saved before it carried them', async () => {
+    service.getJob.mockResolvedValue({
+      job_id: 'j1',
+      status: 'lost',
+      finished_at: new Date().toISOString(),
+      notices: [{ code: 'device_interrupted', pid: 10405 }],
+    });
     await render({ ...CALL, status: 'error', job_status: 'lost' });
+    expect(service.getJob).toHaveBeenCalledTimes(1);
+    expect(
+      container.querySelector('[data-testid="job-notice-device_interrupted"]')
+        ?.textContent,
+    ).toBe('backgroundJobs.card.noticeDeviceInterrupted:{"pid":10405}');
+  });
+
+  it('explains an interrupted job', async () => {
+    await render({
+      ...CALL,
+      status: 'error',
+      job_status: 'lost',
+      job_notices: [],
+    });
     expect(container.textContent).toContain('backgroundJobs.card.status.lost');
     expect(container.textContent).toContain('backgroundJobs.card.lostHint');
   });

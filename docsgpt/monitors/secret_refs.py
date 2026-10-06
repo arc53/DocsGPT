@@ -237,6 +237,27 @@ def _lookup(user_id: str, refs: Iterable[str], *, live_only: bool) -> Dict[str, 
     return found
 
 
+def labels(user_id: str, refs: Iterable[str]) -> Dict[str, str]:
+    """``{ref: the monitor's description}``, so an approval card can name the link, not just its id.
+
+    Args:
+        user_id: The links' owner.
+        refs: Reference ids.
+
+    Returns:
+        The labels found (empty when the lookup failed).
+    """
+    from docsgpt.storage.db.repositories.trigger_links import TriggerLinksRepository
+    from docsgpt.storage.db.session import db_readonly
+
+    try:
+        with db_readonly() as conn:
+            return TriggerLinksRepository(conn).labels_for_refs(str(user_id), list(refs))
+    except Exception:
+        logger.exception("naming secret references failed")
+        return {}
+
+
 def substitute(
     executor: Any,
     tool_data: Dict[str, Any],
