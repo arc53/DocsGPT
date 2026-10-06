@@ -37,7 +37,20 @@ _JOB_ID_SUFFIX = re.compile(r"\s*\(job [0-9a-fA-F-]{8,}\)")
 
 
 # Markdown a notification can't show: removed (code, tables, rules) or reduced to its text.
-_FENCE = re.compile(r"```.*?(?:```|\Z)", re.S)
+_FENCE = re.compile(r"```[^\n]*\n?(.*?)(?:```|\Z)", re.S)
+
+#: Characters of a code block's first line a preview keeps.
+_FENCE_LINE_CHARS = 80
+
+
+def _fence_line(match: "re.Match[str]") -> str:
+    """A code block reduced to its first line ("printed: DONE: 5 rows …"), so the sentence around it still reads."""
+    lines = [line.strip() for line in match.group(1).splitlines() if line.strip()]
+    if not lines:
+        return " "
+    first = lines[0][:_FENCE_LINE_CHARS]
+    more = len(lines) > 1 or len(lines[0]) > _FENCE_LINE_CHARS
+    return f" {first}{' …' if more else ''} "
 _TABLE_ROW = re.compile(r"^[ \t]*\|.*$", re.M)
 _RULE = re.compile(r"^[ \t]*(?:-{3,}|\*{3,}|_{3,})[ \t]*$", re.M)
 _HEADING = re.compile(r"^[ \t]{0,3}#{1,6}[ \t]*", re.M)
@@ -56,8 +69,10 @@ PREVIEW_CHARS = 280
 def plain_preview(text: Optional[str], limit: int = PREVIEW_CHARS) -> str:
     """An answer as a notification shows it: Markdown reduced to plain text, cut at a word boundary.
 
-    Code blocks, table rows and rules are dropped; headings, quotes, list
-    markers, emphasis, inline code and links keep only their text.
+    A code block keeps its first line (with an ellipsis when there is more),
+    so a sentence that leads into it ("the script printed:") still reads;
+    table rows and rules are dropped; headings, quotes, list markers,
+    emphasis, inline code and links keep only their text.
 
     Args:
         text: The answer (Markdown).
@@ -66,8 +81,8 @@ def plain_preview(text: Optional[str], limit: int = PREVIEW_CHARS) -> str:
     Returns:
         One line of plain text.
     """
-    value = str(text or "")
-    for pattern in (_FENCE, _TABLE_ROW, _RULE):
+    value = _FENCE.sub(_fence_line, str(text or ""))
+    for pattern in (_TABLE_ROW, _RULE):
         value = pattern.sub(" ", value)
     for pattern in (_HEADING, _QUOTE, _LIST):
         value = pattern.sub("", value)

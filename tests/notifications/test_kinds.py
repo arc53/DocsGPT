@@ -46,9 +46,15 @@ class TestPlainPreview:
             "Done ACMEB dropped below $90. Price: $88.00 (ACMEB) See the page for more."
         )
 
-    def test_drops_code_blocks_and_keeps_snake_case(self):
+    def test_a_code_block_keeps_its_first_line_and_snake_case_survives(self):
+        """Dropping the block left "the script printed: One thing worth flagging…", a broken sentence."""
         text = "Ran it:\n```python\nprint('x')\n```\nThe file_name is out_put.csv."
-        assert kinds.plain_preview(text) == "Ran it: The file_name is out_put.csv."
+        assert kinds.plain_preview(text) == "Ran it: print('x') The file_name is out_put.csv."
+        printed = "The script printed:\n```\nDONE: report.pdf rendered (5 chunks)\nbye\n```\nOne thing worth flagging."
+        assert kinds.plain_preview(printed) == (
+            "The script printed: DONE: report.pdf rendered (5 chunks) … One thing worth flagging."
+        )
+        assert kinds.plain_preview("Here:\n```\n\n```\nDone.") == "Here: Done."
 
     def test_cuts_at_a_word_boundary(self):
         text = "word " * 100
