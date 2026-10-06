@@ -14,10 +14,12 @@ from flask_restx import Namespace, Resource
 
 from docsgpt.api import api
 from docsgpt.monitors import service
+from docsgpt.monitors.links import SECRET_REJECTIONS, SecretRejected
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.monitors import MonitorsRepository
 from docsgpt.storage.db.repositories.trigger_links import TriggerLinksRepository
 from docsgpt.storage.db.session import db_readonly
+
 
 logger = logging.getLogger(__name__)
 
@@ -149,9 +151,12 @@ class MonitorSecret(Resource):
             return _err("Send {\"secret\": \"...\"}", 400)
         try:
             saved = service.set_secret(monitor_id, user_id, data.get("secret"))
-        except ValueError as exc:
-            # The message describes the format, never the value.
-            return _err(f"That can't be this link's signing secret: {exc}", 400)
+        except SecretRejected as exc:
+            # A fixed sentence per reason: never the value, never the exception's own text.
+            reason = SECRET_REJECTIONS.get(exc.code, "it isn't in this scheme's format")
+            return _err(f"That can't be this link's signing secret: {reason}", 400)
+        except ValueError:
+            return _err("That can't be this link's signing secret", 400)
         except Exception:
             logger.error("setting a monitor secret failed (%s)", monitor_id)
             return _err("Failed to save the secret", 500)

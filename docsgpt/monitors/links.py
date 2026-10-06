@@ -79,6 +79,24 @@ MIN_SECRET_CHARS = 16
 MAX_SECRET_CHARS = 512
 
 
+#: Why a pasted secret was refused, as the owner is told (never with the value).
+SECRET_REJECTIONS = {
+    "not_text": "the secret must be text",
+    "length": f"a signing secret is {MIN_SECRET_CHARS} to {MAX_SECRET_CHARS} characters with no spaces",
+    "characters": "the secret has characters a signing secret never has",
+    "stripe_prefix": "a Stripe endpoint signing secret starts with whsec_",
+    "standard_webhooks_format": "a Standard Webhooks secret is whsec_ followed by base64",
+}
+
+
+class SecretRejected(ValueError):
+    """A pasted signing secret can't be this link's; ``code`` is a key of :data:`SECRET_REJECTIONS`."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(SECRET_REJECTIONS[code])
+        self.code = code
+
+
 def check_owner_secret(scheme: str, secret: Any) -> str:
     """Validate a signing secret the owner pastes in, for the link's scheme.
 
@@ -90,25 +108,23 @@ def check_owner_secret(scheme: str, secret: Any) -> str:
         The secret, trimmed.
 
     Raises:
-        ValueError: It can't be this scheme's secret (the message says why).
+        SecretRejected: It can't be this scheme's secret (its ``code`` says why).
     """
     if not isinstance(secret, str):
-        raise ValueError("the secret must be text")
+        raise SecretRejected("not_text")
     value = secret.strip()
     if not MIN_SECRET_CHARS <= len(value) <= MAX_SECRET_CHARS or any(ch.isspace() for ch in value):
-        raise ValueError(
-            f"a signing secret is {MIN_SECRET_CHARS} to {MAX_SECRET_CHARS} characters with no spaces"
-        )
+        raise SecretRejected("length")
     if not value.isprintable():
-        raise ValueError("the secret has characters a signing secret never has")
+        raise SecretRejected("characters")
     if scheme == "stripe" and not value.startswith("whsec_"):
-        raise ValueError("a Stripe endpoint signing secret starts with whsec_")
+        raise SecretRejected("stripe_prefix")
     if scheme == "standard_webhooks":
         raw = value[len("whsec_"):] if value.startswith("whsec_") else value
         try:
             base64.b64decode(raw, validate=True)
         except (binascii.Error, ValueError):
-            raise ValueError("a Standard Webhooks secret is whsec_ followed by base64") from None
+            raise SecretRejected("standard_webhooks_format") from None
     return value
 
 

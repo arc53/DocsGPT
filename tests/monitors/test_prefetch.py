@@ -19,12 +19,12 @@ PREVIEWS = [
     "WhatsApp/2.23.20.0 A",
     "Mozilla/5.0 (Windows NT 6.1; WOW64) SkypeUriPreview Preview/0.5",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 "
-    "Safari/537.36 Microsoft Office/16.0 (Windows NT 10.0; Microsoft Outlook 16.0.17126; Pro)",
+    + "Safari/537.36 Microsoft Office/16.0 (Windows NT 10.0; Microsoft Outlook 16.0.17126; Pro)",
     "Microsoft Office Existence Discovery",
     "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
     "Mozilla/5.0 (compatible; Google-InspectionTool/1.0)",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 "
-    "Safari/605.1.15 (Applebot/0.1; +http://www.apple.com/go/applebot)",
+    + "Safari/605.1.15 (Applebot/0.1; +http://www.apple.com/go/applebot)",
     "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)",
     "Mozilla/5.0 (compatible; BingPreview/1.0b)",
     "Mozilla/5.0 (compatible; redditbot/1.0; +http://www.reddit.com/feedback)",

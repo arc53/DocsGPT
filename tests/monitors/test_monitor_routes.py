@@ -203,6 +203,10 @@ class TestSetSecret:
             bad = client.put(f"/api/monitors/{hook_id}/secret", json={"secret": "short"})
             assert bad.status_code == 400 and "16 to 512" in bad.get_json()["message"]
             assert "short" not in bad.get_json()["message"]
+            # A refusal the route doesn't name gets the plain sentence, never the exception's text.
+            with patch("docsgpt.monitors.service.set_secret", side_effect=ValueError("internal detail")):
+                other = client.put(f"/api/monitors/{hook_id}/secret", json={"secret": "x" * 20})
+            assert other.status_code == 400 and "internal detail" not in other.get_json()["message"]
             assert client.put(f"/api/monitors/{polled_id}/secret",
                               json={"secret": "a-long-enough-secret-value"}).status_code == 404
         with patch("docsgpt.app.handle_auth", return_value=None):
