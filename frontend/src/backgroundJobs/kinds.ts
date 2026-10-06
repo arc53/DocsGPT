@@ -78,8 +78,21 @@ export function notificationText(
   };
 }
 
+/** One event that woke the agent, as a person reads it (never the model's text). */
+export type WakeEvent = { label?: string; status?: string; detail?: string };
+
 /** What woke the agent for a continuation turn (`message_metadata.wake`). */
-export type WakeInfo = { source: string; count: number };
+export type WakeInfo = { source: string; count: number; events?: WakeEvent[] };
+
+const readEvent = (entry: unknown): WakeEvent => {
+  const out: WakeEvent = {};
+  if (!entry || typeof entry !== 'object') return out;
+  for (const key of ['label', 'status', 'detail'] as const) {
+    const value = (entry as Record<string, unknown>)[key];
+    if (typeof value === 'string' && value) out[key] = value;
+  }
+  return out;
+};
 
 const EVENT_HEADER = /^\[Background event[^\]]*\]\s*/;
 
@@ -95,7 +108,25 @@ export function wakeFromMetadata(metadata: unknown): WakeInfo | null {
   const source =
     typeof meta.wake?.source === 'string' ? meta.wake.source : 'event';
   const count = Array.isArray(meta.wakes) ? Math.max(1, meta.wakes.length) : 1;
-  return { source, count };
+  const entries = Array.isArray(meta.wakes) ? meta.wakes : [meta.wake];
+  const events = entries.map(readEvent);
+  return events.some((e) => Object.keys(e).length)
+    ? { source, count, events }
+    : { source, count };
+}
+
+// The model-facing title of a job's wake: `code_executor.run_code finished`.
+const TOOL_ACTION_TITLE = /^[\w-]+\.([\w-]+)(?:\s.*)?$/;
+
+/**
+ * A title fit for the event row: a `tool.action ...` title (older messages,
+ * written for the model) becomes the action in words ("Run code").
+ */
+export function humanTitle(title: string): string {
+  const match = TOOL_ACTION_TITLE.exec(title.trim());
+  if (!match) return title;
+  const words = match[1].replace(/_/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 /**

@@ -345,7 +345,10 @@ class TestGetPubliclySharedConversations:
         conv_id = _seed_conversation(pg_conn, user, name="Wake")
         repo = ConversationsRepository(pg_conn)
         repo.append_message(conv_id, {"prompt": "run it", "response": "running"})
-        wake = {"source": "job", "ref_id": "job-1", "dedupe_key": "job:job-1:final"}
+        wake = {
+            "source": "job", "ref_id": "job-1", "dedupe_key": "job:job-1:final",
+            "label": "Run code", "status": "completed", "detail": "It printed 42.",
+        }
         repo.append_message(
             conv_id,
             {
@@ -375,7 +378,13 @@ class TestGetPubliclySharedConversations:
             queries = GetPubliclySharedConversations().get(identifier).json["queries"]
 
         assert "wake" not in queries[0]
-        assert queries[1]["wake"] == {"source": "job", "count": 2}
+        assert queries[1]["wake"] == {
+            "source": "job",
+            "count": 2,
+            "events": [{"label": "Run code", "status": "completed", "detail": "It printed 42."}, {}],
+        }
+        # The event text written for the model stays private.
+        assert queries[1]["prompt"] == "" and queries[0]["prompt"] == "run it"
 
     def test_returns_api_key_for_promptable_share(self, app, pg_conn):
         from docsgpt.api.user.sharing.routes import (

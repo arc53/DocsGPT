@@ -27,6 +27,7 @@ It stays headless: tools that need approval are denied.
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
@@ -409,10 +410,87 @@ def _run_turn(
     )
 
 
+#: Characters of an event's detail the chat's event row shows.
+EVENT_DETAIL_CHARS = 280
+
+#: Keys of a job's JSON result that say what happened, in the order they are preferred.
+_RESULT_KEYS = ("error", "stdout_tail", "text", "result", "summary", "message", "content")
+
+
+def _job_detail(result: Any) -> str:
+    """What a finished job produced, in a line or two: its error, the end of its output, or its text."""
+    if not isinstance(result, str) or not result.strip():
+        return ""
+    try:
+        data = json.loads(result)
+    except ValueError:
+        return result
+    if isinstance(data, dict):
+        for key in _RESULT_KEYS:
+            value = data.get(key)
+            if isinstance(value, str) and value.strip():
+                if key == "stdout_tail":
+                    # The last lines a run printed carry its outcome ("DONE: 7 batches").
+                    return "\n".join([line for line in value.splitlines() if line.strip()][-3:])
+                return value
+        return ""
+    return result
+
+
+def _event_view(wake_row: Dict[str, Any], jobs_by_id: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """An event as the chat's event row shows it: a label, a status and a short detail, never the model's text.
+
+    The wake's title and body are written for the model (tool ids, job ids,
+    instructions); this is what a person reads instead. The detail comes from
+    the event's data, which passed the guardrails when it was queued.
+    """
+    from docsgpt.notifications.kinds import plain_preview, user_title
+
+    source = wake_row.get("source")
+    payload = wake_row.get("payload") if isinstance(wake_row.get("payload"), dict) else {}
+    view: Dict[str, Any] = {}
+    if source in ("job", "lost"):
+        job = jobs_by_id.get(str(wake_row.get("ref_id"))) or {}
+        words = str(job.get("action_name") or "").replace("_", " ").strip()
+        view["label"] = words[:1].upper() + words[1:]
+        if job.get("status"):
+            view["status"] = str(job["status"])
+        detail = _job_detail(payload.get("result"))
+    else:
+        view["label"] = user_title(wake_row.get("title"))
+        if source == "approval":
+            detail = payload.get("comment") or ""
+        else:
+            detail = payload.get("summary") or payload.get("error") or ""
+    detail = plain_preview(str(detail), EVENT_DETAIL_CHARS) if detail else ""
+    if detail:
+        view["detail"] = detail
+    return {key: value for key, value in view.items() if value}
+
+
 def _wake_metadata(wakes: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """``message_metadata.wake``: the event that woke the turn; ``wakes`` lists them all when batched."""
+    """``message_metadata.wake``: the event that woke the turn; ``wakes`` lists them all when batched.
+
+    Each entry carries the routing fields and the event as a person reads it
+    (``label``, ``status``, ``detail``; see :func:`_event_view`).
+    """
+    job_ids = [str(w["ref_id"]) for w in wakes if w.get("source") in ("job", "lost") and w.get("ref_id")]
+    jobs_by_id: Dict[str, Dict[str, Any]] = {}
+    if job_ids:
+        try:
+            with db_readonly() as conn:
+                repo = BackgroundJobsRepository(conn)
+                jobs_by_id = {job_id: repo.get(job_id) or {} for job_id in job_ids}
+        except Exception:
+            logger.exception("reading the jobs behind a continuation's events failed")
     entries = [
-        {"source": w.get("source"), "ref_id": w.get("ref_id"), "dedupe_key": w.get("dedupe_key")} for w in wakes
+        {
+            "source": w.get("source"),
+            "ref_id": w.get("ref_id"),
+            "dedupe_key": w.get("dedupe_key"),
+            **_event_view(w, jobs_by_id),
+        }
+        for w in wakes
     ]
     metadata: Dict[str, Any] = {"wake": entries[0], "continuation": True}
     if len(entries) > 1:

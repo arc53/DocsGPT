@@ -8,6 +8,7 @@ import ru from '../locale/ru.json';
 import zh from '../locale/zh.json';
 import zhTW from '../locale/zh-TW.json';
 import {
+  humanTitle,
   NOTIFICATION_KINDS,
   WAKE_SOURCES,
   notificationHeadingKey,
@@ -161,6 +162,35 @@ describe('wakeFromMetadata', () => {
     ).toEqual({ source: 'monitor', count: 3 });
   });
 
+  it('reads each event as a person reads it', () => {
+    expect(
+      wakeFromMetadata({
+        wake: { source: 'job', label: 'Run code', status: 'completed' },
+        wakes: [
+          {
+            source: 'job',
+            label: 'Run code',
+            status: 'completed',
+            ref_id: 'j',
+          },
+          {
+            source: 'monitor',
+            label: 'BTC below $50k',
+            detail: 'It is $49,800',
+          },
+        ],
+        continuation: true,
+      }),
+    ).toEqual({
+      source: 'job',
+      count: 2,
+      events: [
+        { label: 'Run code', status: 'completed' },
+        { label: 'BTC below $50k', detail: 'It is $49,800' },
+      ],
+    });
+  });
+
   it('marks a continuation with no wake as a generic event', () => {
     expect(wakeFromMetadata({ continuation: true })).toEqual({
       source: 'event',
@@ -195,5 +225,16 @@ describe('wakeTitle', () => {
   it('copes with a prompt without the header', () => {
     expect(wakeTitle('plain text')).toBe('plain text');
     expect(wakeTitle('')).toBe('');
+  });
+});
+
+describe('humanTitle', () => {
+  it('turns a tool.action title into the action in words', () => {
+    expect(humanTitle('code_executor.run_code finished')).toBe('Run code');
+    expect(humanTitle('read_webpage.read_webpage was interrupted')).toBe(
+      'Read webpage',
+    );
+    expect(humanTitle('BTC below $50k')).toBe('BTC below $50k');
+    expect(humanTitle('Docs page: expired')).toBe('Docs page: expired');
   });
 });

@@ -190,7 +190,9 @@ class TestContinuation:
         last = _messages(bg_db, conversation_id)[-1]
         assert last["response"] == "The run printed 42."
         assert last["metadata"]["wake"] == {
-            "source": "job", "ref_id": job["id"], "dedupe_key": f"job:{job['id']}:final"
+            "source": "job", "ref_id": job["id"], "dedupe_key": f"job:{job['id']}:final",
+            # What the chat's event row shows: the action in words, the status and the result; no tool ids.
+            "label": "Run code", "status": "completed", "detail": "42",
         }
         assert last["prompt"].startswith("[Background event - not a user message")
         assert _job(bg_db, job["id"])["delivery_state"] == "resumed"
@@ -390,6 +392,44 @@ class TestContinuation:
 
     def test_defer_backoff(self):
         assert [continuation.defer_delay(n) for n in range(7)] == [5, 10, 20, 40, 60, 60, 60]
+
+
+class TestEventViews:
+    """The event row reads like the notification: a label, a status and a short detail, never model text."""
+
+    def test_a_jobs_detail_is_the_end_of_its_output(self):
+        jobs_by_id = {"j": {"action_name": "run_code", "status": "failed"}}
+        result = '{"status": "ok", "stdout_tail": "PROGRESS 86%\\nPROGRESS 100%\\nDONE: 7 batches\\nbye\\n"}'
+        view = continuation._event_view(
+            {"source": "job", "ref_id": "j", "title": "code_executor.run_code finished (job j)",
+             "payload": {"result": result}},
+            jobs_by_id,
+        )
+        assert view == {"label": "Run code", "status": "failed", "detail": "PROGRESS 100% DONE: 7 batches bye"}
+        error = continuation._event_view(
+            {"source": "job", "ref_id": "j", "payload": {"result": '{"status": "error", "error": "Boom"}'}},
+            jobs_by_id,
+        )
+        assert error["detail"] == "Boom"
+
+    def test_monitor_approval_and_notices(self):
+        monitor = continuation._event_view(
+            {"source": "monitor", "title": "ACMEB below $90", "payload": {"summary": "price is 88 (< 90: True)"}}, {}
+        )
+        assert monitor == {"label": "ACMEB below $90", "detail": "price is 88 (< 90: True)"}
+        approval = continuation._event_view(
+            {"source": "approval", "title": "Send the post: approve",
+             "payload": {"decision": "approve", "comment": "Call it a **hybrid** week"}}, {}
+        )
+        assert approval == {"label": "Send the post: approve", "detail": "Call it a hybrid week"}
+        paused = continuation._event_view(
+            {"source": "monitor_paused", "title": "Docs page: paused (repeated errors)", "payload": {"error": "404"}},
+            {},
+        )
+        assert paused == {"label": "Docs page: paused (repeated errors)", "detail": "404"}
+        assert continuation._event_view({"source": "monitor_expired", "title": "Docs page: expired"}, {}) == {
+            "label": "Docs page: expired"
+        }
 
 
 class TestHeadlessTurnInputs:

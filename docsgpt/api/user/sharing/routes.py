@@ -305,7 +305,17 @@ def _shared_wake(metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     source = wake.get("source") if isinstance(wake, dict) else None
     wakes = metadata.get("wakes")
     count = len(wakes) if isinstance(wakes, list) and wakes else 1
-    return {"wake": {"source": str(source) if source else "event", "count": count}}
+    shared: Dict[str, Any] = {"source": str(source) if source else "event", "count": count}
+    # What a person reads about each event (label, status, detail); never the model's prompt.
+    entries = wakes if isinstance(wakes, list) and wakes else [wake] if isinstance(wake, dict) else []
+    events = [
+        {key: entry[key] for key in ("label", "status", "detail") if isinstance(entry.get(key), str) and entry[key]}
+        for entry in entries
+        if isinstance(entry, dict)
+    ]
+    if any(events):
+        shared["events"] = events
+    return {"wake": shared}
 
 
 @sharing_ns.route("/shared_conversation/<string:identifier>")
@@ -358,8 +368,10 @@ class GetPubliclySharedConversations(Resource):
                 first_n = shared.get("first_n_queries") or 0
                 conversation_queries = []
                 for msg in messages[:first_n]:
+                    wake = _shared_wake(msg.get("metadata"))
                     query = {
-                        "prompt": msg.get("prompt"),
+                        # A woken turn's prompt is the event text written for the model; the share shows the event.
+                        "prompt": "" if wake else msg.get("prompt"),
                         "response": msg.get("response"),
                         "thought": msg.get("thought"),
                         "sources": msg.get("sources") or [],
@@ -367,7 +379,7 @@ class GetPubliclySharedConversations(Resource):
                         # Only the order, not the rest of the private metadata.
                         "segments": (msg.get("metadata") or {}).get("segments"),
                         # What woke the agent, so the prompt reads as an event row.
-                        **_shared_wake(msg.get("metadata")),
+                        **wake,
                         "timestamp": (
                             msg["timestamp"].isoformat()
                             if hasattr(msg.get("timestamp"), "isoformat")
