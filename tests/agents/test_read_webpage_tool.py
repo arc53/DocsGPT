@@ -56,6 +56,18 @@ class TestReadWebpageExecuteAction:
         assert "Content" in result
 
     @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
+    def test_a_table_without_th_takes_its_header_from_the_first_row(self, mock_fetch, tool):
+        mock_fetch.return_value = _fetch_result(
+            b"<html><body><table><tr><td>Plan</td><td>Price</td></tr>"
+            b"<tr><td>Starter</td><td>9 EUR</td></tr></table></body></html>",
+            content_type="text/html; charset=utf-8",
+        )
+
+        result = tool.execute_action("read_webpage", url="https://example.com")
+
+        assert "| Plan | Price |\n| --- | --- |\n| Starter | 9 EUR |" in result
+
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_request_error(self, mock_fetch, tool):
         mock_fetch.side_effect = requests.exceptions.ConnectionError("refused")
 

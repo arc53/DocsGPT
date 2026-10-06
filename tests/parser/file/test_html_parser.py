@@ -276,3 +276,55 @@ def test_utf16_head_keeps_an_even_byte_count(tmp_path, monkeypatch):
     text = HTMLMarkdownParser().parse_file(path)
     assert "Zeile 0 Über Größe" in text
     assert "\x00" not in text
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        # A table written with no <th> at all: what a Word table converted to
+        # HTML looks like, and a great deal of hand-written markup besides.
+        "<table><tr><td>Product</td><td>Spec</td></tr><tr><td>Cable</td><td>USB-C</td></tr></table>",
+        # The same table wrapped in a <tbody>, which is what a browser's DOM has.
+        "<table><tbody><tr><td>Product</td><td>Spec</td></tr>"
+        "<tr><td>Cable</td><td>USB-C</td></tr></tbody></table>",
+    ],
+)
+def test_a_table_without_th_keeps_its_first_row_as_the_header(html):
+    """Without it the column names are read as data under a blank header."""
+    from docsgpt.parser.file.html_parser import html_to_markdown
+
+    rows = [line for line in html_to_markdown(html).splitlines() if line.startswith("|")]
+
+    assert rows == ["| Product | Spec |", "| --- | --- |", "| Cable | USB-C |"]
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        "<table><tr><th>Product</th><th>Spec</th></tr><tr><td>Cable</td><td>USB-C</td></tr></table>",
+        "<table><thead><tr><th>Product</th><th>Spec</th></tr></thead>"
+        "<tbody><tr><td>Cable</td><td>USB-C</td></tr></tbody></table>",
+    ],
+)
+def test_a_table_that_marks_its_header_is_unchanged(html):
+    from docsgpt.parser.file.html_parser import html_to_markdown
+
+    rows = [line for line in html_to_markdown(html).splitlines() if line.startswith("|")]
+
+    assert rows == ["| Product | Spec |", "| --- | --- |", "| Cable | USB-C |"]
+
+
+def test_the_crawler_gives_a_crawled_table_the_same_shape():
+    """File and web ingestion are meant to produce the same Markdown."""
+    from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
+
+    html = (
+        "<html><head><title>T</title></head><body>"
+        "<table><tr><td>Product</td><td>Spec</td></tr>"
+        "<tr><td>Cable</td><td>USB-C</td></tr></table></body></html>"
+    )
+
+    _, _, markdown = CrawlerLoader()._process_html_to_markdown(html, "https://example.com/")
+
+    rows = [line for line in markdown.splitlines() if line.startswith("|")]
+    assert rows == ["| Product | Spec |", "| --- | --- |", "| Cable | USB-C |"]
