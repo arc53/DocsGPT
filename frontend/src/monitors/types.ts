@@ -7,6 +7,8 @@ export type MonitorSourceType =
 export interface MonitorLink {
   id: string;
   kind: 'webhook' | 'approval';
+  /** Whether the link still works. */
+  state?: 'live' | 'expired' | 'revoked' | 'used_up';
   signature: string | null;
   expires_at: string | null;
   hit_count: number;

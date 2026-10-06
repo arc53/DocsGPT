@@ -183,8 +183,9 @@ class MonitorTool(Tool):
             {
                 "name": service.LIST,
                 "description": (
-                    "List this conversation's monitors: what each watches, its status, last check, wakes left "
-                    "and expiry. Use it to answer 'what are you watching?' or to find the id to cancel."
+                    "List this conversation's monitors: what each watches, its status, last check, wakes left, "
+                    "expiry, and whether each link still works (live, expired, revoked or used_up). Use it to "
+                    "answer 'what are you watching?' or to find the id to cancel."
                 ),
                 "parameters": {"type": "object", "properties": {}},
             },

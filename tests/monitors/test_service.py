@@ -334,6 +334,9 @@ class TestManage:
         listed = service.list_for_conversation(caller)
         assert {m["monitor_id"] for m in listed} == {polled["monitor_id"], hook["monitor_id"]}
         assert all("monitor_state" not in m and "approval" not in m for m in listed)
+        listed_hook = next(m for m in listed if m["monitor_id"] == hook["monitor_id"])
+        assert [link["state"] for link in listed_hook["links"]] == ["live"]
+        assert next(m for m in listed if m["monitor_id"] == polled["monitor_id"])["links"] == []
 
         paused = service.end(polled["monitor_id"], "u1", "paused", reason="by the user")
         assert paused["status"] == "paused" and paused["next_run_at"] is None
@@ -347,6 +350,8 @@ class TestManage:
         )
         cancelled = service.end(hook["monitor_id"], "u1", "cancelled")
         assert cancelled["status"] == "cancelled"
+        listed_hook = next(m for m in service.list_for_conversation(caller) if m["monitor_id"] == hook["monitor_id"])
+        assert listed_hook["links"][0]["state"] == "revoked"
         token = hook["url"].rsplit("/", 1)[1]
         with mon_db.connect() as conn:
             assert TriggerLinksRepository(conn).get_live(token_hash(token), "webhook") is None

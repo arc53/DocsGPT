@@ -76,6 +76,7 @@ class TestDecide:
         assert wake["payload"] == {"decision": "approve", "comment": "Call it a hybrid week."}
         assert "Call it a hybrid week." not in wake["body"]
         assert "if approved, send it" in wake["body"]
+        assert "covers only what they saw plus the changes their comment asks for" in wake["body"]
 
         again = client.post(f"/api/approvals/{token}", json={"decision": "reject"})
         assert again.status_code == 409 and len(wakes) == 1

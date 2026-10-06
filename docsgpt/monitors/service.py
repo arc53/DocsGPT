@@ -556,7 +556,9 @@ def list_for_conversation(caller: Caller) -> List[Dict[str, Any]]:
         return []
     with db_readonly() as conn:
         rows = MonitorsRepository(conn).list_for_user(caller.user_id, conversation_id=str(caller.conversation_id))
-    return [view(row) for row in rows]
+        links_by_monitor = TriggerLinksRepository(conn).list_for_monitors([str(row["id"]) for row in rows])
+    # Links carry their state (live, expired, revoked, used_up), so the model can tell a dead link from a live one.
+    return [view(row, links_rows=links_by_monitor.get(str(row["id"]), [])) for row in rows]
 
 
 def end(monitor_id: str, user_id: str, status: str, *, reason: Optional[str] = None,

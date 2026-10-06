@@ -22,6 +22,7 @@ import ipaddress
 import json
 import re
 import secrets
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlsplit
 
@@ -244,11 +245,32 @@ def signing_instructions(scheme: str) -> Optional[str]:
     }.get(scheme)
 
 
-def link_view(link: Dict[str, object]) -> Dict[str, object]:
+def link_state(link: Dict[str, Any]) -> str:
+    """Whether a link still works: ``live``, ``revoked``, ``expired`` or ``used_up`` (its calls, or its decision)."""
+    if link.get("revoked_at"):
+        return "revoked"
+    expires = link.get("expires_at")
+    if isinstance(expires, str):
+        try:
+            expires = datetime.fromisoformat(expires.replace("Z", "+00:00"))
+        except ValueError:
+            expires = None
+    if isinstance(expires, datetime):
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if expires <= datetime.now(timezone.utc):
+            return "expired"
+    if link.get("decision") or int(link.get("hit_count") or 0) >= int(link.get("max_hits") or 0) > 0:
+        return "used_up"
+    return "live"
+
+
+def link_view(link: Dict[str, Any]) -> Dict[str, Any]:
     """The safe parts of a link row for lists and the UI (never the token hash or secret)."""
     return {
         "id": link.get("id"),
         "kind": link.get("kind"),
+        "state": link_state(link),
         "signature": link.get("signature_scheme"),
         "expires_at": link.get("expires_at"),
         "hit_count": link.get("hit_count"),

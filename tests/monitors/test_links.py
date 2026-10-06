@@ -147,6 +147,18 @@ class TestExamples:
         assert json.loads(body)["status"] == "success"
         assert sig == hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
 
+    def test_link_view_says_whether_the_link_still_works(self):
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        base = {"id": "1", "kind": "webhook", "hit_count": 0, "max_hits": 10, "expires_at": now + timedelta(days=1)}
+        assert links.link_view(base)["state"] == "live"
+        assert links.link_view({**base, "expires_at": now - timedelta(seconds=1)})["state"] == "expired"
+        assert links.link_view({**base, "expires_at": (now - timedelta(days=1)).isoformat()})["state"] == "expired"
+        assert links.link_view({**base, "revoked_at": now})["state"] == "revoked"
+        assert links.link_view({**base, "hit_count": 10})["state"] == "used_up"
+        assert links.link_view({**base, "kind": "approval", "decision": {"decision": "approve"}})["state"] == "used_up"
+
     def test_link_view_hides_the_hash_and_secret(self):
         view = links.link_view({"id": "1", "kind": "webhook", "token_hash": "h", "secret_encrypted": "s"})
         assert "token_hash" not in view and "secret_encrypted" not in view
