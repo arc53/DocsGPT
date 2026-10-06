@@ -140,7 +140,8 @@ describe('BackgroundJobCard', () => {
         background: backgroundReducer,
         notifications: notificationsReducer,
         actionToast: actionToastReducer,
-        preference: (state = { token: 'tok' }) => state,
+        preference: (state: { token: string | null } = { token: 'tok' }) =>
+          state,
         conversation: (state = { conversationId: 'c1' }) => state,
       },
       preloadedState: {

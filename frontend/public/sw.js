@@ -16,11 +16,16 @@ self.addEventListener('activate', (event) => {
 });
 
 function appUrl(url) {
-  // Only paths inside this app: a push never opens another site.
-  if (typeof url !== 'string' || !url.startsWith('/') || url.startsWith('//')) {
-    return new URL('/', self.location.origin).href;
+  // Only pages of this app, as a path or a full URL on this origin: a push
+  // never opens another site.
+  const root = new URL('/', self.location.origin).href;
+  if (typeof url !== 'string' || !url) return root;
+  try {
+    const resolved = new URL(url, self.location.origin);
+    return resolved.origin === self.location.origin ? resolved.href : root;
+  } catch {
+    return root;
   }
-  return new URL(url, self.location.origin).href;
 }
 
 self.addEventListener('push', (event) => {

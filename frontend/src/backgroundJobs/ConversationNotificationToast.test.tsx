@@ -60,7 +60,8 @@ describe('ConversationNotificationToast', () => {
       reducer: {
         background: backgroundReducer,
         notifications: notificationsReducer,
-        preference: (state = { token: 'tok' }) => state,
+        preference: (state: { token: string | null } = { token: 'tok' }) =>
+          state,
       },
     });
   let store: ReturnType<typeof makeStore>;

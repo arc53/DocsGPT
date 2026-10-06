@@ -33,7 +33,8 @@ describe('PushPermissionToast', () => {
       reducer: {
         background: backgroundReducer,
         actionToast: actionToastReducer,
-        preference: (state = { token: 'tok' }) => state,
+        preference: (state: { token: string | null } = { token: 'tok' }) =>
+          state,
       },
     });
     store.dispatch({

@@ -60,7 +60,8 @@ export type BackgroundState = {
   dismissedNotifications: DismissedEntry[];
 };
 
-const initialState: BackgroundState = {
+// A function, so every store (a reload, a test) reads the persisted dismissals afresh.
+const initialState = (): BackgroundState => ({
   jobs: {},
   unavailableJobs: {},
   jobListRequestedAt: {},
@@ -71,7 +72,7 @@ const initialState: BackgroundState = {
     DISMISSED_NOTIFICATIONS_STORAGE_KEY,
     DISMISSED_NOTIFICATIONS_TTL_MS,
   ),
-};
+});
 
 export const FINAL_JOB_STATUSES: ReadonlySet<string> = new Set([
   'completed',

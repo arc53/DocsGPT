@@ -35,7 +35,8 @@ describe('UnreadDot', () => {
     const store = configureStore({
       reducer: {
         background: backgroundReducer,
-        preference: (state = { token: null }) => state,
+        preference: (state: { token: string | null } = { token: null }) =>
+          state,
       },
     });
     await act(async () => {
@@ -61,7 +62,8 @@ describe('UnreadDot', () => {
     const store = configureStore({
       reducer: {
         background: backgroundReducer,
-        preference: (state = { token: null }) => state,
+        preference: (state: { token: string | null } = { token: null }) =>
+          state,
       },
     });
     store.dispatch(markConversationUnread('c1'));

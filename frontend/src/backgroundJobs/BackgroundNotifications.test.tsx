@@ -54,7 +54,8 @@ describe('BackgroundNotifications', () => {
         background: backgroundReducer,
         notifications: notificationsReducer,
         actionToast: (state = { current: null, nextId: 1 }) => state,
-        preference: (state = { token: 'tok' }) => state,
+        preference: (state: { token: string | null } = { token: 'tok' }) =>
+          state,
         conversation: (state = { conversationId: null, status: 'idle' }) =>
           state,
       },

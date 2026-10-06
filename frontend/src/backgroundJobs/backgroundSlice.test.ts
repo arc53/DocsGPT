@@ -38,7 +38,7 @@ const makeStore = () =>
   configureStore({
     reducer: {
       background: backgroundReducer,
-      preference: (state = { token: 'tok' }) => state,
+      preference: (state: { token: string | null } = { token: 'tok' }) => state,
     },
   });
 
@@ -193,8 +193,8 @@ describe('backgroundSlice', () => {
       store.dispatch(
         receiveConversations({
           data: [
-            { id: 'c1', name: 'a', unread: true },
-            { id: 'c2', name: 'b', unread: false },
+            { id: 'c1', name: 'a', agent_id: null, unread: true },
+            { id: 'c2', name: 'b', agent_id: null, unread: false },
           ],
           loading: false,
         }),
@@ -202,7 +202,9 @@ describe('backgroundSlice', () => {
       expect(selectIsUnread('c1')(store.getState())).toBe(true);
       expect(selectIsUnread('c2')(store.getState())).toBe(false);
       store.dispatch(
-        appendConversations([{ id: 'c3', name: 'c', unread: true }]),
+        appendConversations([
+          { id: 'c3', name: 'c', agent_id: null, unread: true },
+        ]),
       );
       expect(selectIsUnread('c3')(store.getState())).toBe(true);
     });
@@ -210,11 +212,13 @@ describe('backgroundSlice', () => {
     it('a listing without the flag (search results) changes nothing', () => {
       const store = makeStore();
       store.dispatch(markConversationUnread('c1'));
-      store.dispatch(appendConversations([{ id: 'c1', name: 'a' }]));
+      store.dispatch(
+        appendConversations([{ id: 'c1', name: 'a', agent_id: null }]),
+      );
       expect(selectIsUnread('c1')(store.getState())).toBe(true);
       store.dispatch(
         receiveConversations({
-          data: [{ id: 'c1', name: 'a', unread: false }],
+          data: [{ id: 'c1', name: 'a', agent_id: null, unread: false }],
           loading: false,
         }),
       );

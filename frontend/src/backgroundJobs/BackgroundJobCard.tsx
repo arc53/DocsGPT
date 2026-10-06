@@ -154,15 +154,11 @@ export default function BackgroundJobCard({
   const conversationId = job?.conversation_id ?? openConversationId;
   useEffect(() => {
     if (!running || streamHealthy || unavailable) return;
-    const timer = window.setInterval(
-      () =>
-        void dispatch(
-          conversationId
-            ? fetchConversationJobs(conversationId)
-            : fetchBackgroundJob(jobId),
-        ),
-      JOB_POLL_MS,
-    );
+    const poll = () => {
+      if (conversationId) void dispatch(fetchConversationJobs(conversationId));
+      else void dispatch(fetchBackgroundJob(jobId));
+    };
+    const timer = window.setInterval(poll, JOB_POLL_MS);
     return () => window.clearInterval(timer);
   }, [running, streamHealthy, unavailable, conversationId, jobId, dispatch]);
 

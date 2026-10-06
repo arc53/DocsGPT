@@ -106,6 +106,18 @@ describe('service worker', () => {
     }
   });
 
+  it('keeps a full URL on its own origin', async () => {
+    const { handlers, self } = loadWorker();
+    await dispatch(
+      handlers.push,
+      pushEvent({ title: 't', url: `${ORIGIN}/c/c2` }),
+    );
+    expect(self.registration.showNotification).toHaveBeenCalledWith(
+      't',
+      expect.objectContaining({ data: { url: `${ORIGIN}/c/c2` } }),
+    );
+  });
+
   it('copes with a payload that is not JSON', async () => {
     const { handlers, self } = loadWorker();
     await dispatch(handlers.push, {

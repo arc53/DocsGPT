@@ -131,7 +131,9 @@ class TestDecisions:
         assert published == []
         [(user_id, payload)] = pushes
         assert user_id == "u1"
-        assert payload["title"] == "Deploy approved"
+        # A known kind leads with its heading; the caller's title moves into the body.
+        assert payload["title"] == "Approval received"
+        assert payload["body"].startswith("Deploy approved")
         assert payload["url"] == f"/c/{conversation_id}"
         assert payload["kind"] == "approval"
         assert _unread(db, conversation_id) is not None
