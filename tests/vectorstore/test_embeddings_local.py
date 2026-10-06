@@ -334,6 +334,62 @@ class TestTokenizerPadding:
         EmbeddingsWrapper(GRANITE_97M.name)
 
 
+class TestLocalInputCeiling:
+    """``EMBEDDINGS_LOCAL_MAX_TOKENS`` lowers the tokenizer's truncation length.
+
+    FastEmbed truncates only at the model's own maximum -- 32,768 tokens for
+    granite -- and attention memory grows with the square of the input, so a
+    single long input can take far more memory than the host has.
+    """
+
+    def _load(self, fake_fastembed, monkeypatch, limit, truncation):
+        from docsgpt.core.settings import settings
+
+        _, instance = fake_fastembed
+        monkeypatch.setattr(settings, "EMBEDDINGS_LOCAL_MAX_TOKENS", limit)
+        tokenizer = MagicMock()
+        tokenizer.padding = None
+        tokenizer.truncation = truncation
+        instance.model.tokenizer = tokenizer
+        EmbeddingsWrapper(GRANITE_97M.name)
+        return tokenizer
+
+    def test_unset_leaves_the_tokenizer_alone(self, fake_fastembed, monkeypatch):
+        tokenizer = self._load(fake_fastembed, monkeypatch, None, {"max_length": 32768})
+
+        tokenizer.enable_truncation.assert_not_called()
+
+    def test_lowers_the_models_own_ceiling(self, fake_fastembed, monkeypatch):
+        tokenizer = self._load(
+            fake_fastembed,
+            monkeypatch,
+            4096,
+            {"max_length": 32768, "stride": 0, "strategy": "longest_first", "direction": "right"},
+        )
+
+        tokenizer.enable_truncation.assert_called_once_with(
+            max_length=4096, stride=0, strategy="longest_first", direction="right"
+        )
+
+    def test_never_raises_a_lower_ceiling(self, fake_fastembed, monkeypatch):
+        tokenizer = self._load(fake_fastembed, monkeypatch, 4096, {"max_length": 512})
+
+        tokenizer.enable_truncation.assert_not_called()
+
+    def test_a_tokenizer_without_truncation_gets_one(self, fake_fastembed, monkeypatch):
+        tokenizer = self._load(fake_fastembed, monkeypatch, 4096, None)
+
+        tokenizer.enable_truncation.assert_called_once_with(max_length=4096)
+
+    def test_tokenizer_that_cannot_be_reached_is_not_fatal(self, fake_fastembed, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        _, instance = fake_fastembed
+        monkeypatch.setattr(settings, "EMBEDDINGS_LOCAL_MAX_TOKENS", 4096)
+        instance.model = None
+        EmbeddingsWrapper(GRANITE_97M.name)
+
+
 def _repo_json(pooling_file, modules_file):
     """Stub ``_read_repo_json`` returning canned repository metadata."""
 

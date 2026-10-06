@@ -44,6 +44,15 @@ class EmbeddingsSettings(SettingsGroup):
             "payload, pasted logs) OOM-killed a 12 GB embeddings server. Documents are not affected."
         ),
     )
+    EMBEDDINGS_LOCAL_MAX_TOKENS: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Hard ceiling, in tokens, on every input a local FastEmbed model embeds, documents included (the "
+            "overflow is dropped). Unset keeps the model's own maximum, which is 32,768 for granite; its memory "
+            "grows with the square of input length, so 4096 caps one input at about 3 GB."
+        ),
+    )
     EMBEDDINGS_BATCH_SIZE: int = Field(
         default=32, ge=1, description="Chunks per store transaction and per remote embed request."
     )

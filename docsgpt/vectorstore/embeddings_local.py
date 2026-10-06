@@ -321,6 +321,36 @@ def _pad_to_longest_in_batch(model: Any) -> None:
     )
 
 
+def _cap_input_tokens(model: Any, limit: Optional[int]) -> None:
+    """Lower the tokenizer's truncation length to ``limit``, never raise it.
+
+    FastEmbed truncates only at the model's own maximum (32,768 tokens for
+    granite), and attention memory grows with the square of the input, so one
+    long input can need more memory than the host has. A model whose own
+    ceiling is already lower keeps it.
+    """
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+        return
+    tokenizer = getattr(getattr(model, "model", None), "tokenizer", None)
+    if tokenizer is None:
+        return
+    truncation = getattr(tokenizer, "truncation", None)
+    if truncation is None:
+        tokenizer.enable_truncation(max_length=limit)
+        return
+    if not isinstance(truncation, dict):
+        return
+    current = truncation.get("max_length")
+    if isinstance(current, int) and current <= limit:
+        return
+    tokenizer.enable_truncation(
+        max_length=limit,
+        stride=truncation.get("stride", 0),
+        strategy=truncation.get("strategy", "longest_first"),
+        direction=truncation.get("direction", "right"),
+    )
+
+
 class EmbeddingsWrapper:
     """Runs an embedding model locally through FastEmbed.
 
@@ -360,6 +390,7 @@ class EmbeddingsWrapper:
             ) from exc
 
         _pad_to_longest_in_batch(self.model)
+        _cap_input_tokens(self.model, settings.EMBEDDINGS_LOCAL_MAX_TOKENS)
         self.dimension = self.spec.dimension or self._probe_dimension()
         logger.info("Embeddings model ready (dimension=%d)", self.dimension)
 

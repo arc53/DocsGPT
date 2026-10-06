@@ -134,7 +134,7 @@ Leaving `EMBEDDINGS_NAME` unset imposes no limit: the name is only forwarded as 
 
 Each search query is clipped to `EMBEDDINGS_MAX_QUERY_TOKENS` tokens (default `512`) before it is embedded, whichever embedder you use. A query needs a few hundred tokens, while the memory an embedder uses grows with the square of its input length: on a long-context model such as granite, one query of about 9,000 tokens needs more than 12 GB. Long queries come from pasted code, logs or JSON in a first chat message, or from a webhook payload. When a query is clipped, DocsGPT logs `Clipping a … search query`.
 
-Documents are not affected; use `EMBEDDINGS_MAX_INPUT_TOKENS` (remote servers) to bound them. Set `EMBEDDINGS_MAX_QUERY_TOKENS=0` to turn query clipping off.
+Documents are not affected. To bound them too, use `EMBEDDINGS_MAX_INPUT_TOKENS` for a remote server or `EMBEDDINGS_LOCAL_MAX_TOKENS` for a local model. Each drops whatever is past its limit. A local model otherwise accepts up to its own maximum, which is 32,768 tokens for granite; `EMBEDDINGS_LOCAL_MAX_TOKENS=4096` keeps one input at about 3 GB. Set `EMBEDDINGS_MAX_QUERY_TOKENS=0` to turn query clipping off.
 
 ## Where the model runs
 
