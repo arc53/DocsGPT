@@ -4181,7 +4181,9 @@
         "tags": [
           "monitors"
         ],
-        "x-pat-denied": true
+        "x-pat-scopes": [
+          "conversations:read"
+        ]
       }
     },
     "/api/monitors/{monitor_id}": {
@@ -4196,7 +4198,9 @@
         "tags": [
           "monitors"
         ],
-        "x-pat-denied": true
+        "x-pat-scopes": [
+          "conversations:read"
+        ]
       },
       "parameters": [
         {
@@ -4236,7 +4240,9 @@
         "tags": [
           "monitors"
         ],
-        "x-pat-denied": true
+        "x-pat-scopes": [
+          "conversations:write"
+        ]
       }
     },
     "/api/parse_spec": {
