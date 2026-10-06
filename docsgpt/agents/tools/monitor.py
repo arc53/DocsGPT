@@ -20,7 +20,10 @@ _CREATE_DESCRIPTION = (
     "itself a secret, with an expiry and hit and rate limits, so the default unsigned link is right for senders "
     "that can't sign: curl or CI scripts, iOS Shortcuts, Zapier/IFTTT-style tools, forms. Set `signature` only "
     "for a sender that signs natively: \"github\" for GitHub, \"standard_webhooks\" for Svix-style senders, "
-    "\"hmac_sha256\" for a custom sender that computes it); `approval` (returns a page link where a person "
+    "\"hmac_sha256\" for a custom sender that computes it. A signed link's secret comes back as a reference, "
+    "{{link_secret:REF}}: to set up the sender yourself, put the reference in the approved tool call that does it "
+    "and the server fills in the value; `expose_secret: true` returns the raw value instead, which then goes to "
+    "the model provider, so use it only when the user asks); `approval` (returns a page link where a person "
     "approves or rejects your question; you are woken with the decision and any comment).\n"
     "A source only reads state: check a status, list new items, read a page, file or metric. Put the action in "
     "`on_match` and do it when you are woken, asking for approval as usual. A tool source that would need "
@@ -127,6 +130,13 @@ class MonitorTool(Tool):
                                         "webhook: how calls are signed. Default none, right for any sender "
                                         "that can't sign; github for GitHub, standard_webhooks for Svix-style "
                                         "senders, hmac_sha256 only for a custom sender that computes it."
+                                    ),
+                                },
+                                "expose_secret": {
+                                    "type": "boolean",
+                                    "description": (
+                                        "webhook: return the raw signing secret instead of its reference. The "
+                                        "value then goes to the model provider; only when the user asks."
                                     ),
                                 },
                                 "question": {**string, "description": "approval: what the person decides."},

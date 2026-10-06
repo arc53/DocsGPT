@@ -469,6 +469,9 @@
               "hmac_sha256"
             ]
           },
+          "expose_secret": {
+            "type": "boolean"
+          },
           "question": {
             "type": "string"
           },

@@ -240,8 +240,9 @@ class TestLinkCreate:
             },
         )
         assert result["url"].startswith("https://docs.example.com/api/triggers/trg_")
-        # The model gets a placeholder; the real secret is only ever revealed to the owner.
-        assert result["secret"] == links.SECRET_PLACEHOLDER
+        # The model gets a reference; the real secret is only revealed to the owner or filled into approved calls.
+        assert result["secret"] == "{{link_secret:" + result["secret_ref"] + "}}"
+        assert len(result["secret_ref"]) == 6
         assert result["reachable_from_internet"] is True and "reachability_note" not in result
         assert "curl -X POST" in result["example_curl"] and result["method"] == "POST"
         assert "$DOCSGPT_WEBHOOK_SECRET" in result["example_curl"] or "${DOCSGPT_WEBHOOK_SECRET" in result[

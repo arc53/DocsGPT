@@ -2298,6 +2298,7 @@
       "deny": "Deny",
       "details": "Details",
       "denyReasonPlaceholder": "Optional reason for denying…",
+      "secretRefs": "Approving fills in the signing secret of {{refs}} when this runs. The assistant never sees it.",
       "connectTitle": "This tool needs your {{name}} account.",
       "connect": "Connect {{name}}",
       "continue": "Continue",

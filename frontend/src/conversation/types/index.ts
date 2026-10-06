@@ -25,6 +25,8 @@ export type ToolCallsType = {
   // Remote-device tool calls carry the device id so the approval UI can
   // offer a "don't ask again" sticky-pattern action without a lookup.
   device_id?: string;
+  /** Link secret references approving this call fills in (`{{link_secret:REF}}` ids). */
+  secret_refs?: string[];
   // A connection-backed tool whose account needs signing in pauses on a
   // Connect card instead of an approval. Never carries an account or secret.
   connection_required?: {

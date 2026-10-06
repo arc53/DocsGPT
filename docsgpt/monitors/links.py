@@ -3,9 +3,12 @@
 A token is 32 random bytes (``secrets.token_urlsafe``), shown once in the
 tool result; only its sha256 is stored, and a link is looked up by that
 hash. Webhook secrets are random too and stored encrypted for the owner. The
-model never sees a secret: the tool result carries :data:`SECRET_PLACEHOLDER`
-and an example command that reads :data:`SECRET_ENV`, and the owner reveals the
-secret in the chat (``GET /api/monitors/<id>/secret``).
+model never sees a secret unless the link was created with
+``expose_secret``: the tool result carries the reference
+``{{link_secret:REF}}`` (:mod:`docsgpt.monitors.secret_refs` fills the value
+into tool calls the user approves) and an example command that reads
+:data:`SECRET_ENV`, and the owner reveals the secret in the chat or on the
+Monitors page (``GET /api/monitors/<id>/secret``).
 
 URLs are absolute, built from ``PUBLIC_API_BASE_URL`` (else ``API_URL``);
 approval pages from ``PUBLIC_APP_URL`` when the UI runs elsewhere. A base
@@ -35,9 +38,6 @@ TOKEN_BYTES = 32
 WEBHOOK_MAX_HITS = 1000
 
 _TOKEN_PREFIX = {"webhook": "trg_", "approval": "apv_"}
-
-#: What the model is given in place of a signing secret.
-SECRET_PLACEHOLDER = "hidden from you; the user reveals it on the link card in this chat"
 
 #: The environment variable the example command reads the secret from.
 SECRET_ENV = "DOCSGPT_WEBHOOK_SECRET"
@@ -267,11 +267,13 @@ def link_state(link: Dict[str, Any]) -> str:
 
 def link_view(link: Dict[str, Any]) -> Dict[str, Any]:
     """The safe parts of a link row for lists and the UI (never the token hash or secret)."""
+    ref = link.get("ref")
     return {
         "id": link.get("id"),
         "kind": link.get("kind"),
         "state": link_state(link),
         "signature": link.get("signature_scheme"),
+        "secret_ref": "{{link_secret:" + str(ref) + "}}" if ref else None,
         "expires_at": link.get("expires_at"),
         "hit_count": link.get("hit_count"),
         "max_hits": link.get("max_hits"),

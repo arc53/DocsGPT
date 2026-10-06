@@ -2288,6 +2288,7 @@
       "deny": "Denegar",
       "details": "Detalles",
       "denyReasonPlaceholder": "Motivo del rechazo (opcional)…",
+      "secretRefs": "Al aprobar, se inserta el secreto de firma de {{refs}} cuando se ejecute. El asistente nunca lo ve.",
       "connectTitle": "Esta herramienta necesita tu cuenta de {{name}}.",
       "connect": "Conectar {{name}}",
       "continue": "Continuar",

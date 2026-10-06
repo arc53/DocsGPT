@@ -325,6 +325,7 @@ def create(caller: Caller, arguments: Dict[str, Any]) -> Dict[str, Any]:
 
     link_token: Optional[str] = None
     secret: Optional[str] = None
+    ref: Optional[str] = None
     kind = request.source["type"]
     with db_session() as conn:
         repo = MonitorsRepository(conn)
@@ -358,7 +359,10 @@ def create(caller: Caller, arguments: Dict[str, Any]) -> Dict[str, Any]:
             link_token = links.new_token(kind)
             scheme = request.source.get("signature", "none") if kind == "webhook" else "none"
             secret = links.new_secret(scheme) if kind == "webhook" else None
-            TriggerLinksRepository(conn).create(
+            link_repo = TriggerLinksRepository(conn)
+            if secret:
+                ref = _free_ref(link_repo, caller.user_id)
+            link_repo.create(
                 monitor_id=monitor["id"],
                 user_id=caller.user_id,
                 conversation_id=str(caller.conversation_id),
@@ -374,10 +378,24 @@ def create(caller: Caller, arguments: Dict[str, Any]) -> Dict[str, Any]:
                     if kind == "approval"
                     else None
                 ),
+                ref=ref,
+                expose_secret=bool(request.source.get("expose_secret")),
             )
     publish_monitor_updated(monitor)
     return _created_result(request, monitor, baseline=baseline, already=already, token=link_token,
-                           signed=bool(secret))
+                           signed=bool(secret), ref=ref,
+                           secret=secret if request.source.get("expose_secret") else None)
+
+
+def _free_ref(repo: TriggerLinksRepository, user_id: str) -> str:
+    """A reference id the user has no link with yet (the user's monitors are locked by the caller)."""
+    from docsgpt.monitors.secret_refs import new_ref
+
+    for _ in range(20):
+        ref = new_ref()
+        if not repo.ref_taken(user_id, ref):
+            return ref
+    raise RuntimeError("could not find a free link reference id")
 
 
 def _created_result(
@@ -388,6 +406,8 @@ def _created_result(
     already: bool,
     token: Optional[str],
     signed: bool,
+    ref: Optional[str] = None,
+    secret: Optional[str] = None,
 ) -> Dict[str, Any]:
     kind = request.source["type"]
     result: Dict[str, Any] = {
@@ -440,13 +460,31 @@ def _created_result(
                 "example_curl": links.example_curl(url, scheme, request.check),
             }
         )
-        if signed:
-            # The model never sees the secret: the user reveals it on the link card (GET /api/monitors/<id>/secret).
-            result["secret"] = links.SECRET_PLACEHOLDER
+        if signed and secret:
+            # The owner chose expose_secret: the raw value is in this result, and so goes to the model provider.
+            result["secret"] = secret
+            result["secret_exposed"] = True
+            result["secret_ref"] = ref
             result["signing"] = links.signing_instructions(scheme)
             tell += (
-                " Give the user the url (POST only). You never see the signing secret: the user reveals it with "
-                f"Reveal secret on the link card in this chat; example_curl reads it from ${links.SECRET_ENV}."
+                " Give the user the url (POST only). The raw signing secret is in this result because the link was "
+                "created with expose_secret, so it has been sent to the model provider; prefer the reference "
+                f"{{{{link_secret:{ref}}}}} in tool calls, and don't repeat the value in your reply."
+            )
+        elif signed:
+            # The model gets a reference; the executor fills the value into approved calls, the user can reveal it.
+            from docsgpt.monitors.secret_refs import reference
+
+            result["secret"] = reference(ref) if ref else None
+            result["secret_ref"] = ref
+            result["signing"] = links.signing_instructions(scheme)
+            tell += (
+                f" Give the user the url (POST only). You never see the signing secret, only its reference "
+                f"{reference(ref) if ref else ''}: to configure the sender yourself (create the webhook through an "
+                "MCP or API action, or a remote_device command), put the reference exactly as written in that "
+                "call's arguments; the server fills in the real value only when the user approves the call, and "
+                "never into messages, URLs or fetched pages. Otherwise the user reveals the secret with Reveal "
+                f"secret on the link card (or Settings > Monitors); example_curl reads it from ${links.SECRET_ENV}."
             )
         else:
             tell += " Give the user the url (POST only; a GET does nothing)."

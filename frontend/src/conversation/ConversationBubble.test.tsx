@@ -307,6 +307,53 @@ describe('ConversationBubble', () => {
       access: 'write',
     };
 
+    it('says approving fills in a link secret, and offers no sticky approval for it', async () => {
+      const deviceCall: ToolCallsType = {
+        tool_name: 'remote_device',
+        action_name: 'run_command',
+        call_id: 'call-3',
+        arguments: {
+          command:
+            'gh api repos/o/r/hooks -f config[secret]={{link_secret:K7QX2M}}',
+        },
+        status: 'awaiting_approval',
+        device_id: 'dev_1',
+      };
+      await render(
+        <ConversationBubble
+          type="ANSWER"
+          toolCalls={[{ ...deviceCall, secret_refs: ['K7QX2M'] }]}
+          onToolAction={() => {}}
+        />,
+      );
+      const notice = container.querySelector(
+        '[data-testid="approval-secret-refs"]',
+      );
+      expect(notice?.textContent).toBe(
+        tr('conversation.toolApproval.secretRefs').replace(
+          '{{refs}}',
+          'K7QX2M',
+        ),
+      );
+      expect(
+        buttonByText(tr('conversation.toolApproval.approveAlways')),
+      ).toBeUndefined();
+
+      await render(
+        <ConversationBubble
+          type="ANSWER"
+          toolCalls={[deviceCall]}
+          onToolAction={() => {}}
+        />,
+      );
+      expect(
+        container.querySelector('[data-testid="approval-secret-refs"]'),
+      ).toBeNull();
+      expect(
+        buttonByText(tr('conversation.toolApproval.approveAlways')),
+      ).toBeDefined();
+    });
+
     it('names the connector and its action, not the raw tool name', async () => {
       await render(
         <ConversationBubble

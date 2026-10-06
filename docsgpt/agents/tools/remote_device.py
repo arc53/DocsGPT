@@ -232,14 +232,17 @@ class RemoteDeviceTool(Tool):
         inv = broker.dispatch_invocation(self.device_id, self.user_id, envelope, ttl_seconds=ttl)
         dispatched_at = time.time()
 
+        from docsgpt.monitors.secret_refs import redact_active
+
         try:
             with db_session() as conn:
                 DeviceAuditLogRepository(conn).record_dispatch(
                     device_id=self.device_id,
                     user_id=self.user_id,
                     invocation_id=inv.invocation_id,
-                    command=command,
-                    working_dir=working_directory,
+                    # A secret filled into the command is recorded as its reference.
+                    command=redact_active(command),
+                    working_dir=redact_active(working_directory),
                     approval_mode=effective_mode,
                     decision="dispatched",
                     decision_reason=decision_reason or ("denylist:" + denied if denied else None),
@@ -291,6 +294,8 @@ class RemoteDeviceTool(Tool):
         interval = 0.05
         while True:
             if call.handoff_requested():
+                from docsgpt.monitors.secret_refs import active_refs
+
                 external = {
                     "invocation_id": inv.invocation_id,
                     "device_id": self.device_id,
@@ -298,6 +303,10 @@ class RemoteDeviceTool(Tool):
                     "timeout_ms": int(timeout_ms),
                     "dispatched_at": dispatched_at,
                 }
+                refs = active_refs()
+                if refs:
+                    # The poller redacts the command's output with these (it never holds the values).
+                    external["secret_refs"] = refs
                 if call.detach(external, runner="device"):
                     return DETACHED
             current = broker.get_invocation(inv.invocation_id)

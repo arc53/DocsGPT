@@ -2278,6 +2278,7 @@
       "deny": "拒否",
       "details": "詳細",
       "denyReasonPlaceholder": "拒否の理由（任意）…",
+      "secretRefs": "承認すると、実行時に {{refs}} の署名シークレットが入力されます。アシスタントがその値を見ることはありません。",
       "connectTitle": "このツールには {{name}} アカウントが必要です。",
       "connect": "{{name}} に接続",
       "continue": "続行",

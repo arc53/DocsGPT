@@ -2278,6 +2278,7 @@
       "deny": "拒絕",
       "details": "詳細資料",
       "denyReasonPlaceholder": "拒絕原因（選填）…",
+      "secretRefs": "核准後，執行時會填入 {{refs}} 的簽章密鑰。助理永遠看不到它。",
       "connectTitle": "此工具需要你的 {{name}} 帳號。",
       "connect": "連線 {{name}}",
       "continue": "繼續",

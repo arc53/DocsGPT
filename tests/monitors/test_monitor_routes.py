@@ -57,17 +57,20 @@ class TestList:
         with patch("docsgpt.app.handle_auth", return_value=None):
             assert client.get("/api/monitors").status_code == 401
 
-    def test_lists_only_the_callers_monitors_without_secrets(self, client, made, conversation_id):
+    def test_lists_only_the_callers_monitors_without_secrets(self, client, made, conversation_id, mon_db):
         polled_id, hook_id, hook = made
         with _as("u1"):
             body = client.get("/api/monitors").get_json()
         assert {m["monitor_id"] for m in body["monitors"]} == {polled_id, hook_id}
         text = str(body)
         token = hook["url"].rsplit("/", 1)[1]
-        assert token not in text and hook["secret"] not in text and "token_hash" not in text
+        secret = TestRevealSecret._secret(None, mon_db, hook_id)
+        assert token not in text and secret not in text and "token_hash" not in text
         assert "monitor_state" not in text and "secret_encrypted" not in text
         webhook = next(m for m in body["monitors"] if m["monitor_id"] == hook_id)
         assert webhook["links"][0]["kind"] == "webhook" and webhook["links"][0]["signature"] == "github"
+        # The reference is not a secret: the model has it too.
+        assert webhook["links"][0]["secret_ref"] == hook["secret"]
         polled = next(m for m in body["monitors"] if m["monitor_id"] == polled_id)
         assert polled["interval"] == "15m" and polled["wakes_left"] == 1 and polled["check_count"] == 1
         with _as("u2"):

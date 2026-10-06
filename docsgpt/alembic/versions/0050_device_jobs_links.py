@@ -3,6 +3,11 @@
 * ``background_jobs.runner`` takes ``device``: a ``remote_device`` command a
   turn handed off, followed by a Celery poll chain that reads the device's
   output from the broker until the command reports its exit code.
+* ``trigger_links.ref``: a signed link's short reference id, unique per
+  user. The model is given ``{{link_secret:REF}}`` instead of the secret,
+  and the executor fills the value into tool calls the user approves.
+  ``trigger_links.expose_secret`` records a link whose owner let the model
+  see the raw secret.
 
 Idempotent both ways. Downgrade first reports running device jobs ``lost``
 (nothing would follow them any more), then narrows the check.
@@ -40,6 +45,12 @@ def _runners(values: str) -> None:
 
 def upgrade() -> None:
     _runners(_RUNNERS_AFTER)
+    op.execute("ALTER TABLE trigger_links ADD COLUMN IF NOT EXISTS ref TEXT;")
+    op.execute("ALTER TABLE trigger_links ADD COLUMN IF NOT EXISTS expose_secret BOOLEAN NOT NULL DEFAULT false;")
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS trigger_links_user_ref_uidx ON trigger_links (user_id, ref) "
+        "WHERE ref IS NOT NULL;"
+    )
 
 
 def downgrade() -> None:
@@ -52,3 +63,6 @@ def downgrade() -> None:
     )
     op.execute("UPDATE background_jobs SET runner = 'inprocess' WHERE runner = 'device';")
     _runners(_RUNNERS_BEFORE)
+    op.execute("DROP INDEX IF EXISTS trigger_links_user_ref_uidx;")
+    op.execute("ALTER TABLE trigger_links DROP COLUMN IF EXISTS expose_secret;")
+    op.execute("ALTER TABLE trigger_links DROP COLUMN IF EXISTS ref;")

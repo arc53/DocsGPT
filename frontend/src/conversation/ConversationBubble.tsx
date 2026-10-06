@@ -755,6 +755,9 @@ function ToolCallApprovalBar({
 
   const isRemoteDevice =
     toolCall.tool_name === 'remote_device' && toolCall.device_id;
+  const secretRefs = toolCall.secret_refs ?? [];
+  // A call that fills in a link secret is approved one at a time, never as a sticky pattern.
+  const offerSticky = isRemoteDevice && secretRefs.length === 0;
   const handleApproveSticky = async () => {
     if (!isRemoteDevice || !toolCall.device_id) return;
     const command =
@@ -813,7 +816,7 @@ function ToolCallApprovalBar({
           >
             {t('conversation.toolApproval.approve')}
           </Button>
-          {isRemoteDevice && (
+          {offerSticky && (
             <Button
               type="button"
               variant="outline"
@@ -862,6 +865,17 @@ function ToolCallApprovalBar({
         </>
       }
     >
+      {secretRefs.length > 0 && (
+        <p
+          className="text-muted-foreground text-xs"
+          data-testid="approval-secret-refs"
+        >
+          {t('conversation.toolApproval.secretRefs', {
+            refs: secretRefs.join(', '),
+            interpolation: { escapeValue: false },
+          })}
+        </p>
+      )}
       {expanded && (
         <div className="flex flex-col gap-2">
           <p className="text-muted-foreground text-xs font-medium">

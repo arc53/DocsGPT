@@ -208,7 +208,15 @@ def _source(raw: Any) -> Dict[str, Any]:
         scheme = raw.get("signature") or "none"
         if scheme not in SIGNATURE_SCHEMES:
             raise SpecError(f"`source.signature` must be one of: {', '.join(SIGNATURE_SCHEMES)}.")
-        return {"type": "webhook", "signature": scheme}
+        out = {"type": "webhook", "signature": scheme}
+        expose = raw.get("expose_secret")
+        if expose not in (None, False):
+            if not isinstance(expose, bool):
+                raise SpecError("`source.expose_secret` must be true or false.")
+            if scheme == "none":
+                raise SpecError("`source.expose_secret` needs a signed link: set `source.signature` too.")
+            out["expose_secret"] = True
+        return out
     question = _text(raw.get("question"), "source.question", limit=_MAX_QUESTION, required=True)
     details = _text(raw.get("details") or raw.get("context"), "source.details", limit=_MAX_DETAILS)
     options_raw = raw.get("options") or list(DEFAULT_APPROVAL_OPTIONS)

@@ -28,6 +28,7 @@ from docsgpt.agents.tool_pins import (
 from docsgpt.agents.tools.tool_action_parser import ToolActionParser
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.guardrails.types import Stage as GuardrailStage, resolve_tool_result
+from docsgpt.monitors import secret_refs
 from docsgpt.security.encryption import decrypt_credentials
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
@@ -663,6 +664,11 @@ class ToolExecutor:
         # when the call that creates it was really approved.
         self.approved_call_ids: set = set()
         self.current_call_id: Optional[str] = None
+        # Link secrets filled into this turn's approved calls (``{secret: reference}``):
+        # every later result in the turn is redacted with them too. The call ids
+        # whose approval already filled secrets in can't fill them in again.
+        self.secret_values: Dict[str, str] = {}
+        self.secret_approvals_used: set = set()
 
     def get_tools(self) -> Dict[str, Dict]:
         """Load tool configs from DB based on user context.
@@ -1384,6 +1390,27 @@ class ToolExecutor:
                     "thought_signature": getattr(call, "thought_signature", None),
                 }
 
+        # A call that carries a link secret reference always asks the user,
+        # whatever the tool's mode: approving it is what fills the secret in.
+        # One that can't take a secret at all is refused here, before it runs.
+        secret_plan = secret_refs.plan(self, tool_data, action_name, arguments)
+        if secret_plan is not None:
+            if secret_plan.refusal:
+                return {
+                    "call_id": call_id,
+                    "name": llm_name,
+                    "tool_name": tool_data.get("name", "unknown"),
+                    "tool_id": tool_id,
+                    "action_name": action_name,
+                    "llm_name": llm_name,
+                    "arguments": arguments,
+                    "pause_type": "headless_denied",
+                    "deny_reason": secret_plan.refusal,
+                    "error_type": "tool_not_allowed",
+                    "thought_signature": getattr(call, "thought_signature", None),
+                }
+            require_approval = True
+
         if require_approval:
             if self.headless:
                 tool_row_id = str(tool_data.get("id") or tool_id)
@@ -1438,6 +1465,9 @@ class ToolExecutor:
                 config = tool_data.get("config") or {}
                 if config.get("device_id"):
                     payload["device_id"] = config["device_id"]
+            # The card says approving fills these link secrets in.
+            if secret_plan is not None:
+                payload["secret_refs"] = list(secret_plan.refs)
             return payload
 
         return None
@@ -1921,8 +1951,48 @@ class ToolExecutor:
             )
             call_kwargs = parameters
 
+        # Link secret references: filled into an approved call's arguments
+        # here, after everything recorded above kept the reference; any echo
+        # of a value in what the tool returns is put back to the reference.
+        substitution = None
+        refs = secret_refs.find_refs(tool_args)
+        if refs:
+            refused = None
+            if tool_data["name"] == "api_tool" and set(refs) - set(secret_refs.find_refs(call_kwargs)):
+                refused = (
+                    "A link secret reference can only go into an API action's body, never its query string or "
+                    "headers. Nothing ran."
+                )
+            else:
+                try:
+                    substitution = secret_refs.substitute(
+                        self, tool_data, action_name, call_kwargs, call_id=call_id, refs=refs
+                    )
+                except secret_refs.SecretRefError as exc:
+                    refused = str(exc)
+            if refused is not None:
+                tool_call_data["result"] = refused
+                tool_call_data["status"] = "error"
+                if proposed_ok:
+                    _mark_failed(call_id, refused, message_id=self.message_id, user_id=self.user)
+                yield {"type": "tool_call", "data": {**tool_call_data}}
+                self.tool_calls.append(tool_call_data)
+                return refused, call_id
+            call_kwargs = substitution.kwargs
+            self.secret_values.update(substitution.values)
+        # A value filled in earlier in the turn stays out of every later result (a command that reads it back).
+        known_secrets = dict(self.secret_values)
+
         def _invoke():
-            return tool.execute_action(action_name, **call_kwargs)
+            with secret_refs.active(substitution):
+                try:
+                    value = tool.execute_action(action_name, **call_kwargs)
+                except Exception as exc:
+                    if not known_secrets:
+                        raise
+                    message = secret_refs.redact(str(exc) or type(exc).__name__, known_secrets)
+                    raise RuntimeError(message) from None
+            return secret_refs.redact(value, known_secrets) if known_secrets else value
 
         self.current_call_id = call_id
 
@@ -1931,7 +2001,8 @@ class ToolExecutor:
             if background_eligible:
                 explicit = handoff.wants_background(controls)
                 worker_payload = None
-                if explicit:
+                # A call holding a secret stays in this process: the worker would get the reference, not the value.
+                if explicit and substitution is None:
                     from docsgpt.background.celery_runner import worker_payload as build_worker_payload
 
                     worker_payload = build_worker_payload(self, tool_data, action_name, tool_args)

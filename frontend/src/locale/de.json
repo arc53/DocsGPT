@@ -2288,6 +2288,7 @@
       "deny": "Ablehnen",
       "details": "Details",
       "denyReasonPlaceholder": "Optionaler Grund für die Ablehnung…",
+      "secretRefs": "Mit der Freigabe wird beim Ausführen das Signaturgeheimnis von {{refs}} eingesetzt. Der Assistent sieht es nie.",
       "connectTitle": "Dieses Werkzeug braucht dein {{name}}-Konto.",
       "connect": "{{name}} verbinden",
       "continue": "Weiter",

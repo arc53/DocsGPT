@@ -2277,6 +2277,7 @@
       "deny": "拒绝",
       "details": "详情",
       "denyReasonPlaceholder": "拒绝原因（可选）…",
+      "secretRefs": "批准后，运行时会填入 {{refs}} 的签名密钥。助手永远看不到它。",
       "connectTitle": "此工具需要你的 {{name}} 账号。",
       "connect": "连接 {{name}}",
       "continue": "继续",

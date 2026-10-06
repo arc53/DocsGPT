@@ -48,21 +48,31 @@ class TriggerLinksRepository:
         signature_scheme: str = "none",
         secret_encrypted: Optional[str] = None,
         approval_spec: Optional[Dict[str, Any]] = None,
+        ref: Optional[str] = None,
+        expose_secret: bool = False,
     ) -> dict:
-        """Insert a link; returns the row (which never holds the raw token)."""
+        """Insert a link; returns the row (which never holds the raw token).
+
+        ``ref`` is the signed link's short reference id (``{{link_secret:REF}}``),
+        unique per user; ``expose_secret`` records that the owner let the model
+        see the raw secret.
+        """
         row = self._conn.execute(
             text(
                 """
                 INSERT INTO trigger_links (
                     monitor_id, user_id, conversation_id, token_hash, kind, secret_encrypted,
-                    signature_scheme, approval_spec, expires_at, max_hits
+                    signature_scheme, approval_spec, expires_at, max_hits, ref, expose_secret
                 ) VALUES (
                     CAST(:monitor_id AS uuid), :user_id, CAST(:conversation_id AS uuid), :token_hash, :kind,
-                    :secret_encrypted, :signature_scheme, CAST(:approval_spec AS jsonb), :expires_at, :max_hits
+                    :secret_encrypted, :signature_scheme, CAST(:approval_spec AS jsonb), :expires_at, :max_hits,
+                    :ref, :expose_secret
                 ) RETURNING *
                 """
             ),
             {
+                "ref": ref,
+                "expose_secret": bool(expose_secret),
                 "monitor_id": str(monitor_id),
                 "user_id": user_id,
                 "conversation_id": str(conversation_id),
@@ -104,6 +114,25 @@ class TriggerLinksRepository:
             text("SELECT * FROM trigger_links WHERE id = CAST(:id AS uuid)"), {"id": str(link_id)}
         ).fetchone()
         return row_to_dict(row) if row is not None else None
+
+    def ref_taken(self, user_id: str, ref: str) -> bool:
+        """Whether the user already has a link with this reference id."""
+        row = self._conn.execute(
+            text("SELECT 1 FROM trigger_links WHERE user_id = :u AND ref = :ref LIMIT 1"),
+            {"u": user_id, "ref": ref},
+        ).fetchone()
+        return row is not None
+
+    def find_by_refs(self, user_id: str, refs: List[str]) -> List[dict]:
+        """The user's links with these reference ids, in any state (the caller decides what counts)."""
+        wanted = [str(ref).upper() for ref in refs if ref]
+        if not wanted:
+            return []
+        rows = self._conn.execute(
+            text("SELECT * FROM trigger_links WHERE user_id = :u AND ref = ANY(:refs)"),
+            {"u": user_id, "refs": wanted},
+        ).fetchall()
+        return [row_to_dict(r) for r in rows]
 
     def get_live_signed(self, monitor_id: str) -> Optional[dict]:
         """A monitor's live signed webhook link (its secret is what the owner may reveal), or None."""

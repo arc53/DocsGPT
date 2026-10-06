@@ -1498,6 +1498,8 @@ trigger_links_table = Table(
     Column("last_hit_at", DateTime(timezone=True)),
     Column("revoked_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("ref", Text),
+    Column("expose_secret", Boolean, nullable=False, server_default=text("false")),
     CheckConstraint("kind IN ('webhook', 'approval')", name="trigger_links_kind_chk"),
     CheckConstraint(
         "signature_scheme IN ('none', 'standard_webhooks', 'github', 'hmac_sha256')",
@@ -1507,6 +1509,13 @@ trigger_links_table = Table(
 )
 
 Index("trigger_links_monitor_idx", trigger_links_table.c.monitor_id)
+Index(
+    "trigger_links_user_ref_uidx",
+    trigger_links_table.c.user_id,
+    trigger_links_table.c.ref,
+    unique=True,
+    postgresql_where=trigger_links_table.c.ref.isnot(None),
+)
 
 trigger_hits_table = Table(
     "trigger_hits",

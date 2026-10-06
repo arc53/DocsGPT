@@ -224,6 +224,8 @@ def poll_job(job_id: str) -> Dict[str, Any]:
         return {"state": "lost"}
 
     fresh = "".join(str(c.get("chunk") or "") for c in chunks if c.get("stream") in ("stdout", "stderr"))
+    if fresh:
+        fresh = redact_result(row, fresh)
     polls = int(external.get("polls") or 0) + 1
     out_chars = int(external.get("out_chars") or 0) + len(fresh)
     fields: Dict[str, Any] = {"cursor": cursor, "out_chars": out_chars, "polls": polls, "poll_failures": 0}
@@ -354,7 +356,7 @@ def finish(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         value = command_result(broker, invocation_id, external.get("device_name"))
     finally:
         broker.cleanup_invocation(invocation_id)
-    value = sanitize_tool_result(value)
+    value = sanitize_tool_result(redact_result(row, value))
     output = "".join(part for part in (value.get("stdout"), value.get("stderr")) if isinstance(part, str))
     text_value = bound_result_full(jobs.result_text(value))
     in_band = result_status(value)
@@ -365,6 +367,24 @@ def finish(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         result=stored_result(text_value, status=in_band),
         output_tail=tail_of(output) or None,
     )
+
+
+def redact_result(row: Dict[str, Any], value: Any) -> Any:
+    """Put secret references back where the command's output echoed a secret filled into it.
+
+    Args:
+        row: The job row (``user_id``, ``external.secret_refs``).
+        value: The command's output or result.
+
+    Returns:
+        ``value`` with every such secret replaced by its reference.
+    """
+    refs = (row.get("external") or {}).get("secret_refs")
+    if not refs:
+        return value
+    from docsgpt.monitors import secret_refs
+
+    return secret_refs.redact_for_user(value, str(row.get("user_id") or ""), refs)
 
 
 def on_deadline(row: Dict[str, Any], *, state: Optional[str] = None) -> Optional[Dict[str, Any]]:
