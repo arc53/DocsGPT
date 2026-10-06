@@ -1,6 +1,7 @@
 """Agent management webhook handlers."""
 
 import json
+import re
 import secrets
 import uuid
 
@@ -110,6 +111,9 @@ class AgentWebhook(Resource):
 
 # Top-level keys named in the enqueue log line; the rest are counted.
 _LOGGED_PAYLOAD_KEYS = 20
+# Only a key that reads as a field name is named. The sender chooses key names,
+# so one can itself be personal data -- an email address, a person's name.
+_LOGGABLE_KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]{0,63}")
 
 
 def _describe_payload(payload) -> str:
@@ -122,17 +126,20 @@ def _describe_payload(payload) -> str:
         payload: The parsed webhook body or query arguments.
 
     Returns:
-        str: E.g. ``"1234 characters, keys: pr, repository"``.
+        str: E.g. ``"1234 characters, keys: pr, repository"``. Key names that
+        don't read as field names, and any past the first 20, are only counted.
     """
     try:
         size = f"{len(json.dumps(payload))} characters"
     except (TypeError, ValueError):
         size = "unknown size"
     if isinstance(payload, dict):
-        keys = sorted(str(key) for key in payload)
-        shown = ", ".join(keys[:_LOGGED_PAYLOAD_KEYS])
-        more = len(keys) - _LOGGED_PAYLOAD_KEYS
-        return f"{size}, keys: {shown}" + (f" (+{more} more)" if more > 0 else "")
+        named = sorted(key for key in payload if isinstance(key, str) and _LOGGABLE_KEY.fullmatch(key))
+        shown = named[:_LOGGED_PAYLOAD_KEYS]
+        other = len(payload) - len(shown)
+        if not shown:
+            return f"{size}, {len(payload)} keys"
+        return f"{size}, keys: {', '.join(shown)}" + (f" (+{other} other)" if other else "")
     if isinstance(payload, list):
         return f"{size}, list of {len(payload)}"
     return f"{size}, {type(payload).__name__}"

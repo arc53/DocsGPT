@@ -327,6 +327,16 @@ class TestWebhookPayloadIsNotLogged:
         assert f"{len(json.dumps(payload))} characters" in line
         assert "keys: pr, token" in line
 
+    def test_key_names_that_are_not_identifiers_are_only_counted(self, app, caplog):
+        """Callers choose key names, so one can itself be personal data."""
+        payload = {"alice@example.com": 1, "Jane Doe": 2, "action": "opened"}
+        messages = self._enqueue(app, payload, caplog)
+
+        line = next(m for m in messages if "Enqueuing" in m)
+        assert "alice@example.com" not in line
+        assert "Jane Doe" not in line
+        assert "keys: action (+2 other)" in line
+
     def test_a_list_payload_reports_its_length(self, app, caplog):
         messages = self._enqueue(app, [{"text": "private"}, {"text": "data"}], caplog)
 
