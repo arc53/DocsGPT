@@ -192,12 +192,17 @@ def job_event(job: Dict[str, Any]) -> Dict[str, Any]:
     view = final_view(job, max_chars=int(settings.AUTO_RESUME_MAX_RESULT_CHARS))
     tool = view["tool"]
     status = view["status"]
-    title = f"{tool} {'finished' if status == 'completed' else status} (job {view['job_id']})"
-    lines = [f"Background job {view['job_id']} ({tool}) ended: {status}."]
     if job.get("status") == "lost":
-        lines.append(view.get("note") or "")
-    if view.get("error"):
-        lines.append(f"Error: {view['error']}")
+        # Lost reads as "failed" to models elsewhere (MCP Tasks names); here it says what happened, once.
+        title = f"{tool} was interrupted (job {view['job_id']})"
+        lines = [f"Background job {view['job_id']} ({tool}) was interrupted.", view.get("note") or ""]
+        if view.get("error") and view.get("error") != view.get("note"):
+            lines.append(f"Error: {view['error']}")
+    else:
+        title = f"{tool} {'finished' if status == 'completed' else status} (job {view['job_id']})"
+        lines = [f"Background job {view['job_id']} ({tool}) ended: {status}."]
+        if view.get("error"):
+            lines.append(f"Error: {view['error']}")
     payload: Dict[str, Any] = {}
     if view.get("result") is not None:
         payload["result"] = view["result"]

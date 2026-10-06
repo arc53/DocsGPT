@@ -209,7 +209,7 @@ def finish_detached(row: Dict[str, Any], backend: Any, state: Any) -> Optional[D
         str(row["id"]),
         status=status,
         result=stored_result(
-            json.dumps(payload, default=str),
+            json.dumps(CodeExecutorTool.job_result(payload), default=str),
             status="completed" if status == "completed" else "error",
             artifacts=tool.get_artifacts("run_code"),
             artifact_id=tool.get_artifact_id("run_code"),

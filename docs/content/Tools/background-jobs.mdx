@@ -130,6 +130,9 @@ A `code_executor` call can carry a `watch` spec for what its output may do while
 - `heartbeat_s` (0 for off, else at least 60) resumes the agent with the output printed since the last
   heartbeat, at most 2000 characters, skipped when nothing new was printed.
 
+Watch reads the call's own output as it is printed, so a run should print progress itself (`flush=True`); the
+output of a child process captured with `subprocess.run(..., capture_output=True)` only appears when it ends.
+
 In a conversation that auto-resume applies to, completion and failure always resume the agent; in a poll-only
 one (see above) the result waits for `check_job` or the next message, and watch patterns and heartbeats wake
 nothing. Output during a run is available for sandbox jobs only; for other jobs `progress_regex` is applied to
@@ -191,7 +194,8 @@ The toast and the push lead with the kind of event:
 | `approval` | Approval received |
 | `schedule` | Scheduled task finished |
 
-The event's title and the start of the answer follow. Any other kind shows its own title. Toasts are
+Then comes what the event is about (the conversation's name for a job, a monitor's description, a schedule's
+name) and the start of the answer as plain text, Markdown removed. Any other kind shows its own title. Toasts are
 translated; Web Push is sent in English, since the server does not know the browser's language.
 
 ### Setting up Web Push

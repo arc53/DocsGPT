@@ -202,6 +202,10 @@ def complete_from_tool(
             status="failed",
             error={"type": type(error).__name__, "message": str(error) or type(error).__name__},
         )
+    shape = getattr(tool, "job_result", None)
+    if callable(shape):
+        # What a job keeps can differ from what the turn would have seen (code_executor drops its banner).
+        value = shape(value)
     result = sanitize_tool_result(value)
     artifact_id, artifacts = tool_outputs(tool, action_name, parameters)
     text_value = bound_result_full(result_text(result))

@@ -549,6 +549,18 @@ class CodeExecutorTool(Tool):
             payload["hint"] = hints
         return payload
 
+    @staticmethod
+    def job_result(payload: Any) -> Any:
+        """A run's payload as a background job keeps it: without the environment banner and session state.
+
+        Both belong to the turn that started the run (it already saw the
+        banner, and the session it describes is that turn's); repeated in the
+        wake, they cost tokens and were misread as the session being reset.
+        """
+        if not isinstance(payload, dict):
+            return payload
+        return {key: value for key, value in payload.items() if key not in ("environment", "session")}
+
     # ------------------------------------------------------------------
     # Detached runs (background jobs)
     # ------------------------------------------------------------------

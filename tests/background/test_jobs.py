@@ -123,6 +123,24 @@ class TestFinalize:
         assert entry["job_status"] == "completed"
         assert entry["artifact_id"] == "art-1"
 
+    def test_a_tool_can_shape_what_its_job_keeps(self, bg_db, conversation, monkeypatch):
+        """code_executor drops its environment banner and session from a background result (job_result)."""
+        from docsgpt.agents.tools.code_executor import CodeExecutorTool
+
+        monkeypatch.setattr(jobs, "_deliver", lambda row: None)
+        conversation_id, message_id = conversation
+        row, _ = jobs.create_job(
+            _context(conversation_id, message_id), tool_name="code_executor", action_name="run_code",
+            journal_key=f"{message_id}:c9", arguments={},
+        )
+
+        class _Code(_Tool):
+            job_result = staticmethod(CodeExecutorTool.job_result)
+
+        value = {"status": "ok", "session": "new", "environment": "banner", "stdout_tail": "done"}
+        done = jobs.complete_from_tool(row["id"], tool=_Code(), action_name="run_code", parameters={}, value=value)
+        assert json.loads(done["result"]["text"]) == {"status": "ok", "stdout_tail": "done"}
+
     def test_in_band_error_fails_the_job(self, bg_db, conversation, monkeypatch):
         monkeypatch.setattr(jobs, "_deliver", lambda row: None)
         conversation_id, message_id = conversation

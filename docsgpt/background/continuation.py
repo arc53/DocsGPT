@@ -462,19 +462,48 @@ def _link_turn(message_id: str, outcome: Dict[str, Any]) -> None:
         logger.exception("continuation %s: linking its tool calls failed", message_id)
 
 
-def _notify(conversation: Dict[str, Any], wakes: List[Dict[str, Any]], answer: str) -> None:
+def _job_label(job_id: Optional[str]) -> str:
+    """A job's action as a person reads it (``run_code`` -> "Run code"), or "" when unknown."""
+    if not job_id:
+        return ""
+    try:
+        with db_readonly() as conn:
+            job = BackgroundJobsRepository(conn).get(str(job_id))
+    except Exception:
+        logger.debug("reading a job for its notification label failed", exc_info=True)
+        return ""
+    words = str((job or {}).get("action_name") or "").replace("_", " ").strip()
+    return words[:1].upper() + words[1:]
+
+
+def _notify_title(conversation: Dict[str, Any], first: Dict[str, Any]) -> str:
+    """The notification's title: what a person calls the event, never a tool's internal name.
+
+    A job's wake title names it for the model (``code_executor.run_code
+    finished``); the user gets the conversation's name, else the action in
+    words. Other events keep their title (a monitor's description).
+    """
     from docsgpt.notifications.kinds import user_title
+
+    if first.get("source") in ("job", "lost"):
+        name = str(conversation.get("name") or "").strip()
+        return name or _job_label(first.get("ref_id"))
+    return user_title(first.get("title"))
+
+
+def _notify(conversation: Dict[str, Any], wakes: List[Dict[str, Any]], answer: str) -> None:
+    from docsgpt.notifications.kinds import plain_preview
     from docsgpt.notifications.notify import notify_user
 
     first = wakes[0]
-    title = user_title(first.get("title")) or "Your assistant has an update"
+    title = _notify_title(conversation, first)
     if len(wakes) > 1:
-        title = f"{title} (+{len(wakes) - 1} more)"
+        title = f"{title} (+{len(wakes) - 1} more)" if title else f"+{len(wakes) - 1} more"
     notify_user(
         user_id=conversation["user_id"],
         conversation_id=str(conversation["id"]),
         kind=str(first.get("source") or "job"),
         title=title[:200],
-        body=answer[:280],
+        body=plain_preview(answer),
         url=f"/c/{conversation['id']}",
     )

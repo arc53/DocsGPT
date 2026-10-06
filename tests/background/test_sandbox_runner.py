@@ -111,6 +111,8 @@ class TestPollJob:
         payload = json.loads(row["result"]["text"])
         assert payload["status"] == "ok"
         assert payload["stdout_tail"] == "1\n"
+        # The environment banner and session state belong to the turn that ran it, not to the wake.
+        assert "environment" not in payload and "session" not in payload
         assert backend.refreshed == 2
         assert backend.released == ["conv"]
         assert [r["id"] for r in delivered] == [job_id]

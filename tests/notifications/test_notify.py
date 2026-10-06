@@ -232,14 +232,16 @@ class TestContinuationCallsIt:
             }
         ]
 
-    def test_the_title_drops_the_job_id(self, monkeypatch):
+    def test_a_job_is_titled_by_its_conversation_never_by_the_tool(self, monkeypatch):
         from docsgpt.background import continuation
 
         calls = []
         monkeypatch.setattr("docsgpt.notifications.notify.notify_user", lambda **kw: calls.append(kw))
         job_id = "5f0c2a8e-1b7d-4e6a-9c3f-2d8b7a6e5f41"
-        continuation._notify(
-            {"user_id": "u1", "id": "c1"}, [{"source": "job", "title": f"run_code finished (job {job_id})"}], "42"
-        )
-        assert calls[0]["title"] == "run_code finished"
+        wake = {"source": "job", "title": f"code_executor.run_code finished (job {job_id})"}
+        continuation._notify({"user_id": "u1", "id": "c1", "name": "Weekly report"}, [wake], "42")
+        assert calls[0]["title"] == "Weekly report"
         assert calls[0]["kind"] == "job"
+        continuation._notify({"user_id": "u1", "id": "c1", "name": ""}, [wake], "42")
+        # No name and no job to read: the kind's heading says it all.
+        assert calls[1]["title"] == ""

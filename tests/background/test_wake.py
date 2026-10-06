@@ -96,8 +96,12 @@ class TestWakeConversation:
         conversation_id, message_id = conversation
         lost = _finished_job(conversation_id, message_id, key="a", status="lost")
         wake.on_job_finished(lost)
-        assert _wakes(bg_db, conversation_id)[0]["source"] == "lost"
-        assert LOST_NOTE in _wakes(bg_db, conversation_id)[0]["body"]
+        row = _wakes(bg_db, conversation_id)[0]
+        assert row["source"] == "lost"
+        # Said once, and as what happened: interrupted, not "failed".
+        assert row["body"].count(LOST_NOTE) == 1 and "Error:" not in row["body"]
+        assert "was interrupted" in row["body"] and "failed" not in row["body"]
+        assert "was interrupted" in row["title"] and "failed" not in row["title"]
 
         cancelled = _finished_job(conversation_id, message_id, key="b", status="cancelled")
         wake.on_job_finished(cancelled)
@@ -185,6 +189,22 @@ class TestContinuation:
         assert published == [("u1", conversation_id, str(last["id"]), "job")]
         assert notified[0]["url"] == f"/c/{conversation_id}"
         assert notified[0]["body"] == "The run printed 42."
+        # The conversation's name, never the tool's internal name.
+        assert notified[0]["title"] == "chat"
+
+    def test_the_notification_reads_as_plain_text_with_a_human_title(self, bg_db, conversation, scheduled, events,
+                                                                    turn):
+        conversation_id, message_id = conversation
+        with bg_db.begin() as conn:
+            conn.execute(text("UPDATE conversations SET name = '' WHERE id = CAST(:c AS uuid)"), {"c": conversation_id})
+        job = _finished_job(conversation_id, message_id)
+        wake.on_job_finished(job)
+        turn[0].answer = "Done — **revenue_race.mp4** is ready (`1.45 MB`).\n\n## Details\n| a | b |\n|---|---|"
+        continuation.continue_conversation_body(conversation_id, 0)
+        sent = events[1][-1]
+        assert sent["body"] == "Done — revenue_race.mp4 is ready (1.45 MB). Details"
+        assert sent["title"] == "Run code"
+        assert "code_executor" not in sent["title"] and "run_code" not in sent["title"]
 
     def test_batches_events_into_one_turn(self, bg_db, conversation, scheduled, events, turn):
         conversation_id, _ = conversation

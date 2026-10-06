@@ -287,3 +287,16 @@ def test_the_descriptions_say_how_long_a_background_run_may_take():
     timeout = CodeExecutorTool._timeout_parameter_description()
     assert "background runs too" in timeout
     assert "above the expected duration" in timeout
+
+
+def test_a_job_result_drops_the_environment_banner_and_the_session():
+    payload = {"status": "ok", "session": "new", "environment": "x" * 1400, "stdout_tail": "1"}
+    assert CodeExecutorTool.job_result(payload) == {"status": "ok", "stdout_tail": "1"}
+    assert CodeExecutorTool.job_result("text") == "text"
+
+
+def test_the_watch_description_says_how_output_is_read():
+    from docsgpt.background.schema import WATCH_SCHEMA
+
+    text = WATCH_SCHEMA["description"]
+    assert "flush=True" in text and "capture_output=True" in text

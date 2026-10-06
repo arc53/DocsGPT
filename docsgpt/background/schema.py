@@ -31,7 +31,9 @@ WATCH_SCHEMA: Dict[str, Any] = {
     "type": "object",
     "description": (
         "For a run that may go long: what its output may do before it ends. Completion and failure always "
-        "resume you, so only add patterns for events worth acting on mid-run."
+        "resume you, so only add patterns for events worth acting on mid-run. Watch reads this call's own output "
+        "as it is printed: print progress directly (flush=True); a child process's output captured with "
+        "subprocess.run(..., capture_output=True) only appears when it ends."
     ),
     "properties": {
         "patterns": {
