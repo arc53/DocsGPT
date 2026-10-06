@@ -579,12 +579,13 @@ def cleanup_schedule_runs(self):
 
 @celery.task(bind=True, acks_late=False)
 def reap_sandbox_sessions(self):
-    """Close sandbox sessions idle past their TTL in this worker process.
+    """Let go of sandbox sessions idle past their TTL in this worker process.
 
     The SandboxManager registry is per-process, so this reaps only sessions
     bound in THIS worker; the API processes reap their own opportunistically on
-    ``open``. Artifacts are persisted eagerly, so reaping only closes idle
-    kernels and never loses a user-facing artifact.
+    ``open``. A Daytona sandbox another process may still use is only released
+    here, and deleted once no process has used it for ``SANDBOX_MAX_TTL``.
+    Artifacts are persisted eagerly, so reaping never loses a user-facing artifact.
     """
     try:
         from docsgpt.sandbox.sandbox_creator import SandboxCreator

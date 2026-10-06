@@ -8,6 +8,7 @@ import re
 import shlex
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterator, List, Optional
 
 from docsgpt.sandbox import detached
@@ -387,6 +388,51 @@ class DaytonaSandbox(CodeSandbox):
         else:
             self._delete_sandbox_by_id(sandbox_id)
 
+    def release_handle(self, session_id: str, sandbox_id: str) -> None:
+        """Forget the local handle on ``sandbox_id`` without deleting the cloud sandbox.
+
+        The manager calls this when THIS process stopped using a session (idle past
+        its TTL, or evicted at the cap). Another process may have reattached the same
+        sandbox by its label and still be using it, so it is not deleted here; the
+        manager deletes it separately once no process has used it for its TTL.
+        A newer handle registered for the session is left alone.
+        """
+        with self._lock:
+            current = self._handles.get(session_id)
+            if current is not None and current.sandbox_id == sandbox_id:
+                self._handles.pop(session_id, None)
+
+    def idle_seconds(self, sandbox_id: str) -> Optional[float]:
+        """Seconds since any process last used ``sandbox_id``, from Daytona's ``last_activity_at``.
+
+        Daytona stamps toolbox calls (exec, file ops) from any client, and
+        ``_kept_active`` refreshes the stamp while a long run is in flight, so the
+        manager reads it next to its own shared stamp before deleting a sandbox.
+        It can lag real use: a live probe (SDK 0.211, 2026-10-06) saw it stay
+        unchanged for over 100 s of calls every 10 s, so it never decides alone.
+        Returns None when the sandbox is gone, the lookup fails, or the stamp is
+        missing or unreadable.
+        """
+        try:
+            fresh = self._client.get(sandbox_id, request_timeout=self._default_timeout)
+        except Exception as exc:  # noqa: BLE001 - gone or unreachable: nothing safe to decide
+            logger.debug("Daytona get for %s failed while reading its activity: %s", sandbox_id, exc)
+            return None
+        state = getattr(fresh, "state", None)
+        if getattr(state, "value", state) in ("destroyed", "deleted", "error", "archived"):
+            return None
+        stamp = getattr(fresh, "last_activity_at", None)
+        if not isinstance(stamp, str) or not stamp:
+            return None
+        try:
+            last = datetime.fromisoformat(stamp)
+        except ValueError:
+            logger.warning("Daytona sandbox %s has an unreadable last_activity_at %r", sandbox_id, stamp)
+            return None
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - last).total_seconds()
+
     def _delete_sandbox(self, handle: "_Handle") -> None:
         """Best-effort delete of the sandbox behind ``handle`` (never raises)."""
         try:
@@ -654,6 +700,8 @@ class DaytonaSandbox(CodeSandbox):
             The run's handle: everything a poller in another process needs.
 
         Raises:
+            SandboxGoneError: The sandbox no longer exists; its handle is forgotten,
+                so the next open creates or reattaches a live one.
             Exception: The sandbox could not take the run (after one wake-and-retry).
         """
         handle = self._get_handle(session_id)
@@ -673,9 +721,19 @@ class DaytonaSandbox(CodeSandbox):
         try:
             cmd_id = self._launch(handle, process_session, command)
         except Exception:
-            if not self._ensure_started(handle):
+            try:
+                if not self._ensure_started(handle):
+                    raise
+                cmd_id = self._launch(handle, process_session, command)
+            except Exception as failure:
+                # A deleted sandbox can't be woken, and a cached handle on it would
+                # fail every later call; drop it like exec and the file ops do.
+                if self._sandbox_gone(handle):
+                    self._forget_handle(session_id, handle)
+                    raise SandboxGoneError(
+                        f"start_detached failed: sandbox gone ({type(failure).__name__})"
+                    ) from failure
                 raise
-            cmd_id = self._launch(handle, process_session, command)
         return {
             "backend": "daytona",
             "sandbox_id": handle.sandbox_id,

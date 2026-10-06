@@ -20,7 +20,7 @@ from sqlalchemy import text
 
 from docsgpt.agents.tools.artifact_ref import make_ref
 from docsgpt.core.settings import settings
-from docsgpt.sandbox.base import FileTooLargeError
+from docsgpt.sandbox.base import FileTooLargeError, SandboxGoneError
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.storage_creator import StorageCreator
@@ -120,12 +120,20 @@ def _matches_outputs(rel_path: str, outputs: List[str]) -> bool:
 
 
 def snapshot_signatures(manager: Any, session_id: str) -> Dict[str, Tuple[int, Optional[str]]]:
-    """Map each non-input, non-scratch workspace file to a (size, sha256) signature."""
+    """Map each non-input, non-scratch workspace file to a (size, sha256) signature.
+
+    Raises:
+        SandboxGoneError: The session's runtime no longer exists.
+    """
     signatures: Dict[str, Tuple[int, Optional[str]]] = {}
     try:
         files = manager.list_files(session_id)
+    except SandboxGoneError:
+        # The runtime itself is gone (and the manager dropped the session), so the
+        # run that follows could not start either; let the caller decide.
+        raise
     except Exception:
-        # Best-effort: a listing failure (sandbox auto-stopped/deleted) just means no
+        # Best-effort: a listing failure (sandbox auto-stopped) just means no
         # pre-image, so change detection falls back to "capture everything". Swallowed
         # and recoverable -> WARN, not ERROR (an ERROR here false-alarms monitoring).
         logger.warning("artifacts_capture: pre-exec listing failed", exc_info=True)
