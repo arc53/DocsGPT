@@ -872,6 +872,40 @@ class TestApprovalClearedEvents:
         assert scope == {"kind": "conversation", "id": msg["conversation_id"]}
 
     @pytest.mark.unit
+    def test_failing_an_old_message_spares_a_later_turns_pause(self, pg_conn):
+        """The pause row is per conversation: failing a stuck earlier turn must not
+        delete the pause a later turn of the same conversation is waiting on."""
+        from docsgpt.api.user import reconciliation as recon
+
+        msg = _seed_pending_message(pg_conn)
+        later = pg_conn.execute(
+            text(
+                "INSERT INTO conversation_messages (conversation_id, position, prompt, response, status, user_id) "
+                "VALUES (CAST(:c AS uuid), 1, 'later', '', 'streaming', :u) RETURNING id"
+            ),
+            {"c": msg["conversation_id"], "u": msg["user_id"]},
+        ).scalar()
+        _seed_pending_state(pg_conn, {**msg, "id": str(later)})
+
+        ctx, published = _capture_published(pg_conn)
+        with _route_engine_to(pg_conn), ctx:
+            recon.run_reconciliation()
+            recon.run_reconciliation()
+            recon.run_reconciliation()
+
+        status = pg_conn.execute(
+            text("SELECT status FROM conversation_messages WHERE id = CAST(:id AS uuid)"),
+            {"id": msg["id"]},
+        ).scalar()
+        assert status == "failed"
+        pt_count = pg_conn.execute(
+            text("SELECT count(*) FROM pending_tool_state WHERE conversation_id = CAST(:c AS uuid)"),
+            {"c": msg["conversation_id"]},
+        ).scalar()
+        assert pt_count == 1
+        assert not any(p[1] == "tool.approval.cleared" for p in published)
+
+    @pytest.mark.unit
     def test_message_failed_without_approval_emits_no_clear(self, pg_conn):
         """A plain stuck message (no resumable state) must not emit a
         spurious clearing event.

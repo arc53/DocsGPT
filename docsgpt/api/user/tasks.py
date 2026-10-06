@@ -883,11 +883,13 @@ def cleanup_pending_tool_state(self):
         reverted = repo.revert_stale_resuming(grace_seconds=600)
         cleared = repo.cleanup_expired()
 
-    # Reaping the resumable state retires any awaiting-approval prompt
-    # tied to it. Without a clearing event the durable
-    # ``tool.approval.required`` envelope replays on reconnect and the UI
-    # toast lingers for a conversation that can no longer be resumed.
-    from docsgpt.events.publisher import publish_user_event
+    # Reaping the resumable state retires the turn that waited on it: its
+    # message keeps what it did, with the calls it waited on as never run,
+    # and the awaiting-approval prompt is revoked. Without a clearing event
+    # the durable ``tool.approval.required`` envelope replays on reconnect
+    # and the UI toast lingers for a conversation that can no longer be
+    # resumed.
+    from docsgpt.api.answer.services import continuation_service
 
     for row in cleared:
         user_id = row.get("user_id")
@@ -902,27 +904,20 @@ def cleanup_pending_tool_state(self):
         )
         if reserved_message_id:
             try:
-                from docsgpt.api.answer.services.conversation_service import (
-                    ConversationService,
-                    TERMINATED_RESPONSE_PLACEHOLDER,
-                )
-
-                ConversationService().finalize_message(
-                    str(reserved_message_id),
-                    TERMINATED_RESPONSE_PLACEHOLDER,
-                    status="failed",
-                    error=TimeoutError("Tool continuation expired before resume"),
-                )
+                with engine.begin() as conn:
+                    continuation_service.retire_paused_message(
+                        conn, row, continuation_service.RETIRED_EXPIRED
+                    )
             except Exception:
                 logger.exception(
                     "Failed to retire expired continuation message %s",
                     reserved_message_id,
                 )
-        publish_user_event(
+        continuation_service.publish_pause_retired(
             str(user_id),
-            "tool.approval.cleared",
-            {"conversation_id": str(conversation_id), "reason": "expired"},
-            scope={"kind": "conversation", "id": str(conversation_id)},
+            str(conversation_id),
+            str(reserved_message_id) if reserved_message_id else None,
+            continuation_service.RETIRED_EXPIRED,
         )
     return {"deleted": len(cleared), "reverted": reverted}
 
