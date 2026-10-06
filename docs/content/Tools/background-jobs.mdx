@@ -98,8 +98,8 @@ and the result waits for `check_job` or the next message.
 
 ## check_job
 
-Every chat turn that can hand calls off has a `check_job` tool (it is also in the default
-`DEFAULT_CHAT_TOOLS`):
+Every chat turn that can hand calls off has a `check_job` tool. The server attaches it, so it is not in
+`DEFAULT_CHAT_TOOLS`, the Tools picker, Settings > Tools or the agent tool picker, and no tool setting removes it:
 
 ```
 check_job(job_id?, action="get" | "cancel", wait_seconds=0)

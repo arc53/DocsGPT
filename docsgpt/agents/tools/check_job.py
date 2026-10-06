@@ -32,7 +32,11 @@ LIST_LIMIT = 10
 
 
 def add_check_job_tool(tools_dict: Dict[str, Any]) -> bool:
-    """Add check_job to a turn's tools unless something already uses its name.
+    """Add check_job, whole and switched on, to a turn's tools unless another tool uses its name.
+
+    A ``check_job`` row from the user's or agent's config (an older default
+    tool, perhaps with its action switched off) is replaced: the tool is
+    attached by the server, so no setting can leave hand-offs without it.
 
     Args:
         tools_dict: The turn's tools; mutated in place.
@@ -40,8 +44,8 @@ def add_check_job_tool(tools_dict: Dict[str, Any]) -> bool:
     Returns:
         Whether the tool is in ``tools_dict`` now.
     """
-    if CHECK_JOB_TOOL_ID in tools_dict:
-        return True
+    for key in [k for k, t in tools_dict.items() if isinstance(t, dict) and t.get("name") == CHECK_JOB]:
+        del tools_dict[key]
     tools = [t for t in tools_dict.values() if isinstance(t, dict)]
     # A client tool or MCP action of the same name keeps it.
     if any(a.get("name") == CHECK_JOB for t in tools for a in t.get("actions") or [] if isinstance(a, dict)):

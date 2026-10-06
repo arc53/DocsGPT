@@ -818,11 +818,14 @@ class BaseAgent(ABC):
         # A vision model can look at the images its tools point to.
         if self._llm_supports_tools() and reads_images(self.llm):
             add_view_image_tool(tools_dict)
-        # A turn that can hand calls off to background jobs can also check on them.
+        # A turn that can hand calls off to background jobs can also check on
+        # them, whatever the user's or agent's tool settings say.
         if self._llm_supports_tools() and getattr(self.tool_executor, "background", None) is not None:
             from docsgpt.agents.tools.check_job import add_check_job_tool
+            from docsgpt.background.handoff import eligible
 
-            add_check_job_tool(tools_dict)
+            if any(isinstance(t, dict) and eligible(self.tool_executor, t) for t in tools_dict.values()):
+                add_check_job_tool(tools_dict)
         # The executor gates tool calls itself, so it needs this run's engine.
         self.tool_executor.guardrail_engine = self.guardrails
         self.tools = self.tool_executor.prepare_tools_for_llm(tools_dict)

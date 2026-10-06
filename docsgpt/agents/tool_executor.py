@@ -11,6 +11,8 @@ from sqlalchemy.exc import IntegrityError
 from docsgpt.agents.default_tools import (
     BUILTIN_AGENT_TOOLS,
     is_headless_excluded_tool,
+    is_server_attached_tool,
+    is_server_attached_tool_id,
     is_synthesized_tool_id,
     resolve_tool_by_id,
     synthesized_default_tools,
@@ -760,6 +762,9 @@ class ToolExecutor:
         owner = (agent_data.get("user_id") or agent_data.get("user")) if agent_data else None
         tools: List[Dict] = []
         for tid in tool_ids:
+            # check_job, once pickable, is attached by the server now; a saved id is not a choice.
+            if is_server_attached_tool_id(tid):
+                continue
             row = resolve_tool_by_id(tid, owner, user_tools_repo=tools_repo)
             if row is None:
                 # A tool the owner can't use runs as the editor who
@@ -771,7 +776,7 @@ class ToolExecutor:
                 row, access = resolve_holder_tool(conn, "agent", agent_data, tid, tools_repo=tools_repo)
                 if row is None:
                     log_stopped("agent", agent_data, "tool", tid, access.reason)
-            if row is None:
+            if row is None or is_server_attached_tool(row.get("name")):
                 continue
             # Workflow-only builtins (read_document) never resolve for a
             # chat/scheduled agent — nodes get them via the scoped-id path.

@@ -20,7 +20,7 @@ If your deployment runs a sandbox and you want these available in every chat
 rather than per agent, add them to `DEFAULT_CHAT_TOOLS`:
 
 ```env
-DEFAULT_CHAT_TOOLS=["memory","read_webpage","scheduler","check_job","code_executor","artifact_generator"]
+DEFAULT_CHAT_TOOLS=["memory","read_webpage","scheduler","monitor","code_executor","artifact_generator"]
 ```
 
 They are left out of the shipped default deliberately: both execute through the

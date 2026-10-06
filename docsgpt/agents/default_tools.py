@@ -27,11 +27,27 @@ _FK_BOUND_TOOLS = frozenset({"notes", "todo_list"})
 _HEADLESS_EXCLUDED_TOOLS = frozenset({"scheduler", "check_job"})
 
 # Default tools that exist only while their feature is on.
-_FEATURE_GATED_TOOLS = {"check_job": "BACKGROUND_JOBS_ENABLED", "monitor": "MONITORS_ENABLED"}
+_FEATURE_GATED_TOOLS = {"monitor": "MONITORS_ENABLED"}
+
+# Tools the server attaches to a turn by itself, never listed, toggled or
+# picked: ``check_job`` comes with every turn that can hand calls off
+# (``BaseAgent._prepare_tools``). An entry in ``DEFAULT_CHAT_TOOLS`` or an
+# agent's saved tools is ignored, so no setting can leave hand-offs without it.
+SERVER_ATTACHED_TOOLS = frozenset({"check_job"})
+
+
+def is_server_attached_tool(tool_name: Optional[str]) -> bool:
+    """Whether the server attaches ``tool_name`` itself (``check_job``)."""
+    return bool(tool_name) and tool_name in SERVER_ATTACHED_TOOLS
+
+
+def is_server_attached_tool_id(tool_id: Any) -> bool:
+    """Whether ``tool_id`` is a server-attached tool's synthetic id (one an older agent may have saved)."""
+    return bool(tool_id) and str(tool_id) in {default_tool_id(name) for name in SERVER_ATTACHED_TOOLS}
 
 
 def _feature_enabled(tool_name: str) -> bool:
-    """False for a default tool whose feature setting is off (``check_job`` without background jobs)."""
+    """False for a default tool whose feature setting is off (``monitor`` without monitors)."""
     flag = _FEATURE_GATED_TOOLS.get(tool_name)
     return flag is None or bool(getattr(settings, flag, True))
 
@@ -182,7 +198,7 @@ def loaded_default_tools() -> List[str]:
     key = tuple(settings.DEFAULT_CHAT_TOOLS)
     cached = _loaded_cache.get(key)
     if cached is None:
-        cached = [name for name in key if _load_tool(name) is not None]
+        cached = [name for name in key if name not in SERVER_ATTACHED_TOOLS and _load_tool(name) is not None]
         _loaded_cache[key] = cached
     return cached
 

@@ -170,18 +170,48 @@ class TestInjection:
         assert add_check_job_tool(clashing) is False
         assert "check_job" not in clashing
 
-    def test_a_background_capable_turn_gets_it(self, agent_base_params, mock_llm_creator, mock_llm_handler_creator):
+    def test_a_config_row_with_its_action_off_is_replaced(self):
+        """An older default-tool row (check_job toggled off) can't leave hand-offs without the tool."""
+        tools = {
+            "6b1d-check": {"id": "6b1d-check", "name": "check_job",
+                           "actions": [{"name": "check_job", "active": False}]},
+        }
+        assert add_check_job_tool(tools) is True
+        assert list(tools) == ["check_job"]
+        assert all(a["active"] for a in tools["check_job"]["actions"])
+
+    def test_a_turn_with_a_tool_that_can_hand_off_gets_it(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
         from docsgpt.agents.classic_agent import ClassicAgent
 
         agent = ClassicAgent(**agent_base_params)
         agent._llm_supports_tools = lambda: True
-        tools = {}
+        slow = {"name": "read_webpage", "actions": [{"name": "read_webpage", "active": True, "parameters": {}}]}
+        tools = {"t1": dict(slow)}
         agent._prepare_tools(tools)
         assert "check_job" not in tools
         agent.tool_executor.background = BackgroundContext(user_id="u", conversation_id="c")
         agent._prepare_tools(tools)
         assert "check_job" in tools
         assert any(t["function"]["name"] == "check_job" for t in agent.tools)
+
+    def test_no_tool_that_can_hand_off_means_no_check_job(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        from docsgpt.agents.classic_agent import ClassicAgent
+
+        agent = ClassicAgent(**agent_base_params)
+        agent._llm_supports_tools = lambda: True
+        agent.tool_executor.background = BackgroundContext(user_id="u", conversation_id="c")
+        only_inline = {
+            "m": {"name": "monitor", "actions": [{"name": "monitor_create", "active": True, "parameters": {}}]},
+            "c": {"name": "x", "client_side": True, "actions": [{"name": "x", "active": True, "parameters": {}}]},
+        }
+        agent._prepare_tools(only_inline)
+        assert "check_job" not in only_inline
+        agent._prepare_tools({})
+        assert not any(t["function"]["name"] == "check_job" for t in agent.tools)
 
 
 class TestRoutes:
