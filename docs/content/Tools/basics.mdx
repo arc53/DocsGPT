@@ -1,7 +1,7 @@
 ---
 title: Tools Basics
 description: Understand what DocsGPT Tools are, how they work, and explore the built-in tools available to extend DocsGPT's functionality.
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-04
 ---
 
 import { Callout } from 'nextra/components';
@@ -140,7 +140,7 @@ Interacting with tools in DocsGPT is designed to be intuitive:
 
 2.  **Configuration in UI:**
     * Tools are generally managed and configured within the DocsGPT application's settings, found under a "Tools" section in the GUI.
-    * Tools for external services (Brave Search, Telegram, ntfy, PostgreSQL, MCP servers, GitHub, and preset MCP services for Notion, Linear, Jira & Confluence, Sentry and Stripe) are set up from **Settings > Connectors**. You connect the service once; its credentials stay encrypted on the server and never reach the browser, and the tools it provides are grouped under that connection. Each action is marked **Read** or **Write** and can be set to **Always allow**, **Needs approval** or **Off**. See [Connectors](/Sources/Connectors).
+    * Tools for external services (Brave Search, Telegram, ntfy, PostgreSQL, MCP servers, GitHub, and preset MCP services for Notion, Linear, Jira & Confluence, Sentry, Stripe and Resend) are set up from **Settings > Connectors**. You connect the service once; its credentials stay encrypted on the server and never reach the browser, and the tools it provides are grouped under that connection. Each action is marked **Read** or **Write** and can be set to **Always allow**, **Needs approval** or **Off**. See [Connectors](/Sources/Connectors).
     * When a tool's connection is missing or expired, the chat shows a **Connect** prompt and continues once you connect.
 
 3.  **Prompt Engineering for Tools:** While the LLM aims to intelligently use tools, for more complex or reliable agent-like behaviors, you might need to customize the system prompts. Modifying the prompt can guide the LLM on when and how to prioritize or chain tools to achieve specific outcomes, especially if you're building an agent designed to perform a certain sequence of actions every time. For more on this, see [Prompts](/Agents/prompts).
