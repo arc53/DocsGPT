@@ -7,6 +7,18 @@ import pytest
 from docsgpt.scripts import reembed
 
 
+class _CharacterCounter:
+    """Deterministic test counter where one character equals one token."""
+
+    @staticmethod
+    def count(text):
+        return len(text)
+
+    @staticmethod
+    def split(text, max_tokens):
+        return [text[i : i + max_tokens] for i in range(0, len(text), max_tokens)]
+
+
 def paginating_cursor(chunk_rows, *, graph_rows=(), graph_table=("graph_nodes",)):
     """A cursor answering the reads ``reembed_pgvector`` issues, from memory.
 
@@ -138,6 +150,23 @@ class TestFaissRebuild:
         docs = factory.call_args_list[1].kwargs["docs_init"]
         assert [d.page_content for d in docs] == ["alpha", "beta"]
         assert [d.metadata for d in docs] == [{"i": 0}, {"i": 1}]
+
+    def test_clips_oversized_embedding_input_but_preserves_stored_text(
+        self, stores, monkeypatch, caplog
+    ):
+        existing, _, factory = stores
+        oversized = "x" * 5000
+        existing.get_chunks.return_value = [
+            {"doc_id": "1", "text": oversized, "metadata": {"i": 0}}
+        ]
+        monkeypatch.setattr(reembed, "get_token_counter", lambda: _CharacterCounter())
+
+        reembed.reembed_faiss("s1", batch_size=8, dry_run=False)
+
+        rebuild_kwargs = factory.call_args_list[1].kwargs
+        assert rebuild_kwargs["docs_init"][0].page_content == oversized
+        assert rebuild_kwargs["embedding_texts"] == ["x" * 4096]
+        assert "1 oversized chunk(s)" in caplog.text
 
     def test_embeddings_key_comes_from_settings(self, stores):
         """A placeholder here is sent as the server's bearer token."""
@@ -293,6 +322,21 @@ class TestPgvectorWithoutTheExtension:
         seen, written = reembed.reembed_pgvector("s1", batch_size=64, dry_run=False)
         assert (seen, written) == (2, 2)
         assert fake_store._embedding.embed_documents.call_args.args[0] == ["", "beta"]
+
+    def test_clips_oversized_embedding_input(self, store, monkeypatch, caplog):
+        fake_store, _, _, table = store
+        table["chunks"] = [(1, "x" * 5000)]
+        monkeypatch.setattr(reembed, "get_token_counter", lambda: _CharacterCounter())
+
+        seen, written = reembed.reembed_pgvector(
+            "s1", batch_size=64, dry_run=False
+        )
+
+        assert (seen, written) == (1, 1)
+        assert fake_store._embedding.embed_documents.call_args.args[0] == [
+            "x" * 4096
+        ]
+        assert "1 oversized chunk(s)" in caplog.text
 
     def test_empty_source_is_a_no_op(self, store):
         fake_store, _, _, table = store

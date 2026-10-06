@@ -14,6 +14,7 @@ from docsgpt.parser.chunking_strategies import (
     RecursiveChunker,
     SemanticChunker,
 )
+from docsgpt.parser.limits import MAX_CHUNK_TOKENS
 from docsgpt.parser.schema.base import Document
 from docsgpt.parser.tokenization import get_token_counter
 
@@ -140,6 +141,15 @@ class _FakeEmbeddings:
         return self._vectors
 
 
+class _RecordingEmbeddings:
+    def __init__(self):
+        self.calls = []
+
+    def embed_documents(self, sentences):
+        self.calls.append(list(sentences))
+        return [[1.0, 0.0] for _ in sentences]
+
+
 @pytest.mark.unit
 class TestSemantic:
     @pytest.fixture(autouse=True)
@@ -174,13 +184,38 @@ class TestSemantic:
         # A single semantic group larger than max_tokens is hard-split.
         long_sentence = "word " * 300 + "."
         text = f"{long_sentence} {long_sentence}"
-        vectors = [[1.0, 0.0], [1.0, 0.0]]
+        embeddings = _RecordingEmbeddings()
         chunker = SemanticChunker(max_tokens=40, min_tokens=0)
-        with patch(_EMB_TARGET, return_value=_FakeEmbeddings(vectors)):
+        with patch(_EMB_TARGET, return_value=embeddings):
             out = chunker.chunk([Document(text=text, doc_id="d")])
         assert len(out) > 1
+        assert embeddings.calls
         for c in out:
             assert _tok(c.text) <= 40
+
+    def test_embedding_requests_bound_batch_and_input_tokens(self):
+        short_sentences = " ".join(f"Sentence {i}." for i in range(70))
+        oversized_sentence = "word " * 5000 + "."
+        embeddings = _RecordingEmbeddings()
+        # Exercise the hard ceiling even if a chunker is constructed directly
+        # with a legacy value that bypasses SourceConfig validation.
+        chunker = SemanticChunker(max_tokens=10_000, min_tokens=0)
+
+        with patch(
+            "docsgpt.vectorstore.base.get_embeddings", return_value=embeddings
+        ):
+            out = chunker.chunk(
+                [Document(text=f"{short_sentences} {oversized_sentence}", doc_id="d")]
+            )
+
+        assert out
+        assert len(embeddings.calls) > 1
+        assert all(len(batch) <= 32 for batch in embeddings.calls)
+        assert all(
+            _tok(text) <= MAX_CHUNK_TOKENS
+            for batch in embeddings.calls
+            for text in batch
+        )
 
     def test_min_tokens_merges_neighbours(self):
         # Non-uniform distances yield several breakpoints and tiny groups,

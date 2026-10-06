@@ -9,6 +9,7 @@ import {
   chunkingChanged,
   scoreThresholdHidden,
   DEFAULT_RETRIEVAL_OPTIONS,
+  MAX_CHUNK_TOKENS,
   RetrievalOptionsValue,
 } from './RetrievalOptions';
 
@@ -45,6 +46,13 @@ describe('configToOptions (lenient read)', () => {
     expect(opts.retrieval.prescreen.enabled).toBe(false);
   });
 
+  it('clamps an over-limit stored chunk size', () => {
+    const opts = configToOptions({
+      chunking: { max_tokens: 100_000 },
+    } as SourceConfig);
+    expect(opts.chunking.max_tokens).toBe(MAX_CHUNK_TOKENS);
+  });
+
   it('marks prescreen enabled when the stored object is present', () => {
     const opts = configToOptions({
       retrieval: {
@@ -77,6 +85,12 @@ describe('optionsToConfig (write path)', () => {
     v.kind = 'classic';
     v.retrieval.retriever = 'graphrag';
     expect(optionsToConfig(v).kind).toBe('graphrag');
+  });
+
+  it('clamps an over-limit chunk size before serializing', () => {
+    const v = clone(DEFAULT_RETRIEVAL_OPTIONS);
+    v.chunking.max_tokens = 100_000;
+    expect(optionsToConfig(v).chunking?.max_tokens).toBe(MAX_CHUNK_TOKENS);
   });
 
   it('round-trips the graph config including model and max_chunks', () => {

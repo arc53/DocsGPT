@@ -86,6 +86,7 @@ class FaissStore(BaseVectorStore):
         source_id: str,
         embeddings_key: str,
         docs_init=None,
+        embedding_texts=None,
         ids=None,
         batch_size=None,
         skip_dimension_check: bool = False,
@@ -97,6 +98,8 @@ class FaissStore(BaseVectorStore):
             embeddings_key: API key handed to the embeddings provider.
             docs_init: Documents to build a fresh index from. Loads the stored
                 index instead when omitted.
+            embedding_texts: Optional bounded text used only to compute vectors;
+                full document text is still stored in the sidecar.
             ids: Chunk ids to keep when building. Generated when omitted.
             batch_size: Documents per embed call when building.
             skip_dimension_check: Open an index whose width does not match the
@@ -116,7 +119,12 @@ class FaissStore(BaseVectorStore):
 
         try:
             if docs_init:
-                self._build_from_documents(docs_init, ids=ids, batch_size=batch_size)
+                self._build_from_documents(
+                    docs_init,
+                    embedding_texts=embedding_texts,
+                    ids=ids,
+                    batch_size=batch_size,
+                )
             else:
                 self._load_from_storage()
         except Exception as e:
@@ -127,11 +135,15 @@ class FaissStore(BaseVectorStore):
 
     # -- Construction ----------------------------------------------------
 
-    def _build_from_documents(self, docs_init, ids=None, batch_size=None) -> None:
+    def _build_from_documents(
+        self, docs_init, embedding_texts=None, ids=None, batch_size=None
+    ) -> None:
         """Create a fresh index seeded with ``docs_init``.
 
         Args:
             docs_init: Documents to embed.
+            embedding_texts: Optional text used only for embedding. Must align
+                one-to-one with ``docs_init``; full document text is stored.
             ids: Chunk ids to keep. Generated when omitted, which renumbers
                 every chunk and orphans anything referencing the old ids.
             batch_size: Documents per embed call. Without it the whole index
@@ -143,12 +155,16 @@ class FaissStore(BaseVectorStore):
             texts.append(getattr(doc, "page_content", None) or getattr(doc, "text", "") or "")
             metadatas.append(getattr(doc, "metadata", None) or getattr(doc, "extra_info", None) or {})
 
+        inputs = list(embedding_texts) if embedding_texts is not None else texts
+        if len(inputs) != len(texts):
+            raise ValueError("embedding_texts must match docs_init length")
+
         faiss = _dependable_faiss_import()
         ids = list(ids) if ids else None
         step = batch_size if batch_size and batch_size > 0 else len(texts)
         for start in range(0, len(texts), max(1, step)):
             stop = start + max(1, step)
-            vectors = self.embeddings.embed_documents(texts[start:stop])
+            vectors = self.embeddings.embed_documents(inputs[start:stop])
             if self.index is None:
                 self.index = faiss.IndexFlatL2(len(vectors[0]))
             self._append(

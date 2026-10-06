@@ -65,4 +65,22 @@ describe('RetrievalOptions disclosure', () => {
       .firstElementChild as HTMLElement;
     expect(inner.className.split(' ')).toContain('pt-4');
   });
+
+  it('caps the chunk-size input and explains the limit', () => {
+    act(() => {
+      root.render(
+        <RetrievalOptions
+          value={DEFAULT_RETRIEVAL_OPTIONS}
+          onChange={vi.fn()}
+          alwaysOpen
+        />,
+      );
+    });
+
+    const input = container.querySelector(
+      '#chunking-max-tokens',
+    ) as HTMLInputElement;
+    expect(input.max).toBe('4096');
+    expect(container.textContent).toContain('chunking.maxTokensHint');
+  });
 });

@@ -282,6 +282,25 @@ class TestBuildFromDocumentsBatching:
         assert sizes == [2, 2, 1]
         assert len(store.index_to_docstore_id) == 5
 
+    def test_embedding_override_preserves_full_stored_text(self):
+        embedded = []
+
+        def embed(texts):
+            embedded.extend(texts)
+            return [[1.0, 2.0] for _ in texts]
+
+        store = self._store(embed)
+        docs = [_SeedDoc("full legacy chunk text", {"source": "legacy"})]
+        store._build_from_documents(docs, embedding_texts=["bounded prefix"])
+
+        assert embedded == ["bounded prefix"]
+        assert store.get_chunks()[0]["text"] == "full legacy chunk text"
+
+    def test_embedding_override_must_match_document_count(self):
+        store = self._store(lambda texts: [[1.0, 2.0] for _ in texts])
+        with pytest.raises(ValueError, match="must match docs_init length"):
+            store._build_from_documents(self._docs(2), embedding_texts=["one"])
+
     def test_defaults_are_unchanged(self):
         store = self._store(lambda texts: [[1.0, 2.0] for _ in texts])
         store._build_from_documents(self._docs(3))

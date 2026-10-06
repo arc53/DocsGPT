@@ -464,6 +464,7 @@
             "semantic": "Semantisch"
           },
           "maxTokens": "Max. Tokens pro Chunk",
+          "maxTokensHint": "Maximal 4.096 Tokens.",
           "minTokens": "Min. Tokens pro Chunk",
           "duplicateHeaders": "Überschriften über Chunks hinweg duplizieren"
         }

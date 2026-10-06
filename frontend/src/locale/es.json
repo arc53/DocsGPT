@@ -464,6 +464,7 @@
             "semantic": "Semántica"
           },
           "maxTokens": "Máximo de tokens por fragmento",
+          "maxTokensHint": "Máximo de 4096 tokens.",
           "minTokens": "Mínimo de tokens por fragmento",
           "duplicateHeaders": "Duplicar encabezados entre fragmentos"
         }

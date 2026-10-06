@@ -31,6 +31,8 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from psycopg import sql
 
 from docsgpt.core.settings import settings
+from docsgpt.parser.limits import MAX_CHUNK_TOKENS
+from docsgpt.parser.tokenization import get_token_counter
 from docsgpt.vectorstore.model_registry import resolve
 from docsgpt.vectorstore.vector_creator import VectorCreator
 
@@ -65,6 +67,39 @@ def _log_setup(verbose: bool) -> None:
 def _batched(items: Sequence[Any], size: int) -> Iterable[Sequence[Any]]:
     for start in range(0, len(items), size):
         yield items[start : start + size]
+
+
+def _bounded_embedding_texts(texts: Sequence[Optional[str]]) -> Tuple[List[str], int]:
+    """Clip oversized stored chunks for embedding without changing stored text.
+
+    Args:
+        texts: Legacy chunk text values to prepare.
+
+    Returns:
+        The bounded embedding inputs and the number that were clipped.
+    """
+    counter = get_token_counter()
+    bounded: List[str] = []
+    clipped = 0
+    for value in texts:
+        text = value or ""
+        if counter.count(text) > MAX_CHUNK_TOKENS:
+            pieces = counter.split(text, MAX_CHUNK_TOKENS)
+            text = pieces[0] if pieces else ""
+            clipped += 1
+        bounded.append(text)
+    return bounded, clipped
+
+
+def _log_clipped_chunks(source_id: str, clipped: int) -> None:
+    """Report legacy chunks whose embedding input needed clipping."""
+    if clipped:
+        logger.warning(
+            "  %s: clipped %d oversized chunk(s) to %d tokens for embedding",
+            source_id,
+            clipped,
+            MAX_CHUNK_TOKENS,
+        )
 
 
 def list_source_ids(store_type: str) -> List[str]:
@@ -244,9 +279,10 @@ def _fetch_chunk_page(
         cursor.close()
 
 
-def _write_chunk_page(conn, table: str, vector_column: str, store, page) -> None:
-    """Embed one page and commit its vectors."""
-    vectors = store._embedding.embed_documents([row[1] or "" for row in page])
+def _write_chunk_page(conn, table: str, vector_column: str, store, page) -> int:
+    """Embed one bounded page, commit its vectors, and return clips made."""
+    texts, clipped = _bounded_embedding_texts([row[1] for row in page])
+    vectors = store._embedding.embed_documents(texts)
     cursor = conn.cursor()
     try:
         cursor.executemany(
@@ -262,6 +298,7 @@ def _write_chunk_page(conn, table: str, vector_column: str, store, page) -> None
         raise
     finally:
         cursor.close()
+    return clipped
 
 
 def reembed_pgvector(source_id: str, batch_size: int, dry_run: bool) -> Tuple[int, int]:
@@ -289,7 +326,7 @@ def reembed_pgvector(source_id: str, batch_size: int, dry_run: bool) -> Tuple[in
     table, vector_column = store._table_name, store._vector_column
     conn = store._get_connection()
 
-    seen = written = 0
+    seen = written = clipped = 0
     try:
         if dry_run:
             seen = _count_source_chunks(conn, table, source_id)
@@ -301,10 +338,14 @@ def reembed_pgvector(source_id: str, batch_size: int, dry_run: bool) -> Tuple[in
                 )
                 if not page:
                     break
-                _write_chunk_page(conn, table, vector_column, store, page)
+                clipped += _write_chunk_page(
+                    conn, table, vector_column, store, page
+                )
                 after_id = page[-1][0]
                 seen += len(page)
                 written += len(page)
+
+            _log_clipped_chunks(source_id, clipped)
 
         # The graph seeds every traversal from its own vectors, so leaving them
         # in the old model's space is the same silent mismatch this script
@@ -358,6 +399,9 @@ def reembed_faiss(source_id: str, batch_size: int, dry_run: bool) -> Tuple[int, 
         _RebuildDoc(chunk.get("text") or "", chunk.get("metadata") or {})
         for chunk in chunks
     ]
+    embedding_texts, clipped = _bounded_embedding_texts(
+        [doc.page_content for doc in docs]
+    )
 
     # Constructing with ``docs_init`` embeds everything into a fresh in-memory
     # index and touches nothing on disk. The existing index is only replaced by
@@ -370,10 +414,12 @@ def reembed_faiss(source_id: str, batch_size: int, dry_run: bool) -> Tuple[int, 
         source_id=source_id,
         embeddings_key=settings.EMBEDDINGS_KEY,
         docs_init=docs,
+        embedding_texts=embedding_texts,
         ids=ids if all(ids) else None,
         batch_size=batch_size,
     )
     rebuilt.save_local()
+    _log_clipped_chunks(source_id, clipped)
     return len(chunks), len(docs)
 
 

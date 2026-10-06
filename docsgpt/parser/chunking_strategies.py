@@ -15,6 +15,7 @@ from typing import List
 
 from docsgpt.parser.chunking import Chunker
 from docsgpt.parser.chunking_creator import ChunkerCreator
+from docsgpt.parser.limits import MAX_CHUNK_TOKENS, SEMANTIC_EMBED_BATCH_SIZE
 from docsgpt.parser.schema.base import Document
 from docsgpt.parser.tokenization import get_token_counter
 
@@ -276,13 +277,39 @@ class SemanticChunker(_BaseStrategyChunker):
                 capped.extend(p for p in self._split_by_tokens(group) if p.strip())
         return self._merge_to_min(capped, " ")
 
+    def _embedding_inputs(self, sentences: List[str]) -> List[str]:
+        """Split sentences into inputs that are individually safe to embed."""
+        limit = min(self.max_tokens, MAX_CHUNK_TOKENS)
+        inputs: List[str] = []
+        for sentence in sentences:
+            if self._token_count(sentence) <= limit:
+                inputs.append(sentence)
+            else:
+                inputs.extend(
+                    piece for piece in self.counter.split(sentence, limit) if piece.strip()
+                )
+        return inputs
+
+    @staticmethod
+    def _embed_in_batches(embeddings_client, inputs: List[str]):
+        """Embed a bounded number of sentence inputs per provider call."""
+        vectors = []
+        for start in range(0, len(inputs), SEMANTIC_EMBED_BATCH_SIZE):
+            batch = inputs[start : start + SEMANTIC_EMBED_BATCH_SIZE]
+            batch_vectors = embeddings_client.embed_documents(batch)
+            if len(batch_vectors) != len(batch):
+                raise ValueError("embedding provider returned the wrong vector count")
+            vectors.extend(batch_vectors)
+        return vectors
+
     def _chunk_text(self, text: str) -> List[str]:
         sentences = self._split_sentences(text)
         if len(sentences) < 2:
             raise ValueError("too few sentences for semantic chunking")
         from docsgpt.vectorstore.base import get_embeddings
 
-        embeddings = get_embeddings().embed_documents(sentences)
+        sentences = self._embedding_inputs(sentences)
+        embeddings = self._embed_in_batches(get_embeddings(), sentences)
         breakpoints = self._breakpoints(embeddings)
         groups = self._group(sentences, breakpoints)
         return [g for g in self._enforce_tokens(groups) if g.strip()]
