@@ -15,6 +15,10 @@
   header a ``header_token`` link reads (``X-Webhook-Token`` when null).
   Downgrade revokes links with a new scheme: they could only be kept by
   dropping their signature, which would leave them open.
+* ``monitor_events``: an ingest event an ingest monitor watches, stored
+  before its task is queued (unique per monitor and event), so a task the
+  broker loses is queued again by the dispatcher's sweep instead of the event
+  being dropped. Same lifecycle as ``trigger_hits``.
 
 Idempotent both ways. Downgrade first reports running device jobs ``lost``
 (nothing would follow them any more), then narrows the check.
@@ -72,9 +76,31 @@ def upgrade() -> None:
     op.execute("ALTER TABLE trigger_links ADD COLUMN IF NOT EXISTS allow_get BOOLEAN NOT NULL DEFAULT false;")
     op.execute("ALTER TABLE trigger_links ADD COLUMN IF NOT EXISTS signature_header TEXT;")
     _schemes(_SCHEMES_AFTER)
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS monitor_events (
+            id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            monitor_id   UUID NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+            dedupe_key   TEXT NOT NULL,
+            payload      JSONB NOT NULL DEFAULT '{}'::jsonb,
+            status       TEXT NOT NULL DEFAULT 'pending'
+                CONSTRAINT monitor_events_status_chk
+                CHECK (status IN ('pending', 'processed', 'ignored', 'failed')),
+            attempts     INTEGER NOT NULL DEFAULT 0,
+            error        TEXT,
+            received_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+            processed_at TIMESTAMPTZ,
+            CONSTRAINT monitor_events_monitor_dedupe_uidx UNIQUE (monitor_id, dedupe_key)
+        );
+        """
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS monitor_events_status_received_idx ON monitor_events (status, received_at);"
+    )
 
 
 def downgrade() -> None:
+    op.execute("DROP TABLE IF EXISTS monitor_events;")
     op.execute(
         "UPDATE background_jobs SET status = 'lost', finished_at = now(), last_updated_at = now(), "
         "expires_at = now() + interval '7 days', "

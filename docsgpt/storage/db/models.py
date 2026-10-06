@@ -1539,6 +1539,29 @@ trigger_hits_table = Table(
 
 Index("trigger_hits_received_idx", trigger_hits_table.c.received_at)
 
+# --- Monitor events (migration 0050) -----------------------------------------
+# An ingest event a monitor watches, stored before its task is queued so a lost
+# task can be queued again; settled like a trigger hit.
+monitor_events_table = Table(
+    "monitor_events",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("monitor_id", UUID(as_uuid=True), ForeignKey("schedules.id", ondelete="CASCADE"), nullable=False),
+    Column("dedupe_key", Text, nullable=False),
+    Column("payload", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("status", Text, nullable=False, server_default="pending"),
+    Column("attempts", Integer, nullable=False, server_default="0"),
+    Column("error", Text),
+    Column("received_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("processed_at", DateTime(timezone=True)),
+    CheckConstraint(
+        "status IN ('pending', 'processed', 'ignored', 'failed')", name="monitor_events_status_chk"
+    ),
+    UniqueConstraint("monitor_id", "dedupe_key", name="monitor_events_monitor_dedupe_uidx"),
+)
+
+Index("monitor_events_status_received_idx", monitor_events_table.c.status, monitor_events_table.c.received_at)
+
 # --- Web Push subscriptions (migration 0049) ---------------------------------
 # One browser's push subscription: the push service endpoint and the keys the
 # payload is encrypted with. The endpoint is unique; re-registering it moves it.
