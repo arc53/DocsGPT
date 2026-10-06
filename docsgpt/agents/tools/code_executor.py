@@ -8,6 +8,8 @@ import hashlib
 import logging
 import math
 import re
+import time
+from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlsplit
 
@@ -95,6 +97,74 @@ def _tail(stream: Optional[str]) -> str:
     return stream[-_OUTPUT_TAIL_BYTES:]
 
 
+# Characters of the submitted code a detached run keeps for the fix hints.
+_STATE_CODE_MAX_CHARS = 20_000
+
+
+def detached_marker() -> Any:
+    """The value ``execute_action`` returns when a background job took the run over."""
+    from docsgpt.background.handoff import DETACHED
+
+    return DETACHED
+
+
+def _megabytes(size: int) -> str:
+    """``38925591`` -> ``38.9 MB``; a whole number of MiB (a cap) reads as ``10 MB``."""
+    if size >= 1024 * 1024 and size % (1024 * 1024) == 0:
+        return f"{size // (1024 * 1024)} MB"
+    return f"{size / 1_000_000:.1f} MB"
+
+
+def too_large_note(entry: Dict[str, Any]) -> str:
+    """What the model is told about a produced file that was too big to save as an artifact."""
+    name = str(entry.get("path") or "").rsplit("/", 1)[-1]
+    return (
+        f"{name} ({_megabytes(int(entry.get('size') or 0))}) is over the {_megabytes(int(entry.get('limit') or 0))} "
+        "limit and was not saved; compress, downscale or split it"
+    )
+
+
+@dataclass
+class PreparedRun:
+    """A run_code call once its session is open and its inputs staged.
+
+    Serializable (``to_state`` / ``from_state``) so a background job's poller
+    in another process can finish a detached run exactly as the turn would.
+    """
+
+    session_id: str
+    code: str
+    timeout: float
+    clamped: bool = False
+    asked_timeout: Optional[int] = None
+    should_capture: bool = True
+    outputs: Optional[List[str]] = None
+    pre_signatures: Dict[str, Tuple[int, Optional[str]]] = field(default_factory=dict)
+    inputs_loaded: List[str] = field(default_factory=list)
+    session_created: bool = False
+    keep_alive: bool = True
+    # The run is in a turn that can hand calls off: a timeout points to background=true.
+    background_capable: bool = False
+    # The run is a background job (asked for, or handed off): a timeout is reported, never re-run unasked.
+    background: bool = False
+
+    def to_state(self) -> Dict[str, Any]:
+        """A JSON-safe copy (the code is kept to ``_STATE_CODE_MAX_CHARS`` for the hints)."""
+        state = asdict(self)
+        state["code"] = self.code[:_STATE_CODE_MAX_CHARS]
+        state["pre_signatures"] = {path: list(sig) for path, sig in self.pre_signatures.items()}
+        return state
+
+    @classmethod
+    def from_state(cls, state: Dict[str, Any]) -> "PreparedRun":
+        """Rebuild a run from ``to_state``."""
+        fields = dict(state)
+        fields["pre_signatures"] = {
+            path: (int(sig[0]), sig[1]) for path, sig in (state.get("pre_signatures") or {}).items()
+        }
+        return cls(**fields)
+
+
 class CodeExecutorTool(Tool):
     """Code Executor
     Run code in a sandboxed session; files it writes become downloadable artifacts.
@@ -114,6 +184,8 @@ class CodeExecutorTool(Tool):
         self._last_artifacts: List[Dict[str, Any]] = []
         # Charts the last run displayed, for the model to see (``drain_native_parts``).
         self._native_queue: List[Dict[str, Any]] = []
+        # Files the last run produced that were over the sandbox's file cap (not saved).
+        self._too_large: List[Dict[str, Any]] = []
 
     # ------------------------------------------------------------------
     # Tool ABC
@@ -217,7 +289,8 @@ class CodeExecutorTool(Tool):
             ),
             (
                 f"Limits: {timeout}s per call by default; pass `timeout` up to {max_timeout}s for long jobs (video, "
-                "OCR of many pages, big conversions); prefer splitting work. Network: usually open for pip and "
+                "OCR of many pages, conversions); prefer splitting work; files over "
+                f"{_megabytes(int(settings.SANDBOX_MAX_FILE_BYTES))} aren't saved. Network: usually open for pip and "
                 "public sites."
             ),
             cls._environment_note(),
@@ -304,9 +377,11 @@ class CodeExecutorTool(Tool):
     def _timeout_parameter_description(cls) -> str:
         """Describe the ``timeout`` argument, with rough budgets so the model can pick a value."""
         return (
-            f"Wall-clock seconds for this call (default {int(cls._exec_timeout())}, max "
-            f"{int(cls._max_exec_timeout())}). Raise it only for long jobs; rough budgets: pip install of a big "
-            "package ~120, office-convert of a large deck ~120, OCR ~2-3 per page, video render scales with frames."
+            f"Wall-clock seconds this run may take before it is stopped (default {int(cls._exec_timeout())}, max "
+            f"{int(cls._max_exec_timeout())}); the cap applies to background runs too. For a long job, set it above "
+            "the expected duration (add a margin to what the user says it takes); rough budgets: pip install of a "
+            "big package ~120, office-convert of a large deck ~120, OCR ~2-3 per page, video render scales with "
+            "frames."
         )
 
     def get_config_requirements(self) -> Dict[str, Any]:
@@ -366,7 +441,10 @@ class CodeExecutorTool(Tool):
         # session's TTL when one is passed, and a session another tool opened first
         # (artifact_generator opens at the exec timeout) would be reaped early.
         open_ttl = ttl if ttl is not None else (float(settings.SANDBOX_MAX_TTL) if keep_alive else None)
-        timeout, clamped = self._requested_timeout(kwargs.get("timeout"))
+        call = self._background_call()
+        timeout, clamped = self._requested_timeout(
+            kwargs.get("timeout"), background=bool(call is not None and call.explicit)
+        )
         inputs = kwargs.get("inputs") or []
 
         manager = SandboxCreator.get_manager()
@@ -380,6 +458,7 @@ class CodeExecutorTool(Tool):
         if opened.created:
             self._make_scratch_dir(manager, session_id)
 
+        detached_run = False
         try:
             materialized = self._materialize_inputs(manager, session_id, inputs)
             if materialized.get("error"):
@@ -389,52 +468,223 @@ class CodeExecutorTool(Tool):
             if should_capture:
                 pre_signatures = self._snapshot_signatures(manager, session_id)
 
-            try:
-                result = manager.exec(session_id, code, timeout=timeout)
-            except Exception as exc:
-                logger.exception("code_executor: exec raised")
-                return {
-                    "status": "error",
-                    "error": f"execution failed: {type(exc).__name__}: {exc}",
-                    "session": session_state,
-                }
-
-            # Capture even on error/timeout while the runtime remains reachable
-            # so partial outputs aren't lost; capture never masks the run status.
-            artifacts: List[Dict[str, Any]] = []
-            if should_capture and not result.runtime_invalidated:
-                try:
-                    artifacts = self._capture_artifacts(manager, session_id, pre_signatures, outputs)
-                except Exception:
-                    logger.exception("code_executor: artifact capture failed")
-            # A run that saved an image file (savefig) already gave the user its chart;
-            # saving the displayed copy as well left a duplicate ``chart-<sha8>.png``.
-            saved_image = any(str(a.get("mime_type") or "").startswith("image/") for a in artifacts)
-            charts = self._show_charts(result, should_capture and not saved_image)
-
-            payload = self._shape_payload(
-                result,
-                artifacts + charts,
-                materialized.get("loaded", []),
-                session=session_state,
-                environment=self._environment_summary() if opened.created else None,
+            run = PreparedRun(
+                session_id=session_id,
+                code=code,
                 timeout=timeout,
+                clamped=clamped,
+                asked_timeout=self._timeout_number(kwargs.get("timeout")) if clamped else None,
+                should_capture=bool(should_capture),
+                outputs=outputs,
+                pre_signatures=pre_signatures,
+                inputs_loaded=list(materialized.get("loaded", [])),
+                session_created=bool(opened.created),
+                keep_alive=keep_alive,
             )
-            if clamped:
-                asked = self._timeout_number(kwargs.get("timeout"))
-                payload["timeout"] = f"ran with {int(timeout)}s, the maximum; {asked}s was asked for"
-            if self._native_queue:
-                payload["charts_shown"] = [part["label"] for part in self._native_queue]
-            hints = self._hints(session_id, code, result, artifacts + charts, opened.created, timeout, should_capture)
-            if hints:
-                payload["hint"] = hints
-            return payload
+            run.background_capable = call is not None
+            run.background = bool(call is not None and call.explicit)
+            if call is not None and self._can_detach(manager, call):
+                outcome = self._run_detached(manager, run, call)
+                if outcome is detached_marker():
+                    # A background job's poller finishes this run, and closes the session if asked.
+                    detached_run = True
+                    return outcome
+                if isinstance(outcome, dict):
+                    return outcome
+                result = outcome
+            else:
+                try:
+                    result = manager.exec(session_id, code, timeout=timeout)
+                except Exception as exc:
+                    logger.exception("code_executor: exec raised")
+                    return {
+                        "status": "error",
+                        "error": f"execution failed: {type(exc).__name__}: {exc}",
+                        "session": session_state,
+                    }
+            # A run the turn handed off while it ran is finished here, as a background job.
+            if call is not None and call.handoff_requested():
+                run.background = True
+            return self.finish_run(manager, run, result)
         finally:
-            if not keep_alive:
+            if not keep_alive and not detached_run:
                 try:
                     manager.close(session_id)
                 except Exception:
                     logger.exception("code_executor: session close failed")
+
+    def finish_run(self, files: Any, run: "PreparedRun", result: ExecResult) -> Dict[str, Any]:
+        """Turn a finished run into the model's payload: capture its files, show its charts, add hints.
+
+        Shared by a run that finished in the turn and one a background job's
+        poller finished in another process, so both report the same payload.
+
+        Args:
+            files: The session's file access (the manager, or an adopted backend).
+            run: The run as prepared.
+            result: What the run returned.
+
+        Returns:
+            The payload the model sees.
+        """
+        # Capture even on error/timeout while the runtime remains reachable
+        # so partial outputs aren't lost; capture never masks the run status.
+        artifacts: List[Dict[str, Any]] = []
+        self._too_large = []
+        if run.should_capture and not result.runtime_invalidated:
+            try:
+                artifacts = self._capture_artifacts(files, run.session_id, run.pre_signatures, run.outputs)
+            except Exception:
+                logger.exception("code_executor: artifact capture failed")
+        # A run that saved an image file (savefig) already gave the user its chart;
+        # saving the displayed copy as well left a duplicate ``chart-<sha8>.png``.
+        saved_image = any(str(a.get("mime_type") or "").startswith("image/") for a in artifacts)
+        charts = self._show_charts(result, run.should_capture and not saved_image)
+
+        payload = self._shape_payload(
+            result,
+            artifacts + charts,
+            run.inputs_loaded,
+            session="new" if run.session_created else "reused",
+            environment=self._environment_summary() if run.session_created else None,
+            timeout=run.timeout,
+            background_capable=run.background_capable,
+            background=run.background,
+        )
+        if run.clamped:
+            payload["timeout"] = f"ran with {int(run.timeout)}s, the maximum; {run.asked_timeout}s was asked for"
+        if self._native_queue:
+            payload["charts_shown"] = [part["label"] for part in self._native_queue]
+        if self._too_large:
+            payload["not_saved"] = [too_large_note(entry) for entry in self._too_large]
+        hints = self._hints(
+            run.session_id,
+            run.code,
+            result,
+            artifacts + charts,
+            run.session_created,
+            run.timeout,
+            run.should_capture,
+            background=run.background,
+        )
+        if hints:
+            payload["hint"] = hints
+        return payload
+
+    @staticmethod
+    def job_result(payload: Any) -> Any:
+        """A run's payload as a background job keeps it: without the environment banner and session state.
+
+        Both belong to the turn that started the run (it already saw the
+        banner, and the session it describes is that turn's); repeated in the
+        wake, they cost tokens and were misread as the session being reset.
+        """
+        if not isinstance(payload, dict):
+            return payload
+        return {key: value for key, value in payload.items() if key not in ("environment", "session")}
+
+    # ------------------------------------------------------------------
+    # Detached runs (background jobs)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _background_call() -> Any:
+        """The background call this run belongs to, when the turn may hand it off."""
+        from docsgpt.background.handoff import current_call
+
+        return current_call()
+
+    def supports_detached(self) -> bool:
+        """Whether this deployment's sandbox can run code detached (a background job survives the turn)."""
+        try:
+            return SandboxCreator.get_manager().supports_detached()
+        except Exception:
+            return False
+
+    def _can_detach(self, manager: Any, call: Any) -> bool:
+        """Run detached on Daytona always (no kernel state to lose); on Jupyter only for ``background``.
+
+        A Jupyter run in the kernel keeps its variables for the next call, so
+        only an explicit background run gives that up for a separate process.
+        """
+        if not manager.supports_detached():
+            return False
+        return self._backend() == "daytona" or bool(getattr(call, "explicit", False))
+
+    def _run_detached(self, manager: Any, run: "PreparedRun", call: Any) -> Any:
+        """Start the run detached and follow it until it ends or the turn hands it off.
+
+        Args:
+            manager: The sandbox manager.
+            run: The prepared run.
+            call: The background call handle.
+
+        Returns:
+            The ``ExecResult`` of a run that ended here, the detached marker when a
+            background job took it over, or an error payload when it could not start.
+        """
+        try:
+            handle = manager.start_detached(run.session_id, run.code, run.timeout, call.key)
+        except Exception as exc:
+            logger.exception("code_executor: detached start failed")
+            return {
+                "status": "error",
+                "error": f"execution failed: {type(exc).__name__}: {exc}",
+                "session": "new" if run.session_created else "reused",
+            }
+        # Tight polls first, so a short run returns about as soon as a foreground one would.
+        interval = 0.05
+        failures = 0
+        # The wrapper enforces the run's own cap; this bounds a poll loop whose sandbox stopped answering.
+        deadline = time.monotonic() + float(run.timeout) + 60
+        while True:
+            if call.handoff_requested() and call.detach(self._detached_state(run, handle)):
+                return detached_marker()
+            try:
+                state = manager.poll_detached(run.session_id, handle)
+                failures = 0
+            except Exception:
+                failures += 1
+                logger.warning("code_executor: polling a detached run failed (%d)", failures, exc_info=True)
+                if failures >= 5:
+                    self._cancel_quietly(manager, run, handle)
+                    return ExecResult(
+                        status="error",
+                        error_name="SandboxError",
+                        error_value="lost contact with the sandbox while the code ran",
+                        exit_code=-1,
+                    )
+            else:
+                if state.done and state.result is not None:
+                    return state.result
+            if time.monotonic() > deadline:
+                self._cancel_quietly(manager, run, handle)
+                return ExecResult(
+                    status="error", error_name="TimeoutError", error_value=f"execution exceeded {int(run.timeout)}s",
+                    exit_code=-1,
+                )
+            call.wait(interval)
+            interval = min(interval * 1.3, 1.0)
+
+    @staticmethod
+    def _cancel_quietly(manager: Any, run: "PreparedRun", handle: Dict[str, Any]) -> None:
+        try:
+            manager.cancel_detached(run.session_id, handle)
+        except Exception:
+            logger.warning("code_executor: stopping a detached run failed", exc_info=True)
+
+    def _detached_state(self, run: "PreparedRun", handle: Dict[str, Any]) -> Dict[str, Any]:
+        """What a poller in another process needs to finish this run: the handle, the run, this tool."""
+        config = {
+            key: self.config.get(key)
+            for key in ("tool_id", "conversation_id", "workflow_run_id", "message_id", "require_approval")
+            if self.config.get(key) is not None
+        }
+        return {
+            "session_id": run.session_id,
+            "run": handle,
+            "finish": run.to_state(),
+            "tool": {"config": config, "user_id": self.user_id},
+        }
 
     @staticmethod
     def _make_scratch_dir(manager: Any, session_id: str) -> None:
@@ -592,7 +842,11 @@ class CodeExecutorTool(Tool):
         pre_signatures: Dict[str, Tuple[int, Optional[str]]],
         outputs: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
-        """Persist produced workspace files (only ``outputs`` globs when given)."""
+        """Persist produced workspace files (only ``outputs`` globs when given).
+
+        Files over the sandbox's file cap are not saved; they are kept in
+        ``self._too_large`` for the result to name.
+        """
         captured = capture_artifacts(
             manager,
             session_id,
@@ -607,6 +861,7 @@ class CodeExecutorTool(Tool):
                 "session_id": session_id,
             },
             outputs=outputs,
+            too_large=self._too_large,
         )
         if captured:
             self._last_artifact_id = captured[0]["artifact_id"]
@@ -681,6 +936,7 @@ class CodeExecutorTool(Tool):
         session_new: bool,
         timeout: float,
         capture: Any,
+        background: bool = False,
     ) -> List[str]:
         """Return the fix hints for this run, the repeated-failure warning first.
 
@@ -692,6 +948,7 @@ class CodeExecutorTool(Tool):
             session_new: The call started a fresh session.
             timeout: The per-call cap in seconds.
             capture: The call's ``capture_artifacts`` flag.
+            background: The run was a background job.
 
         Returns:
             At most ``MAX_HINTS`` short hints.
@@ -709,6 +966,7 @@ class CodeExecutorTool(Tool):
             app_hosts=self._app_hosts(),
             capture=bool(capture),
             charts_shown=len(self._native_queue),
+            background=background,
         )
         try:
             hints = fix_hints(facts)
@@ -727,6 +985,8 @@ class CodeExecutorTool(Tool):
         session: Optional[str] = None,
         environment: Optional[str] = None,
         timeout: Optional[float] = None,
+        background_capable: bool = False,
+        background: bool = False,
     ) -> Dict[str, Any]:
         """Build the compact LLM-facing payload; raw bytes never appear here.
 
@@ -740,6 +1000,8 @@ class CodeExecutorTool(Tool):
             session: ``"new"`` or ``"reused"``, reported right after the status.
             environment: The environment summary, given for a new session only.
             timeout: The cap this call ran with; the default cap when None.
+            background_capable: The turn could hand the run off as a background job.
+            background: The run was a background job.
 
         Returns:
             The payload the model sees.
@@ -759,7 +1021,9 @@ class CodeExecutorTool(Tool):
             if result.out_of_memory:
                 payload["error"] = self._out_of_memory_text(result)
             elif self._is_timeout(result):
-                payload["error"] = self._timeout_text(timeout)
+                payload["error"] = self._timeout_text(
+                    timeout, background_capable=background_capable, background=background
+                )
             else:
                 payload["error"] = self._error_text(result)
         if inputs_loaded:
@@ -767,22 +1031,44 @@ class CodeExecutorTool(Tool):
         return payload
 
     @classmethod
-    def _timeout_text(cls, timeout: Optional[float]) -> str:
+    def _timeout_text(
+        cls, timeout: Optional[float], *, background_capable: bool = False, background: bool = False
+    ) -> str:
         """Explain a run that hit its wall-clock cap, and how to give the work more room.
+
+        A run that was already a background job is reported, not retried: it
+        may have done part of its work, and nobody is in the turn to agree to
+        a second run.
 
         Args:
             timeout: The cap the run had; the default cap when None.
+            background_capable: The turn can run code as a background job, which
+                beats a hand-rolled background process polled with more calls.
+            background: The run was a background job.
 
         Returns:
             The error line the model sees.
         """
         cap = int(timeout if timeout is not None else cls._exec_timeout())
         most = int(cls._max_exec_timeout())
-        background = (
-            "start it in the background (e.g. launch a subprocess or `nohup ... &` and write progress to a file) "
-            "and return immediately, then poll with additional run_code calls to check on it. The session, with "
-            "the background process and its files, stays alive between calls unless you pass persist=false."
-        )
+        if background:
+            return (
+                f"The background run hit its {cap}s timeout and was stopped; what it did before then may have "
+                "taken effect. Tell the user how far it got; run it again only if the user asks, with a `timeout` "
+                "above the expected duration."
+            )
+        if background_capable:
+            background = (
+                "run it again with background=true and a larger `timeout`: it then runs as a background job and "
+                "you are resumed with its result when it ends."
+            )
+        else:
+            background = (
+                "start it in the background (e.g. launch a subprocess or `nohup ... &` and write progress to a "
+                "file) and return immediately, then poll with additional run_code calls to check on it. The "
+                "session, with the background process and its files, stays alive between calls unless you pass "
+                "persist=false."
+            )
         if cap < most:
             return (
                 f"Execution timed out after {cap}s. If the work needs longer, pass a larger `timeout` (up to "
@@ -855,24 +1141,28 @@ class CodeExecutorTool(Tool):
         return max(float(settings.SANDBOX_EXEC_MAX_TIMEOUT), cls._exec_timeout())
 
     @classmethod
-    def _requested_timeout(cls, value: Any) -> Tuple[float, bool]:
+    def _requested_timeout(cls, value: Any, *, background: bool = False) -> Tuple[float, bool]:
         """Turn the call's ``timeout`` argument into the cap the run gets.
 
         Models send integers, floats or numeric strings. Anything else, and any
-        value that is not a positive finite number, falls back to the default.
+        value that is not a positive finite number, falls back to the default:
+        the foreground default, or for a ``background=true`` run the job's own
+        lifetime (``BACKGROUND_JOB_MAX_SECONDS``, within the sandbox maximum).
 
         Args:
             value: The call's ``timeout`` argument, or None.
+            background: The model asked for ``background=true``.
 
         Returns:
             The cap in whole seconds, and True when the request was above the
             maximum and was clamped to it.
         """
-        default = cls._exec_timeout()
+        most = cls._max_exec_timeout()
         requested = cls._timeout_number(value)
         if requested is None:
-            return default, False
-        most = cls._max_exec_timeout()
+            if background:
+                return float(min(max(int(settings.BACKGROUND_JOB_MAX_SECONDS), 1), most)), False
+            return cls._exec_timeout(), False
         if requested > most:
             return most, True
         return float(requested), False

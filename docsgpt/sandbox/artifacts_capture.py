@@ -20,6 +20,7 @@ from sqlalchemy import text
 
 from docsgpt.agents.tools.artifact_ref import make_ref
 from docsgpt.core.settings import settings
+from docsgpt.sandbox.base import FileTooLargeError
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.storage_creator import StorageCreator
@@ -139,6 +140,10 @@ def snapshot_signatures(manager: Any, session_id: str) -> Dict[str, Tuple[int, O
     for rel_path in candidates[:MAX_SCANNED_FILES]:
         try:
             data = manager.get_file(session_id, rel_path)
+        except FileTooLargeError as exc:
+            # Too big to read: its size stands for it, so an unchanged big file isn't reported after the run.
+            signatures[rel_path] = (exc.size, None)
+            continue
         except Exception:
             logger.exception("artifacts_capture: pre-exec signature read failed")
             continue
@@ -157,6 +162,7 @@ def capture_artifacts(
     message_id: Optional[str] = None,
     produced_by: Optional[Dict[str, Any]] = None,
     outputs: Optional[List[str]] = None,
+    too_large: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Persist workspace files that are new or whose content changed.
 
@@ -166,7 +172,9 @@ def capture_artifacts(
     ``_is_scratch``). A file re-saved under a name the same tool already used in this
     parent becomes a new version of that artifact (see ``persist_artifact``).
     Returns one artifact reference per captured file: ``{artifact_id, version,
-    filename, mime_type, size}`` (JSON primitives only; never bytes).
+    filename, mime_type, size}`` (JSON primitives only; never bytes). A file over
+    the sandbox's file cap (``SANDBOX_MAX_FILE_BYTES``) is not saved; it is added
+    to ``too_large`` as ``{path, size, limit}`` so the caller can say so.
     """
     try:
         post_files = set(manager.list_files(session_id))
@@ -193,6 +201,17 @@ def capture_artifacts(
         scanned += 1
         try:
             data = manager.get_file(session_id, rel_path)
+        except FileTooLargeError as exc:
+            if pre_signatures.get(rel_path) == (exc.size, None):
+                continue
+            logger.warning(
+                "artifacts_capture: a produced file (%d bytes) is over the %d-byte file cap; not saved",
+                exc.size,
+                exc.limit,
+            )
+            if too_large is not None:
+                too_large.append({"path": rel_path, "size": exc.size, "limit": exc.limit})
+            continue
         except Exception:
             logger.exception("artifacts_capture: get_file failed during capture")
             continue

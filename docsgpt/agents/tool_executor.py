@@ -1,4 +1,5 @@
 import copy
+import json
 import logging
 import re
 import uuid
@@ -10,12 +11,20 @@ from sqlalchemy.exc import IntegrityError
 from docsgpt.agents.default_tools import (
     BUILTIN_AGENT_TOOLS,
     is_headless_excluded_tool,
+    is_server_attached_tool,
+    is_server_attached_tool_id,
     is_synthesized_tool_id,
     resolve_tool_by_id,
     synthesized_default_tools,
 )
 from docsgpt import tracing
-from docsgpt.agents.tool_pins import iter_parameters, llm_fills, resolve_arguments, sent_arguments
+from docsgpt.agents.tool_pins import (
+    PARAM_SECTIONS,
+    iter_parameters,
+    llm_fills,
+    resolve_arguments,
+    sent_arguments,
+)
 from docsgpt.agents.tools.tool_action_parser import ToolActionParser
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.guardrails.types import Stage as GuardrailStage, resolve_tool_result
@@ -322,6 +331,29 @@ def _is_missing_parent(message_id: Optional[str]) -> bool:
     return bool(message_id) and message_id in _MISSING_PARENTS
 
 
+# Turn messages written only after their turn (a continuation's): the journal
+# keys its rows by the message id from the start but leaves the foreign key
+# empty until the message exists (``ToolCallAttemptsRepository.attach_message``).
+_DEFERRED_PARENTS: set = set()
+
+
+def defer_journal_parent(message_id: str) -> None:
+    """Journal this turn's calls under ``message_id`` before its message row exists."""
+    _DEFERRED_PARENTS.add(str(message_id))
+
+
+def release_journal_parent(message_id: str) -> None:
+    """Stop deferring ``message_id`` (its message was written, or never will be)."""
+    _DEFERRED_PARENTS.discard(str(message_id))
+
+
+def _parent_column(message_id: Optional[str]) -> Optional[str]:
+    """The ``message_id`` a journal row may reference now: None while the message is still to be written."""
+    if message_id and str(message_id) in _DEFERRED_PARENTS:
+        return None
+    return message_id
+
+
 def _note_missing_parent(message_id: Optional[str], exc: BaseException) -> bool:
     """Record a FK failure against ``message_id``. True if newly latched.
 
@@ -387,7 +419,7 @@ def _record_proposed(
                 action_name,
                 arguments,
                 tool_id=tool_id if tool_id and looks_like_uuid(tool_id) else None,
-                message_id=message_id,
+                message_id=_parent_column(message_id),
                 user_id=user_id,
                 agent_id=(str(agent_id) if agent_id and looks_like_uuid(str(agent_id)) else None),
             )
@@ -449,7 +481,7 @@ def _mark_executed(
                 updated = repo.mark_executed(
                     key,
                     result,
-                    message_id=message_id,
+                    message_id=_parent_column(message_id),
                     artifact_id=artifact_id,
                     user_id=user_id,
                 )
@@ -463,7 +495,7 @@ def _mark_executed(
                 arguments=arguments if arguments is not None else {},
                 result=result,
                 tool_id=tool_id if tool_id and looks_like_uuid(tool_id) else None,
-                message_id=message_id,
+                message_id=_parent_column(message_id),
                 artifact_id=artifact_id,
                 user_id=user_id,
                 agent_id=(str(agent_id) if agent_id and looks_like_uuid(str(agent_id)) else None),
@@ -608,6 +640,10 @@ class ToolExecutor:
         self.context_room_tokens: Optional[int] = None
         self.context_epoch = 0
         self.client_tools: Optional[List[Dict]] = None
+        # Set by the chat turn (``docsgpt.background.context.bind_turn``): a
+        # slow call may then be handed off to a background job. None runs
+        # every call in the foreground.
+        self.background = None
         self._name_to_tool: Dict[str, Tuple[str, str]] = {}
         # Per-NAME failure counts for invented tool names this turn. After
         # ``UNRESOLVABLE_CALL_LIMIT`` the model is handed a directive message
@@ -622,6 +658,11 @@ class ToolExecutor:
         self._connections: Dict[str, Any] = {}
         # Tool parameters those connections set (Telegram's default chat).
         self._connection_params: Dict[str, Dict] = {}
+        # Calls the user approved on an approval card (set by the resume
+        # path), and the call running now: ``monitor`` binds an approval only
+        # when the call that creates it was really approved.
+        self.approved_call_ids: set = set()
+        self.current_call_id: Optional[str] = None
 
     def get_tools(self) -> Dict[str, Dict]:
         """Load tool configs from DB based on user context.
@@ -721,6 +762,9 @@ class ToolExecutor:
         owner = (agent_data.get("user_id") or agent_data.get("user")) if agent_data else None
         tools: List[Dict] = []
         for tid in tool_ids:
+            # check_job, once pickable, is attached by the server now; a saved id is not a choice.
+            if is_server_attached_tool_id(tid):
+                continue
             row = resolve_tool_by_id(tid, owner, user_tools_repo=tools_repo)
             if row is None:
                 # A tool the owner can't use runs as the editor who
@@ -732,7 +776,7 @@ class ToolExecutor:
                 row, access = resolve_holder_tool(conn, "agent", agent_data, tid, tools_repo=tools_repo)
                 if row is None:
                     log_stopped("agent", agent_data, "tool", tid, access.reason)
-            if row is None:
+            if row is None or is_server_attached_tool(row.get("name")):
                 continue
             # Workflow-only builtins (read_document) never resolve for a
             # chat/scheduled agent — nodes get them via the scoped-id path.
@@ -972,6 +1016,10 @@ class ToolExecutor:
                 params = self._build_tool_parameters(
                     action, hidden=set(self._connection_parameters(tools_dict[tool_id])),
                 )
+                if self.background is not None:
+                    from docsgpt.background.schema import add_background_params
+
+                    add_background_params(tool_name, params)
 
             description = action.get("description", "")
             if account:
@@ -1007,15 +1055,28 @@ class ToolExecutor:
         Parameters the model does not fill (fixed values) and ``hidden`` ones
         (values the connection fixes) are left out, so the model is never
         asked for them.
+
+        A parameter is required when its section lists it in ``required`` (the
+        JSON-schema form built-in and MCP tools use) or when it carries
+        ``required: true`` itself (the form imported API actions use). An
+        object parameter's own ``required`` list names its nested fields; it
+        is kept on the parameter and never makes the parameter itself required.
         """
         params = {"type": "object", "properties": {}, "required": []}
+        listed: set = set()
+        for section in PARAM_SECTIONS:
+            block = action.get(section)
+            if isinstance(block, dict) and isinstance(block.get("required"), list):
+                listed.update(name for name in block["required"] if isinstance(name, str))
         for _section, k, v in iter_parameters(action):
             if not llm_fills(v) or (hidden and k in hidden):
                 continue
             params["properties"][k] = {
-                key: value for key, value in v.items() if key not in ("filled_by_llm", "value", "required")
+                key: value
+                for key, value in v.items()
+                if key not in ("filled_by_llm", "value") and not (key == "required" and not isinstance(value, list))
             }
-            if v.get("required", False):
+            if (v.get("required") is True or k in listed) and k not in params["required"]:
                 params["required"].append(k)
         return params
 
@@ -1248,6 +1309,12 @@ class ToolExecutor:
                 )
                 or require_approval
             )
+        elif tool_data.get("name") == "monitor":
+            # A monitor that replays an approval-gated call asks for that
+            # approval once, when it is created.
+            from docsgpt.monitors.service import create_needs_approval
+
+            require_approval = create_needs_approval(self, action_name, arguments) or require_approval
 
         # An admin forbade changes through this connector (GitHub): its tool
         # already calls the read-only endpoint, so say why instead of failing.
@@ -1759,6 +1826,14 @@ class ToolExecutor:
             self.tool_calls.append(tool_call_data)
             return error_message, call_id
         yield {"type": "tool_call", "data": {**tool_call_data, "status": "pending"}}
+        # ``background`` / ``watch`` steer a hand-off; the tool never sees them.
+        from docsgpt.background import handoff
+
+        background_eligible = handoff.eligible(self, tool_data)
+        controls: Dict[str, Any] = {}
+        tool_args = call_args
+        if background_eligible:
+            tool_args, controls = handoff.split_controls(call_args)
         action_data = (
             api_tool_action_with_secrets(tool_data, action_name, self.user)
             if tool_data["name"] == "api_tool"
@@ -1771,13 +1846,13 @@ class ToolExecutor:
             tool_call_data["access"] = action_access(tool_data.get("name"), action_data)
 
         # Fixed values win over whatever the model sent for the same key.
-        sections = resolve_arguments(action_data, call_args, self._connection_parameters(tool_data))
+        sections = resolve_arguments(action_data, tool_args, self._connection_parameters(tool_data))
         query_params, headers = sections["query_params"], sections["headers"]
         body, parameters = sections["body"], sections["parameters"]
         # The chat shows what was sent; ``arguments`` keeps what the model
         # asked for, which is what a later turn replays to it.
-        sent = sent_arguments(action_data, call_args, self._connection_parameters(tool_data))
-        if sent != (call_args if isinstance(call_args, dict) else {}):
+        sent = sent_arguments(action_data, tool_args, self._connection_parameters(tool_data))
+        if sent != (tool_args if isinstance(tool_args, dict) else {}):
             tool_call_data["sent_arguments"] = sent
 
         # Load tool (with caching)
@@ -1829,23 +1904,56 @@ class ToolExecutor:
             if tool_data["name"] == "api_tool"
             else parameters
         )
+        if tool_data["name"] == "api_tool":
+            logger.debug(
+                "Executing api: %s with query_params: %s, headers: %s, body: %s",
+                action_name,
+                _redact_args_for_log(query_params),
+                _redact_args_for_log(headers),
+                _redact_args_for_log(body),
+            )
+            call_kwargs = body
+        else:
+            logger.debug(
+                "Executing tool: %s with args: %s",
+                action_name,
+                _redact_args_for_log(call_args),
+            )
+            call_kwargs = parameters
+
+        def _invoke():
+            return tool.execute_action(action_name, **call_kwargs)
+
+        self.current_call_id = call_id
+
+        outcome = None
         try:
-            if tool_data["name"] == "api_tool":
-                logger.debug(
-                    "Executing api: %s with query_params: %s, headers: %s, body: %s",
-                    action_name,
-                    _redact_args_for_log(query_params),
-                    _redact_args_for_log(headers),
-                    _redact_args_for_log(body),
+            if background_eligible:
+                explicit = handoff.wants_background(controls)
+                worker_payload = None
+                if explicit:
+                    from docsgpt.background.celery_runner import worker_payload as build_worker_payload
+
+                    worker_payload = build_worker_payload(self, tool_data, action_name, tool_args)
+                outcome = handoff.run_call(
+                    self.background,
+                    handoff.CallSpec(
+                        tool_name=tool_data["name"],
+                        action_name=action_name,
+                        journal_key=_journal_key(call_id, self.message_id),
+                        arguments=tool_args,
+                        parameters=parameters,
+                        controls=controls,
+                        worker_payload=worker_payload,
+                    ),
+                    tool,
+                    _invoke,
+                    explicit=explicit,
                 )
-                result = tool.execute_action(action_name, **body)
+                result = None if outcome.handed_off else outcome.value
             else:
-                logger.debug(
-                    "Executing tool: %s with args: %s",
-                    action_name,
-                    _redact_args_for_log(call_args),
-                )
-                result = tool.execute_action(action_name, **parameters)
+                result = _invoke()
+            if tool_data["name"] != "api_tool" and not (outcome and outcome.handed_off):
                 result = self._collect_native_parts(tool, result, tool_call_data)
         except Exception as exc:
             if proposed_ok:
@@ -1853,6 +1961,11 @@ class ToolExecutor:
                     call_id, str(exc), message_id=self.message_id, user_id=self.user
                 )
             raise
+
+        if outcome is not None and outcome.handed_off:
+            return (
+                yield from self._handed_off(tool_data, tool_id, call_id, tool_call_data, resolved_arguments, outcome)
+            )
 
         # Single fan-out point: from here ``result`` reaches the LLM copy,
         # the conversation row, tool_call_attempts, and the stream event —
@@ -1940,6 +2053,34 @@ class ToolExecutor:
         self.tool_calls.append(tool_call_data)
 
         return result, call_id
+
+    def _handed_off(self, tool_data, tool_id, call_id, tool_call_data, resolved_arguments, outcome):
+        """Report a call that became a background job: its entry shows it running.
+
+        The journal row stays ``proposed`` until the job finishes and settles
+        it. The tool instance is dropped from the cache, since the job's
+        thread still uses it.
+
+        Yields:
+            The call's ``tool_call`` event.
+
+        Returns:
+            ``(running_payload, call_id)``.
+        """
+        self._loaded_tools.pop(f"{tool_data['name']}:{tool_id}:{self.user or ''}", None)
+        payload = outcome.payload or {}
+        text = json.dumps(payload)
+        tool_call_data["job_id"] = str(outcome.job["id"]) if outcome.job else payload.get("job_id")
+        tool_call_data["resolved_arguments"] = resolved_arguments
+        tool_call_data["result_full"] = text
+        tool_call_data["result"] = truncate_tool_result(text)
+        tool_call_data["status"] = "pending"
+        stream_tool_call_data = {
+            key: value for key, value in tool_call_data.items() if key not in {"result_full", "resolved_arguments"}
+        }
+        yield {"type": "tool_call", "data": {**stream_tool_call_data}}
+        self.tool_calls.append(tool_call_data)
+        return payload, call_id
 
     def _get_or_load_tool(
         self,
@@ -2055,6 +2196,10 @@ class ToolExecutor:
                 if self.external_caller:
                     # Its runs act as the owner for an API-key caller.
                     tool_config["created_via"] = "api"
+            if tool_data["name"] == "monitor":
+                # The monitor tool resolves its source among this caller's
+                # tools and checks the approval of the call creating it.
+                tool_config["executor"] = self
             if tool_data["name"] == "mcp_tool":
                 tool_config["query_mode"] = True
                 # The stored schemas carry the server's ``x-mcp-header``
@@ -2154,6 +2299,7 @@ class ToolExecutor:
     # call does not grow null columns in every persisted row.
     _PRESERVED_TOOL_CALL_KEYS = (
         "artifacts", "device_id", "connector_key", "connector_name", "access", "sent_arguments", "images",
+        "job_id",
     )
 
     def _collect_native_parts(self, tool: Any, result: Any, tool_call_data: Dict) -> Any:

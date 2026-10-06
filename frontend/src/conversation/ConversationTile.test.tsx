@@ -28,11 +28,20 @@ import ConversationTile from './ConversationTile';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const makeStore = (conversationId: string | null) =>
+const makeStore = (conversationId: string | null, marks = false) =>
   configureStore({
     reducer: {
       conversation: () => ({ conversationId }),
       preference: () => ({ token: null }),
+      ...(marks
+        ? {
+            monitors: () => ({
+              order: ['m1'],
+              byId: { m1: { conversation_id: 'c1', status: 'active' } },
+            }),
+            background: () => ({ unread: { c1: true } }),
+          }
+        : {}),
     },
   });
 
@@ -55,13 +64,14 @@ describe('ConversationTile', () => {
     currentId: string | null,
     select = vi.fn(),
     onDelete: (id: string) => void | Promise<unknown> = () => undefined,
+    { marks = false, name = 'Halvorsen QBR prep' } = {},
   ) => {
     act(() => {
       root.render(
-        <Provider store={makeStore(currentId)}>
+        <Provider store={makeStore(currentId, marks)}>
           <MemoryRouter>
             <ConversationTile
-              conversation={{ id: 'c1', name: 'Halvorsen QBR prep' }}
+              conversation={{ id: 'c1', name }}
               selectConversation={select}
               onConversationClick={() => undefined}
               onDeleteConversation={onDelete}
@@ -87,6 +97,29 @@ describe('ConversationTile', () => {
     expect(link.querySelector('span.truncate')?.getAttribute('title')).toBe(
       'Halvorsen QBR prep',
     );
+  });
+
+  it('pins the watching mark and unread dot after a truncating name, outside the menu slot', () => {
+    const long =
+      'A very long conversation name that will not fit the sidebar row';
+    const link = render(null, vi.fn(), () => undefined, {
+      marks: true,
+      name: long,
+    });
+    const name = link.querySelector('span.truncate') as HTMLElement;
+    expect(name.className).toContain('min-w-0');
+    expect(name.className).toContain('flex-1');
+    const marks = link.querySelector(
+      '[data-testid="conversation-marks"]',
+    ) as HTMLElement;
+    expect(marks.className).toContain('shrink-0');
+    expect(name.nextElementSibling).toBe(marks);
+    // Watching first, then unread, both inside the one pinned group.
+    expect(
+      Array.from(marks.children).map((c) => c.getAttribute('data-testid')),
+    ).toEqual(['watching-mark', 'unread-dot']);
+    // The link keeps pr-10 so the absolutely placed menu never covers them.
+    expect(link.className).toContain('pr-10');
   });
 
   it('keeps the actions menu outside the link', () => {

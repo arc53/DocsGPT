@@ -56,6 +56,8 @@ This file maps the DocsGPT documentation for LLMs and coding agents. It is gener
 - [API Tool](https://docs.docsgpt.cloud/Tools/api-tool): Learn how to configure and use the API Tool in DocsGPT to connect with any RESTful API without writing custom code.
 - [MCP Tools](https://docs.docsgpt.cloud/Tools/mcp-tools): Connect external tools to DocsGPT agents using the Model Context Protocol (MCP) standard.
 - [Artifacts and Code Execution](https://docs.docsgpt.cloud/Tools/artifacts-and-code-execution): Generate editable documents, run sandboxed code, and read files with the DocsGPT artifact, code executor, and read document tools.
+- [Background Jobs](https://docs.docsgpt.cloud/Tools/background-jobs): How DocsGPT hands slow tool calls off to background jobs, resumes the conversation with their results, notifies the user (toasts, unread marks, Web Push), and how check_job and watch work.
+- [Monitors and Links](https://docs.docsgpt.cloud/Tools/monitors): How the monitor tool watches a web page or any tool, wakes the conversation on ingests, webhook trigger links and human approval links, and how its checks, limits and safety rules work.
 - [Remote Device](https://docs.docsgpt.cloud/Tools/remote-device): Run shell commands on a paired remote machine from a DocsGPT agent using docsgpt-cli host.
 - [Creating a Custom Tool](https://docs.docsgpt.cloud/Tools/creating-a-tool): Learn how to create custom Python tools to extend DocsGPT's functionality and integrate with various services or perform specific actions.
 

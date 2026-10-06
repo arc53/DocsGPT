@@ -16,9 +16,12 @@ from .agents import (
 from .analytics import analytics_ns
 from .artifacts import artifacts_ns
 from .attachments import attachments_ns
+from .background_jobs import background_jobs_ns
 from .conversations import conversations_ns
 from .me import me_ns
 from .models import models_ns
+from .monitors import approvals_ns, monitors_ns, triggers_ns
+from .notifications import notifications_ns
 from .prompts import prompts_ns
 from .schedules import schedules_ns
 from .sharing import sharing_ns
@@ -44,6 +47,9 @@ api.add_namespace(artifacts_ns)
 # Attachments
 api.add_namespace(attachments_ns)
 
+# Background jobs (the chat's job card)
+api.add_namespace(background_jobs_ns)
+
 # Conversations
 api.add_namespace(conversations_ns)
 
@@ -53,6 +59,9 @@ api.add_namespace(me_ns)
 # Models
 api.add_namespace(models_ns)
 
+# Notifications (presence, Web Push subscriptions, unread marks)
+api.add_namespace(notifications_ns)
+
 # Agents (main, sharing, webhooks, folders, import/export)
 api.add_namespace(agents_ns)
 api.add_namespace(agents_sharing_ns)
@@ -60,6 +69,11 @@ api.add_namespace(agents_webhooks_ns)
 api.add_namespace(agents_folders_ns)
 api.add_namespace(agents_portability_ns)
 api.add_namespace(agents_guardrails_ns)
+
+# Monitors: public trigger and approval links, and the Monitors page
+api.add_namespace(triggers_ns)
+api.add_namespace(approvals_ns)
+api.add_namespace(monitors_ns)
 
 # Prompts
 api.add_namespace(prompts_ns)

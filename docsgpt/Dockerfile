@@ -45,8 +45,10 @@ COPY docsgpt/requirements.txt docsgpt/requirements-docling.txt docsgpt/requireme
 RUN python3.12 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 
+# http-ece (pulled in by pywebpush for Web Push) is pure Python and has only ever shipped
+# an sdist, so it is the one package allowed to build from source.
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --only-binary=:all: -r requirements.txt
+    pip install --no-cache-dir --only-binary=:all: --no-binary=http-ece -r requirements.txt
 
 # Optional extras. Each requirements-<extra>.txt is exported from the same
 # lock as requirements.txt, so installing it on top only adds the extra's

@@ -23,6 +23,8 @@ import {
 import Hero from '../Hero';
 import AddToKnowledgeAction from './AddToKnowledgeAction';
 import { deriveArtifactChips } from './artifactChips';
+import JobCancelledRows from '../backgroundJobs/JobCancelledRow';
+import WakeEventRow from '../backgroundJobs/WakeEventRow';
 import ConversationBubble from './ConversationBubble';
 import { FEEDBACK, Query, Status } from './conversationModels';
 import { curatedErrorText } from './curatedError';
@@ -172,7 +174,9 @@ export default function ConversationMessages({
     // Error first; reconciler-failed rows may carry partial thought/
     // tool_calls and would otherwise fall into the answer branch.
     if (query.error) {
-      const retryButton = (
+      // A woken turn's prompt is the background event: retrying would send
+      // it as the user's own message.
+      const retryButton = query.wake ? undefined : (
         <IconButton
           label={t('conversation.retry')}
           variant="ghost-muted"
@@ -320,22 +324,40 @@ export default function ConversationMessages({
               return (
                 <Fragment key={`${index}-query-fragment`}>
                   <MessageScrollerItem messageId={`q-${index}`} scrollAnchor>
-                    <ConversationBubble
-                      className={cn(
-                        QUESTION_BUBBLE_MARGIN_BOTTOM,
-                        index === 0 ? FIRST_QUESTION_BUBBLE_MARGIN_TOP : '',
-                      )}
-                      message={query.prompt}
-                      type="QUESTION"
-                      handleUpdatedQuestionSubmission={handleQuestionSubmission}
-                      questionNumber={index}
-                      sources={query.sources}
-                      filesAttached={query.attachments}
-                    />
+                    {query.wake ? (
+                      <WakeEventRow
+                        wake={query.wake}
+                        prompt={query.prompt}
+                        className={cn(
+                          QUESTION_BUBBLE_MARGIN_BOTTOM,
+                          index === 0 ? FIRST_QUESTION_BUBBLE_MARGIN_TOP : '',
+                        )}
+                      />
+                    ) : (
+                      <ConversationBubble
+                        className={cn(
+                          QUESTION_BUBBLE_MARGIN_BOTTOM,
+                          index === 0 ? FIRST_QUESTION_BUBBLE_MARGIN_TOP : '',
+                        )}
+                        message={query.prompt}
+                        type="QUESTION"
+                        handleUpdatedQuestionSubmission={
+                          handleQuestionSubmission
+                        }
+                        questionNumber={index}
+                        sources={query.sources}
+                        filesAttached={query.attachments}
+                      />
+                    )}
                   </MessageScrollerItem>
                   {responseView && (
                     <MessageScrollerItem messageId={`a-${index}`}>
                       {responseView}
+                    </MessageScrollerItem>
+                  )}
+                  {query.tool_calls?.some((call) => call.job_id) && (
+                    <MessageScrollerItem messageId={`c-${index}`}>
+                      <JobCancelledRows toolCalls={query.tool_calls} />
                     </MessageScrollerItem>
                   )}
                 </Fragment>

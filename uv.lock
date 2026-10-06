@@ -1409,9 +1409,11 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "python-jose" },
     { name = "python-pptx" },
+    { name = "pywebpush" },
     { name = "pyyaml" },
     { name = "qdrant-client" },
     { name = "redis" },
+    { name = "regex" },
     { name = "requests" },
     { name = "retry" },
     { name = "sqlalchemy" },
@@ -1527,10 +1529,12 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.2.3,<2" },
     { name = "python-jose", specifier = ">=3.5.0,<4" },
     { name = "python-pptx", specifier = ">=1.0.2,<2" },
+    { name = "pywebpush", specifier = ">=2.5.0,<3" },
     { name = "pyyaml", specifier = ">=6.0.3,<7" },
     { name = "qdrant-client", specifier = ">=1.19.0,<2" },
     { name = "rapidocr", marker = "extra == 'docling'", specifier = ">=3.9.2,<4" },
     { name = "redis", specifier = ">=8.1.0,<9" },
+    { name = "regex", specifier = ">=2024.11.6" },
     { name = "requests", specifier = ">=2.34.2,<3" },
     { name = "retry", specifier = ">=0.9.2,<0.10" },
     { name = "sqlalchemy", specifier = ">=2.0,<3" },
@@ -2303,6 +2307,15 @@ sdist = { url = "https://files.pythonhosted.org/packages/26/5b/fcabf6028144a8723
 wheels = [
     { url = "https://files.pythonhosted.org/packages/71/b4/4a9fcfb2aef6ba44d9073ecd301443aa00b3dac95de5619f2a7de7ec8a91/hpack-4.2.0-py3-none-any.whl", hash = "sha256:858ac0b02280fa582b5080d68db0899c62a80375e0e5413a74970c5e518b6986", size = 34246, upload-time = "2026-06-23T18:34:45.472Z" },
 ]
+
+[[package]]
+name = "http-ece"
+version = "1.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7c/af/249d1576653b69c20b9ac30e284b63bd94af6a175d72d87813235caf2482/http_ece-1.2.1.tar.gz", hash = "sha256:8c6ab23116bbf6affda894acfd5f2ca0fb8facbcbb72121c11c75c33e7ce8cff", size = 8830, upload-time = "2024-08-08T00:10:47.301Z" }
 
 [[package]]
 name = "httpcore"
@@ -4730,6 +4743,18 @@ wheels = [
 ]
 
 [[package]]
+name = "py-vapid"
+version = "1.9.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a3/ed/c648c8018fab319951764f4babe68ddcbbff7f2bbcd7ff7e531eac1788c8/py_vapid-1.9.4.tar.gz", hash = "sha256:a004023560cbc54e34fc06380a0580f04ffcc788e84fb6d19e9339eeb6551a28", size = 74750, upload-time = "2026-01-05T22:13:25.201Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7f/15/f9d0171e1ad863ca49e826d5afb6b50566f20dc9b4f76965096d3555ce9e/py_vapid-1.9.4-py2.py3-none-any.whl", hash = "sha256:f165a5bf90dcf966b226114f01f178f137579a09784c7f0628fa2f0a299741b6", size = 23912, upload-time = "2026-01-05T20:42:05.455Z" },
+]
+
+[[package]]
 name = "pyarrow"
 version = "25.0.1"
 source = { registry = "https://pypi.org/simple" }
@@ -5290,6 +5315,22 @@ asyncio-client = [
 client = [
     { name = "requests" },
     { name = "websocket-client" },
+]
+
+[[package]]
+name = "pywebpush"
+version = "2.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "cryptography" },
+    { name = "http-ece" },
+    { name = "py-vapid" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/54/ff/db9efe7454d329bfa6fe433e0f881eb9d28489fc4b8427ee2fbaedc5f42b/pywebpush-2.5.0.tar.gz", hash = "sha256:8260f8e42d70ed95a3bd00527ffcb43b5b3df8983a4a48b059fe29b06dc3d92c", size = 28565, upload-time = "2026-08-29T21:57:11.062Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/65/fc/32c8902ce796e8b21c229fa50478fd70e2be2fe7c3ac2259771cf1d5aa07/pywebpush-2.5.0-py3-none-any.whl", hash = "sha256:b5f5d45024223a04e73fe17f7a8e62540f35bbcc62b49e64d0a1080ff2dc26f2", size = 22520, upload-time = "2026-08-30T20:32:15.039Z" },
 ]
 
 [[package]]
