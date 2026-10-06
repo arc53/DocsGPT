@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 
 pytestmark = pytest.mark.integration
@@ -70,8 +71,10 @@ class TestMigration0051RoundTrip:
             assert row.status == "lost"
             assert row.runner == "inprocess"
             assert "verify before retrying" in row.error["message"]
-            with pytest.raises(Exception):
-                _device_job(conn, _conversation(conn))
+            conversation_id = _conversation(conn)
+            # Only the restored runner check refuses it, not some unrelated error.
+            with pytest.raises(IntegrityError, match="background_jobs_runner_chk"):
+                _device_job(conn, conversation_id)
         _run_alembic(url, "upgrade", "head")
         with pg_engine.begin() as conn:
             _device_job(conn, _conversation(conn))
