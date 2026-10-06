@@ -34,7 +34,10 @@ The model is told not to run the call again and not to guess its result, and usu
 the user the work is running. The call's entry in the conversation shows as running until the job ends.
 
 The model can also start a call as a job at once with `background=true`. The argument is offered on
-`code_executor`, MCP tools, API tools and `read_webpage`, in chat turns only.
+`code_executor`, MCP tools, API tools and `read_webpage`, in chat turns only. A `code_executor` run started
+that way without a `timeout` may run for the whole job lifetime (`BACKGROUND_JOB_MAX_SECONDS`, within
+`SANDBOX_EXEC_MAX_TIMEOUT`) instead of the 60-second default. A background run that hits its timeout is
+reported to the user, never re-run unless they ask.
 
 Some calls are never handed off: client-side tools (the `/v1` client tool calls), calls inside workflow nodes,
 scheduled and webhook runs, and continuation turns (below). A tool that needs approval starts its clock only

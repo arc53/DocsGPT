@@ -230,6 +230,33 @@ def _timed_out():
 class TestBackgroundRunTimeouts:
     """A run already in the background that hits its cap is reported, never re-run on the model's own."""
 
+    def test_an_explicit_background_run_without_a_timeout_gets_the_job_maximum(self, tool, monkeypatch):
+        monkeypatch.setattr(ce.settings, "BACKGROUND_JOB_MAX_SECONDS", 900)
+        monkeypatch.setattr(ce.settings, "SANDBOX_EXEC_MAX_TIMEOUT", 1000)
+        manager = _Manager(_ok())
+        _use(monkeypatch, manager, call=_Call(manager=manager, explicit=True))
+        tool.execute_action("run_code", code="x=1", capture_artifacts=False)
+        assert manager.started[0][2] == 900
+
+    def test_the_job_maximum_never_exceeds_the_sandbox_cap(self, tool, monkeypatch):
+        monkeypatch.setattr(ce.settings, "BACKGROUND_JOB_MAX_SECONDS", 5000)
+        monkeypatch.setattr(ce.settings, "SANDBOX_EXEC_MAX_TIMEOUT", 1000)
+        manager = _Manager(_ok())
+        _use(monkeypatch, manager, call=_Call(manager=manager, explicit=True))
+        tool.execute_action("run_code", code="x=1", capture_artifacts=False)
+        assert manager.started[0][2] == 1000
+
+    def test_an_explicit_timeout_and_a_foreground_run_keep_theirs(self, tool, monkeypatch):
+        manager = _Manager(_ok())
+        _use(monkeypatch, manager, call=_Call(manager=manager, explicit=True))
+        tool.execute_action("run_code", code="x=1", timeout=120, capture_artifacts=False)
+        assert manager.started[0][2] == 120
+
+        manager = _Manager(_ok())
+        _use(monkeypatch, manager, call=_Call(manager=manager))
+        tool.execute_action("run_code", code="x=1", capture_artifacts=False)
+        assert manager.started[0][2] == float(ce.settings.SANDBOX_EXEC_TIMEOUT)
+
     def test_a_background_run_that_timed_out_is_reported_not_rerun(self, tool, monkeypatch):
         manager = _Manager(_timed_out())
         _use(monkeypatch, manager, call=_Call(manager=manager, explicit=True))
@@ -249,3 +276,14 @@ class TestBackgroundRunTimeouts:
         out = tool.finish_run(_Manager(_timed_out()), run, _timed_out())
         assert "background=true" in out["error"]
         assert any("rerun it with a larger" in hint for hint in out.get("hint", []))
+
+
+def test_the_descriptions_say_how_long_a_background_run_may_take():
+    from docsgpt.background.schema import add_background_params
+
+    params = {"type": "object", "properties": {}}
+    add_background_params("code_executor", params)
+    assert "job maximum" in params["properties"]["background"]["description"]
+    timeout = CodeExecutorTool._timeout_parameter_description()
+    assert "background runs too" in timeout
+    assert "above the expected duration" in timeout

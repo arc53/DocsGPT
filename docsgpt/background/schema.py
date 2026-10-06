@@ -21,9 +21,9 @@ _GENERIC = (
 
 _CODE = (
     "Run this code as a background job and return a job id at once; you are resumed with the result when it "
-    "ends. Use it for long runs (renders, big conversions, OCR of many pages). A run that takes long becomes a "
-    "background job on its own anyway. A background run is a separate process: on a session that keeps "
-    "variables between calls it does not see them, only the files."
+    "ends. Use it for long runs (renders, big conversions, OCR of many pages); without a `timeout` it may run up "
+    "to the job maximum. A run that takes long becomes a background job on its own anyway. A background run is "
+    "a separate process: on a session that keeps variables between calls it does not see them, only the files."
 )
 
 

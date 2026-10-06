@@ -358,9 +358,11 @@ class CodeExecutorTool(Tool):
     def _timeout_parameter_description(cls) -> str:
         """Describe the ``timeout`` argument, with rough budgets so the model can pick a value."""
         return (
-            f"Wall-clock seconds for this call (default {int(cls._exec_timeout())}, max "
-            f"{int(cls._max_exec_timeout())}). Raise it only for long jobs; rough budgets: pip install of a big "
-            "package ~120, office-convert of a large deck ~120, OCR ~2-3 per page, video render scales with frames."
+            f"Wall-clock seconds this run may take before it is stopped (default {int(cls._exec_timeout())}, max "
+            f"{int(cls._max_exec_timeout())}); the cap applies to background runs too. For a long job, set it above "
+            "the expected duration (add a margin to what the user says it takes); rough budgets: pip install of a "
+            "big package ~120, office-convert of a large deck ~120, OCR ~2-3 per page, video render scales with "
+            "frames."
         )
 
     def get_config_requirements(self) -> Dict[str, Any]:
@@ -420,7 +422,10 @@ class CodeExecutorTool(Tool):
         # session's TTL when one is passed, and a session another tool opened first
         # (artifact_generator opens at the exec timeout) would be reaped early.
         open_ttl = ttl if ttl is not None else (float(settings.SANDBOX_MAX_TTL) if keep_alive else None)
-        timeout, clamped = self._requested_timeout(kwargs.get("timeout"))
+        call = self._background_call()
+        timeout, clamped = self._requested_timeout(
+            kwargs.get("timeout"), background=bool(call is not None and call.explicit)
+        )
         inputs = kwargs.get("inputs") or []
 
         manager = SandboxCreator.get_manager()
@@ -457,7 +462,6 @@ class CodeExecutorTool(Tool):
                 session_created=bool(opened.created),
                 keep_alive=keep_alive,
             )
-            call = self._background_call()
             run.background_capable = call is not None
             run.background = bool(call is not None and call.explicit)
             if call is not None and self._can_detach(manager, call):
@@ -1098,24 +1102,28 @@ class CodeExecutorTool(Tool):
         return max(float(settings.SANDBOX_EXEC_MAX_TIMEOUT), cls._exec_timeout())
 
     @classmethod
-    def _requested_timeout(cls, value: Any) -> Tuple[float, bool]:
+    def _requested_timeout(cls, value: Any, *, background: bool = False) -> Tuple[float, bool]:
         """Turn the call's ``timeout`` argument into the cap the run gets.
 
         Models send integers, floats or numeric strings. Anything else, and any
-        value that is not a positive finite number, falls back to the default.
+        value that is not a positive finite number, falls back to the default:
+        the foreground default, or for a ``background=true`` run the job's own
+        lifetime (``BACKGROUND_JOB_MAX_SECONDS``, within the sandbox maximum).
 
         Args:
             value: The call's ``timeout`` argument, or None.
+            background: The model asked for ``background=true``.
 
         Returns:
             The cap in whole seconds, and True when the request was above the
             maximum and was clamped to it.
         """
-        default = cls._exec_timeout()
+        most = cls._max_exec_timeout()
         requested = cls._timeout_number(value)
         if requested is None:
-            return default, False
-        most = cls._max_exec_timeout()
+            if background:
+                return float(min(max(int(settings.BACKGROUND_JOB_MAX_SECONDS), 1), most)), False
+            return cls._exec_timeout(), False
         if requested > most:
             return most, True
         return float(requested), False

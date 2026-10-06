@@ -1,7 +1,7 @@
 ---
 title: Artifacts and Code Execution
 description: Generate editable documents, run sandboxed code, and read files with the DocsGPT artifact, code executor, and read document tools.
-lastUpdated: 2026-10-05
+lastUpdated: 2026-10-06
 ---
 
 import { Callout } from 'nextra/components';
@@ -73,7 +73,7 @@ Key points:
 - What carries over to the next run depends on the backend. On the Jupyter runner, variables, imports, files, and installed packages all do. On Daytona, files and installed packages do, but each run starts a new Python interpreter, so the model re-imports and re-loads what it needs and passes data between runs through files.
 - Each result tells the model whether the session is `new` (nothing from earlier runs is left, for example after it idled out) or `reused`, so it knows when to rebuild its files.
 - Only a compact summary is returned to the model (an output tail plus artifact references), never raw file bytes.
-- Each run is limited to `SANDBOX_EXEC_TIMEOUT` seconds of wall-clock time (60 by default). For a long job, such as a video render, OCR of many pages or converting a large deck, the model can pass a `timeout` of up to `SANDBOX_EXEC_MAX_TIMEOUT` seconds (1000 by default); a larger value is cut to the maximum and the result says so. In a chat, a run that is still going after `BACKGROUND_YIELD_SECONDS` (30 by default) becomes a [background job](/Tools/background-jobs): the turn ends, the run keeps going in the sandbox, and the agent comes back with the result when it finishes (in conversations through the API, a widget or a shared link the result waits for `check_job` or the next message instead). The model can also pass `background=true` to start a run as a job right away.
+- Each run is limited to `SANDBOX_EXEC_TIMEOUT` seconds of wall-clock time (60 by default). For a long job, such as a video render, OCR of many pages or converting a large deck, the model can pass a `timeout` of up to `SANDBOX_EXEC_MAX_TIMEOUT` seconds (1000 by default); a larger value is cut to the maximum and the result says so. In a chat, a run that is still going after `BACKGROUND_YIELD_SECONDS` (30 by default) becomes a [background job](/Tools/background-jobs): the turn ends, the run keeps going in the sandbox, and the agent comes back with the result when it finishes (in conversations through the API, a widget or a shared link the result waits for `check_job` or the next message instead). The model can also pass `background=true` to start a run as a job right away; without a `timeout`, such a run may take up to `BACKGROUND_JOB_MAX_SECONDS` (still within `SANDBOX_EXEC_MAX_TIMEOUT`).
 - When a run uses more memory than the sandbox allows, the result says it ran out of memory rather than timed out, with a hint to load and process less at once.
 - Every file a run creates or changes in the workspace is saved as an artifact, except files under `scratch/` (or `tmp/`), where the model puts previews and intermediate files. The model can instead name the files or globs to keep. Files written outside the workspace, such as under `/tmp`, are never saved.
 - Saving a file under a name the Code Executor already used in the conversation (or workflow run) adds a new version of that artifact instead of a second artifact, and saving identical bytes again adds nothing. Files from workflow Code nodes are always new artifacts.
@@ -123,7 +123,7 @@ When a run shows a mistake the Code Executor recognizes, the result gets a `hint
 | A missing file or variable in a new session | Earlier files and variables are gone; recreate them or pass them as inputs |
 | A missing variable on Daytona | Each call is a new interpreter; re-import and reload from files |
 | A missing file under `/tmp` | `/tmp` isn't kept; use `scratch/` or the workspace |
-| The time cap | Work not written before the cap is lost; split it and write partial results to `scratch/`. Below the maximum, also to rerun with a larger `timeout` |
+| The time cap | Work not written before the cap is lost; split it and write partial results to `scratch/`. Below the maximum, also to rerun with a larger `timeout`, except for a background run, which is reported and re-run only if the user asks |
 | Running out of memory: the kernel or process killed for memory, a `MemoryError`, or a subprocess killed with `SIGKILL` | Load less at once: read in chunks, one page or frame at a time, at a lower resolution |
 | A missing command (`wkhtmltopdf`, `pdftk`, `google-chrome`, ...) | The replacement (`html-to-pdf`, pypdf, ...) and the commands that exist |
 | A 401, 403 or connection error fetching this deployment's URLs or `/api/artifacts/` | Pass the file in `inputs` instead |
