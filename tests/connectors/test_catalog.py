@@ -133,6 +133,17 @@ class TestPresets:
 
         assert "mcp:miro" in {preset.key for preset in presets}
 
+
+    def test_resend_preset_exposes_email_actions(self):
+        definition = catalog.get_definition("mcp:resend")
+
+        assert definition.name == "Resend"
+        assert definition.category == "messaging"
+        assert definition.mcp_url == "https://mcp.resend.com/mcp"
+        assert definition.auth_kind == "mcp_oauth"
+        assert definition.capabilities == ("read", "write")
+        assert definition.docs_url == "https://resend.com/docs/knowledge-base/mcp-server"
+
     def test_presets_load_from_yaml(self, tmp_path, monkeypatch):
         presets = tmp_path / "mcp.yaml"
         presets.write_text(
