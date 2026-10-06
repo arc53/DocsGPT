@@ -128,7 +128,7 @@ def _judge_factory(agent):
                 model_override
                 or settings.GUARDRAILS_JUDGE_MODEL
                 or getattr(agent, "model_id", None)
-                or agent.upstream_model_id
+                or getattr(agent, "upstream_model_id", None)
             ),
             agent_id=agent.agent_id,
             model_user_id=agent.model_user_id,

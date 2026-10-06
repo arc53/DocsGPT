@@ -5,6 +5,7 @@ import { Footer, Layout, Navbar } from 'nextra-theme-docs';
 import 'nextra-theme-docs/style.css';
 
 import { DocsGPTChatWidget } from '../components/DocsGPTChatWidget';
+import { FullLogo } from '../components/FullLogo';
 import { HOME_TITLE, SITE_NAME, SITE_URL } from '../page-meta';
 import themeConfig from '../theme.config';
 
@@ -28,14 +29,10 @@ export const metadata = {
 const navbar = (
   <Navbar
     logo={
-      <div style={{ alignItems: 'center', display: 'flex', gap: '8px' }}>
-        <img
-          className="brand-logo brand-logo-light"
-          src="/logo-b.svg"
-          alt="DocsGPT logo"
-        />
-        <img className="brand-logo brand-logo-dark" src="/logo-w.svg" alt="" />
-        <span style={{ fontWeight: 'bold', fontSize: 18 }}>DocsGPT Docs</span>
+      <div className="brand">
+        <FullLogo className="brand-logo" />
+        <span className="brand-divider" aria-hidden="true" />
+        <span className="brand-label">Docs</span>
       </div>
     }
     projectLink={github}
