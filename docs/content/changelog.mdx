@@ -83,6 +83,8 @@ Answers render math, and the chat widget is published at 0.8.0.
   nothing and reloads the chat. See [Tools that need approval](/API/agent-api#tools-that-need-approval).
   On later turns the model reads that turn's text before its tool results, as it was written, so
   it no longer takes the calls it made for a plan that never ran.
+  A call that didn't run is labelled by its tool and action ("Memory · Create") instead of as done
+  ("Saved … to memory"), so the label no longer contradicts its **not run** note.
 - A tool call the server refuses (a secret reference a tool can't take, a write an admin turned
   off, an API caller's write on the owner's account) stays on the message as a failed call with its
   reason after a reload, and is no longer worded as a headless run in an interactive chat. On the
