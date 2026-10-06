@@ -12,7 +12,7 @@ from docsgpt.agents.tools.graph_search import add_graph_search_tool
 from docsgpt.agents.tools.internal_search import add_internal_search_tool
 from docsgpt.agents.tools.wiki import add_wiki_tool
 from docsgpt.agents.tools.think import THINK_TOOL_ENTRY, THINK_TOOL_ID
-from docsgpt.llm.handlers.base import ToolCall, take_tool_images
+from docsgpt.llm.handlers.base import ToolCall, _bound_tool_response_for_llm, take_tool_images
 from docsgpt.logging import LogContext
 
 logger = logging.getLogger(__name__)
@@ -635,6 +635,9 @@ class ResearchAgent(BaseAgent):
             # Answer the id declared above, not the raw ``call.id``, which a
             # provider may leave empty (the executor then mints one).
             resolved_call = ToolCall(id=call_id, name=call.name, arguments=call.arguments)
+            # As in the chat loop: every later iteration re-sends this result,
+            # so the model gets a bounded copy (the journal keeps it whole).
+            result = _bound_tool_response_for_llm(result)
             tool_message = self.llm_handler.create_tool_message(resolved_call, result)
             messages.append(take_tool_images(executor, tool_message))
         return messages, search_returned_empty

@@ -1474,6 +1474,41 @@ class TestExecuteStepToolsWithRefinement:
         assert assistant_id
         assert messages[1]["tool_call_id"] == assistant_id
 
+    def test_oversized_tool_result_is_capped_for_the_llm(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_handler,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+        monkeypatch,
+    ):
+        """A huge result is cut to TOOL_RESULT_MAX_TOKENS before it enters the step's messages."""
+        monkeypatch.setattr("docsgpt.core.settings.settings.TOOL_RESULT_MAX_TOKENS", 30, raising=False)
+        agent = ResearchAgent(**agent_base_params)
+
+        from docsgpt.llm.handlers.base import ToolCall
+
+        call = ToolCall(id="tc1", name="api__fetch", arguments={})
+        big = "word " * 2000
+
+        def gen_execute(tools_dict, tc, llm_class):
+            return (big, "tc1")
+            yield  # noqa: B901 - makes it a generator
+
+        agent.tool_executor.execute = gen_execute
+        mock_llm_handler.create_tool_message = Mock(
+            side_effect=lambda call, result: {"role": "tool", "tool_call_id": call.id, "content": result}
+        )
+
+        messages, _ = agent._execute_step_tools_with_refinement(
+            [call], {}, [], agent.tool_executor, False
+        )
+
+        content = messages[1]["content"]
+        assert "tool result truncated" in content
+        assert len(content) < len(big)
+
 
 # =====================================================================
 # _planning_phase extended (edge cases in JSON parsing)
