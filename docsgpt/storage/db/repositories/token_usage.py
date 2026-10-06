@@ -200,12 +200,13 @@ class TokenUsageRepository:
     SIDE_CHANNEL_SOURCES = ("title", "compression", "rag_condense", "fallback")
 
     # Run-level roll-ups that duplicate per-call rows. The scheduler worker
-    # inserts one ``source='schedule'`` row summing a run's tokens, but the
-    # run's individual LLM calls were already persisted as ``agent_stream``
-    # rows by the usage decorators — counting both doubles scheduled spend.
-    # The rollup is never used as a fallback: if a per-call insert failed
-    # (logged in usage.py), that call's tokens go uncounted, the same loss
-    # mode as any other traffic whose insert fails.
+    # used to insert one ``source='schedule'`` row summing a run's tokens,
+    # though the run's individual LLM calls were already persisted as
+    # ``agent_stream`` rows by the usage decorators. It no longer writes
+    # them; rows written before that stay out of every total. A rollup is
+    # never used as a fallback: if a per-call insert failed (logged in
+    # usage.py), that call's tokens go uncounted, the same loss mode as any
+    # other traffic whose insert fails.
     ROLLUP_SOURCES = ("schedule",)
 
     # Allowed ``group_by`` values → the SQL expression producing the
