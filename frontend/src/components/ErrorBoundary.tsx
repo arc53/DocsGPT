@@ -1,6 +1,8 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { isChunkLoadError } from '../utils/chunkReload';
+
 import { Button } from './ui/button';
 
 type ErrorBoundaryProps = {
@@ -15,6 +17,7 @@ type ErrorBoundaryProps = {
 
 type ErrorBoundaryState = {
   hasError: boolean;
+  error?: unknown;
   resetKey?: unknown;
 };
 
@@ -42,8 +45,8 @@ export default class ErrorBoundary extends Component<
     resetKey: this.props.resetKey,
   };
 
-  static getDerivedStateFromError(): Partial<ErrorBoundaryState> {
-    return { hasError: true };
+  static getDerivedStateFromError(error: unknown): Partial<ErrorBoundaryState> {
+    return { hasError: true, error };
   }
 
   static getDerivedStateFromProps(
@@ -51,7 +54,7 @@ export default class ErrorBoundary extends Component<
     state: ErrorBoundaryState,
   ): Partial<ErrorBoundaryState> | null {
     if (props.resetKey === state.resetKey) return null;
-    return { hasError: false, resetKey: props.resetKey };
+    return { hasError: false, error: undefined, resetKey: props.resetKey };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
@@ -59,7 +62,13 @@ export default class ErrorBoundary extends Component<
   }
 
   retry = () => {
-    this.setState({ hasError: false });
+    // A lazy chunk a deploy replaced can't be fetched again, and React.lazy
+    // caches the failure, so only a reload (new index.html) recovers.
+    if (isChunkLoadError(this.state.error)) {
+      window.location.reload();
+      return;
+    }
+    this.setState({ hasError: false, error: undefined });
   };
 
   render() {

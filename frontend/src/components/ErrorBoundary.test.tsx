@@ -9,6 +9,12 @@ import ErrorBoundary from './ErrorBoundary';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
+function StaleChunk(): never {
+  throw new TypeError(
+    'Failed to fetch dynamically imported module: /assets/x-abc123.js',
+  );
+}
+
 function Bomb({ armed }: { armed: boolean }) {
   if (armed) throw new Error('render exploded');
   return <div data-testid="child">safe child</div>;
@@ -144,5 +150,63 @@ describe('ErrorBoundary', () => {
       );
     });
     expect(container.querySelector('[data-testid="custom"]')).not.toBeNull();
+  });
+
+  it('reloads the page on retry when a lazy chunk failed to load', async () => {
+    // React.lazy caches the rejected import, so re-rendering can't recover;
+    // only a fresh index.html with the new chunk names can.
+    const reload = vi.fn();
+    const original = window.location;
+    Object.defineProperty(window, 'location', {
+      value: { ...original, reload },
+      configurable: true,
+    });
+    try {
+      await act(async () => {
+        root.render(
+          <ErrorBoundary>
+            <StaleChunk />
+          </ErrorBoundary>,
+        );
+      });
+      const button = container.querySelector('button');
+      await act(async () => {
+        button!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      expect(reload).toHaveBeenCalledTimes(1);
+    } finally {
+      Object.defineProperty(window, 'location', {
+        value: original,
+        configurable: true,
+      });
+    }
+  });
+
+  it('retries in place without reloading for other errors', async () => {
+    const reload = vi.fn();
+    const original = window.location;
+    Object.defineProperty(window, 'location', {
+      value: { ...original, reload },
+      configurable: true,
+    });
+    try {
+      await act(async () => {
+        root.render(
+          <ErrorBoundary>
+            <Bomb armed={true} />
+          </ErrorBoundary>,
+        );
+      });
+      const button = container.querySelector('button');
+      await act(async () => {
+        button!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      expect(reload).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window, 'location', {
+        value: original,
+        configurable: true,
+      });
+    }
   });
 });
