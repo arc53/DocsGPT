@@ -215,9 +215,13 @@ class BaseLLM(ABC):
         # by the same user the primary model was resolved under.
         if settings.FALLBACK_LLM_PROVIDER:
             try:
+                # Unset FALLBACK_LLM_API_KEY means the fallback provider's own
+                # key (API_KEY only when it is LLM_PROVIDER), never the
+                # primary provider's.
                 self._fallback_llm = LLMCreator.create_llm(
                     settings.FALLBACK_LLM_PROVIDER,
-                    api_key=settings.FALLBACK_LLM_API_KEY or settings.API_KEY,
+                    api_key=settings.FALLBACK_LLM_API_KEY
+                    or get_api_key_for_provider(settings.FALLBACK_LLM_PROVIDER),
                     user_api_key=getattr(self, "user_api_key", None),
                     decoded_token=self.decoded_token,
                     model_id=settings.FALLBACK_LLM_NAME,

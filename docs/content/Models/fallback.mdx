@@ -1,7 +1,7 @@
 ---
 title: Fallback Models
 description: Switch to another model automatically when the primary model fails, and keep each provider's API key with that provider.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-06
 ---
 
 import { Callout } from 'nextra/components'
@@ -24,13 +24,11 @@ A fallback is skipped when the request is clearly too large for the fallback mod
 | --- | --- | --- |
 | `FALLBACK_LLM_PROVIDER` | Provider name, as in `LLM_PROVIDER` (for example `openai`, `anthropic`, `google`) | unset (no global fallback) |
 | `FALLBACK_LLM_NAME` | Model name sent to that provider. A [catalog](https://github.com/arc53/DocsGPT/tree/main/docsgpt/core/models) id works, and so does any other model name the provider serves. | unset |
-| `FALLBACK_LLM_API_KEY` | API key for the fallback provider | `API_KEY` |
+| `FALLBACK_LLM_API_KEY` | API key for the fallback provider | The fallback provider's own key, such as `ANTHROPIC_API_KEY`; `API_KEY` only when the fallback provider is `LLM_PROVIDER` |
 
 Set all three. Without `FALLBACK_LLM_NAME` the fallback has no model to call.
 
-<Callout type="warning">
-When `FALLBACK_LLM_API_KEY` is unset, DocsGPT sends `API_KEY`, the key of your primary provider, to the fallback provider. Provider variables such as `ANTHROPIC_API_KEY` are not used for the global fallback. Whenever the fallback provider differs from `LLM_PROVIDER`, set `FALLBACK_LLM_API_KEY`: otherwise your primary key is sent to another vendor, and the fallback fails to authenticate.
-</Callout>
+When `FALLBACK_LLM_API_KEY` is unset, the fallback uses its provider's own key, for example `ANTHROPIC_API_KEY` for `FALLBACK_LLM_PROVIDER=anthropic`. `API_KEY` is used only when the fallback provider is also `LLM_PROVIDER`: it is your primary provider's key, and DocsGPT never sends it to another vendor. If the fallback provider has no key at all, the fallback fails to start and the error is logged.
 
 If `FALLBACK_LLM_NAME` is a catalog model that carries its own key and endpoint, such as a DeepSeek model enabled with `DEEPSEEK_API_KEY`, that key and endpoint are used instead.
 

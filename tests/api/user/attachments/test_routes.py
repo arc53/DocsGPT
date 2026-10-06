@@ -1873,6 +1873,38 @@ class TestTextToSpeech:
         mock_create_tts.assert_not_called()
 
 
+    @pytest.mark.parametrize(
+        "request_kwargs",
+        [
+            pytest.param({"json": {}}, id="empty_object"),
+            pytest.param({"json": {"text": ""}}, id="empty_text"),
+            pytest.param({"json": {"text": "   "}}, id="whitespace_text"),
+            pytest.param({"json": {"text": 123}}, id="non_string_text"),
+            pytest.param({"json": ["Hello"]}, id="non_object_body"),
+            pytest.param({}, id="no_body"),
+            pytest.param(
+                {"data": "{not json", "content_type": "application/json"},
+                id="malformed_json",
+            ),
+        ],
+    )
+    @patch("docsgpt.api.user.attachments.routes.TTSCreator.create_tts")
+    def test_tts_invalid_body_returns_400(
+        self, mock_create_tts, flask_app, request_kwargs
+    ):
+        from docsgpt.api.user.attachments.routes import TextToSpeech
+
+        app = Flask(__name__)
+        with app.test_request_context("/api/tts", method="POST", **request_kwargs):
+            response = TextToSpeech().post()
+            assert _get_response_status(response) == 400
+            assert _get_response_json(response) == {
+                "success": False,
+                "message": "Text is required",
+            }
+        mock_create_tts.assert_not_called()
+
+
 @pytest.mark.unit
 class TestSpeechToTextDisabled:
     """STT_PROVIDER=none turns every transcription endpoint off before any provider is built."""

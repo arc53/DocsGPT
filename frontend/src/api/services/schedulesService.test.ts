@@ -112,3 +112,36 @@ describe('schedulesService create and update errors', () => {
     ).resolves.toEqual({ success: true, schedule: { id: 's1' } });
   });
 });
+
+describe('schedulesService run now and pause errors', () => {
+  it('rejects a run now that the server refused', async () => {
+    vi.spyOn(apiClient, 'post').mockResolvedValue(
+      response({ success: false, message: 'a run is already in flight' }, 409),
+    );
+
+    await expect(schedulesService.runNow('s1', 't')).rejects.toThrow(
+      'a run is already in flight',
+    );
+  });
+
+  it('rejects a pause that the server refused', async () => {
+    vi.spyOn(apiClient, 'patch').mockResolvedValue(
+      response({ success: false, message: 'schedule is terminal' }, 409),
+    );
+
+    await expect(
+      schedulesService.setPaused('s1', 'pause', 't'),
+    ).rejects.toThrow('schedule is terminal');
+  });
+
+  it('returns the queued run on success', async () => {
+    vi.spyOn(apiClient, 'post').mockResolvedValue(
+      response({ success: true, run: { id: 'r1' } }, 202),
+    );
+
+    await expect(schedulesService.runNow('s1', 't')).resolves.toEqual({
+      success: true,
+      run: { id: 'r1' },
+    });
+  });
+});
