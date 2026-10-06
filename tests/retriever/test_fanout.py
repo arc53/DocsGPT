@@ -414,3 +414,71 @@ class TestRetrievalDegraded:
 
         assert outer.attributes["docsgpt.retrieval_degraded"] is True
         assert outer.attributes["docsgpt.retrieval_degraded.status_code"] == 401
+
+
+@pytest.mark.unit
+class TestEmbedderFailureIsNotResentPerStore:
+    """Every store embeds with the same embedder, so its own failure repeats.
+
+    Re-sending the query once per store turned one oversized query into 1 + N
+    identical giant embeds in parallel, each of which OOM-killed a worker.
+    """
+
+    def _run(self, error, items=("a", "b", "c")):
+        store = _failing_store(error)
+        search = Mock(return_value=["hit"])
+        results = fetch_per_source(list(items), lambda item: store, search, lambda item: "q")
+        return results, search, store._embedding.embed_query
+
+    def test_server_error_on_shared_embed_skips_store_searches(self):
+        results, search, embed_query = self._run(_http_error(502))
+
+        assert results == [None, None, None]
+        search.assert_not_called()
+        assert embed_query.call_count == 1
+
+    def test_timeout_skips_store_searches(self):
+        import requests
+
+        results, search, _ = self._run(requests.Timeout("read timed out"))
+
+        assert results == [None, None, None]
+        search.assert_not_called()
+
+    def test_connection_error_skips_store_searches(self):
+        import requests
+
+        results, search, _ = self._run(requests.ConnectionError("refused"))
+
+        assert results == [None, None, None]
+        search.assert_not_called()
+
+    def test_a_wrapped_server_error_skips_store_searches(self):
+        try:
+            raise RuntimeError("embed dispatch failed") from _http_error(503)
+        except RuntimeError as wrapped:
+            error = wrapped
+
+        results, search, _ = self._run(error)
+
+        assert results == [None, None, None]
+        search.assert_not_called()
+
+    def test_client_error_still_lets_each_store_try(self):
+        results, search, _ = self._run(_http_error(400))
+
+        assert results == [["hit"], ["hit"], ["hit"]]
+        assert search.call_count == 3
+
+    def test_other_errors_still_let_each_store_try(self):
+        results, search, _ = self._run(ValueError("unexpected response"))
+
+        assert results == [["hit"], ["hit"], ["hit"]]
+
+    def test_the_skip_is_reported_as_a_degraded_retrieval(self, caplog):
+        with caplog.at_level("WARNING"):
+            self._run(_http_error(502))
+
+        (record,) = _degraded_records(caplog)
+        assert record.status_code == 502
+        assert any("not re-sending" in r.getMessage() for r in caplog.records)
