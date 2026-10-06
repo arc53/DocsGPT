@@ -298,6 +298,7 @@ def create(caller: Caller, arguments: Dict[str, Any]) -> Dict[str, Any]:
     baseline: Optional[Dict[str, Any]] = None
     already = False
     if request.polled:
+        content = None
         try:
             content, approval = _take_baseline(caller, request, now)
             evaluation = evaluate(request.check, content, None, baseline=True)
@@ -308,7 +309,13 @@ def create(caller: Caller, arguments: Dict[str, Any]) -> Dict[str, Any]:
         except SourceError as exc:
             return {"error": f"The source doesn't work as a monitor: {exc}. Nothing was created."}
         except CheckError as exc:
-            return {"error": f"The check doesn't fit what the source returns: {exc}. Nothing was created."}
+            refused: Dict[str, Any] = {
+                "error": f"The check doesn't fit what the source returns: {exc}. Nothing was created."
+            }
+            if content is not None:
+                # What the source returned, so the check can be fixed without another read.
+                refused["excerpt"] = content.text[:600]
+            return refused
         state = bounded_state(
             {"hash": content.digest, "excerpt": content.text[:EXCERPT_CHARS], "check": evaluation.state}
         )
@@ -397,7 +404,7 @@ def _created_result(
         result["interval"] = human_duration(request.interval_seconds)
         result["next_check_at"] = _iso(monitor.get("next_run_at"))
     if request.notes:
-        result["notes"] = request.notes
+        result["notes"] = list(request.notes)
     tell = (
         "Tell the user what is watched, how often and until when, and that you will report back here when it "
         "fires. Don't check it yourself in the meantime."
@@ -413,6 +420,18 @@ def _created_result(
     if kind == "webhook" and token:
         url = links.trigger_url(token)
         scheme = request.source.get("signature", "none")
+        check_type = (request.check or {}).get("type")
+        if check_type in (None, "changed"):
+            result.setdefault("notes", []).append(
+                "this link wakes you on every call, progress calls such as started or in_progress included; if the "
+                "user wants only the outcome, cancel it and create one with a status check listing every final "
+                "state, or make on_match say to reply NO_REPLY to calls that aren't final"
+            )
+        elif check_type == "status":
+            tell += (
+                f" Tell the user the body must carry `{request.check['value_path']}` set to one of: "
+                f"{', '.join(request.check['terminal'])} (other values don't wake you); example_curl shows it."
+            )
         result.update(
             {
                 "url": url,
@@ -431,6 +450,10 @@ def _created_result(
             )
         else:
             tell += " Give the user the url (POST only; a GET does nothing)."
+        tell += (
+            " A call with the same Idempotency-Key or delivery id counts once, and so does the same body within "
+            f"{human_duration(int(settings.TRIGGER_DEDUPE_WINDOW_SECONDS))}."
+        )
         _add_reachability(result, url)
     if kind == "approval" and token:
         url = links.approval_page_url(token)

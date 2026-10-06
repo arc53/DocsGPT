@@ -106,17 +106,31 @@ class TestValidation:
         assert request.source["allow_comment"] is True
         assert request.source["details"] == "Draft text"
         assert request.max_wakes == 1
-        with pytest.raises(SpecError, match="no `check`"):
-            _req(source={"type": "approval", "question": "Q"}, check={"type": "changed"})
+
+    def test_an_approval_ignores_a_check_and_condition_with_a_note(self):
+        """The decision is the event; a check can't change that, so it is dropped, not refused."""
+        request = _req(
+            source={"type": "approval", "question": "Q"}, check={"type": "regex", "pattern": "(?s)."},
+            condition="if they approve",
+        )
+        assert request.check is None and request.condition is None
+        assert any("check and condition ignored" in note for note in request.notes)
+        malformed = _req(source={"type": "approval", "question": "Q"}, check={"type": "nonsense"})
+        assert malformed.check is None
 
     def test_approval_on_match_defaults(self):
         assert parse_request(
             {"description": "d", "source": {"type": "approval", "question": "Q"}}, now=NOW
         ).on_match
 
-    def test_ingest_takes_no_check(self):
-        with pytest.raises(SpecError, match="ingest"):
-            _req(source={"type": "ingest", "source_id": "s"}, check={"type": "changed"})
+    def test_an_ingest_ignores_a_check_with_a_note_and_keeps_its_condition(self):
+        request = _req(source={"type": "ingest", "source_id": "s"}, check={"type": "changed"}, condition="it failed")
+        assert request.check is None and request.condition == "it failed"
+        assert any("check ignored" in note for note in request.notes)
+
+    def test_a_malformed_check_on_a_webhook_is_still_an_error(self):
+        with pytest.raises(SpecError):
+            _req(source={"type": "webhook"}, check={"type": "nonsense"})
 
 
 class TestDerived:

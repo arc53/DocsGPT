@@ -137,7 +137,9 @@ class TestPolledCreate:
 
     def test_a_check_that_does_not_fit_creates_nothing(self, conversation_id, page):
         page("no numbers here")
-        assert "doesn't fit" in service.create(_caller(conversation_id), _webpage_args())["error"]
+        refused = service.create(_caller(conversation_id), _webpage_args())
+        assert "doesn't fit" in refused["error"]
+        assert refused["excerpt"] == "no numbers here"
 
     def test_limits_are_noted(self, monkeypatch, conversation_id, page, events):
         monkeypatch.setattr(settings, "MONITOR_MIN_INTERVAL_SECONDS", 300)
@@ -258,6 +260,27 @@ class TestLinkCreate:
         }
         assert service.reveal_secret(result["monitor_id"], "u2") is None
         assert events[-1]["type"] == "monitor.updated" and events[-1]["payload"]["status"] == "active"
+
+    def test_a_webhook_without_a_status_check_says_every_call_wakes(self, conversation_id, public_url, events):
+        result = service.create(
+            _caller(conversation_id), {"description": "d", "source": {"type": "webhook"}, "on_match": "x"}
+        )
+        assert any("every call" in note for note in result["notes"])
+        assert "counts once" in result["next"]
+
+    def test_a_status_check_tells_the_user_what_to_send(self, conversation_id, public_url, events):
+        result = service.create(
+            _caller(conversation_id),
+            {
+                "description": "deploy",
+                "source": {"type": "webhook"},
+                "check": {"type": "status", "value_path": "deploy.state", "terminal": ["success", "failure"]},
+                "on_match": "tell me",
+            },
+        )
+        assert "`deploy.state`" in result["next"] and "success, failure" in result["next"]
+        assert "notes" not in result or not any("every call" in n for n in result["notes"])
+        assert "deploy" in result["example_curl"] and "state" in result["example_curl"]
 
     def test_local_base_is_flagged(self, monkeypatch, conversation_id, events):
         monkeypatch.setattr(settings, "PUBLIC_API_BASE_URL", None)

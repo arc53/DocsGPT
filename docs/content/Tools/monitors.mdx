@@ -66,6 +66,12 @@ Paths are dotted, with `[index]` for lists (`data.items[0].price`); on text cont
 number. A check is edge-triggered: a price that stays below the threshold doesn't fire again until it has gone
 above and come back.
 
+On a webhook the check reads each delivered body, and without one every call wakes the agent, progress calls
+included; the agent picks the body's shape when it gives the user the command to send, so for "tell me when the
+deploy finishes" it uses a `status` check and says which field and values to send. An `approval` or `ingest`
+monitor takes no check (the decision, or the ingest ending, is the event): one given anyway is ignored, and the
+result says so in `notes`.
+
 ### Tool sources and approval
 
 A tool source replays one exact call, with no model, as the monitor's owner. If that call would need approval in

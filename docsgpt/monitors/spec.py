@@ -304,16 +304,23 @@ def parse_request(arguments: Dict[str, Any], *, now: Optional[datetime] = None) 
     source = _source(arguments.get("source"))
     on_match = _text(arguments.get("on_match"), "on_match", limit=_MAX_ON_MATCH)
     condition = _text(arguments.get("condition"), "condition", limit=_MAX_CONDITION)
-    check = _check(arguments.get("check"))
     kind = source["type"]
-
+    raw_check = arguments.get("check")
+    # The decision, or the ingest ending, is the event: a check there could change nothing, so it is
+    # dropped with a note rather than refused (a refusal costs a round trip and teaches nothing).
     if kind == "approval":
-        if check or condition:
-            raise SpecError("An approval link takes no `check` or `condition`: the decision is the event.")
+        check = None
+        if raw_check not in (None, {}) or condition:
+            notes.append("check and condition ignored: any decision on an approval link wakes you; act on it in "
+                         "on_match")
+        condition = None
         on_match = on_match or "Tell the user the decision and continue the task it was for."
     elif kind == "ingest":
-        if check:
-            raise SpecError("An ingest monitor takes no `check`: finishing the ingest is the event.")
+        check = None
+        if raw_check not in (None, {}):
+            notes.append("check ignored: the ingest finishing or failing is the event")
+    else:
+        check = _check(raw_check)
     if not on_match:
         raise SpecError("`on_match` is required: say what to do when the monitor fires.")
 

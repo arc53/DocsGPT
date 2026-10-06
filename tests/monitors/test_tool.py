@@ -34,6 +34,24 @@ class TestSchema:
         for needle in ("only when the user asked", "scheduler", "only reads", "on_match", "Silence is not success"):
             assert needle in text
 
+    def test_description_explains_webhook_checks(self):
+        text = MonitorTool().get_actions_metadata()[0]["description"]
+        for needle in (
+            "each POSTed body",
+            "every call",
+            '{"type":"status","value_path":"status","terminal":["success","failure","error","cancelled","timed_out"]}',
+            "tell the user which field and values to send",
+            "take no check",
+            "No need to read the source first",
+        ):
+            assert needle in text, needle
+
+    def test_check_fields_are_described(self):
+        check = MonitorTool().get_actions_metadata()[0]["parameters"]["properties"]["check"]
+        assert "each POSTed body" in check["description"]
+        assert "approval" in check["description"] and "ingest" in check["description"]
+        assert "success" in check["properties"]["terminal"]["description"]
+
 
 class TestActions:
     def test_needs_a_user(self):

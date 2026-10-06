@@ -17,20 +17,26 @@ _CREATE_DESCRIPTION = (
     "Sources: `webpage` (url, optional css_selector); `tool` (any tool this chat can call, by the exact function "
     "name you would call, with its args: a search, an API or MCP action, read_webpage, a remote_device "
     "run_command); `ingest` (a source_id; fires when its ingest finishes or fails); `webhook` (returns a POST url, "
-    "optionally signed: github, standard_webhooks or hmac_sha256, with its secret); `approval` (returns a page "
-    "link where a person approves or rejects your question).\n"
+    "optionally signed: github, standard_webhooks or hmac_sha256); `approval` (returns a page link where a person "
+    "approves or rejects your question; you are woken with the decision and any comment).\n"
     "A source only reads state: check a status, list new items, read a page, file or metric. Put the action in "
     "`on_match` and do it when you are woken, asking for approval as usual. A tool source that would need "
     "approval asks the user once, now, for exactly that call; other arguments need a new monitor.\n"
-    "Prefer a deterministic `check`: threshold for numbers, status listing EVERY terminal state (success and "
-    "failure), new_items with an id field, regex for text, changed for any change. Add a natural-language "
-    "`condition` only when no check can express it. The monitor remembers what it already reported, so don't "
-    "track that yourself. String args may use {{now}}, {{last_checked_at}}, {{last_changed_at}} and "
-    "{{last_checked_date}} (YYYY/MM/DD), filled in on every check.\n"
-    "Write a specific description; it titles every notification (\"ACMEB below $90\", not \"price\"). The "
-    "result has the current value or the link: tell the user what is watched, how often and until when, and when "
-    "`reachable_from_internet` is false, that outside services and people can't open the link. Silence is not "
-    "success: an unreachable source or repeated errors wake you too."
+    "Prefer a deterministic `check`: threshold for numbers, status listing every final state (success and "
+    "failure), new_items with an id field, regex for text. Without one, a polled source fires on any change and "
+    "a webhook on every call, \"started\" and \"in_progress\" ones included. On a webhook the check runs on each "
+    "POSTed body, whose shape you choose: when the user waits for something to finish (a deploy, a build), use "
+    'e.g. {"type":"status","value_path":"status","terminal":["success","failure","error","cancelled","timed_out"]} '
+    "and tell the user which field and values to send; a call without that field wakes you once so you can say "
+    "so. `approval` and `ingest` take no check: the decision, or the ingest ending, is the event. Add a "
+    "natural-language `condition` only when no check can express it. The monitor remembers what it already "
+    "reported, so don't track that yourself. String args may use {{now}}, {{last_checked_at}}, "
+    "{{last_changed_at}} and {{last_checked_date}} (YYYY/MM/DD), filled in on every check.\n"
+    "Write a specific description; it titles every notification (\"ACMEB below $90\", not \"price\"). No need to "
+    "read the source first: the result has its current value (or the link), and a check that doesn't fit says "
+    "why. Tell the user what is watched, how often and until when, and when `reachable_from_internet` is false, "
+    "that outside services and people can't open the link. Silence is not success: an unreachable source or "
+    "repeated errors wake you too."
 )
 
 
@@ -133,9 +139,11 @@ class MonitorTool(Tool):
                         "check": {
                             "type": "object",
                             "description": (
-                                "Deterministic test of the content: changed; new_items (items_path, id_field); "
-                                "regex (pattern, when match|no_match); threshold (value_path, op, value); "
-                                "status (value_path, terminal: every final state)."
+                                "Deterministic test of the content (on a webhook, of each POSTed body); leave it "
+                                "out for approval and ingest. changed (any change; on a webhook, every call); "
+                                "new_items (items_path, id_field); regex (pattern, when match|no_match); "
+                                "threshold (value_path, op, value); status (value_path, terminal: every final "
+                                "state; other values never wake)."
                             ),
                             "properties": {
                                 "type": {
@@ -149,7 +157,14 @@ class MonitorTool(Tool):
                                 "value_path": {**string, "description": "Dotted path in JSON, e.g. data.price."},
                                 "op": {"type": "string", "enum": ["<", "<=", ">", ">=", "==", "!="]},
                                 "value": {"type": "number"},
-                                "terminal": {"type": "array", "items": string},
+                                "terminal": {
+                                    "type": "array",
+                                    "items": string,
+                                    "description": (
+                                        "status: every final value, success and failure, e.g. [\"success\", "
+                                        "\"failure\", \"error\", \"cancelled\", \"timed_out\"]."
+                                    ),
+                                },
                             },
                             "required": ["type"],
                         },
