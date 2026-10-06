@@ -86,7 +86,8 @@
       "monitor_paused": "Monitor paused",
       "monitor_expired": "Monitor expired",
       "default": "Background event",
-      "more": "+{{count}} more"
+      "more": "+{{count}} more",
+      "cancelled": "Background job cancelled"
     }
   },
   "demo": [

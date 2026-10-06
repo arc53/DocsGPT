@@ -82,7 +82,8 @@
       "monitor_paused": "Монитор приостановлен",
       "monitor_expired": "Срок монитора истёк",
       "default": "Фоновое событие",
-      "more": "ещё {{count}}"
+      "more": "ещё {{count}}",
+      "cancelled": "Фоновая задача отменена"
     }
   },
   "demo": [

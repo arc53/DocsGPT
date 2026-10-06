@@ -82,7 +82,8 @@
       "monitor_paused": "监控已暂停",
       "monitor_expired": "监控已过期",
       "default": "后台事件",
-      "more": "另有 {{count}} 条"
+      "more": "另有 {{count}} 条",
+      "cancelled": "后台任务已取消"
     }
   },
   "demo": [

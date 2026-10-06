@@ -82,7 +82,8 @@
       "monitor_paused": "Monitor en pausa",
       "monitor_expired": "Monitor caducado",
       "default": "Evento en segundo plano",
-      "more": "+{{count}} más"
+      "more": "+{{count}} más",
+      "cancelled": "Tarea en segundo plano cancelada"
     }
   },
   "demo": [

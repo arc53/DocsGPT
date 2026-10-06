@@ -23,6 +23,7 @@ import {
 import Hero from '../Hero';
 import AddToKnowledgeAction from './AddToKnowledgeAction';
 import { deriveArtifactChips } from './artifactChips';
+import JobCancelledRows from '../backgroundJobs/JobCancelledRow';
 import WakeEventRow from '../backgroundJobs/WakeEventRow';
 import ConversationBubble from './ConversationBubble';
 import { FEEDBACK, Query, Status } from './conversationModels';
@@ -352,6 +353,11 @@ export default function ConversationMessages({
                   {responseView && (
                     <MessageScrollerItem messageId={`a-${index}`}>
                       {responseView}
+                    </MessageScrollerItem>
+                  )}
+                  {query.tool_calls?.some((call) => call.job_id) && (
+                    <MessageScrollerItem messageId={`c-${index}`}>
+                      <JobCancelledRows toolCalls={query.tool_calls} />
                     </MessageScrollerItem>
                   )}
                 </Fragment>

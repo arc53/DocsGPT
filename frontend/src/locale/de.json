@@ -82,7 +82,8 @@
       "monitor_paused": "Monitor pausiert",
       "monitor_expired": "Monitor abgelaufen",
       "default": "Hintergrundereignis",
-      "more": "+{{count}} weitere"
+      "more": "+{{count}} weitere",
+      "cancelled": "Hintergrundaufgabe abgebrochen"
     }
   },
   "demo": [

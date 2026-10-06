@@ -82,7 +82,8 @@
       "monitor_paused": "監控已暫停",
       "monitor_expired": "監控已過期",
       "default": "背景事件",
-      "more": "另有 {{count}} 則"
+      "more": "另有 {{count}} 則",
+      "cancelled": "背景工作已取消"
     }
   },
   "demo": [

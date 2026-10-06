@@ -82,7 +82,8 @@
       "monitor_paused": "モニターが一時停止されました",
       "monitor_expired": "モニターの期限が切れました",
       "default": "バックグラウンドイベント",
-      "more": "ほか{{count}}件"
+      "more": "ほか{{count}}件",
+      "cancelled": "バックグラウンドジョブをキャンセルしました"
     }
   },
   "demo": [
