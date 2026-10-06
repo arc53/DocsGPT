@@ -129,6 +129,11 @@ class TestRendering:
         assert "offer extras instead of doing them" in out
         assert "finish any outstanding work" not in out
 
+    def test_the_instruction_asks_for_grounded_claims(self):
+        out = wake.render_events([{"source": "job", "title": "t", "body": "b", "payload": None}])
+        assert "Every number and explanation must come from the data above or a tool you ran in this turn" in out
+        assert "if you haven't checked why something happened, say so or leave it out" in out
+
     @pytest.mark.parametrize("answer", ["NO_REPLY", " no_reply. ", "`NO_REPLY`", '"NO_REPLY"'])
     def test_no_reply(self, answer):
         assert wake.is_no_reply(answer)

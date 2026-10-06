@@ -79,6 +79,8 @@ class TestObserve:
         assert wakes[0]["payload"]["line"] == "Traceback (most recent call last):"
         assert wakes[0]["dedupe_key"].startswith(f"job:{job['id']}:watch:")
         assert "still running" in wakes[0]["body"]
+        assert "don't predict how it will end" in wakes[0]["body"]
+        assert "cancel it with check_job" in wakes[0]["body"]
         # The same output again is not new.
         watch.observe_output(_reload(bg_db, job["id"]), output, len(output))
         assert len(wakes) == 1

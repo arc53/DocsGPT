@@ -234,9 +234,10 @@ def _wake(job: Dict[str, Any], what: str, line: str, output: str, key: str) -> N
         return
     tool = f"{job.get('tool_name')}.{job.get('action_name')}"
     body = (
-        f"Background job {job['id']} ({tool}) is still running; its {what}. You will get its final result "
-        "when it ends. Act only if this changes what you or the user should do now (for example, cancel it "
-        "with check_job if it is failing); otherwise reply NO_REPLY."
+        f"Background job {job['id']} ({tool}) is still running; its {what}. You get its final result when it "
+        "ends; don't predict how it will end. If the user asked to hear about this, or it changes what they "
+        "should do, tell them briefly what happened; if the run is failing and should stop, cancel it with "
+        "check_job. Otherwise reply NO_REPLY."
     )
     payload: Dict[str, Any] = {"output": tail_of(output, HEARTBEAT_CHARS)}
     if line:
