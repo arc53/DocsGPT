@@ -1,0 +1,992 @@
+{
+  "artifact_generator.create_artifact": {
+    "type": "object",
+    "required": [
+      "kind",
+      "spec"
+    ],
+    "properties": {
+      "kind": {
+        "type": "string",
+        "enum": [
+          "document",
+          "html",
+          "pdf",
+          "presentation",
+          "spreadsheet"
+        ]
+      },
+      "title": {
+        "type": "string"
+      },
+      "spec": {
+        "type": "object"
+      }
+    }
+  },
+  "artifact_generator.edit_artifact": {
+    "type": "object",
+    "required": [
+      "id"
+    ],
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "spec_patch": {
+        "type": "object"
+      },
+      "spec_append": {
+        "type": "object"
+      }
+    }
+  },
+  "artifact_generator.rewrite_artifact": {
+    "type": "object",
+    "required": [
+      "id",
+      "spec"
+    ],
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "spec": {
+        "type": "object"
+      }
+    }
+  },
+  "attachments.attachments_list": {
+    "type": "object",
+    "required": [],
+    "properties": {}
+  },
+  "attachments.attachments_read": {
+    "type": "object",
+    "required": [
+      "ref"
+    ],
+    "properties": {
+      "ref": {
+        "type": "string"
+      },
+      "offset": {
+        "type": "integer"
+      },
+      "max_tokens": {
+        "type": "integer"
+      },
+      "pages": {
+        "type": "string"
+      },
+      "rows": {
+        "type": "string"
+      }
+    }
+  },
+  "attachments.attachments_search": {
+    "type": "object",
+    "required": [
+      "query"
+    ],
+    "properties": {
+      "query": {
+        "type": "string"
+      },
+      "refs": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "k": {
+        "type": "integer"
+      },
+      "offset": {
+        "type": "integer"
+      }
+    }
+  },
+  "brave.brave_image_search": {
+    "type": "object",
+    "required": [
+      "query"
+    ],
+    "properties": {
+      "query": {
+        "type": "string"
+      },
+      "count": {
+        "type": "integer"
+      }
+    }
+  },
+  "brave.brave_web_search": {
+    "type": "object",
+    "required": [
+      "query"
+    ],
+    "properties": {
+      "query": {
+        "type": "string"
+      },
+      "search_lang": {
+        "type": "string"
+      },
+      "freshness": {
+        "type": "string"
+      }
+    }
+  },
+  "check_job.check_job": {
+    "type": "object",
+    "required": [],
+    "properties": {
+      "job_id": {
+        "type": "string"
+      },
+      "action": {
+        "type": "string",
+        "enum": [
+          "get",
+          "cancel"
+        ]
+      },
+      "wait_seconds": {
+        "type": "integer"
+      }
+    }
+  },
+  "code_executor.run_code": {
+    "type": "object",
+    "required": [
+      "code"
+    ],
+    "properties": {
+      "code": {
+        "type": "string"
+      },
+      "inputs": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "outputs": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "timeout": {
+        "type": "integer"
+      },
+      "ttl": {
+        "type": "integer"
+      },
+      "persist": {
+        "type": "boolean"
+      },
+      "capture_artifacts": {
+        "type": "boolean"
+      }
+    }
+  },
+  "cryptoprice.cryptoprice_get": {
+    "type": "object",
+    "required": [
+      "symbol",
+      "currency"
+    ],
+    "properties": {
+      "symbol": {
+        "type": "string"
+      },
+      "currency": {
+        "type": "string"
+      }
+    }
+  },
+  "duckduckgo.ddg_image_search": {
+    "type": "object",
+    "required": [
+      "query"
+    ],
+    "properties": {
+      "query": {
+        "type": "string"
+      },
+      "max_results": {
+        "type": "integer"
+      },
+      "region": {
+        "type": "string"
+      }
+    }
+  },
+  "duckduckgo.ddg_news_search": {
+    "type": "object",
+    "required": [
+      "query"
+    ],
+    "properties": {
+      "query": {
+        "type": "string"
+      },
+      "max_results": {
+        "type": "integer"
+      },
+      "timelimit": {
+        "type": "string"
+      }
+    }
+  },
+  "duckduckgo.ddg_web_search": {
+    "type": "object",
+    "required": [
+      "query"
+    ],
+    "properties": {
+      "query": {
+        "type": "string"
+      },
+      "max_results": {
+        "type": "integer"
+      },
+      "region": {
+        "type": "string"
+      },
+      "timelimit": {
+        "type": "string"
+      }
+    }
+  },
+  "graph_search.get_relationships": {
+    "type": "object",
+    "required": [
+      "entity"
+    ],
+    "properties": {
+      "entity": {
+        "type": "string"
+      }
+    }
+  },
+  "graph_search.read_entity_pages": {
+    "type": "object",
+    "required": [
+      "entity"
+    ],
+    "properties": {
+      "entity": {
+        "type": "string"
+      }
+    }
+  },
+  "graph_search.search_entities": {
+    "type": "object",
+    "required": [
+      "query"
+    ],
+    "properties": {
+      "query": {
+        "type": "string"
+      },
+      "k": {
+        "type": "integer"
+      }
+    }
+  },
+  "internal_search.search": {
+    "type": "object",
+    "required": [
+      "query"
+    ],
+    "properties": {
+      "query": {
+        "type": "string"
+      }
+    }
+  },
+  "memory.memory_create": {
+    "type": "object",
+    "required": [
+      "path",
+      "file_text"
+    ],
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "file_text": {
+        "type": "string"
+      }
+    }
+  },
+  "memory.memory_delete": {
+    "type": "object",
+    "required": [
+      "path"
+    ],
+    "properties": {
+      "path": {
+        "type": "string"
+      }
+    }
+  },
+  "memory.memory_insert": {
+    "type": "object",
+    "required": [
+      "path",
+      "insert_line",
+      "insert_text"
+    ],
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "insert_line": {
+        "type": "integer"
+      },
+      "insert_text": {
+        "type": "string"
+      }
+    }
+  },
+  "memory.memory_rename": {
+    "type": "object",
+    "required": [
+      "old_path",
+      "new_path"
+    ],
+    "properties": {
+      "old_path": {
+        "type": "string"
+      },
+      "new_path": {
+        "type": "string"
+      }
+    }
+  },
+  "memory.memory_str_replace": {
+    "type": "object",
+    "required": [
+      "path",
+      "old_str",
+      "new_str"
+    ],
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "old_str": {
+        "type": "string"
+      },
+      "new_str": {
+        "type": "string"
+      }
+    }
+  },
+  "memory.memory_view": {
+    "type": "object",
+    "required": [
+      "path"
+    ],
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "view_range": {
+        "type": "array",
+        "items": {
+          "type": "integer"
+        }
+      }
+    }
+  },
+  "monitor.monitor_cancel": {
+    "type": "object",
+    "required": [
+      "monitor_id"
+    ],
+    "properties": {
+      "monitor_id": {
+        "type": "string"
+      }
+    }
+  },
+  "monitor.monitor_create": {
+    "type": "object",
+    "required": [
+      "description",
+      "source",
+      "on_match"
+    ],
+    "properties": {
+      "description": {
+        "type": "string"
+      },
+      "source": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "webpage",
+              "tool",
+              "ingest",
+              "webhook",
+              "approval"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "css_selector": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "args": {
+            "type": "object"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string",
+            "enum": [
+              "none",
+              "standard_webhooks",
+              "github",
+              "hmac_sha256"
+            ]
+          },
+          "question": {
+            "type": "string"
+          },
+          "details": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allow_comment": {
+            "type": "boolean"
+          }
+        }
+      },
+      "check": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "changed",
+              "new_items",
+              "regex",
+              "threshold",
+              "status"
+            ]
+          },
+          "items_path": {
+            "type": "string"
+          },
+          "id_field": {
+            "type": "string"
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "when": {
+            "type": "string",
+            "enum": [
+              "match",
+              "no_match"
+            ]
+          },
+          "value_path": {
+            "type": "string"
+          },
+          "op": {
+            "type": "string",
+            "enum": [
+              "<",
+              "<=",
+              ">",
+              ">=",
+              "==",
+              "!="
+            ]
+          },
+          "value": {
+            "type": "number"
+          },
+          "terminal": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "condition": {
+        "type": "string"
+      },
+      "interval": {
+        "type": "string"
+      },
+      "expires_in": {
+        "type": "string"
+      },
+      "max_wakes": {
+        "type": "integer"
+      },
+      "on_match": {
+        "type": "string"
+      }
+    }
+  },
+  "monitor.monitor_list": {
+    "type": "object",
+    "required": [],
+    "properties": {}
+  },
+  "notes.note_delete": {
+    "type": "object",
+    "required": [],
+    "properties": {}
+  },
+  "notes.note_insert": {
+    "type": "object",
+    "required": [
+      "line_number",
+      "text"
+    ],
+    "properties": {
+      "line_number": {
+        "type": "integer"
+      },
+      "text": {
+        "type": "string"
+      }
+    }
+  },
+  "notes.note_overwrite": {
+    "type": "object",
+    "required": [
+      "text"
+    ],
+    "properties": {
+      "text": {
+        "type": "string"
+      }
+    }
+  },
+  "notes.note_str_replace": {
+    "type": "object",
+    "required": [
+      "old_str",
+      "new_str"
+    ],
+    "properties": {
+      "old_str": {
+        "type": "string"
+      },
+      "new_str": {
+        "type": "string"
+      }
+    }
+  },
+  "notes.note_view": {
+    "type": "object",
+    "required": [],
+    "properties": {}
+  },
+  "ntfy.ntfy_send_message": {
+    "type": "object",
+    "required": [
+      "server_url",
+      "message",
+      "topic"
+    ],
+    "properties": {
+      "server_url": {
+        "type": "string"
+      },
+      "message": {
+        "type": "string"
+      },
+      "topic": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "priority": {
+        "type": "integer"
+      }
+    }
+  },
+  "postgres.postgres_execute_sql": {
+    "type": "object",
+    "required": [
+      "sql_query"
+    ],
+    "properties": {
+      "sql_query": {
+        "type": "string"
+      }
+    }
+  },
+  "postgres.postgres_get_schema": {
+    "type": "object",
+    "required": [
+      "db_name"
+    ],
+    "properties": {
+      "db_name": {
+        "type": "string"
+      }
+    }
+  },
+  "read_document.read_document": {
+    "type": "object",
+    "required": [
+      "input"
+    ],
+    "properties": {
+      "input": {
+        "type": "string"
+      },
+      "output": {
+        "type": "string",
+        "enum": [
+          "markdown",
+          "text",
+          "structured",
+          "chunks"
+        ]
+      },
+      "ocr": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "on",
+          "off"
+        ]
+      },
+      "pages": {
+        "type": "string"
+      },
+      "engine": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "docling",
+          "anydoc",
+          "fast"
+        ]
+      },
+      "max_chars": {
+        "type": "integer"
+      },
+      "include_tables": {
+        "type": "boolean"
+      },
+      "json_schema": {
+        "type": "object"
+      },
+      "persist": {
+        "type": "boolean"
+      }
+    }
+  },
+  "read_webpage.read_webpage": {
+    "type": "object",
+    "required": [
+      "url"
+    ],
+    "properties": {
+      "url": {
+        "type": "string"
+      }
+    }
+  },
+  "remote_device.run_command": {
+    "type": "object",
+    "required": [
+      "command"
+    ],
+    "properties": {
+      "command": {
+        "type": "string"
+      },
+      "working_directory": {
+        "type": "string"
+      },
+      "timeout_ms": {
+        "type": "integer"
+      }
+    }
+  },
+  "scheduler.cancel_scheduled_task": {
+    "type": "object",
+    "required": [
+      "task_id"
+    ],
+    "properties": {
+      "task_id": {
+        "type": "string"
+      }
+    }
+  },
+  "scheduler.list_scheduled_tasks": {
+    "type": "object",
+    "required": [],
+    "properties": {}
+  },
+  "scheduler.schedule_task": {
+    "type": "object",
+    "required": [
+      "instruction"
+    ],
+    "properties": {
+      "instruction": {
+        "type": "string"
+      },
+      "delay": {
+        "type": "string"
+      },
+      "run_at": {
+        "type": "string"
+      },
+      "timezone": {
+        "type": "string"
+      }
+    }
+  },
+  "telegram.telegram_send_image": {
+    "type": "object",
+    "required": [
+      "image_url"
+    ],
+    "properties": {
+      "image_url": {
+        "type": "string"
+      },
+      "chat_id": {
+        "type": "string"
+      }
+    }
+  },
+  "telegram.telegram_send_message": {
+    "type": "object",
+    "required": [
+      "text"
+    ],
+    "properties": {
+      "text": {
+        "type": "string"
+      },
+      "chat_id": {
+        "type": "string"
+      }
+    }
+  },
+  "think.reason": {
+    "type": "object",
+    "required": [
+      "reasoning"
+    ],
+    "properties": {
+      "reasoning": {
+        "type": "string"
+      }
+    }
+  },
+  "todo_list.todo_complete": {
+    "type": "object",
+    "required": [
+      "todo_id"
+    ],
+    "properties": {
+      "todo_id": {
+        "type": "integer"
+      }
+    }
+  },
+  "todo_list.todo_create": {
+    "type": "object",
+    "required": [
+      "title"
+    ],
+    "properties": {
+      "title": {
+        "type": "string"
+      }
+    }
+  },
+  "todo_list.todo_delete": {
+    "type": "object",
+    "required": [
+      "todo_id"
+    ],
+    "properties": {
+      "todo_id": {
+        "type": "integer"
+      }
+    }
+  },
+  "todo_list.todo_get": {
+    "type": "object",
+    "required": [
+      "todo_id"
+    ],
+    "properties": {
+      "todo_id": {
+        "type": "integer"
+      }
+    }
+  },
+  "todo_list.todo_list": {
+    "type": "object",
+    "required": [],
+    "properties": {}
+  },
+  "todo_list.todo_update": {
+    "type": "object",
+    "required": [
+      "todo_id",
+      "title"
+    ],
+    "properties": {
+      "todo_id": {
+        "type": "integer"
+      },
+      "title": {
+        "type": "string"
+      }
+    }
+  },
+  "view_image.view_image": {
+    "type": "object",
+    "required": [
+      "source"
+    ],
+    "properties": {
+      "source": {
+        "type": "string"
+      }
+    }
+  },
+  "wiki.wiki_create": {
+    "type": "object",
+    "required": [
+      "path",
+      "content"
+    ],
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "content": {
+        "type": "string"
+      }
+    }
+  },
+  "wiki.wiki_delete": {
+    "type": "object",
+    "required": [
+      "path"
+    ],
+    "properties": {
+      "path": {
+        "type": "string"
+      }
+    }
+  },
+  "wiki.wiki_insert": {
+    "type": "object",
+    "required": [
+      "path",
+      "insert_line",
+      "insert_text"
+    ],
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "insert_line": {
+        "type": "integer"
+      },
+      "insert_text": {
+        "type": "string"
+      }
+    }
+  },
+  "wiki.wiki_rename": {
+    "type": "object",
+    "required": [
+      "old_path",
+      "new_path"
+    ],
+    "properties": {
+      "old_path": {
+        "type": "string"
+      },
+      "new_path": {
+        "type": "string"
+      }
+    }
+  },
+  "wiki.wiki_str_replace": {
+    "type": "object",
+    "required": [
+      "path",
+      "old_str",
+      "new_str"
+    ],
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "old_str": {
+        "type": "string"
+      },
+      "new_str": {
+        "type": "string"
+      }
+    }
+  },
+  "wiki.wiki_view": {
+    "type": "object",
+    "required": [
+      "path"
+    ],
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "view_range": {
+        "type": "array",
+        "items": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

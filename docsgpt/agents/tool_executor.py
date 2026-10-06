@@ -16,7 +16,13 @@ from docsgpt.agents.default_tools import (
     synthesized_default_tools,
 )
 from docsgpt import tracing
-from docsgpt.agents.tool_pins import iter_parameters, llm_fills, resolve_arguments, sent_arguments
+from docsgpt.agents.tool_pins import (
+    PARAM_SECTIONS,
+    iter_parameters,
+    llm_fills,
+    resolve_arguments,
+    sent_arguments,
+)
 from docsgpt.agents.tools.tool_action_parser import ToolActionParser
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.guardrails.types import Stage as GuardrailStage, resolve_tool_result
@@ -1021,15 +1027,28 @@ class ToolExecutor:
         Parameters the model does not fill (fixed values) and ``hidden`` ones
         (values the connection fixes) are left out, so the model is never
         asked for them.
+
+        A parameter is required when its section lists it in ``required`` (the
+        JSON-schema form built-in and MCP tools use) or when it carries
+        ``required: true`` itself (the form imported API actions use). An
+        object parameter's own ``required`` list names its nested fields; it
+        is kept on the parameter and never makes the parameter itself required.
         """
         params = {"type": "object", "properties": {}, "required": []}
+        listed: set = set()
+        for section in PARAM_SECTIONS:
+            block = action.get(section)
+            if isinstance(block, dict) and isinstance(block.get("required"), list):
+                listed.update(name for name in block["required"] if isinstance(name, str))
         for _section, k, v in iter_parameters(action):
             if not llm_fills(v) or (hidden and k in hidden):
                 continue
             params["properties"][k] = {
-                key: value for key, value in v.items() if key not in ("filled_by_llm", "value", "required")
+                key: value
+                for key, value in v.items()
+                if key not in ("filled_by_llm", "value") and not (key == "required" and not isinstance(value, list))
             }
-            if v.get("required", False):
+            if (v.get("required") is True or k in listed) and k not in params["required"]:
                 params["required"].append(k)
         return params
 
