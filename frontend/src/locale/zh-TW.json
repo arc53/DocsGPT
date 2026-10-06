@@ -3278,7 +3278,15 @@
       "secretNote": "只有你能看到簽章密鑰，助理看不到。將它設為 DOCSGPT_WEBHOOK_SECRET 即可執行範例指令，或貼到傳送方的密鑰欄位。",
       "revealFailed": "無法載入密鑰，請再試一次。",
       "revealLimited": "請求過多，請一分鐘後再試。",
-      "revealMissing": "此連結已沒有密鑰：它已結束或已被取消。"
+      "revealMissing": "此連結已沒有密鑰：它已結束或已被取消。",
+      "approvalTitle": "審核連結",
+      "expires": "{{date}} 到期",
+      "state": {
+        "pending": "等待決定",
+        "decided": "已決定",
+        "ended": "連結已結束",
+        "active": "有效"
+      }
     },
     "finished": {
       "decided": "已結束：已做出決定",

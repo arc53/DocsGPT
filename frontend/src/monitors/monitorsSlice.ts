@@ -72,7 +72,7 @@ const fromEvent = (payload: MonitorUpdatedPayload): Monitor => ({
   max_wakes: payload.wakes_left,
   wakes_left: payload.wakes_left,
   last_error: payload.last_error ?? null,
-  paused_reason: null,
+  paused_reason: payload.paused_reason ?? null,
   approval_required: false,
 });
 
@@ -122,6 +122,8 @@ const monitorsSlice = createSlice({
             known.check_count = payload.check_count;
           if (payload.last_error !== undefined)
             known.last_error = payload.last_error;
+          if (payload.paused_reason !== undefined)
+            known.paused_reason = payload.paused_reason;
         },
       );
   },
@@ -130,7 +132,7 @@ const monitorsSlice = createSlice({
 export default monitorsSlice.reducer;
 
 /** Stores built for a single component in tests may have no monitors slice. */
-type WithMonitors = { monitors?: MonitorsState };
+export type WithMonitors = { monitors?: MonitorsState };
 
 export const selectMonitorsState = (state: WithMonitors): MonitorsState =>
   state.monitors ?? initialState;
@@ -142,6 +144,12 @@ export const selectMonitors = createSelector(
 );
 
 /** True while some monitor of this conversation is active (the "watching" mark). */
+/** One monitor, when the store knows it. */
+export const selectMonitor = (
+  state: WithMonitors,
+  monitorId: string,
+): Monitor | undefined => selectMonitorsState(state).byId[monitorId];
+
 export const selectIsWatching = (
   state: WithMonitors,
   conversationId: string,

@@ -55,6 +55,7 @@ export interface MonitorUpdatedPayload {
   conversation_id: string | null;
   check_count?: number;
   last_error?: string | null;
+  paused_reason?: string | null;
 }
 
 /** What the public approval page shows. */

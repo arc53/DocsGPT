@@ -1,21 +1,29 @@
-import { Webhook } from 'lucide-react';
+import { ShieldCheck, Webhook } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import monitorsService from '../api/services/monitorsService';
 import CopyButton from '../components/CopyButton';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { CodeBlock } from '../components/ui/code-block';
 import ToolCallCard from '../conversation/ToolCallCard';
 import { selectToken } from '../preferences/preferenceSlice';
+import { formatDeadline } from '../utils/dateTimeUtils';
+import { selectMonitor, type WithMonitors } from './monitorsSlice';
+import type { Monitor } from './types';
 
-/** What the card needs from a `monitor_create` result that made a webhook link. */
+/** What the card needs from a `monitor_create` result that made a webhook or approval link. */
 export type MonitorLink = {
+  kind: 'webhook' | 'approval';
   monitorId: string;
   url: string;
-  /** `none`, `github`, `hmac_sha256` or `standard_webhooks`. */
+  /** `none`, `github`, `hmac_sha256` or `standard_webhooks` (a webhook link). */
   signature: string;
+  /** The question an approval link asks. */
+  question?: string;
+  expiresAt?: string;
 };
 
 const field = (text: string, name: string): string | null => {
@@ -29,32 +37,71 @@ const field = (text: string, name: string): string | null => {
  * so a result that is no longer valid JSON is read field by field.
  */
 export function parseMonitorLink(result: unknown): MonitorLink | null {
-  let monitorId: unknown;
-  let url: unknown;
-  let signature: unknown;
+  const names = ['monitor_id', 'url', 'signature', 'question', 'expires_at'];
+  let data: Record<string, unknown> = {};
   if (result && typeof result === 'object') {
-    ({
-      monitor_id: monitorId,
-      url,
-      signature,
-    } = result as Record<string, unknown>);
+    data = result as Record<string, unknown>;
   } else if (typeof result === 'string') {
     try {
-      ({ monitor_id: monitorId, url, signature } = JSON.parse(result));
+      const parsed = JSON.parse(result);
+      if (parsed && typeof parsed === 'object') data = parsed;
     } catch {
-      monitorId = field(result, 'monitor_id');
-      url = field(result, 'url');
-      signature = field(result, 'signature');
+      for (const name of names) data[name] = field(result, name);
     }
   }
-  if (typeof monitorId !== 'string' || typeof url !== 'string') return null;
-  if (!url.includes('/api/triggers/')) return null;
-  return {
+  const text = (name: string): string | undefined =>
+    typeof data[name] === 'string' ? (data[name] as string) : undefined;
+  const monitorId = text('monitor_id');
+  const url = text('url');
+  if (!monitorId || !url) return null;
+  const kind = url.includes('/api/triggers/')
+    ? 'webhook'
+    : /\/approve\/apv_/.test(url)
+      ? 'approval'
+      : null;
+  if (!kind) return null;
+  const link: MonitorLink = {
+    kind,
     monitorId,
     url,
-    signature: typeof signature === 'string' ? signature : 'none',
+    signature: text('signature') ?? 'none',
   };
+  const question = text('question');
+  const expiresAt = text('expires_at');
+  if (question) link.question = question;
+  if (expiresAt) link.expiresAt = expiresAt;
+  return link;
 }
+
+type LinkState = 'active' | 'pending' | 'decided' | 'ended';
+
+/**
+ * Where the link stands, from its monitor as the store knows it (kept live by
+ * `monitor.updated`). A monitor the store hasn't loaded counts as live.
+ */
+export function linkState(
+  kind: MonitorLink['kind'],
+  monitor: Monitor | undefined,
+  now: number = Date.now(),
+  expiresAt?: string,
+): LinkState {
+  const live = kind === 'approval' ? 'pending' : 'active';
+  if (!monitor) {
+    const end = expiresAt ? Date.parse(expiresAt) : NaN;
+    return Number.isFinite(end) && end <= now ? 'ended' : live;
+  }
+  if (monitor.status === 'active' || monitor.status === 'paused') return live;
+  if (kind === 'approval' && monitor.paused_reason === 'decided')
+    return 'decided';
+  return 'ended';
+}
+
+const STATE_BADGE: Record<LinkState, 'info' | 'success' | 'neutral'> = {
+  active: 'info',
+  pending: 'info',
+  decided: 'success',
+  ended: 'neutral',
+};
 
 type RevealState = 'idle' | 'loading' | 'failed' | 'limited' | 'missing';
 
@@ -65,17 +112,29 @@ const PROBLEM_KEY: Partial<Record<RevealState, string>> = {
 };
 
 /**
- * A webhook link the assistant made, in the chat: the URL to copy and, for a
- * signed link, a Reveal secret button. The assistant only ever sees a
- * placeholder for the secret; the owner fetches it here, and it lives in this
- * card's state only (never in the store, never logged).
+ * A webhook or approval link the assistant made, in the chat: the URL to
+ * copy, its expiry and where it stands (waiting, decided, ended). A signed
+ * webhook link also has a Reveal secret button while the link is live. The
+ * assistant only ever sees a placeholder for the secret; the owner fetches it
+ * here, and it lives in this card's state only (never in the store, never
+ * logged).
  */
 export default function MonitorLinkCard({ link }: { link: MonitorLink }) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
+  const monitor = useSelector((state: WithMonitors) =>
+    selectMonitor(state, link.monitorId),
+  );
   const [secret, setSecret] = useState<string | null>(null);
   const [state, setState] = useState<RevealState>('idle');
-  const signed = Boolean(link.signature) && link.signature !== 'none';
+  const status = linkState(link.kind, monitor, Date.now(), link.expiresAt);
+  const ended = status === 'ended' || status === 'decided';
+  const signed =
+    link.kind === 'webhook' &&
+    Boolean(link.signature) &&
+    link.signature !== 'none' &&
+    !ended;
+  const expiresAt = monitor?.expires_at ?? link.expiresAt;
 
   const reveal = async () => {
     setState('loading');
@@ -93,8 +152,18 @@ export default function MonitorLinkCard({ link }: { link: MonitorLink }) {
   return (
     <div className="my-2 mr-5 ml-6" data-testid="monitor-link-card">
       <ToolCallCard
-        icon={<Webhook className="text-muted-foreground size-4" aria-hidden />}
-        title={t('monitors.linkCard.title')}
+        icon={
+          link.kind === 'approval' ? (
+            <ShieldCheck className="text-muted-foreground size-4" aria-hidden />
+          ) : (
+            <Webhook className="text-muted-foreground size-4" aria-hidden />
+          )
+        }
+        title={t(
+          link.kind === 'approval'
+            ? 'monitors.linkCard.approvalTitle'
+            : 'monitors.linkCard.title',
+        )}
         actions={
           signed ? (
             <Button
@@ -116,6 +185,9 @@ export default function MonitorLinkCard({ link }: { link: MonitorLink }) {
         }
       >
         <div className="flex flex-col gap-2">
+          {link.question && (
+            <p className="text-foreground text-sm">{link.question}</p>
+          )}
           <div className="flex min-w-0 items-start gap-1">
             <CodeBlock
               surface="subtle"
@@ -149,6 +221,22 @@ export default function MonitorLinkCard({ link }: { link: MonitorLink }) {
               </p>
             </>
           )}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <Badge
+              variant={STATE_BADGE[status]}
+              data-testid="monitor-link-state"
+            >
+              {t(`monitors.linkCard.state.${status}`)}
+            </Badge>
+            {expiresAt && !ended && (
+              <span className="text-muted-foreground">
+                {t('monitors.linkCard.expires', {
+                  date: formatDeadline(expiresAt),
+                  interpolation: { escapeValue: false },
+                })}
+              </span>
+            )}
+          </div>
           {problem && (
             <p className="text-destructive text-xs" role="alert">
               {t(problem)}

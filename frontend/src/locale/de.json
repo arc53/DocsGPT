@@ -3290,7 +3290,15 @@
       "secretNote": "Nur du siehst das Signaturgeheimnis, der Assistent nie. Setze es als DOCSGPT_WEBHOOK_SECRET, um den Beispielbefehl auszuführen, oder füge es beim Absender in das Feld für das Geheimnis ein.",
       "revealFailed": "Das Geheimnis konnte nicht geladen werden. Versuch es noch einmal.",
       "revealLimited": "Zu viele Anfragen. Versuch es in einer Minute noch einmal.",
-      "revealMissing": "Dieser Link hat kein Geheimnis mehr: Er ist abgelaufen oder wurde beendet."
+      "revealMissing": "Dieser Link hat kein Geheimnis mehr: Er ist abgelaufen oder wurde beendet.",
+      "approvalTitle": "Freigabe-Link",
+      "expires": "Läuft ab am {{date}}",
+      "state": {
+        "pending": "Wartet auf Entscheidung",
+        "decided": "Entschieden",
+        "ended": "Link beendet",
+        "active": "Aktiv"
+      }
     },
     "finished": {
       "decided": "Beendet: Die Entscheidung ist gefallen",

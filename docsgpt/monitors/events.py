@@ -37,6 +37,8 @@ def publish_monitor_updated(monitor: Dict[str, Any]) -> None:
         "conversation_id": str(conversation_id) if conversation_id else None,
         "check_count": int(monitor.get("check_count") or 0),
         "last_error": monitor.get("last_error"),
+        # Why it paused or ended ("decided", "expired"), so a link's card can say so live.
+        "paused_reason": monitor.get("paused_reason"),
     }
     try:
         publish_user_event(

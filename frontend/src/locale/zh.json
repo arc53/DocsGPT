@@ -3277,7 +3277,15 @@
       "secretNote": "只有你能看到签名密钥，助手看不到。将它设置为 DOCSGPT_WEBHOOK_SECRET 即可运行示例命令，或将它粘贴到发送方的密钥字段中。",
       "revealFailed": "无法加载密钥，请重试。",
       "revealLimited": "请求过多，请一分钟后再试。",
-      "revealMissing": "此链接已没有密钥：它已结束或已被取消。"
+      "revealMissing": "此链接已没有密钥：它已结束或已被取消。",
+      "approvalTitle": "审批链接",
+      "expires": "{{date}} 过期",
+      "state": {
+        "pending": "等待决定",
+        "decided": "已决定",
+        "ended": "链接已结束",
+        "active": "有效"
+      }
     },
     "finished": {
       "decided": "已结束：已做出决定",

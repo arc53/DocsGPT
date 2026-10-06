@@ -141,6 +141,9 @@ class TestDispatch:
         )
         tick.dispatch_due_monitors()
         assert wakes[0]["source"] == "monitor_expired" and "Nobody decided" in wakes[0]["body"]
+        # The chat's link card hears why it ended.
+        assert events[-1]["payload"]["status"] == "completed"
+        assert events[-1]["payload"]["paused_reason"] == "expired"
 
     def test_lost_deliveries_are_requeued(self, mon_db, conversation_id, queued):
         monitor = make_monitor(mon_db, conversation_id, source={"type": "webhook", "signature": "none"}, check=None)

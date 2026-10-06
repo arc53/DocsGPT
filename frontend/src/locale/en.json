@@ -3335,7 +3335,15 @@
       "secretNote": "Only you can see the signing secret; the assistant never does. Set it as DOCSGPT_WEBHOOK_SECRET to run the example command, or paste it into the sender's secret field.",
       "revealFailed": "Couldn't load the secret. Try again.",
       "revealLimited": "Too many requests. Try again in a minute.",
-      "revealMissing": "This link has no secret any more: it ended or was cancelled."
+      "revealMissing": "This link has no secret any more: it ended or was cancelled.",
+      "approvalTitle": "Approval link",
+      "expires": "Expires {{date}}",
+      "state": {
+        "pending": "Waiting for a decision",
+        "decided": "Decided",
+        "ended": "Link ended",
+        "active": "Active"
+      }
     },
     "finished": {
       "decided": "Finished: the decision was made",
