@@ -195,3 +195,71 @@ class TestEmbeddingsNameIsExplicit:
         emb.embed_documents([long_text])
 
         assert captured["payload"]["input"][0] == long_text
+
+
+class TestQueryLimit:
+    """``EMBEDDINGS_MAX_QUERY_TOKENS`` clips search queries, never documents.
+
+    Embedder memory grows with the square of input length: one search query of
+    9k+ tokens (a webhook payload, pasted logs) OOM-killed a 12 GB granite
+    server, so a query is clipped before it is sent whatever the input limit.
+    """
+
+    def _remote(self, monkeypatch):
+        from docsgpt.parser.tokenization import TiktokenCounter
+
+        emb = RemoteEmbeddings(api_url="https://example.test", model_name="m")
+        # A raw remote name has no tokenizer to fetch; count in cl100k.
+        monkeypatch.setattr(emb, "_token_counter", lambda: TiktokenCounter())
+        return emb
+
+    def test_query_clipped_to_query_limit(self, monkeypatch, caplog):
+        monkeypatch.setattr(settings, "EMBEDDINGS_MAX_INPUT_TOKENS", None)
+        monkeypatch.setattr(settings, "EMBEDDINGS_MAX_QUERY_TOKENS", 10)
+        captured = _capture_post(monkeypatch)
+        enc = get_encoding()
+
+        long_text = " ".join(["word"] * 1000)
+        with caplog.at_level("INFO"):
+            self._remote(monkeypatch).embed_query(long_text)
+
+        sent = captured["payload"]["input"]
+        assert len(enc.encode(sent)) <= 10
+        assert long_text.startswith(sent)
+        assert any("search query" in r.getMessage() for r in caplog.records)
+
+    def test_documents_not_clipped_by_query_limit(self, monkeypatch):
+        monkeypatch.setattr(settings, "EMBEDDINGS_MAX_INPUT_TOKENS", None)
+        monkeypatch.setattr(settings, "EMBEDDINGS_MAX_QUERY_TOKENS", 10)
+        captured = _capture_post(monkeypatch)
+
+        long_text = " ".join(["word"] * 1000)
+        self._remote(monkeypatch).embed_documents([long_text])
+
+        assert captured["payload"]["input"] == [long_text]
+
+    def test_query_limit_zero_disables(self, monkeypatch):
+        monkeypatch.setattr(settings, "EMBEDDINGS_MAX_INPUT_TOKENS", None)
+        monkeypatch.setattr(settings, "EMBEDDINGS_MAX_QUERY_TOKENS", 0)
+        captured = _capture_post(monkeypatch)
+
+        long_text = " ".join(["word"] * 1000)
+        self._remote(monkeypatch).embed_query(long_text)
+
+        assert captured["payload"]["input"] == long_text
+
+    def test_short_query_is_not_tokenized(self, monkeypatch):
+        """A query shorter in bytes than the limit cannot exceed it: no tokenizer load."""
+        monkeypatch.setattr(settings, "EMBEDDINGS_MAX_QUERY_TOKENS", 512)
+        captured = _capture_post(monkeypatch)
+        emb = RemoteEmbeddings(api_url="https://example.test", model_name="m")
+        monkeypatch.setattr(emb, "_token_counter", MagicMock(side_effect=AssertionError("tokenized")))
+
+        emb.embed_query("how do I reset my password?")
+
+        assert captured["payload"]["input"] == "how do I reset my password?"
+
+    def test_the_default_limit_is_512(self):
+        from docsgpt.core.settings import Settings
+
+        assert Settings.model_fields["EMBEDDINGS_MAX_QUERY_TOKENS"].default == 512

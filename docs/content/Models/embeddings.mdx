@@ -130,6 +130,12 @@ You usually do not need to set it. When `EMBEDDINGS_NAME` names a model DocsGPT 
 
 Leaving `EMBEDDINGS_NAME` unset imposes no limit: the name is only forwarded as the `model` field in each request, so a default nobody chose is not taken as a description of your server. When no model tokenizer is available, counting falls back to tiktoken — pick a limit with headroom below the server's true limit to absorb the skew between the two tokenizers.
 
+## Search query length
+
+Each search query is clipped to `EMBEDDINGS_MAX_QUERY_TOKENS` tokens (default `512`) before it is embedded, whichever embedder you use. A query needs a few hundred tokens, while the memory an embedder uses grows with the square of its input length: on a long-context model such as granite, one query of about 9,000 tokens needs more than 12 GB. Long queries come from pasted code, logs or JSON in a first chat message, or from a webhook payload. When a query is clipped, DocsGPT logs `Clipping a … search query`.
+
+Documents are not affected; use `EMBEDDINGS_MAX_INPUT_TOKENS` (remote servers) to bound them. Set `EMBEDDINGS_MAX_QUERY_TOKENS=0` to turn query clipping off.
+
 ## Where the model runs
 
 A local embedding model costs a few hundred megabytes of resident memory per process, and the API embeds every query it serves — so by default it would hold its own copy alongside the worker's.

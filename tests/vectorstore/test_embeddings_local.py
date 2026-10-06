@@ -185,6 +185,40 @@ class TestEmbedding:
         wrapper = EmbeddingsWrapper(MPNET.name)
         assert wrapper.embed_query("hello") == [0.5, 0.6]
 
+    def test_embed_query_clips_long_query(self, fake_fastembed, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.parser.tokenization import TiktokenCounter
+
+        _, instance = fake_fastembed
+        monkeypatch.setattr(settings, "EMBEDDINGS_MAX_QUERY_TOKENS", 10)
+        monkeypatch.setattr(
+            "docsgpt.parser.tokenization.get_token_counter", lambda *_a, **_k: TiktokenCounter()
+        )
+        wrapper = EmbeddingsWrapper(MPNET.name)
+        instance.embed.reset_mock()
+        instance.embed.return_value = iter([np.array([0.5])])
+
+        long_query = " ".join(["word"] * 1000)
+        wrapper.embed_query(long_query)
+
+        (sent,) = instance.embed.call_args.args[0]
+        assert TiktokenCounter().count(sent) <= 10
+        assert long_query.startswith(sent)
+
+    def test_embed_documents_are_not_clipped_by_the_query_limit(self, fake_fastembed, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        _, instance = fake_fastembed
+        monkeypatch.setattr(settings, "EMBEDDINGS_MAX_QUERY_TOKENS", 10)
+        wrapper = EmbeddingsWrapper(MPNET.name)
+        instance.embed.reset_mock()
+        instance.embed.return_value = iter([np.array([0.5])])
+
+        long_text = " ".join(["word"] * 1000)
+        wrapper.embed_documents([long_text])
+
+        assert instance.embed.call_args.args[0] == [long_text]
+
     def test_call_dispatches_on_input_type(self, fake_fastembed):
         _, instance = fake_fastembed
         wrapper = EmbeddingsWrapper(MPNET.name)

@@ -368,8 +368,12 @@ class EmbeddingsWrapper:
         return len(self.embed_query("dimension probe"))
 
     def embed_query(self, query: str) -> List[float]:
-        """Embed a single query string."""
-        return self.embed_documents([query])[0]
+        """Embed a single query string, clipped to ``EMBEDDINGS_MAX_QUERY_TOKENS``."""
+        from docsgpt.parser.tokenization import get_token_counter
+        from docsgpt.vectorstore.base import clip_query
+
+        clipped = clip_query(query, lambda: get_token_counter(self.spec.repo))
+        return self.embed_documents([clipped])[0]
 
     def embed_documents(self, documents: List[str]) -> List[List[float]]:
         """Embed a list of documents, preserving input order.
