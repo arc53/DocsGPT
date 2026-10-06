@@ -119,7 +119,12 @@ export default function MonitorLinkCard({ link }: { link: MonitorLink }) {
   const monitor = useSelector((state: WithMonitors) =>
     selectMonitor(state, link.monitorId),
   );
-  const controls = useSecretControls(link.monitorId, link.signature);
+  const storedLink = monitor?.links?.find((l) => l.kind === 'webhook');
+  const controls = useSecretControls(
+    link.monitorId,
+    link.signature,
+    storedLink?.has_secret,
+  );
   const status = linkState(link.kind, monitor, Date.now(), link.expiresAt);
   const ended = status === 'ended' || status === 'decided';
   const signed = link.kind === 'webhook' && isSigned(link.signature) && !ended;

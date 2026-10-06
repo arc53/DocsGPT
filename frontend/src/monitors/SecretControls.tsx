@@ -8,6 +8,7 @@ import { Button } from '../components/ui/button';
 import { CodeBlock } from '../components/ui/code-block';
 import { Input } from '../components/ui/input';
 import { selectToken } from '../preferences/preferenceSlice';
+import type { Monitor } from './types';
 
 /** Schemes whose signing secret the sender creates: the owner pastes it in. */
 export const SENDER_SECRET_SCHEMES: ReadonlySet<string> = new Set([
@@ -34,7 +35,11 @@ const PROBLEM_KEY: Record<Exclude<Problem, null>, string> = {
  * Reveal, hide and set a webhook link's signing secret. The value lives in
  * this hook's state only: never in the store, never logged.
  */
-export function useSecretControls(monitorId: string, signature: string) {
+export function useSecretControls(
+  monitorId: string,
+  signature: string,
+  hasSecret?: boolean,
+) {
   const token = useSelector(selectToken);
   const [secret, setSecret] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -99,6 +104,7 @@ export function useSecretControls(monitorId: string, signature: string) {
 
   return {
     signature,
+    hasSecret,
     secret,
     busy,
     problem,
@@ -158,14 +164,18 @@ export function SecretPanel({ controls }: { controls: SecretControlsState }) {
   const senderCreated = SENDER_SECRET_SCHEMES.has(signature);
   return (
     <>
-      {senderCreated && !secret && !editing && !controls.saved && (
-        <p className="text-muted-foreground text-xs">
-          {t('monitors.linkCard.senderSecretNote', {
-            sender: signature === 'stripe' ? 'Stripe' : 'Slack',
-            interpolation: { escapeValue: false },
-          })}
-        </p>
-      )}
+      {senderCreated &&
+        controls.hasSecret !== true &&
+        !secret &&
+        !editing &&
+        !controls.saved && (
+          <p className="text-muted-foreground text-xs">
+            {t('monitors.linkCard.senderSecretNote', {
+              sender: signature === 'stripe' ? 'Stripe' : 'Slack',
+              interpolation: { escapeValue: false },
+            })}
+          </p>
+        )}
       {editing && (
         <form
           className="flex min-w-0 items-center gap-2"
@@ -239,5 +249,53 @@ export function SecretPanel({ controls }: { controls: SecretControlsState }) {
         </p>
       )}
     </>
+  );
+}
+
+/**
+ * A monitor's signing-secret controls on the Monitors page: Reveal / Hide
+ * and, for Stripe and Slack, Set signing secret, while its webhook link is
+ * live and signed. Nothing for any other monitor.
+ */
+export function MonitorSecretControls({ monitor }: { monitor: Monitor }) {
+  const link = liveSignedLink(monitor);
+  if (!link) return null;
+  return (
+    <LinkSecretControls
+      monitorId={monitor.monitor_id}
+      signature={link.signature as string}
+      hasSecret={link.has_secret}
+    />
+  );
+}
+
+function LinkSecretControls({
+  monitorId,
+  signature,
+  hasSecret,
+}: {
+  monitorId: string;
+  signature: string;
+  hasSecret?: boolean;
+}) {
+  const controls = useSecretControls(monitorId, signature, hasSecret);
+  return (
+    <div className="mt-1 flex min-w-0 flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <SecretActions controls={controls} />
+      </div>
+      <SecretPanel controls={controls} />
+    </div>
+  );
+}
+
+/** A live monitor's live, signed webhook link, or undefined. */
+export function liveSignedLink(monitor: Monitor) {
+  if (monitor.status !== 'active' && monitor.status !== 'paused') return;
+  return monitor.links?.find(
+    (link) =>
+      link.kind === 'webhook' &&
+      (link.state ?? 'live') === 'live' &&
+      isSigned(link.signature),
   );
 }

@@ -4,7 +4,12 @@ import { createRoot, type Root } from 'react-dom/client';
 import { Provider } from 'react-redux';
 import { MemoryRouter } from 'react-router-dom';
 
-const service = vi.hoisted(() => ({ list: vi.fn(), act: vi.fn() }));
+const service = vi.hoisted(() => ({
+  list: vi.fn(),
+  act: vi.fn(),
+  revealSecret: vi.fn(),
+  setSecret: vi.fn(),
+}));
 vi.mock('@/api/services/monitorsService', () => ({ default: service }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -32,6 +37,8 @@ describe('Monitors page', () => {
 
   beforeEach(() => {
     service.list.mockReset();
+    service.revealSecret.mockReset();
+    service.setSecret.mockReset();
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -57,6 +64,96 @@ describe('Monitors page', () => {
       await Promise.resolve();
     });
   };
+
+  const webhookLink = (overrides: Record<string, unknown> = {}) => ({
+    id: 'l-1',
+    kind: 'webhook' as const,
+    state: 'live' as const,
+    signature: 'github',
+    expires_at: '2999-01-01T00:00:00Z',
+    hit_count: 0,
+    max_hits: 1000,
+    last_hit_at: null,
+    revoked: false,
+    decided: false,
+    has_secret: true,
+    ...overrides,
+  });
+  const buttons = (label: string) =>
+    Array.from(container.querySelectorAll('button')).filter(
+      (b) => b.textContent === label,
+    );
+
+  it("reveals a live signed link's secret, as the chat card does", async () => {
+    service.revealSecret.mockResolvedValue({ state: 'ok', secret: 's3cret' });
+    service.list.mockResolvedValue([
+      sampleMonitor({
+        monitor_id: 'hook',
+        source_type: 'webhook',
+        interval: null,
+        links: [webhookLink()],
+      }),
+    ]);
+    await render();
+    const reveal = buttons('monitors.linkCard.revealSecret');
+    // The table and the narrow-screen list each carry the row.
+    expect(reveal).toHaveLength(2);
+    await act(async () => reveal[0].click());
+    expect(service.revealSecret).toHaveBeenCalledWith('hook', 'tok');
+    expect(
+      container.querySelector('[data-testid="monitor-link-secret"]')
+        ?.textContent,
+    ).toBe('s3cret');
+    await act(async () => buttons('monitors.linkCard.hideSecret')[0].click());
+    expect(container.textContent).not.toContain('s3cret');
+  });
+
+  it('offers Set signing secret for a Stripe link still waiting for it', async () => {
+    service.list.mockResolvedValue([
+      sampleMonitor({
+        monitor_id: 'stripe',
+        source_type: 'webhook',
+        interval: null,
+        links: [webhookLink({ signature: 'stripe', has_secret: false })],
+      }),
+      sampleMonitor({
+        monitor_id: 'set',
+        source_type: 'webhook',
+        interval: null,
+        links: [webhookLink({ signature: 'slack', has_secret: true })],
+      }),
+    ]);
+    await render();
+    expect(buttons('monitors.linkCard.setSecret')).toHaveLength(4);
+    // Only the one still waiting says calls are refused.
+    expect(
+      container.textContent?.split('monitors.linkCard.senderSecretNote').length,
+    ).toBe(3);
+  });
+
+  it('offers nothing for an unsigned, ended or finished link', async () => {
+    service.list.mockResolvedValue([
+      sampleMonitor({
+        monitor_id: 'unsigned',
+        source_type: 'webhook',
+        links: [webhookLink({ signature: 'none' })],
+      }),
+      sampleMonitor({
+        monitor_id: 'expired',
+        source_type: 'webhook',
+        links: [webhookLink({ state: 'expired' })],
+      }),
+      sampleMonitor({
+        monitor_id: 'done',
+        source_type: 'webhook',
+        status: 'cancelled',
+        links: [webhookLink()],
+      }),
+      sampleMonitor(),
+    ]);
+    await render();
+    expect(buttons('monitors.linkCard.revealSecret')).toHaveLength(0);
+  });
 
   it('lists what is watched, how often, wakes left, live ones first', async () => {
     service.list.mockResolvedValue([
