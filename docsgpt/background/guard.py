@@ -57,7 +57,7 @@ class _EngineOwner:
             self.model_user_id = user_id
         else:
             model_id = get_default_model_id()
-        self.upstream_model_id = model_id
+        self.model_id = model_id
         self.llm_name = (
             get_provider_from_model_id(model_id, user_id=user_id) if model_id else None
         ) or settings.LLM_PROVIDER

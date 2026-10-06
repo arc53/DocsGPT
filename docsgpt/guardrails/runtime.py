@@ -121,10 +121,12 @@ def _judge_factory(agent):
             api_key=agent.api_key,
             user_api_key=agent.user_api_key,
             decoded_token=agent.decoded_token,
+            # The registry id, not ``upstream_model_id``: LLMCreator looks the
+            # model up by id and resolves the wire name, base_url, key and caps.
             model_id=(
                 model_override
                 or settings.GUARDRAILS_JUDGE_MODEL
-                or agent.upstream_model_id
+                or agent.model_id
             ),
             agent_id=agent.agent_id,
             model_user_id=agent.model_user_id,
