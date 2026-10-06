@@ -292,6 +292,20 @@ class TestEmbeddingsSingleton:
         assert result.model_name == "embeddinggemma"
         assert result.headers["Authorization"] == "Bearer sk-remote"
 
+    @pytest.mark.parametrize(
+        "args, kwargs",
+        [(("sk-explicit",), {}), ((), {"openai_api_key": "sk-explicit"})],
+    )
+    @patch("docsgpt.vectorstore.base.settings")
+    def test_get_instance_remote_forwards_an_explicit_key(self, mock_settings, args, kwargs):
+        """A direct caller's key wins over EMBEDDINGS_KEY, as it does via ``get_embeddings``."""
+        mock_settings.EMBEDDINGS_BASE_URL = "http://remote:8080"
+        mock_settings.EMBEDDINGS_KEY = "sk-from-settings"
+
+        result = EmbeddingsSingleton.get_instance("embeddinggemma", *args, **kwargs)
+
+        assert result.headers["Authorization"] == "Bearer sk-explicit"
+
     @patch("docsgpt.vectorstore.base.settings")
     def test_get_instance_remote_falls_back_to_settings_key(self, mock_settings):
         """When no key is passed, the remote dispatch uses EMBEDDINGS_KEY."""

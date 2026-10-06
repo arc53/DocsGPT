@@ -289,7 +289,12 @@ class EmbeddingsSingleton:
     @staticmethod
     def get_instance(embeddings_name, *args, **kwargs):
         if settings.EMBEDDINGS_BASE_URL:
-            return EmbeddingsSingleton._remote_instance(embeddings_name)
+            # A direct caller hands its key over positionally or as
+            # ``openai_api_key``; either wins over EMBEDDINGS_KEY.
+            explicit = kwargs.get("openai_api_key", args[0] if args else None)
+            return EmbeddingsSingleton._remote_instance(
+                embeddings_name, explicit if isinstance(explicit, str) else None
+            )
         # A keyed runner (OpenAI) is cached per key. A local model takes no key
         # and stays under its bare name, which the boot hook evicts it by.
         key = kwargs.get("openai_api_key")
@@ -368,7 +373,9 @@ def get_embeddings(
     embeddings_name = embeddings_name or settings.EMBEDDINGS_NAME
     if not settings.EMBEDDINGS_BASE_URL and _delegation_enabled():
         # Keyed by the key too: inside a worker the client embeds locally with
-        # the key it was built with.
+        # the key it was built with. A dispatched embed carries no key -- the
+        # worker embeds with its own EMBEDDINGS_KEY, which it shares with this
+        # process -- so no secret ever travels over the broker.
         api_key = embeddings_key if embeddings_key is not None else settings.EMBEDDINGS_KEY
 
         def _delegated():
