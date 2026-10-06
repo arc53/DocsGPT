@@ -199,7 +199,7 @@ dnspython==2.8.0
     # via email-validator
 doclang==0.7.3
     # via docling-core
-docling==2.126.0
+docling==2.131.0
     # via docsgpt
 docling-core==2.96.0
     # via
