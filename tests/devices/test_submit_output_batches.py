@@ -99,15 +99,16 @@ def test_a_batch_of_many_lines_lands_in_order(broker):
     assert _Repo.touched == [("dev_b", "cancel,outbox")]
 
 
-def test_a_resent_batch_counts_once_and_writes_no_second_audit(broker):
+def test_a_resent_batch_counts_once_and_its_audit_keeps_the_first_outcome(broker):
     b, fake = broker
     _post(b, BATCH[:2], caps="cancel,outbox")
     status, body = _post(b, BATCH, caps="cancel,outbox")
     assert status == 200 and body == {"success": True, "received": 2, "duplicates": 2}
-    status, body = _post(b, BATCH, caps="cancel,outbox")
+    status, body = _post(b, [*BATCH[:3], {**BATCH[3], "exit_code": 7}], caps="cancel,outbox")
     assert body == {"success": True, "received": 0, "duplicates": 4}
     assert [c["seq"] for c in _stream(fake)] == [0, 1, 2, 3]
-    assert len(_Audit.calls) == 1
+    # A resent report re-records the stored outcome (idempotently), never the resent numbers.
+    assert {call[1]["exit_code"] for call in _Audit.calls} == {0}
 
 
 def test_a_client_without_an_outbox_is_taken_as_sent(broker):
@@ -198,3 +199,29 @@ def test_an_ack_the_broker_cannot_store_is_a_503(broker, monkeypatch):
             patch.object(auth_module, "db_session", _Ctx), patch.object(session_module, "get_broker", return_value=b):
         response = session_module.ack_invocation("s", "inv_b")
     assert response.status_code == 503 and response.headers["Retry-After"] == "5"
+
+
+def test_a_report_whose_reply_was_lost_is_audited_from_broker_state_on_retry(broker, monkeypatch):
+    """Redis stored the control chunk but the reply never came back: the route said 503, the client resends."""
+    b, fake = broker
+    real_eval = fake.eval
+
+    def stored_then_lost(script, *args):
+        result = real_eval(script, *args)
+        if '"control"' in str(args):
+            raise ConnectionError("reply lost")
+        return result
+
+    monkeypatch.setattr(fake, "eval", stored_then_lost)
+    status, _ = _post(b, BATCH, caps="outbox")
+    assert status == 503 and _Audit.calls == []
+    # The invocation was marked completed in the same step that stored the chunk.
+    assert b.get_invocation("inv_b").completed and b.get_invocation("inv_b").exit_code == 0
+    monkeypatch.setattr(fake, "eval", real_eval)
+    # The resend carries different numbers; the audit comes from what was stored, not from it.
+    resent = BATCH[:3] + [{**BATCH[3], "exit_code": 99}]
+    status, body = _post(b, resent, caps="outbox")
+    assert status == 200 and body == {"success": True, "received": 0, "duplicates": 4}
+    assert len(_Audit.calls) == 1 and _Audit.calls[0][1]["exit_code"] == 0
+    assert b.get_invocation("inv_b").exit_code == 0
+    assert _Audit.calls[0][1]["duration_ms"] == 5

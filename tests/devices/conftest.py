@@ -101,7 +101,7 @@ class FakeRedis:
             del self.kv[key]
             return 1
 
-    def _accept_chunk(self, inv_key, out_key, seq, is_control, chunk_json, maxlen, ttl):
+    def _accept_chunk(self, inv_key, out_key, seq, is_control, chunk_json, maxlen, ttl, now=None, *fields):
         """Mirror of ``_ACCEPT_CHUNK_LUA``, under the lock as Redis runs a script."""
         with self._lock:
             h = self.hashes.get(inv_key)
@@ -117,6 +117,11 @@ class FakeRedis:
                 h["last_seq"] = _b(seq)
             self.xadd(out_key, {"c": chunk_json}, maxlen=int(maxlen))
             self.expire(out_key, int(ttl))
+            if is_control == "1":
+                h.setdefault("started_at", _b(now))
+                for name, value in zip(fields[::2], fields[1::2]):
+                    h[name] = _b(value)
+                self.expire(inv_key, int(ttl))
             return 1
 
     # -- lists --------------------------------------------------------

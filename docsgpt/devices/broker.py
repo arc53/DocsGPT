@@ -88,9 +88,11 @@ CHUNK_ERROR = "error"
 
 # Takes one output chunk, once. KEYS: the invocation hash, its output stream.
 # ARGV: seq to deduplicate on ("" for none), "1" for the control chunk, the
-# chunk's JSON, the stream's MAXLEN, the TTL. Returns -1 for an unknown
-# invocation, 0 for a repeat, 1 when appended. One step, so two copies of a
-# resent batch racing each other can't both get in.
+# chunk's JSON, the stream's MAXLEN, the TTL, now, then the control chunk's
+# result fields as name/value pairs. Returns -1 for an unknown invocation, 0
+# for a repeat, 1 when appended. One step, so two copies of a resent batch
+# racing each other can't both get in, and a control chunk that was appended
+# has always marked the invocation completed (even if the reply was lost).
 _ACCEPT_CHUNK_LUA = """
 -- accept_chunk
 if redis.call('EXISTS', KEYS[1]) == 0 then
@@ -112,6 +114,13 @@ if ARGV[1] ~= '' then
 end
 redis.call('XADD', KEYS[2], 'MAXLEN', '~', ARGV[4], '*', 'c', ARGV[3])
 redis.call('EXPIRE', KEYS[2], ARGV[5])
+if ARGV[2] == '1' then
+    redis.call('HSETNX', KEYS[1], 'started_at', ARGV[6])
+    for i = 7, #ARGV, 2 do
+        redis.call('HSET', KEYS[1], ARGV[i], ARGV[i + 1])
+    end
+    redis.call('EXPIRE', KEYS[1], ARGV[5])
+end
 return 1
 """
 
@@ -664,6 +673,10 @@ class DeviceBroker:
         stream = chunk.get("stream")
         seq = chunk.get("seq")
         seq_arg = str(int(seq)) if dedupe and isinstance(seq, int) and not isinstance(seq, bool) else ""
+        fields: list = []
+        if stream == "control":
+            for name, value in _control_fields(chunk, now).items():
+                fields.extend([name, value])
         try:
             taken = redis.eval(
                 _ACCEPT_CHUNK_LUA,
@@ -675,6 +688,8 @@ class DeviceBroker:
                 json.dumps(chunk),
                 str(self._out_maxlen()),
                 str(ttl),
+                repr(now),
+                *fields,
             )
         except Exception:
             logger.exception("submit_output_chunk append failed for %s", invocation_id)
@@ -690,23 +705,7 @@ class DeviceBroker:
                 if isinstance(text, str):
                     field = "stdout_bytes" if stream == "stdout" else "stderr_bytes"
                     redis.hincrby(key, field, len(text.encode("utf-8")))
-            elif stream == "control":
-                redis.hsetnx(key, "started_at", repr(now))
-                mapping = {"completed": "1", "finished_at": repr(now)}
-                exit_code = _coerce_int(chunk.get("exit_code"))
-                if exit_code is not None:
-                    mapping["exit_code"] = str(exit_code)
-                duration = _coerce_int(chunk.get("duration_ms"))
-                if duration is not None:
-                    mapping["duration_ms"] = str(duration)
-                if chunk.get("error"):
-                    mapping["error"] = _as_str(chunk["error"])[:200]
-                if chunk.get("detail"):
-                    mapping["detail"] = _as_str(chunk["detail"])[:500]
-                if chunk.get("truncated") is True:
-                    mapping["truncated"] = "1"
-                redis.hset(key, mapping=mapping)
-            redis.expire(key, ttl)
+                redis.expire(key, ttl)
         except Exception:
             logger.exception("submit_output_chunk bookkeeping failed for %s", invocation_id)
         # Keep a co-located SSE session alive while output flows (single-worker
@@ -895,6 +894,24 @@ def _decode_chunk(fields: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(chunk, dict) or chunk.get("stream") not in ("stdout", "stderr", "control"):
         return None
     return chunk
+
+
+def _control_fields(chunk: Dict[str, Any], now: float) -> Dict[str, str]:
+    """What a control chunk records on its invocation: completion, exit code, duration, error, detail, truncation."""
+    fields = {"completed": "1", "finished_at": repr(now)}
+    exit_code = _coerce_int(chunk.get("exit_code"))
+    if exit_code is not None:
+        fields["exit_code"] = str(exit_code)
+    duration = _coerce_int(chunk.get("duration_ms"))
+    if duration is not None:
+        fields["duration_ms"] = str(duration)
+    if chunk.get("error"):
+        fields["error"] = _as_str(chunk["error"])[:200]
+    if chunk.get("detail"):
+        fields["detail"] = _as_str(chunk["detail"])[:500]
+    if chunk.get("truncated") is True:
+        fields["truncated"] = "1"
+    return fields
 
 
 def _coerce_int(value: Any) -> Optional[int]:

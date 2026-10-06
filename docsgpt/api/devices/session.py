@@ -158,6 +158,7 @@ def submit_output(session_id: str, invocation_id: str) -> Response:
     received = 0
     duplicates = 0
     control_chunk = None
+    resent_control = False
     for line in io.BytesIO(body):
         line = line.strip()
         if not line:
@@ -171,6 +172,8 @@ def submit_output(session_id: str, invocation_id: str) -> Response:
         outcome = broker.accept_output_chunk(invocation_id, chunk, dedupe=dedupe)
         if outcome == "duplicate":
             duplicates += 1
+            if chunk.get("stream") == "control":
+                resent_control = True
             continue
         if outcome == "gone":
             # Expired or cleaned up since the lookup: the client stops resending.
@@ -191,6 +194,11 @@ def submit_output(session_id: str, invocation_id: str) -> Response:
     # (worker) process racing to delete the invocation's Redis state. Byte
     # totals / started_at live in the hash, read best-effort (the functional
     # exit_code/error/duration still land even if the hash is already gone).
+    if control_chunk is None and resent_control:
+        # The report was taken before, perhaps by a request whose reply was lost before
+        # its audit write: record the outcome again from what the broker stored (never
+        # from the resent chunk). The write is idempotent.
+        _audit_from_state(broker, invocation_id)
     if control_chunk is not None:
         from datetime import datetime, timezone
         snap = broker.get_invocation(invocation_id)
@@ -254,3 +262,32 @@ def _owned_invocation(broker, invocation_id: str):
     except Exception:
         logger.exception("device broker lookup failed for %s", invocation_id)
         return None, _broker_unavailable()
+
+
+def _audit_from_state(broker, invocation_id: str) -> None:
+    """Record an invocation's outcome in the audit log from the broker's stored result (best-effort)."""
+    from datetime import datetime, timezone
+
+    snap = broker.get_invocation(invocation_id)
+    if snap is None or not snap.completed:
+        return
+    try:
+        with db_session() as conn:
+            DeviceAuditLogRepository(conn).record_result(
+                invocation_id,
+                started_at=(
+                    datetime.fromtimestamp(snap.started_at, tz=timezone.utc) if snap.started_at else None
+                ),
+                finished_at=(
+                    datetime.fromtimestamp(snap.finished_at, tz=timezone.utc)
+                    if snap.finished_at
+                    else datetime.now(timezone.utc)
+                ),
+                exit_code=snap.exit_code,
+                duration_ms=snap.duration_ms,
+                stdout_bytes=snap.stdout_bytes,
+                stderr_bytes=snap.stderr_bytes,
+                error=_audit_error({"error": snap.error, "detail": snap.detail}),
+            )
+    except Exception:
+        logger.exception("audit record_result (from broker state) failed for %s", invocation_id)
