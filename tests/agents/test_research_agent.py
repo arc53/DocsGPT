@@ -1504,6 +1504,39 @@ class TestExecuteStepToolsWithRefinement:
         assert assistant_id
         assert messages[1]["tool_call_id"] == assistant_id
 
+    def test_raising_tool_does_not_carry_queued_images(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_handler,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+    ):
+        """Images a tool queued before it raised are dropped, not attached to the error result."""
+        agent = ResearchAgent(**agent_base_params)
+
+        from docsgpt.llm.handlers.base import ToolCall
+        from docsgpt.llm.tool_images import IMAGES_KEY
+
+        call = ToolCall(id="tc1", name="api__fetch", arguments={})
+
+        def gen_execute(tools_dict, tc, llm_class):
+            agent.tool_executor.pending_native_parts = [{"ref": "img-1"}]
+            raise RuntimeError("failed after queuing an image")
+            yield  # noqa: B901 - makes it a generator
+
+        agent.tool_executor.execute = gen_execute
+        mock_llm_handler.create_tool_message = Mock(
+            side_effect=lambda call, result: {"role": "tool", "tool_call_id": call.id, "content": result}
+        )
+
+        messages, _ = agent._execute_step_tools_with_refinement(
+            [call], {}, [], agent.tool_executor, False
+        )
+
+        assert IMAGES_KEY not in messages[1]
+        assert agent.tool_executor.pending_native_parts == []
+
     def test_oversized_tool_result_is_capped_for_the_llm(
         self,
         agent_base_params,
@@ -2017,3 +2050,34 @@ class TestResearchStepPauseGates:
         assert ran == []
         assert results["c1"].startswith("Tool denied")
         assert [d["action_name"] for d in executor.headless_denials] == ["delete_all"]
+
+
+@pytest.mark.unit
+class TestResearchThinkTool:
+    """The think tool research adds has no DB row, so it needs its sentinel id to load."""
+
+    def test_think_call_runs_through_the_real_executor(
+        self, agent_base_params, mock_llm, mock_llm_creator, monkeypatch,
+    ):
+        # Pre-import to stabilise the ToolManager.load_tools walk's import order.
+        import docsgpt.api.user.tools.mcp  # noqa: F401
+        from docsgpt.agents import tool_executor as te_mod
+        from docsgpt.agents.tool_executor import ToolExecutor
+        from docsgpt.llm.handlers.base import ToolCall
+        from docsgpt.llm.handlers.openai import OpenAILLMHandler
+
+        # Journal writes need a database.
+        monkeypatch.setattr(te_mod, "_record_proposed", lambda *a, **kw: False)
+        executor = ToolExecutor(user="owner", decoded_token={"sub": "owner"})
+        monkeypatch.setattr(executor, "get_tools", lambda: {})
+        agent = ResearchAgent(tool_executor=executor, **agent_base_params)
+        agent.llm_handler = OpenAILLMHandler()
+
+        tools_dict = agent._setup_tools()
+        assert "reason" in [t["function"]["name"] for t in agent.tools]
+        call = ToolCall(id="c1", name="reason", arguments={"reasoning": "plan the search"})
+
+        messages, _ = agent._execute_step_tools_with_refinement([call], tools_dict, [], executor, False)
+
+        assert messages[-1]["content"] == "Continue."
+        assert executor.tool_calls[-1]["status"] != "error"

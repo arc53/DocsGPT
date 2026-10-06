@@ -682,6 +682,9 @@ class ResearchAgent(BaseAgent):
                     )
         except Exception as e:
             logger.error(f"Research step tool {call.name} failed: {e}", exc_info=True)
+            # As in the chat loop: images the call queued before it failed
+            # must not ride on its error result.
+            take_tool_images(executor, {})
             return f"Error executing tool: {e}", call.id or str(uuid.uuid4())
 
     def _refuse_paused_call(
