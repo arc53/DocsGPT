@@ -199,17 +199,17 @@ dnspython==2.8.0
     # via email-validator
 doclang==0.7.3
     # via docling-core
-docling==2.126.0
+docling==2.131.0
     # via docsgpt
-docling-core==2.96.0
+docling-core==2.100.0
     # via
     #   docling-parse
     #   docling-slim
 docling-ibm-models==4.0.2
     # via docling-slim
-docling-parse==7.19.1
+docling-parse==7.22.2
     # via docling-slim
-docling-slim==2.126.0
+docling-slim==2.131.0
     # via docling
 docstring-parser==0.18.0
     # via
@@ -418,6 +418,8 @@ kombu==5.6.2
     # via
     #   celery
     #   docsgpt
+langcodes==3.5.1
+    # via docling-slim
 lark==1.3.1
     # via cel-python
 latex2mathml==3.81.1
@@ -873,6 +875,7 @@ regex==2026.9.10
     #   transformers
 requests==2.34.2
     # via
+    #   docling-core
     #   docling-slim
     #   docsgpt
     #   elevenlabs
