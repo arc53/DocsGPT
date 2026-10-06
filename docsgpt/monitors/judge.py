@@ -56,17 +56,14 @@ class JudgeError(Exception):
 #: Provider error codes that mean the content was refused under a content or safety policy.
 _REFUSAL_CODES = frozenset({"content_filter", "content_policy_violation", "responsibleaipolicyviolation"})
 
-#: Provider exception class names (Gemini SDKs) that mean the same.
-_REFUSAL_CLASSES = ("BlockedPromptException", "StopCandidateException")
-
-
 def is_content_refusal(error: BaseException) -> bool:
     """Whether a provider refused the request's content under a content or safety policy.
 
     Azure OpenAI and OpenAI answer 400 with ``code: content_filter`` (or an inner
-    ``ResponsibleAIPolicyViolation``); Gemini's SDK raises a blocked-prompt
-    error. Only those explicit markers count: anything else stays a failure
-    that a later check may get past.
+    ``ResponsibleAIPolicyViolation``); ``GoogleLLM`` raises ``ContentBlockedError``
+    (``code = "content_filter"``) for a prompt or answer Gemini blocked. Only
+    those explicit markers count: anything else stays a failure that a later
+    check may get past.
     """
     codes = [getattr(error, "code", None)]
     body = getattr(error, "body", None)
@@ -75,9 +72,7 @@ def is_content_refusal(error: BaseException) -> bool:
         codes.append(inner.get("code"))
         if isinstance(inner.get("innererror"), dict):
             codes.append(inner["innererror"].get("code"))
-    if any(isinstance(code, str) and code.strip().lower() in _REFUSAL_CODES for code in codes):
-        return True
-    return type(error).__name__ in _REFUSAL_CLASSES
+    return any(isinstance(code, str) and code.strip().lower() in _REFUSAL_CODES for code in codes)
 
 
 @dataclass
