@@ -188,6 +188,35 @@ def _body_command(check: Optional[Dict[str, Any]]) -> str:
     return f"body=$(printf {_quoted(template)} \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\")"
 
 
+def example_get(url: str, check: Optional[Dict[str, Any]] = None) -> str:
+    """A GET call to a link that takes GET: the example body's top-level fields as query parameters.
+
+    Args:
+        url: The link.
+        check: The monitor's check, to shape the parameters.
+
+    Returns:
+        A one-line shell command.
+    """
+    from urllib.parse import urlencode
+
+    params: Dict[str, str] = {}
+
+    def flatten(node: Dict[str, Any], prefix: str) -> None:
+        for key, value in node.items():
+            if value == _SENT_AT:
+                continue
+            if isinstance(value, dict):
+                flatten(value, f"{prefix}{key}.")
+            else:
+                params[f"{prefix}{key}"] = str(value)
+
+    # Dotted keys nest again on arrival, so a check's value_path reads them as from a JSON body.
+    flatten(example_body(check), "")
+    query = urlencode(params)
+    return f"curl {_quoted(url + ('?' + query if query else ''))}"
+
+
 def example_curl(url: str, scheme: str, check: Optional[Dict[str, Any]] = None) -> str:
     """A command that calls the link correctly for its signature scheme.
 
@@ -274,6 +303,7 @@ def link_view(link: Dict[str, Any]) -> Dict[str, Any]:
         "state": link_state(link),
         "signature": link.get("signature_scheme"),
         "secret_ref": "{{link_secret:" + str(ref) + "}}" if ref else None,
+        "methods": ["POST", "GET"] if link.get("allow_get") else ["POST"] if link.get("kind") == "webhook" else None,
         "expires_at": link.get("expires_at"),
         "hit_count": link.get("hit_count"),
         "max_hits": link.get("max_hits"),

@@ -32,7 +32,8 @@ def enqueued(monkeypatch):
     return calls
 
 
-def make_link(engine, conversation_id, *, scheme="none", max_hits=1000, expires_in=timedelta(days=1)):
+def make_link(engine, conversation_id, *, scheme="none", max_hits=1000, expires_in=timedelta(days=1),
+              allow_get=False, check=None):
     """A webhook monitor with its link; returns ``(token, secret, link, monitor)``."""
     now = datetime.now(timezone.utc)
     token = links.new_token("webhook")
@@ -44,7 +45,7 @@ def make_link(engine, conversation_id, *, scheme="none", max_hits=1000, expires_
             agent_id=None,
             description="CI done",
             source_type="webhook",
-            spec={"source": {"type": "webhook", "signature": scheme}},
+            spec={"source": {"type": "webhook", "signature": scheme}, "check": check},
             on_match="tell me",
             end_at=now + timedelta(days=7),
             next_run_at=now + timedelta(days=7),
@@ -60,6 +61,7 @@ def make_link(engine, conversation_id, *, scheme="none", max_hits=1000, expires_
             max_hits=max_hits,
             signature_scheme=scheme,
             secret_encrypted=links.seal_secret(secret, "u1"),
+            allow_get=allow_get,
         )
     return token, secret, link, monitor
 
@@ -70,10 +72,15 @@ def _hits(engine):
 
 
 class TestBasics:
-    def test_get_is_405_with_a_short_explanation(self, client):
-        response = client.get("/api/triggers/trg_anything_at_all_here")
+    def test_get_on_a_post_only_link_is_405_with_a_short_explanation(self, client, mon_db, conversation_id, enqueued):
+        token, *_ = make_link(mon_db, conversation_id)
+        response = client.get(f"/api/triggers/{token}?status=success")
         assert response.status_code == 405
         assert "POST" in response.get_data(as_text=True) and response.headers["Allow"] == "POST"
+        assert _hits(mon_db) == [] and enqueued == []
+
+    def test_get_on_an_unknown_link_is_404(self, client, mon_db):
+        assert client.get("/api/triggers/trg_anything_at_all_here").status_code == 404
 
     def test_post_stores_once_and_queues(self, client, mon_db, conversation_id, enqueued):
         token, _secret, link, _monitor = make_link(mon_db, conversation_id)
@@ -306,3 +313,75 @@ class TestSignedLinks:
         with caplog.at_level("DEBUG"):
             client.post(f"/api/triggers/{token}", json={}, headers={"X-Hub-Signature-256": "sha256=00"})
         assert secret not in caplog.text
+
+
+class TestGetLinks:
+    def test_query_parameters_are_the_delivery(self, client, mon_db, conversation_id, enqueued):
+        token, _secret, link, _m = make_link(mon_db, conversation_id, allow_get=True)
+        response = client.get(f"/api/triggers/{token}?status=success&deployment.env=prod&tag=a&tag=b",
+                              headers={"User-Agent": "curl/8.5"})
+        assert response.status_code == 202 and response.get_json() == {"accepted": True}
+        hit = _hits(mon_db)[0]
+        assert hit["payload"]["body"] == {"status": "success", "deployment": {"env": "prod"}, "tag": ["a", "b"]}
+        assert hit["payload"]["method"] == "GET"
+        assert enqueued == [str(hit["id"])]
+        with mon_db.connect() as conn:
+            assert TriggerLinksRepository(conn).get(str(link["id"]))["hit_count"] == 1
+
+    def test_the_same_query_twice_counts_once(self, client, mon_db, conversation_id, enqueued):
+        token, *_ = make_link(mon_db, conversation_id, allow_get=True)
+        assert client.get(f"/api/triggers/{token}?a=1&b=2").status_code == 202
+        assert client.get(f"/api/triggers/{token}?b=2&a=1").get_json()["duplicate"] is True
+        assert client.get(f"/api/triggers/{token}?a=2").status_code == 202
+        assert len(_hits(mon_db)) == 2
+
+    @pytest.mark.parametrize(
+        "headers,reason",
+        [
+            ({"User-Agent": "Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)"}, "preview"),
+            ({"User-Agent": "Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)"}, "preview"),
+            ({"User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"}, "preview"),
+            ({"User-Agent": "Mozilla/5.0", "Sec-Purpose": "prefetch;prerender"}, "prefetch"),
+            ({"User-Agent": "Mozilla/5.0", "Purpose": "prefetch"}, "prefetch"),
+        ],
+    )
+    def test_previews_and_prefetches_change_nothing(self, client, mon_db, conversation_id, enqueued, headers, reason):
+        token, _secret, link, _m = make_link(mon_db, conversation_id, allow_get=True)
+        response = client.get(f"/api/triggers/{token}?status=success", headers=headers)
+        assert response.status_code == 200 and response.get_json() == {"ignored": reason}
+        assert _hits(mon_db) == [] and enqueued == []
+        with mon_db.connect() as conn:
+            assert TriggerLinksRepository(conn).get(str(link["id"]))["hit_count"] == 0
+
+    def test_head_changes_nothing(self, client, mon_db, conversation_id, enqueued):
+        token, *_ = make_link(mon_db, conversation_id, allow_get=True)
+        response = client.head(f"/api/triggers/{token}?status=success")
+        assert response.status_code == 200
+        assert _hits(mon_db) == [] and enqueued == []
+
+    def test_post_still_works_on_a_get_link(self, client, mon_db, conversation_id, enqueued):
+        token, *_ = make_link(mon_db, conversation_id, allow_get=True)
+        assert client.post(f"/api/triggers/{token}", json={"status": "success"}).status_code == 202
+
+    def test_a_used_up_get_link_is_404(self, client, mon_db, conversation_id, enqueued):
+        token, *_ = make_link(mon_db, conversation_id, allow_get=True, max_hits=1)
+        assert client.get(f"/api/triggers/{token}?n=1").status_code == 202
+        assert client.get(f"/api/triggers/{token}?n=2").status_code == 404
+
+    def test_a_long_query_is_413(self, client, mon_db, conversation_id, enqueued, monkeypatch):
+        monkeypatch.setattr(settings, "TRIGGER_MAX_PAYLOAD_BYTES", 1024)
+        token, *_ = make_link(mon_db, conversation_id, allow_get=True)
+        assert client.get(f"/api/triggers/{token}?x={'a' * 2000}").status_code == 413
+
+    def test_a_get_delivery_runs_the_check_like_a_body(self, client, mon_db, conversation_id, enqueued, wakes):
+        from docsgpt.monitors import tick
+
+        token, *_ = make_link(
+            mon_db, conversation_id, allow_get=True,
+            check={"type": "status", "value_path": "deployment.state", "terminal": ["success", "failure"]},
+        )
+        client.get(f"/api/triggers/{token}?deployment.state=running")
+        client.get(f"/api/triggers/{token}?deployment.state=success")
+        for hit in _hits(mon_db):
+            tick.process_hit(str(hit["id"]))
+        assert len(wakes) == 1 and "success" in json.dumps(wakes[0]["payload"])

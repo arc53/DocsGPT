@@ -191,3 +191,43 @@ class TestDerived:
         assert spec.human_duration(900) == "15m"
         assert spec.human_duration(86400 * 7) == "7d"
         assert spec.human_duration(90) == "90s"
+
+
+class TestWebhookMethods:
+    def test_post_only_by_default(self):
+        assert "methods" not in _req(source={"type": "webhook"}).source
+
+    def test_get_is_opt_in_and_lives_a_short_while(self, monkeypatch):
+        monkeypatch.setattr(settings, "TRIGGER_GET_DEFAULT_TTL_HOURS", 12)
+        request = _req(source={"type": "webhook", "methods": ["get", "POST"]})
+        assert request.source["methods"] == ["POST", "GET"]
+        assert request.expires_at == NOW + timedelta(hours=12)
+
+    def test_an_explicit_lifetime_still_applies(self):
+        request = _req(source={"type": "webhook", "methods": ["GET"]}, expires_in="3d")
+        assert request.source["methods"] == ["POST", "GET"]
+        assert request.expires_at == NOW + timedelta(days=3)
+
+    @pytest.mark.parametrize(
+        "source,message",
+        [
+            ({"type": "webhook", "methods": ["PUT"]}, "takes only POST, GET"),
+            ({"type": "webhook", "methods": "nonsense"}, "takes only"),
+            ({"type": "webhook", "methods": [1]}, "must be a list"),
+            ({"type": "webhook", "methods": ["GET"], "signature": "github"}, "a GET call has none"),
+        ],
+    )
+    def test_rejects(self, source, message):
+        with pytest.raises(SpecError, match=message):
+            _req(source=source)
+
+
+class TestExposeSecret:
+    def test_only_on_a_signed_link(self):
+        assert _req(source={"type": "webhook", "signature": "github", "expose_secret": True}).source[
+            "expose_secret"
+        ] is True
+        with pytest.raises(SpecError, match="needs a signed link"):
+            _req(source={"type": "webhook", "expose_secret": True})
+        with pytest.raises(SpecError, match="true or false"):
+            _req(source={"type": "webhook", "signature": "github", "expose_secret": "yes"})

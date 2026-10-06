@@ -50,29 +50,31 @@ class TriggerLinksRepository:
         approval_spec: Optional[Dict[str, Any]] = None,
         ref: Optional[str] = None,
         expose_secret: bool = False,
+        allow_get: bool = False,
     ) -> dict:
         """Insert a link; returns the row (which never holds the raw token).
 
         ``ref`` is the signed link's short reference id (``{{link_secret:REF}}``),
         unique per user; ``expose_secret`` records that the owner let the model
-        see the raw secret.
+        see the raw secret; ``allow_get`` lets a webhook link take GET calls.
         """
         row = self._conn.execute(
             text(
                 """
                 INSERT INTO trigger_links (
                     monitor_id, user_id, conversation_id, token_hash, kind, secret_encrypted,
-                    signature_scheme, approval_spec, expires_at, max_hits, ref, expose_secret
+                    signature_scheme, approval_spec, expires_at, max_hits, ref, expose_secret, allow_get
                 ) VALUES (
                     CAST(:monitor_id AS uuid), :user_id, CAST(:conversation_id AS uuid), :token_hash, :kind,
                     :secret_encrypted, :signature_scheme, CAST(:approval_spec AS jsonb), :expires_at, :max_hits,
-                    :ref, :expose_secret
+                    :ref, :expose_secret, :allow_get
                 ) RETURNING *
                 """
             ),
             {
                 "ref": ref,
                 "expose_secret": bool(expose_secret),
+                "allow_get": bool(allow_get),
                 "monitor_id": str(monitor_id),
                 "user_id": user_id,
                 "conversation_id": str(conversation_id),

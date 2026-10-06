@@ -23,7 +23,7 @@ from typing import Any, Dict, Mapping, Optional, Tuple
 from urllib.parse import parse_qs
 
 from docsgpt.core.settings import settings
-from docsgpt.monitors import links, signatures
+from docsgpt.monitors import links, prefetch, signatures
 from docsgpt.storage.db.repositories.monitors import MonitorsRepository
 from docsgpt.storage.db.repositories.trigger_links import TriggerHitsRepository, TriggerLinksRepository
 from docsgpt.storage.db.session import db_readonly, db_session
@@ -120,6 +120,58 @@ def parse_body(body: bytes, content_type: str) -> Any:
     return text
 
 
+#: Most query parameters a GET call keeps.
+MAX_QUERY_PARAMS = 100
+
+
+def query_body(pairs: Any) -> Dict[str, Any]:
+    """A GET call's query parameters as the call's data.
+
+    One value per key unless the key repeats (then a list); a dotted key
+    (``deployment.state=success``) also nests, so a check's ``value_path``
+    reads it the same as from a JSON body. A key that is both a value and a
+    parent keeps the value.
+
+    Args:
+        pairs: ``(key, value)`` pairs in order (``request.args.items(multi=True)``).
+
+    Returns:
+        The data.
+    """
+    flat: Dict[str, Any] = {}
+    for key, value in list(pairs)[:MAX_QUERY_PARAMS]:
+        key = strip_null_bytes(str(key))[:200]
+        value = strip_null_bytes(str(value))
+        if key in flat:
+            flat[key] = (flat[key] if isinstance(flat[key], list) else [flat[key]]) + [value]
+        else:
+            flat[key] = value
+    out: Dict[str, Any] = {}
+    for key, value in flat.items():
+        parts = [part for part in key.split(".")]
+        if len(parts) == 1 or not all(parts):
+            out.setdefault(key, value)
+            continue
+        node = out
+        for part in parts[:-1]:
+            child = node.get(part)
+            if child is None:
+                child = node[part] = {}
+            if not isinstance(child, dict):
+                node = None
+                break
+            node = child
+        if node is None or parts[-1] in node:
+            out.setdefault(key, value)
+        else:
+            node[parts[-1]] = value
+    return out
+
+
+def _canonical_query(data: Dict[str, Any]) -> bytes:
+    return json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
 def _window() -> int:
     return max(int(settings.TRIGGER_DEDUPE_WINDOW_SECONDS), 1)
 
@@ -152,25 +204,48 @@ def _repeated_body(conn: Any, link_id: str, key: str) -> bool:
     return TriggerHitsRepository(conn).received_since(link_id, previous, _window())
 
 
-def accept_delivery(token: str, *, body: bytes, headers: Mapping[str, str], content_type: str) -> Response:
-    """Take a webhook delivery: 202 when stored (or already stored), else 404, 401, 413 or 429.
+def accept_delivery(
+    token: str,
+    *,
+    body: bytes,
+    headers: Mapping[str, str],
+    content_type: str,
+    method: str = "POST",
+    query: Any = None,
+) -> Response:
+    """Take a webhook delivery: 202 when stored (or already stored), else 404, 401, 405, 413 or 429.
+
+    A GET call is taken only by a link created to accept it; its query
+    parameters are the delivery (:func:`query_body`). A HEAD, a prefetch or a
+    known link-preview bot (:mod:`docsgpt.monitors.prefetch`) gets ``200
+    {"ignored": ...}`` and changes nothing.
 
     Args:
         token: The token from the URL.
-        body: The raw body (the caller reads at most ``TRIGGER_MAX_PAYLOAD_BYTES`` + 1 bytes).
+        body: The raw body (the caller reads at most ``TRIGGER_MAX_PAYLOAD_BYTES`` + 1 bytes); empty for GET.
         headers: The request headers.
         content_type: The request's Content-Type.
+        method: ``POST``, ``GET`` or ``HEAD``.
+        query: A GET call's ``(key, value)`` query pairs.
 
     Returns:
         ``(status, json body)``.
     """
     if not settings.MONITORS_ENABLED or not _valid_token(token):
         return NOT_FOUND
+    method = str(method or "POST").upper()
+    is_get = method in ("GET", "HEAD")
+    if is_get:
+        ignored = prefetch.ignore_reason(method, headers)
+        if ignored:
+            return 200, {"ignored": ignored}
     hashed = links.token_hash(token)
     with db_readonly() as conn:
         link = TriggerLinksRepository(conn).get_live(hashed, "webhook")
     if link is None:
         return NOT_FOUND
+    if is_get and not link.get("allow_get"):
+        return 405, {"error": "this link takes POST only"}
     link_id = str(link["id"])
     scheme = link.get("signature_scheme") or "none"
     signed = scheme != "none"
@@ -196,11 +271,17 @@ def accept_delivery(token: str, *, body: bytes, headers: Mapping[str, str], cont
         return 202, {"accepted": True, "ping": True}
     if signed and rate_limited("trigger", link_id, limit):
         return 429, {"error": "too many requests to this link; retry in a minute"}
-    payload: Dict[str, Any] = {"body": parse_body(body, content_type), "content_type": content_type or None}
+    if is_get:
+        data = query_body(query or [])
+        payload: Dict[str, Any] = {"body": data, "content_type": None, "method": "GET"}
+        identity = _canonical_query(data)
+    else:
+        payload = {"body": parse_body(body, content_type), "content_type": content_type or None}
+        identity = body
     event = next((_get(headers, name) for name in _EVENT_HEADERS if _get(headers, name)), None)
     if event:
         payload["event"] = str(event)[:100]
-    key = dedupe_key(headers, body, delivery_id)
+    key = dedupe_key(headers, identity, delivery_id)
     try:
         with db_session() as conn:
             if _repeated_body(conn, link_id, key):

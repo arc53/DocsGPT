@@ -23,7 +23,10 @@ _CREATE_DESCRIPTION = (
     "\"hmac_sha256\" for a custom sender that computes it. A signed link's secret comes back as a reference, "
     "{{link_secret:REF}}: to set up the sender yourself, put the reference in the approved tool call that does it "
     "and the server fills in the value; `expose_secret: true` returns the raw value instead, which then goes to "
-    "the model provider, so use it only when the user asks); `approval` (returns a page link where a person "
+    "the model provider, so use it only when the user asks. `methods: [\"POST\", \"GET\"]` also takes GET calls, "
+    "with the query parameters as the data, but anything that opens a GET link fires it: use it only for a "
+    "machine caller that can't POST (a device or app that only opens URLs), never for a link to paste into a "
+    "chat, an email or a document); `approval` (returns a page link where a person "
     "approves or rejects your question; you are woken with the decision and any comment).\n"
     "A source only reads state: check a status, list new items, read a page, file or metric. Put the action in "
     "`on_match` and do it when you are woken, asking for approval as usual. A tool source that would need "
@@ -130,6 +133,14 @@ class MonitorTool(Tool):
                                         "webhook: how calls are signed. Default none, right for any sender "
                                         "that can't sign; github for GitHub, standard_webhooks for Svix-style "
                                         "senders, hmac_sha256 only for a custom sender that computes it."
+                                    ),
+                                },
+                                "methods": {
+                                    "type": "array",
+                                    "items": {"type": "string", "enum": ["POST", "GET"]},
+                                    "description": (
+                                        "webhook: HTTP methods; default [\"POST\"]. Add GET only for a machine "
+                                        "caller that can't POST; never for a link people paste or open."
                                     ),
                                 },
                                 "expose_secret": {

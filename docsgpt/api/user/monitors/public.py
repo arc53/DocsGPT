@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 triggers_ns = Namespace("triggers", description="Public webhook trigger links of monitors", path="/api")
 
+#: What a GET on a POST-only link gets.
 _GET_TEXT = (
     "This is a webhook trigger link: it accepts POST requests only. Opening it in a browser does nothing.\n"
 )
@@ -64,9 +65,35 @@ class TriggerLink(Resource):
             return _reply(500, {"error": "the delivery could not be stored; retry later"})
         return _reply(status, payload)
 
-    @api.doc(description="Not a page: a trigger link takes POST only, so this answers 405.", security=[])
+    @api.doc(
+        description=(
+            "A GET call, taken only by a link created with methods [\"POST\", \"GET\"]: the query parameters are "
+            "the delivery (a dotted key nests). A HEAD, a prefetch (Purpose / Sec-Purpose: prefetch) or a known "
+            "link-preview or crawler User-Agent gets 200 {ignored} and changes nothing. 202 when accepted, 405 "
+            "for a POST-only link, 404 for an unknown, expired, revoked or used-up one, 429 when rate limited."
+        ),
+        params={"token": "The link's token."},
+        security=[],
+    )
     def get(self, token: str):
-        return Response(_GET_TEXT, status=405, mimetype="text/plain", headers={"Allow": "POST"})
+        limit = int(settings.TRIGGER_MAX_PAYLOAD_BYTES)
+        if len(request.query_string or b"") > limit:
+            return _reply(413, {"error": f"the query is longer than {limit} bytes"})
+        try:
+            status, payload = triggers.accept_delivery(
+                token,
+                body=b"",
+                headers=dict(request.headers),
+                content_type="",
+                method=request.method,
+                query=request.args.items(multi=True),
+            )
+        except Exception:
+            logger.exception("trigger GET delivery failed")
+            return _reply(500, {"error": "the delivery could not be stored; retry later"})
+        if status == 405:
+            return Response(_GET_TEXT, status=405, mimetype="text/plain", headers={"Allow": "POST"})
+        return _reply(status, payload)
 
 
 approvals_ns = Namespace("approvals", description="Public human approval links of monitors", path="/api")

@@ -376,3 +376,54 @@ class TestManage:
                 text("SELECT tool_allowlist FROM schedules WHERE id = CAST(:id AS uuid)"), {"id": created["monitor_id"]}
             ).scalar()
         assert monitor["approval"] is None and allowlist == []
+
+
+
+class TestGetLink:
+    def test_a_get_link_takes_fewer_calls_and_says_where_not_to_paste_it(
+        self, mon_db, conversation_id, public_url, events, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "TRIGGER_GET_MAX_HITS", 7)
+        result = service.create(
+            _caller(conversation_id),
+            {
+                "description": "Garage door opened",
+                "source": {"type": "webhook", "methods": ["POST", "GET"]},
+                "check": {"type": "status", "value_path": "door.state", "terminal": ["open"]},
+                "on_match": "tell me",
+            },
+        )
+        assert result["method"] == "POST, GET" and result["max_calls"] == 7
+        assert result["example_get"].startswith("curl '") and "door.state=open" in result["example_get"]
+        assert "never to paste it into a chat" in result["next"]
+        token = result["url"].rsplit("/", 1)[1]
+        with mon_db.connect() as conn:
+            link = TriggerLinksRepository(conn).get_live(token_hash(token), "webhook")
+        assert link["allow_get"] is True and link["max_hits"] == 7
+
+    def test_a_post_link_is_unchanged(self, mon_db, conversation_id, public_url, events):
+        result = service.create(
+            _caller(conversation_id),
+            {"description": "CI", "source": {"type": "webhook"}, "on_match": "tell me"},
+        )
+        assert result["method"] == "POST" and "example_get" not in result
+        token = result["url"].rsplit("/", 1)[1]
+        with mon_db.connect() as conn:
+            link = TriggerLinksRepository(conn).get_live(token_hash(token), "webhook")
+        assert link["allow_get"] is False and link["max_hits"] == links.WEBHOOK_MAX_HITS
+
+
+class TestQueryBody:
+    def test_dotted_keys_nest_and_repeats_list(self):
+        from docsgpt.monitors.triggers import query_body
+
+        assert query_body([("a", "1"), ("b.c", "2"), ("b.d", "3"), ("t", "x"), ("t", "y")]) == {
+            "a": "1", "b": {"c": "2", "d": "3"}, "t": ["x", "y"]
+        }
+
+    def test_a_key_that_is_a_value_and_a_parent_keeps_the_value(self):
+        from docsgpt.monitors.triggers import query_body
+
+        assert query_body([("a", "1"), ("a.b", "2"), ("x.", "3"), (".y", "4")]) == {
+            "a": "1", "a.b": "2", "x.": "3", ".y": "4"
+        }

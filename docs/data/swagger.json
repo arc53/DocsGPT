@@ -5929,10 +5929,11 @@
     },
     "/api/triggers/{token}": {
       "get": {
-        "description": "Not a page: a trigger link takes POST only, so this answers 405.",
+        "description": "A GET call, taken only by a link created with methods [\"POST\", \"GET\"]: the query parameters are the delivery (a dotted key nests). A HEAD, a prefetch (Purpose / Sec-Purpose: prefetch) or a known link-preview or crawler User-Agent gets 200 {ignored} and changes nothing. 202 when accepted, 405 for a POST-only link, 404 for an unknown, expired, revoked or used-up one, 429 when rate limited.",
         "operationId": "get_trigger_link",
         "parameters": [
           {
+            "description": "The link's token.",
             "in": "path",
             "name": "token",
             "required": true,

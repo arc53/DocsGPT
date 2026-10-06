@@ -469,6 +469,16 @@
               "hmac_sha256"
             ]
           },
+          "methods": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "POST",
+                "GET"
+              ]
+            }
+          },
           "expose_secret": {
             "type": "boolean"
           },

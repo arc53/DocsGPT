@@ -1500,6 +1500,7 @@ trigger_links_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("ref", Text),
     Column("expose_secret", Boolean, nullable=False, server_default=text("false")),
+    Column("allow_get", Boolean, nullable=False, server_default=text("false")),
     CheckConstraint("kind IN ('webhook', 'approval')", name="trigger_links_kind_chk"),
     CheckConstraint(
         "signature_scheme IN ('none', 'standard_webhooks', 'github', 'hmac_sha256')",

@@ -30,6 +30,10 @@ SOURCE_TYPES = ("webpage", "tool", "ingest", "webhook", "approval")
 POLLED_SOURCES = ("webpage", "tool")
 CHECK_TYPES = ("changed", "new_items", "regex", "threshold", "status")
 SIGNATURE_SCHEMES = ("none", "standard_webhooks", "github", "hmac_sha256")
+WEBHOOK_METHODS = ("POST", "GET")
+
+#: Schemes a GET call can satisfy: a GET has no body to sign.
+GET_SIGNATURE_SCHEMES = ("none",)
 
 #: Threshold operators, and the words a model may use for them.
 OPERATORS = ("<", "<=", ">", ">=", "==", "!=")
@@ -209,6 +213,14 @@ def _source(raw: Any) -> Dict[str, Any]:
         if scheme not in SIGNATURE_SCHEMES:
             raise SpecError(f"`source.signature` must be one of: {', '.join(SIGNATURE_SCHEMES)}.")
         out = {"type": "webhook", "signature": scheme}
+        methods = _methods(raw.get("methods"))
+        if "GET" in methods:
+            if scheme not in GET_SIGNATURE_SCHEMES:
+                raise SpecError(
+                    f"`source.signature` {scheme!r} signs a request body, and a GET call has none: use GET only "
+                    f"with {', '.join(GET_SIGNATURE_SCHEMES)}."
+                )
+            out["methods"] = methods
         expose = raw.get("expose_secret")
         if expose not in (None, False):
             if not isinstance(expose, bool):
@@ -239,6 +251,21 @@ def _source(raw: Any) -> Dict[str, Any]:
     if details:
         out["details"] = details
     return out
+
+
+def _methods(raw: Any) -> List[str]:
+    """A webhook's HTTP methods, POST first; POST alone when none are given."""
+    if raw in (None, "", []):
+        return ["POST"]
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list) or not all(isinstance(m, str) for m in raw):
+        raise SpecError('`source.methods` must be a list like ["POST"] or ["POST", "GET"].')
+    wanted = {m.strip().upper() for m in raw}
+    unknown = wanted - set(WEBHOOK_METHODS)
+    if unknown:
+        raise SpecError(f"`source.methods` takes only {', '.join(WEBHOOK_METHODS)}, not {', '.join(sorted(unknown))}.")
+    return [m for m in WEBHOOK_METHODS if m in wanted or m == "POST"]
 
 
 def _check(raw: Any) -> Optional[Dict[str, Any]]:
@@ -343,7 +370,11 @@ def parse_request(arguments: Dict[str, Any], *, now: Optional[datetime] = None) 
         notes.append(f"interval ignored: a {kind} monitor is not polled")
 
     max_ttl = int(settings.MONITOR_MAX_TTL_DAYS) * 86400
-    ttl = _duration(arguments.get("expires_in"), "expires_in") or int(settings.MONITOR_DEFAULT_TTL_DAYS) * 86400
+    default_ttl = int(settings.MONITOR_DEFAULT_TTL_DAYS) * 86400
+    if "GET" in (source.get("methods") or []):
+        # Anything that opens a GET link fires it, so it lives a short while unless asked otherwise.
+        default_ttl = int(settings.TRIGGER_GET_DEFAULT_TTL_HOURS) * 3600
+    ttl = _duration(arguments.get("expires_in"), "expires_in") or default_ttl
     if ttl > max_ttl:
         longer = (
             "to keep the link longer, the user asks for a new one before it expires"

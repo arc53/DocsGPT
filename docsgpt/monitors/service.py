@@ -369,7 +369,7 @@ def create(caller: Caller, arguments: Dict[str, Any]) -> Dict[str, Any]:
                 token_hash=links.token_hash(link_token),
                 kind=kind,
                 expires_at=request.expires_at,
-                max_hits=links.WEBHOOK_MAX_HITS if kind == "webhook" else 1,
+                max_hits=_max_hits(request) if kind == "webhook" else 1,
                 signature_scheme=scheme,
                 secret_encrypted=links.seal_secret(secret, caller.user_id),
                 approval_spec=(
@@ -380,11 +380,19 @@ def create(caller: Caller, arguments: Dict[str, Any]) -> Dict[str, Any]:
                 ),
                 ref=ref,
                 expose_secret=bool(request.source.get("expose_secret")),
+                allow_get="GET" in (request.source.get("methods") or []),
             )
     publish_monitor_updated(monitor)
     return _created_result(request, monitor, baseline=baseline, already=already, token=link_token,
                            signed=bool(secret), ref=ref,
                            secret=secret if request.source.get("expose_secret") else None)
+
+
+def _max_hits(request: MonitorRequest) -> int:
+    """Calls a webhook link takes: fewer for one that also takes GET (anything that opens it fires it)."""
+    if "GET" in (request.source.get("methods") or []):
+        return int(settings.TRIGGER_GET_MAX_HITS)
+    return links.WEBHOOK_MAX_HITS
 
 
 def _free_ref(repo: TriggerLinksRepository, user_id: str) -> str:
@@ -452,14 +460,24 @@ def _created_result(
                 f" Tell the user the body must carry `{request.check['value_path']}` set to one of: "
                 f"{', '.join(request.check['terminal'])} (other values don't wake you); example_curl shows it."
             )
+        methods = request.source.get("methods") or ["POST"]
         result.update(
             {
                 "url": url,
-                "method": "POST",
+                "method": ", ".join(methods),
                 "signature": scheme,
                 "example_curl": links.example_curl(url, scheme, request.check),
             }
         )
+        if "GET" in methods:
+            result["example_get"] = links.example_get(url, request.check)
+            result["max_calls"] = int(settings.TRIGGER_GET_MAX_HITS)
+            tell += (
+                " The link also takes GET, with the query parameters as the call's data (example_get); a HEAD, a "
+                "prefetch or a known link-preview bot does nothing. Still, anything that opens the link fires it, "
+                "so it is for a machine caller that can't POST: tell the user never to paste it into a chat, "
+                "email or document, where previews and scanners open links."
+            )
         if signed and secret:
             # The owner chose expose_secret: the raw value is in this result, and so goes to the model provider.
             result["secret"] = secret
@@ -467,7 +485,7 @@ def _created_result(
             result["secret_ref"] = ref
             result["signing"] = links.signing_instructions(scheme)
             tell += (
-                " Give the user the url (POST only). The raw signing secret is in this result because the link was "
+                " Give the user the url. The raw signing secret is in this result because the link was "
                 "created with expose_secret, so it has been sent to the model provider; prefer the reference "
                 f"{{{{link_secret:{ref}}}}} in tool calls, and don't repeat the value in your reply."
             )
@@ -479,13 +497,15 @@ def _created_result(
             result["secret_ref"] = ref
             result["signing"] = links.signing_instructions(scheme)
             tell += (
-                f" Give the user the url (POST only). You never see the signing secret, only its reference "
+                f" Give the user the url. You never see the signing secret, only its reference "
                 f"{reference(ref) if ref else ''}: to configure the sender yourself (create the webhook through an "
                 "MCP or API action, or a remote_device command), put the reference exactly as written in that "
                 "call's arguments; the server fills in the real value only when the user approves the call, and "
                 "never into messages, URLs or fetched pages. Otherwise the user reveals the secret with Reveal "
                 f"secret on the link card (or Settings > Monitors); example_curl reads it from ${links.SECRET_ENV}."
             )
+        elif "GET" in methods:
+            tell += " Give the user the url."
         else:
             tell += " Give the user the url (POST only; a GET does nothing)."
         tell += (
