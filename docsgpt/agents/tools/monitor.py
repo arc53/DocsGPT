@@ -18,9 +18,20 @@ _CREATE_DESCRIPTION = (
     "name you would call, with its args: a search, an API or MCP action, read_webpage, a remote_device "
     "run_command); `ingest` (a source_id; fires when its ingest finishes or fails); `webhook` (returns a POST url that is "
     "itself a secret, with an expiry and hit and rate limits, so the default unsigned link is right for senders "
-    "that can't sign: curl or CI scripts, iOS Shortcuts, Zapier/IFTTT-style tools, forms. Set `signature` only "
-    "for a sender that signs natively: \"github\" for GitHub, \"standard_webhooks\" for Svix-style senders, "
-    "\"hmac_sha256\" for a custom sender that computes it); `approval` (returns a page link where a person "
+    "that can't sign: curl or CI scripts, iOS Shortcuts, Zapier/IFTTT-style tools, forms. Set `signature` "
+    "only for a sender that signs natively or sends a fixed secret: \"github\" for GitHub; \"stripe\" for Stripe "
+    "and \"slack\" for a Slack "
+    "app's Events API (both create their own secret, which the user pastes in; you get none); "
+    "\"standard_webhooks\" for Svix-style senders; \"header_token\" for a sender that sends a fixed secret "
+    "header (GitLab: signature_header X-Gitlab-Token; default X-Webhook-Token); \"bearer\" for one that sends "
+    "Authorization: Bearer; \"hmac_sha256\" for a custom sender that computes it. A signed link's secret "
+    "comes back as a reference, "
+    "{{link_secret:REF}}: to set up the sender yourself, put the reference in the approved tool call that does it "
+    "and the server fills in the value; you never get the raw value, and must never ask for it. "
+    "`methods: [\"POST\", \"GET\"]` also takes GET calls, "
+    "with the query parameters as the data, but anything that opens a GET link fires it: use it only for a "
+    "machine caller that can't POST (a device or app that only opens URLs), never for a link to paste into a "
+    "chat, an email or a document); `approval` (returns a page link where a person "
     "approves or rejects your question; you are woken with the decision and any comment).\n"
     "A source only reads state: check a status, list new items, read a page, file or metric. Put the action in "
     "`on_match` and do it when you are woken, asking for approval as usual. A tool source that would need "
@@ -122,11 +133,31 @@ class MonitorTool(Tool):
                                 "source_id": {**string, "description": "ingest: the source to watch."},
                                 "signature": {
                                     "type": "string",
-                                    "enum": ["none", "standard_webhooks", "github", "hmac_sha256"],
+                                    "enum": [
+                                        "none", "github", "stripe", "slack", "standard_webhooks", "header_token",
+                                        "bearer", "hmac_sha256",
+                                    ],
                                     "description": (
-                                        "webhook: how calls are signed. Default none, right for any sender "
-                                        "that can't sign; github for GitHub, standard_webhooks for Svix-style "
-                                        "senders, hmac_sha256 only for a custom sender that computes it."
+                                        "webhook: how calls are signed. Default none, right for any "
+                                        "sender that can't sign; github, stripe, slack for those senders; "
+                                        "standard_webhooks for Svix-style senders; header_token for a fixed "
+                                        "secret header; bearer for Authorization: Bearer; hmac_sha256 only "
+                                        "for a custom sender that computes it."
+                                    ),
+                                },
+                                "signature_header": {
+                                    **string,
+                                    "description": (
+                                        "webhook with header_token: the header the secret comes in, e.g. "
+                                        "X-Gitlab-Token (default X-Webhook-Token)."
+                                    ),
+                                },
+                                "methods": {
+                                    "type": "array",
+                                    "items": {"type": "string", "enum": ["POST", "GET"]},
+                                    "description": (
+                                        "webhook: HTTP methods; default [\"POST\"]. Add GET only for a machine "
+                                        "caller that can't POST; never for a link people paste or open."
                                     ),
                                 },
                                 "question": {**string, "description": "approval: what the person decides."},

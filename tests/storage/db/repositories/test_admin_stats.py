@@ -41,6 +41,16 @@ class TestOverview:
         assert after["failed_logins_7d"] - before["failed_logins_7d"] == 1
         assert after["tokens_30d"] - before["tokens_30d"] == 20
 
+    def test_a_scheduled_runs_old_rollup_is_not_counted_twice(self, pg_conn):
+        repo = AdminStatsRepository(pg_conn)
+        before = repo.overview()
+        TokenUsageRepository(pg_conn).insert(user_id="ov_sched", prompt_tokens=10, generated_tokens=5)
+        # Written by the scheduler before it stopped: the same tokens again, as a run total.
+        TokenUsageRepository(pg_conn).insert(
+            user_id="ov_sched", prompt_tokens=10, generated_tokens=5, source="schedule"
+        )
+        assert repo.overview()["tokens_30d"] - before["tokens_30d"] == 15
+
     def test_inactive_user_counted(self, pg_conn):
         repo = AdminStatsRepository(pg_conn)
         before = repo.overview()
@@ -118,6 +128,14 @@ class TestUserCounts:
         assert counts["agents"] == 0
         assert counts["sources"] == 0
         assert counts["conversations"] == 0
+
+
+    def test_an_old_rollup_is_not_counted_twice(self, pg_conn):
+        TokenUsageRepository(pg_conn).insert(user_id="uc_sched", prompt_tokens=7, generated_tokens=3)
+        TokenUsageRepository(pg_conn).insert(
+            user_id="uc_sched", prompt_tokens=7, generated_tokens=3, source="schedule"
+        )
+        assert AdminStatsRepository(pg_conn).user_counts("uc_sched")["tokens_30d"] == 10
 
 
 class TestAuthEventsGlobalFeed:

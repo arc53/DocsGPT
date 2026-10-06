@@ -149,12 +149,13 @@ class ContinuationService:
                 return None
             repo = PendingToolStateRepository(conn)
             claimed = repo.claim_state(pg_conv_id, user)
-            if claimed:
-                return claimed
-            existing = repo.load_state_any(pg_conv_id, user)
-            if existing and existing.get("status") == "resuming":
-                raise ResumeInProgressError(RESUME_IN_PROGRESS_MESSAGE)
-        return None
+            if not claimed:
+                existing = repo.load_state_any(pg_conv_id, user)
+                if existing and existing.get("status") == "resuming":
+                    raise ResumeInProgressError(RESUME_IN_PROGRESS_MESSAGE)
+                return None
+        _publish_decided(str(pg_conv_id), user, claimed)
+        return claimed
 
     def delete_state(self, conversation_id: str, user: str) -> bool:
         """Delete pending state after successful resumption.
@@ -218,3 +219,24 @@ class ContinuationService:
                 f"{conversation_id}"
             )
         return flipped
+
+
+def _publish_decided(conversation_id: str, user: str, state: Dict[str, Any]) -> None:
+    """Tell the user's tabs the turn's approval was decided, so its toast stops asking.
+
+    ``tool.approval.required`` was only cleared when a pause failed or
+    expired; one the user approved or denied in the chat kept surfacing as a
+    toast elsewhere for half an hour. Best-effort: a failure is logged.
+    """
+    try:
+        from docsgpt.events.publisher import publish_user_event
+
+        message_id = (state.get("agent_config") or {}).get("reserved_message_id")
+        payload: Dict[str, Any] = {"conversation_id": conversation_id, "reason": "decided"}
+        if message_id:
+            payload["message_id"] = str(message_id)
+        publish_user_event(
+            user, "tool.approval.cleared", payload, scope={"kind": "conversation", "id": conversation_id}
+        )
+    except Exception:
+        logger.exception("publishing tool.approval.cleared after a decision failed")

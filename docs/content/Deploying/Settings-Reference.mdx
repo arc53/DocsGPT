@@ -262,7 +262,7 @@ Base URL for OpenAI-compatible model servers.
 
 Type `bool`, default `false`.
 
-Allow a configured LLM API key to be sent over plain http to any host. Off, plain http is accepted only for loopback, private and link-local addresses, single-label hosts (Docker service names), host.docker.internal and names ending in .local, .svc, .internal or .localhost; every other endpoint needs https.
+Allow a configured LLM API key to be sent over plain http to any endpoint already in that key's configured scope. Off, plain http is accepted only for loopback, private and link-local addresses, single-label hosts (Docker service names), host.docker.internal and names ending in .local, .svc, .internal or .localhost; every other endpoint needs https.
 
 ### `FALLBACK_LLM_PROVIDER`
 
@@ -1728,6 +1728,12 @@ Type `int`, default `1000`, must be `>= 1`.
 
 Hard lifetime of one background job in seconds; past it the job is failed. Matches SANDBOX_EXEC_MAX_TIMEOUT by default.
 
+### `DEVICE_JOB_MAX_SECONDS`
+
+Type `int`, default `3600`, must be `>= 60`.
+
+Hard lifetime of a background job running a command on a paired remote device, in seconds. A command started with background=true may run this long (a foreground one keeps its 600 s cap); a job whose device never reports back before then is marked lost.
+
 ### `BACKGROUND_MAX_JOBS_PER_CONVERSATION`
 
 Type `int`, default `2`, must be `>= 0`.
@@ -1876,6 +1882,18 @@ Requests one trigger link accepts per minute; more get 429.
 Type `int`, default `65536`, must be `>= 1024`.
 
 Largest request body a trigger link accepts, in bytes; larger gets 413.
+
+### `TRIGGER_GET_MAX_HITS`
+
+Type `int`, default `100`, must be `>= 1`.
+
+Calls a webhook link that also accepts GET takes over its lifetime (a POST-only link takes 1000). Lower, since a GET link can be fired by anything that opens it.
+
+### `TRIGGER_GET_DEFAULT_TTL_HOURS`
+
+Type `int`, default `24`, must be `>= 1`.
+
+Default lifetime, in hours, of a webhook link that also accepts GET, when monitor_create asks for none (a POST-only link defaults to MONITOR_DEFAULT_TTL_DAYS). An explicit expires_in still applies, up to MONITOR_MAX_TTL_DAYS.
 
 ### `TRIGGER_DEDUPE_WINDOW_SECONDS`
 

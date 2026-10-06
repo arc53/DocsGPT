@@ -57,6 +57,10 @@ class TestSchema:
             '"github" for GitHub',
             '"standard_webhooks" for Svix-style senders',
             '"hmac_sha256" for a custom sender that computes it',
+            '"stripe" for Stripe',
+            '"header_token" for a sender that sends a fixed secret header',
+            '"bearer" for one that sends Authorization: Bearer',
+            "use it only for a machine caller that can't POST",
         ):
             assert needle in text, needle
         signature = create["parameters"]["properties"]["source"]["properties"]["signature"]

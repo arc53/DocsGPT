@@ -25,6 +25,10 @@ export type ToolCallsType = {
   // Remote-device tool calls carry the device id so the approval UI can
   // offer a "don't ask again" sticky-pattern action without a lookup.
   device_id?: string;
+  /** Link secret references approving this call fills in (`{{link_secret:REF}}` ids). */
+  secret_refs?: string[];
+  /** `{ref: the monitor's description}`, to name each link on the approval card. */
+  secret_ref_labels?: Record<string, string>;
   // A connection-backed tool whose account needs signing in pauses on a
   // Connect card instead of an approval. Never carries an account or secret.
   connection_required?: {
@@ -51,6 +55,8 @@ export type ToolCallsType = {
   /** When the job behind a handed-off call started and finished (patched on when it ends). */
   job_started_at?: string;
   job_finished_at?: string;
+  /** What the job's card says beyond its status (patched on when it ends; absent on older calls). */
+  job_notices?: { code: string; pid?: number }[];
 };
 
 /** The arguments to show for a call: what it sends, not what the model asked. */

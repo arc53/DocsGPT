@@ -651,6 +651,18 @@ def poll_background_sandbox_job(self, job_id):
 
 
 @celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)
+def poll_background_device_job(self, job_id):
+    """One poll of a background job's command on a paired device; re-queues itself until it reports.
+
+    Never retried by Celery: a failed poll re-queues itself with a backoff,
+    and the background sweep restarts a chain that broke.
+    """
+    from docsgpt.background.device_runner import poll_job
+
+    return poll_job(job_id)
+
+
+@celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)
 def run_background_tool_call(self, job_id, payload):
     """Run an explicit ``background=true`` tool call in this worker and finish its job.
 

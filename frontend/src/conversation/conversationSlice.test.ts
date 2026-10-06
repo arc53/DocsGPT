@@ -27,6 +27,8 @@ import reducer, {
   resendQuery,
   retractResponse,
   setConversation,
+  tailInFlightMessage,
+  updateConversationId,
 } from './conversationSlice';
 
 const baseQuery = {
@@ -742,5 +744,69 @@ describe('loadConversation with resolveAgent', () => {
     expect(result.stale).toBe(true);
     expect(store.getState().conversation.conversationId).toBe('c-3');
     expect(store.getState().preference.selectedAgent).toBeNull();
+  });
+});
+
+describe('a turn paused for approval, reloaded', () => {
+  const pausedTail = {
+    message_id: 'm-1',
+    status: 'streaming',
+    response: 'Checking.\n\nThen this.',
+    thought: null,
+    sources: [],
+    tool_calls: [
+      {
+        call_id: 'c1',
+        tool_name: 'remote_device',
+        action_name: 'run_command',
+        arguments: {},
+        status: 'awaiting_approval',
+      },
+    ],
+    segments: [
+      { kind: 'text', length: 9 },
+      { kind: 'tool', call_id: 'c1' },
+      { kind: 'text', length: 11 },
+    ],
+  };
+
+  it('waits for the decision instead of showing it as generating', async () => {
+    const tail = vi
+      .spyOn(conversationService, 'tailMessage')
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => pausedTail,
+      } as Response);
+    const store = makeStore();
+    store.dispatch(
+      setConversation([
+        { prompt: 'q', messageId: 'm-1', messageStatus: 'streaming' },
+      ]),
+    );
+    store.dispatch(updateConversationId({ query: { conversationId: 'c-1' } }));
+    await store.dispatch(
+      tailInFlightMessage({
+        messageId: 'm-1',
+        index: 0,
+        conversationId: 'c-1',
+      }),
+    );
+    // The thunk returns at once (no 10-minute poll), with the chat waiting on the user.
+    expect(tail).toHaveBeenCalledTimes(1);
+    expect(store.getState().conversation.status).toBe('awaiting_tool_actions');
+    tail.mockRestore();
+  });
+
+  it('keeps the tool card where it streamed, between the paragraphs', () => {
+    const next = reducer(
+      reducer(undefined, setConversation([{ prompt: 'q' }])),
+      applyMessageTail({ index: 0, tail: pausedTail }),
+    );
+    expect(next.queries[0].segments?.map((segment) => segment.kind)).toEqual([
+      'text',
+      'tool',
+      'text',
+    ]);
   });
 });

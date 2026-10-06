@@ -23,6 +23,7 @@ import notificationsReducer, {
   sseEventReceived,
 } from '../notifications/notificationsSlice';
 import BackgroundJobCard, {
+  noticeText,
   effectiveJobStatus,
   elapsedSeconds,
   formatElapsed,
@@ -191,6 +192,17 @@ describe('BackgroundJobCard', () => {
     expect(button('backgroundJobs.card.cancel')).toBeDefined();
   });
 
+  it('stretches to the chat column so a long title truncates instead of spilling on a phone', async () => {
+    await render();
+    const card = container.querySelector(
+      '[data-testid="background-job-card"]',
+    ) as HTMLElement;
+    expect(card.className).toContain('w-full');
+    expect(card.className).toContain('min-w-0');
+    expect(container.querySelector('.truncate')).not.toBeNull();
+    expect(container.querySelector('.whitespace-nowrap')).not.toBeNull();
+  });
+
   it('says when the result has to be asked for', async () => {
     service.getJob.mockResolvedValue({
       job_id: 'j1',
@@ -199,6 +211,78 @@ describe('BackgroundJobCard', () => {
     });
     await render();
     expect(container.textContent).toContain('backgroundJobs.card.pollOnly');
+  });
+
+  it('says when a device job waits for its device, and stops once it is back', async () => {
+    const store = await render();
+    const update = (progress: Record<string, unknown>) =>
+      act(async () => {
+        store.dispatch(
+          sseEventReceived({
+            id: `e-${String(progress.waiting_for)}`,
+            type: 'job.updated',
+            payload: { job_id: 'j1', status: 'working', progress },
+          }),
+        );
+      });
+    await update({ waiting_for: 'device' });
+    expect(
+      container.querySelector('[data-testid="job-waiting-device"]')
+        ?.textContent,
+    ).toBe('backgroundJobs.card.waitingForDevice');
+    expect(
+      container.querySelector('[data-testid="job-badge-waiting-device"]')
+        ?.textContent,
+    ).toBe('backgroundJobs.card.waitingBadge');
+    expect(container.textContent).not.toContain(
+      'backgroundJobs.card.status.working',
+    );
+    expect(container.textContent).not.toContain(
+      'backgroundJobs.card.willResume',
+    );
+    await update({ waiting_for: null });
+    expect(container.textContent).toContain(
+      'backgroundJobs.card.status.working',
+    );
+    expect(
+      container.querySelector('[data-testid="job-waiting-device"]'),
+    ).toBeNull();
+    expect(container.textContent).toContain('backgroundJobs.card.willResume');
+  });
+
+  it('explains a device job its client interrupted, with the pid, instead of the generic hint', async () => {
+    service.getJob.mockResolvedValue({
+      job_id: 'j1',
+      status: 'lost',
+      finished_at: new Date().toISOString(),
+      notices: [
+        { code: 'device_interrupted', pid: 4242 },
+        { code: 'output_truncated' },
+      ],
+    });
+    await render();
+    expect(
+      container.querySelector('[data-testid="job-notice-device_interrupted"]')
+        ?.textContent,
+    ).toBe('backgroundJobs.card.noticeDeviceInterrupted:{"pid":4242}');
+    expect(
+      container.querySelector('[data-testid="job-notice-output_truncated"]'),
+    ).not.toBeNull();
+    expect(container.textContent).not.toContain('backgroundJobs.card.lostHint');
+  });
+
+  it('says at once when a device job could not be cancelled on its device', async () => {
+    service.getJob.mockResolvedValue({
+      job_id: 'j1',
+      status: 'cancelled',
+      finished_at: new Date().toISOString(),
+      notices: [{ code: 'cancel_unsupported' }],
+    });
+    await render();
+    expect(
+      container.querySelector('[data-testid="job-notice-cancel_unsupported"]')
+        ?.textContent,
+    ).toBe('backgroundJobs.card.noticeCancelUnsupported');
   });
 
   it('follows job.updated: progress, then the final state', async () => {
@@ -297,7 +381,12 @@ describe('BackgroundJobCard', () => {
   });
 
   it('a call saved with its outcome needs no fetch', async () => {
-    await render({ ...CALL, status: 'completed', job_status: 'completed' });
+    await render({
+      ...CALL,
+      status: 'completed',
+      job_status: 'completed',
+      job_notices: [],
+    });
     expect(service.getJob).not.toHaveBeenCalled();
     expect(container.textContent).toContain(
       'backgroundJobs.card.status.completed',
@@ -311,6 +400,7 @@ describe('BackgroundJobCard', () => {
       job_status: 'completed',
       job_started_at: '2026-10-06T10:00:00Z',
       job_finished_at: '2026-10-06T10:01:23Z',
+      job_notices: [],
     });
     expect(service.getJob).not.toHaveBeenCalled();
     expect(container.textContent).toContain(
@@ -318,8 +408,43 @@ describe('BackgroundJobCard', () => {
     );
   });
 
-  it('explains an interrupted job', async () => {
+  it("keeps a device's pid after a reload, from the saved entry", async () => {
+    await render({
+      ...CALL,
+      status: 'error',
+      job_status: 'lost',
+      job_notices: [{ code: 'device_interrupted', pid: 1373 }],
+    });
+    expect(service.getJob).not.toHaveBeenCalled();
+    expect(
+      container.querySelector('[data-testid="job-notice-device_interrupted"]')
+        ?.textContent,
+    ).toBe('backgroundJobs.card.noticeDeviceInterrupted:{"pid":1373}');
+    expect(container.textContent).not.toContain('backgroundJobs.card.lostHint');
+  });
+
+  it('fetches the notices once for a call saved before it carried them', async () => {
+    service.getJob.mockResolvedValue({
+      job_id: 'j1',
+      status: 'lost',
+      finished_at: new Date().toISOString(),
+      notices: [{ code: 'device_interrupted', pid: 10405 }],
+    });
     await render({ ...CALL, status: 'error', job_status: 'lost' });
+    expect(service.getJob).toHaveBeenCalledTimes(1);
+    expect(
+      container.querySelector('[data-testid="job-notice-device_interrupted"]')
+        ?.textContent,
+    ).toBe('backgroundJobs.card.noticeDeviceInterrupted:{"pid":10405}');
+  });
+
+  it('explains an interrupted job', async () => {
+    await render({
+      ...CALL,
+      status: 'error',
+      job_status: 'lost',
+      job_notices: [],
+    });
     expect(container.textContent).toContain('backgroundJobs.card.status.lost');
     expect(container.textContent).toContain('backgroundJobs.card.lostHint');
   });
@@ -353,5 +478,27 @@ describe('BackgroundJobCard', () => {
       vi.advanceTimersByTime(JOB_POLL_MS * 2);
     });
     expect(service.listJobs).not.toHaveBeenCalled();
+  });
+});
+
+describe('noticeText', () => {
+  const t = (key: string, opts?: Record<string, unknown>) =>
+    opts ? `${key}:${JSON.stringify(opts)}` : key;
+  it('names every notice, with the pid when there is one', () => {
+    expect(noticeText({ code: 'device_interrupted', pid: 7 }, t)).toBe(
+      'backgroundJobs.card.noticeDeviceInterrupted:{"pid":7}',
+    );
+    expect(noticeText({ code: 'device_interrupted' }, t)).toBe(
+      'backgroundJobs.card.noticeDeviceInterruptedNoPid',
+    );
+    expect(noticeText({ code: 'device_shutdown' }, t)).toBe(
+      'backgroundJobs.card.noticeDeviceShutdown',
+    );
+    expect(
+      noticeText(
+        { code: 'unknown' } as unknown as Parameters<typeof noticeText>[0],
+        t,
+      ),
+    ).toBeNull();
   });
 });

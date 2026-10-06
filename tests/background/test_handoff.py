@@ -198,6 +198,40 @@ class TestRunCall:
         release.set()
         assert fake_jobs.done.wait(5)
 
+    def test_an_explicit_call_over_the_cap_runs_as_a_foreground_call(self, ctx, fake_jobs):
+        # A tool that detaches reads ``explicit`` to pick a background run's longer limits.
+        class _Detaching:
+            def supports_detached(self):
+                return True
+
+        fake_jobs.caps = False
+        seen = []
+        outcome = handoff.run_call(
+            ctx, _spec(), _Detaching(), lambda: seen.append(handoff.current_call().explicit) or "ran", explicit=True
+        )
+        assert outcome.value == "ran"
+        assert seen == [False]
+        assert fake_jobs.created == []
+
+    def test_an_explicit_call_within_the_cap_keeps_its_background_limits(self, ctx, fake_jobs):
+        class _Detaching:
+            def supports_detached(self):
+                return True
+
+        release = threading.Event()
+        seen = []
+
+        def invoke():
+            seen.append(handoff.current_call().explicit)
+            release.wait(5)
+            return "x"
+
+        outcome = handoff.run_call(ctx, _spec(), _Detaching(), invoke, explicit=True)
+        assert outcome.handed_off is True
+        release.set()
+        assert fake_jobs.done.wait(5)
+        assert seen == [True]
+
     def test_a_full_pool_runs_the_call_inline(self, ctx, fake_jobs, monkeypatch):
         monkeypatch.setattr(pool, "try_submit", lambda fn: None)
         caller = threading.current_thread()

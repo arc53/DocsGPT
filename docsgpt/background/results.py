@@ -138,3 +138,38 @@ def final_view(job: Dict[str, Any], *, max_chars: int) -> Dict[str, Any]:
     elif status == "cancelled":
         view["note"] = "This job was cancelled."
     return view
+
+
+#: Notices a job card shows, by the error type (or result flag) that causes them.
+_NOTICE_BY_ERROR = {
+    "CancelUnsupported": "cancel_unsupported",
+    "DeviceInterrupted": "device_interrupted",
+    "HostShutdown": "device_shutdown",
+}
+
+
+def job_notices(job: Dict[str, Any]) -> list:
+    """What a job card should say beyond its status, as codes the UI translates.
+
+    Args:
+        job: The ``background_jobs`` row.
+
+    Returns:
+        ``[{"code", "pid"?}]``: ``cancel_unsupported`` (the device's client
+        can't stop a running command), ``device_interrupted`` (its client
+        restarted; the command may still run, with the ``pid`` when known),
+        ``device_shutdown`` (its client shut down and stopped the command) and
+        ``output_truncated`` (the device dropped some output).
+    """
+    notices: list = []
+    error = job.get("error") if isinstance(job.get("error"), dict) else {}
+    code = _NOTICE_BY_ERROR.get(str(error.get("type") or ""))
+    if code:
+        notice: Dict[str, Any] = {"code": code}
+        if code == "device_interrupted" and error.get("pid"):
+            notice["pid"] = error["pid"]
+        notices.append(notice)
+    result = job.get("result") if isinstance(job.get("result"), dict) else {}
+    if result.get("truncated"):
+        notices.append({"code": "output_truncated"})
+    return notices

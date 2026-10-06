@@ -1195,6 +1195,7 @@ devices_table = Table(
     Column("paired_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("last_seen_at", DateTime(timezone=True)),
     Column("revoked_at", DateTime(timezone=True)),
+    Column("capabilities", Text),
     Column("revoke_reason", Text),
     UniqueConstraint("user_id", "name", name="devices_user_name_uidx"),
 )
@@ -1368,7 +1369,9 @@ background_jobs_table = Table(
     CheckConstraint(
         "status IN ('working', 'completed', 'failed', 'cancelled', 'lost')", name="background_jobs_status_chk"
     ),
-    CheckConstraint("runner IN ('inprocess', 'celery', 'sandbox', 'mcp')", name="background_jobs_runner_chk"),
+    CheckConstraint(
+        "runner IN ('inprocess', 'celery', 'sandbox', 'mcp', 'device')", name="background_jobs_runner_chk"
+    ),
     CheckConstraint(
         "delivery_state IN ('pending', 'claimed_by_poll', 'resumed', 'folded', 'suppressed', 'failed')",
         name="background_jobs_delivery_state_chk",
@@ -1496,15 +1499,32 @@ trigger_links_table = Table(
     Column("last_hit_at", DateTime(timezone=True)),
     Column("revoked_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("ref", Text),
+    Column("expose_secret", Boolean, nullable=False, server_default=text("false")),
+    Column("allow_get", Boolean, nullable=False, server_default=text("false")),
+    Column("signature_header", Text),
     CheckConstraint("kind IN ('webhook', 'approval')", name="trigger_links_kind_chk"),
     CheckConstraint(
-        "signature_scheme IN ('none', 'standard_webhooks', 'github', 'hmac_sha256')",
+        "signature_scheme IN ('none', 'standard_webhooks', 'github', 'hmac_sha256', 'stripe', 'slack', "
+        "'header_token', 'bearer')",
         name="trigger_links_signature_scheme_chk",
     ),
     UniqueConstraint("token_hash", name="trigger_links_token_hash_uidx"),
 )
 
 Index("trigger_links_monitor_idx", trigger_links_table.c.monitor_id)
+Index(
+    "trigger_links_exposed_idx",
+    trigger_links_table.c.user_id,
+    postgresql_where=trigger_links_table.c.expose_secret,
+)
+Index(
+    "trigger_links_user_ref_uidx",
+    trigger_links_table.c.user_id,
+    trigger_links_table.c.ref,
+    unique=True,
+    postgresql_where=trigger_links_table.c.ref.isnot(None),
+)
 
 trigger_hits_table = Table(
     "trigger_hits",
@@ -1524,6 +1544,29 @@ trigger_hits_table = Table(
 )
 
 Index("trigger_hits_received_idx", trigger_hits_table.c.received_at)
+
+# --- Monitor events (migration 0050) -----------------------------------------
+# An ingest event a monitor watches, stored before its task is queued so a lost
+# task can be queued again; settled like a trigger hit.
+monitor_events_table = Table(
+    "monitor_events",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("monitor_id", UUID(as_uuid=True), ForeignKey("schedules.id", ondelete="CASCADE"), nullable=False),
+    Column("dedupe_key", Text, nullable=False),
+    Column("payload", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("status", Text, nullable=False, server_default="pending"),
+    Column("attempts", Integer, nullable=False, server_default="0"),
+    Column("error", Text),
+    Column("received_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("processed_at", DateTime(timezone=True)),
+    CheckConstraint(
+        "status IN ('pending', 'processed', 'ignored', 'failed')", name="monitor_events_status_chk"
+    ),
+    UniqueConstraint("monitor_id", "dedupe_key", name="monitor_events_monitor_dedupe_uidx"),
+)
+
+Index("monitor_events_status_received_idx", monitor_events_table.c.status, monitor_events_table.c.received_at)
 
 # --- Web Push subscriptions (migration 0049) ---------------------------------
 # One browser's push subscription: the push service endpoint and the keys the
