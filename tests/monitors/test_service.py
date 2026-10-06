@@ -121,6 +121,8 @@ class TestPolledCreate:
         assert events and events[-1]["type"] == "monitor.updated"
         assert events[-1]["payload"]["monitor_id"] == result["monitor_id"]
         assert events[-1]["payload"]["wakes_left"] == 1
+        # The web app offers Web Push on an active monitor.updated (backgroundListener).
+        assert events[-1]["payload"]["status"] == "active"
 
     def test_already_matching_is_said(self, conversation_id, page, events):
         page("Price: $80")
@@ -245,6 +247,7 @@ class TestLinkCreate:
             raw = conn.execute(text("SELECT token_hash, secret_encrypted FROM trigger_links")).fetchone()
         assert link["signature_scheme"] == "standard_webhooks"
         assert token not in raw[0] and result["secret"] not in (raw[1] or "")
+        assert events[-1]["type"] == "monitor.updated" and events[-1]["payload"]["status"] == "active"
 
     def test_local_base_is_flagged(self, monkeypatch, conversation_id, events):
         monkeypatch.setattr(settings, "PUBLIC_API_BASE_URL", None)
@@ -271,6 +274,7 @@ class TestLinkCreate:
         with mon_db.connect() as conn:
             link = TriggerLinksRepository(conn).get_live(token_hash(result["url"].rsplit("/", 1)[1]), "approval")
         assert link["max_hits"] == 1 and link["approval_spec"]["question"] == "Send it?"
+        assert events[-1]["type"] == "monitor.updated" and events[-1]["payload"]["status"] == "active"
 
     def test_ingest_source_must_be_the_users(self, mon_db, conversation_id, events):
         from docsgpt.storage.db.repositories.sources import SourcesRepository

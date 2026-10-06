@@ -62,6 +62,7 @@
         "trigger": "Webhook received",
         "approval": "Approval received",
         "monitor_paused": "Monitor paused",
+        "monitor_expired": "Monitor expired",
         "default": "New reply"
       },
       "open": "Open",
@@ -81,6 +82,8 @@
       "monitor": "Monitor matched",
       "trigger": "Webhook received",
       "approval": "Approval received",
+      "monitor_paused": "Monitor paused",
+      "monitor_expired": "Monitor expired",
       "default": "Background event",
       "more": "+{{count}} more"
     }

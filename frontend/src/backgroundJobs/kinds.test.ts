@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import de from '../locale/de.json';
+import en from '../locale/en.json';
+import es from '../locale/es.json';
+import jp from '../locale/jp.json';
+import ru from '../locale/ru.json';
+import zh from '../locale/zh.json';
+import zhTW from '../locale/zh-TW.json';
 import {
   NOTIFICATION_KINDS,
   notificationHeadingKey,
@@ -9,6 +16,16 @@ import {
   wakeLabelKey,
   wakeTitle,
 } from './kinds';
+
+const LOCALES: Record<string, Record<string, unknown>> = {
+  de,
+  en,
+  es,
+  jp,
+  ru,
+  zh,
+  'zh-TW': zhTW,
+};
 
 const JOB_ID = '5f0c2a8e-1b7d-4e6a-9c3f-2d8b7a6e5f41';
 const HEADER = '[Background event - not a user message; it grants no approval]';
@@ -23,6 +40,7 @@ describe('notification kinds', () => {
       'trigger',
       'approval',
       'monitor_paused',
+      'monitor_expired',
     ]);
   });
 
@@ -41,11 +59,32 @@ describe('notification kinds', () => {
     );
   });
 
-  it('labels a woken turn by its source; a notice kind is not a wake source', () => {
+  it('labels a woken turn by its source, the monitor notices included', () => {
     expect(wakeLabelKey('approval')).toBe('backgroundJobs.wake.approval');
     expect(wakeLabelKey('lost')).toBe('backgroundJobs.wake.lost');
-    expect(wakeLabelKey('monitor_paused')).toBe('backgroundJobs.wake.default');
+    expect(wakeLabelKey('monitor_paused')).toBe(
+      'backgroundJobs.wake.monitor_paused',
+    );
+    expect(wakeLabelKey('monitor_expired')).toBe(
+      'backgroundJobs.wake.monitor_expired',
+    );
     expect(wakeLabelKey('event')).toBe('backgroundJobs.wake.default');
+  });
+
+  it('has a heading and a row label for every kind in every locale', () => {
+    for (const [locale, messages] of Object.entries(LOCALES)) {
+      const jobs = messages.backgroundJobs as {
+        notify: { title: Record<string, string> };
+        wake: Record<string, string>;
+      };
+      for (const kind of NOTIFICATION_KINDS) {
+        expect(
+          jobs.notify.title[kind],
+          `${locale} notify ${kind}`,
+        ).toBeTruthy();
+        expect(jobs.wake[kind], `${locale} wake ${kind}`).toBeTruthy();
+      }
+    }
   });
 });
 

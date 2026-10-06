@@ -58,6 +58,7 @@
         "trigger": "Webhook recibido",
         "approval": "Aprobación recibida",
         "monitor_paused": "Monitor en pausa",
+        "monitor_expired": "Monitor caducado",
         "default": "Nueva respuesta"
       },
       "open": "Abrir",
@@ -77,6 +78,8 @@
       "monitor": "El monitor detectó un cambio",
       "trigger": "Webhook recibido",
       "approval": "Aprobación recibida",
+      "monitor_paused": "Monitor en pausa",
+      "monitor_expired": "Monitor caducado",
       "default": "Evento en segundo plano",
       "more": "+{{count}} más"
     }

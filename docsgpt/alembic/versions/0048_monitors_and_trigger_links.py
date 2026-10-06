@@ -18,7 +18,7 @@ status and the failure counter. What only a monitor needs lives 1:1 in
 token is stored (the raw token is shown once), an optional HMAC secret
 encrypted at rest, and the approval question or its decision.
 ``conversation_wakes.source`` also takes ``monitor_paused`` (a monitor that paused
-itself). ``trigger_hits`` keeps accepted webhook deliveries, bounded, unique per
+itself) and ``monitor_expired`` (one whose lifetime ended without firing). ``trigger_hits`` keeps accepted webhook deliveries, bounded, unique per
 link and dedupe key, until a worker has run them through the check.
 
 Rows cascade with the schedule and with the conversation; deleting a monitor row
@@ -41,7 +41,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 _WAKE_SOURCES_BEFORE = "'job', 'monitor', 'trigger', 'approval', 'lost'"
-_WAKE_SOURCES_AFTER = "'job', 'monitor', 'monitor_paused', 'trigger', 'approval', 'lost'"
+_WAKE_SOURCES_AFTER = "'job', 'monitor', 'monitor_paused', 'monitor_expired', 'trigger', 'approval', 'lost'"
 
 
 def _wake_sources(values: str) -> None:
@@ -53,7 +53,7 @@ def _wake_sources(values: str) -> None:
 
 
 def upgrade() -> None:
-    # A monitor that pauses itself wakes the agent once with its own source.
+    # A monitor that pauses itself, or expires unfired, wakes the agent once with its own source.
     _wake_sources(_WAKE_SOURCES_AFTER)
     op.execute("ALTER TABLE schedules DROP CONSTRAINT IF EXISTS schedules_trigger_type_chk;")
     op.execute(
@@ -173,7 +173,9 @@ def downgrade() -> None:
     op.execute("DROP TABLE IF EXISTS trigger_links;")
     op.execute("DROP TABLE IF EXISTS monitors;")
     op.execute("DELETE FROM schedules WHERE trigger_type = 'monitor';")
-    op.execute("UPDATE conversation_wakes SET source = 'monitor' WHERE source = 'monitor_paused';")
+    op.execute(
+        "UPDATE conversation_wakes SET source = 'monitor' WHERE source IN ('monitor_paused', 'monitor_expired');"
+    )
     _wake_sources(_WAKE_SOURCES_BEFORE)
     op.execute("ALTER TABLE schedules DROP CONSTRAINT IF EXISTS schedules_trigger_type_chk;")
     op.execute(

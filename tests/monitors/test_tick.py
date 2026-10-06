@@ -113,6 +113,8 @@ class TestDispatch:
         after = reload(mon_db, monitor["id"])
         assert after["status"] == "completed" and after["paused_reason"] == "expired"
         assert len(wakes) == 1 and "expired" in wakes[0]["title"]
+        # An expiry is its own kind, so the user is not told "Monitor matched".
+        assert wakes[0]["source"] == "monitor_expired"
         assert wakes[0]["dedupe_key"] == f"monitor:{monitor['id']}:expired:end"
         assert tick.dispatch_due_monitors()["expired"] == 0 and len(wakes) == 1
 
@@ -138,7 +140,7 @@ class TestDispatch:
             next_run_at=past,
         )
         tick.dispatch_due_monitors()
-        assert wakes[0]["source"] == "approval" and "Nobody decided" in wakes[0]["body"]
+        assert wakes[0]["source"] == "monitor_expired" and "Nobody decided" in wakes[0]["body"]
 
     def test_lost_deliveries_are_requeued(self, mon_db, conversation_id, queued):
         monitor = make_monitor(mon_db, conversation_id, source={"type": "webhook", "signature": "none"}, check=None)

@@ -17,6 +17,7 @@ class TestHeading:
             ("lost", "Background job interrupted"),
             ("monitor", "Monitor matched"),
             ("monitor_paused", "Monitor paused"),
+            ("monitor_expired", "Monitor expired"),
             ("trigger", "Webhook received"),
             ("approval", "Approval received"),
         ],
@@ -29,7 +30,9 @@ class TestHeading:
         assert kinds.heading("") is None
 
     def test_every_wake_source_is_a_known_kind(self):
-        assert {"job", "lost", "monitor", "trigger", "approval"} <= set(kinds.KIND_HEADINGS)
+        from docsgpt.background.wake import WAKE_SOURCES
+
+        assert set(WAKE_SOURCES) <= set(kinds.KIND_HEADINGS)
 
 
 class TestUserTitle:

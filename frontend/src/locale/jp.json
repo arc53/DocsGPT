@@ -58,6 +58,7 @@
         "trigger": "Webhook を受信しました",
         "approval": "承認の回答が届きました",
         "monitor_paused": "モニターが一時停止されました",
+        "monitor_expired": "モニターの期限が切れました",
         "default": "新しい返信"
       },
       "open": "開く",
@@ -77,6 +78,8 @@
       "monitor": "モニターが条件に一致しました",
       "trigger": "Webhook を受信しました",
       "approval": "承認の回答が届きました",
+      "monitor_paused": "モニターが一時停止されました",
+      "monitor_expired": "モニターの期限が切れました",
       "default": "バックグラウンドイベント",
       "more": "ほか{{count}}件"
     }

@@ -35,8 +35,9 @@ MAX_BATCH = 8
 #: Seconds a scheduled continuation suppresses scheduling another for the same conversation.
 _SCHEDULED_TTL_SECONDS = 30
 
-#: ``monitor_paused`` is a monitor telling the agent it paused (unreachable, errors, the breaker).
-WAKE_SOURCES = ("job", "monitor", "monitor_paused", "trigger", "approval", "lost")
+#: ``monitor_paused`` is a monitor telling the agent it paused (unreachable, errors, the breaker);
+#: ``monitor_expired`` is a monitor or link telling it its lifetime ended without firing.
+WAKE_SOURCES = ("job", "monitor", "monitor_paused", "monitor_expired", "trigger", "approval", "lost")
 
 NO_REPLY = "NO_REPLY"
 
@@ -73,7 +74,7 @@ def wake_conversation(
     Args:
         user_id: The conversation's owner.
         conversation_id: The conversation to resume.
-        source: ``job``, ``monitor``, ``trigger``, ``approval`` or ``lost``.
+        source: One of :data:`WAKE_SOURCES`.
         ref_id: What raised it (job id, monitor id, link id).
         title: One line naming the event ("BTC below $50k").
         body: What happened, written for the agent.

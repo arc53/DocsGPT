@@ -61,7 +61,7 @@ class TestMigration0048RoundTrip:
             conn.execute(
                 text(
                     "INSERT INTO conversation_wakes (user_id, conversation_id, source, dedupe_key) "
-                    "VALUES ('u1', :cid, 'monitor_paused', 'k1')"
+                    "VALUES ('u1', :cid, 'monitor_paused', 'k1'), ('u1', :cid, 'monitor_expired', 'k2')"
                 ),
                 {"cid": cid},
             )

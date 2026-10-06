@@ -78,7 +78,8 @@ conversation, and a `conversation.continued` event tells open tabs about the new
 - **Bounded.** At most `AUTO_RESUME_MAX_CONSECUTIVE` continuations follow one another without a user message.
 
 [Monitors, trigger links and approval links](/Tools/monitors) resume the conversation the same way, with
-`source` `monitor`, `trigger` or `approval`.
+`source` `monitor`, `trigger` or `approval`, or `monitor_paused` and `monitor_expired` when a monitor reports on
+itself.
 
 Continuations are billed to the conversation's owner like any turn, and only run in conversations the owner
 holds outright. Conversations through the OpenAI-compatible `/v1` API, an agent API key or the widget, a
@@ -142,7 +143,7 @@ through `GET /api/background_jobs?conversation_id=…`, `GET /api/background_job
   every 10 seconds while the event stream is down.
 - **Woken turns.** A continuation's prompt is the event that woke the agent, not something the user wrote. It
   shows as a one-line event row ("Background job finished", "Monitor matched", "Webhook received", "Approval
-  received", "Background job interrupted") with the event text behind a toggle, never as a user message. A
+  received", "Monitor paused", "Monitor expired", "Background job interrupted") with the event text behind a toggle, never as a user message. A
   failed continuation offers no Retry, which would send the event as the user's own words. Shared
   conversations show it the same way, without the internal ids.
 - **Live.** The new answer appears in an open conversation without a reload. If the user's own answer is
@@ -172,6 +173,7 @@ The toast and the push lead with the kind of event:
 | `lost` | Background job interrupted |
 | `monitor` | Monitor matched |
 | `monitor_paused` | Monitor paused |
+| `monitor_expired` | Monitor expired |
 | `trigger` | Webhook received |
 | `approval` | Approval received |
 

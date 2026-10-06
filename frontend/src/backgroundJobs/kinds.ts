@@ -3,21 +3,28 @@
  * imports, so the conversation slice can use them without a cycle.
  */
 
-/** What can wake the agent (`message_metadata.wake.source`); each has its own row label. */
+/**
+ * What can wake the agent (`message_metadata.wake.source`); each has its own
+ * row label. Mirrors `WAKE_SOURCES` in `docsgpt/background/wake.py`: the
+ * monitor notices (a monitor that paused itself, or expired without firing)
+ * wake the agent like any other event.
+ */
 export const WAKE_SOURCES = [
   'job',
   'lost',
   'monitor',
   'trigger',
   'approval',
+  'monitor_paused',
+  'monitor_expired',
 ] as const;
 
 /**
- * `notify_user` kinds with their own heading: every wake source, and the
- * notices a feature sends on its own (a monitor paused by its circuit
- * breaker). Others read generically. Mirrors `docsgpt/notifications/kinds.py`.
+ * `notify_user` kinds with their own heading: every wake source (a
+ * continuation notifies with the source of the event that woke it). Others
+ * read generically. Mirrors `docsgpt/notifications/kinds.py`.
  */
-export const NOTIFICATION_KINDS = [...WAKE_SOURCES, 'monitor_paused'] as const;
+export const NOTIFICATION_KINDS = WAKE_SOURCES;
 
 const isIn = (list: readonly string[], value: unknown): value is string =>
   typeof value === 'string' && list.includes(value);

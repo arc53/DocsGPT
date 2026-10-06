@@ -58,6 +58,7 @@
         "trigger": "已收到 Webhook",
         "approval": "已收到審核結果",
         "monitor_paused": "監控已暫停",
+        "monitor_expired": "監控已過期",
         "default": "新回覆"
       },
       "open": "開啟",
@@ -77,6 +78,8 @@
       "monitor": "監控條件已觸發",
       "trigger": "已收到 Webhook",
       "approval": "已收到審核結果",
+      "monitor_paused": "監控已暫停",
+      "monitor_expired": "監控已過期",
       "default": "背景事件",
       "more": "另有 {{count}} 則"
     }

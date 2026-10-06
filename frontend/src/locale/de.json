@@ -58,6 +58,7 @@
         "trigger": "Webhook empfangen",
         "approval": "Freigabe erhalten",
         "monitor_paused": "Monitor pausiert",
+        "monitor_expired": "Monitor abgelaufen",
         "default": "Neue Antwort"
       },
       "open": "Öffnen",
@@ -77,6 +78,8 @@
       "monitor": "Monitor hat angeschlagen",
       "trigger": "Webhook empfangen",
       "approval": "Freigabe erhalten",
+      "monitor_paused": "Monitor pausiert",
+      "monitor_expired": "Monitor abgelaufen",
       "default": "Hintergrundereignis",
       "more": "+{{count}} weitere"
     }

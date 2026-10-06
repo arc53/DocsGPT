@@ -1405,7 +1405,7 @@ conversation_wakes_table = Table(
     Column("claimed_at", DateTime(timezone=True)),
     Column("delivered_at", DateTime(timezone=True)),
     CheckConstraint(
-        "source IN ('job', 'monitor', 'monitor_paused', 'trigger', 'approval', 'lost')",
+        "source IN ('job', 'monitor', 'monitor_paused', 'monitor_expired', 'trigger', 'approval', 'lost')",
         name="conversation_wakes_source_chk",
     ),
     CheckConstraint(

@@ -2,11 +2,12 @@
 
 ``notify_user`` takes a ``kind``: a continuation turn passes the source of
 the event that woke it (``job``, ``lost``, ``monitor``, ``trigger``,
-``approval``), and a feature that notifies on its own passes its own word
-(``monitor_paused``). A known kind gets a fixed heading: the web app shows
-its translated heading on the toast (``backgroundJobs.notify.title.<kind>``)
-and Web Push, which the server words in English, leads with
-:data:`KIND_HEADINGS`. An unknown kind reads as the caller's own title.
+``approval``, and the monitor notices ``monitor_paused`` and
+``monitor_expired``); another caller may pass its own word. A known kind gets
+a fixed heading: the web app shows its translated heading on the toast
+(``backgroundJobs.notify.title.<kind>``) and Web Push, which the server words
+in English, leads with :data:`KIND_HEADINGS`. An unknown kind reads as the
+caller's own title.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ KIND_HEADINGS: Dict[str, str] = {
     "lost": "Background job interrupted",
     "monitor": "Monitor matched",
     "monitor_paused": "Monitor paused",
+    "monitor_expired": "Monitor expired",
     "trigger": "Webhook received",
     "approval": "Approval received",
 }

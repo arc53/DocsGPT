@@ -222,6 +222,9 @@ def _finish(monitor_id: str, status: str, reason: str) -> Optional[Dict[str, Any
 #: The wake source (and notification kind) of a monitor that paused itself.
 PAUSED_SOURCE = "monitor_paused"
 
+#: The wake source (and notification kind) of a monitor or link whose lifetime ended without firing.
+EXPIRED_SOURCE = "monitor_expired"
+
 
 def _notice(monitor: Dict[str, Any], *, kind: str, title: str, body: str, payload: Optional[Dict[str, Any]],
             dedupe: str, source: Optional[str] = None) -> None:
@@ -303,6 +306,7 @@ def expire(monitor_id: str, *, now: Optional[datetime] = None) -> bool:
             ),
             payload=None,
             dedupe="end",
+            source=EXPIRED_SOURCE,
         )
     return True
 
