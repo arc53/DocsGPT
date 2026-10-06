@@ -55,13 +55,13 @@ describe('AnswerFlow', () => {
     const call = search({
       tool_name: 'monitor',
       action_name: 'monitor_create',
-      result: JSON.stringify({
+      result: {
         monitor_id: 'm-1',
         url: 'https://docs.example.com/api/triggers/trg_abc',
         signature: 'github',
         secret:
           'hidden from you; the user reveals it on the link card in this chat',
-      }),
+      },
     });
     const html = renderToStaticMarkup(
       <Provider store={store}>
