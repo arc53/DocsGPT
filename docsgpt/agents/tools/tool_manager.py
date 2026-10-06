@@ -41,6 +41,7 @@ class ToolManager:
                         "artifact_generator",
                         "read_document",
                         "check_job",
+                        "monitor",
                     }
                     and user_id
                 ):

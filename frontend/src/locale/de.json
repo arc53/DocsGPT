@@ -3162,5 +3162,67 @@
     "collapse": "Verkleinern",
     "back": "Zurück"
   },
-  "close": "Schließen"
+  "close": "Schließen",
+  "approval": {
+    "logoAlt": "DocsGPT",
+    "untitled": "Freigabe angefragt",
+    "missingTitle": "Dieser Link funktioniert nicht",
+    "missingDescription": "Er ist vielleicht abgelaufen oder wurde abgebrochen, oder die Adresse ist unvollständig.",
+    "loadError": "Diese Anfrage konnte nicht geladen werden",
+    "options": {
+      "approve": "Freigeben",
+      "reject": "Ablehnen"
+    },
+    "commentLabel": "Kommentar (optional)",
+    "commentPlaceholder": "Was die anfragende Person wissen sollte",
+    "onceOnly": "Ihre Wahl ist endgültig: Nur die erste Entscheidung zählt.",
+    "thanks": "Danke. Sie haben „{{decision}}“ gewählt, und der Assistent, der gefragt hat, wurde informiert.",
+    "alreadyDecided": "Über diese Anfrage wurde bereits entschieden: {{decision}}.",
+    "notWaiting": "Diese Anfrage wartet nicht mehr auf eine Entscheidung.",
+    "rateLimited": "Zu viele Versuche. Warten Sie eine Minute und versuchen Sie es erneut.",
+    "submitError": "Ihre Entscheidung konnte nicht gesendet werden. Versuchen Sie es erneut."
+  },
+  "monitors": {
+    "label": "Monitore",
+    "subtitle": "Was der Assistent für Sie beobachtet: Seiten, Tools, Webhook-Links und Freigabe-Links. Jeder setzt sein Gespräch fort, sobald etwas passiert.",
+    "empty": "Noch keine Monitore",
+    "emptyHint": "Bitten Sie den Assistenten in einem Chat, etwas zu beobachten, etwa „Sag mir, wenn der Preis unter 90 $ fällt“.",
+    "loadError": "Ihre Monitore konnten nicht geladen werden",
+    "actionError": "Das hat nicht geklappt. Versuchen Sie es erneut.",
+    "untitled": "Monitor",
+    "watching": "Wird beobachtet",
+    "every": "Alle {{interval}}",
+    "onEvent": "Wenn es passiert",
+    "openConversation": "Gespräch öffnen",
+    "pause": "Pausieren",
+    "resume": "Fortsetzen",
+    "cancel": "Monitor beenden",
+    "menu": "Aktionen für {{name}}",
+    "pausedBecause": "Pausiert: {{reason}}",
+    "lastError": "Letztes Problem: {{error}}",
+    "cancelConfirm": "„{{name}}“ beenden?",
+    "cancelConsequence": "Er prüft nichts mehr, seine Links funktionieren nicht mehr, und eine erteilte Freigabe wird zurückgezogen.",
+    "status": {
+      "active": "Aktiv",
+      "paused": "Pausiert",
+      "completed": "Fertig",
+      "cancelled": "Beendet"
+    },
+    "source": {
+      "webpage": "Webseite",
+      "tool": "Tool",
+      "ingest": "Wissens-Import",
+      "webhook": "Webhook-Link",
+      "approval": "Freigabe-Link"
+    },
+    "columns": {
+      "monitor": "Monitor",
+      "status": "Status",
+      "interval": "Prüfungen",
+      "lastChecked": "Zuletzt geprüft",
+      "wakesLeft": "Weckungen übrig",
+      "expires": "Läuft ab",
+      "actions": "Aktionen"
+    }
+  }
 }

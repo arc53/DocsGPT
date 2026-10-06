@@ -887,3 +887,21 @@ def test_pinned_fetch_bytes_passes_headers(monkeypatch):
             headers={"User-Agent": "DocsGPT-Agent/1.0"},
         )
     assert captured["prepared"].headers["User-Agent"] == "DocsGPT-Agent/1.0"
+
+
+@pytest.mark.unit
+def test_pinned_fetch_bytes_truncates_instead_of_raising_when_asked(monkeypatch):
+    stub = _StreamStubResponse(b"x" * 5000, headers={"Content-Length": "5000"})
+    _capture_stream_send(monkeypatch, stub)
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("93.184.216.34")):
+        content, _ = pinned_fetch_bytes("http://example.com/big", max_bytes=1500, truncate=True)
+        assert content == b"x" * 1500
+        with pytest.raises(ResponseTooLargeError):
+            pinned_fetch_bytes("http://example.com/big", max_bytes=1500)
+
+
+@pytest.mark.unit
+def test_pinned_fetch_bytes_truncate_still_refuses_private_addresses():
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("10.0.0.5")):
+        with pytest.raises(UnsafeUserUrlError):
+            pinned_fetch_bytes("http://intranet.example/", max_bytes=10, truncate=True)

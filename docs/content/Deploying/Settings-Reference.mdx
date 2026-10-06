@@ -1412,9 +1412,9 @@ Per-agent default quotas: tokens and requests.
 
 ### `DEFAULT_CHAT_TOOLS`
 
-Type `list[str]`, default `["memory", "read_webpage", "scheduler", "check_job"]`.
+Type `list[str]`, default `["memory", "read_webpage", "scheduler", "check_job", "monitor"]`.
 
-Config-free tools on by default in agentless chats, as a JSON list of tool names (["memory","scheduler"]) or comma-separated names. none (or []) turns them all off; an empty value keeps the default. scheduler is dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add code_executor and artifact_generator once a sandbox runner is configured; both execute through it and would fail on every call without one. check_job is offered only while BACKGROUND_JOBS_ENABLED is on, and every chat turn that can hand calls off gets it whether or not it is listed here.
+Config-free tools on by default in agentless chats, as a JSON list of tool names (["memory","scheduler"]) or comma-separated names. none (or []) turns them all off; an empty value keeps the default. scheduler is dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add code_executor and artifact_generator once a sandbox runner is configured; both execute through it and would fail on every call without one. check_job is offered only while BACKGROUND_JOBS_ENABLED is on, and every chat turn that can hand calls off gets it whether or not it is listed here. monitor is offered only while MONITORS_ENABLED is on.
 
 ### `ENABLE_TOOL_PREFETCH`
 
@@ -1746,6 +1746,101 @@ Characters of one job result a continuation turn sees; longer results keep their
 Type `int`, default `5`, must be `>= 1`.
 
 Continuation turns a conversation may get in a row without a user message in between. Past it, results wait for check_job or the user's next message, so a job that starts a job cannot loop.
+
+
+## Monitors and trigger links
+
+What the ``monitor`` tool may watch, how often, for how long, and how trigger and approval links behave.
+
+### `MONITORS_ENABLED`
+
+Type `bool`, default `true`.
+
+Offer the monitor tool: polled checks of a webpage or any tool, ingest events, webhook trigger links and human approval links that resume the conversation when something happens. Needs AUTO_RESUME_ENABLED, since a monitor reports back by resuming the conversation.
+
+### `MONITOR_JUDGE_MODEL`
+
+Type `str`, default unset.
+
+Model that judges a monitor's natural-language condition, only after its deterministic check passed (or on a change when it has none). Unset uses the deployment's default model.
+
+### `MONITOR_DEFAULT_INTERVAL_SECONDS`
+
+Type `int`, default `900`, must be `>= 60`.
+
+Seconds between checks of a polled monitor that names no interval.
+
+### `MONITOR_MIN_INTERVAL_SECONDS`
+
+Type `int`, default `300`, must be `>= 60`.
+
+Shortest interval a polled monitor may use, in seconds; a shorter request is raised to it.
+
+### `MONITOR_DEFAULT_TTL_DAYS`
+
+Type `int`, default `7`, must be `>= 1`.
+
+Days a monitor (and its trigger or approval link) lives when none is named.
+
+### `MONITOR_MAX_TTL_DAYS`
+
+Type `int`, default `30`, must be `>= 1`.
+
+Longest lifetime a monitor may ask for, in days.
+
+### `MONITOR_DEFAULT_MAX_WAKES`
+
+Type `int`, default `1`, must be `>= 1`.
+
+Times a monitor may wake the agent when none is named; at 0 left it finishes.
+
+### `MONITOR_MAX_WAKES`
+
+Type `int`, default `20`, must be `>= 1`.
+
+Most wakes one monitor may ask for.
+
+### `MONITOR_MAX_ACTIVE_PER_USER`
+
+Type `int`, default `5`, must be `>= 0`.
+
+Active or paused monitors one user may have; 0 turns creating them off.
+
+### `MONITOR_MAX_WAKES_PER_HOUR`
+
+Type `int`, default `5`, must be `>= 1`.
+
+Circuit breaker: a monitor that would wake the agent more often than this in an hour is paused, and the conversation is told why.
+
+### `MONITOR_UNREACHABLE_GRACE_SECONDS`
+
+Type `int`, default `3600`, must be `>= 60`.
+
+How long a monitor's source may stay unreachable (device offline, server down, timeout, 5xx) before the agent is told once and the monitor pauses. Unreachable checks are skipped, never a change.
+
+### `MONITOR_JUDGE_TOKEN_BUDGET`
+
+Type `int`, default `100000`, must be `>= 0`.
+
+Tokens one monitor's condition judge may use over its lifetime; past it the monitor pauses and says so. 0 means no limit.
+
+### `PUBLIC_APP_URL`
+
+Type `str`, default unset.
+
+Public address of the web UI, used for human approval links (/approve/&lt;token>). Unset uses PUBLIC_API_BASE_URL, then API_URL: the API serves the UI itself when SERVE_UI is on. Set it when the UI runs elsewhere, e.g. http://localhost:5173 for the Vite dev server.
+
+### `TRIGGER_RATE_PER_MINUTE`
+
+Type `int`, default `30`, must be `>= 1`.
+
+Requests one trigger link accepts per minute; more get 429.
+
+### `TRIGGER_MAX_PAYLOAD_BYTES`
+
+Type `int`, default `65536`, must be `>= 1024`.
+
+Largest request body a trigger link accepts, in bytes; larger gets 413.
 
 
 ## Sandbox

@@ -1403,7 +1403,8 @@ conversation_wakes_table = Table(
     Column("claimed_at", DateTime(timezone=True)),
     Column("delivered_at", DateTime(timezone=True)),
     CheckConstraint(
-        "source IN ('job', 'monitor', 'trigger', 'approval', 'lost')", name="conversation_wakes_source_chk"
+        "source IN ('job', 'monitor', 'monitor_paused', 'trigger', 'approval', 'lost')",
+        name="conversation_wakes_source_chk",
     ),
     CheckConstraint(
         "status IN ('pending', 'claimed', 'delivered', 'folded', 'suppressed', 'superseded', 'failed')",
@@ -1418,3 +1419,106 @@ Index(
     conversation_wakes_table.c.status,
 )
 Index("conversation_wakes_status_created_idx", conversation_wakes_table.c.status, conversation_wakes_table.c.created_at)
+
+
+# --- Monitors, trigger links and their hits (migration 0048) ----------------
+# A monitor is a ``schedules`` row (trigger_type 'monitor'); this side table
+# holds what only a monitor needs. Trigger links are the public webhook and
+# approval links that feed a monitor; only the token's sha256 is stored.
+
+monitors_table = Table(
+    "monitors",
+    metadata,
+    Column(
+        "schedule_id",
+        UUID(as_uuid=True),
+        ForeignKey("schedules.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("user_id", Text, nullable=False),
+    Column(
+        "conversation_id",
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("agent_id", UUID(as_uuid=True)),
+    Column("description", Text, nullable=False),
+    Column("source_type", Text, nullable=False),
+    Column("monitor_spec", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("monitor_state", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("approval", JSONB),
+    Column("interval_seconds", Integer),
+    Column("check_count", Integer, nullable=False, server_default="0"),
+    Column("wake_count", Integer, nullable=False, server_default="0"),
+    Column("max_wakes", Integer, nullable=False, server_default="1"),
+    Column("judge_tokens", Integer, nullable=False, server_default="0"),
+    Column("last_checked_at", DateTime(timezone=True)),
+    Column("last_changed_at", DateTime(timezone=True)),
+    Column("last_woken_at", DateTime(timezone=True)),
+    Column("last_error", Text),
+    Column("unreachable_since", DateTime(timezone=True)),
+    Column("paused_reason", Text),
+    Column("tick_started_at", DateTime(timezone=True)),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint(
+        "source_type IN ('webpage', 'tool', 'ingest', 'webhook', 'approval')", name="monitors_source_type_chk"
+    ),
+)
+
+Index("monitors_user_idx", monitors_table.c.user_id, monitors_table.c.source_type)
+Index("monitors_conversation_idx", monitors_table.c.conversation_id)
+
+trigger_links_table = Table(
+    "trigger_links",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("monitor_id", UUID(as_uuid=True), ForeignKey("schedules.id", ondelete="CASCADE"), nullable=False),
+    Column("user_id", Text, nullable=False),
+    Column(
+        "conversation_id",
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("token_hash", Text, nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("secret_encrypted", Text),
+    Column("signature_scheme", Text, nullable=False, server_default="none"),
+    Column("approval_spec", JSONB),
+    Column("decision", JSONB),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("max_hits", Integer, nullable=False, server_default="1"),
+    Column("hit_count", Integer, nullable=False, server_default="0"),
+    Column("last_hit_at", DateTime(timezone=True)),
+    Column("revoked_at", DateTime(timezone=True)),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint("kind IN ('webhook', 'approval')", name="trigger_links_kind_chk"),
+    CheckConstraint(
+        "signature_scheme IN ('none', 'standard_webhooks', 'github', 'hmac_sha256')",
+        name="trigger_links_signature_scheme_chk",
+    ),
+    UniqueConstraint("token_hash", name="trigger_links_token_hash_uidx"),
+)
+
+Index("trigger_links_monitor_idx", trigger_links_table.c.monitor_id)
+
+trigger_hits_table = Table(
+    "trigger_hits",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("link_id", UUID(as_uuid=True), ForeignKey("trigger_links.id", ondelete="CASCADE"), nullable=False),
+    Column("dedupe_key", Text, nullable=False),
+    Column("payload", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("status", Text, nullable=False, server_default="pending"),
+    Column("error", Text),
+    Column("received_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("processed_at", DateTime(timezone=True)),
+    CheckConstraint(
+        "status IN ('pending', 'processed', 'ignored', 'failed')", name="trigger_hits_status_chk"
+    ),
+    UniqueConstraint("link_id", "dedupe_key", name="trigger_hits_link_dedupe_uidx"),
+)
+
+Index("trigger_hits_received_idx", trigger_hits_table.c.received_at)

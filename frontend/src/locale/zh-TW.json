@@ -3150,5 +3150,67 @@
     "collapse": "收合",
     "back": "返回"
   },
-  "close": "關閉"
+  "close": "關閉",
+  "approval": {
+    "logoAlt": "DocsGPT",
+    "untitled": "請求審核",
+    "missingTitle": "此連結無法使用",
+    "missingDescription": "它可能已過期或被取消，或者網址不完整。",
+    "loadError": "無法載入此請求",
+    "options": {
+      "approve": "核准",
+      "reject": "拒絕"
+    },
+    "commentLabel": "備註（選填）",
+    "commentPlaceholder": "需要讓請求者知道的事",
+    "onceOnly": "你的選擇是最終的：只有第一個決定有效。",
+    "thanks": "謝謝。你選擇了「{{decision}}」，提出請求的助理已收到通知。",
+    "alreadyDecided": "此請求已有決定：{{decision}}。",
+    "notWaiting": "此請求已不再等待決定。",
+    "rateLimited": "嘗試次數過多。請等一分鐘後再試。",
+    "submitError": "無法送出你的決定。請再試一次。"
+  },
+  "monitors": {
+    "label": "監控",
+    "subtitle": "助理為你留意的內容：網頁、工具、Webhook 連結和審核連結。一有動靜，就會在對應的對話中繼續。",
+    "empty": "還沒有監控",
+    "emptyHint": "在聊天中請助理留意某件事，例如「價格低於 90 美元時告訴我」。",
+    "loadError": "無法載入你的監控",
+    "actionError": "操作失敗，請再試一次。",
+    "untitled": "監控",
+    "watching": "正在留意變化",
+    "every": "每 {{interval}}",
+    "onEvent": "發生時",
+    "openConversation": "開啟對話",
+    "pause": "暫停",
+    "resume": "繼續",
+    "cancel": "取消監控",
+    "menu": "{{name}} 的操作",
+    "pausedBecause": "已暫停：{{reason}}",
+    "lastError": "最近的問題：{{error}}",
+    "cancelConfirm": "取消「{{name}}」？",
+    "cancelConsequence": "它將停止檢查，連結將失效，已給予的核准也會撤回。",
+    "status": {
+      "active": "執行中",
+      "paused": "已暫停",
+      "completed": "已完成",
+      "cancelled": "已取消"
+    },
+    "source": {
+      "webpage": "網頁",
+      "tool": "工具",
+      "ingest": "知識匯入",
+      "webhook": "Webhook 連結",
+      "approval": "審核連結"
+    },
+    "columns": {
+      "monitor": "監控",
+      "status": "狀態",
+      "interval": "檢查頻率",
+      "lastChecked": "上次檢查",
+      "wakesLeft": "剩餘喚醒次數",
+      "expires": "到期",
+      "actions": "操作"
+    }
+  }
 }

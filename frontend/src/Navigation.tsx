@@ -51,6 +51,7 @@ import { LoadMoreStatus } from './components/ui/load-more-status';
 import { Skeleton } from './components/ui/skeleton';
 import { useScrollSentinel } from './hooks/useLoadMore';
 import { getConversations } from './preferences/preferenceApi';
+import useMonitorsLoader from './monitors/useMonitorsLoader';
 import MobileTopBar from './navigation/MobileTopBar';
 import SectionNav from './navigation/SectionNav';
 import SectionRail from './navigation/SectionRail';
@@ -100,6 +101,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const { t } = useTranslation();
 
   const token = useSelector(selectToken);
+  useMonitorsLoader();
   const queries = useSelector(selectQueries);
   const conversations = useSelector(selectConversations);
   const conversationId = useSelector(selectConversationId);

@@ -229,6 +229,13 @@ const endpoints = {
     ACCESS_TOKEN: (id: string) => `/api/user/tokens/${id}`,
     ACCESS_TOKEN_REGENERATE: (id: string) =>
       `/api/user/tokens/${id}/regenerate`,
+    MONITORS: (conversationId?: string) =>
+      conversationId
+        ? `/api/monitors?conversation_id=${encodeURIComponent(conversationId)}`
+        : '/api/monitors',
+    MONITOR_ACTION: (id: string, action: 'pause' | 'resume' | 'cancel') =>
+      `/api/monitors/${encodeURIComponent(id)}/${action}`,
+    APPROVAL: (token: string) => `/api/approvals/${encodeURIComponent(token)}`,
   },
   V1: {
     CHAT_COMPLETIONS: '/v1/chat/completions',

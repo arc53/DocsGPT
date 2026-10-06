@@ -1,7 +1,7 @@
 ---
 title: Background Jobs and Auto-Resume
 description: How DocsGPT hands slow tool calls off to background jobs, resumes the conversation with their results, and how check_job and watch work.
-lastUpdated: 2026-10-05
+lastUpdated: 2026-10-06
 ---
 
 import { Callout } from 'nextra/components';
@@ -76,6 +76,9 @@ conversation, and a `conversation.continued` event tells open tabs about the new
 - **Safe by default.** A continuation can't use tools that need approval, and data from tools and outside
   services is presented to the model as data, never as instructions.
 - **Bounded.** At most `AUTO_RESUME_MAX_CONSECUTIVE` continuations follow one another without a user message.
+
+[Monitors, trigger links and approval links](/Tools/monitors) resume the conversation the same way, with
+`source` `monitor`, `trigger` or `approval`.
 
 Continuations are billed to the conversation's owner like any turn, and only run in conversations the owner
 holds outright. Conversations through the OpenAI-compatible `/v1` API, an agent API key or the widget, a

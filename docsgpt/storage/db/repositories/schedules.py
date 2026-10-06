@@ -158,6 +158,9 @@ class SchedulesRepository:
         if trigger_type:
             sql += " AND trigger_type = :trigger_type"
             params["trigger_type"] = trigger_type
+        else:
+            # Monitors live on their own page (Settings -> Monitors).
+            sql += " AND trigger_type <> 'monitor'"
         sql += " ORDER BY created_at DESC"
         rows = self._conn.execute(text(sql), params).fetchall()
         return [row_to_dict(r) for r in rows]
@@ -208,23 +211,25 @@ class SchedulesRepository:
         return [row_to_dict(r) for r in rows]
 
     def count_active_for_user(self, user_id: str) -> int:
-        """Active+paused schedules for quota enforcement."""
+        """Active+paused schedules for quota enforcement (monitors have their own cap)."""
         scalar = self._conn.execute(
             text(
                 "SELECT COUNT(*) FROM schedules "
-                "WHERE user_id = :user_id AND status IN ('active', 'paused')"
+                "WHERE user_id = :user_id AND status IN ('active', 'paused') "
+                "AND trigger_type <> 'monitor'"
             ),
             {"user_id": user_id},
         ).scalar()
         return int(scalar or 0)
 
     def list_due(self, *, limit: int = 100) -> list[dict]:
-        """Lock and return schedules with ``next_run_at <= now()``."""
+        """Lock and return schedules with ``next_run_at <= now()`` (monitors tick through their own dispatch)."""
         rows = self._conn.execute(
             text(
                 """
                 SELECT * FROM schedules
                 WHERE status = 'active'
+                  AND trigger_type <> 'monitor'
                   AND next_run_at IS NOT NULL
                   AND next_run_at <= now()
                   AND (end_at IS NULL OR next_run_at <= end_at)

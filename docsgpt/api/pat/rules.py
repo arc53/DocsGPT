@@ -307,6 +307,12 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/background_jobs/<string:job_id>/cancel", "POST"): _rule(
         "conversations:write", blocked_by=_ALL_FAMILIES
     ),
+    # Monitors of the caller's conversations (Settings > Monitors).
+    ("/api/monitors", "GET"): _rule("conversations:read", blocked_by=_ALL_FAMILIES),
+    ("/api/monitors/<string:monitor_id>", "GET"): _rule("conversations:read", blocked_by=_ALL_FAMILIES),
+    ("/api/monitors/<string:monitor_id>/<string:action>", "POST"): _rule(
+        "conversations:write", blocked_by=_ALL_FAMILIES
+    ),
     ("/api/get_message_analytics", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     ("/api/get_token_analytics", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     ("/api/get_feedback_analytics", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
@@ -348,6 +354,9 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/shared_agent": ("*",),
     "/api/shared_conversation/<string:identifier>": ("*",),
     "/api/webhooks/agents/<string:webhook_token>": ("*",),
+    # Monitor links: public, the token in the path is the credential (no session or PAT).
+    "/api/triggers/<string:token>": ("*",),
+    "/api/approvals/<string:token>": ("*",),
     "/api/images/<string:agent_id>/<string:capability>": ("*",),
     "/api/mcp_server/callback": ("*",),
     "/api/mcp_server/auth_status": ("*",),
