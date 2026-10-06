@@ -35,7 +35,8 @@ MAX_BATCH = 8
 #: Seconds a scheduled continuation suppresses scheduling another for the same conversation.
 _SCHEDULED_TTL_SECONDS = 30
 
-WAKE_SOURCES = ("job", "monitor", "trigger", "approval", "lost")
+#: ``monitor_paused`` is a monitor telling the agent it paused (unreachable, errors, the breaker).
+WAKE_SOURCES = ("job", "monitor", "monitor_paused", "trigger", "approval", "lost")
 
 NO_REPLY = "NO_REPLY"
 

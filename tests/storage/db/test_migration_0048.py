@@ -52,6 +52,20 @@ class TestMigration0048RoundTrip:
             assert _tables(conn) == set(_TABLES)
             _monitor_schedule(conn)
 
+    def test_wakes_take_the_monitor_paused_source(self, pg_engine):
+        with pg_engine.begin() as conn:
+            conn.execute(text("INSERT INTO users (user_id) VALUES ('u1') ON CONFLICT DO NOTHING"))
+            cid = conn.execute(
+                text("INSERT INTO conversations (user_id, name) VALUES ('u1', 'c') RETURNING id")
+            ).scalar()
+            conn.execute(
+                text(
+                    "INSERT INTO conversation_wakes (user_id, conversation_id, source, dedupe_key) "
+                    "VALUES ('u1', :cid, 'monitor_paused', 'k1')"
+                ),
+                {"cid": cid},
+            )
+
     def test_downgrade_drops_monitors_then_upgrade_restores(self, pg_engine):
         url = pg_engine.url.render_as_string(hide_password=False)
         with pg_engine.begin() as conn:

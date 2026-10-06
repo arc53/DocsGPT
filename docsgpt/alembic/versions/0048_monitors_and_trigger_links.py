@@ -17,7 +17,8 @@ status and the failure counter. What only a monitor needs lives 1:1 in
 ``trigger_links`` holds webhook and approval links: only the sha256 of the
 token is stored (the raw token is shown once), an optional HMAC secret
 encrypted at rest, and the approval question or its decision.
-``trigger_hits`` keeps accepted webhook deliveries, bounded, unique per
+``conversation_wakes.source`` also takes ``monitor_paused`` (a monitor that paused
+itself). ``trigger_hits`` keeps accepted webhook deliveries, bounded, unique per
 link and dedupe key, until a worker has run them through the check.
 
 Rows cascade with the schedule and with the conversation; deleting a monitor row
@@ -39,7 +40,21 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+_WAKE_SOURCES_BEFORE = "'job', 'monitor', 'trigger', 'approval', 'lost'"
+_WAKE_SOURCES_AFTER = "'job', 'monitor', 'monitor_paused', 'trigger', 'approval', 'lost'"
+
+
+def _wake_sources(values: str) -> None:
+    op.execute("ALTER TABLE conversation_wakes DROP CONSTRAINT IF EXISTS conversation_wakes_source_chk;")
+    op.execute(
+        "ALTER TABLE conversation_wakes ADD CONSTRAINT conversation_wakes_source_chk "
+        f"CHECK (source IN ({values}));"
+    )
+
+
 def upgrade() -> None:
+    # A monitor that pauses itself wakes the agent once with its own source.
+    _wake_sources(_WAKE_SOURCES_AFTER)
     op.execute("ALTER TABLE schedules DROP CONSTRAINT IF EXISTS schedules_trigger_type_chk;")
     op.execute(
         "ALTER TABLE schedules ADD CONSTRAINT schedules_trigger_type_chk "
@@ -158,6 +173,8 @@ def downgrade() -> None:
     op.execute("DROP TABLE IF EXISTS trigger_links;")
     op.execute("DROP TABLE IF EXISTS monitors;")
     op.execute("DELETE FROM schedules WHERE trigger_type = 'monitor';")
+    op.execute("UPDATE conversation_wakes SET source = 'monitor' WHERE source = 'monitor_paused';")
+    _wake_sources(_WAKE_SOURCES_BEFORE)
     op.execute("ALTER TABLE schedules DROP CONSTRAINT IF EXISTS schedules_trigger_type_chk;")
     op.execute(
         "ALTER TABLE schedules ADD CONSTRAINT schedules_trigger_type_chk "

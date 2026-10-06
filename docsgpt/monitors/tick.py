@@ -219,10 +219,14 @@ def _finish(monitor_id: str, status: str, reason: str) -> Optional[Dict[str, Any
     return monitor
 
 
+#: The wake source (and notification kind) of a monitor that paused itself.
+PAUSED_SOURCE = "monitor_paused"
+
+
 def _notice(monitor: Dict[str, Any], *, kind: str, title: str, body: str, payload: Optional[Dict[str, Any]],
-            dedupe: str) -> None:
+            dedupe: str, source: Optional[str] = None) -> None:
     """Tell the agent something about the monitor itself (paused, unreachable, expired); never counts a wake."""
-    source = "approval" if monitor.get("source_type") == "approval" else "monitor"
+    source = source or ("approval" if monitor.get("source_type") == "approval" else "monitor")
     _wake(
         user_id=str(monitor["user_id"]),
         conversation_id=str(monitor["conversation_id"]),
@@ -264,6 +268,7 @@ def pause_with_notice(monitor: Dict[str, Any], *, kind: str, reason: str, detail
         body=body,
         payload=payload,
         dedupe=_iso(_now()) or "",
+        source=PAUSED_SOURCE,
     )
 
 

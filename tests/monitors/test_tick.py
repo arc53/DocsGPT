@@ -287,6 +287,7 @@ class TestFailures:
         assert tick.run_tick(monitor["id"]) == {"state": "paused"}
         assert reload(mon_db, monitor["id"])["status"] == "paused"
         assert len(wakes) == 1 and "can't be reached" in wakes[0]["body"]
+        assert wakes[0]["source"] == "monitor_paused"
         assert wakes[0]["dedupe_key"].startswith(f"monitor:{monitor['id']}:unreachable:")
 
     def test_recovering_clears_the_unreachable_streak(self, mon_db, conversation_id, page, events):
@@ -426,6 +427,7 @@ class TestBreaker:
         after = reload(mon_db, monitor["id"])
         assert after["status"] == "paused" and after["wake_count"] == 0
         assert len(wakes) == 1 and "within an hour" in wakes[0]["body"]
+        assert wakes[0]["source"] == "monitor_paused"
         assert wakes[0]["dedupe_key"].startswith(f"monitor:{monitor['id']}:breaker:")
 
 
@@ -647,3 +649,20 @@ class TestConversationNoLongerResumable:
         assert tick.run_tick(monitor["id"]) == {"state": "cancelled"}
         assert page["calls"] == 0 and wakes == []
         assert reload(mon_db, monitor["id"])["status"] == "cancelled"
+
+
+class TestPausedNoticeReachesTheQueue:
+    def test_monitor_paused_is_a_wake_source_the_queue_takes(self, mon_db, conversation_id, page, events, monkeypatch):
+        scheduled = []
+        monkeypatch.setattr("docsgpt.background.wake.schedule_continuation", lambda cid, **kw: scheduled.append(cid))
+        monitor = make_monitor(mon_db, conversation_id)
+        page["value"] = SourceError("HTTP 404")
+        for _ in range(3):
+            tick.run_tick(monitor["id"])
+        with mon_db.connect() as conn:
+            rows = conn.execute(
+                text("SELECT source, ref_id, payload FROM conversation_wakes WHERE conversation_id = CAST(:c AS uuid)"),
+                {"c": conversation_id},
+            ).fetchall()
+        assert [(r[0], r[1]) for r in rows] == [("monitor_paused", monitor["id"])]
+        assert rows[0][2]["error"] == "HTTP 404" and scheduled == [conversation_id]

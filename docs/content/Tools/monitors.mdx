@@ -156,7 +156,8 @@ sidebar. In the chat, the agent can list and cancel the conversation's monitors 
 
 The app's event stream carries `monitor.updated`:
 `{monitor_id, status, wakes_left, last_checked_at, conversation_id, check_count, last_error}`. A woken message
-carries `metadata.wake = {source, ref_id, dedupe_key}` with `source` `monitor`, `trigger` or `approval`.
+carries `metadata.wake = {source, ref_id, dedupe_key}` with `source` `monitor`, `trigger` or `approval`, or
+`monitor_paused` when a monitor tells the agent it paused itself.
 
 The same data is available through `GET /api/monitors` (`conversation_id`, `status=live`) and
 `POST /api/monitors/<id>/pause|resume|cancel`.
