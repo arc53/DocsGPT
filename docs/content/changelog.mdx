@@ -253,7 +253,9 @@ stored secrets and upload its documents again: see
   registry now loads once under a lock, a request whose model has no endpoint of its own is refused,
   and an LLM client refuses a configured key for any host it was not configured for. The Anthropic
   and Gemini clients are pinned to the endpoint that check sees, so `ANTHROPIC_BASE_URL`,
-  `GOOGLE_GEMINI_BASE_URL` and `GOOGLE_GENAI_USE_VERTEXAI` no longer redirect them. See
+  `GOOGLE_GEMINI_BASE_URL` and `GOOGLE_GENAI_USE_VERTEXAI` no longer redirect them. A configured key
+  goes over plain `http` only to a host on your own network; `LLM_ALLOW_PLAINTEXT_ENDPOINTS` allows
+  other internal names. See [Plain http and your API key](/Models/local-inference#plain-http-and-your-api-key). See
   [Keys stay with their provider](/Models/cloud-providers#keys-stay-with-their-provider).
 - The sandbox manager and the embedding models are also built once per process under a lock, so
   concurrent first requests no longer create a second sandbox session registry or load a model twice.

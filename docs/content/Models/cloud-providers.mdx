@@ -86,6 +86,8 @@ The model decides where a request goes: it carries its provider, its key and its
 | `Model '<id>' is not available` | The model is an `openai_compatible` model DocsGPT doesn't have (its key variable is unset, or its YAML isn't loaded), a custom model the user can no longer reach, or `LLM_PROVIDER=openai_compatible` with no model. |
 | `Refusing to send a <provider> request to <host>` | A configured key was about to reach a host it wasn't configured for. Nothing was sent. The message lists the hosts the key belongs to, never the key. Check `LLM_PROVIDER`, the provider keys and the model's endpoint. |
 
+A key configured for an `https` endpoint is never sent to the same host over `http`, and plain `http` is accepted only for a server on your own network; see [Plain http and your API key](/Models/local-inference#plain-http-and-your-api-key).
+
 The provider SDKs' own endpoint variables (`ANTHROPIC_BASE_URL`, `GOOGLE_GEMINI_BASE_URL`, `GOOGLE_GENAI_USE_VERTEXAI`) are ignored, because they would send a key to a host DocsGPT never checked. To reach a provider through a proxy or another endpoint, give the model a `base_url` in a [model YAML](/Deploying/DocsGPT-Settings#adding-custom-models-models_config_dir).
 
 A model name that isn't in the catalog still works for a provider with a fixed endpoint, such as `FALLBACK_LLM_NAME=gpt-4o-mini` with `FALLBACK_LLM_PROVIDER=openai`: it goes to that provider with that provider's key.

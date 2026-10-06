@@ -48,6 +48,15 @@ class LLMSettings(SettingsGroup):
         default=None, description="Base URL for OpenAI-compatible model servers."
     )
 
+    LLM_ALLOW_PLAINTEXT_ENDPOINTS: bool = Field(
+        default=False,
+        description=(
+            "Allow a configured LLM API key to be sent over plain http to any host. Off, plain http is accepted "
+            "only for loopback, private and link-local addresses, single-label hosts (Docker service names), "
+            "host.docker.internal and names ending in .local, .svc or .internal; every other endpoint needs https."
+        ),
+    )
+
     FALLBACK_LLM_PROVIDER: Optional[str] = Field(default=None, description="Provider for the fallback LLM.")
     FALLBACK_LLM_NAME: Optional[str] = Field(default=None, description="Model name for the fallback LLM.")
     FALLBACK_LLM_API_KEY: Optional[str] = Field(

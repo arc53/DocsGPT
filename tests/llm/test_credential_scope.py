@@ -35,7 +35,7 @@ from docsgpt.core.model_utils import (
 from docsgpt.core.model_yaml import BUILTIN_MODELS_DIR, load_model_yamls
 from docsgpt.core.settings import settings
 from docsgpt.llm.anthropic import AnthropicLLM
-from docsgpt.llm.credential_scope import CredentialScopeError, credential_hosts, endpoint_host
+from docsgpt.llm.credential_scope import CredentialScopeError, credential_hosts, endpoint_origin
 from docsgpt.llm.google_ai import GoogleLLM
 from docsgpt.llm.groq import GroqLLM
 from docsgpt.llm.llm_creator import LLMCreator, ModelNotAvailableError
@@ -227,7 +227,7 @@ class TestClientGuard:
         configure(monkeypatch, LLM_PROVIDER="openai_compatible", DEEPSEEK_API_KEY="sk-ds")
         with pytest.raises(
             CredentialScopeError,
-            match=r"request to api\.openai\.com:443: .* configured for api\.deepseek\.com:443\.",
+            match=r"request to https://api\.openai\.com:443: .* configured for https://api\.deepseek\.com:443\.",
         ) as excinfo:
             OpenAILLM(api_key="sk-ds")
         # The message names hosts, never the key.
@@ -284,7 +284,7 @@ class TestClientGuard:
 
     def test_a_shared_key_may_go_to_every_endpoint_it_was_configured_for(self, monkeypatch):
         configure(monkeypatch, LLM_PROVIDER="openai", API_KEY="sk-same", OPENAI_API_KEY="sk-same")
-        assert credential_hosts()["sk-same"] == {"api.openai.com:443"}
+        assert credential_hosts()["sk-same"] == {"https://api.openai.com:443"}
 
     def test_a_fallback_key_may_go_to_its_catalog_models_endpoint(self, monkeypatch):
         configure(
@@ -296,7 +296,7 @@ class TestClientGuard:
             FALLBACK_LLM_NAME="deepseek-v4-flash",
             FALLBACK_LLM_API_KEY="sk-fallback",
         )
-        assert credential_hosts()["sk-fallback"] == {"api.deepseek.com:443"}
+        assert credential_hosts()["sk-fallback"] == {"https://api.deepseek.com:443"}
 
     def test_an_unreadable_catalog_only_narrows_where_keys_may_go(self, monkeypatch):
         configure(monkeypatch, LLM_PROVIDER="openai", API_KEY="sk-openai", DEEPSEEK_API_KEY="sk-ds")
@@ -306,17 +306,114 @@ class TestClientGuard:
 
         monkeypatch.setattr(ModelRegistry, "get_instance", staticmethod(broken))
         hosts = credential_hosts()
-        assert hosts["sk-openai"] == {"api.openai.com:443"}
+        assert hosts["sk-openai"] == {"https://api.openai.com:443"}
         # The catalog key is unknown without the catalog, so it is not checked.
         assert "sk-ds" not in hosts
 
-    def test_endpoint_host_normalises_ports_and_case(self):
-        assert endpoint_host("https://API.DeepSeek.com/v1") == "api.deepseek.com:443"
-        assert endpoint_host("http://localhost:11434/v1") == "localhost:11434"
-        assert endpoint_host("http://ollama/v1") == "ollama:80"
-        assert endpoint_host("https://example.com:notaport/v1") == "example.com:443"
-        assert endpoint_host(None) == ""
-        assert endpoint_host("not a url") == ""
+    def test_endpoint_origin_normalises_scheme_ports_and_case(self):
+        assert endpoint_origin("https://API.DeepSeek.com/v1") == "https://api.deepseek.com:443"
+        assert endpoint_origin("HTTP://localhost:11434/v1") == "http://localhost:11434"
+        assert endpoint_origin("http://ollama/v1") == "http://ollama:80"
+        assert endpoint_origin("https://example.com:notaport/v1") == "https://example.com:443"
+        assert endpoint_origin("ftp://example.com/") == ""
+        assert endpoint_origin(None) == ""
+        assert endpoint_origin("not a url") == ""
+
+
+@pytest.mark.unit
+class TestPlaintextEndpoints:
+    """A configured key never crosses the public internet unencrypted.
+
+    The scheme is part of the scope: a key configured for an https endpoint
+    is not sent to the same host over http. Plain http is accepted for an
+    endpoint the operator configured only when its host is local: loopback,
+    a private or link-local address, a single-label name (a Docker service),
+    ``host.docker.internal`` or an internal suffix. Anything else needs
+    https, or ``LLM_ALLOW_PLAINTEXT_ENDPOINTS``.
+    """
+
+    def test_an_https_key_is_not_sent_to_the_same_host_over_http(self, monkeypatch):
+        configure(monkeypatch, LLM_PROVIDER="openai", OPENAI_API_KEY="sk-openai")
+        with pytest.raises(CredentialScopeError, match=r"request to http://api\.openai\.com:443"):
+            OpenAILLM(api_key="sk-openai", base_url="http://api.openai.com:443/v1")
+
+    @pytest.mark.parametrize(
+        "base_url",
+        [
+            "http://localhost:11434/v1",
+            "http://127.0.0.1:8000/v1",
+            "http://[::1]:8000/v1",
+            "http://10.0.0.5:8000/v1",
+            "http://172.20.0.3:4000",
+            "http://192.168.1.20:11434/v1",
+            "http://169.254.10.10/v1",
+            "http://[fd12:3456::1]:8000/v1",
+            "http://ollama:11434/v1",
+            "http://litellm:4000",
+            "http://host.docker.internal:23333/v1",
+            "http://ollama.llm.svc.cluster.local:11434/v1",
+            "http://vllm.corp.internal/v1",
+        ],
+    )
+    def test_plain_http_to_a_local_endpoint_is_allowed(self, monkeypatch, base_url):
+        configure(monkeypatch, LLM_PROVIDER="openai", API_KEY="sk-local", OPENAI_BASE_URL=base_url, LLM_NAME="m")
+        assert target(chat()) == ("sk-local", base_url)
+
+    @pytest.mark.parametrize(
+        "base_url",
+        ["http://llm.example.com/v1", "http://8.8.8.8:8000/v1", "http://api.deepseek.com/v1"],
+    )
+    def test_plain_http_to_a_public_endpoint_is_refused(self, monkeypatch, base_url):
+        configure(monkeypatch, LLM_PROVIDER="openai", API_KEY="sk-remote", OPENAI_BASE_URL=base_url, LLM_NAME="m")
+        with pytest.raises(CredentialScopeError, match="plain http") as excinfo:
+            chat()
+        assert endpoint_origin(base_url) in str(excinfo.value)
+        assert "LLM_ALLOW_PLAINTEXT_ENDPOINTS" in str(excinfo.value)
+        assert "sk-remote" not in str(excinfo.value)
+
+    def test_the_escape_hatch_allows_plain_http_to_a_configured_public_endpoint(self, monkeypatch):
+        configure(
+            monkeypatch,
+            LLM_PROVIDER="openai",
+            API_KEY="sk-remote",
+            OPENAI_BASE_URL="http://llm.example.com/v1",
+            LLM_NAME="m",
+        )
+        monkeypatch.setattr(settings, "LLM_ALLOW_PLAINTEXT_ENDPOINTS", True)
+        assert target(chat()) == ("sk-remote", "http://llm.example.com/v1")
+
+    def test_the_escape_hatch_does_not_widen_where_a_key_may_go(self, monkeypatch):
+        configure(monkeypatch, LLM_PROVIDER="openai", OPENAI_API_KEY="sk-openai")
+        monkeypatch.setattr(settings, "LLM_ALLOW_PLAINTEXT_ENDPOINTS", True)
+        with pytest.raises(CredentialScopeError, match="is configured for https://api"):
+            OpenAILLM(api_key="sk-openai", base_url="http://api.openai.com/v1")
+
+    def test_a_plaintext_catalog_endpoint_is_refused_for_a_public_host(self, monkeypatch, tmp_path):
+        (tmp_path / "plain.yaml").write_text(
+            dedent(
+                """
+                provider: openai_compatible
+                api_key_env: PLAIN_API_KEY
+                base_url: http://llm.example.com/v1
+                models:
+                  - id: plain-model
+                """
+            )
+        )
+        configure(monkeypatch, LLM_PROVIDER="openai", MODELS_CONFIG_DIR=str(tmp_path), PLAIN_API_KEY="sk-plain")
+        with pytest.raises(CredentialScopeError, match="plain http"):
+            chat("plain-model")
+
+    def test_https_endpoints_are_unchanged(self, monkeypatch):
+        configure(monkeypatch, LLM_PROVIDER="openai", API_KEY="sk-openai", DEEPSEEK_API_KEY="sk-ds")
+        assert target(chat()) == ("sk-openai", OPENAI_URL)
+        assert target(chat("deepseek-v4-flash")) == ("sk-ds", DEEPSEEK_URL)
+
+    def test_a_key_the_deployment_did_not_configure_is_not_held_to_the_policy(self, monkeypatch):
+        # A user's own model is validated and pinned where it is saved.
+        configure(monkeypatch, LLM_PROVIDER="openai", API_KEY="sk-openai")
+        llm = OpenAILLM(api_key="sk-users-own", base_url="http://llm.example.com/v1")
+        assert target(llm) == ("sk-users-own", "http://llm.example.com/v1")
 
 
 @pytest.mark.unit
@@ -332,7 +429,7 @@ class TestSdkEnvironmentEndpoints:
         configure(monkeypatch, LLM_PROVIDER="google", GOOGLE_API_KEY="g-key")
         monkeypatch.setenv("GOOGLE_GEMINI_BASE_URL", "https://collector.example.com/")
         llm = GoogleLLM(api_key=None)
-        assert endpoint_host(llm.client._api_client._http_options.base_url) == "generativelanguage.googleapis.com:443"
+        assert endpoint_origin(llm.client._api_client._http_options.base_url) == "https://generativelanguage.googleapis.com:443"
 
     def test_gemini_ignores_the_vertex_ai_switch(self, monkeypatch):
         configure(monkeypatch, LLM_PROVIDER="google", GOOGLE_API_KEY="g-key")
@@ -340,14 +437,14 @@ class TestSdkEnvironmentEndpoints:
         monkeypatch.setenv("GOOGLE_VERTEX_BASE_URL", "https://collector.example.com/")
         llm = GoogleLLM(api_key=None)
         assert not llm.client._api_client.vertexai
-        assert endpoint_host(llm.client._api_client._http_options.base_url) == "generativelanguage.googleapis.com:443"
+        assert endpoint_origin(llm.client._api_client._http_options.base_url) == "https://generativelanguage.googleapis.com:443"
 
     def test_anthropic_ignores_anthropic_base_url(self, monkeypatch):
         configure(monkeypatch, LLM_PROVIDER="anthropic", ANTHROPIC_API_KEY="sk-ant")
         monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://collector.example.com")
         llm = AnthropicLLM(api_key=None)
         assert target(llm) == ("sk-ant", ANTHROPIC_URL)
-        assert "collector.example.com:443" not in credential_hosts()["sk-ant"]
+        assert "https://collector.example.com:443" not in credential_hosts()["sk-ant"]
 
     def test_anthropic_still_takes_a_models_own_endpoint(self, monkeypatch):
         configure(monkeypatch, LLM_PROVIDER="anthropic", ANTHROPIC_API_KEY="sk-ant")
@@ -359,7 +456,7 @@ class TestSdkEnvironmentEndpoints:
         monkeypatch.setenv("OPENAI_BASE_URL", "https://collector.example.com/v1")
         llm = OpenAILLM(api_key=None)
         assert target(llm) == ("sk-openai", OPENAI_URL)
-        assert endpoint_host(str(llm.client.base_url)) == "api.openai.com:443"
+        assert endpoint_origin(str(llm.client.base_url)) == "https://api.openai.com:443"
 
 
 # ---------------------------------------------------------------------------
