@@ -114,7 +114,7 @@ EMBEDDINGS_KEY=YOUR_API_KEY                 # optional; sent as a Bearer token
 - `EMBEDDINGS_NAME` — forwarded as the `model` field in each request.
 - `EMBEDDINGS_KEY` — optional bearer token. In this mode it is the only key sent: `OPENAI_API_KEY` and `API_KEY` are not used, so set it even if it is the same OpenAI key.
 
-If the server answers `401` or `403`, DocsGPT logs an `embeddings_auth_failed` error naming a fingerprint of the key (the first 16 hex characters of its SHA-256), never the key itself. When a failed query embedding leaves every source of a retrieval empty, the answer goes ahead without retrieved context; that is logged once as a `retrieval_degraded` error with the status code, the number of sources, and the activity and user ids, and the trace's `retrieval` step is marked `docsgpt.retrieval_degraded`.
+If the server answers `401` or `403`, DocsGPT logs an `embeddings_auth_failed` error naming a fingerprint of the key (the first 16 hex characters of its SHA-256), never the key itself. When the query embedding fails and every source's search then fails too, the answer goes ahead without retrieved context; that is logged once as a `retrieval_degraded` error with the status code, the number of sources, and the activity and user ids, and the trace's `retrieval` step is marked `docsgpt.retrieval_degraded`.
 
 ### Guarding against oversized inputs
 
