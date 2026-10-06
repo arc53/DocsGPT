@@ -146,4 +146,12 @@ describe('Hero connect card', () => {
     expect(card()).toBeNull();
     expect(container.textContent).toContain('demo4');
   });
+
+  it('keeps the browser translator off the model picker', async () => {
+    await render([]);
+    // A translator that rewraps the picker's text breaks React's next
+    // commit; model names are product names anyway.
+    const trigger = container.querySelector('[data-slot="select-trigger"]');
+    expect(trigger?.getAttribute('translate')).toBe('no');
+  });
 });

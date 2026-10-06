@@ -1,5 +1,6 @@
 """Factory + process-wide singleton selecting a sandbox backend from settings."""
 
+import threading
 from typing import Callable, Dict, Optional
 
 from docsgpt.core.settings import settings
@@ -59,18 +60,28 @@ class SandboxCreator:
     }
 
     _instance = None
+    _lock = threading.Lock()
 
     @classmethod
     def get_manager(cls) -> SandboxManager:
-        """Return the process-wide ``SandboxManager``, building it on first use."""
-        if cls._instance is None:
-            backend = cls.create_backend(settings.SANDBOX_BACKEND)
-            cls._instance = SandboxManager(
-                backend=backend,
-                max_ttl=float(settings.SANDBOX_MAX_TTL),
-                max_sessions=int(settings.SANDBOX_MAX_SESSIONS),
-            )
-        return cls._instance
+        """Return the process-wide ``SandboxManager``, building it on first use.
+
+        Built once under a lock: two managers would keep two session
+        registries, so a sandbox opened through the one that lost the race
+        would never be reaped and ``SANDBOX_MAX_SESSIONS`` would undercount.
+        """
+        instance = cls._instance
+        if instance is not None:
+            return instance
+        with cls._lock:
+            if cls._instance is None:
+                backend = cls.create_backend(settings.SANDBOX_BACKEND)
+                cls._instance = SandboxManager(
+                    backend=backend,
+                    max_ttl=float(settings.SANDBOX_MAX_TTL),
+                    max_sessions=int(settings.SANDBOX_MAX_SESSIONS),
+                )
+            return cls._instance
 
     @classmethod
     def peek_manager(cls) -> Optional[SandboxManager]:
@@ -88,4 +99,5 @@ class SandboxCreator:
     @classmethod
     def reset(cls) -> None:
         """Drop the cached singleton (test/teardown hook)."""
-        cls._instance = None
+        with cls._lock:
+            cls._instance = None
