@@ -653,7 +653,7 @@ pygments==2.21.0
     # via
     #   rich
     #   rich-rst
-pyjwt==2.14.0
+pyjwt==2.15.0
     # via
     #   mcp
     #   msal
