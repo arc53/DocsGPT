@@ -76,6 +76,12 @@ STUCK_HIT_SECONDS = 300
 #: Times a delivery waits for a busy monitor before it is queued again later by the sweep.
 MAX_HIT_DEFERRALS = 5
 
+#: Seconds before an event whose condition could not be judged is tried again, per attempt.
+UNDECIDED_RETRY_SECONDS = 60
+
+#: Why an event is dropped after ``MAX_HIT_DEFERRALS`` undecided tries.
+UNDECIDED_NOTE = "the condition could not be judged after several tries"
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -837,9 +843,34 @@ def process_hit(hit_id: str, attempt: int = 0) -> Dict[str, Any]:
         if outcome in ("ignored", "unfit"):
             with db_session() as conn:
                 TriggerHitsRepository(conn).mark(hit_id, "ignored", None if outcome == "ignored" else "unfit")
+        if outcome == "retry":
+            # A delivery happens once: unlike a polled change, no later check sees it again.
+            return {"state": _retry_hit(hit_id, attempt)}
         return {"state": outcome}
     finally:
         _release(monitor_id)
+
+
+def _retry_hit(hit_id: str, attempt: int) -> str:
+    """Put an undecided delivery back in the queue, or record it as failed once its tries are used up."""
+    with db_session() as conn:
+        repo = TriggerHitsRepository(conn)
+        if attempt + 1 >= MAX_HIT_DEFERRALS:
+            repo.mark(hit_id, "failed", UNDECIDED_NOTE)
+            return "failed"
+        repo.release(hit_id)
+    enqueue_hit(hit_id, countdown=UNDECIDED_RETRY_SECONDS * (attempt + 1), attempt=attempt + 1)
+    return "retry"
+
+
+def _requeue_event(monitor_id: str, event: Dict[str, Any], attempt: int, countdown: float) -> None:
+    """Queue an ingest event for this monitor again."""
+    try:
+        from docsgpt.api.user.tasks import process_monitor_event
+
+        process_monitor_event.apply_async(args=[monitor_id, event, attempt + 1], countdown=countdown, queue="docsgpt")
+    except Exception:
+        logger.exception("monitor %s: could not requeue its ingest event", monitor_id)
 
 
 INGEST_EVENTS = ("source.ingest.completed", "source.ingest.failed")
@@ -886,14 +917,7 @@ def process_event(monitor_id: str, event: Dict[str, Any], attempt: int = 0) -> D
     """Run an ingest event for one monitor (the ``process_monitor_event`` task)."""
     if not _lease(monitor_id):
         if attempt + 1 < MAX_HIT_DEFERRALS:
-            try:
-                from docsgpt.api.user.tasks import process_monitor_event
-
-                process_monitor_event.apply_async(
-                    args=[monitor_id, event, attempt + 1], countdown=2 * (attempt + 1), queue="docsgpt"
-                )
-            except Exception:
-                logger.exception("monitor %s: could not requeue its ingest event", monitor_id)
+            _requeue_event(monitor_id, event, attempt, 2 * (attempt + 1))
         return {"state": "busy"}
     try:
         with db_readonly() as conn:
@@ -907,15 +931,20 @@ def process_event(monitor_id: str, event: Dict[str, Any], attempt: int = 0) -> D
         if event.get("error"):
             summary_text += f": {str(event['error'])[:300]}"
         content = Content(text=canonical_json(event), data=event)
-        return {
-            "state": _event(
-                monitor,
-                content,
-                source="monitor",
-                key=f"ingest:{int(monitor.get('check_count') or 0) + 1}",
-                summary=summary_text,
-                extra={"ingest": event},
-            )
-        }
+        outcome = _event(
+            monitor,
+            content,
+            source="monitor",
+            key=f"ingest:{int(monitor.get('check_count') or 0) + 1}",
+            summary=summary_text,
+            extra={"ingest": event},
+        )
+        if outcome == "retry":
+            # An ingest ends once: no later check sees this event again.
+            if attempt + 1 >= MAX_HIT_DEFERRALS:
+                _store(monitor_id, None, {"last_error": f"an ingest event was dropped: {UNDECIDED_NOTE}"})
+                return {"state": "failed"}
+            _requeue_event(monitor_id, event, attempt, UNDECIDED_RETRY_SECONDS * (attempt + 1))
+        return {"state": outcome}
     finally:
         _release(monitor_id)

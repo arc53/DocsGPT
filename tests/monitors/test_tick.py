@@ -498,6 +498,32 @@ class TestHits:
         assert tick.process_hit(hit_id) == {"state": "busy"}
         assert queued["hits"] == [[hit_id, 1]]
 
+    def test_a_delivery_left_undecided_goes_back_to_pending_and_is_requeued(
+        self, mon_db, conversation_id, queued, wakes, events, monkeypatch
+    ):
+        monitor, link = _webhook(mon_db, conversation_id, check=None, state={}, condition="it failed")
+        monkeypatch.setattr(tick, "_decide", lambda *args: ("retry", None, None))
+        hit_id = _hit(mon_db, link, "a", {"status": "failure"})
+        assert tick.process_hit(hit_id) == {"state": "retry"}
+        with mon_db.connect() as conn:
+            assert TriggerHitsRepository(conn).get(hit_id)["status"] == "pending"
+        assert queued["hits"] == [[hit_id, 1]]
+        # Once the judge answers, the same delivery wakes the agent.
+        monkeypatch.setattr(tick, "_decide", lambda *args: ("fire", None, "it failed"))
+        assert tick.process_hit(hit_id, 1) == {"state": "woken"} and len(wakes) == 1
+
+    def test_a_delivery_still_undecided_after_its_retries_is_marked_failed(
+        self, mon_db, conversation_id, queued, wakes, events, monkeypatch
+    ):
+        monitor, link = _webhook(mon_db, conversation_id, check=None, state={}, condition="it failed")
+        monkeypatch.setattr(tick, "_decide", lambda *args: ("retry", None, None))
+        hit_id = _hit(mon_db, link, "a", {"status": "failure"})
+        assert tick.process_hit(hit_id, tick.MAX_HIT_DEFERRALS - 1) == {"state": "failed"}
+        with mon_db.connect() as conn:
+            hit = TriggerHitsRepository(conn).get(hit_id)
+        assert hit["status"] == "failed" and "could not be judged" in hit["error"]
+        assert queued["hits"] == [] and wakes == []
+
     def test_a_delivery_that_does_not_fit_is_recorded(self, mon_db, conversation_id, wakes, events):
         monitor, link = _webhook(mon_db, conversation_id, check=self.STATUS, state={})
         assert tick.process_hit(_hit(mon_db, link, "a", {"state": "done"})) == {"state": "unfit"}
@@ -520,6 +546,21 @@ class TestIngest:
         assert wakes[0]["source"] == "monitor" and "failed: bad pdf" in wakes[0]["payload"]["summary"]
         assert "bad pdf" not in wakes[0]["body"]
         assert reload(mon_db, monitor["id"])["status"] == "completed"
+
+    def test_an_undecided_ingest_event_is_requeued_then_dropped_with_a_note(
+        self, mon_db, conversation_id, queued, wakes, events, monkeypatch
+    ):
+        monitor = make_monitor(
+            mon_db, conversation_id, source={"type": "ingest", "source_id": "src-1"}, check=None, state={},
+            condition="the ingest failed",
+        )
+        monkeypatch.setattr(tick, "_decide", lambda *args: ("retry", None, None))
+        event = {"event": "failed", "source_id": "src-1"}
+        assert tick.process_event(monitor["id"], event) == {"state": "retry"}
+        assert queued["events"] == [[monitor["id"], event, 1]]
+        assert tick.process_event(monitor["id"], event, tick.MAX_HIT_DEFERRALS - 1) == {"state": "failed"}
+        assert len(queued["events"]) == 1 and wakes == []
+        assert "could not be judged" in reload(mon_db, monitor["id"])["last_error"]
 
     def test_publish_user_event_feeds_the_hook_even_without_sse(self, monkeypatch):
         seen = []

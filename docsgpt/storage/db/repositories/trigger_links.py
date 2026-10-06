@@ -211,6 +211,16 @@ class TriggerHitsRepository:
         ).fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def release(self, hit_id: str) -> None:
+        """Hand a claimed hit back to ``pending`` (its check could not be decided yet)."""
+        self._conn.execute(
+            text(
+                "UPDATE trigger_hits SET status = 'pending', processed_at = NULL "
+                "WHERE id = CAST(:id AS uuid) AND status = 'processed'"
+            ),
+            {"id": str(hit_id)},
+        )
+
     def mark(self, hit_id: str, status: str, error: Optional[str] = None) -> None:
         """Record how a hit ended (``processed``, ``ignored`` or ``failed``)."""
         self._conn.execute(
