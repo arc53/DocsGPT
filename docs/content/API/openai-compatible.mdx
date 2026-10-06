@@ -1,7 +1,7 @@
 ---
 title: OpenAI-Compatible API
 description: Connect any OpenAI-compatible client to DocsGPT Agents via /v1/chat/completions — streaming, structured output, files and images, tool calling, reasoning, and idempotent retries.
-lastUpdated: 2026-10-05
+lastUpdated: 2026-10-06
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -273,6 +273,8 @@ By default each request is a new conversation built from the `messages` you send
 3. `docsgpt.conversation_id`.
 
 The conversation must belong to the agent bound to your key; otherwise the request fails with HTTP `400` and `"code": "conversation_not_found"`.
+
+In a stored conversation, a new user message sent while a tool round still waits for your results ends that round. The stored turn keeps what ran and records the calls it waited on as never run. Results you post afterwards for those calls, while a later round of the same conversation is waiting, are refused with HTTP `409` and `"code": "tool_call_not_pending"`.
 
 ### Session headers
 

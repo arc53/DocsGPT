@@ -1548,12 +1548,15 @@ class BaseAnswerResource:
                 conversation_id = None
             # Resume finished cleanly; drop the continuation row.
             # Crash-paths leave it ``resuming`` for the janitor to revert.
+            # Only this turn's: a later turn that paused meanwhile owns the
+            # conversation's row now.
             if _continuation and conversation_id:
                 try:
                     cont_service = ContinuationService()
                     cont_service.delete_state(
                         str(conversation_id),
                         decoded_token.get("sub", "local"),
+                        message_id=reserved_message_id,
                     )
                 except Exception as e:
                     logger.error(
@@ -2112,9 +2115,20 @@ class BaseAnswerResource:
 
         return result
 
-    def error_stream_generate(self, err_response):
-        data = json.dumps({"type": "error", "error": err_response})
-        yield f"data: {data}\n\n"
+    def error_stream_generate(self, err_response: str, code: Optional[str] = None):
+        """One SSE ``error`` event, for a request refused before its stream began.
+
+        Args:
+            err_response: The message.
+            code: A stable code the client can act on, when there is one.
+
+        Yields:
+            The event.
+        """
+        payload: Dict[str, Any] = {"type": "error", "error": err_response}
+        if code:
+            payload["code"] = code
+        yield f"data: {json.dumps(payload)}\n\n"
 
     def curated_error_stream_generate(self, error: BaseException):
         """One SSE ``error`` event with the curated message, code and params.

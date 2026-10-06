@@ -8,6 +8,13 @@ export type ToolCallsType = {
   sent_arguments?: Record<string, any>;
   result?: Record<string, any>;
   error?: string;
+  /** Set on a refused call (``tool_not_allowed``, ``connection_required``). */
+  error_type?: string;
+  /**
+   * A call its turn waited on that never ran: the user started a new message
+   * instead of answering it, or the request expired. Its status is ``denied``.
+   */
+  not_run?: 'moved_on' | 'expired';
   status?:
     | 'pending'
     | 'completed'

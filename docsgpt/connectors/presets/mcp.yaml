@@ -104,3 +104,13 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://support.atlassian.com/trello/docs/connect-trello-to-ai-assistants-with-trello-mcp/
+
+- key: mcp:miro
+  name: Miro
+  description: Find boards, read content and comments, create diagrams, and reply to comments.
+  icon: miro
+  category: projects
+  mcp_url: https://mcp.miro.com/
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://developers.miro.com/docs/miro-mcp

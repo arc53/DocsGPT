@@ -1506,6 +1506,7 @@
         "mcp_clickup": "Search, read and update ClickUp tasks, docs and lists, and add comments.",
         "mcp_zapier": "Use the actions enabled in your Zapier MCP account to read or update connected apps.",
         "mcp_trello": "Find Trello boards and cards, and create and update cards.",
+        "mcp_miro": "Find Miro boards, read content and comments, create diagrams, and reply to comments.",
         "github": "Sync repositories into Knowledge and let agents read code, issues and pull requests."
       },
       "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",
@@ -2259,7 +2260,10 @@
       "response": "Response",
       "running": "Running…",
       "denied": "Denied by user",
-      "failed": "failed"
+      "failed": "failed",
+      "notRun": "not run",
+      "notRunMovedOn": "Not run: the conversation moved on before this was approved.",
+      "notRunExpired": "Not run: the approval request expired."
     },
     "quotaExceeded": {
       "tokens": "You've used {{used}} of your {{limit}} token quota. It resets {{resetsAt}}.",

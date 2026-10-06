@@ -561,6 +561,70 @@ def journal_refused_call(executor: Any, pause_info: Dict, error: str) -> None:
         )
 
 
+def refusal_texts(executor: Any, reason: str) -> Tuple[str, str]:
+    """What the model is told about a refused call, and the journal error, worded for the run it happened in.
+
+    ``check_pause`` refuses calls in interactive turns too (a secret
+    reference a tool can't take, an admin's read-only connector, an API
+    caller's write on the owner's account), so only a headless run is called
+    one.
+
+    Args:
+        executor: The run's ``ToolExecutor``.
+        reason: Why the call was refused, as ``check_pause`` worded it.
+
+    Returns:
+        ``(tool result for the model, journal error)``.
+    """
+    if getattr(executor, "headless", False):
+        return f"Tool denied (headless): {reason}", f"headless: {reason}"
+    return f"Tool denied: {reason}", f"denied: {reason}"
+
+
+def record_refused_call(
+    executor: Any,
+    pause_info: Dict,
+    *,
+    reason: str,
+    model_text: str,
+    journal_error: str,
+) -> Dict[str, Any]:
+    """Journal a refused call and keep it on the message as a failed call.
+
+    The message's ``tool_calls`` are what a reload renders and what later
+    turns replay to the model, so a refusal kept only in the journal vanished
+    from both.
+
+    Args:
+        executor: The run's ``ToolExecutor``.
+        pause_info: What ``check_pause`` returned for the call.
+        reason: Why it was refused, for the user (the call's ``error``).
+        model_text: The tool result the model was given (the call's ``result``).
+        journal_error: The failure recorded on the journal row.
+
+    Returns:
+        The recorded entry.
+    """
+    journal_refused_call(executor, pause_info, journal_error)
+    entry: Dict[str, Any] = {
+        "tool_name": pause_info.get("tool_name") or "unknown",
+        "call_id": pause_info["call_id"],
+        "action_name": pause_info.get("llm_name") or pause_info.get("name") or pause_info.get("action_name"),
+        "arguments": pause_info.get("arguments") or {},
+        "result": model_text,
+        "error": reason,
+        "error_type": pause_info.get("error_type") or "tool_not_allowed",
+        "status": "error",
+    }
+    for key in ("device_id", "connector_key", "connector_name", "access"):
+        if pause_info.get(key):
+            entry[key] = pause_info[key]
+    tool_calls = getattr(executor, "tool_calls", None)
+    if isinstance(tool_calls, list):
+        tool_calls.append(entry)
+    return entry
+
+
 class ToolExecutor:
     """Handles tool discovery, preparation, and execution.
 
@@ -2396,9 +2460,11 @@ class ToolExecutor:
     # Keys the client needs that are not part of the fixed shape below. They are
     # small and optional, and are copied only when present so an ordinary tool
     # call does not grow null columns in every persisted row.
+    # ``error`` / ``error_type``: a refused call's reason, which the chat shows
+    # after a reload as it did live.
     _PRESERVED_TOOL_CALL_KEYS = (
         "artifacts", "device_id", "connector_key", "connector_name", "access", "sent_arguments", "images",
-        "job_id",
+        "job_id", "error", "error_type",
     )
 
     def _collect_native_parts(self, tool: Any, result: Any, tool_call_data: Dict) -> Any:

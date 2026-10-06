@@ -1,7 +1,7 @@
 ---
 title: Code Execution Sandbox
 description: Run the sandbox that the Artifact and Code Executor tools need - the self-hosted Jupyter runner with Docker Compose, Kubernetes or pip, or Daytona Cloud - with the gateway token, kernel settings and network isolation.
-lastUpdated: 2026-10-05
+lastUpdated: 2026-10-06
 ---
 
 import { Callout } from 'nextra/components'
@@ -151,6 +151,8 @@ To check the setup, ask an agent with Code Executor to run `print(1 + 1)`. An er
 | `SANDBOX_KERNEL_IDLE_TIMEOUT` | `1800` | Set on the runner, not on DocsGPT. Seconds an idle kernel may live before the runner shuts it down, which catches kernels a restarted API or worker process left behind. Keep it above `SANDBOX_MAX_TTL`. A kernel that is running code is never shut down, so long runs don't need a higher value. |
 
 On the Jupyter runner every conversation that ran code keeps its kernel until the session has been idle for `SANDBOX_MAX_TTL`. An idle kernel takes about 50-60 MB, and more once code has loaded data, and its workspace files sit on the runner's in-memory `/tmp`. Size `SANDBOX_MEMORY` for the conversations you expect to run code at the same time, or lower `SANDBOX_MAX_TTL` or `SANDBOX_MAX_SESSIONS`. On Daytona each session is its own sandbox, which Daytona also stops after `DAYTONA_AUTO_STOP_INTERVAL` idle minutes.
+
+On Daytona, an API process and a worker can both use the same session's sandbox: each finds it again by its session label. Each process tracks idle time on its own, so when its copy of a session expires it only drops its own handle. Every process records each use of a session in Redis, and the sandbox is deleted only when neither that record nor Daytona's own activity time shows a use in the last `SANDBOX_MAX_TTL` seconds. If neither can be read, the sandbox is kept too. Daytona stops a kept sandbox after `DAYTONA_AUTO_STOP_INTERVAL` idle minutes and deletes it `DAYTONA_AUTO_DELETE_INTERVAL` minutes after that. When the model passes `persist=false`, the sandbox is still deleted right after the run.
 
 ### Long runs
 

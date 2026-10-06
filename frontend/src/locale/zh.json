@@ -1505,6 +1505,7 @@
         "mcp_clickup": "搜索、读取和更新 ClickUp 任务、文档与列表，并添加评论。",
         "mcp_zapier": "使用 Zapier MCP 账户中启用的操作读取或更新已连接的应用。",
         "mcp_trello": "查找 Trello 看板和卡片，并创建和更新卡片。",
+        "mcp_miro": "查找 Miro 白板、阅读内容和评论、创建图表并回复评论。",
         "github": "将仓库同步到知识库，并让智能体读取代码、Issue 和拉取请求。"
       },
       "empty": "尚未连接任何服务。连接一个服务以同步其内容，或为智能体提供新工具。",
@@ -2248,7 +2249,10 @@
       "response": "响应",
       "running": "正在运行…",
       "denied": "已被用户拒绝",
-      "failed": "失败"
+      "failed": "失败",
+      "notRun": "未运行",
+      "notRunMovedOn": "未运行：在批准之前，对话已继续。",
+      "notRunExpired": "未运行：批准请求已过期。"
     },
     "quotaExceeded": {
       "tokens": "您已使用 {{limit}} 令牌配额中的 {{used}}。配额将于 {{resetsAt}} 重置。",

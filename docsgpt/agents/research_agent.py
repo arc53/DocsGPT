@@ -7,7 +7,7 @@ from typing import Any, Dict, Generator, List, Optional
 
 from docsgpt import tracing
 from docsgpt.agents.base import BaseAgent
-from docsgpt.agents.tool_executor import ToolExecutor, journal_refused_call
+from docsgpt.agents.tool_executor import ToolExecutor, record_refused_call, refusal_texts
 from docsgpt.agents.tools.graph_search import add_graph_search_tool
 from docsgpt.agents.tools.internal_search import add_internal_search_tool
 from docsgpt.agents.tools.wiki import add_wiki_tool
@@ -709,22 +709,25 @@ class ResearchAgent(BaseAgent):
         if pause_type == "headless_denied":
             reason = pause_info.get("deny_reason") or "This tool can't run here."
             result = f"Tool denied: {reason}"
-            journal_error = f"headless: {reason}" if executor.headless else f"denied: {reason}"
+            _, journal_error = refusal_texts(executor, reason)
             if executor.headless:
                 executor.headless_denials.append(pause_info)
         elif pause_info.get("connection_required"):
+            reason = "Its service needs to be connected first, and a research step can't wait for that."
             result = (
                 "Tool not run: its service needs to be connected first, and a "
                 "research step can't wait for that."
             )
             journal_error = "research: connection required"
         elif pause_type == "requires_client_execution":
+            reason = "It runs in the user's app, which a research step can't reach."
             result = (
                 "Tool not run: it runs in the user's app, which a research step "
                 "can't reach."
             )
             journal_error = "research: client-side tool"
         else:
+            reason = "This action needs the user's approval, which a research step can't ask for."
             result = (
                 "Tool not run: this action needs the user's approval, which a "
                 "research step can't ask for. Tell the user it needs their "
@@ -738,7 +741,9 @@ class ResearchAgent(BaseAgent):
                 "pause_type": pause_type,
             },
         )
-        journal_refused_call(executor, pause_info, journal_error)
+        record_refused_call(
+            executor, pause_info, reason=reason, model_text=result, journal_error=journal_error
+        )
         return result, pause_info["call_id"]
 
     def _collect_step_sources(self):
