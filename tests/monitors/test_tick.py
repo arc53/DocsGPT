@@ -524,10 +524,25 @@ class TestHits:
         assert hit["status"] == "failed" and "could not be judged" in hit["error"]
         assert queued["hits"] == [] and wakes == []
 
-    def test_a_delivery_that_does_not_fit_is_recorded(self, mon_db, conversation_id, wakes, events):
+    def test_a_delivery_that_does_not_fit_wakes_once_to_say_so(self, mon_db, conversation_id, wakes, events):
+        """Silence is not success: a call the check can't read is reported once, never as a match."""
         monitor, link = _webhook(mon_db, conversation_id, check=self.STATUS, state={})
         assert tick.process_hit(_hit(mon_db, link, "a", {"state": "done"})) == {"state": "unfit"}
-        assert "didn't fit" in reload(mon_db, monitor["id"])["last_error"] and wakes == []
+        after = reload(mon_db, monitor["id"])
+        assert "didn't fit" in after["last_error"]
+        assert after["wake_count"] == 0 and after["status"] == "active"
+        assert len(wakes) == 1
+        notice = wakes[0]
+        assert notice["source"] == "trigger"
+        assert notice["dedupe_key"] == f"monitor:{monitor['id']}:unfit:first"
+        assert "could not read" in notice["body"] and "did not count as a match" in notice["body"]
+        assert notice["payload"]["delivery"] == {"state": "done"}
+        assert "`status` is not in the content" in notice["payload"]["error"]
+        # Later calls that don't fit stay silent; one that fits still wakes.
+        assert tick.process_hit(_hit(mon_db, link, "b", {"state": "done"})) == {"state": "unfit"}
+        assert len(wakes) == 1
+        assert tick.process_hit(_hit(mon_db, link, "c", {"status": "success"})) == {"state": "woken"}
+        assert len(wakes) == 2
 
 
 class TestIngest:

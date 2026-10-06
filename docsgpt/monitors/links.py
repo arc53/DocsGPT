@@ -20,8 +20,9 @@ import base64
 import hashlib
 import ipaddress
 import json
+import re
 import secrets
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlsplit
 
 from docsgpt.core.settings import settings
@@ -140,34 +141,87 @@ def reachability(url: str) -> Tuple[bool, Optional[str]]:
     return True, None
 
 
-_EXAMPLE_BODY = {"status": "success", "detail": "example"}
+#: A plain dotted path (``status``, ``deployment.state``) an example body can be built for.
+_SIMPLE_PATH = re.compile(r"^[A-Za-z_][\w-]*(?:\.[A-Za-z_][\w-]*)*$")
+
+#: Stands for the send time in an example body until it becomes ``printf``'s ``%s``.
+_SENT_AT = "\x00sent_at\x00"
 
 
-def example_curl(url: str, scheme: str) -> str:
+def example_body(check: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """The JSON an example call sends: what the monitor's status check reads, plus a ``sent_at`` time.
+
+    The time makes each call's body different, so a repeat of the example
+    within ``TRIGGER_DEDUPE_WINDOW_SECONDS`` is not taken for a duplicate.
+
+    Args:
+        check: The monitor's check; a status check on a plain dotted path
+            puts its first final state there.
+
+    Returns:
+        The body, with :data:`_SENT_AT` where the time goes.
+    """
+    body: Dict[str, Any] = {"status": "success", "detail": "example"}
+    if check and check.get("type") == "status" and check.get("terminal"):
+        path = str(check.get("value_path") or "")
+        if _SIMPLE_PATH.match(path):
+            body = {}
+            node = body
+            *parents, leaf = path.split(".")
+            for part in parents:
+                node = node.setdefault(part, {})
+            node[leaf] = str(check["terminal"][0])
+    body.setdefault("sent_at", _SENT_AT)
+    return body
+
+
+def _quoted(value: str) -> str:
+    """``value`` as one single-quoted shell word, whatever it contains."""
+    return "'" + value.replace("'", "'\\''") + "'"
+
+
+def _body_command(check: Optional[Dict[str, Any]]) -> str:
+    """Shell that sets ``$body`` to the example JSON with the current UTC time, quoted safely."""
+    template = json.dumps(example_body(check), separators=(",", ":"), ensure_ascii=False)
+    template = template.replace("%", "%%").replace(json.dumps(_SENT_AT)[1:-1], "%s")
+    return f"body=$(printf {_quoted(template)} \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\")"
+
+
+def example_curl(url: str, scheme: str, check: Optional[Dict[str, Any]] = None) -> str:
     """A command that calls the link correctly for its signature scheme.
 
     A signed link's command reads the secret from ``$DOCSGPT_WEBHOOK_SECRET``,
-    so the command can be shown to the model and kept in the chat.
+    so the command can be shown to the model and kept in the chat. The body
+    fits the monitor's status check (see :func:`example_body`).
+
+    Args:
+        url: The link.
+        scheme: Its signature scheme.
+        check: The monitor's check, to shape the example body.
+
+    Returns:
+        A one-line shell command.
     """
-    body = json.dumps(_EXAMPLE_BODY, separators=(",", ":"))
+    body = _body_command(check)
+    target = _quoted(url)
     if scheme in ("github", "hmac_sha256"):
         header = "X-Hub-Signature-256" if scheme == "github" else "X-Signature"
         return (
-            f"body='{body}'; "
+            f"{body}; "
             f"sig=$(printf '%s' \"$body\" | openssl dgst -sha256 -hmac \"${SECRET_ENV}\" | sed 's/^.* //'); "
-            f"curl -X POST '{url}' -H 'Content-Type: application/json' -H \"{header}: sha256=$sig\" "
+            f"curl -X POST {target} -H 'Content-Type: application/json' -H \"{header}: sha256=$sig\" "
             "--data-raw \"$body\""
         )
     if scheme == "standard_webhooks":
         return (
-            f"body='{body}'; id=\"msg_$(date +%s)\"; ts=$(date +%s); "
+            f"{body}; id=\"msg_$(date +%s)\"; ts=$(date +%s); "
             f"key=$(printf '%s' \"${{{SECRET_ENV}#whsec_}}\" | base64 -d | xxd -p | tr -d '\\n'); "
             "sig=$(printf '%s' \"$id.$ts.$body\" | openssl dgst -sha256 -mac HMAC -macopt hexkey:$key -binary "
             "| base64); "
-            f"curl -X POST '{url}' -H 'Content-Type: application/json' -H \"webhook-id: $id\" "
+            f"curl -X POST {target} -H 'Content-Type: application/json' -H \"webhook-id: $id\" "
             "-H \"webhook-timestamp: $ts\" -H \"webhook-signature: v1,$sig\" --data-raw \"$body\""
         )
-    return f"curl -X POST '{url}' -H 'Content-Type: application/json' --data-raw '{body}'"
+    return f"{body}; curl -X POST {target} -H 'Content-Type: application/json' --data-raw \"$body\""
 
 
 def signing_instructions(scheme: str) -> Optional[str]:

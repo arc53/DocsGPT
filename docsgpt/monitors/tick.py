@@ -760,7 +760,7 @@ def _event(monitor: Dict[str, Any], content: Content, *, source: str, key: str, 
     try:
         evaluation = evaluate(spec.get("check"), content, state.get("check"), mode="event")
     except CheckError as exc:
-        _store(str(monitor["id"]), None, {**fields, "last_error": f"a delivery didn't fit the check: {exc}"[:500]})
+        _unfit(monitor, state, fields, exc, source=source, extra=extra)
         return "unfit"
     new_state = {**state, "check": evaluation.state}
     if not evaluation.fire:
@@ -780,6 +780,41 @@ def _event(monitor: Dict[str, Any], content: Content, *, source: str, key: str, 
     return deliver(
         monitor, state=new_state, fields={**fields, "last_error": None}, source=source,
         key=f"{key}:{judge_key}" if judge_key else key, summary=summary, payload=payload, now=now,
+    )
+
+
+#: The wake source of the notice that a webhook call didn't fit its monitor's check.
+UNFIT_SOURCE = "trigger"
+
+
+def _unfit(monitor: Dict[str, Any], state: Dict[str, Any], fields: Dict[str, Any], exc: CheckError, *,
+           source: str, extra: Optional[Dict[str, Any]]) -> None:
+    """Record an event the check could not read; the first webhook call like that wakes the agent to say so.
+
+    A status check guessed for a payload shape the caller doesn't send would
+    otherwise drop every call in silence. The notice is not a match: it uses
+    no wake, and later calls that don't fit stay silent (``last_error`` keeps
+    the latest reason).
+    """
+    message = f"a delivery didn't fit the check: {exc}"[:500]
+    tell = source == "trigger" and not state.get("unfit_told")
+    new_state = {**state, "unfit_told": True} if tell else None
+    _store(str(monitor["id"]), new_state, {**fields, "last_error": message})
+    if not tell:
+        return
+    _notice(
+        monitor,
+        kind="unfit",
+        title=f"{monitor.get('description')}: a call didn't fit the check",
+        body=(
+            f'Monitor {monitor["id"]} ("{monitor.get("description")}") got a webhook call its check could not '
+            "read (the reason and the call are in the data below), so it did not count as a match. Tell the user "
+            "what the call was missing, and offer to re-create the monitor to fit what the caller sends. Later "
+            "calls that don't fit stay silent."
+        ),
+        payload={"error": str(exc)[:500], **(extra or {})},
+        dedupe="first",
+        source=UNFIT_SOURCE,
     )
 
 

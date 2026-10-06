@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 
 import pytest
 
@@ -87,7 +88,32 @@ class TestUrls:
 class TestExamples:
     def test_unsigned_curl_posts_json(self):
         command = links.example_curl("https://h/api/triggers/t", "none")
-        assert command.startswith("curl -X POST 'https://h/api/triggers/t'")
+        assert "curl -X POST 'https://h/api/triggers/t'" in command
+
+    def _body_of(self, command):
+        """Run the command's body half in a shell and parse what it would send."""
+        import shutil
+        import subprocess
+
+        if not shutil.which("bash"):
+            pytest.skip("needs bash")
+        script = command.split("; curl ", 1)[0].split("; sig=", 1)[0] + '; printf %s "$body"'
+        return json.loads(subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=True).stdout)
+
+    def test_the_example_body_carries_a_timestamp(self):
+        """Identical bodies count once within TRIGGER_DEDUPE_WINDOW_SECONDS, so each example call differs."""
+        body = self._body_of(links.example_curl("https://h/t", "none"))
+        assert body["status"] == "success" and body["sent_at"].endswith("Z")
+
+    def test_a_status_check_shapes_the_example_body(self):
+        check = {"type": "status", "value_path": "deployment.state", "terminal": ["success", "failure"]}
+        body = self._body_of(links.example_curl("https://h/t", "github", check))
+        assert body["deployment"] == {"state": "success"} and "sent_at" in body
+
+    def test_odd_check_values_cannot_break_out_of_the_command(self):
+        check = {"type": "status", "value_path": "status", "terminal": ["it's $(touch /tmp/x) done % now"]}
+        body = self._body_of(links.example_curl("https://h/t", "none", check))
+        assert body["status"] == "it's $(touch /tmp/x) done % now"
 
     @pytest.mark.parametrize("scheme,header", [("github", "X-Hub-Signature-256"), ("hmac_sha256", "X-Signature")])
     def test_hmac_curl_signs_the_body_with_the_secret_from_the_environment(self, scheme, header):
@@ -111,14 +137,15 @@ class TestExamples:
         if not shutil.which("openssl") or not shutil.which("bash"):
             pytest.skip("needs bash and openssl")
         command = links.example_curl("https://h/t", scheme)
-        signing = command.split("; curl ", 1)[0] + '; printf %s "$sig"'
+        signing = command.split("; curl ", 1)[0] + '; printf "%s\\n%s" "$body" "$sig"'
         secret = links.new_secret(scheme)
         out = subprocess.run(
             ["bash", "-c", signing], capture_output=True, text=True, env={**os.environ, "DOCSGPT_WEBHOOK_SECRET": secret},
             check=True,
-        ).stdout.strip()
-        body = '{"status":"success","detail":"example"}'
-        assert out == hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
+        ).stdout
+        body, sig = out.rsplit("\n", 1)
+        assert json.loads(body)["status"] == "success"
+        assert sig == hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
 
     def test_link_view_hides_the_hash_and_secret(self):
         view = links.link_view({"id": "1", "kind": "webhook", "token_hash": "h", "secret_encrypted": "s"})

@@ -122,8 +122,13 @@ it answers `404` once the link has ended. The secret is stored only encrypted, i
 - **Answers.** `202 {"accepted": true}` once the delivery is stored; `404` for an unknown, expired, revoked or
   used-up link (all look the same); `401` for a missing or wrong signature; `413` over
   `TRIGGER_MAX_PAYLOAD_BYTES`; `429` over `TRIGGER_RATE_PER_MINUTE` for that link.
-- **Duplicates.** A delivery is stored once per `Idempotency-Key`, `webhook-id` or `X-GitHub-Delivery`, else per
-  body hash; a repeat answers `202` and does nothing.
+- **Duplicates.** A delivery is stored once per `Idempotency-Key`, `webhook-id` or `X-GitHub-Delivery`. Without
+  one, the same body counts once within `TRIGGER_DEDUPE_WINDOW_SECONDS` (10 minutes); sent again later (a nightly
+  job's constant body) it is a new event. A repeat answers `202` and does nothing. The `example_curl` body carries
+  a `sent_at` time, so each example call is new.
+- **Calls that don't fit.** When a call lacks what the check reads (the `value_path` of a status check, say), the
+  agent is woken once to tell the user what was missing; it doesn't count as a match, and later calls that don't
+  fit stay silent.
 - No model runs in the request: the delivery is queued for the worker, which runs the check and wakes the
   conversation.
 
@@ -196,6 +201,7 @@ The same data is available through `GET /api/monitors` (`conversation_id`, `stat
 | `PUBLIC_APP_URL` | unset | Base URL of the web UI for approval pages |
 | `TRIGGER_RATE_PER_MINUTE` | `30` | Requests one trigger link accepts per minute |
 | `TRIGGER_MAX_PAYLOAD_BYTES` | `65536` | Largest delivery body |
+| `TRIGGER_DEDUPE_WINDOW_SECONDS` | `600` | How long the same body (with no delivery id) counts as a repeat |
 
 Checks are spread out: each next check is jittered and never lands on the hour or half hour. See the
 [Settings Reference](/Deploying/Settings-Reference) for every setting.

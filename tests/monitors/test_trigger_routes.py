@@ -169,7 +169,40 @@ class TestDedupe:
         client.post(f"/api/triggers/{token}", data='{"b": 2}', content_type="application/json")
         client.post(f"/api/triggers/{token}", data='{"b": 2}', content_type="application/json")
         keys = sorted(h["dedupe_key"] for h in _hits(mon_db))
-        assert keys == ["gh:d-1", "sha:" + hashlib.sha256(b'{"b": 2}').hexdigest()]
+        assert keys[0] == "gh:d-1" and len(keys) == 2
+        assert keys[1].startswith("sha:" + hashlib.sha256(b'{"b": 2}').hexdigest() + ":")
+
+    def test_an_identical_body_is_a_repeat_only_within_the_window(self, client, mon_db, conversation_id, enqueued,
+                                                                  monkeypatch):
+        """A nightly job posting the same body every night is a new event each night."""
+        from docsgpt.monitors import triggers
+
+        window = int(settings.TRIGGER_DEDUPE_WINDOW_SECONDS)
+        real = time.time()
+        clock = {"now": real}
+        monkeypatch.setattr(triggers.time, "time", lambda: clock["now"])
+        token, *_ = make_link(mon_db, conversation_id)
+        body = {"status": "success", "job": "backup"}
+        assert client.post(f"/api/triggers/{token}", json=body).get_json() == {"accepted": True}
+        clock["now"] = real + window // 2
+        assert client.post(f"/api/triggers/{token}", json=body).get_json()["duplicate"] is True
+        clock["now"] = real + 2 * window + 1
+        assert client.post(f"/api/triggers/{token}", json=body).get_json() == {"accepted": True}
+        assert len(_hits(mon_db)) == 2
+
+    def test_a_repeat_across_a_window_boundary_is_still_a_repeat(self, client, mon_db, conversation_id, enqueued,
+                                                                monkeypatch):
+        from docsgpt.monitors import triggers
+
+        window = int(settings.TRIGGER_DEDUPE_WINDOW_SECONDS)
+        bucket = int(time.time()) // window
+        clock = {"now": (bucket + 1) * window - 1}
+        monkeypatch.setattr(triggers.time, "time", lambda: clock["now"])
+        token, *_ = make_link(mon_db, conversation_id)
+        assert client.post(f"/api/triggers/{token}", json={"a": 1}).get_json() == {"accepted": True}
+        clock["now"] = (bucket + 1) * window + 1
+        assert client.post(f"/api/triggers/{token}", json={"a": 1}).get_json()["duplicate"] is True
+        assert len(_hits(mon_db)) == 1
 
     def test_a_duplicate_does_not_use_up_a_hit(self, client, mon_db, conversation_id, enqueued):
         token, _s, link, _m = make_link(mon_db, conversation_id, max_hits=2)

@@ -84,3 +84,12 @@ class MonitorSettings(SettingsGroup):
     TRIGGER_MAX_PAYLOAD_BYTES: int = Field(
         default=65536, ge=1024, description="Largest request body a trigger link accepts, in bytes; larger gets 413."
     )
+    TRIGGER_DEDUPE_WINDOW_SECONDS: int = Field(
+        default=600,
+        ge=1,
+        description=(
+            "Seconds in which a trigger link delivery with the same body as an earlier one (and no "
+            "Idempotency-Key, webhook-id or X-GitHub-Delivery) counts as a repeat. The same body sent later, such "
+            "as a nightly job's, is a new event."
+        ),
+    )

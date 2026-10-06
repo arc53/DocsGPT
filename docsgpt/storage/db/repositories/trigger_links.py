@@ -206,6 +206,17 @@ class TriggerHitsRepository:
         ).fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def received_since(self, link_id: str, dedupe_key: str, seconds: int) -> bool:
+        """Whether the link stored a delivery with this key in the last ``seconds``."""
+        row = self._conn.execute(
+            text(
+                "SELECT 1 FROM trigger_hits WHERE link_id = CAST(:link_id AS uuid) AND dedupe_key = :key "
+                "AND received_at > now() - make_interval(secs => :seconds) LIMIT 1"
+            ),
+            {"link_id": str(link_id), "key": dedupe_key, "seconds": int(seconds)},
+        ).fetchone()
+        return row is not None
+
     def get(self, hit_id: str) -> Optional[dict]:
         if not looks_like_uuid(str(hit_id)):
             return None

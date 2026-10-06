@@ -117,8 +117,17 @@ def parse_body(body: bytes, content_type: str) -> Any:
     return text
 
 
+def _window() -> int:
+    return max(int(settings.TRIGGER_DEDUPE_WINDOW_SECONDS), 1)
+
+
 def dedupe_key(headers: Mapping[str, str], body: bytes, delivery_id: Optional[str]) -> str:
-    """Idempotency-Key, then the sender's delivery id, then the payload hash."""
+    """Idempotency-Key, then the sender's delivery id, then the payload hash in its time window.
+
+    A sender's id names one delivery forever. A bare body only repeats within
+    ``TRIGGER_DEDUPE_WINDOW_SECONDS``: its key carries the window it arrived
+    in, so the same body sent later (a nightly job) is a new event.
+    """
     for prefix, value in (
         ("idem", _get(headers, "Idempotency-Key")),
         ("wh", delivery_id or _get(headers, "webhook-id")),
@@ -126,7 +135,18 @@ def dedupe_key(headers: Mapping[str, str], body: bytes, delivery_id: Optional[st
     ):
         if value and str(value).strip():
             return f"{prefix}:{str(value).strip()[:_MAX_KEY]}"
-    return "sha:" + hashlib.sha256(body).hexdigest()
+    return f"sha:{hashlib.sha256(body).hexdigest()}:{int(time.time()) // _window()}"
+
+
+def _repeated_body(conn: Any, link_id: str, key: str) -> bool:
+    """Whether a body-hash key repeats one stored in the previous window less than a window ago."""
+    if not key.startswith("sha:"):
+        return False
+    digest, _, bucket = key[len("sha:"):].rpartition(":")
+    if not bucket.isdigit():
+        return False
+    previous = f"sha:{digest}:{int(bucket) - 1}"
+    return TriggerHitsRepository(conn).received_since(link_id, previous, _window())
 
 
 def accept_delivery(token: str, *, body: bytes, headers: Mapping[str, str], content_type: str) -> Response:
@@ -170,6 +190,8 @@ def accept_delivery(token: str, *, body: bytes, headers: Mapping[str, str], cont
     key = dedupe_key(headers, body, delivery_id)
     try:
         with db_session() as conn:
+            if _repeated_body(conn, link_id, key):
+                return 202, {"accepted": True, "duplicate": True}
             stored = TriggerHitsRepository(conn).insert(link_id, key, payload)
             if stored is None:
                 return 202, {"accepted": True, "duplicate": True}

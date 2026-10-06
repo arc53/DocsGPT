@@ -414,7 +414,12 @@ def _created_result(
         url = links.trigger_url(token)
         scheme = request.source.get("signature", "none")
         result.update(
-            {"url": url, "method": "POST", "signature": scheme, "example_curl": links.example_curl(url, scheme)}
+            {
+                "url": url,
+                "method": "POST",
+                "signature": scheme,
+                "example_curl": links.example_curl(url, scheme, request.check),
+            }
         )
         if signed:
             # The model never sees the secret: the user reveals it on the link card (GET /api/monitors/<id>/secret).
