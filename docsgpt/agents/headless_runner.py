@@ -111,6 +111,8 @@ def run_agent_headless(
     public_link_caller: bool = False,
     request_id: Optional[str] = None,
     trace_user_id: Optional[str] = None,
+    message_id: Optional[str] = None,
+    background: Any = None,
 ) -> Dict[str, Any]:
     """Run an agent with no live client; returns a structured outcome dict.
 
@@ -127,6 +129,12 @@ def run_agent_headless(
     and credentials then run only when the agent's API write allowlist has
     them, and wiki edits only when the wiki's owner allows outside edits (as
     for a webhook run).
+
+    A continuation turn passes ``message_id``, the id its message will be
+    stored with (tool calls are journaled and files attached under it), and
+    ``background``, its :class:`~docsgpt.background.context.BackgroundContext`:
+    a slow call then becomes a background job and ``check_job`` is offered,
+    as in a chat turn. Approval-gated tools stay denied either way.
 
     Raises:
         QuotaExceededError: If the agent owner's usage quota is exhausted.
@@ -151,6 +159,8 @@ def run_agent_headless(
                 conversation_id=conversation_id,
                 external_caller=external_caller,
                 public_link_caller=public_link_caller,
+                message_id=message_id,
+                background=background,
             )
             if outcome.get("error"):
                 status = tracing.STATUS_ERROR
@@ -173,6 +183,8 @@ def _run_agent_headless(
     conversation_id: Optional[str] = None,
     external_caller: bool = False,
     public_link_caller: bool = False,
+    message_id: Optional[str] = None,
+    background: Any = None,
 ) -> Dict[str, Any]:
     from docsgpt.core.model_utils import (
         get_api_key_for_provider,
@@ -301,6 +313,10 @@ def _run_agent_headless(
     )
     if conversation_id:
         tool_executor.conversation_id = str(conversation_id)
+    if message_id:
+        tool_executor.message_id = str(message_id)
+    if background is not None:
+        tool_executor.background = background
 
     # Render the prompt (Jinja namespaces / legacy {summaries}) so retrieved
     # docs actually reach the model — mirroring StreamProcessor.create_agent.

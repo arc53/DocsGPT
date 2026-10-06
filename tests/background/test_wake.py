@@ -148,7 +148,7 @@ class TestContinuation:
     def turn(self, monkeypatch):
         runs = []
 
-        def fake_run(conversation, messages, wakes):
+        def fake_run(conversation, messages, wakes, **kwargs):
             runs.append([w["dedupe_key"] for w in wakes])
             return {"answer": fake_run.answer, "thought": "", "sources": [], "tool_calls": [], "model_id": "m-1"}
 
@@ -257,6 +257,95 @@ class TestContinuation:
         assert continuation.continue_conversation_body(conversation_id, 0)["state"] == "failed"
         assert _job(bg_db, job["id"])["delivery_state"] == "pending"
         assert _wakes(bg_db, conversation_id)[0]["status"] == "failed"
+
+    def test_the_turn_runs_as_the_reserved_message_and_can_hand_off(self, bg_db, conversation, scheduled, events,
+                                                                    monkeypatch):
+        """A woken turn is a turn: its message id exists up front, and its calls may become jobs."""
+        from docsgpt.agents import headless_runner
+
+        conversation_id, _ = conversation
+        seen = {}
+
+        def fake_headless(agent_config, query, **kwargs):
+            seen.update(kwargs)
+            return {"answer": "Done.", "thought": "", "sources": [], "tool_calls": [], "model_id": "m-1"}
+
+        monkeypatch.setattr(headless_runner, "run_agent_headless", fake_headless)
+        _queue(conversation_id, "a")
+        summary = continuation.continue_conversation_body(conversation_id, 0)
+        assert summary["state"] == "delivered"
+        assert seen["message_id"] == summary["message_id"]
+        context = seen["background"]
+        assert context.continuation is True
+        assert context.origin_message_id == summary["message_id"]
+        assert context.conversation_id == conversation_id
+        assert _messages(bg_db, conversation_id)[-1]["id"] == summary["message_id"]
+
+    def test_the_turns_journal_and_jobs_point_at_its_message(self, bg_db, conversation, scheduled, events,
+                                                            monkeypatch):
+        """Tool calls journaled before the message exists are linked to it once it is written."""
+        from docsgpt.agents import tool_executor as te
+
+        conversation_id, _ = conversation
+        jobs_made = {}
+
+        def fake_run(conversation, messages, wakes, *, message_id, **kwargs):
+            assert te._record_proposed("call-1", "read_webpage", "read_webpage", {"url": "u"},
+                                       message_id=message_id, user_id="u1")
+            te._mark_executed("call-1", "page text", message_id=message_id, user_id="u1")
+            # A call this turn handed off finished before the turn's message was written.
+            context = BackgroundContext(user_id="u1", conversation_id=conversation_id,
+                                        origin_message_id=message_id, continuation=True)
+            context._auto_resume = True
+            row, _ = jobs.create_job(context, tool_name="read_webpage", action_name="read_webpage",
+                                     journal_key=f"{message_id}:call-2", arguments={})
+            jobs.finalize(row["id"], status="completed", result={"text": "late", "status": "completed"},
+                          deliver=False)
+            jobs_made["id"] = row["id"]
+            calls = [
+                {"call_id": "call-1", "tool_name": "read_webpage", "action_name": "read_webpage",
+                 "status": "completed"},
+                {"call_id": "call-2", "tool_name": "read_webpage", "action_name": "read_webpage",
+                 "status": "pending", "job_id": row["id"]},
+            ]
+            return {"answer": "Here it is.", "thought": "", "sources": [], "tool_calls": calls, "model_id": "m-1"}
+
+        monkeypatch.setattr(continuation, "_run_turn", fake_run)
+        _queue(conversation_id, "a")
+        summary = continuation.continue_conversation_body(conversation_id, 0)
+        message_id = summary["message_id"]
+        with bg_db.connect() as conn:
+            row = conn.execute(
+                text("SELECT message_id, status FROM tool_call_attempts WHERE call_id = :k"),
+                {"k": f"{message_id}:call-1"},
+            ).fetchone()
+        assert str(row.message_id) == message_id
+        assert row.status == "confirmed"
+        entry = _messages(bg_db, conversation_id)[-1]["tool_calls"][1]
+        assert entry["job_status"] == "completed"
+        assert entry["status"] == "completed"
+
+    def test_a_silent_turn_leaves_its_journal_unlinked(self, bg_db, conversation, scheduled, events, monkeypatch):
+        from docsgpt.agents import tool_executor as te
+
+        conversation_id, _ = conversation
+        keys = {}
+
+        def fake_run(conversation, messages, wakes, *, message_id, **kwargs):
+            keys["k"] = f"{message_id}:c1"
+            te._record_proposed("c1", "read_webpage", "read_webpage", {}, message_id=message_id, user_id="u1")
+            te._mark_executed("c1", "x", message_id=message_id, user_id="u1")
+            return {"answer": "NO_REPLY", "thought": "", "sources": [], "tool_calls": [{"call_id": "c1"}]}
+
+        monkeypatch.setattr(continuation, "_run_turn", fake_run)
+        _queue(conversation_id, "a")
+        assert continuation.continue_conversation_body(conversation_id, 0)["state"] == "suppressed"
+        with bg_db.connect() as conn:
+            row = conn.execute(
+                text("SELECT message_id, status FROM tool_call_attempts WHERE call_id = :k"), {"k": keys["k"]}
+            ).fetchone()
+        assert row.message_id is None
+        assert row.status == "confirmed"
 
     def test_defer_backoff(self):
         assert [continuation.defer_delay(n) for n in range(7)] == [5, 10, 20, 40, 60, 60, 60]

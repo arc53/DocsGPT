@@ -1,9 +1,12 @@
 """Which turns may hand a tool call off, and which conversations a finished job may resume.
 
 ``bind_turn`` is the one hook a chat turn calls: it puts a
-:class:`BackgroundContext` on the turn's ``ToolExecutor``. An executor
-without one (scheduled and webhook runs, workflow nodes, continuation turns,
-research steps built elsewhere) runs every call in the foreground as before.
+:class:`BackgroundContext` on the turn's ``ToolExecutor``. A continuation
+turn builds its own (``continuation=True``), so a woken turn can hand calls
+off and check on jobs like a chat turn while staying headless (approval-gated
+tools denied). An executor without one (scheduled and webhook runs, workflow
+nodes, research steps built elsewhere) runs every call in the foreground as
+before.
 """
 
 from __future__ import annotations
@@ -30,6 +33,8 @@ class BackgroundContext:
         agent_id: The agent the turn runs.
         api_route: The OpenAI-compatible ``/v1`` route, whose clients can't be
             resumed: jobs there are poll-only.
+        continuation: A woken (headless) turn: it may hand calls off though
+            nobody is in it to approve anything.
     """
 
     user_id: str
@@ -37,6 +42,7 @@ class BackgroundContext:
     origin_message_id: Optional[str] = None
     agent_id: Optional[str] = None
     api_route: bool = False
+    continuation: bool = False
     _auto_resume: Optional[bool] = field(default=None, repr=False)
 
     @property

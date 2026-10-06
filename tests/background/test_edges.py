@@ -378,7 +378,7 @@ class TestContinuationEdges:
         wake.wake_conversation(user_id="u1", conversation_id=conversation[0], source="monitor", ref_id="m",
                                title="t", body="b", payload=None, dedupe_key="q1")
         monkeypatch.setattr(
-            continuation, "_run_turn", lambda *a: (_ for _ in ()).throw(QuotaExceededError(SimpleNamespace()))
+            continuation, "_run_turn", lambda *a, **k: (_ for _ in ()).throw(QuotaExceededError(SimpleNamespace()))
         )
         assert continuation.continue_conversation_body(conversation[0])["state"] == "failed"
 
@@ -386,8 +386,8 @@ class TestContinuationEdges:
         monkeypatch.setattr(wake, "schedule_continuation", lambda *a, **k: None)
         wake.wake_conversation(user_id="u1", conversation_id=conversation[0], source="monitor", ref_id="m",
                                title="t", body="b", payload=None, dedupe_key="s1")
-        monkeypatch.setattr(continuation, "_run_turn", lambda *a: {"answer": "", "error_type": "stream_error",
-                                                                     "error": "provider 500"})
+        monkeypatch.setattr(continuation, "_run_turn", lambda *a, **k: {"answer": "", "error_type": "stream_error",
+                                                                          "error": "provider 500"})
         assert continuation.continue_conversation_body(conversation[0]) == {"state": "failed", "error": "stream_error"}
 
     def test_run_turn_builds_the_headless_call(self, monkeypatch):
@@ -401,8 +401,10 @@ class TestContinuationEdges:
         monkeypatch.setattr(continuation, "db_readonly", MagicMock())
         conversation = {"id": "c", "user_id": "u1", "agent_id": None}
         messages = [{"prompt": "p", "response": "r", "status": "complete", "model_id": "m-1"}]
-        out = continuation._run_turn(conversation, messages, [{"source": "monitor", "title": "t"}])
+        out = continuation._run_turn(conversation, messages, [{"source": "monitor", "title": "t"}], message_id="m-9")
         assert out == {"answer": "ok"}
+        assert captured["message_id"] == "m-9"
+        assert captured["background"].continuation is True
         assert captured["tool_allowlist"] == []
         assert captured["model_id_override"] == "m-1"
         assert captured["endpoint"] == "continuation"
@@ -413,7 +415,7 @@ class TestContinuationEdges:
         monkeypatch.setattr(continuation, "db_readonly", MagicMock())
         monkeypatch.setattr(continuation, "_agent_config", lambda *a: None)
         with pytest.raises(LookupError):
-            continuation._run_turn({"id": "c", "user_id": "u", "agent_id": "a"}, [], [{"source": "job"}])
+            continuation._run_turn({"id": "c", "user_id": "u", "agent_id": "a"}, [], [{"source": "job"}], message_id="m")
 
 
 class TestJobsEdges:

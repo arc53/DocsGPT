@@ -18,6 +18,11 @@ Rules, in order:
 * **Bounded.** No continuation in conversations auto-resume does not apply to,
   and at most ``AUTO_RESUME_MAX_CONSECUTIVE`` in a row without a user message;
   past that, events wait for the user's next message.
+
+A continuation is a turn like a chat turn: its message id is reserved before
+it runs, so its tool calls are journaled and its files attached under it, and
+a slow call may become a background job (with ``check_job`` to look at it).
+It stays headless: tools that need approval are denied.
 """
 
 from __future__ import annotations
@@ -28,14 +33,15 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import Connection, text
 
-from docsgpt.background import wake
-from docsgpt.background.context import auto_resume_allowed
+from docsgpt.background import jobs, wake
+from docsgpt.background.context import BackgroundContext, auto_resume_allowed
 from docsgpt.background.events import publish_conversation_continued
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.base_repository import row_to_dict
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 from docsgpt.storage.db.repositories.conversation_wakes import ConversationWakesRepository
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+from docsgpt.storage.db.repositories.tool_call_attempts import ToolCallAttemptsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 
 logger = logging.getLogger(__name__)
@@ -278,8 +284,24 @@ def continue_conversation_body(conversation_id: str, attempt: int = 0) -> Dict[s
     if not wakes:
         return {"state": "superseded", "dropped": len(dropped)}
 
+    from docsgpt.agents.tool_executor import defer_journal_parent, release_journal_parent
+
+    # The turn's message is written after the turn; its calls are journaled under this id meanwhile.
+    message_id = str(uuid.uuid4())
+    defer_journal_parent(message_id)
     try:
-        outcome = _run_turn(conversation, messages, wakes)
+        return _answer(conversation, messages, wakes, message_id)
+    finally:
+        release_journal_parent(message_id)
+
+
+def _answer(conversation: Dict[str, Any], messages: List[Dict[str, Any]], wakes: List[Dict[str, Any]],
+            message_id: str) -> Dict[str, Any]:
+    """Run the turn for the claimed wakes and deliver its answer as ``message_id`` (or stay silent)."""
+    conversation_id = str(conversation["id"])
+    user_id = conversation["user_id"]
+    try:
+        outcome = _run_turn(conversation, messages, wakes, message_id=message_id)
     except Exception as exc:
         from docsgpt.quotas.service import QuotaExceededError
 
@@ -300,7 +322,8 @@ def continue_conversation_body(conversation_id: str, attempt: int = 0) -> Dict[s
         _schedule_rest(conversation_id)
         return {"state": "suppressed", "events": len(wakes)}
 
-    message = _append(conversation, wakes, outcome)
+    message = _append(conversation, wakes, outcome, message_id=message_id)
+    _link_turn(message_id, outcome)
     _settle(wakes, "delivered", message_id=str(message["id"]))
     publish_conversation_continued(user_id, conversation_id, str(message["id"]), wakes[0].get("source") or "job")
     _notify(conversation, wakes, answer)
@@ -342,8 +365,18 @@ def _schedule_rest(conversation_id: str) -> None:
         wake.schedule_continuation(conversation_id)
 
 
-def _run_turn(conversation: Dict[str, Any], messages: List[Dict[str, Any]], wakes: List[Dict[str, Any]]):
-    """Run the headless turn and return its outcome (``run_agent_headless``'s dict)."""
+def _run_turn(
+    conversation: Dict[str, Any],
+    messages: List[Dict[str, Any]],
+    wakes: List[Dict[str, Any]],
+    *,
+    message_id: str,
+):
+    """Run the headless turn as ``message_id`` and return its outcome (``run_agent_headless``'s dict).
+
+    The turn gets a background context of its own, so a slow call becomes a
+    job (reporting back to this message) instead of holding the worker.
+    """
     from docsgpt.agents.headless_runner import run_agent_headless
 
     user_id = conversation["user_id"]
@@ -353,6 +386,14 @@ def _run_turn(conversation: Dict[str, Any], messages: List[Dict[str, Any]], wake
     if agent_config is None:
         raise LookupError("the conversation's agent no longer exists")
     query = wake.render_events(wakes)
+    agent_id = agent_config.get("id")
+    background = BackgroundContext(
+        user_id=str(user_id),
+        conversation_id=str(conversation["id"]),
+        origin_message_id=message_id,
+        agent_id=str(agent_id) if agent_id else None,
+        continuation=True,
+    )
     return run_agent_headless(
         agent_config,
         query,
@@ -363,6 +404,8 @@ def _run_turn(conversation: Dict[str, Any], messages: List[Dict[str, Any]], wake
         conversation_id=str(conversation["id"]),
         request_id=str(uuid.uuid4()),
         trace_user_id=user_id,
+        message_id=message_id,
+        background=background,
     )
 
 
@@ -377,12 +420,15 @@ def _wake_metadata(wakes: List[Dict[str, Any]]) -> Dict[str, Any]:
     return metadata
 
 
-def _append(conversation: Dict[str, Any], wakes: List[Dict[str, Any]], outcome: Dict[str, Any]) -> Dict[str, Any]:
+def _append(
+    conversation: Dict[str, Any], wakes: List[Dict[str, Any]], outcome: Dict[str, Any], *, message_id: str
+) -> Dict[str, Any]:
     """Append the continuation as an assistant turn; its prompt is the event text, marked as not the user's."""
     with db_session() as conn:
         return ConversationsRepository(conn).append_message(
             str(conversation["id"]),
             {
+                "id": message_id,
                 "prompt": wake.render_events(wakes),
                 "response": outcome.get("answer") or "",
                 "thought": outcome.get("thought") or "",
@@ -392,6 +438,28 @@ def _append(conversation: Dict[str, Any], wakes: List[Dict[str, Any]], outcome: 
                 "metadata": _wake_metadata(wakes),
             },
         )
+
+
+def _link_turn(message_id: str, outcome: Dict[str, Any]) -> None:
+    """Link what the turn did before its message existed: its journal rows, and the jobs that already ended.
+
+    A call the turn handed off reports to this message; one that finished
+    before the message was written could not show its outcome on it, so it
+    is shown now. Never raises: the answer is delivered either way.
+    """
+    calls = [c for c in outcome.get("tool_calls") or [] if isinstance(c, dict)]
+    keys = [f"{message_id}:{c['call_id']}" for c in calls if c.get("call_id")]
+    job_ids = [str(c["job_id"]) for c in calls if c.get("job_id")]
+    try:
+        with db_session() as conn:
+            ToolCallAttemptsRepository(conn).attach_message(keys, message_id)
+            repo = BackgroundJobsRepository(conn)
+            for job_id in job_ids:
+                job = repo.get(job_id)
+                if job and job.get("status") != "working" and str(job.get("origin_message_id")) == message_id:
+                    jobs.patch_origin_entry(conn, job)
+    except Exception:
+        logger.exception("continuation %s: linking its tool calls failed", message_id)
 
 
 def _notify(conversation: Dict[str, Any], wakes: List[Dict[str, Any]], answer: str) -> None:

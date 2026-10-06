@@ -89,12 +89,15 @@ def eligible(executor: Any, tool_data: Dict[str, Any]) -> bool:
         tool_data: The tool row being called.
 
     Returns:
-        True for a server-side call in a turn that has a background context.
+        True for a server-side call in a turn that has a background context:
+        a chat turn, or a continuation turn (headless, but bound for it).
     """
     context = getattr(executor, "background", None)
     if not isinstance(context, BackgroundContext):
         return False
-    if getattr(executor, "headless", False) or getattr(executor, "workflow_run_id", None):
+    if getattr(executor, "workflow_run_id", None):
+        return False
+    if getattr(executor, "headless", False) and not context.continuation:
         return False
     if tool_data.get("client_side"):
         return False

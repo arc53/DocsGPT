@@ -288,7 +288,7 @@ def finalize(
             if row is None:
                 return None
             _settle_journal(conn, row)
-            _patch_origin_entry(conn, row)
+            patch_origin_entry(conn, row)
     except Exception:
         logger.exception("background job %s: final write failed", job_id)
         return None
@@ -361,7 +361,7 @@ def _settle_journal(conn: Any, row: Dict[str, Any]) -> None:
     repo.mark_failed(key, f"background job {row.get('status')}: {message or 'no result'}", user_id=user_id)
 
 
-def _patch_origin_entry(conn: Any, row: Dict[str, Any]) -> None:
+def patch_origin_entry(conn: Any, row: Dict[str, Any]) -> None:
     """Show the outcome on the turn's tool-call entry, so a reload stops showing it as running."""
     message_id = row.get("origin_message_id")
     if not message_id:

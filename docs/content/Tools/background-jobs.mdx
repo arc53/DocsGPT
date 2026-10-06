@@ -40,8 +40,7 @@ that way without a `timeout` may run for the whole job lifetime (`BACKGROUND_JOB
 reported to the user, never re-run unless they ask.
 
 Some calls are never handed off: client-side tools (the `/v1` client tool calls), calls inside workflow nodes,
-scheduled and webhook runs, and continuation turns (below). A tool that needs approval starts its clock only
-after it is approved.
+and scheduled and webhook runs. A tool that needs approval starts its clock only after it is approved.
 
 ### Where a job runs
 
@@ -76,6 +75,9 @@ conversation, and a `conversation.continued` event tells open tabs about the new
 - **Batched.** Results that land together, up to eight, are answered in one turn.
 - **Silence is allowed.** If nothing is worth telling the user, the model answers `NO_REPLY` and nothing is
   added to the conversation.
+- **A turn like any other.** A continuation's tool calls and files belong to its own message, a slow call in it
+  becomes a background job too, and it has `check_job` (to cancel a failing job a watch pattern reported, for
+  example). Chains stay bounded by `AUTO_RESUME_MAX_CONSECUTIVE` and the job caps.
 - **Safe by default.** A continuation can't use tools that need approval, and data from tools and outside
   services is presented to the model as data, never as instructions.
 - **Guarded like any tool result.** The agent's `tool_result` [guardrails](/Agents/guardrails) (and the instance

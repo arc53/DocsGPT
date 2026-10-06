@@ -329,6 +329,29 @@ def _is_missing_parent(message_id: Optional[str]) -> bool:
     return bool(message_id) and message_id in _MISSING_PARENTS
 
 
+# Turn messages written only after their turn (a continuation's): the journal
+# keys its rows by the message id from the start but leaves the foreign key
+# empty until the message exists (``ToolCallAttemptsRepository.attach_message``).
+_DEFERRED_PARENTS: set = set()
+
+
+def defer_journal_parent(message_id: str) -> None:
+    """Journal this turn's calls under ``message_id`` before its message row exists."""
+    _DEFERRED_PARENTS.add(str(message_id))
+
+
+def release_journal_parent(message_id: str) -> None:
+    """Stop deferring ``message_id`` (its message was written, or never will be)."""
+    _DEFERRED_PARENTS.discard(str(message_id))
+
+
+def _parent_column(message_id: Optional[str]) -> Optional[str]:
+    """The ``message_id`` a journal row may reference now: None while the message is still to be written."""
+    if message_id and str(message_id) in _DEFERRED_PARENTS:
+        return None
+    return message_id
+
+
 def _note_missing_parent(message_id: Optional[str], exc: BaseException) -> bool:
     """Record a FK failure against ``message_id``. True if newly latched.
 
@@ -394,7 +417,7 @@ def _record_proposed(
                 action_name,
                 arguments,
                 tool_id=tool_id if tool_id and looks_like_uuid(tool_id) else None,
-                message_id=message_id,
+                message_id=_parent_column(message_id),
                 user_id=user_id,
                 agent_id=(str(agent_id) if agent_id and looks_like_uuid(str(agent_id)) else None),
             )
@@ -456,7 +479,7 @@ def _mark_executed(
                 updated = repo.mark_executed(
                     key,
                     result,
-                    message_id=message_id,
+                    message_id=_parent_column(message_id),
                     artifact_id=artifact_id,
                     user_id=user_id,
                 )
@@ -470,7 +493,7 @@ def _mark_executed(
                 arguments=arguments if arguments is not None else {},
                 result=result,
                 tool_id=tool_id if tool_id and looks_like_uuid(tool_id) else None,
-                message_id=message_id,
+                message_id=_parent_column(message_id),
                 artifact_id=artifact_id,
                 user_id=user_id,
                 agent_id=(str(agent_id) if agent_id and looks_like_uuid(str(agent_id)) else None),

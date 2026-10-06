@@ -78,6 +78,15 @@ class TestEligible:
         assert not handoff.eligible(SimpleNamespace(**base), {"name": "check_job"})
 
 
+    def test_a_continuation_turn_may_hand_off_though_it_is_headless(self, ctx):
+        woken = BackgroundContext(user_id="u1", conversation_id="c1", origin_message_id="m2", continuation=True)
+        executor = SimpleNamespace(background=woken, headless=True, workflow_run_id=None)
+        assert handoff.eligible(executor, {"name": "read_webpage"}) is True
+        assert not handoff.eligible(SimpleNamespace(background=woken, headless=True, workflow_run_id="w"),
+                                    {"name": "read_webpage"})
+        assert not handoff.eligible(executor, {"name": "monitor"})
+
+
 class TestRunCall:
     def test_fast_call_returns_its_value_and_writes_no_job(self, ctx, fake_jobs):
         outcome = handoff.run_call(ctx, _spec(), object(), lambda: {"ok": 1}, yield_seconds=5)

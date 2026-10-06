@@ -768,7 +768,9 @@ class ConversationsRepository:
         Uses ``SELECT ... FOR UPDATE`` to allocate the next position
         atomically. The caller must be inside a transaction.
 
-        Mirrors Mongo's ``$push`` on the ``queries`` array.
+        Mirrors Mongo's ``$push`` on the ``queries`` array. ``message["id"]``,
+        when given, is the new row's id (a turn that reserved its id while it
+        ran, such as a continuation).
         """
         # Lock the parent conversation row to serialize concurrent appends.
         self._conn.execute(
@@ -799,6 +801,8 @@ class ConversationsRepository:
             "model_id": message.get("model_id"),
             "message_metadata": message.get("metadata") or {},
         }
+        if message.get("id"):
+            values["id"] = str(message["id"])
         # Callers that know the turn failed (e.g. an agent that yielded a
         # terminal error) must be able to say so; without this the column
         # default silently made every appended row "complete".
