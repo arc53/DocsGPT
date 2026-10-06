@@ -2256,7 +2256,10 @@
       "response": "Respuesta",
       "running": "Ejecutando…",
       "denied": "Denegado por el usuario",
-      "failed": "falló"
+      "failed": "falló",
+      "notRun": "no ejecutado",
+      "notRunMovedOn": "No ejecutado: la conversación siguió antes de que se aprobara.",
+      "notRunExpired": "No ejecutado: la solicitud de aprobación caducó."
     },
     "quotaExceeded": {
       "tokens": "Has usado {{used}} de tu cuota de {{limit}} tokens. Se restablece el {{resetsAt}}.",

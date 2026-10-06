@@ -2246,7 +2246,10 @@
       "response": "回應",
       "running": "執行中…",
       "denied": "已被使用者拒絕",
-      "failed": "失敗"
+      "failed": "失敗",
+      "notRun": "未執行",
+      "notRunMovedOn": "未執行：在核准之前，對話已繼續。",
+      "notRunExpired": "未執行：核准請求已過期。"
     },
     "quotaExceeded": {
       "tokens": "您已使用 {{limit}} 權杖配額中的 {{used}}。配額將於 {{resetsAt}} 重設。",

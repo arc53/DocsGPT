@@ -2246,7 +2246,10 @@
       "response": "レスポンス",
       "running": "実行中…",
       "denied": "ユーザーによって拒否されました",
-      "failed": "失敗"
+      "failed": "失敗",
+      "notRun": "未実行",
+      "notRunMovedOn": "未実行：承認される前に会話が先に進みました。",
+      "notRunExpired": "未実行：承認リクエストの有効期限が切れました。"
     },
     "quotaExceeded": {
       "tokens": "トークンクォータ {{limit}} のうち {{used}} を使用しました。{{resetsAt}} にリセットされます。",
