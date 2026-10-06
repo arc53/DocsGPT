@@ -362,20 +362,33 @@ def redact(value: Any, values: Mapping[str, str]) -> Any:
     return scrub(value)
 
 
+class RedactionUnavailable(RuntimeError):
+    """The secrets to redact could not all be looked up, so the value must not be kept as it is."""
+
+
 def redact_for_user(value: Any, user_id: str, refs: Iterable[str]) -> Any:
     """Redact the secrets of the user's links named by ``refs`` (live or not) out of ``value``.
 
     For work that finishes after its call (a device job's output): the
     secrets are looked up again rather than carried anywhere.
+
+    Raises:
+        RedactionUnavailable: A secret could not be looked up (the database
+            failed, or the link is gone). The caller must withhold the value:
+            it may hold the secret.
     """
     refs = [str(ref).upper() for ref in refs or []]
-    if not refs or not user_id:
+    if not refs:
         return value
+    if not user_id:
+        raise RedactionUnavailable("no owner to look the secrets up for")
     try:
         found = _lookup(user_id, refs, live_only=False)
-    except Exception:
+    except Exception as exc:
         logger.exception("looking up link secrets to redact failed")
-        return value
+        raise RedactionUnavailable("the link secrets could not be looked up") from exc
+    if any(ref not in found for ref in refs):
+        raise RedactionUnavailable("a link whose secret was used is gone")
     return redact(value, {entry["secret"]: reference(ref) for ref, entry in found.items()})
 
 

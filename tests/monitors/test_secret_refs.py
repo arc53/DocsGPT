@@ -465,14 +465,35 @@ class TestEdges:
             assert secret_refs.redact_active("got s3cr3t-0123456789") == "got {{link_secret:ABCDEF}}"
         assert secret_refs.active_refs() == []
 
-    def test_redact_for_user_survives_a_failed_lookup(self, monkeypatch):
+    def test_redact_for_user_fails_closed(self, monkeypatch):
         def boom(*args, **kwargs):
             raise RuntimeError("db down")
 
         monkeypatch.setattr(secret_refs, "_lookup", boom)
-        assert secret_refs.redact_for_user("v", "u1", ["ABCDEF"]) == "v"
-        assert secret_refs.redact_for_user("v", "", ["ABCDEF"]) == "v"
+        with pytest.raises(secret_refs.RedactionUnavailable):
+            secret_refs.redact_for_user("v", "u1", ["ABCDEF"])
+        with pytest.raises(secret_refs.RedactionUnavailable):
+            secret_refs.redact_for_user("v", "", ["ABCDEF"])
+        monkeypatch.setattr(secret_refs, "_lookup", lambda *a, **k: {})
+        with pytest.raises(secret_refs.RedactionUnavailable, match="gone"):
+            secret_refs.redact_for_user("v", "u1", ["ABCDEF"])
+        assert secret_refs.redact_for_user("v", "u1", []) == "v"
         assert secret_refs.redact({"a": 1}, {}) == {"a": 1}
+
+    def test_a_device_job_withholds_output_it_cannot_redact(self, monkeypatch):
+        from docsgpt.background import device_runner
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("db down")
+
+        monkeypatch.setattr(secret_refs, "_lookup", boom)
+        row = {"id": "j1", "user_id": "u1", "external": {"secret_refs": ["ABCDEF"]}}
+        result = {"exit_code": 0, "stdout": "key=s3cr3t", "stderr": "", "error": None}
+        assert device_runner.redact_result(row, result) == {
+            "exit_code": 0, "stdout": device_runner.WITHHELD_NOTE, "stderr": "", "error": None
+        }
+        assert device_runner.redact_result(row, "key=s3cr3t") == device_runner.WITHHELD_NOTE
+        assert device_runner.redact_result({"external": {}}, "plain") == "plain"
 
     def test_a_failed_audit_never_stops_the_call(self, mon_db, conversation_id, webhook, monkeypatch):
         created, secret = webhook

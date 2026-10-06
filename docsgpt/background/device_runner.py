@@ -377,14 +377,34 @@ def redact_result(row: Dict[str, Any], value: Any) -> Any:
         value: The command's output or result.
 
     Returns:
-        ``value`` with every such secret replaced by its reference.
+        ``value`` with every such secret replaced by its reference, or with its
+        output withheld when the secrets can't be looked up.
     """
     refs = (row.get("external") or {}).get("secret_refs")
     if not refs:
         return value
     from docsgpt.monitors import secret_refs
 
-    return secret_refs.redact_for_user(value, str(row.get("user_id") or ""), refs)
+    try:
+        return secret_refs.redact_for_user(value, str(row.get("user_id") or ""), refs)
+    except secret_refs.RedactionUnavailable:
+        # Fail closed: output that may echo a secret is withheld rather than kept as it is.
+        logger.warning("background job %s: withheld output it could not redact", row.get("id"))
+        return _withheld(value)
+
+
+#: What replaces output that may hold a secret and could not be redacted.
+WITHHELD_NOTE = "[output withheld: it may contain a link secret that could not be redacted]"
+
+
+def _withheld(value: Any) -> Any:
+    """``value`` with its output replaced by :data:`WITHHELD_NOTE` (a result keeps its exit code)."""
+    if isinstance(value, dict):
+        return {
+            **value,
+            **{key: WITHHELD_NOTE for key in ("stdout", "stderr") if value.get(key)},
+        }
+    return WITHHELD_NOTE if value else value
 
 
 def on_deadline(row: Dict[str, Any], *, state: Optional[str] = None) -> Optional[Dict[str, Any]]:
