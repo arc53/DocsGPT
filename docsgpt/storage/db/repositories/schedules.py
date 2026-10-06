@@ -322,12 +322,17 @@ class SchedulesRepository:
         self._conn.execute(text(sql), params)
 
     def cancel(self, schedule_id: str, user_id: str) -> bool:
-        """Soft-cancel — flips ``status`` to ``cancelled`` and clears ``next_run_at``."""
+        """Soft-cancel — flips ``status`` to ``cancelled`` and clears ``next_run_at``.
+
+        Never a monitor's schedule: a monitor is cancelled through
+        ``/api/monitors`` or ``monitor_cancel``, which also revoke its links
+        and its approval.
+        """
         result = self._conn.execute(
             text(
                 "UPDATE schedules SET status = 'cancelled', next_run_at = NULL "
                 "WHERE id = CAST(:id AS uuid) AND user_id = :user_id "
-                "AND status NOT IN ('cancelled', 'completed')"
+                "AND status NOT IN ('cancelled', 'completed') AND trigger_type <> 'monitor'"
             ),
             {"id": str(schedule_id), "user_id": user_id},
         )
