@@ -43,8 +43,11 @@ A polled check is cheap before it is expensive:
 3. On a change, the deterministic `check` (below) runs against what the monitor stored last time.
 4. Only when the check fires and the monitor has a natural-language `condition`, a **judge** model decides. It
    has no tools, reads at most 8,000 characters of the content, marked as untrusted data, and answers whether the
-   condition holds. Its tokens are recorded in `token_usage` with `source = 'monitor_judge'` and billed to the
-   user; `MONITOR_JUDGE_TOKEN_BUDGET` caps one monitor's total.
+   condition holds. It is called like a chat turn's model: the catalog entry resolves to its provider, key and
+   upstream model name. Its tokens are recorded in `token_usage` with `source = 'monitor_judge'` and billed to the
+   user; `MONITOR_JUDGE_TOKEN_BUDGET` caps one monitor's total. If the judge fails `SCHEDULE_AUTOPAUSE_FAILURES`
+   times in a row on a match, the match wakes the agent anyway, marked as not checked against the condition, so a
+   broken judge never hides it (it counts toward `max_wakes` like any wake).
 5. A match wakes the conversation once per fact (what it found passes the agent's `tool_result` guardrails before
    it is queued, as a tool result in the chat does): the monitor keeps the keys of what it reported, so the same
    price drop or the same item is never reported twice. The first check, taken when the monitor is created, is
@@ -93,7 +96,7 @@ String arguments may hold placeholders that are filled in on every check: `{{now
 An unreachable source (a device that is offline, a server that is down, a timeout, a 5xx or 429 answer) is a
 skipped check, never a change. After `MONITOR_UNREACHABLE_GRACE_SECONDS` of it the agent is told once and the
 monitor pauses. Any other error (a 404, a page that no longer has the selected part, content that no longer fits
-the check, a judge that fails) counts toward `SCHEDULE_AUTOPAUSE_FAILURES`, after which the agent is told once and
+the check) counts toward `SCHEDULE_AUTOPAUSE_FAILURES`, after which the agent is told once and
 the monitor pauses. A monitor that would wake the agent more than `MONITOR_MAX_WAKES_PER_HOUR` times in an hour is
 paused the same way. A monitor that expires without ever firing says so once. Silence is never taken for success.
 

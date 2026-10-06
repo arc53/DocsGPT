@@ -333,12 +333,20 @@ def _recent_wakes(state: Dict[str, Any], now: datetime) -> List[str]:
     return out
 
 
-def _wake_body(monitor: Dict[str, Any], *, left: int) -> str:
+#: Said in a wake whose check matched while the judge could not evaluate the condition.
+UNJUDGED_NOTE = (
+    "Its check matched, but its condition could not be evaluated (the judge model failed {count} times in a "
+    "row), so this is the check's match alone: tell the user it may not meet the condition, and why."
+)
+
+
+def _wake_body(monitor: Dict[str, Any], *, left: int, note: Optional[str] = None) -> str:
     """The wake's trusted text: which monitor fired and what to do; what it found is in the fenced data."""
     on_match = (monitor.get("on_match") or "").strip()
     lines = [
         f'Monitor {monitor["id"]} ("{monitor.get("description")}", watching {source_label(monitor)}) fired. '
         "What it found is in the data below (its summary first).",
+        note or "",
         f"What to do now (the instruction you wrote when it was set up): {on_match}" if on_match else "",
         (
             f"It may wake you {left} more time(s)."
@@ -359,6 +367,7 @@ def deliver(
     summary: str,
     payload: Dict[str, Any],
     now: datetime,
+    note: Optional[str] = None,
 ) -> str:
     """Wake the conversation for a match, once per key, then count it.
 
@@ -377,6 +386,7 @@ def deliver(
         summary: One line for the agent.
         payload: Outside data for the wake (fenced as data).
         now: The current time.
+        note: A line of this code's own text for the wake (why it is a partial match).
 
     Returns:
         ``woken``, ``duplicate`` or ``breaker``.
@@ -408,7 +418,7 @@ def deliver(
         source=source,
         ref_id=monitor_id,
         title=str(monitor.get("description") or "Monitor"),
-        body=_wake_body(monitor, left=max(0, left_after)),
+        body=_wake_body(monitor, left=max(0, left_after), note=note),
         payload=payload,
         dedupe_key=dedupe_key,
     )
@@ -465,17 +475,23 @@ def _unreachable(monitor: Dict[str, Any], exc: SourceError, now: datetime) -> st
     return "unreachable"
 
 
-def _failed(monitor: Dict[str, Any], message: str) -> str:
-    """A counted source error: after ``SCHEDULE_AUTOPAUSE_FAILURES`` in a row, tell the agent once and pause."""
+def _strike(monitor: Dict[str, Any], message: str) -> int:
+    """Count one failed check and record why; returns the failures in a row."""
     monitor_id = str(monitor["id"])
-    message = message[:500]
     with db_session() as conn:
         repo = MonitorsRepository(conn)
         count = repo.bump_failures(monitor_id)
-        repo.update(monitor_id, {"last_error": message, "unreachable_since": None})
+        repo.update(monitor_id, {"last_error": message[:500], "unreachable_since": None})
         after = repo.get_internal(monitor_id)
     if after is not None:
         publish_monitor_updated(after)
+    return count
+
+
+def _failed(monitor: Dict[str, Any], message: str) -> str:
+    """A counted source error: after ``SCHEDULE_AUTOPAUSE_FAILURES`` in a row, tell the agent once and pause."""
+    message = message[:500]
+    count = _strike(monitor, message)
     if count >= int(settings.SCHEDULE_AUTOPAUSE_FAILURES):
         pause_with_notice(
             monitor,
@@ -492,9 +508,9 @@ def _failed(monitor: Dict[str, Any], message: str) -> str:
 _HEALTHY = {"last_error": None, "unreachable_since": None}
 
 
-def _reset_failures(monitor: Dict[str, Any]) -> None:
-    """End an error streak: called only once a check got all the way through."""
-    if monitor.get("consecutive_failure_count"):
+def _reset_failures(monitor: Dict[str, Any], *, force: bool = False) -> None:
+    """End an error streak: called only once a check got all the way through (``force``: counted this tick)."""
+    if force or monitor.get("consecutive_failure_count"):
         with db_session() as conn:
             MonitorsRepository(conn).set_schedule(str(monitor["id"]), consecutive_failure_count=0)
 
@@ -539,7 +555,9 @@ def _decide(
 
     Returns:
         ``(outcome, key, summary)``: outcome is ``fire``, ``quiet``, ``retry`` (keep the old
-        state so the next check judges again) or ``paused``.
+        state so the next check judges again), ``paused`` or ``unjudged`` (the check matched and
+        the judge failed ``SCHEDULE_AUTOPAUSE_FAILURES`` times in a row: deliver the match with
+        :data:`UNJUDGED_NOTE` rather than pause, so a broken judge never hides a match).
     """
     spec = monitor.get("monitor_spec") or {}
     if not spec.get("condition"):
@@ -560,8 +578,9 @@ def _decide(
     if outcome == "quota":
         _store(str(monitor["id"]), None, {"last_error": "the user's usage quota is used up; the condition waits"})
         return "retry", None, None
-    if _failed(monitor, f"the condition could not be judged: {verdict}") == "paused":
-        return "paused", None, None
+    count = _strike(monitor, f"the condition could not be judged: {verdict}")
+    if count >= int(settings.SCHEDULE_AUTOPAUSE_FAILURES):
+        return "unjudged", None, None
     return "retry", None, None
 
 
@@ -698,7 +717,8 @@ def _tick(monitor_id: str) -> str:
         return "retry"
     if outcome == "paused":
         return "paused"
-    _reset_failures(monitor)
+    note = _unjudged_note(monitor) if outcome == "unjudged" else None
+    _reset_failures(monitor, force=note is not None)
     if outcome == "quiet":
         _store(monitor_id, new_state, fields)
         return "checked"
@@ -712,8 +732,13 @@ def _tick(monitor_id: str) -> str:
     summary = summary or evaluation.summary
     payload = _payload(evaluation, content, summary, _source_ref(monitor))
     return deliver(
-        monitor, state=new_state, fields=fields, source="monitor", key=key, summary=summary, payload=payload, now=now
+        monitor, state=new_state, fields=fields, source="monitor", key=key, summary=summary, payload=payload, now=now,
+        note=note,
     )
+
+
+def _unjudged_note(monitor: Dict[str, Any]) -> str:
+    return UNJUDGED_NOTE.format(count=int(settings.SCHEDULE_AUTOPAUSE_FAILURES))
 
 
 def _source_ref(monitor: Dict[str, Any]) -> Dict[str, Any]:
@@ -769,6 +794,10 @@ def _event(monitor: Dict[str, Any], content: Content, *, source: str, key: str, 
     outcome, judge_key, judged = _decide(monitor, evaluation, content)
     if outcome in ("retry", "paused"):
         return outcome
+    note = None
+    if outcome == "unjudged":
+        note = _unjudged_note(monitor)
+        _reset_failures(monitor, force=True)
     if outcome == "quiet":
         _store(str(monitor["id"]), new_state, {**fields, "last_error": None})
         return "ignored"
@@ -779,7 +808,7 @@ def _event(monitor: Dict[str, Any], content: Content, *, source: str, key: str, 
     payload = _payload(evaluation, content, summary, extra, excerpt=False)
     return deliver(
         monitor, state=new_state, fields={**fields, "last_error": None}, source=source,
-        key=f"{key}:{judge_key}" if judge_key else key, summary=summary, payload=payload, now=now,
+        key=f"{key}:{judge_key}" if judge_key else key, summary=summary, payload=payload, now=now, note=note,
     )
 
 

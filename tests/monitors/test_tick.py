@@ -377,9 +377,10 @@ class TestJudge:
         assert tick.run_tick(monitor["id"]) == {"state": "duplicate"}
         assert len(wakes) == 1
 
-    def test_judge_failures_keep_the_change_and_count_toward_the_pause(
+    def test_a_judge_that_keeps_failing_delivers_the_match_with_a_note_instead_of_pausing(
         self, mon_db, conversation_id, page, wakes, events, monkeypatch
     ):
+        """A broken judge must not hide a match: after the strikes the check's match wakes, said to be unjudged."""
         self._judged(monkeypatch, judge.JudgeError("the judge call failed"))
         monitor = self._monitor(mon_db, conversation_id)
         page["value"] = Content(text="Something new")
@@ -388,8 +389,22 @@ class TestJudge:
         assert after["monitor_state"]["hash"] == Content(text="Price: $95").digest
         assert after["consecutive_failure_count"] == 1 and "judged" in after["last_error"]
         assert tick.run_tick(monitor["id"]) == {"state": "retry"}
-        assert tick.run_tick(monitor["id"]) == {"state": "paused"}
-        assert reload(mon_db, monitor["id"])["status"] == "paused" and len(wakes) == 1
+        assert wakes == []
+        assert tick.run_tick(monitor["id"]) == {"state": "woken"}
+        assert len(wakes) == 1 and wakes[0]["source"] == "monitor"
+        assert "its condition could not be evaluated" in wakes[0]["body"]
+        after = reload(mon_db, monitor["id"])
+        assert after["status"] == "active" and after["wake_count"] == 1 and after["consecutive_failure_count"] == 0
+
+    def test_an_unjudged_match_still_counts_against_max_wakes(
+        self, mon_db, conversation_id, page, wakes, events, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "SCHEDULE_AUTOPAUSE_FAILURES", 1)
+        self._judged(monkeypatch, judge.JudgeError("the judge call failed"))
+        monitor = make_monitor(mon_db, conversation_id, check={"type": "changed"}, condition="c", max_wakes=1)
+        page["value"] = Content(text="Something new")
+        assert tick.run_tick(monitor["id"]) == {"state": "woken"}
+        assert reload(mon_db, monitor["id"])["status"] == "completed"
 
     def test_budget_used_up_pauses(self, mon_db, conversation_id, page, wakes, events, monkeypatch):
         self._judged(monkeypatch, AssertionError("must not run"))
@@ -668,6 +683,7 @@ class TestJudgeCall:
 
         monkeypatch.setattr(judge, "_build_llm", build)
         monkeypatch.setattr(settings, "MONITOR_JUDGE_MODEL", "judge-model")
+        monkeypatch.setattr("docsgpt.core.model_utils.validate_model_id", lambda m, user_id=None: True)
         verdict = judge.judge(
             user_id="u1",
             monitor_id="m1",
@@ -680,6 +696,42 @@ class TestJudgeCall:
         assert built["model"] == "judge-model" and built["request"] == "monitor:m1" and built["user"] == "u1"
         assert built["gen"]["tools"] is None
         assert built["llm"]._token_usage_source == "monitor_judge"
+
+    def test_the_provider_gets_the_upstream_name_not_the_catalog_id(self, monkeypatch):
+        """A catalog entry ``gpt-5.6-sol-foundry`` serves the upstream ``gpt-5.6-sol``: Azure only knows the latter."""
+        from docsgpt.llm.providers import PROVIDERS_BY_NAME
+
+        seen = {}
+
+        class _LLM:
+            token_usage = {"prompt_tokens": 1, "generated_tokens": 1}
+
+            def __init__(self, api_key, user_api_key, *args, model_id=None, **kwargs):
+                self.model_id = model_id
+                seen["key"] = api_key
+
+            def gen(self, model, messages, **kwargs):
+                seen["model"] = model
+                return '{"match": true, "summary": "Series B", "key": "b"}'
+
+        entry = SimpleNamespace(
+            source="builtin", api_key=None, base_url=None, upstream_model_id="gpt-5.6-sol", capabilities=None
+        )
+        registry = SimpleNamespace(
+            get_model=lambda model_id, user_id=None: entry if model_id == "gpt-5.6-sol-foundry" else None,
+            model_exists=lambda model_id, user_id=None: model_id == "gpt-5.6-sol-foundry",
+            default_model_id="gpt-5.6-sol-foundry",
+        )
+        monkeypatch.setattr("docsgpt.core.model_registry.ModelRegistry.get_instance", lambda: registry)
+        monkeypatch.setattr(PROVIDERS_BY_NAME["openai"], "llm_class", _LLM)
+        monkeypatch.setattr("docsgpt.core.model_utils.get_provider_from_model_id", lambda m, user_id=None: "openai")
+        monkeypatch.setattr("docsgpt.core.model_utils.get_api_key_for_provider", lambda p: "provider-key")
+        for configured in (None, "gpt-5.6-sol-foundry", "not-in-the-catalog"):
+            monkeypatch.setattr(settings, "MONITOR_JUDGE_MODEL", configured)
+            verdict = judge.judge(user_id="u1", monitor_id="m1", description="d", condition="c",
+                                  check_summary="s", content="x")
+            assert verdict.match is True
+            assert seen == {"key": "provider-key", "model": "gpt-5.6-sol"}
 
     def test_default_model_when_unset(self, monkeypatch):
         monkeypatch.setattr(settings, "MONITOR_JUDGE_MODEL", None)

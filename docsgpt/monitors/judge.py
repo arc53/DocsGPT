@@ -62,13 +62,19 @@ class Verdict:
 
 
 def judge_model_id(user_id: Optional[str]) -> Optional[str]:
-    """``MONITOR_JUDGE_MODEL``, else the deployment's default model."""
+    """The catalog id of the judge model: ``MONITOR_JUDGE_MODEL``, else the deployment's default model.
+
+    Resolved as a chat turn resolves its model: an id the user's catalog
+    doesn't know falls back to the default (as ``run_agent_headless`` does).
+    """
+    from docsgpt.core.model_utils import get_default_model_id, validate_model_id
+
     configured = (settings.MONITOR_JUDGE_MODEL or "").strip()
     if configured:
-        return configured
-    from docsgpt.core.model_registry import ModelRegistry
-
-    return ModelRegistry.get_instance().default_model_id
+        if validate_model_id(configured, user_id=user_id):
+            return configured
+        logger.warning("MONITOR_JUDGE_MODEL %r is not in the model catalog; using the default model", configured)
+    return get_default_model_id()
 
 
 def _fence(text: str) -> str:
@@ -163,7 +169,9 @@ def judge(
     )
     try:
         llm = _build_llm(user_id, model_id, f"monitor:{monitor_id}")
-        raw = llm.gen(model=model_id, messages=messages)
+        # The provider is called with the model's upstream name (LLMCreator resolves it from the catalog
+        # onto llm.model_id), never the catalog id, exactly as an agent turn calls it.
+        raw = llm.gen(model=getattr(llm, "model_id", None) or model_id, messages=messages)
     except Exception as exc:
         logger.warning("monitor %s: judge call failed: %s", monitor_id, type(exc).__name__)
         raise JudgeError(f"the judge call failed ({type(exc).__name__})") from None
