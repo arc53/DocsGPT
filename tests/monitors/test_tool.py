@@ -43,6 +43,9 @@ class TestSchema:
             "tell the user which field and values to send",
             "take no check",
             "No need to read the source first",
+            '"github" for a GitHub webhook',
+            '"standard_webhooks" for a sender that follows Standard Webhooks',
+            '"hmac_sha256" only for a custom sender',
         ):
             assert needle in text, needle
 
