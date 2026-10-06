@@ -259,6 +259,16 @@ class TestQueryLimit:
 
         assert captured["payload"]["input"] == "how do I reset my password?"
 
+    def test_a_query_long_in_bytes_but_within_the_limit_is_kept(self, monkeypatch):
+        monkeypatch.setattr(settings, "EMBEDDINGS_MAX_INPUT_TOKENS", None)
+        monkeypatch.setattr(settings, "EMBEDDINGS_MAX_QUERY_TOKENS", 10)
+        captured = _capture_post(monkeypatch)
+
+        text = "word " * 8  # 40 bytes, 8 tokens
+        self._remote(monkeypatch).embed_query(text)
+
+        assert captured["payload"]["input"] == text
+
     def test_the_default_limit_is_512(self):
         from docsgpt.core.settings import Settings
 

@@ -381,6 +381,11 @@ class TestLocalInputCeiling:
 
         tokenizer.enable_truncation.assert_called_once_with(max_length=4096)
 
+    def test_an_unreadable_truncation_config_is_left_alone(self, fake_fastembed, monkeypatch):
+        tokenizer = self._load(fake_fastembed, monkeypatch, 4096, "not-a-dict")
+
+        tokenizer.enable_truncation.assert_not_called()
+
     def test_tokenizer_that_cannot_be_reached_is_not_fatal(self, fake_fastembed, monkeypatch):
         from docsgpt.core.settings import settings
 

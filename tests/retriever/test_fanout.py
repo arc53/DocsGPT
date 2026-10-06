@@ -464,6 +464,16 @@ class TestEmbedderFailureIsNotResentPerStore:
         assert results == [None, None, None]
         search.assert_not_called()
 
+    def test_an_openai_timeout_skips_store_searches(self):
+        import httpx
+        import openai
+
+        error = openai.APITimeoutError(request=httpx.Request("POST", "https://api.openai.test"))
+        results, search, _ = self._run(error)
+
+        assert results == [None, None, None]
+        search.assert_not_called()
+
     def test_client_error_still_lets_each_store_try(self):
         results, search, _ = self._run(_http_error(400))
 

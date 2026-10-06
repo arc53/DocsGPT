@@ -335,6 +335,12 @@ class TestWebhookPayloadIsNotLogged:
         assert not any(key in line for key in payload)
         assert "3 keys" in line
 
+    def test_other_payload_shapes_are_described_without_content(self):
+        from docsgpt.api.user.agents.webhooks import _describe_payload
+
+        assert _describe_payload("secret text") == '13 characters, str'
+        assert _describe_payload({"k": {1, 2}}) == "unknown size, 1 keys"
+
     def test_a_list_payload_reports_its_length(self, app, caplog):
         messages = self._enqueue(app, [{"text": "private"}, {"text": "data"}], caplog)
 
