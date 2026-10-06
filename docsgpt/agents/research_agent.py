@@ -551,7 +551,9 @@ class ResearchAgent(BaseAgent):
                 )
                 break
 
-            parsed = self.llm_handler.parse_response(response)
+            # Read the reply with the parser of the model that answered: a
+            # fallback to another provider returns that provider's shape.
+            parsed = self.llm_handler._parse_for_response(self, response)
 
             if not parsed.requires_tool_call:
                 return parsed.content or "No findings for this step."
@@ -592,6 +594,14 @@ class ResearchAgent(BaseAgent):
         """
         search_returned_empty = False
 
+        # One assistant message carries the whole parallel batch, followed by
+        # one tool message per call, as in the chat loop. Gemini 3 rejects the
+        # interleaved "call, result, call, result" layout with a 400: only the
+        # batch's first call carries a thought signature.
+        batch_assistant: Dict[str, Any] = {"role": "assistant", "content": None, "tool_calls": []}
+        if tool_calls:
+            messages.append(batch_assistant)
+
         for call in tool_calls:
             # A step runs inside one turn and nobody can answer a pause here,
             # so a call that would pause (approval, a connection, the client,
@@ -623,15 +633,15 @@ class ResearchAgent(BaseAgent):
                 if isinstance(call.arguments, dict)
                 else call.arguments
             )
-            messages.append({
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [{
-                    "id": call_id,
-                    "type": "function",
-                    "function": {"name": call.name, "arguments": args_str},
-                }],
-            })
+            tool_call_obj = {
+                "id": call_id,
+                "type": "function",
+                "function": {"name": call.name, "arguments": args_str},
+            }
+            # Gemini 3 rejects a function call sent back without its signature.
+            if call.thought_signature:
+                tool_call_obj["thought_signature"] = call.thought_signature
+            batch_assistant["tool_calls"].append(tool_call_obj)
             # Answer the id declared above, not the raw ``call.id``, which a
             # provider may leave empty (the executor then mints one).
             resolved_call = ToolCall(id=call_id, name=call.name, arguments=call.arguments)
