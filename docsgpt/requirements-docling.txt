@@ -209,7 +209,7 @@ docling-ibm-models==4.0.2
     # via docling-slim
 docling-parse==7.19.1
     # via docling-slim
-docling-slim==2.126.0
+docling-slim==2.134.0
     # via docling
 docstring-parser==0.18.0
     # via
