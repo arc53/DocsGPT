@@ -7,6 +7,7 @@ import store from './store';
 import { TooltipProvider } from './components/ui/tooltip';
 import './index.css';
 import { installChunkReload } from './utils/chunkReload';
+import { installTranslatorGuard } from './utils/translatorGuard';
 
 // Show scrollbar on scroll for scrollbar-overlay elements, hide after 1s idle
 const scrollTimers = new WeakMap<Element, ReturnType<typeof setTimeout>>();
@@ -73,6 +74,11 @@ document.addEventListener(
 // the new index.html. Registered before the first render so it also covers
 // chunks that load during it.
 installChunkReload();
+
+// A page translator (Chrome Translate, by hand or offered by the browser)
+// rewrites text nodes React still owns; without this, React's next update of
+// one throws and the nearest error boundary blanks that part of the UI.
+installTranslatorGuard();
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
