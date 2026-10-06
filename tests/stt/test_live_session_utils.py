@@ -4,7 +4,9 @@ These tests ensure that text normalization, word splitting, prefix matching, and
 calculations function correctly to stabilize live transcription output.
 """
 
-from application.stt.live_session import (
+import pytest
+
+from docsgpt.stt.live_session import (
     _calculate_commit_count,
     _common_prefix_length,
     _find_suffix_prefix_overlap,
@@ -143,9 +145,10 @@ def test_overlap_no_match():
 
 
 def test_overlap_respects_minimum_threshold():
-    """Tests that an overlap smaller than the specified minimum threshold is ignored (returns 0)."""
-    left = ["a", "b"]
-    right = ["b"]
+    """Tests that an overlap shorter than the minimum is ignored even when a shorter one exists."""
+    left = ["x", "a", "b", "c"]
+    right = ["c", "y"]
+    assert _find_suffix_prefix_overlap(left, right, 1) == 1
     assert _find_suffix_prefix_overlap(left, right, 2) == 0
 
 
@@ -165,66 +168,30 @@ def test_overlap_case_and_symbol_insensitive():
 
 # _calculate_commit_count
 
-
-def test_commit_count_no_previous_words():
-    """Tests that a fresh session with no prior hypothesis does not commit words immediately."""
-    result = _calculate_commit_count("", "hello world", is_silence=False)
-    assert result == 0
+TEN_WORDS = "one two three four five six seven eight nine ten"
 
 
-def test_commit_count_with_silence_no_previous():
-    """
-    Tests that a fresh session encountering silence might commit words early.
-
-    Silence aggressively drops the mutable tail size, allowing words to commit
-    even if there's no previous text to stabilize against.
-    """
-    result = _calculate_commit_count("", "hello world", is_silence=True)
-    # silence allows committing more
-    assert result >= 0
-
-
-def test_commit_count_no_common_prefix():
-    """Tests that a complete shift in hypothesis resets stabilization, committing 0 words."""
-    result = _calculate_commit_count("hello world", "bye world", is_silence=False)
-    assert result == 0
-
-
-def test_commit_count_partial_prefix():
-    """Tests that a stable prefix across hypotheses results in committed words."""
-    # Must be longer than LIVE_STT_MUTABLE_TAIL_WORDS (8 words) to commit anything when not silent
-    prev = "one two three four five six seven eight nine ten"
-    curr = "one two three four five six seven eight nine ten eleven"
-    result = _calculate_commit_count(prev, curr, is_silence=False)
-    assert result >= 1
-
-
-def test_commit_count_full_prefix_but_tail_limited():
-    """
-    Tests the mutable tail constraint during continuous speech.
-
-    Even if the prefix perfectly matches, the engine should hold back the last
-    few words (the mutable tail) from committing to allow for STT corrections.
-    """
-    prev = "one two three four five six seven eight"
-    curr = "one two three four five six seven eight nine ten"
-    result = _calculate_commit_count(prev, curr, is_silence=False)
-
-    # Should not commit everything due to mutable tail constraint
-    assert result < len(curr.split())
-
-
-def test_commit_count_more_aggressive_on_silence():
-    """
-    Tests that silence triggers a smaller mutable tail, committing more words.
-
-    When the user pauses (silence), the STT is less likely to correct older words,
-    so the system commits a larger portion of the stable prefix.
-    """
-    prev = "one two three four five six seven eight"
-    curr = "one two three four five six seven eight nine ten"
-
-    normal = _calculate_commit_count(prev, curr, is_silence=False)
-    silence = _calculate_commit_count(prev, curr, is_silence=True)
-
-    assert silence >= normal
+@pytest.mark.parametrize(
+    "previous, current, is_silence, expected",
+    [
+        # Silence with no previous hypothesis commits all but the 2-word silence tail.
+        pytest.param("", TEN_WORDS, True, 8, id="silence-no-previous"),
+        # A changed first word leaves no stable prefix, so nothing commits even on silence.
+        pytest.param("hello " + TEN_WORDS, "bye " + TEN_WORDS, True, 0, id="no-stable-prefix"),
+        # Stable prefix of 8, but the 8-word tail of a 10-word hypothesis is held back.
+        pytest.param("one two three four five six seven eight", TEN_WORDS, False, 2, id="tail-holds-back"),
+        # Silence shrinks the tail to 2, so the whole stable prefix of 8 commits.
+        pytest.param("one two three four five six seven eight", TEN_WORDS, True, 8, id="silence-shrinks-tail"),
+        # The tail would allow 9 words, but only the 3-word stable prefix commits.
+        pytest.param(
+            "one two three four five",
+            "one two three for five six seven eight nine ten eleven",
+            True,
+            3,
+            id="prefix-limits",
+        ),
+    ],
+)
+def test_calculate_commit_count(previous, current, is_silence, expected):
+    """Tests that the commit count is the stable prefix capped by the mutable tail."""
+    assert _calculate_commit_count(previous, current, is_silence=is_silence) == expected
