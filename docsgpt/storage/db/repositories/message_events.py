@@ -403,7 +403,7 @@ def _redact_chunks(
             if end <= lo or start >= hi:
                 continue
             pieces.append(joined[cursor:max(start, lo)])
-            if lo <= start < hi:
+            if start >= lo:  # the occurrence starts in this chunk (the check above rules out start >= hi)
                 pieces.append(ref)
             cursor = min(end, hi)
         if cursor == lo and not pieces:
