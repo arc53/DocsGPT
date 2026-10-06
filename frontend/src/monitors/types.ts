@@ -59,7 +59,6 @@ export interface MonitorUpdatedPayload {
 
 /** What the public approval page shows. */
 export interface ApprovalView {
-  title: string | null;
   question: string | null;
   details: string | null;
   options: string[];

@@ -16,6 +16,7 @@ import { LoadingState } from '@/components/ui/loading-state';
 import { SectionHeader } from '@/components/ui/section-header';
 import { Textarea } from '@/components/ui/textarea';
 import { useDarkTheme } from '@/hooks';
+import { formatDateTime } from '@/utils/dateTimeUtils';
 
 import type { ApprovalView } from './types';
 
@@ -123,7 +124,6 @@ export default function ApprovalPage() {
         as="h2"
         size="title"
         title={view.question || t('approval.untitled')}
-        description={view.title || undefined}
       />
       {view.details && (
         <p
@@ -184,6 +184,14 @@ export default function ApprovalPage() {
           </div>
           <p className="text-muted-foreground text-xs">
             {t('approval.onceOnly')}
+            {view.expires_at && (
+              <>
+                {' '}
+                {t('approval.expiresAt', {
+                  date: formatDateTime(view.expires_at),
+                })}
+              </>
+            )}
           </p>
         </div>
       )}

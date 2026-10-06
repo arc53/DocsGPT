@@ -41,6 +41,9 @@ _TOKEN = re.compile(r"^[A-Za-z0-9_\-]{16,128}$")
 #: Longest idempotency key or delivery id used as a dedupe key.
 _MAX_KEY = 200
 
+#: How many times ``TRIGGER_RATE_PER_MINUTE`` a signed link takes in requests before their signature is checked.
+PRE_AUTH_RATE_FACTOR = 4
+
 #: Decisions one approval link takes per minute (the first one decides; the rest get 409).
 APPROVAL_RATE_PER_MINUTE = 10
 
@@ -169,13 +172,18 @@ def accept_delivery(token: str, *, body: bytes, headers: Mapping[str, str], cont
     if link is None:
         return NOT_FOUND
     link_id = str(link["id"])
-    if rate_limited("trigger", link_id, int(settings.TRIGGER_RATE_PER_MINUTE)):
+    scheme = link.get("signature_scheme") or "none"
+    signed = scheme != "none"
+    limit = int(settings.TRIGGER_RATE_PER_MINUTE)
+    # A signed link counts only verified deliveries against its rate, so junk from someone who has the URL
+    # can't use up the sender's budget; unverified requests get a looser cap of their own, checked first.
+    pre_scope, pre_limit = ("trigger_unverified", limit * PRE_AUTH_RATE_FACTOR) if signed else ("trigger", limit)
+    if rate_limited(pre_scope, link_id, pre_limit):
         return 429, {"error": "too many requests to this link; retry in a minute"}
     if len(body) > int(settings.TRIGGER_MAX_PAYLOAD_BYTES):
         return 413, {"error": f"the body is larger than {settings.TRIGGER_MAX_PAYLOAD_BYTES} bytes"}
-    scheme = link.get("signature_scheme") or "none"
     try:
-        secret = links.open_secret(link.get("secret_encrypted"), str(link["user_id"])) if scheme != "none" else None
+        secret = links.open_secret(link.get("secret_encrypted"), str(link["user_id"])) if signed else None
         delivery_id = signatures.verify(scheme, secret, headers, body)
     except signatures.SignatureError as exc:
         logger.info("trigger link %s: rejected a delivery (%s)", link_id, exc)
@@ -183,6 +191,11 @@ def accept_delivery(token: str, *, body: bytes, headers: Mapping[str, str], cont
     except Exception:
         logger.exception("trigger link %s: could not open its secret", link_id)
         return 401, {"error": "the signature could not be verified"}
+    if str(_get(headers, "X-GitHub-Event") or "").strip().lower() == "ping":
+        # GitHub's "is this hook set up?" call: acknowledged, never stored, counted or checked.
+        return 202, {"accepted": True, "ping": True}
+    if signed and rate_limited("trigger", link_id, limit):
+        return 429, {"error": "too many requests to this link; retry in a minute"}
     payload: Dict[str, Any] = {"body": parse_body(body, content_type), "content_type": content_type or None}
     event = next((_get(headers, name) for name in _EVENT_HEADERS if _get(headers, name)), None)
     if event:
@@ -220,9 +233,11 @@ def _approval_link(token: str) -> Optional[Dict[str, Any]]:
 
 
 def approval_view(token: str) -> Response:
-    """What the public approval page shows: the question, details and options; never who asked or why else.
+    """What the public approval page shows: the question, details, options and expiry; never who asked or why else.
 
-    Opening the page (this GET) changes nothing.
+    The monitor's description is left out: it is written for the requester's
+    own chat ("Manager's decision on the announcement"), not for the person
+    deciding. Opening the page (this GET) changes nothing.
     """
     link = _approval_link(token)
     if link is None:
@@ -232,7 +247,6 @@ def approval_view(token: str) -> Response:
     spec = link.get("approval_spec") or {}
     decision = link.get("decision") or None
     return 200, {
-        "title": (monitor or {}).get("description"),
         "question": spec.get("question"),
         "details": spec.get("details"),
         "options": spec.get("options") or ["approve", "reject"],

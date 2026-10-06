@@ -867,7 +867,11 @@ def process_hit(hit_id: str, attempt: int = 0) -> Dict[str, Any]:
                 summary="the webhook link received a delivery",
                 extra={
                     key: value
-                    for key, value in (("delivery", payload.get("body")), ("event", payload.get("event")))
+                    for key, value in (
+                        ("delivery", payload.get("body")),
+                        ("content_type", payload.get("content_type")),
+                        ("event", payload.get("event")),
+                    )
                     if value is not None
                 },
             )

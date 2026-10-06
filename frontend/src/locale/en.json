@@ -3281,7 +3281,8 @@
     "alreadyDecided": "This request was already decided: {{decision}}.",
     "notWaiting": "This request is no longer waiting for a decision.",
     "rateLimited": "Too many attempts. Wait a minute and try again.",
-    "submitError": "Your decision couldn't be sent. Try again."
+    "submitError": "Your decision couldn't be sent. Try again.",
+    "expiresAt": "This request expires on {{date}}."
   },
   "monitors": {
     "label": "Monitors",

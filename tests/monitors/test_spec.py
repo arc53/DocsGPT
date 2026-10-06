@@ -49,6 +49,17 @@ class TestDefaultsAndLimits:
         assert request.max_wakes == 20
         assert len(request.notes) == 2
 
+    def test_the_lifetime_note_says_how_to_go_longer(self, monkeypatch):
+        """The cap note must not invite a schedule in place of a link: a schedule can't receive calls."""
+        monkeypatch.setattr(settings, "MONITOR_MAX_TTL_DAYS", 30)
+        hook = _req(source={"type": "webhook"}, expires_in="90d")
+        assert hook.notes == [
+            "lifetime lowered to 30d, the longest allowed; to keep the link longer, the user asks for a new one "
+            "before it expires"
+        ]
+        polled = _req(expires_in="90d")
+        assert "create a new monitor before it expires" in polled.notes[0]
+
     def test_weeks_and_numbers_are_durations(self):
         assert _req(expires_in="1w").expires_at == NOW + timedelta(days=7)
         assert _req(interval=3600).interval_seconds == 3600

@@ -49,7 +49,11 @@ class TestView:
         assert body["question"] == "Send the announcement?" and body["details"] == "Draft: ..."
         assert body["options"] == ["approve", "reject"] and body["allow_comment"] is True
         assert body["decided"] is False and body["waiting"] is True
-        assert body["title"] == "Manager approves the announcement"
+        # The description is written for the requester's chat; the person deciding sees the question and expiry.
+        assert "title" not in body and "Manager approves" not in str(body)
+        from datetime import datetime
+
+        assert datetime.fromisoformat(body["expires_at"].replace("Z", "+00:00")) > datetime.now().astimezone()
         assert "conversation_id" not in body and "user_id" not in body and "on_match" not in str(body)
         client.get(f"/api/approvals/{token}")
         assert wakes == []

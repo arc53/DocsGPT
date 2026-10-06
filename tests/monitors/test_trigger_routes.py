@@ -144,6 +144,50 @@ class TestLimits:
         limited = client.post(f"/api/triggers/{token}", json={"i": 9})
         assert limited.headers["Retry-After"] == "60" and len(_hits(mon_db)) == 3
 
+    def test_junk_without_a_valid_signature_cannot_use_up_a_signed_links_budget(
+        self, client, mon_db, conversation_id, monkeypatch, fake_redis, enqueued
+    ):
+        """Anyone with the URL could send junk; only verified deliveries count against the per-minute rate."""
+        monkeypatch.setattr(settings, "TRIGGER_RATE_PER_MINUTE", 3)
+        monkeypatch.setattr("docsgpt.cache.get_redis_instance", lambda: fake_redis)
+        token, secret, *_ = make_link(mon_db, conversation_id, scheme="github")
+        junk = [
+            client.post(f"/api/triggers/{token}", json={"i": i}, headers={"X-Hub-Signature-256": "sha256=00"})
+            for i in range(6)
+        ]
+        assert {r.status_code for r in junk} == {401}
+        body = b'{"status": "success"}'
+        good = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        ok = client.post(
+            f"/api/triggers/{token}", data=body, content_type="application/json",
+            headers={"X-Hub-Signature-256": good},
+        )
+        assert ok.status_code == 202
+        # Junk is still capped, more loosely, before any signature work.
+        flood = [
+            client.post(f"/api/triggers/{token}", json={"i": i}, headers={"X-Hub-Signature-256": "sha256=00"})
+            .status_code
+            for i in range(20)
+        ]
+        assert flood[-1] == 429
+
+    def test_a_github_ping_is_acknowledged_and_does_nothing(self, client, mon_db, conversation_id, enqueued):
+        token, secret, link, _m = make_link(mon_db, conversation_id, scheme="github")
+        body = b'{"zen": "Keep it logically awesome.", "hook_id": 1}'
+        sig = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        response = client.post(
+            f"/api/triggers/{token}", data=body, content_type="application/json",
+            headers={"X-GitHub-Event": "ping", "X-Hub-Signature-256": sig, "X-GitHub-Delivery": "p-1"},
+        )
+        assert response.status_code == 202 and response.get_json() == {"accepted": True, "ping": True}
+        assert _hits(mon_db) == [] and enqueued == []
+        with mon_db.connect() as conn:
+            assert TriggerLinksRepository(conn).get(str(link["id"]))["hit_count"] == 0
+        unsigned = client.post(
+            f"/api/triggers/{token}", data=body, content_type="application/json", headers={"X-GitHub-Event": "ping"}
+        )
+        assert unsigned.status_code == 401
+
     def test_rate_limits_are_per_link(self, client, mon_db, conversation_id, monkeypatch, fake_redis, enqueued):
         monkeypatch.setattr(settings, "TRIGGER_RATE_PER_MINUTE", 1)
         monkeypatch.setattr("docsgpt.cache.get_redis_instance", lambda: fake_redis)

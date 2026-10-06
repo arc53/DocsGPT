@@ -8,7 +8,11 @@ const decideApproval = vi.fn();
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, values?: Record<string, unknown>) =>
-      values?.decision ? `${key}:${values.decision}` : key,
+      values?.decision
+        ? `${key}:${values.decision}`
+        : values?.date
+          ? `${key}:${values.date}`
+          : key,
   }),
 }));
 vi.mock('@/hooks', () => ({ useDarkTheme: () => [false] }));
@@ -25,7 +29,6 @@ import type { ApprovalView } from './types';
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const view = (overrides: Partial<ApprovalView> = {}): ApprovalView => ({
-  title: 'Manager approves the announcement',
   question: 'Send the announcement?',
   details: 'Draft line one\nDraft line two',
   options: ['approve', 'reject'],
@@ -78,6 +81,15 @@ describe('ApprovalPage', () => {
     Array.from(container.querySelectorAll('button')).filter((b) =>
       b.textContent?.startsWith('approval.options.'),
     );
+
+  it('says when the request expires', async () => {
+    getApproval.mockResolvedValue({
+      state: 'ok',
+      view: view({ expires_at: '2026-10-08T09:30:00Z' }),
+    });
+    await render();
+    expect(container.textContent).toContain('approval.expiresAt:');
+  });
 
   it('opening the page only reads the request', async () => {
     getApproval.mockResolvedValue({ state: 'ok', view: view() });

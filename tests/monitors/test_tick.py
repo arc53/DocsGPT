@@ -448,9 +448,9 @@ def _webhook(mon_db, conversation_id, **extra):
     return monitor, link
 
 
-def _hit(mon_db, link, key, body):
+def _hit(mon_db, link, key, body, **payload):
     with mon_db.begin() as conn:
-        return str(TriggerHitsRepository(conn).insert(str(link["id"]), key, {"body": body})["id"])
+        return str(TriggerHitsRepository(conn).insert(str(link["id"]), key, {"body": body, **payload})["id"])
 
 
 class TestHits:
@@ -472,8 +472,11 @@ class TestHits:
 
     def test_no_check_wakes_on_any_delivery(self, mon_db, conversation_id, wakes, events):
         monitor, link = _webhook(mon_db, conversation_id, check=None, state={})
-        assert tick.process_hit(_hit(mon_db, link, "a", "plain text body")) == {"state": "woken"}
+        assert tick.process_hit(_hit(mon_db, link, "a", "plain text body", content_type="text/plain")) == {
+            "state": "woken"
+        }
         assert "received a delivery" in wakes[0]["payload"]["summary"]
+        assert wakes[0]["payload"]["content_type"] == "text/plain"
 
     def test_a_hit_is_processed_once(self, mon_db, conversation_id, wakes, events):
         monitor, link = _webhook(mon_db, conversation_id, check=None, state={}, max_wakes=5)

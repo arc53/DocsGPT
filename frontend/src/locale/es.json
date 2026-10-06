@@ -3236,7 +3236,8 @@
     "alreadyDecided": "Esta solicitud ya se decidió: {{decision}}.",
     "notWaiting": "Esta solicitud ya no espera una decisión.",
     "rateLimited": "Demasiados intentos. Espera un minuto y vuelve a intentarlo.",
-    "submitError": "No se pudo enviar tu decisión. Inténtalo de nuevo."
+    "submitError": "No se pudo enviar tu decisión. Inténtalo de nuevo.",
+    "expiresAt": "Esta solicitud caduca el {{date}}."
   },
   "monitors": {
     "label": "Monitores",

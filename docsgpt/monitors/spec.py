@@ -337,7 +337,12 @@ def parse_request(arguments: Dict[str, Any], *, now: Optional[datetime] = None) 
     max_ttl = int(settings.MONITOR_MAX_TTL_DAYS) * 86400
     ttl = _duration(arguments.get("expires_in"), "expires_in") or int(settings.MONITOR_DEFAULT_TTL_DAYS) * 86400
     if ttl > max_ttl:
-        notes.append(f"lifetime lowered to {human_duration(max_ttl)}, the longest allowed")
+        longer = (
+            "to keep the link longer, the user asks for a new one before it expires"
+            if kind in ("webhook", "approval")
+            else "to keep watching longer, create a new monitor before it expires"
+        )
+        notes.append(f"lifetime lowered to {human_duration(max_ttl)}, the longest allowed; {longer}")
         ttl = max_ttl
     if interval is not None and interval > ttl:
         raise SpecError("`interval` is longer than the monitor's lifetime (`expires_in`).")

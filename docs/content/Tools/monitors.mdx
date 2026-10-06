@@ -121,6 +121,10 @@ may use (never an access token). It is rate limited, audited as `monitor.secret_
 it answers `404` once the link has ended. The secret is stored only encrypted, in `trigger_links`.
 
 - **POST only.** `GET` answers `405` with a short note, because link previews and mail scanners fetch links.
+- **Order.** On a signed link the signature is checked before a request counts against the link's rate, so
+  junk from someone who has the URL can't use up the sender's budget; unverified requests have a looser cap of
+  their own (four times the rate). A GitHub `ping` (sent when the hook is added) is acknowledged with `202` and
+  does nothing else.
 - **Signatures.** `standard_webhooks` verifies `webhook-id`, `webhook-timestamp` and `webhook-signature` (any
   `v1` signature in the list) with a `whsec_` secret and a five-minute tolerance; `github` verifies
   `X-Hub-Signature-256`; `hmac_sha256` verifies `X-Signature: sha256=<hex>` over the raw body. Comparisons are
@@ -145,8 +149,9 @@ the link until the instance has a public `PUBLIC_API_BASE_URL`.
 ## Approval links
 
 An `approval` monitor returns a link to a small public page, `/approve/<token>`, that shows the question, the
-details to review (a draft, a plan) and the buttons (Approve and Reject, or the options the agent set), with an
-optional comment.
+details to review (a draft, a plan), the buttons (Approve and Reject, or the options the agent set), with an
+optional comment, and when the request expires. The monitor's description, written for the requester's chat, is
+not shown.
 
 - Opening the page changes nothing. Only pressing a button sends the decision.
 - The first decision wins; any later one gets `409`. The page then shows the decision.
