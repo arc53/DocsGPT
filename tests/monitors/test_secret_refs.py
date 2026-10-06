@@ -87,13 +87,13 @@ def _call(arguments, call_id="call-1", name="create_repository_webhook"):
     return ToolCall(id=call_id, name=name, arguments=json.dumps(arguments))
 
 
-def _run(gen):
-    events = []
+def _result(gen):
+    """Run an ``execute`` generator to the end; its ``(result, call_id)``."""
     while True:
         try:
-            events.append(next(gen))
+            next(gen)
         except StopIteration as stop:
-            return events, stop.value
+            return stop.value
 
 
 def _hook_args(created, **overrides):
@@ -234,13 +234,13 @@ class TestExecution:
         created, secret = webhook
         tool = _EchoTool()
         executor = _executor(conversation_id, tool, monkeypatch)
-        _events, (result, _id) = _run(executor.execute(_tools(), _call(_hook_args(created)), "OpenAILLM"))
+        result, _id = _result(executor.execute(_tools(), _call(_hook_args(created)), "OpenAILLM"))
         assert tool.calls == []
         assert "did not approve" in result
         assert executor.tool_calls[-1]["status"] == "error"
 
         executor.approved_call_ids.add("call-2")
-        _events, (result, _id) = _run(
+        result, _id = _result(
             executor.execute(_tools(), _call(_hook_args(created), call_id="call-2"), "OpenAILLM")
         )
         assert tool.calls[-1]["config"]["secret"] == secret
@@ -258,8 +258,8 @@ class TestExecution:
         tool = _EchoTool()
         executor = _executor(conversation_id, tool, monkeypatch)
         executor.approved_call_ids.add("call-1")
-        _run(executor.execute(_tools(), _call(_hook_args(created)), "OpenAILLM"))
-        _events, (result, _id) = _run(executor.execute(_tools(), _call(_hook_args(created)), "OpenAILLM"))
+        _result(executor.execute(_tools(), _call(_hook_args(created)), "OpenAILLM"))
+        result, _id = _result(executor.execute(_tools(), _call(_hook_args(created)), "OpenAILLM"))
         assert "did not approve" in result
         assert [call["config"]["secret"] for call in tool.calls] == [secret]
 
@@ -278,8 +278,8 @@ class TestExecution:
 
         executor = _executor(conversation_id, _Device(), monkeypatch)
         executor.approved_call_ids.add("call-1")
-        _run(executor.execute(_tools(), _call(_hook_args(created)), "OpenAILLM"))
-        _events, (result, _id) = _run(
+        _result(executor.execute(_tools(), _call(_hook_args(created)), "OpenAILLM"))
+        result, _id = _result(
             executor.execute(_tools(), _call({"owner": "acme", "repo": "app"}, call_id="call-2"), "OpenAILLM")
         )
         assert result == f"file contents: {created['secret']}"
@@ -289,7 +289,7 @@ class TestExecution:
         created, secret = webhook
         executor = _executor(conversation_id, _EchoTool(), monkeypatch)
         executor.approved_call_ids.add("call-1")
-        _run(executor.execute(_tools(), _call(_hook_args(created)), "OpenAILLM"))
+        _result(executor.execute(_tools(), _call(_hook_args(created)), "OpenAILLM"))
         with mon_db.connect() as conn:
             rows = conn.execute(
                 text("SELECT metadata::text FROM auth_events WHERE event = 'monitor.secret_substituted'")
@@ -308,7 +308,7 @@ class TestExecution:
         executor = _executor(conversation_id, _Boom(), monkeypatch)
         executor.approved_call_ids.add("call-1")
         with pytest.raises(RuntimeError) as raised:
-            _run(executor.execute(_tools(), _call(_hook_args(created)), "OpenAILLM"))
+            _result(executor.execute(_tools(), _call(_hook_args(created)), "OpenAILLM"))
         assert secret not in str(raised.value) and created["secret"] in str(raised.value)
 
     def test_a_dead_or_foreign_reference_is_refused(self, mon_db, conversation_id, webhook, monkeypatch):
@@ -318,11 +318,11 @@ class TestExecution:
         executor.approved_call_ids.update({"call-1", "call-2"})
         args = _hook_args(created)
         args["config"]["secret"] = "{{link_secret:ZZZZZZ}}"
-        _events, (result, _id) = _run(executor.execute(_tools(), _call(args), "OpenAILLM"))
+        result, _id = _result(executor.execute(_tools(), _call(args), "OpenAILLM"))
         assert "does not name a live signed link" in result and tool.calls == []
 
         service.end(created["monitor_id"], "u1", "cancelled")
-        _events, (result, _id) = _run(
+        result, _id = _result(
             executor.execute(_tools(), _call(_hook_args(created), call_id="call-2"), "OpenAILLM")
         )
         assert "does not name a live signed link" in result and tool.calls == []
@@ -333,7 +333,7 @@ class TestExecution:
         executor = _executor(conversation_id, tool, monkeypatch)
         executor.user = "u2"
         executor.approved_call_ids.add("call-1")
-        _events, (result, _id) = _run(executor.execute(_tools(), _call(_hook_args(created)), "OpenAILLM"))
+        result, _id = _result(executor.execute(_tools(), _call(_hook_args(created)), "OpenAILLM"))
         assert "does not name a live signed link" in result and tool.calls == []
 
     def test_a_reference_in_a_url_is_refused_even_when_approved(self, mon_db, conversation_id, webhook, monkeypatch):
@@ -343,7 +343,7 @@ class TestExecution:
         executor.approved_call_ids.add("call-1")
         args = _hook_args(created)
         args["config"]["url"] = created["url"] + "?s=" + created["secret"]
-        _events, (result, _id) = _run(executor.execute(_tools(), _call(args), "OpenAILLM"))
+        result, _id = _result(executor.execute(_tools(), _call(args), "OpenAILLM"))
         assert "never goes into a URL" in result and tool.calls == []
 
 
@@ -376,7 +376,7 @@ class TestEndToEnd:
         assert created["secret"] in json.dumps(pause["arguments"])
 
         executor.approved_call_ids.add(call.id)  # the user pressed Approve
-        _events, (result, _id) = _run(executor.execute(tools, call, "OpenAILLM"))
+        result, _id = _result(executor.execute(tools, call, "OpenAILLM"))
         given = github.calls[-1]["config"]["secret"]
         assert given != created["secret"] and created["secret"] in json.dumps(result)
 
@@ -428,7 +428,7 @@ class TestEndToEnd:
         call = _call({"command": command}, name="run_command")
         assert executor.check_pause(tools, call, "OpenAILLM")["secret_refs"] == [created["secret_ref"]]
         executor.approved_call_ids.add(call.id)
-        _events, (result, _id) = _run(executor.execute(tools, call, "OpenAILLM"))
+        result, _id = _result(executor.execute(tools, call, "OpenAILLM"))
         assert isinstance(result, dict) and result.get("exit_code") == 0, result
         queued = json.loads(fake.lists["dev:cmd:dev_gh"][0])
         assert f"config[secret]={secret}" in queued["params"]["command"]
