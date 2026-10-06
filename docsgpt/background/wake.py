@@ -208,6 +208,8 @@ def job_event(job: Dict[str, Any]) -> Dict[str, Any]:
         payload["result"] = view["result"]
     if view.get("artifacts"):
         payload["files"] = [a.get("ref") or a.get("filename") or a.get("id") for a in view["artifacts"]]
+        # The job's card on the message that started it carries them; the reply only names them.
+        lines.append("The files it wrote are attached to the earlier message that started it, not to your reply.")
     return {"title": title, "body": "\n".join(line for line in lines if line), "payload": payload or None}
 
 

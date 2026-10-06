@@ -112,6 +112,15 @@ class TestWakeConversation:
         assert len(_wakes(bg_db, conversation_id)) == 1
 
 
+def test_a_jobs_files_are_said_to_be_on_the_message_that_started_it():
+    job = {"id": "j1", "tool_name": "code_executor", "action_name": "run_code", "status": "completed",
+           "result": {"text": "ok", "artifacts": [{"id": "a1", "filename": "race.mp4", "ref": "A1"}]}}
+    event = wake.job_event(job)
+    assert event["payload"]["files"] == ["A1"]
+    assert "attached to the earlier message that started it, not to your reply" in event["body"]
+    assert "attached" not in wake.job_event({**job, "result": {"text": "ok"}})["body"]
+
+
 class TestRendering:
     def test_events_are_marked_and_fenced(self):
         out = wake.render_events(
