@@ -206,7 +206,8 @@ def _run_agent_headless(
         raise QuotaExceededError(exceeded)
 
     retriever_kind = agent_config.get("retriever", "classic")
-    agent_type = agent_config.get("agent_type", "classic")
+    # PG rows carry every column: an unset type is None, not missing.
+    agent_type = (agent_config.get("agent_type") or "").strip() or "classic"
     # Every source a chat with this agent searches: the primary and the
     # extras, each owned or team-shared to the owner, else attached by an
     # editor who still qualifies.
