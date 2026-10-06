@@ -431,6 +431,20 @@ class TestWebhookRetrievalQuery:
 
         assert query == json.dumps(payload)[:_WEBHOOK_QUERY_MAX_CHARS]
 
+    def test_the_documented_question_field_is_searched(self):
+        """The webhook docs' own examples send ``question``."""
+        from docsgpt.worker import _webhook_retrieval_query
+
+        payload = {"metadata": {"trace": "x" * 5000}, "question": "Summarize order 4567"}
+
+        assert _webhook_retrieval_query(payload) == "Summarize order 4567"
+
+    def test_query_and_prompt_fields_are_searched(self):
+        from docsgpt.worker import _webhook_retrieval_query
+
+        assert _webhook_retrieval_query({"query": "refund policy"}) == "refund policy"
+        assert _webhook_retrieval_query({"prompt": "draft a reply"}) == "draft a reply"
+
     def test_repeated_text_is_kept_once(self):
         from docsgpt.worker import _webhook_retrieval_query
 

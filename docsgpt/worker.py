@@ -3438,7 +3438,9 @@ def agent_webhook_worker(self, agent_id, payload):
 
 
 # Fields a person writes, in the order they best say what an event is about.
+# ``question`` leads: it is what the webhook docs' own examples send.
 _WEBHOOK_QUERY_KEYS = (
+    "question", "query", "prompt",
     "title", "subject", "summary", "name", "description", "body", "text", "message", "content",
 )
 _WEBHOOK_QUERY_MAX_CHARS = 2000
