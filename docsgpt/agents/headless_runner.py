@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional
 from docsgpt import tracing
 from docsgpt.agents.agent_creator import AgentCreator
 from docsgpt.agents.tool_executor import ToolExecutor
+from docsgpt.api.answer.segments import separated
 from docsgpt.api.answer.services.prompt_renderer import (
     PromptRenderer,
     format_docs_for_prompt,
@@ -392,6 +393,8 @@ def _run_agent_headless(
     tool_calls: List[Dict[str, Any]] = []
     stream_error: Optional[str] = None
     steps_completed = 0
+    # Text after a tool call starts a new paragraph, as in a chat turn's stored answer.
+    tool_since_text = False
     for event in agent.gen(query=query):
         if not isinstance(event, dict):
             continue
@@ -418,8 +421,14 @@ def _run_agent_headless(
             if event.get("status") == "completed":
                 steps_completed += 1
             continue
+        if event.get("type") == "tool_call":
+            tool_since_text = True
+            continue
         if "answer" in event:
-            answer_full += str(event["answer"])
+            chunk = separated(answer_full, str(event["answer"]), after_tool=tool_since_text)
+            if chunk.strip():
+                tool_since_text = False
+            answer_full += chunk
         elif "sources" in event:
             sources_log.extend(event["sources"])
         elif "tool_calls" in event:

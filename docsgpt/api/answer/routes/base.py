@@ -909,15 +909,19 @@ class BaseAnswerResource:
                     query_metadata.update(line["metadata"])
                 elif "answer" in line:
                     _mark_streaming_once()
-                    response_full += str(line["answer"])
-                    segments.answer(line["answer"])
+                    chunk = str(line["answer"])
+                    if not line.get("structured"):
+                        # Text after a tool call starts a new paragraph, live and stored alike.
+                        chunk = segments.join(response_full, chunk)
+                    response_full += chunk
+                    segments.answer(chunk)
                     if line.get("structured"):
                         is_structured = True
                         schema_info = line.get("schema")
                         structured_chunks.append(line["answer"])
                     else:
                         yield _emit(
-                            {"type": "answer", "answer": line["answer"]}
+                            {"type": "answer", "answer": chunk}
                         )
                 elif "sources" in line:
                     _mark_streaming_once()
