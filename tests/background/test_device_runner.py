@@ -500,3 +500,85 @@ class TestThroughTheExecutor:
         job = _job(bg_db, job_id)
         assert json.loads(job["result"]["text"])["stdout"] == "released v2\n"
         assert [row["id"] for row in delivered] == [job["id"]]
+
+
+class TestEdges:
+    def test_timestamps_read_every_shape(self):
+        assert device_runner._timestamp(datetime(2026, 1, 1)) == datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp()
+        assert device_runner._timestamp("2026-01-01T00:00:00Z") == datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp()
+        assert device_runner._timestamp("2026-01-01T00:00:00") == datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp()
+        assert device_runner._timestamp("not a time") is None
+        assert device_runner._timestamp(12.5) == 12.5
+        assert device_runner._timestamp(None) is None
+
+    def test_a_device_never_seen_is_offline(self, bg_db, conversation, device, broker):
+        with bg_db.begin() as conn:
+            conn.execute(text("UPDATE devices SET last_seen_at = NULL WHERE id = :id"), {"id": DEVICE_ID})
+        assert device_runner.device_state({"external": {"device_id": DEVICE_ID}, "user_id": "u1"}) == "offline"
+        assert device_runner.device_state({"external": {"device_id": "nope"}, "user_id": "u1"}) == "gone"
+
+    def test_a_job_that_lost_its_command_fails(self, bg_db, conversation, device, broker, polls, delivered):
+        job_id = _start(bg_db, conversation, broker)
+        with bg_db.begin() as conn:
+            conn.execute(
+                text("UPDATE background_jobs SET external = '{}'::jsonb WHERE id = CAST(:id AS uuid)"), {"id": job_id}
+            )
+        assert device_runner.poll_job(job_id) == {"state": "failed"}
+
+    def test_a_failed_move_keeps_the_command_where_it_is(self, bg_db, conversation, broker, monkeypatch):
+        def boom(*args, **kwargs):
+            raise RuntimeError("db down")
+
+        monkeypatch.setattr(BackgroundJobsRepository, "set_runner", boom)
+        assert device_runner.detach_job("00000000-0000-0000-0000-000000000001", {"invocation_id": "x"}) is False
+
+    def test_a_poll_that_cannot_be_queued_is_left_to_the_sweep(self, monkeypatch):
+        import docsgpt.api.user.tasks as tasks
+
+        def refuse(*args, **kwargs):
+            raise ConnectionError("broker down")
+
+        monkeypatch.setattr(tasks.poll_background_device_job, "apply_async", refuse)
+        device_runner.enqueue_poll("job-1", 1)  # logged, never raised
+
+    def test_bookkeeping_failures_never_stop_the_poll(self, bg_db, conversation, device, broker, polls, delivered,
+                                                      published, monkeypatch):
+        job_id = _start(bg_db, conversation, broker)
+        broker.submit_ack("inv_1", "accepted")
+        broker.submit_output_chunk("inv_1", {"stream": "stdout", "chunk": "x\n"})
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("db hiccup")
+
+        monkeypatch.setattr(BackgroundJobsRepository, "update_progress", boom)
+        monkeypatch.setattr(BackgroundJobsRepository, "touch", boom)
+        _seen(bg_db, seconds_ago=device_runner.OFFLINE_AFTER_SECONDS + 30)
+        assert device_runner.poll_job(job_id) == {"state": "waiting"}
+        assert published == []
+
+    def test_the_deadline_check_survives_an_unreadable_broker_and_device(
+        self, bg_db, conversation, device, broker, polls, delivered, monkeypatch
+    ):
+        job_id = _start(bg_db, conversation, broker)
+
+        def boom(*args, **kwargs):
+            raise ConnectionError("down")
+
+        monkeypatch.setattr(broker, "get_invocation", boom)
+        monkeypatch.setattr(device_runner, "device_state", boom)
+        done = device_runner.on_deadline(_job(bg_db, job_id))
+        assert done["status"] == "lost"
+
+    def test_cancel_detached_without_a_command_does_nothing(self, broker):
+        device_runner.cancel_detached({"external": {}})
+
+    def test_a_failed_poll_note_that_cannot_be_written_still_retries(
+        self, bg_db, conversation, device, broker, polls, monkeypatch
+    ):
+        job_id = _start(bg_db, conversation, broker)
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("db down")
+
+        monkeypatch.setattr(device_runner, "_merge", boom)
+        assert device_runner._poll_failed(job_id, {}, ConnectionError("x")) == {"state": "retry"}

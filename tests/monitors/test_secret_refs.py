@@ -436,3 +436,53 @@ class TestEndToEnd:
         with mon_db.connect() as conn:
             audit = conn.execute(text("SELECT command FROM device_audit_log")).scalar()
         assert created["secret"] in audit and secret not in audit
+
+
+
+class TestEdges:
+    def test_a_call_without_a_user_is_refused(self):
+        executor = SimpleNamespace(user=None, headless=False, external_caller=False, public_link_caller=False)
+        plan = secret_refs.plan(executor, {"name": "mcp_tool"}, "create_hook", {"x": "{{link_secret:ABCDEF}}"})
+        assert "no signed-in user" in plan.refusal
+
+    def test_references_in_lists_and_odd_urls(self):
+        executor = SimpleNamespace(user="u1", headless=False, external_caller=False, public_link_caller=False)
+        nested = {"hooks": [{"url": "{{link_secret:ABCDEF}}"}]}
+        assert "URL" in secret_refs.plan(executor, {"name": "mcp_tool"}, "create_hook", nested).refusal
+        assert secret_refs.plan(
+            executor, {"name": "mcp_tool"}, "create_hook", {"note": ["fine {{link_secret:ABCDEF}}"]}
+        ).refusal is None
+        assert secret_refs._is_url("https://[bad") is True
+        assert secret_refs._is_url("https://") is False
+
+    def test_outside_a_call_nothing_is_active(self):
+        assert secret_refs.active_refs() == []
+        assert secret_refs.redact_active("value") == "value"
+        sub = secret_refs.Substitution(kwargs={}, values={"s3cr3t-0123456789": "{{link_secret:ABCDEF}}"},
+                                       links=[("ABCDEF", "l1")])
+        with secret_refs.active(sub):
+            assert secret_refs.active_refs() == ["ABCDEF"]
+            assert secret_refs.redact_active("got s3cr3t-0123456789") == "got {{link_secret:ABCDEF}}"
+        assert secret_refs.active_refs() == []
+
+    def test_redact_for_user_survives_a_failed_lookup(self, monkeypatch):
+        def boom(*args, **kwargs):
+            raise RuntimeError("db down")
+
+        monkeypatch.setattr(secret_refs, "_lookup", boom)
+        assert secret_refs.redact_for_user("v", "u1", ["ABCDEF"]) == "v"
+        assert secret_refs.redact_for_user("v", "", ["ABCDEF"]) == "v"
+        assert secret_refs.redact({"a": 1}, {}) == {"a": 1}
+
+    def test_a_failed_audit_never_stops_the_call(self, mon_db, conversation_id, webhook, monkeypatch):
+        created, secret = webhook
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("audit down")
+
+        monkeypatch.setattr("docsgpt.api.audit.record_event", boom)
+        tool = _EchoTool()
+        executor = _executor(conversation_id, tool, monkeypatch)
+        executor.approved_call_ids.add("call-1")
+        _result(executor.execute(_tools(), _call(_hook_args(created)), "OpenAILLM"))
+        assert tool.calls[-1]["config"]["secret"] == secret
