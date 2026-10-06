@@ -1635,9 +1635,11 @@ class TestToolCallsAcrossApprovalRounds:
         ]
         assert merge_tool_calls([], []) == [] and merge_tool_calls(None, ["junk"]) == []
 
-    def test_a_pause_saves_this_rounds_calls_with_the_earlier_ones(self, pg_conn, flask_app):
+    def test_a_pause_saves_this_rounds_calls_with_the_earlier_ones(self, pg_conn, flask_app, mock_llm_creator):
         from docsgpt.api.answer.routes.base import BaseAnswerResource
 
+        # The pause creates the conversation and names it with the title model.
+        mock_llm_creator.gen.return_value = "Tool approval"
         with flask_app.app_context():
             resource = BaseAnswerResource()
             agent = MagicMock()

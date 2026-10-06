@@ -603,3 +603,55 @@ class TestExposure:
         answer, thought = _seal_exposed_text(agent, {"sub": "u1"}, f"Your secret is {secret}.", "none")
         assert answer == f"Your secret is {created['secret']}." and thought == "none"
         assert _seal_exposed_text(agent, {"sub": "u2"}, "x") == ("x",)
+
+
+class TestExposureCoverage:
+    def test_a_stripe_link_gets_a_reference_and_its_exposed_secret_is_covered(
+        self, mon_db, conversation_id, public_url, events
+    ):
+        caller = service.Caller(user_id="u1", conversation_id=conversation_id)
+        created = service.create(
+            caller,
+            {"description": "Invoices", "source": {"type": "webhook", "signature": "stripe"}, "on_match": "tell me"},
+        )
+        assert created["secret"] is None and len(created["secret_ref"]) == 6
+        service.set_secret(created["monitor_id"], "u1", "whsec_" + "a" * 32)
+        assert service.set_exposure(created["monitor_id"], "u1", True) == {"exposed": True}
+        link = service.list_for_conversation(caller)[0]["links"][0]
+        assert link["secret"] == "whsec_" + "a" * 32
+        assert link["secret_ref"] == created["secret_ref"]
+        assert link["secret_placeholder"] == "{{link_secret:" + created["secret_ref"] + "}}"
+        assert secret_refs.exposed_values("u1") == {"whsec_" + "a" * 32: link["secret_placeholder"]}
+
+    def test_a_link_without_a_reference_never_carries_its_secret(self, mon_db, conversation_id, webhook):
+        created, secret = webhook
+        service.set_exposure(created["monitor_id"], "u1", True)
+        with mon_db.begin() as conn:
+            conn.execute(text("UPDATE trigger_links SET ref = NULL"))
+        link = service.list_for_conversation(service.Caller(user_id="u1", conversation_id=conversation_id))[0][
+            "links"
+        ][0]
+        assert "secret" not in link and secret not in json.dumps(link, default=str)
+
+    def test_the_journal_and_the_failed_answer_keep_the_reference(self, mon_db, conversation_id, webhook):
+        from unittest.mock import patch as _patch
+
+        from docsgpt.api.answer.routes import base as base_routes
+
+        created, secret = webhook
+        service.set_exposure(created["monitor_id"], "u1", True)
+        agent = SimpleNamespace(tool_executor=None)
+        with _patch(
+            "docsgpt.storage.db.repositories.message_events.MessageEventsRepository.redact_values", return_value=1
+        ) as redact_values:
+            base_routes._seal_exposed_journal(agent, {"sub": "u1"}, "m-1")
+            base_routes._seal_exposed_journal(agent, {"sub": "u2"}, "m-2")
+            base_routes._seal_exposed_journal(agent, {"sub": "u1"}, None)
+        redact_values.assert_called_once_with("m-1", {secret: created["secret"]})
+        with _patch(
+            "docsgpt.storage.db.repositories.message_events.MessageEventsRepository.redact_values",
+            side_effect=RuntimeError("db down"),
+        ):
+            base_routes._seal_exposed_journal(agent, {"sub": "u1"}, "m-1")  # logged, never raised
+        with _patch.object(base_routes, "_exposed_for_turn", side_effect=RuntimeError("db down")):
+            assert base_routes._seal_exposed_text(agent, {"sub": "u1"}, secret) == (secret,)

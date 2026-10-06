@@ -10,8 +10,10 @@ export interface MonitorLink {
   /** Whether the link still works. */
   state?: 'live' | 'expired' | 'revoked' | 'used_up';
   signature: string | null;
-  /** `{{link_secret:REF}}`, the reference the assistant uses for a signed link's secret. */
+  /** The reference id (`REF`) of a signed link's secret. */
   secret_ref?: string | null;
+  /** `{{link_secret:REF}}`, what the assistant writes in place of the secret. */
+  secret_placeholder?: string | null;
   /** `["POST"]`, or `["POST", "GET"]` for a link that also takes GET. */
   methods?: string[] | null;
   /** The header a `header_token` link reads. */

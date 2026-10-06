@@ -168,23 +168,48 @@ def _seal_exposed_text(agent: Any, decoded_token: Optional[Dict], *texts: str) -
     Returns:
         The texts, in order.
     """
-    executor = getattr(agent, "tool_executor", None)
-    exposed_secrets = getattr(executor, "exposed_secrets", None)
     try:
-        if callable(exposed_secrets):
-            exposed = exposed_secrets()
-        else:
-            from docsgpt.monitors.secret_refs import exposed_values
-
-            exposed = exposed_values((decoded_token or {}).get("sub") or "")
+        exposed = _exposed_for_turn(agent, decoded_token)
     except Exception:
         logger.exception("looking up exposed secrets for the stored answer failed")
         return texts
-    if not isinstance(exposed, dict) or not exposed:
+    if not exposed:
         return texts
     from docsgpt.monitors.secret_refs import redact
 
     return tuple(redact(text, exposed) if isinstance(text, str) else text for text in texts)
+
+
+def _exposed_for_turn(agent: Any, decoded_token: Optional[Dict]) -> Dict[str, str]:
+    """``{secret: reference}`` for the secrets the owner chose to show the assistant (via the turn's executor)."""
+    executor = getattr(agent, "tool_executor", None)
+    exposed_secrets = getattr(executor, "exposed_secrets", None)
+    if callable(exposed_secrets):
+        exposed = exposed_secrets()
+    else:
+        from docsgpt.monitors.secret_refs import exposed_values
+
+        exposed = exposed_values((decoded_token or {}).get("sub") or "")
+    return exposed if isinstance(exposed, dict) else {}
+
+
+def _seal_exposed_journal(agent: Any, decoded_token: Optional[Dict], message_id: Optional[str]) -> None:
+    """Rewrite a message's stream journal so it keeps references, not secrets the owner showed the assistant.
+
+    Runs as the stream ends (any exit). A failure is logged, never raised.
+    """
+    if not message_id:
+        return
+    try:
+        exposed = _exposed_for_turn(agent, decoded_token)
+        if not exposed:
+            return
+        from docsgpt.storage.db.repositories.message_events import MessageEventsRepository
+
+        with db_session() as conn:
+            MessageEventsRepository(conn).redact_values(str(message_id), exposed)
+    except Exception:
+        logger.exception("sealing exposed secrets in the stream journal failed")
 
 
 def _native_image_names(agent: Any) -> List[str]:
@@ -1579,6 +1604,7 @@ class BaseAnswerResource:
             if journal_writer is not None:
                 journal_writer.flush()
                 journal_writer.close()
+            response_full, thought = _seal_exposed_text(agent, decoded_token, response_full, thought)
             # Save partial response
 
             # Whether the DB row was flipped to ``complete`` during this
@@ -1797,6 +1823,7 @@ class BaseAnswerResource:
                 surface="v1" if getattr(agent, "is_v1", False) is True else "chat",
                 image_names=_native_image_names(agent),
             )
+            response_full, thought = _seal_exposed_text(agent, decoded_token, response_full, thought)
             trace = tracing.current_trace()
             if trace is not None:
                 trace.outcome = tracing.STATUS_ERROR
@@ -1904,6 +1931,8 @@ class BaseAnswerResource:
                     flush_guardrails(reserved_message_id)
                 except Exception:
                     logger.exception("Guardrail audit flush failed")
+            # The journal kept the stream as written; put back any secret the owner showed the assistant.
+            _seal_exposed_journal(agent, decoded_token, reserved_message_id)
 
     def _finalize_stateless_tool_pause(
         self,

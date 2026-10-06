@@ -171,7 +171,8 @@ counted.
 link starts without one and refuses every call (`401`) until the owner pastes it in with **Set signing secret**
 on the link card or on **Settings → Monitors** (`PUT /api/monitors/<id>/secret` with `{"secret": "…"}`). The
 value is checked against the scheme (a Stripe endpoint secret starts with `whsec_`), stored encrypted, audited
-as `monitor.secret_set` without the value, and never shown to the model. Paste a Slack app's secret **before**
+as `monitor.secret_set` without the value, and never shown to the model. The link still gets a `secret_ref`
+at creation; its reference works once the secret is set. Paste a Slack app's secret **before**
 setting its Request URL: Slack verifies the URL at once. The same route replaces a secret DocsGPT generated, for
 any signed scheme.
 
@@ -280,8 +281,9 @@ carries `metadata.wake = {source, ref_id, dedupe_key}` with `source` `monitor`, 
 of time without firing.
 
 The same data is available through `GET /api/monitors` (`conversation_id`, `status=live`) and
-`POST /api/monitors/<id>/pause|resume|cancel`. A link in that list carries its `secret_ref`, `methods`,
-`signature_header`, whether it `has_secret` and whether it is `secret_exposed`, never the secret itself.
+`POST /api/monitors/<id>/pause|resume|cancel`. A link in that list carries its `secret_ref` (the bare id) and
+`secret_placeholder` (`{{link_secret:REF}}`), `methods`, `signature_header`, whether it `has_secret` and whether
+it is `secret_exposed`, never the secret itself.
 
 ## Settings
 

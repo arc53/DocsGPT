@@ -360,7 +360,8 @@ def create(caller: Caller, arguments: Dict[str, Any]) -> Dict[str, Any]:
             scheme = request.source.get("signature", "none") if kind == "webhook" else "none"
             secret = links.new_secret(scheme) if kind == "webhook" else None
             link_repo = TriggerLinksRepository(conn)
-            if secret:
+            if scheme != "none":
+                # Every signed link gets a reference, Stripe's and Slack's too (their secret comes later).
                 ref = _free_ref(link_repo, caller.user_id)
             link_repo.create(
                 monitor_id=monitor["id"],
@@ -532,9 +533,10 @@ def _created_result(
                 f"secret on the link card (or Settings > Monitors); example_curl reads it from ${links.SECRET_ENV}."
             )
         elif scheme in links.SENDER_SECRET_SCHEMES:
-            # Stripe and Slack create the secret: the user pastes it in; there is nothing to show or reference.
+            # Stripe and Slack create the secret: the user pastes it in. The reference works once it is set.
             sender = "Stripe" if scheme == "stripe" else "Slack"
             result["secret"] = None
+            result["secret_ref"] = ref
             result["secret_source"] = "sender"
             result["signing"] = links.signing_instructions(scheme)
             tell += (
@@ -671,7 +673,9 @@ def list_for_conversation(caller: Caller) -> List[Dict[str, Any]]:
     views = [view(row, links_rows=links_by_monitor.get(str(row["id"]), [])) for row in rows]
     for monitor_view, row in zip(views, rows):
         for link_view, link in zip(monitor_view.get("links") or [], links_by_monitor.get(str(row["id"]), [])):
-            if link.get("expose_secret") and link.get("secret_encrypted") and links.link_state(link) == "live":
+            # Only with a reference: that is what storage puts back in the value's place.
+            if (link.get("expose_secret") and link.get("secret_encrypted") and link.get("ref")
+                    and links.link_state(link) == "live"):
                 link_view["secret"] = links.open_secret(link["secret_encrypted"], caller.user_id)
                 link_view["secret_note"] = EXPOSED_NOTE
     return views

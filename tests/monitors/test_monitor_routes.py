@@ -70,7 +70,8 @@ class TestList:
         webhook = next(m for m in body["monitors"] if m["monitor_id"] == hook_id)
         assert webhook["links"][0]["kind"] == "webhook" and webhook["links"][0]["signature"] == "github"
         # The reference is not a secret: the model has it too.
-        assert webhook["links"][0]["secret_ref"] == hook["secret"]
+        assert webhook["links"][0]["secret_ref"] == hook["secret_ref"]
+        assert webhook["links"][0]["secret_placeholder"] == hook["secret"]
         polled = next(m for m in body["monitors"] if m["monitor_id"] == polled_id)
         assert polled["interval"] == "15m" and polled["wakes_left"] == 1 and polled["check_count"] == 1
         with _as("u2"):

@@ -512,3 +512,46 @@ class TestMessageEventsRepository:
         rows = list(repo.read_after(msg))
         assert [r["sequence_no"] for r in rows] == [1]
         assert rows[0]["payload"] == {"prev": True}
+
+
+@pytest.mark.integration
+class TestRedactValues:
+    SECRET = "whsec_0123456789abcdef"
+    REF = "{{link_secret:K7QX2M}}"
+
+    def test_a_secret_split_across_chunks_becomes_its_reference(self, pg_conn):
+        message_id = _seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        chunks = ["Your secret is whsec_01", "23456789", "abcdef, and again ", "whsec_0123456789abcdef", "."]
+        for seq, chunk in enumerate(chunks):
+            repo.record(message_id, seq, "answer", {"type": "answer", "answer": chunk})
+        repo.record(message_id, 5, "thought", {"type": "thought", "thought": "whsec_0123"})
+        repo.record(message_id, 6, "thought", {"type": "thought", "thought": "456789abcdef"})
+        repo.record(
+            message_id, 7, "tool_call",
+            {"type": "tool_call", "data": {"call_id": "c1", "result": f"secret={self.SECRET}"}},
+        )
+        repo.record(message_id, 8, "end", {"type": "end"})
+
+        assert repo.redact_values(message_id, {self.SECRET: self.REF}) == 7
+
+        partial = repo.reconstruct_partial(message_id)
+        assert partial["response"] == f"Your secret is {self.REF}, and again {self.REF}."
+        assert partial["thought"] == self.REF
+        assert partial["tool_calls"][0]["result"] == f"secret={self.REF}"
+        stored = pg_conn.execute(
+            text("SELECT string_agg(payload::text, '') FROM message_events WHERE message_id = CAST(:m AS uuid)"),
+            {"m": message_id},
+        ).scalar()
+        assert "whsec_" not in stored and "0123456789" not in stored
+        rows = list(repo.read_after(message_id))
+        assert rows[0]["payload"] == {"type": "answer", "answer": f"Your secret is {self.REF}"}
+        assert rows[-1]["payload"] == {"type": "end"}
+
+    def test_nothing_to_redact_changes_nothing(self, pg_conn):
+        message_id = _seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        repo.record(message_id, 0, "answer", {"type": "answer", "answer": "whsec_ but not the secret"})
+        assert repo.redact_values(message_id, {self.SECRET: self.REF}) == 0
+        assert repo.redact_values(message_id, {}) == 0
+        assert list(repo.read_after(message_id))[0]["payload"]["answer"] == "whsec_ but not the secret"

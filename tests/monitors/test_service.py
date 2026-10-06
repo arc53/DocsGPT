@@ -438,13 +438,13 @@ class TestSenderSecrets:
              "on_match": "tell me"},
         )
         assert result["secret"] is None and result["secret_source"] == "sender"
-        assert "secret_ref" not in result
+        assert len(result["secret_ref"]) == 6
         assert "Set signing secret" in result["next"] and "Stripe" in result["signing"]
         assert "Stripe-Signature" in result["example_curl"]
         token = result["url"].rsplit("/", 1)[1]
         with mon_db.connect() as conn:
             link = TriggerLinksRepository(conn).get_live(token_hash(token), "webhook")
-        assert link["secret_encrypted"] is None and link["ref"] is None
+        assert link["secret_encrypted"] is None and link["ref"] == result["secret_ref"]
         assert service.reveal_secret(result["monitor_id"], "u1") is None
         assert service.set_secret(result["monitor_id"], "u1", "whsec_pasted_from_stripe_1") == {
             "saved": True, "signature": "stripe"
