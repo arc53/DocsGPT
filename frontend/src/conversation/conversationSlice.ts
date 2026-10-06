@@ -698,6 +698,18 @@ export const fetchAnswer = createAsyncThunk<
 const TAIL_POLL_INTERVAL_MS = 2000;
 const TAIL_MAX_POLL_DURATION_MS = 10 * 60 * 1000;
 
+/** Whether a turn's calls include one paused for the user to decide or run. */
+export function isWaitingOnUser(toolCalls: unknown): boolean {
+  return (
+    Array.isArray(toolCalls) &&
+    toolCalls.some(
+      (call) =>
+        call?.status === 'awaiting_approval' ||
+        call?.status === 'requires_client_execution',
+    )
+  );
+}
+
 export const tailInFlightMessage = createAsyncThunk<
   void,
   { messageId: string; index: number; conversationId: string }
@@ -744,6 +756,13 @@ export const tailInFlightMessage = createAsyncThunk<
             status === 'failed' ? 'failed' : 'idle',
           ),
         );
+        return;
+      }
+      // Paused for the user (an approval, a client-side tool): nothing is
+      // generating, so wait as a live pause does, not with "Generating…"
+      // and Stop. The decision resumes the turn in a new stream.
+      if (isWaitingOnUser(data?.tool_calls)) {
+        dispatch(conversationSlice.actions.setStatus('awaiting_tool_actions'));
         return;
       }
       await new Promise((r) => setTimeout(r, TAIL_POLL_INTERVAL_MS));
@@ -1145,11 +1164,12 @@ export const conversationSlice = createSlice({
       const { index, tail } = action.payload;
       const query = state.queries[index];
       if (!query) return;
-      // A tail is a flat snapshot with no ordering. The live order is left
-      // alone: dropping it here left the stream reducers rebuilding a partial
-      // one from the next delta, which hid every step that came before. It is
-      // rendering that decides, per answer, whether the recorded order still
-      // accounts for the snapshot or synthesis has to take over.
+      // A tail carries the order the server rebuilt from its journal when
+      // it has one; otherwise the live order is left alone: dropping it here
+      // left the stream reducers rebuilding a partial one from the next
+      // delta, which hid every step that came before. It is rendering that
+      // decides, per answer, whether the recorded order still accounts for
+      // the snapshot or synthesis has to take over.
       const status = tail?.status as MessageStatus | undefined;
       query.messageStatus = status;
       query.lastHeartbeatAt = tail?.last_heartbeat_at ?? query.lastHeartbeatAt;
@@ -1182,6 +1202,14 @@ export const conversationSlice = createSlice({
       if (Array.isArray(tail?.tool_calls) && tail.tool_calls.length > 0) {
         query.tool_calls = tail.tool_calls;
       }
+      // The order the turn streamed in, rebuilt by the server from its
+      // journal: without it every tool card renders above the text.
+      const tailSegments = hydrateSegments(
+        tail?.segments,
+        query.response,
+        query.thought,
+      );
+      if (tailSegments) query.segments = tailSegments;
       if (status === 'complete') {
         delete query.error;
         delete query.errorCode;

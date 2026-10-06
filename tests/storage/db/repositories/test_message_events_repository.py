@@ -132,7 +132,40 @@ class TestMessageEventsRepository:
             "thought": "",
             "sources": [],
             "tool_calls": [],
+            "segments": [],
         }
+
+    def test_reconstruct_partial_keeps_the_order_the_parts_streamed_in(self, pg_conn):
+        """A paused turn reloaded mid-way renders its tool card between its paragraphs, as it streamed."""
+        message_id = _seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        repo.record(message_id, 0, "thought", {"type": "thought", "thought": "plan"})
+        repo.record(message_id, 1, "answer", {"type": "answer", "answer": "I'll check. "})
+        repo.record(message_id, 2, "tool_call", {"type": "tool_call", "data": {"call_id": "c1", "status": "pending"}})
+        repo.record(
+            message_id, 3, "tool_call", {"type": "tool_call", "data": {"call_id": "c1", "status": "completed"}}
+        )
+        repo.record(message_id, 4, "answer", {"type": "answer", "answer": "\n\nDone. Now 😀"})
+        repo.record(
+            message_id, 5, "tool_call",
+            {"type": "tool_call", "data": {"call_id": "c2", "status": "awaiting_approval"}},
+        )
+        partial = repo.reconstruct_partial(message_id)
+        assert partial["segments"] == [
+            {"kind": "thought", "length": 4},
+            {"kind": "text", "length": 12},
+            {"kind": "tool", "call_id": "c1"},
+            {"kind": "text", "length": 14},  # the emoji is two UTF-16 units
+            {"kind": "tool", "call_id": "c2"},
+        ]
+        assert [call["status"] for call in partial["tool_calls"]] == ["completed", "awaiting_approval"]
+
+    def test_a_retracted_stream_forgets_its_order(self, pg_conn):
+        message_id = _seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        repo.record(message_id, 0, "answer", {"type": "answer", "answer": "blocked text"})
+        repo.record(message_id, 1, "guardrail", {"type": "guardrail", "retract": True})
+        assert repo.reconstruct_partial(message_id)["segments"] == []
 
     def test_reconstruct_partial_includes_paused_tool_call(self, pg_conn):
         """A paused (awaiting_approval) ``tool_call`` event must surface

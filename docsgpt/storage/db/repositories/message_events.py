@@ -235,6 +235,14 @@ class MessageEventsRepository:
             else:
                 tool_calls[existing] = entry
 
+        from docsgpt.api.answer.segments import AnswerSegments
+
+        # The order the parts streamed in, as the stream records it, so a
+        # reload of an unfinished turn (one paused for approval) renders it
+        # in that order, not with every tool card above the text.
+        segment_holder: dict = {}
+        segments = AnswerSegments(segment_holder)
+
         for row in rows:
             payload = row.payload
             if not isinstance(payload, dict):
@@ -244,10 +252,14 @@ class MessageEventsRepository:
                 chunk = payload.get("answer")
                 if isinstance(chunk, str):
                     response_parts.append(chunk)
+                    segments.answer(chunk)
             elif etype == "thought":
                 chunk = payload.get("thought")
                 if isinstance(chunk, str):
                     thought_parts.append(chunk)
+                    segments.thought(chunk)
+            elif etype == "guardrail" and payload.get("retract"):
+                segments.reset()
             elif etype == "source":
                 src = payload.get("source")
                 if isinstance(src, list):
@@ -267,12 +279,14 @@ class MessageEventsRepository:
                 data = payload.get("data")
                 if isinstance(data, dict):
                     _overlay(data)
+                    segments.tool_call(data)
 
         return {
             "response": "".join(response_parts),
             "thought": "".join(thought_parts),
             "sources": sources,
             "tool_calls": tool_calls,
+            "segments": list(segments.items),
         }
 
     def redact_values(self, message_id: str, values: Mapping[str, str]) -> int:
