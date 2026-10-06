@@ -650,7 +650,7 @@ class TestCleanupPendingToolState:
         assert row.status == "complete"
         assert [c["call_id"] for c in row.tool_calls] == ["call-1", "call-2", "call-3", "call-4", "call-5"]
         assert row.tool_calls[-1]["not_run"] == "expired"
-        ((user, kind, payload), kwargs) = published[0]
+        ((user, kind, payload), _) = published[0]
         assert (user, kind) == (USER, "tool.approval.cleared")
         assert payload == {
             "conversation_id": turn["conversation_id"],

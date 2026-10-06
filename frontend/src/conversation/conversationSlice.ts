@@ -1422,7 +1422,8 @@ conversationListenerMiddleware.startListening({
 
 // A turn this chat shows waiting on an approval was moved past in another tab
 // (or the request expired): reload it so the card becomes the call that never
-// ran. Not mid-stream — the tab that moved on marks it itself.
+// ran. Never mid-stream: a reload then would drop the stream's later chunks,
+// so it waits for the stream (or a tail that may still hold the old turn) to end.
 conversationListenerMiddleware.startListening({
   actionCreator: sseEventReceived,
   effect: async (action: PayloadAction<SSEEvent>, listenerApi) => {
@@ -1433,12 +1434,18 @@ conversationListenerMiddleware.startListening({
     const conversationId =
       (payload.conversation_id as string | undefined) || envelope.scope?.id;
     const state = listenerApi.getState() as RootState;
-    if (
-      !conversationId ||
-      state.conversation.conversationId !== conversationId ||
-      state.conversation.status === 'loading'
-    )
+    if (!conversationId || state.conversation.conversationId !== conversationId)
       return;
+    if (state.conversation.status === 'loading') {
+      const ended = await listenerApi.condition(
+        (_, current) =>
+          (current as RootState).conversation.status !== 'loading',
+        CONTINUATION_REFRESH_WAIT_MS,
+      );
+      const after = listenerApi.getState() as RootState;
+      if (!ended || after.conversation.conversationId !== conversationId)
+        return;
+    }
     listenerApi.dispatch(loadConversation({ id: conversationId, force: true }));
   },
 });

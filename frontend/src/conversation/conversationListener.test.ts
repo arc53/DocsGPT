@@ -367,12 +367,29 @@ describe('conversation listener — tool.approval.cleared', () => {
     expect(conversationService.getConversation).not.toHaveBeenCalled();
   });
 
-  it('never interrupts the stream of the turn that moved on', async () => {
+  it('never interrupts a stream, and reloads once it ends', async () => {
     const store = makeStore('conv-1', 'loading');
     store.dispatch(sseEventReceived(CLEARED('moved_on')));
     await settle();
     expect(conversationService.getConversation).not.toHaveBeenCalled();
     expect(store.getState().conversation.status).toBe('loading');
+
+    store.dispatch(conversationSlice.actions.setStatus('idle'));
+    await settle();
+    expect(conversationService.getConversation).toHaveBeenCalledWith(
+      'conv-1',
+      'tok-1',
+    );
+  });
+
+  it('not after a stream if the user left that conversation meanwhile', async () => {
+    const store = makeStore('conv-1', 'loading');
+    store.dispatch(sseEventReceived(CLEARED('expired')));
+    await settle();
+    store.dispatch(conversationSlice.actions.setConversationId('conv-2'));
+    store.dispatch(conversationSlice.actions.setStatus('idle'));
+    await settle();
+    expect(conversationService.getConversation).not.toHaveBeenCalled();
   });
 
   it('ignores another conversation', async () => {
