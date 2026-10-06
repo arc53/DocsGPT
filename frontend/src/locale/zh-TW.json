@@ -3266,6 +3266,17 @@
       "wakesLeft": "剩餘喚醒次數",
       "expires": "到期",
       "actions": "操作"
+    },
+    "linkCard": {
+      "title": "Webhook 連結",
+      "copyUrl": "複製連結",
+      "revealSecret": "顯示密鑰",
+      "hideSecret": "隱藏密鑰",
+      "copySecret": "複製密鑰",
+      "secretNote": "只有你能看到簽章密鑰，助理看不到。將它設為 DOCSGPT_WEBHOOK_SECRET 即可執行範例指令，或貼到傳送方的密鑰欄位。",
+      "revealFailed": "無法載入密鑰，請再試一次。",
+      "revealLimited": "請求過多，請一分鐘後再試。",
+      "revealMissing": "此連結已沒有密鑰：它已結束或已被取消。"
     }
   }
 }

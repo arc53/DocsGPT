@@ -6,6 +6,7 @@ import SchedulerToolCallCard from '../agents/schedules/SchedulerToolCallCard';
 import BackgroundJobCard from '../backgroundJobs/BackgroundJobCard';
 import { Button } from '../components/ui/button';
 import { usePacedText } from '../hooks';
+import MonitorLinkCard, { parseMonitorLink } from '../monitors/MonitorLinkCard';
 import {
   getToolChipLabel,
   isToolCallRunning,
@@ -173,6 +174,16 @@ export default function AnswerFlow({
                 agentId={agentId}
               />
             </div>
+          );
+
+        const monitorLink =
+          call.tool_name === 'monitor' ? parseMonitorLink(call.result) : null;
+        if (monitorLink)
+          return (
+            <MonitorLinkCard
+              key={`monitor-link-${call.call_id}`}
+              link={monitorLink}
+            />
           );
 
         return (

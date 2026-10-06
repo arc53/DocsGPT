@@ -3265,6 +3265,17 @@
       "wakesLeft": "剩余唤醒次数",
       "expires": "到期",
       "actions": "操作"
+    },
+    "linkCard": {
+      "title": "Webhook 链接",
+      "copyUrl": "复制链接",
+      "revealSecret": "显示密钥",
+      "hideSecret": "隐藏密钥",
+      "copySecret": "复制密钥",
+      "secretNote": "只有你能看到签名密钥，助手看不到。将它设置为 DOCSGPT_WEBHOOK_SECRET 即可运行示例命令，或将它粘贴到发送方的密钥字段中。",
+      "revealFailed": "无法加载密钥，请重试。",
+      "revealLimited": "请求过多，请一分钟后再试。",
+      "revealMissing": "此链接已没有密钥：它已结束或已被取消。"
     }
   }
 }

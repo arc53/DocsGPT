@@ -3323,6 +3323,17 @@
       "wakesLeft": "Wakes left",
       "expires": "Expires",
       "actions": "Actions"
+    },
+    "linkCard": {
+      "title": "Webhook link",
+      "copyUrl": "Copy link",
+      "revealSecret": "Reveal secret",
+      "hideSecret": "Hide secret",
+      "copySecret": "Copy secret",
+      "secretNote": "Only you can see the signing secret; the assistant never does. Set it as DOCSGPT_WEBHOOK_SECRET to run the example command, or paste it into the sender's secret field.",
+      "revealFailed": "Couldn't load the secret. Try again.",
+      "revealLimited": "Too many requests. Try again in a minute.",
+      "revealMissing": "This link has no secret any more: it ended or was cancelled."
     }
   }
 }

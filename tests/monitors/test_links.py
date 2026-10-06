@@ -86,13 +86,39 @@ class TestUrls:
 
 class TestExamples:
     def test_unsigned_curl_posts_json(self):
-        command = links.example_curl("https://h/api/triggers/t", "none", None)
+        command = links.example_curl("https://h/api/triggers/t", "none")
         assert command.startswith("curl -X POST 'https://h/api/triggers/t'")
 
     @pytest.mark.parametrize("scheme,header", [("github", "X-Hub-Signature-256"), ("hmac_sha256", "X-Signature")])
-    def test_hmac_curl_signs_the_body(self, scheme, header):
-        command = links.example_curl("https://h/t", scheme, "sek")
-        assert header in command and "openssl dgst -sha256 -hmac 'sek'" in command
+    def test_hmac_curl_signs_the_body_with_the_secret_from_the_environment(self, scheme, header):
+        command = links.example_curl("https://h/t", scheme)
+        assert header in command and 'openssl dgst -sha256 -hmac "$DOCSGPT_WEBHOOK_SECRET"' in command
+
+    def test_standard_webhooks_curl_reads_the_secret_from_the_environment(self):
+        command = links.example_curl("https://h/t", "standard_webhooks")
+        assert '"${DOCSGPT_WEBHOOK_SECRET#whsec_}"' in command and "whsec_" not in command.replace("#whsec_", "")
+        assert "webhook-signature: v1,$sig" in command
+
+    @pytest.mark.parametrize("scheme", ["github", "hmac_sha256"])
+    def test_the_hmac_command_signs_correctly(self, scheme, tmp_path):
+        """Run the command's signing half in a shell and check it against the server's own HMAC."""
+        import hashlib
+        import hmac
+        import os
+        import shutil
+        import subprocess
+
+        if not shutil.which("openssl") or not shutil.which("bash"):
+            pytest.skip("needs bash and openssl")
+        command = links.example_curl("https://h/t", scheme)
+        signing = command.split("; curl ", 1)[0] + '; printf %s "$sig"'
+        secret = links.new_secret(scheme)
+        out = subprocess.run(
+            ["bash", "-c", signing], capture_output=True, text=True, env={**os.environ, "DOCSGPT_WEBHOOK_SECRET": secret},
+            check=True,
+        ).stdout.strip()
+        body = '{"status":"success","detail":"example"}'
+        assert out == hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
 
     def test_link_view_hides_the_hash_and_secret(self):
         view = links.link_view({"id": "1", "kind": "webhook", "token_hash": "h", "secret_encrypted": "s"})

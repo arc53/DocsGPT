@@ -113,3 +113,66 @@ class TestActions:
         polled_id, _hook_id, _hook = made
         with _as("u1"):
             assert client.post(f"/api/monitors/{polled_id}/delete").status_code == 404
+
+
+class TestRevealSecret:
+    def _secret(self, mon_db, monitor_id):
+        from sqlalchemy import text
+
+        from docsgpt.monitors import links
+
+        with mon_db.connect() as conn:
+            sealed = conn.execute(
+                text("SELECT secret_encrypted FROM trigger_links WHERE monitor_id = CAST(:m AS uuid)"),
+                {"m": monitor_id},
+            ).scalar()
+        return links.open_secret(sealed, "u1")
+
+    def test_the_owner_gets_the_secret_uncached_and_audited(self, client, made, mon_db, caplog):
+        _polled_id, hook_id, hook = made
+        with _as("u1"):
+            response = client.get(f"/api/monitors/{hook_id}/secret")
+        assert response.status_code == 200
+        body = response.get_json()
+        secret = self._secret(mon_db, hook_id)
+        assert body == {"secret": secret, "signature": "github"}
+        assert response.headers["Cache-Control"] == "no-store"
+        assert hook["secret"] != secret and secret not in str(hook)
+        assert secret not in caplog.text
+        from sqlalchemy import text
+
+        with mon_db.connect() as conn:
+            audit = conn.execute(
+                text("SELECT user_id, metadata::text FROM auth_events WHERE event = 'monitor.secret_revealed'")
+            ).fetchall()
+        assert len(audit) == 1 and audit[0][0] == "u1"
+        assert hook_id in audit[0][1] and secret not in audit[0][1]
+
+    def test_nobody_else_and_no_unsigned_or_ended_link(self, client, made):
+        polled_id, hook_id, _hook = made
+        with _as("u2"):
+            assert client.get(f"/api/monitors/{hook_id}/secret").status_code == 404
+        with patch("docsgpt.app.handle_auth", return_value=None):
+            assert client.get(f"/api/monitors/{hook_id}/secret").status_code == 401
+        with _as("u1"):
+            assert client.get(f"/api/monitors/{polled_id}/secret").status_code == 404
+            assert client.get("/api/monitors/not-a-uuid/secret").status_code == 404
+            client.post(f"/api/monitors/{hook_id}/cancel")
+            assert client.get(f"/api/monitors/{hook_id}/secret").status_code == 404
+
+    def test_rate_limited(self, client, made, monkeypatch, fake_redis):
+        from docsgpt.api.user.monitors import routes
+
+        monkeypatch.setattr("docsgpt.cache.get_redis_instance", lambda: fake_redis)
+        _polled_id, hook_id, _hook = made
+        with _as("u1"):
+            statuses = [
+                client.get(f"/api/monitors/{hook_id}/secret").status_code
+                for _ in range(routes.SECRET_REVEALS_PER_MINUTE + 1)
+            ]
+        assert statuses[0] == 200 and statuses[-1] == 429
+
+    def test_an_access_token_can_never_read_it(self):
+        from docsgpt.api.pat.rules import DENIED
+
+        assert DENIED["/api/monitors/<string:monitor_id>/secret"] == ("*",)

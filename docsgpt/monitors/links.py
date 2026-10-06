@@ -2,7 +2,10 @@
 
 A token is 32 random bytes (``secrets.token_urlsafe``), shown once in the
 tool result; only its sha256 is stored, and a link is looked up by that
-hash. Webhook secrets are random too and stored encrypted for the owner.
+hash. Webhook secrets are random too and stored encrypted for the owner. The
+model never sees a secret: the tool result carries :data:`SECRET_PLACEHOLDER`
+and an example command that reads :data:`SECRET_ENV`, and the owner reveals the
+secret in the chat (``GET /api/monitors/<id>/secret``).
 
 URLs are absolute, built from ``PUBLIC_API_BASE_URL`` (else ``API_URL``);
 approval pages from ``PUBLIC_APP_URL`` when the UI runs elsewhere. A base
@@ -30,6 +33,12 @@ TOKEN_BYTES = 32
 WEBHOOK_MAX_HITS = 1000
 
 _TOKEN_PREFIX = {"webhook": "trg_", "approval": "apv_"}
+
+#: What the model is given in place of a signing secret.
+SECRET_PLACEHOLDER = "hidden from you; the user reveals it on the link card in this chat"
+
+#: The environment variable the example command reads the secret from.
+SECRET_ENV = "DOCSGPT_WEBHOOK_SECRET"
 
 
 def new_token(kind: str) -> str:
@@ -134,21 +143,25 @@ def reachability(url: str) -> Tuple[bool, Optional[str]]:
 _EXAMPLE_BODY = {"status": "success", "detail": "example"}
 
 
-def example_curl(url: str, scheme: str, secret: Optional[str]) -> str:
-    """A command that calls the link correctly for its signature scheme."""
+def example_curl(url: str, scheme: str) -> str:
+    """A command that calls the link correctly for its signature scheme.
+
+    A signed link's command reads the secret from ``$DOCSGPT_WEBHOOK_SECRET``,
+    so the command can be shown to the model and kept in the chat.
+    """
     body = json.dumps(_EXAMPLE_BODY, separators=(",", ":"))
-    if scheme in ("github", "hmac_sha256") and secret:
+    if scheme in ("github", "hmac_sha256"):
         header = "X-Hub-Signature-256" if scheme == "github" else "X-Signature"
         return (
             f"body='{body}'; "
-            f"sig=$(printf '%s' \"$body\" | openssl dgst -sha256 -hmac '{secret}' | sed 's/^.* //'); "
+            f"sig=$(printf '%s' \"$body\" | openssl dgst -sha256 -hmac \"${SECRET_ENV}\" | sed 's/^.* //'); "
             f"curl -X POST '{url}' -H 'Content-Type: application/json' -H \"{header}: sha256=$sig\" "
             "--data-raw \"$body\""
         )
-    if scheme == "standard_webhooks" and secret:
+    if scheme == "standard_webhooks":
         return (
-            f"secret='{secret}'; body='{body}'; id=\"msg_$(date +%s)\"; ts=$(date +%s); "
-            "key=$(printf '%s' \"${secret#whsec_}\" | base64 -d | xxd -p | tr -d '\\n'); "
+            f"body='{body}'; id=\"msg_$(date +%s)\"; ts=$(date +%s); "
+            f"key=$(printf '%s' \"${{{SECRET_ENV}#whsec_}}\" | base64 -d | xxd -p | tr -d '\\n'); "
             "sig=$(printf '%s' \"$id.$ts.$body\" | openssl dgst -sha256 -mac HMAC -macopt hexkey:$key -binary "
             "| base64); "
             f"curl -X POST '{url}' -H 'Content-Type: application/json' -H \"webhook-id: $id\" "
@@ -162,8 +175,8 @@ def signing_instructions(scheme: str) -> Optional[str]:
     return {
         "github": (
             "In the repository's Settings > Webhooks > Add webhook: Payload URL = the url, Content type = "
-            "application/json, Secret = the secret, then pick the events. GitHub signs each delivery with "
-            "X-Hub-Signature-256."
+            "application/json, Secret = the secret from the link card, then pick the events. GitHub signs each "
+            "delivery with X-Hub-Signature-256."
         ),
         "hmac_sha256": (
             "Sign the raw request body with HMAC-SHA256 using the secret and send it as "

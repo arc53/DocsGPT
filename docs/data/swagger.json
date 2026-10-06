@@ -4291,6 +4291,29 @@
         }
       ]
     },
+    "/api/monitors/{monitor_id}/secret": {
+      "get": {
+        "description": "The signing secret of one of the caller's webhook monitors, so the owner can configure the sender. Only the owner's session may read it (never an access token); the model only ever sees a placeholder. Rate limited, audited, never cached or logged. 404 when the monitor has no live signed link.",
+        "operationId": "get_monitor_secret",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "monitors"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "monitor_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
     "/api/monitors/{monitor_id}/{action}": {
       "parameters": [
         {

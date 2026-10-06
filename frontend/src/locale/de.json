@@ -3278,6 +3278,17 @@
       "wakesLeft": "Weckungen übrig",
       "expires": "Läuft ab",
       "actions": "Aktionen"
+    },
+    "linkCard": {
+      "title": "Webhook-Link",
+      "copyUrl": "Link kopieren",
+      "revealSecret": "Geheimnis anzeigen",
+      "hideSecret": "Geheimnis ausblenden",
+      "copySecret": "Geheimnis kopieren",
+      "secretNote": "Nur du siehst das Signaturgeheimnis, der Assistent nie. Setze es als DOCSGPT_WEBHOOK_SECRET, um den Beispielbefehl auszuführen, oder füge es beim Absender in das Feld für das Geheimnis ein.",
+      "revealFailed": "Das Geheimnis konnte nicht geladen werden. Versuch es noch einmal.",
+      "revealLimited": "Zu viele Anfragen. Versuch es in einer Minute noch einmal.",
+      "revealMissing": "Dieser Link hat kein Geheimnis mehr: Er ist abgelaufen oder wurde beendet."
     }
   }
 }

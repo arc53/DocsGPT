@@ -50,6 +50,7 @@ _NAMESPACES: dict[str, str] = {
     "source": "data",
     "agent": "data",
     "conversation": "data",
+    "monitor": "data",
     "device": "device",
     "guardrail": "safety",
 }

@@ -24,6 +24,12 @@ export type DecisionResult =
   | { state: 'invalid'; message: string }
   | { state: 'error' };
 
+export type SecretResult =
+  | { state: 'ok'; secret: string }
+  | { state: 'missing' }
+  | { state: 'limited' }
+  | { state: 'error' };
+
 const monitorsService = {
   /** The public approval page's data. No token: the link's own token is the credential. */
   getApproval: async (linkToken: string): Promise<ApprovalResult> => {
@@ -82,6 +88,30 @@ const monitorsService = {
     if (!r.ok) throw new Error(`Listing monitors failed: ${r.status}`);
     const body = await bodyOf<{ monitors?: Monitor[] }>(r);
     return body?.monitors ?? [];
+  },
+
+  /**
+   * A webhook monitor's signing secret, for its owner. The value is shown in
+   * the chat's link card only: never stored in the app's state or logged.
+   */
+  revealSecret: async (
+    id: string,
+    token: string | null,
+  ): Promise<SecretResult> => {
+    try {
+      const r: Response = await apiClient.get(
+        endpoints.USER.MONITOR_SECRET(id),
+        token,
+      );
+      if (r.status === 404) return { state: 'missing' };
+      if (r.status === 429) return { state: 'limited' };
+      const body = r.ok ? await bodyOf<{ secret?: string }>(r) : undefined;
+      return body?.secret
+        ? { state: 'ok', secret: body.secret }
+        : { state: 'error' };
+    } catch {
+      return { state: 'error' };
+    }
   },
 
   /** Pause, resume or cancel a monitor; resolves with the monitor after the change. */

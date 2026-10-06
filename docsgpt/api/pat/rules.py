@@ -357,6 +357,8 @@ DENIED: dict[str, tuple[str, ...]] = {
     # Monitor links: public, the token in the path is the credential (no session or PAT).
     "/api/triggers/<string:token>": ("*",),
     "/api/approvals/<string:token>": ("*",),
+    # A webhook's signing secret is shown to its owner in the app only.
+    "/api/monitors/<string:monitor_id>/secret": ("*",),
     "/api/images/<string:agent_id>/<string:capability>": ("*",),
     "/api/mcp_server/callback": ("*",),
     "/api/mcp_server/auth_status": ("*",),

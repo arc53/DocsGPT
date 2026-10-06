@@ -3278,6 +3278,17 @@
       "wakesLeft": "Avisos restantes",
       "expires": "Caduca",
       "actions": "Acciones"
+    },
+    "linkCard": {
+      "title": "Enlace webhook",
+      "copyUrl": "Copiar enlace",
+      "revealSecret": "Mostrar secreto",
+      "hideSecret": "Ocultar secreto",
+      "copySecret": "Copiar secreto",
+      "secretNote": "Solo tú puedes ver el secreto de firma; el asistente nunca lo ve. Defínelo como DOCSGPT_WEBHOOK_SECRET para ejecutar el comando de ejemplo, o pégalo en el campo de secreto del remitente.",
+      "revealFailed": "No se pudo cargar el secreto. Inténtalo de nuevo.",
+      "revealLimited": "Demasiadas solicitudes. Inténtalo de nuevo en un minuto.",
+      "revealMissing": "Este enlace ya no tiene secreto: terminó o se canceló."
     }
   }
 }

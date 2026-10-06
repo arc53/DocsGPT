@@ -235,6 +235,8 @@ const endpoints = {
         : '/api/monitors',
     MONITOR_ACTION: (id: string, action: 'pause' | 'resume' | 'cancel') =>
       `/api/monitors/${encodeURIComponent(id)}/${action}`,
+    MONITOR_SECRET: (id: string) =>
+      `/api/monitors/${encodeURIComponent(id)}/secret`,
     APPROVAL: (token: string) => `/api/approvals/${encodeURIComponent(token)}`,
   },
   V1: {

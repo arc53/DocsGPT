@@ -93,8 +93,8 @@ paused the same way. A monitor that expires without ever firing says so once. Si
 
 ## Trigger links
 
-A `webhook` monitor returns an absolute URL built from `PUBLIC_API_BASE_URL` (else `API_URL`), an `example_curl`
-and, for a signed link, its `secret`, shown only once:
+A `webhook` monitor returns an absolute URL built from `PUBLIC_API_BASE_URL` (else `API_URL`) and an
+`example_curl`:
 
 ```json
 {
@@ -102,10 +102,17 @@ and, for a signed link, its `secret`, shown only once:
   "url": "https://docs.example.com/api/triggers/trg_…",
   "method": "POST",
   "signature": "github",
-  "secret": "…",
+  "secret": "hidden from you; the user reveals it on the link card in this chat",
   "reachable_from_internet": true
 }
 ```
+
+The model never sees a signed link's secret, so it never reaches the provider, the conversation, the tool-call
+journal, the logs or the traces. The chat shows the link as a card with the URL and, for a signed link, a
+**Reveal secret** button for the conversation's owner; the `example_curl` reads the secret from
+`$DOCSGPT_WEBHOOK_SECRET`. The button calls `GET /api/monitors/<id>/secret`, which only the owner's own session
+may use (never an access token). It is rate limited, audited as `monitor.secret_revealed` and never cached, and
+it answers `404` once the link has ended. The secret is stored only encrypted, in `trigger_links`.
 
 - **POST only.** `GET` answers `405` with a short note, because link previews and mail scanners fetch links.
 - **Signatures.** `standard_webhooks` verifies `webhook-id`, `webhook-timestamp` and `webhook-signature` (any

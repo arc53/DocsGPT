@@ -105,6 +105,20 @@ class TriggerLinksRepository:
         ).fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def get_live_signed(self, monitor_id: str) -> Optional[dict]:
+        """A monitor's live signed webhook link (its secret is what the owner may reveal), or None."""
+        if not looks_like_uuid(str(monitor_id)):
+            return None
+        row = self._conn.execute(
+            text(
+                "SELECT * FROM trigger_links WHERE monitor_id = CAST(:m AS uuid) AND kind = 'webhook' "
+                f"AND secret_encrypted IS NOT NULL AND {_LIVE} AND hit_count < max_hits "
+                "ORDER BY created_at DESC LIMIT 1"
+            ),
+            {"m": str(monitor_id)},
+        ).fetchone()
+        return row_to_dict(row) if row is not None else None
+
     def list_for_monitor(self, monitor_id: str) -> List[dict]:
         """A monitor's links, oldest first."""
         rows = self._conn.execute(

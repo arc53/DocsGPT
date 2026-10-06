@@ -96,6 +96,7 @@ class TestCategories:
             ("source.deleted", "data"),
             ("agent.created", "data"),
             ("conversation.deleted", "data"),
+            ("monitor.secret_revealed", "data"),
         ],
     )
     def test_known_events(self, event, expected):

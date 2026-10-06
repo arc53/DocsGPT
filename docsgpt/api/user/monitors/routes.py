@@ -32,6 +32,9 @@ _LIVE = ("active", "paused")
 _ACTIONS = ("pause", "resume", "cancel")
 _PAST = {"pause": "paused", "resume": "resumed", "cancel": "cancelled"}
 
+#: Secret reveals one user may make per minute.
+SECRET_REVEALS_PER_MINUTE = 10
+
 
 def _user_id() -> Optional[str]:
     decoded = getattr(request, "decoded_token", None)
@@ -92,6 +95,37 @@ class MonitorDetail(Resource):
                 return _err("Monitor not found", 404)
             view = _views(conn, [row])[0]
         return make_response(jsonify({"monitor": view}), 200)
+
+
+@monitors_ns.route("/monitors/<string:monitor_id>/secret")
+class MonitorSecret(Resource):
+    @api.doc(
+        description=(
+            "The signing secret of one of the caller's webhook monitors, so the owner can configure the sender. "
+            "Only the owner's session may read it (never an access token); the model only ever sees a "
+            "placeholder. Rate limited, audited, never cached or logged. 404 when the monitor has no live signed "
+            "link."
+        )
+    )
+    def get(self, monitor_id: str):
+        from docsgpt.monitors.triggers import rate_limited
+
+        user_id = _user_id()
+        if not user_id:
+            return _err("Unauthorized", 401)
+        if rate_limited("secret", user_id, SECRET_REVEALS_PER_MINUTE):
+            return _err("Too many requests; try again in a minute", 429)
+        try:
+            revealed = service.reveal_secret(monitor_id, user_id)
+        except Exception:
+            # Never log the exception text: it could carry the value.
+            logger.error("revealing a monitor secret failed (%s)", monitor_id)
+            return _err("Failed to read the secret", 500)
+        if revealed is None:
+            return _err("No signing secret for this monitor", 404)
+        response = make_response(jsonify(revealed), 200)
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
 
 @monitors_ns.route("/monitors/<string:monitor_id>/<string:action>")

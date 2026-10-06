@@ -3266,6 +3266,17 @@
       "wakesLeft": "残り通知回数",
       "expires": "期限",
       "actions": "操作"
+    },
+    "linkCard": {
+      "title": "Webhook リンク",
+      "copyUrl": "リンクをコピー",
+      "revealSecret": "シークレットを表示",
+      "hideSecret": "シークレットを隠す",
+      "copySecret": "シークレットをコピー",
+      "secretNote": "署名シークレットを見られるのはあなただけで、アシスタントには見えません。サンプルコマンドを実行するには DOCSGPT_WEBHOOK_SECRET に設定するか、送信元のシークレット欄に貼り付けてください。",
+      "revealFailed": "シークレットを読み込めませんでした。もう一度お試しください。",
+      "revealLimited": "リクエストが多すぎます。1 分後にもう一度お試しください。",
+      "revealMissing": "このリンクにはもうシークレットがありません。終了したか、中止されました。"
     }
   }
 }

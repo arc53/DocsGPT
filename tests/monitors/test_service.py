@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import text
 
 from docsgpt.core.settings import settings
-from docsgpt.monitors import service, sources
+from docsgpt.monitors import links, service, sources
 from docsgpt.monitors.checks import Content
 from docsgpt.monitors.fetch import SourceUnreachable
 from docsgpt.monitors.links import token_hash
@@ -238,15 +238,25 @@ class TestLinkCreate:
             },
         )
         assert result["url"].startswith("https://docs.example.com/api/triggers/trg_")
-        assert result["secret"].startswith("whsec_")
+        # The model gets a placeholder; the real secret is only ever revealed to the owner.
+        assert result["secret"] == links.SECRET_PLACEHOLDER
         assert result["reachable_from_internet"] is True and "reachability_note" not in result
         assert "curl -X POST" in result["example_curl"] and result["method"] == "POST"
+        assert "$DOCSGPT_WEBHOOK_SECRET" in result["example_curl"] or "${DOCSGPT_WEBHOOK_SECRET" in result[
+            "example_curl"]
+        assert "Reveal secret" in result["next"]
         token = result["url"].rsplit("/", 1)[1]
         with mon_db.connect() as conn:
             link = TriggerLinksRepository(conn).get_live(token_hash(token), "webhook")
             raw = conn.execute(text("SELECT token_hash, secret_encrypted FROM trigger_links")).fetchone()
         assert link["signature_scheme"] == "standard_webhooks"
-        assert token not in raw[0] and result["secret"] not in (raw[1] or "")
+        secret = links.open_secret(raw[1], "u1")
+        assert secret.startswith("whsec_")
+        assert token not in raw[0] and secret not in raw[1] and secret not in str(result)
+        assert service.reveal_secret(result["monitor_id"], "u1") == {
+            "secret": secret, "signature": "standard_webhooks"
+        }
+        assert service.reveal_secret(result["monitor_id"], "u2") is None
         assert events[-1]["type"] == "monitor.updated" and events[-1]["payload"]["status"] == "active"
 
     def test_local_base_is_flagged(self, monkeypatch, conversation_id, events):

@@ -369,7 +369,8 @@ def create(caller: Caller, arguments: Dict[str, Any]) -> Dict[str, Any]:
                 ),
             )
     publish_monitor_updated(monitor)
-    return _created_result(request, monitor, baseline=baseline, already=already, token=link_token, secret=secret)
+    return _created_result(request, monitor, baseline=baseline, already=already, token=link_token,
+                           signed=bool(secret))
 
 
 def _created_result(
@@ -379,7 +380,7 @@ def _created_result(
     baseline: Optional[Dict[str, Any]],
     already: bool,
     token: Optional[str],
-    secret: Optional[str],
+    signed: bool,
 ) -> Dict[str, Any]:
     kind = request.source["type"]
     result: Dict[str, Any] = {
@@ -412,13 +413,17 @@ def _created_result(
     if kind == "webhook" and token:
         url = links.trigger_url(token)
         scheme = request.source.get("signature", "none")
-        result.update({"url": url, "method": "POST", "signature": scheme, "example_curl": links.example_curl(
-            url, scheme, secret
-        )})
-        if secret:
-            result["secret"] = secret
+        result.update(
+            {"url": url, "method": "POST", "signature": scheme, "example_curl": links.example_curl(url, scheme)}
+        )
+        if signed:
+            # The model never sees the secret: the user reveals it on the link card (GET /api/monitors/<id>/secret).
+            result["secret"] = links.SECRET_PLACEHOLDER
             result["signing"] = links.signing_instructions(scheme)
-            tell += " Give the user the url and the secret now; the secret is shown only this once."
+            tell += (
+                " Give the user the url (POST only). You never see the signing secret: the user reveals it with "
+                f"Reveal secret on the link card in this chat; example_curl reads it from ${links.SECRET_ENV}."
+            )
         else:
             tell += " Give the user the url (POST only; a GET does nothing)."
         _add_reachability(result, url)
@@ -447,6 +452,37 @@ def _add_reachability(result: Dict[str, Any], url: str) -> None:
 # ----------------------------------------------------------------------
 # List and manage
 # ----------------------------------------------------------------------
+
+
+def reveal_secret(monitor_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+    """The signing secret of an owned webhook monitor's live link, for the owner only.
+
+    Records an audit event (never the value). The caller must not log what
+    this returns.
+
+    Args:
+        monitor_id: The monitor.
+        user_id: Its owner (anyone else gets None).
+
+    Returns:
+        ``{"secret", "signature"}``, or None when the monitor isn't the
+        caller's or has no live signed link.
+    """
+    from docsgpt.api.audit import record_event
+
+    with db_session() as conn:
+        monitor = MonitorsRepository(conn).get(monitor_id, user_id)
+        if monitor is None or monitor.get("source_type") != "webhook":
+            return None
+        link = TriggerLinksRepository(conn).get_live_signed(str(monitor["id"]))
+        if link is None:
+            return None
+        secret = links.open_secret(link["secret_encrypted"], user_id)
+        if not secret:
+            return None
+        record_event(conn, "monitor.secret_revealed", actor=user_id, monitor_id=str(monitor["id"]),
+                     link_id=str(link["id"]))
+    return {"secret": secret, "signature": link.get("signature_scheme")}
 
 
 def view(monitor: Dict[str, Any], *, links_rows: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:

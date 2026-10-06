@@ -75,8 +75,8 @@ def _get(headers: Mapping[str, str], name: str) -> Optional[str]:
     return None
 
 
-def _rate_limited(scope: str, link_id: str, limit: int) -> bool:
-    """A fixed one-minute window per link in Redis; without Redis nothing is limited (max_hits still caps)."""
+def rate_limited(scope: str, link_id: str, limit: int) -> bool:
+    """A fixed one-minute window per key (a link, a user) in Redis; without Redis nothing is limited."""
     try:
         from docsgpt.cache import get_redis_instance
 
@@ -149,7 +149,7 @@ def accept_delivery(token: str, *, body: bytes, headers: Mapping[str, str], cont
     if link is None:
         return NOT_FOUND
     link_id = str(link["id"])
-    if _rate_limited("trigger", link_id, int(settings.TRIGGER_RATE_PER_MINUTE)):
+    if rate_limited("trigger", link_id, int(settings.TRIGGER_RATE_PER_MINUTE)):
         return 429, {"error": "too many requests to this link; retry in a minute"}
     if len(body) > int(settings.TRIGGER_MAX_PAYLOAD_BYTES):
         return 413, {"error": f"the body is larger than {settings.TRIGGER_MAX_PAYLOAD_BYTES} bytes"}
@@ -249,7 +249,7 @@ def decide(token: str, *, decision: Any, comment: Any, headers: Mapping[str, str
     if link is None:
         return NOT_FOUND
     link_id = str(link["id"])
-    if _rate_limited("approval", link_id, APPROVAL_RATE_PER_MINUTE):
+    if rate_limited("approval", link_id, APPROVAL_RATE_PER_MINUTE):
         return 429, {"error": "too many requests to this link; retry in a minute"}
     if _own_request(headers):
         return 403, {"error": "the agent can't decide its own approval link"}
