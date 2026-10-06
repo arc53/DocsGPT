@@ -83,6 +83,12 @@ describe('conversationIdFromPath', () => {
     expect(conversationIdFromPath('/settings')).toBeNull();
     expect(conversationIdFromPath('/c/abc/extra')).toBeNull();
   });
+
+  it('is null for a malformed escape instead of throwing', () => {
+    expect(conversationIdFromPath('/c/%E0%A4%A')).toBeNull();
+    expect(conversationIdFromPath('/c/%')).toBeNull();
+    expect(conversationIdFromPath('/c/a%20b')).toBe('a b');
+  });
 });
 
 describe('isFreshEvent', () => {
@@ -118,6 +124,14 @@ describe('background listener', () => {
     store.dispatch(sseEventReceived(notification()));
     await flush();
     expect(selectIsUnread('c1')(store.getState())).toBe(true);
+  });
+
+  it('not from a replayed backlog event (the server listing says what is unread)', async () => {
+    const store = makeStore();
+    const old = new Date(Date.now() - FRESH_EVENT_MS - 1000).toISOString();
+    store.dispatch(sseEventReceived(notification({ ts: old })));
+    await flush();
+    expect(selectIsUnread('c1')(store.getState())).toBe(false);
   });
 
   it('not the conversation this visible tab shows', async () => {

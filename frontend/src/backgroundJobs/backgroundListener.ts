@@ -21,7 +21,12 @@ export const FRESH_EVENT_MS = 60_000;
 export function conversationIdFromPath(pathname: string): string | null {
   const match = /^\/(?:agents\/[^/]+\/)?c\/([^/]+)\/?$/.exec(pathname);
   if (!match || match[1] === 'new') return null;
-  return decodeURIComponent(match[1]);
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    // A malformed escape (a mistyped or truncated link) names no conversation.
+    return null;
+  }
 }
 
 export function isFreshEvent(event: SSEEvent, now = Date.now()): boolean {
@@ -51,8 +56,8 @@ type NotificationPayload = {
 /**
  * Side effects of the event stream for background work:
  *
- * - `notification.created` marks its conversation unread (unless this tab
- *   shows it right now) and, when this tab is hidden and the user allowed
+ * - A fresh `notification.created` marks its conversation unread (unless this
+ *   tab shows it right now) and, when this tab is hidden and the user allowed
  *   notifications, shows a system notification: the server sent a toast
  *   because a tab is open, but nobody is looking at it.
  * - A job that just went to the background (`job.updated` working), a
@@ -76,7 +81,8 @@ backgroundListenerMiddleware.startListening({
         conversationId !== null &&
         conversationIdFromPath(currentPath()) === conversationId &&
         pageVisible();
-      if (conversationId && !onIt) {
+      // A replayed backlog event is old news: the server's listing says what is still unread.
+      if (conversationId && !onIt && isFreshEvent(event)) {
         listenerApi.dispatch(markConversationUnread(conversationId));
       }
       if (!pageVisible() && isFreshEvent(event)) {
