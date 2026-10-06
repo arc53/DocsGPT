@@ -20,6 +20,7 @@ from docsgpt.sandbox.base import (
     DetachedState,
     DisplayData,
     ExecResult,
+    FileTooLargeError,
     OpenedSession,
     Plot,
     SandboxGoneError,
@@ -409,6 +410,9 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
         """Build the error for a failed file op; a lost runtime is a ``SandboxGoneError``."""
         if result.runtime_invalidated:
             return SandboxGoneError(f"{op} failed: kernel gone ({result.error_name})")
+        too_large = FileTooLargeError.from_message(result.error_value)
+        if too_large is not None:
+            return too_large
         return IOError(f"{op} failed: {result.error_value}")
 
     def _prime(self, kernel: _Kernel) -> None:

@@ -15,6 +15,7 @@ from docsgpt.sandbox.base import (
     CodeSandbox,
     DetachedState,
     ExecResult,
+    FileTooLargeError,
     OpenedSession,
     SandboxGoneError,
 )
@@ -862,7 +863,7 @@ class DaytonaSandbox(CodeSandbox):
         # The pre-download size guard may be skipped when get_file_info has no size;
         # enforce the cap against the actual payload so an oversized file never slips through.
         if len(data) > self._max_file_bytes:
-            raise IOError(f"file too large: {len(data)} > {self._max_file_bytes} bytes")
+            raise FileTooLargeError(len(data), self._max_file_bytes)
         return data
 
     def _raise_file_error(self, op: str, path: str, session_id: str, handle: "_Handle", exc: Exception) -> None:
@@ -890,7 +891,7 @@ class DaytonaSandbox(CodeSandbox):
         info = handle.sandbox.fs.get_file_info(remote, request_timeout=self._default_timeout)
         size = getattr(info, "size", None)
         if size is not None and size > self._max_file_bytes:
-            raise IOError(f"file too large: {size} > {self._max_file_bytes} bytes")
+            raise FileTooLargeError(size, self._max_file_bytes)
         # download_file takes its timeout positionally and dispatches on
         # isinstance(arg, int): a float would be read as a destination path.
         return handle.sandbox.fs.download_file(remote, int(self._default_timeout))

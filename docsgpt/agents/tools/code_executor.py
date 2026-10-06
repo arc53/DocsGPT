@@ -108,6 +108,22 @@ def detached_marker() -> Any:
     return DETACHED
 
 
+def _megabytes(size: int) -> str:
+    """``38925591`` -> ``38.9 MB``; a whole number of MiB (a cap) reads as ``10 MB``."""
+    if size >= 1024 * 1024 and size % (1024 * 1024) == 0:
+        return f"{size // (1024 * 1024)} MB"
+    return f"{size / 1_000_000:.1f} MB"
+
+
+def too_large_note(entry: Dict[str, Any]) -> str:
+    """What the model is told about a produced file that was too big to save as an artifact."""
+    name = str(entry.get("path") or "").rsplit("/", 1)[-1]
+    return (
+        f"{name} ({_megabytes(int(entry.get('size') or 0))}) is over the {_megabytes(int(entry.get('limit') or 0))} "
+        "limit and was not saved; compress, downscale or split it"
+    )
+
+
 @dataclass
 class PreparedRun:
     """A run_code call once its session is open and its inputs staged.
@@ -168,6 +184,8 @@ class CodeExecutorTool(Tool):
         self._last_artifacts: List[Dict[str, Any]] = []
         # Charts the last run displayed, for the model to see (``drain_native_parts``).
         self._native_queue: List[Dict[str, Any]] = []
+        # Files the last run produced that were over the sandbox's file cap (not saved).
+        self._too_large: List[Dict[str, Any]] = []
 
     # ------------------------------------------------------------------
     # Tool ABC
@@ -271,7 +289,8 @@ class CodeExecutorTool(Tool):
             ),
             (
                 f"Limits: {timeout}s per call by default; pass `timeout` up to {max_timeout}s for long jobs (video, "
-                "OCR of many pages, big conversions); prefer splitting work. Network: usually open for pip and "
+                "OCR of many pages, conversions); prefer splitting work; files over "
+                f"{_megabytes(int(settings.SANDBOX_MAX_FILE_BYTES))} aren't saved. Network: usually open for pip and "
                 "public sites."
             ),
             cls._environment_note(),
@@ -511,6 +530,7 @@ class CodeExecutorTool(Tool):
         # Capture even on error/timeout while the runtime remains reachable
         # so partial outputs aren't lost; capture never masks the run status.
         artifacts: List[Dict[str, Any]] = []
+        self._too_large = []
         if run.should_capture and not result.runtime_invalidated:
             try:
                 artifacts = self._capture_artifacts(files, run.session_id, run.pre_signatures, run.outputs)
@@ -535,6 +555,8 @@ class CodeExecutorTool(Tool):
             payload["timeout"] = f"ran with {int(run.timeout)}s, the maximum; {run.asked_timeout}s was asked for"
         if self._native_queue:
             payload["charts_shown"] = [part["label"] for part in self._native_queue]
+        if self._too_large:
+            payload["not_saved"] = [too_large_note(entry) for entry in self._too_large]
         hints = self._hints(
             run.session_id,
             run.code,
@@ -820,7 +842,11 @@ class CodeExecutorTool(Tool):
         pre_signatures: Dict[str, Tuple[int, Optional[str]]],
         outputs: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
-        """Persist produced workspace files (only ``outputs`` globs when given)."""
+        """Persist produced workspace files (only ``outputs`` globs when given).
+
+        Files over the sandbox's file cap are not saved; they are kept in
+        ``self._too_large`` for the result to name.
+        """
         captured = capture_artifacts(
             manager,
             session_id,
@@ -835,6 +861,7 @@ class CodeExecutorTool(Tool):
                 "session_id": session_id,
             },
             outputs=outputs,
+            too_large=self._too_large,
         )
         if captured:
             self._last_artifact_id = captured[0]["artifact_id"]

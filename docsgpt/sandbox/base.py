@@ -1,5 +1,6 @@
 """Backend-agnostic code-execution sandbox interface and result types."""
 
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, NamedTuple, Optional
@@ -80,6 +81,28 @@ class DetachedState:
     output: str = ""
     output_size: int = 0
     gone: bool = False
+
+
+class FileTooLargeError(IOError):
+    """A workspace file is over the backend's ``max_file_bytes`` (``SANDBOX_MAX_FILE_BYTES``), so it was not read.
+
+    Attributes:
+        size: The file's size in bytes.
+        limit: The cap it is over.
+    """
+
+    _MESSAGE = re.compile(r"file too large: (\d+) > (\d+) bytes")
+
+    def __init__(self, size: int, limit: int) -> None:
+        super().__init__(f"file too large: {size} > {limit} bytes")
+        self.size = int(size)
+        self.limit = int(limit)
+
+    @classmethod
+    def from_message(cls, text: Any) -> Optional["FileTooLargeError"]:
+        """The error a backend reported as text (a kernel's ``file too large: N > M bytes``), or None."""
+        match = cls._MESSAGE.search(str(text or ""))
+        return cls(int(match.group(1)), int(match.group(2))) if match else None
 
 
 class SandboxGoneError(IOError):

@@ -198,5 +198,11 @@ A snapshot can't change once it's built, so a new version of the contents comes 
 - `SANDBOX_EXEC_TIMEOUT`: per-run wall-clock cap in seconds when the model doesn't pass a `timeout`.
 - `SANDBOX_EXEC_MAX_TIMEOUT`: the largest `timeout` the model may pass.
 - `SANDBOX_MAX_TTL`: how long an idle session is kept before it is closed.
+- `SANDBOX_MAX_FILE_BYTES` (10 MiB): the largest workspace file saved as an artifact. A bigger one is not saved,
+  and the run's result names it (`not_saved`: "race.mp4 (38.9 MB) is over the 10 MB limit and was not saved;
+  compress, downscale or split it"), so the model can say so or shrink it. Capture reads each file whole into
+  memory (on the Jupyter runner as base64 over the kernel's output), so the default stays at 10 MiB; raise it only
+  if the API and worker have the memory, and never above `ARTIFACT_MAX_BYTES` (50 MiB), which caps any stored
+  artifact.
 - `DAYTONA_API_KEY`, `DAYTONA_TARGET`, `DAYTONA_SNAPSHOT`: Daytona Cloud settings.
 - Per-user artifact quotas bound how many artifacts and how much storage each user can hold.

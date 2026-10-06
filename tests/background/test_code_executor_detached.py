@@ -300,3 +300,23 @@ def test_the_watch_description_says_how_output_is_read():
 
     text = WATCH_SCHEMA["description"]
     assert "flush=True" in text and "capture_output=True" in text
+
+
+def test_a_file_over_the_cap_is_named_in_the_result(tool, monkeypatch):
+    """The user would otherwise get no file and no explanation."""
+    from docsgpt.sandbox.base import FileTooLargeError
+
+    manager = _Manager(_ok())
+    # Written by the run: absent from the listing before it.
+    manager.list_files = lambda session_id: ["race.mp4"] if manager.exec_calls else []
+
+    def get_file(session_id, path):
+        raise FileTooLargeError(38925591, 10 * 1024 * 1024)
+
+    manager.get_file = get_file
+    _use(monkeypatch, manager, call=None)
+    out = tool.execute_action("run_code", code="render()")
+    assert out["not_saved"] == [
+        "race.mp4 (38.9 MB) is over the 10 MB limit and was not saved; compress, downscale or split it"
+    ]
+    assert "files over 10 MB aren't saved" in CodeExecutorTool._description()
