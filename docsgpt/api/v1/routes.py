@@ -480,6 +480,7 @@ def chat_completions():
                 # leaving the initial message permanently ``streaming``.
                 "reserved_message_id": processor.reserved_message_id,
                 "request_id": processor.request_id,
+                "prior_tool_calls": getattr(processor, "prior_tool_calls", []),
             }
             question = ""
         else:

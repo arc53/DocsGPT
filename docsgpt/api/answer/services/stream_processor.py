@@ -550,6 +550,7 @@ class StreamProcessor:
         self.model_user_id: Optional[str] = None
         # WAL placeholder id pulled from continuation state on resume.
         self.reserved_message_id: Optional[str] = None
+        self.prior_tool_calls: List[Dict[str, Any]] = []
         # Carried through resumes so multi-pause runs keep one request_id.
         self.request_id: Optional[str] = None
         # The request's execution trace, started by the first traced setup
@@ -2365,6 +2366,8 @@ class StreamProcessor:
         # request_id stays consistent across token_usage rows.
         self.reserved_message_id = agent_config.get("reserved_message_id")
         self.request_id = agent_config.get("request_id")
+        # The turn's calls from its earlier approval rounds, kept on the message.
+        self.prior_tool_calls = list(agent_config.get("prior_tool_calls") or [])
 
         reasoning_content = agent_config.get("reasoning_content", "")
         return (

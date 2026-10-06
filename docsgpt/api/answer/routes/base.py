@@ -13,7 +13,7 @@ from flask import jsonify, make_response, Response
 from flask_restx import Namespace
 
 from docsgpt import tracing
-from docsgpt.api.answer.segments import AnswerSegments
+from docsgpt.api.answer.segments import AnswerSegments, merge_tool_calls
 from docsgpt.background.context import bind_turn as bind_background_turn
 from docsgpt.background.fold import fold_turn as fold_background_turn
 from docsgpt.api.answer.services.continuation_service import ContinuationService
@@ -496,6 +496,11 @@ class BaseAnswerResource:
             Server-sent event strings
         """
         response_full, thought, source_log_docs, tool_calls = "", "", [], []
+        # A resumed turn's calls from the rounds before its approval pauses: the
+        # message keeps them with the calls this stream makes.
+        prior_tool_calls: List[Dict] = list((_continuation or {}).get("prior_tool_calls") or [])
+        if prior_tool_calls:
+            tool_calls = list(prior_tool_calls)
         # Set when a workflow agent run emits its ``workflow_run`` event; persisted
         # onto the message metadata so the chat can render the run's produced
         # artifacts on reload.
@@ -941,7 +946,7 @@ class BaseAnswerResource:
                     # retrieval outage behind a confident, fabricated answer.
                     yield _emit({"type": "source", "source": truncated_sources})
                 elif "tool_calls" in line:
-                    tool_calls = line["tool_calls"]
+                    tool_calls = merge_tool_calls(prior_tool_calls, line["tool_calls"])
                     yield _emit({"type": "tool_calls", "tool_calls": tool_calls})
                 elif "thought" in line:
                     thought += line["thought"]
@@ -1199,6 +1204,9 @@ class BaseAnswerResource:
                                     # consistent across token_usage rows.
                                     "reserved_message_id": reserved_message_id,
                                     "request_id": request_id,
+                                    # Every round's calls so far, so the message
+                                    # the resumed turn finalizes keeps them all.
+                                    "prior_tool_calls": json.loads(json.dumps(tool_calls or [], default=str)),
                                     # Persisted in agent_config (rather than
                                     # a new column) so resume rebuilds the
                                     # paused assistant message with the
