@@ -5,8 +5,9 @@ The wheel ships the frontend build under ``docsgpt/static`` (produced by
 and ``SERVE_UI`` is on, the ASGI shell puts :class:`StaticUI` in front of
 Flask: files are served as they are, paths that belong to the backend pass
 through, a missing ``/assets/*`` file is a 404 (as in the nginx image), and
-every other GET renders ``index.html`` for the client-side router. ``/config.js`` is generated per request so the UI talks to the origin
-it was loaded from, the same mechanism the nginx image uses.
+every other GET renders ``index.html`` for the client-side router.
+``/config.js`` is generated per request so the UI talks to the origin it was
+loaded from, the same mechanism the nginx image uses.
 """
 
 from __future__ import annotations
