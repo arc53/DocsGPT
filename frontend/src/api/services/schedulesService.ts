@@ -108,7 +108,7 @@ const schedulesService = {
       { action },
       token,
     );
-    return (await json(r)) as ScheduleResponse;
+    return (await savedOrThrow(r)) as ScheduleResponse;
   },
 
   remove: async (
@@ -128,7 +128,7 @@ const schedulesService = {
       {},
       token,
     );
-    return (await json(r)) as ScheduleRunResponse;
+    return (await savedOrThrow(r)) as ScheduleRunResponse;
   },
 
   listRuns: async (
