@@ -8,6 +8,7 @@ and :mod:`docsgpt.services.search_service` so both paths behave the same.
 
 from __future__ import annotations
 
+import contextvars
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Tuple, TypeVar
@@ -232,10 +233,14 @@ def run_source_jobs(
     # Pool threads don't inherit context: carry the trace and its current
     # retrieval span in so per-source spans nest under it.
     traced_fn = tracing.wrap(fn)
+    # Nor the caller's context variables -- the log ids and the OTel context
+    # -- without which per-source log lines carry trace id 0. Each job gets
+    # its own copy: one Context cannot be entered by two threads at once.
+    contexts = [contextvars.copy_context() for _ in jobs]
     with ThreadPoolExecutor(
         max_workers=workers, thread_name_prefix="rag-source"
     ) as pool:
-        return list(pool.map(traced_fn, jobs))
+        return list(pool.map(lambda ctx, job: ctx.run(traced_fn, job), contexts, jobs))
 
 
 def fetch_per_source(

@@ -482,3 +482,51 @@ class TestEmbedderFailureIsNotResentPerStore:
         (record,) = _degraded_records(caplog)
         assert record.status_code == 502
         assert any("not re-sending" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.unit
+class TestPoolThreadsKeepTheCallersContext:
+    """Per-source logs must join their request: ids, OTel trace and all.
+
+    Pool threads start with an empty context, so ``Error searching
+    vectorstore`` lines carried trace id 0 and no activity id.
+    """
+
+    def test_log_context_reaches_every_job(self):
+        from docsgpt.core import log_context
+
+        token = log_context.bind(activity_id="act-9")
+        try:
+            seen = run_source_jobs(
+                lambda job: log_context.snapshot().get("activity_id"), [1, 2, 3], workers=3
+            )
+        finally:
+            log_context.reset(token)
+
+        assert seen == ["act-9", "act-9", "act-9"]
+
+    def test_otel_context_reaches_every_job(self):
+        from opentelemetry import context as otel_context
+
+        token = otel_context.attach(otel_context.set_value("probe", "request-ctx"))
+        try:
+            seen = run_source_jobs(
+                lambda job: otel_context.get_value("probe"), [1, 2, 3], workers=3
+            )
+        finally:
+            otel_context.detach(token)
+
+        assert seen == ["request-ctx"] * 3
+
+    def test_a_job_cannot_leak_context_into_another(self):
+        import contextvars
+
+        var = contextvars.ContextVar("fanout_probe", default="unset")
+        barrier = threading.Barrier(2, timeout=5)
+
+        def job(value):
+            var.set(value)
+            barrier.wait()
+            return var.get()
+
+        assert run_source_jobs(job, ["x", "y"], workers=2) == ["x", "y"]
