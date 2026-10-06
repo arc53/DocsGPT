@@ -132,3 +132,69 @@ def test_an_expired_invocation_is_404(broker):
     fake.delete("dev:inv:inv_b")
     status, body = _post(b, BATCH, caps="outbox")
     assert status == 404 and body["error"] == "invocation_not_found"
+
+
+def test_a_broker_failure_mid_batch_is_a_503_and_the_retry_completes_it(broker, monkeypatch):
+    # Never a 200 for output that wasn't stored: the outbox client would drop it.
+    b, fake = broker
+    real_eval = fake.eval
+    calls = {"n": 0}
+
+    def flaky(script, *args):
+        calls["n"] += 1
+        if calls["n"] == 3:
+            raise ConnectionError("redis blip")
+        return real_eval(script, *args)
+
+    monkeypatch.setattr(fake, "eval", flaky)
+    status, body = _post(b, BATCH, caps="cancel,outbox")
+    assert status == 503 and body["error"] == "broker_unavailable"
+    assert _Audit.calls == []
+    status, body = _post(b, BATCH, caps="cancel,outbox")
+    assert status == 200 and body == {"success": True, "received": 2, "duplicates": 2}
+    assert [c["seq"] for c in _stream(fake)] == [0, 1, 2, 3]
+    assert len(_Audit.calls) == 1
+
+
+def test_an_unreachable_broker_on_lookup_is_a_503_not_a_404(broker, monkeypatch):
+    b, fake = broker
+
+    def boom(*args, **kwargs):
+        raise ConnectionError("redis down")
+
+    monkeypatch.setattr(fake, "hgetall", boom)
+    status, body = _post(b, BATCH, caps="outbox")
+    assert status == 503 and body["error"] == "broker_unavailable"
+
+
+def test_an_invocation_that_vanishes_mid_batch_is_a_404(broker, monkeypatch):
+    b, fake = broker
+    real_eval = fake.eval
+    calls = {"n": 0}
+
+    def vanish(script, *args):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            fake.delete("dev:inv:inv_b")
+        return real_eval(script, *args)
+
+    monkeypatch.setattr(fake, "eval", vanish)
+    status, body = _post(b, BATCH, caps="outbox")
+    assert status == 404 and body["error"] == "invocation_not_found"
+
+
+def test_an_ack_the_broker_cannot_store_is_a_503(broker, monkeypatch):
+    b, fake = broker
+    app = Flask(__name__)
+
+    def boom(*args, **kwargs):
+        raise ConnectionError("redis down")
+
+    monkeypatch.setattr(fake, "hmget", boom)
+    with app.test_request_context(
+        "/api/devices/sessions/s/invocations/inv_b/ack", method="POST", json={"decision": "accepted"},
+        headers={"Authorization": "Bearer tok"},
+    ), patch.object(auth_module, "DevicesRepository", _Repo), patch.object(auth_module, "db_readonly", _Ctx), \
+            patch.object(auth_module, "db_session", _Ctx), patch.object(session_module, "get_broker", return_value=b):
+        response = session_module.ack_invocation("s", "inv_b")
+    assert response.status_code == 503 and response.headers["Retry-After"] == "5"

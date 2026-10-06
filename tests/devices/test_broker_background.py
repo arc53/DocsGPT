@@ -206,12 +206,21 @@ class TestResentReports:
         inv = broker.get_invocation("inv_1")
         assert inv.completed and inv.exit_code is None and inv.duration_ms is None
 
-    def test_an_unknown_invocation_or_no_redis_is_unknown(self, broker_env, monkeypatch):
-        broker, _ = broker_env
-        assert broker.accept_output_chunk("inv_x", {"stream": "stdout", "chunk": "a"}) == "unknown"
+    def test_an_unknown_invocation_is_gone_and_a_broken_redis_is_an_error(self, broker_env, monkeypatch):
+        broker, fake = broker_env
+        assert broker.accept_output_chunk("inv_x", {"stream": "stdout", "chunk": "a"}) == "gone"
         assert broker.submit_output_chunk("inv_x", {"stream": "stdout", "chunk": "a"}) is False
+        _dispatch(broker)
+
+        def boom(*args, **kwargs):
+            raise ConnectionError("redis down")
+
+        monkeypatch.setattr(fake, "eval", boom)
+        assert broker.accept_output_chunk("inv_1", {"stream": "stdout", "chunk": "a"}) == "error"
+        monkeypatch.setattr(fake, "hmget", boom)
+        assert broker.accept_output_chunk("inv_1", {"stream": "stdout", "chunk": "a"}) == "error"
         monkeypatch.setattr("docsgpt.devices.broker.get_redis_instance", lambda: None)
-        assert broker.accept_output_chunk("inv_1", {"stream": "stdout", "chunk": "a"}) == "unknown"
+        assert broker.accept_output_chunk("inv_1", {"stream": "stdout", "chunk": "a"}) == "error"
 
     def test_two_copies_of_a_batch_racing_land_once(self, broker_env):
         import threading

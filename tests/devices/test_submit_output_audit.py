@@ -74,7 +74,7 @@ class _RaceBroker:
         self._snap = snap
         self.calls = 0
 
-    def get_invocation(self, _invocation_id):
+    def get_invocation(self, _invocation_id, **_kwargs):
         self.calls += 1
         if self.calls == 1:
             return SimpleNamespace(device_id="dev_route", completed=True)

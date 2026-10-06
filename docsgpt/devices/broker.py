@@ -81,7 +81,10 @@ return 0
 #: What :meth:`DeviceBroker.accept_output_chunk` did with a chunk.
 CHUNK_ACCEPTED = "accepted"
 CHUNK_DUPLICATE = "duplicate"
-CHUNK_UNKNOWN = "unknown"
+#: The invocation doesn't exist (expired or cleaned up): the client should stop sending.
+CHUNK_GONE = "gone"
+#: Redis is unavailable or failed: nothing was stored, the client should retry.
+CHUNK_ERROR = "error"
 
 # Takes one output chunk, once. KEYS: the invocation hash, its output stream.
 # ARGV: seq to deduplicate on ("" for none), "1" for the control chunk, the
@@ -611,7 +614,7 @@ class DeviceBroker:
         self, invocation_id: str, chunk: Dict[str, Any]
     ) -> bool:
         """Forward one CLI output chunk; ``False`` for an unknown invocation (see :meth:`accept_output_chunk`)."""
-        return self.accept_output_chunk(invocation_id, chunk) != CHUNK_UNKNOWN
+        return self.accept_output_chunk(invocation_id, chunk) in (CHUNK_ACCEPTED, CHUNK_DUPLICATE)
 
     def accept_output_chunk(
         self, invocation_id: str, chunk: Dict[str, Any], *, dedupe: bool = False
@@ -640,20 +643,21 @@ class DeviceBroker:
             dedupe: Drop chunks whose ``seq`` was already accepted.
 
         Returns:
-            ``accepted``, ``duplicate``, or ``unknown`` (no such invocation,
-            or Redis failed: the client should retry or give up).
+            ``accepted``, ``duplicate``, ``gone`` (no such invocation: the
+            client should stop), or ``error`` (Redis is unavailable or failed:
+            nothing was stored, the client should retry).
         """
         redis = get_redis_instance()
         if redis is None:
-            return CHUNK_UNKNOWN
+            return CHUNK_ERROR
         key = _inv_key(invocation_id)
         try:
             device_id, stored_ttl = redis.hmget(key, ["device_id", "ttl"])
         except Exception:
             logger.exception("submit_output_chunk read failed for %s", invocation_id)
-            return CHUNK_UNKNOWN
+            return CHUNK_ERROR
         if device_id is None:
-            return CHUNK_UNKNOWN
+            return CHUNK_GONE
         device_id = _as_str(device_id)
         ttl = self._ttl_of({"ttl": _as_str(stored_ttl) if stored_ttl is not None else ""})
         now = time.time()
@@ -674,10 +678,10 @@ class DeviceBroker:
             )
         except Exception:
             logger.exception("submit_output_chunk append failed for %s", invocation_id)
-            return CHUNK_UNKNOWN
+            return CHUNK_ERROR
         taken = int(taken or 0)
         if taken < 0:
-            return CHUNK_UNKNOWN
+            return CHUNK_GONE
         if taken == 0:
             return CHUNK_DUPLICATE
         try:

@@ -94,12 +94,15 @@ def ack_invocation(session_id: str, invocation_id: str) -> Response:
             jsonify({"success": False, "error": "invalid_decision"}), 400
         )
     broker = get_broker()
-    inv = broker.get_invocation(invocation_id)
+    inv, unavailable = _owned_invocation(broker, invocation_id)
+    if unavailable is not None:
+        return unavailable
     if inv is None or inv.device_id != device["id"]:
         return make_response(
             jsonify({"success": False, "error": "invocation_not_found"}), 404
         )
-    broker.submit_ack(invocation_id, decision, reason)
+    if not broker.submit_ack(invocation_id, decision, reason):
+        return _broker_unavailable()
     if decision == "denied":
         # A denial is terminal and produces no device output, so submit_output's
         # audit write is never reached. Record the outcome here from locally
@@ -132,7 +135,9 @@ def submit_output(session_id: str, invocation_id: str) -> Response:
     if err is not None:
         return err
     broker = get_broker()
-    inv = broker.get_invocation(invocation_id)
+    inv, unavailable = _owned_invocation(broker, invocation_id)
+    if unavailable is not None:
+        return unavailable
     if inv is None or inv.device_id != device["id"]:
         return make_response(
             jsonify({"success": False, "error": "invocation_not_found"}), 404
@@ -167,6 +172,15 @@ def submit_output(session_id: str, invocation_id: str) -> Response:
         if outcome == "duplicate":
             duplicates += 1
             continue
+        if outcome == "gone":
+            # Expired or cleaned up since the lookup: the client stops resending.
+            return make_response(
+                jsonify({"success": False, "error": "invocation_not_found"}), 404
+            )
+        if outcome != "accepted":
+            # Nothing was stored: the client resends the batch, and what this POST
+            # already took comes back as duplicates.
+            return _broker_unavailable()
         if chunk.get("stream") == "control":
             # Only the control chunk the broker took is the outcome; a resent one changes nothing.
             control_chunk = chunk
@@ -220,3 +234,23 @@ def _audit_error(chunk: dict) -> str | None:
         return None
     detail = chunk.get("detail")
     return f"{error}: {detail}"[:500] if detail else str(error)[:500]
+
+
+def _broker_unavailable() -> Response:
+    """503 with ``Retry-After``: the device broker couldn't store this, so the client should send it again."""
+    response = make_response(jsonify({"success": False, "error": "broker_unavailable"}), 503)
+    response.headers["Retry-After"] = "5"
+    return response
+
+
+def _owned_invocation(broker, invocation_id: str):
+    """``(invocation or None, error response or None)``: a broker that can't answer is a 503, never a 404.
+
+    A 404 tells the client the invocation is gone for good, so it is kept for
+    an invocation that really doesn't exist.
+    """
+    try:
+        return broker.get_invocation(invocation_id, strict=True), None
+    except Exception:
+        logger.exception("device broker lookup failed for %s", invocation_id)
+        return None, _broker_unavailable()
