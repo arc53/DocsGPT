@@ -103,6 +103,7 @@ def run_agent_headless(
     agent_config: Dict[str, Any],
     query: str,
     *,
+    retrieval_query: Optional[str] = None,
     tool_allowlist: Optional[Iterable[str]] = None,
     model_id_override: Optional[str] = None,
     endpoint: str = "headless",
@@ -116,6 +117,11 @@ def run_agent_headless(
     background: Any = None,
 ) -> Dict[str, Any]:
     """Run an agent with no live client; returns a structured outcome dict.
+
+    ``query`` is the agent's input. Its sources are searched with
+    ``retrieval_query`` when one is given -- a webhook passes its payload's
+    human-written fields, as the whole payload makes a poor and costly search
+    -- and with ``query`` otherwise.
 
     The run is recorded as one execution trace under ``endpoint`` as its
     source. ``request_id`` links that trace to the caller's own record (the
@@ -153,6 +159,7 @@ def run_agent_headless(
             outcome = _run_agent_headless(
                 agent_config,
                 query,
+                retrieval_query=retrieval_query,
                 tool_allowlist=tool_allowlist,
                 model_id_override=model_id_override,
                 endpoint=endpoint,
@@ -177,6 +184,7 @@ def _run_agent_headless(
     agent_config: Dict[str, Any],
     query: str,
     *,
+    retrieval_query: Optional[str] = None,
     tool_allowlist: Optional[Iterable[str]] = None,
     model_id_override: Optional[str] = None,
     endpoint: str = "headless",
@@ -296,7 +304,7 @@ def _run_agent_headless(
             **retriever_kwargs,
         )
         try:
-            docs = retriever.search(query)
+            docs = retriever.search(retrieval_query or query)
             if docs:
                 retrieved_docs = docs
         except Exception as exc:
