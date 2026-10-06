@@ -157,6 +157,36 @@ def _record_answered_by(agent: Any, query_metadata: Dict[str, Any]) -> None:
         query_metadata["answered_by"] = entries
 
 
+def _seal_exposed_text(agent: Any, decoded_token: Optional[Dict], *texts: str) -> tuple:
+    """The answer's texts with any link secret the owner chose to show the assistant put back to its reference.
+
+    Args:
+        agent: The turn's agent (its executor caches the lookup).
+        decoded_token: The caller's token (the owner).
+        *texts: The texts to store.
+
+    Returns:
+        The texts, in order.
+    """
+    executor = getattr(agent, "tool_executor", None)
+    exposed_secrets = getattr(executor, "exposed_secrets", None)
+    try:
+        if callable(exposed_secrets):
+            exposed = exposed_secrets()
+        else:
+            from docsgpt.monitors.secret_refs import exposed_values
+
+            exposed = exposed_values((decoded_token or {}).get("sub") or "")
+    except Exception:
+        logger.exception("looking up exposed secrets for the stored answer failed")
+        return texts
+    if not isinstance(exposed, dict) or not exposed:
+        return texts
+    from docsgpt.monitors.secret_refs import redact
+
+    return tuple(redact(text, exposed) if isinstance(text, str) else text for text in texts)
+
+
 def _native_image_names(agent: Any) -> List[str]:
     """Files the turn sent to the model as images, for a provider's image refusal."""
     plan = getattr(agent, "attachment_plan", None)
@@ -1355,6 +1385,9 @@ class BaseAnswerResource:
             )
 
             if should_persist:
+                # A secret the owner chose to show the assistant is stored as its reference
+                # if the model repeated it (the stream already carried it as written).
+                response_full, thought = _seal_exposed_text(agent, decoded_token, response_full, thought)
                 if reserved_message_id is not None:
                     finalize_outcome = self.conversation_service.finalize_message(
                         reserved_message_id,

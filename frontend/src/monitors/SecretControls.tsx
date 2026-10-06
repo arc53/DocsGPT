@@ -265,6 +265,7 @@ export function MonitorSecretControls({ monitor }: { monitor: Monitor }) {
       monitorId={monitor.monitor_id}
       signature={link.signature as string}
       hasSecret={link.has_secret}
+      exposed={Boolean(link.secret_exposed)}
     />
   );
 }
@@ -273,19 +274,125 @@ function LinkSecretControls({
   monitorId,
   signature,
   hasSecret,
+  exposed,
 }: {
   monitorId: string;
   signature: string;
   hasSecret?: boolean;
+  exposed: boolean;
 }) {
   const controls = useSecretControls(monitorId, signature, hasSecret);
   return (
     <div className="mt-1 flex min-w-0 flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <SecretActions controls={controls} />
+        {hasSecret !== false && (
+          <ExposureToggle monitorId={monitorId} initial={exposed} />
+        )}
       </div>
       <SecretPanel controls={controls} />
     </div>
+  );
+}
+
+/**
+ * Show (or stop showing) the raw secret to the assistant: the owner's choice
+ * only, behind a warning. The assistant never gets the value otherwise.
+ */
+function ExposureToggle({
+  monitorId,
+  initial,
+}: {
+  monitorId: string;
+  initial: boolean;
+}) {
+  const { t } = useTranslation();
+  const token = useSelector(selectToken);
+  const [exposed, setExposed] = useState(initial);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const change = async (next: boolean) => {
+    setBusy(true);
+    setFailed(false);
+    const ok = await monitorsService.setExposure(monitorId, next, token);
+    setBusy(false);
+    setConfirming(false);
+    if (ok) setExposed(next);
+    else setFailed(true);
+  };
+
+  return (
+    <>
+      {exposed ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          shape="pill"
+          disabled={busy}
+          onClick={() => void change(false)}
+        >
+          {t('monitors.linkCard.unexposeSecret')}
+        </Button>
+      ) : (
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          shape="pill"
+          disabled={busy || confirming}
+          onClick={() => setConfirming(true)}
+        >
+          {t('monitors.linkCard.exposeSecret')}
+        </Button>
+      )}
+      {exposed && (
+        <p
+          className="text-muted-foreground basis-full text-xs"
+          data-testid="monitor-secret-exposed"
+        >
+          {t('monitors.linkCard.exposedNote')}
+        </p>
+      )}
+      {confirming && (
+        <div
+          className="flex basis-full flex-col gap-2"
+          data-testid="monitor-expose-confirm"
+        >
+          <p className="text-destructive text-xs" role="alert">
+            {t('monitors.linkCard.exposeWarning')}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="destructive"
+              size="xs"
+              shape="pill"
+              disabled={busy}
+              onClick={() => void change(true)}
+            >
+              {t('monitors.linkCard.exposeConfirm')}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              shape="pill"
+              onClick={() => setConfirming(false)}
+            >
+              {t('monitors.linkCard.cancelSecret')}
+            </Button>
+          </div>
+        </div>
+      )}
+      {failed && (
+        <p className="text-destructive basis-full text-xs" role="alert">
+          {t('monitors.linkCard.exposeFailed')}
+        </p>
+      )}
+    </>
   );
 }
 

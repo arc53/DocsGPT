@@ -9,6 +9,7 @@ const service = vi.hoisted(() => ({
   act: vi.fn(),
   revealSecret: vi.fn(),
   setSecret: vi.fn(),
+  setExposure: vi.fn(),
 }));
 vi.mock('@/api/services/monitorsService', () => ({ default: service }));
 vi.mock('react-i18next', () => ({
@@ -129,6 +130,36 @@ describe('Monitors page', () => {
     expect(
       container.textContent?.split('monitors.linkCard.senderSecretNote').length,
     ).toBe(3);
+  });
+
+  it('shows a secret to the assistant only after the owner confirms the warning', async () => {
+    service.setExposure.mockResolvedValue(true);
+    service.list.mockResolvedValue([
+      sampleMonitor({
+        monitor_id: 'hook',
+        source_type: 'webhook',
+        interval: null,
+        links: [webhookLink()],
+      }),
+    ]);
+    await render();
+    await act(async () => buttons('monitors.linkCard.exposeSecret')[0].click());
+    expect(service.setExposure).not.toHaveBeenCalled();
+    expect(
+      container.querySelector('[data-testid="monitor-expose-confirm"]')
+        ?.textContent,
+    ).toContain('monitors.linkCard.exposeWarning');
+    await act(async () =>
+      buttons('monitors.linkCard.exposeConfirm')[0].click(),
+    );
+    expect(service.setExposure).toHaveBeenCalledWith('hook', true, 'tok');
+    expect(
+      container.querySelector('[data-testid="monitor-secret-exposed"]'),
+    ).not.toBeNull();
+    await act(async () =>
+      buttons('monitors.linkCard.unexposeSecret')[0].click(),
+    );
+    expect(service.setExposure).toHaveBeenLastCalledWith('hook', false, 'tok');
   });
 
   it('offers nothing for an unsigned, ended or finished link', async () => {

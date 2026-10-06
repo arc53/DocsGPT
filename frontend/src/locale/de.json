@@ -3309,6 +3309,12 @@
       "setSecretFailed": "Das Signaturgeheimnis konnte nicht gespeichert werden. Versuch es noch einmal.",
       "setSecretInvalid": "Das sieht nicht nach dem Signaturgeheimnis dieses Links aus. {{reason}}",
       "senderSecretNote": "{{sender}} erstellt das Signaturgeheimnis dieses Links. Kopiere es aus {{sender}} und lege es hier fest; bis dahin werden Aufrufe abgelehnt.",
+      "exposeSecret": "Dem Assistenten zeigen",
+      "unexposeSecret": "Vor dem Assistenten verbergen",
+      "exposeWarning": "Der Assistent sieht das Geheimnis im Klartext, wenn er seine Monitore auflistet; es wird also an den Modellanbieter gesendet. Seine Tool-Aufrufe verwenden weiterhin die Referenz und fragen weiterhin nach deiner Freigabe. Schalte das nur ein, wenn der Assistent den Wert selbst lesen muss.",
+      "exposeConfirm": "Dem Assistenten zeigen",
+      "exposedNote": "Der Assistent kann dieses Geheimnis sehen.",
+      "exposeFailed": "Das konnte nicht geändert werden. Versuch es noch einmal.",
       "approvalTitle": "Freigabe-Link",
       "expires": "Läuft ab am {{date}}",
       "state": {

@@ -507,3 +507,99 @@ class TestEdges:
         executor.approved_call_ids.add("call-1")
         _result(executor.execute(_tools(), _call(_hook_args(created)), "OpenAILLM"))
         assert tool.calls[-1]["config"]["secret"] == secret
+
+
+class TestExposure:
+    """Showing a raw secret to the assistant is the owner's choice only, and the value still stays out of storage."""
+
+    def test_a_models_request_to_expose_the_secret_has_no_effect(self, mon_db, conversation_id, public_url, events):
+        created = service.create(
+            service.Caller(user_id="u1", conversation_id=conversation_id),
+            {"description": "Pushes", "source": {"type": "webhook", "signature": "github", "expose_secret": True},
+             "on_match": "tell me"},
+        )
+        secret = service.reveal_secret(created["monitor_id"], "u1")["secret"]
+        assert created["secret"] == "{{link_secret:" + created["secret_ref"] + "}}"
+        assert "secret_exposed" not in created and secret not in json.dumps(created)
+        assert any("expose_secret ignored" in note for note in created["notes"])
+        with mon_db.connect() as conn:
+            assert conn.execute(text("SELECT expose_secret FROM trigger_links")).scalar() is False
+        listed = service.list_for_conversation(service.Caller(user_id="u1", conversation_id=conversation_id))
+        assert secret not in json.dumps(listed, default=str)
+
+    def test_the_owner_shows_it_and_only_monitor_list_carries_it(self, mon_db, conversation_id, webhook):
+        created, secret = webhook
+        caller = service.Caller(user_id="u1", conversation_id=conversation_id)
+        assert service.set_exposure(created["monitor_id"], "u2", True) is None
+        with pytest.raises(ValueError):
+            service.set_exposure(created["monitor_id"], "u1", "yes")
+        assert service.set_exposure(created["monitor_id"], "u1", True) == {"exposed": True}
+        link = service.list_for_conversation(caller)[0]["links"][0]
+        assert link["secret"] == secret and link["secret_exposed"] is True and "model provider" in link["secret_note"]
+        assert secret_refs.exposed_values("u1") == {secret: created["secret"]}
+        assert service.set_exposure(created["monitor_id"], "u1", False) == {"exposed": False}
+        assert "secret" not in service.list_for_conversation(caller)[0]["links"][0]
+        assert secret_refs.exposed_values("u1") == {}
+        with mon_db.connect() as conn:
+            events_ = conn.execute(
+                text("SELECT metadata::text FROM auth_events WHERE event = 'monitor.secret_exposure'")
+            ).fetchall()
+        assert len(events_) == 2 and all(secret not in row[0] for row in events_)
+
+    def test_a_raw_exposed_secret_in_a_call_is_taken_as_its_reference(
+        self, mon_db, conversation_id, webhook, monkeypatch
+    ):
+        """The model pastes the value it was shown: the call asks for approval like a reference, and nothing that
+        records it keeps the value; the tool still gets it once approved."""
+        created, secret = webhook
+        service.set_exposure(created["monitor_id"], "u1", True)
+        tool = _EchoTool()
+        executor = _executor(conversation_id, tool, monkeypatch)
+        args = _hook_args(created)
+        args["config"]["secret"] = secret
+        call = _call(args)
+        pause = executor.check_pause(_tools(), call, "OpenAILLM")
+        assert pause["pause_type"] == "awaiting_approval" and pause["secret_refs"] == [created["secret_ref"]]
+        assert secret not in json.dumps(pause["arguments"])
+        executor.approved_call_ids.add(call.id)
+        result, _id = _result(executor.execute(_tools(), call, "OpenAILLM"))
+        assert tool.calls[-1]["config"]["secret"] == secret
+        assert secret not in json.dumps(executor.tool_calls, default=str)
+        assert secret not in json.dumps(result)
+
+    def test_a_raw_exposed_secret_cant_reach_a_fetch(self, mon_db, conversation_id, webhook, monkeypatch):
+        created, secret = webhook
+        service.set_exposure(created["monitor_id"], "u1", True)
+        executor = _executor(conversation_id, _EchoTool(), monkeypatch, action="read")
+        pause = executor.check_pause(
+            _tools(name="read_webpage", action="read"), _call({"url": f"https://x.example/?s={secret}"}, name="read"),
+            "OpenAILLM",
+        )
+        assert pause["pause_type"] == "headless_denied" and secret not in json.dumps(pause)
+
+    def test_the_model_reads_an_exposed_secret_but_storage_keeps_the_reference(
+        self, mon_db, conversation_id, webhook, monkeypatch
+    ):
+        created, secret = webhook
+        service.set_exposure(created["monitor_id"], "u1", True)
+
+        class _Lister:
+            def execute_action(self, action_name, **kwargs):
+                return json.dumps({"links": [{"secret": secret}]})
+
+        executor = _executor(conversation_id, _Lister(), monkeypatch, action="list_hooks")
+        result, _id = _result(executor.execute(_tools(action="list_hooks"), _call({}, name="list_hooks"), "OpenAILLM"))
+        assert secret in result
+        entry = executor.tool_calls[-1]
+        assert secret not in entry["result_full"] and created["secret"] in entry["result_full"]
+        assert secret not in json.dumps(entry, default=str)
+
+    def test_the_stored_answer_keeps_the_reference(self, mon_db, conversation_id, webhook):
+        from docsgpt.api.answer.routes.base import _seal_exposed_text
+
+        created, secret = webhook
+        service.set_exposure(created["monitor_id"], "u1", True)
+        agent = SimpleNamespace(tool_executor=None)
+        answer, thought = _seal_exposed_text(agent, {"sub": "u1"}, f"Your secret is {secret}.", "none")
+        assert answer == f"Your secret is {created['secret']}." and thought == "none"
+        assert _seal_exposed_text(agent, {"sub": "u2"}, "x") == ("x",)

@@ -392,6 +392,39 @@ def redact_for_user(value: Any, user_id: str, refs: Iterable[str]) -> Any:
     return redact(value, {entry["secret"]: reference(ref) for ref, entry in found.items()})
 
 
+def exposed_values(user_id: str) -> Dict[str, str]:
+    """``{secret: reference}`` for the user's live links whose owner chose to show the secret to the assistant.
+
+    A model that was shown such a secret may write the raw value into a tool
+    call or repeat it; the executor and the stream put the reference back
+    wherever they store it, and treat a raw value in a call as its reference.
+
+    Args:
+        user_id: The conversation's owner.
+
+    Returns:
+        The mapping (empty when the user exposed nothing, or the lookup failed).
+    """
+    if not user_id:
+        return {}
+    from docsgpt.monitors import links
+    from docsgpt.storage.db.repositories.trigger_links import TriggerLinksRepository
+    from docsgpt.storage.db.session import db_readonly
+
+    try:
+        with db_readonly() as conn:
+            rows = TriggerLinksRepository(conn).list_exposed(str(user_id))
+        values: Dict[str, str] = {}
+        for row in rows:
+            secret = links.open_secret(row.get("secret_encrypted"), str(user_id))
+            if secret:
+                values[secret] = reference(str(row["ref"]))
+        return values
+    except Exception:
+        logger.exception("looking up exposed link secrets failed")
+        return {}
+
+
 class active:
     """Make a call's substitution visible to the tool running it (``with active(substitution): ...``).
 

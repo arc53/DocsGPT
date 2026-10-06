@@ -669,6 +669,26 @@ class ToolExecutor:
         # whose approval already filled secrets in can't fill them in again.
         self.secret_values: Dict[str, str] = {}
         self.secret_approvals_used: set = set()
+        # Secrets the owner chose to show the assistant (``{secret: reference}``),
+        # looked up once per turn: a raw one in a call is taken as its reference.
+        self._exposed_secrets: Optional[Dict[str, str]] = None
+
+    def exposed_secrets(self) -> Dict[str, str]:
+        """``{secret: reference}`` for the secrets this user chose to show the assistant (cached per turn)."""
+        if self._exposed_secrets is None:
+            self._exposed_secrets = secret_refs.exposed_values(str(self.user or "")) if self.user else {}
+        return self._exposed_secrets
+
+    def _sealed(self, arguments: Any) -> Any:
+        """Arguments with any exposed raw secret put back to its reference, before anything records them.
+
+        The call then goes through the reference rules: it asks for approval,
+        and only an eligible, approved call gets the value filled in again.
+        """
+        if not isinstance(arguments, (dict, list, str)):
+            return arguments
+        exposed = self.exposed_secrets()
+        return secret_refs.redact(arguments, exposed) if exposed else arguments
 
     def get_tools(self) -> Dict[str, Dict]:
         """Load tool configs from DB based on user context.
@@ -1208,6 +1228,7 @@ class ToolExecutor:
         """
         parser = ToolActionParser(llm_class_name, name_mapping=self._name_to_tool)
         tool_id, action_name, call_args = parser.parse_args(call)
+        call_args = self._sealed(call_args)
         call_id = getattr(call, "id", None) or str(uuid.uuid4())
         llm_name = getattr(call, "name", "")
 
@@ -1647,6 +1668,7 @@ class ToolExecutor:
     def _execute(self, tools_dict: Dict, call, llm_class_name: str):
         parser = ToolActionParser(llm_class_name, name_mapping=self._name_to_tool)
         tool_id, action_name, call_args = parser.parse_args(call)
+        call_args = self._sealed(call_args)
         llm_name = getattr(call, "name", "unknown")
 
         call_id = getattr(call, "id", None) or str(uuid.uuid4())
@@ -2091,7 +2113,9 @@ class ToolExecutor:
                 )
             if artifacts:
                 tool_call_data["artifacts"] = artifacts
-        result_full = bound_result_full(str(result))
+        # The model may read a secret its owner chose to show it (monitor_list); stored copies get the reference.
+        exposed = self.exposed_secrets()
+        result_full = bound_result_full(secret_refs.redact(str(result), exposed) if exposed else str(result))
         tool_call_data["resolved_arguments"] = resolved_arguments
         tool_call_data["result_full"] = result_full
         tool_call_data["result"] = truncate_tool_result(result_full)

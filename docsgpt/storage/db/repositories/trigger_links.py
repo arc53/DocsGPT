@@ -178,6 +178,28 @@ class TriggerLinksRepository:
         )
         return (result.rowcount or 0) > 0
 
+    def set_exposed(self, link_id: str, exposed: bool) -> bool:
+        """Show (or stop showing) a live link's raw secret to the assistant: the owner's choice only."""
+        result = self._conn.execute(
+            text(
+                "UPDATE trigger_links SET expose_secret = :exposed "
+                f"WHERE id = CAST(:id AS uuid) AND kind = 'webhook' AND {_LIVE}"
+            ),
+            {"id": str(link_id), "exposed": bool(exposed)},
+        )
+        return (result.rowcount or 0) > 0
+
+    def list_exposed(self, user_id: str) -> List[dict]:
+        """The user's live links whose owner chose to show their secret to the assistant."""
+        rows = self._conn.execute(
+            text(
+                "SELECT * FROM trigger_links WHERE user_id = :u AND expose_secret "
+                f"AND secret_encrypted IS NOT NULL AND ref IS NOT NULL AND {_LIVE}"
+            ),
+            {"u": user_id},
+        ).fetchall()
+        return [row_to_dict(r) for r in rows]
+
     def list_for_monitor(self, monitor_id: str) -> List[dict]:
         """A monitor's links, oldest first."""
         rows = self._conn.execute(

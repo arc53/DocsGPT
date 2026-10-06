@@ -3354,6 +3354,12 @@
       "setSecretFailed": "Couldn't save the signing secret. Try again.",
       "setSecretInvalid": "That doesn't look like this link's signing secret. {{reason}}",
       "senderSecretNote": "{{sender}} creates this link's signing secret. Copy it from {{sender}} and set it here; calls are refused until then.",
+      "exposeSecret": "Show to assistant",
+      "unexposeSecret": "Hide from assistant",
+      "exposeWarning": "The assistant will see the raw secret when it lists its monitors, so the secret is sent to the model provider. Its tool calls still use the reference and still ask for your approval. Turn this on only if the assistant must read the value itself.",
+      "exposeConfirm": "Show it to the assistant",
+      "exposedNote": "The assistant can see this secret.",
+      "exposeFailed": "Couldn't change that. Try again.",
       "approvalTitle": "Approval link",
       "expires": "Expires {{date}}",
       "state": {

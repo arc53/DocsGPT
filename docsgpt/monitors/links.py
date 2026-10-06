@@ -3,8 +3,8 @@
 A token is 32 random bytes (``secrets.token_urlsafe``), shown once in the
 tool result; only its sha256 is stored, and a link is looked up by that
 hash. Webhook secrets are random too and stored encrypted for the owner. The
-model never sees a secret unless the link was created with
-``expose_secret``: the tool result carries the reference
+model never sees a secret unless its owner chose to show it (Settings >
+Monitors; ``monitor_list`` then carries it): the tool result carries the reference
 ``{{link_secret:REF}}`` (:mod:`docsgpt.monitors.secret_refs` fills the value
 into tool calls the user approves) and an example command that reads
 :data:`SECRET_ENV`, and the owner reveals the secret in the chat or on the
@@ -403,6 +403,7 @@ def link_view(link: Dict[str, Any]) -> Dict[str, Any]:
         "secret_ref": "{{link_secret:" + str(ref) + "}}" if ref else None,
         "signature_header": link.get("signature_header"),
         "has_secret": bool(link.get("secret_encrypted")),
+        "secret_exposed": bool(link.get("expose_secret")),
         "methods": ["POST", "GET"] if link.get("allow_get") else ["POST"] if link.get("kind") == "webhook" else None,
         "expires_at": link.get("expires_at"),
         "hit_count": link.get("hit_count"),

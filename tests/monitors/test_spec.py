@@ -223,14 +223,15 @@ class TestWebhookMethods:
 
 
 class TestExposeSecret:
-    def test_only_on_a_signed_link(self):
-        assert _req(source={"type": "webhook", "signature": "github", "expose_secret": True}).source[
-            "expose_secret"
-        ] is True
-        with pytest.raises(SpecError, match="needs a signed link"):
-            _req(source={"type": "webhook", "expose_secret": True})
-        with pytest.raises(SpecError, match="true or false"):
-            _req(source={"type": "webhook", "signature": "github", "expose_secret": "yes"})
+    @pytest.mark.parametrize("value", [True, "yes", 1])
+    def test_a_model_can_never_ask_for_the_raw_secret(self, value):
+        request = _req(source={"type": "webhook", "signature": "github", "expose_secret": value})
+        assert "expose_secret" not in request.source and "expose_secret_ignored" not in request.source
+        assert any("expose_secret ignored" in note for note in request.notes)
+
+    def test_false_is_simply_the_default(self):
+        request = _req(source={"type": "webhook", "signature": "github", "expose_secret": False})
+        assert not any("expose_secret" in note for note in request.notes)
 
 
 class TestSchemes:
@@ -252,7 +253,6 @@ class TestSchemes:
             ({"signature": "header_token", "signature_header": "Authorization"}, "can't be Authorization"),
             ({"signature": "header_token", "signature_header": "webhook-id"}, "can't be webhook-id"),
             ({"signature": "stripe", "methods": ["GET"]}, "a GET call has none"),
-            ({"signature": "stripe", "expose_secret": True}, "stripe creates the secret"),
         ],
     )
     def test_rejects(self, source, message):

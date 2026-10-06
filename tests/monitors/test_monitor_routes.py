@@ -219,3 +219,26 @@ class TestSetSecret:
                 for _ in range(routes.SECRET_REVEALS_PER_MINUTE + 1)
             ]
         assert statuses[0] == 200 and statuses[-1] == 429
+
+
+class TestSecretExposure:
+    def test_only_the_owner_turns_it_on_and_off(self, client, made):
+        _polled_id, hook_id, _hook = made
+        path = f"/api/monitors/{hook_id}/secret/exposure"
+        with _as("u2"):
+            assert client.put(path, json={"exposed": True}).status_code == 404
+        with patch("docsgpt.app.handle_auth", return_value=None):
+            assert client.put(path, json={"exposed": True}).status_code == 401
+        with _as("u1"):
+            assert client.put(path, json={"exposed": "yes"}).status_code == 400
+            on = client.put(path, json={"exposed": True})
+            assert on.status_code == 200 and on.get_json() == {"exposed": True}
+            listed = client.get("/api/monitors").get_json()
+            hook = next(m for m in listed["monitors"] if m["monitor_id"] == hook_id)
+            assert hook["links"][0]["secret_exposed"] is True and "secret" not in hook["links"][0]
+            assert client.put(path, json={"exposed": False}).get_json() == {"exposed": False}
+
+    def test_an_access_token_can_never_change_it(self):
+        from docsgpt.api.pat.rules import DENIED
+
+        assert DENIED["/api/monitors/<string:monitor_id>/secret/exposure"] == ("*",)

@@ -3296,6 +3296,12 @@
       "setSecretFailed": "无法保存签名密钥。请重试。",
       "setSecretInvalid": "这看起来不像此链接的签名密钥。{{reason}}",
       "senderSecretNote": "此链接的签名密钥由 {{sender}} 创建。请从 {{sender}} 复制并在此设置；在此之前调用会被拒绝。",
+      "exposeSecret": "向助手显示",
+      "unexposeSecret": "对助手隐藏",
+      "exposeWarning": "助手在列出其监控器时会看到原始密钥，因此密钥会发送给模型提供商。它的工具调用仍使用引用，并仍会请求你的批准。只有在助手必须自己读取该值时才开启。",
+      "exposeConfirm": "向助手显示",
+      "exposedNote": "助手可以看到此密钥。",
+      "exposeFailed": "无法更改。请重试。",
       "approvalTitle": "审批链接",
       "expires": "{{date}} 过期",
       "state": {

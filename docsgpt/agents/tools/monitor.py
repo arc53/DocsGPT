@@ -27,8 +27,8 @@ _CREATE_DESCRIPTION = (
     "Authorization: Bearer; \"hmac_sha256\" for a custom sender that computes it. A signed link's secret "
     "comes back as a reference, "
     "{{link_secret:REF}}: to set up the sender yourself, put the reference in the approved tool call that does it "
-    "and the server fills in the value; `expose_secret: true` returns the raw value instead, which then goes to "
-    "the model provider, so use it only when the user asks. `methods: [\"POST\", \"GET\"]` also takes GET calls, "
+    "and the server fills in the value; you never get the raw value, and must never ask for it. "
+    "`methods: [\"POST\", \"GET\"]` also takes GET calls, "
     "with the query parameters as the data, but anything that opens a GET link fires it: use it only for a "
     "machine caller that can't POST (a device or app that only opens URLs), never for a link to paste into a "
     "chat, an email or a document); `approval` (returns a page link where a person "
@@ -158,13 +158,6 @@ class MonitorTool(Tool):
                                     "description": (
                                         "webhook: HTTP methods; default [\"POST\"]. Add GET only for a machine "
                                         "caller that can't POST; never for a link people paste or open."
-                                    ),
-                                },
-                                "expose_secret": {
-                                    "type": "boolean",
-                                    "description": (
-                                        "webhook: return the raw signing secret instead of its reference. The "
-                                        "value then goes to the model provider; only when the user asks."
                                     ),
                                 },
                                 "question": {**string, "description": "approval: what the person decides."},

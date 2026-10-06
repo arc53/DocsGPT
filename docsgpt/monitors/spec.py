@@ -246,18 +246,9 @@ def _source(raw: Any) -> Dict[str, Any]:
                     f"with {', '.join(GET_SIGNATURE_SCHEMES)}."
                 )
             out["methods"] = methods
-        expose = raw.get("expose_secret")
-        if expose not in (None, False):
-            if not isinstance(expose, bool):
-                raise SpecError("`source.expose_secret` must be true or false.")
-            if scheme == "none":
-                raise SpecError("`source.expose_secret` needs a signed link: set `source.signature` too.")
-            if scheme in SENDER_SECRET_SCHEMES:
-                raise SpecError(
-                    f"`source.expose_secret` doesn't apply to {scheme}: {scheme} creates the secret, and the user "
-                    "pastes it in."
-                )
-            out["expose_secret"] = True
+        if raw.get("expose_secret") not in (None, False):
+            # Only the owner shows a secret to the assistant (Settings > Monitors); a model's request is ignored.
+            out["expose_secret_ignored"] = True
         return out
     question = _text(raw.get("question"), "source.question", limit=_MAX_QUESTION, required=True)
     details = _text(raw.get("details") or raw.get("context"), "source.details", limit=_MAX_DETAILS)
@@ -386,6 +377,11 @@ def parse_request(arguments: Dict[str, Any], *, now: Optional[datetime] = None) 
             notes.append("check ignored: the ingest finishing or failing is the event")
     else:
         check = _check(raw_check)
+    if source.pop("expose_secret_ignored", False):
+        notes.append(
+            "expose_secret ignored: you never get a link's raw secret from monitor_create. Use its reference "
+            "{{link_secret:REF}}; only the owner can choose to show a secret to you, in Settings > Monitors"
+        )
     if not on_match:
         raise SpecError("`on_match` is required: say what to do when the monitor fires.")
 

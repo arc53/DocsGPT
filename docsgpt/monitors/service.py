@@ -379,14 +379,12 @@ def create(caller: Caller, arguments: Dict[str, Any]) -> Dict[str, Any]:
                     else None
                 ),
                 ref=ref,
-                expose_secret=bool(request.source.get("expose_secret")),
                 allow_get="GET" in (request.source.get("methods") or []),
                 signature_header=request.source.get("signature_header"),
             )
     publish_monitor_updated(monitor)
     return _created_result(request, monitor, baseline=baseline, already=already, token=link_token,
-                           signed=bool(secret), ref=ref,
-                           secret=secret if request.source.get("expose_secret") else None)
+                           signed=bool(secret), ref=ref)
 
 
 def set_secret(monitor_id: str, user_id: str, secret: Any) -> Optional[Dict[str, Any]]:
@@ -453,7 +451,6 @@ def _created_result(
     token: Optional[str],
     signed: bool,
     ref: Optional[str] = None,
-    secret: Optional[str] = None,
 ) -> Dict[str, Any]:
     kind = request.source["type"]
     result: Dict[str, Any] = {
@@ -519,18 +516,7 @@ def _created_result(
                 "so it is for a machine caller that can't POST: tell the user never to paste it into a chat, "
                 "email or document, where previews and scanners open links."
             )
-        if signed and secret:
-            # The owner chose expose_secret: the raw value is in this result, and so goes to the model provider.
-            result["secret"] = secret
-            result["secret_exposed"] = True
-            result["secret_ref"] = ref
-            result["signing"] = links.signing_instructions(scheme, header_name)
-            tell += (
-                " Give the user the url. The raw signing secret is in this result because the link was "
-                "created with expose_secret, so it has been sent to the model provider; prefer the reference "
-                f"{{{{link_secret:{ref}}}}} in tool calls, and don't repeat the value in your reply."
-            )
-        elif signed:
+        if signed:
             # The model gets a reference; the executor fills the value into approved calls, the user can reveal it.
             from docsgpt.monitors.secret_refs import reference
 
@@ -661,15 +647,68 @@ def view(monitor: Dict[str, Any], *, links_rows: Optional[List[Dict[str, Any]]] 
     return out
 
 
+#: What the assistant is told with a secret its owner chose to show it.
+EXPOSED_NOTE = (
+    "The owner chose to show you this link's raw secret, so it has been sent to the model provider. Still use "
+    "the reference in tool calls (a call carrying the raw value is treated as carrying the reference: it asks "
+    "for approval, and goes only where a reference may), and don't repeat the value unless the user asks."
+)
+
+
 def list_for_conversation(caller: Caller) -> List[Dict[str, Any]]:
-    """This conversation's monitors, newest first."""
+    """This conversation's monitors, newest first, for the model.
+
+    A live link whose owner chose to show its secret to the assistant carries
+    it (``secret`` with ``secret_note``); no other path gives the model a raw
+    secret.
+    """
     if not caller.conversation_id:
         return []
     with db_readonly() as conn:
         rows = MonitorsRepository(conn).list_for_user(caller.user_id, conversation_id=str(caller.conversation_id))
         links_by_monitor = TriggerLinksRepository(conn).list_for_monitors([str(row["id"]) for row in rows])
     # Links carry their state (live, expired, revoked, used_up), so the model can tell a dead link from a live one.
-    return [view(row, links_rows=links_by_monitor.get(str(row["id"]), [])) for row in rows]
+    views = [view(row, links_rows=links_by_monitor.get(str(row["id"]), [])) for row in rows]
+    for monitor_view, row in zip(views, rows):
+        for link_view, link in zip(monitor_view.get("links") or [], links_by_monitor.get(str(row["id"]), [])):
+            if link.get("expose_secret") and link.get("secret_encrypted") and links.link_state(link) == "live":
+                link_view["secret"] = links.open_secret(link["secret_encrypted"], caller.user_id)
+                link_view["secret_note"] = EXPOSED_NOTE
+    return views
+
+
+def set_exposure(monitor_id: str, user_id: str, exposed: Any) -> Optional[Dict[str, Any]]:
+    """Show (or stop showing) a webhook monitor's raw secret to the assistant: the owner's choice only.
+
+    Audited as ``monitor.secret_exposure`` (never with the value).
+
+    Args:
+        monitor_id: The monitor.
+        user_id: Its owner (anyone else gets None).
+        exposed: True to show it, False to stop.
+
+    Returns:
+        ``{"exposed": bool}``, or None when the monitor isn't the caller's or
+        has no live signed link with a secret.
+
+    Raises:
+        ValueError: ``exposed`` is not a boolean.
+    """
+    from docsgpt.api.audit import record_event
+
+    if not isinstance(exposed, bool):
+        raise ValueError("exposed must be true or false")
+    with db_session() as conn:
+        monitor = MonitorsRepository(conn).get(monitor_id, user_id)
+        if monitor is None or monitor.get("source_type") != "webhook":
+            return None
+        repo = TriggerLinksRepository(conn)
+        link = repo.get_live_signed(str(monitor["id"]))
+        if link is None or not repo.set_exposed(str(link["id"]), exposed):
+            return None
+        record_event(conn, "monitor.secret_exposure", actor=user_id, monitor_id=str(monitor["id"]),
+                     link_id=str(link["id"]), exposed=exposed)
+    return {"exposed": exposed}
 
 
 def end(monitor_id: str, user_id: str, status: str, *, reason: Optional[str] = None,

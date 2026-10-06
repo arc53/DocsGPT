@@ -149,6 +149,27 @@ const monitorsService = {
     }
   },
 
+  /**
+   * Show (or stop showing) a webhook monitor's raw secret to the assistant.
+   * The owner's choice only; the assistant can never turn it on.
+   */
+  setExposure: async (
+    id: string,
+    exposed: boolean,
+    token: string | null,
+  ): Promise<boolean> => {
+    try {
+      const r: Response = await apiClient.put(
+        endpoints.USER.MONITOR_SECRET_EXPOSURE(id),
+        { exposed },
+        token,
+      );
+      return r.ok;
+    } catch {
+      return false;
+    }
+  },
+
   /** Pause, resume or cancel a monitor; resolves with the monitor after the change. */
   act: async (
     id: string,

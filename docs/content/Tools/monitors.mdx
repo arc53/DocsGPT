@@ -202,9 +202,17 @@ GitHub's own MCP server has no webhook tool, so through the stock GitHub connect
 `gh api` on a [paired device](/Tools/remote-device) or an [API tool](/Tools/api-tool) for GitHub's REST API
 (`POST /repos/{owner}/{repo}/hooks` with the reference as `config.secret`).
 
-`monitor_create` with `source.expose_secret: true` returns the raw value instead (`secret_exposed: true`). The
-value then goes to the model provider and into the conversation, so the tool description tells the model to use
-it only when the user asks.
+Only the owner can show a secret to the assistant: **Show to assistant** on **Settings → Monitors**, after a
+warning (`PUT /api/monitors/<id>/secret/exposure` with `{"exposed": true}`; owner session only, audited as
+`monitor.secret_exposure`). The model can't: an `expose_secret` argument from it is ignored, with a note in the
+result. An exposed link's secret appears in `monitor_list` and so goes to the model provider. Even then:
+
+- a tool call carrying the raw value is treated as carrying its reference, so it asks for approval and goes only
+  where a reference may go;
+- what a turn stores keeps the reference: tool-call arguments and results, the tool-call journal, and the
+  stored answer if the model repeats the value. The live stream already carried the reply as it was written.
+
+**Hide from assistant** turns it off again.
 
 The owner can always see the secret: **Reveal secret** on the link card or on **Settings → Monitors** calls
 `GET /api/monitors/<id>/secret`, which only the owner's own session may use (never an access token). It is rate
@@ -260,8 +268,8 @@ why, so it doesn't promise to report back.
 ## Managing monitors
 
 **Settings → Monitors** lists the user's monitors: what each watches, how often, when it last checked, the wakes
-left and the expiry, with pause, resume and cancel, and for a live signed webhook link **Reveal secret** (and
-**Set signing secret** for Stripe and Slack). Cancelling stops the checks, revokes its links and withdraws
+left and the expiry, with pause, resume and cancel, and for a live signed webhook link **Reveal secret**, **Show to
+assistant** (and **Set signing secret** for Stripe and Slack). Cancelling stops the checks, revokes its links and withdraws
 the approval its source was given. A conversation with an active monitor shows a small watching mark in the
 sidebar. In the chat, the agent can list and cancel the conversation's monitors itself.
 
@@ -273,7 +281,7 @@ of time without firing.
 
 The same data is available through `GET /api/monitors` (`conversation_id`, `status=live`) and
 `POST /api/monitors/<id>/pause|resume|cancel`. A link in that list carries its `secret_ref`, `methods`,
-`signature_header` and whether it `has_secret`, never the secret itself.
+`signature_header`, whether it `has_secret` and whether it is `secret_exposed`, never the secret itself.
 
 ## Settings
 

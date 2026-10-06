@@ -3297,6 +3297,12 @@
       "setSecretFailed": "無法儲存簽章密鑰。請再試一次。",
       "setSecretInvalid": "這看起來不像此連結的簽章密鑰。{{reason}}",
       "senderSecretNote": "此連結的簽章密鑰由 {{sender}} 建立。請從 {{sender}} 複製並在此設定；在此之前呼叫會被拒絕。",
+      "exposeSecret": "向助理顯示",
+      "unexposeSecret": "對助理隱藏",
+      "exposeWarning": "助理在列出其監控器時會看到原始密鑰，因此密鑰會傳送給模型供應商。它的工具呼叫仍使用參照，並仍會請求你的核准。只有在助理必須自己讀取該值時才開啟。",
+      "exposeConfirm": "向助理顯示",
+      "exposedNote": "助理可以看到此密鑰。",
+      "exposeFailed": "無法變更。請再試一次。",
       "approvalTitle": "審核連結",
       "expires": "{{date}} 到期",
       "state": {

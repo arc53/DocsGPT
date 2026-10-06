@@ -162,6 +162,39 @@ class MonitorSecret(Resource):
         return response
 
 
+@monitors_ns.route("/monitors/<string:monitor_id>/secret/exposure")
+class MonitorSecretExposure(Resource):
+    @api.doc(
+        description=(
+            "Show (or stop showing) one of the caller's webhook monitors' raw signing secret to the assistant: "
+            "{exposed: true|false}. Shown, monitor_list gives the assistant the value, which then goes to the model "
+            "provider. Only the owner's session may change it (never an access token, never the assistant). Rate "
+            "limited and audited. 404 when the monitor has no live signed link with a secret."
+        )
+    )
+    def put(self, monitor_id: str):
+        from docsgpt.monitors.triggers import rate_limited
+
+        user_id = _user_id()
+        if not user_id:
+            return _err("Unauthorized", 401)
+        if rate_limited("secret_exposure", user_id, SECRET_REVEALS_PER_MINUTE):
+            return _err("Too many requests; try again in a minute", 429)
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or not isinstance(data.get("exposed"), bool):
+            return _err("Send {\"exposed\": true} or {\"exposed\": false}", 400)
+        try:
+            changed = service.set_exposure(monitor_id, user_id, data["exposed"])
+        except Exception:
+            logger.exception("changing a monitor secret's exposure failed (%s)", monitor_id)
+            return _err("Failed to change it", 500)
+        if changed is None:
+            return _err("No signed link with a secret for this monitor", 404)
+        response = make_response(jsonify(changed), 200)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+
 @monitors_ns.route("/monitors/<string:monitor_id>/<string:action>")
 class MonitorAction(Resource):
     @api.doc(

@@ -1514,6 +1514,11 @@ trigger_links_table = Table(
 
 Index("trigger_links_monitor_idx", trigger_links_table.c.monitor_id)
 Index(
+    "trigger_links_exposed_idx",
+    trigger_links_table.c.user_id,
+    postgresql_where=trigger_links_table.c.expose_secret,
+)
+Index(
     "trigger_links_user_ref_uidx",
     trigger_links_table.c.user_id,
     trigger_links_table.c.ref,

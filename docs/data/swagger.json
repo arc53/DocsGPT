@@ -4327,6 +4327,29 @@
         "x-pat-denied": true
       }
     },
+    "/api/monitors/{monitor_id}/secret/exposure": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "monitor_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "put": {
+        "description": "Show (or stop showing) one of the caller's webhook monitors' raw signing secret to the assistant: {exposed: true|false}. Shown, monitor_list gives the assistant the value, which then goes to the model provider. Only the owner's session may change it (never an access token, never the assistant). Rate limited and audited. 404 when the monitor has no live signed link with a secret.",
+        "operationId": "put_monitor_secret_exposure",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "monitors"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/monitors/{monitor_id}/{action}": {
       "parameters": [
         {

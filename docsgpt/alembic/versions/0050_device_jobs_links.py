@@ -9,8 +9,9 @@
 * ``trigger_links.ref``: a signed link's short reference id, unique per
   user. The model is given ``{{link_secret:REF}}`` instead of the secret,
   and the executor fills the value into tool calls the user approves.
-  ``trigger_links.expose_secret`` records a link whose owner let the model
-  see the raw secret.
+  ``trigger_links.expose_secret`` records a link whose owner chose, in
+  Settings > Monitors, to show its raw secret to the assistant (never the
+  model's choice); a partial index finds a user's exposed links.
 * ``trigger_links.allow_get``: a webhook link that also takes GET calls
   (query parameters are the payload), for machine callers that can't POST.
 * ``trigger_links.signature_scheme`` takes ``stripe``, ``slack``,
@@ -78,6 +79,9 @@ def upgrade() -> None:
         "WHERE ref IS NOT NULL;"
     )
     op.execute("ALTER TABLE trigger_links ADD COLUMN IF NOT EXISTS allow_get BOOLEAN NOT NULL DEFAULT false;")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS trigger_links_exposed_idx ON trigger_links (user_id) WHERE expose_secret;"
+    )
     op.execute("ALTER TABLE trigger_links ADD COLUMN IF NOT EXISTS signature_header TEXT;")
     _schemes(_SCHEMES_AFTER)
     op.execute(
@@ -123,6 +127,7 @@ def downgrade() -> None:
     _schemes(_SCHEMES_BEFORE)
     op.execute("ALTER TABLE trigger_links DROP COLUMN IF EXISTS signature_header;")
     op.execute("ALTER TABLE trigger_links DROP COLUMN IF EXISTS allow_get;")
+    op.execute("DROP INDEX IF EXISTS trigger_links_exposed_idx;")
     op.execute("DROP INDEX IF EXISTS trigger_links_user_ref_uidx;")
     op.execute("ALTER TABLE trigger_links DROP COLUMN IF EXISTS expose_secret;")
     op.execute("ALTER TABLE trigger_links DROP COLUMN IF EXISTS ref;")

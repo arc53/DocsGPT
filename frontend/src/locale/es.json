@@ -3309,6 +3309,12 @@
       "setSecretFailed": "No se pudo guardar el secreto de firma. Inténtalo de nuevo.",
       "setSecretInvalid": "Eso no parece el secreto de firma de este enlace. {{reason}}",
       "senderSecretNote": "{{sender}} crea el secreto de firma de este enlace. Cópialo de {{sender}} y establécelo aquí; hasta entonces se rechazan las llamadas.",
+      "exposeSecret": "Mostrar al asistente",
+      "unexposeSecret": "Ocultar al asistente",
+      "exposeWarning": "El asistente verá el secreto en claro al listar sus monitores, así que el secreto se envía al proveedor del modelo. Sus llamadas a herramientas siguen usando la referencia y siguen pidiendo tu aprobación. Actívalo solo si el asistente debe leer el valor por sí mismo.",
+      "exposeConfirm": "Mostrárselo al asistente",
+      "exposedNote": "El asistente puede ver este secreto.",
+      "exposeFailed": "No se pudo cambiar. Inténtalo de nuevo.",
       "approvalTitle": "Enlace de aprobación",
       "expires": "Caduca el {{date}}",
       "state": {

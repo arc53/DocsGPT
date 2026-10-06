@@ -18,6 +18,8 @@ export interface MonitorLink {
   signature_header?: string | null;
   /** Whether a signed link has its secret (Stripe and Slack ones wait for the owner's). */
   has_secret?: boolean;
+  /** The owner chose to show the raw secret to the assistant. */
+  secret_exposed?: boolean;
   expires_at: string | null;
   hit_count: number;
   max_hits: number;
