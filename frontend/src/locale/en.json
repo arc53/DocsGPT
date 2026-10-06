@@ -3282,7 +3282,8 @@
     "notWaiting": "This request is no longer waiting for a decision.",
     "rateLimited": "Too many attempts. Wait a minute and try again.",
     "submitError": "Your decision couldn't be sent. Try again.",
-    "expiresAt": "This request expires on {{date}}."
+    "expiresAt": "This request expires on {{date}}.",
+    "yourComment": "Your comment: “{{comment}}”"
   },
   "monitors": {
     "label": "Monitors",

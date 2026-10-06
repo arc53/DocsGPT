@@ -3237,7 +3237,8 @@
     "notWaiting": "Diese Anfrage wartet nicht mehr auf eine Entscheidung.",
     "rateLimited": "Zu viele Versuche. Warte eine Minute und versuche es erneut.",
     "submitError": "Deine Entscheidung konnte nicht gesendet werden. Versuche es erneut.",
-    "expiresAt": "Diese Anfrage läuft am {{date}} ab."
+    "expiresAt": "Diese Anfrage läuft am {{date}} ab.",
+    "yourComment": "Ihr Kommentar: „{{comment}}“"
   },
   "monitors": {
     "label": "Monitore",

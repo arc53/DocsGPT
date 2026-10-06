@@ -16,7 +16,7 @@ import { LoadingState } from '@/components/ui/loading-state';
 import { SectionHeader } from '@/components/ui/section-header';
 import { Textarea } from '@/components/ui/textarea';
 import { useDarkTheme } from '@/hooks';
-import { formatDateTime } from '@/utils/dateTimeUtils';
+import { formatDeadline } from '@/utils/dateTimeUtils';
 
 import type { ApprovalView } from './types';
 
@@ -48,6 +48,8 @@ export default function ApprovalPage() {
   const [comment, setComment] = useState('');
   const [pending, setPending] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<DecisionResult | null>(null);
+  // The comment this visitor sent, echoed back with the confirmation.
+  const [sentComment, setSentComment] = useState('');
 
   const fetchView = useCallback(async () => {
     setLoad({ state: 'loading' });
@@ -69,6 +71,7 @@ export default function ApprovalPage() {
     const result = await monitorsService.decideApproval(token, option, comment);
     setPending(null);
     setOutcome(result);
+    if (result.state === 'decided') setSentComment(comment.trim());
   };
 
   const shell = (children: React.ReactNode) => (
@@ -133,17 +136,33 @@ export default function ApprovalPage() {
           {view.details}
         </p>
       )}
-      {decided ? (
+      {decided && outcome?.state === 'decided' ? (
         <Alert variant="success" role="status">
-          {outcome?.state === 'decided'
-            ? t('approval.thanks', {
-                decision: label(decided),
-                interpolation: { escapeValue: false },
-              })
-            : t('approval.alreadyDecided', {
-                decision: label(decided),
+          <p>
+            {t('approval.thanks', {
+              decision: label(decided),
+              interpolation: { escapeValue: false },
+            })}
+          </p>
+          {sentComment && (
+            <p
+              className="wrap-break-word whitespace-pre-wrap"
+              data-testid="approval-sent-comment"
+            >
+              {t('approval.yourComment', {
+                comment: sentComment,
                 interpolation: { escapeValue: false },
               })}
+            </p>
+          )}
+        </Alert>
+      ) : decided ? (
+        // Someone decided before this visit: a fact, not this visitor's success.
+        <Alert variant="info" role="status">
+          {t('approval.alreadyDecided', {
+            decision: label(decided),
+            interpolation: { escapeValue: false },
+          })}
         </Alert>
       ) : !open ? (
         <Alert variant="info" role="status">
@@ -188,7 +207,7 @@ export default function ApprovalPage() {
               <>
                 {' '}
                 {t('approval.expiresAt', {
-                  date: formatDateTime(view.expires_at),
+                  date: formatDeadline(view.expires_at),
                   interpolation: { escapeValue: false },
                 })}
               </>

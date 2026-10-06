@@ -3237,7 +3237,8 @@
     "notWaiting": "Esta solicitud ya no espera una decisión.",
     "rateLimited": "Demasiados intentos. Espera un minuto y vuelve a intentarlo.",
     "submitError": "No se pudo enviar tu decisión. Inténtalo de nuevo.",
-    "expiresAt": "Esta solicitud caduca el {{date}}."
+    "expiresAt": "Esta solicitud caduca el {{date}}.",
+    "yourComment": "Tu comentario: «{{comment}}»"
   },
   "monitors": {
     "label": "Monitores",

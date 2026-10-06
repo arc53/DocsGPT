@@ -3225,7 +3225,8 @@
     "notWaiting": "此請求已不再等待決定。",
     "rateLimited": "嘗試次數過多。請等一分鐘後再試。",
     "submitError": "無法送出你的決定。請再試一次。",
-    "expiresAt": "此請求將於 {{date}} 到期。"
+    "expiresAt": "此請求將於 {{date}} 到期。",
+    "yourComment": "你的備註:「{{comment}}」"
   },
   "monitors": {
     "label": "監控",

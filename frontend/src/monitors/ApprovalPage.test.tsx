@@ -10,9 +10,11 @@ vi.mock('react-i18next', () => ({
     t: (key: string, values?: Record<string, unknown>) =>
       values?.decision
         ? `${key}:${values.decision}`
-        : values?.date
-          ? `${key}:${values.date}`
-          : key,
+        : values?.comment
+          ? `${key}:${values.comment}`
+          : values?.date
+            ? `${key}:${values.date}`
+            : key,
   }),
 }));
 vi.mock('@/hooks', () => ({ useDarkTheme: () => [false] }));
@@ -130,6 +132,16 @@ describe('ApprovalPage', () => {
     expect(container.textContent).toContain(
       'approval.thanks:approval.options.approve',
     );
+    // The confirmation repeats what this visitor wrote, in a success style.
+    expect(
+      container.querySelector('[data-testid="approval-sent-comment"]')
+        ?.textContent,
+    ).toBe('approval.yourComment:Looks good');
+    expect(
+      container
+        .querySelector('[data-slot="alert"]')
+        ?.getAttribute('data-variant'),
+    ).toBe('success');
     expect(buttons()).toHaveLength(0);
   });
 
@@ -143,6 +155,12 @@ describe('ApprovalPage', () => {
     expect(container.textContent).toContain(
       'approval.alreadyDecided:approval.options.reject',
     );
+    // Someone else's earlier decision is information, not this visitor's success.
+    expect(
+      container
+        .querySelector('[data-slot="alert"]')
+        ?.getAttribute('data-variant'),
+    ).toBe('info');
   });
 
   it('keeps custom options as written and hides the comment when not allowed', async () => {

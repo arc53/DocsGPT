@@ -3224,7 +3224,8 @@
     "notWaiting": "此请求已不再等待决定。",
     "rateLimited": "尝试次数过多。请等一分钟后重试。",
     "submitError": "无法发送你的决定。请重试。",
-    "expiresAt": "此请求将于 {{date}} 过期。"
+    "expiresAt": "此请求将于 {{date}} 过期。",
+    "yourComment": "你的备注:“{{comment}}”"
   },
   "monitors": {
     "label": "监控",
