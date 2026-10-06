@@ -51,7 +51,8 @@ class LLMSettings(SettingsGroup):
     LLM_ALLOW_PLAINTEXT_ENDPOINTS: bool = Field(
         default=False,
         description=(
-            "Allow a configured LLM API key to be sent over plain http to any host. Off, plain http is accepted "
+            "Allow a configured LLM API key to be sent over plain http to any endpoint already in that key's "
+            "configured scope. Off, plain http is accepted "
             "only for loopback, private and link-local addresses, single-label hosts (Docker service names), "
             "host.docker.internal and names ending in .local, .svc, .internal or .localhost; every other endpoint needs https."
         ),

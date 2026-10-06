@@ -4,7 +4,13 @@ import { createRoot, type Root } from 'react-dom/client';
 import { Provider } from 'react-redux';
 import { MemoryRouter } from 'react-router-dom';
 
-const service = vi.hoisted(() => ({ list: vi.fn(), act: vi.fn() }));
+const service = vi.hoisted(() => ({
+  list: vi.fn(),
+  act: vi.fn(),
+  revealSecret: vi.fn(),
+  setSecret: vi.fn(),
+  setExposure: vi.fn(),
+}));
 vi.mock('@/api/services/monitorsService', () => ({ default: service }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -32,6 +38,8 @@ describe('Monitors page', () => {
 
   beforeEach(() => {
     service.list.mockReset();
+    service.revealSecret.mockReset();
+    service.setSecret.mockReset();
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -57,6 +65,153 @@ describe('Monitors page', () => {
       await Promise.resolve();
     });
   };
+
+  const webhookLink = (overrides: Record<string, unknown> = {}) => ({
+    id: 'l-1',
+    kind: 'webhook' as const,
+    state: 'live' as const,
+    signature: 'github',
+    expires_at: '2999-01-01T00:00:00Z',
+    hit_count: 0,
+    max_hits: 1000,
+    last_hit_at: null,
+    revoked: false,
+    decided: false,
+    has_secret: true,
+    ...overrides,
+  });
+  const buttons = (label: string) =>
+    Array.from(container.querySelectorAll('button')).filter(
+      (b) => b.textContent === label,
+    );
+
+  it("reveals a live signed link's secret, as the chat card does", async () => {
+    service.revealSecret.mockResolvedValue({ state: 'ok', secret: 's3cret' });
+    service.list.mockResolvedValue([
+      sampleMonitor({
+        monitor_id: 'hook',
+        source_type: 'webhook',
+        interval: null,
+        links: [webhookLink()],
+      }),
+    ]);
+    await render();
+    const reveal = buttons('monitors.linkCard.revealSecret');
+    // The table and the narrow-screen list each carry the row.
+    expect(reveal).toHaveLength(2);
+    await act(async () => reveal[0].click());
+    expect(service.revealSecret).toHaveBeenCalledWith('hook', 'tok');
+    expect(
+      container.querySelector('[data-testid="monitor-link-secret"]')
+        ?.textContent,
+    ).toBe('s3cret');
+    // This page has no example command; the note says what applies here.
+    expect(
+      container.querySelector('[data-testid="monitor-secret-note"]')
+        ?.textContent,
+    ).toBe('monitors.linkCard.secretNoteSettings');
+    await act(async () => buttons('monitors.linkCard.hideSecret')[0].click());
+    expect(container.textContent).not.toContain('s3cret');
+  });
+
+  it('offers Set signing secret for a Stripe link still waiting for it', async () => {
+    service.list.mockResolvedValue([
+      sampleMonitor({
+        monitor_id: 'stripe',
+        source_type: 'webhook',
+        interval: null,
+        links: [webhookLink({ signature: 'stripe', has_secret: false })],
+      }),
+      sampleMonitor({
+        monitor_id: 'set',
+        source_type: 'webhook',
+        interval: null,
+        links: [webhookLink({ signature: 'slack', has_secret: true })],
+      }),
+    ]);
+    await render();
+    expect(buttons('monitors.linkCard.setSecret')).toHaveLength(4);
+    // Only the one still waiting says calls are refused.
+    expect(
+      container.textContent?.split('monitors.linkCard.senderSecretNote').length,
+    ).toBe(3);
+    // Nothing to reveal or show until the secret is set: only the Slack link offers them.
+    expect(buttons('monitors.linkCard.revealSecret')).toHaveLength(2);
+    expect(buttons('monitors.linkCard.exposeSecret')).toHaveLength(2);
+  });
+
+  it('stacks the set-secret field full width on a narrow screen', async () => {
+    service.list.mockResolvedValue([
+      sampleMonitor({
+        monitor_id: 'stripe',
+        source_type: 'webhook',
+        interval: null,
+        links: [webhookLink({ signature: 'stripe', has_secret: false })],
+      }),
+    ]);
+    await render();
+    await act(async () => buttons('monitors.linkCard.setSecret')[0].click());
+    const input = container.querySelector(
+      'input[type="password"]',
+    ) as HTMLInputElement;
+    expect(input.className).toContain('w-full');
+    expect(input.closest('form')?.className).toContain('flex-col');
+    expect(input.closest('form')?.className).toContain('sm:flex-row');
+  });
+
+  it('shows a secret to the assistant only after the owner confirms the warning', async () => {
+    service.setExposure.mockResolvedValue(true);
+    service.list.mockResolvedValue([
+      sampleMonitor({
+        monitor_id: 'hook',
+        source_type: 'webhook',
+        interval: null,
+        links: [webhookLink()],
+      }),
+    ]);
+    await render();
+    await act(async () => buttons('monitors.linkCard.exposeSecret')[0].click());
+    expect(service.setExposure).not.toHaveBeenCalled();
+    expect(
+      container.querySelector('[data-testid="monitor-expose-confirm"]')
+        ?.textContent,
+    ).toContain('monitors.linkCard.exposeWarning');
+    await act(async () =>
+      buttons('monitors.linkCard.exposeConfirm')[0].click(),
+    );
+    expect(service.setExposure).toHaveBeenCalledWith('hook', true, 'tok');
+    expect(
+      container.querySelector('[data-testid="monitor-secret-exposed"]'),
+    ).not.toBeNull();
+    await act(async () =>
+      buttons('monitors.linkCard.unexposeSecret')[0].click(),
+    );
+    expect(service.setExposure).toHaveBeenLastCalledWith('hook', false, 'tok');
+  });
+
+  it('offers nothing for an unsigned, ended or finished link', async () => {
+    service.list.mockResolvedValue([
+      sampleMonitor({
+        monitor_id: 'unsigned',
+        source_type: 'webhook',
+        links: [webhookLink({ signature: 'none' })],
+      }),
+      sampleMonitor({
+        monitor_id: 'expired',
+        source_type: 'webhook',
+        links: [webhookLink({ state: 'expired' })],
+      }),
+      sampleMonitor({
+        monitor_id: 'done',
+        source_type: 'webhook',
+        status: 'cancelled',
+        links: [webhookLink()],
+      }),
+      sampleMonitor(),
+    ]);
+    await render();
+    expect(buttons('monitors.linkCard.revealSecret')).toHaveLength(0);
+  });
 
   it('lists what is watched, how often, wakes left, live ones first', async () => {
     service.list.mockResolvedValue([

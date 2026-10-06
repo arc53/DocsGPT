@@ -121,6 +121,10 @@ Answers render math, and the chat widget is published at 0.8.0.
 - Editing a one-time task's date or time in the Schedules tab now moves the task; the change used
   to be ignored. `PUT /api/schedules/<id>` accepts `run_at` for one-time tasks, and the schedule
   dialog shows why a save was refused.
+- A scheduled run no longer writes a `source='schedule'` row with its total tokens to `token_usage`
+  next to the rows its LLM calls already wrote, so queries that sum the table no longer count
+  scheduled spend twice. Older rows stay out of every DocsGPT total, now including the admin
+  overview's 30-day token count.
 
 ### Documentation
 

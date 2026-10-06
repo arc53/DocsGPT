@@ -34,10 +34,12 @@ The model is told not to run the call again, not to wait on it and not to guess 
 its turn by telling the user in plain words that the work is running (without the job id or how it is resumed). The call's entry in the conversation shows as running until the job ends.
 
 The model can also start a call as a job at once with `background=true`. The argument is offered on
-`code_executor`, MCP tools, API tools and `read_webpage`, in chat turns only. A `code_executor` run started
-that way without a `timeout` may run for the whole job lifetime (`BACKGROUND_JOB_MAX_SECONDS`, within
-`SANDBOX_EXEC_MAX_TIMEOUT`) instead of the 60-second default. A background run that hits its timeout is
-reported to the user, never re-run unless they ask.
+`code_executor`, MCP tools, API tools, `read_webpage` and a [remote device](/Tools/remote-device)'s
+`run_command`, in chat turns only. A `code_executor` run started that way without a `timeout` may run for the
+whole job lifetime (`BACKGROUND_JOB_MAX_SECONDS`, within `SANDBOX_EXEC_MAX_TIMEOUT`) instead of the 60-second
+default; a device command may run up to `DEVICE_JOB_MAX_SECONDS`. A background run that hits its timeout is
+reported to the user, never re-run unless they ask. Over the job caps, a `background=true` call runs in the
+foreground with the foreground limits.
 
 Some calls are never handed off: client-side tools (the `/v1` client tool calls), calls inside workflow nodes,
 and scheduled and webhook runs. A tool that needs approval starts its clock only after it is approved.
@@ -47,6 +49,7 @@ and scheduled and webhook runs. A tool that needs approval starts its clock only
 | Runner | When | Survives an API restart |
 | --- | --- | --- |
 | Sandbox | Every `code_executor` run on Daytona; a `background=true` run on the Jupyter runner | Yes |
+| Device | A `remote_device` command: it runs on the paired machine | Yes |
 | Worker | `background=true` on other tools: the whole call runs in a Celery worker | Until the worker dies |
 | In-process | Any other call that outlived the window (and Jupyter runs, which keep their kernel variables) | No |
 
@@ -55,6 +58,11 @@ auto-stopping, captures the files it writes as artifacts and reports the same re
 On Daytona every chat run starts this way (about 60 ms more than before for a trivial run), so a hand-off
 costs nothing. On the Jupyter runner a normal run stays in the kernel, so variables persist; a `background=true`
 run is a separate Python process that **does not share the kernel's variables**, only the workspace files.
+
+A **device** job is a command on a paired machine. A Celery poller reads its output from the device broker,
+applies its `watch`, and finishes the job with the exit code and output once the device reports. While the
+device is offline the job shows "waiting for the device" and picks up again when it reconnects; one whose
+report never arrives is marked lost (see [Remote Device](/Tools/remote-device#long-commands-as-background-jobs)).
 
 A job that a process was running when the process died is marked **lost** within about two minutes. The agent
 is resumed with a note that the work may or may not have taken effect and should be verified before retrying.
@@ -110,15 +118,17 @@ check_job(job_id?, action="get" | "cancel", wait_seconds=0)
   except for a job the same turn started: that one answers at once, since its result resumes the conversation
   anyway.
 - Without a `job_id`, it lists this conversation's jobs. It never sees other conversations' jobs.
-- `cancel` asks the job to stop. A sandbox run is stopped; an in-process call can't be interrupted and ends
-  `cancelled` when it returns. A step already under way may still complete.
+- `cancel` asks the job to stop. A sandbox run is stopped; a device command is taken off the device's queue,
+  or the device is told to kill it; an in-process call can't be interrupted and ends `cancelled` when it
+  returns. A step already under way may still complete.
 
 Statuses follow MCP Tasks: `working`, `completed`, `failed`, `cancelled`. A lost job reads as `failed` with the
 lost note.
 
 ## watch
 
-A `code_executor` call can carry a `watch` spec for what its output may do while it runs:
+A `code_executor` call or a remote device's `run_command` can carry a `watch` spec for what its output may do
+while it runs:
 
 ```json
 "watch": {"patterns": ["Traceback|Error|Killed"], "progress_regex": "PROGRESS (\\d+)%", "heartbeat_s": 0}
@@ -135,14 +145,15 @@ output of a child process captured with `subprocess.run(..., capture_output=True
 
 In a conversation that auto-resume applies to, completion and failure always resume the agent; in a poll-only
 one (see above) the result waits for `check_job` or the next message, and watch patterns and heartbeats wake
-nothing. Output during a run is available for sandbox jobs only; for other jobs `progress_regex` is applied to
-the final result.
+nothing. Output during a run is available for sandbox and device jobs; for other jobs `progress_regex` is
+applied to the final result.
 
 ## Events
 
 The app's event stream (`/api/events`) carries:
 
-- `job.updated`: `{job_id, conversation_id, status, progress, tool_name, action_name}`
+- `job.updated`: `{job_id, conversation_id, status, progress, tool_name, action_name, status_message}`; a
+  device job waiting for its device has `progress.waiting_for = "device"`
 - `conversation.continued`: `{conversation_id, message_id, source}`
 - `notification.created`: `{kind, title, body, url, conversation_id}`
 
@@ -254,8 +265,8 @@ failing is dropped.
 ## Running it
 
 <Callout type="info">
-  Background jobs need a Celery worker and the beat scheduler. The worker runs continuations, sandbox pollers
-  and `background=true` calls; beat runs the sweep that reports lost jobs and redelivers results. See
+  Background jobs need a Celery worker and the beat scheduler. The worker runs continuations, sandbox and
+  device pollers and `background=true` calls; beat runs the sweep that reports lost jobs and redelivers results. See
   [Development Environment](/Deploying/Development-Environment).
 </Callout>
 
@@ -264,6 +275,7 @@ failing is dropped.
 | `BACKGROUND_JOBS_ENABLED` | `true` | Hand slow calls off at all |
 | `BACKGROUND_YIELD_SECONDS` | `30` | How long a turn waits before handing a call off |
 | `BACKGROUND_JOB_MAX_SECONDS` | `1000` | Hard lifetime of a job |
+| `DEVICE_JOB_MAX_SECONDS` | `3600` | Hard lifetime of a job running a command on a paired device |
 | `BACKGROUND_MAX_JOBS_PER_CONVERSATION` | `2` | Running jobs per conversation; over it a call stays in the foreground |
 | `BACKGROUND_MAX_JOBS_PER_USER` | `5` | Running jobs per user |
 | `BACKGROUND_RESULT_RETENTION_DAYS` | `7` | How long finished jobs are kept |

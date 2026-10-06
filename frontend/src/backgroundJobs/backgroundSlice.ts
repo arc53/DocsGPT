@@ -5,6 +5,7 @@ import {
 } from '@reduxjs/toolkit';
 
 import backgroundService, {
+  type BackgroundJobNotice,
   type BackgroundJobProgress,
   type BackgroundJobStatus,
   type BackgroundJobSummary,
@@ -93,6 +94,7 @@ type JobUpdatedPayload = {
   progress?: BackgroundJobProgress;
   tool_name?: string;
   action_name?: string;
+  notices?: BackgroundJobNotice[];
 };
 
 function mergeJob(
@@ -243,6 +245,7 @@ export const backgroundSlice = createSlice({
           progress: payload.progress,
           tool_name: payload.tool_name,
           action_name: payload.action_name,
+          ...(payload.notices ? { notices: payload.notices } : {}),
         });
       })
       .addCase(fetchBackgroundJob.fulfilled, (state, action) => {

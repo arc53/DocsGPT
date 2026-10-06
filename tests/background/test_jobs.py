@@ -123,6 +123,19 @@ class TestFinalize:
         assert entry["job_status"] == "completed"
         assert entry["artifact_id"] == "art-1"
         assert entry["job_started_at"] and entry["job_finished_at"] >= entry["job_started_at"]
+        assert entry["job_notices"] == []
+
+    def test_the_entry_keeps_the_jobs_notices(self, bg_db, conversation):
+        _conversation_id, message_id = conversation
+        _seed_turn(bg_db, message_id, job_id_entry="job-x")
+        with bg_db.begin() as conn:
+            jobs.patch_origin_entry(conn, {
+                "id": "job-x", "origin_message_id": message_id, "status": "lost",
+                "error": {"type": "DeviceInterrupted", "pid": 4242}, "result": {"truncated": True},
+            })
+        entry = _entry(bg_db, message_id)
+        assert entry["job_status"] == "lost" and entry["status"] == "error"
+        assert entry["job_notices"] == [{"code": "device_interrupted", "pid": 4242}, {"code": "output_truncated"}]
 
     def test_a_tool_can_shape_what_its_job_keeps(self, bg_db, conversation, monkeypatch):
         """code_executor drops its environment banner and session from a background result (job_result)."""

@@ -534,6 +534,7 @@ class GetMessageTail(Resource):
                 thought = msg.get("thought")
                 sources = msg.get("sources") or []
                 tool_calls = msg.get("tool_calls") or []
+                segments = (msg.get("message_metadata") or {}).get("segments")
                 if status in ("pending", "streaming") and (
                     response == TERMINATED_RESPONSE_PLACEHOLDER
                 ):
@@ -546,6 +547,9 @@ class GetMessageTail(Resource):
                         sources = partial["sources"]
                     if partial["tool_calls"]:
                         tool_calls = partial["tool_calls"]
+                    # The order it streamed in, so a reload (a turn paused for
+                    # approval) places its tool cards where they were.
+                    segments = partial["segments"] or None
         except Exception as err:
             current_app.logger.error(
                 f"Error tailing message {message_id}: {err}", exc_info=True
@@ -561,6 +565,7 @@ class GetMessageTail(Resource):
                     "thought": thought,
                     "sources": sources,
                     "tool_calls": tool_calls,
+                    "segments": segments,
                     "request_id": msg.get("request_id"),
                     "last_heartbeat_at": metadata.get("last_heartbeat_at"),
                     "error": metadata.get("error"),

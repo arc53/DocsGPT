@@ -191,3 +191,76 @@ class TestDerived:
         assert spec.human_duration(900) == "15m"
         assert spec.human_duration(86400 * 7) == "7d"
         assert spec.human_duration(90) == "90s"
+
+
+class TestWebhookMethods:
+    def test_post_only_by_default(self):
+        assert "methods" not in _req(source={"type": "webhook"}).source
+
+    def test_get_is_opt_in_and_lives_a_short_while(self, monkeypatch):
+        monkeypatch.setattr(settings, "TRIGGER_GET_DEFAULT_TTL_HOURS", 12)
+        request = _req(source={"type": "webhook", "methods": ["get", "POST"]})
+        assert request.source["methods"] == ["POST", "GET"]
+        assert request.expires_at == NOW + timedelta(hours=12)
+
+    def test_an_explicit_lifetime_still_applies(self):
+        request = _req(source={"type": "webhook", "methods": ["GET"]}, expires_in="3d")
+        assert request.source["methods"] == ["POST", "GET"]
+        assert request.expires_at == NOW + timedelta(days=3)
+
+    @pytest.mark.parametrize(
+        "source,message",
+        [
+            ({"type": "webhook", "methods": ["PUT"]}, "takes only POST, GET"),
+            ({"type": "webhook", "methods": "nonsense"}, "takes only"),
+            ({"type": "webhook", "methods": [1]}, "must be a list"),
+            ({"type": "webhook", "methods": ["GET"], "signature": "github"}, "a GET call has none"),
+        ],
+    )
+    def test_rejects(self, source, message):
+        with pytest.raises(SpecError, match=message):
+            _req(source=source)
+
+
+class TestExposeSecret:
+    @pytest.mark.parametrize("value", [True, "yes", 1])
+    def test_a_model_can_never_ask_for_the_raw_secret(self, value):
+        request = _req(source={"type": "webhook", "signature": "github", "expose_secret": value})
+        assert "expose_secret" not in request.source and "expose_secret_ignored" not in request.source
+        assert any("expose_secret ignored" in note for note in request.notes)
+
+    def test_false_is_simply_the_default(self):
+        request = _req(source={"type": "webhook", "signature": "github", "expose_secret": False})
+        assert not any("expose_secret" in note for note in request.notes)
+
+
+class TestSchemes:
+    @pytest.mark.parametrize("scheme", ["stripe", "slack", "header_token", "bearer"])
+    def test_new_schemes_are_accepted(self, scheme):
+        assert _req(source={"type": "webhook", "signature": scheme}).source["signature"] == scheme
+
+    def test_a_header_token_names_its_header(self):
+        source = _req(source={"type": "webhook", "signature": "header_token", "signature_header": "X-Gitlab-Token"}
+                      ).source
+        assert source["signature_header"] == "X-Gitlab-Token"
+        assert "signature_header" not in _req(source={"type": "webhook", "signature": "header_token"}).source
+
+    @pytest.mark.parametrize(
+        "source,message",
+        [
+            ({"signature": "bearer", "signature_header": "X-Token"}, "only to signature"),
+            ({"signature": "header_token", "signature_header": "Bad Header"}, "header name like"),
+            ({"signature": "header_token", "signature_header": "Authorization"}, "can't be Authorization"),
+            ({"signature": "header_token", "signature_header": "webhook-id"}, "can't be webhook-id"),
+            ({"signature": "stripe", "methods": ["GET"]}, "a GET call has none"),
+        ],
+    )
+    def test_rejects(self, source, message):
+        with pytest.raises(SpecError, match=message):
+            _req(source={"type": "webhook", **source})
+
+    @pytest.mark.parametrize("scheme", ["header_token", "bearer"])
+    def test_a_static_token_link_may_take_get(self, scheme):
+        assert _req(source={"type": "webhook", "signature": scheme, "methods": ["GET"]}).source["methods"] == [
+            "POST", "GET"
+        ]

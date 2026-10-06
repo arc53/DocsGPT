@@ -3,9 +3,12 @@
 A token is 32 random bytes (``secrets.token_urlsafe``), shown once in the
 tool result; only its sha256 is stored, and a link is looked up by that
 hash. Webhook secrets are random too and stored encrypted for the owner. The
-model never sees a secret: the tool result carries :data:`SECRET_PLACEHOLDER`
-and an example command that reads :data:`SECRET_ENV`, and the owner reveals the
-secret in the chat (``GET /api/monitors/<id>/secret``).
+model never sees a secret unless its owner chose to show it (Settings >
+Monitors; ``monitor_list`` then carries it): the tool result carries the reference
+``{{link_secret:REF}}`` (:mod:`docsgpt.monitors.secret_refs` fills the value
+into tool calls the user approves) and an example command that reads
+:data:`SECRET_ENV`, and the owner reveals the secret in the chat or on the
+Monitors page (``GET /api/monitors/<id>/secret``).
 
 URLs are absolute, built from ``PUBLIC_API_BASE_URL`` (else ``API_URL``);
 approval pages from ``PUBLIC_APP_URL`` when the UI runs elsewhere. A base
@@ -17,6 +20,7 @@ user an outside service won't get through.
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import ipaddress
 import json
@@ -35,9 +39,6 @@ TOKEN_BYTES = 32
 WEBHOOK_MAX_HITS = 1000
 
 _TOKEN_PREFIX = {"webhook": "trg_", "approval": "apv_"}
-
-#: What the model is given in place of a signing secret.
-SECRET_PLACEHOLDER = "hidden from you; the user reveals it on the link card in this chat"
 
 #: The environment variable the example command reads the secret from.
 SECRET_ENV = "DOCSGPT_WEBHOOK_SECRET"
@@ -62,9 +63,69 @@ def new_secret(scheme: str) -> Optional[str]:
     """
     if scheme == "standard_webhooks":
         return "whsec_" + base64.b64encode(secrets.token_bytes(32)).decode("ascii")
-    if scheme in ("github", "hmac_sha256"):
+    if scheme in ("github", "hmac_sha256", "header_token", "bearer"):
         return secrets.token_urlsafe(32)
+    # Stripe and Slack create their own signing secret; the owner pastes it in (PUT /api/monitors/<id>/secret).
     return None
+
+
+#: Schemes whose secret the sender creates, so a new link has none until the owner sets it.
+SENDER_SECRET_SCHEMES = ("stripe", "slack")
+
+#: Shortest secret the owner may set.
+MIN_SECRET_CHARS = 16
+
+#: Longest secret the owner may set.
+MAX_SECRET_CHARS = 512
+
+
+#: Why a pasted secret was refused, as the owner is told (never with the value).
+SECRET_REJECTIONS = {
+    "not_text": "the secret must be text",
+    "length": f"a signing secret is {MIN_SECRET_CHARS} to {MAX_SECRET_CHARS} characters with no spaces",
+    "characters": "the secret has characters a signing secret never has",
+    "stripe_prefix": "a Stripe endpoint signing secret starts with whsec_",
+    "standard_webhooks_format": "a Standard Webhooks secret is whsec_ followed by base64",
+}
+
+
+class SecretRejected(ValueError):
+    """A pasted signing secret can't be this link's; ``code`` is a key of :data:`SECRET_REJECTIONS`."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(SECRET_REJECTIONS[code])
+        self.code = code
+
+
+def check_owner_secret(scheme: str, secret: Any) -> str:
+    """Validate a signing secret the owner pastes in, for the link's scheme.
+
+    Args:
+        scheme: The link's signature scheme.
+        secret: What was pasted.
+
+    Returns:
+        The secret, trimmed.
+
+    Raises:
+        SecretRejected: It can't be this scheme's secret (its ``code`` says why).
+    """
+    if not isinstance(secret, str):
+        raise SecretRejected("not_text")
+    value = secret.strip()
+    if not MIN_SECRET_CHARS <= len(value) <= MAX_SECRET_CHARS or any(ch.isspace() for ch in value):
+        raise SecretRejected("length")
+    if not value.isprintable():
+        raise SecretRejected("characters")
+    if scheme == "stripe" and not value.startswith("whsec_"):
+        raise SecretRejected("stripe_prefix")
+    if scheme == "standard_webhooks":
+        raw = value[len("whsec_"):] if value.startswith("whsec_") else value
+        try:
+            base64.b64decode(raw, validate=True)
+        except (binascii.Error, ValueError):
+            raise SecretRejected("standard_webhooks_format") from None
+    return value
 
 
 def seal_secret(secret: Optional[str], user_id: str) -> Optional[str]:
@@ -188,7 +249,53 @@ def _body_command(check: Optional[Dict[str, Any]]) -> str:
     return f"body=$(printf {_quoted(template)} \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\")"
 
 
-def example_curl(url: str, scheme: str, check: Optional[Dict[str, Any]] = None) -> str:
+def example_get(
+    url: str, check: Optional[Dict[str, Any]] = None, scheme: str = "none", header_name: Optional[str] = None
+) -> str:
+    """A GET call to a link that takes GET: the example body's fields as query parameters.
+
+    Args:
+        url: The link.
+        check: The monitor's check, to shape the parameters.
+        scheme: The link's signature scheme (a static-token one adds its header).
+        header_name: The header a ``header_token`` link reads.
+
+    Returns:
+        A one-line shell command.
+    """
+    from urllib.parse import urlencode
+
+    params: Dict[str, str] = {}
+
+    def flatten(node: Dict[str, Any], prefix: str) -> None:
+        for key, value in node.items():
+            if value == _SENT_AT:
+                continue
+            if isinstance(value, dict):
+                flatten(value, f"{prefix}{key}.")
+            else:
+                params[f"{prefix}{key}"] = str(value)
+
+    # Dotted keys nest again on arrival, so a check's value_path reads them as from a JSON body.
+    flatten(example_body(check), "")
+    query = urlencode(params)
+    token_header = _token_header(scheme, header_name)
+    header = f' -H "{token_header}"' if token_header else ""
+    return f"curl{header} {_quoted(url + ('?' + query if query else ''))}"
+
+
+def _token_header(scheme: str, header_name: Optional[str]) -> Optional[str]:
+    """The header line (with ``$DOCSGPT_WEBHOOK_SECRET``) a static-token scheme sends, or None."""
+    if scheme == "header_token":
+        return f"{header_name or 'X-Webhook-Token'}: ${SECRET_ENV}"
+    if scheme == "bearer":
+        return f"Authorization: Bearer ${SECRET_ENV}"
+    return None
+
+
+def example_curl(
+    url: str, scheme: str, check: Optional[Dict[str, Any]] = None, header_name: Optional[str] = None
+) -> str:
     """A command that calls the link correctly for its signature scheme.
 
     A signed link's command reads the secret from ``$DOCSGPT_WEBHOOK_SECRET``,
@@ -205,6 +312,26 @@ def example_curl(url: str, scheme: str, check: Optional[Dict[str, Any]] = None) 
     """
     body = _body_command(check)
     target = _quoted(url)
+    token_header = _token_header(scheme, header_name)
+    if token_header:
+        return (
+            f"{body}; curl -X POST {target} -H 'Content-Type: application/json' -H \"{token_header}\" "
+            "--data-raw \"$body\""
+        )
+    if scheme == "stripe":
+        return (
+            f"{body}; ts=$(date +%s); "
+            f"sig=$(printf '%s' \"$ts.$body\" | openssl dgst -sha256 -hmac \"${SECRET_ENV}\" | sed 's/^.* //'); "
+            f"curl -X POST {target} -H 'Content-Type: application/json' -H \"Stripe-Signature: t=$ts,v1=$sig\" "
+            "--data-raw \"$body\""
+        )
+    if scheme == "slack":
+        return (
+            f"{body}; ts=$(date +%s); "
+            f"sig=$(printf '%s' \"v0:$ts:$body\" | openssl dgst -sha256 -hmac \"${SECRET_ENV}\" | sed 's/^.* //'); "
+            f"curl -X POST {target} -H 'Content-Type: application/json' -H \"X-Slack-Request-Timestamp: $ts\" "
+            "-H \"X-Slack-Signature: v0=$sig\" --data-raw \"$body\""
+        )
     if scheme in ("github", "hmac_sha256"):
         header = "X-Hub-Signature-256" if scheme == "github" else "X-Signature"
         return (
@@ -225,9 +352,25 @@ def example_curl(url: str, scheme: str, check: Optional[Dict[str, Any]] = None) 
     return f"{body}; curl -X POST {target} -H 'Content-Type: application/json' --data-raw \"$body\""
 
 
-def signing_instructions(scheme: str) -> Optional[str]:
+def signing_instructions(scheme: str, header_name: Optional[str] = None) -> Optional[str]:
     """What the sender must configure for ``scheme``, in a sentence."""
     return {
+        "stripe": (
+            "In Stripe's Dashboard (Developers > Webhooks > Add endpoint): Endpoint URL = the url, then pick the "
+            "events. Stripe creates the endpoint's signing secret (whsec_...); the user copies it from the "
+            "endpoint's page and pastes it with Set signing secret on the link card. Calls are refused until "
+            "then. Stripe signs each delivery with Stripe-Signature."
+        ),
+        "slack": (
+            "In the Slack app's settings: copy the Signing Secret from Basic Information and paste it with Set "
+            "signing secret on the link card first, then put the url in Event Subscriptions > Request URL (Slack "
+            "verifies it at once). Slack signs each request with X-Slack-Signature."
+        ),
+        "header_token": (
+            f"Send the secret as the {header_name or 'X-Webhook-Token'} header on every call (GitLab: Settings > "
+            "Webhooks > Secret token, with X-Gitlab-Token as the header)."
+        ),
+        "bearer": "Send the secret as Authorization: Bearer <secret> on every call.",
         "github": (
             "In the repository's Settings > Webhooks > Add webhook: Payload URL = the url, Content type = "
             "application/json, Secret = the secret from the link card, then pick the events. GitHub signs each "
@@ -267,11 +410,18 @@ def link_state(link: Dict[str, Any]) -> str:
 
 def link_view(link: Dict[str, Any]) -> Dict[str, Any]:
     """The safe parts of a link row for lists and the UI (never the token hash or secret)."""
+    ref = link.get("ref")
     return {
         "id": link.get("id"),
         "kind": link.get("kind"),
         "state": link_state(link),
         "signature": link.get("signature_scheme"),
+        "secret_ref": str(ref) if ref else None,
+        "secret_placeholder": "{{link_secret:" + str(ref) + "}}" if ref else None,
+        "signature_header": link.get("signature_header"),
+        "has_secret": bool(link.get("secret_encrypted")),
+        "secret_exposed": bool(link.get("expose_secret")),
+        "methods": ["POST", "GET"] if link.get("allow_get") else ["POST"] if link.get("kind") == "webhook" else None,
         "expires_at": link.get("expires_at"),
         "hit_count": link.get("hit_count"),
         "max_hits": link.get("max_hits"),

@@ -237,6 +237,8 @@ const endpoints = {
       `/api/monitors/${encodeURIComponent(id)}/${action}`,
     MONITOR_SECRET: (id: string) =>
       `/api/monitors/${encodeURIComponent(id)}/secret`,
+    MONITOR_SECRET_EXPOSURE: (id: string) =>
+      `/api/monitors/${encodeURIComponent(id)}/secret/exposure`,
     APPROVAL: (token: string) => `/api/approvals/${encodeURIComponent(token)}`,
   },
   V1: {

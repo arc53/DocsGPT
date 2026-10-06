@@ -66,8 +66,9 @@ class AdminStatsRepository:
             ),
             "tokens_30d": self._scalar(
                 "SELECT COALESCE(SUM(prompt_tokens + generated_tokens), 0) "
-                "FROM token_usage WHERE timestamp >= :c",
-                {"c": cutoff_30d},
+                "FROM token_usage WHERE timestamp >= :c "
+                "AND COALESCE(source, 'agent_stream') <> ALL(:rollup_sources)",
+                {"c": cutoff_30d, "rollup_sources": list(TokenUsageRepository.ROLLUP_SOURCES)},
             ),
         }
 
@@ -262,7 +263,8 @@ class AdminStatsRepository:
             ),
             "tokens_30d": self._scalar(
                 "SELECT COALESCE(SUM(prompt_tokens + generated_tokens), 0) "
-                "FROM token_usage WHERE user_id = :u AND timestamp >= :c",
-                {"u": user_id, "c": cutoff_30d},
+                "FROM token_usage WHERE user_id = :u AND timestamp >= :c "
+                "AND COALESCE(source, 'agent_stream') <> ALL(:rollup_sources)",
+                {"u": user_id, "c": cutoff_30d, "rollup_sources": list(TokenUsageRepository.ROLLUP_SOURCES)},
             ),
         }

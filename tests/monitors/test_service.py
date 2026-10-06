@@ -240,8 +240,9 @@ class TestLinkCreate:
             },
         )
         assert result["url"].startswith("https://docs.example.com/api/triggers/trg_")
-        # The model gets a placeholder; the real secret is only ever revealed to the owner.
-        assert result["secret"] == links.SECRET_PLACEHOLDER
+        # The model gets a reference; the real secret is only revealed to the owner or filled into approved calls.
+        assert result["secret"] == "{{link_secret:" + result["secret_ref"] + "}}"
+        assert len(result["secret_ref"]) == 6
         assert result["reachable_from_internet"] is True and "reachability_note" not in result
         assert "curl -X POST" in result["example_curl"] and result["method"] == "POST"
         assert "$DOCSGPT_WEBHOOK_SECRET" in result["example_curl"] or "${DOCSGPT_WEBHOOK_SECRET" in result[
@@ -375,3 +376,142 @@ class TestManage:
                 text("SELECT tool_allowlist FROM schedules WHERE id = CAST(:id AS uuid)"), {"id": created["monitor_id"]}
             ).scalar()
         assert monitor["approval"] is None and allowlist == []
+
+
+
+class TestGetLink:
+    def test_a_get_link_takes_fewer_calls_and_says_where_not_to_paste_it(
+        self, mon_db, conversation_id, public_url, events, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "TRIGGER_GET_MAX_HITS", 7)
+        result = service.create(
+            _caller(conversation_id),
+            {
+                "description": "Garage door opened",
+                "source": {"type": "webhook", "methods": ["POST", "GET"]},
+                "check": {"type": "status", "value_path": "door.state", "terminal": ["open"]},
+                "on_match": "tell me",
+            },
+        )
+        assert result["method"] == "POST, GET" and result["max_calls"] == 7
+        assert result["example_get"].startswith("curl '") and "door.state=open" in result["example_get"]
+        assert "never to paste it into a chat" in result["next"]
+        token = result["url"].rsplit("/", 1)[1]
+        with mon_db.connect() as conn:
+            link = TriggerLinksRepository(conn).get_live(token_hash(token), "webhook")
+        assert link["allow_get"] is True and link["max_hits"] == 7
+
+    def test_a_post_link_is_unchanged(self, mon_db, conversation_id, public_url, events):
+        result = service.create(
+            _caller(conversation_id),
+            {"description": "CI", "source": {"type": "webhook"}, "on_match": "tell me"},
+        )
+        assert result["method"] == "POST" and "example_get" not in result
+        token = result["url"].rsplit("/", 1)[1]
+        with mon_db.connect() as conn:
+            link = TriggerLinksRepository(conn).get_live(token_hash(token), "webhook")
+        assert link["allow_get"] is False and link["max_hits"] == links.WEBHOOK_MAX_HITS
+
+
+class TestQueryBody:
+    def test_dotted_keys_nest_and_repeats_list(self):
+        from docsgpt.monitors.triggers import query_body
+
+        assert query_body([("a", "1"), ("b.c", "2"), ("b.d", "3"), ("t", "x"), ("t", "y")]) == {
+            "a": "1", "b": {"c": "2", "d": "3"}, "t": ["x", "y"]
+        }
+
+    def test_a_key_that_is_a_value_and_a_parent_keeps_the_value(self):
+        from docsgpt.monitors.triggers import query_body
+
+        assert query_body([("a", "1"), ("a.b", "2"), ("x.", "3"), (".y", "4")]) == {
+            "a": "1", "a.b": "2", "x.": "3", ".y": "4"
+        }
+
+
+
+class TestSenderSecrets:
+    def test_a_stripe_link_waits_for_the_owners_secret(self, mon_db, conversation_id, public_url, events):
+        result = service.create(
+            _caller(conversation_id),
+            {"description": "Invoices paid", "source": {"type": "webhook", "signature": "stripe"},
+             "on_match": "tell me"},
+        )
+        assert result["secret"] is None and result["secret_source"] == "sender"
+        assert len(result["secret_ref"]) == 6
+        assert "Set signing secret" in result["next"] and "Stripe" in result["signing"]
+        assert "Stripe-Signature" in result["example_curl"]
+        token = result["url"].rsplit("/", 1)[1]
+        with mon_db.connect() as conn:
+            link = TriggerLinksRepository(conn).get_live(token_hash(token), "webhook")
+        assert link["secret_encrypted"] is None and link["ref"] == result["secret_ref"]
+        assert service.reveal_secret(result["monitor_id"], "u1") is None
+        assert service.set_secret(result["monitor_id"], "u1", "whsec_pasted_from_stripe_1") == {
+            "saved": True, "signature": "stripe"
+        }
+        assert service.reveal_secret(result["monitor_id"], "u1")["secret"] == "whsec_pasted_from_stripe_1"
+        with pytest.raises(ValueError):
+            service.set_secret(result["monitor_id"], "u1", "sk_live_not_a_webhook_secret")
+        assert service.set_secret(result["monitor_id"], "u2", "whsec_pasted_from_stripe_1") is None
+
+    def test_a_slack_link_says_to_set_the_secret_before_the_request_url(
+        self, mon_db, conversation_id, public_url, events
+    ):
+        result = service.create(
+            _caller(conversation_id),
+            {"description": "Mentions", "source": {"type": "webhook", "signature": "slack"}, "on_match": "reply"},
+        )
+        assert "before setting the Request URL" in result["next"]
+
+    def test_a_header_token_link_shows_its_header(self, mon_db, conversation_id, public_url, events):
+        result = service.create(
+            _caller(conversation_id),
+            {"description": "Pipelines", "on_match": "tell me",
+             "source": {"type": "webhook", "signature": "header_token", "signature_header": "X-Gitlab-Token",
+                        "methods": ["POST", "GET"]}},
+        )
+        assert result["signature_header"] == "X-Gitlab-Token"
+        assert 'X-Gitlab-Token: $DOCSGPT_WEBHOOK_SECRET' in result["example_curl"]
+        assert 'X-Gitlab-Token: $DOCSGPT_WEBHOOK_SECRET' in result["example_get"]
+        assert "X-Gitlab-Token" in result["signing"]
+        assert result["secret"] == "{{link_secret:" + result["secret_ref"] + "}}"
+
+    def test_setting_a_secret_is_audited_without_the_value(self, mon_db, conversation_id, public_url, events):
+        result = service.create(
+            _caller(conversation_id),
+            {"description": "CI", "source": {"type": "webhook", "signature": "github"}, "on_match": "tell me"},
+        )
+        service.set_secret(result["monitor_id"], "u1", "replacement-secret-0123456789")
+        with mon_db.connect() as conn:
+            rows = conn.execute(
+                text("SELECT metadata::text FROM auth_events WHERE event = 'monitor.secret_set'")
+            ).fetchall()
+        assert len(rows) == 1 and "replacement-secret" not in rows[0][0]
+        assert service.reveal_secret(result["monitor_id"], "u1")["secret"] == "replacement-secret-0123456789"
+
+    def test_an_unsigned_or_ended_link_takes_no_secret(self, mon_db, conversation_id, public_url, events):
+        unsigned = service.create(
+            _caller(conversation_id), {"description": "CI", "source": {"type": "webhook"}, "on_match": "tell me"}
+        )
+        assert service.set_secret(unsigned["monitor_id"], "u1", "a-long-enough-secret-value") is None
+        signed = service.create(
+            _caller(conversation_id),
+            {"description": "CI2", "source": {"type": "webhook", "signature": "github"}, "on_match": "tell me"},
+        )
+        service.end(signed["monitor_id"], "u1", "cancelled")
+        assert service.set_secret(signed["monitor_id"], "u1", "a-long-enough-secret-value") is None
+
+
+    def test_a_link_that_ends_before_the_write_saves_nothing(
+        self, mon_db, conversation_id, public_url, events, monkeypatch
+    ):
+        result = service.create(
+            _caller(conversation_id),
+            {"description": "CI3", "source": {"type": "webhook", "signature": "github"}, "on_match": "tell me"},
+        )
+        monkeypatch.setattr(TriggerLinksRepository, "set_secret", lambda self, link_id, sealed: False)
+        assert service.set_secret(result["monitor_id"], "u1", "a-long-enough-secret-value") is None
+        with mon_db.connect() as conn:
+            assert conn.execute(
+                text("SELECT count(*) FROM auth_events WHERE event = 'monitor.secret_set'")
+            ).scalar() == 0

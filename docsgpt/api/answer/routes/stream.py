@@ -145,6 +145,7 @@ class StreamResource(Resource, BaseAnswerResource):
                                 "reserved_message_id": processor.reserved_message_id,
                                 "request_id": processor.request_id,
                                 "reasoning_content": reasoning_content,
+                                "prior_tool_calls": processor.prior_tool_calls,
                             },
                         ),
                     ),

@@ -30,6 +30,13 @@ export type SecretResult =
   | { state: 'limited' }
   | { state: 'error' };
 
+export type SetSecretResult =
+  | { state: 'saved' }
+  | { state: 'invalid'; message: string }
+  | { state: 'missing' }
+  | { state: 'limited' }
+  | { state: 'error' };
+
 const monitorsService = {
   /** The public approval page's data. No token: the link's own token is the credential. */
   getApproval: async (linkToken: string): Promise<ApprovalResult> => {
@@ -111,6 +118,55 @@ const monitorsService = {
         : { state: 'error' };
     } catch {
       return { state: 'error' };
+    }
+  },
+
+  /**
+   * Set a webhook monitor's signing secret: the one Stripe or Slack created,
+   * or a replacement. The value is sent once and never kept in the app.
+   */
+  setSecret: async (
+    id: string,
+    secret: string,
+    token: string | null,
+  ): Promise<SetSecretResult> => {
+    try {
+      const r: Response = await apiClient.put(
+        endpoints.USER.MONITOR_SECRET(id),
+        { secret },
+        token,
+      );
+      if (r.ok) return { state: 'saved' };
+      if (r.status === 404) return { state: 'missing' };
+      if (r.status === 429) return { state: 'limited' };
+      if (r.status === 400) {
+        const body = await bodyOf<{ message?: string }>(r);
+        return { state: 'invalid', message: body?.message ?? '' };
+      }
+      return { state: 'error' };
+    } catch {
+      return { state: 'error' };
+    }
+  },
+
+  /**
+   * Show (or stop showing) a webhook monitor's raw secret to the assistant.
+   * The owner's choice only; the assistant can never turn it on.
+   */
+  setExposure: async (
+    id: string,
+    exposed: boolean,
+    token: string | null,
+  ): Promise<boolean> => {
+    try {
+      const r: Response = await apiClient.put(
+        endpoints.USER.MONITOR_SECRET_EXPOSURE(id),
+        { exposed },
+        token,
+      );
+      return r.ok;
+    } catch {
+      return false;
     }
   },
 
