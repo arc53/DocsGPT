@@ -105,3 +105,13 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://developers.miro.com/docs/miro-mcp
+
+- key: mcp:resend
+  name: Resend
+  description: Send emails and manage contacts, audiences and domains.
+  icon: resend
+  category: messaging
+  mcp_url: https://mcp.resend.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://resend.com/docs/knowledge-base/mcp-server
