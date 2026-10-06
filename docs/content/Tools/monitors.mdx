@@ -1,6 +1,6 @@
 ---
 title: Monitors, Trigger Links and Approval Links
-description: How the monitor tool watches a web page or any tool, wakes the conversation on ingests, webhook trigger links and human approval links, and how its checks, limits and safety rules work.
+description: How the monitor tool watches a web page or any tool, wakes the conversation on ingests, webhook trigger links and human approval links, how link secrets reach a sender through secret references, and how its checks, limits and safety rules work.
 lastUpdated: 2026-10-06
 ---
 
@@ -56,6 +56,9 @@ A polled check is cheap before it is expensive:
    the baseline and never wakes; `monitor_create` returns it ("currently $95.10").
 
 Webhook deliveries and ingest events run the same check and judge on the delivered data, each event on its own.
+Both are stored before their task is queued: a task the broker loses is queued again by the dispatcher's sweep
+after five minutes, so an event is never dropped silently. An ingest event queued ten times without being
+processed is given up, and the monitor's last error says so.
 
 ### The checks
 
@@ -113,39 +116,29 @@ A `webhook` monitor returns an absolute URL built from `PUBLIC_API_BASE_URL` (el
   "url": "https://docs.example.com/api/triggers/trg_…",
   "method": "POST",
   "signature": "github",
-  "secret": "hidden from you; the user reveals it on the link card in this chat",
+  "secret": "{{link_secret:K7QX2M}}",
+  "secret_ref": "K7QX2M",
   "reachable_from_internet": true
 }
 ```
 
-The model never sees a signed link's secret, so it never reaches the provider, the conversation, the tool-call
-journal, the logs or the traces. The chat shows the link as a card with the URL and, for a signed link, a
-**Reveal secret** button for the conversation's owner; the `example_curl` reads the secret from
-`$DOCSGPT_WEBHOOK_SECRET`. The button calls `GET /api/monitors/<id>/secret`, which only the owner's own session
-may use (never an access token). It is rate limited, audited as `monitor.secret_revealed` and never cached, and
-it answers `404` once the link has ended. The secret is stored only encrypted, in `trigger_links`.
-
 - **Unsigned is the default, and fine.** The URL is a 256-bit secret with an expiry, a hit limit
-  (`max_hits`) and a rate limit (while Redis is reachable; see the limits below), and it can be revoked, so an unsigned link suits senders that can't sign: curl
-  or CI scripts on a device, iOS Shortcuts, Zapier- or IFTTT-style tools, form tools. Use a signature only
-  when the sender signs natively: `github` for GitHub, `standard_webhooks` for Svix-style senders, and
-  `hmac_sha256` for a custom sender that can compute it.
-- **POST only.** `GET` answers `405` with a short note, because link previews and mail scanners fetch links.
+  (`max_hits`) and a rate limit (while Redis is reachable; see the limits below), and it can be revoked, so an
+  unsigned link suits senders that can't sign: curl or CI scripts on a device, iOS Shortcuts, Zapier- or
+  IFTTT-style tools, form tools. Use a signature only when the sender authenticates natively (the table below).
+- **POST only, unless asked.** A link is POST-only by default: `GET` answers `405` with a short note, because
+  link previews and mail scanners fetch links. See [GET links](#get-links) for the opt-in.
 - **Order.** On a signed link the signature is checked before a request counts against the link's rate, so
   junk from someone who has the URL can't use up the sender's budget; unverified requests have a looser cap of
   their own (four times the rate). A GitHub `ping` (sent when the hook is added) is acknowledged with `202` and
   does nothing else.
-- **Signatures.** `standard_webhooks` verifies `webhook-id`, `webhook-timestamp` and `webhook-signature` (any
-  `v1` signature in the list) with a `whsec_` secret and a five-minute tolerance; `github` verifies
-  `X-Hub-Signature-256`; `hmac_sha256` verifies `X-Signature: sha256=<hex>` over the raw body. Comparisons are
-  constant-time, and the secret is stored encrypted.
 - **Answers.** `202 {"accepted": true}` once the delivery is stored; `404` for an unknown, expired, revoked or
   used-up link (all look the same); `401` for a missing or wrong signature; `413` over
   `TRIGGER_MAX_PAYLOAD_BYTES`; `429` over `TRIGGER_RATE_PER_MINUTE` for that link.
-- **Duplicates.** A delivery is stored once per `Idempotency-Key`, `webhook-id` or `X-GitHub-Delivery`. Without
-  one, the same body counts once within `TRIGGER_DEDUPE_WINDOW_SECONDS` (10 minutes); sent again later (a nightly
-  job's constant body) it is a new event. A repeat answers `202` and does nothing. The `example_curl` body carries
-  a `sent_at` time, so each example call is new.
+- **Duplicates.** A delivery is stored once per `Idempotency-Key`, `webhook-id`, `X-GitHub-Delivery`, or the
+  Stripe or Slack event id. Without one, the same body counts once within `TRIGGER_DEDUPE_WINDOW_SECONDS`
+  (10 minutes); sent again later (a nightly job's constant body) it is a new event. A repeat answers `202` and
+  does nothing. The `example_curl` body carries a `sent_at` time, so each example call is new.
 - **Calls that don't fit.** When a call lacks what the check reads (the `value_path` of a status check, say), the
   agent is woken once to tell the user what was missing; it doesn't count as a match, and later calls that don't
   fit stay silent.
@@ -155,6 +148,89 @@ it answers `404` once the link has ended. The secret is stored only encrypted, i
 If the base URL is `localhost`, a private address or a bare container hostname, the result says so
 (`reachable_from_internet: false` with a note), and the agent tells the user that outside services can't reach
 the link until the instance has a public `PUBLIC_API_BASE_URL`.
+
+### Signatures
+
+| `signature` | For | What a call must carry |
+| --- | --- | --- |
+| `none` | Any sender that can't sign (the default) | Nothing: the URL is the secret |
+| `github` | GitHub | `X-Hub-Signature-256: sha256=<hex>` over the raw body |
+| `stripe` | Stripe | `Stripe-Signature: t=<unix>,v1=<hex>` over `"{t}.{body}"`; any `v1` may match (Stripe sends several while a secret is rolled) |
+| `slack` | A Slack app's Events API | `X-Slack-Signature: v0=<hex>` over `"v0:{timestamp}:{body}"`, with `X-Slack-Request-Timestamp` |
+| `standard_webhooks` | Svix-style senders | `webhook-id`, `webhook-timestamp`, `webhook-signature` (any `v1` in the list), with a `whsec_` secret |
+| `header_token` | A sender that sends a fixed secret header (GitLab's `X-Gitlab-Token`) | The secret in `X-Webhook-Token`, or the header named by `signature_header` |
+| `bearer` | A sender that sends a token | `Authorization: Bearer <secret>` |
+| `hmac_sha256` | A custom sender that can compute it | `X-Signature: sha256=<hex>` over the raw body |
+
+Timestamps (Stripe, Slack, Standard Webhooks) must be within five minutes. Every comparison is constant-time,
+and the secret is stored only encrypted, in `trigger_links`. A Slack app's `url_verification` request (sent when
+the Request URL is set) is answered with its `challenge` once its signature verifies, and is never stored or
+counted.
+
+**Secrets the sender creates.** Stripe and Slack generate their own signing secret, so a `stripe` or `slack`
+link starts without one and refuses every call (`401`) until the owner pastes it in with **Set signing secret**
+on the link card or on **Settings → Monitors** (`PUT /api/monitors/<id>/secret` with `{"secret": "…"}`). The
+value is checked against the scheme (a Stripe endpoint secret starts with `whsec_`), stored encrypted, audited
+as `monitor.secret_set` without the value, and never shown to the model. Paste a Slack app's secret **before**
+setting its Request URL: Slack verifies the URL at once. The same route replaces a secret DocsGPT generated, for
+any signed scheme.
+
+### The secret and the model
+
+The model never sees a signed link's secret. It gets a **reference**, `{{link_secret:REF}}`, where `REF` is the
+link's short id (shown on the link card and in the monitor list). To set the sender up itself ("create the
+GitHub webhook on my repo"), the agent puts the reference in the tool call that does it, and the server fills
+in the real value only when that call runs, and only when:
+
+- the tool acts on a device or service: a `remote_device` command, an MCP action or an API action, and not an
+  action that sends a message (`send_email`, `post_message`, `add_comment`, …);
+- the user approved that very call. A call carrying a reference always shows the approval card, whatever the
+  tool's usual approval mode, and the card says the secret will be filled in; **Approve, don't ask again** is
+  not offered for it, and one approval fills secrets in once;
+- the reference names one of the user's own live signed links;
+- the reference is not in a URL (a URL argument, a URL value, or a URL inside a command), where it would end up
+  in logs.
+
+Anything else gets an error result and the tool does not run: a `read_webpage` fetch, a message, a scheduled or
+continuation run, an API-key or public-link caller, a reference that has ended. Everything recorded about the
+call keeps the reference (the conversation, the tool-call journal, logs, traces, a background job's arguments,
+the device audit log), and any echo of the value in what the tool returns, in its error, in a device job's
+output, or in a later result in the same turn is put back to the reference before the model or storage sees it.
+Each substitution is audited as `monitor.secret_substituted` without the value.
+
+GitHub's own MCP server has no webhook tool, so through the stock GitHub connector the agent sets a hook up with
+`gh api` on a [paired device](/Tools/remote-device) or an [API tool](/Tools/api-tool) for GitHub's REST API
+(`POST /repos/{owner}/{repo}/hooks` with the reference as `config.secret`).
+
+`monitor_create` with `source.expose_secret: true` returns the raw value instead (`secret_exposed: true`). The
+value then goes to the model provider and into the conversation, so the tool description tells the model to use
+it only when the user asks.
+
+The owner can always see the secret: **Reveal secret** on the link card or on **Settings → Monitors** calls
+`GET /api/monitors/<id>/secret`, which only the owner's own session may use (never an access token). It is rate
+limited, audited as `monitor.secret_revealed` and never cached, and it answers `404` once the link has ended.
+The `example_curl` reads the secret from `$DOCSGPT_WEBHOOK_SECRET`.
+
+### GET links
+
+`source.methods: ["POST", "GET"]` makes a link that also takes `GET` calls, for a machine caller that can't
+POST (a device or an app that only opens URLs). A GET call's query parameters are its data; a dotted key nests,
+so `?deployment.state=success` reads like `{"deployment": {"state": "success"}}` to a check. The same query sent
+again within the dedupe window counts once.
+
+Anything that opens a GET link fires it, so:
+
+- a `HEAD`, a speculative fetch (`Purpose: prefetch`, `Sec-Purpose: prefetch`, `X-Purpose: preview`) and the
+  known link-preview, crawler and mail-scanner User-Agents (Slack, Discord, Telegram, WhatsApp, Microsoft
+  Teams and Outlook, Facebook, Twitter, LinkedIn, Googlebot, Bingbot, Applebot and more; the list is in
+  `docsgpt/monitors/prefetch.py`) get `200 {"ignored": …}` and change nothing;
+- a GET link takes at most `TRIGGER_GET_MAX_HITS` calls (100) and lives `TRIGGER_GET_DEFAULT_TTL_HOURS` (24)
+  unless `expires_in` asks otherwise;
+- only `none`, `header_token` and `bearer` links may take GET (a GET has no body to sign);
+- the tool description tells the model to use GET only for a machine caller, never for a link pasted into a
+  chat, an email or a document.
+
+A GET on a POST-only link still answers `405`. Approval links are unchanged.
 
 ## Approval links
 
@@ -184,7 +260,8 @@ why, so it doesn't promise to report back.
 ## Managing monitors
 
 **Settings → Monitors** lists the user's monitors: what each watches, how often, when it last checked, the wakes
-left and the expiry, with pause, resume and cancel. Cancelling stops the checks, revokes its links and withdraws
+left and the expiry, with pause, resume and cancel, and for a live signed webhook link **Reveal secret** (and
+**Set signing secret** for Stripe and Slack). Cancelling stops the checks, revokes its links and withdraws
 the approval its source was given. A conversation with an active monitor shows a small watching mark in the
 sidebar. In the chat, the agent can list and cancel the conversation's monitors itself.
 
@@ -195,7 +272,8 @@ carries `metadata.wake = {source, ref_id, dedupe_key}` with `source` `monitor`, 
 of time without firing.
 
 The same data is available through `GET /api/monitors` (`conversation_id`, `status=live`) and
-`POST /api/monitors/<id>/pause|resume|cancel`.
+`POST /api/monitors/<id>/pause|resume|cancel`. A link in that list carries its `secret_ref`, `methods`,
+`signature_header` and whether it `has_secret`, never the secret itself.
 
 ## Settings
 
@@ -223,6 +301,8 @@ The same data is available through `GET /api/monitors` (`conversation_id`, `stat
 | `TRIGGER_RATE_PER_MINUTE` | `30` | Requests one trigger link accepts per minute |
 | `TRIGGER_MAX_PAYLOAD_BYTES` | `65536` | Largest delivery body |
 | `TRIGGER_DEDUPE_WINDOW_SECONDS` | `600` | How long the same body (with no delivery id) counts as a repeat |
+| `TRIGGER_GET_MAX_HITS` | `100` | Calls a link that also takes GET accepts over its lifetime (a POST-only link takes 1000) |
+| `TRIGGER_GET_DEFAULT_TTL_HOURS` | `24` | Default lifetime of a link that also takes GET |
 
 Checks are spread out: each next check is jittered and never lands on the hour or half hour. See the
 [Settings Reference](/Deploying/Settings-Reference) for every setting.

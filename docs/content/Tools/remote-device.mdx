@@ -1,7 +1,7 @@
 ---
 title: Remote Device
-description: Run shell commands on a paired remote machine from a DocsGPT agent using docsgpt-cli host.
-lastUpdated: 2026-09-30
+description: Run shell commands on a paired remote machine from a DocsGPT agent using docsgpt-cli host, including long commands that run as background jobs.
+lastUpdated: 2026-10-06
 ---
 
 import { Callout } from 'nextra/components';
@@ -94,6 +94,51 @@ Compound commands are split on operators such as `&&`, `||`, `;`, and `|`, and e
 A paired device behaves like any other tool. Open or create an agent, add the device from the tool picker, and the agent can call its `run_command` action. The picker shows whether the device is currently online.
 
 If you attach more than one device to an agent, give each a clear description so the agent can pick the right one.
+
+## Long commands as background jobs
+
+In a chat, a command that runs longer than the yield window (`BACKGROUND_YIELD_SECONDS`, 30 by default), or one
+the agent starts with `background=true`, becomes a [background job](/Tools/background-jobs). The turn ends,
+the command keeps running on the machine, and the agent comes back to the conversation with its exit code and
+output when it ends, as it would for any job. The chat shows a job card with the elapsed time, the latest output
+line and a **Cancel** button.
+
+- **How long.** A command in the foreground keeps its 600-second cap. With `background=true`, its `timeout_ms`
+  may go up to `DEVICE_JOB_MAX_SECONDS` (an hour by default) and defaults to it. A device job's lifetime is
+  `DEVICE_JOB_MAX_SECONDS` from when it was handed off.
+- **watch.** `run_command` takes the same `watch` spec as `code_executor`: `patterns` resume the agent when a
+  line matches while the command runs, `progress_regex` updates the card, and `heartbeat_s` sends the output
+  printed since the last heartbeat.
+- **Approvals are unchanged.** The approval mode, the auto-approved patterns and the denylist are applied before
+  the command starts, and an approved command's clock starts after the approval.
+- **When the device goes offline.** A device not heard from for 90 seconds counts as offline: the card says
+  **Waiting for the device**, and the job picks up the output again when the device reconnects.
+- **When the result never arrives.** The job ends **interrupted** (lost), with a note that the command may or may
+  not have run and should be verified before retrying, when the device is revoked, when it is connected but
+  never reports past the command's own timeout (or never picks the command up), or when the job's lifetime ends
+  without a report. If the device is connected at the end of the lifetime, the command is stopped and the job
+  fails as timed out.
+- **Cancel.** A command the device has not picked up yet is taken off its queue and never runs. A running one is
+  sent a cancel; if the device doesn't confirm within 30 seconds, the job ends cancelled with a note to check
+  the machine.
+
+<Callout type="warning">
+  Today's `docsgpt-cli` keeps a command running when its connection to DocsGPT drops and reconnects, and reports
+  the exit code if it can reach the server when the command ends. It does not yet resend output posted while
+  the network was down, act on a cancel, or hold off an auto-update while a command runs, so a command whose
+  report is lost ends as interrupted, and a cancelled one may keep running. Those changes are tracked in
+  [arc53/DocsGPT-cli](https://github.com/arc53/DocsGPT-cli).
+</Callout>
+
+Scheduled runs and monitor checks keep running commands in the foreground.
+
+### Webhook secrets in commands
+
+A command can use a webhook link's secret without the agent seeing it: the agent writes the link's
+[secret reference](/Tools/monitors#the-secret-and-the-model), `{{link_secret:REF}}`, and the server fills in
+the value when you approve the command. Such a command always asks for approval, even in Full access mode, and
+can't be approved with "don't ask again". The activity log records the reference, and any output that echoes
+the secret shows the reference instead.
 
 ## Manage a device
 
