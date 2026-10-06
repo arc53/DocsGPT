@@ -93,14 +93,15 @@ def _seed_tool_call(
     age_minutes: int,
     tool_name: str = "notes",
     action_name: str = "view",
+    message_id: str | None = None,
 ) -> None:
     conn.execute(
         text(
             """
             INSERT INTO tool_call_attempts (
-                call_id, tool_name, action_name, arguments, status
+                call_id, tool_name, action_name, arguments, status, message_id
             )
-            VALUES (:cid, :tn, :an, CAST(:args AS jsonb), :st)
+            VALUES (:cid, :tn, :an, CAST(:args AS jsonb), :st, CAST(:mid AS uuid))
             """
         ),
         {
@@ -109,6 +110,7 @@ def _seed_tool_call(
             "an": action_name,
             "args": json.dumps({}),
             "st": status,
+            "mid": message_id,
         },
     )
     # The ``set_updated_at`` BEFORE-UPDATE trigger would otherwise reset
@@ -313,6 +315,46 @@ class TestFindAndLockExecutedToolCalls:
         repo = ReconciliationRepository(pg_conn)
         rows = repo.find_and_lock_executed_tool_calls()
         assert all(r["call_id"] != "e-3" for r in rows)
+
+    def test_excludes_a_call_whose_turn_is_paused_for_approval(self, pg_conn):
+        """A turn waiting on an approval confirms its calls only when it resumes and finalizes."""
+        msg = _seed_message(pg_conn, age_minutes=20)
+        _seed_pending_state(pg_conn, msg["conversation_id"], msg["user_id"])
+        _seed_tool_call(
+            pg_conn, call_id="e-4", status="executed", age_minutes=16, message_id=msg["id"],
+        )
+        rows = ReconciliationRepository(pg_conn).find_and_lock_executed_tool_calls()
+        assert all(r["call_id"] != "e-4" for r in rows)
+
+    def test_excludes_a_call_whose_turn_is_resuming(self, pg_conn):
+        msg = _seed_message(pg_conn, age_minutes=20)
+        _seed_resuming(pg_conn, msg["conversation_id"], msg["user_id"], secs_ago=60)
+        _seed_tool_call(
+            pg_conn, call_id="e-5", status="executed", age_minutes=16, message_id=msg["id"],
+        )
+        rows = ReconciliationRepository(pg_conn).find_and_lock_executed_tool_calls()
+        assert all(r["call_id"] != "e-5" for r in rows)
+
+    def test_returns_a_call_whose_pause_expired(self, pg_conn):
+        msg = _seed_message(pg_conn, age_minutes=40)
+        _seed_pending_state(
+            pg_conn, msg["conversation_id"], msg["user_id"], expires_in_minutes=-1,
+        )
+        _seed_tool_call(
+            pg_conn, call_id="e-6", status="executed", age_minutes=16, message_id=msg["id"],
+        )
+        rows = ReconciliationRepository(pg_conn).find_and_lock_executed_tool_calls()
+        assert any(r["call_id"] == "e-6" for r in rows)
+
+    def test_returns_a_call_whose_message_is_terminal(self, pg_conn):
+        """A pause row left beside a finished message does not shield its calls."""
+        msg = _seed_message(pg_conn, status="complete", age_minutes=20)
+        _seed_pending_state(pg_conn, msg["conversation_id"], msg["user_id"])
+        _seed_tool_call(
+            pg_conn, call_id="e-7", status="executed", age_minutes=16, message_id=msg["id"],
+        )
+        rows = ReconciliationRepository(pg_conn).find_and_lock_executed_tool_calls()
+        assert any(r["call_id"] == "e-7" for r in rows)
 
 
 class TestIncrementMessageReconcileAttempts:
