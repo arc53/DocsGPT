@@ -426,7 +426,7 @@ lxml==6.1.3
     #   python-pptx
 mail-parser==4.6.5
     # via docling-slim
-mako==1.4.1
+mako==1.4.2
     # via alembic
 markdown-it-py==4.2.0
     # via rich
