@@ -23,15 +23,33 @@ file loading from importing Settings.
 
 from __future__ import annotations
 
+import re
+from typing import Any
 
-def _rewrite_uri_prefixes(v, rewrites):
+# An RFC 3986 scheme followed by ``://``. Anchored so a libpq
+# ``key=value`` DSN whose password contains ``://`` never matches.
+_URI_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
+
+
+def _rewrite_uri_prefixes(v: Any, rewrites: tuple[tuple[str, str], ...]) -> Any:
     """Shared URI prefix rewriter used by both normalizers below.
 
     Strips whitespace, returns ``None`` for empty / ``"none"`` values,
-    applies the first matching rewrite, and passes unrecognised input
-    through so downstream consumers (SQLAlchemy, libpq) can produce
-    their own error messages rather than us silently eating a
-    misconfiguration.
+    lowercases the URI scheme (scheme matching is case-insensitive, and
+    SQLAlchemy and libpq only accept lower-case schemes), applies the
+    first matching rewrite, and passes unrecognised input through so
+    downstream consumers (SQLAlchemy, libpq) can produce their own error
+    messages rather than us silently eating a misconfiguration. Only the
+    scheme changes case; credentials, host, path and query are kept as is.
+
+    Args:
+        v: The raw setting value.
+        rewrites: ``(prefix, target)`` pairs with lower-case prefixes,
+            tried in order.
+
+    Returns:
+        The normalized string, ``None`` for an empty or ``"none"`` value,
+        or ``v`` unchanged when it is not a string.
     """
     if v is None:
         return None
@@ -40,8 +58,11 @@ def _rewrite_uri_prefixes(v, rewrites):
     v = v.strip()
     if not v or v.lower() == "none":
         return None
+    scheme = _URI_SCHEME_RE.match(v)
+    if scheme:
+        v = scheme.group(0).lower() + v[scheme.end() :]
     for prefix, target in rewrites:
-        if v[: len(prefix)].lower() == prefix:
+        if v.startswith(prefix):
             return target + v[len(prefix) :]
     return v
 
@@ -67,23 +88,38 @@ _PGVECTOR_CONNECTION_STRING_REWRITES = (
 )
 
 
-def normalize_postgres_uri(v):
+def normalize_postgres_uri(v: Any) -> Any:
     """Normalize a user-supplied POSTGRES_URI to the SQLAlchemy psycopg3 form.
 
     Accepts the forms operators naturally write (``postgres://``,
-    ``postgresql://``) and rewrites them to ``postgresql+psycopg://``.
-    Unknown schemes pass through unchanged so SQLAlchemy can produce its
-    own dialect-not-found error.
+    ``postgresql://``), in any letter case, and rewrites them to
+    ``postgresql+psycopg://``. Unknown schemes pass through (lowercased
+    only) so SQLAlchemy can produce its own dialect-not-found error.
+
+    Args:
+        v: The raw POSTGRES_URI value.
+
+    Returns:
+        The normalized URI, ``None`` for an empty or ``"none"`` value, or
+        ``v`` unchanged when it is not a string.
     """
     return _rewrite_uri_prefixes(v, _POSTGRES_URI_REWRITES)
 
 
-def normalize_pgvector_connection_string(v):
+def normalize_pgvector_connection_string(v: Any) -> Any:
     """Normalize a user-supplied PGVECTOR_CONNECTION_STRING for libpq.
 
     Strips the SQLAlchemy dialect prefix if the operator accidentally
     copied their POSTGRES_URI value here — libpq can't parse it.
     User-friendly forms (``postgres://``, ``postgresql://``) pass
-    through unchanged since libpq accepts them natively.
+    through with only the scheme lowercased, since libpq accepts them
+    natively but only in lower case. Scheme matching is case-insensitive.
+
+    Args:
+        v: The raw PGVECTOR_CONNECTION_STRING value.
+
+    Returns:
+        The normalized connection string, ``None`` for an empty or
+        ``"none"`` value, or ``v`` unchanged when it is not a string.
     """
     return _rewrite_uri_prefixes(v, _PGVECTOR_CONNECTION_STRING_REWRITES)
