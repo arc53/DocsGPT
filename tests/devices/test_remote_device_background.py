@@ -159,7 +159,8 @@ class TestFollow:
         result = instance.execute_action("run_command", command="false")
         worker.join()
         assert result["exit_code"] == 1
-        assert handle.detached
+        # Tried once: a job that refused the move never takes it later.
+        assert len(handle.detached) == 1
 
     def test_an_explicit_background_command_gets_the_job_lifetime(self, tool, monkeypatch):
         monkeypatch.setattr(settings, "DEVICE_JOB_MAX_SECONDS", 1200)

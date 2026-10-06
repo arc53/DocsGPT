@@ -292,8 +292,11 @@ class RemoteDeviceTool(Tool):
 
         deadline = dispatched_at + timeout_ms / 1000.0 + 5.0
         interval = 0.05
+        # One attempt: a job that refused the move (it ended meanwhile) never takes it later.
+        tried_detach = False
         while True:
-            if call.handoff_requested():
+            if not tried_detach and call.handoff_requested():
+                tried_detach = True
                 from docsgpt.monitors.secret_refs import active_refs
 
                 external = {
