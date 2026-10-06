@@ -49,6 +49,9 @@ def _every_row(engine):
 
 @pytest.mark.parametrize("scheme", ["github", "standard_webhooks", "hmac_sha256"])
 def test_the_secret_is_only_in_the_encrypted_link(mon_db, conversation_id, events, monkeypatch, scheme):
+    # Loading a tool imports every tool module; the app's own import order avoids their import cycle.
+    import docsgpt.app  # noqa: F401
+
     monkeypatch.setattr(settings, "PUBLIC_API_BASE_URL", "https://docs.example.com")
     monkeypatch.setattr(settings, "TRACES_ENABLED", True)
     monkeypatch.setattr(settings, "TRACES_CAPTURE_CONTENT", True)
