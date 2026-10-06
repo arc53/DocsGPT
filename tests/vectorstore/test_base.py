@@ -6,6 +6,7 @@ from docsgpt.vectorstore.base import (
     BaseVectorStore,
     EmbeddingsSingleton,
     RemoteEmbeddings,
+    _key_fingerprint,
     get_embeddings,
 )
 
@@ -63,6 +64,51 @@ class TestRemoteEmbeddings:
         emb = RemoteEmbeddings("http://host", "m")
         result = emb._embed(["a", "b"])
         assert result == [[0.1, 0.2], [0.3, 0.4]]
+
+    @pytest.mark.parametrize("status", [401, 403])
+    @patch("docsgpt.vectorstore.base.requests.post")
+    def test_auth_error_logs_the_key_fingerprint_not_the_key(self, mock_post, status, caplog):
+        """An auth failure is a configuration error, reported once, naming no secret."""
+        import requests
+
+        response = requests.Response()
+        response.status_code = status
+        response.url = "http://host/v1/embeddings"
+        mock_post.return_value = response
+
+        emb = RemoteEmbeddings("http://host", "m", api_key="sk-secret-value")
+        with caplog.at_level("ERROR"), pytest.raises(requests.HTTPError):
+            emb._embed("test")
+
+        errors = [r for r in caplog.records if r.levelname == "ERROR"]
+        assert len(errors) == 1
+        message = errors[0].getMessage()
+        assert str(status) in message
+        assert _key_fingerprint("sk-secret-value") in message
+        assert "sk-secret-value" not in message
+        assert errors[0].event == "embeddings_auth_failed"
+
+    @patch("docsgpt.vectorstore.base.requests.post")
+    def test_server_error_is_not_reported_as_an_auth_error(self, mock_post, caplog):
+        import requests
+
+        response = requests.Response()
+        response.status_code = 503
+        response.url = "http://host/v1/embeddings"
+        mock_post.return_value = response
+
+        emb = RemoteEmbeddings("http://host", "m", api_key="sk-key")
+        with caplog.at_level("ERROR"), pytest.raises(requests.HTTPError):
+            emb._embed("test")
+
+        assert not [r for r in caplog.records if r.levelname == "ERROR"]
+
+    def test_key_fingerprint_is_stable_and_not_the_key(self):
+        assert _key_fingerprint(None) == "nokey"
+        assert _key_fingerprint("") == "nokey"
+        assert _key_fingerprint("abc") == _key_fingerprint("abc")
+        assert _key_fingerprint("abc") != _key_fingerprint("abd")
+        assert "abc" not in _key_fingerprint("abc")
 
     @patch("docsgpt.vectorstore.base.requests.post")
     def test_embed_raises_on_error_response(self, mock_post):
@@ -293,6 +339,102 @@ class TestEmbeddingsSingleton:
         EmbeddingsSingleton.get_instance(HF_MPNET, openai_api_key="sk-nope")
 
         mock_wrapper_cls.assert_called_once_with(HF_MPNET)
+
+
+@pytest.mark.unit
+class TestEmbeddingsCacheIsKeyedByApiKey:
+    """A cached client must never serve a caller that holds a different key.
+
+    The cache used to be keyed without the key, so the first caller's key won
+    for the life of the process: a store built with the legacy ``"embeddings"``
+    placeholder (a source delete) left every later retrieval sending
+    ``Bearer embeddings`` and getting 401s.
+    """
+
+    def setup_method(self):
+        EmbeddingsSingleton._instances = {}
+
+    def teardown_method(self):
+        EmbeddingsSingleton._instances = {}
+
+    @patch("docsgpt.vectorstore.base.settings")
+    def test_remote_client_not_shared_across_keys(self, mock_settings):
+        mock_settings.EMBEDDINGS_BASE_URL = "http://remote:8080"
+        mock_settings.EMBEDDINGS_KEY = "real"
+
+        poisoned = get_embeddings("m", "embeddings")
+        real = get_embeddings("m", "real")
+
+        assert real is not poisoned
+        assert real.headers["Authorization"] == "Bearer real"
+        assert poisoned.headers["Authorization"] == "Bearer embeddings"
+
+    @patch("docsgpt.vectorstore.base.settings")
+    def test_remote_client_shared_for_same_key(self, mock_settings):
+        mock_settings.EMBEDDINGS_BASE_URL = "http://remote:8080"
+        mock_settings.EMBEDDINGS_KEY = "real"
+
+        first = get_embeddings("m", "real")
+        second = get_embeddings("m", "real")
+        from_settings = get_embeddings("m")
+
+        assert first is second
+        assert from_settings is first
+
+    @patch("docsgpt.vectorstore.base.settings")
+    def test_remote_cache_key_does_not_contain_the_key(self, mock_settings):
+        mock_settings.EMBEDDINGS_BASE_URL = "http://remote:8080"
+        mock_settings.EMBEDDINGS_KEY = "sk-secret-value"
+
+        get_embeddings("m")
+
+        assert not any("sk-secret-value" in key for key in EmbeddingsSingleton._instances)
+
+    @patch("docsgpt.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base.OpenAIEmbeddings")
+    def test_openai_client_not_shared_across_keys(self, mock_openai_cls, mock_settings):
+        mock_settings.EMBEDDINGS_BASE_URL = None
+        mock_settings.OPENAI_API_BASE = None
+        mock_settings.OPENAI_API_VERSION = None
+        mock_settings.AZURE_DEPLOYMENT_NAME = None
+        mock_settings.EMBEDDINGS_DELEGATE_TO_WORKER = False
+        mock_settings.EMBEDDINGS_KEY = "sk-real"
+        mock_openai_cls.side_effect = lambda **kwargs: Mock(**kwargs)
+
+        poisoned = get_embeddings("openai_text-embedding-ada-002", "embeddings")
+        real = get_embeddings("openai_text-embedding-ada-002", "sk-real")
+        again = get_embeddings("openai_text-embedding-ada-002")
+
+        assert real is not poisoned
+        assert real.openai_api_key == "sk-real"
+        assert again is real
+        assert mock_openai_cls.call_count == 2
+
+    @patch("docsgpt.vectorstore.base.settings")
+    def test_delegated_client_not_shared_across_keys(self, mock_settings):
+        """The worker-local fallback of a delegated client embeds with its key."""
+        mock_settings.EMBEDDINGS_BASE_URL = None
+        mock_settings.EMBEDDINGS_DELEGATE_TO_WORKER = True
+        mock_settings.EMBEDDINGS_KEY = "sk-real"
+
+        poisoned = get_embeddings("m", "embeddings")
+        real = get_embeddings("m", "sk-real")
+
+        assert real is not poisoned
+        assert real.embeddings_key == "sk-real"
+        assert get_embeddings("m", "sk-real") is real
+
+    @patch("docsgpt.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base._get_embeddings_wrapper")
+    def test_local_model_cache_key_stays_the_model_name(self, mock_get_wrapper, mock_settings):
+        """The boot hook evicts the local model by its bare name."""
+        mock_settings.EMBEDDINGS_BASE_URL = None
+        mock_settings.EMBEDDINGS_KEY = "sk-ignored"
+        mock_get_wrapper.return_value = Mock()
+
+        get_embeddings(HF_MPNET, "sk-ignored")
+
+        assert set(EmbeddingsSingleton._instances) == {HF_MPNET}
 
 
 # --- BaseVectorStore ---
