@@ -1138,7 +1138,9 @@ def _backfill_agents(
                 "key": (doc.get("key") or None),
                 "image": doc.get("image"),
                 "description": doc.get("description"),
-                "agent_type": doc.get("agent_type"),
+                # Mongo left it unset (share agents) or "": both mean classic,
+                # and the column is NOT NULL.
+                "agent_type": str(doc.get("agent_type") or "").strip() or "classic",
                 "source_id": primary_source_id,
                 "extra_source_ids": extra_source_ids,
                 "chunks": doc.get("chunks"),
