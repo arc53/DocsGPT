@@ -72,9 +72,13 @@ class PostgresTool(Tool):
             if conn:
                 conn.close()
 
-    def _get_schema(self, db_name):
+    def _get_schema(self, db_name=None):
         """
         Retrieves the schema of the PostgreSQL database using a connection string.
+
+        The database is the one the connection string names. ``db_name`` is
+        accepted and ignored: tools saved before it was dropped from the
+        schema still ask the model for it.
         """
         conn = None
         try:
@@ -153,16 +157,11 @@ class PostgresTool(Tool):
             {
                 "name": "postgres_get_schema",
                 "access": "read",
-                "description": "Retrieve the schema of the PostgreSQL database, including tables and their columns. Use this to understand the database structure before executing queries. db_name is 'default' if not provided.",
+                "description": "Retrieve the schema of the PostgreSQL database, including tables and their columns. Use this to understand the database structure before executing queries.",
                 "parameters": {
                     "type": "object",
-                    "properties": {
-                        "db_name": {
-                            "type": "string",
-                            "description": "The name of the database to retrieve the schema for.",
-                        },
-                    },
-                    "required": ["db_name"],
+                    "properties": {},
+                    "required": [],
                     "additionalProperties": False,
                 },
             },
