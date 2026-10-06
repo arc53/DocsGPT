@@ -393,7 +393,7 @@ agents_table = Table(
     Column("user_id", Text, nullable=False),
     Column("name", Text, nullable=False),
     Column("description", Text),
-    Column("agent_type", Text),
+    Column("agent_type", Text, nullable=False, server_default="classic"),
     Column("status", Text, nullable=False),
     Column("key", CITEXT, unique=True),
     # Stable per-user human identifier used to match an agent across

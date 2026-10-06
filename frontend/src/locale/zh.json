@@ -10,6 +10,10 @@
   "loading": "加载中...",
   "retry": "重试",
   "cancel": "取消",
+  "errorBoundary": {
+    "message": "显示此内容时出错。",
+    "tryAgain": "重试"
+  },
   "help": "帮助",
   "emailUs": "给我们发邮件",
   "documentation": "文档",
@@ -188,7 +192,8 @@
         "never": "从不",
         "daily": "每天",
         "weekly": "每周",
-        "monthly": "每月"
+        "monthly": "每月",
+        "option": "同步：{{frequency}}"
       },
       "actions": "操作",
       "view": "查看",
@@ -572,6 +577,7 @@
       "stats": {
         "messages": "消息",
         "tokens": "令牌",
+        "tokensHint": "所有由 LLM 计费的令牌。代理在每个工具步骤都会重新发送对话上下文，因此大量使用工具的对话所消耗的令牌，会比可见消息看起来多出许多倍。",
         "toolCalls": "工具调用",
         "runSuccess": "运行成功率",
         "feedback": "反馈"
@@ -2245,6 +2251,10 @@
       "tokens": "您已使用 {{limit}} 令牌配额中的 {{used}}。配额将于 {{resetsAt}} 重置。",
       "cost": "您已使用 {{limit}} 用量预算中的 {{used}}。预算将于 {{resetsAt}} 重置。"
     },
+    "send": "发送",
+    "viewArtifact": "查看工件",
+    "stopSpeaking": "停止朗读",
+    "loadingAudio": "正在加载音频",
     "voice": {
       "start": "语音输入",
       "stopRecording": "停止录音",
@@ -2470,7 +2480,9 @@
         "requestLimiting": "请求限制",
         "requestLimitingDescription": "限制每天可向此代理发出的总请求数",
         "systemPromptOverride": "允许覆盖提示词",
-        "systemPromptOverrideDescription": "允许 v1 API 调用者替换此代理的系统提示词"
+        "systemPromptOverrideDescription": "允许 v1 API 调用者替换此代理的系统提示词",
+        "tokenLimit": "令牌上限",
+        "requestLimit": "请求上限"
       },
       "preview": {
         "savedVersion": "已保存版本",
@@ -2696,7 +2708,9 @@
           "oct": "10月",
           "nov": "11月",
           "dec": "12月"
-        }
+        },
+        "frequencyLabel": "频率",
+        "dayOfWeek": "星期"
       },
       "status": {
         "active": "活跃",
@@ -2828,6 +2842,7 @@
       "noSubfolders": "没有子文件夹",
       "openFolder": "打开文件夹",
       "noFolders": "暂无文件夹",
+      "moveTitle": "将“{{name}}”移动到",
       "menuAriaLabel": "{{folderName}} 的操作",
       "deleteConsequence": "其中的智能体会移出文件夹，不会被删除。"
     },
@@ -2854,6 +2869,15 @@
       "loadError": "Could not load guardrail activity"
     },
     "workflow": {
+      "expressionRow": "表达式 {{index}}",
+      "conditionRow": "条件 {{index}}",
+      "conditionNameRow": "条件 {{index}} 名称",
+      "conditionVariableRow": "条件 {{index}} 变量",
+      "conditionValueRow": "条件 {{index}} 值",
+      "undo": "撤销",
+      "undoHint": "撤销 (Ctrl+Z)",
+      "redo": "重做",
+      "redoHint": "重做 (Ctrl+Shift+Z)",
       "artifacts": {
         "previewUnsupported": "此产物无法预览",
         "loadListFailed": "无法加载产物",
@@ -3052,7 +3076,9 @@
       },
       "zoomIn": "放大",
       "zoomOut": "缩小",
-      "fitView": "适应视图"
+      "fitView": "适应视图",
+      "removeAssignment": "删除赋值 {{index}}",
+      "removeCondition": "删除条件 {{index}}"
     },
     "typeModal": {
       "title": "创建新智能体",

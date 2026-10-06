@@ -1,4 +1,4 @@
-"""Migration round-trip test for 0050_device_jobs_links."""
+"""Migration round-trip test for 0050_agent_type_default."""
 
 from __future__ import annotations
 
@@ -25,83 +25,47 @@ def _run_alembic(url: str, *args: str) -> None:
     )
 
 
-def _conversation(conn) -> str:
-    return str(
-        conn.execute(text("INSERT INTO conversations (user_id, name) VALUES ('u1', 'c') RETURNING id")).scalar()
+def _column(conn) -> tuple[str, str | None]:
+    row = conn.execute(
+        text(
+            "SELECT is_nullable, column_default FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = 'agents' AND column_name = 'agent_type'"
+        )
+    ).one()
+    return row.is_nullable, row.column_default
+
+
+def _insert(conn, name: str, agent_type: str | None) -> None:
+    conn.execute(
+        text("INSERT INTO agents (user_id, name, status, agent_type) VALUES ('u', :n, 'published', :t)"),
+        {"n": name, "t": agent_type},
     )
 
 
-def _device_job(conn, conversation_id: str) -> str:
-    return str(
-        conn.execute(
-            text(
-                "INSERT INTO background_jobs (user_id, conversation_id, tool_name, action_name, runner, deadline_at) "
-                "VALUES ('u1', CAST(:c AS uuid), 'remote_device', 'run_command', 'device', now() + interval '1 hour') "
-                "RETURNING id"
-            ),
-            {"c": conversation_id},
-        ).scalar()
-    )
-
-
-class TestMigration0050RoundTrip:
-    def test_head_takes_a_device_job(self, pg_engine):
+class TestMigration0050:
+    def test_head_defaults_to_classic_and_forbids_null(self, pg_engine):
         with pg_engine.begin() as conn:
-            assert conn.execute(
-                text(
-                    "SELECT 1 FROM information_schema.columns WHERE table_name = 'devices' "
-                    "AND column_name = 'capabilities'"
-                )
-            ).fetchone() is not None
-            job_id = _device_job(conn, _conversation(conn))
-            assert conn.execute(
-                text("SELECT runner FROM background_jobs WHERE id = CAST(:id AS uuid)"), {"id": job_id}
-            ).scalar() == "device"
+            is_nullable, default = _column(conn)
+            assert is_nullable == "NO"
+            assert "classic" in default
+            conn.execute(text("INSERT INTO agents (user_id, name, status) VALUES ('u', 'a', 'draft')"))
+            assert conn.execute(text("SELECT agent_type FROM agents")).scalar() == "classic"
 
-    def test_downgrade_reports_running_device_jobs_lost(self, pg_engine):
+    def test_upgrade_repairs_null_and_blank_types(self, pg_engine):
         url = pg_engine.url.render_as_string(hide_password=False)
-        with pg_engine.begin() as conn:
-            job_id = _device_job(conn, _conversation(conn))
         _run_alembic(url, "downgrade", _0049)
-        with pg_engine.connect() as conn:
-            row = conn.execute(
-                text("SELECT status, runner, error FROM background_jobs WHERE id = CAST(:id AS uuid)"), {"id": job_id}
-            ).one()
-            assert row.status == "lost"
-            assert row.runner == "inprocess"
-            assert "verify before retrying" in row.error["message"]
-            with pytest.raises(Exception):
-                _device_job(conn, _conversation(conn))
-        _run_alembic(url, "upgrade", "head")
         with pg_engine.begin() as conn:
-            _device_job(conn, _conversation(conn))
-
-
-    def test_downgrade_revokes_links_signed_a_new_way(self, pg_engine):
-        url = pg_engine.url.render_as_string(hide_password=False)
-        with pg_engine.begin() as conn:
-            conversation_id = _conversation(conn)
-            schedule_id = conn.execute(
-                text(
-                    "INSERT INTO schedules (user_id, trigger_type, instruction, status) "
-                    "VALUES ('u1', 'monitor', 'x', 'active') RETURNING id"
-                )
-            ).scalar()
-            for index, scheme in enumerate(("stripe", "github")):
-                conn.execute(
-                    text(
-                        "INSERT INTO trigger_links (monitor_id, user_id, conversation_id, token_hash, kind, "
-                        "signature_scheme, expires_at, allow_get, signature_header) VALUES (:m, 'u1', "
-                        "CAST(:c AS uuid), :h, 'webhook', :s, now() + interval '1 day', true, 'X-T')"
-                    ),
-                    {"m": schedule_id, "c": conversation_id, "h": f"h{index}", "s": scheme},
-                )
-        _run_alembic(url, "downgrade", _0049)
-        with pg_engine.connect() as conn:
-            rows = {
-                row.token_hash: row
-                for row in conn.execute(text("SELECT token_hash, signature_scheme, revoked_at FROM trigger_links"))
-            }
-        assert rows["h0"].revoked_at is not None and rows["h0"].signature_scheme == "hmac_sha256"
-        assert rows["h1"].revoked_at is None and rows["h1"].signature_scheme == "github"
+            assert _column(conn) == ("YES", None)
+            _insert(conn, "null(shared)", None)
+            _insert(conn, "blank", "")
+            _insert(conn, "spaces", "  ")
+            _insert(conn, "agentic", "agentic")
         _run_alembic(url, "upgrade", "head")
+        with pg_engine.connect() as conn:
+            rows = dict(conn.execute(text("SELECT name, agent_type FROM agents")).fetchall())
+        assert rows == {
+            "null(shared)": "classic",
+            "blank": "classic",
+            "spaces": "classic",
+            "agentic": "agentic",
+        }

@@ -10,6 +10,10 @@
   "loading": "読み込み中...",
   "retry": "再試行",
   "cancel": "キャンセル",
+  "errorBoundary": {
+    "message": "このコンテンツの表示中に問題が発生しました。",
+    "tryAgain": "再試行"
+  },
   "help": "ヘルプ",
   "emailUs": "メールを送る",
   "documentation": "ドキュメント",
@@ -188,7 +192,8 @@
         "never": "なし",
         "daily": "毎日",
         "weekly": "毎週",
-        "monthly": "毎月"
+        "monthly": "毎月",
+        "option": "同期: {{frequency}}"
       },
       "actions": "アクション",
       "view": "表示",
@@ -572,6 +577,7 @@
       "stats": {
         "messages": "メッセージ",
         "tokens": "トークン",
+        "tokensHint": "LLM で課金されるすべてのトークンです。エージェントはツールの各ステップで会話のコンテキストを再送信するため、ツールを多用するチャットでは、表示されているメッセージから想像されるよりも何倍も多くのトークンを使用します。",
         "toolCalls": "ツール呼び出し",
         "runSuccess": "実行成功率",
         "feedback": "フィードバック"
@@ -2246,6 +2252,10 @@
       "tokens": "トークンクォータ {{limit}} のうち {{used}} を使用しました。{{resetsAt}} にリセットされます。",
       "cost": "利用予算 {{limit}} のうち {{used}} を使用しました。{{resetsAt}} にリセットされます。"
     },
+    "send": "送信",
+    "viewArtifact": "アーティファクトを表示",
+    "stopSpeaking": "読み上げを停止",
+    "loadingAudio": "音声を読み込み中",
     "voice": {
       "start": "音声入力",
       "stopRecording": "録音を停止",
@@ -2471,7 +2481,9 @@
         "requestLimiting": "リクエスト制限",
         "requestLimitingDescription": "このエージェントに対して行える1日の合計リクエスト数を制限します",
         "systemPromptOverride": "プロンプトの上書きを許可",
-        "systemPromptOverrideDescription": "v1 API呼び出し元がこのエージェントのシステムプロンプトを置き換えることを許可します"
+        "systemPromptOverrideDescription": "v1 API呼び出し元がこのエージェントのシステムプロンプトを置き換えることを許可します",
+        "tokenLimit": "トークン上限",
+        "requestLimit": "リクエスト上限"
       },
       "preview": {
         "savedVersion": "保存済みバージョン",
@@ -2697,7 +2709,9 @@
           "oct": "10月",
           "nov": "11月",
           "dec": "12月"
-        }
+        },
+        "frequencyLabel": "頻度",
+        "dayOfWeek": "曜日"
       },
       "status": {
         "active": "有効",
@@ -2829,6 +2843,7 @@
       "noSubfolders": "サブフォルダなし",
       "openFolder": "フォルダーを開く",
       "noFolders": "フォルダがありません",
+      "moveTitle": "「{{name}}」の移動先",
       "menuAriaLabel": "{{folderName}} の操作",
       "deleteConsequence": "中のエージェントはフォルダーの外に移動され、削除されません。"
     },
@@ -2855,6 +2870,15 @@
       "loadError": "Could not load guardrail activity"
     },
     "workflow": {
+      "expressionRow": "式 {{index}}",
+      "conditionRow": "条件 {{index}}",
+      "conditionNameRow": "条件 {{index}} の名前",
+      "conditionVariableRow": "条件 {{index}} の変数",
+      "conditionValueRow": "条件 {{index}} の値",
+      "undo": "元に戻す",
+      "undoHint": "元に戻す (Ctrl+Z)",
+      "redo": "やり直す",
+      "redoHint": "やり直す (Ctrl+Shift+Z)",
       "artifacts": {
         "previewUnsupported": "このアーティファクトはプレビューできません",
         "loadListFailed": "アーティファクトを読み込めませんでした",
@@ -3053,7 +3077,9 @@
       },
       "zoomIn": "拡大",
       "zoomOut": "縮小",
-      "fitView": "全体を表示"
+      "fitView": "全体を表示",
+      "removeAssignment": "割り当て {{index}} を削除",
+      "removeCondition": "条件 {{index}} を削除"
     },
     "typeModal": {
       "title": "新しいエージェントを作成",

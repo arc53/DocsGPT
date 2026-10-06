@@ -10,6 +10,10 @@
   "loading": "載入中...",
   "retry": "重試",
   "cancel": "取消",
+  "errorBoundary": {
+    "message": "顯示此內容時發生錯誤。",
+    "tryAgain": "重試"
+  },
   "help": "幫助",
   "emailUs": "給我們發電郵",
   "documentation": "文件",
@@ -188,7 +192,8 @@
         "never": "從不",
         "daily": "每天",
         "weekly": "每週",
-        "monthly": "每月"
+        "monthly": "每月",
+        "option": "同步：{{frequency}}"
       },
       "actions": "操作",
       "view": "查看",
@@ -572,6 +577,7 @@
       "stats": {
         "messages": "訊息",
         "tokens": "Token",
+        "tokensHint": "所有由 LLM 計費的 Token。代理在每個工具步驟都會重新傳送對話內容，因此大量使用工具的對話所耗用的 Token，會比可見訊息看起來多出許多倍。",
         "toolCalls": "工具呼叫",
         "runSuccess": "執行成功率",
         "feedback": "回饋"
@@ -2246,6 +2252,10 @@
       "tokens": "您已使用 {{limit}} 權杖配額中的 {{used}}。配額將於 {{resetsAt}} 重設。",
       "cost": "您已使用 {{limit}} 用量預算中的 {{used}}。預算將於 {{resetsAt}} 重設。"
     },
+    "send": "傳送",
+    "viewArtifact": "檢視 Artifact",
+    "stopSpeaking": "停止朗讀",
+    "loadingAudio": "正在載入音訊",
     "voice": {
       "start": "語音輸入",
       "stopRecording": "停止錄音",
@@ -2471,7 +2481,9 @@
         "requestLimiting": "請求限制",
         "requestLimitingDescription": "限制每天可向此代理發出的總請求數",
         "systemPromptOverride": "允許覆蓋提示詞",
-        "systemPromptOverrideDescription": "允許 v1 API 呼叫者替換此代理的系統提示詞"
+        "systemPromptOverrideDescription": "允許 v1 API 呼叫者替換此代理的系統提示詞",
+        "tokenLimit": "權杖上限",
+        "requestLimit": "請求上限"
       },
       "preview": {
         "savedVersion": "已儲存版本",
@@ -2697,7 +2709,9 @@
           "oct": "10月",
           "nov": "11月",
           "dec": "12月"
-        }
+        },
+        "frequencyLabel": "頻率",
+        "dayOfWeek": "星期"
       },
       "status": {
         "active": "啟用中",
@@ -2829,6 +2843,7 @@
       "noSubfolders": "沒有子資料夾",
       "openFolder": "開啟資料夾",
       "noFolders": "暫無資料夾",
+      "moveTitle": "將「{{name}}」移動到",
       "menuAriaLabel": "{{folderName}} 的操作",
       "deleteConsequence": "其中的代理會移出資料夾，不會被刪除。"
     },
@@ -2855,6 +2870,15 @@
       "loadError": "Could not load guardrail activity"
     },
     "workflow": {
+      "expressionRow": "運算式 {{index}}",
+      "conditionRow": "條件 {{index}}",
+      "conditionNameRow": "條件 {{index}} 名稱",
+      "conditionVariableRow": "條件 {{index}} 變數",
+      "conditionValueRow": "條件 {{index}} 值",
+      "undo": "復原",
+      "undoHint": "復原 (Ctrl+Z)",
+      "redo": "重做",
+      "redoHint": "重做 (Ctrl+Shift+Z)",
       "artifacts": {
         "previewUnsupported": "此產出物無法預覽",
         "loadListFailed": "無法載入產出物",
@@ -3053,7 +3077,9 @@
       },
       "zoomIn": "放大",
       "zoomOut": "縮小",
-      "fitView": "符合檢視"
+      "fitView": "符合檢視",
+      "removeAssignment": "移除指定 {{index}}",
+      "removeCondition": "移除條件 {{index}}"
     },
     "typeModal": {
       "title": "建立新代理",

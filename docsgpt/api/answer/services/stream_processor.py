@@ -1290,7 +1290,13 @@ class StreamProcessor:
             for source_doc in source_docs
         ]
         data["sources"] = sources_list
-        data["default_model_id"] = data.get("default_model_id", "")
+        # A PG row carries every column, so an unset one is None (or a
+        # legacy Mongo ""), never missing: ``.get(k, default)`` alone
+        # returns it. Unset means the default.
+        data["agent_type"] = (agent.get("agent_type") or "").strip() or settings.AGENT_NAME
+        data["prompt_id"] = agent.get("prompt_id") or "default"
+        data["default_model_id"] = agent.get("default_model_id") or ""
+        data["models"] = agent.get("models") or []
         return data
 
     def _configure_source(self):
@@ -1500,15 +1506,15 @@ class StreamProcessor:
                     # The agent runs in its owner's context: its prompt must
                     # be one the owner may use (re-checked on every run).
                     "prompt_id": authorized_prompt_id(
-                        self._agent_data.get("prompt_id", "default"),
+                        self._agent_data.get("prompt_id") or "default",
                         self._agent_data.get("user"),
                         self._agent_data,
                     ),
-                    "agent_type": self._agent_data.get("agent_type", settings.AGENT_NAME),
+                    "agent_type": (self._agent_data.get("agent_type") or "").strip() or settings.AGENT_NAME,
                     "user_api_key": effective_key,
                     "json_schema": self._agent_data.get("json_schema"),
-                    "default_model_id": self._agent_data.get("default_model_id", ""),
-                    "models": self._agent_data.get("models", []),
+                    "default_model_id": self._agent_data.get("default_model_id") or "",
+                    "models": self._agent_data.get("models") or [],
                     "allow_system_prompt_override": self._agent_data.get(
                         "allow_system_prompt_override", False
                     ),

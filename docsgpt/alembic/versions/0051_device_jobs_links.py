@@ -1,4 +1,4 @@
-"""0050 device jobs and links — background jobs on paired devices, and what links can do.
+"""0051 device jobs and links — background jobs on paired devices, and what links can do.
 
 * ``background_jobs.runner`` takes ``device``: a ``remote_device`` command a
   turn handed off, followed by a Celery poll chain that reads the device's
@@ -27,8 +27,8 @@
 Idempotent both ways. Downgrade first reports running device jobs ``lost``
 (nothing would follow them any more), then narrows the check.
 
-Revision ID: 0050_device_jobs_links
-Revises: 0049_push_and_unread
+Revision ID: 0051_device_jobs_links
+Revises: 0050_agent_type_default
 """
 
 from typing import Sequence, Union
@@ -36,8 +36,8 @@ from typing import Sequence, Union
 from alembic import op
 
 
-revision: str = "0050_device_jobs_links"
-down_revision: Union[str, None] = "0049_push_and_unread"
+revision: str = "0051_device_jobs_links"
+down_revision: Union[str, None] = "0050_agent_type_default"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
