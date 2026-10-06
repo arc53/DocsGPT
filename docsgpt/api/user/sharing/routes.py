@@ -235,6 +235,7 @@ class ShareConversation(Resource):
                             name,
                             "published",
                             key=api_uuid,
+                            agent_type="classic",
                             retriever=retriever,
                             chunks=chunks_int,
                             prompt_id=prompt_pg_id,
