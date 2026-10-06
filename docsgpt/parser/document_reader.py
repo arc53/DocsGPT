@@ -443,7 +443,7 @@ def _to_chunks(text: str, max_chars: Optional[int]) -> List[str]:
     from docsgpt.parser.chunking_creator import ChunkerCreator
     from docsgpt.parser.schema.base import Document
 
-    chunker = ChunkerCreator.create_chunker("recursive")
+    chunker = ChunkerCreator.create_chunker("classic_chunk")
     chunks = chunker.chunk([Document(text=text)])
     cap = int(max_chars or 0)
     out: List[str] = []

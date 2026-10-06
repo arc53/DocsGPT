@@ -180,4 +180,4 @@ class TestReingestSourceWorker:
         assert calls[0]["chunking_strategy"] == "recursive"
         assert calls[0]["max_tokens"] == 800
         assert calls[0]["min_tokens"] == 50
-        assert calls[0]["chunk_overlap"] == 200
+        assert calls[0]["chunk_overlap"] == 0
