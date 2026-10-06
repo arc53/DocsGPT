@@ -1340,3 +1340,112 @@ def test_activity_interval_is_a_third_of_the_auto_stop_window():
 
     assert _activity_interval(15) == 300
     assert _activity_interval(1) == 30  # never hammer the API
+
+
+# --- Expiry: release vs delete -------------------------------------------
+
+
+def test_release_handle_drops_the_handle_without_deleting(sandbox):
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    sandbox.release_handle("conv-1", created.id)
+    assert "conv-1" not in sandbox._handles
+    sandbox._client.delete.assert_not_called()
+
+
+def test_release_handle_leaves_a_newer_handle_alone(sandbox):
+    sandbox.open("conv-1")
+    sandbox.release_handle("conv-1", "sbx-older")
+    assert "conv-1" in sandbox._handles
+
+
+def test_idle_seconds_reads_the_sandbox_activity(sandbox):
+    from datetime import datetime, timedelta, timezone
+
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    created.last_activity_at = (datetime.now(timezone.utc) - timedelta(seconds=300)).isoformat()
+    assert 299 <= sandbox.idle_seconds(created.id) <= 310
+    # The API's own spelling: a ``Z`` suffix.
+    created.last_activity_at = (datetime.now(timezone.utc) - timedelta(seconds=60)).strftime(
+        "%Y-%m-%dT%H:%M:%S.%fZ"
+    )
+    assert 59 <= sandbox.idle_seconds(created.id) <= 70
+
+
+@pytest.mark.parametrize("stamp", [None, "", "not a date"])
+def test_idle_seconds_is_unknown_without_a_usable_stamp(sandbox, stamp):
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    created.last_activity_at = stamp
+    assert sandbox.idle_seconds(created.id) is None
+
+
+def test_idle_seconds_is_unknown_for_a_gone_sandbox(sandbox):
+    assert sandbox.idle_seconds("sbx-missing") is None
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    created.last_activity_at = "2020-01-01T00:00:00Z"
+    created.state = "destroyed"
+    assert sandbox.idle_seconds(created.id) is None
+
+
+def test_reaping_through_the_manager_keeps_a_recently_active_sandbox(sandbox, monkeypatch):
+    from datetime import datetime, timezone
+
+    from docsgpt.sandbox.manager import SandboxManager
+
+    clock = {"t": 0.0}
+    monkeypatch.setattr("docsgpt.sandbox.manager.time.monotonic", lambda: clock["t"])
+    manager = SandboxManager(sandbox, max_ttl=1200)
+    manager.open_session("conv-1")
+    _, created = sandbox._client.created[0]
+    created.last_activity_at = datetime.now(timezone.utc).isoformat()  # another process just used it
+    clock["t"] = 1300.0
+    assert manager.reap_expired() == ["conv-1"]
+    sandbox._client.delete.assert_not_called()
+    assert "conv-1" not in sandbox._handles
+
+    created.last_activity_at = "2020-01-01T00:00:00Z"
+    manager.open_session("conv-1")  # nothing labelled in ``existing``: creates sbx-2
+    _, second = sandbox._client.created[1]
+    second.last_activity_at = "2020-01-01T00:00:00Z"
+    clock["t"] = 3000.0
+    manager.reap_expired()
+    sandbox._client.delete.assert_called_once_with(second)
+
+
+def test_start_detached_on_a_deleted_sandbox_raises_gone_and_the_next_open_is_fresh(sandbox, fake_sdk, monkeypatch):
+    # Prod 2026-10-06: create_session on a deleted sandbox timed out, then
+    # 404'd; the dead session stayed registered and failed the next call too.
+    import types as _types
+
+    from docsgpt.sandbox.base import SandboxGoneError
+    from docsgpt.sandbox.manager import SandboxManager
+
+    monkeypatch.setattr(sys.modules["daytona"], "SessionExecuteRequest", _types.SimpleNamespace, raising=False)
+    manager = SandboxManager(sandbox, max_ttl=1200)
+    assert manager.open_session("conv-1").created is True
+    _, created = sandbox._client.created[0]
+    created.process.create_session = mock.Mock(side_effect=RuntimeError("not found: sandbox has been deleted"))
+    sandbox._client.created.clear()  # client.get no longer resolves the id
+
+    with pytest.raises(SandboxGoneError):
+        manager.start_detached("conv-1", "print(1)", 30, "job1")
+    assert "conv-1" not in sandbox._handles
+    assert not manager.has_session("conv-1")
+
+    assert manager.open_session("conv-1").created is True
+    assert len(sandbox._client.created) == 1  # a fresh create, not the dead handle
+
+
+def test_start_detached_on_a_live_sandbox_keeps_the_plain_error(sandbox, monkeypatch):
+    import types as _types
+
+    monkeypatch.setattr(sys.modules["daytona"], "SessionExecuteRequest", _types.SimpleNamespace, raising=False)
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    created.process.create_session = mock.Mock(side_effect=RuntimeError("502"))
+    with pytest.raises(RuntimeError, match="502"):
+        sandbox.start_detached("conv-1", "print(1)", 30, "job1")
+    assert "conv-1" in sandbox._handles

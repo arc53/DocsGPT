@@ -320,3 +320,33 @@ def test_a_file_over_the_cap_is_named_in_the_result(tool, monkeypatch):
         "race.mp4 (38.9 MB) is over the 10 MB limit and was not saved; compress, downscale or split it"
     ]
     assert "files over 10 MB aren't saved" in CodeExecutorTool._description()
+
+
+class TestGoneSandbox:
+    def test_a_detached_start_on_a_gone_reused_session_retries_on_a_fresh_one(self, tool, monkeypatch):
+        # Prod 2026-10-06: another process deleted the sandbox; create_session
+        # 404'd and the turn reported a sandbox it could not run code in.
+        from docsgpt.sandbox.base import SandboxGoneError
+
+        class _GoneOnce(_Manager):
+            def __init__(self):
+                super().__init__(_ok(), created=False)
+                self.opened = []
+
+            def open_session(self, session_id, ttl=None):
+                self.opened.append(session_id)
+                return OpenedSession(session_id, self.created)
+
+            def start_detached(self, session_id, code, timeout, key):
+                if not self.created:
+                    self.created = True  # the manager dropped it: the next open is fresh
+                    raise SandboxGoneError("start_detached failed: sandbox gone (NotFoundError)")
+                return super().start_detached(session_id, code, timeout, key)
+
+        manager = _GoneOnce()
+        _use(monkeypatch, manager, call=_Call(manager=manager))
+        payload = tool.execute_action("run_code", code="print('hello')", capture_artifacts=False)
+        assert payload["status"] == "ok"
+        assert payload["session"] == "new"
+        assert len(manager.opened) == 2
+        assert len(manager.started) == 1
