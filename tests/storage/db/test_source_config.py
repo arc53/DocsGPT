@@ -29,12 +29,12 @@ class TestParseLenient:
         assert cfg == SourceConfig()
 
     def test_chunking_defaults_match_worker(self):
-        # Ingest defaults equal worker MAX/MIN_TOKENS and recursive strategy.
+        # Byte-identical-ingest guarantee: defaults equal worker MAX/MIN_TOKENS.
         c = ChunkingConfig()
-        assert c.strategy == "recursive"
+        assert c.strategy == "classic_chunk"
         assert c.max_tokens == 1250
         assert c.min_tokens == 150
-        assert c.chunk_overlap == 200
+        assert c.chunk_overlap == 0
         assert c.duplicate_headers is False
 
     def test_chunk_overlap_validation(self):
