@@ -1855,6 +1855,42 @@ class TestTextToSpeech:
             assert _get_response_json(response)["success"] is False
 
     @patch("docsgpt.api.user.attachments.routes.TTSCreator.create_tts")
+    def test_tts_strips_markdown_before_synthesis(self, mock_create_tts, flask_app):
+        from docsgpt.api.user.attachments.routes import TextToSpeech
+
+        app = Flask(__name__)
+        mock_tts = MagicMock()
+        mock_tts.text_to_speech.return_value = ("base64audio==", "en")
+        mock_create_tts.return_value = mock_tts
+
+        markdown = (
+            "## Setup\n**Run** the [installer](https://example.com/install)."
+            "\n```bash\n./setup.sh\n```\n![diagram](arch.png)"
+        )
+        with app.test_request_context(
+            "/api/tts",
+            method="POST",
+            json={"text": markdown},
+        ):
+            response = TextToSpeech().post()
+            assert _get_response_status(response) == 200
+
+        mock_tts.text_to_speech.assert_called_once_with(
+            "Setup Run the installer. code block,"
+        )
+
+    @patch("docsgpt.api.user.attachments.routes.TTSCreator.create_tts")
+    def test_tts_null_text_returns_400_not_500(self, mock_create_tts, flask_app):
+        from docsgpt.api.user.attachments.routes import TextToSpeech
+
+        app = Flask(__name__)
+        with app.test_request_context("/api/tts", method="POST", json={"text": None}):
+            response = TextToSpeech().post()
+            assert _get_response_status(response) == 400
+            assert _get_response_json(response) == {"success": False, "message": "Text is required"}
+        mock_create_tts.assert_not_called()
+
+    @patch("docsgpt.api.user.attachments.routes.TTSCreator.create_tts")
     def test_tts_disabled_returns_404_without_a_provider(self, mock_create_tts, flask_app):
         from docsgpt.api.user.attachments import routes
 
@@ -1869,6 +1905,38 @@ class TestTextToSpeech:
             assert _get_response_json(response) == {
                 "success": False,
                 "message": "Text-to-speech is disabled on this server.",
+            }
+        mock_create_tts.assert_not_called()
+
+
+    @pytest.mark.parametrize(
+        "request_kwargs",
+        [
+            pytest.param({"json": {}}, id="empty_object"),
+            pytest.param({"json": {"text": ""}}, id="empty_text"),
+            pytest.param({"json": {"text": "   "}}, id="whitespace_text"),
+            pytest.param({"json": {"text": 123}}, id="non_string_text"),
+            pytest.param({"json": ["Hello"]}, id="non_object_body"),
+            pytest.param({}, id="no_body"),
+            pytest.param(
+                {"data": "{not json", "content_type": "application/json"},
+                id="malformed_json",
+            ),
+        ],
+    )
+    @patch("docsgpt.api.user.attachments.routes.TTSCreator.create_tts")
+    def test_tts_invalid_body_returns_400(
+        self, mock_create_tts, flask_app, request_kwargs
+    ):
+        from docsgpt.api.user.attachments.routes import TextToSpeech
+
+        app = Flask(__name__)
+        with app.test_request_context("/api/tts", method="POST", **request_kwargs):
+            response = TextToSpeech().post()
+            assert _get_response_status(response) == 400
+            assert _get_response_json(response) == {
+                "success": False,
+                "message": "Text is required",
             }
         mock_create_tts.assert_not_called()
 

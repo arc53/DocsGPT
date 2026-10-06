@@ -82,12 +82,13 @@ def test_remove_images():
 
 
 def test_remove_directives():
-    """Test directive removal functionality."""
+    """Test removal of standard reStructuredText directive syntax."""
     parser = RstParser()
-    content = "Text with `..note::` directive and more text"
+    content = "Text before\n.. note:: Important information\nText after"
+
     result = parser.remove_directives(content)
-    # The regex pattern looks for `..something::` so it should remove `..note::`
-    assert result == "Text with ` directive and more text"
+
+    assert result == "Text before\nImportant information\nText after"
 
 
 def test_remove_interpreters():
@@ -267,7 +268,7 @@ Text with `link <http://example.com>`_ and :doc:`reference`.
 | A   | B   |
 +-----+-----+
 
-`..note::` This is a note."""
+.. note:: This is a note."""
 
     with patch("builtins.open", mock_open(read_data=content)):
         result = parser.parse_file(Path("test.rst"))
@@ -279,6 +280,5 @@ Text with `link <http://example.com>`_ and :doc:`reference`.
     assert ":doc:" not in joined_result  # interpreters removed
     assert ".. image::" not in joined_result  # images removed
     assert "+-----+" not in joined_result  # table excess removed
-    # The directive pattern looks for `..something::` so regular .. note:: won't be removed
-    # but `..note::` will be removed
-    assert "`..note::`" not in joined_result  # directives removed
+    assert ".. note::" not in joined_result
+    assert "This is a note." in joined_result

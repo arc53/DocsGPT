@@ -15,9 +15,16 @@ from docsgpt.storage.db.repositories.reconciliation import (
 
 
 def _seed_message(
-    conn, *, status: str = "pending", age_minutes: int = 6, user_id: str = "u",
+    conn,
+    *,
+    status: str = "pending",
+    age_minutes: int = 6,
+    user_id: str = "u",
+    conversation_id: str | None = None,
+    position: int = 0,
 ) -> dict:
-    conv = ConversationsRepository(conn).create(user_id, "rec repo test")
+    if conversation_id is None:
+        conversation_id = ConversationsRepository(conn).create(user_id, "rec repo test")["id"]
     row = conn.execute(
         text(
             """
@@ -25,18 +32,22 @@ def _seed_message(
                 conversation_id, position, prompt, response, status, user_id, timestamp
             )
             VALUES (
-                CAST(:cid AS uuid), 0, 'p', '', :status, :uid,
+                CAST(:cid AS uuid), :pos, 'p', '', :status, :uid,
                 clock_timestamp() - make_interval(mins => :age)
             )
             RETURNING id
             """
         ),
-        {"cid": conv["id"], "status": status, "uid": user_id, "age": age_minutes},
+        {
+            "cid": conversation_id, "pos": position, "status": status,
+            "uid": user_id, "age": age_minutes,
+        },
     ).fetchone()
-    return {"id": str(row[0]), "conversation_id": conv["id"], "user_id": user_id}
+    return {"id": str(row[0]), "conversation_id": conversation_id, "user_id": user_id}
 
 
-def _seed_resuming(conn, conv_id: str, user_id: str, *, secs_ago: int) -> None:
+def _seed_resuming(conn, msg: dict, *, secs_ago: int) -> None:
+    """Insert a claimed ``pending_tool_state`` row for the turn that owns ``msg``."""
     conn.execute(
         text(
             """
@@ -47,7 +58,7 @@ def _seed_resuming(conn, conv_id: str, user_id: str, *, secs_ago: int) -> None:
             )
             VALUES (
                 CAST(:cid AS uuid), :uid,
-                '[]'::jsonb, '[]'::jsonb, '{}'::jsonb, '[]'::jsonb, '{}'::jsonb,
+                '[]'::jsonb, '[]'::jsonb, '{}'::jsonb, '[]'::jsonb, CAST(:cfg AS json),
                 clock_timestamp(),
                 clock_timestamp() + interval '30 minutes',
                 'resuming',
@@ -55,14 +66,15 @@ def _seed_resuming(conn, conv_id: str, user_id: str, *, secs_ago: int) -> None:
             )
             """
         ),
-        {"cid": conv_id, "uid": user_id, "secs": secs_ago},
+        {
+            "cid": msg["conversation_id"], "uid": msg["user_id"],
+            "cfg": json.dumps({"reserved_message_id": msg["id"]}), "secs": secs_ago,
+        },
     )
 
 
-def _seed_pending_state(
-    conn, conv_id: str, user_id: str, *, expires_in_minutes: int = 30,
-) -> None:
-    """Insert a paused ``pending_tool_state`` row (status='pending')."""
+def _seed_pending_state(conn, msg: dict, *, expires_in_minutes: int = 30) -> None:
+    """Insert a paused ``pending_tool_state`` row (status='pending') for the turn that owns ``msg``."""
     conn.execute(
         text(
             """
@@ -73,7 +85,7 @@ def _seed_pending_state(
             )
             VALUES (
                 CAST(:cid AS uuid), :uid,
-                '[]'::jsonb, '[]'::jsonb, '{}'::jsonb, '[]'::jsonb, '{}'::jsonb,
+                '[]'::jsonb, '[]'::jsonb, '{}'::jsonb, '[]'::jsonb, CAST(:cfg AS json),
                 clock_timestamp(),
                 clock_timestamp() + make_interval(mins => :exp),
                 'pending',
@@ -81,7 +93,10 @@ def _seed_pending_state(
             )
             """
         ),
-        {"cid": conv_id, "uid": user_id, "exp": expires_in_minutes},
+        {
+            "cid": msg["conversation_id"], "uid": msg["user_id"],
+            "cfg": json.dumps({"reserved_message_id": msg["id"]}), "exp": expires_in_minutes,
+        },
     )
 
 
@@ -93,14 +108,15 @@ def _seed_tool_call(
     age_minutes: int,
     tool_name: str = "notes",
     action_name: str = "view",
+    message_id: str | None = None,
 ) -> None:
     conn.execute(
         text(
             """
             INSERT INTO tool_call_attempts (
-                call_id, tool_name, action_name, arguments, status
+                call_id, tool_name, action_name, arguments, status, message_id
             )
-            VALUES (:cid, :tn, :an, CAST(:args AS jsonb), :st)
+            VALUES (:cid, :tn, :an, CAST(:args AS jsonb), :st, CAST(:mid AS uuid))
             """
         ),
         {
@@ -109,6 +125,7 @@ def _seed_tool_call(
             "an": action_name,
             "args": json.dumps({}),
             "st": status,
+            "mid": message_id,
         },
     )
     # The ``set_updated_at`` BEFORE-UPDATE trigger would otherwise reset
@@ -158,17 +175,14 @@ class TestFindAndLockStuckMessages:
 
     def test_skipped_when_resuming_within_grace(self, pg_conn):
         msg = _seed_message(pg_conn)
-        _seed_resuming(pg_conn, msg["conversation_id"], msg["user_id"], secs_ago=60)
+        _seed_resuming(pg_conn, msg, secs_ago=60)
         repo = ReconciliationRepository(pg_conn)
         rows = repo.find_and_lock_stuck_messages()
         assert all(str(r["id"]) != msg["id"] for r in rows)
 
     def test_not_skipped_when_resuming_past_grace(self, pg_conn):
         msg = _seed_message(pg_conn)
-        _seed_resuming(
-            pg_conn, msg["conversation_id"], msg["user_id"],
-            secs_ago=11 * 60,
-        )
+        _seed_resuming(pg_conn, msg, secs_ago=11 * 60)
         repo = ReconciliationRepository(pg_conn)
         rows = repo.find_and_lock_stuck_messages()
         assert any(str(r["id"]) == msg["id"] for r in rows)
@@ -176,10 +190,7 @@ class TestFindAndLockStuckMessages:
     def test_skipped_when_pending_state_active(self, pg_conn):
         """Paused row (PT.status='pending') with future expires_at exempts the message."""
         msg = _seed_message(pg_conn)
-        _seed_pending_state(
-            pg_conn, msg["conversation_id"], msg["user_id"],
-            expires_in_minutes=30,
-        )
+        _seed_pending_state(pg_conn, msg, expires_in_minutes=30)
         repo = ReconciliationRepository(pg_conn)
         rows = repo.find_and_lock_stuck_messages()
         assert all(str(r["id"]) != msg["id"] for r in rows)
@@ -187,13 +198,22 @@ class TestFindAndLockStuckMessages:
     def test_not_skipped_when_pending_state_expired(self, pg_conn):
         """An expired PT row (expires_at <= now()) no longer shields the message."""
         msg = _seed_message(pg_conn)
-        _seed_pending_state(
-            pg_conn, msg["conversation_id"], msg["user_id"],
-            expires_in_minutes=-1,
-        )
+        _seed_pending_state(pg_conn, msg, expires_in_minutes=-1)
         repo = ReconciliationRepository(pg_conn)
         rows = repo.find_and_lock_stuck_messages()
         assert any(str(r["id"]) == msg["id"] for r in rows)
+
+    def test_another_turns_pause_does_not_shield_the_message(self, pg_conn):
+        """A turn sent while an earlier one waits on approval is swept on its own merits."""
+        paused = _seed_message(pg_conn)
+        _seed_pending_state(pg_conn, paused)
+        later = _seed_message(
+            pg_conn, status="streaming", conversation_id=paused["conversation_id"], position=1,
+        )
+        rows = ReconciliationRepository(pg_conn).find_and_lock_stuck_messages()
+        ids = {str(r["id"]) for r in rows}
+        assert later["id"] in ids
+        assert paused["id"] not in ids
 
     def test_recent_heartbeat_keeps_long_stream_alive(self, pg_conn):
         """A stale ``timestamp`` plus fresh heartbeat in metadata excludes the row."""
@@ -313,6 +333,58 @@ class TestFindAndLockExecutedToolCalls:
         repo = ReconciliationRepository(pg_conn)
         rows = repo.find_and_lock_executed_tool_calls()
         assert all(r["call_id"] != "e-3" for r in rows)
+
+    def test_excludes_a_call_whose_turn_is_paused_for_approval(self, pg_conn):
+        """A turn waiting on an approval confirms its calls only when it resumes and finalizes."""
+        msg = _seed_message(pg_conn, age_minutes=20)
+        _seed_pending_state(pg_conn, msg)
+        _seed_tool_call(
+            pg_conn, call_id="e-4", status="executed", age_minutes=16, message_id=msg["id"],
+        )
+        rows = ReconciliationRepository(pg_conn).find_and_lock_executed_tool_calls()
+        assert all(r["call_id"] != "e-4" for r in rows)
+
+    def test_excludes_a_call_whose_turn_is_resuming(self, pg_conn):
+        msg = _seed_message(pg_conn, age_minutes=20)
+        _seed_resuming(pg_conn, msg, secs_ago=60)
+        _seed_tool_call(
+            pg_conn, call_id="e-5", status="executed", age_minutes=16, message_id=msg["id"],
+        )
+        rows = ReconciliationRepository(pg_conn).find_and_lock_executed_tool_calls()
+        assert all(r["call_id"] != "e-5" for r in rows)
+
+    def test_returns_a_call_whose_pause_expired(self, pg_conn):
+        msg = _seed_message(pg_conn, age_minutes=40)
+        _seed_pending_state(pg_conn, msg, expires_in_minutes=-1)
+        _seed_tool_call(
+            pg_conn, call_id="e-6", status="executed", age_minutes=16, message_id=msg["id"],
+        )
+        rows = ReconciliationRepository(pg_conn).find_and_lock_executed_tool_calls()
+        assert any(r["call_id"] == "e-6" for r in rows)
+
+    def test_returns_a_call_whose_message_is_terminal(self, pg_conn):
+        """A pause row left beside a finished message does not shield its calls."""
+        msg = _seed_message(pg_conn, status="complete", age_minutes=20)
+        _seed_pending_state(pg_conn, msg)
+        _seed_tool_call(
+            pg_conn, call_id="e-7", status="executed", age_minutes=16, message_id=msg["id"],
+        )
+        rows = ReconciliationRepository(pg_conn).find_and_lock_executed_tool_calls()
+        assert any(r["call_id"] == "e-7" for r in rows)
+
+    def test_returns_a_call_from_another_turn_of_a_paused_conversation(self, pg_conn):
+        """Only the paused turn's own calls wait for its approval."""
+        paused = _seed_message(pg_conn, age_minutes=20)
+        _seed_pending_state(pg_conn, paused)
+        later = _seed_message(
+            pg_conn, status="streaming", age_minutes=18,
+            conversation_id=paused["conversation_id"], position=1,
+        )
+        _seed_tool_call(
+            pg_conn, call_id="e-8", status="executed", age_minutes=16, message_id=later["id"],
+        )
+        rows = ReconciliationRepository(pg_conn).find_and_lock_executed_tool_calls()
+        assert any(r["call_id"] == "e-8" for r in rows)
 
 
 class TestIncrementMessageReconcileAttempts:

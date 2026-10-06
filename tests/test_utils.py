@@ -625,6 +625,12 @@ class TestCleanTextForTts:
     def test_removes_images(self):
         result = clean_text_for_tts("![alt text](image.png)")
         assert "image.png" not in result
+        assert result == ""
+
+    @pytest.mark.unit
+    def test_removes_inline_image_without_leftover_marker(self):
+        result = clean_text_for_tts("See ![diagram](a.png) and [docs](https://x.io)")
+        assert result == "See and docs"
 
     @pytest.mark.unit
     def test_removes_inline_code(self):
@@ -694,11 +700,137 @@ class TestCleanTextForTts:
         assert "::" not in result
 
     @pytest.mark.unit
-    def test_removes_non_ascii(self):
+    def test_removes_emoji(self):
         result = clean_text_for_tts("hello \U0001f600 world")
-        assert "\U0001f600" not in result
-        assert "hello" in result
-        assert "world" in result
+        assert result == "hello world"
+
+    @pytest.mark.unit
+    def test_removes_emoji_sequences(self):
+        # thumbs-up + skin tone, ZWJ family, heart + variation selector
+        result = clean_text_for_tts(
+            "ok \U0001f44d\U0001f3fd \U0001f468‍\U0001f469‍\U0001f467 ❤️ done"
+        )
+        assert result == "ok done"
+
+    @pytest.mark.unit
+    def test_keycap_emoji_keeps_only_the_digit(self):
+        assert clean_text_for_tts("1️⃣ Install #️⃣ tags") == "1 Install # tags"
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "text",
+        ["Café résumé", "Привет мир", "こんにちは世界", "你好，世界", "Größe über"],
+    )
+    def test_keeps_non_english_letters(self, text):
+        assert clean_text_for_tts(text) == text
+
+    @pytest.mark.unit
+    def test_keeps_zero_width_non_joiner(self):
+        # Persian half-space: part of the spelling, not formatting
+        word = "می\u200cشود"
+        assert clean_text_for_tts(word) == word
+
+    @pytest.mark.unit
+    def test_removes_supplementary_variation_selectors(self):
+        # VS17-VS256 (U+E0100-U+E01EF) go; other combining marks such as
+        # the acute accent in a decomposed "é" stay
+        text = "a\U000e0100b\U000e01ef café"
+        assert clean_text_for_tts(text) == "ab café"
+
+    @pytest.mark.unit
+    def test_removes_multiline_tag_with_closing_bracket_on_own_line(self):
+        # The lone ">" line must not be taken for a blockquote first
+        text = 'Intro\n<video\n  width={1440}\n  controls\n>\n  <source src="a.mp4" />\n</video>\nOutro'
+        assert clean_text_for_tts(text) == "Intro Outro"
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "text, expected",
+        [
+            ("x <b>bold</b> y<br/>z", "x bold y z"),
+            ('<div class="a">d</div>', "d"),
+            ('<Callout type="info">Note</Callout>', "Note"),
+            ("<Steps>One</Steps>", "One"),
+        ],
+    )
+    def test_removes_html_and_jsx_markup(self, text, expected):
+        assert clean_text_for_tts(text) == expected
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "text, expected",
+        [
+            ("Visible <!-- internal note --> text", "Visible text"),
+            ("A <!-- one\nspans\nlines --> B <!----> C", "A B C"),
+            ("Keep <!-- unclosed comment", "Keep <!-- unclosed comment"),
+        ],
+    )
+    def test_removes_html_comments(self, text, expected):
+        assert clean_text_for_tts(text) == expected
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Use List<int> or Map<String, int>.",
+            "Replace <your-api-key> with your key.",
+            "Press <Enter> to send.",
+            "Check a <= b and c >= d.",
+        ],
+    )
+    def test_keeps_angle_bracket_prose(self, text):
+        assert clean_text_for_tts(text) == text
+
+    @pytest.mark.unit
+    def test_lone_less_than_does_not_swallow_text(self):
+        text = "Keep rows where timestamp < now() and age <30 days.\nNext line > here"
+        assert "now() and age" in clean_text_for_tts(text)
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "[a" * 50_000,  # unmatched [text]
+            "{a" * 50_000,  # unmatched {text}
+            "![a](" * 40_000,  # unmatched image url
+            "[a](" * 50_000,  # unmatched link url
+            "<a" * 100_000,  # unmatched html tag
+            "<!--a" * 40_000,  # unclosed html comment
+        ],
+        ids=["bracket", "brace", "image", "link", "tag", "comment"],
+    )
+    def test_unmatched_delimiters_clean_in_linear_time(self, text):
+        # Each pattern used to rescan the rest of the text from every
+        # opener, so malformed markdown took seconds to minutes.
+        import time
+
+        start = time.monotonic()
+        clean_text_for_tts(text)
+        elapsed = time.monotonic() - start
+        assert elapsed < 0.5, f"cleanup took {elapsed:.1f}s on {len(text)} chars"
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "text", ["\n" * 100_000, " \n" * 50_000, "\t\n" * 50_000], ids=["newlines", "spaces", "tabs"]
+    )
+    def test_blank_lines_clean_in_linear_time(self, text):
+        # The list-marker patterns' leading whitespace crossed newlines and
+        # rescanned the blank tail from every line start.
+        import time
+
+        start = time.monotonic()
+        assert clean_text_for_tts(text) == ""
+        elapsed = time.monotonic() - start
+        assert elapsed < 0.5, f"cleanup took {elapsed:.1f}s on {len(text)} chars"
+
+    @pytest.mark.unit
+    def test_indented_list_markers_removed(self):
+        text = "Steps:\n  - first\n\t* second\n    3. third\n\n+ fourth"
+        assert clean_text_for_tts(text) == "Steps: first second third fourth"
+
+    @pytest.mark.unit
+    def test_ascii_handling_unchanged(self):
+        assert clean_text_for_tts("x^2 \x00\x07ok") == "x^2 ok"
 
     @pytest.mark.unit
     def test_empty_string(self):
