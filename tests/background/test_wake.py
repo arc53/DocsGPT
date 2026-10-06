@@ -102,6 +102,8 @@ class TestWakeConversation:
         assert row["body"].count(LOST_NOTE) == 1 and "Error:" not in row["body"]
         assert "was interrupted" in row["body"] and "failed" not in row["body"]
         assert "was interrupted" in row["title"] and "failed" not in row["title"]
+        assert "Tell the user plainly that this attempt was interrupted, and whether it was started again" in row[
+            "body"]
 
         cancelled = _finished_job(conversation_id, message_id, key="b", status="cancelled")
         wake.on_job_finished(cancelled)

@@ -195,7 +195,13 @@ def job_event(job: Dict[str, Any]) -> Dict[str, Any]:
     if job.get("status") == "lost":
         # Lost reads as "failed" to models elsewhere (MCP Tasks names); here it says what happened, once.
         title = f"{tool} was interrupted (job {view['job_id']})"
-        lines = [f"Background job {view['job_id']} ({tool}) was interrupted.", view.get("note") or ""]
+        lines = [
+            f"Background job {view['job_id']} ({tool}) was interrupted.",
+            view.get("note") or "",
+            # A retry started meanwhile may still be running: "it is still running" would hide the interruption.
+            "Tell the user plainly that this attempt was interrupted, and whether it was started again (if a new "
+            "run is going, say that it is a retry).",
+        ]
         if view.get("error") and view.get("error") != view.get("note"):
             lines.append(f"Error: {view['error']}")
     else:
