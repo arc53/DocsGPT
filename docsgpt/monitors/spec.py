@@ -29,11 +29,27 @@ from docsgpt.core.settings import settings
 SOURCE_TYPES = ("webpage", "tool", "ingest", "webhook", "approval")
 POLLED_SOURCES = ("webpage", "tool")
 CHECK_TYPES = ("changed", "new_items", "regex", "threshold", "status")
-SIGNATURE_SCHEMES = ("none", "standard_webhooks", "github", "hmac_sha256")
+SIGNATURE_SCHEMES = (
+    "none", "standard_webhooks", "github", "hmac_sha256", "stripe", "slack", "header_token", "bearer"
+)
 WEBHOOK_METHODS = ("POST", "GET")
 
-#: Schemes a GET call can satisfy: a GET has no body to sign.
-GET_SIGNATURE_SCHEMES = ("none",)
+#: Schemes a GET call can satisfy: a GET has no body to sign, so only a static token header.
+GET_SIGNATURE_SCHEMES = ("none", "header_token", "bearer")
+
+#: Schemes whose secret the sender creates (Stripe, Slack): the owner pastes it in; DocsGPT mints none.
+SENDER_SECRET_SCHEMES = ("stripe", "slack")
+
+#: A header name a ``header_token`` link may read.
+_HEADER_NAME = regex.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,63}$")
+
+#: Headers a token can't live in: they carry other meanings, or a proxy rewrites them.
+_RESERVED_HEADERS = frozenset({
+    "authorization", "proxy-authorization", "cookie", "set-cookie", "host", "content-type", "content-length",
+    "content-encoding", "transfer-encoding", "connection", "upgrade", "user-agent", "accept", "accept-encoding",
+    "idempotency-key", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-real-ip", "forwarded",
+    "via", "te", "trailer", "expect", "origin", "referer",
+})
 
 #: Threshold operators, and the words a model may use for them.
 OPERATORS = ("<", "<=", ">", ">=", "==", "!=")
@@ -213,6 +229,15 @@ def _source(raw: Any) -> Dict[str, Any]:
         if scheme not in SIGNATURE_SCHEMES:
             raise SpecError(f"`source.signature` must be one of: {', '.join(SIGNATURE_SCHEMES)}.")
         out = {"type": "webhook", "signature": scheme}
+        header = raw.get("signature_header")
+        if header not in (None, ""):
+            if scheme != "header_token":
+                raise SpecError("`source.signature_header` applies only to signature \"header_token\".")
+            if not isinstance(header, str) or not _HEADER_NAME.match(header.strip()):
+                raise SpecError("`source.signature_header` must be a header name like X-Gitlab-Token.")
+            if header.strip().lower() in _RESERVED_HEADERS or header.strip().lower().startswith("webhook-"):
+                raise SpecError(f"`source.signature_header` can't be {header.strip()}: pick a header of its own.")
+            out["signature_header"] = header.strip()
         methods = _methods(raw.get("methods"))
         if "GET" in methods:
             if scheme not in GET_SIGNATURE_SCHEMES:
@@ -227,6 +252,11 @@ def _source(raw: Any) -> Dict[str, Any]:
                 raise SpecError("`source.expose_secret` must be true or false.")
             if scheme == "none":
                 raise SpecError("`source.expose_secret` needs a signed link: set `source.signature` too.")
+            if scheme in SENDER_SECRET_SCHEMES:
+                raise SpecError(
+                    f"`source.expose_secret` doesn't apply to {scheme}: {scheme} creates the secret, and the user "
+                    "pastes it in."
+                )
             out["expose_secret"] = True
         return out
     question = _text(raw.get("question"), "source.question", limit=_MAX_QUESTION, required=True)

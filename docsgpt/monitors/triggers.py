@@ -204,6 +204,17 @@ def _repeated_body(conn: Any, link_id: str, key: str) -> bool:
     return TriggerHitsRepository(conn).received_since(link_id, previous, _window())
 
 
+def _sender_event_id(scheme: str, parsed: Any) -> Optional[str]:
+    """The event id a signed sender puts in the body, so its retries count once (Stripe ``evt_``, Slack ``Ev``)."""
+    if not isinstance(parsed, dict):
+        return None
+    if scheme == "stripe" and isinstance(parsed.get("id"), str) and parsed["id"].startswith("evt_"):
+        return f"stripe:{parsed['id']}"
+    if scheme == "slack" and isinstance(parsed.get("event_id"), str) and parsed["event_id"]:
+        return f"slack:{parsed['event_id']}"
+    return None
+
+
 def accept_delivery(
     token: str,
     *,
@@ -259,7 +270,7 @@ def accept_delivery(
         return 413, {"error": f"the body is larger than {settings.TRIGGER_MAX_PAYLOAD_BYTES} bytes"}
     try:
         secret = links.open_secret(link.get("secret_encrypted"), str(link["user_id"])) if signed else None
-        delivery_id = signatures.verify(scheme, secret, headers, body)
+        delivery_id = signatures.verify(scheme, secret, headers, body, header_name=link.get("signature_header"))
     except signatures.SignatureError as exc:
         logger.info("trigger link %s: rejected a delivery (%s)", link_id, exc)
         return 401, {"error": "the signature is missing or does not verify"}
@@ -269,6 +280,11 @@ def accept_delivery(
     if str(_get(headers, "X-GitHub-Event") or "").strip().lower() == "ping":
         # GitHub's "is this hook set up?" call: acknowledged, never stored, counted or checked.
         return 202, {"accepted": True, "ping": True}
+    parsed = None if is_get else parse_body(body, content_type)
+    if scheme == "slack" and isinstance(parsed, dict) and parsed.get("type") == "url_verification":
+        # Slack checking the Request URL: answer its challenge (the request is already verified); nothing is
+        # stored, counted or checked.
+        return 200, {"challenge": str(parsed.get("challenge") or "")[:500]}
     if signed and rate_limited("trigger", link_id, limit):
         return 429, {"error": "too many requests to this link; retry in a minute"}
     if is_get:
@@ -276,8 +292,9 @@ def accept_delivery(
         payload: Dict[str, Any] = {"body": data, "content_type": None, "method": "GET"}
         identity = _canonical_query(data)
     else:
-        payload = {"body": parse_body(body, content_type), "content_type": content_type or None}
+        payload = {"body": parsed, "content_type": content_type or None}
         identity = body
+        delivery_id = delivery_id or _sender_event_id(scheme, parsed)
     event = next((_get(headers, name) for name in _EVENT_HEADERS if _get(headers, name)), None)
     if event:
         payload["event"] = str(event)[:100]

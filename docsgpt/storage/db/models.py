@@ -1501,9 +1501,11 @@ trigger_links_table = Table(
     Column("ref", Text),
     Column("expose_secret", Boolean, nullable=False, server_default=text("false")),
     Column("allow_get", Boolean, nullable=False, server_default=text("false")),
+    Column("signature_header", Text),
     CheckConstraint("kind IN ('webhook', 'approval')", name="trigger_links_kind_chk"),
     CheckConstraint(
-        "signature_scheme IN ('none', 'standard_webhooks', 'github', 'hmac_sha256')",
+        "signature_scheme IN ('none', 'standard_webhooks', 'github', 'hmac_sha256', 'stripe', 'slack', "
+        "'header_token', 'bearer')",
         name="trigger_links_signature_scheme_chk",
     ),
     UniqueConstraint("token_hash", name="trigger_links_token_hash_uidx"),

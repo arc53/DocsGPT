@@ -10,6 +10,11 @@
   see the raw secret.
 * ``trigger_links.allow_get``: a webhook link that also takes GET calls
   (query parameters are the payload), for machine callers that can't POST.
+* ``trigger_links.signature_scheme`` takes ``stripe``, ``slack``,
+  ``header_token`` and ``bearer``; ``trigger_links.signature_header`` is the
+  header a ``header_token`` link reads (``X-Webhook-Token`` when null).
+  Downgrade revokes links with a new scheme: they could only be kept by
+  dropping their signature, which would leave them open.
 
 Idempotent both ways. Downgrade first reports running device jobs ``lost``
 (nothing would follow them any more), then narrows the check.
@@ -32,6 +37,9 @@ depends_on: Union[str, Sequence[str], None] = None
 _RUNNERS_BEFORE = "'inprocess', 'celery', 'sandbox', 'mcp'"
 _RUNNERS_AFTER = "'inprocess', 'celery', 'sandbox', 'mcp', 'device'"
 
+_SCHEMES_BEFORE = "'none', 'standard_webhooks', 'github', 'hmac_sha256'"
+_SCHEMES_AFTER = "'none', 'standard_webhooks', 'github', 'hmac_sha256', 'stripe', 'slack', 'header_token', 'bearer'"
+
 _LOST_ON_DOWNGRADE = (
     '{"type": "Lost", "message": "This job was interrupted before it finished and will not report back. It may '
     "or may not have taken effect: verify before retrying, and never re-run a non-idempotent action blindly.\"}"
@@ -45,6 +53,14 @@ def _runners(values: str) -> None:
     )
 
 
+def _schemes(values: str) -> None:
+    op.execute("ALTER TABLE trigger_links DROP CONSTRAINT IF EXISTS trigger_links_signature_scheme_chk;")
+    op.execute(
+        "ALTER TABLE trigger_links ADD CONSTRAINT trigger_links_signature_scheme_chk "
+        f"CHECK (signature_scheme IN ({values}));"
+    )
+
+
 def upgrade() -> None:
     _runners(_RUNNERS_AFTER)
     op.execute("ALTER TABLE trigger_links ADD COLUMN IF NOT EXISTS ref TEXT;")
@@ -54,6 +70,8 @@ def upgrade() -> None:
         "WHERE ref IS NOT NULL;"
     )
     op.execute("ALTER TABLE trigger_links ADD COLUMN IF NOT EXISTS allow_get BOOLEAN NOT NULL DEFAULT false;")
+    op.execute("ALTER TABLE trigger_links ADD COLUMN IF NOT EXISTS signature_header TEXT;")
+    _schemes(_SCHEMES_AFTER)
 
 
 def downgrade() -> None:
@@ -66,6 +84,13 @@ def downgrade() -> None:
     )
     op.execute("UPDATE background_jobs SET runner = 'inprocess' WHERE runner = 'device';")
     _runners(_RUNNERS_BEFORE)
+    # A link signed a new way would be left unsigned (open) by narrowing the check: revoke it instead.
+    op.execute(
+        "UPDATE trigger_links SET revoked_at = COALESCE(revoked_at, now()), signature_scheme = 'hmac_sha256' "
+        "WHERE signature_scheme IN ('stripe', 'slack', 'header_token', 'bearer');"
+    )
+    _schemes(_SCHEMES_BEFORE)
+    op.execute("ALTER TABLE trigger_links DROP COLUMN IF EXISTS signature_header;")
     op.execute("ALTER TABLE trigger_links DROP COLUMN IF EXISTS allow_get;")
     op.execute("DROP INDEX IF EXISTS trigger_links_user_ref_uidx;")
     op.execute("ALTER TABLE trigger_links DROP COLUMN IF EXISTS expose_secret;")

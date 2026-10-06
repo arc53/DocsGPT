@@ -385,3 +385,80 @@ class TestGetLinks:
         for hit in _hits(mon_db):
             tick.process_hit(str(hit["id"]))
         assert len(wakes) == 1 and "success" in json.dumps(wakes[0]["payload"])
+
+
+class TestNewSchemes:
+    def test_a_stripe_link_refuses_calls_until_its_secret_is_set(self, client, mon_db, conversation_id, enqueued):
+        token, secret, link, monitor = make_link(mon_db, conversation_id, scheme="stripe")
+        assert secret is None and link["secret_encrypted"] is None
+        body = json.dumps({"id": "evt_1", "type": "invoice.paid"}).encode()
+        stripe_secret = "whsec_from_stripe_dashboard_1"
+        ts = int(time.time())
+        headers = {"Stripe-Signature": signatures.sign_stripe(stripe_secret, ts, body),
+                   "Content-Type": "application/json"}
+        assert client.post(f"/api/triggers/{token}", data=body, headers=headers).status_code == 401
+
+        from docsgpt.monitors import service
+
+        assert service.set_secret(str(monitor["id"]), "u1", stripe_secret) == {"saved": True, "signature": "stripe"}
+        assert client.post(f"/api/triggers/{token}", data=body, headers=headers).status_code == 202
+        # Stripe retries the same event: its id makes it count once.
+        retry = {**headers, "Stripe-Signature": signatures.sign_stripe(stripe_secret, ts + 5, body)}
+        assert client.post(f"/api/triggers/{token}", data=body, headers=retry).get_json()["duplicate"] is True
+        assert [hit["dedupe_key"] for hit in _hits(mon_db)] == ["wh:stripe:evt_1"]
+
+    def test_slack_url_verification_is_answered_and_nothing_is_stored(
+        self, client, mon_db, conversation_id, enqueued
+    ):
+        from docsgpt.monitors import service
+
+        token, _secret, link, monitor = make_link(mon_db, conversation_id, scheme="slack")
+        slack_secret = "8f742231b10e8888abcd99yyyzzz85a5"
+        service.set_secret(str(monitor["id"]), "u1", slack_secret)
+        body = json.dumps({"token": "x", "challenge": "3eZbrw1aBm2rZgRNFdxV2595E9CY3gmdALWMmHkvFXO7tYXAYM8P",
+                           "type": "url_verification"}).encode()
+        ts = int(time.time())
+        headers = {"X-Slack-Request-Timestamp": str(ts),
+                   "X-Slack-Signature": signatures.sign_slack(slack_secret, ts, body),
+                   "Content-Type": "application/json"}
+        response = client.post(f"/api/triggers/{token}", data=body, headers=headers)
+        assert response.status_code == 200
+        assert response.get_json() == {"challenge": "3eZbrw1aBm2rZgRNFdxV2595E9CY3gmdALWMmHkvFXO7tYXAYM8P"}
+        assert _hits(mon_db) == [] and enqueued == []
+        forged = {**headers, "X-Slack-Signature": "v0=" + "0" * 64}
+        assert client.post(f"/api/triggers/{token}", data=body, headers=forged).status_code == 401
+
+        event = json.dumps({"type": "event_callback", "event_id": "Ev01", "event": {"type": "app_mention"}}).encode()
+        ok = {**headers, "X-Slack-Signature": signatures.sign_slack(slack_secret, ts, event)}
+        assert client.post(f"/api/triggers/{token}", data=event, headers=ok).status_code == 202
+        assert client.post(f"/api/triggers/{token}", data=event, headers=ok).get_json()["duplicate"] is True
+        assert _hits(mon_db)[0]["dedupe_key"] == "wh:slack:Ev01"
+
+    def test_a_gitlab_token_header(self, client, mon_db, conversation_id, enqueued):
+        token, secret, link, _m = make_link(mon_db, conversation_id, scheme="header_token")
+        with mon_db.begin() as conn:
+            conn.execute(text("UPDATE trigger_links SET signature_header = 'X-Gitlab-Token' WHERE id = :id"),
+                         {"id": link["id"]})
+        body = json.dumps({"object_kind": "pipeline"}).encode()
+        assert client.post(f"/api/triggers/{token}", data=body,
+                           headers={"X-Webhook-Token": secret}).status_code == 401
+        assert client.post(f"/api/triggers/{token}", data=body,
+                           headers={"X-Gitlab-Token": secret, "X-Gitlab-Event": "Pipeline Hook"}).status_code == 202
+        assert _hits(mon_db)[0]["payload"]["event"] == "Pipeline Hook"
+
+    def test_bearer_on_a_get_link(self, client, mon_db, conversation_id, enqueued):
+        token, secret, *_ = make_link(mon_db, conversation_id, scheme="bearer", allow_get=True)
+        assert client.get(f"/api/triggers/{token}?door=open").status_code == 401
+        assert client.get(f"/api/triggers/{token}?door=open",
+                          headers={"Authorization": f"Bearer {secret}"}).status_code == 202
+
+    def test_junk_spends_only_the_unverified_budget(self, client, mon_db, conversation_id, enqueued, monkeypatch,
+                                                    fake_redis):
+        monkeypatch.setattr("docsgpt.cache.get_redis_instance", lambda: fake_redis)
+        monkeypatch.setattr(settings, "TRIGGER_RATE_PER_MINUTE", 2)
+        token, secret, *_ = make_link(mon_db, conversation_id, scheme="bearer")
+        for _ in range(4):
+            assert client.post(f"/api/triggers/{token}", json={}, headers={"Authorization": "Bearer nope"}
+                               ).status_code == 401
+        assert client.post(f"/api/triggers/{token}", json={"n": 1},
+                           headers={"Authorization": f"Bearer {secret}"}).status_code == 202

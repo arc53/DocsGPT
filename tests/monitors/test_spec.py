@@ -231,3 +231,36 @@ class TestExposeSecret:
             _req(source={"type": "webhook", "expose_secret": True})
         with pytest.raises(SpecError, match="true or false"):
             _req(source={"type": "webhook", "signature": "github", "expose_secret": "yes"})
+
+
+class TestSchemes:
+    @pytest.mark.parametrize("scheme", ["stripe", "slack", "header_token", "bearer"])
+    def test_new_schemes_are_accepted(self, scheme):
+        assert _req(source={"type": "webhook", "signature": scheme}).source["signature"] == scheme
+
+    def test_a_header_token_names_its_header(self):
+        source = _req(source={"type": "webhook", "signature": "header_token", "signature_header": "X-Gitlab-Token"}
+                      ).source
+        assert source["signature_header"] == "X-Gitlab-Token"
+        assert "signature_header" not in _req(source={"type": "webhook", "signature": "header_token"}).source
+
+    @pytest.mark.parametrize(
+        "source,message",
+        [
+            ({"signature": "bearer", "signature_header": "X-Token"}, "only to signature"),
+            ({"signature": "header_token", "signature_header": "Bad Header"}, "header name like"),
+            ({"signature": "header_token", "signature_header": "Authorization"}, "can't be Authorization"),
+            ({"signature": "header_token", "signature_header": "webhook-id"}, "can't be webhook-id"),
+            ({"signature": "stripe", "methods": ["GET"]}, "a GET call has none"),
+            ({"signature": "stripe", "expose_secret": True}, "stripe creates the secret"),
+        ],
+    )
+    def test_rejects(self, source, message):
+        with pytest.raises(SpecError, match=message):
+            _req(source={"type": "webhook", **source})
+
+    @pytest.mark.parametrize("scheme", ["header_token", "bearer"])
+    def test_a_static_token_link_may_take_get(self, scheme):
+        assert _req(source={"type": "webhook", "signature": scheme, "methods": ["GET"]}).source["methods"] == [
+            "POST", "GET"
+        ]

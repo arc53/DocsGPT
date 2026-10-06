@@ -464,10 +464,17 @@
             "type": "string",
             "enum": [
               "none",
-              "standard_webhooks",
               "github",
+              "stripe",
+              "slack",
+              "standard_webhooks",
+              "header_token",
+              "bearer",
               "hmac_sha256"
             ]
+          },
+          "signature_header": {
+            "type": "string"
           },
           "methods": {
             "type": "array",

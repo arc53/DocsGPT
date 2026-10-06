@@ -51,23 +51,26 @@ class TriggerLinksRepository:
         ref: Optional[str] = None,
         expose_secret: bool = False,
         allow_get: bool = False,
+        signature_header: Optional[str] = None,
     ) -> dict:
         """Insert a link; returns the row (which never holds the raw token).
 
         ``ref`` is the signed link's short reference id (``{{link_secret:REF}}``),
         unique per user; ``expose_secret`` records that the owner let the model
-        see the raw secret; ``allow_get`` lets a webhook link take GET calls.
+        see the raw secret; ``allow_get`` lets a webhook link take GET calls;
+        ``signature_header`` is the header a ``header_token`` link reads.
         """
         row = self._conn.execute(
             text(
                 """
                 INSERT INTO trigger_links (
                     monitor_id, user_id, conversation_id, token_hash, kind, secret_encrypted,
-                    signature_scheme, approval_spec, expires_at, max_hits, ref, expose_secret, allow_get
+                    signature_scheme, approval_spec, expires_at, max_hits, ref, expose_secret, allow_get,
+                    signature_header
                 ) VALUES (
                     CAST(:monitor_id AS uuid), :user_id, CAST(:conversation_id AS uuid), :token_hash, :kind,
                     :secret_encrypted, :signature_scheme, CAST(:approval_spec AS jsonb), :expires_at, :max_hits,
-                    :ref, :expose_secret, :allow_get
+                    :ref, :expose_secret, :allow_get, :signature_header
                 ) RETURNING *
                 """
             ),
@@ -75,6 +78,7 @@ class TriggerLinksRepository:
                 "ref": ref,
                 "expose_secret": bool(expose_secret),
                 "allow_get": bool(allow_get),
+                "signature_header": signature_header,
                 "monitor_id": str(monitor_id),
                 "user_id": user_id,
                 "conversation_id": str(conversation_id),
@@ -149,6 +153,30 @@ class TriggerLinksRepository:
             {"m": str(monitor_id)},
         ).fetchone()
         return row_to_dict(row) if row is not None else None
+
+    def get_live_webhook(self, monitor_id: str) -> Optional[dict]:
+        """A monitor's live webhook link, with or without a secret yet (one waiting for the sender's), or None."""
+        if not looks_like_uuid(str(monitor_id)):
+            return None
+        row = self._conn.execute(
+            text(
+                "SELECT * FROM trigger_links WHERE monitor_id = CAST(:m AS uuid) AND kind = 'webhook' "
+                f"AND {_LIVE} AND hit_count < max_hits ORDER BY created_at DESC LIMIT 1"
+            ),
+            {"m": str(monitor_id)},
+        ).fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def set_secret(self, link_id: str, sealed: str) -> bool:
+        """Store a live link's (encrypted) signing secret, replacing any it had."""
+        result = self._conn.execute(
+            text(
+                "UPDATE trigger_links SET secret_encrypted = :sealed "
+                f"WHERE id = CAST(:id AS uuid) AND kind = 'webhook' AND {_LIVE}"
+            ),
+            {"id": str(link_id), "sealed": sealed},
+        )
+        return (result.rowcount or 0) > 0
 
     def list_for_monitor(self, monitor_id: str) -> List[dict]:
         """A monitor's links, oldest first."""

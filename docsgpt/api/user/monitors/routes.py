@@ -102,9 +102,9 @@ class MonitorSecret(Resource):
     @api.doc(
         description=(
             "The signing secret of one of the caller's webhook monitors, so the owner can configure the sender. "
-            "Only the owner's session may read it (never an access token); the model only ever sees a "
-            "placeholder. Rate limited, audited, never cached or logged. 404 when the monitor has no live signed "
-            "link."
+            "Only the owner's session may read it (never an access token); the model only ever sees its "
+            "reference. Rate limited, audited, never cached or logged. 404 when the monitor has no live signed "
+            "link, or its secret was never set."
         )
     )
     def get(self, monitor_id: str):
@@ -124,6 +124,40 @@ class MonitorSecret(Resource):
         if revealed is None:
             return _err("No signing secret for this monitor", 404)
         response = make_response(jsonify(revealed), 200)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @api.doc(
+        description=(
+            "Set the signing secret of one of the caller's webhook monitors: {secret}. For Stripe and Slack, "
+            "which create their own signing secret, this is how the link gets it; for any other signed scheme it "
+            "replaces the generated one. Only the owner's session may set it (never an access token). Rate "
+            "limited, audited without the value, never logged. 400 for a value that can't be this scheme's "
+            "secret, 404 when the monitor has no live signed link."
+        )
+    )
+    def put(self, monitor_id: str):
+        from docsgpt.monitors.triggers import rate_limited
+
+        user_id = _user_id()
+        if not user_id:
+            return _err("Unauthorized", 401)
+        if rate_limited("secret_set", user_id, SECRET_REVEALS_PER_MINUTE):
+            return _err("Too many requests; try again in a minute", 429)
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or "secret" not in data:
+            return _err("Send {\"secret\": \"...\"}", 400)
+        try:
+            saved = service.set_secret(monitor_id, user_id, data.get("secret"))
+        except ValueError as exc:
+            # The message describes the format, never the value.
+            return _err(f"That can't be this link's signing secret: {exc}", 400)
+        except Exception:
+            logger.error("setting a monitor secret failed (%s)", monitor_id)
+            return _err("Failed to save the secret", 500)
+        if saved is None:
+            return _err("No signed link for this monitor", 404)
+        response = make_response(jsonify(saved), 200)
         response.headers["Cache-Control"] = "no-store"
         return response
 

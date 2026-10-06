@@ -42,9 +42,13 @@ class TriggerLink(Resource):
             "Deliver an event to a monitor's webhook trigger link. Public: the token is the credential. "
             "Accepts JSON, form or text up to TRIGGER_MAX_PAYLOAD_BYTES. Signed links verify Standard Webhooks "
             "(webhook-id/webhook-timestamp/webhook-signature, 5 minute tolerance), GitHub X-Hub-Signature-256, "
-            "or X-Signature: sha256=<hex>. Deduplicated on Idempotency-Key, webhook-id or X-GitHub-Delivery, "
-            "else the body hash. 202 when accepted; 404 for an unknown, expired, revoked or used-up link; 401 "
-            "for a bad signature; 413 for a large body; 429 past TRIGGER_RATE_PER_MINUTE."
+            "X-Signature: sha256=<hex>, Stripe-Signature (t=..,v1=.., 5 minute tolerance), Slack "
+            "X-Slack-Signature with X-Slack-Request-Timestamp (5 minute tolerance; a url_verification "
+            "challenge is answered with 200 {challenge}), a static token header (X-Webhook-Token unless the "
+            "link names another) or Authorization: Bearer. Deduplicated on Idempotency-Key, webhook-id, "
+            "X-GitHub-Delivery or the Stripe/Slack event id, else the body hash. 202 when accepted; 404 for an "
+            "unknown, expired, revoked or used-up link; 401 for a bad signature; 413 for a large body; 429 past "
+            "TRIGGER_RATE_PER_MINUTE."
         ),
         params={"token": "The link's token."},
         security=[],

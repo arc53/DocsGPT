@@ -427,3 +427,76 @@ class TestQueryBody:
         assert query_body([("a", "1"), ("a.b", "2"), ("x.", "3"), (".y", "4")]) == {
             "a": "1", "a.b": "2", "x.": "3", ".y": "4"
         }
+
+
+
+class TestSenderSecrets:
+    def test_a_stripe_link_waits_for_the_owners_secret(self, mon_db, conversation_id, public_url, events):
+        result = service.create(
+            _caller(conversation_id),
+            {"description": "Invoices paid", "source": {"type": "webhook", "signature": "stripe"},
+             "on_match": "tell me"},
+        )
+        assert result["secret"] is None and result["secret_source"] == "sender"
+        assert "secret_ref" not in result
+        assert "Set signing secret" in result["next"] and "Stripe" in result["signing"]
+        assert "Stripe-Signature" in result["example_curl"]
+        token = result["url"].rsplit("/", 1)[1]
+        with mon_db.connect() as conn:
+            link = TriggerLinksRepository(conn).get_live(token_hash(token), "webhook")
+        assert link["secret_encrypted"] is None and link["ref"] is None
+        assert service.reveal_secret(result["monitor_id"], "u1") is None
+        assert service.set_secret(result["monitor_id"], "u1", "whsec_pasted_from_stripe_1") == {
+            "saved": True, "signature": "stripe"
+        }
+        assert service.reveal_secret(result["monitor_id"], "u1")["secret"] == "whsec_pasted_from_stripe_1"
+        with pytest.raises(ValueError):
+            service.set_secret(result["monitor_id"], "u1", "sk_live_not_a_webhook_secret")
+        assert service.set_secret(result["monitor_id"], "u2", "whsec_pasted_from_stripe_1") is None
+
+    def test_a_slack_link_says_to_set_the_secret_before_the_request_url(
+        self, mon_db, conversation_id, public_url, events
+    ):
+        result = service.create(
+            _caller(conversation_id),
+            {"description": "Mentions", "source": {"type": "webhook", "signature": "slack"}, "on_match": "reply"},
+        )
+        assert "before setting the Request URL" in result["next"]
+
+    def test_a_header_token_link_shows_its_header(self, mon_db, conversation_id, public_url, events):
+        result = service.create(
+            _caller(conversation_id),
+            {"description": "Pipelines", "on_match": "tell me",
+             "source": {"type": "webhook", "signature": "header_token", "signature_header": "X-Gitlab-Token",
+                        "methods": ["POST", "GET"]}},
+        )
+        assert result["signature_header"] == "X-Gitlab-Token"
+        assert 'X-Gitlab-Token: $DOCSGPT_WEBHOOK_SECRET' in result["example_curl"]
+        assert 'X-Gitlab-Token: $DOCSGPT_WEBHOOK_SECRET' in result["example_get"]
+        assert "X-Gitlab-Token" in result["signing"]
+        assert result["secret"] == "{{link_secret:" + result["secret_ref"] + "}}"
+
+    def test_setting_a_secret_is_audited_without_the_value(self, mon_db, conversation_id, public_url, events):
+        result = service.create(
+            _caller(conversation_id),
+            {"description": "CI", "source": {"type": "webhook", "signature": "github"}, "on_match": "tell me"},
+        )
+        service.set_secret(result["monitor_id"], "u1", "replacement-secret-0123456789")
+        with mon_db.connect() as conn:
+            rows = conn.execute(
+                text("SELECT metadata::text FROM auth_events WHERE event = 'monitor.secret_set'")
+            ).fetchall()
+        assert len(rows) == 1 and "replacement-secret" not in rows[0][0]
+        assert service.reveal_secret(result["monitor_id"], "u1")["secret"] == "replacement-secret-0123456789"
+
+    def test_an_unsigned_or_ended_link_takes_no_secret(self, mon_db, conversation_id, public_url, events):
+        unsigned = service.create(
+            _caller(conversation_id), {"description": "CI", "source": {"type": "webhook"}, "on_match": "tell me"}
+        )
+        assert service.set_secret(unsigned["monitor_id"], "u1", "a-long-enough-secret-value") is None
+        signed = service.create(
+            _caller(conversation_id),
+            {"description": "CI2", "source": {"type": "webhook", "signature": "github"}, "on_match": "tell me"},
+        )
+        service.end(signed["monitor_id"], "u1", "cancelled")
+        assert service.set_secret(signed["monitor_id"], "u1", "a-long-enough-secret-value") is None

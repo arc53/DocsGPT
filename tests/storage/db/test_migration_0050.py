@@ -69,3 +69,33 @@ class TestMigration0050RoundTrip:
         _run_alembic(url, "upgrade", "head")
         with pg_engine.begin() as conn:
             _device_job(conn, _conversation(conn))
+
+
+    def test_downgrade_revokes_links_signed_a_new_way(self, pg_engine):
+        url = pg_engine.url.render_as_string(hide_password=False)
+        with pg_engine.begin() as conn:
+            conversation_id = _conversation(conn)
+            schedule_id = conn.execute(
+                text(
+                    "INSERT INTO schedules (user_id, trigger_type, instruction, status) "
+                    "VALUES ('u1', 'monitor', 'x', 'active') RETURNING id"
+                )
+            ).scalar()
+            for index, scheme in enumerate(("stripe", "github")):
+                conn.execute(
+                    text(
+                        "INSERT INTO trigger_links (monitor_id, user_id, conversation_id, token_hash, kind, "
+                        "signature_scheme, expires_at, allow_get, signature_header) VALUES (:m, 'u1', "
+                        "CAST(:c AS uuid), :h, 'webhook', :s, now() + interval '1 day', true, 'X-T')"
+                    ),
+                    {"m": schedule_id, "c": conversation_id, "h": f"h{index}", "s": scheme},
+                )
+        _run_alembic(url, "downgrade", _0049)
+        with pg_engine.connect() as conn:
+            rows = {
+                row.token_hash: row
+                for row in conn.execute(text("SELECT token_hash, signature_scheme, revoked_at FROM trigger_links"))
+            }
+        assert rows["h0"].revoked_at is not None and rows["h0"].signature_scheme == "hmac_sha256"
+        assert rows["h1"].revoked_at is None and rows["h1"].signature_scheme == "github"
+        _run_alembic(url, "upgrade", "head")

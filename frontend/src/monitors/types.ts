@@ -10,6 +10,14 @@ export interface MonitorLink {
   /** Whether the link still works. */
   state?: 'live' | 'expired' | 'revoked' | 'used_up';
   signature: string | null;
+  /** `{{link_secret:REF}}`, the reference the assistant uses for a signed link's secret. */
+  secret_ref?: string | null;
+  /** `["POST"]`, or `["POST", "GET"]` for a link that also takes GET. */
+  methods?: string[] | null;
+  /** The header a `header_token` link reads. */
+  signature_header?: string | null;
+  /** Whether a signed link has its secret (Stripe and Slack ones wait for the owner's). */
+  has_secret?: boolean;
   expires_at: string | null;
   hit_count: number;
   max_hits: number;

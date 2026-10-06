@@ -7,7 +7,10 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-const service = vi.hoisted(() => ({ revealSecret: vi.fn() }));
+const service = vi.hoisted(() => ({
+  revealSecret: vi.fn(),
+  setSecret: vi.fn(),
+}));
 vi.mock('../api/services/monitorsService', () => ({ default: service }));
 
 import MonitorLinkCard, {
@@ -109,6 +112,7 @@ describe('MonitorLinkCard', () => {
 
   beforeEach(() => {
     service.revealSecret.mockReset();
+    service.setSecret.mockReset();
     store = makeStore();
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -167,6 +171,71 @@ describe('MonitorLinkCard', () => {
     await act(async () => button('monitors.linkCard.revealSecret')!.click());
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(
       'monitors.linkCard.revealLimited',
+    );
+  });
+
+  it('lets the owner paste the secret Stripe created, and never shows it unasked', async () => {
+    service.setSecret.mockResolvedValue({ state: 'saved' });
+    await render('stripe');
+    expect(container.textContent).toContain(
+      'monitors.linkCard.senderSecretNote',
+    );
+    await act(async () => button('monitors.linkCard.setSecret')!.click());
+    const input = container.querySelector(
+      'input[type="password"]',
+    ) as HTMLInputElement;
+    expect(input).not.toBeNull();
+    const setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )!.set!;
+    await act(async () => {
+      setValue.call(input, '  whsec_from_stripe_123456  ');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => button('monitors.linkCard.saveSecret')!.click());
+    expect(service.setSecret).toHaveBeenCalledWith(
+      'm-1',
+      'whsec_from_stripe_123456',
+      'tok',
+    );
+    expect(container.querySelector('input[type="password"]')).toBeNull();
+    expect(container.querySelector('[role="status"]')?.textContent).toBe(
+      'monitors.linkCard.secretSaved',
+    );
+    expect(container.textContent).not.toContain('whsec_from_stripe');
+  });
+
+  it('says why a pasted secret was refused', async () => {
+    service.setSecret.mockResolvedValue({
+      state: 'invalid',
+      message: 'a Stripe endpoint signing secret starts with whsec_',
+    });
+    await render('slack');
+    await act(async () => button('monitors.linkCard.setSecret')!.click());
+    const input = container.querySelector(
+      'input[type="password"]',
+    ) as HTMLInputElement;
+    const setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )!.set!;
+    await act(async () => {
+      setValue.call(input, 'nope');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => button('monitors.linkCard.saveSecret')!.click());
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      'monitors.linkCard.setSecretInvalid',
+    );
+    expect(container.querySelector('input[type="password"]')).not.toBeNull();
+  });
+
+  it('offers no set for a secret DocsGPT created', async () => {
+    await render('github');
+    expect(button('monitors.linkCard.setSecret')).toBeUndefined();
+    expect(container.textContent).not.toContain(
+      'monitors.linkCard.senderSecretNote',
     );
   });
 

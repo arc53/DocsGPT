@@ -381,11 +381,47 @@ def create(caller: Caller, arguments: Dict[str, Any]) -> Dict[str, Any]:
                 ref=ref,
                 expose_secret=bool(request.source.get("expose_secret")),
                 allow_get="GET" in (request.source.get("methods") or []),
+                signature_header=request.source.get("signature_header"),
             )
     publish_monitor_updated(monitor)
     return _created_result(request, monitor, baseline=baseline, already=already, token=link_token,
                            signed=bool(secret), ref=ref,
                            secret=secret if request.source.get("expose_secret") else None)
+
+
+def set_secret(monitor_id: str, user_id: str, secret: Any) -> Optional[Dict[str, Any]]:
+    """Store the signing secret the owner pasted in for a webhook monitor's live link (Stripe's, Slack's).
+
+    Records an audit event (never the value). Works for any signed scheme, so
+    the owner can also replace a secret DocsGPT generated.
+
+    Args:
+        monitor_id: The monitor.
+        user_id: Its owner (anyone else gets None).
+        secret: What the owner pasted.
+
+    Returns:
+        ``{"saved": True, "signature"}``, or None when the monitor isn't the
+        caller's or has no live signed link.
+
+    Raises:
+        ValueError: The secret can't be this scheme's (the message says why).
+    """
+    from docsgpt.api.audit import record_event
+
+    with db_session() as conn:
+        monitor = MonitorsRepository(conn).get(monitor_id, user_id)
+        if monitor is None or monitor.get("source_type") != "webhook":
+            return None
+        repo = TriggerLinksRepository(conn)
+        link = repo.get_live_webhook(str(monitor["id"]))
+        if link is None or (link.get("signature_scheme") or "none") == "none":
+            return None
+        value = links.check_owner_secret(str(link["signature_scheme"]), secret)
+        repo.set_secret(str(link["id"]), links.seal_secret(value, user_id))
+        record_event(conn, "monitor.secret_set", actor=user_id, monitor_id=str(monitor["id"]),
+                     link_id=str(link["id"]), signature=link.get("signature_scheme"))
+    return {"saved": True, "signature": link.get("signature_scheme")}
 
 
 def _max_hits(request: MonitorRequest) -> int:
@@ -461,16 +497,19 @@ def _created_result(
                 f"{', '.join(request.check['terminal'])} (other values don't wake you); example_curl shows it."
             )
         methods = request.source.get("methods") or ["POST"]
+        header_name = request.source.get("signature_header")
         result.update(
             {
                 "url": url,
                 "method": ", ".join(methods),
                 "signature": scheme,
-                "example_curl": links.example_curl(url, scheme, request.check),
+                "example_curl": links.example_curl(url, scheme, request.check, header_name=header_name),
             }
         )
+        if header_name:
+            result["signature_header"] = header_name
         if "GET" in methods:
-            result["example_get"] = links.example_get(url, request.check)
+            result["example_get"] = links.example_get(url, request.check, scheme, header_name)
             result["max_calls"] = int(settings.TRIGGER_GET_MAX_HITS)
             tell += (
                 " The link also takes GET, with the query parameters as the call's data (example_get); a HEAD, a "
@@ -483,7 +522,7 @@ def _created_result(
             result["secret"] = secret
             result["secret_exposed"] = True
             result["secret_ref"] = ref
-            result["signing"] = links.signing_instructions(scheme)
+            result["signing"] = links.signing_instructions(scheme, header_name)
             tell += (
                 " Give the user the url. The raw signing secret is in this result because the link was "
                 "created with expose_secret, so it has been sent to the model provider; prefer the reference "
@@ -495,7 +534,7 @@ def _created_result(
 
             result["secret"] = reference(ref) if ref else None
             result["secret_ref"] = ref
-            result["signing"] = links.signing_instructions(scheme)
+            result["signing"] = links.signing_instructions(scheme, header_name)
             tell += (
                 f" Give the user the url. You never see the signing secret, only its reference "
                 f"{reference(ref) if ref else ''}: to configure the sender yourself (create the webhook through an "
@@ -503,6 +542,18 @@ def _created_result(
                 "call's arguments; the server fills in the real value only when the user approves the call, and "
                 "never into messages, URLs or fetched pages. Otherwise the user reveals the secret with Reveal "
                 f"secret on the link card (or Settings > Monitors); example_curl reads it from ${links.SECRET_ENV}."
+            )
+        elif scheme in links.SENDER_SECRET_SCHEMES:
+            # Stripe and Slack create the secret: the user pastes it in; there is nothing to show or reference.
+            sender = "Stripe" if scheme == "stripe" else "Slack"
+            result["secret"] = None
+            result["secret_source"] = "sender"
+            result["signing"] = links.signing_instructions(scheme)
+            tell += (
+                f" Give the user the url. {sender} creates the signing secret itself: the user copies it from "
+                f"{sender} and pastes it with Set signing secret on the link card (or Settings > Monitors); you "
+                "never see it. Until then every call is refused, so tell the user to do that"
+                + (" before setting the Request URL, which Slack verifies at once." if scheme == "slack" else ".")
             )
         elif "GET" in methods:
             tell += " Give the user the url."
