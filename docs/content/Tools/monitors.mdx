@@ -47,7 +47,9 @@ A polled check is cheap before it is expensive:
    upstream model name. Its tokens are recorded in `token_usage` with `source = 'monitor_judge'` and billed to the
    user; `MONITOR_JUDGE_TOKEN_BUDGET` caps one monitor's total. If the judge fails `SCHEDULE_AUTOPAUSE_FAILURES`
    times in a row on a match, the match wakes the agent anyway, marked as not checked against the condition, so a
-   broken judge never hides it (it counts toward `max_wakes` like any wake).
+   broken judge never hides it (it counts toward `max_wakes` like any wake). A content-policy refusal from the
+   judge's provider (Azure OpenAI's `content_filter`, for a page that carries injection text, say) does the same at
+   once: the same content would be refused again.
 5. A match wakes the conversation once per fact (what it found passes the agent's `tool_result` guardrails before
    it is queued, as a tool result in the chat does): the monitor keeps the keys of what it reported, so the same
    price drop or the same item is never reported twice. The first check, taken when the monitor is created, is

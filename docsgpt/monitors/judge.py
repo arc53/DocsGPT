@@ -41,7 +41,43 @@ _JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
 
 
 class JudgeError(Exception):
-    """The judge could not decide (the model failed or answered nonsense)."""
+    """The judge could not decide (the model failed or answered nonsense).
+
+    Attributes:
+        refused: The provider refused the content under its content policy, so
+            asking again would be refused again.
+    """
+
+    def __init__(self, message: str, *, refused: bool = False) -> None:
+        super().__init__(message)
+        self.refused = refused
+
+
+#: Provider error codes that mean the content was refused under a content or safety policy.
+_REFUSAL_CODES = frozenset({"content_filter", "content_policy_violation", "responsibleaipolicyviolation"})
+
+#: Provider exception class names (Gemini SDKs) that mean the same.
+_REFUSAL_CLASSES = ("BlockedPromptException", "StopCandidateException")
+
+
+def is_content_refusal(error: BaseException) -> bool:
+    """Whether a provider refused the request's content under a content or safety policy.
+
+    Azure OpenAI and OpenAI answer 400 with ``code: content_filter`` (or an inner
+    ``ResponsibleAIPolicyViolation``); Gemini's SDK raises a blocked-prompt
+    error. Only those explicit markers count: anything else stays a failure
+    that a later check may get past.
+    """
+    codes = [getattr(error, "code", None)]
+    body = getattr(error, "body", None)
+    if isinstance(body, dict):
+        inner = body.get("error") if isinstance(body.get("error"), dict) else body
+        codes.append(inner.get("code"))
+        if isinstance(inner.get("innererror"), dict):
+            codes.append(inner["innererror"].get("code"))
+    if any(isinstance(code, str) and code.strip().lower() in _REFUSAL_CODES for code in codes):
+        return True
+    return type(error).__name__ in _REFUSAL_CLASSES
 
 
 @dataclass
@@ -173,6 +209,9 @@ def judge(
         # onto llm.model_id), never the catalog id, exactly as an agent turn calls it.
         raw = llm.gen(model=getattr(llm, "model_id", None) or model_id, messages=messages)
     except Exception as exc:
+        if is_content_refusal(exc):
+            logger.warning("monitor %s: the judge's provider refused the content under its content policy", monitor_id)
+            raise JudgeError("the judge's provider refused the content (content policy)", refused=True) from None
         logger.warning("monitor %s: judge call failed: %s", monitor_id, type(exc).__name__)
         raise JudgeError(f"the judge call failed ({type(exc).__name__})") from None
     usage = getattr(llm, "token_usage", None) or {}

@@ -339,6 +339,13 @@ UNJUDGED_NOTE = (
     "row), so this is the check's match alone: tell the user it may not meet the condition, and why."
 )
 
+#: Said instead when the judge's provider refused the content (a content filter or safety policy).
+REFUSED_NOTE = (
+    "Its check matched, but its condition could not be evaluated (the judge model's provider refused the "
+    "content under its content policy), so this is the check's match alone: tell the user it may not meet the "
+    "condition, and why."
+)
+
 
 def _wake_body(monitor: Dict[str, Any], *, left: int, note: Optional[str] = None) -> str:
     """The wake's trusted text: which monitor fired and what to do; what it found is in the fenced data."""
@@ -542,7 +549,8 @@ def _judge(monitor: Dict[str, Any], evaluation: Evaluation, content: Content) ->
             content=content.text,
         )
     except judge.JudgeError as exc:
-        return "error", str(exc)
+        # A content-policy refusal won't change on a retry: the same content is refused again.
+        return ("refused" if exc.refused else "error"), str(exc)
     with db_session() as conn:
         MonitorsRepository(conn).add_judge_tokens(str(monitor["id"]), verdict.tokens)
     return ("match" if verdict.match else "no_match"), verdict
@@ -555,7 +563,9 @@ def _decide(
 
     Returns:
         ``(outcome, key, summary)``: outcome is ``fire``, ``quiet``, ``retry`` (keep the old
-        state so the next check judges again), ``paused`` or ``unjudged`` (the check matched and
+        state so the next check judges again), ``paused``, ``refused`` (the judge's provider refused the
+        content under its content policy: deliver the match with :data:`REFUSED_NOTE` at once, no strike)
+        or ``unjudged`` (the check matched and
         the judge failed ``SCHEDULE_AUTOPAUSE_FAILURES`` times in a row: deliver the match with
         :data:`UNJUDGED_NOTE` rather than pause, so a broken judge never hides a match).
     """
@@ -578,6 +588,8 @@ def _decide(
     if outcome == "quota":
         _store(str(monitor["id"]), None, {"last_error": "the user's usage quota is used up; the condition waits"})
         return "retry", None, None
+    if outcome == "refused":
+        return "refused", None, None
     count = _strike(monitor, f"the condition could not be judged: {verdict}")
     if count >= int(settings.SCHEDULE_AUTOPAUSE_FAILURES):
         return "unjudged", None, None
@@ -717,7 +729,7 @@ def _tick(monitor_id: str) -> str:
         return "retry"
     if outcome == "paused":
         return "paused"
-    note = _unjudged_note(monitor) if outcome == "unjudged" else None
+    note = _unjudged_note(monitor, refused=outcome == "refused") if outcome in ("unjudged", "refused") else None
     _reset_failures(monitor, force=note is not None)
     if outcome == "quiet":
         _store(monitor_id, new_state, fields)
@@ -737,7 +749,9 @@ def _tick(monitor_id: str) -> str:
     )
 
 
-def _unjudged_note(monitor: Dict[str, Any]) -> str:
+def _unjudged_note(monitor: Dict[str, Any], *, refused: bool = False) -> str:
+    if refused:
+        return REFUSED_NOTE
     return UNJUDGED_NOTE.format(count=int(settings.SCHEDULE_AUTOPAUSE_FAILURES))
 
 
@@ -795,8 +809,8 @@ def _event(monitor: Dict[str, Any], content: Content, *, source: str, key: str, 
     if outcome in ("retry", "paused"):
         return outcome
     note = None
-    if outcome == "unjudged":
-        note = _unjudged_note(monitor)
+    if outcome in ("unjudged", "refused"):
+        note = _unjudged_note(monitor, refused=outcome == "refused")
         _reset_failures(monitor, force=True)
     if outcome == "quiet":
         _store(str(monitor["id"]), new_state, {**fields, "last_error": None})
