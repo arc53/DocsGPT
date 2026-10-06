@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -189,6 +189,20 @@ class TestRecursive:
         # Must advance directly to "f3" rather than emitting redundant ["f1f2", "f2", "f3"].
         assert chunks == ["f1f2", "f3"]
 
+    def test_overlap_is_trimmed_when_exceeding_max_tokens_with_next_fragment(self):
+        """Ensure overlap is trimmed rather than dropped when overlap + next fragment exceeds max_tokens."""
+        chunker = RecursiveChunker(max_tokens=15, min_tokens=1, chunk_overlap=8)
+        # f1 (4) + f2 (4) + f3 (4) = 12 <= 15 (chunk 1)
+        # target overlap up to 8 is f2 (4) + f3 (4) = 8
+        # next fragment f4 has 9 tokens
+        # full overlap (8) + f4 (9) = 17 > 15
+        # Trimming reduces overlap to f3 (4 tokens) so f3 (4) + f4 (9) = 13 <= 15
+        token_map = {"f1": 4, "f2": 4, "f3": 4, "f4": 9}
+        chunker._token_count = lambda text: token_map.get(text, len(text))
+
+        chunks = chunker._merge_fragments(["f1", "f2", "f3", "f4"])
+        assert chunks == ["f1f2f3", "f3f4"]
+
 
 @pytest.mark.unit
 class TestMarkdown:
@@ -333,6 +347,24 @@ class TestSemantic:
         assert len(out) == 1
         assert out[0].text.strip() == "just one sentence"
 
+    def test_semantic_fallback_passes_chunk_overlap(self, monkeypatch):
+        """Ensure SemanticChunker._fallback preserves chunk_overlap when building RecursiveChunker."""
+        chunker = SemanticChunker(max_tokens=100, min_tokens=10, chunk_overlap=30)
+        captured = []
+
+        def spy_chunker(*args, **kwargs):
+            captured.append(kwargs)
+            mock = MagicMock()
+            mock.chunk.return_value = []
+            return mock
+
+        monkeypatch.setattr(
+            "docsgpt.parser.chunking_strategies.RecursiveChunker", spy_chunker
+        )
+        chunker._fallback([Document(text="fallback test")])
+        assert len(captured) == 1
+        assert captured[0]["chunk_overlap"] == 30
+
     def test_source_and_extra_info_preserved(self):
         text = "Alpha one. Alpha two. Beta one. Beta two."
         vectors = [[1.0, 0.0], [1.0, 0.0], [0.0, 1.0], [0.0, 1.0]]
@@ -381,6 +413,27 @@ class TestClassicByteIdentical:
             cfg.strategy,
             max_tokens=cfg.max_tokens,
             min_tokens=cfg.min_tokens,
+            duplicate_headers=cfg.duplicate_headers,
+        )
+        assert isinstance(chunker, Chunker)
+
+        docs = [Document(text="word " * 3000, doc_id="large")]
+        direct = Chunker(max_tokens=1250, min_tokens=150).chunk(docs)
+        via = chunker.chunk([Document(text="word " * 3000, doc_id="large")])
+        assert [c.text for c in via] == [c.text for c in direct]
+
+    def test_default_config_preserves_classic_output(self):
+        """Default ChunkingConfig() preserves historical classic_chunk output."""
+        from docsgpt.storage.db.source_config import ChunkingConfig
+
+        cfg = ChunkingConfig()
+        assert cfg.strategy == "classic_chunk"
+        assert cfg.chunk_overlap == 0
+        chunker = ChunkerCreator.create_chunker(
+            cfg.strategy,
+            max_tokens=cfg.max_tokens,
+            min_tokens=cfg.min_tokens,
+            chunk_overlap=cfg.chunk_overlap,
             duplicate_headers=cfg.duplicate_headers,
         )
         assert isinstance(chunker, Chunker)

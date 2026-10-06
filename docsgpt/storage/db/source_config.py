@@ -5,12 +5,9 @@ input), lenient on read (``SourceConfig.parse`` falls back to all-defaults for
 ``{}``/``None`` and tolerates partial/legacy dicts so a malformed row never
 crashes ingest or retrieval).
 
-The defaults mirror the ingest pipeline's behavior: ``strategy`` defaults
-to ``recursive`` with ``chunk_overlap=200``, and ``max_tokens`` /
-``min_tokens`` match ``docsgpt/worker.py`` (1250 / 150). These defaults also
-apply to existing sources with empty or partial configs upon re-ingest.
-Explicitly setting ``strategy: "classic_chunk"`` preserves the historical
-token-window chunking byte-for-byte.
+The defaults mirror the ingest pipeline's current behavior: ``max_tokens`` /
+``min_tokens`` match ``docsgpt/worker.py`` (1250 / 150), so an empty config
+reproduces today's chunking byte-for-byte.
 """
 
 from __future__ import annotations
@@ -87,10 +84,10 @@ class ChunkingConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    strategy: str = "recursive"  # ChunkerCreator key
+    strategy: str = "classic_chunk"  # ChunkerCreator key
     max_tokens: int = 1250  # matches docsgpt/worker.py MAX_TOKENS
     min_tokens: int = 150  # matches docsgpt/worker.py MIN_TOKENS
-    chunk_overlap: int = 200  # Token overlap across adjacent chunks
+    chunk_overlap: int = 0  # Token overlap across adjacent chunks
     duplicate_headers: bool = False
 
     @field_validator("chunk_overlap")

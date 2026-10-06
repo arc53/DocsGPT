@@ -156,48 +156,46 @@ class RecursiveChunker(_BaseStrategyChunker):
         if not fragments:
             return []
 
+        frag_tokens = [self._token_count(f) for f in fragments]
         chunks: List[str] = []
         i = 0
         n = len(fragments)
 
         while i < n:
             j = i
-            current_text = ""
+            current_tokens = 0
             while j < n:
-                candidate = current_text + fragments[j]
-                if self._token_count(candidate) <= self.max_tokens:
-                    current_text = candidate
+                if current_tokens + frag_tokens[j] <= self.max_tokens:
+                    current_tokens += frag_tokens[j]
                     j += 1
                 else:
                     break
 
             if j == i:
-                current_text = fragments[i]
+                chunk_text = fragments[i]
                 j = i + 1
+            else:
+                chunk_text = "".join(fragments[i:j])
 
-            if current_text.strip():
-                chunks.append(current_text)
+            if chunk_text.strip():
+                chunks.append(chunk_text)
 
             if j >= n:
                 break
 
             if self.chunk_overlap > 0:
-                overlap_text = ""
+                budget = min(self.chunk_overlap, self.max_tokens - frag_tokens[j])
+                overlap_tokens = 0
                 next_i = j
-                for k in range(j - 1, i, -1):
-                    cand_overlap = fragments[k] + overlap_text
-                    if self._token_count(cand_overlap) <= self.chunk_overlap:
-                        overlap_text = cand_overlap
-                        next_i = k
-                    else:
-                        break
-                if (
-                    overlap_text
-                    and self._token_count(overlap_text + fragments[j]) > self.max_tokens
-                ):
-                    i = j
-                else:
-                    i = max(i + 1, next_i)
+                if budget > 0:
+                    for k in range(j - 1, i, -1):
+                        cand = overlap_tokens + frag_tokens[k]
+                        if cand <= budget:
+                            overlap_tokens = cand
+                            next_i = k
+                        else:
+                            break
+                i = max(i + 1, next_i)
             else:
                 i = j
 
@@ -342,6 +340,7 @@ class SemanticChunker(_BaseStrategyChunker):
             chunking_strategy=self.chunking_strategy,
             max_tokens=self.max_tokens,
             min_tokens=self.min_tokens,
+            chunk_overlap=self.chunk_overlap,
             duplicate_headers=self.duplicate_headers,
         )
         return recursive.chunk(documents)

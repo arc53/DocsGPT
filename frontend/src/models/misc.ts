@@ -14,10 +14,10 @@ export type RetrievalExposure = 'prefetch' | 'agentic_tool';
 
 // Ingest-time chunking knobs (bake-time; changing them requires a re-ingest).
 export type SourceChunkingConfig = {
-  strategy?: ChunkingStrategy; // default 'recursive'
+  strategy?: ChunkingStrategy; // default 'classic_chunk'
   max_tokens?: number; // default 1250
   min_tokens?: number; // default 150
-  chunk_overlap?: number; // default 200
+  chunk_overlap?: number; // default 0
   duplicate_headers?: boolean; // default false
 };
 

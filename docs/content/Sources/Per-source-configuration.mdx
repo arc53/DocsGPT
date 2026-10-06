@@ -41,10 +41,10 @@ Chunking decides how a document is split into the pieces that get embedded and s
 ```json
 {
   "chunking": {
-    "strategy": "recursive",
+    "strategy": "classic_chunk",
     "max_tokens": 1250,
     "min_tokens": 150,
-    "chunk_overlap": 200,
+    "chunk_overlap": 0,
     "duplicate_headers": false
   }
 }
@@ -52,18 +52,18 @@ Chunking decides how a document is split into the pieces that get embedded and s
 
 | Field | Default | Description |
 | --- | --- | --- |
-| `strategy` | `recursive` | Which chunking algorithm to use (see below). |
+| `strategy` | `classic_chunk` | Which chunking algorithm to use (see below). |
 | `max_tokens` | `1250` | Upper bound on chunk size in tokens. |
 | `min_tokens` | `150` | Lower bound; small fragments are merged up to this size. |
-| `chunk_overlap` | `200` | Number of tokens to overlap across adjacent chunks. |
+| `chunk_overlap` | `0` | Number of tokens to overlap across adjacent chunks (used by `recursive`). |
 | `duplicate_headers` | `false` | Repeat section headers into each child chunk for context. |
 
 ### Available chunking strategies
 
 | Strategy | Behavior |
 | --- | --- |
-| `recursive` | Default recursive splitter on natural boundaries (paragraphs, lines, sentences) with token overlap. |
-| `classic_chunk` | The legacy token-window splitter. Reproduces DocsGPT's historical chunking byte-for-byte. |
+| `classic_chunk` | The default token-window splitter. An empty config reproduces DocsGPT's historical chunking byte-for-byte. |
+| `recursive` | Recursive splitter on natural boundaries (paragraphs, lines, sentences) with token overlap. Chunks are packed up to `max_tokens` (and `min_tokens` is no longer used for early flushing), so recursive output changes even with `chunk_overlap: 0`. |
 | `markdown` | Splits along Markdown structure (headings, sections) — good for docs and wikis. |
 | `parent_child` | Embeds small **child** chunks for precise matching but carries a larger **parent** window in metadata, so the model still sees surrounding context. |
 | `semantic` | Embeds sentences and splits where meaning shifts (at the 95th-percentile cosine-distance gap between adjacent sentences), falling back to `recursive` on failure. Produces topically coherent chunks at the cost of extra embedding calls during ingest. |
@@ -71,10 +71,6 @@ Chunking decides how a document is split into the pieces that get embedded and s
 <Callout type="warning" emoji="⚠️">
 Chunking is bake-time. After changing `strategy`, `max_tokens`, `min_tokens`, `chunk_overlap`,
 or `duplicate_headers`, re-ingest the source so existing chunks are rebuilt.
-
-Note that the new defaults (`recursive` with `chunk_overlap: 200`) also take effect on existing
-sources with empty or partial configs upon re-ingest. To preserve the historical token-window
-chunking on an existing or new source, explicitly set `strategy: "classic_chunk"`.
 </Callout>
 
 ## Retrieval configuration
