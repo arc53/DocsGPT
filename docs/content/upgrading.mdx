@@ -1,7 +1,7 @@
 ---
 title: Upgrading DocsGPT
 description: Upgrade DocsGPT installed with the installer, pip, Docker Compose or Kubernetes, and what changes in each release.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-06
 ---
 
 import { Callout } from 'nextra/components'
@@ -218,6 +218,17 @@ The default model, the one that answers when a request names none, is now the fi
 - **`LLM_PROVIDER=openai` with the key in `API_KEY`**: the key used to register no OpenAI model, so chats silently used the hosted DocsGPT API. They now go to OpenAI.
 
 To keep using the hosted model, set `LLM_NAME=docsgpt-local`. To pick a specific model of your provider, set `LLM_NAME` to its id. The API and the worker log an `ERROR` at startup when `LLM_PROVIDER` names a provider but the default is still the hosted model. See [Default model selection](/Models/local-inference#default-model-selection).
+
+#### API keys stay with their provider
+
+DocsGPT now sends each API key only to the endpoint it was configured for, and refuses a request that has nowhere safe to go instead of falling back to OpenAI:
+
+- **`API_KEY` belongs to `LLM_PROVIDER` only.** Another provider no longer borrows it: a Groq, Anthropic or Google model needs its own `GROQ_API_KEY`, `ANTHROPIC_API_KEY` or `GOOGLE_API_KEY` unless that provider is `LLM_PROVIDER`.
+- **The global fallback uses the fallback provider's own key.** With `FALLBACK_LLM_API_KEY` unset, DocsGPT used to send `API_KEY`, your primary provider's key, to the fallback provider. It now sends that provider's own key (`ANTHROPIC_API_KEY` for `FALLBACK_LLM_PROVIDER=anthropic`), or `API_KEY` when the fallback provider is `LLM_PROVIDER`. Set `FALLBACK_LLM_API_KEY` or the provider's key if your fallback relied on `API_KEY`.
+- **A model without an endpoint of its own fails.** A request for an `openai_compatible` model DocsGPT doesn't know, a custom model the user can no longer reach, or `LLM_PROVIDER=openai_compatible` with no model fails with `Model '<id>' is not available`. It used to go to `OPENAI_BASE_URL` or `api.openai.com` with whatever key was configured.
+- **A key bound for the wrong host is refused.** If a configured key would still reach a host it wasn't configured for, the request fails with `Refusing to send a <provider> request to <host>` before anything is sent. The message names the hosts the key belongs to, never the key.
+
+See [Keys stay with their provider](/Models/cloud-providers#keys-stay-with-their-provider).
 
 #### Chatwoot bridge: port 5000 and its own .env
 

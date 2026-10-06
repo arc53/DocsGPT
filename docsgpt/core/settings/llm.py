@@ -53,8 +53,9 @@ class LLMSettings(SettingsGroup):
     FALLBACK_LLM_API_KEY: Optional[str] = Field(
         default=None,
         description=(
-            "API key for the fallback LLM; unset sends API_KEY. Set it whenever FALLBACK_LLM_PROVIDER differs "
-            "from LLM_PROVIDER, or the primary provider's key goes to the fallback provider."
+            "API key for the fallback LLM. Unset uses the fallback provider's own key (e.g. ANTHROPIC_API_KEY), "
+            "or API_KEY when FALLBACK_LLM_PROVIDER is LLM_PROVIDER; the primary provider's key never goes to "
+            "another provider."
         ),
     )
     TITLE_MODEL_ID: Optional[str] = Field(

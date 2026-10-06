@@ -3,21 +3,30 @@ from typing import Any, Dict, Optional
 from docsgpt.core.model_registry import ModelRegistry
 
 
-def get_api_key_for_provider(provider: str) -> Optional[str]:
-    """Get the appropriate API key for a provider.
+def get_api_key_for_provider(provider: Optional[str]) -> Optional[str]:
+    """Return the deployment's own API key for ``provider``.
 
-    Delegates to the provider plugin's ``get_api_key``. Falls back to the
-    generic ``settings.API_KEY`` for unknown providers.
+    Delegates to the provider plugin's ``get_api_key``: the provider's key
+    setting, or the generic ``API_KEY`` when ``provider`` is ``LLM_PROVIDER``.
+
+    There is no fallback to ``API_KEY`` beyond that. ``API_KEY`` belongs to
+    ``LLM_PROVIDER``; handing it to another provider, an unknown name, or
+    ``openai_compatible`` (whose models each carry their own key and
+    endpoint) would send it to an endpoint it does not belong to.
+
+    Args:
+        provider: A provider plugin name, e.g. ``openai``.
+
+    Returns:
+        The key, or ``None`` when the provider has none configured.
     """
     from docsgpt.core.settings import settings
     from docsgpt.llm.providers import PROVIDERS_BY_NAME
 
-    plugin = PROVIDERS_BY_NAME.get(provider)
-    if plugin is not None:
-        key = plugin.get_api_key(settings)
-        if key:
-            return key
-    return settings.API_KEY
+    plugin = PROVIDERS_BY_NAME.get((provider or "").lower())
+    if plugin is None:
+        return None
+    return plugin.get_api_key(settings) or None
 
 
 def resolve_dispatch_provider(
@@ -51,10 +60,8 @@ def resolve_dispatch_provider(
     """
     from docsgpt.llm.providers import PROVIDERS_BY_NAME
 
-    # Return the *canonical* lowercase name. ``LLMCreator`` lowercases before
-    # its own lookup, but ``get_api_key_for_provider`` matches exactly — so a
-    # stored "OpenAI" would pass this guard and then silently fall through to
-    # ``settings.API_KEY``, which is the key leak this function exists to stop.
+    # Return the *canonical* lowercase name, so every later lookup (key,
+    # handler, LLM class) agrees on which provider this is.
     if stored_llm_name and stored_llm_name.lower() in PROVIDERS_BY_NAME:
         return stored_llm_name.lower()
     if model_id:

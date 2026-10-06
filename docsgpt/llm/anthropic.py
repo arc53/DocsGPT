@@ -7,6 +7,7 @@ from anthropic import Anthropic, transform_schema
 
 from docsgpt.core.settings import settings
 from docsgpt.llm.base import BaseLLM, optional_int
+from docsgpt.llm.credential_scope import check_credential_scope
 from docsgpt.llm.tool_images import tool_result
 from docsgpt.storage.storage_creator import StorageCreator
 
@@ -201,7 +202,12 @@ class AnthropicLLM(BaseLLM):
     def __init__(self, api_key=None, user_api_key=None, base_url=None, *args, **kwargs):
 
         super().__init__(*args, **kwargs)
-        self.api_key = api_key or settings.ANTHROPIC_API_KEY or settings.API_KEY
+        # ``API_KEY`` is Anthropic's only when LLM_PROVIDER says so.
+        self.api_key = (
+            api_key
+            or settings.ANTHROPIC_API_KEY
+            or (settings.API_KEY if settings.LLM_PROVIDER == "anthropic" else None)
+        )
         self.user_api_key = user_api_key
 
         # Use custom base_url if provided
@@ -209,6 +215,8 @@ class AnthropicLLM(BaseLLM):
             self.anthropic = Anthropic(api_key=self.api_key, base_url=base_url)
         else:
             self.anthropic = Anthropic(api_key=self.api_key)
+        # The client is built but has sent nothing yet.
+        check_credential_scope(self.api_key, str(self.anthropic.base_url), self.provider_name)
 
         self.storage = StorageCreator.get_storage()
         self._last_usage: Optional[Dict[str, Any]] = None

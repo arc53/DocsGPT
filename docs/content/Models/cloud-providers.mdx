@@ -1,7 +1,7 @@
 ---
 title: Connecting DocsGPT to Cloud LLM Providers
 description: Connect DocsGPT to various Cloud Large Language Model (LLM) providers to power your document Q&A.
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-06
 ---
 
 import { Callout } from 'nextra/components'
@@ -69,6 +69,24 @@ Each provider's models are registered when its key is set. `API_KEY` counts as t
 `LLM_PROVIDER` still decides the default. With `LLM_PROVIDER=openai`, `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` both set, both providers appear in the picker and `gpt-5.5` is the default. To make a DeepSeek, Qwen or GLM model the default, set `LLM_NAME` to its id (for example `LLM_NAME=deepseek-v4-flash`).
 
 To add a provider or model that is not in the catalog, write a model YAML and load it with [`MODELS_CONFIG_DIR`](/Deploying/DocsGPT-Settings#adding-custom-models-models_config_dir).
+
+### Keys stay with their provider
+
+Each key is sent only to the endpoint it was configured for:
+
+- a provider's own variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY` ...) to that provider;
+- `API_KEY` to the provider in `LLM_PROVIDER`, or to your own server at `OPENAI_BASE_URL`;
+- a catalog key such as `DEEPSEEK_API_KEY` to the `base_url` in its YAML;
+- `FALLBACK_LLM_API_KEY` to the [fallback provider](/Models/fallback).
+
+The model decides where a request goes: it carries its provider, its key and its endpoint together. When DocsGPT cannot pair a request with an endpoint of its own, it refuses the request instead of sending it to OpenAI with whatever key is set:
+
+| Error | Cause |
+| :---- | :---- |
+| `Model '<id>' is not available` | The model is an `openai_compatible` model DocsGPT doesn't have (its key variable is unset, or its YAML isn't loaded), a custom model the user can no longer reach, or `LLM_PROVIDER=openai_compatible` with no model. |
+| `Refusing to send a <provider> request to <host>` | A configured key was about to reach a host it wasn't configured for. Nothing was sent. The message lists the hosts the key belongs to, never the key. Check `LLM_PROVIDER`, the provider keys and the model's endpoint. |
+
+A model name that isn't in the catalog still works for a provider with a fixed endpoint, such as `FALLBACK_LLM_NAME=gpt-4o-mini` with `FALLBACK_LLM_PROVIDER=openai`: it goes to that provider with that provider's key.
 
 ## Connecting to OpenAI-Compatible Cloud APIs
 

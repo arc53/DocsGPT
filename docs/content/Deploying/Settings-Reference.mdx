@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-05
+lastUpdated: 2026-10-06
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -274,7 +274,7 @@ Model name for the fallback LLM.
 
 Type `str`, default unset.
 
-API key for the fallback LLM; unset sends API_KEY. Set it whenever FALLBACK_LLM_PROVIDER differs from LLM_PROVIDER, or the primary provider's key goes to the fallback provider.
+API key for the fallback LLM. Unset uses the fallback provider's own key (e.g. ANTHROPIC_API_KEY), or API_KEY when FALLBACK_LLM_PROVIDER is LLM_PROVIDER; the primary provider's key never goes to another provider.
 
 ### `TITLE_MODEL_ID`
 

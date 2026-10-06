@@ -1,7 +1,7 @@
 ---
 title: 'Changelog'
 description: What changed in each DocsGPT release, with links to the upgrade steps an existing deployment needs.
-lastUpdated: 2026-10-05
+lastUpdated: 2026-10-06
 ---
 
 import { Callout } from 'nextra/components'
@@ -32,6 +32,11 @@ Entries start at 0.17.0; see GitHub for earlier releases.
     with the key in `API_KEY` now really uses OpenAI instead of the hosted API. Set
     `LLM_NAME=docsgpt-local` to keep the hosted model. See
     [Default model](/upgrading#default-model-llm_provider-alone-picks-it).
+  - Each API key now goes only to the endpoint it was configured for. `API_KEY` belongs to
+    `LLM_PROVIDER` alone, and an unset `FALLBACK_LLM_API_KEY` now means the fallback provider's own
+    key (say `ANTHROPIC_API_KEY`) instead of `API_KEY`. A request whose model DocsGPT cannot resolve
+    to its own endpoint now fails with `Model '<id>' is not available` instead of going to OpenAI.
+    See [API keys stay with their provider](/upgrading#api-keys-stay-with-their-provider).
   - `LLM_PROVIDER=llama.cpp` and `LLM_PROVIDER=huggingface` are gone; neither ever answered.
     Reach llama.cpp through its OpenAI-compatible server with `OPENAI_BASE_URL` and `LLM_NAME`.
     `VECTOR_STORE=lancedb` could never start and is gone from the setup scripts.
@@ -242,6 +247,14 @@ stored secrets and upload its documents again: see
   setting's old and new value.
 - The URL check for MCP servers, S3 endpoints and imported agents also refuses carrier-grade NAT
   addresses (`100.64.0.0/10`).
+- A provider's API key could reach another provider. Right after a restart, two requests at once
+  could find the model registry empty; one then fell back to `LLM_PROVIDER` with no model and the
+  OpenAI client sent the configured key to `api.openai.com` (a DeepSeek key, in the case seen). The
+  registry now loads once under a lock, a request whose model has no endpoint of its own is refused,
+  and an LLM client refuses a configured key for any host it was not configured for. See
+  [Keys stay with their provider](/Models/cloud-providers#keys-stay-with-their-provider).
+- The sandbox manager and the embedding models are also built once per process under a lock, so
+  concurrent first requests no longer create a second sandbox session registry or load a model twice.
 - A new [security checklist](/Deploying/Security) covers bind addresses, the choice of `AUTH_TYPE`,
   the secrets to set, outbound URL checks, prompt templates, the LLM cache and the version check.
 
