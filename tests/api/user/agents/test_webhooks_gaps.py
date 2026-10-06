@@ -295,3 +295,41 @@ class TestAgentWebhookListener:
                 agent_id_str=str(agent["id"]),
             )
         assert response.status_code == 200
+
+
+@pytest.mark.unit
+class TestWebhookPayloadIsNotLogged:
+    """The enqueue log line carries the payload's size and keys, not its content.
+
+    It used to log the whole payload at INFO, shipping full PR diffs and any
+    secret a caller put in the body to the log pipeline.
+    """
+
+    def _enqueue(self, app, payload, caplog):
+        from docsgpt.api.user.agents.webhooks import AgentWebhookListener
+
+        with patch("docsgpt.api.user.agents.webhooks.process_agent_webhook") as mock_process:
+            mock_process.apply_async.return_value = Mock(id="t1")
+            with app.test_request_context("/api/webhooks/agents/tok", method="POST", json=payload):
+                with caplog.at_level("INFO"):
+                    AgentWebhookListener()._enqueue_webhook_task("a1", payload, "POST")
+        return [r.getMessage() for r in caplog.records if "webhook" in r.getMessage().lower()]
+
+    def test_logs_size_and_keys_only(self, app, caplog):
+        import json
+
+        payload = {"token": "sk-very-secret", "pr": {"diff_excerpt": "+" * 500}}
+        messages = self._enqueue(app, payload, caplog)
+
+        assert messages
+        assert not any("sk-very-secret" in m or "+++" in m for m in messages)
+        line = next(m for m in messages if "Enqueuing" in m)
+        assert f"{len(json.dumps(payload))} characters" in line
+        assert "keys: pr, token" in line
+
+    def test_a_list_payload_reports_its_length(self, app, caplog):
+        messages = self._enqueue(app, [{"text": "private"}, {"text": "data"}], caplog)
+
+        line = next(m for m in messages if "Enqueuing" in m)
+        assert "private" not in line
+        assert "list of 2" in line

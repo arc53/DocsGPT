@@ -1,5 +1,6 @@
 """Agent management webhook handlers."""
 
+import json
 import secrets
 import uuid
 
@@ -107,6 +108,36 @@ class AgentWebhook(Resource):
         )
 
 
+# Top-level keys named in the enqueue log line; the rest are counted.
+_LOGGED_PAYLOAD_KEYS = 20
+
+
+def _describe_payload(payload) -> str:
+    """The payload's size and shape for a log line, never its content.
+
+    A webhook body can hold whole PR diffs and whatever secrets its sender
+    included, and none of that belongs in the log pipeline.
+
+    Args:
+        payload: The parsed webhook body or query arguments.
+
+    Returns:
+        str: E.g. ``"1234 characters, keys: pr, repository"``.
+    """
+    try:
+        size = f"{len(json.dumps(payload))} characters"
+    except (TypeError, ValueError):
+        size = "unknown size"
+    if isinstance(payload, dict):
+        keys = sorted(str(key) for key in payload)
+        shown = ", ".join(keys[:_LOGGED_PAYLOAD_KEYS])
+        more = len(keys) - _LOGGED_PAYLOAD_KEYS
+        return f"{size}, keys: {shown}" + (f" (+{more} more)" if more > 0 else "")
+    if isinstance(payload, list):
+        return f"{size}, list of {len(payload)}"
+    return f"{size}, {type(payload).__name__}"
+
+
 @agents_webhooks_ns.route("/webhooks/agents/<string:webhook_token>")
 class AgentWebhookListener(Resource):
     method_decorators = [require_agent]
@@ -117,7 +148,10 @@ class AgentWebhookListener(Resource):
                 f"Webhook ({source_method}) received for agent {agent_id_str} with empty payload."
             )
         current_app.logger.info(
-            f"Incoming {source_method} webhook for agent {agent_id_str}. Enqueuing task with payload: {payload}"
+            "Incoming %s webhook for agent %s. Enqueuing task with payload: %s",
+            source_method,
+            agent_id_str,
+            _describe_payload(payload),
         )
 
         idempotency_key, key_error = _read_idempotency_key()
