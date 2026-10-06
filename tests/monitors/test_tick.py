@@ -562,6 +562,39 @@ class TestIngest:
         assert len(queued["events"]) == 1 and wakes == []
         assert "could not be judged" in reload(mon_db, monitor["id"])["last_error"]
 
+    def test_the_same_ingest_event_twice_wakes_once(self, mon_db, conversation_id, queued, wakes, events):
+        make_monitor(
+            mon_db, conversation_id, source={"type": "ingest", "source_id": "src-1"}, check=None, state={},
+            max_wakes=5,
+        )
+        tick.on_ingest_event("u1", "source.ingest.completed", {"source_id": "src-1"})
+        monitor_id, event = queued["events"][0]
+        assert event["event_id"]
+        tick.process_event(monitor_id, event)
+        tick.process_event(monitor_id, event)
+        assert len(wakes) == 1 and wakes[0]["dedupe_key"].endswith(f"ingest:{event['event_id']}")
+        assert "event_id" not in wakes[0]["payload"]["ingest"]
+
+    def test_an_ingest_event_that_cannot_be_requeued_is_recorded(
+        self, mon_db, conversation_id, wakes, events, monkeypatch
+    ):
+        import docsgpt.api.user.tasks as tasks
+
+        def refuse(*args, **kwargs):
+            raise ConnectionError("broker down")
+
+        monkeypatch.setattr(tasks.process_monitor_event, "apply_async", refuse)
+        monitor = make_monitor(
+            mon_db, conversation_id, source={"type": "ingest", "source_id": "src-1"}, check=None, state={},
+            condition="the ingest failed",
+        )
+        monkeypatch.setattr(tick, "_decide", lambda *args: ("retry", None, None))
+        assert tick.process_event(monitor["id"], {"event": "failed", "source_id": "src-1"}) == {"state": "failed"}
+        assert "could not be queued again" in reload(mon_db, monitor["id"])["last_error"]
+        with mon_db.begin() as conn:
+            MonitorsRepository(conn).acquire_tick(monitor["id"], stale_seconds=900)
+        assert tick.process_event(monitor["id"], {"event": "failed", "source_id": "src-1"}) == {"state": "failed"}
+
     def test_publish_user_event_feeds_the_hook_even_without_sse(self, monkeypatch):
         seen = []
         monkeypatch.setattr(tick, "on_ingest_event", lambda *args: seen.append(args))

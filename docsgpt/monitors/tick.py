@@ -32,6 +32,7 @@ on the delivered data, each delivery on its own (``event`` mode).
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -863,14 +864,27 @@ def _retry_hit(hit_id: str, attempt: int) -> str:
     return "retry"
 
 
-def _requeue_event(monitor_id: str, event: Dict[str, Any], attempt: int, countdown: float) -> None:
-    """Queue an ingest event for this monitor again."""
+def _requeue_event(monitor_id: str, event: Dict[str, Any], attempt: int, countdown: float) -> bool:
+    """Queue an ingest event for this monitor again.
+
+    An ingest event lives only in its task, so when it can't be queued again
+    the monitor's ``last_error`` says it was dropped instead of losing it silently.
+
+    Returns:
+        True when queued.
+    """
     try:
         from docsgpt.api.user.tasks import process_monitor_event
 
         process_monitor_event.apply_async(args=[monitor_id, event, attempt + 1], countdown=countdown, queue="docsgpt")
+        return True
     except Exception:
         logger.exception("monitor %s: could not requeue its ingest event", monitor_id)
+    try:
+        _store(monitor_id, None, {"last_error": "an ingest event was dropped: it could not be queued again"})
+    except Exception:
+        logger.exception("monitor %s: recording the dropped ingest event failed", monitor_id)
+    return False
 
 
 INGEST_EVENTS = ("source.ingest.completed", "source.ingest.failed")
@@ -903,6 +917,8 @@ def on_ingest_event(user_id: str, event_type: str, payload: Dict[str, Any]) -> N
         "filename": payload.get("filename"),
         "operation": payload.get("operation"),
         "error": payload.get("error"),
+        # Names this ingest run, so a repeated delivery of the same event wakes once.
+        "event_id": uuid.uuid4().hex,
     }
     for monitor in monitors:
         try:
@@ -916,8 +932,8 @@ def on_ingest_event(user_id: str, event_type: str, payload: Dict[str, Any]) -> N
 def process_event(monitor_id: str, event: Dict[str, Any], attempt: int = 0) -> Dict[str, Any]:
     """Run an ingest event for one monitor (the ``process_monitor_event`` task)."""
     if not _lease(monitor_id):
-        if attempt + 1 < MAX_HIT_DEFERRALS:
-            _requeue_event(monitor_id, event, attempt, 2 * (attempt + 1))
+        if attempt + 1 < MAX_HIT_DEFERRALS and not _requeue_event(monitor_id, event, attempt, 2 * (attempt + 1)):
+            return {"state": "failed"}
         return {"state": "busy"}
     try:
         with db_readonly() as conn:
@@ -930,21 +946,25 @@ def process_event(monitor_id: str, event: Dict[str, Any], attempt: int = 0) -> D
         )
         if event.get("error"):
             summary_text += f": {str(event['error'])[:300]}"
-        content = Content(text=canonical_json(event), data=event)
+        event_id = event.get("event_id")
+        data = {k: v for k, v in event.items() if k != "event_id"}
+        content = Content(text=canonical_json(data), data=data)
         outcome = _event(
             monitor,
             content,
             source="monitor",
-            key=f"ingest:{int(monitor.get('check_count') or 0) + 1}",
+            # Stable per event; an event queued before event_id existed falls back to the check count.
+            key=f"ingest:{event_id}" if event_id else f"ingest:{int(monitor.get('check_count') or 0) + 1}",
             summary=summary_text,
-            extra={"ingest": event},
+            extra={"ingest": data},
         )
         if outcome == "retry":
             # An ingest ends once: no later check sees this event again.
             if attempt + 1 >= MAX_HIT_DEFERRALS:
                 _store(monitor_id, None, {"last_error": f"an ingest event was dropped: {UNDECIDED_NOTE}"})
                 return {"state": "failed"}
-            _requeue_event(monitor_id, event, attempt, UNDECIDED_RETRY_SECONDS * (attempt + 1))
+            if not _requeue_event(monitor_id, event, attempt, UNDECIDED_RETRY_SECONDS * (attempt + 1)):
+                return {"state": "failed"}
         return {"state": outcome}
     finally:
         _release(monitor_id)
