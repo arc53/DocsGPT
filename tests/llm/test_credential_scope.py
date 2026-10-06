@@ -353,6 +353,7 @@ class TestPlaintextEndpoints:
             "http://host.docker.internal:23333/v1",
             "http://ollama.llm.svc.cluster.local:11434/v1",
             "http://vllm.corp.internal/v1",
+            "http://llm.localhost:8000/v1",
         ],
     )
     def test_plain_http_to_a_local_endpoint_is_allowed(self, monkeypatch, base_url):

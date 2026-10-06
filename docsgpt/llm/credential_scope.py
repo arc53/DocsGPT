@@ -105,7 +105,7 @@ def plaintext_allowed(url: Optional[str]) -> bool:
     ``fc00::/7``) or link-local address, a single-label host name (a Docker
     Compose service such as ``ollama``), and names under an internal suffix
     (``host.docker.internal``, ``*.svc.cluster.local``, ``*.internal``,
-    ``*.local``, ``localhost``). Any other host needs https, unless
+    ``*.local``, ``localhost`` and ``*.localhost``). Any other host needs https, unless
     ``LLM_ALLOW_PLAINTEXT_ENDPOINTS`` is set.
 
     Args:

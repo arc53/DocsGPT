@@ -61,7 +61,7 @@ The `OPENAI_BASE_URL` examples above use `http://localhost`.  If you are running
 
 ### Plain http and your API key
 
-DocsGPT sends a configured API key (`API_KEY`, `OPENAI_API_KEY`, a model YAML's key) over plain `http` only when the server is on your own network: `localhost` and other loopback addresses, private addresses (`10.x`, `172.16–31.x`, `192.168.x`, `fc00::/7`), link-local addresses, a single-label host such as a Docker Compose service (`http://ollama:11434/v1`, `http://litellm:4000`), `host.docker.internal`, and names ending in `.local`, `.svc` or `.internal` (for example `http://ollama.llm.svc.cluster.local:11434/v1`). Any other host needs `https`. Otherwise the request fails with `Refusing to send a ... request to http://...: the endpoint uses plain http`, and nothing is sent.
+DocsGPT sends a configured API key (`API_KEY`, `OPENAI_API_KEY`, a model YAML's key) over plain `http` only when the server is on your own network: `localhost` and other loopback addresses, private addresses (`10.x`, `172.16–31.x`, `192.168.x`, `fc00::/7`), link-local addresses, a single-label host such as a Docker Compose service (`http://ollama:11434/v1`, `http://litellm:4000`), `host.docker.internal`, and names ending in `.local`, `.svc`, `.internal` or `.localhost` (for example `http://ollama.llm.svc.cluster.local:11434/v1`). Any other host needs `https`. Otherwise the request fails with `Refusing to send a ... request to http://...: the endpoint uses plain http`, and nothing is sent.
 
 If your server sits on your own network under another name, such as `http://llm.corp.example`, set `LLM_ALLOW_PLAINTEXT_ENDPOINTS=true`. The key still goes only to the endpoint you configured.
 
