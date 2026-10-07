@@ -1949,6 +1949,24 @@ class TestTextToSpeech:
         mock_create_tts.assert_not_called()
 
     @patch("docsgpt.api.user.attachments.routes.TTSCreator.create_tts")
+    def test_tts_rejects_an_oversized_body_before_parsing_it(self, mock_create_tts, flask_app):
+        from docsgpt.api.user.attachments import routes
+
+        app = Flask(__name__)
+        body = b'{"text": "' + b"a" * routes._TTS_MAX_REQUEST_BYTES + b'"}'
+        with patch.object(routes, "clean_text_for_tts") as clean, app.test_request_context(
+            "/api/tts", method="POST", data=body, content_type="application/json"
+        ):
+            request.decoded_token = {"sub": "test_user"}
+            response = routes.TextToSpeech().post()
+            assert _get_response_status(response) == 413
+            assert _get_response_json(response)["success"] is False
+            # A body sent without Content-Length is cut off at the same size.
+            assert request.max_content_length == routes._TTS_MAX_REQUEST_BYTES
+        clean.assert_not_called()
+        mock_create_tts.assert_not_called()
+
+    @patch("docsgpt.api.user.attachments.routes.TTSCreator.create_tts")
     def test_tts_rejects_text_over_the_limit(self, mock_create_tts, flask_app):
         from docsgpt.api.user.attachments import routes
 

@@ -348,6 +348,10 @@ class StoreAttachment(Resource):
 
 _STT_DISABLED_MESSAGE = "Speech-to-text is disabled on this server."
 _TTS_DISABLED_MESSAGE = "Text-to-speech is disabled on this server."
+# Raw body cap for /api/tts, checked before parsing. The spoken-text cap
+# (TTS_MAX_CHARS) applies after markdown is stripped, so it cannot bound the
+# work of parsing and cleaning an oversized body.
+_TTS_MAX_REQUEST_BYTES = 1024 * 1024
 
 
 def _feature_disabled(message: str):
@@ -846,6 +850,15 @@ class TextToSpeech(Resource):
             )
         if not TTSCreator.is_enabled(settings.TTS_PROVIDER):
             return _feature_disabled(_TTS_DISABLED_MESSAGE)
+        # Also bounds a body sent without Content-Length while it is read.
+        request.max_content_length = _TTS_MAX_REQUEST_BYTES
+        if request.content_length is not None and request.content_length > _TTS_MAX_REQUEST_BYTES:
+            return make_response(
+                jsonify({
+                    "success": False,
+                    "message": f"Request is larger than the {_TTS_MAX_REQUEST_BYTES}-byte limit",
+                }), 413
+            )
         data = request.get_json(silent=True)
         text = data.get("text") if isinstance(data,dict) else None
         if not isinstance(text,str) or not text.strip():
