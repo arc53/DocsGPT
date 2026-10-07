@@ -675,6 +675,11 @@ class MCPTool(Tool):
                 content_list.append({"type": "audio", "mimeType": mime_type, "note": "audio, not shown"})
             else:
                 content_list.append({"type": "unknown", "content": str(item)})
+        if not content_list:
+            # Some servers (Airtable) answer only in structured content and leave ``content`` empty.
+            structured = getattr(result, "structured_content", None) or getattr(result, "structuredContent", None)
+            if structured:
+                content_list.append({"type": "text", "text": json.dumps(structured, default=str)})
         # FastMCP's client result names it ``is_error``; the MCP type ``isError``.
         is_error = getattr(result, "is_error", None)
         if not isinstance(is_error, bool):
