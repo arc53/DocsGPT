@@ -124,13 +124,15 @@ class TestTokenSignIn:
 
 
 class TestAppSignIn:
-    def test_callback_stores_the_app_token_under_the_login(self, app, pg_conn, app_settings):
-        import base64
-        import json
+    def test_sign_in_stores_the_app_token_under_the_login(self, app, pg_conn, app_settings):
+        from urllib.parse import parse_qs, urlsplit
 
-        from docsgpt.api.connector.routes import ConnectorsCallback, build_authorization
+        from flask import request
 
-        with _db(pg_conn), patch("docsgpt.api.connector.routes.service.ensure_can_store_credentials"):
+        from docsgpt.api.connector.routes import ConnectorAuthComplete, ConnectorsCallback, build_authorization
+
+        with _db(pg_conn), patch("docsgpt.api.connector.routes.service.ensure_can_store_credentials"), \
+                app.test_request_context("/api/connectors/auth?provider=github"):
             started = build_authorization("github", "alice")
         assert started["authorization_url"].startswith("https://github.com/login/oauth/authorize?")
         state = started["state"]
@@ -141,19 +143,26 @@ class TestAppSignIn:
         with _db(pg_conn), patch("docsgpt.parser.connectors.github.auth.GitHubAuth.exchange_code_for_tokens",
                                  return_value=token_info):
             with app.test_request_context(f"/api/connectors/callback?code=c&state={state}"):
-                page = ConnectorsCallback().get()
-        assert page.status_code == 200
-        assert b"github_auth_success" in page.data
+                forwarded = ConnectorsCallback().get()
+            assert forwarded.status_code == 302
+            params = parse_qs(urlsplit(forwarded.location).query)
+            with app.test_request_context(
+                "/api/connectors/auth/complete", method="POST",
+                json={"code": params["code"][0], "state": params["state"][0]},
+            ):
+                request.decoded_token = {"sub": "alice"}
+                done = ConnectorAuthComplete().post()
+        assert done.status_code == 200 and done.json["provider"] == "github"
         row = pg_conn.execute(text("SELECT * FROM connector_sessions WHERE provider = 'github'")).one()._mapping
         assert row["account_label"] == "octocat" and row["auth_kind"] == "oauth"
         assert service.read_secrets(dict(row))["token_info"]["refresh_token"] == "ghr_r"
-        assert json.loads(base64.urlsafe_b64decode(state))["provider"] == "github"
 
-    def test_installation_link_carries_the_same_state(self, pg_conn, app_settings):
+    def test_installation_link_carries_the_same_state(self, app, pg_conn, app_settings):
         from docsgpt.api.connector.routes import build_authorization
 
         cid = _connection(pg_conn, auth_kind="oauth", secrets={"token_info": {"access_token": "ghu"}})
-        with _db(pg_conn), patch("docsgpt.api.connector.routes.service.ensure_can_store_credentials"):
+        with _db(pg_conn), patch("docsgpt.api.connector.routes.service.ensure_can_store_credentials"), \
+                app.test_request_context("/api/connectors/auth?provider=github&install=1"):
             started = build_authorization("github", "alice", cid, install=True)
         assert started["authorization_url"].startswith(
             "https://github.com/apps/docsgpt-acme/installations/new?state="

@@ -1831,6 +1831,11 @@
           "connectedAs": "Connected as {{email}}",
           "disconnect": "Disconnect"
         },
+        "callback": {
+          "failed": "Could not finish the sign-in. Start it again from DocsGPT.",
+          "closeWindow": "You can close this window.",
+          "backToApp": "Back to DocsGPT"
+        },
         "googleDrive": {
           "connect": "Connect to Google Drive",
           "validateFailed": "Could not check the sign-in. Try again.",

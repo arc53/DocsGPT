@@ -1831,6 +1831,11 @@
           "connectedAs": "Verbunden als {{email}}",
           "disconnect": "Trennen"
         },
+        "callback": {
+          "failed": "Die Anmeldung konnte nicht abgeschlossen werden. Starte sie in DocsGPT erneut.",
+          "closeWindow": "Du kannst dieses Fenster schließen.",
+          "backToApp": "Zurück zu DocsGPT"
+        },
         "googleDrive": {
           "connect": "Mit Google Drive verbinden",
           "validateFailed": "Die Anmeldung konnte nicht geprüft werden. Versuche es erneut.",

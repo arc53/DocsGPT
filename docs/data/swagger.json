@@ -130,6 +130,23 @@
       ],
       "type": "object"
     },
+    "ConnectorAuthCompleteModel": {
+      "properties": {
+        "code": {
+          "description": "The provider's authorization code",
+          "type": "string"
+        },
+        "state": {
+          "description": "The state the provider echoed",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "state"
+      ],
+      "type": "object"
+    },
     "ConnectorDisconnectModel": {
       "properties": {
         "provider": {
@@ -2996,16 +3013,41 @@
         "x-pat-denied": true
       }
     },
+    "/api/connectors/auth/complete": {
+      "post": {
+        "description": "Finish a connector sign-in: the app's callback page posts the provider's code and state",
+        "operationId": "post_connector_auth_complete",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ConnectorAuthCompleteModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "connectors"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/connectors/callback": {
       "get": {
-        "description": "Handle OAuth callback for external connectors",
+        "description": "OAuth redirect URI for external connectors; forwards to the app's callback page",
         "operationId": "get_connectors_callback",
         "responses": {
           "200": {
             "description": "Success"
           }
         },
-        "summary": "Handle OAuth callback for external connectors",
+        "summary": "Forward the provider's answer to the app page that finishes the sign-in",
         "tags": [
           "connectors"
         ],

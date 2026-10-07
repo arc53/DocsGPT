@@ -1825,6 +1825,11 @@
           "connectedAs": "{{email}}として接続",
           "disconnect": "切断"
         },
+        "callback": {
+          "failed": "サインインを完了できませんでした。DocsGPT からもう一度開始してください。",
+          "closeWindow": "このウィンドウは閉じてかまいません。",
+          "backToApp": "DocsGPT に戻る"
+        },
         "googleDrive": {
           "connect": "Google Driveに接続",
           "validateFailed": "サインインを確認できませんでした。もう一度お試しください。",

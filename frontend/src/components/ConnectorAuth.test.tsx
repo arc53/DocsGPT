@@ -13,7 +13,9 @@ vi.mock('../hooks', () => ({
   useDarkTheme: () => [false, () => undefined],
 }));
 
-vi.mock('../api/services/userService', () => ({ default: {} }));
+const service = vi.hoisted(() => ({ getConnectorAuthUrl: vi.fn() }));
+
+vi.mock('../api/services/userService', () => ({ default: service }));
 
 import ConnectorAuth from './ConnectorAuth';
 
@@ -72,6 +74,72 @@ describe('ConnectorAuth', () => {
     );
     act(() => button?.click());
     expect(onDisconnect).toHaveBeenCalledTimes(1);
+  });
+
+  // Opens the pop-up and returns a function that posts a message from it.
+  const startSignIn = async (
+    props: Partial<Parameters<typeof ConnectorAuth>[0]>,
+  ) => {
+    const popup = { closed: false, close: vi.fn(), location: { href: '' } };
+    vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+    service.getConnectorAuthUrl.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        authorization_url: 'https://provider.example.com/auth',
+        callback_origin: 'https://app.example.com',
+      }),
+    });
+    render(props);
+    await act(async () => {
+      container.querySelector('button')?.click();
+    });
+    expect(popup.location.href).toBe('https://provider.example.com/auth');
+    return (data: unknown, origin = 'https://app.example.com') => {
+      const event = new MessageEvent('message', { data, origin });
+      Object.defineProperty(event, 'source', { value: popup });
+      act(() => {
+        window.dispatchEvent(event);
+      });
+    };
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    service.getConnectorAuthUrl.mockReset();
+  });
+
+  it('reports the connection the callback page finished', async () => {
+    const onSuccess = vi.fn();
+    const post = await startSignIn({ onSuccess });
+    post({
+      type: 'google_drive_auth_success',
+      connection_id: 'conn-1',
+      user_email: 'a@b.c',
+    });
+    expect(onSuccess).toHaveBeenCalledWith({
+      connection_id: 'conn-1',
+      user_email: 'a@b.c',
+    });
+  });
+
+  it('ignores a result from another origin', async () => {
+    const onSuccess = vi.fn();
+    const post = await startSignIn({ onSuccess });
+    post(
+      { type: 'google_drive_auth_success', connection_id: 'conn-1' },
+      'https://attacker.example.com',
+    );
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
+
+  it('reports a generic failure from the callback page', async () => {
+    const onError = vi.fn();
+    const post = await startSignIn({ onError });
+    post({ type: 'connector_auth_error' });
+    expect(onError).toHaveBeenCalledWith(
+      'modals.uploadDoc.connectors.auth.authFailed',
+    );
   });
 
   it('renders the auth button as a default brand button', () => {

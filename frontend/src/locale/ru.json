@@ -1931,6 +1931,11 @@
           "connectedAs": "Подключен как {{email}}",
           "disconnect": "Отключить"
         },
+        "callback": {
+          "failed": "Не удалось завершить вход. Начните его заново в DocsGPT.",
+          "closeWindow": "Это окно можно закрыть.",
+          "backToApp": "Вернуться в DocsGPT"
+        },
         "googleDrive": {
           "connect": "Подключиться к Google Drive",
           "validateFailed": "Не удалось проверить вход. Попробуйте ещё раз.",

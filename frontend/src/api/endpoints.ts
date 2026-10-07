@@ -125,6 +125,7 @@ const endpoints = {
       `/api/connectors/auth?provider=${encodeURIComponent(provider)}${
         connectionId ? `&connection_id=${encodeURIComponent(connectionId)}` : ''
       }${install ? '&install=1' : ''}`,
+    CONNECTOR_AUTH_COMPLETE: '/api/connectors/auth/complete',
     CONNECTOR_FILES: '/api/connectors/files',
     CONNECTOR_VALIDATE_SESSION: '/api/connectors/validate-session',
     CONNECTOR_DISCONNECT: '/api/connectors/disconnect',
