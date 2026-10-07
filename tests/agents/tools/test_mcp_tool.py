@@ -170,7 +170,6 @@ class TestMCPToolInit:
         # The client prefers IPv6, so a public A record beside AAAA ::1 dials loopback.
         import socket
 
-        from docsgpt.agents.tools.mcp_tool import MCPTool
         from docsgpt.security.safe_url import validate_user_base_url
         import docsgpt.agents.tools.mcp_tool as mcp_mod
 
@@ -181,7 +180,7 @@ class TestMCPToolInit:
         ]
         monkeypatch.setattr("socket.getaddrinfo", lambda *a, **kw: answers)
         with pytest.raises(ValueError, match="Invalid MCP server URL"):
-            MCPTool(config={"server_url": "https://mcp.attacker.example/mcp", "auth_type": "none"})
+            mcp_mod.MCPTool(config={"server_url": "https://mcp.attacker.example/mcp", "auth_type": "none"})
 
     def test_transport_client_checks_every_request(self):
         from docsgpt.security.safe_url import _GuardedAsyncTransport

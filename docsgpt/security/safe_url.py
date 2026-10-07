@@ -616,7 +616,7 @@ def pinned_httpx_client(
     )
 
 
-class _GuardedAsyncTransport(httpx.AsyncHTTPTransport):
+class _GuardedAsyncTransport(httpx.AsyncBaseTransport):
     """Async ``httpx`` transport that runs the SSRF guard on every host it is sent to.
 
     Unlike :class:`_PinnedHTTPSTransport` it is not bound to one host: SDKs
@@ -626,19 +626,24 @@ class _GuardedAsyncTransport(httpx.AsyncHTTPTransport):
     goes to that IP literal; the ``Host`` header and TLS SNI keep the
     hostname. The caller's request is not mutated, so redirect and
     relative-URL handling above the transport still see the hostname.
+
+    Each hostname gets its own connection pool: pooled connections are
+    matched on the dialed IP, so hostnames sharing an IP would otherwise
+    reuse a TLS connection whose certificate was checked for only one of them.
     """
 
     def __init__(self, **kwargs: Any) -> None:
         kwargs.setdefault("http2", False)
-        super().__init__(**kwargs)
-        self._pinned: dict[str, ipaddress.IPv4Address | ipaddress.IPv6Address] = {}
+        self._transport_kwargs = kwargs
+        self._hosts: dict[str, tuple[ipaddress.IPv4Address | ipaddress.IPv6Address, httpx.AsyncHTTPTransport]] = {}
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         host = request.url.host
-        ip = self._pinned.get(host)
-        if ip is None:
+        entry = self._hosts.get(host)
+        if entry is None:
             _host, ip, _parts = await anyio.to_thread.run_sync(_validate_and_pick_ip, str(request.url))
-            self._pinned[host] = ip
+            entry = self._hosts.setdefault(host, (ip, httpx.AsyncHTTPTransport(**self._transport_kwargs)))
+        ip, transport = entry
         pinned = httpx.Request(
             request.method,
             request.url.copy_with(host=_ip_to_url_host(ip)),
@@ -646,7 +651,11 @@ class _GuardedAsyncTransport(httpx.AsyncHTTPTransport):
             stream=request.stream,
             extensions={**request.extensions, "sni_hostname": host},
         )
-        return await super().handle_async_request(pinned)
+        return await transport.handle_async_request(pinned)
+
+    async def aclose(self) -> None:
+        for _ip, transport in self._hosts.values():
+            await transport.aclose()
 
 
 def guarded_async_client(

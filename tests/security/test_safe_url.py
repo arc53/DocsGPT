@@ -1038,3 +1038,33 @@ def test_guarded_async_client_follows_no_redirects_and_ignores_env_proxies(monke
         import asyncio
 
         asyncio.run(client.aclose())
+
+
+@pytest.mark.unit
+def test_guarded_async_client_keeps_connections_apart_per_hostname(monkeypatch):
+    # Pooled connections are matched on the dialed IP; two hostnames behind one
+    # IP must not share a TLS connection verified for only one of them.
+    import httpx2
+
+    pools: list[tuple[str, int]] = []
+
+    async def fake_handle(self, request):
+        pools.append((request.extensions["sni_hostname"], id(self)))
+        return httpx2.Response(200)
+
+    monkeypatch.setattr("httpx2.AsyncHTTPTransport.handle_async_request", fake_handle)
+    _fake_dns(
+        monkeypatch,
+        {"mcp.example.com": [["104.18.6.192"]], "auth.example.com": [["104.18.6.192"]]},
+    )
+
+    _get(
+        guarded_async_client(),
+        "https://mcp.example.com/mcp",
+        "https://auth.example.com/token",
+        "https://mcp.example.com/mcp",
+    )
+
+    (mcp_first, auth, mcp_again) = pools
+    assert mcp_first[1] != auth[1]
+    assert mcp_first[1] == mcp_again[1]
