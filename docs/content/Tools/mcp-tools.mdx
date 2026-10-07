@@ -56,6 +56,23 @@ A server's tool descriptions reach the model verbatim, so a hostile server can p
 Once enabled, the agent can call these tools during conversations. Queries, requested URLs, and any supplied objectives or context are sent to Parallel. Only enable the connection for agents whose data may be shared with this service.
 </Callout>
 
+### Supabase
+
+Supabase's hosted MCP server accepts optional query parameters that narrow what it can reach:
+
+- `read_only=true` runs SQL with read-only database access.
+- `project_ref=<project-ref>` scopes the server to a single Supabase project and limits it to that project's resources. Project-scoped mode drops Supabase's account-management tools, such as listing and managing projects.
+
+The two combine:
+
+```
+https://mcp.supabase.com/mcp?project_ref=<project-ref>&read_only=true
+```
+
+Use a development project for testing rather than a production one. When working with production data, prefer project scoping and read-only access where possible. Add the parameters to the URL when you connect Supabase as a custom MCP server.
+
+The curated Supabase preset currently connects to the plain `https://mcp.supabase.com/mcp` URL. The parameters above can be used when configuring Supabase as a custom MCP server.
+
 ## Authentication Types
 
 | Auth Type | Config Fields |
