@@ -230,6 +230,23 @@ class TestProcessAgentWebhookTask:
         mock_worker.assert_called_once_with(ANY, "agent123", {"event": "test"})
         assert result == {"status": "ok"}
 
+    @pytest.mark.unit
+    def test_time_limits_follow_webhook_run_timeout(self):
+        from docsgpt.api.user.tasks import process_agent_webhook
+        from docsgpt.core.settings import settings
+
+        assert process_agent_webhook.soft_time_limit == max(30, settings.WEBHOOK_RUN_TIMEOUT)
+        assert process_agent_webhook.time_limit == process_agent_webhook.soft_time_limit + 60
+
+    @pytest.mark.unit
+    def test_run_is_never_retried(self):
+        """A webhook run has side effects, so a failure must not re-run the agent."""
+        from docsgpt.api.user.tasks import process_agent_webhook
+
+        assert process_agent_webhook.acks_late is True
+        assert not getattr(process_agent_webhook, "autoretry_for", None)
+        assert process_agent_webhook.max_retries == 0
+
 
 class TestIngestConnectorTask:
     @pytest.mark.unit
@@ -449,7 +466,6 @@ class TestDurableTaskRetryPolicy:
             "ingest_remote",
             "reingest_source_task",
             "store_attachment",
-            "process_agent_webhook",
             "ingest_connector_task",
             "reembed_wiki_page",
             "convert_source_to_wiki",
