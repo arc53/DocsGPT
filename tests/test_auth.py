@@ -46,6 +46,7 @@ class TestHandleAuth:
             "valid_token",
             "secret",
             algorithms=["HS256"],
+            leeway=60,
             options={"verify_exp": False, "require": []},
         )
 
@@ -117,6 +118,7 @@ class TestHandleAuthOidc:
             "valid_token",
             "secret",
             algorithms=["HS256"],
+            leeway=60,
             options={"verify_exp": True, "require": ["exp"]},
         )
 
@@ -194,6 +196,27 @@ class TestHandleAuthOidc:
             result = handle_auth(mock_request)
 
         assert result["error"] == "token_expired"
+
+    def test_oidc_session_minted_by_a_host_with_a_fast_clock_accepted(self):
+        # Another API host whose clock runs a little ahead stamps a future iat;
+        # a small skew must not log the user out.
+        import time
+
+        import jwt as real_jwt
+
+        from docsgpt.auth import handle_auth
+
+        now = int(time.time())
+        token = real_jwt.encode({"sub": "u1", "iat": now + 30, "exp": now + 3600}, "secret", algorithm="HS256")
+        mock_request = Mock()
+        mock_request.headers.get.return_value = f"Bearer {token}"
+
+        with patch("docsgpt.auth.settings") as mock_settings:
+            mock_settings.AUTH_TYPE = "oidc"
+            mock_settings.JWT_SECRET_KEY = "secret"
+            result = handle_auth(mock_request)
+
+        assert result["sub"] == "u1"
 
     @pytest.mark.parametrize(
         "algorithm,key",

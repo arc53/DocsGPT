@@ -8,6 +8,10 @@ from docsgpt.core.settings import settings
 # token can never present itself as a (differently scoped) personal access token.
 _PAT_ONLY_CLAIMS = ("auth_method", "pat_id", "pat_name", "scopes", "resource_filter")
 
+# Clock skew tolerated between the API hosts that mint and check session tokens:
+# PyJWT rejects an iat in the future and checks exp, both against this leeway.
+CLOCK_SKEW_SECONDS = 60
+
 
 def _bearer_value(request):
     header = request.headers.get("Authorization")
@@ -39,6 +43,7 @@ def handle_auth(request, data={}):
                 jwt_token,
                 settings.JWT_SECRET_KEY,
                 algorithms=["HS256"],
+                leeway=CLOCK_SKEW_SECONDS,
                 # oidc sessions are minted with an exp at the login callback and
                 # must carry one: require_exp rejects any exp-less HS256 token
                 # signed with JWT_SECRET_KEY (e.g. a legacy simple_jwt/session_jwt

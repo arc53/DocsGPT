@@ -337,11 +337,11 @@ disk per sandbox (Daytona's default is 1/1/3):
 
 ```bash
 # Reads DAYTONA_API_KEY / DAYTONA_API_URL / DAYTONA_TARGET from .env:
-python scripts/build_daytona_snapshot.py          # builds "docsgpt-sandbox-py312-v2"
+python scripts/build_daytona_snapshot.py          # builds "docsgpt-sandbox-py312-v3"
 python scripts/build_daytona_snapshot.py --smoke  # and runs smoke_test.py in a sandbox from it
 python scripts/build_daytona_snapshot.py --dockerfile  # prints the image; no API call
 # then in .env:
-#   DAYTONA_SNAPSHOT=docsgpt-sandbox-py312-v2
+#   DAYTONA_SNAPSHOT=docsgpt-sandbox-py312-v3
 ```
 
 `--cpu`, `--memory` and `--disk` change the resources. A snapshot's contents
