@@ -7,7 +7,7 @@ user's behalf, so we must reject anything that could be used to reach
 internal-network resources (cloud metadata services, RFC 1918 ranges,
 loopback, link-local, etc.).
 
-Three entry points:
+Four entry points:
 
 * :func:`validate_user_base_url` — called at create/update time on REST
   routes that persist the URL, to give the user immediate feedback.
@@ -19,8 +19,11 @@ Three entry points:
   hands an ``httpx2.Client`` to a third-party SDK (e.g. the OpenAI
   Python SDK via ``OpenAI(http_client=...)``). Same DNS-rebinding
   closure on the httpx transport layer.
+* :func:`guarded_async_client` — an ``httpx2.AsyncClient`` for async SDKs
+  (MCP) that may send requests to hosts beyond the validated URL: every
+  host is checked and pinned on first use.
 
-Why all three: the OpenAI / httpx ecosystem performs its own DNS lookup
+Why all of them: the OpenAI / httpx ecosystem performs its own DNS lookup
 inside ``socket.getaddrinfo`` when a connection opens, so a hostile DNS
 server can hand a public IP to the validator and a loopback / link-local
 address to the HTTP client. Validate-then-construct-SDK is unsafe; the
@@ -38,8 +41,9 @@ from urllib.parse import urlsplit, urlunsplit
 # httpx2 (the maintained fork of httpx, by its original author, published by
 # Pydantic at github.com/pydantic/httpx2) is what the OpenAI and Anthropic
 # SDKs run on; a client built on the old ``httpx`` is rejected at their
-# construction. This module uses it only for the pinned client below — its
+# construction. This module uses it only for the pinned clients below — its
 # own fetches go through ``requests``.
+import anyio
 import httpx2 as httpx
 import requests
 from requests.adapters import HTTPAdapter
@@ -608,5 +612,76 @@ def pinned_httpx_client(
     return httpx.Client(
         transport=transport,
         timeout=timeout,
+        follow_redirects=False,
+    )
+
+
+class _GuardedAsyncTransport(httpx.AsyncBaseTransport):
+    """Async ``httpx`` transport that runs the SSRF guard on every host it is sent to.
+
+    Unlike :class:`_PinnedHTTPSTransport` it is not bound to one host: SDKs
+    such as MCP's send OAuth discovery and token requests to hosts the remote
+    server names, so each new host is validated (every DNS answer) on first
+    use and pinned to the chosen IP for the transport's lifetime. The dial
+    goes to that IP literal; the ``Host`` header and TLS SNI keep the
+    hostname. The caller's request is not mutated, so redirect and
+    relative-URL handling above the transport still see the hostname.
+
+    Each hostname gets its own connection pool: pooled connections are
+    matched on the dialed IP, so hostnames sharing an IP would otherwise
+    reuse a TLS connection whose certificate was checked for only one of them.
+    """
+
+    def __init__(self, **kwargs: Any) -> None:
+        kwargs.setdefault("http2", False)
+        self._transport_kwargs = kwargs
+        self._hosts: dict[str, tuple[ipaddress.IPv4Address | ipaddress.IPv6Address, httpx.AsyncHTTPTransport]] = {}
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        host = request.url.host
+        entry = self._hosts.get(host)
+        if entry is None:
+            _host, ip, _parts = await anyio.to_thread.run_sync(_validate_and_pick_ip, str(request.url))
+            entry = self._hosts.setdefault(host, (ip, httpx.AsyncHTTPTransport(**self._transport_kwargs)))
+        ip, transport = entry
+        pinned = httpx.Request(
+            request.method,
+            request.url.copy_with(host=_ip_to_url_host(ip)),
+            headers=request.headers,
+            stream=request.stream,
+            extensions={**request.extensions, "sni_hostname": host},
+        )
+        return await transport.handle_async_request(pinned)
+
+    async def aclose(self) -> None:
+        for _ip, transport in self._hosts.values():
+            await transport.aclose()
+
+
+def guarded_async_client(
+    *,
+    headers: dict[str, str] | None = None,
+    timeout: httpx.Timeout | float | None = 30.0,
+    auth: httpx.Auth | None = None,
+) -> httpx.AsyncClient:
+    """Return an :class:`httpx.AsyncClient` that SSRF-checks and pins every host it dials.
+
+    For async SDKs that take a client factory and may send requests beyond
+    the URL validated up front (MCP transports and their OAuth flows).
+    Redirects are not followed; env proxies are not used, since passing a
+    transport turns them off in ``httpx``.
+
+    Args:
+        headers: Default headers for every request.
+        timeout: Client timeout.
+        auth: Optional ``httpx`` auth flow; its own requests go through the
+            same guarded transport.
+    """
+
+    return httpx.AsyncClient(
+        transport=_GuardedAsyncTransport(),
+        headers=headers,
+        timeout=timeout,
+        auth=auth,
         follow_redirects=False,
     )

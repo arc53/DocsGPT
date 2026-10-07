@@ -28,7 +28,7 @@ def _patch_mcp_globals(monkeypatch):
         import docsgpt.agents.tools.mcp_tool as mcp_mod
 
     monkeypatch.setattr(mcp_mod, "_mcp_clients_cache", {})
-    monkeypatch.setattr(mcp_mod, "validate_url", lambda url: url)
+    monkeypatch.setattr(mcp_mod, "validate_user_base_url", lambda url: None)
 
 
 @pytest.fixture
