@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-07
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -1462,6 +1462,12 @@ Per-agent default quotas: tokens and requests.
 Type `list[str]`, default `["memory", "read_webpage", "scheduler", "monitor"]`.
 
 Config-free tools on by default in agentless chats, as a JSON list of tool names (["memory","scheduler"]) or comma-separated names. none (or []) turns them all off; an empty value keeps the default. scheduler is dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add code_executor and artifact_generator once a sandbox runner is configured; both execute through it and would fail on every call without one. check_job is never listed or toggled (an entry is ignored): every turn that can hand calls off to a background job gets it. monitor is offered only while MONITORS_ENABLED is on.
+
+### `WEBHOOK_RUN_TIMEOUT`
+
+Type `int`, default `600`, must be `> 0`.
+
+Wall-clock cap on one agent webhook run, in seconds (at least 30). Past it the run stops and its task ends with a "timeout" result; the worker kills it 60 seconds later if it has not stopped by then.
 
 ### `ENABLE_TOOL_PREFETCH`
 

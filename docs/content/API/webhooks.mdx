@@ -1,7 +1,7 @@
 ---
 title: Triggering Agents with Webhooks
 description: Learn how to automate and integrate DocsGPT Agents using webhooks for asynchronous task execution.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-07
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -146,12 +146,21 @@ When the agent owner's [usage quota](/Deploying/Usage-Quotas) is exhausted, the 
 }
 ```
 
+A run that takes longer than `WEBHOOK_RUN_TIMEOUT` (default 600 seconds) is stopped, and the task also ends with `SUCCESS`, with `"status": "timeout"`. Anything the agent did before it was stopped, such as a tool action, has already taken effect. On a self-hosted instance, raise the setting if your agent legitimately needs longer.
+
+```json
+{
+  "status": "SUCCESS",
+  "result": {"status": "timeout", "error": "The run exceeded WEBHOOK_RUN_TIMEOUT and was stopped."}
+}
+```
+
 While a task is `PENDING`, `/api/task_status` returns `503` if no worker answers; a `PENDING` task and no reachable worker usually means the worker isn't running.
 
 Two more cases to handle:
 
 - **A run that fails inside the agent still ends `SUCCESS`.** When the model or a workflow node reports an error during the run, the task finishes with `"status": "success"` and an empty or partial `answer`; the error itself is not in the result. An empty `answer` usually means the run failed; the agent's logs in DocsGPT (**Settings > Logs**) show why.
-- **A crashed run is retried.** If the run raises an error (for example the model provider is unreachable), the worker retries the task up to 3 times, with a growing delay, before it ends `FAILURE`. Each retry runs the agent again from the start, including any tool actions that already took effect, so prefer tools whose writes are safe to repeat.
+- **A crashed run is not retried.** If the run raises an error (for example the model provider is unreachable), the task ends `FAILURE` and the agent does not run again on its own: a retry would repeat any tool actions that already took effect. To try again, send the webhook again, with a new `Idempotency-Key` if you set one. If the worker process itself dies mid-run (a restart or a deploy), the task is delivered again and the agent runs from the start.
 
 <Tabs items={['cURL', 'Python', 'JavaScript']}>
   <Tabs.Tab>

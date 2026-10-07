@@ -1506,6 +1506,7 @@
         "mcp_zapier": "Usa las acciones habilitadas en tu cuenta de Zapier MCP para leer o actualizar aplicaciones conectadas.",
         "mcp_trello": "Busca tableros y tarjetas de Trello, y crea y actualiza tarjetas.",
         "mcp_miro": "Busca tableros de Miro, lee contenido y comentarios, crea diagramas y responde a comentarios.",
+        "mcp_resend": "Envía correos electrónicos y gestiona contactos, audiencias y dominios.",
         "github": "Sincroniza repositorios con Conocimiento y deja que los agentes lean código, issues y pull requests."
       },
       "empty": "Aún no hay nada conectado. Conecta un servicio para sincronizar su contenido o dar nuevas herramientas a los agentes.",

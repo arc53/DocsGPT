@@ -143,6 +143,30 @@ class TestAgentWebhookWorker:
         assert result["status"] == "quota_exceeded"
         assert "$5.00 of $5.00" in result["error"]
 
+    def test_soft_time_limit_is_returned_as_timeout(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        """A run past WEBHOOK_RUN_TIMEOUT ends with a timeout result, not a crash."""
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        from docsgpt import worker
+        from docsgpt.agents import headless_runner
+
+        agent = AgentsRepository(pg_conn).create(
+            user_id="alice", name="hook-agent", status="active",
+            agent_type="classic", retriever="classic", chunks=2, key="sk-test-t",
+        )
+
+        def _too_slow(*a, **k):
+            raise SoftTimeLimitExceeded()
+
+        monkeypatch.setattr(headless_runner, "run_agent_headless", _too_slow)
+
+        result = worker.agent_webhook_worker(task_self, str(agent["id"]), {"event": "ping"})
+
+        assert result["status"] == "timeout"
+        assert "WEBHOOK_RUN_TIMEOUT" in result["error"]
+
     def test_webhook_journals_headless_denial_for_approval_gated_tool(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
