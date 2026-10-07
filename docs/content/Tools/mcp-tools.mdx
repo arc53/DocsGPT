@@ -37,6 +37,23 @@ In your agent configuration, enable the MCP tools you want the agent to use.
 
 Presets need no URL entry. Most sign in with OAuth; draw.io uses a prefilled connection form and needs no credentials. Its `create_diagram` tool returns a link to an editable diagram in draw.io. The hosted server receives the diagram content; [draw.io's MCP server](https://github.com/jgraph/drawio-mcp) also documents a self-hosted option. Admins can turn presets off one by one, and turn off custom MCP servers, in **Admin > Connectors**. See [Connectors](/Sources/Connectors).
 
+### Supabase
+
+Supabase's hosted MCP server accepts optional query parameters that narrow what it can reach:
+
+- `read_only=true` runs SQL with read-only database access.
+- `project_ref=<project-ref>` scopes the server to a single Supabase project and limits it to that project's resources. Project-scoped mode drops Supabase's account-management tools, such as listing and managing projects.
+
+The two combine:
+
+```
+https://mcp.supabase.com/mcp?project_ref=<project-ref>&read_only=true
+```
+
+Use a development project for testing rather than a production one. When working with production data, prefer project scoping and read-only access where possible. Add the parameters to the URL when you connect Supabase as a custom MCP server.
+
+The curated Supabase preset currently connects to the plain `https://mcp.supabase.com/mcp` URL. The parameters above can be used when configuring Supabase as a custom MCP server.
+
 ## Authentication Types
 
 | Auth Type | Config Fields |
