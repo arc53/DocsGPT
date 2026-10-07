@@ -17,7 +17,9 @@ import requests
 from docsgpt.security.safe_url import (
     ResponseTooLargeError,
     UnsafeUserUrlError,
+    _GuardedAsyncTransport,
     _PinnedHTTPSTransport,
+    guarded_async_client,
     pinned_fetch_bytes,
     pinned_httpx_client,
     pinned_post,
@@ -905,3 +907,134 @@ def test_pinned_fetch_bytes_truncate_still_refuses_private_addresses():
     with mock.patch("socket.getaddrinfo", return_value=_addrinfo("10.0.0.5")):
         with pytest.raises(UnsafeUserUrlError):
             pinned_fetch_bytes("http://intranet.example/", max_bytes=10, truncate=True)
+
+
+# guarded_async_client: per-request SSRF guard for async SDKs (MCP)
+
+
+def _capture_async_handle_request(monkeypatch) -> list[dict]:
+    """Record what the guarded transport hands to the base async transport."""
+
+    import httpx2
+
+    captured: list[dict] = []
+
+    async def fake_handle(self, request):
+        captured.append(
+            {
+                "url": request.url,
+                "sni": request.extensions.get("sni_hostname"),
+                "host_header": request.headers.get("host"),
+            }
+        )
+        return httpx2.Response(200, content=b"ok")
+
+    monkeypatch.setattr("httpx2.AsyncHTTPTransport.handle_async_request", fake_handle)
+    return captured
+
+
+def _fake_dns(monkeypatch, table: dict[str, list[list[str]]]) -> dict[str, int]:
+    """Serve ``table[host]`` answers in order (last one repeats); return lookup counts."""
+
+    calls: dict[str, int] = {}
+
+    def fake_getaddrinfo(host, *args, **kwargs):
+        answers = table[host]
+        n = calls.get(host, 0)
+        calls[host] = n + 1
+        return _addrinfo(*answers[min(n, len(answers) - 1)])
+
+    monkeypatch.setattr("socket.getaddrinfo", fake_getaddrinfo)
+    return calls
+
+
+def _get(client, *urls: str) -> list:
+    import asyncio
+
+    async def run():
+        async with client:
+            return [await client.get(u) for u in urls]
+
+    return asyncio.run(run())
+
+
+@pytest.mark.unit
+def test_guarded_async_client_dials_validated_ip_with_original_host(monkeypatch):
+    captured = _capture_async_handle_request(monkeypatch)
+    _fake_dns(monkeypatch, {"mcp.example.com": [["104.18.6.192"]]})
+
+    (response,) = _get(guarded_async_client(), "https://mcp.example.com/mcp")
+
+    assert captured[0]["url"].host == "104.18.6.192"
+    assert captured[0]["sni"] == "mcp.example.com"
+    assert captured[0]["host_header"] == "mcp.example.com"
+    # The caller's request is untouched, so redirect and relative-URL handling
+    # still see the hostname.
+    assert response.request.url.host == "mcp.example.com"
+
+
+@pytest.mark.unit
+def test_guarded_async_client_closes_dns_rebinding_window(monkeypatch):
+    captured = _capture_async_handle_request(monkeypatch)
+    calls = _fake_dns(monkeypatch, {"mcp.attacker.example": [["104.18.6.192"], ["127.0.0.1"]]})
+
+    _get(guarded_async_client(), "https://mcp.attacker.example/mcp", "https://mcp.attacker.example/mcp")
+
+    assert calls["mcp.attacker.example"] == 1
+    assert [c["url"].host for c in captured] == ["104.18.6.192", "104.18.6.192"]
+
+
+@pytest.mark.unit
+def test_guarded_async_client_refuses_private_aaaa_beside_public_a(monkeypatch):
+    # A client that prefers IPv6 would dial ::1 even though the A record is public.
+    captured = _capture_async_handle_request(monkeypatch)
+    _fake_dns(monkeypatch, {"mcp.attacker.example": [["104.18.6.192", "::1"]]})
+
+    with pytest.raises(UnsafeUserUrlError, match="blocked address ::1"):
+        _get(guarded_async_client(), "https://mcp.attacker.example/mcp")
+    assert captured == []
+
+
+@pytest.mark.unit
+def test_guarded_async_client_checks_every_host_it_is_sent_to(monkeypatch):
+    # OAuth discovery sends requests to hosts the MCP server names.
+    captured = _capture_async_handle_request(monkeypatch)
+    _fake_dns(
+        monkeypatch,
+        {"mcp.example.com": [["104.18.6.192"]], "auth.example.com": [["104.18.6.193"]]},
+    )
+
+    _get(guarded_async_client(), "https://mcp.example.com/mcp", "https://auth.example.com/token")
+    assert [c["url"].host for c in captured] == ["104.18.6.192", "104.18.6.193"]
+
+    with pytest.raises(UnsafeUserUrlError):
+        _get(guarded_async_client(), "http://169.254.169.254/latest/meta-data")
+    with pytest.raises(UnsafeUserUrlError):
+        _get(guarded_async_client(), "http://[::ffff:10.0.0.1]/")
+    assert len(captured) == 2
+
+
+@pytest.mark.unit
+def test_guarded_async_client_brackets_ipv6(monkeypatch):
+    captured = _capture_async_handle_request(monkeypatch)
+    _fake_dns(monkeypatch, {"mcp.example.com": [["2606:4700::6812:6c0"]]})
+
+    _get(guarded_async_client(), "https://mcp.example.com:8443/mcp")
+
+    assert captured[0]["url"].host == "2606:4700::6812:6c0"
+    assert captured[0]["url"].port == 8443
+    assert captured[0]["sni"] == "mcp.example.com"
+
+
+@pytest.mark.unit
+def test_guarded_async_client_follows_no_redirects_and_ignores_env_proxies(monkeypatch):
+    monkeypatch.setenv("HTTPS_PROXY", "http://10.0.0.1:3128")
+    client = guarded_async_client(headers={"X-Test": "1"})
+    try:
+        assert client.follow_redirects is False
+        assert client.headers["X-Test"] == "1"
+        assert isinstance(client._transport_for_url(client._merge_url("https://a.example/")), _GuardedAsyncTransport)
+    finally:
+        import asyncio
+
+        asyncio.run(client.aclose())
