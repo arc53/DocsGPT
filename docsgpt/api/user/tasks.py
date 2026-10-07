@@ -389,11 +389,24 @@ def store_archive_member(self, member_info, user, idempotency_key=None):
     return archive_member_worker(self, member_info, user)
 
 
-@celery.task(**DURABLE_TASK)
+@celery.task(
+    bind=True,
+    acks_late=True,
+    # Not DURABLE_TASK: agent runs have side effects; blind retry would double them.
+    autoretry_for=(),
+    max_retries=0,
+)
 @with_idempotency(task_name="process_agent_webhook")
 def process_agent_webhook(self, agent_id, payload, idempotency_key=None):
     resp = agent_webhook_worker(self, agent_id, payload)
     return resp
+
+
+# Soft limit ends the run with a "timeout" result; the hard limit is the backstop.
+from docsgpt.core.settings import settings as _webhook_settings  # noqa: E402
+
+process_agent_webhook.soft_time_limit = max(30, int(_webhook_settings.WEBHOOK_RUN_TIMEOUT))
+process_agent_webhook.time_limit = process_agent_webhook.soft_time_limit + 60
 
 
 # Seconds the hard (SIGKILL) limit trails the soft limit, giving the soft handler
