@@ -320,9 +320,13 @@ class TestReconnect:
                          body={}, args=[cid])
         assert resp.get_json()["authorization_url"] == "https://accounts.example/auth"
         state = fake_auth.get_authorization_url.call_args.kwargs["state"]
-        import base64
+        import hashlib
 
-        assert json.loads(base64.urlsafe_b64decode(state))["object_id"] == cid
+        flow = pg_conn.execute(
+            text("SELECT user_id, connection_id FROM connector_oauth_flows WHERE state_hash = :h"),
+            {"h": hashlib.sha256(state.encode()).hexdigest()},
+        ).one()
+        assert str(flow.connection_id) == cid
 
     def test_cannot_reconnect_someone_elses(self, app, pg_conn):
         from docsgpt.api.connector.connections import ConnectionReconnect

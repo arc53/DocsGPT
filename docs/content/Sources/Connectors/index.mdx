@@ -123,7 +123,12 @@ Custom MCP servers and the API Tool reach only hosts on the public internet: `lo
 
 OAuth connectors return to one callback, set by `CONNECTOR_REDIRECT_BASE_URI` (default `http://127.0.0.1:7091/api/connectors/callback`). Register it with each provider exactly as set, without query parameters. MCP servers use `MCP_OAUTH_REDIRECT_URI`, which is derived from the same base when unset. Admin > Connectors shows both values with copy buttons.
 
-If the frontend runs on a different origin from the API, list it in `CONNECTOR_ALLOWED_ORIGINS` so the sign-in pop-up can hand the result back.
+A sign-in finishes in the app, on its `/connectors/callback` page, which sends the provider's answer to the API with the signed-in user's own login. Only the user who started a sign-in can finish it. The callback can be either of:
+
+- **The API callback**, `<API origin>/api/connectors/callback` (the default). It forwards the browser to the app page the sign-in started from.
+- **The app page itself**, `<app origin>/connectors/callback`. The browser goes there directly. If the app is on another host than the API, also set `MCP_OAUTH_REDIRECT_URI`, which is otherwise derived from this host.
+
+Sign-ins start only from allowed app origins, all taken from configuration: the origin of `CONNECTOR_REDIRECT_BASE_URI`, `OIDC_FRONTEND_URL`, `localhost:5173` in local development, and those listed in `CONNECTOR_ALLOWED_ORIGINS`. The address a request was sent to never counts. If the frontend runs on another origin, or users reach DocsGPT through a second host name, list it in `CONNECTOR_ALLOWED_ORIGINS`; otherwise starting a sign-in fails with `origin_not_allowed`.
 
 ### Google Drive
 

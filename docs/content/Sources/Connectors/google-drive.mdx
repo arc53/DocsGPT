@@ -1,7 +1,7 @@
 ---
 title: Google Drive Connector
 description: Connect your Google Drive as an external knowledge base to upload and process files directly from your Google Drive account.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-07
 ---
 
 import { Callout } from 'nextra/components'
@@ -57,7 +57,7 @@ VITE_GOOGLE_PICKER_API_KEY=your-google-api-key
 | `GOOGLE_CLIENT_SECRET` | OAuth Client Secret from GCP Credentials | Yes |
 | `VITE_GOOGLE_CLIENT_ID` | Same Client ID, used by the frontend for Google's file picker | No |
 | `VITE_GOOGLE_PICKER_API_KEY` | API key (**APIs & Services** > **Credentials** > **Create Credentials** > **API key**) passed to Google's file picker as its developer key | No |
-| `CONNECTOR_ALLOWED_ORIGINS` | Comma-separated frontend origins allowed to receive the sign-in result, e.g. `https://docsgpt.example.com`. Not needed when the frontend shares the API origin, or in local dev when the callback is on `localhost`/`127.0.0.1` and the frontend runs on port 5173 | When the frontend is on its own origin |
+| `CONNECTOR_ALLOWED_ORIGINS` | Comma-separated frontend origins a sign-in may start from and return to, e.g. `https://docsgpt.example.com`. Not needed when the frontend is on the origin of `CONNECTOR_REDIRECT_BASE_URI` or `OIDC_FRONTEND_URL`, or in local dev when the callback is on `localhost`/`127.0.0.1` and the frontend runs on port 5173 | When the frontend is on its own origin |
 
 <Callout type="warning" emoji="⚠️">
 If you set `VITE_GOOGLE_CLIENT_ID`, use the same Client ID as the backend. Publish the OAuth consent screen (or use an internal Workspace app): apps left in Testing get refresh tokens that expire after seven days, which stops background sync.
@@ -77,7 +77,7 @@ Restart your application, then go to **Settings > Connectors** and pick **Google
 
 - **Google Drive is not offered** — `GOOGLE_CLIENT_ID` or `GOOGLE_CLIENT_SECRET` is missing from the backend `.env`, so the connector stays off. Admin > Connectors lists which one.
 - **Authentication failed** — Check that the redirect URI matches exactly and equals `CONNECTOR_REDIRECT_BASE_URI`, with no query parameters. Ensure the Google Drive API is enabled.
-- **Sign-in popup closes but the account never connects** — The frontend origin is not allowed to receive the result. Add it to `CONNECTOR_ALLOWED_ORIGINS` in the backend `.env`.
+- **Sign-in fails with "not an allowed origin"** — The frontend runs on an origin the sign-in may not return to. Add it to `CONNECTOR_ALLOWED_ORIGINS` in the backend `.env`.
 - **Permission denied** — Verify the OAuth consent screen is configured and the user has access to the target files.
 - **Files not processing** — Check backend logs and verify that backend environment variables are correctly set.
 

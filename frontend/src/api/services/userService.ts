@@ -332,6 +332,11 @@ const userService = {
       endpoints.USER.CONNECTOR_AUTH(provider, connectionId, install),
       token,
     ),
+  completeConnectorAuth: (
+    data: { code: string; state: string },
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.post(endpoints.USER.CONNECTOR_AUTH_COMPLETE, data, token),
   getConnectorFiles: (
     data: any,
     token: string | null,

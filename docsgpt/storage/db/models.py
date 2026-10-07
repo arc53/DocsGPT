@@ -681,6 +681,27 @@ connector_policies_table = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
+# A connector OAuth sign-in in progress, bound to the user who started it
+# (migration 0052). The app's callback page uses up ``state_hash`` with the
+# starter's login; the API callback forwards to ``return_origin``.
+connector_oauth_flows_table = Table(
+    "connector_oauth_flows",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    Column("provider", Text, nullable=False),
+    Column(
+        "connection_id", UUID(as_uuid=True), ForeignKey("connector_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("state_hash", Text, nullable=False, unique=True),
+    Column("return_origin", Text, nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+Index("connector_oauth_flows_expires_idx", connector_oauth_flows_table.c.expires_at)
+
 
 # --- Conversations, messages, workflows -------------------------------------
 

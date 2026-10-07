@@ -1,7 +1,7 @@
 ---
 title: Upgrading DocsGPT
 description: Upgrade DocsGPT installed with the installer, pip, Docker Compose or Kubernetes, and what changes in each release.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-07
 ---
 
 import { Callout } from 'nextra/components'
@@ -189,6 +189,14 @@ Other changes:
 - `VITE_GOOGLE_CLIENT_ID` is optional now; without it, members pick Drive files in DocsGPT's own picker.
 - Synced sources run as their connection, without a browser session. Keep Celery beat running for scheduled syncs.
 - To undo only this change, for example on a `develop` build that already had the migrations before it, downgrade to `0039_resource_sponsors`, the revision just before `0040_connections`, the way [Rollback](#rollback) describes. Alembic undoes `0043` to `0041` first, then decrypts the tokens and gives each tool its key again. This does not take you back to 0.21.0, which ends at `0031_token_usage_cache_tokens`: going that far drops more data, so restore your pre-upgrade backup instead.
+
+#### Connector sign-ins finish in the app
+
+Google Drive, SharePoint, Confluence and GitHub sign-ins now end on the app's `/connectors/callback` page, which finishes them with the signed-in user's own login. The API callback forwards there, so the redirect URIs registered with providers keep working. Migration `0052_connector_oauth_flows` runs on startup.
+
+- If the frontend runs on an origin other than that of `CONNECTOR_REDIRECT_BASE_URI` or `OIDC_FRONTEND_URL`, or users reach DocsGPT through a second host name, list it in `CONNECTOR_ALLOWED_ORIGINS`. Without it, starting a sign-in fails with `origin_not_allowed`.
+- Sign-ins in progress during the upgrade fail; start them again. Reload open DocsGPT tabs so they use the new sign-in page.
+- Optional: register `<app origin>/connectors/callback` as the redirect URI instead and set `CONNECTOR_REDIRECT_BASE_URI` to it, so the browser never passes through the API. See [Redirect URIs](/Sources/Connectors#redirect-uris).
 
 #### Checkout Compose files: bound to this machine
 

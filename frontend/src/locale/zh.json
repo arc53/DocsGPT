@@ -1825,6 +1825,11 @@
           "connectedAs": "已连接为 {{email}}",
           "disconnect": "断开连接"
         },
+        "callback": {
+          "failed": "无法完成登录。请在 DocsGPT 中重新开始。",
+          "closeWindow": "你可以关闭此窗口。",
+          "backToApp": "返回 DocsGPT"
+        },
         "googleDrive": {
           "connect": "连接到 Google Drive",
           "validateFailed": "无法验证登录。请重试。",
