@@ -105,13 +105,32 @@ def test_sandbox_carries_the_libraries_models_reach_for():
     } <= imports
 
 
-def test_pillow_stays_below_twelve_so_pdfplumber_is_pinned_to_0_11_9():
-    """pdfplumber 0.11.10 needs Pillow >= 12.2; the image keeps Pillow 11.3.0."""
+def _pinned_version(name: str) -> tuple:
+    """Return the pinned version of ``name`` in the sandbox manifest as an int tuple."""
+    for spec in manifest.pip_specs():
+        if manifest.dist_name(spec).lower() == name.lower():
+            return tuple(int(part) for part in spec.split("==", 1)[1].split("."))
+    raise AssertionError(f"{name} is not pinned in the manifest")
+
+
+def test_pdfplumber_pins_match_its_requirements():
+    """pdfplumber 0.11.10 pins pdfminer.six 20260107 and needs Pillow >= 12.2 and pypdfium2 >= 5.9."""
     specs = manifest.pip_specs()
-    assert "pillow==11.3.0" in specs
-    assert "pdfplumber==0.11.9" in specs
-    assert "pdfminer.six==20251230" in specs
-    assert "pypdfium2==5.13.0" in specs
+    assert "pdfplumber==0.11.10" in specs
+    assert "pdfminer.six==20260107" in specs
+    assert _pinned_version("pillow") >= (12, 2)
+    assert _pinned_version("pypdfium2") >= (5, 9)
+
+
+def test_pillow_and_pypdf_are_past_their_known_vulnerabilities():
+    """Pillow < 12.3.0 and pypdf < 6.19.0 carry published CVEs."""
+    assert _pinned_version("pillow") >= (12, 3, 0)
+    assert _pinned_version("pypdf") >= (6, 19, 0)
+
+
+def test_pandas_stays_on_the_2_x_series():
+    """pandas 3 changes copy and string-dtype semantics that model-written code relies on."""
+    assert _pinned_version("pandas")[0] == 2
 
 
 def test_agpl_pymupdf_is_never_installed():
