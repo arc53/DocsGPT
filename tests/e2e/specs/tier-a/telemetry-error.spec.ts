@@ -187,38 +187,38 @@ test.describe('tier-a · error telemetry', () => {
     }
   });
 
-  test('silent-break: bad /stream request with invalid prompt_id — route rejects 400 AND telemetry pipeline stays consistent', async ({
+  test('silent-break: malformed /stream request body — route rejects 400 AND telemetry pipeline stays consistent', async ({
     browser,
   }) => {
-    // An invalid `prompt_id` (not a preset, not a UUID) makes `get_prompt`
-    // raise ValueError from inside `create_agent`. That's caught by
-    // `except ValueError` in stream.py and translated to a 400 SSE
-    // response — *before* `agent.gen` is reached. The telemetry decorator
-    // therefore does not fire, and the user_logs insert (which sits at
-    // the very tail of `complete_stream`) also does not fire. We assert
-    // exactly that to pin the contract: route-level validation errors
-    // are silent on the telemetry pipes, so if someone later wires
+    // A `history` that is not JSON makes the stream processor raise a
+    // ValueError (json.JSONDecodeError) while it reads the request. That's
+    // caught by `except ValueError` in routes/stream.py and translated to a
+    // 400 SSE response — *before* `agent.gen` is reached. The telemetry
+    // decorator therefore does not fire, and the user_logs insert (which
+    // sits at the very tail of `complete_stream`) also does not fire. We
+    // assert exactly that to pin the contract: route-level validation
+    // errors are silent on the telemetry pipes, so if someone later wires
     // stack_logs into the route handler itself, these numbers change and
     // this test will catch the behaviour shift.
+    //
+    // (This used to send an unknown `prompt_id`. An unknown, deleted or
+    // foreign prompt now falls back to the default prompt instead of
+    // failing the turn; the next test pins that.)
     const { context, sub, token } = await newUserContext(browser);
     const api = await authedRequest(playwright, token);
     try {
-      // Deliberate bad input: `prompt_id` that is neither a preset
-      // ("default"/"creative"/"strict") nor a UUID/legacy ObjectId. The
-      // repository lookup returns None and `get_prompt` raises ValueError.
       const res = await api.post('/stream', {
         data: {
-          question: 'telemetry-bad-prompt-question',
-          history: '[]',
-          prompt_id: 'definitely-not-a-real-prompt-id-42',
+          question: 'telemetry-bad-history-question',
+          history: 'not-json',
         },
       });
       // 400 with SSE body containing the route's canned "Malformed
       // request body" error frame.
-      expect(res.status()).toBeGreaterThanOrEqual(400);
-      expect(res.status()).toBeLessThan(500);
+      expect(res.status()).toBe(400);
       const body = await res.text();
       expect(body).toContain('"type": "error"');
+      expect(body).toContain('Malformed request body');
 
       // Route-level ValueError path does not reach @log_activity nor the
       // user_logs insert — both tables stay empty for this user.
@@ -252,6 +252,37 @@ test.describe('tier-a · error telemetry', () => {
           params: [sub],
         }),
       ).toBeGreaterThanOrEqual(1);
+      expect(
+        await countRows('user_logs', {
+          sql: "user_id = $1 AND endpoint = 'stream_answer'",
+          params: [sub],
+        }),
+      ).toBeGreaterThanOrEqual(1);
+    } finally {
+      await api.dispose();
+      await context.close();
+    }
+  });
+
+  test('unknown prompt_id falls back to the default prompt — the turn answers and is logged', async ({
+    browser,
+  }) => {
+    // authorized_prompt_id (services/stream_processor.py): a prompt the
+    // caller can't use — unknown, deleted or someone else's — renders as
+    // the default prompt rather than failing the turn.
+    const { context, sub, token } = await newUserContext(browser);
+    const api = await authedRequest(playwright, token);
+    try {
+      const res = await streamOnce(api, {
+        question: 'telemetry-unknown-prompt-question',
+        history: '[]',
+        prompt_id: 'definitely-not-a-real-prompt-id-42',
+      });
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('"type": "answer"');
+      expect(res.text).toContain('"type": "end"');
+      expect(res.text).not.toContain('"type": "error"');
+
       expect(
         await countRows('user_logs', {
           sql: "user_id = $1 AND endpoint = 'stream_answer'",
