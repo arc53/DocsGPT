@@ -1,7 +1,7 @@
 ---
 title: App Configuration
 description: Configure your DocsGPT application by understanding the basic settings.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-06
 ---
 
 import { Callout } from 'nextra/components'
@@ -542,6 +542,8 @@ See [Embeddings](/Models/embeddings) for full guidance.
 | `EMBEDDINGS_THREADS` | unset (Docker image: `4`) | Threads one local FastEmbed/onnxruntime session may use. onnxruntime otherwise sizes its pool to the host's core count, which a CPU-limited container still reports, so the image pins it like `OMP_NUM_THREADS`. Raise it on a large dedicated worker. |
 | `EMBEDDINGS_KEY` | unset | Optional bearer token for the remote embeddings server. |
 | `EMBEDDINGS_MAX_INPUT_TOKENS` | unset | Truncate each remote embedding input to N tokens (guards servers that reject oversized inputs). |
+| `EMBEDDINGS_LOCAL_MAX_TOKENS` | unset | Hard ceiling, in tokens, on every input a local FastEmbed model embeds, documents included; the overflow is dropped. Unset keeps the model's own maximum (32,768 for granite). |
+| `EMBEDDINGS_MAX_QUERY_TOKENS` | `512` | Clip each search query to N tokens before it is embedded, for every embedder; `0` turns it off. Documents are not clipped. |
 | `EMBEDDINGS_DELEGATE_TO_WORKER` | `true` | Embed queries on the Celery worker instead of loading a model in the API. Requires a worker consuming `EMBEDDINGS_QUEUE`; set `false` to run the API standalone. Ignored when `EMBEDDINGS_BASE_URL` is set. |
 | `EMBEDDINGS_QUEUE` | `embeddings` | Queue the query-embedding task is routed to. A worker started with an explicit `-Q` must list it. |
 | `EMBEDDINGS_DELEGATE_TIMEOUT` | `60` | Seconds the API waits for the worker's vector before failing the search. |
