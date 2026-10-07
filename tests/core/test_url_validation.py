@@ -196,6 +196,21 @@ class TestValidateUrl:
         assert result == "http://127.0.0.1"
 
 
+class TestValidateUrlParserDifferential:
+    """``urlparse`` and urllib3 must not disagree on the host (GHSA-gccc-rwf6-qrpp)."""
+
+    @pytest.mark.parametrize("url", [
+        "http://127.0.0.1\\@1.1.1.1",
+        "http://127.0.0.1:6666\\\\\\@1.1.1.1",
+        "127.0.0.1\\@1.1.1.1/x",
+        "http://127.0.0.1\t@1.1.1.1/",
+    ])
+    def test_blocks_urls_parsers_disagree_on(self, url):
+        with patch("docsgpt.core.url_validation.resolve_hostname", return_value="1.1.1.1"):
+            with pytest.raises(SSRFError):
+                validate_url(url)
+
+
 class TestValidateUrlSafe:
     """Tests for validate_url_safe non-throwing function."""
 

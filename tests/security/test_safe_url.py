@@ -21,6 +21,8 @@ from docsgpt.security.safe_url import (
     _PinnedHTTPSTransport,
     guarded_async_client,
     pinned_fetch_bytes,
+    pinned_request,
+    reject_ambiguous_url,
     pinned_httpx_client,
     pinned_post,
     validate_user_base_url,
@@ -395,9 +397,22 @@ def test_pinned_post_preserves_url_userinfo(monkeypatch):
             allow_redirects=False,
         )
     prepared = captured["prepared"]
-    assert prepared.url == "https://user:pass@93.184.216.34:8443/v1/test"
+    # Credentials travel as a header, never as raw userinfo in the dialed URL.
+    assert prepared.url == "https://93.184.216.34:8443/v1/test"
     assert prepared.headers["Host"] == "api.example.com:8443"
     assert prepared.headers["Authorization"] == "Basic dXNlcjpwYXNz"
+
+
+@pytest.mark.unit
+def test_pinned_post_decodes_percent_encoded_userinfo(monkeypatch):
+    import base64
+
+    captured = _capture_send(monkeypatch)
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("93.184.216.34")):
+        pinned_post("https://us%40er:p%3Ass@api.example.com/v1", json={}, timeout=5)
+    prepared = captured["prepared"]
+    assert prepared.url == "https://93.184.216.34/v1"
+    assert prepared.headers["Authorization"] == "Basic " + base64.b64encode(b"us@er:p:ss").decode()
 
 
 @pytest.mark.unit
@@ -1068,3 +1083,82 @@ def test_guarded_async_client_keeps_connections_apart_per_hostname(monkeypatch):
     (mcp_first, auth, mcp_again) = pools
     assert mcp_first[1] != auth[1]
     assert mcp_first[1] == mcp_again[1]
+
+
+# Parser-differential URLs (GHSA-gccc-rwf6-qrpp): urlsplit reads the host after
+# the backslash, urllib3 (requests, boto) reads the one before it.
+
+
+@pytest.fixture
+def loopback_listener():
+    """An HTTP server on 127.0.0.1 that records every request it gets."""
+    import http.server
+    import threading
+
+    hits: list[str] = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            hits.append(self.path)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"internal")
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server.server_address[1], hits
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("template", [
+    "http://127.0.0.1:{port}\\@1.1.1.1/",
+    "http://127.0.0.1:{port}\\\\\\@1.1.1.1/",
+    "http://127.0.0.1:{port}\\@1.1.1.1:80/x",
+])
+def test_pinned_fetchers_refuse_a_backslash_host_split(template, loopback_listener):
+    port, hits = loopback_listener
+    url = template.format(port=port)
+
+    with pytest.raises(UnsafeUserUrlError):
+        pinned_fetch_bytes(url, max_bytes=100, timeout=2)
+    with pytest.raises(UnsafeUserUrlError):
+        pinned_request("GET", url, timeout=2)
+    assert hits == []
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("url", [
+    "http://127.0.0.1\\@1.1.1.1/",
+    "http://127.0.0.1:80\\\\@1.1.1.1",
+    "http://1.1.1.1\\.example.com/",
+    "http://127.0.0.1\t@1.1.1.1/",
+    "http://127.0.0.1\n@1.1.1.1/",
+    "http://1.1.1.1/\r\nX-Injected: 1",
+    "http://exa mple.com/",
+])
+def test_reject_ambiguous_url_refuses(url):
+    with pytest.raises(UnsafeUserUrlError):
+        reject_ambiguous_url(url)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("url", [
+    "https://api.example.com/v1?q=a\\b",
+    "https://api.example.com/path\\segment",
+    "https://user:p@ss@api.example.com/",
+    "https://us%40er:p%3Ass@api.example.com/",
+    "https://bücher.example/x",
+    "http://[2606:4700::1]:8080/",
+    "HTTPS://API.Example.COM/",
+    "https://api.example.com/search?q=hello world",
+])
+def test_reject_ambiguous_url_accepts(url):
+    assert reject_ambiguous_url(url) is None
