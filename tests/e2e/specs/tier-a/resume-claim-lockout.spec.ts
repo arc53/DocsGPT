@@ -69,7 +69,7 @@ async function seedAbandonedClaim(conversationId: string, userId: string): Promi
   );
 }
 
-/** Byte length of the Flask log, or 0 when it is not present. */
+/** Byte length of the API log, or 0 when it is not present. */
 async function readLogSize(path: string): Promise<number> {
   try {
     return (await stat(path)).size;
@@ -78,7 +78,7 @@ async function readLogSize(path: string): Promise<number> {
   }
 }
 
-/** Everything appended to the Flask log since `offset`. */
+/** Everything appended to the API log since `offset`. */
 async function readLogSince(path: string, offset: number): Promise<string> {
   const handle = await open(path, 'r');
   try {
@@ -144,7 +144,7 @@ test.describe('duplicate tool_actions resume', () => {
   }) => {
     const { sub, token } = await newUserContext(browser);
     const api = await authedRequest(playwright, token);
-    const logPath = process.env.E2E_FLASK_LOG ?? '/tmp/docsgpt-e2e/flask.log';
+    const logPath = process.env.E2E_API_LOG ?? '/tmp/docsgpt-e2e/api.log';
     const before = await readLogSize(logPath);
 
     try {
