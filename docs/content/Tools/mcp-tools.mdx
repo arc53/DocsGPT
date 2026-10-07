@@ -1,7 +1,7 @@
 ---
 title: MCP Tool Integration
 description: Connect external tools to DocsGPT agents using the Model Context Protocol (MCP) standard.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-05
 ---
 
 import { Callout } from 'nextra/components'
@@ -36,6 +36,23 @@ In your agent configuration, enable the MCP tools you want the agent to use.
 </Steps>
 
 Presets need no URL or form: they sign in with OAuth in one step. Admins can turn presets off one by one, and turn off custom MCP servers, in **Admin > Connectors**. See [Connectors](/Sources/Connectors).
+
+### Supabase
+
+Supabase's hosted MCP server accepts optional query parameters that narrow what it can reach:
+
+- `read_only=true` runs SQL with read-only database access.
+- `project_ref=<project-ref>` scopes the server to a single Supabase project and limits it to that project's resources. Project-scoped mode drops Supabase's account-management tools, such as listing and managing projects.
+
+The two combine:
+
+```
+https://mcp.supabase.com/mcp?project_ref=<project-ref>&read_only=true
+```
+
+Use a development project for testing rather than a production one. When working with production data, prefer project scoping and read-only access where possible. Add the parameters to the URL when you connect Supabase as a custom MCP server.
+
+The curated Supabase preset currently connects to the plain `https://mcp.supabase.com/mcp` URL. The parameters above can be used when configuring Supabase as a custom MCP server.
 
 ## Authentication Types
 
