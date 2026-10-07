@@ -17,7 +17,7 @@ Run:
 import time
 
 import pytest
-from jose import jwt
+import jwt
 
 
 # ---------------------------------------------------------------------------

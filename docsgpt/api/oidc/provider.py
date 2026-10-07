@@ -6,9 +6,8 @@ import logging
 import threading
 import time
 
+import jwt
 import requests
-from jose import jwt
-from jose.exceptions import ExpiredSignatureError, JWTClaimsError
 
 from docsgpt.core.settings import settings
 
@@ -26,6 +25,19 @@ ALLOWED_ID_TOKEN_ALGS = [
     "ES256", "ES384", "ES512",
     "PS256", "PS384", "PS512",
 ]
+
+# A token that reached these failed on its claims, not its signature: refetching
+# the JWKS cannot help.
+_CLAIM_ERRORS = (
+    jwt.ExpiredSignatureError,
+    jwt.ImmatureSignatureError,
+    jwt.InvalidAudienceError,
+    jwt.InvalidIssuerError,
+    jwt.InvalidIssuedAtError,
+    jwt.exceptions.InvalidSubjectError,
+    jwt.exceptions.InvalidJTIError,
+    jwt.MissingRequiredClaimError,
+)
 
 _lock = threading.Lock()
 _cache: dict = {
@@ -127,26 +139,44 @@ def _resolve_signing_key(token: str) -> dict:
     return key
 
 
-def _decode_verified(token: str, options: dict) -> dict:
+def _decode_verified(token: str, require: list[str]) -> dict:
     """Decode ``token`` against the JWKS, retrying once if the IdP re-keyed.
 
     A signature failure can mean the IdP replaced its signing key while
     reusing the same kid — the kid-miss refetch never triggers then, so
     retry once against a freshly fetched JWKS (rate-limited in get_jwks).
+
+    Args:
+        token: The compact JWT from the IdP.
+        require: Claims the token must carry.
+
+    Returns:
+        The verified claims.
+
+    Raises:
+        OIDCError: The token is malformed, unsigned by the IdP, or fails a claim check.
     """
+
+    def decode(jwk: dict) -> dict:
+        # The JWK becomes a cryptography public key, which the HMAC algorithms
+        # refuse; the header alg was already checked against the asymmetric list.
+        return jwt.decode(
+            token,
+            jwt.PyJWK(jwk).key,
+            algorithms=ALLOWED_ID_TOKEN_ALGS,
+            audience=settings.OIDC_CLIENT_ID,
+            # Compare against the discovery document's own issuer value —
+            # some IdPs (Authentik) use a trailing slash the operator may
+            # not have typed into OIDC_ISSUER.
+            issuer=get_discovery()["issuer"],
+            leeway=LEEWAY_SECONDS,
+            options={"require": require},
+        )
+
     key = _resolve_signing_key(token)
-    decode_kwargs = {
-        "algorithms": ALLOWED_ID_TOKEN_ALGS,
-        "audience": settings.OIDC_CLIENT_ID,
-        # Compare against the discovery document's own issuer value —
-        # some IdPs (Authentik) use a trailing slash the operator may
-        # not have typed into OIDC_ISSUER.
-        "issuer": get_discovery()["issuer"],
-        "options": options,
-    }
     try:
-        return jwt.decode(token, key, **decode_kwargs)
-    except (ExpiredSignatureError, JWTClaimsError) as exc:
+        return decode(key)
+    except _CLAIM_ERRORS as exc:
         raise OIDCError(f"token validation failed: {exc}") from exc
     except Exception:
         get_jwks(force=True)
@@ -154,24 +184,14 @@ def _decode_verified(token: str, options: dict) -> dict:
         if key is None:
             raise OIDCError("No matching key in IdP JWKS")
         try:
-            return jwt.decode(token, key, **decode_kwargs)
+            return decode(key)
         except Exception as exc:
             raise OIDCError(f"token validation failed: {exc}") from exc
 
 
 def validate_id_token(id_token: str, nonce: str | None = None) -> dict:
     """Verify the ID token's signature, iss, aud, exp, and (when given) nonce; return claims."""
-    claims = _decode_verified(
-        id_token,
-        options={
-            "verify_at_hash": False,
-            "leeway": LEEWAY_SECONDS,
-            "require_iss": True,
-            "require_aud": True,
-            "require_exp": True,
-            "require_sub": True,
-        },
-    )
+    claims = _decode_verified(id_token, require=["iss", "aud", "exp", "sub"])
     # Refresh-issued id_tokens carry no nonce; callers pass None to skip the check.
     if nonce is not None and claims.get("nonce") != nonce:
         raise OIDCError("nonce mismatch")
@@ -180,22 +200,11 @@ def validate_id_token(id_token: str, nonce: str | None = None) -> dict:
 
 def validate_logout_token(logout_token: str) -> dict:
     """Verify a back-channel logout token per OIDC Back-Channel Logout 1.0; return claims."""
-    claims = _decode_verified(
-        logout_token,
-        options={
-            "verify_at_hash": False,
-            "leeway": LEEWAY_SECONDS,
-            "require_iss": True,
-            "require_aud": True,
-            "require_iat": True,
-            # jti is REQUIRED by OIDC Back-Channel Logout 1.0 and underpins
-            # replay protection — reject tokens that omit it. exp is not a
-            # required logout-token claim, so it stays optional (the caller
-            # bounds replay via iat freshness instead).
-            "require_jti": True,
-            "require_exp": False,
-        },
-    )
+    # jti is REQUIRED by OIDC Back-Channel Logout 1.0 and underpins replay
+    # protection — reject tokens that omit it. exp is not a required
+    # logout-token claim, so it stays optional (checked only when present; the
+    # caller bounds replay via iat freshness instead).
+    claims = _decode_verified(logout_token, require=["iss", "aud", "iat", "jti"])
     events = claims.get("events")
     if not isinstance(events, dict) or BACKCHANNEL_LOGOUT_EVENT not in events:
         raise OIDCError("logout_token missing the backchannel-logout event")

@@ -1,7 +1,7 @@
 ---
 title: Artifacts and Code Execution
 description: Generate editable documents, run sandboxed code, and read files with the DocsGPT artifact, code executor, and read document tools.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-07
 ---
 
 import { Callout } from 'nextra/components';
@@ -184,7 +184,7 @@ Daytona's default image is plain Python: presentation, document, spreadsheet and
 # Reads DAYTONA_API_KEY / DAYTONA_API_URL / DAYTONA_TARGET from your environment:
 python scripts/build_daytona_snapshot.py
 # then set in your environment:
-#   DAYTONA_SNAPSHOT=docsgpt-sandbox-py312-v2
+#   DAYTONA_SNAPSHOT=docsgpt-sandbox-py312-v3
 ```
 
 Sandboxes made from the snapshot get 2 vCPUs, 2 GiB of memory and 6 GiB of disk, double Daytona's default, because LibreOffice and Chromium need the room. Change them with `--cpu`, `--memory` and `--disk`. `--smoke` runs the image's smoke test in a sandbox from the new snapshot, and `--dockerfile` prints the image definition without calling Daytona.

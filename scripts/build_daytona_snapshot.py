@@ -28,7 +28,7 @@ Usage::
 
 Then set in .env::
 
-    DAYTONA_SNAPSHOT=docsgpt-sandbox-py312-v2
+    DAYTONA_SNAPSHOT=docsgpt-sandbox-py312-v3
 
 A snapshot's contents and resources are fixed once built, so a change to the
 manifest means a new name: bump the ``-vN`` suffix of ``DEFAULT_NAME``, build
@@ -48,7 +48,7 @@ from typing import Any, List, Optional
 
 from docsgpt.sandbox import manifest
 
-DEFAULT_NAME = "docsgpt-sandbox-py312-v2"
+DEFAULT_NAME = "docsgpt-sandbox-py312-v3"
 DEFAULT_PYTHON = manifest.PYTHON_SERIES
 DEFAULT_CPU = 2
 DEFAULT_MEMORY_GIB = 2

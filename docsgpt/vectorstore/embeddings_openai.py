@@ -77,8 +77,11 @@ class OpenAIEmbeddings:
         return vectors
 
     def embed_query(self, query: str) -> List[float]:
-        """Embed a single query string."""
-        return self._embed([query])[0]
+        """Embed a single query string, clipped to ``EMBEDDINGS_MAX_QUERY_TOKENS``."""
+        from docsgpt.parser.tokenization import TiktokenCounter
+        from docsgpt.vectorstore.base import clip_query
+
+        return self._embed([clip_query(query, TiktokenCounter)])[0]
 
     def embed_documents(self, documents: List[str]) -> List[List[float]]:
         """Embed a list of documents."""

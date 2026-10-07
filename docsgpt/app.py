@@ -3,8 +3,8 @@ import platform
 import uuid
 
 import dotenv
+import jwt
 from flask import Flask, Response, jsonify, redirect, request
-from jose import jwt
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from docsgpt.auth import handle_auth

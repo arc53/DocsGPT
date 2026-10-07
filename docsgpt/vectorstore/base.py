@@ -2,7 +2,7 @@ import hashlib
 import logging
 import threading
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import Any, Callable, List, Optional
 
 import requests
 
@@ -31,6 +31,39 @@ def _key_fingerprint(api_key: Optional[str]) -> str:
     if not api_key:
         return "nokey"
     return hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
+
+
+def clip_query(text: str, counter_for: Callable[[], Any]) -> str:
+    """Clip a search query to ``EMBEDDINGS_MAX_QUERY_TOKENS``.
+
+    Every embedder's ``embed_query`` runs its input through here, so each
+    query path -- chat retrieval, ``/api/search``, the search tools, GraphRAG
+    -- is bounded whatever the embedder. Documents are not: ``embed_documents``
+    never calls this.
+
+    Args:
+        text: The query.
+        counter_for: Returns the token counter of the embedding model. Called
+            only for a query that might be over the limit, so a short query
+            never loads a tokenizer.
+
+    Returns:
+        str: ``text``, or its leading part that fits the limit. A limit of 0
+        leaves it unchanged.
+    """
+    limit = settings.EMBEDDINGS_MAX_QUERY_TOKENS
+    if not limit or not isinstance(text, str):
+        return text
+    # Every token covers at least one byte, so a query no longer in bytes
+    # than the limit cannot exceed it.
+    if len(text.encode("utf-8")) <= limit:
+        return text
+    counter = counter_for()
+    if counter.count(text) <= limit:
+        return text
+    logging.info("Clipping a %d-character search query to %d tokens", len(text), limit)
+    pieces = counter.split(text, limit)
+    return pieces[0] if pieces else text
 
 
 def _embeddings_name_is_explicit() -> bool:
@@ -191,8 +224,8 @@ class RemoteEmbeddings:
             )
 
     def embed_query(self, query: str):
-        """Embed a single query string."""
-        embeddings_list = self._embed(query)
+        """Embed a single query string, clipped to ``EMBEDDINGS_MAX_QUERY_TOKENS``."""
+        embeddings_list = self._embed(clip_query(query, self._token_counter))
         if (
             isinstance(embeddings_list, list)
             and len(embeddings_list) == 1

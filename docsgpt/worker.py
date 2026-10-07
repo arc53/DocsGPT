@@ -3411,6 +3411,7 @@ def agent_webhook_worker(self, agent_id, payload):
         outcome = run_agent_headless(
             agent_config,
             input_data,
+            retrieval_query=_webhook_retrieval_query(payload),
             tool_allowlist=_webhook_tool_allowlist(agent_config),
             endpoint="webhook",
             request_id=getattr(getattr(self, "request", None), "id", None),
@@ -3442,6 +3443,59 @@ def agent_webhook_worker(self, agent_id, payload):
         return {"status": "success", "result": result}
     finally:
         self.update_state(state="PROGRESS", meta={"current": 100})
+
+
+# Fields a person writes, in the order they best say what an event is about.
+# ``question`` leads: it is what the webhook docs' own examples send.
+_WEBHOOK_QUERY_KEYS = (
+    "question", "query", "prompt",
+    "title", "subject", "summary", "name", "description", "body", "text", "message", "content",
+)
+_WEBHOOK_QUERY_MAX_CHARS = 2000
+# How deep into the payload, and how many items of each list, to look.
+_WEBHOOK_QUERY_MAX_DEPTH = 3
+_WEBHOOK_QUERY_MAX_ITEMS = 5
+
+
+def _webhook_retrieval_query(payload: Any) -> str:
+    """What a webhook run searches its sources with: the human-written fields, bounded.
+
+    The agent still gets the whole payload as its input; only the search is
+    narrowed. Searching with the serialized payload filled the query vector
+    with keys, ids, URLs and diffs, and a PR event's 20-35k characters
+    OOM-killed a long-context embedder.
+
+    Args:
+        payload: The webhook's parsed body (or query arguments).
+
+    Returns:
+        str: Distinct text fields (``title``, ``body``, ``message``, ...) from
+        the top three levels, one per line; the serialized payload when there
+        are none. At most ``_WEBHOOK_QUERY_MAX_CHARS`` characters either way.
+    """
+    found: List[str] = []
+
+    def collected() -> int:
+        return sum(len(text) for text in found)
+
+    def walk(node: Any, depth: int) -> None:
+        if depth > _WEBHOOK_QUERY_MAX_DEPTH or collected() >= _WEBHOOK_QUERY_MAX_CHARS:
+            return
+        if isinstance(node, dict):
+            for key in _WEBHOOK_QUERY_KEYS:
+                value = node.get(key)
+                if isinstance(value, str) and value.strip():
+                    found.append(value.strip())
+            for value in node.values():
+                if isinstance(value, (dict, list)):
+                    walk(value, depth + 1)
+        elif isinstance(node, list):
+            for item in node[:_WEBHOOK_QUERY_MAX_ITEMS]:
+                walk(item, depth + 1)
+
+    walk(payload, 0)
+    query = "\n".join(dict.fromkeys(found)) or json.dumps(payload)
+    return query[:_WEBHOOK_QUERY_MAX_CHARS]
 
 
 def _webhook_tool_allowlist(agent_config):
