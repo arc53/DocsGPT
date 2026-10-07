@@ -2,6 +2,7 @@
 
 import base64
 import hashlib
+import hmac
 import json
 import time
 from contextlib import contextmanager
@@ -9,11 +10,11 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlparse
 
+import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from jose import jwk
-from jose import jwt as jose_jwt
+from jwt.algorithms import RSAAlgorithm
 
 from docsgpt.core.settings import settings
 
@@ -43,16 +44,21 @@ def _generate_rsa_pem():
     ).decode("ascii")
 
 
+def _public_jwk(private_pem):
+    public_key = serialization.load_pem_private_key(private_pem.encode("ascii"), None).public_key()
+    return {**RSAAlgorithm.to_jwk(public_key, as_dict=True), "alg": "RS256"}
+
+
 PRIVATE_PEM = _generate_rsa_pem()
 PUBLIC_JWK = {
-    **jwk.construct(PRIVATE_PEM, algorithm="RS256").public_key().to_dict(),
+    **_public_jwk(PRIVATE_PEM),
     "kid": KID,
     "use": "sig",
 }
 
 
 def sign_id_token(claims, kid=KID, key=PRIVATE_PEM, algorithm="RS256"):
-    return jose_jwt.encode(claims, key, algorithm=algorithm, headers={"kid": kid})
+    return jwt.encode(claims, key, algorithm=algorithm, headers={"kid": kid})
 
 
 def id_token_claims(**overrides):
@@ -96,7 +102,7 @@ def make_session_token(**overrides):
         "oidc_sub": "oidc-user-1",
     }
     payload.update(overrides)
-    return jose_jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
 
 class FakeRedis:
@@ -247,9 +253,36 @@ class TestValidateIdToken:
     def test_hs256_id_token_rejected(self):
         from docsgpt.api.oidc import provider
 
-        forged = jose_jwt.encode(
+        forged = jwt.encode(
             id_token_claims(), JWT_SECRET, algorithm="HS256", headers={"kid": KID}
         )
+        with pytest.raises(provider.OIDCError):
+            self._validate(forged)
+
+    def test_hs256_signed_with_der_public_key_rejected(self):
+        # Algorithm confusion: an HMAC token keyed with the IdP's public key in
+        # DER form (no PEM armor to give it away) must not verify.
+        from docsgpt.api.oidc import provider
+
+        der = serialization.load_pem_private_key(PRIVATE_PEM.encode("ascii"), None).public_key().public_bytes(
+            serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+        # Signed by hand: PyJWT itself refuses an asymmetric key as an HMAC secret.
+        def b64(raw):
+            return base64.urlsafe_b64encode(raw).rstrip(b"=")
+
+        signing_input = b".".join(
+            b64(json.dumps(part).encode()) for part in ({"alg": "HS256", "kid": KID}, id_token_claims())
+        )
+        signature = hmac.new(der, signing_input, hashlib.sha256).digest()
+        forged = (signing_input + b"." + b64(signature)).decode("ascii")
+        with pytest.raises(provider.OIDCError):
+            self._validate(forged)
+
+    def test_unsigned_id_token_rejected(self):
+        from docsgpt.api.oidc import provider
+
+        forged = jwt.encode(id_token_claims(), None, algorithm="none", headers={"kid": KID})
         with pytest.raises(provider.OIDCError):
             self._validate(forged)
 
@@ -262,7 +295,7 @@ class TestValidateIdToken:
 
         new_pem = _generate_rsa_pem()
         new_jwk = {
-            **jwk.construct(new_pem, algorithm="RS256").public_key().to_dict(),
+            **_public_jwk(new_pem),
             "kid": KID,
             "use": "sig",
         }
@@ -281,7 +314,7 @@ class TestValidateIdToken:
 
         rotated_pem = _generate_rsa_pem()
         rotated_jwk = {
-            **jwk.construct(rotated_pem, algorithm="RS256").public_key().to_dict(),
+            **_public_jwk(rotated_pem),
             "kid": "rotated-key",
             "use": "sig",
         }
@@ -751,7 +784,7 @@ class TestCallbackRoute:
         handoff = location.split("#oidc_code=", 1)[1]
 
         session_token = fake_redis.store[f"oidc:handoff:{handoff}"].decode("utf-8")
-        decoded = jose_jwt.decode(session_token, JWT_SECRET, algorithms=["HS256"])
+        decoded = jwt.decode(session_token, JWT_SECRET, algorithms=["HS256"])
         assert decoded["sub"] == "oidc-user-1"
         assert decoded["email"] == "user@example.com"
         assert decoded["name"] == "OIDC User"
@@ -836,7 +869,7 @@ class TestCallbackRoute:
 
         handoff = response.headers["Location"].split("#oidc_code=", 1)[1]
         session_token = fake_redis.store[f"oidc:handoff:{handoff}"].decode("utf-8")
-        decoded = jose_jwt.decode(session_token, JWT_SECRET, algorithms=["HS256"])
+        decoded = jwt.decode(session_token, JWT_SECRET, algorithms=["HS256"])
         assert "email" not in decoded
         assert "name" not in decoded
 
@@ -987,7 +1020,7 @@ class TestCallbackGroups:
 
         handoff = response.headers["Location"].split("#oidc_code=", 1)[1]
         session_token = fake_redis.store[f"oidc:handoff:{handoff}"].decode("utf-8")
-        decoded = jose_jwt.decode(session_token, JWT_SECRET, algorithms=["HS256"])
+        decoded = jwt.decode(session_token, JWT_SECRET, algorithms=["HS256"])
         assert decoded["sub"] == "alice"
 
 
@@ -1190,7 +1223,7 @@ class TestSessionTokenMint:
             response = client.get(f"/api/auth/oidc/callback?code=abc&state={state}")
         handoff = response.headers["Location"].split("#oidc_code=", 1)[1]
         session_token = fake_redis.store[f"oidc:handoff:{handoff}"].decode("utf-8")
-        return jose_jwt.decode(session_token, JWT_SECRET, algorithms=["HS256"])
+        return jwt.decode(session_token, JWT_SECRET, algorithms=["HS256"])
 
     def test_contains_jti_and_oidc_sub(self, client, fake_redis):
         decoded = self._login_decoded(client, fake_redis)
@@ -1395,7 +1428,7 @@ class TestRefreshRoute:
         )
 
         assert response.status_code == 200
-        decoded = jose_jwt.decode(
+        decoded = jwt.decode(
             response.get_json()["token"], JWT_SECRET, algorithms=["HS256"]
         )
         assert decoded["sub"] == "oidc-user-1"
@@ -1418,7 +1451,7 @@ class TestRefreshRoute:
         response, _ = self._refresh(client, token, idp_response={"access_token": "at-2"})
 
         assert response.status_code == 200
-        decoded = jose_jwt.decode(
+        decoded = jwt.decode(
             response.get_json()["token"], JWT_SECRET, algorithms=["HS256"]
         )
         assert decoded["sub"] == "oidc-user-1"

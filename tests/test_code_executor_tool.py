@@ -732,7 +732,7 @@ def _description(monkeypatch, backend: str = "jupyter", **kwargs) -> str:
     return _tool().get_actions_metadata()[0]["description"]
 
 
-_SNAPSHOT = "docsgpt-sandbox-py312-v2"
+_SNAPSHOT = "docsgpt-sandbox-py312-v3"
 
 
 def test_inputs_metadata_names_the_staging_path():

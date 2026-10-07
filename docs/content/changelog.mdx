@@ -47,7 +47,7 @@ Entries start at 0.17.0; see GitHub for earlier releases.
     fallback but is deprecated in favour of `S3_*`.
   - The code sandbox image grew (LibreOffice, Chromium, OCR, ffmpeg, Node.js): rebuild the runner
     image and raise a hand-set `SANDBOX_MEMORY` to `4g`. On Daytona, build the new
-    `docsgpt-sandbox-py312-v2` snapshot and point `DAYTONA_SNAPSHOT` at it. See
+    `docsgpt-sandbox-py312-v3` snapshot and point `DAYTONA_SNAPSHOT` at it. See
     [Daytona snapshot](/Tools/artifacts-and-code-execution#daytona-snapshot).
 </Callout>
 
@@ -282,6 +282,12 @@ stored secrets and upload its documents again: see
   [Keys stay with their provider](/Models/cloud-providers#keys-stay-with-their-provider).
 - The sandbox manager and the embedding models are also built once per process under a lock, so
   concurrent first requests no longer create a second sandbox session registry or load a model twice.
+- Backend dependencies are updated, clearing the known vulnerabilities in pypdf, werkzeug, urllib3,
+  PyJWT, oauthlib, multidict and docling. JWTs are now signed and checked with PyJWT instead of
+  python-jose, which has an unfixed algorithm-confusion advisory and pulled in `ecdsa`. Existing
+  tokens stay valid. A `JWT_SECRET_KEY` shorter than 32 bytes now logs a warning. The code sandbox
+  libraries move to Pillow 12.3, pypdf 6.19, pdfplumber 0.11.10, pandas 2.3 and matplotlib 3.11, so
+  the Daytona snapshot is now `docsgpt-sandbox-py312-v3`.
 - A new [security checklist](/Deploying/Security) covers bind addresses, the choice of `AUTH_TYPE`,
   the secrets to set, outbound URL checks, prompt templates, the LLM cache and the version check.
 

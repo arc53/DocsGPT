@@ -86,30 +86,35 @@ class NodeRelease(TypedDict):
 
 
 # Libraries baked into both images. Pins are exact so a rebuild gives the same
-# image; pdfplumber stays at 0.11.9 because 0.11.10 needs Pillow >= 12.2.
+# image. pdfplumber pins pdfminer.six exactly and sets floors on Pillow and
+# pypdfium2, so bump those four together. pandas stays on 2.x: pandas 3 changes
+# copy and string-dtype semantics that model-written code relies on; numpy stays
+# on the series pandas 2.3 was released against. PyPDF2 is deprecated (its code
+# moved to pypdf) and has had no release since 3.0.1; it stays only because
+# model-written code still imports it.
 # reportlab is 4.4+ for its HarfBuzz shaping (through uharfbuzz), which the pdf
 # artifact renderer uses for Devanagari and other complex scripts.
 PIP_PACKAGES: Tuple[PipPackage, ...] = (
-    {"spec": "pandas==2.2.3", "import": "pandas", "use": "dataframes, CSV and Excel I/O"},
-    {"spec": "numpy==2.1.3", "import": "numpy", "use": "arrays and maths"},
-    {"spec": "matplotlib==3.9.2", "import": "matplotlib", "use": "charts"},
+    {"spec": "pandas==2.3.3", "import": "pandas", "use": "dataframes, CSV and Excel I/O"},
+    {"spec": "numpy==2.3.5", "import": "numpy", "use": "arrays and maths"},
+    {"spec": "matplotlib==3.11.2", "import": "matplotlib", "use": "charts"},
     {"spec": "openpyxl==3.1.5", "import": "openpyxl", "use": "Excel .xlsx"},
-    {"spec": "python-docx==1.1.2", "import": "docx", "use": "Word .docx"},
+    {"spec": "python-docx==1.2.0", "import": "docx", "use": "Word .docx"},
     {"spec": "python-pptx==1.0.2", "import": "pptx", "use": "PowerPoint .pptx"},
-    {"spec": "reportlab==4.4.10", "import": "reportlab", "use": "PDF generation"},
-    {"spec": "uharfbuzz==0.56.2", "import": "uharfbuzz", "use": "text shaping for reportlab (Indic scripts)"},
+    {"spec": "reportlab==4.5.1", "import": "reportlab", "use": "PDF generation"},
+    {"spec": "uharfbuzz==0.56.3", "import": "uharfbuzz", "use": "text shaping for reportlab (Indic scripts)"},
     {"spec": "arabic-reshaper==3.0.1", "import": "arabic_reshaper", "use": "join Arabic letters for reportlab"},
     {"spec": "python-bidi==0.6.11", "import": "bidi", "use": "right-to-left display order for reportlab"},
     {"spec": "lxml==6.1.3", "import": "lxml", "use": "XML and HTML parsing"},
-    {"spec": "pillow==11.3.0", "import": "PIL", "use": "images"},
+    {"spec": "pillow==12.3.0", "import": "PIL", "use": "images"},
     {"spec": "requests==2.34.2", "import": "requests", "use": "HTTP"},
     {"spec": "beautifulsoup4==4.15.0", "import": "bs4", "use": "HTML parsing"},
     {"spec": "PyYAML==6.0.3", "import": "yaml", "use": "YAML"},
-    {"spec": "pypdf==6.18.1", "import": "pypdf", "use": "read, merge and split PDFs"},
+    {"spec": "pypdf==6.19.0", "import": "pypdf", "use": "read, merge and split PDFs"},
     {"spec": "PyPDF2==3.0.1", "import": "PyPDF2", "use": "older pypdf API that existing code imports"},
-    {"spec": "pdfplumber==0.11.9", "import": "pdfplumber", "use": "PDF text, tables and page images"},
-    {"spec": "pdfminer.six==20251230", "import": "pdfminer", "use": "PDF text layout (pdfplumber's engine)"},
-    {"spec": "pypdfium2==5.13.0", "import": "pypdfium2", "use": "render PDF pages to images"},
+    {"spec": "pdfplumber==0.11.10", "import": "pdfplumber", "use": "PDF text, tables and page images"},
+    {"spec": "pdfminer.six==20260107", "import": "pdfminer", "use": "PDF text layout (pdfplumber's engine)"},
+    {"spec": "pypdfium2==5.14.0", "import": "pypdfium2", "use": "render PDF pages to images"},
     {"spec": "pytesseract==0.3.13", "import": "pytesseract", "use": "OCR through the tesseract binary"},
     {"spec": "imageio==2.38.0", "import": "imageio", "use": "animated GIF, WebP and PNG (MP4: the ffmpeg command)"},
 )
@@ -118,7 +123,7 @@ PIP_PACKAGES: Tuple[PipPackage, ...] = (
 # runs code through its own process API and does not need these.
 RUNNER_PIP_PACKAGES: Tuple[PipPackage, ...] = (
     {"spec": "jupyter-kernel-gateway==3.0.1", "import": "kernel_gateway", "use": "the runner's gateway"},
-    {"spec": "ipykernel==6.29.5", "import": "ipykernel", "use": "the runner's Python kernels"},
+    {"spec": "ipykernel==6.31.0", "import": "ipykernel", "use": "the runner's Python kernels"},
 )
 
 # Package names exist on Debian 12 (bookworm, the Daytona base) and Debian 13
