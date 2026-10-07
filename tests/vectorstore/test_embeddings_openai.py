@@ -53,3 +53,28 @@ class TestKeyLookup:
 
     def test_a_passed_key_wins(self):
         assert _key_used(_settings(EMBEDDINGS_KEY="sk-emb"), passed="sk-passed") == "sk-passed"
+
+
+@pytest.mark.unit
+class TestQueryLimit:
+    def test_a_long_query_is_clipped(self, monkeypatch):
+        from types import SimpleNamespace as NS
+
+        from docsgpt.core.settings import settings as real_settings
+        from docsgpt.parser.tokenization import TiktokenCounter
+
+        monkeypatch.setattr(real_settings, "EMBEDDINGS_MAX_QUERY_TOKENS", 10)
+        with patch.object(embeddings_openai, "settings", _settings(EMBEDDINGS_KEY="sk")), patch("openai.OpenAI"):
+            emb = OpenAIEmbeddings()
+        sent = []
+
+        def create(model, input):
+            sent.extend(input)
+            return NS(data=[NS(index=0, embedding=[0.1])])
+
+        emb.client.embeddings.create = create
+        long_query = " ".join(["word"] * 1000)
+        emb.embed_query(long_query)
+
+        assert TiktokenCounter().count(sent[0]) <= 10
+        assert long_query.startswith(sent[0])

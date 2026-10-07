@@ -395,6 +395,18 @@ Type `int`, default unset.
 
 Truncate each remote embed input to N tokens (overflow is lost).
 
+### `EMBEDDINGS_MAX_QUERY_TOKENS`
+
+Type `int`, default `512`, must be `>= 0`.
+
+Clip a search query to N tokens before embedding it (0 disables). Embedder memory grows with the square of input length, and a query needs a few hundred tokens: one 9k-token query (a webhook payload, pasted logs) OOM-killed a 12 GB embeddings server. Documents are not affected.
+
+### `EMBEDDINGS_LOCAL_MAX_TOKENS`
+
+Type `int`, default unset, must be `>= 1`.
+
+Hard ceiling, in tokens, on every input a local FastEmbed model embeds, documents included (the overflow is dropped). Unset keeps the model's own maximum, which is 32,768 for granite; its memory grows with the square of input length, so 4096 caps one input at about 3 GB.
+
 ### `EMBEDDINGS_BATCH_SIZE`
 
 Type `int`, default `32`, must be `>= 1`.
