@@ -15,7 +15,7 @@ reportlab>=5.0.1,<6
 # The pdf artifact renderer's right-to-left and shaping paths (the sandbox image has them).
 arabic-reshaper>=3.0.1
 python-bidi>=0.6.11
-uharfbuzz>=0.56.2
+uharfbuzz>=0.56.3
 # The optional docling engine stays installed in the test env so its parser
 # paths keep CI coverage even though production installs it on demand.
 -r ../docsgpt/requirements-docling.txt

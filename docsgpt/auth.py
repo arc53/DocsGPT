@@ -1,5 +1,5 @@
-from jose import jwt
-from jose.exceptions import ExpiredSignatureError
+import jwt
+from jwt import ExpiredSignatureError
 
 from docsgpt.core.settings import settings
 
@@ -45,7 +45,7 @@ def handle_auth(request, data={}):
                 # token), which would otherwise authenticate forever and be
                 # unrevocable. simple_jwt/session_jwt never carried an exp, so the
                 # requirement is scoped to oidc.
-                options={"verify_exp": is_oidc, "require_exp": is_oidc},
+                options={"verify_exp": is_oidc, "require": ["exp"] if is_oidc else []},
             )
             for claim in _PAT_ONLY_CLAIMS:
                 decoded_token.pop(claim, None)
