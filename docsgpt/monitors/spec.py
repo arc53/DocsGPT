@@ -29,7 +29,27 @@ from docsgpt.core.settings import settings
 SOURCE_TYPES = ("webpage", "tool", "ingest", "webhook", "approval")
 POLLED_SOURCES = ("webpage", "tool")
 CHECK_TYPES = ("changed", "new_items", "regex", "threshold", "status")
-SIGNATURE_SCHEMES = ("none", "standard_webhooks", "github", "hmac_sha256")
+SIGNATURE_SCHEMES = (
+    "none", "standard_webhooks", "github", "hmac_sha256", "stripe", "slack", "header_token", "bearer"
+)
+WEBHOOK_METHODS = ("POST", "GET")
+
+#: Schemes a GET call can satisfy: a GET has no body to sign, so only a static token header.
+GET_SIGNATURE_SCHEMES = ("none", "header_token", "bearer")
+
+#: Schemes whose secret the sender creates (Stripe, Slack): the owner pastes it in; DocsGPT mints none.
+SENDER_SECRET_SCHEMES = ("stripe", "slack")
+
+#: A header name a ``header_token`` link may read.
+_HEADER_NAME = regex.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,63}$")
+
+#: Headers a token can't live in: they carry other meanings, or a proxy rewrites them.
+_RESERVED_HEADERS = frozenset({
+    "authorization", "proxy-authorization", "cookie", "set-cookie", "host", "content-type", "content-length",
+    "content-encoding", "transfer-encoding", "connection", "upgrade", "user-agent", "accept", "accept-encoding",
+    "idempotency-key", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-real-ip", "forwarded",
+    "via", "te", "trailer", "expect", "origin", "referer",
+})
 
 #: Threshold operators, and the words a model may use for them.
 OPERATORS = ("<", "<=", ">", ">=", "==", "!=")
@@ -208,7 +228,28 @@ def _source(raw: Any) -> Dict[str, Any]:
         scheme = raw.get("signature") or "none"
         if scheme not in SIGNATURE_SCHEMES:
             raise SpecError(f"`source.signature` must be one of: {', '.join(SIGNATURE_SCHEMES)}.")
-        return {"type": "webhook", "signature": scheme}
+        out = {"type": "webhook", "signature": scheme}
+        header = raw.get("signature_header")
+        if header not in (None, ""):
+            if scheme != "header_token":
+                raise SpecError("`source.signature_header` applies only to signature \"header_token\".")
+            if not isinstance(header, str) or not _HEADER_NAME.match(header.strip()):
+                raise SpecError("`source.signature_header` must be a header name like X-Gitlab-Token.")
+            if header.strip().lower() in _RESERVED_HEADERS or header.strip().lower().startswith("webhook-"):
+                raise SpecError(f"`source.signature_header` can't be {header.strip()}: pick a header of its own.")
+            out["signature_header"] = header.strip()
+        methods = _methods(raw.get("methods"))
+        if "GET" in methods:
+            if scheme not in GET_SIGNATURE_SCHEMES:
+                raise SpecError(
+                    f"`source.signature` {scheme!r} signs a request body, and a GET call has none: use GET only "
+                    f"with {', '.join(GET_SIGNATURE_SCHEMES)}."
+                )
+            out["methods"] = methods
+        if raw.get("expose_secret") not in (None, False):
+            # Only the owner shows a secret to the assistant (Settings > Monitors); a model's request is ignored.
+            out["expose_secret_ignored"] = True
+        return out
     question = _text(raw.get("question"), "source.question", limit=_MAX_QUESTION, required=True)
     details = _text(raw.get("details") or raw.get("context"), "source.details", limit=_MAX_DETAILS)
     options_raw = raw.get("options") or list(DEFAULT_APPROVAL_OPTIONS)
@@ -231,6 +272,21 @@ def _source(raw: Any) -> Dict[str, Any]:
     if details:
         out["details"] = details
     return out
+
+
+def _methods(raw: Any) -> List[str]:
+    """A webhook's HTTP methods, POST first; POST alone when none are given."""
+    if raw in (None, "", []):
+        return ["POST"]
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list) or not all(isinstance(m, str) for m in raw):
+        raise SpecError('`source.methods` must be a list like ["POST"] or ["POST", "GET"].')
+    wanted = {m.strip().upper() for m in raw}
+    unknown = wanted - set(WEBHOOK_METHODS)
+    if unknown:
+        raise SpecError(f"`source.methods` takes only {', '.join(WEBHOOK_METHODS)}, not {', '.join(sorted(unknown))}.")
+    return [m for m in WEBHOOK_METHODS if m in wanted or m == "POST"]
 
 
 def _check(raw: Any) -> Optional[Dict[str, Any]]:
@@ -321,6 +377,11 @@ def parse_request(arguments: Dict[str, Any], *, now: Optional[datetime] = None) 
             notes.append("check ignored: the ingest finishing or failing is the event")
     else:
         check = _check(raw_check)
+    if source.pop("expose_secret_ignored", False):
+        notes.append(
+            "expose_secret ignored: you never get a link's raw secret from monitor_create. Use its reference "
+            "{{link_secret:REF}}; only the owner can choose to show a secret to you, in Settings > Monitors"
+        )
     if not on_match:
         raise SpecError("`on_match` is required: say what to do when the monitor fires.")
 
@@ -335,7 +396,11 @@ def parse_request(arguments: Dict[str, Any], *, now: Optional[datetime] = None) 
         notes.append(f"interval ignored: a {kind} monitor is not polled")
 
     max_ttl = int(settings.MONITOR_MAX_TTL_DAYS) * 86400
-    ttl = _duration(arguments.get("expires_in"), "expires_in") or int(settings.MONITOR_DEFAULT_TTL_DAYS) * 86400
+    default_ttl = int(settings.MONITOR_DEFAULT_TTL_DAYS) * 86400
+    if "GET" in (source.get("methods") or []):
+        # Anything that opens a GET link fires it, so it lives a short while unless asked otherwise.
+        default_ttl = int(settings.TRIGGER_GET_DEFAULT_TTL_HOURS) * 3600
+    ttl = _duration(arguments.get("expires_in"), "expires_in") or default_ttl
     if ttl > max_ttl:
         longer = (
             "to keep the link longer, the user asks for a new one before it expires"

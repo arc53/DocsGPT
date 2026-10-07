@@ -325,6 +325,7 @@ def create(caller: Caller, arguments: Dict[str, Any]) -> Dict[str, Any]:
 
     link_token: Optional[str] = None
     secret: Optional[str] = None
+    ref: Optional[str] = None
     kind = request.source["type"]
     with db_session() as conn:
         repo = MonitorsRepository(conn)
@@ -358,14 +359,18 @@ def create(caller: Caller, arguments: Dict[str, Any]) -> Dict[str, Any]:
             link_token = links.new_token(kind)
             scheme = request.source.get("signature", "none") if kind == "webhook" else "none"
             secret = links.new_secret(scheme) if kind == "webhook" else None
-            TriggerLinksRepository(conn).create(
+            link_repo = TriggerLinksRepository(conn)
+            if scheme != "none":
+                # Every signed link gets a reference, Stripe's and Slack's too (their secret comes later).
+                ref = _free_ref(link_repo, caller.user_id)
+            link_repo.create(
                 monitor_id=monitor["id"],
                 user_id=caller.user_id,
                 conversation_id=str(caller.conversation_id),
                 token_hash=links.token_hash(link_token),
                 kind=kind,
                 expires_at=request.expires_at,
-                max_hits=links.WEBHOOK_MAX_HITS if kind == "webhook" else 1,
+                max_hits=_max_hits(request) if kind == "webhook" else 1,
                 signature_scheme=scheme,
                 secret_encrypted=links.seal_secret(secret, caller.user_id),
                 approval_spec=(
@@ -374,10 +379,68 @@ def create(caller: Caller, arguments: Dict[str, Any]) -> Dict[str, Any]:
                     if kind == "approval"
                     else None
                 ),
+                ref=ref,
+                allow_get="GET" in (request.source.get("methods") or []),
+                signature_header=request.source.get("signature_header"),
             )
     publish_monitor_updated(monitor)
     return _created_result(request, monitor, baseline=baseline, already=already, token=link_token,
-                           signed=bool(secret))
+                           signed=bool(secret), ref=ref)
+
+
+def set_secret(monitor_id: str, user_id: str, secret: Any) -> Optional[Dict[str, Any]]:
+    """Store the signing secret the owner pasted in for a webhook monitor's live link (Stripe's, Slack's).
+
+    Records an audit event (never the value). Works for any signed scheme, so
+    the owner can also replace a secret DocsGPT generated.
+
+    Args:
+        monitor_id: The monitor.
+        user_id: Its owner (anyone else gets None).
+        secret: What the owner pasted.
+
+    Returns:
+        ``{"saved": True, "signature"}``, or None when the monitor isn't the
+        caller's or has no live signed link.
+
+    Raises:
+        ValueError: The secret can't be this scheme's (the message says why).
+    """
+    from docsgpt.api.audit import record_event
+
+    with db_session() as conn:
+        monitor = MonitorsRepository(conn).get(monitor_id, user_id)
+        if monitor is None or monitor.get("source_type") != "webhook":
+            return None
+        repo = TriggerLinksRepository(conn)
+        link = repo.get_live_webhook(str(monitor["id"]))
+        if link is None or (link.get("signature_scheme") or "none") == "none":
+            return None
+        value = links.check_owner_secret(str(link["signature_scheme"]), secret)
+        if not repo.set_secret(str(link["id"]), links.seal_secret(value, user_id)):
+            # The link ended between the lookup and the write.
+            return None
+        record_event(conn, "monitor.secret_set", actor=user_id, monitor_id=str(monitor["id"]),
+                     link_id=str(link["id"]), signature=link.get("signature_scheme"))
+    return {"saved": True, "signature": link.get("signature_scheme")}
+
+
+def _max_hits(request: MonitorRequest) -> int:
+    """Calls a webhook link takes: fewer for one that also takes GET (anything that opens it fires it)."""
+    if "GET" in (request.source.get("methods") or []):
+        return int(settings.TRIGGER_GET_MAX_HITS)
+    return links.WEBHOOK_MAX_HITS
+
+
+def _free_ref(repo: TriggerLinksRepository, user_id: str) -> str:
+    """A reference id the user has no link with yet (the user's monitors are locked by the caller)."""
+    from docsgpt.monitors.secret_refs import new_ref
+
+    for _ in range(20):
+        ref = new_ref()
+        if not repo.ref_taken(user_id, ref):
+            return ref
+    raise RuntimeError("could not find a free link reference id")
 
 
 def _created_result(
@@ -388,6 +451,7 @@ def _created_result(
     already: bool,
     token: Optional[str],
     signed: bool,
+    ref: Optional[str] = None,
 ) -> Dict[str, Any]:
     kind = request.source["type"]
     result: Dict[str, Any] = {
@@ -432,22 +496,57 @@ def _created_result(
                 f" Tell the user the body must carry `{request.check['value_path']}` set to one of: "
                 f"{', '.join(request.check['terminal'])} (other values don't wake you); example_curl shows it."
             )
+        methods = request.source.get("methods") or ["POST"]
+        header_name = request.source.get("signature_header")
         result.update(
             {
                 "url": url,
-                "method": "POST",
+                "method": ", ".join(methods),
                 "signature": scheme,
-                "example_curl": links.example_curl(url, scheme, request.check),
+                "example_curl": links.example_curl(url, scheme, request.check, header_name=header_name),
             }
         )
+        if header_name:
+            result["signature_header"] = header_name
+        if "GET" in methods:
+            result["example_get"] = links.example_get(url, request.check, scheme, header_name)
+            result["max_calls"] = int(settings.TRIGGER_GET_MAX_HITS)
+            tell += (
+                " The link also takes GET, with the query parameters as the call's data (example_get); a HEAD, a "
+                "prefetch or a known link-preview bot does nothing. Still, anything that opens the link fires it, "
+                "so it is for a machine caller that can't POST: tell the user never to paste it into a chat, "
+                "email or document, where previews and scanners open links."
+            )
         if signed:
-            # The model never sees the secret: the user reveals it on the link card (GET /api/monitors/<id>/secret).
-            result["secret"] = links.SECRET_PLACEHOLDER
+            # The model gets a reference; the executor fills the value into approved calls, the user can reveal it.
+            from docsgpt.monitors.secret_refs import reference
+
+            result["secret"] = reference(ref) if ref else None
+            result["secret_ref"] = ref
+            result["signing"] = links.signing_instructions(scheme, header_name)
+            tell += (
+                f" Give the user the url. You never see the signing secret, only its reference "
+                f"{reference(ref) if ref else ''}: to configure the sender yourself (create the webhook through an "
+                "MCP or API action, or a remote_device command), put the reference exactly as written in that "
+                "call's arguments; the server fills in the real value only when the user approves the call, and "
+                "never into messages, URLs or fetched pages. Otherwise the user reveals the secret with Reveal "
+                f"secret on the link card (or Settings > Monitors); example_curl reads it from ${links.SECRET_ENV}."
+            )
+        elif scheme in links.SENDER_SECRET_SCHEMES:
+            # Stripe and Slack create the secret: the user pastes it in. The reference works once it is set.
+            sender = "Stripe" if scheme == "stripe" else "Slack"
+            result["secret"] = None
+            result["secret_ref"] = ref
+            result["secret_source"] = "sender"
             result["signing"] = links.signing_instructions(scheme)
             tell += (
-                " Give the user the url (POST only). You never see the signing secret: the user reveals it with "
-                f"Reveal secret on the link card in this chat; example_curl reads it from ${links.SECRET_ENV}."
+                f" Give the user the url. {sender} creates the signing secret itself: the user copies it from "
+                f"{sender} and pastes it with Set signing secret on the link card (or Settings > Monitors); you "
+                "never see it. Until then every call is refused, so tell the user to do that"
+                + (" before setting the Request URL, which Slack verifies at once." if scheme == "slack" else ".")
             )
+        elif "GET" in methods:
+            tell += " Give the user the url."
         else:
             tell += " Give the user the url (POST only; a GET does nothing)."
         tell += (
@@ -550,15 +649,70 @@ def view(monitor: Dict[str, Any], *, links_rows: Optional[List[Dict[str, Any]]] 
     return out
 
 
+#: What the assistant is told with a secret its owner chose to show it.
+EXPOSED_NOTE = (
+    "The owner chose to show you this link's raw secret, so it has been sent to the model provider. Still use "
+    "the reference in tool calls (a call carrying the raw value is treated as carrying the reference: it asks "
+    "for approval, and goes only where a reference may), and don't repeat the value unless the user asks."
+)
+
+
 def list_for_conversation(caller: Caller) -> List[Dict[str, Any]]:
-    """This conversation's monitors, newest first."""
+    """This conversation's monitors, newest first, for the model.
+
+    A live link whose owner chose to show its secret to the assistant carries
+    it (``secret`` with ``secret_note``); no other path gives the model a raw
+    secret.
+    """
     if not caller.conversation_id:
         return []
     with db_readonly() as conn:
         rows = MonitorsRepository(conn).list_for_user(caller.user_id, conversation_id=str(caller.conversation_id))
         links_by_monitor = TriggerLinksRepository(conn).list_for_monitors([str(row["id"]) for row in rows])
     # Links carry their state (live, expired, revoked, used_up), so the model can tell a dead link from a live one.
-    return [view(row, links_rows=links_by_monitor.get(str(row["id"]), [])) for row in rows]
+    views = [view(row, links_rows=links_by_monitor.get(str(row["id"]), [])) for row in rows]
+    for monitor_view, row in zip(views, rows):
+        for link_view, link in zip(monitor_view.get("links") or [], links_by_monitor.get(str(row["id"]), [])):
+            # Only with a reference: that is what storage puts back in the value's place.
+            if (link.get("expose_secret") and link.get("secret_encrypted") and link.get("ref")
+                    and links.link_state(link) == "live"):
+                link_view["secret"] = links.open_secret(link["secret_encrypted"], caller.user_id)
+                link_view["secret_note"] = EXPOSED_NOTE
+    return views
+
+
+def set_exposure(monitor_id: str, user_id: str, exposed: Any) -> Optional[Dict[str, Any]]:
+    """Show (or stop showing) a webhook monitor's raw secret to the assistant: the owner's choice only.
+
+    Audited as ``monitor.secret_exposure`` (never with the value).
+
+    Args:
+        monitor_id: The monitor.
+        user_id: Its owner (anyone else gets None).
+        exposed: True to show it, False to stop.
+
+    Returns:
+        ``{"exposed": bool}``, or None when the monitor isn't the caller's or
+        has no live signed link with a secret.
+
+    Raises:
+        ValueError: ``exposed`` is not a boolean.
+    """
+    from docsgpt.api.audit import record_event
+
+    if not isinstance(exposed, bool):
+        raise ValueError("exposed must be true or false")
+    with db_session() as conn:
+        monitor = MonitorsRepository(conn).get(monitor_id, user_id)
+        if monitor is None or monitor.get("source_type") != "webhook":
+            return None
+        repo = TriggerLinksRepository(conn)
+        link = repo.get_live_signed(str(monitor["id"]))
+        if link is None or not repo.set_exposed(str(link["id"]), exposed):
+            return None
+        record_event(conn, "monitor.secret_exposure", actor=user_id, monitor_id=str(monitor["id"]),
+                     link_id=str(link["id"]), exposed=exposed)
+    return {"exposed": exposed}
 
 
 def end(monitor_id: str, user_id: str, status: str, *, reason: Optional[str] = None,

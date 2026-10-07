@@ -905,7 +905,7 @@ class TestResumeMarkResuming:
         )
 
         cont_service.claim_state.assert_called_once_with(
-            "00000000-0000-0000-0000-000000000001", "alice"
+            "00000000-0000-0000-0000-000000000001", "alice", call_ids=[]
         )
         cont_service.delete_state.assert_not_called()
 
@@ -1060,7 +1060,7 @@ class TestResumeMarkResuming:
 
         fake_repo.find_by_key.assert_called_once_with("agent-key-1")
         # The lookup + claim now key on the owner id, not None.
-        cont_service.claim_state.assert_called_once_with(conv_id, "owner-1")
+        cont_service.claim_state.assert_called_once_with(conv_id, "owner-1", call_ids=[])
         assert sp.initial_user_id == "owner-1"
         assert sp.decoded_token == {"sub": "owner-1"}
 

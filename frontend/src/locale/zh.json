@@ -10,6 +10,10 @@
   "loading": "加载中...",
   "retry": "重试",
   "cancel": "取消",
+  "errorBoundary": {
+    "message": "显示此内容时出错。",
+    "tryAgain": "重试"
+  },
   "help": "帮助",
   "emailUs": "给我们发邮件",
   "documentation": "文档",
@@ -45,7 +49,14 @@
       "progress": "已完成 {{percent}}%",
       "willResume": "完成后，结果会出现在此对话中。",
       "pollOnly": "完成后，请在此对话中询问结果。",
+      "waitingForDevice": "正在等待设备重新连接。命令可能仍在设备上运行。",
+      "waitingBadge": "等待设备",
       "lostHint": "任务被中断，可能尚未完成。助手会在重试前先确认。",
+      "noticeCancelUnsupported": "此设备的 docsgpt-cli 无法取消正在运行的命令，命令可能仍在运行。请在该机器上更新 docsgpt-cli。",
+      "noticeDeviceInterrupted": "设备的客户端已重启；命令可能仍在机器上运行 (pid {{pid}})。重试前请先确认。",
+      "noticeDeviceInterruptedNoPid": "设备的客户端已重启；命令可能仍在机器上运行。重试前请先确认。",
+      "noticeDeviceShutdown": "设备的客户端已关闭并停止了命令；命令可能已部分执行。",
+      "noticeOutputTruncated": "输出已截断：设备在无法连接服务器期间丢弃了部分输出。",
       "durationSeconds": "{{s}} 秒",
       "durationMinutes": "{{m}} 分 {{s}} 秒",
       "durationHours": "{{h}} 小时 {{m}} 分"
@@ -181,7 +192,8 @@
         "never": "从不",
         "daily": "每天",
         "weekly": "每周",
-        "monthly": "每月"
+        "monthly": "每月",
+        "option": "同步：{{frequency}}"
       },
       "actions": "操作",
       "view": "查看",
@@ -565,6 +577,7 @@
       "stats": {
         "messages": "消息",
         "tokens": "令牌",
+        "tokensHint": "所有由 LLM 计费的令牌。代理在每个工具步骤都会重新发送对话上下文，因此大量使用工具的对话所消耗的令牌，会比可见消息看起来多出许多倍。",
         "toolCalls": "工具调用",
         "runSuccess": "运行成功率",
         "feedback": "反馈"
@@ -1490,6 +1503,10 @@
         "mcp_stripe": "查看 Stripe 中的客户、付款和订阅。",
         "mcp_drawio": "使用 draw.io 创建可编辑的流程图和其他图表。",
         "mcp_clickup": "搜索、读取和更新 ClickUp 任务、文档与列表，并添加评论。",
+        "mcp_zapier": "使用 Zapier MCP 账户中启用的操作读取或更新已连接的应用。",
+        "mcp_trello": "查找 Trello 看板和卡片，并创建和更新卡片。",
+        "mcp_miro": "查找 Miro 白板、阅读内容和评论、创建图表并回复评论。",
+        "mcp_resend": "发送电子邮件并管理联系人、受众和域名。",
         "github": "将仓库同步到知识库，并让智能体读取代码、Issue 和拉取请求。"
       },
       "empty": "尚未连接任何服务。连接一个服务以同步其内容，或为智能体提供新工具。",
@@ -2233,12 +2250,19 @@
       "response": "响应",
       "running": "正在运行…",
       "denied": "已被用户拒绝",
-      "failed": "失败"
+      "failed": "失败",
+      "notRun": "未运行",
+      "notRunMovedOn": "未运行：在批准之前，对话已继续。",
+      "notRunExpired": "未运行：批准请求已过期。"
     },
     "quotaExceeded": {
       "tokens": "您已使用 {{limit}} 令牌配额中的 {{used}}。配额将于 {{resetsAt}} 重置。",
       "cost": "您已使用 {{limit}} 用量预算中的 {{used}}。预算将于 {{resetsAt}} 重置。"
     },
+    "send": "发送",
+    "viewArtifact": "查看工件",
+    "stopSpeaking": "停止朗读",
+    "loadingAudio": "正在加载音频",
     "voice": {
       "start": "语音输入",
       "stopRecording": "停止录音",
@@ -2277,6 +2301,8 @@
       "deny": "拒绝",
       "details": "详情",
       "denyReasonPlaceholder": "拒绝原因（可选）…",
+      "secretRefs": "批准后，运行时会填入 {{refs}} 的签名密钥。助手永远看不到它。",
+      "secretRefLabel": "“{{label}}”（{{ref}}）",
       "connectTitle": "此工具需要你的 {{name}} 账号。",
       "connect": "连接 {{name}}",
       "continue": "继续",
@@ -2462,7 +2488,9 @@
         "requestLimiting": "请求限制",
         "requestLimitingDescription": "限制每天可向此代理发出的总请求数",
         "systemPromptOverride": "允许覆盖提示词",
-        "systemPromptOverrideDescription": "允许 v1 API 调用者替换此代理的系统提示词"
+        "systemPromptOverrideDescription": "允许 v1 API 调用者替换此代理的系统提示词",
+        "tokenLimit": "令牌上限",
+        "requestLimit": "请求上限"
       },
       "preview": {
         "savedVersion": "已保存版本",
@@ -2688,7 +2716,9 @@
           "oct": "10月",
           "nov": "11月",
           "dec": "12月"
-        }
+        },
+        "frequencyLabel": "频率",
+        "dayOfWeek": "星期"
       },
       "status": {
         "active": "活跃",
@@ -2820,6 +2850,7 @@
       "noSubfolders": "没有子文件夹",
       "openFolder": "打开文件夹",
       "noFolders": "暂无文件夹",
+      "moveTitle": "将“{{name}}”移动到",
       "menuAriaLabel": "{{folderName}} 的操作",
       "deleteConsequence": "其中的智能体会移出文件夹，不会被删除。"
     },
@@ -2846,6 +2877,15 @@
       "loadError": "Could not load guardrail activity"
     },
     "workflow": {
+      "expressionRow": "表达式 {{index}}",
+      "conditionRow": "条件 {{index}}",
+      "conditionNameRow": "条件 {{index}} 名称",
+      "conditionVariableRow": "条件 {{index}} 变量",
+      "conditionValueRow": "条件 {{index}} 值",
+      "undo": "撤销",
+      "undoHint": "撤销 (Ctrl+Z)",
+      "redo": "重做",
+      "redoHint": "重做 (Ctrl+Shift+Z)",
       "artifacts": {
         "previewUnsupported": "此产物无法预览",
         "loadListFailed": "无法加载产物",
@@ -3044,7 +3084,9 @@
       },
       "zoomIn": "放大",
       "zoomOut": "缩小",
-      "fitView": "适应视图"
+      "fitView": "适应视图",
+      "removeAssignment": "删除赋值 {{index}}",
+      "removeCondition": "删除条件 {{index}}"
     },
     "typeModal": {
       "title": "创建新智能体",
@@ -3279,9 +3321,24 @@
       "hideSecret": "隐藏密钥",
       "copySecret": "复制密钥",
       "secretNote": "只有你能看到签名密钥，助手看不到。将它设置为 DOCSGPT_WEBHOOK_SECRET 即可运行示例命令，或将它粘贴到发送方的密钥字段中。",
+      "secretNoteSettings": "只有你能看到签名密钥；除非你选择“向助手显示”，否则助手看不到。请将其粘贴到发送方的密钥字段中。",
       "revealFailed": "无法加载密钥，请重试。",
       "revealLimited": "请求过多，请一分钟后再试。",
-      "revealMissing": "此链接已没有密钥：它已结束或已被取消。",
+      "revealMissing": "此链接没有密钥：它已结束、已取消，或尚未设置密钥。",
+      "setSecret": "设置签名密钥",
+      "secretPlaceholder": "粘贴签名密钥",
+      "saveSecret": "保存",
+      "cancelSecret": "取消",
+      "secretSaved": "签名密钥已保存。现在会接受用它签名的调用。",
+      "setSecretFailed": "无法保存签名密钥。请重试。",
+      "setSecretInvalid": "这看起来不像此链接的签名密钥。{{reason}}",
+      "senderSecretNote": "此链接的签名密钥由 {{sender}} 创建。请从 {{sender}} 复制并在此设置；在此之前调用会被拒绝。",
+      "exposeSecret": "向助手显示",
+      "unexposeSecret": "对助手隐藏",
+      "exposeWarning": "助手在列出其监控器时会看到原始密钥，因此密钥会发送给模型提供商。它的工具调用仍使用引用，并仍会请求你的批准。只有在助手必须自己读取该值时才开启。",
+      "exposeConfirm": "向助手显示",
+      "exposedNote": "助手可以看到此密钥。",
+      "exposeFailed": "无法更改。请重试。",
       "approvalTitle": "审批链接",
       "expires": "{{date}} 过期",
       "state": {

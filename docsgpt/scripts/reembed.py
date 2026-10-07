@@ -82,7 +82,9 @@ def list_source_ids(store_type: str) -> List[str]:
 
 
 def _pgvector_source_ids() -> List[str]:
-    store = VectorCreator.create_vectorstore("pgvector", source_id="")
+    store = VectorCreator.create_vectorstore(
+        "pgvector", source_id="", embeddings_key=settings.EMBEDDINGS_KEY
+    )
     # ``_get_connection`` hands back a pooled connection, not a context
     # manager: closing it via ``with`` would cost the pool a slot.
     conn = store._get_connection()
@@ -285,7 +287,9 @@ def reembed_pgvector(source_id: str, batch_size: int, dry_run: bool) -> Tuple[in
     Returns:
         ``(chunks_seen, chunks_written)``.
     """
-    store = VectorCreator.create_vectorstore("pgvector", source_id=source_id)
+    store = VectorCreator.create_vectorstore(
+        "pgvector", source_id=source_id, embeddings_key=settings.EMBEDDINGS_KEY
+    )
     table, vector_column = store._table_name, store._vector_column
     conn = store._get_connection()
 

@@ -550,6 +550,7 @@ class StreamProcessor:
         self.model_user_id: Optional[str] = None
         # WAL placeholder id pulled from continuation state on resume.
         self.reserved_message_id: Optional[str] = None
+        self.prior_tool_calls: List[Dict[str, Any]] = []
         # Carried through resumes so multi-pause runs keep one request_id.
         self.request_id: Optional[str] = None
         # The request's execution trace, started by the first traced setup
@@ -699,6 +700,8 @@ class StreamProcessor:
         prior_messages = [dict(m) for m in messages[:pending_idx]]
 
         # Build a normal agent (config / LLM / client tools), no new question.
+        # This round answers a pause; it is not a new turn moving past one.
+        self._answering_resent_round = True
         agent = self.build_agent("")
         tools_dict = agent.tool_executor.get_tools()
         # The resent files arrive as attachment rows (the route converted the
@@ -710,9 +713,32 @@ class StreamProcessor:
 
         return agent, prior_messages, tools_dict, pending_tool_calls, tool_actions, ""
 
+    def _retire_unanswered_pause(self) -> None:
+        """Finalize the turn the user left waiting on an approval, before this turn reads the history.
+
+        The user started a new turn instead of answering it: its message gets
+        what it did, with the calls it waited on as never run, so the model
+        reads them as not run rather than missing. A ``/v1`` round rebuilt from
+        the transcript is answering a pause, not moving past one, so it skips
+        this. Best-effort: a failure leaves the pause as it was and never fails
+        the new turn.
+        """
+        if getattr(self, "_answering_resent_round", False):
+            return
+        try:
+            self.conversation_service.abandon_pending_approval(
+                str(self.conversation_id), self.initial_user_id
+            )
+        except Exception:
+            logger.exception(
+                "retiring the unanswered pause failed for conversation %s",
+                self.conversation_id,
+            )
+
     def _load_conversation_history(self):
         """Load conversation history either from DB or request"""
         if self.conversation_id and self.initial_user_id:
+            self._retire_unanswered_pause()
             conversation = self.conversation_service.get_conversation(
                 self.conversation_id, self.initial_user_id
             )
@@ -1289,7 +1315,13 @@ class StreamProcessor:
             for source_doc in source_docs
         ]
         data["sources"] = sources_list
-        data["default_model_id"] = data.get("default_model_id", "")
+        # A PG row carries every column, so an unset one is None (or a
+        # legacy Mongo ""), never missing: ``.get(k, default)`` alone
+        # returns it. Unset means the default.
+        data["agent_type"] = (agent.get("agent_type") or "").strip() or settings.AGENT_NAME
+        data["prompt_id"] = agent.get("prompt_id") or "default"
+        data["default_model_id"] = agent.get("default_model_id") or ""
+        data["models"] = agent.get("models") or []
         return data
 
     def _configure_source(self):
@@ -1499,15 +1531,15 @@ class StreamProcessor:
                     # The agent runs in its owner's context: its prompt must
                     # be one the owner may use (re-checked on every run).
                     "prompt_id": authorized_prompt_id(
-                        self._agent_data.get("prompt_id", "default"),
+                        self._agent_data.get("prompt_id") or "default",
                         self._agent_data.get("user"),
                         self._agent_data,
                     ),
-                    "agent_type": self._agent_data.get("agent_type", settings.AGENT_NAME),
+                    "agent_type": (self._agent_data.get("agent_type") or "").strip() or settings.AGENT_NAME,
                     "user_api_key": effective_key,
                     "json_schema": self._agent_data.get("json_schema"),
-                    "default_model_id": self._agent_data.get("default_model_id", ""),
-                    "models": self._agent_data.get("models", []),
+                    "default_model_id": self._agent_data.get("default_model_id") or "",
+                    "models": self._agent_data.get("models") or [],
                     "allow_system_prompt_override": self._agent_data.get(
                         "allow_system_prompt_override", False
                     ),
@@ -2168,7 +2200,10 @@ class StreamProcessor:
             mode and ignored elsewhere.
         """
         from docsgpt.api.answer.services.continuation_service import (
+            NOT_PENDING_MESSAGE,
+            ContinuationNotPendingError,
             ContinuationService,
+            answered_call_ids,
         )
         from docsgpt.agents.agent_creator import AgentCreator
         from docsgpt.agents.tool_executor import ToolExecutor
@@ -2209,10 +2244,11 @@ class StreamProcessor:
 
         cont_service = ContinuationService()
         state = claimed_state or cont_service.claim_state(
-            conversation_id, self.initial_user_id
+            conversation_id, self.initial_user_id, call_ids=answered_call_ids(tool_actions)
         )
         if not state:
-            raise ValueError("No pending tool state found for this conversation")
+            # Decided already, moved past by a new turn, or expired.
+            raise ContinuationNotPendingError(NOT_PENDING_MESSAGE)
 
         # A request that names an agent (by key or id) resumes only that
         # agent's turn; the claim goes back so its rightful caller can resume.
@@ -2228,6 +2264,22 @@ class StreamProcessor:
             except Exception:
                 logger.warning("Failed to release a refused resume claim", exc_info=True)
             raise ValueError("This conversation belongs to a different agent")
+
+        # The actions must answer the calls this pause waits on. A stale tab
+        # deciding a call its pause no longer has would otherwise resolve the
+        # pause that is waiting now, every call in it denied for want of an
+        # answer; the claim goes back untouched instead.
+        waiting = {
+            str(call.get("call_id"))
+            for call in state.get("pending_tool_calls") or []
+            if isinstance(call, dict)
+        }
+        if any(call_id not in waiting for call_id in answered_call_ids(tool_actions)):
+            try:
+                cont_service.release_claim(conversation_id, self.initial_user_id)
+            except Exception:
+                logger.warning("Failed to release a refused resume claim", exc_info=True)
+            raise ContinuationNotPendingError(NOT_PENDING_MESSAGE)
 
         messages = state["messages"]
         pending_tool_calls = state["pending_tool_calls"]
@@ -2365,6 +2417,8 @@ class StreamProcessor:
         # request_id stays consistent across token_usage rows.
         self.reserved_message_id = agent_config.get("reserved_message_id")
         self.request_id = agent_config.get("request_id")
+        # The turn's calls from its earlier approval rounds, kept on the message.
+        self.prior_tool_calls = list(agent_config.get("prior_tool_calls") or [])
 
         reasoning_content = agent_config.get("reasoning_content", "")
         return (

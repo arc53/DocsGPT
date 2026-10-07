@@ -1,7 +1,7 @@
 ---
 title: 'Changelog'
 description: What changed in each DocsGPT release, with links to the upgrade steps an existing deployment needs.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-07
 ---
 
 import { Callout } from 'nextra/components'
@@ -76,6 +76,21 @@ Admin > Connectors, and synced sources run as their connection without a browser
 
 Answers render math, and the chat widget is published at 0.8.0.
 
+- A turn waiting on a tool approval no longer stays "streaming" when you send a new message
+  instead of answering, or when the approval expires. The turn is saved with its text and the
+  calls that ran; the calls it waited on show as **not run**, the model reads them that way on the
+  next turn, and the approval clears in your other tabs. Approving it later from a stale tab does
+  nothing and reloads the chat. See [Tools that need approval](/API/agent-api#tools-that-need-approval).
+  On later turns the model reads that turn's text before its tool results, as it was written, so
+  it no longer takes the calls it made for a plan that never ran.
+  A call that didn't run is labelled by its tool and action ("Memory · Create") instead of as done
+  ("Saved … to memory"), so the label no longer contradicts its **not run** note.
+- A tool call the server refuses (a secret reference a tool can't take, a write an admin turned
+  off, an API caller's write on the owner's account) stays on the message as a failed call with its
+  reason after a reload, and is no longer worded as a headless run in an interactive chat. On the
+  API its `tool_call` event now reports `"status": "error"` (it was `"denied"`), still with
+  `"error_type": "tool_not_allowed"`.
+
 ### Tools and list settings
 
 - `DEFAULT_CHAT_TOOLS`, `GUARDRAILS_CHECKS_ENABLED` and `QUOTA_UNPRICED_RATE_PER_MILLION` accept a JSON
@@ -111,6 +126,10 @@ Answers render math, and the chat widget is published at 0.8.0.
   document, including the token scope for each endpoint.
 - DocsGPT's MCP server now answers at `/mcp` as well as `/mcp/`. Before, `/mcp` without the slash
   returned 404 to a POST.
+- An agent webhook run stops after `WEBHOOK_RUN_TIMEOUT` (default 600 seconds) and its task ends
+  with `"status": "timeout"`; before, nothing bounded it. A run that raises an error is no longer
+  retried, since each retry ran the agent again, tool actions included: the task ends `FAILURE`.
+  See [Webhooks](/API/webhooks#step-2-poll-for-the-result).
 
 ### Schedules
 
@@ -121,6 +140,10 @@ Answers render math, and the chat widget is published at 0.8.0.
 - Editing a one-time task's date or time in the Schedules tab now moves the task; the change used
   to be ignored. `PUT /api/schedules/<id>` accepts `run_at` for one-time tasks, and the schedule
   dialog shows why a save was refused.
+- A scheduled run no longer writes a `source='schedule'` row with its total tokens to `token_usage`
+  next to the rows its LLM calls already wrote, so queries that sum the table no longer count
+  scheduled spend twice. Older rows stay out of every DocsGPT total, now including the admin
+  overview's 30-day token count.
 
 ### Documentation
 

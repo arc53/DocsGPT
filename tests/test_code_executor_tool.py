@@ -1027,3 +1027,84 @@ def test_a_failed_scratch_setup_does_not_stop_the_run(monkeypatch):
     payload = _run_with_fake_manager(monkeypatch, _PutFails(ExecResult(status="ok", stdout="ok"), created=True),
                                      code="print(1)", capture_artifacts=False)
     assert payload["status"] == "ok"
+
+
+# ---------------------------------------------------------------------------
+# A reused session whose sandbox is gone
+# ---------------------------------------------------------------------------
+class _GoneOnReuseManager(_FakeManager):
+    """A reused session whose sandbox another process deleted: ``fail_on`` finds it gone.
+
+    The manager drops the dead session on ``SandboxGoneError``, so the next open is fresh.
+    """
+
+    def __init__(self, fail_on: str, *, still_gone: bool = False) -> None:
+        super().__init__(ExecResult(status="ok", stdout="ok"), created=False)
+        self.fail_on = fail_on
+        self.still_gone = still_gone
+        self.dropped = False
+        self.exec_calls = 0
+        self.staged: list = []
+
+    def open_session(self, session_id, ttl=None):
+        self.opened.append((session_id, ttl))
+        return OpenedSession(session_id, self.dropped)
+
+    def _maybe_gone(self, op: str) -> None:
+        from docsgpt.sandbox.base import SandboxGoneError
+
+        if op == self.fail_on and (not self.dropped or self.still_gone):
+            self.dropped = True
+            raise SandboxGoneError(f"{op} failed: sandbox gone (NotFound)")
+
+    def put_file(self, session_id, dest_path, data):
+        if dest_path.startswith("inputs/"):
+            self._maybe_gone("put_file")
+        self.staged.append((dest_path, self.dropped))
+        super().put_file(session_id, dest_path, data)
+
+    def list_files(self, session_id):
+        self._maybe_gone("list_files")
+        return super().list_files(session_id)
+
+    def exec(self, session_id, code, timeout=None):
+        self.exec_calls += 1
+        return super().exec(session_id, code, timeout)
+
+
+def test_a_gone_reused_session_is_retried_once_on_a_fresh_one_with_inputs_restaged(monkeypatch):
+    _patch_input_repo(monkeypatch, found_position=True, conv="conv-1")
+    manager = _GoneOnReuseManager("put_file")
+    payload = _run_with_fake_manager(monkeypatch, manager, code="print(1)", inputs=["A1"], capture_artifacts=False)
+    assert payload["status"] == "ok"
+    assert payload["session"] == "new"  # earlier files and installs are gone, and the model is told
+    assert payload["inputs_loaded"] == ["inputs/seed.csv"]
+    assert ("inputs/seed.csv", True) in manager.staged
+    assert len(manager.opened) == 2
+    assert manager.exec_calls == 1
+
+
+def test_a_gone_session_found_by_the_pre_run_listing_is_retried(monkeypatch):
+    manager = _GoneOnReuseManager("list_files")
+    payload = _run_with_fake_manager(monkeypatch, manager, code="print(1)")
+    assert payload["status"] == "ok" and payload["session"] == "new"
+    assert manager.exec_calls == 1
+
+
+def test_a_session_gone_again_after_the_retry_is_reported_not_looped(monkeypatch):
+    manager = _GoneOnReuseManager("list_files", still_gone=True)
+    payload = _run_with_fake_manager(monkeypatch, manager, code="print(1)")
+    assert payload["status"] == "error"
+    assert "sandbox" in payload["error"].lower()
+    assert payload["session"] == "new"
+    assert len(manager.opened) == 2
+    assert manager.exec_calls == 0
+
+
+def test_a_new_session_that_is_gone_is_not_retried(monkeypatch):
+    manager = _GoneOnReuseManager("list_files")
+    manager.open_session = lambda session_id, ttl=None: (manager.opened.append((session_id, ttl)),
+                                                         OpenedSession(session_id, True))[1]
+    payload = _run_with_fake_manager(monkeypatch, manager, code="print(1)")
+    assert payload["status"] == "error" and payload["session"] == "new"
+    assert len(manager.opened) == 1

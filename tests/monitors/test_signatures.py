@@ -122,3 +122,137 @@ class TestSchemes:
     def test_unknown_scheme(self):
         with pytest.raises(SignatureError):
             signatures.verify("md5", "s", {}, BODY)
+
+
+def _hex(secret: str, content: bytes) -> str:
+    return hmac.new(secret.encode(), content, hashlib.sha256).hexdigest()
+
+
+class TestStripe:
+    SECRET = "whsec_stripe_endpoint_secret_123"
+
+    def _header(self, ts=NOW, body=BODY, *, extra=()):
+        parts = [f"t={ts}", *extra, f"v1={_hex(self.SECRET, f'{ts}.'.encode() + body)}"]
+        return {"Stripe-Signature": ",".join(parts)}
+
+    def test_a_signed_delivery_verifies(self):
+        assert signatures.verify("stripe", self.SECRET, self._header(), BODY, now=NOW) is None
+        assert signatures.sign_stripe(self.SECRET, NOW, BODY) == self._header()["Stripe-Signature"]
+
+    def test_any_v1_matching_passes(self):
+        # Stripe sends one v1 per active secret while one is rolled, and a v0 test signature.
+        header = self._header(extra=("v1=" + "0" * 64, "v0=" + "f" * 64))
+        assert signatures.verify("stripe", self.SECRET, header, BODY, now=NOW) is None
+
+    @pytest.mark.parametrize(
+        "headers,body,now,message",
+        [
+            ({}, BODY, NOW, "missing"),
+            ({"Stripe-Signature": f"t={NOW}"}, BODY, NOW, "no v1"),
+            ({"Stripe-Signature": "v1=abc"}, BODY, NOW, "timestamp is missing"),
+            ({"Stripe-Signature": "t=soon,v1=abc"}, BODY, NOW, "not a Unix time"),
+            (None, BODY + b" ", NOW, "no Stripe v1 signature matches"),
+            (None, BODY, NOW + signatures.TOLERANCE_SECONDS + 1, "too old"),
+        ],
+    )
+    def test_rejects(self, headers, body, now, message):
+        with pytest.raises(SignatureError, match=message):
+            signatures.verify("stripe", self.SECRET, headers if headers is not None else self._header(), body,
+                              now=now)
+
+
+class TestSlack:
+    SECRET = "8f742231b10e8888abcd99yyyzzz85a5"
+
+    def _headers(self, ts=NOW, body=BODY):
+        return {
+            "X-Slack-Request-Timestamp": str(ts),
+            "X-Slack-Signature": "v0=" + _hex(self.SECRET, f"v0:{ts}:".encode() + body),
+        }
+
+    def test_a_signed_request_verifies(self):
+        assert signatures.verify("slack", self.SECRET, self._headers(), BODY, now=NOW) is None
+        assert signatures.sign_slack(self.SECRET, NOW, BODY) == self._headers()["X-Slack-Signature"]
+
+    @pytest.mark.parametrize(
+        "change,message",
+        [
+            (lambda h: h.pop("X-Slack-Signature"), "X-Slack-Signature is missing"),
+            (lambda h: h.pop("X-Slack-Request-Timestamp"), "X-Slack-Request-Timestamp is missing"),
+            (lambda h: h.update({"X-Slack-Signature": "v0=" + "0" * 64}), "does not match"),
+            (lambda h: h.update({"X-Slack-Request-Timestamp": str(NOW - 301)}), "too old"),
+        ],
+    )
+    def test_rejects(self, change, message):
+        headers = self._headers()
+        change(headers)
+        with pytest.raises(SignatureError, match=message):
+            signatures.verify("slack", self.SECRET, headers, BODY, now=NOW)
+
+
+class TestStaticTokens:
+    SECRET = "tok_0123456789abcdefghij"
+
+    def test_header_token_reads_the_default_header(self):
+        assert signatures.verify("header_token", self.SECRET, {"x-webhook-token": self.SECRET}, b"") is None
+        with pytest.raises(SignatureError, match="X-Webhook-Token is missing"):
+            signatures.verify("header_token", self.SECRET, {}, b"")
+        with pytest.raises(SignatureError, match="does not match"):
+            signatures.verify("header_token", self.SECRET, {"X-Webhook-Token": self.SECRET + "x"}, b"")
+
+    def test_header_token_reads_the_links_header(self):
+        headers = {"X-Gitlab-Token": self.SECRET}
+        assert signatures.verify("header_token", self.SECRET, headers, BODY, header_name="X-Gitlab-Token") is None
+        with pytest.raises(SignatureError):
+            signatures.verify("header_token", self.SECRET, headers, BODY)
+
+    def test_bearer(self):
+        assert signatures.verify("bearer", self.SECRET, {"Authorization": f"Bearer {self.SECRET}"}, b"") is None
+        assert signatures.verify("bearer", self.SECRET, {"authorization": f"bearer  {self.SECRET}"}, b"") is None
+        for value in (f"Basic {self.SECRET}", "Bearer", f"Bearer {self.SECRET[:-1]}"):
+            with pytest.raises(SignatureError):
+                signatures.verify("bearer", self.SECRET, {"Authorization": value}, b"")
+
+    def test_compares_in_constant_time(self, monkeypatch):
+        seen = []
+        real = hmac.compare_digest
+
+        def spy(a, b):
+            seen.append((a, b))
+            return real(a, b)
+
+        monkeypatch.setattr(signatures.hmac, "compare_digest", spy)
+        signatures.verify("bearer", self.SECRET, {"Authorization": f"Bearer {self.SECRET}"}, b"")
+        signatures.verify("header_token", self.SECRET, {"X-Webhook-Token": self.SECRET}, b"")
+        assert len(seen) == 2
+
+
+class TestOwnerSecrets:
+    @pytest.mark.parametrize(
+        "scheme,value",
+        [
+            ("stripe", "whsec_abcdefghijklmnop1234"),
+            ("slack", "8f742231b10e8888abcd99yyyzzz85a5"),
+            ("standard_webhooks", "whsec_" + base64.b64encode(b"k" * 24).decode()),
+            ("github", "a-long-enough-secret-value"),
+            ("bearer", "a-long-enough-secret-value"),
+        ],
+    )
+    def test_accepted(self, scheme, value):
+        assert links.check_owner_secret(scheme, f"  {value} ") == value
+
+    @pytest.mark.parametrize(
+        "scheme,value,message",
+        [
+            ("stripe", "sk_live_abcdefghijklmnopqrst", "starts with whsec_"),
+            ("slack", "short", "16 to 512"),
+            ("slack", "has a space inside it here", "no spaces"),
+            ("standard_webhooks", "whsec_not base64!!", "no spaces"),
+            ("standard_webhooks", "whsec_###notbase64####", "base64"),
+            ("github", 12345, "must be text"),
+            ("github", "x" * 600, "16 to 512"),
+        ],
+    )
+    def test_refused(self, scheme, value, message):
+        with pytest.raises(ValueError, match=message):
+            links.check_owner_secret(scheme, value)

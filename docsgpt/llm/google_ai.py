@@ -332,6 +332,10 @@ class GoogleLLM(BaseLLM):
             # Standard format: assistant message with tool_calls array
             msg_tool_calls = message.get("tool_calls")
             if msg_tool_calls and role == "model":
+                # Text the model wrote with the calls (a replayed turn that
+                # ended on a pause) leads them, ahead of their responses.
+                if isinstance(content, str) and content:
+                    parts.append(types.Part.from_text(text=content))
                 for tc in msg_tool_calls:
                     func = tc.get("function", {})
                     call_names[tc.get("id")] = func.get("name", "")

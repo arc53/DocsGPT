@@ -3371,8 +3371,9 @@ def _persist_parse_result(result, title, user_id, parent, options):
 def agent_webhook_worker(self, agent_id, payload):
     """Process the webhook payload for an agent.
 
-    Raises on failure: Celery treats a returned dict as success and
-    would skip retries, leaving the caller with a stale 200.
+    Raises on failure so the task ends ``FAILURE``: Celery treats a
+    returned dict as success. A quota refusal and a run past
+    ``WEBHOOK_RUN_TIMEOUT`` are returned, with their own ``status``.
     """
     self.update_state(state="PROGRESS", meta={"current": 1})
     try:
@@ -3400,6 +3401,8 @@ def agent_webhook_worker(self, agent_id, payload):
         logging.error(f"Error processing agent webhook: {e}", exc_info=True)
         raise
     self.update_state(state="PROGRESS", meta={"current": 50})
+    from celery.exceptions import SoftTimeLimitExceeded
+
     try:
         # Shared headless path with the scheduler; approval-gated tools auto-deny.
         from docsgpt.agents.headless_runner import run_agent_headless
@@ -3424,6 +3427,11 @@ def agent_webhook_worker(self, agent_id, payload):
             f"Webhook skipped for agent {agent_id}: {e}", extra={"agent_id": agent_id}
         )
         return {"status": "quota_exceeded", "error": str(e)}
+    except SoftTimeLimitExceeded:
+        logging.warning(
+            f"Webhook run for agent {agent_id} exceeded WEBHOOK_RUN_TIMEOUT", extra={"agent_id": agent_id}
+        )
+        return {"status": "timeout", "error": "The run exceeded WEBHOOK_RUN_TIMEOUT and was stopped."}
     except Exception as e:
         logging.error(f"Error running agent logic: {e}", exc_info=True)
         raise

@@ -11,7 +11,10 @@ from __future__ import annotations
 from typing import Any, Dict
 
 #: Tools offered an explicit ``background`` argument.
-BACKGROUND_PARAM_TOOLS = frozenset({"code_executor", "mcp_tool", "api_tool", "read_webpage"})
+BACKGROUND_PARAM_TOOLS = frozenset({"code_executor", "mcp_tool", "api_tool", "read_webpage", "remote_device"})
+
+#: Tools whose running output a ``watch`` can read.
+WATCH_PARAM_TOOLS = frozenset({"code_executor", "remote_device"})
 
 _GENERIC = (
     "Run this call as a background job and return a job id at once; you are resumed with the result when it "
@@ -27,13 +30,21 @@ _CODE = (
 )
 
 
+_DEVICE = (
+    "Run this command as a background job and return a job id at once; you are resumed with its exit code and "
+    "output when it ends. Use it for long commands (builds, backups, test suites, deploys); `timeout_ms` may then "
+    "go up to the device job maximum (an hour by default) and defaults to it. A command that runs long becomes a "
+    "background job on its own anyway. If the device goes offline the job waits for it to reconnect."
+)
+
 WATCH_SCHEMA: Dict[str, Any] = {
     "type": "object",
     "description": (
         "For a run that may go long: what its output may do before it ends. Completion and failure always "
         "resume you, so only add patterns for events worth acting on mid-run. Watch reads this call's own output "
-        "as it is printed: print progress directly (flush=True); a child process's output captured with "
-        "subprocess.run(..., capture_output=True) only appears when it ends."
+        "as it is printed (a command's stdout and stderr as the device streams them): print progress directly "
+        "(flush=True); a child process's output captured with subprocess.run(..., capture_output=True) only "
+        "appears when it ends."
     ),
     "properties": {
         "patterns": {
@@ -67,7 +78,7 @@ def add_background_params(tool_name: str, params: Dict[str, Any]) -> None:
         return
     properties["background"] = {
         "type": "boolean",
-        "description": _CODE if tool_name == "code_executor" else _GENERIC,
+        "description": {"code_executor": _CODE, "remote_device": _DEVICE}.get(tool_name, _GENERIC),
     }
-    if tool_name == "code_executor" and "watch" not in properties:
+    if tool_name in WATCH_PARAM_TOOLS and "watch" not in properties:
         properties["watch"] = WATCH_SCHEMA

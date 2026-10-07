@@ -23,6 +23,8 @@ Coercion rules:
 * ``bytes`` → base64 string. Lossless and universally JSON-safe;
   prior code used UTF-8 with ``errors="replace"`` which silently
   corrupted binary payloads (e.g. Gemini's ``thought_signature``).
+* Pydantic model → its JSON-mode ``model_dump`` dict (e.g. a source's
+  ``RetrievalConfig`` inside a paused turn's ``retriever_config``).
 """
 
 from __future__ import annotations
@@ -35,6 +37,8 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+from pydantic import BaseModel
+
 
 def _coerce_scalar(obj: Any) -> Any:
     if isinstance(obj, UUID):
@@ -45,6 +49,8 @@ def _coerce_scalar(obj: Any) -> Any:
         return str(obj)
     if isinstance(obj, bytes):
         return base64.b64encode(obj).decode("ascii")
+    if isinstance(obj, BaseModel):
+        return obj.model_dump(mode="json")
     return obj
 
 
@@ -80,7 +86,7 @@ def decode_base64_bytes(value: Any) -> Any:
 
 
 class PGNativeJSONEncoder(json.JSONEncoder):
-    """``JSONEncoder`` covering UUID / datetime / date / Decimal / bytes.
+    """``JSONEncoder`` covering UUID / datetime / date / Decimal / bytes / Pydantic models.
 
     Use as ``json.dumps(obj, cls=PGNativeJSONEncoder)``. Equivalent in
     coverage to :func:`coerce_pg_native` but skips the eager walk.

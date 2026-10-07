@@ -57,17 +57,21 @@ class TestList:
         with patch("docsgpt.app.handle_auth", return_value=None):
             assert client.get("/api/monitors").status_code == 401
 
-    def test_lists_only_the_callers_monitors_without_secrets(self, client, made, conversation_id):
+    def test_lists_only_the_callers_monitors_without_secrets(self, client, made, conversation_id, mon_db):
         polled_id, hook_id, hook = made
         with _as("u1"):
             body = client.get("/api/monitors").get_json()
         assert {m["monitor_id"] for m in body["monitors"]} == {polled_id, hook_id}
         text = str(body)
         token = hook["url"].rsplit("/", 1)[1]
-        assert token not in text and hook["secret"] not in text and "token_hash" not in text
+        secret = TestRevealSecret._secret(None, mon_db, hook_id)
+        assert token not in text and secret not in text and "token_hash" not in text
         assert "monitor_state" not in text and "secret_encrypted" not in text
         webhook = next(m for m in body["monitors"] if m["monitor_id"] == hook_id)
         assert webhook["links"][0]["kind"] == "webhook" and webhook["links"][0]["signature"] == "github"
+        # The reference is not a secret: the model has it too.
+        assert webhook["links"][0]["secret_ref"] == hook["secret_ref"]
+        assert webhook["links"][0]["secret_placeholder"] == hook["secret"]
         polled = next(m for m in body["monitors"] if m["monitor_id"] == polled_id)
         assert polled["interval"] == "15m" and polled["wakes_left"] == 1 and polled["check_count"] == 1
         with _as("u2"):
@@ -176,3 +180,70 @@ class TestRevealSecret:
         from docsgpt.api.pat.rules import DENIED
 
         assert DENIED["/api/monitors/<string:monitor_id>/secret"] == ("*",)
+
+
+
+class TestSetSecret:
+    def test_the_owner_sets_it_and_nobody_else_can(self, client, made, mon_db, caplog):
+        _polled_id, hook_id, _hook = made
+        value = "a-replacement-secret-0123456789"
+        with _as("u2"):
+            assert client.put(f"/api/monitors/{hook_id}/secret", json={"secret": value}).status_code == 404
+        with _as("u1"):
+            response = client.put(f"/api/monitors/{hook_id}/secret", json={"secret": value})
+            assert response.status_code == 200 and response.get_json() == {"saved": True, "signature": "github"}
+            assert response.headers["Cache-Control"] == "no-store"
+            assert client.get(f"/api/monitors/{hook_id}/secret").get_json()["secret"] == value
+        assert value not in caplog.text
+
+    def test_bad_requests(self, client, made):
+        polled_id, hook_id, _hook = made
+        with _as("u1"):
+            assert client.put(f"/api/monitors/{hook_id}/secret", json={}).status_code == 400
+            bad = client.put(f"/api/monitors/{hook_id}/secret", json={"secret": "short"})
+            assert bad.status_code == 400 and "16 to 512" in bad.get_json()["message"]
+            assert "short" not in bad.get_json()["message"]
+            # A refusal the route doesn't name gets the plain sentence, never the exception's text.
+            with patch("docsgpt.monitors.service.set_secret", side_effect=ValueError("internal detail")):
+                other = client.put(f"/api/monitors/{hook_id}/secret", json={"secret": "x" * 20})
+            assert other.status_code == 400 and "internal detail" not in other.get_json()["message"]
+            assert client.put(f"/api/monitors/{polled_id}/secret",
+                              json={"secret": "a-long-enough-secret-value"}).status_code == 404
+        with patch("docsgpt.app.handle_auth", return_value=None):
+            assert client.put(f"/api/monitors/{hook_id}/secret", json={"secret": "x" * 20}).status_code == 401
+
+    def test_rate_limited(self, client, made, monkeypatch, fake_redis):
+        from docsgpt.api.user.monitors import routes
+
+        monkeypatch.setattr("docsgpt.cache.get_redis_instance", lambda: fake_redis)
+        _polled_id, hook_id, _hook = made
+        with _as("u1"):
+            statuses = [
+                client.put(f"/api/monitors/{hook_id}/secret", json={"secret": "a-long-enough-secret-value"}
+                           ).status_code
+                for _ in range(routes.SECRET_REVEALS_PER_MINUTE + 1)
+            ]
+        assert statuses[0] == 200 and statuses[-1] == 429
+
+
+class TestSecretExposure:
+    def test_only_the_owner_turns_it_on_and_off(self, client, made):
+        _polled_id, hook_id, _hook = made
+        path = f"/api/monitors/{hook_id}/secret/exposure"
+        with _as("u2"):
+            assert client.put(path, json={"exposed": True}).status_code == 404
+        with patch("docsgpt.app.handle_auth", return_value=None):
+            assert client.put(path, json={"exposed": True}).status_code == 401
+        with _as("u1"):
+            assert client.put(path, json={"exposed": "yes"}).status_code == 400
+            on = client.put(path, json={"exposed": True})
+            assert on.status_code == 200 and on.get_json() == {"exposed": True}
+            listed = client.get("/api/monitors").get_json()
+            hook = next(m for m in listed["monitors"] if m["monitor_id"] == hook_id)
+            assert hook["links"][0]["secret_exposed"] is True and "secret" not in hook["links"][0]
+            assert client.put(path, json={"exposed": False}).get_json() == {"exposed": False}
+
+    def test_an_access_token_can_never_change_it(self):
+        from docsgpt.api.pat.rules import DENIED
+
+        assert DENIED["/api/monitors/<string:monitor_id>/secret/exposure"] == ("*",)

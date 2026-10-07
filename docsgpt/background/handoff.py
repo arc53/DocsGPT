@@ -161,9 +161,9 @@ class _Flight:
 class CallHandle:
     """What a running tool sees of its background call (``current_call()``).
 
-    A tool that can run detached (``code_executor``) polls its run and, once
-    the turn handed the call off, moves it to a poller with :meth:`detach`
-    instead of holding a pool thread for the rest of the run.
+    A tool that can run detached (``code_executor``, ``remote_device``) polls
+    its run and, once the turn handed the call off, moves it to a poller with
+    :meth:`detach` instead of holding a pool thread for the rest of the run.
 
     Attributes:
         key: A unique key for this call's detached run.
@@ -187,11 +187,13 @@ class CallHandle:
         else:
             self._flight.job_ready.wait(seconds)
 
-    def detach(self, external: Dict[str, Any]) -> bool:
-        """Hand the rest of the run to the sandbox poller; True when it took it.
+    def detach(self, external: Dict[str, Any], *, runner: str = "sandbox") -> bool:
+        """Hand the rest of the run to a poller; True when it took it.
 
         Args:
             external: Everything the poller needs (run handle, finish state).
+            runner: ``sandbox`` (a detached code run) or ``device`` (a command
+                on a paired remote device).
 
         Returns:
             False when the job could not be moved (keep polling here).
@@ -199,7 +201,10 @@ class CallHandle:
         job_id = self._flight.job_id
         if job_id is None:
             return False
-        from docsgpt.background.sandbox_runner import detach_job
+        if runner == "device":
+            from docsgpt.background.device_runner import detach_job
+        else:
+            from docsgpt.background.sandbox_runner import detach_job
 
         if not detach_job(job_id, external):
             return False
@@ -208,7 +213,7 @@ class CallHandle:
 
 
 def _detaches(tool: Any) -> bool:
-    """Whether the tool can move a running call to a sandbox poller (``code_executor``)."""
+    """Whether the tool can move a running call to a poller (``code_executor``, ``remote_device``)."""
     supports = getattr(tool, "supports_detached", None)
     try:
         return bool(callable(supports) and supports())
@@ -247,7 +252,12 @@ def run_call(
             queued = _run_in_worker(context, spec)
             if queued is not None:
                 return queued
-        yield_seconds = 0
+        elif _detaches(tool) and not _caps_allow(context):
+            # Over the cap the call runs in the foreground; it must not take a
+            # background run's longer limits (an hour-long device command) there.
+            explicit = False
+        if explicit:
+            yield_seconds = 0
 
     flight = _Flight()
     handle = CallHandle(flight, explicit=explicit, watch=_watch_of(spec))
@@ -291,6 +301,15 @@ def run_call(
     return _await_or_hand_off(context, spec, flight, future, window_override=yield_seconds)
 
 
+def _caps_allow(context: BackgroundContext) -> bool:
+    """``jobs.within_caps``, False when it can't be read (the call then stays in the foreground)."""
+    try:
+        return jobs.within_caps(context)
+    except Exception:
+        logger.exception("background job cap check failed; the call stays in the foreground")
+        return False
+
+
 def _await_or_hand_off(
     context: BackgroundContext,
     spec: CallSpec,
@@ -307,12 +326,7 @@ def _await_or_hand_off(
     except FuturesTimeout:
         pass
 
-    try:
-        allowed = jobs.within_caps(context)
-    except Exception:
-        logger.exception("background job cap check failed; the call stays in the foreground")
-        allowed = False
-    if not allowed:
+    if not _caps_allow(context):
         return Outcome(False, value=future.result())
 
     with flight.lock:

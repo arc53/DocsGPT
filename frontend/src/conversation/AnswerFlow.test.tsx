@@ -8,6 +8,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import en from '../locale/en.json';
 import { AnswerSegment } from './answerSegments';
 import AnswerFlow from './AnswerFlow';
+import { ToolCallDetail } from './StepGroup';
 import { ToolCallsType } from './types';
 
 const testI18n = i18n.createInstance();
@@ -178,6 +179,49 @@ describe('AnswerFlow', () => {
     });
     expect(html).toContain('Searching the web');
     expect(html).not.toContain('slide-in-from-bottom-1.5');
+  });
+});
+
+describe('calls that never ran', () => {
+  const detail = (toolCall: ToolCallsType): string =>
+    renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <ToolCallDetail toolCall={toolCall} />
+      </I18nextProvider>,
+    );
+
+  it('marks a call the user moved past as not run, not as ran', () => {
+    const html = render({
+      toolCalls: [search({ status: 'denied', not_run: 'moved_on' })],
+      segments: [{ kind: 'tool', call_id: 'c1' }],
+    });
+    expect(html).not.toContain('APPROVAL_BAR');
+    expect(html).toContain('not run');
+  });
+
+  it('says why it never ran', () => {
+    expect(detail(search({ status: 'denied', not_run: 'moved_on' }))).toContain(
+      'Not run: the conversation moved on before this was approved.',
+    );
+    expect(detail(search({ status: 'denied', not_run: 'expired' }))).toContain(
+      'Not run: the approval request expired.',
+    );
+    expect(detail(search({ status: 'denied' }))).toContain('Denied by user');
+  });
+
+  it('shows a refused call as failed with the reason, after a reload too', () => {
+    const refused = search({
+      status: 'error',
+      error: 'memory never receives secrets.',
+      result: 'Tool denied: memory never receives secrets.' as never,
+    });
+    expect(
+      render({
+        toolCalls: [refused],
+        segments: [{ kind: 'tool', call_id: 'c1' }],
+      }),
+    ).toContain('failed');
+    expect(detail(refused)).toContain('memory never receives secrets.');
   });
 });
 

@@ -24,6 +24,18 @@ export type BackgroundJobProgress = {
   percent?: number;
   last?: string;
   updated_at?: string;
+  /** Set while a device job's device is offline. */
+  waiting_for?: 'device' | null;
+};
+
+/** `job_notices` on the backend (`docsgpt/background/results.py`). */
+export type BackgroundJobNotice = {
+  code:
+    | 'cancel_unsupported'
+    | 'device_interrupted'
+    | 'device_shutdown'
+    | 'output_truncated';
+  pid?: number;
 };
 
 /** `job_summary` on the backend (`docsgpt/background/service.py`). */
@@ -41,6 +53,8 @@ export type BackgroundJobSummary = {
   finished_at?: string | null;
   auto_resume?: boolean;
   cancel_requested?: boolean;
+  /** What the card says beyond the status (a device job's client restarted, truncated output, ...). */
+  notices?: BackgroundJobNotice[];
   /** A finished job's error message (the single-job route only). */
   error?: string;
 };

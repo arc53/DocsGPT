@@ -301,7 +301,9 @@ def delete_source(owner: str, doc: dict, *, actor: Optional[str] = None) -> bool
                     storage.delete_file(f"{index_path}/{index_file}")
         else:
             vectorstore = VectorCreator.create_vectorstore(
-                settings.VECTOR_STORE, source_id=source_id
+                settings.VECTOR_STORE,
+                source_id=source_id,
+                embeddings_key=settings.EMBEDDINGS_KEY,
             )
             vectorstore.delete_index()
         if "file_path" in doc and doc["file_path"]:

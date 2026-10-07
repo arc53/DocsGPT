@@ -84,6 +84,23 @@ class MonitorSettings(SettingsGroup):
     TRIGGER_MAX_PAYLOAD_BYTES: int = Field(
         default=65536, ge=1024, description="Largest request body a trigger link accepts, in bytes; larger gets 413."
     )
+    TRIGGER_GET_MAX_HITS: int = Field(
+        default=100,
+        ge=1,
+        description=(
+            "Calls a webhook link that also accepts GET takes over its lifetime (a POST-only link takes 1000). "
+            "Lower, since a GET link can be fired by anything that opens it."
+        ),
+    )
+    TRIGGER_GET_DEFAULT_TTL_HOURS: int = Field(
+        default=24,
+        ge=1,
+        description=(
+            "Default lifetime, in hours, of a webhook link that also accepts GET, when monitor_create asks for "
+            "none (a POST-only link defaults to MONITOR_DEFAULT_TTL_DAYS). An explicit expires_in still applies, up "
+            "to MONITOR_MAX_TTL_DAYS."
+        ),
+    )
     TRIGGER_DEDUPE_WINDOW_SECONDS: int = Field(
         default=600,
         ge=1,

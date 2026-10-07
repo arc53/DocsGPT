@@ -27,7 +27,10 @@ class ReconciliationRepository:
         across ticks. Liveness exemption covers both ``pending`` (paused
         waiting for resume) and ``resuming`` (actively executing)
         ``pending_tool_state`` rows so a paused message survives until
-        the PT row's own TTL retires it.
+        the PT row's own TTL retires it. The PT row must name this message
+        as its ``agent_config.reserved_message_id``: the row is keyed per
+        conversation, so a later turn sent while an earlier one waits on
+        approval would otherwise borrow that pause.
 
         A second exemption covers **server-executed** tools.
         ``pending_tool_state`` is only written on the pause path (client-side
@@ -73,6 +76,7 @@ class ReconciliationRepository:
                       FROM pending_tool_state pts
                       WHERE pts.conversation_id = cm.conversation_id
                         AND pts.user_id = cm.user_id
+                        AND pts.agent_config->>'reserved_message_id' = cm.id::text
                         AND (
                             (pts.status = 'pending'
                              AND pts.expires_at > now())
@@ -160,18 +164,55 @@ class ReconciliationRepository:
     def find_and_lock_executed_tool_calls(
         self, *, age_minutes: int = 15, limit: int = 100,
     ) -> list[dict]:
-        """Lock tool_call_attempts stuck in ``executed`` past confirm window."""
+        """Lock tool_call_attempts stuck in ``executed`` past confirm window.
+
+        A call whose turn is paused on ``pending_tool_state`` is left alone:
+        the row is confirmed when the turn finalizes, and a paused turn only
+        finalizes after the user answers the approval (or the pause expires and
+        ``cleanup_pending_tool_state`` fails the message, which confirms it
+        too). The pause outlives this window — its TTL is 30 minutes — so
+        without the exemption a call that ran before the pause, or was approved
+        on one resume before the turn paused again, was failed while the side
+        effect it reports had committed. The predicate matches
+        :meth:`find_and_lock_stuck_messages`.
+
+        Args:
+            age_minutes: How long a row may sit in ``executed``.
+            limit: Maximum rows to lock per tick.
+
+        Returns:
+            The locked rows as dicts.
+        """
         result = self._conn.execute(
             text(
                 """
-                SELECT call_id, message_id, tool_id, tool_name, action_name,
-                       arguments, result, attempted_at, updated_at
-                FROM tool_call_attempts
-                WHERE status = 'executed'
-                  AND updated_at < now() - make_interval(mins => :age)
-                ORDER BY updated_at ASC
+                SELECT tca.call_id, tca.message_id, tca.tool_id, tca.tool_name,
+                       tca.action_name, tca.arguments, tca.result,
+                       tca.attempted_at, tca.updated_at
+                FROM tool_call_attempts tca
+                WHERE tca.status = 'executed'
+                  AND tca.updated_at < now() - make_interval(mins => :age)
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM conversation_messages cm
+                      JOIN pending_tool_state pts
+                        ON pts.conversation_id = cm.conversation_id
+                       AND pts.user_id = cm.user_id
+                       AND pts.agent_config->>'reserved_message_id' = cm.id::text
+                      WHERE cm.id = tca.message_id
+                        AND cm.status IN ('pending', 'streaming')
+                        AND (
+                            (pts.status = 'pending'
+                             AND pts.expires_at > now())
+                            OR
+                            (pts.status = 'resuming'
+                             AND pts.resumed_at
+                                 > now() - interval '10 minutes')
+                        )
+                  )
+                ORDER BY tca.updated_at ASC
                 LIMIT :limit
-                FOR UPDATE SKIP LOCKED
+                FOR UPDATE OF tca SKIP LOCKED
                 """
             ),
             {"age": age_minutes, "limit": limit},

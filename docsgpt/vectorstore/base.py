@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import threading
 from abc import ABC, abstractmethod
@@ -12,6 +13,24 @@ from docsgpt.vectorstore.model_registry import (
     max_input_tokens_for,
     resolve,
 )
+
+
+def _key_fingerprint(api_key: Optional[str]) -> str:
+    """Non-reversible tag for an API key, so it can be named without being exposed.
+
+    Part of every cached client's identity: the cache used to be keyed without
+    the key, so the first caller's key served every later caller in the
+    process. Also what an auth failure logs in place of the key.
+
+    Args:
+        api_key: The key, or ``None``/empty for none.
+
+    Returns:
+        str: The first 16 hex characters of the key's SHA-256, or ``"nokey"``.
+    """
+    if not api_key:
+        return "nokey"
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
 
 
 def _embeddings_name_is_explicit() -> bool:
@@ -42,6 +61,7 @@ class RemoteEmbeddings:
     def __init__(self, api_url: str, model_name: str, api_key: str = None):
         self.api_url = api_url.rstrip("/")
         self.model_name = model_name
+        self.key_fingerprint = _key_fingerprint(api_key)
         self.headers = {"Content-Type": "application/json"}
         if api_key:
             self.headers["Authorization"] = f"Bearer {api_key}"
@@ -136,6 +156,21 @@ class RemoteEmbeddings:
 
         url = f"{self.api_url}/v1/embeddings"
         response = requests.post(url, headers=self.headers, json=payload, timeout=180)
+        if response.status_code in (401, 403):
+            # A rejected key is configuration, not a transient fault: every
+            # later request fails the same way until the key is fixed.
+            logging.error(
+                "embeddings_auth_failed status_code=%s model=%s key_fingerprint=%s: "
+                "the embeddings endpoint rejected this process's key; check EMBEDDINGS_KEY",
+                response.status_code,
+                self.model_name,
+                self.key_fingerprint,
+                extra={
+                    "event": "embeddings_auth_failed",
+                    "status_code": response.status_code,
+                    "key_fingerprint": self.key_fingerprint,
+                },
+            )
         response.raise_for_status()
         result = response.json()
 
@@ -221,10 +256,14 @@ class EmbeddingsSingleton:
                 ``settings.EMBEDDINGS_KEY`` when not provided.
 
         Returns:
-            RemoteEmbeddings: Shared instance keyed by base URL and model name.
+            RemoteEmbeddings: Shared instance keyed by base URL, model name and
+            a fingerprint of the key, so a caller holding a different key never
+            gets a client that authenticates with someone else's.
         """
         api_key = embeddings_key if embeddings_key is not None else settings.EMBEDDINGS_KEY
-        cache_key = f"remote_{settings.EMBEDDINGS_BASE_URL}_{embeddings_name}"
+        cache_key = (
+            f"remote_{settings.EMBEDDINGS_BASE_URL}_{embeddings_name}_{_key_fingerprint(api_key)}"
+        )
         return EmbeddingsSingleton._get_or_create(
             cache_key,
             lambda: RemoteEmbeddings(
@@ -250,9 +289,18 @@ class EmbeddingsSingleton:
     @staticmethod
     def get_instance(embeddings_name, *args, **kwargs):
         if settings.EMBEDDINGS_BASE_URL:
-            return EmbeddingsSingleton._remote_instance(embeddings_name)
+            # A direct caller hands its key over positionally or as
+            # ``openai_api_key``; either wins over EMBEDDINGS_KEY.
+            explicit = kwargs.get("openai_api_key", args[0] if args else None)
+            return EmbeddingsSingleton._remote_instance(
+                embeddings_name, explicit if isinstance(explicit, str) else None
+            )
+        # A keyed runner (OpenAI) is cached per key. A local model takes no key
+        # and stays under its bare name, which the boot hook evicts it by.
+        key = kwargs.get("openai_api_key")
+        cache_key = embeddings_name if key is None else f"{embeddings_name}_{_key_fingerprint(key)}"
         return EmbeddingsSingleton._get_or_create(
-            embeddings_name,
+            cache_key,
             lambda: EmbeddingsSingleton._create_instance(embeddings_name, *args, **kwargs),
         )
 
@@ -324,14 +372,20 @@ def get_embeddings(
     """
     embeddings_name = embeddings_name or settings.EMBEDDINGS_NAME
     if not settings.EMBEDDINGS_BASE_URL and _delegation_enabled():
-        cache_key = f"delegated_{embeddings_name}"
-        if cache_key not in EmbeddingsSingleton._instances:
+        # Keyed by the key too: inside a worker the client embeds locally with
+        # the key it was built with. A dispatched embed carries no key -- the
+        # worker embeds with its own EMBEDDINGS_KEY, which it shares with this
+        # process -- so no secret ever travels over the broker.
+        api_key = embeddings_key if embeddings_key is not None else settings.EMBEDDINGS_KEY
+
+        def _delegated():
             from docsgpt.vectorstore.embeddings_delegated import DelegatedEmbeddings
 
-            EmbeddingsSingleton._instances[cache_key] = DelegatedEmbeddings(
-                embeddings_name, embeddings_key
-            )
-        return EmbeddingsSingleton._instances[cache_key]
+            return DelegatedEmbeddings(embeddings_name, api_key)
+
+        return EmbeddingsSingleton._get_or_create(
+            f"delegated_{embeddings_name}_{_key_fingerprint(api_key)}", _delegated
+        )
     return build_local_embeddings(embeddings_name, embeddings_key)
 
 

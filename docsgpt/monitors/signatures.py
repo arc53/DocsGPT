@@ -1,4 +1,4 @@
-"""Verifying signed webhook deliveries: Standard Webhooks, GitHub, and a plain HMAC-SHA256 header.
+"""Verifying signed webhook deliveries: Standard Webhooks, GitHub, Stripe, Slack, HMAC and static tokens.
 
 Every comparison is constant-time (:func:`hmac.compare_digest`) and is made
 over the raw request body exactly as received.
@@ -13,6 +13,17 @@ over the raw request body exactly as received.
 * ``github``: ``X-Hub-Signature-256: sha256=<hex HMAC-SHA256 of the body>``,
   keyed with the secret's UTF-8 bytes.
 * ``hmac_sha256``: ``X-Signature: sha256=<hex>``, the same computation.
+* ``stripe``: ``Stripe-Signature: t=<unix>,v1=<hex>[,v1=<hex>...]``, the
+  hex HMAC-SHA256 of ``"{t}.{body}"`` keyed with the endpoint secret's UTF-8
+  bytes (``whsec_...`` as Stripe shows it). Any ``v1`` matching passes (Stripe
+  sends several while a secret is rolled); ``t`` must be within
+  :data:`TOLERANCE_SECONDS`.
+* ``slack``: ``X-Slack-Signature: v0=<hex>`` with ``X-Slack-Request-Timestamp``,
+  the hex HMAC-SHA256 of ``"v0:{ts}:{body}"`` keyed with the app's signing
+  secret; the timestamp must be within :data:`TOLERANCE_SECONDS`.
+* ``header_token``: a static header (``X-Webhook-Token`` unless the link names
+  another, e.g. GitLab's ``X-Gitlab-Token``) equal to the secret.
+* ``bearer``: ``Authorization: Bearer <secret>``.
 """
 
 from __future__ import annotations
@@ -24,8 +35,11 @@ import hmac
 import time
 from typing import Mapping, Optional
 
-#: How far a Standard Webhooks timestamp may be from now, in seconds (the spec's five minutes).
+#: How far a signed timestamp (Standard Webhooks, Stripe, Slack) may be from now, in seconds: five minutes.
 TOLERANCE_SECONDS = 300
+
+#: The header a ``header_token`` link reads when it names none.
+DEFAULT_TOKEN_HEADER = "X-Webhook-Token"
 
 _WHSEC_PREFIX = "whsec_"
 
@@ -115,16 +129,109 @@ def verify_hex(secret: str, header_value: Optional[str], body: bytes) -> None:
         raise SignatureError("the signature does not match")
 
 
+def _within_tolerance(stamp: Optional[str], now: Optional[float], name: str) -> int:
+    """The signed timestamp as an int, raising unless it is within :data:`TOLERANCE_SECONDS` of now."""
+    if not stamp:
+        raise SignatureError(f"{name} is missing")
+    try:
+        timestamp = int(stamp)
+    except ValueError:
+        raise SignatureError(f"{name} is not a Unix time") from None
+    current = time.time() if now is None else now
+    if abs(current - timestamp) > TOLERANCE_SECONDS:
+        raise SignatureError(f"{name} is too old or too new")
+    return timestamp
+
+
+def sign_stripe(secret: str, timestamp: int, body: bytes) -> str:
+    """The ``Stripe-Signature`` value for a delivery (used by tests and examples)."""
+    return f"t={timestamp},v1={hex_hmac(secret, f'{timestamp}.'.encode('utf-8') + body)}"
+
+
+def verify_stripe(secret: str, headers: Mapping[str, str], body: bytes, *, now: Optional[float] = None) -> None:
+    """Verify Stripe's ``Stripe-Signature``: a recent ``t`` and any ``v1`` matching.
+
+    Raises:
+        SignatureError: Missing or malformed header, a stale timestamp, or no matching ``v1``.
+    """
+    header = _header(headers, "Stripe-Signature")
+    if not header:
+        raise SignatureError("Stripe-Signature is missing")
+    stamp: Optional[str] = None
+    candidates = []
+    for item in header.split(","):
+        key, _, value = item.strip().partition("=")
+        if key == "t":
+            stamp = value.strip()
+        elif key == "v1" and value.strip():
+            candidates.append(value.strip().lower())
+    timestamp = _within_tolerance(stamp, now, "the Stripe-Signature timestamp")
+    if not candidates:
+        raise SignatureError("Stripe-Signature has no v1 signature")
+    expected = hex_hmac(secret, f"{timestamp}.".encode("utf-8") + body).encode("ascii")
+    # Every candidate is compared, so the time taken doesn't say which one matched.
+    matched = False
+    for candidate in candidates:
+        matched |= hmac.compare_digest(candidate.encode("ascii", "replace"), expected)
+    if not matched:
+        raise SignatureError("no Stripe v1 signature matches")
+
+
+def sign_slack(secret: str, timestamp: int, body: bytes) -> str:
+    """The ``X-Slack-Signature`` value for a request (used by tests and examples)."""
+    return "v0=" + hex_hmac(secret, f"v0:{timestamp}:".encode("utf-8") + body)
+
+
+def verify_slack(secret: str, headers: Mapping[str, str], body: bytes, *, now: Optional[float] = None) -> None:
+    """Verify Slack's ``X-Slack-Signature`` over ``v0:{timestamp}:{body}``.
+
+    Raises:
+        SignatureError: Missing headers, a stale timestamp, or a wrong signature.
+    """
+    signature = _header(headers, "X-Slack-Signature")
+    if not signature:
+        raise SignatureError("X-Slack-Signature is missing")
+    timestamp = _within_tolerance(
+        _header(headers, "X-Slack-Request-Timestamp"), now, "X-Slack-Request-Timestamp"
+    )
+    expected = sign_slack(secret, timestamp, body).encode("ascii")
+    if not hmac.compare_digest(signature.strip().lower().encode("ascii", "replace"), expected):
+        raise SignatureError("the Slack signature does not match")
+
+
+def verify_token(secret: str, presented: Optional[str], what: str) -> None:
+    """Compare a static token in constant time.
+
+    Raises:
+        SignatureError: It is missing or wrong.
+    """
+    if not presented:
+        raise SignatureError(f"{what} is missing")
+    if not hmac.compare_digest(presented.strip().encode("utf-8"), secret.encode("utf-8")):
+        raise SignatureError(f"{what} does not match")
+
+
+def _bearer(headers: Mapping[str, str]) -> Optional[str]:
+    value = _header(headers, "Authorization")
+    if not value:
+        return None
+    kind, _, token = value.strip().partition(" ")
+    return token.strip() if kind.lower() == "bearer" and token.strip() else None
+
+
 def verify(scheme: str, secret: Optional[str], headers: Mapping[str, str], body: bytes,
-           *, now: Optional[float] = None) -> Optional[str]:
+           *, now: Optional[float] = None, header_name: Optional[str] = None) -> Optional[str]:
     """Verify a delivery for the link's scheme.
 
     Args:
-        scheme: ``none``, ``standard_webhooks``, ``github`` or ``hmac_sha256``.
+        scheme: ``none``, ``standard_webhooks``, ``github``, ``hmac_sha256``,
+            ``stripe``, ``slack``, ``header_token`` or ``bearer``.
         secret: The link's decrypted secret.
         headers: The request headers.
         body: The raw body.
         now: The current Unix time (for tests).
+        header_name: The header a ``header_token`` link reads (default
+            :data:`DEFAULT_TOKEN_HEADER`).
 
     Returns:
         The sender's delivery id when the scheme carries one (Standard Webhooks), else None.
@@ -143,5 +250,18 @@ def verify(scheme: str, secret: Optional[str], headers: Mapping[str, str], body:
         return None
     if scheme == "hmac_sha256":
         verify_hex(secret, _header(headers, "X-Signature"), body)
+        return None
+    if scheme == "stripe":
+        verify_stripe(secret, headers, body, now=now)
+        return None
+    if scheme == "slack":
+        verify_slack(secret, headers, body, now=now)
+        return None
+    if scheme == "header_token":
+        name = header_name or DEFAULT_TOKEN_HEADER
+        verify_token(secret, _header(headers, name), name)
+        return None
+    if scheme == "bearer":
+        verify_token(secret, _bearer(headers), "the Authorization bearer token")
         return None
     raise SignatureError(f"unknown signature scheme {scheme!r}")

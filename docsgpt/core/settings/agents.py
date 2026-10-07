@@ -30,6 +30,14 @@ class AgentSettings(SettingsGroup):
             "MONITORS_ENABLED is on."
         ),
     )
+    WEBHOOK_RUN_TIMEOUT: int = Field(
+        default=600,
+        gt=0,
+        description=(
+            "Wall-clock cap on one agent webhook run, in seconds (at least 30). Past it the run stops and its task "
+            'ends with a "timeout" result; the worker kills it 60 seconds later if it has not stopped by then.'
+        ),
+    )
     ENABLE_TOOL_PREFETCH: bool = Field(default=True, description="Pre-fetch retrieval before the agent's first turn.")
     TOOL_RESULT_MAX_TOKENS: int = Field(
         default=20000,

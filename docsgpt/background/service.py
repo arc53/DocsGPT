@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
 from docsgpt.background.events import publish_job_updated
-from docsgpt.background.results import model_status
+from docsgpt.background.results import job_notices, model_status
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 from docsgpt.storage.db.repositories.conversation_wakes import ConversationWakesRepository
 from docsgpt.storage.db.session import db_session
@@ -45,7 +45,7 @@ def job_summary(job: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         ``{job_id, conversation_id, tool_name, action_name, status, status_message,
         progress, output_tail, elapsed_s, started_at, finished_at, delivery_state,
-        cancel_requested}``.
+        cancel_requested, notices}``.
     """
     return {
         "job_id": str(job.get("id")),
@@ -62,6 +62,7 @@ def job_summary(job: Dict[str, Any]) -> Dict[str, Any]:
         "delivery_state": job.get("delivery_state"),
         "auto_resume": bool(job.get("auto_resume")),
         "cancel_requested": bool(job.get("cancel_requested_at")),
+        "notices": job_notices(job),
     }
 
 
@@ -97,9 +98,11 @@ def claim_for_poll(job_id: str) -> Tuple[Optional[Dict[str, Any]], bool]:
 def cancel_job(job_id: str, user_id: str) -> Optional[Dict[str, Any]]:
     """Ask a job to stop; it reaches ``cancelled`` once its work really stops.
 
-    A detached sandbox run is stopped on its next poll (queued now); a queued
-    worker call never starts; an in-process call can't be interrupted, so it
-    ends ``cancelled`` when it returns.
+    A detached sandbox run is stopped on its next poll (queued now), and so is
+    a device command (the device is told to kill it; one it never picked up
+    is taken off its queue); a queued worker call never starts; an
+    in-process call can't be interrupted, so it ends ``cancelled`` when it
+    returns.
 
     Args:
         job_id: The job.
@@ -116,5 +119,9 @@ def cancel_job(job_id: str, user_id: str) -> Optional[Dict[str, Any]]:
         from docsgpt.background.sandbox_runner import enqueue_poll
 
         enqueue_poll(str(row["id"]), 0)
+    elif row.get("status") == "working" and row.get("runner") == "device":
+        from docsgpt.background.device_runner import enqueue_poll as enqueue_device_poll
+
+        enqueue_device_poll(str(row["id"]), 0)
     publish_job_updated(row)
     return row

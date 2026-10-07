@@ -650,6 +650,105 @@ class TestIngest:
             MonitorsRepository(conn).acquire_tick(monitor["id"], stale_seconds=900)
         assert tick.process_event(monitor["id"], {"event": "failed", "source_id": "src-1"}) == {"state": "failed"}
 
+    @staticmethod
+    def _events(engine):
+        with engine.connect() as conn:
+            return [dict(r._mapping) for r in conn.execute(text("SELECT * FROM monitor_events ORDER BY received_at"))]
+
+    def test_an_ingest_event_is_stored_before_it_is_queued(self, mon_db, conversation_id, queued, wakes, events):
+        monitor = make_monitor(
+            mon_db, conversation_id, source={"type": "ingest", "source_id": "src-1"}, check=None, state={}
+        )
+        tick.on_ingest_event("u1", "source.ingest.completed", {"source_id": "src-1", "filename": "a.pdf"})
+        stored = self._events(mon_db)
+        assert len(stored) == 1 and stored[0]["status"] == "pending"
+        assert stored[0]["payload"]["filename"] == "a.pdf"
+        monitor_id, event = queued["events"][0]
+        assert event["row_id"] == str(stored[0]["id"])
+        assert tick.process_event(monitor_id, event) == {"state": "woken"}
+        assert self._events(mon_db)[0]["status"] == "processed"
+        assert "row_id" not in wakes[0]["payload"]["ingest"]
+        assert reload(mon_db, monitor["id"])["status"] == "completed"
+
+    def test_a_lost_task_is_queued_again_by_the_sweep(self, mon_db, conversation_id, wakes, events, monkeypatch):
+        """The broker refused the task: the event is not dropped, the dispatcher's sweep runs it later."""
+        import docsgpt.api.user.tasks as tasks
+
+        def refuse(*args, **kwargs):
+            raise ConnectionError("broker down")
+
+        monkeypatch.setattr(tasks.process_monitor_event, "apply_async", refuse)
+        make_monitor(mon_db, conversation_id, source={"type": "ingest", "source_id": "src-1"}, check=None, state={})
+        tick.on_ingest_event("u1", "source.ingest.failed", {"source_id": "src-1", "error": "bad pdf"})
+        assert self._events(mon_db)[0]["status"] == "pending"
+
+        sent = []
+        monkeypatch.setattr(tasks.process_monitor_event, "apply_async", lambda args, **kw: sent.append(args))
+        with mon_db.begin() as conn:
+            conn.execute(text("UPDATE monitor_events SET received_at = now() - interval '1 hour'"))
+        assert tick.dispatch_due_monitors()["requeued"] == 1
+        monitor_id, event = sent[0]
+        assert tick.process_event(monitor_id, event) == {"state": "woken"}
+        assert "failed: bad pdf" in wakes[0]["payload"]["summary"]
+
+    def test_an_undecided_stored_event_goes_back_to_pending(
+        self, mon_db, conversation_id, queued, wakes, events, monkeypatch
+    ):
+        make_monitor(
+            mon_db, conversation_id, source={"type": "ingest", "source_id": "src-1"}, check=None, state={},
+            condition="the ingest failed",
+        )
+        monkeypatch.setattr(tick, "_decide", lambda *args: ("retry", None, None))
+        tick.on_ingest_event("u1", "source.ingest.failed", {"source_id": "src-1"})
+        monitor_id, event = queued["events"][0]
+        assert tick.process_event(monitor_id, event) == {"state": "retry"}
+        stored = self._events(mon_db)[0]
+        assert stored["status"] == "pending" and stored["attempts"] == 1
+        assert queued["events"][1] == [monitor_id, event, 1]
+        assert tick.process_event(monitor_id, event, tick.MAX_HIT_DEFERRALS - 1) == {"state": "failed"}
+        assert self._events(mon_db)[0]["status"] == "failed"
+
+    def test_a_busy_monitor_leaves_the_stored_event_pending(self, mon_db, conversation_id, queued, wakes, events):
+        monitor = make_monitor(
+            mon_db, conversation_id, source={"type": "ingest", "source_id": "src-1"}, check=None, state={}
+        )
+        tick.on_ingest_event("u1", "source.ingest.completed", {"source_id": "src-1"})
+        monitor_id, event = queued["events"][0]
+        with mon_db.begin() as conn:
+            MonitorsRepository(conn).acquire_tick(monitor["id"], stale_seconds=900)
+        assert tick.process_event(monitor_id, event, tick.MAX_HIT_DEFERRALS - 1) == {"state": "busy"}
+        assert self._events(mon_db)[0]["status"] == "pending" and wakes == []
+
+    def test_an_event_that_never_gets_processed_is_given_up_with_a_note(
+        self, mon_db, conversation_id, queued, wakes, events
+    ):
+        monitor = make_monitor(
+            mon_db, conversation_id, source={"type": "ingest", "source_id": "src-1"}, check=None, state={}
+        )
+        tick.on_ingest_event("u1", "source.ingest.completed", {"source_id": "src-1"})
+        with mon_db.begin() as conn:
+            conn.execute(
+                text("UPDATE monitor_events SET attempts = :n - 1, received_at = now() - interval '1 hour'"),
+                {"n": tick.MAX_EVENT_REQUEUES},
+            )
+        assert tick.dispatch_due_monitors()["requeued"] == 0
+        assert self._events(mon_db)[0]["status"] == "failed"
+        assert "never got processed" in reload(mon_db, monitor["id"])["last_error"]
+
+    def test_settled_events_are_cleaned_up(self, mon_db, conversation_id, queued, events, monkeypatch):
+        from docsgpt.monitors.tasks import cleanup_hits
+
+        make_monitor(mon_db, conversation_id, source={"type": "ingest", "source_id": "src-1"}, check=None, state={})
+        tick.on_ingest_event("u1", "source.ingest.completed", {"source_id": "src-1"})
+        tick.on_ingest_event("u1", "source.ingest.completed", {"source_id": "src-1"})
+        with mon_db.begin() as conn:
+            conn.execute(text(
+                "UPDATE monitor_events SET status = CASE WHEN dedupe_key = (SELECT min(dedupe_key) FROM "
+                "monitor_events) THEN 'processed' ELSE 'pending' END, received_at = now() - interval '30 days'"
+            ))
+        assert cleanup_hits()["events"] == 1
+        assert [row["status"] for row in self._events(mon_db)] == ["pending"]
+
     def test_publish_user_event_feeds_the_hook_even_without_sse(self, monkeypatch):
         seen = []
         monkeypatch.setattr(tick, "on_ingest_event", lambda *args: seen.append(args))

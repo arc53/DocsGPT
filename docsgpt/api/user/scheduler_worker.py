@@ -27,7 +27,6 @@ from docsgpt.storage.db.repositories.schedule_runs import (
     ScheduleRunsRepository,
 )
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
-from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 
 logger = logging.getLogger(__name__)
 
@@ -455,24 +454,9 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
             update_fields["error_type"] = error_type
             update_fields["error"] = error_text
         updated_run = ScheduleRunsRepository(conn).update(run_id, update_fields)
-        if used_tokens > 0:
-            agent_id_raw = schedule.get("agent_id")
-            try:
-                TokenUsageRepository(conn).insert(
-                    user_id=schedule.get("user_id"),
-                    api_key=None,
-                    prompt_tokens=prompt_tokens,
-                    generated_tokens=generated_tokens,
-                    timestamp=finished,
-                    agent_id=str(agent_id_raw) if agent_id_raw else None,
-                    source="schedule",
-                    request_id=str(run_id),
-                    model_id=outcome.get("model_id"),
-                )
-            except Exception:
-                logger.exception(
-                    "scheduler: token_usage insert failed run=%s", run_id,
-                )
+        # No token_usage row here: the run's LLM calls were each recorded by
+        # the usage decorators as they ran, and a run total on top of them
+        # counted every token twice. The run's own total stays on its row.
         schedules_repo = SchedulesRepository(conn)
         autopaused = False
         if new_status == "success":

@@ -83,6 +83,9 @@ UNDECIDED_RETRY_SECONDS = 60
 #: Why an event is dropped after ``MAX_HIT_DEFERRALS`` undecided tries.
 UNDECIDED_NOTE = "the condition could not be judged after several tries"
 
+#: Times the sweep queues a stored ingest event again before it is given up.
+MAX_EVENT_REQUEUES = 10
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -176,7 +179,7 @@ def dispatch_due_monitors(now: Optional[datetime] = None) -> Dict[str, int]:
             counts["ticked"] += 1
         except Exception:
             logger.exception("monitor %s: could not queue its tick", monitor_id)
-    counts["requeued"] = _requeue_stuck_hits()
+    counts["requeued"] = _requeue_stuck_hits() + _requeue_stuck_events()
     return counts
 
 
@@ -193,6 +196,53 @@ def _requeue_stuck_hits() -> int:
         if enqueue_hit(str(hit["id"])):
             queued += 1
     return queued
+
+
+def _requeue_stuck_events() -> int:
+    """Queue again the stored ingest events whose task never ran, or could not be queued again.
+
+    An event queued too often without being settled is given up: it is
+    marked failed and its monitor's ``last_error`` says so.
+    """
+    from docsgpt.storage.db.repositories.monitor_events import MonitorEventsRepository
+
+    try:
+        with db_readonly() as conn:
+            stuck = MonitorEventsRepository(conn).list_stuck(age_seconds=STUCK_HIT_SECONDS)
+    except Exception:
+        logger.exception("monitors: listing stuck ingest events failed")
+        return 0
+    queued = 0
+    for row in stuck:
+        event_id = str(row["id"])
+        monitor_id = str(row["monitor_id"])
+        try:
+            with db_session() as conn:
+                tries = MonitorEventsRepository(conn).bump(event_id)
+                if tries >= MAX_EVENT_REQUEUES:
+                    MonitorEventsRepository(conn).mark(event_id, "failed", "never got processed")
+            if tries >= MAX_EVENT_REQUEUES:
+                _store(monitor_id, None, {"last_error": "an ingest event was dropped: it never got processed"})
+                continue
+        except Exception:
+            logger.exception("monitors: requeueing ingest event %s failed", event_id)
+            continue
+        if _queue_event(monitor_id, {**(row.get("payload") or {}), "row_id": event_id}):
+            queued += 1
+    return queued
+
+
+def _queue_event(monitor_id: str, event: Dict[str, Any], *, attempt: int = 0, countdown: float = 0) -> bool:
+    """Queue an ingest event's task; False when the broker refused it (a stored event waits for the sweep)."""
+    try:
+        from docsgpt.api.user.tasks import process_monitor_event
+
+        args = [monitor_id, event, attempt] if attempt else [monitor_id, event]
+        process_monitor_event.apply_async(args=args, countdown=countdown, queue="docsgpt")
+        return True
+    except Exception:
+        logger.exception("monitor %s: could not queue its ingest event", monitor_id)
+        return False
 
 
 def enqueue_hit(hit_id: str, *, countdown: float = 0, attempt: int = 0) -> bool:
@@ -949,19 +999,18 @@ def _retry_hit(hit_id: str, attempt: int) -> str:
 def _requeue_event(monitor_id: str, event: Dict[str, Any], attempt: int, countdown: float) -> bool:
     """Queue an ingest event for this monitor again.
 
-    An ingest event lives only in its task, so when it can't be queued again
-    the monitor's ``last_error`` says it was dropped instead of losing it silently.
+    A stored event (``row_id``) that can't be queued stays pending, and the
+    dispatcher's sweep queues it later. One from before events were stored
+    lives only in its task: the monitor's ``last_error`` then says it was
+    dropped instead of losing it silently.
 
     Returns:
         True when queued.
     """
-    try:
-        from docsgpt.api.user.tasks import process_monitor_event
-
-        process_monitor_event.apply_async(args=[monitor_id, event, attempt + 1], countdown=countdown, queue="docsgpt")
+    if _queue_event(monitor_id, event, attempt=attempt + 1, countdown=countdown):
         return True
-    except Exception:
-        logger.exception("monitor %s: could not requeue its ingest event", monitor_id)
+    if event.get("row_id"):
+        return True
     try:
         _store(monitor_id, None, {"last_error": "an ingest event was dropped: it could not be queued again"})
     except Exception:
@@ -1002,25 +1051,59 @@ def on_ingest_event(user_id: str, event_type: str, payload: Dict[str, Any]) -> N
         # Names this ingest run, so a repeated delivery of the same event wakes once.
         "event_id": uuid.uuid4().hex,
     }
-    for monitor in monitors:
-        try:
-            from docsgpt.api.user.tasks import process_monitor_event
+    from docsgpt.storage.db.repositories.monitor_events import MonitorEventsRepository
 
-            process_monitor_event.apply_async(args=[str(monitor["id"]), event], queue="docsgpt")
+    for monitor in monitors:
+        monitor_id = str(monitor["id"])
+        queued_event = dict(event)
+        try:
+            # Stored first: a task the broker loses is queued again by the dispatcher's sweep.
+            with db_session() as conn:
+                row = MonitorEventsRepository(conn).insert(monitor_id, f"ingest:{event['event_id']}", event)
+            if row is not None:
+                queued_event["row_id"] = str(row["id"])
         except Exception:
-            logger.exception("monitor %s: could not queue its ingest event", monitor.get("id"))
+            logger.exception("monitor %s: storing its ingest event failed; queueing it directly", monitor_id)
+        _queue_event(monitor_id, queued_event)
+
+
+def _settle_event(row_id: Optional[str], status: str, error: Optional[str] = None) -> None:
+    """Record how a stored ingest event ended (nothing for one that was never stored)."""
+    if not row_id:
+        return
+    from docsgpt.storage.db.repositories.monitor_events import MonitorEventsRepository
+
+    try:
+        with db_session() as conn:
+            MonitorEventsRepository(conn).mark(row_id, status, error)
+    except Exception:
+        logger.exception("ingest event %s: recording how it ended failed", row_id)
 
 
 def process_event(monitor_id: str, event: Dict[str, Any], attempt: int = 0) -> Dict[str, Any]:
-    """Run an ingest event for one monitor (the ``process_monitor_event`` task)."""
+    """Run an ingest event for one monitor (the ``process_monitor_event`` task).
+
+    A stored event (``row_id``) is claimed first, so a repeated task runs it
+    once, and handed back to ``pending`` when it has to wait: a task that
+    can't be queued again leaves it for the dispatcher's sweep.
+    """
+    from docsgpt.storage.db.repositories.monitor_events import MonitorEventsRepository
+
+    row_id = event.get("row_id")
     if not _lease(monitor_id):
         if attempt + 1 < MAX_HIT_DEFERRALS and not _requeue_event(monitor_id, event, attempt, 2 * (attempt + 1)):
             return {"state": "failed"}
         return {"state": "busy"}
     try:
+        if row_id:
+            with db_session() as conn:
+                claimed = MonitorEventsRepository(conn).claim(str(row_id))
+            if claimed is None:
+                return {"state": "gone"}
         with db_readonly() as conn:
             monitor = MonitorsRepository(conn).get_internal(monitor_id)
         if monitor is None or monitor.get("status") != "active" or monitor.get("source_type") != "ingest":
+            _settle_event(row_id, "ignored", "the monitor is not active")
             return {"state": "skipped"}
         status = event.get("event")
         summary_text = (
@@ -1029,24 +1112,35 @@ def process_event(monitor_id: str, event: Dict[str, Any], attempt: int = 0) -> D
         if event.get("error"):
             summary_text += f": {str(event['error'])[:300]}"
         event_id = event.get("event_id")
-        data = {k: v for k, v in event.items() if k != "event_id"}
+        data = {k: v for k, v in event.items() if k not in ("event_id", "row_id")}
         content = Content(text=canonical_json(data), data=data)
-        outcome = _event(
-            monitor,
-            content,
-            source="monitor",
-            # Stable per event; an event queued before event_id existed falls back to the check count.
-            key=f"ingest:{event_id}" if event_id else f"ingest:{int(monitor.get('check_count') or 0) + 1}",
-            summary=summary_text,
-            extra={"ingest": data},
-        )
+        try:
+            outcome = _event(
+                monitor,
+                content,
+                source="monitor",
+                # Stable per event; an event queued before event_id existed falls back to the check count.
+                key=f"ingest:{event_id}" if event_id else f"ingest:{int(monitor.get('check_count') or 0) + 1}",
+                summary=summary_text,
+                extra={"ingest": data},
+            )
+        except Exception as exc:
+            logger.exception("monitor %s: processing its ingest event failed", monitor_id)
+            _settle_event(row_id, "failed", type(exc).__name__)
+            return {"state": "failed"}
         if outcome == "retry":
             # An ingest ends once: no later check sees this event again.
             if attempt + 1 >= MAX_HIT_DEFERRALS:
                 _store(monitor_id, None, {"last_error": f"an ingest event was dropped: {UNDECIDED_NOTE}"})
+                _settle_event(row_id, "failed", UNDECIDED_NOTE)
                 return {"state": "failed"}
+            if row_id:
+                with db_session() as conn:
+                    MonitorEventsRepository(conn).release(str(row_id))
             if not _requeue_event(monitor_id, event, attempt, UNDECIDED_RETRY_SECONDS * (attempt + 1)):
                 return {"state": "failed"}
+        elif outcome in ("ignored", "unfit"):
+            _settle_event(row_id, "ignored", None if outcome == "ignored" else "unfit")
         return {"state": outcome}
     finally:
         _release(monitor_id)

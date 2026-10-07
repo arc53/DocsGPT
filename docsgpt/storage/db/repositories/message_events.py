@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Optional
+from typing import Any, Iterator, Mapping, Optional
 
 from sqlalchemy import Connection, text
 
@@ -235,6 +235,14 @@ class MessageEventsRepository:
             else:
                 tool_calls[existing] = entry
 
+        from docsgpt.api.answer.segments import AnswerSegments
+
+        # The order the parts streamed in, as the stream records it, so a
+        # reload of an unfinished turn (one paused for approval) renders it
+        # in that order, not with every tool card above the text.
+        segment_holder: dict = {}
+        segments = AnswerSegments(segment_holder)
+
         for row in rows:
             payload = row.payload
             if not isinstance(payload, dict):
@@ -244,10 +252,14 @@ class MessageEventsRepository:
                 chunk = payload.get("answer")
                 if isinstance(chunk, str):
                     response_parts.append(chunk)
+                    segments.answer(chunk)
             elif etype == "thought":
                 chunk = payload.get("thought")
                 if isinstance(chunk, str):
                     thought_parts.append(chunk)
+                    segments.thought(chunk)
+            elif etype == "guardrail" and payload.get("retract"):
+                segments.reset()
             elif etype == "source":
                 src = payload.get("source")
                 if isinstance(src, list):
@@ -267,13 +279,64 @@ class MessageEventsRepository:
                 data = payload.get("data")
                 if isinstance(data, dict):
                     _overlay(data)
+                    segments.tool_call(data)
 
         return {
             "response": "".join(response_parts),
             "thought": "".join(thought_parts),
             "sources": sources,
             "tool_calls": tool_calls,
+            "segments": list(segments.items),
         }
+
+    def redact_values(self, message_id: str, values: Mapping[str, str]) -> int:
+        """Put each secret in ``values`` back to its reference across one message's journal.
+
+        ``answer`` and ``thought`` text is streamed in small chunks, so a
+        secret usually spans several rows: those are matched on the joined
+        text, the chunk where an occurrence starts gets the reference, and
+        the rest of it is cut from the chunks after. Any other payload is
+        redacted value by value.
+
+        Args:
+            message_id: The message whose journal to rewrite.
+            values: ``{secret: reference}``.
+
+        Returns:
+            How many rows changed.
+        """
+        if not values:
+            return 0
+        rows = self._conn.execute(
+            text(
+                "SELECT sequence_no, event_type, payload FROM message_events "
+                "WHERE message_id = CAST(:message_id AS uuid) ORDER BY sequence_no ASC"
+            ),
+            {"message_id": str(message_id)},
+        ).fetchall()
+        changed: dict[int, Any] = {}
+        streams: dict[str, list[tuple[int, dict, str]]] = {"answer": [], "thought": []}
+        for row in rows:
+            payload = row.payload
+            key = row.event_type if row.event_type in streams else None
+            if key and isinstance(payload, dict) and isinstance(payload.get(key), str):
+                streams[key].append((row.sequence_no, payload, payload[key]))
+                continue
+            redacted = _redact_tree(payload, values)
+            if redacted != payload:
+                changed[row.sequence_no] = redacted
+        for key, chunks in streams.items():
+            for seq, payload, chunk in _redact_chunks(chunks, values):
+                changed[seq] = {**payload, key: chunk}
+        for seq, payload in changed.items():
+            self._conn.execute(
+                text(
+                    "UPDATE message_events SET payload = CAST(:payload AS jsonb) "
+                    "WHERE message_id = CAST(:message_id AS uuid) AND sequence_no = :seq"
+                ),
+                {"message_id": str(message_id), "seq": seq, "payload": json.dumps(payload)},
+            )
+        return len(changed)
 
     def latest_sequence_no(self, message_id: str) -> Optional[int]:
         """Largest ``sequence_no`` recorded for ``message_id``, or ``None``.
@@ -296,3 +359,54 @@ class MessageEventsRepository:
         ).first()
         value = row[0] if row is not None else None
         return int(value) if value is not None else None
+
+
+def _redact_tree(node: Any, values: Mapping[str, str]) -> Any:
+    """``node`` with every secret in a string (nested in dicts and lists) replaced by its reference."""
+    if isinstance(node, str):
+        for secret, ref in sorted(values.items(), key=lambda item: len(item[0]), reverse=True):
+            if secret and secret in node:
+                node = node.replace(secret, ref)
+        return node
+    if isinstance(node, dict):
+        return {key: _redact_tree(child, values) for key, child in node.items()}
+    if isinstance(node, list):
+        return [_redact_tree(child, values) for child in node]
+    return node
+
+
+def _redact_chunks(
+    chunks: list[tuple[int, dict, str]], values: Mapping[str, str]
+) -> Iterator[tuple[int, dict, str]]:
+    """The chunks of one text stream that change when its secrets are cut out of the joined text.
+
+    Yields ``(sequence_no, payload, new_text)`` for each changed chunk.
+    """
+    joined = "".join(chunk for _seq, _payload, chunk in chunks)
+    spans: list[tuple[int, int, str]] = []
+    for secret, ref in sorted(values.items(), key=lambda item: len(item[0]), reverse=True):
+        start = joined.find(secret) if secret else -1
+        while start >= 0:
+            end = start + len(secret)
+            if not any(s < end and start < e for s, e, _r in spans):
+                spans.append((start, end, ref))
+            start = joined.find(secret, end)
+    if not spans:
+        return
+    offset = 0
+    for seq, payload, chunk in chunks:
+        lo, hi = offset, offset + len(chunk)
+        offset = hi
+        pieces: list[str] = []
+        cursor = lo
+        for start, end, ref in sorted(spans):
+            if end <= lo or start >= hi:
+                continue
+            pieces.append(joined[cursor:max(start, lo)])
+            if start >= lo:  # the occurrence starts in this chunk (the check above rules out start >= hi)
+                pieces.append(ref)
+            cursor = min(end, hi)
+        if cursor == lo and not pieces:
+            continue
+        pieces.append(joined[cursor:hi])
+        yield seq, payload, "".join(pieces)

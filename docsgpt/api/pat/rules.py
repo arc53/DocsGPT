@@ -359,6 +359,7 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/approvals/<string:token>": ("*",),
     # A webhook's signing secret is shown to its owner in the app only.
     "/api/monitors/<string:monitor_id>/secret": ("*",),
+    "/api/monitors/<string:monitor_id>/secret/exposure": ("*",),
     "/api/images/<string:agent_id>/<string:capability>": ("*",),
     "/api/mcp_server/callback": ("*",),
     "/api/mcp_server/auth_status": ("*",),

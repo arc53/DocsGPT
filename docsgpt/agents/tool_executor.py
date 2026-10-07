@@ -28,6 +28,7 @@ from docsgpt.agents.tool_pins import (
 from docsgpt.agents.tools.tool_action_parser import ToolActionParser
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.guardrails.types import Stage as GuardrailStage, resolve_tool_result
+from docsgpt.monitors import secret_refs
 from docsgpt.security.encryption import decrypt_credentials
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
@@ -560,6 +561,70 @@ def journal_refused_call(executor: Any, pause_info: Dict, error: str) -> None:
         )
 
 
+def refusal_texts(executor: Any, reason: str) -> Tuple[str, str]:
+    """What the model is told about a refused call, and the journal error, worded for the run it happened in.
+
+    ``check_pause`` refuses calls in interactive turns too (a secret
+    reference a tool can't take, an admin's read-only connector, an API
+    caller's write on the owner's account), so only a headless run is called
+    one.
+
+    Args:
+        executor: The run's ``ToolExecutor``.
+        reason: Why the call was refused, as ``check_pause`` worded it.
+
+    Returns:
+        ``(tool result for the model, journal error)``.
+    """
+    if getattr(executor, "headless", False):
+        return f"Tool denied (headless): {reason}", f"headless: {reason}"
+    return f"Tool denied: {reason}", f"denied: {reason}"
+
+
+def record_refused_call(
+    executor: Any,
+    pause_info: Dict,
+    *,
+    reason: str,
+    model_text: str,
+    journal_error: str,
+) -> Dict[str, Any]:
+    """Journal a refused call and keep it on the message as a failed call.
+
+    The message's ``tool_calls`` are what a reload renders and what later
+    turns replay to the model, so a refusal kept only in the journal vanished
+    from both.
+
+    Args:
+        executor: The run's ``ToolExecutor``.
+        pause_info: What ``check_pause`` returned for the call.
+        reason: Why it was refused, for the user (the call's ``error``).
+        model_text: The tool result the model was given (the call's ``result``).
+        journal_error: The failure recorded on the journal row.
+
+    Returns:
+        The recorded entry.
+    """
+    journal_refused_call(executor, pause_info, journal_error)
+    entry: Dict[str, Any] = {
+        "tool_name": pause_info.get("tool_name") or "unknown",
+        "call_id": pause_info["call_id"],
+        "action_name": pause_info.get("llm_name") or pause_info.get("name") or pause_info.get("action_name"),
+        "arguments": pause_info.get("arguments") or {},
+        "result": model_text,
+        "error": reason,
+        "error_type": pause_info.get("error_type") or "tool_not_allowed",
+        "status": "error",
+    }
+    for key in ("device_id", "connector_key", "connector_name", "access"):
+        if pause_info.get(key):
+            entry[key] = pause_info[key]
+    tool_calls = getattr(executor, "tool_calls", None)
+    if isinstance(tool_calls, list):
+        tool_calls.append(entry)
+    return entry
+
+
 class ToolExecutor:
     """Handles tool discovery, preparation, and execution.
 
@@ -663,6 +728,31 @@ class ToolExecutor:
         # when the call that creates it was really approved.
         self.approved_call_ids: set = set()
         self.current_call_id: Optional[str] = None
+        # Link secrets filled into this turn's approved calls (``{secret: reference}``):
+        # every later result in the turn is redacted with them too. The call ids
+        # whose approval already filled secrets in can't fill them in again.
+        self.secret_values: Dict[str, str] = {}
+        self.secret_approvals_used: set = set()
+        # Secrets the owner chose to show the assistant (``{secret: reference}``),
+        # looked up once per turn: a raw one in a call is taken as its reference.
+        self._exposed_secrets: Optional[Dict[str, str]] = None
+
+    def exposed_secrets(self) -> Dict[str, str]:
+        """``{secret: reference}`` for the secrets this user chose to show the assistant (cached per turn)."""
+        if self._exposed_secrets is None:
+            self._exposed_secrets = secret_refs.exposed_values(str(self.user or "")) if self.user else {}
+        return self._exposed_secrets
+
+    def _sealed(self, arguments: Any) -> Any:
+        """Arguments with any exposed raw secret put back to its reference, before anything records them.
+
+        The call then goes through the reference rules: it asks for approval,
+        and only an eligible, approved call gets the value filled in again.
+        """
+        if not isinstance(arguments, (dict, list, str)):
+            return arguments
+        exposed = self.exposed_secrets()
+        return secret_refs.redact(arguments, exposed) if exposed else arguments
 
     def get_tools(self) -> Dict[str, Dict]:
         """Load tool configs from DB based on user context.
@@ -1202,6 +1292,7 @@ class ToolExecutor:
         """
         parser = ToolActionParser(llm_class_name, name_mapping=self._name_to_tool)
         tool_id, action_name, call_args = parser.parse_args(call)
+        call_args = self._sealed(call_args)
         call_id = getattr(call, "id", None) or str(uuid.uuid4())
         llm_name = getattr(call, "name", "")
 
@@ -1384,6 +1475,27 @@ class ToolExecutor:
                     "thought_signature": getattr(call, "thought_signature", None),
                 }
 
+        # A call that carries a link secret reference always asks the user,
+        # whatever the tool's mode: approving it is what fills the secret in.
+        # One that can't take a secret at all is refused here, before it runs.
+        secret_plan = secret_refs.plan(self, tool_data, action_name, arguments)
+        if secret_plan is not None:
+            if secret_plan.refusal:
+                return {
+                    "call_id": call_id,
+                    "name": llm_name,
+                    "tool_name": tool_data.get("name", "unknown"),
+                    "tool_id": tool_id,
+                    "action_name": action_name,
+                    "llm_name": llm_name,
+                    "arguments": arguments,
+                    "pause_type": "headless_denied",
+                    "deny_reason": secret_plan.refusal,
+                    "error_type": "tool_not_allowed",
+                    "thought_signature": getattr(call, "thought_signature", None),
+                }
+            require_approval = True
+
         if require_approval:
             if self.headless:
                 tool_row_id = str(tool_data.get("id") or tool_id)
@@ -1438,6 +1550,13 @@ class ToolExecutor:
                 config = tool_data.get("config") or {}
                 if config.get("device_id"):
                     payload["device_id"] = config["device_id"]
+            # The card says approving fills these link secrets in.
+            if secret_plan is not None:
+                payload["secret_refs"] = list(secret_plan.refs)
+                # Named by its monitor: a bare id means nothing to the user.
+                ref_labels = secret_refs.labels(str(self.user or ""), secret_plan.refs) if self.user else {}
+                if ref_labels:
+                    payload["secret_ref_labels"] = ref_labels
             return payload
 
         return None
@@ -1617,6 +1736,7 @@ class ToolExecutor:
     def _execute(self, tools_dict: Dict, call, llm_class_name: str):
         parser = ToolActionParser(llm_class_name, name_mapping=self._name_to_tool)
         tool_id, action_name, call_args = parser.parse_args(call)
+        call_args = self._sealed(call_args)
         llm_name = getattr(call, "name", "unknown")
 
         call_id = getattr(call, "id", None) or str(uuid.uuid4())
@@ -1921,8 +2041,48 @@ class ToolExecutor:
             )
             call_kwargs = parameters
 
+        # Link secret references: filled into an approved call's arguments
+        # here, after everything recorded above kept the reference; any echo
+        # of a value in what the tool returns is put back to the reference.
+        substitution = None
+        refs = secret_refs.find_refs(tool_args)
+        if refs:
+            refused = None
+            if tool_data["name"] == "api_tool" and set(refs) - set(secret_refs.find_refs(call_kwargs)):
+                refused = (
+                    "A link secret reference can only go into an API action's body, never its query string or "
+                    "headers. Nothing ran."
+                )
+            else:
+                try:
+                    substitution = secret_refs.substitute(
+                        self, tool_data, action_name, call_kwargs, call_id=call_id, refs=refs
+                    )
+                except secret_refs.SecretRefError as exc:
+                    refused = str(exc)
+            if refused is not None:
+                tool_call_data["result"] = refused
+                tool_call_data["status"] = "error"
+                if proposed_ok:
+                    _mark_failed(call_id, refused, message_id=self.message_id, user_id=self.user)
+                yield {"type": "tool_call", "data": {**tool_call_data}}
+                self.tool_calls.append(tool_call_data)
+                return refused, call_id
+            call_kwargs = substitution.kwargs
+            self.secret_values.update(substitution.values)
+        # A value filled in earlier in the turn stays out of every later result (a command that reads it back).
+        known_secrets = dict(self.secret_values)
+
         def _invoke():
-            return tool.execute_action(action_name, **call_kwargs)
+            with secret_refs.active(substitution):
+                try:
+                    value = tool.execute_action(action_name, **call_kwargs)
+                except Exception as exc:
+                    if not known_secrets:
+                        raise
+                    message = secret_refs.redact(str(exc) or type(exc).__name__, known_secrets)
+                    raise RuntimeError(message) from None
+            return secret_refs.redact(value, known_secrets) if known_secrets else value
 
         self.current_call_id = call_id
 
@@ -1931,7 +2091,8 @@ class ToolExecutor:
             if background_eligible:
                 explicit = handoff.wants_background(controls)
                 worker_payload = None
-                if explicit:
+                # A call holding a secret stays in this process: the worker would get the reference, not the value.
+                if explicit and substitution is None:
                     from docsgpt.background.celery_runner import worker_payload as build_worker_payload
 
                     worker_payload = build_worker_payload(self, tool_data, action_name, tool_args)
@@ -2020,7 +2181,9 @@ class ToolExecutor:
                 )
             if artifacts:
                 tool_call_data["artifacts"] = artifacts
-        result_full = bound_result_full(str(result))
+        # The model may read a secret its owner chose to show it (monitor_list); stored copies get the reference.
+        exposed = self.exposed_secrets()
+        result_full = bound_result_full(secret_refs.redact(str(result), exposed) if exposed else str(result))
         tool_call_data["resolved_arguments"] = resolved_arguments
         tool_call_data["result_full"] = result_full
         tool_call_data["result"] = truncate_tool_result(result_full)
@@ -2297,9 +2460,11 @@ class ToolExecutor:
     # Keys the client needs that are not part of the fixed shape below. They are
     # small and optional, and are copied only when present so an ordinary tool
     # call does not grow null columns in every persisted row.
+    # ``error`` / ``error_type``: a refused call's reason, which the chat shows
+    # after a reload as it did live.
     _PRESERVED_TOOL_CALL_KEYS = (
         "artifacts", "device_id", "connector_key", "connector_name", "access", "sent_arguments", "images",
-        "job_id",
+        "job_id", "error", "error_type",
     )
 
     def _collect_native_parts(self, tool: Any, result: Any, tool_call_data: Dict) -> Any:

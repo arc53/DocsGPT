@@ -15,7 +15,10 @@ import preferenceReducer, {
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import uploadReducer, { addAttachment } from '../upload/uploadSlice';
-import { handleFetchAnswer } from './conversationHandlers';
+import {
+  handleFetchAnswer,
+  handleSubmitToolActions,
+} from './conversationHandlers';
 import reducer, {
   addQuery,
   applyMessageTail,
@@ -27,6 +30,11 @@ import reducer, {
   resendQuery,
   retractResponse,
   setConversation,
+  setConversationId,
+  setStatus,
+  submitToolActions,
+  tailInFlightMessage,
+  updateConversationId,
 } from './conversationSlice';
 
 const baseQuery = {
@@ -742,5 +750,166 @@ describe('loadConversation with resolveAgent', () => {
     expect(result.stale).toBe(true);
     expect(store.getState().conversation.conversationId).toBe('c-3');
     expect(store.getState().preference.selectedAgent).toBeNull();
+  });
+});
+
+describe('a turn paused for approval, reloaded', () => {
+  const pausedTail = {
+    message_id: 'm-1',
+    status: 'streaming',
+    response: 'Checking.\n\nThen this.',
+    thought: null,
+    sources: [],
+    tool_calls: [
+      {
+        call_id: 'c1',
+        tool_name: 'remote_device',
+        action_name: 'run_command',
+        arguments: {},
+        status: 'awaiting_approval',
+      },
+    ],
+    segments: [
+      { kind: 'text', length: 9 },
+      { kind: 'tool', call_id: 'c1' },
+      { kind: 'text', length: 11 },
+    ],
+  };
+
+  it('waits for the decision instead of showing it as generating', async () => {
+    const tail = vi
+      .spyOn(conversationService, 'tailMessage')
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => pausedTail,
+      } as Response);
+    const store = makeStore();
+    store.dispatch(
+      setConversation([
+        { prompt: 'q', messageId: 'm-1', messageStatus: 'streaming' },
+      ]),
+    );
+    store.dispatch(updateConversationId({ query: { conversationId: 'c-1' } }));
+    await store.dispatch(
+      tailInFlightMessage({
+        messageId: 'm-1',
+        index: 0,
+        conversationId: 'c-1',
+      }),
+    );
+    // The thunk returns at once (no 10-minute poll), with the chat waiting on the user.
+    expect(tail).toHaveBeenCalledTimes(1);
+    expect(store.getState().conversation.status).toBe('awaiting_tool_actions');
+    tail.mockRestore();
+  });
+
+  it('keeps the tool card where it streamed, between the paragraphs', () => {
+    const next = reducer(
+      reducer(undefined, setConversation([{ prompt: 'q' }])),
+      applyMessageTail({ index: 0, tail: pausedTail }),
+    );
+    expect(next.queries[0].segments?.map((segment) => segment.kind)).toEqual([
+      'text',
+      'tool',
+      'text',
+    ]);
+  });
+});
+
+describe('a turn left waiting on an approval', () => {
+  const waitingTurn = {
+    prompt: 'make a webhook link',
+    tool_calls: [
+      {
+        call_id: 'c1',
+        tool_name: 'monitor',
+        action_name: 'monitor_create',
+        arguments: {},
+        status: 'completed' as const,
+      },
+      {
+        call_id: 'c5',
+        tool_name: 'remote_device',
+        action_name: 'run_command',
+        arguments: { command: 'whoami' },
+        status: 'awaiting_approval' as const,
+      },
+    ],
+  };
+
+  it('shows the waiting call as not run once the user sends a new message', () => {
+    let state = reducer(
+      undefined,
+      setConversation([waitingTurn, { prompt: 'now set the sender up' }]),
+    );
+    state = reducer(
+      state,
+      fetchAnswer.pending('req-1', { question: 'now set the sender up' }),
+    );
+    const calls = state.queries[0].tool_calls ?? [];
+    expect(calls[0].status).toBe('completed');
+    expect(calls[1]).toMatchObject({ status: 'denied', not_run: 'moved_on' });
+  });
+
+  it('reloads the chat instead of failing when a late decision finds it over', async () => {
+    vi.mocked(handleSubmitToolActions).mockImplementation(
+      async (_conversationId, _actions, _token, _signal, onEvent) => {
+        onEvent(
+          new MessageEvent('message', {
+            data: JSON.stringify({
+              type: 'error',
+              error: 'This request is no longer pending.',
+              code: 'tool_call_not_pending',
+            }),
+          }),
+        );
+        return undefined as never;
+      },
+    );
+    const load = vi
+      .spyOn(conversationService, 'getConversation')
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          queries: [
+            {
+              prompt: 'make a webhook link',
+              response: '',
+              status: 'complete',
+              tool_calls: [
+                {
+                  ...waitingTurn.tool_calls[1],
+                  status: 'denied',
+                  not_run: 'moved_on',
+                },
+              ],
+            },
+          ],
+        }),
+      } as Response);
+    const store = configureStore({
+      reducer: {
+        conversation: reducer,
+        upload: uploadReducer,
+        preference: preferenceReducer,
+      },
+    });
+    store.dispatch(setConversation([waitingTurn]));
+    store.dispatch(setConversationId('conv-1'));
+    store.dispatch(setStatus('awaiting_tool_actions'));
+
+    await store.dispatch(
+      submitToolActions({
+        toolActions: [{ call_id: 'c5', decision: 'approved' }],
+      }),
+    );
+    for (let i = 0; i < 4; i += 1) await new Promise((r) => setTimeout(r, 0));
+
+    expect(load.mock.calls[0]?.[0]).toBe('conv-1');
+    const state = store.getState().conversation;
+    expect(state.status).toBe('idle');
+    expect(state.queries[0].error).toBeUndefined();
+    expect(state.queries[0].tool_calls?.[0].not_run).toBe('moved_on');
   });
 });

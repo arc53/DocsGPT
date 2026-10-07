@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Dict, Iterable, List, Optional, TypeVar
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, TypeVar
 
 from docsgpt import tracing
+from docsgpt.core import log_context
 from docsgpt.core.settings import settings
-from docsgpt.tracing.retrieval import start_embedding_span
+from docsgpt.tracing.retrieval import mark_retrieval_degraded, start_embedding_span
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,24 @@ def store_embeddings(docsearch) -> Optional[Any]:
 def embed_questions(docsearch, questions: Iterable[str]) -> Dict[str, List[float]]:
     """Embed each distinct query once for the whole retrieval.
 
+    See :func:`_embed_questions`, which also reports why embedding failed.
+
+    Args:
+        docsearch: Any store of the retrieval; only its embedder is used.
+        questions: Queries to embed (duplicates are embedded once).
+
+    Returns:
+        dict: ``{question: vector}``, or ``{}`` when no embedder is reachable
+        or embedding fails.
+    """
+    return _embed_questions(docsearch, questions)[0]
+
+
+def _embed_questions(
+    docsearch, questions: Iterable[str]
+) -> Tuple[Dict[str, List[float]], Optional[BaseException]]:
+    """Embed each distinct query once for the whole retrieval.
+
     Every source of one retrieval shares a single embeddings config
     (``settings.EMBEDDINGS_NAME`` is global — nothing per-source overrides it),
     so a vector computed with one store's embedder is valid for all of them.
@@ -80,13 +99,13 @@ def embed_questions(docsearch, questions: Iterable[str]) -> Dict[str, List[float
         questions: Queries to embed (duplicates are embedded once).
 
     Returns:
-        dict: ``{question: vector}``, or ``{}`` when no embedder is reachable
-        or embedding fails — in which case every store embeds its own query,
-        exactly as before.
+        tuple: ``({question: vector}, None)``; or ``({}, None)`` when no
+        embedder is reachable and ``({}, error)`` when embedding fails. Either
+        way every store then embeds its own query, exactly as before.
     """
     embedder = store_embeddings(docsearch)
     if embedder is None:
-        return {}
+        return {}, None
     distinct = list(dict.fromkeys(questions))
     span = start_embedding_span(
         settings.EMBEDDINGS_NAME,
@@ -100,9 +119,50 @@ def embed_questions(docsearch, questions: Iterable[str]) -> Dict[str, List[float
         logger.warning(
             "Query embedding failed (%s); each store will embed its own.", e
         )
-        return {}
+        return {}, e
     span.end()
-    return vectors
+    return vectors, None
+
+
+def _status_code(error: BaseException) -> Optional[int]:
+    """The HTTP status behind ``error`` or anything it wraps, if there is one."""
+    seen = set()
+    current: Optional[BaseException] = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        for holder in (current, getattr(current, "response", None)):
+            status = getattr(holder, "status_code", None)
+            if isinstance(status, int):
+                return status
+        current = current.__cause__ or current.__context__
+    return None
+
+
+def _report_degraded(error: BaseException, source_count: int) -> None:
+    """Log and trace a retrieval that will answer from no context at all.
+
+    The query embed failed and every source search failed after it, so the
+    turn goes on with nothing retrieved. Each piece alone is a WARNING or a
+    per-source ERROR; this is the one event that says the retrieval as a whole
+    came back empty because of it.
+    """
+    status_code = _status_code(error)
+    ctx = log_context.snapshot()
+    logger.error(
+        "retrieval_degraded status_code=%s source_count=%d activity_id=%s user_id=%s: "
+        "query embedding failed (%s) and every source search failed; answering without retrieved context",
+        status_code,
+        source_count,
+        ctx.get("activity_id"),
+        ctx.get("user_id"),
+        error,
+        extra={
+            "event": "retrieval_degraded",
+            "status_code": status_code,
+            "source_count": source_count,
+        },
+    )
+    mark_retrieval_degraded(status_code=status_code)
 
 
 def run_source_jobs(
@@ -192,10 +252,15 @@ def fetch_per_source(
         # each embedding its own query (there is no store to borrow one from).
         return [None] + _dispatch([(item, None, None) for item in items[1:]])
 
-    vectors = embed_questions(first_store, [question_of(item) for item in items])
-    return _dispatch(
+    vectors, embed_error = _embed_questions(
+        first_store, [question_of(item) for item in items]
+    )
+    results = _dispatch(
         [
             (item, first_store if idx == 0 else None, vectors.get(question_of(item)))
             for idx, item in enumerate(items)
         ]
     )
+    if embed_error is not None and all(result is None for result in results):
+        _report_degraded(embed_error, len(items))
+    return results

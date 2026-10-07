@@ -4293,7 +4293,7 @@
     },
     "/api/monitors/{monitor_id}/secret": {
       "get": {
-        "description": "The signing secret of one of the caller's webhook monitors, so the owner can configure the sender. Only the owner's session may read it (never an access token); the model only ever sees a placeholder. Rate limited, audited, never cached or logged. 404 when the monitor has no live signed link.",
+        "description": "The signing secret of one of the caller's webhook monitors, so the owner can configure the sender. Only the owner's session may read it (never an access token); the model only ever sees its reference. Rate limited, audited, never cached or logged. 404 when the monitor has no live signed link, or its secret was never set.",
         "operationId": "get_monitor_secret",
         "responses": {
           "200": {
@@ -4312,7 +4312,43 @@
           "required": true,
           "type": "string"
         }
-      ]
+      ],
+      "put": {
+        "description": "Set the signing secret of one of the caller's webhook monitors: {secret}. For Stripe and Slack, which create their own signing secret, this is how the link gets it; for any other signed scheme it replaces the generated one. Only the owner's session may set it (never an access token). Rate limited, audited without the value, never logged. 400 for a value that can't be this scheme's secret, 404 when the monitor has no live signed link.",
+        "operationId": "put_monitor_secret",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "monitors"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/monitors/{monitor_id}/secret/exposure": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "monitor_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "put": {
+        "description": "Show (or stop showing) one of the caller's webhook monitors' raw signing secret to the assistant: {exposed: true|false}. Shown, monitor_list gives the assistant the value, which then goes to the model provider. Only the owner's session may change it (never an access token, never the assistant). Rate limited and audited. 404 when the monitor has no live signed link with a secret.",
+        "operationId": "put_monitor_secret_exposure",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "monitors"
+        ],
+        "x-pat-denied": true
+      }
     },
     "/api/monitors/{monitor_id}/{action}": {
       "parameters": [
@@ -5929,10 +5965,11 @@
     },
     "/api/triggers/{token}": {
       "get": {
-        "description": "Not a page: a trigger link takes POST only, so this answers 405.",
+        "description": "A GET call, taken only by a link created with methods [\"POST\", \"GET\"]: the query parameters are the delivery (a dotted key nests). A HEAD, a prefetch (Purpose / Sec-Purpose: prefetch) or a known link-preview or crawler User-Agent gets 200 {ignored} and changes nothing. 202 when accepted, 405 for a POST-only link, 404 for an unknown, expired, revoked or used-up one, 429 when rate limited.",
         "operationId": "get_trigger_link",
         "parameters": [
           {
+            "description": "The link's token.",
             "in": "path",
             "name": "token",
             "required": true,
@@ -5951,7 +5988,7 @@
         "x-pat-denied": true
       },
       "post": {
-        "description": "Deliver an event to a monitor's webhook trigger link. Public: the token is the credential. Accepts JSON, form or text up to TRIGGER_MAX_PAYLOAD_BYTES. Signed links verify Standard Webhooks (webhook-id/webhook-timestamp/webhook-signature, 5 minute tolerance), GitHub X-Hub-Signature-256, or X-Signature: sha256=<hex>. Deduplicated on Idempotency-Key, webhook-id or X-GitHub-Delivery, else the body hash. 202 when accepted; 404 for an unknown, expired, revoked or used-up link; 401 for a bad signature; 413 for a large body; 429 past TRIGGER_RATE_PER_MINUTE.",
+        "description": "Deliver an event to a monitor's webhook trigger link. Public: the token is the credential. Accepts JSON, form or text up to TRIGGER_MAX_PAYLOAD_BYTES. Signed links verify Standard Webhooks (webhook-id/webhook-timestamp/webhook-signature, 5 minute tolerance), GitHub X-Hub-Signature-256, X-Signature: sha256=<hex>, Stripe-Signature (t=..,v1=.., 5 minute tolerance), Slack X-Slack-Signature with X-Slack-Request-Timestamp (5 minute tolerance; a url_verification challenge is answered with 200 {challenge}), a static token header (X-Webhook-Token unless the link names another) or Authorization: Bearer. Deduplicated on Idempotency-Key, webhook-id, X-GitHub-Delivery or the Stripe/Slack event id, else the body hash. 202 when accepted; 404 for an unknown, expired, revoked or used-up link; 401 for a bad signature; 413 for a large body; 429 past TRIGGER_RATE_PER_MINUTE.",
         "operationId": "post_trigger_link",
         "parameters": [
           {

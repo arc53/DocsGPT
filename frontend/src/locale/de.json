@@ -10,6 +10,10 @@
   "loading": "Wird geladen...",
   "retry": "Erneut versuchen",
   "cancel": "Abbrechen",
+  "errorBoundary": {
+    "message": "Beim Anzeigen dieses Inhalts ist ein Fehler aufgetreten.",
+    "tryAgain": "Erneut versuchen"
+  },
   "help": "Hilfe",
   "emailUs": "E-Mail senden",
   "documentation": "Dokumentation",
@@ -45,7 +49,14 @@
       "progress": "{{percent}} % erledigt",
       "willResume": "Das Ergebnis erscheint in diesem Chat, sobald der Job fertig ist.",
       "pollOnly": "Frag in diesem Chat nach dem Ergebnis, sobald der Job fertig ist.",
+      "waitingForDevice": "Warte darauf, dass sich das Gerät wieder verbindet. Der Befehl läuft dort möglicherweise noch.",
+      "waitingBadge": "Wartet auf Gerät",
       "lostHint": "Der Job wurde unterbrochen und ist vielleicht nicht fertig geworden. Der Assistent prüft das, bevor er es erneut versucht.",
+      "noticeCancelUnsupported": "Die docsgpt-cli dieses Geräts kann laufende Befehle nicht abbrechen; der Befehl läuft dort möglicherweise noch. Aktualisiere docsgpt-cli auf diesem Rechner.",
+      "noticeDeviceInterrupted": "Der Client des Geräts wurde neu gestartet; der Befehl läuft möglicherweise noch auf dem Rechner (PID {{pid}}). Prüfe das, bevor du ihn wiederholst.",
+      "noticeDeviceInterruptedNoPid": "Der Client des Geräts wurde neu gestartet; der Befehl läuft möglicherweise noch auf dem Rechner. Prüfe das, bevor du ihn wiederholst.",
+      "noticeDeviceShutdown": "Der Client des Geräts wurde beendet und hat den Befehl gestoppt; er ist möglicherweise teilweise gelaufen.",
+      "noticeOutputTruncated": "Die Ausgabe wurde gekürzt: Das Gerät hat einen Teil verworfen, während es den Server nicht erreichen konnte.",
       "durationSeconds": "{{s}} s",
       "durationMinutes": "{{m}} min {{s}} s",
       "durationHours": "{{h}} h {{m}} min"
@@ -181,7 +192,8 @@
         "never": "Nie",
         "daily": "Täglich",
         "weekly": "Wöchentlich",
-        "monthly": "Monatlich"
+        "monthly": "Monatlich",
+        "option": "Synchronisierung: {{frequency}}"
       },
       "actions": "Aktionen",
       "view": "Anzeigen",
@@ -566,6 +578,7 @@
       "stats": {
         "messages": "Nachrichten",
         "tokens": "Tokens",
+        "tokensHint": "Alle vom LLM abgerechneten Tokens. Agenten senden bei jedem Tool-Schritt den Gesprächskontext erneut, daher verbrauchen Chats mit vielen Tool-Aufrufen ein Vielfaches der Tokens, die die sichtbaren Nachrichten vermuten lassen.",
         "toolCalls": "Werkzeugaufrufe",
         "runSuccess": "Erfolgsquote",
         "feedback": "Feedback"
@@ -1491,6 +1504,10 @@
         "mcp_stripe": "Kunden, Zahlungen und Abonnements in Stripe nachschlagen.",
         "mcp_drawio": "Bearbeitbare Flussdiagramme und andere Diagramme mit draw.io erstellen.",
         "mcp_clickup": "ClickUp-Aufgaben, Dokumente und Listen suchen, lesen und aktualisieren sowie Kommentare hinzufügen.",
+        "mcp_zapier": "Mit den in deinem Zapier-MCP-Konto aktivierten Aktionen verbundene Apps lesen oder aktualisieren.",
+        "mcp_trello": "Trello-Boards und -Karten finden sowie Karten erstellen und aktualisieren.",
+        "mcp_miro": "Miro-Boards finden, Inhalte und Kommentare lesen, Diagramme erstellen und auf Kommentare antworten.",
+        "mcp_resend": "E-Mails senden sowie Kontakte, Zielgruppen und Domains verwalten.",
         "github": "Repositorys in Wissen synchronisieren und Agenten Code, Issues und Pull Requests lesen lassen."
       },
       "empty": "Noch nichts verbunden. Verbinde einen Dienst, um seine Inhalte zu synchronisieren oder Agenten neue Werkzeuge zu geben.",
@@ -2244,12 +2261,19 @@
       "response": "Antwort",
       "running": "Läuft…",
       "denied": "Vom Benutzer abgelehnt",
-      "failed": "fehlgeschlagen"
+      "failed": "fehlgeschlagen",
+      "notRun": "nicht ausgeführt",
+      "notRunMovedOn": "Nicht ausgeführt: Das Gespräch ging weiter, bevor dies genehmigt wurde.",
+      "notRunExpired": "Nicht ausgeführt: Die Genehmigungsanfrage ist abgelaufen."
     },
     "quotaExceeded": {
       "tokens": "Sie haben {{used}} von Ihrem Kontingent von {{limit}} Tokens verbraucht. Es wird am {{resetsAt}} zurückgesetzt.",
       "cost": "Sie haben {{used}} von Ihrem Nutzungsbudget von {{limit}} verbraucht. Es wird am {{resetsAt}} zurückgesetzt."
     },
+    "send": "Senden",
+    "viewArtifact": "Artefakt anzeigen",
+    "stopSpeaking": "Vorlesen beenden",
+    "loadingAudio": "Audio wird geladen",
     "voice": {
       "start": "Spracheingabe",
       "stopRecording": "Aufnahme beenden",
@@ -2288,6 +2312,8 @@
       "deny": "Ablehnen",
       "details": "Details",
       "denyReasonPlaceholder": "Optionaler Grund für die Ablehnung…",
+      "secretRefs": "Mit der Freigabe wird beim Ausführen das Signaturgeheimnis von {{refs}} eingesetzt. Der Assistent sieht es nie.",
+      "secretRefLabel": "„{{label}}“ ({{ref}})",
       "connectTitle": "Dieses Werkzeug braucht dein {{name}}-Konto.",
       "connect": "{{name}} verbinden",
       "continue": "Weiter",
@@ -2474,7 +2500,9 @@
         "requestLimiting": "Anfrage-Limitierung",
         "requestLimitingDescription": "Begrenze die täglich an diesen Agenten gestellten Anfragen",
         "systemPromptOverride": "Prompt-Überschreibung erlauben",
-        "systemPromptOverrideDescription": "Erlaubt v1-API-Aufrufern, den System-Prompt dieses Agenten zu ersetzen"
+        "systemPromptOverrideDescription": "Erlaubt v1-API-Aufrufern, den System-Prompt dieses Agenten zu ersetzen",
+        "tokenLimit": "Token-Limit",
+        "requestLimit": "Anfragelimit"
       },
       "preview": {
         "savedVersion": "gespeicherte Version",
@@ -2701,7 +2729,9 @@
           "oct": "Okt",
           "nov": "Nov",
           "dec": "Dez"
-        }
+        },
+        "frequencyLabel": "Häufigkeit",
+        "dayOfWeek": "Wochentag"
       },
       "status": {
         "active": "Aktiv",
@@ -2833,6 +2863,7 @@
       "noSubfolders": "Keine Unterordner",
       "openFolder": "Ordner öffnen",
       "noFolders": "Noch keine Ordner",
+      "moveTitle": "„{{name}}“ verschieben nach",
       "menuAriaLabel": "Aktionen für {{folderName}}",
       "deleteConsequence": "Die Agenten darin werden aus dem Ordner verschoben, nicht gelöscht."
     },
@@ -2859,6 +2890,15 @@
       "loadError": "Could not load guardrail activity"
     },
     "workflow": {
+      "expressionRow": "Ausdruck {{index}}",
+      "conditionRow": "Bedingung {{index}}",
+      "conditionNameRow": "Name von Bedingung {{index}}",
+      "conditionVariableRow": "Variable von Bedingung {{index}}",
+      "conditionValueRow": "Wert von Bedingung {{index}}",
+      "undo": "Rückgängig",
+      "undoHint": "Rückgängig (Strg+Z)",
+      "redo": "Wiederholen",
+      "redoHint": "Wiederholen (Strg+Umschalt+Z)",
       "artifacts": {
         "previewUnsupported": "Dieses Artefakt kann nicht in der Vorschau angezeigt werden",
         "loadListFailed": "Artefakte konnten nicht geladen werden",
@@ -3057,7 +3097,9 @@
       },
       "zoomIn": "Vergrößern",
       "zoomOut": "Verkleinern",
-      "fitView": "Ansicht anpassen"
+      "fitView": "Ansicht anpassen",
+      "removeAssignment": "Zuweisung {{index}} entfernen",
+      "removeCondition": "Bedingung {{index}} entfernen"
     },
     "typeModal": {
       "title": "Neuen Agenten erstellen",
@@ -3292,9 +3334,24 @@
       "hideSecret": "Geheimnis ausblenden",
       "copySecret": "Geheimnis kopieren",
       "secretNote": "Nur du siehst das Signaturgeheimnis, der Assistent nie. Setze es als DOCSGPT_WEBHOOK_SECRET, um den Beispielbefehl auszuführen, oder füge es beim Absender in das Feld für das Geheimnis ein.",
+      "secretNoteSettings": "Nur du kannst das Signaturgeheimnis sehen; der Assistent sieht es nur, wenn du „Dem Assistenten zeigen“ wählst. Füge es in das Geheimnisfeld des Absenders ein.",
       "revealFailed": "Das Geheimnis konnte nicht geladen werden. Versuch es noch einmal.",
       "revealLimited": "Zu viele Anfragen. Versuch es in einer Minute noch einmal.",
-      "revealMissing": "Dieser Link hat kein Geheimnis mehr: Er ist abgelaufen oder wurde beendet.",
+      "revealMissing": "Dieser Link hat kein Geheimnis: Er ist abgelaufen, wurde beendet oder sein Geheimnis wurde noch nicht festgelegt.",
+      "setSecret": "Signaturgeheimnis festlegen",
+      "secretPlaceholder": "Signaturgeheimnis einfügen",
+      "saveSecret": "Speichern",
+      "cancelSecret": "Abbrechen",
+      "secretSaved": "Signaturgeheimnis gespeichert. Damit signierte Aufrufe werden jetzt angenommen.",
+      "setSecretFailed": "Das Signaturgeheimnis konnte nicht gespeichert werden. Versuch es noch einmal.",
+      "setSecretInvalid": "Das sieht nicht nach dem Signaturgeheimnis dieses Links aus. {{reason}}",
+      "senderSecretNote": "{{sender}} erstellt das Signaturgeheimnis dieses Links. Kopiere es aus {{sender}} und lege es hier fest; bis dahin werden Aufrufe abgelehnt.",
+      "exposeSecret": "Dem Assistenten zeigen",
+      "unexposeSecret": "Vor dem Assistenten verbergen",
+      "exposeWarning": "Der Assistent sieht das Geheimnis im Klartext, wenn er seine Monitore auflistet; es wird also an den Modellanbieter gesendet. Seine Tool-Aufrufe verwenden weiterhin die Referenz und fragen weiterhin nach deiner Freigabe. Schalte das nur ein, wenn der Assistent den Wert selbst lesen muss.",
+      "exposeConfirm": "Dem Assistenten zeigen",
+      "exposedNote": "Der Assistent kann dieses Geheimnis sehen.",
+      "exposeFailed": "Das konnte nicht geändert werden. Versuch es noch einmal.",
       "approvalTitle": "Freigabe-Link",
       "expires": "Läuft ab am {{date}}",
       "state": {

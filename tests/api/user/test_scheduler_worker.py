@@ -525,10 +525,10 @@ class TestExecuteScheduledRunBody:
         # filtering for chat-only tools like ``scheduler``).
         assert "tools" not in cfg
 
-    def test_agentless_token_usage_row_has_null_agent_id(
+    def test_each_llm_call_is_recorded_once(
         self, pg_engine, patched_engine, stub_events,
     ):
-        """token_usage row for an agentless run carries ``agent_id IS NULL``."""
+        """A run writes no total of its own: its calls' rows (written as they ran) are the only record."""
         with pg_engine.begin() as conn:
             conv_id = conn.execute(
                 text(
@@ -546,27 +546,38 @@ class TestExecuteScheduledRunBody:
             run = ScheduleRunsRepository(conn).record_pending(
                 str(schedule["id"]), "u1", None, _now(),
             )
-        with patch(
-            "docsgpt.api.user.scheduler_worker.run_agent_headless",
-            return_value={
+        def _run_with_one_llm_call(*args, **kwargs):
+            # What the usage decorator writes for the run's one LLM call.
+            with pg_engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "INSERT INTO token_usage (user_id, prompt_tokens, generated_tokens, source, model_id) "
+                        "VALUES ('u1', 11, 7, 'agent_stream', 'fake')"
+                    )
+                )
+            return {
                 "answer": "yes",
                 "tool_calls": [], "sources": [], "thought": "",
                 "prompt_tokens": 11, "generated_tokens": 7,
                 "denied": [], "error_type": None, "model_id": "fake",
-            },
+            }
+
+        with patch(
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
+            side_effect=_run_with_one_llm_call,
         ):
             execute_scheduled_run_body(str(run["id"]), "celery-tu")
         with pg_engine.connect() as conn:
-            tu_row = conn.execute(
-                text(
-                    "SELECT * FROM token_usage "
-                    "WHERE request_id = :r"
-                ),
+            rows = conn.execute(
+                text("SELECT source, prompt_tokens + generated_tokens AS tokens FROM token_usage WHERE user_id = 'u1'")
+            ).fetchall()
+            run_row = conn.execute(
+                text("SELECT prompt_tokens, generated_tokens FROM schedule_runs WHERE id = CAST(:r AS uuid)"),
                 {"r": str(run["id"])},
-            ).fetchone()
-        assert tu_row is not None
-        assert tu_row._mapping["agent_id"] is None
-        assert tu_row._mapping["source"] == "schedule"
+            ).one()
+        assert [(row.source, row.tokens) for row in rows] == [("agent_stream", 18)]
+        # The run keeps its own total on its row.
+        assert (run_row.prompt_tokens, run_row.generated_tokens) == (11, 7)
 
     def test_one_time_appends_message(
         self, pg_engine, patched_engine, stub_events,

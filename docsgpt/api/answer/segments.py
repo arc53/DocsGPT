@@ -113,3 +113,34 @@ class AnswerSegments:
         self.items.clear()
         self._seen_calls.clear()
         self._tool_since_text = False
+
+
+def merge_tool_calls(earlier: List[Dict[str, Any]], latest: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """One turn's tool calls across its approval rounds, in the order they were made.
+
+    A turn that pauses for approval resumes in a new stream whose agent
+    reports only the calls made after the resume; the message must keep the
+    earlier rounds' calls too. A call reported again (the approved call, its
+    ``awaiting_approval`` entry superseded by its result) keeps its first
+    position and takes its latest state.
+
+    Args:
+        earlier: The calls of the rounds before this stream.
+        latest: The calls this stream reported.
+
+    Returns:
+        The merged list.
+    """
+    merged: List[Dict[str, Any]] = []
+    position: Dict[str, int] = {}
+    for call in list(earlier or []) + list(latest or []):
+        if not isinstance(call, dict):
+            continue
+        call_id = call.get("call_id")
+        if call_id and call_id in position:
+            merged[position[call_id]] = call
+            continue
+        if call_id:
+            position[call_id] = len(merged)
+        merged.append(call)
+    return merged
