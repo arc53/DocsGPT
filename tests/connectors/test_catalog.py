@@ -257,3 +257,15 @@ def test_calcom_preset_uses_remote_oauth_catalog_contract():
     assert calcom.auth_kind == "mcp_oauth"
     assert calcom.capabilities == ("read", "write")
     assert calcom.docs_url == "https://cal.com/docs/mcp-server"
+
+
+def test_airtable_preset_uses_remote_oauth_catalog_contract():
+    airtable = catalog.get_definition("mcp:airtable")
+
+    assert airtable.name == "Airtable"
+    assert airtable.icon == "airtable"
+    assert airtable.category == "database"
+    assert airtable.mcp_url == "https://mcp.airtable.com/mcp"
+    assert airtable.auth_kind == "mcp_oauth"
+    assert airtable.capabilities == ("read", "write")
+    assert airtable.docs_url == "https://airtable.com/developers/agents/mcp/getting-started"
