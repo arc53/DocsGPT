@@ -1967,6 +1967,21 @@ class TestTextToSpeech:
         mock_create_tts.assert_not_called()
 
     @patch("docsgpt.api.user.attachments.routes.TTSCreator.create_tts")
+    def test_tts_size_check_runs_before_the_form_is_parsed_for_auth(self, mock_create_tts, flask_app):
+        # Resolving the caller reads request.form, which parses a form-encoded body.
+        from docsgpt.api.user.attachments import routes
+
+        app = Flask(__name__)
+        body = b"api_key=x&text=" + b"a" * routes._TTS_MAX_REQUEST_BYTES
+        with patch.object(routes, "_resolve_authenticated_user") as resolve, app.test_request_context(
+            "/api/tts", method="POST", data=body, content_type="application/x-www-form-urlencoded"
+        ):
+            response = routes.TextToSpeech().post()
+            assert _get_response_status(response) == 413
+        resolve.assert_not_called()
+        mock_create_tts.assert_not_called()
+
+    @patch("docsgpt.api.user.attachments.routes.TTSCreator.create_tts")
     def test_tts_rejects_text_over_the_limit(self, mock_create_tts, flask_app):
         from docsgpt.api.user.attachments import routes
 

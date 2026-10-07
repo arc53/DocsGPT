@@ -839,6 +839,16 @@ class TextToSpeech(Resource):
     @api.expect(tts_model)
     @api.doc(description="Synthesize audio speech from text")
     def post(self):
+        # Before anything reads the body: resolving the caller parses a form body.
+        # Also bounds a body sent without Content-Length while it is read.
+        request.max_content_length = _TTS_MAX_REQUEST_BYTES
+        if request.content_length is not None and request.content_length > _TTS_MAX_REQUEST_BYTES:
+            return make_response(
+                jsonify({
+                    "success": False,
+                    "message": f"Request is larger than the {_TTS_MAX_REQUEST_BYTES}-byte limit",
+                }), 413
+            )
         # Each call spends the operator's provider quota, so callers must be known.
         auth_user = _resolve_authenticated_user()
         if hasattr(auth_user, "status_code"):
@@ -850,15 +860,6 @@ class TextToSpeech(Resource):
             )
         if not TTSCreator.is_enabled(settings.TTS_PROVIDER):
             return _feature_disabled(_TTS_DISABLED_MESSAGE)
-        # Also bounds a body sent without Content-Length while it is read.
-        request.max_content_length = _TTS_MAX_REQUEST_BYTES
-        if request.content_length is not None and request.content_length > _TTS_MAX_REQUEST_BYTES:
-            return make_response(
-                jsonify({
-                    "success": False,
-                    "message": f"Request is larger than the {_TTS_MAX_REQUEST_BYTES}-byte limit",
-                }), 413
-            )
         data = request.get_json(silent=True)
         text = data.get("text") if isinstance(data,dict) else None
         if not isinstance(text,str) or not text.strip():
