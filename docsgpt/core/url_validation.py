@@ -11,6 +11,8 @@ import socket
 from urllib.parse import urlparse
 from typing import Optional, Set
 
+from docsgpt.security.safe_url import reject_ambiguous_url
+
 
 class SSRFError(Exception):
     """Raised when a URL fails SSRF validation."""
@@ -147,6 +149,8 @@ def validate_url(url: str, allow_localhost: bool = False) -> str:
         # Ensure URL has a scheme
         if not urlparse(url).scheme:
             url = "http://" + url
+        # The host checked below must be the one requests/boto will dial.
+        reject_ambiguous_url(url)
 
         parsed = urlparse(url)
         hostname = parsed.hostname
