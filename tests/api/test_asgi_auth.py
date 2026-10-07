@@ -10,7 +10,7 @@ import json
 from unittest.mock import patch
 
 import pytest
-from jose import jwt
+import jwt
 from starlette.requests import Request
 
 from docsgpt.api import asgi_auth

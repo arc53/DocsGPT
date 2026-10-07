@@ -1,7 +1,7 @@
 ---
 title: Code Execution Sandbox
 description: Run the sandbox that the Artifact and Code Executor tools need - the self-hosted Jupyter runner with Docker Compose, Kubernetes or pip, or Daytona Cloud - with the gateway token, kernel settings and network isolation.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-07
 ---
 
 import { Callout } from 'nextra/components'
@@ -107,7 +107,7 @@ Use the same `<version>` as your DocsGPT release. `develop` tracks the main bran
 
 ## Daytona Cloud
 
-Set `SANDBOX_BACKEND=daytona`, `DAYTONA_API_KEY`, and optionally `DAYTONA_TARGET` for the region. Nothing runs next to DocsGPT. Daytona's default image lacks the libraries that render presentations, documents, spreadsheets and PDFs, and the sandbox's command-line tools, so build a snapshot once with `scripts/build_daytona_snapshot.py`, then set `DAYTONA_SNAPSHOT` to its name yourself: `DAYTONA_SNAPSHOT=docsgpt-sandbox-py312-v2` for the script's default. DocsGPT uses Daytona's plain image until you do. See [Daytona snapshot](/Tools/artifacts-and-code-execution#daytona-snapshot).
+Set `SANDBOX_BACKEND=daytona`, `DAYTONA_API_KEY`, and optionally `DAYTONA_TARGET` for the region. Nothing runs next to DocsGPT. Daytona's default image lacks the libraries that render presentations, documents, spreadsheets and PDFs, and the sandbox's command-line tools, so build a snapshot once with `scripts/build_daytona_snapshot.py`, then set `DAYTONA_SNAPSHOT` to its name yourself: `DAYTONA_SNAPSHOT=docsgpt-sandbox-py312-v3` for the script's default. DocsGPT uses Daytona's plain image until you do. See [Daytona snapshot](/Tools/artifacts-and-code-execution#daytona-snapshot).
 
 ## What the sandbox image contains
 
