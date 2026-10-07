@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-08
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -2072,6 +2072,12 @@ Voice providers and transcription options.
 Type `"google_tts" | "elevenlabs" | "none"`, default `google_tts`.
 
 Text-to-speech provider; none switches it off.
+
+### `TTS_MAX_CHARS`
+
+Type `int`, default `10000`.
+
+Cap on the characters one text-to-speech request may speak, after markdown is stripped.
 
 ### `ELEVENLABS_API_KEY`
 

@@ -63,6 +63,7 @@ const preloadedState: { preference: Preference } = {
     rolesResolved: false,
     ttsAvailable: true,
     sttAvailable: true,
+    authRequired: false,
     attachmentBudgetShare: null,
   },
 };

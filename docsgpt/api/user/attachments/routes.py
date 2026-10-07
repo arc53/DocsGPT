@@ -835,6 +835,15 @@ class TextToSpeech(Resource):
     @api.expect(tts_model)
     @api.doc(description="Synthesize audio speech from text")
     def post(self):
+        # Each call spends the operator's provider quota, so callers must be known.
+        auth_user = _resolve_authenticated_user()
+        if hasattr(auth_user, "status_code"):
+            return auth_user
+        if not auth_user:
+            return make_response(
+                jsonify({"success": False, "message": "Authentication required"}),
+                401,
+            )
         if not TTSCreator.is_enabled(settings.TTS_PROVIDER):
             return _feature_disabled(_TTS_DISABLED_MESSAGE)
         data = request.get_json(silent=True)
@@ -846,8 +855,15 @@ class TextToSpeech(Resource):
                     "message": "Text is required"
                 }), 400
             )
+        text = clean_text_for_tts(text)
+        if len(text) > settings.TTS_MAX_CHARS:
+            return make_response(
+                jsonify({
+                    "success": False,
+                    "message": f"Text is longer than the {settings.TTS_MAX_CHARS}-character limit",
+                }), 413
+            )
         try:
-            text = clean_text_for_tts(text)
             tts_instance = TTSCreator.create_tts(settings.TTS_PROVIDER)
             audio_base64, detected_language = tts_instance.text_to_speech(text)
             return make_response(
