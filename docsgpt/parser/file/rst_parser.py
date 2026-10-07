@@ -55,8 +55,17 @@ class RstParser(BaseParser):
 
         for i, line in enumerate(lines):
             header_match = re.match(r"^[^\S\n]*[-=]+[^\S\n]*$", line)
+            underline_len = len(header_match.group().strip()) if header_match else 0
+            title_len = len(lines[i - 1].strip()) if header_match and i > 0 else 0
+            # A line of dashes/equals is a real section underline if it's at
+            # least as long as the title above it (the common case), OR if
+            # it's merely too short for that title but still at least 4
+            # characters: docutils still parses this as a heading (emitting
+            # only a "Title underline too short" warning, not rejecting it),
+            # so a 4+ character underline under a longer title is still a
+            # real section title, not ordinary text.
             if header_match and i > 0 and (
-                    len(lines[i - 1].strip()) <= len(header_match.group().strip())):
+                    underline_len >= title_len or underline_len >= 4):
                 # Strip the header's own title line back out of the text
                 # accumulated so far, whether that text belongs to a
                 # previous section (current_header is set) or is preamble
@@ -67,7 +76,15 @@ class RstParser(BaseParser):
                 if current_text.endswith(lines[i - 1] + "\n"):
                     # removes the next heading from current Document
                     current_text = current_text[:len(current_text) - len(lines[i - 1] + "\n")]
-                if current_text != "" or current_header is not None:
+                # Skip the tuple only when there is truly nothing to keep:
+                # no real header yet AND nothing but whitespace accumulated
+                # (e.g. a header at the very start of the document, or a
+                # file beginning with a blank line before its first
+                # heading). .strip() rather than a bare "" check so a
+                # whitespace-only preamble isn't silently kept as an empty
+                # chunk either. A titled section's own text is always kept,
+                # even if empty, since current_header is not None there.
+                if current_text.strip() != "" or current_header is not None:
                     rst_tups.append((current_header, current_text))
 
                 current_header = lines[i - 1]
@@ -126,10 +143,9 @@ class RstParser(BaseParser):
         return content
 
     def remove_directives(self, content: str) -> str:
-        """Removes reStructuredText Directives"""
-        pattern = r"`\.\.([^:]+)::"
-        content = re.sub(pattern, "", content)
-        return content
+        """Remove standard reStructuredText directive markers."""
+        pattern = r"^[ \t]*\.\.[ \t]+[\w-]+::[ \t]*"
+        return re.sub(pattern, "", content, flags=re.MULTILINE)
 
     def remove_interpreters(self, content: str) -> str:
         """Removes reStructuredText Interpreted Text Roles"""

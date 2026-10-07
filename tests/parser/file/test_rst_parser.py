@@ -82,12 +82,13 @@ def test_remove_images():
 
 
 def test_remove_directives():
-    """Test directive removal functionality."""
+    """Test removal of standard reStructuredText directive syntax."""
     parser = RstParser()
-    content = "Text with `..note::` directive and more text"
+    content = "Text before\n.. note:: Important information\nText after"
+
     result = parser.remove_directives(content)
-    # The regex pattern looks for `..something::` so it should remove `..note::`
-    assert result == "Text with ` directive and more text"
+
+    assert result == "Text before\nImportant information\nText after"
 
 
 def test_remove_interpreters():
@@ -255,6 +256,46 @@ def test_rst_to_tups_preserves_preamble_before_first_header():
     assert "First Header" in headers
 
 
+def test_rst_to_tups_no_empty_chunk_when_file_starts_with_blank_line():
+    """A file beginning with a blank line (or any whitespace-only text)
+    before its first header must not produce a spurious (None, "") or
+    (None, whitespace) chunk ahead of the real header.
+    """
+    parser = RstParser()
+    rst_content = "\nTitle\n=====\nContent.\n"
+
+    tups = parser.rst_to_tups(rst_content)
+
+    assert tups[0][0] == "Title"
+    for header, text in tups:
+        if header is None:
+            assert text.strip() != ""
+
+
+def test_rst_to_tups_short_underline_at_least_4_chars_is_still_a_header():
+    """docutils treats an underline shorter than its title as a valid
+    section heading as long as the underline is still at least 4
+    characters long -- it only emits a "Title underline too short"
+    warning, it does not reject the heading. An underline below the
+    4-character floor is the only case that is NOT treated as a header.
+    """
+    parser = RstParser()
+
+    # Underline is shorter than the title but still >= 4 chars: docutils
+    # still treats this as a heading.
+    short_but_valid = "A Longer Title Than The Underline\n====\nContent.\n"
+    tups = parser.rst_to_tups(short_but_valid)
+    headers = [header for header, _ in tups if header is not None]
+    assert "A Longer Title Than The Underline" in headers
+
+    # Underline is both shorter than the title AND under 4 characters:
+    # docutils does not treat this as a heading.
+    too_short = "A Longer Title Than The Underline\n===\nContent.\n"
+    tups = parser.rst_to_tups(too_short)
+    headers = [header for header, _ in tups if header is not None]
+    assert "A Longer Title Than The Underline" not in headers
+
+
 def test_parse_file_basic(rst_parser):
     """Test basic parse_file functionality."""
     content = """Title
@@ -355,7 +396,7 @@ Text with `link <http://example.com>`_ and :doc:`reference`.
 | A   | B   |
 +-----+-----+
 
-`..note::` This is a note."""
+.. note:: This is a note."""
 
     with patch("builtins.open", mock_open(read_data=content)):
         result = parser.parse_file(Path("test.rst"))
@@ -367,6 +408,5 @@ Text with `link <http://example.com>`_ and :doc:`reference`.
     assert ":doc:" not in joined_result  # interpreters removed
     assert ".. image::" not in joined_result  # images removed
     assert "+-----+" not in joined_result  # table excess removed
-    # The directive pattern looks for `..something::` so regular .. note:: won't be removed
-    # but `..note::` will be removed
-    assert "`..note::`" not in joined_result  # directives removed
+    assert ".. note::" not in joined_result
+    assert "This is a note." in joined_result
