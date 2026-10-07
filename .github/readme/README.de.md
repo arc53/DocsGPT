@@ -1,4 +1,4 @@
-<!-- Translated from README.md at commit c345cddb3ac33b44a077cfb5599f6adb2fc6604f by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
+<!-- Translated from README.md at commit 7974998b8f162961478a95eff9cb7ac62286c8f8 by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
 <h1 align="center">
   DocsGPT 🦖
 </h1>
@@ -44,7 +44,7 @@
 
 <p align="center">
   <a href="https://docs.docsgpt.cloud/">
-    <img src="https://pub.arc53.com/docsgpt/readme-reel.webp?v=2" alt="DocsGPT in 30 Sekunden: Dokumente hochladen, GitHub synchronisieren, Antworten mit Quellen, Deep Research, visuelle Workflows, Tools, das Chat-Widget, die OpenAI-kompatible API, der MCP-Server und Self-Hosting mit docsgpt up" width="100%">
+    <img width="1100" height="688" src="https://pub.arc53.com/readme-reel.webp" alt="DocsGPT im Überblick: Antworten mit Quellenangaben, Wissen, Agenten, visuelle Workflows, Tools und Konnektoren, Observability">
   </a>
 </p>
 
@@ -76,6 +76,8 @@ Sie möchten es nur ausprobieren? Nutzen Sie [DocsGPT Cloud](https://app.docsgpt
 - 🧠 **Jedes Modell:** OpenAI, Anthropic, Google, Groq, OpenRouter oder lokale Modelle über Ollama, vLLM und andere OpenAI-kompatible Server.
 - 🛡️ **Guardrails:** Erkennen, schwärzen oder blockieren Sie PII, Geheimnisse, Prompt Injection und nicht fundierte Antworten.
 - ⏰ **Zeitpläne und Webhooks:** Führen Sie Agenten nach Zeitplan oder aus jedem System aus, das eine HTTP-Anfrage senden kann.
+
+https://github.com/user-attachments/assets/d36bbd7d-c23c-4ab8-8777-b432632d6882
 
 <table>
   <tr>
