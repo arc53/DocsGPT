@@ -76,7 +76,7 @@ class TestPresets:
         assert {p.key for p in presets} >= {"mcp:notion", "mcp:linear"}
         for preset in presets:
             assert preset.mcp_url.startswith("https://")
-            assert preset.auth_kind in ("mcp_oauth", "none")
+            assert preset.auth_kind in ("mcp_oauth", "mcp", "none")
             assert preset.tool_templates == ("mcp_tool",)
 
     def test_existing_mcp_connection_maps_to_its_preset(self):

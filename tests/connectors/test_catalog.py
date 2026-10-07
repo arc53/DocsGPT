@@ -101,6 +101,17 @@ class TestRowMapping:
 
 
 class TestPresets:
+    def test_drawio_preset_connects_without_oauth(self):
+        definition = catalog.get_definition("mcp:drawio")
+
+        assert definition.publisher == "preset"
+        assert definition.icon == "drawio"
+        assert definition.category == "projects"
+        assert definition.auth_kind == "mcp"
+        assert definition.mcp_url == "https://mcp.draw.io/mcp"
+        assert definition.capabilities == ("read",)
+        assert definition.docs_url == "https://github.com/jgraph/drawio-mcp"
+        assert definition.configured
     def test_trello_preset(self):
         definition = catalog.get_definition("mcp:trello")
 

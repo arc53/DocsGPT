@@ -1501,6 +1501,7 @@
         "mcp_atlassian": "Jira の課題と Confluence のページを検索、更新します。",
         "mcp_sentry": "Sentry の課題、イベント、リリースを調べます。",
         "mcp_stripe": "Stripe の顧客、支払い、サブスクリプションを調べます。",
+        "mcp_drawio": "draw.io で編集可能なフローチャートやその他の図を作成します。",
         "mcp_clickup": "ClickUp のタスク、ドキュメント、リストを検索、閲覧、更新し、コメントを追加します。",
         "mcp_zapier": "Zapier MCP アカウントで有効にしたアクションを使って、接続済みアプリの情報を読み取ったり更新したりします。",
         "mcp_trello": "Trello のボードやカードを検索し、カードを作成・更新します。",
