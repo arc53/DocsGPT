@@ -394,6 +394,8 @@ class TestHostileHost:
         r = self._start(app, pg_conn, {"Host": "evil.example.net", "Origin": "http://evil.example.net"})
         assert r.status_code == 400
         assert r.json["code"] == "origin_not_allowed"
+        # The response is a fixed message; the origin is only logged.
+        assert "evil.example.net" not in r.json["error"]
 
 
 class TestSignInBoundToStarter:

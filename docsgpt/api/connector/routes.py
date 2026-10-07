@@ -40,6 +40,8 @@ CALLBACK_STATUS_PATH = "/api/connectors/callback-status"
 API_CALLBACK_PATH = "/api/connectors/callback"
 # The app page that finishes a sign-in with the user's own login.
 APP_CALLBACK_PATH = "/connectors/callback"
+# What the API callback passes on to that page: all it reads from the provider.
+_FORWARDED_PARAMS = ("code", "state", "error", "installation_id", "setup_action")
 
 
 def build_callback_redirect(params: dict) -> str:
@@ -262,9 +264,13 @@ def build_authorization(
 
 
 def origin_not_allowed_response(err: OriginNotAllowed):
-    """The 400 for a sign-in started from an origin that may not receive it."""
+    """The 400 for a sign-in started from an origin that may not receive it; the origin is only logged."""
     current_app.logger.warning(str(err))
-    return make_response(jsonify({"success": False, "error": str(err), "code": "origin_not_allowed"}), 400)
+    return make_response(jsonify({
+        "success": False,
+        "error": "This app address is not an allowed origin for connector sign-ins; add it to CONNECTOR_ALLOWED_ORIGINS.",
+        "code": "origin_not_allowed",
+    }), 400)
 
 
 @connectors_ns.route("/api/connectors/auth")
@@ -325,16 +331,18 @@ class ConnectorsCallback(Resource):
 
             with db_readonly() as conn:
                 flow = oauth_flows.peek(conn, state)
-            if flow is None:
+            # ``return_origin`` was allowed when the sign-in started; check it
+            # again in case the allowed origins changed since.
+            if flow is None or flow["return_origin"] not in connector_allowed_origins():
                 return redirect(build_callback_redirect({
                     "status": "error",
                     "message": "This sign-in has expired. Please start again."
                 }))
             # This request carries no login, so it cannot tell who consented.
             # The app page posts the code with the user's own login, and only
-            # the user who started the sign-in can finish it. ``return_origin``
-            # was checked against the allowed origins when the sign-in started.
-            target = f"{flow['return_origin']}{APP_CALLBACK_PATH}?{request.query_string.decode()}"
+            # the user who started the sign-in can finish it.
+            params = {key: request.args[key] for key in _FORWARDED_PARAMS if key in request.args}
+            target = f"{flow['return_origin']}{APP_CALLBACK_PATH}?{urlencode(params)}"
             response = redirect(target, code=302)
             response.headers["Cache-Control"] = "no-store"
             response.headers["Referrer-Policy"] = "no-referrer"

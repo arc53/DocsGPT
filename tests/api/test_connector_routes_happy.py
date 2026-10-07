@@ -123,6 +123,13 @@ def _start_flow(pg_conn, user="u-callback", provider="google_drive", return_orig
 
 
 class TestConnectorsCallback:
+    @pytest.fixture(autouse=True)
+    def _app_origin_allowed(self):
+        from docsgpt.core.settings import settings
+
+        with patch.object(settings, "CONNECTOR_ALLOWED_ORIGINS", "https://app.example.com"):
+            yield
+
     def test_unknown_state_redirects_to_error(self, app, pg_conn):
         from docsgpt.api.connector.routes import ConnectorsCallback
 
@@ -148,14 +155,41 @@ class TestConnectorsCallback:
         "query",
         ["code=auth-code", "error=access_denied", "error=other", "code=c&installation_id=1&setup_action=install"],
     )
-    def test_forwards_the_whole_answer_to_the_app(self, app, pg_conn, query):
+    def test_forwards_the_providers_answer_to_the_app(self, app, pg_conn, query):
+        from urllib.parse import parse_qs, urlsplit
+
         from docsgpt.api.connector.routes import ConnectorsCallback
 
         _, state = _start_flow(pg_conn)
         with _patch_db(pg_conn), app.test_request_context(f"/api/connectors/callback?{query}&state={state}"):
             r = ConnectorsCallback().get()
+        target = urlsplit(r.location)
         assert r.status_code == 302
-        assert r.location == f"https://app.example.com/connectors/callback?{query}&state={state}"
+        assert f"{target.scheme}://{target.netloc}{target.path}" == "https://app.example.com/connectors/callback"
+        assert parse_qs(target.query) == parse_qs(f"{query}&state={state}")
+
+    def test_forwards_only_the_parameters_the_app_reads(self, app, pg_conn):
+        from urllib.parse import parse_qs, urlsplit
+
+        from docsgpt.api.connector.routes import ConnectorsCallback
+
+        _, state = _start_flow(pg_conn)
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/connectors/callback?code=c&state={state}&next=https://evil.example.net&scope=x"
+        ):
+            r = ConnectorsCallback().get()
+        assert set(parse_qs(urlsplit(r.location).query)) == {"code", "state"}
+
+    def test_refuses_a_return_origin_no_longer_allowed(self, app, pg_conn):
+        """The allowlist is checked again when forwarding, in case it changed since the sign-in started."""
+        from docsgpt.api.connector.routes import ConnectorsCallback
+
+        _, state = _start_flow(pg_conn, return_origin="https://removed.example.com")
+        with _patch_db(pg_conn), app.test_request_context(f"/api/connectors/callback?code=c&state={state}"):
+            r = ConnectorsCallback().get()
+        assert r.status_code == 302
+        assert r.location.startswith("/api/connectors/callback-status?")
+        assert "removed.example.com" not in r.location
 
     def test_github_install_without_state_renders_the_installed_page(self, app):
         from docsgpt.api.connector.routes import ConnectorsCallback
