@@ -281,6 +281,9 @@ class OpenAILLM(BaseLLM):
         # ``_last_response_id`` is the most recent /v1/responses id, used to
         # chain turns when OPENAI_RESPONSES_STORE is enabled.
         self._reasoning_for_calls = {}
+        # The call ids of each response that made calls, in order: one list
+        # per tool round, so a later turn replays the rounds as they ran.
+        self._call_rounds = []
         self._last_response_id = None
         # call_ids the most recent response emitted; the chained-request
         # coverage guard checks the next turn answers all of them.
@@ -372,6 +375,7 @@ class OpenAILLM(BaseLLM):
             "call_ids": sorted(self._last_response_call_ids or ()),
             "reasoning_items": self._last_reasoning_items,
             "reasoning_for_calls": self._reasoning_for_calls,
+            "call_rounds": self._call_rounds,
             "system_hash": self._chain_system_hash,
             "tools_hash": self._chain_tools_hash,
         }
@@ -388,6 +392,7 @@ class OpenAILLM(BaseLLM):
         self._last_response_call_ids = set(state.get("call_ids") or ())
         self._last_reasoning_items = list(state.get("reasoning_items") or [])
         self._reasoning_for_calls = dict(state.get("reasoning_for_calls") or {})
+        self._call_rounds = [list(r) for r in state.get("call_rounds") or [] if isinstance(r, list)]
         self._chain_system_hash = state.get("system_hash")
         self._pending_system_hash = None
         self._chain_tools_hash = state.get("tools_hash")
@@ -528,6 +533,7 @@ class OpenAILLM(BaseLLM):
         """
         self._chain_reset_hint = reason
         self._reasoning_for_calls = {}
+        self._call_rounds = []
         self._last_reasoning_items = []
         self._last_response_id = None
         self._last_response_call_ids = set()
@@ -1386,6 +1392,42 @@ class OpenAILLM(BaseLLM):
         encoded = json.dumps(parts, sort_keys=True, default=str).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
+    def _with_cache_breakpoints(self, input_items):
+        """Mark an explicit prompt-cache breakpoint on each user message.
+
+        GPT-5.6 and later cache only at breakpoints: the latest message, the
+        system block, earlier message endings near the end of the input and
+        explicit breakpoints. A turn that resends its history unchained
+        (after a compression, a restart, or a chain past its budget) renders
+        earlier turns differently from how they ran live, so without explicit
+        breakpoints it reads back nothing past the system prompt. The first
+        text block of a user message is the question as the history replays
+        it; a breakpoint there makes the prefix through it readable by every
+        later turn. Only the latest few breakpoints of a request are written,
+        so marking each message adds reads, not writes.
+
+        Args:
+            input_items: The Responses ``input`` list.
+
+        Returns:
+            The list with breakpoints marked (user items copied, not mutated);
+            unchanged when the model does not declare the capability.
+        """
+        if getattr(self.capabilities, "prompt_cache_breakpoints", False) is not True:
+            return input_items
+        marked = []
+        for item in input_items:
+            content = item.get("content") if isinstance(item, dict) else None
+            if isinstance(content, list) and item.get("role") == "user":
+                for index, part in enumerate(content):
+                    if isinstance(part, dict) and part.get("type") == "input_text":
+                        content = list(content)
+                        content[index] = {**part, "prompt_cache_breakpoint": {"mode": "explicit"}}
+                        item = {**item, "content": content}
+                        break
+            marked.append(item)
+        return marked
+
     def _build_responses_input(self, messages, previous_response_id):
         """Build the Responses ``input`` list, honouring store-mode chaining.
 
@@ -1409,7 +1451,7 @@ class OpenAILLM(BaseLLM):
             # The full head goes out; it becomes the chain's head only once
             # the provider records the response.
             self._pending_system_hash = self._system_fingerprint(messages)
-            return self._to_responses_input(messages, chained=False), None
+            return self._with_cache_breakpoints(self._to_responses_input(messages, chained=False)), None
 
         trimmed = self._trim_for_previous_response(messages)
         head_hash = self._system_fingerprint(trimmed)
@@ -1460,8 +1502,8 @@ class OpenAILLM(BaseLLM):
                     sorted(missing),
                 )
                 self._pending_system_hash = self._system_fingerprint(messages)
-                return self._to_responses_input(messages, chained=False), None
-        return input_items, previous_response_id
+                return self._with_cache_breakpoints(self._to_responses_input(messages, chained=False)), None
+        return self._with_cache_breakpoints(input_items), previous_response_id
 
     @staticmethod
     def _to_responses_tools(tools):
@@ -1743,7 +1785,11 @@ class OpenAILLM(BaseLLM):
 
     def _remember_reasoning(self, tool_calls, reasoning_items):
         """Key captured reasoning items by each function-call id for replay
-        on the next in-turn request."""
+        on the next in-turn request, and record the response's calls as one
+        tool round."""
+        round_ids = [tc.id for tc in tool_calls or () if getattr(tc, "id", None)]
+        if round_ids:
+            self._call_rounds.append(round_ids)
         if not reasoning_items:
             return
         for tc in tool_calls:

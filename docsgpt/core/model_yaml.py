@@ -74,6 +74,7 @@ class _CapabilityFields(BaseModel):
     reasoning_effort: Optional[str] = None
     api_flavor: Optional[str] = None
     tool_result_images: Optional[str] = None
+    prompt_cache_breakpoints: Optional[bool] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -286,6 +287,7 @@ def _build_model(
         reasoning_effort=pick("reasoning_effort", None),
         api_flavor=pick("api_flavor", "chat_completions"),
         tool_result_images=pick("tool_result_images", None),
+        prompt_cache_breakpoints=pick("prompt_cache_breakpoints", False),
     )
 
     return AvailableModel(

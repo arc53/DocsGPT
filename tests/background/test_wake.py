@@ -352,6 +352,29 @@ class TestContinuation:
         assert seen["compressed_summary"] == "Summary of p, q0, q1."
         assert [h["prompt"] for h in seen["chat_history"]] == ["q2"]
 
+    def test_the_turn_keeps_its_responses_state_so_the_next_turn_can_chain(self, bg_db, conversation, scheduled,
+                                                                            events, monkeypatch):
+        """Without the response id a continuation reports, the user's next turn resends the whole history."""
+        from docsgpt.agents import headless_runner
+
+        conversation_id, _ = conversation
+
+        def fake_headless(agent_config, query, **kwargs):
+            return {"answer": "Done.", "thought": "", "sources": [], "tool_calls": [], "model_id": "m-1",
+                    "metadata": {"response_id": "resp_c", "response_chain_key": "ck",
+                                 "responses_state": {"chain_key": "ck", "call_rounds": []},
+                                 "unrelated": "dropped"}}
+
+        monkeypatch.setattr(headless_runner, "run_agent_headless", fake_headless)
+        _queue(conversation_id, "a")
+        assert continuation.continue_conversation_body(conversation_id, 0)["state"] == "delivered"
+        metadata = _messages(bg_db, conversation_id)[-1]["metadata"]
+        assert metadata["response_id"] == "resp_c"
+        assert metadata["response_chain_key"] == "ck"
+        assert metadata["responses_state"]["chain_key"] == "ck"
+        assert "unrelated" not in metadata
+        assert metadata["continuation"] is True and "wake" in metadata
+
     def test_the_turns_journal_and_jobs_point_at_its_message(self, bg_db, conversation, scheduled, events,
                                                             monkeypatch):
         """Tool calls journaled before the message exists are linked to it once it is written."""

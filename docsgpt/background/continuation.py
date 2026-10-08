@@ -531,6 +531,18 @@ def _wake_metadata(wakes: List[Dict[str, Any]]) -> Dict[str, Any]:
     return metadata
 
 
+#: Keys of a turn's agent metadata a continuation message keeps (as a chat turn stores them).
+_RESPONSES_METADATA_KEYS = ("response_id", "response_chain_key", "responses_state", "usage", "compression_epoch")
+
+
+def _responses_metadata(outcome: Dict[str, Any]) -> Dict[str, Any]:
+    """The Responses continuity a headless turn reported, for its message's metadata."""
+    reported = outcome.get("metadata")
+    if not isinstance(reported, dict):
+        return {}
+    return {key: reported[key] for key in _RESPONSES_METADATA_KEYS if reported.get(key) is not None}
+
+
 def _append(
     conversation: Dict[str, Any], wakes: List[Dict[str, Any]], outcome: Dict[str, Any], *, message_id: str
 ) -> Dict[str, Any]:
@@ -546,7 +558,10 @@ def _append(
                 "sources": outcome.get("sources") or [],
                 "tool_calls": outcome.get("tool_calls") or [],
                 "model_id": outcome.get("model_id"),
-                "metadata": _wake_metadata(wakes),
+                # The turn's Responses state (response id, reasoning) beside
+                # the wake: without it the user's next turn cannot chain onto
+                # this one and resends the whole history.
+                "metadata": {**_responses_metadata(outcome), **_wake_metadata(wakes)},
             },
         )
 
