@@ -1,7 +1,7 @@
 ---
 title: Air-Gapped Deployment
 description: Run DocsGPT on a network with no internet access.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-08
 ---
 
 import { Callout } from 'nextra/components'
@@ -38,7 +38,7 @@ The backend image already contains everything the default configuration loads at
 On a machine with internet access, pull the images and save them to one file:
 
 ```bash
-TAG=<version>   # the release you deploy, e.g. 0.21.0; avoid latest in a mirror
+TAG=<version>   # the release you deploy, e.g. 1.0.0; avoid latest in a mirror
 docker pull arc53/docsgpt:$TAG
 docker pull redis:6-alpine
 docker pull postgres:16-alpine
@@ -63,12 +63,12 @@ To use an embedding model other than the two defaults, build your own backend im
 The [Kubernetes manifests](/Deploying/Kubernetes-Deploying) pin every image. The default stack uses:
 
 ```text
-arc53/docsgpt:0.21.0
+arc53/docsgpt:1.0.0
 pgvector/pgvector:0.8.6-pg16
 redis:7.4-alpine
 ```
 
-The opt-in manifests add `arc53/docsgpt-sandbox:0.21.0` (code-execution sandbox), `qdrant/qdrant:v1.19.1` and `mongo:8.0`. Check the `image:` lines in `deployment/k8s` for the release you deploy, since they change with it. Push the images to your internal registry and point the manifests at it, either by editing the `image:` lines or with an `images:` entry in `kustomization.yaml`:
+The opt-in manifests add `arc53/docsgpt-sandbox:1.0.0` (code-execution sandbox), `qdrant/qdrant:v1.19.1` and `mongo:8.0`. Check the `image:` lines in `deployment/k8s` for the release you deploy, since they change with it. Push the images to your internal registry and point the manifests at it, either by editing the `image:` lines or with an `images:` entry in `kustomization.yaml`:
 
 ```yaml
 images:
