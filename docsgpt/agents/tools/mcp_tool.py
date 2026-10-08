@@ -1238,6 +1238,29 @@ class NonInteractiveOAuth(DocsGPTOAuth):
         )
 
 
+def _default_token_endpoint_auth_method(info: dict) -> dict:
+    """Apply RFC 7591 §2's default when a registration omits the auth method.
+
+    A server that issues a ``client_secret`` has registered a confidential
+    client, but a registration response need not echo
+    ``token_endpoint_auth_method``: Supabase returns only ``client_id``,
+    ``client_secret``, ``client_secret_expires_at``, ``id`` and
+    ``redirect_uris``. The SDK reads an absent method as a public client and
+    sends no credentials at all, which no confidential server accepts —
+    Supabase answers ``422 {"message":"Required parameter: client_secret"}``.
+
+    RFC 7591 §2 makes ``client_secret_basic`` the default in exactly this
+    case, and it is a form this client already applies: the Basic header is
+    what ``DocsGPTOAuth._one_client_authentication`` handles by dropping the
+    redundant ``client_id`` from the body.
+
+    A registration that names a method, or issued no secret, is left alone.
+    """
+    if info.get("client_secret") and not info.get("token_endpoint_auth_method"):
+        info["token_endpoint_auth_method"] = "client_secret_basic"
+    return info
+
+
 class DBTokenStorage(TokenStorage):
     """MCP OAuth tokens and client registration, kept encrypted on the connection.
 
@@ -1331,7 +1354,9 @@ class DBTokenStorage(TokenStorage):
             logger.debug("No client_info in DB for %s", base_url)
             return None
         try:
-            client_info = OAuthClientInformationFull.model_validate(data["client_info"])
+            client_info = OAuthClientInformationFull.model_validate(
+                _default_token_endpoint_auth_method(dict(data["client_info"]))
+            )
             if self.expected_redirect_uri:
                 stored_uris = [
                     str(uri).rstrip("/") for uri in client_info.redirect_uris
@@ -1363,7 +1388,9 @@ class DBTokenStorage(TokenStorage):
         return info
 
     async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
-        serialized_info = self._serialize_client_info(client_info.model_dump())
+        serialized_info = _default_token_endpoint_auth_method(
+            self._serialize_client_info(client_info.model_dump())
+        )
         base_url = self.get_base_url(self.server_url)
         await asyncio.to_thread(
             self._merge, {"client_info": serialized_info},
