@@ -75,6 +75,13 @@ def _setup(app, cid):
 
 
 class TestPresetConfig:
+    def test_excalidraw_recreation_keeps_authentication_disabled(self):
+        definition = catalog.get_definition("mcp:excalidraw")
+        assert service.connection_mcp_config(definition) == {
+            "server_url": "https://mcp.excalidraw.com/mcp", "auth_type": "none",
+            "timeout": 30, "transport_type": "auto",
+        }
+
     def test_is_the_config_the_sign_in_saves(self):
         definition = catalog.get_definition("mcp:notion")
         assert service.connection_mcp_config(definition) == {
@@ -92,6 +99,28 @@ class TestPresetConfig:
 
 
 class TestRecreate:
+    def test_setup_rebuilds_excalidraw_without_oauth(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+        row = ConnectorSessionsRepository(pg_conn).create(
+            "alice", "custom_mcp", connector_key="custom_mcp", auth_kind="none",
+            display_name="Excalidraw", account_label="mcp.excalidraw.com",
+            server_url="https://mcp.excalidraw.com",
+        )
+        cid = str(row["id"])
+        actions = [{"name": "export_to_excalidraw", "description": "Export diagram"}]
+        with _db(pg_conn), patch("docsgpt.connectors.mcp._discover", return_value=actions) as discover:
+            for _ in range(2):
+                resp = _setup(app, cid)
+                assert resp.status_code == 200, resp.get_json()
+        discover.assert_called_once()
+        assert discover.call_args.args[2]["config"]["auth_type"] == "none"
+        tools = _tools(pg_conn, cid)
+        assert len(tools) == 1
+        assert tools[0].config["auth_type"] == "none"
+        assert "oauth_scopes" not in tools[0].config
+        assert tools[0].display_name == "Excalidraw"
+
     def test_setup_rebuilds_the_deleted_tool_from_the_sign_in(self, app, pg_conn):
         cid = _connection(pg_conn)
         with _db(pg_conn), patch("docsgpt.agents.tools.mcp_tool.MCPTool.discover_tools") as discover, \

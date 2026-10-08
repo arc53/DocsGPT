@@ -1,7 +1,7 @@
 ---
 title: MCP Tool Integration
 description: Connect external tools to DocsGPT agents using the Model Context Protocol (MCP) standard.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-08
 ---
 
 import { Callout } from 'nextra/components'
@@ -27,7 +27,7 @@ If not set, it is derived from the host of `CONNECTOR_REDIRECT_BASE_URI`, then f
 
 ### Step 2: Add an MCP Server
 
-Go to **Settings** > **Connectors** and pick a preset (Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Zapier, Trello, Miro, Resend, Cal.com, or draw.io). OAuth presets open the service's sign-in: **Sign in to ClickUp**, for example, opens ClickUp's sign-in, and its tools are ready when you return. draw.io needs no sign-in: its server URL and no-auth setting are prefilled, so click **Test Connection**, then **Save**. For any other server, choose **Add custom connector** > **MCP server** and enter its URL and authentication; scopes and the timeout are under **Show advanced**. Click **Test Connection** to verify, then **Save**.
+Go to **Settings** > **Connectors** and pick a preset (Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Zapier, Trello, Miro, Resend, Cal.com, draw.io, or Excalidraw). OAuth presets open the service's sign-in: **Sign in to ClickUp**, for example, opens ClickUp's sign-in, and its tools are ready when you return. draw.io and Excalidraw need no sign-in: their server URLs and no-auth settings are prefilled, so click **Test Connection**, then **Save**. For any other server, choose **Add custom connector** > **MCP server** and enter its URL and authentication; scopes and the timeout are under **Show advanced**. Click **Test Connection** to verify, then **Save**.
 
 ### Step 3: Enable for Your Agent
 
@@ -35,7 +35,9 @@ In your agent configuration, enable the MCP tools you want the agent to use.
 
 </Steps>
 
-Presets need no URL entry. Most sign in with OAuth; draw.io uses a prefilled connection form and needs no credentials. Its `create_diagram` tool returns a link to an editable diagram in draw.io. The hosted server receives the diagram content; [draw.io's MCP server](https://github.com/jgraph/drawio-mcp) also documents a self-hosted option. Admins can turn presets off one by one, and turn off custom MCP servers, in **Admin > Connectors**. See [Connectors](/Sources/Connectors).
+Presets need no URL entry. Most sign in with OAuth; draw.io and Excalidraw use a prefilled connection form and need no credentials. draw.io's `create_diagram` tool returns a link to an editable diagram in draw.io. The hosted server receives the diagram content; [draw.io's MCP server](https://github.com/jgraph/drawio-mcp) also documents a self-hosted option. Admins can turn presets off one by one, and turn off custom MCP servers, in **Admin > Connectors**. See [Connectors](/Sources/Connectors).
+
+For Excalidraw, ask your agent to draw a diagram and return an editable link. The `read_me` tool describes the diagram format, and `export_to_excalidraw` uploads the diagram and returns a `https://excalidraw.com/#json=…` link. Open the link to view and edit it. DocsGPT does not yet render MCP Apps widgets inline, so `create_view` alone only reports that the canvas is rendering.
 
 ## Authentication Types
 

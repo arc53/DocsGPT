@@ -112,6 +112,7 @@ class TestPresets:
         assert definition.capabilities == ("read",)
         assert definition.docs_url == "https://github.com/jgraph/drawio-mcp"
         assert definition.configured
+
     def test_trello_preset(self):
         definition = catalog.get_definition("mcp:trello")
 
@@ -125,7 +126,6 @@ class TestPresets:
         assert definition.docs_url == (
             "https://support.atlassian.com/trello/docs/connect-trello-to-ai-assistants-with-trello-mcp/"
         )
-
 
     def test_miro_preset_uses_the_catalog_contract(self):
         definition = catalog.get_definition("mcp:miro")
@@ -144,7 +144,6 @@ class TestPresets:
 
         assert "mcp:miro" in {preset.key for preset in presets}
 
-
     def test_resend_preset_exposes_email_actions(self):
         definition = catalog.get_definition("mcp:resend")
 
@@ -154,6 +153,32 @@ class TestPresets:
         assert definition.auth_kind == "mcp_oauth"
         assert definition.capabilities == ("read", "write")
         assert definition.docs_url == "https://resend.com/docs/knowledge-base/mcp-server"
+
+    def test_excalidraw_needs_no_credentials_or_server_settings(self):
+        definition = catalog.get_definition("mcp:excalidraw")
+        assert definition is not None
+        assert definition.name == "Excalidraw"
+        assert definition.icon == "excalidraw"
+        assert definition.category == "projects"
+        assert definition.publisher == "preset"
+        assert definition.auth_kind == "mcp"
+        assert definition.mcp_url == "https://mcp.excalidraw.com/mcp"
+        assert definition.docs_url == "https://github.com/excalidraw/excalidraw-mcp"
+        assert set(definition.capabilities) == {"read", "write"}
+        assert definition.tool_templates == ("mcp_tool",)
+        assert definition.configured
+        assert not definition.required_settings
+        assert not definition.credential_fields
+        assert not definition.oauth_scopes
+        assert definition.sync_ingestor is None
+
+    def test_excalidraw_server_maps_to_its_preset(self):
+        url = "https://mcp.excalidraw.com/mcp"
+        definition = catalog.preset_for_url(url)
+        assert definition is not None
+        assert definition.key == "mcp:excalidraw"
+        row = {"provider": "mcp:https://mcp.excalidraw.com", "server_url": url}
+        assert catalog.connector_key_for_row(row) == "mcp:excalidraw"
 
     def test_presets_load_from_yaml(self, tmp_path, monkeypatch):
         presets = tmp_path / "mcp.yaml"
