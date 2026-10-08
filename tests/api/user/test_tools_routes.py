@@ -371,6 +371,38 @@ class TestTransformActions:
         result = transform_actions(actions)
         assert result[0]["active"] is True
 
+    def test_handles_non_mapping_properties(self):
+        from docsgpt.api.user.tools.routes import transform_actions
+
+        actions = [{"name": "legacy", "parameters": {"properties": None}}]
+
+        result = transform_actions(actions)
+
+        assert result[0]["active"] is True
+        assert result[0]["parameters"]["properties"] is None
+
+    def test_skips_non_mapping_property_definitions(self):
+        from docsgpt.api.user.tools.routes import transform_actions
+
+        actions = [
+            {
+                "name": "legacy",
+                "parameters": {
+                    "properties": {
+                        "type": "object",
+                        "query": {"type": "string"},
+                    }
+                },
+            }
+        ]
+
+        result = transform_actions(actions)
+        props = result[0]["parameters"]["properties"]
+
+        assert props["type"] == "object"
+        assert props["query"]["filled_by_llm"] is True
+        assert props["query"]["value"] == ""
+
     def test_handles_empty_list(self):
         from docsgpt.api.user.tools.routes import transform_actions
 

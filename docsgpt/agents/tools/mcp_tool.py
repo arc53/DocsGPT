@@ -862,20 +862,20 @@ class MCPTool(Tool):
                 "required": [],
             }
 
-            if input_schema:
-                if isinstance(input_schema, dict):
-                    if "properties" in input_schema:
-                        parameters_schema = {
-                            "type": input_schema.get("type", "object"),
-                            "properties": input_schema.get("properties", {}),
-                            "required": input_schema.get("required", []),
-                        }
+            if input_schema and isinstance(input_schema, dict):
+                if "properties" in input_schema or input_schema.get("type") == "object":
+                    properties = input_schema.get("properties")
+                    parameters_schema = {
+                        "type": input_schema.get("type", "object"),
+                        "properties": properties if isinstance(properties, dict) else {},
+                        "required": input_schema.get("required", []),
+                    }
 
-                        for key in ["additionalProperties", "description"]:
-                            if key in input_schema:
-                                parameters_schema[key] = input_schema[key]
-                    else:
-                        parameters_schema["properties"] = input_schema
+                    for key in ["additionalProperties", "description"]:
+                        if key in input_schema:
+                            parameters_schema[key] = input_schema[key]
+                else:
+                    parameters_schema["properties"] = input_schema
             action = {
                 "name": tool.get("name", ""),
                 "description": tool.get("description", ""),

@@ -887,6 +887,31 @@ class TestGetActionsMetadata:
         meta = tool.get_actions_metadata()
         assert meta[0]["parameters"]["properties"] == {}
 
+    @pytest.mark.parametrize(
+        "input_schema",
+        [
+            {"type": "object"},
+            {"type": "object", "properties": None},
+        ],
+    )
+    def test_tools_without_property_definitions(self, mcp_config, input_schema):
+        tool = _make_tool(mcp_config)
+        tool.available_tools = [
+            {
+                "name": "no_args",
+                "description": "Takes no arguments",
+                "inputSchema": input_schema,
+            }
+        ]
+
+        meta = tool.get_actions_metadata()
+
+        assert meta[0]["parameters"] == {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        }
+
     def test_tools_with_flat_schema(self, mcp_config):
         tool = _make_tool(mcp_config)
         tool.available_tools = [
