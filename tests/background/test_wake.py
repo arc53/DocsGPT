@@ -324,6 +324,34 @@ class TestContinuation:
         assert context.conversation_id == conversation_id
         assert _messages(bg_db, conversation_id)[-1]["id"] == summary["message_id"]
 
+    def test_the_turn_carries_the_conversations_compression_point(self, bg_db, conversation, scheduled, events,
+                                                                  monkeypatch):
+        """A woken turn must not replay the raw history a chat turn would replace with its summary."""
+        from docsgpt.agents import headless_runner
+
+        conversation_id, _ = conversation
+        with bg_db.begin() as conn:
+            repo = ConversationsRepository(conn)
+            for i in range(3):
+                repo.append_message(conversation_id, {"prompt": f"q{i}", "response": f"a{i}"})
+            repo.update_compression_metadata(conversation_id, "u1", {
+                "is_compressed": True,
+                "compression_points": [
+                    {"query_index": 2, "compressed_summary": "Summary of p, q0, q1.", "compressed_token_count": 6}
+                ],
+            })
+        seen = {}
+
+        def fake_headless(agent_config, query, **kwargs):
+            seen.update(kwargs)
+            return {"answer": "Done.", "thought": "", "sources": [], "tool_calls": [], "model_id": "m-1"}
+
+        monkeypatch.setattr(headless_runner, "run_agent_headless", fake_headless)
+        _queue(conversation_id, "a")
+        assert continuation.continue_conversation_body(conversation_id, 0)["state"] == "delivered"
+        assert seen["compressed_summary"] == "Summary of p, q0, q1."
+        assert [h["prompt"] for h in seen["chat_history"]] == ["q2"]
+
     def test_the_turns_journal_and_jobs_point_at_its_message(self, bg_db, conversation, scheduled, events,
                                                             monkeypatch):
         """Tool calls journaled before the message exists are linked to it once it is written."""
@@ -444,6 +472,41 @@ class TestHeadlessTurnInputs:
         assert [h["prompt"] for h in history] == ["hi", "run"]
         assert history[1]["tool_calls"][0]["job_id"] == "j"
         assert continuation._last_model(messages) == "m-c"
+
+    def test_a_saved_compression_point_replaces_the_history_it_covers(self):
+        """A continuation replays what a chat turn would: the summary plus the turns after its point."""
+        messages = [
+            {"prompt": f"q{i}", "response": f"a{i}", "status": "complete", "metadata": {}} for i in range(5)
+        ]
+        conversation = {
+            "id": "c1",
+            "compression_metadata": {
+                "is_compressed": True,
+                "compression_points": [
+                    {"query_index": 2, "compressed_summary": "Earlier: q0-q2.", "compressed_token_count": 5}
+                ],
+            },
+        }
+        summary, history = continuation._replay(conversation, messages, "m-c", "u1")
+        assert summary == "Earlier: q0-q2."
+        assert [h["prompt"] for h in history] == ["q3", "q4"]
+
+    @pytest.mark.parametrize(
+        "metadata",
+        [
+            None,
+            {"is_compressed": False, "compression_points": []},
+            # An empty saved summary is not a point: the raw history stays.
+            {"is_compressed": True, "compression_points": [{"query_index": 2, "compressed_summary": " "}]},
+        ],
+    )
+    def test_without_a_usable_point_the_whole_history_is_replayed(self, metadata):
+        messages = [
+            {"prompt": f"q{i}", "response": f"a{i}", "status": "complete", "metadata": {}} for i in range(3)
+        ]
+        summary, history = continuation._replay({"id": "c1", "compression_metadata": metadata}, messages, "m", "u1")
+        assert summary is None
+        assert [h["prompt"] for h in history] == ["q0", "q1", "q2"]
 
     def test_agentless_config(self):
         config = continuation._agent_config(MagicMock(), {"user_id": "u1", "agent_id": None}, "m-1")
