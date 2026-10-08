@@ -16,7 +16,7 @@ from docsgpt.parser.chunking_strategies import (
 )
 from docsgpt.parser.limits import MAX_CHUNK_TOKENS
 from docsgpt.parser.schema.base import Document
-from docsgpt.parser.tokenization import get_token_counter
+from docsgpt.parser.tokenization import HuggingFaceCounter, get_token_counter
 
 
 def _tok(text: str) -> int:
@@ -150,6 +150,41 @@ class _RecordingEmbeddings:
         return [[1.0, 0.0] for _ in sentences]
 
 
+class _CharacterCounter:
+    """Deterministic counter where one character equals one token."""
+
+    @staticmethod
+    def count(text):
+        return len(text)
+
+    @staticmethod
+    def split(text, max_tokens):
+        return [text[i : i + max_tokens] for i in range(0, len(text), max_tokens)]
+
+
+class _CollapsingEncoding:
+    """WordPiece-like offsets: one token per word, including long unknowns."""
+
+    def __init__(self, text):
+        self.ids = []
+        self.offsets = []
+        cursor = 0
+        for word in text.split(" "):
+            if word:
+                self.ids.append(0)
+                self.offsets.append((cursor, cursor + len(word)))
+            cursor += len(word) + 1
+
+
+class _CollapsingTokenizer:
+    def encode(self, text, add_special_tokens=False):
+        return _CollapsingEncoding(text)
+
+
+def _wordpiece_counter():
+    return HuggingFaceCounter(_CollapsingTokenizer(), "wordpiece-stub")
+
+
 @pytest.mark.unit
 class TestSemantic:
     @pytest.fixture(autouse=True)
@@ -216,6 +251,61 @@ class TestSemantic:
             for batch in embeddings.calls
             for text in batch
         )
+
+    def test_wordpiece_collapsed_span_is_bounded_before_embedding(self):
+        text = "a" * 32_000 + " b" * 3_000 + ". Tail sentence."
+        embeddings = _RecordingEmbeddings()
+        chunker = SemanticChunker(max_tokens=10_000, min_tokens=0)
+        chunker.counter = _wordpiece_counter()
+
+        with patch(
+            "docsgpt.vectorstore.base.get_embeddings", return_value=embeddings
+        ):
+            chunker.chunk([Document(text=text, doc_id="d")])
+
+        assert embeddings.calls
+        assert all(
+            chunker.counter.count(embedded) <= MAX_CHUNK_TOKENS
+            for batch in embeddings.calls
+            for embedded in batch
+        )
+
+    def test_sentence_fragments_preserve_exact_text(self):
+        text = "identifierWithoutSpaces1234567890.  Tail sentence."
+        embeddings = _RecordingEmbeddings()
+        chunker = SemanticChunker(max_tokens=10, min_tokens=0)
+        chunker.counter = _CharacterCounter()
+
+        with patch(
+            "docsgpt.vectorstore.base.get_embeddings", return_value=embeddings
+        ):
+            out = chunker.chunk([Document(text=text, doc_id="d")])
+
+        assert "".join(chunk.text for chunk in out) == text
+
+    def test_direct_oversized_limit_caps_final_chunks(self):
+        text = "a" * 5_000 + ". Tail sentence."
+        embeddings = _RecordingEmbeddings()
+        chunker = SemanticChunker(max_tokens=10_000, min_tokens=0)
+        chunker.counter = _CharacterCounter()
+
+        with patch(
+            "docsgpt.vectorstore.base.get_embeddings", return_value=embeddings
+        ):
+            out = chunker.chunk([Document(text=text, doc_id="d")])
+
+        assert out
+        assert all(chunker.counter.count(chunk.text) <= MAX_CHUNK_TOKENS for chunk in out)
+
+    def test_direct_oversized_limit_caps_recursive_fallback(self):
+        text = "x" * 5_000
+        chunker = SemanticChunker(max_tokens=10_000, min_tokens=0)
+        chunker.counter = _CharacterCounter()
+
+        out = chunker.chunk([Document(text=text, doc_id="d")])
+
+        assert len(out) > 1
+        assert all(chunker.counter.count(chunk.text) <= MAX_CHUNK_TOKENS for chunk in out)
 
     def test_min_tokens_merges_neighbours(self):
         # Non-uniform distances yield several breakpoints and tiny groups,

@@ -32,7 +32,7 @@ from psycopg import sql
 
 from docsgpt.core.settings import settings
 from docsgpt.parser.limits import MAX_CHUNK_TOKENS
-from docsgpt.parser.tokenization import get_token_counter
+from docsgpt.parser.tokenization import get_token_counter, split_to_token_limit
 from docsgpt.vectorstore.model_registry import resolve
 from docsgpt.vectorstore.vector_creator import VectorCreator
 
@@ -84,7 +84,7 @@ def _bounded_embedding_texts(texts: Sequence[Optional[str]]) -> Tuple[List[str],
     for value in texts:
         text = value or ""
         if counter.count(text) > MAX_CHUNK_TOKENS:
-            pieces = counter.split(text, MAX_CHUNK_TOKENS)
+            pieces = split_to_token_limit(counter, text, MAX_CHUNK_TOKENS)
             text = pieces[0] if pieces else ""
             clipped += 1
         bounded.append(text)
