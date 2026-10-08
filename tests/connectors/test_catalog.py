@@ -257,3 +257,12 @@ def test_calcom_preset_uses_remote_oauth_catalog_contract():
     assert calcom.auth_kind == "mcp_oauth"
     assert calcom.capabilities == ("read", "write")
     assert calcom.docs_url == "https://cal.com/docs/mcp-server"
+
+
+def test_cloudflare_preset_signs_in_with_mcp_oauth():
+    cloudflare = catalog.get_definition("mcp:cloudflare")
+    assert cloudflare.publisher == "preset"
+    assert cloudflare.mcp_url == "https://mcp.cloudflare.com/mcp"
+    assert cloudflare.auth_kind == "mcp_oauth"
+    assert cloudflare.capabilities == ("read", "write")
+    assert catalog.preset_for_url("https://mcp.cloudflare.com/mcp").key == "mcp:cloudflare"

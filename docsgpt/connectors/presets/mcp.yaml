@@ -136,3 +136,13 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://cal.com/docs/mcp-server
+
+- key: mcp:cloudflare
+  name: Cloudflare
+  description: Manage Workers, DNS, R2 and more through the Cloudflare API.
+  icon: cloudflare
+  category: dev
+  mcp_url: https://mcp.cloudflare.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://developers.cloudflare.com/agents/model-context-protocol/cloudflare/servers-for-cloudflare/
