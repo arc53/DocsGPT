@@ -252,6 +252,10 @@ class TestSemantic:
             for text in batch
         )
 
+    def test_embedding_provider_count_mismatch_fails_the_batch(self):
+        with pytest.raises(ValueError, match="wrong vector count"):
+            SemanticChunker._embed_in_batches(_FakeEmbeddings([]), ["sentence"])
+
     def test_wordpiece_collapsed_span_is_bounded_before_embedding(self):
         text = "a" * 32_000 + " b" * 3_000 + ". Tail sentence."
         embeddings = _RecordingEmbeddings()

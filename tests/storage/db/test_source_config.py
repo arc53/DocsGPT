@@ -100,6 +100,10 @@ class TestStrictWrite:
         with pytest.raises(ValidationError, match="must be <= 4096"):
             ChunkingConfig(max_tokens=100_000)
 
+    def test_chunk_max_tokens_rejects_values_below_one(self):
+        with pytest.raises(ValidationError, match="must be >= 1"):
+            ChunkingConfig(max_tokens=0)
+
     def test_chunk_max_tokens_accepts_ceiling(self):
         assert ChunkingConfig(max_tokens=4096).max_tokens == 4096
 
