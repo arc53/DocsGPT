@@ -108,6 +108,7 @@ def run_agent_headless(
     model_id_override: Optional[str] = None,
     endpoint: str = "headless",
     chat_history: Optional[List[Dict[str, Any]]] = None,
+    compressed_summary: Optional[str] = None,
     conversation_id: Optional[str] = None,
     external_caller: bool = False,
     public_link_caller: bool = False,
@@ -137,6 +138,9 @@ def run_agent_headless(
     them, and wiki edits only when the wiki's owner allows outside edits (as
     for a webhook run).
 
+    ``compressed_summary`` is the summary of a compressed conversation whose
+    tail ``chat_history`` holds; it goes into the system prompt as in a chat turn.
+
     A continuation turn passes ``message_id``, the id its message will be
     stored with (tool calls are journaled and files attached under it), and
     ``background``, its :class:`~docsgpt.background.context.BackgroundContext`:
@@ -164,6 +168,7 @@ def run_agent_headless(
                 model_id_override=model_id_override,
                 endpoint=endpoint,
                 chat_history=chat_history,
+                compressed_summary=compressed_summary,
                 conversation_id=conversation_id,
                 external_caller=external_caller,
                 public_link_caller=public_link_caller,
@@ -189,6 +194,7 @@ def _run_agent_headless(
     model_id_override: Optional[str] = None,
     endpoint: str = "headless",
     chat_history: Optional[List[Dict[str, Any]]] = None,
+    compressed_summary: Optional[str] = None,
     conversation_id: Optional[str] = None,
     external_caller: bool = False,
     public_link_caller: bool = False,
@@ -368,6 +374,10 @@ def _run_agent_headless(
         # agent, so it carries the same guardrails an interactive turn would.
         "agent_config": agent_config.get("config") or {},
     }
+    if compressed_summary:
+        # ``chat_history`` is then the tail after a saved compression point;
+        # the summary of what it replaced rides in the system prompt.
+        agent_kwargs["compressed_summary"] = compressed_summary
     if wiki_config:
         agent_kwargs["wiki_config"] = wiki_config
     if agent_type == "workflow":
