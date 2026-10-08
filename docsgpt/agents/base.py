@@ -98,6 +98,54 @@ def _epoch_text(value: Any) -> Optional[str]:
     return str(value)
 
 
+def _tool_call_rounds(source_call_ids: List[str], state: Optional[Dict[str, Any]]) -> List[List[int]]:
+    """Group a turn's persisted tool calls into the rounds they ran in.
+
+    Persistence flattens a turn's calls into one list. Replayed as one batch
+    they render differently from the live turn, which ran them round by round,
+    and a GPT-5.6+ prompt cache written live then never matches the replay.
+    The rounds come from the Responses state: ``call_rounds`` (the call ids of
+    each response, recorded since it exists), else the reasoning items each
+    call carries (the calls of one response share them). A call neither knows
+    stays in the round before it.
+
+    Args:
+        source_call_ids: The calls' persisted ids, in the order they ran.
+        state: The turn's Responses state, or None.
+
+    Returns:
+        Lists of call positions, one per round, in order; a single round
+        holding every call when there is no state to tell them apart.
+    """
+    if not source_call_ids:
+        return []
+    if not isinstance(state, dict):
+        return [list(range(len(source_call_ids)))]
+    recorded: Dict[str, int] = {}
+    for number, round_ids in enumerate(state.get("call_rounds") or []):
+        for call_id in round_ids if isinstance(round_ids, list) else ():
+            recorded.setdefault(str(call_id), number)
+    reasoning = state.get("reasoning_for_calls") or {}
+    rounds: List[List[int]] = []
+    previous_key: Any = None
+    for position, call_id in enumerate(source_call_ids):
+        key: Any = None
+        if call_id in recorded:
+            key = ("round", recorded[call_id])
+        else:
+            items = reasoning.get(call_id) if isinstance(reasoning, dict) else None
+            ids = tuple(item.get("id") for item in items or () if isinstance(item, dict))
+            if ids:
+                key = ("reasoning", ids)
+        if rounds and (key is None or key == previous_key):
+            rounds[-1].append(position)
+        else:
+            rounds.append([position])
+        if key is not None:
+            previous_key = key
+    return rounds
+
+
 def _unique_reasoning_items(items: List[Any]) -> List[Any]:
     """Responses reasoning items in order, each id once (an item without an id is kept as is).
 
@@ -1017,6 +1065,7 @@ class BaseAgent(ABC):
         )
 
         tokens = TokenCounter.count_message_tokens(messages)
+        tokens += self._pending_reasoning_tokens(messages)
         plan = getattr(self, "attachment_plan", None)
         carrier = getattr(self, "_current_turn_message", None)
         if not isinstance(plan, AttachmentPlan) or carrier is None:
@@ -1026,6 +1075,38 @@ class BaseAgent(ABC):
         if not getattr(self, "_attachments_merged", False):
             return tokens + plan.reserved_tokens
         return tokens + max(int(getattr(self, "_attachment_token_correction", 0) or 0), 0)
+
+    def _pending_reasoning_tokens(self, messages: List[Dict]) -> int:
+        """Tokens of this turn's reasoning the LLM adds to its calls on the Responses API.
+
+        The tool loop's own calls carry no reasoning on their messages: the
+        LLM keeps it and puts it back in front of each call when it builds the
+        request (``reasoning_for_calls``). Counted here so a long tool loop's
+        context check sees what is sent.
+
+        Args:
+            messages: The messages the next request is built from.
+
+        Returns:
+            The estimate; 0 off the Responses API.
+        """
+        from docsgpt.api.answer.services.compression.token_counter import (
+            TokenCounter,
+        )
+
+        uses_responses = getattr(self.llm, "_uses_responses_api", None)
+        held = getattr(self.llm, "_reasoning_for_calls", None)
+        if not (callable(uses_responses) and uses_responses()) or not isinstance(held, dict) or not held:
+            return 0
+        items: List[Any] = []
+        for message in messages:
+            if message.get("role") != "assistant" or message.get("responses_reasoning_items"):
+                continue
+            for tool_call in message.get("tool_calls") or ():
+                call_id = tool_call.get("id") if isinstance(tool_call, dict) else None
+                if call_id in held:
+                    items.extend(held[call_id])
+        return TokenCounter.count_reasoning_items(items)
 
     def note_attachments_merged(self, carrier: Dict, native_estimate: int) -> None:
         """Record that the handler merged the plan into the turn's message.
@@ -1546,12 +1627,8 @@ class BaseAgent(ABC):
                 and ended_on_retired_pause(i)
             )
             if historical_tool_calls:
-                tool_message: Dict[str, Any] = {
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [],
-                }
-                reasoning_items: List[Any] = []
+                emitted_calls: List[Dict[str, Any]] = []
+                source_call_ids: List[str] = []
                 used_replay_call_ids: set[str] = set()
                 call_id_occurrences: Dict[str, int] = {}
                 for tool_call in historical_tool_calls:
@@ -1572,13 +1649,14 @@ class BaseAgent(ABC):
                             f"{source_call_id}:{occurrence}",
                         ))
                     used_replay_call_ids.add(call_id)
+                    source_call_ids.append(source_call_id)
                     args = tool_call.get("arguments")
                     args_str = (
                         json.dumps(args)
                         if isinstance(args, dict)
                         else (args or "{}")
                     )
-                    tool_message["tool_calls"].append({
+                    emitted_calls.append({
                         "id": call_id,
                         "type": "function",
                         "function": {
@@ -1586,33 +1664,41 @@ class BaseAgent(ABC):
                             "arguments": args_str,
                         },
                     })
+                # The rounds replay as they ran: each round's calls, behind
+                # their reasoning, then its results. That is the shape the
+                # live turn sent, so a prompt cache it wrote still matches.
+                rounds = _tool_call_rounds(source_call_ids, state)
+                for number, positions in enumerate(rounds):
+                    tool_message: Dict[str, Any] = {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [emitted_calls[p] for p in positions],
+                    }
+                    reasoning_items: List[Any] = []
                     if state:
-                        reasoning_items.extend(
-                            state.get("reasoning_for_calls", {}).get(
-                                source_call_id, []
+                        for p in positions:
+                            reasoning_items.extend(
+                                state.get("reasoning_for_calls", {}).get(source_call_ids[p], [])
                             )
-                        )
-                if narrated_before_calls:
-                    if i["response"]:
-                        tool_message["content"] = i["response"]
-                    if i.get("thought"):
-                        tool_message["reasoning_content"] = i["thought"]
-                    # The turn's last response is the one that made the
-                    # calls it paused on, so its reasoning precedes them.
-                    if state:
-                        reasoning_items.extend(state.get("reasoning_items") or [])
-                call_reasoning = _unique_reasoning_items(reasoning_items)
-                if call_reasoning:
-                    tool_message["responses_reasoning_items"] = call_reasoning
-                messages.append(tool_message)
-                for tool_call, emitted_call in zip(
-                    historical_tool_calls, tool_message["tool_calls"]
-                ):
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": emitted_call["id"],
-                        "content": replayed_result(tool_call),
-                    })
+                    if narrated_before_calls and number == len(rounds) - 1:
+                        if i["response"]:
+                            tool_message["content"] = i["response"]
+                        if i.get("thought"):
+                            tool_message["reasoning_content"] = i["thought"]
+                        # The turn's last response is the one that made the
+                        # calls it paused on, so its reasoning precedes them.
+                        if state:
+                            reasoning_items.extend(state.get("reasoning_items") or [])
+                    call_reasoning = _unique_reasoning_items(reasoning_items)
+                    if call_reasoning:
+                        tool_message["responses_reasoning_items"] = call_reasoning
+                    messages.append(tool_message)
+                    for p in positions:
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": emitted_calls[p]["id"],
+                            "content": replayed_result(historical_tool_calls[p]),
+                        })
             if has_completed_turn and not narrated_before_calls:
                 asst_msg: Dict[str, Any] = {
                     "role": "assistant",
@@ -1664,8 +1750,10 @@ class BaseAgent(ABC):
             TokenCounter,
         )
 
+        uses_responses = getattr(self.llm, "_uses_responses_api", None)
         return TokenCounter.count_query_tokens(
-            [h for h in (self.chat_history or []) if isinstance(h, dict)]
+            [h for h in (self.chat_history or []) if isinstance(h, dict)],
+            include_reasoning=bool(callable(uses_responses) and uses_responses()),
         )
 
     def _plan_attachments(
@@ -1773,6 +1861,9 @@ class BaseAgent(ABC):
         history: List[Dict],
         max_tokens: int,
     ) -> List[Dict]:
+        from docsgpt.api.answer.services.compression.token_counter import (
+            TokenCounter,
+        )
         from docsgpt.utils import num_tokens_from_string
 
         if not history or max_tokens <= 0:
@@ -1797,6 +1888,10 @@ class BaseAgent(ABC):
                         f"Response: {tool_call.get('result')}"
                     )
                     message_tokens += num_tokens_from_string(tool_str)
+            # The reasoning the turn replays on the Responses API is sent
+            # with it and billed in full.
+            if self._compatible_responses_state(message.get("metadata")):
+                message_tokens += TokenCounter.replayed_reasoning_tokens(message)
 
             if current_tokens + message_tokens <= max_tokens:
                 current_tokens += message_tokens
