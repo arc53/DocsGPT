@@ -34,7 +34,14 @@ class TestParseLenient:
         assert c.strategy == "classic_chunk"
         assert c.max_tokens == 1250
         assert c.min_tokens == 150
+        assert c.chunk_overlap == 0
         assert c.duplicate_headers is False
+
+    def test_chunk_overlap_validation(self):
+        """Ensure chunk_overlap permits non-negative values and rejects negative values."""
+        assert ChunkingConfig(chunk_overlap=50).chunk_overlap == 50
+        with pytest.raises(ValidationError, match="chunk_overlap must be >= 0"):
+            ChunkingConfig(chunk_overlap=-1)
 
     def test_retrieval_defaults(self):
         r = RetrievalConfig()

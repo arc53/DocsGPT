@@ -190,6 +190,7 @@ class TestIngestWorkerConfigThreading:
         assert calls[0]["chunking_strategy"] == "classic_chunk"
         assert calls[0]["max_tokens"] == 1250
         assert calls[0]["min_tokens"] == 150
+        assert calls[0]["chunk_overlap"] == 0
         assert calls[0]["duplicate_headers"] is False
 
     def test_non_default_config_is_threaded(
@@ -214,6 +215,7 @@ class TestIngestWorkerConfigThreading:
                     "strategy": "recursive",
                     "max_tokens": 800,
                     "min_tokens": 50,
+                    "chunk_overlap": 100,
                 }
             },
         )
@@ -223,6 +225,7 @@ class TestIngestWorkerConfigThreading:
         assert calls[0]["chunking_strategy"] == "recursive"
         assert calls[0]["max_tokens"] == 800
         assert calls[0]["min_tokens"] == 50
+        assert calls[0]["chunk_overlap"] == 100
 
 
 @pytest.mark.unit

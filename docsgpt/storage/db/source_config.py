@@ -87,7 +87,26 @@ class ChunkingConfig(BaseModel):
     strategy: str = "classic_chunk"  # ChunkerCreator key
     max_tokens: int = 1250  # matches docsgpt/worker.py MAX_TOKENS
     min_tokens: int = 150  # matches docsgpt/worker.py MIN_TOKENS
+    chunk_overlap: int = 0  # Token overlap across adjacent chunks
     duplicate_headers: bool = False
+
+    @field_validator("chunk_overlap")
+    @classmethod
+    def _non_negative_chunk_overlap(cls, value: int) -> int:
+        """Validate that chunk_overlap is non-negative.
+
+        Args:
+            value: Number of overlapping tokens between chunks.
+
+        Returns:
+            The validated non-negative chunk_overlap value.
+
+        Raises:
+            ValueError: If value is negative.
+        """
+        if value < 0:
+            raise ValueError("chunk_overlap must be >= 0")
+        return value
 
 
 class GraphRetrievalConfig(BaseModel):

@@ -17,6 +17,7 @@ export type SourceChunkingConfig = {
   strategy?: ChunkingStrategy; // default 'classic_chunk'
   max_tokens?: number; // default 1250
   min_tokens?: number; // default 150
+  chunk_overlap?: number; // default 0
   duplicate_headers?: boolean; // default false
 };
 

@@ -771,6 +771,7 @@ def ingest_worker(
                 chunking_strategy=cfg.chunking.strategy,
                 max_tokens=cfg.chunking.max_tokens,
                 min_tokens=cfg.chunking.min_tokens,
+                chunk_overlap=cfg.chunking.chunk_overlap,
                 duplicate_headers=cfg.chunking.duplicate_headers,
             )
             raw_docs = chunker.chunk(documents=raw_docs)
@@ -1097,6 +1098,7 @@ def reingest_source_worker(self, source_id, user):
                                 chunking_strategy=cfg.chunking.strategy,
                                 max_tokens=cfg.chunking.max_tokens,
                                 min_tokens=cfg.chunking.min_tokens,
+                                chunk_overlap=cfg.chunking.chunk_overlap,
                                 duplicate_headers=cfg.chunking.duplicate_headers,
                             )
                             chunked_new = chunker_new.chunk(documents=raw_docs_new)
@@ -1337,6 +1339,7 @@ def remote_worker(
             chunking_strategy=cfg.chunking.strategy,
             max_tokens=cfg.chunking.max_tokens,
             min_tokens=cfg.chunking.min_tokens,
+            chunk_overlap=cfg.chunking.chunk_overlap,
             duplicate_headers=cfg.chunking.duplicate_headers,
         )
         raw_docs = chunker.chunk(documents=raw_docs)
@@ -3801,6 +3804,7 @@ def ingest_connector(
                 chunking_strategy=cfg.chunking.strategy,
                 max_tokens=cfg.chunking.max_tokens,
                 min_tokens=cfg.chunking.min_tokens,
+                chunk_overlap=cfg.chunking.chunk_overlap,
                 duplicate_headers=cfg.chunking.duplicate_headers,
             )
             raw_docs = chunker.chunk(documents=raw_docs)
@@ -4073,6 +4077,7 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
             chunking_strategy=cfg.chunking.strategy,
             max_tokens=cfg.chunking.max_tokens,
             min_tokens=cfg.chunking.min_tokens,
+            chunk_overlap=cfg.chunking.chunk_overlap,
             duplicate_headers=cfg.chunking.duplicate_headers,
         )
         chunks = chunker.chunk(
