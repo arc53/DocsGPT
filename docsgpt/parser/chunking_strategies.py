@@ -187,10 +187,12 @@ class ParentChildChunker(_BaseStrategyChunker):
         child_size = self._child_size()
         for doc in documents:
             part_index = 0
-            for parent_text in self.counter.split(doc.text, self.max_tokens):
+            for parent_text in self._split_by_tokens(doc.text):
                 if not parent_text.strip():
                     continue
-                for child_text in self.counter.split(parent_text, child_size):
+                for child_text in split_to_token_limit(
+                    self.counter, parent_text, child_size
+                ):
                     if not child_text.strip():
                         continue
                     child = Document(

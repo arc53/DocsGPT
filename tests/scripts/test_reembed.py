@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from docsgpt.parser.tokenization import HuggingFaceCounter
 from docsgpt.scripts import reembed
+from tests.parser.counter_fakes import wordpiece_counter
 
 
 class _CharacterCounter:
@@ -18,29 +18,6 @@ class _CharacterCounter:
     @staticmethod
     def split(text, max_tokens):
         return [text[i : i + max_tokens] for i in range(0, len(text), max_tokens)]
-
-
-class _CollapsingEncoding:
-    """WordPiece-like offsets: one token per word, including long unknowns."""
-
-    def __init__(self, text):
-        self.ids = []
-        self.offsets = []
-        cursor = 0
-        for word in text.split(" "):
-            if word:
-                self.ids.append(0)
-                self.offsets.append((cursor, cursor + len(word)))
-            cursor += len(word) + 1
-
-
-class _CollapsingTokenizer:
-    def encode(self, text, add_special_tokens=False):
-        return _CollapsingEncoding(text)
-
-
-def _wordpiece_counter():
-    return HuggingFaceCounter(_CollapsingTokenizer(), "wordpiece-stub")
 
 
 def paginating_cursor(chunk_rows, *, graph_rows=(), graph_table=("graph_nodes",)):
@@ -114,7 +91,7 @@ class TestCLI:
 
 class TestBoundedEmbeddingTexts:
     def test_wordpiece_collapsed_span_is_bounded(self, monkeypatch):
-        counter = _wordpiece_counter()
+        counter = wordpiece_counter()
         text = "a" * 32_000 + " b" * 3_000
         monkeypatch.setattr(reembed, "get_token_counter", lambda: counter)
 

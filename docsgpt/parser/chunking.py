@@ -3,7 +3,7 @@ from typing import List, Tuple
 import logging
 from docsgpt.parser.chunking_creator import ChunkerCreator
 from docsgpt.parser.schema.base import Document
-from docsgpt.parser.tokenization import get_token_counter
+from docsgpt.parser.tokenization import get_token_counter, split_to_token_limit
 
 logger = logging.getLogger(__name__)
 
@@ -94,10 +94,17 @@ class Chunker:
             duplicate_headers = False
 
         if duplicate_headers:
-            body_pieces = self.counter.split(body, with_header_budget)
+            body_pieces = split_to_token_limit(
+                self.counter,
+                body,
+                with_header_budget,
+            )
         else:
-            body_pieces = self.counter.split(
-                body, self.max_tokens, first_max_tokens=with_header_budget
+            body_pieces = split_to_token_limit(
+                self.counter,
+                body,
+                self.max_tokens,
+                first_max_tokens=with_header_budget,
             )
 
         if not body_pieces and header:

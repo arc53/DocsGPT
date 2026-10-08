@@ -202,6 +202,22 @@ class TestCounterContract:
         with pytest.raises(ValueError, match="cannot split"):
             split_to_token_limit(ImpossibleCounter(), "x", 1)
 
+    def test_verified_first_window_recovers_if_splitter_drops_text(self):
+        class DroppingFirstCounter:
+            count = staticmethod(len)
+
+            @staticmethod
+            def split(text, limit, first_max_tokens=None):
+                if first_max_tokens is not None:
+                    return []
+                return [text[i : i + limit] for i in range(0, len(text), limit)]
+
+        pieces = split_to_token_limit(
+            DroppingFirstCounter(), "abcdef", 4, first_max_tokens=2
+        )
+        assert "".join(pieces) == "abcdef"
+        assert all(len(piece) <= 2 for piece in pieces)
+
 
 class TestFallbackWhenTokenizerUnavailable:
     def test_load_failure_returns_none_rather_than_raising(self, monkeypatch, caplog):

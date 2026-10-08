@@ -16,7 +16,8 @@ from docsgpt.parser.chunking_strategies import (
 )
 from docsgpt.parser.limits import MAX_CHUNK_TOKENS
 from docsgpt.parser.schema.base import Document
-from docsgpt.parser.tokenization import HuggingFaceCounter, get_token_counter
+from docsgpt.parser.tokenization import get_token_counter
+from tests.parser.counter_fakes import wordpiece_counter
 
 
 def _tok(text: str) -> int:
@@ -129,6 +130,21 @@ class TestParentChild:
         out = chunker.chunk([Document(text="gamma " * 200, doc_id="d")])
         assert all("parent_text" in c.extra_info for c in out)
 
+    def test_wordpiece_collapsed_span_caps_parent_and_child_windows(self):
+        text = "a" * 32_000 + " b" * 3_000
+        counter = wordpiece_counter()
+        chunker = ParentChildChunker(max_tokens=4096, min_tokens=1024)
+        chunker.counter = counter
+
+        out = chunker.chunk([Document(text=text, doc_id="d")])
+
+        assert out
+        assert "".join(chunk.text for chunk in out) == text
+        assert all(counter.count(chunk.text) <= 1024 for chunk in out)
+        assert all(
+            counter.count(chunk.extra_info["parent_text"]) <= 4096 for chunk in out
+        )
+
 
 _EMB_TARGET = "docsgpt.vectorstore.base.EmbeddingsSingleton.get_instance"
 
@@ -160,29 +176,6 @@ class _CharacterCounter:
     @staticmethod
     def split(text, max_tokens):
         return [text[i : i + max_tokens] for i in range(0, len(text), max_tokens)]
-
-
-class _CollapsingEncoding:
-    """WordPiece-like offsets: one token per word, including long unknowns."""
-
-    def __init__(self, text):
-        self.ids = []
-        self.offsets = []
-        cursor = 0
-        for word in text.split(" "):
-            if word:
-                self.ids.append(0)
-                self.offsets.append((cursor, cursor + len(word)))
-            cursor += len(word) + 1
-
-
-class _CollapsingTokenizer:
-    def encode(self, text, add_special_tokens=False):
-        return _CollapsingEncoding(text)
-
-
-def _wordpiece_counter():
-    return HuggingFaceCounter(_CollapsingTokenizer(), "wordpiece-stub")
 
 
 @pytest.mark.unit
@@ -260,7 +253,7 @@ class TestSemantic:
         text = "a" * 32_000 + " b" * 3_000 + ". Tail sentence."
         embeddings = _RecordingEmbeddings()
         chunker = SemanticChunker(max_tokens=10_000, min_tokens=0)
-        chunker.counter = _wordpiece_counter()
+        chunker.counter = wordpiece_counter()
 
         with patch(
             "docsgpt.vectorstore.base.get_embeddings", return_value=embeddings
