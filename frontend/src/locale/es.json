@@ -563,7 +563,7 @@
         "total": "Total",
         "model": "Por modelo",
         "agent": "Por agente",
-        "source": "Por fuente"
+        "source": "Por flujo"
       },
       "includeSideChannel": "Tokens en segundo plano",
       "promptTokens": "Tokens de Prompt",

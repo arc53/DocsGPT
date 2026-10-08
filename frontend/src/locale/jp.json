@@ -562,7 +562,7 @@
         "total": "合計",
         "model": "モデル別",
         "agent": "エージェント別",
-        "source": "ソース別"
+        "source": "フロー別"
       },
       "includeSideChannel": "バックグラウンドトークン",
       "promptTokens": "プロンプトトークン",

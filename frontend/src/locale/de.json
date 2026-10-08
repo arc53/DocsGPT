@@ -563,7 +563,7 @@
         "total": "Gesamt",
         "model": "Nach Modell",
         "agent": "Nach Agent",
-        "source": "Nach Quelle"
+        "source": "Nach Ablauf"
       },
       "includeSideChannel": "Hintergrund-Tokens",
       "promptTokens": "Prompt-Tokens",
