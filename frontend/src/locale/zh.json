@@ -562,7 +562,7 @@
         "total": "总计",
         "model": "按模型",
         "agent": "按代理",
-        "source": "按来源"
+        "source": "按流程"
       },
       "includeSideChannel": "后台令牌",
       "promptTokens": "提示词令牌",

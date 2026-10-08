@@ -562,7 +562,7 @@
         "total": "總計",
         "model": "依模型",
         "agent": "依代理",
-        "source": "依來源"
+        "source": "依流程"
       },
       "includeSideChannel": "背景 Token",
       "promptTokens": "提示 Token",

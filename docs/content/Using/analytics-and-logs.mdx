@@ -1,7 +1,7 @@
 ---
 title: Analytics and Logs
 description: Read the Analytics charts, filter the Logs list and open an execution trace in the DocsGPT web app, for your whole account or for one agent.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-08
 ---
 
 import { Callout } from 'nextra/components'
@@ -43,7 +43,7 @@ The summary cards total the period:
 The charts below them:
 
 - **Messages**: questions per interval.
-- **Token Usage**: **Prompt Tokens** and **Generated Tokens** per interval. **Group by** splits the bars **By model**, **By agent** (not on an agent's tab) or **By source**, which is what the tokens were spent on, such as chat, a scheduled run or a graph build. More than five groups fold into **Other**. **Background tokens** adds tokens spent outside a user's request, such as title generation, history compression and query rephrasing; it's off by default.
+- **Token Usage**: **Prompt Tokens** and **Generated Tokens** per interval. **Group by** splits the bars **By model**, **By agent** (not on an agent's tab) or **By flow**, which is what the tokens were spent on, such as chat, a scheduled run or a graph build. More than five groups fold into **Other**. **Background tokens** adds tokens spent outside a user's request, such as title generation, history compression and query rephrasing; it's off by default.
 - **Scheduled Runs**: **Completed**, **Failed** and **Skipped** runs of [agent schedules](/Agents/schedules) per interval.
 - **Tool Usage**: **Successful** and **Failed** calls for each tool.
 - **User Feedback**: **Positive Feedback** and **Negative Feedback** per interval.
