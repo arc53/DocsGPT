@@ -105,7 +105,7 @@ DocsGPT, so a typo in `POSTGRES_URI` fails instead of creating a new one.
 | `docsgpt up --native` or pip | `docsgpt migrate --no-create` |
 | Checkout Compose (from the repository root) | `docker compose --env-file .env -f deployment/<file>.yaml run --rm backend python -m docsgpt migrate --no-create` |
 | Installer or `docsgpt up` on Docker (the default), from the stack directory (`~/.docsgpt/server` by default) | `docker compose run --rm backend python -m docsgpt migrate --no-create`. The host's `docsgpt migrate` can't reach this stack's database. |
-| Kubernetes | The bundled `postgres-init` Job runs `python -m docsgpt.cli migrate --no-create`; see [Kubernetes](/Deploying/Kubernetes-Deploying). |
+| Kubernetes | The bundled `postgres-init` Job runs `python -m docsgpt migrate --no-create`; see [Kubernetes](/Deploying/Kubernetes-Deploying). |
 | Source checkout | `python scripts/db/init_postgres.py` or `alembic -c docsgpt/alembic.ini upgrade head` |
 
 The Docker image has no `docsgpt` console script, so containers call it as
