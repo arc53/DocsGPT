@@ -1,7 +1,9 @@
 import { Square, Volume2 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 import userService from '../api/services/userService';
+import { selectToken } from '../preferences/preferenceSlice';
 import { IconButton } from './ui/icon-button';
 
 let currentlyPlayingAudio: {
@@ -43,6 +45,7 @@ function setCachedAudio(text: string, audioBase64: string) {
 
 export default function SpeakButton({ text }: { text: string }) {
   const { t } = useTranslation();
+  const token = useSelector(selectToken);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -116,7 +119,7 @@ export default function SpeakButton({ text }: { text: string }) {
 
         const response = await userService.textToSpeech(
           text,
-          null,
+          token,
           abortController.signal,
         );
 
