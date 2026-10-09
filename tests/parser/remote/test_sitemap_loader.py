@@ -375,3 +375,110 @@ class TestSitemapLoaderMalformedEntry:
             {"source": "https://example.com/good", "file_path": "good.md"}
         ]
         mock_pinned_request.assert_called_once()
+
+
+# =====================================================================
+# Nested sitemap safety (#3036)
+# =====================================================================
+
+
+def _sitemap_index(*children):
+    locs = "".join(f"<sitemap><loc>{c}</loc></sitemap>" for c in children)
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        f'<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{locs}</sitemapindex>'
+    ).encode()
+
+
+def _urlset(*pages):
+    locs = "".join(f"<url><loc>{p}</loc></url>" for p in pages)
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        f'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{locs}</urlset>'
+    ).encode()
+
+
+def _serve(sites):
+    """A ``pinned_request`` stand-in that answers from a URL -> XML bytes map."""
+
+    def fake(method, url, **kwargs):
+        body = sites[url]
+        response = MagicMock()
+        response.headers = {"Content-Type": "application/xml"}
+        response.url = url
+        response.content = body
+        response.text = body.decode("utf-8", "replace")
+        response.raise_for_status.return_value = None
+        return response
+
+    return MagicMock(side_effect=fake)
+
+
+@pytest.mark.unit
+class TestNestedSitemapSafety:
+
+    def test_self_referencing_index_is_fetched_once(self):
+        url = "https://example.com/sitemap.xml"
+        fake = _serve({url: _sitemap_index(url)})
+        with patch("docsgpt.parser.remote.sitemap_loader.pinned_request", fake):
+            urls = SitemapLoader()._extract_urls(url)
+
+        assert urls == []
+        assert fake.call_count == 1
+
+    def test_mutually_referencing_indexes_are_each_fetched_once(self):
+        a = "https://example.com/a.xml"
+        b = "https://example.com/b.xml"
+        fake = _serve({
+            a: _sitemap_index(b),
+            b: _sitemap_index(a),
+        })
+        with patch("docsgpt.parser.remote.sitemap_loader.pinned_request", fake):
+            SitemapLoader()._extract_urls(a)
+
+        fetched = [call.args[1] for call in fake.call_args_list]
+        assert sorted(fetched) == [a, b]
+
+    def test_nesting_deeper_than_the_cap_stops(self, caplog):
+        from docsgpt.parser.remote.sitemap_loader import MAX_SITEMAP_DEPTH
+
+        chain = [f"https://example.com/s{i}.xml" for i in range(MAX_SITEMAP_DEPTH + 5)]
+        sites = {u: _sitemap_index(chain[i + 1]) for i, u in enumerate(chain[:-1])}
+        sites[chain[-1]] = _urlset("https://example.com/deep")
+        fake = _serve(sites)
+        with patch("docsgpt.parser.remote.sitemap_loader.pinned_request", fake):
+            urls = SitemapLoader()._extract_urls(chain[0])
+
+        assert urls == []
+        assert fake.call_count == MAX_SITEMAP_DEPTH + 1
+        assert "depth" in caplog.text.lower()
+
+    def test_limit_stops_following_child_sitemaps(self):
+        index = "https://example.com/index.xml"
+        children = [f"https://example.com/child{i}.xml" for i in range(50)]
+        sites = {index: _sitemap_index(*children)}
+        for i, child in enumerate(children):
+            sites[child] = _urlset(f"https://example.com/page{i}")
+        fake = _serve(sites)
+        with patch("docsgpt.parser.remote.sitemap_loader.pinned_request", fake):
+            urls = SitemapLoader(limit=3)._extract_urls(index)
+
+        assert len(urls) >= 3
+        assert fake.call_count <= 4
+
+    def test_malformed_xml_returns_no_urls(self):
+        assert SitemapLoader()._parse_sitemap(b"<urlset><url>") == []
+
+    def test_malformed_child_does_not_drop_its_siblings(self):
+        index = "https://example.com/index.xml"
+        bad = "https://example.com/bad.xml"
+        good = "https://example.com/good.xml"
+        fake = _serve({
+            index: _sitemap_index(bad, good),
+            bad: b"<urlset><url><loc>https://example.com/x",
+            good: _urlset("https://example.com/ok"),
+        })
+        with patch("docsgpt.parser.remote.sitemap_loader.pinned_request", fake):
+            urls = SitemapLoader()._extract_urls(index)
+
+        assert urls == ["https://example.com/ok"]
