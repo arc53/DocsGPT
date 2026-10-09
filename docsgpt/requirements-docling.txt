@@ -54,7 +54,7 @@ annotated-types==0.8.0
     # via pydantic
 anthropic==1.11.0
     # via docsgpt
-antlr4-python3-runtime==4.9.3
+antlr4-python3-runtime==4.13.2
     # via omegaconf
 anyio==4.15.1
     # via
@@ -121,7 +121,7 @@ cffi==2.1.1 ; platform_python_implementation != 'PyPy'
     # via cryptography
 charset-normalizer==3.5.2
     # via requests
-click==8.1.8
+click==8.5.0
     # via
     #   celery
     #   click-didyoumean
@@ -462,7 +462,7 @@ more-itertools==11.1.0
     #   jaraco-functools
 mpire==2.10.2
     # via semchunk
-mpmath==1.3.0
+mpmath==1.4.1
     # via sympy
 msal==1.39.0
     # via docsgpt
@@ -755,7 +755,7 @@ pydantic==2.13.5
     #   openapi3-parser
     #   pydantic-settings
     #   qdrant-client
-pydantic-core==2.46.5
+pydantic-core==2.49.0
     # via
     #   elevenlabs
     #   pydantic
@@ -1035,7 +1035,7 @@ truststore==0.10.4 ; sys_platform != 'emscripten'
     # via
     #   httpcore2
     #   httpx2
-typer==0.26.8
+typer==0.27.2
     # via
     #   doclang
     #   docling-core
