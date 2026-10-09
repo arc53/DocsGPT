@@ -105,7 +105,7 @@ cffi==2.1.1 ; platform_python_implementation != 'PyPy'
     # via cryptography
 charset-normalizer==3.5.2
     # via requests
-click==8.1.8
+click==8.5.0
     # via
     #   celery
     #   click-didyoumean
@@ -658,7 +658,7 @@ pydantic==2.13.5
     #   openapi3-parser
     #   pydantic-settings
     #   qdrant-client
-pydantic-core==2.46.5
+pydantic-core==2.49.0
     # via
     #   elevenlabs
     #   pydantic
@@ -845,7 +845,7 @@ truststore==0.10.4 ; sys_platform != 'emscripten'
     # via
     #   httpcore2
     #   httpx2
-typer==0.26.8
+typer==0.27.2
     # via huggingface-hub
 typing-extensions==4.16.0
     # via
