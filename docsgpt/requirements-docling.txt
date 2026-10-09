@@ -466,7 +466,7 @@ mpmath==1.3.0
     # via sympy
 msal==1.39.0
     # via docsgpt
-multidict==6.9.1
+multidict==7.0.0
     # via
     #   aiohttp
     #   yarl
