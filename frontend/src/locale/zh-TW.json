@@ -1766,6 +1766,7 @@
       "dropzoneText": "點擊上傳或拖放檔案",
       "dropzoneHint": "PDF、Word、Excel、PowerPoint、Markdown、HTML、圖片、音訊、EPUB、JSON 或 ZIP，每個最大 25 MB",
       "filesRejected": "未新增（超過 25 MB 或不支援的類型）：{{files}}",
+      "selectFolder": "選擇資料夾",
       "uploadedFiles": "已上傳檔案",
       "cancel": "取消",
       "train": "新增到知識庫",

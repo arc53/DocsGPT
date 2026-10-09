@@ -1772,6 +1772,7 @@
       "dropzoneText": "Haz clic para subir o arrastra y suelta",
       "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, imágenes, audio, EPUB, JSON o ZIP, hasta 25 MB cada uno",
       "filesRejected": "No se añadieron (más de 25 MB o tipo no admitido): {{files}}",
+      "selectFolder": "Seleccionar una carpeta",
       "uploadedFiles": "Archivos Subidos",
       "cancel": "Cancelar",
       "train": "Añadir al conocimiento",
