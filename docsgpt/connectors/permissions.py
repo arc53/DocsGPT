@@ -10,6 +10,7 @@ on the action itself: ``active`` off means "Off", ``require_approval`` means
 from __future__ import annotations
 
 import re
+from collections.abc import Collection
 from typing import Optional
 
 ACCESS_READ = "read"
@@ -91,14 +92,29 @@ def apply_permission(action: dict, permission: str) -> dict:
     return updated
 
 
-def apply_default_permissions(tool_name: Optional[str], actions: list[dict]) -> list[dict]:
-    """Stamp ``access`` on each action and default writes to needing approval."""
+def apply_default_permissions(
+    tool_name: Optional[str], actions: list[dict], enabled: Collection[str] = (),
+) -> list[dict]:
+    """Stamp ``access`` on each action and default writes to needing approval.
+
+    Args:
+        tool_name: The ``user_tools`` name the actions belong to.
+        actions: The actions to stamp.
+        enabled: When given, the only actions that start on; the rest start
+            "Off". An MCP preset with more tools than a model takes in one
+            request (Alpha Vantage's 133) names its core ones here.
+
+    Returns:
+        The stamped actions.
+    """
     stamped = []
     for action in actions:
         access = action_access(tool_name, action)
         updated = {**action, "access": access}
         if access == ACCESS_WRITE:
             updated["require_approval"] = True
+        if enabled and action.get("name") not in enabled:
+            updated["active"] = False
         stamped.append(updated)
     return stamped
 

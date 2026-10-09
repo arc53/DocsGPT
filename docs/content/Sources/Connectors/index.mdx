@@ -1,7 +1,7 @@
 ---
 title: Connectors
 description: Connect DocsGPT to the services your team uses. One connection can sync content into Knowledge and give agents tools, with credentials encrypted on the server.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-09
 ---
 
 import { Callout } from 'nextra/components'
@@ -9,7 +9,7 @@ import { Steps } from 'nextra/components'
 
 # Connectors
 
-A connector is a service DocsGPT can connect to: Google Drive, SharePoint, Confluence, GitHub, Amazon S3, Reddit, Brave Search, Telegram, ntfy, PostgreSQL, curated MCP servers (Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Zapier, Trello, Miro, Resend, Cal.com, draw.io), and any MCP server or OpenAPI spec you add yourself. A **connection** is a saved setup for a connector, with credentials when the service requires them.
+A connector is a service DocsGPT can connect to: Google Drive, SharePoint, Confluence, GitHub, Amazon S3, Reddit, Brave Search, Telegram, ntfy, PostgreSQL, curated MCP servers (Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Zapier, Trello, Miro, Resend, Cal.com, Alpha Vantage, draw.io), and any MCP server or OpenAPI spec you add yourself. A **connection** is a saved setup for a connector, with credentials when the service requires them.
 
 Connections are the single place credentials live when a service requires them. A synced source and an agent tool both point at a connection, so you sign in once when needed, reconnect when a token expires, and disconnect in one place.
 
@@ -304,7 +304,9 @@ Each post becomes one document with its title, subreddit, score, author and link
 
 ### MCP presets
 
-Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Zapier, Trello, Miro, Resend and Cal.com are remote MCP servers that support OAuth with dynamic client registration, so they need no server settings. Members sign in with their own account. The presets ship in `docsgpt/connectors/presets/mcp.yaml`.
+Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Zapier, Trello, Miro, Resend, Cal.com and Alpha Vantage are remote MCP servers that support OAuth with dynamic client registration, so they need no server settings. Members sign in with their own account. The presets ship in `docsgpt/connectors/presets/mcp.yaml`.
+
+Alpha Vantage gives agents read-only market data: stock quotes and history, company fundamentals and earnings, forex, crypto, commodities, economic indicators (CPI, GDP, unemployment, Treasury yields), technical indicators and news sentiment. Its server has 133 tools, more than some models take in one request (OpenAI's limit is 128), so 22 core tools start on and the rest start **Off**; `TOOL_CALL` still reaches any of them, and you can turn more on per action. Alpha Vantage accepts sign-ins only from DocsGPT cloud and `localhost`. A self-hosted instance on its own domain gets `invalid_redirect_uri` at sign-in; add it as a custom MCP connector instead, with your [free API key](https://www.alphavantage.co/support/#api-key) in the URL: `https://mcp.alphavantage.co/mcp?apikey=<KEY>`. The free tier allows 25 requests a day.
 
 draw.io is a remote MCP preset that needs no account or credentials. Pick its card, test the prefilled server connection, and save it to give agents diagram tools. An agent can create an editable diagram and return a link that opens it in the draw.io editor. The hosted server receives the diagram content; [draw.io's MCP server](https://github.com/jgraph/drawio-mcp) also documents a self-hosted option.
 

@@ -1509,6 +1509,7 @@
         "mcp_miro": "Miro-Boards finden, Inhalte und Kommentare lesen, Diagramme erstellen und auf Kommentare antworten.",
         "mcp_resend": "E-Mails senden sowie Kontakte, Zielgruppen und Domains verwalten.",
         "mcp_calcom": "Cal.com-Buchungen, Eventtypen, Verfügbarkeit und Zeitpläne lesen und verwalten.",
+        "mcp_alphavantage": "Aktienkurse, Fundamentaldaten, Devisen, Krypto, Wirtschaftsindikatoren und Marktnachrichten abrufen.",
         "github": "Repositorys in Wissen synchronisieren und Agenten Code, Issues und Pull Requests lesen lassen."
       },
       "empty": "Noch nichts verbunden. Verbinde einen Dienst, um seine Inhalte zu synchronisieren oder Agenten neue Werkzeuge zu geben.",
