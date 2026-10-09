@@ -15,7 +15,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-from flask import Flask
+from flask import Flask, request
+from flask.views import MethodView
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
@@ -24,6 +25,7 @@ from docsgpt.api.agent_origins import (
     UNAVAILABLE_MESSAGE,
     enforce_agent_origin,
     origin_denied,
+    reads_raw_body,
     trusted_origins,
 )
 from docsgpt.core.settings import settings
@@ -246,6 +248,47 @@ class TestTrustedOrigins:
         assert trusted_origins() == ["https://api.example.org", "https://a.com"]
 
 
+@pytest.fixture
+def raw_client(db):
+    """Views that read the raw body, as webhook receivers do to check a signature."""
+    app = Flask(__name__)
+    app.before_request(enforce_agent_origin)
+
+    @app.route("/hooks/fn", methods=["POST"])
+    @reads_raw_body
+    def _raw_fn():
+        return {"body": request.stream.read().decode()}
+
+    @reads_raw_body
+    class _RawView(MethodView):
+        def post(self):
+            return {"body": request.stream.read().decode()}
+
+    app.add_url_rule("/hooks/view", view_func=_RawView.as_view("raw_view"))
+    return app.test_client()
+
+
+@pytest.mark.unit
+class TestRawBodyViews:
+    def test_a_form_body_reaches_the_view_unread(self, raw_client, restricted):
+        body = f"api_key={restricted}&payload=1"
+        resp = raw_client.post(
+            "/hooks/fn", data=body, content_type="application/x-www-form-urlencoded", headers={"Origin": OTHER},
+        )
+        assert resp.status_code == 200
+        assert resp.get_json() == {"body": body}
+
+    def test_a_json_body_reaches_a_class_view_unread(self, raw_client):
+        body = '{"status": "success"}'
+        resp = raw_client.post("/hooks/view", data=body, content_type="application/json")
+        assert resp.status_code == 200
+        assert resp.get_json() == {"body": body}
+
+    def test_the_query_string_is_still_checked(self, raw_client, restricted):
+        resp = raw_client.post("/hooks/fn", query_string={"api_key": restricted}, headers={"Origin": OTHER})
+        assert resp.status_code == 403
+
+
 @pytest.mark.unit
 class TestRegisteredOnTheApp:
     def test_runs_after_authentication(self):
@@ -254,6 +297,12 @@ class TestRegisteredOnTheApp:
         hooks = app.before_request_funcs[None]
         assert enforce_agent_origin in hooks
         assert hooks.index(authenticate_request) < hooks.index(enforce_agent_origin)
+
+    def test_raw_body_views_are_marked(self):
+        from docsgpt.api.devices.session import submit_output
+        from docsgpt.api.user.monitors.public import TriggerLink
+
+        assert TriggerLink.reads_raw_body and submit_output.reads_raw_body
 
 
 @pytest.mark.unit

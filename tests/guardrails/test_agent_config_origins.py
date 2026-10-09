@@ -150,7 +150,7 @@ class TestImport:
         from docsgpt.api.user.agents.portability import _import_config
 
         with Flask(__name__).app_context():
-            return _import_config({"config": config})
+            return _import_config({"config": config}, None, [])
 
     def test_a_valid_config_is_normalized(self):
         stored = self._import({"restrict_origins": True, "allowed_origins": ["HTTPS://A.com/"]})

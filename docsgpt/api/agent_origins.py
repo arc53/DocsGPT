@@ -6,7 +6,9 @@ places (a JSON or form ``api_key``, an ``api_key`` query parameter, the ``/v1``
 and ``/mcp`` bearer token), so the check runs once per request rather than in
 each route: :func:`enforce_agent_origin` is a Flask ``before_request`` hook,
 and the two ASGI-only entry points, the MCP tool and the artifact download,
-call :func:`origin_refusal` themselves.
+call :func:`origin_refusal` themselves. A view that reads the raw body
+itself is marked with :func:`reads_raw_body`, and the hook leaves its body
+unread.
 
 The ``Origin`` header is set by browsers, so this keeps other websites from
 embedding a key, not a script that sets its own header. A request with no
@@ -16,10 +18,10 @@ origin at all (a server, ``curl``) is refused by a restricted agent.
 from __future__ import annotations
 
 import logging
-from typing import Iterable, Mapping, Optional, Tuple
+from typing import Callable, Iterable, Mapping, Optional, Tuple, TypeVar
 from urllib.parse import urlsplit
 
-from flask import jsonify, make_response, request
+from flask import current_app, jsonify, make_response, request
 
 from docsgpt.core.settings import settings
 from docsgpt.guardrails.config import AgentConfig
@@ -33,6 +35,27 @@ DENIED_MESSAGE = "This origin is not allowed to use this agent's API key."
 UNAVAILABLE_MESSAGE = "Could not check this request's origin. Please try again later."
 
 _FORM_MIMETYPES = ("multipart/form-data", "application/x-www-form-urlencoded")
+
+_View = TypeVar("_View", bound=Callable)
+
+
+def reads_raw_body(view: _View) -> _View:
+    """Mark a view (a function or a ``Resource`` class) that reads the raw request body.
+
+    Parsing a form drains the request stream, and ``request.stream`` is never
+    replayed, so :func:`enforce_agent_origin` must not read such a view's body:
+    a webhook signature is checked over the exact bytes sent. The hook still
+    checks the query string and bearer token. Such a view must not accept an
+    agent key in its body, as the hook would not see it.
+    """
+    view.reads_raw_body = True
+    return view
+
+
+def _view_reads_raw_body() -> bool:
+    """Whether the view serving the current request is marked with :func:`reads_raw_body`."""
+    view = current_app.view_functions.get(request.endpoint or "")
+    return bool(getattr(getattr(view, "view_class", view), "reads_raw_body", False))
 
 
 def trusted_origins() -> list[str]:
@@ -121,12 +144,13 @@ def origin_refusal(api_keys: Iterable[Optional[str]], headers: Mapping[str, str]
 def _flask_request_keys() -> list[str]:
     """Every agent key the current Flask request carries, wherever a route may read it."""
     keys = request.args.getlist("api_key")
-    if request.mimetype in _FORM_MIMETYPES:
-        keys += request.form.getlist("api_key")
-    if request.is_json:
-        body = request.get_json(silent=True)
-        if isinstance(body, dict):
-            keys.append(body.get("api_key"))
+    if not _view_reads_raw_body():
+        if request.mimetype in _FORM_MIMETYPES:
+            keys += request.form.getlist("api_key")
+        if request.is_json:
+            body = request.get_json(silent=True)
+            if isinstance(body, dict):
+                keys.append(body.get("api_key"))
     # Elsewhere a bearer token is a user's session or access token, never an agent key.
     if request.path.startswith("/v1/"):
         auth = request.headers.get("Authorization", "")

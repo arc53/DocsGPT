@@ -10,6 +10,7 @@ from __future__ import annotations
 from unittest.mock import Mock
 
 import pytest
+from flask import Flask
 
 from docsgpt.agents.default_tools import default_tool_id
 from docsgpt.api.user.agents.portability import (
@@ -22,6 +23,7 @@ from docsgpt.api.user.agents.portability import (
     plan_import,
     serialize_agent,
 )
+from docsgpt.guardrails.config import AgentConfig
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
@@ -341,6 +343,60 @@ def test_parse_rejects_yaml_aliases():
     with pytest.raises(AgentImportError):
         parse_agent_yaml(bomb)
 
+
+
+_RESTRICTED = {"restrict_origins": True, "allowed_origins": ["https://docs.example.com"]}
+
+
+def _reimport_config(conn, user, config):
+    """Re-import a published, origin-restricted agent with ``config`` in the file."""
+    agent = AgentsRepository(conn).create(
+        user, "Keyed Bot", "published", retriever="classic", key=f"key-{user}", config=_RESTRICTED,
+    )
+    slug = ensure_agent_slug(conn, agent, user)
+    doc = _doc(name="Keyed Bot", _slug=slug, retriever="classic", config=config)
+    doc["metadata"]["id"] = str(agent["id"])
+    with Flask(__name__).app_context():
+        result = apply_import(conn, user, doc)
+    return result, AgentsRepository(conn).get(str(agent["id"]), user)
+
+
+@pytest.mark.parametrize("config", ["not json", '"a string"', ["https://evil.example.net"], 42])
+def test_unreadable_config_keeps_the_published_agents_origin_policy(pg_conn, config):
+    """A config that is not a mapping must not reset the key to accept any origin."""
+    result, updated = _reimport_config(pg_conn, "u_unreadable", config)
+
+    assert updated["status"] == "published"
+    assert updated["config"]["restrict_origins"] is True
+    assert updated["config"]["allowed_origins"] == ["https://docs.example.com"]
+    assert AgentConfig.parse(updated["config"]).origin_allowed("https://evil.example.net", []) is False
+    assert "Config is not a mapping; it was not imported" in result["warnings"]
+
+
+def test_invalid_config_mapping_keeps_the_restriction_on(pg_conn):
+    result, updated = _reimport_config(
+        pg_conn, "u_invalid_map", {"restrict_origins": None, "allowed_origins": ["https://docs.example.com"]},
+    )
+
+    assert AgentConfig.parse(updated["config"]).origin_allowed("https://evil.example.net", []) is False
+    assert any(w.startswith("Invalid config (") for w in result["warnings"])
+
+
+def test_a_valid_config_that_lifts_the_restriction_is_applied(pg_conn):
+    """The file is authoritative when it is valid: lifting the restriction is the owner's call."""
+    result, updated = _reimport_config(pg_conn, "u_lift", {"restrict_origins": False})
+
+    assert updated["config"]["restrict_origins"] is False
+    assert not any("config" in w.lower() for w in result["warnings"])
+
+
+def test_unreadable_config_on_a_new_agent_is_left_out(pg_conn):
+    with Flask(__name__).app_context():
+        result = apply_import(pg_conn, "u_new_unreadable", _doc(name="New Bot", _slug="new-bot", config=42))
+
+    created = AgentsRepository(pg_conn).get(result["agent_id"], "u_new_unreadable")
+    assert not AgentConfig.parse(created["config"]).restrict_origins
+    assert "Config is not a mapping; it was not imported" in result["warnings"]
 
 def test_update_clears_removed_json_schema(pg_conn):
     """On update the YAML is authoritative — removing json_schema clears it."""
