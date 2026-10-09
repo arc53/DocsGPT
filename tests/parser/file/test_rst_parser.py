@@ -296,6 +296,61 @@ def test_rst_to_tups_short_underline_at_least_4_chars_is_still_a_header():
     assert "A Longer Title Than The Underline" not in headers
 
 
+def test_rst_to_tups_overline_title_at_document_start_no_adornment_chunk():
+    """An overline-style title (====\\nTitle\\n====\\n) must not produce a
+    spurious (None, "<overline>\\n") chunk ahead of the real title.
+
+    Regression test: after stripping the title line from current_text,
+    the overline line directly above it (itself matching the
+    underline/overline pattern) remained in current_text. It passed the
+    .strip() guard because it is not whitespace, so it leaked through as
+    an extra adornment-only chunk.
+    """
+    parser = RstParser()
+    rst_content = "=====\nTitle\n=====\nContent.\n"
+
+    tups = parser.rst_to_tups(rst_content)
+
+    headers = [header for header, _ in tups if header is not None]
+    assert "Title" in headers
+    assert (None, "=====\n") not in tups
+    for header, text in tups:
+        if header is None:
+            assert text.strip() != ""
+
+
+def test_rst_to_tups_overline_title_after_preamble_keeps_preamble_only():
+    """An overline-style title appearing after real preamble text must
+    keep that preamble, but still must not produce a separate
+    adornment-only chunk for the overline itself, and the blank line
+    directly above the overline must not be mistaken for an empty-titled
+    heading.
+    """
+    parser = RstParser()
+    rst_content = (
+        "Some real preamble text here.\n"
+        "\n"
+        "=====\n"
+        "Title\n"
+        "=====\n"
+        "Content.\n"
+    )
+
+    tups = parser.rst_to_tups(rst_content)
+
+    combined_text = "\n".join(text for _, text in tups)
+    assert "Some real preamble text here." in combined_text
+
+    headers = [header for header, _ in tups if header is not None]
+    assert "Title" in headers
+    assert "" not in headers  # no empty-titled heading from the blank line above the overline
+
+    assert (None, "=====\n") not in tups
+    for header, text in tups:
+        if header is None:
+            assert text.strip() != ""
+
+
 def test_parse_file_basic(rst_parser):
     """Test basic parse_file functionality."""
     content = """Title

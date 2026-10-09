@@ -55,16 +55,21 @@ class RstParser(BaseParser):
 
         for i, line in enumerate(lines):
             header_match = re.match(r"^[^\S\n]*[-=]+[^\S\n]*$", line)
+            title_line = lines[i - 1] if header_match and i > 0 else ""
+            title_len = len(title_line.strip())
             underline_len = len(header_match.group().strip()) if header_match else 0
-            title_len = len(lines[i - 1].strip()) if header_match and i > 0 else 0
-            # A line of dashes/equals is a real section underline if it's at
-            # least as long as the title above it (the common case), OR if
-            # it's merely too short for that title but still at least 4
-            # characters: docutils still parses this as a heading (emitting
-            # only a "Title underline too short" warning, not rejecting it),
-            # so a 4+ character underline under a longer title is still a
-            # real section title, not ordinary text.
-            if header_match and i > 0 and (
+            # A line of dashes/equals is a real section underline if the
+            # line above it is an actual title (non-blank -- a heading
+            # cannot have an empty title, so a blank line never counts,
+            # even though its stripped length of 0 would otherwise satisfy
+            # the length checks below) AND that underline is either at
+            # least as long as the title (the common case), OR merely too
+            # short for that title but still at least 4 characters:
+            # docutils still parses this as a heading (emitting only a
+            # "Title underline too short" warning, not rejecting it), so a
+            # 4+ character underline under a longer title is still a real
+            # section title, not ordinary text.
+            if header_match and i > 0 and title_len > 0 and (
                     underline_len >= title_len or underline_len >= 4):
                 # Strip the header's own title line back out of the text
                 # accumulated so far, whether that text belongs to a
@@ -76,6 +81,18 @@ class RstParser(BaseParser):
                 if current_text.endswith(lines[i - 1] + "\n"):
                     # removes the next heading from current Document
                     current_text = current_text[:len(current_text) - len(lines[i - 1] + "\n")]
+                    # An overline-style title (====\nTitle\n====) has a
+                    # second adornment line directly above the title line
+                    # we just removed. That line is decoration, not real
+                    # preamble content, so strip it too when present -- but
+                    # only when i >= 2, since lines[i - 2] is meaningless
+                    # (wraps to the document's last line) for a header this
+                    # close to the start of the document.
+                    if i >= 2:
+                        overline_candidate = lines[i - 2]
+                        if (re.match(r"^[^\S\n]*[-=]+[^\S\n]*$", overline_candidate)
+                                and current_text.endswith(overline_candidate + "\n")):
+                            current_text = current_text[:len(current_text) - len(overline_candidate + "\n")]
                 # Skip the tuple only when there is truly nothing to keep:
                 # no real header yet AND nothing but whitespace accumulated
                 # (e.g. a header at the very start of the document, or a
