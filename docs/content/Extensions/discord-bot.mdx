@@ -1,0 +1,43 @@
+---
+title: Discord Bot Integration
+description: A step-by-step guide to connecting a Discord bot to DocsGPT.
+lastUpdated: 2026-10-06
+---
+
+# Discord Bot Integration
+
+This guide provides detailed steps to create a Discord bot and integrate it with DocsGPT using the independent Discord extension.
+
+## Step 1: Create a Discord Application
+
+1. Go to the [Discord Developer Portal](https://discord.com).
+2. Click on **New Application** in the top right corner, give it a name, and save.
+
+## Step 2: Configure Bot Tokens and Intents
+
+1. Navigate to the **Bot** tab in your application settings.
+2. Click **Reset Token** to generate a new bot token and copy it securely.
+3. Scroll down to the **Privileged Gateway Intents** section.
+4. Enable the **Message Content Intent**. This is mandatory for the extension to read thread follow-ups and respond to channel messages.
+
+## Step 3: Configure Environment Variables
+
+To connect the bot to your DocsGPT backend, you need to add your tokens to your deployment configuration.
+
+### Using Docker Compose
+
+Open your `.env` file or environment variables settings and add your tokens, making sure to target the correct local API port (`7091`):
+
+```env
+DISCORD_TOKEN=your_copied_discord_bot_token_here
+API_KEY=your_published_agent_api_key_here
+API_URL=http://localhost:7091
+```
+
+## Step 4: Run the Extension
+
+Do not use npm commands to run the extension. Instead, start the Discord extension using **Docker Compose** or the **Cargo-based setup** as detailed in the extension repository's primary `README.md` file.
+
+```bash
+docker compose down && docker compose up -d
+```
