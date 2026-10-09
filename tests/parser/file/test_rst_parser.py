@@ -369,6 +369,38 @@ def test_rst_to_tups_keeps_divider_that_is_not_a_matching_overline():
     assert "----" in preamble
 
 
+def test_rst_to_tups_keeps_overline_with_mismatched_character():
+    """An adornment line with the same length but a different character
+    than the underline is not an overline and must stay in the preamble.
+    """
+    parser = RstParser()
+    rst_content = "Intro\n\n-----\nTitle\n=====\nContent\n"
+
+    tups = parser.rst_to_tups(rst_content)
+
+    headers = [header for header, _ in tups if header is not None]
+    assert "Title" in headers
+    preamble = "".join(text for header, text in tups if header is None)
+    assert "Intro" in preamble
+    assert "-----" in preamble
+
+
+def test_rst_to_tups_keeps_overline_with_mismatched_length():
+    """An adornment line with the same character but a different length
+    than the underline is not an overline and must stay in the preamble.
+    """
+    parser = RstParser()
+    rst_content = "Intro\n\n---\nTitle\n-----\nContent\n"
+
+    tups = parser.rst_to_tups(rst_content)
+
+    headers = [header for header, _ in tups if header is not None]
+    assert "Title" in headers
+    preamble = "".join(text for header, text in tups if header is None)
+    assert "Intro" in preamble
+    assert "---" in preamble
+
+
 def test_parse_file_basic(rst_parser):
     """Test basic parse_file functionality."""
     content = """Title
