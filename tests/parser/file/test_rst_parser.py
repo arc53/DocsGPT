@@ -168,6 +168,239 @@ def test_rst_to_tups_without_headers():
     assert "Just plain text" in tups[0][1]
 
 
+def test_rst_to_tups_ignores_mismatched_underline_length():
+    """A dash/equals run that doesn't match the length of the line above it
+    is not a valid RST section header and should not be treated as one.
+
+    Regression test: the header-detection guard previously included a
+    self-comparison (``lines[i - 2] == lines[i - 2]``) that is always
+    True, which silently disabled the length check it was meant to pair
+    with. Any short divider line (e.g. a horizontal rule) following a
+    longer line of prose was incorrectly promoted to a section header.
+    """
+    parser = RstParser()
+    rst_content = (
+        "Some regular paragraph text here that is fairly long.\n"
+        "---\n"
+        "More text continues after what might be mistaken for an underline.\n"
+        "\n"
+        "Real Header\n"
+        "===========\n"
+        "Real content under the real header.\n"
+    )
+
+    tups = parser.rst_to_tups(rst_content)
+
+    headers = [header for header, _ in tups if header is not None]
+    assert "Some regular paragraph text here that is fairly long." not in headers
+    assert "Real Header" in headers
+
+    combined_text = "\n".join(text for _, text in tups)
+    assert "More text continues after what might be mistaken for an underline." in combined_text
+
+
+def test_rst_to_tups_header_at_document_start():
+    """A header on the very first line (i == 1) must still be detected;
+    this exercises the lines[i - 2] index boundary directly. There must
+    be no spurious (None, "") tuple ahead of it, since there is no real
+    preamble in this document."""
+    parser = RstParser()
+    rst_content = "Title\n=====\nContent.\n"
+
+    tups = parser.rst_to_tups(rst_content)
+
+    headers = [header for header, _ in tups if header is not None]
+    assert "Title" in headers
+    assert (None, "") not in tups
+
+
+def test_rst_to_tups_allows_underline_longer_than_title():
+    """Per the RST spec, a section underline only needs to be at least
+    as long as its title, not an exact-length match. An underline longer
+    than its title is valid RST and must still be detected as a header.
+    """
+    parser = RstParser()
+    rst_content = "Title\n=======\nContent.\n"
+
+    tups = parser.rst_to_tups(rst_content)
+
+    headers = [header for header, _ in tups if header is not None]
+    assert "Title" in headers
+    assert (None, "") not in tups
+
+
+def test_rst_to_tups_preserves_preamble_before_first_header():
+    """Text appearing before a document's first header must not be
+    silently dropped.
+
+    Regression test: the header-detection branch only saved accumulated
+    text when current_header was already set, so preamble content ahead
+    of the first header (current_header still None at that point) was
+    discarded instead of being kept as a (None, preamble) tuple.
+    """
+    parser = RstParser()
+    rst_content = (
+        "This is preamble text that appears before any header.\n"
+        "\n"
+        "First Header\n"
+        "============\n"
+        "Content under the first header.\n"
+    )
+
+    tups = parser.rst_to_tups(rst_content)
+
+    combined_text = "\n".join(text for _, text in tups)
+    assert "This is preamble text that appears before any header." in combined_text
+
+    headers = [header for header, _ in tups if header is not None]
+    assert "First Header" in headers
+
+
+def test_rst_to_tups_no_empty_chunk_when_file_starts_with_blank_line():
+    """A file beginning with a blank line (or any whitespace-only text)
+    before its first header must not produce a spurious (None, "") or
+    (None, whitespace) chunk ahead of the real header.
+    """
+    parser = RstParser()
+    rst_content = "\nTitle\n=====\nContent.\n"
+
+    tups = parser.rst_to_tups(rst_content)
+
+    assert tups[0][0] == "Title"
+    for header, text in tups:
+        if header is None:
+            assert text.strip() != ""
+
+
+def test_rst_to_tups_short_underline_at_least_4_chars_is_still_a_header():
+    """docutils treats an underline shorter than its title as a valid
+    section heading as long as the underline is still at least 4
+    characters long -- it only emits a "Title underline too short"
+    warning, it does not reject the heading. An underline below the
+    4-character floor is the only case that is NOT treated as a header.
+    """
+    parser = RstParser()
+
+    # Underline is shorter than the title but still >= 4 chars: docutils
+    # still treats this as a heading.
+    short_but_valid = "A Longer Title Than The Underline\n====\nContent.\n"
+    tups = parser.rst_to_tups(short_but_valid)
+    headers = [header for header, _ in tups if header is not None]
+    assert "A Longer Title Than The Underline" in headers
+
+    # Underline is both shorter than the title AND under 4 characters:
+    # docutils does not treat this as a heading.
+    too_short = "A Longer Title Than The Underline\n===\nContent.\n"
+    tups = parser.rst_to_tups(too_short)
+    headers = [header for header, _ in tups if header is not None]
+    assert "A Longer Title Than The Underline" not in headers
+
+
+def test_rst_to_tups_overline_title_at_document_start_no_adornment_chunk():
+    """An overline-style title (====\\nTitle\\n====\\n) must not produce a
+    spurious (None, "<overline>\\n") chunk ahead of the real title.
+
+    Regression test: after stripping the title line from current_text,
+    the overline line directly above it (itself matching the
+    underline/overline pattern) remained in current_text. It passed the
+    .strip() guard because it is not whitespace, so it leaked through as
+    an extra adornment-only chunk.
+    """
+    parser = RstParser()
+    rst_content = "=====\nTitle\n=====\nContent.\n"
+
+    tups = parser.rst_to_tups(rst_content)
+
+    headers = [header for header, _ in tups if header is not None]
+    assert "Title" in headers
+    assert (None, "=====\n") not in tups
+    for header, text in tups:
+        if header is None:
+            assert text.strip() != ""
+
+
+def test_rst_to_tups_overline_title_after_preamble_keeps_preamble_only():
+    """An overline-style title appearing after real preamble text must
+    keep that preamble, but still must not produce a separate
+    adornment-only chunk for the overline itself, and the blank line
+    directly above the overline must not be mistaken for an empty-titled
+    heading.
+    """
+    parser = RstParser()
+    rst_content = (
+        "Some real preamble text here.\n"
+        "\n"
+        "=====\n"
+        "Title\n"
+        "=====\n"
+        "Content.\n"
+    )
+
+    tups = parser.rst_to_tups(rst_content)
+
+    combined_text = "\n".join(text for _, text in tups)
+    assert "Some real preamble text here." in combined_text
+
+    headers = [header for header, _ in tups if header is not None]
+    assert "Title" in headers
+    assert "" not in headers  # no empty-titled heading from the blank line above the overline
+
+    assert (None, "=====\n") not in tups
+    for header, text in tups:
+        if header is None:
+            assert text.strip() != ""
+
+
+def test_rst_to_tups_keeps_divider_that_is_not_a_matching_overline():
+    """Only an adornment line identical to the underline counts as an
+    overline. A different divider directly above a title (here "----"
+    above a "=====" underline) is ordinary preamble content and must not
+    be stripped out of the preamble.
+    """
+    parser = RstParser()
+    rst_content = "Intro\n\n----\nTitle\n=====\nContent\n"
+
+    tups = parser.rst_to_tups(rst_content)
+
+    headers = [header for header, _ in tups if header is not None]
+    assert "Title" in headers
+    preamble = "".join(text for header, text in tups if header is None)
+    assert "Intro" in preamble
+    assert "----" in preamble
+
+
+def test_rst_to_tups_keeps_overline_with_mismatched_character():
+    """An adornment line with the same length but a different character
+    than the underline is not an overline and must stay in the preamble.
+    """
+    parser = RstParser()
+    rst_content = "Intro\n\n-----\nTitle\n=====\nContent\n"
+
+    tups = parser.rst_to_tups(rst_content)
+
+    headers = [header for header, _ in tups if header is not None]
+    assert "Title" in headers
+    preamble = "".join(text for header, text in tups if header is None)
+    assert "Intro" in preamble
+    assert "-----" in preamble
+
+
+def test_rst_to_tups_keeps_overline_with_mismatched_length():
+    """An adornment line with the same character but a different length
+    than the underline is not an overline and must stay in the preamble.
+    """
+    parser = RstParser()
+    rst_content = "Intro\n\n---\nTitle\n-----\nContent\n"
+
+    tups = parser.rst_to_tups(rst_content)
+
+    headers = [header for header, _ in tups if header is not None]
+    assert "Title" in headers
+    preamble = "".join(text for header, text in tups if header is None)
+    assert "Intro" in preamble
+    assert "---" in preamble
+
+
 def test_parse_file_basic(rst_parser):
     """Test basic parse_file functionality."""
     content = """Title
