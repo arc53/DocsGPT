@@ -351,6 +351,24 @@ def test_rst_to_tups_overline_title_after_preamble_keeps_preamble_only():
             assert text.strip() != ""
 
 
+def test_rst_to_tups_keeps_divider_that_is_not_a_matching_overline():
+    """Only an adornment line identical to the underline counts as an
+    overline. A different divider directly above a title (here "----"
+    above a "=====" underline) is ordinary preamble content and must not
+    be stripped out of the preamble.
+    """
+    parser = RstParser()
+    rst_content = "Intro\n\n----\nTitle\n=====\nContent\n"
+
+    tups = parser.rst_to_tups(rst_content)
+
+    headers = [header for header, _ in tups if header is not None]
+    assert "Title" in headers
+    preamble = "".join(text for header, text in tups if header is None)
+    assert "Intro" in preamble
+    assert "----" in preamble
+
+
 def test_parse_file_basic(rst_parser):
     """Test basic parse_file functionality."""
     content = """Title

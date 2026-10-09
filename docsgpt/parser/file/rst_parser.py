@@ -90,7 +90,12 @@ class RstParser(BaseParser):
                     # close to the start of the document.
                     if i >= 2:
                         overline_candidate = lines[i - 2]
-                        if (re.match(r"^[^\S\n]*[-=]+[^\S\n]*$", overline_candidate)
+                        # reStructuredText requires an overline to match its
+                        # underline exactly (same character, same length).
+                        # A different adornment line (e.g. a "----" divider
+                        # above a "=====" underline) is ordinary content and
+                        # must stay in the preamble.
+                        if (overline_candidate.strip() == header_match.group().strip()
                                 and current_text.endswith(overline_candidate + "\n")):
                             current_text = current_text[:len(current_text) - len(overline_candidate + "\n")]
                 # Skip the tuple only when there is truly nothing to keep:
