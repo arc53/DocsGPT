@@ -450,7 +450,19 @@ class LLMHandler(ABC):
         block = render_attachment_block(plan)
         if block:
             content = carrier.get("content")
-            if isinstance(content, list):
+            if getattr(getattr(llm, "capabilities", None), "prompt_cache_breakpoints", False) is True:
+                # The history replays the question without the files, so it
+                # goes first and alone in its text part: the prompt-cache
+                # breakpoint on it then marks a prefix later turns resend
+                # byte for byte (``OpenAILLM._with_cache_breakpoints``).
+                parts = content if isinstance(content, list) else (
+                    [{"type": "text", "text": content}] if isinstance(content, str) and content else []
+                )
+                lead = 0
+                while lead < len(parts) and isinstance(parts[lead], dict) and parts[lead].get("type") == "text":
+                    lead += 1
+                carrier["content"] = [*parts[:lead], {"type": "text", "text": block}, *parts[lead:]]
+            elif isinstance(content, list):
                 carrier["content"] = [{"type": "text", "text": block}, *content]
             else:
                 text = content if isinstance(content, str) else ""
@@ -1495,13 +1507,20 @@ class LLMHandler(ABC):
                 tools_dict, call, llm_class
             )
             if pause_info:
-                # Headless (scheduled / webhook): synthesize a denial tool message
-                # so the LLM finishes gracefully instead of stalling on a pause
-                # nobody will resolve, then journal so the reconciler sees it.
+                # A refused call (headless runs, and refusals in any turn: a
+                # secret reference the tool can't take, an admin's read-only
+                # connector, an API caller's write on the owner's account):
+                # answer it with the refusal so the LLM carries on instead of
+                # stalling on a pause nobody will resolve, journal it, and keep
+                # it on the message as a failed call.
                 if pause_info.get("pause_type") == "headless_denied":
-                    deny_reason = pause_info.get(
-                        "deny_reason", "Tool blocked in headless mode."
+                    from docsgpt.agents.tool_executor import (
+                        record_refused_call,
+                        refusal_texts,
                     )
+
+                    deny_reason = pause_info.get("deny_reason") or "This tool can't run here."
+                    model_text, journal_error = refusal_texts(agent.tool_executor, deny_reason)
                     args_str = (
                         json.dumps(call.arguments)
                         if isinstance(call.arguments, dict)
@@ -1524,33 +1543,23 @@ class LLMHandler(ABC):
                         arguments=call.arguments,
                     )
                     updated_messages.append(
-                        self.create_tool_message(
-                            denial_call,
-                            f"Tool denied (headless): {deny_reason}",
-                        )
+                        self.create_tool_message(denial_call, model_text)
                     )
-                    if hasattr(agent.tool_executor, "headless_denials"):
+                    # Only a run nobody watches reports what it was refused.
+                    if getattr(agent.tool_executor, "headless", False) and isinstance(
+                        getattr(agent.tool_executor, "headless_denials", None), list
+                    ):
                         agent.tool_executor.headless_denials.append(pause_info)
-                    from docsgpt.agents.tool_executor import journal_refused_call
-
-                    journal_refused_call(
-                        agent.tool_executor, pause_info, f"headless: {deny_reason}"
+                    refused = record_refused_call(
+                        agent.tool_executor,
+                        pause_info,
+                        reason=deny_reason,
+                        model_text=model_text,
+                        journal_error=journal_error,
                     )
-                    denied_data = {
-                        "tool_name": pause_info["tool_name"],
-                        "call_id": pause_info["call_id"],
-                        "action_name": pause_info.get(
-                            "llm_name", pause_info["name"]
-                        ),
-                        "arguments": pause_info["arguments"],
-                        "status": "denied",
-                        "error": deny_reason,
-                        "error_type": pause_info.get(
-                            "error_type", "tool_not_allowed"
-                        ),
-                    }
-                    trace_unexecuted_tool_call(call, denied_data)
-                    yield {"type": "tool_call", "data": denied_data}
+                    # The trace keeps telling a refusal from a failed run.
+                    trace_unexecuted_tool_call(call, {**refused, "status": "denied"})
+                    yield {"type": "tool_call", "data": dict(refused)}
                     continue
                 # Yield pause event so the client knows this tool is waiting
                 pause_data = {
@@ -1564,6 +1573,11 @@ class LLMHandler(ABC):
                 # can wire the sticky "don't ask again" button.
                 if pause_info.get("device_id"):
                     pause_data["device_id"] = pause_info["device_id"]
+                # Link secrets approving this call fills in (the card says so).
+                if pause_info.get("secret_refs"):
+                    pause_data["secret_refs"] = pause_info["secret_refs"]
+                if pause_info.get("secret_ref_labels"):
+                    pause_data["secret_ref_labels"] = pause_info["secret_ref_labels"]
                 # What will be sent once fixed values replace the model's.
                 if pause_info.get("sent_arguments") is not None:
                     pause_data["sent_arguments"] = pause_info["sent_arguments"]

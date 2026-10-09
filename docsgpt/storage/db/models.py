@@ -393,7 +393,7 @@ agents_table = Table(
     Column("user_id", Text, nullable=False),
     Column("name", Text, nullable=False),
     Column("description", Text),
-    Column("agent_type", Text),
+    Column("agent_type", Text, nullable=False, server_default="classic"),
     Column("status", Text, nullable=False),
     Column("key", CITEXT, unique=True),
     # Stable per-user human identifier used to match an agent across
@@ -681,6 +681,27 @@ connector_policies_table = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
+# A connector OAuth sign-in in progress, bound to the user who started it
+# (migration 0052). The app's callback page uses up ``state_hash`` with the
+# starter's login; the API callback forwards to ``return_origin``.
+connector_oauth_flows_table = Table(
+    "connector_oauth_flows",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    Column("provider", Text, nullable=False),
+    Column(
+        "connection_id", UUID(as_uuid=True), ForeignKey("connector_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("state_hash", Text, nullable=False, unique=True),
+    Column("return_origin", Text, nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+Index("connector_oauth_flows_expires_idx", connector_oauth_flows_table.c.expires_at)
+
 
 # --- Conversations, messages, workflows -------------------------------------
 
@@ -703,6 +724,8 @@ conversations_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
+    # Set when a message arrived the owner has not seen; opening the chat clears it. See migration 0049.
+    Column("unread_at", DateTime(timezone=True)),
 )
 
 conversation_messages_table = Table(
@@ -1193,6 +1216,7 @@ devices_table = Table(
     Column("paired_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("last_seen_at", DateTime(timezone=True)),
     Column("revoked_at", DateTime(timezone=True)),
+    Column("capabilities", Text),
     Column("revoke_reason", Text),
     UniqueConstraint("user_id", "name", name="devices_user_name_uidx"),
 )
@@ -1316,3 +1340,274 @@ Index(
     quota_policies_table.c.bucket,
     unique=True,
 )
+
+
+# --- Background jobs and conversation wakes (migration 0047) ----------------
+# A tool call a turn handed off, and the queue of events that resume a
+# conversation (a finished job, later monitors, trigger and approval links).
+
+background_jobs_table = Table(
+    "background_jobs",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    Column("conversation_id", UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE")),
+    Column("workflow_run_id", UUID(as_uuid=True)),
+    Column("origin_message_id", UUID(as_uuid=True)),
+    # The turn-scoped call key (``<message_id>:<call_id>``), as in tool_call_attempts.
+    Column("tool_call_id", Text),
+    Column("agent_id", UUID(as_uuid=True)),
+    Column("tool_name", Text, nullable=False),
+    Column("action_name", Text, nullable=False),
+    Column("kind", Text, nullable=False, server_default="tool_call"),
+    Column("args", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("status", Text, nullable=False, server_default="working"),
+    Column("status_message", Text),
+    Column("progress", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("output_tail", Text),
+    Column("result", JSONB),
+    Column("error", JSONB),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("started_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("last_updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("finished_at", DateTime(timezone=True)),
+    Column("deadline_at", DateTime(timezone=True), nullable=False),
+    Column("expires_at", DateTime(timezone=True)),
+    Column("runner", Text, nullable=False, server_default="inprocess"),
+    Column("lease_owner", Text),
+    Column("heartbeat_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("attempts", Integer, nullable=False, server_default="0"),
+    Column("cancel_requested_at", DateTime(timezone=True)),
+    Column("auto_resume", Boolean, nullable=False, server_default="true"),
+    Column("delivery_state", Text, nullable=False, server_default="pending"),
+    Column("delivered_at", DateTime(timezone=True)),
+    Column("followup_message_id", UUID(as_uuid=True)),
+    Column("watch", JSONB),
+    Column("external", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    CheckConstraint(
+        "kind IN ('tool_call', 'code_exec', 'mcp_task', 'monitor_tick')", name="background_jobs_kind_chk"
+    ),
+    CheckConstraint(
+        "status IN ('working', 'completed', 'failed', 'cancelled', 'lost')", name="background_jobs_status_chk"
+    ),
+    CheckConstraint(
+        "runner IN ('inprocess', 'celery', 'sandbox', 'mcp', 'device')", name="background_jobs_runner_chk"
+    ),
+    CheckConstraint(
+        "delivery_state IN ('pending', 'claimed_by_poll', 'resumed', 'folded', 'suppressed', 'failed')",
+        name="background_jobs_delivery_state_chk",
+    ),
+    UniqueConstraint("conversation_id", "tool_call_id", name="background_jobs_conversation_call_uidx"),
+)
+
+Index("background_jobs_user_status_idx", background_jobs_table.c.user_id, background_jobs_table.c.status)
+Index("background_jobs_conversation_idx", background_jobs_table.c.conversation_id)
+Index("background_jobs_status_heartbeat_idx", background_jobs_table.c.status, background_jobs_table.c.heartbeat_at)
+
+conversation_wakes_table = Table(
+    "conversation_wakes",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    Column(
+        "conversation_id",
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("source", Text, nullable=False),
+    Column("ref_id", Text),
+    Column("title", Text, nullable=False, server_default=""),
+    Column("body", Text, nullable=False, server_default=""),
+    Column("payload", JSONB),
+    Column("dedupe_key", Text, nullable=False),
+    Column("status", Text, nullable=False, server_default="pending"),
+    Column("attempts", Integer, nullable=False, server_default="0"),
+    Column("error", Text),
+    Column("message_id", UUID(as_uuid=True)),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("claimed_at", DateTime(timezone=True)),
+    Column("delivered_at", DateTime(timezone=True)),
+    CheckConstraint(
+        "source IN ('job', 'monitor', 'monitor_paused', 'monitor_expired', 'trigger', 'approval', 'lost')",
+        name="conversation_wakes_source_chk",
+    ),
+    CheckConstraint(
+        "status IN ('pending', 'claimed', 'delivered', 'folded', 'suppressed', 'superseded', 'failed')",
+        name="conversation_wakes_status_chk",
+    ),
+    UniqueConstraint("dedupe_key", name="conversation_wakes_dedupe_uidx"),
+)
+
+Index(
+    "conversation_wakes_conversation_status_idx",
+    conversation_wakes_table.c.conversation_id,
+    conversation_wakes_table.c.status,
+)
+Index("conversation_wakes_status_created_idx", conversation_wakes_table.c.status, conversation_wakes_table.c.created_at)
+
+
+# --- Monitors, trigger links and their hits (migration 0048) ----------------
+# A monitor is a ``schedules`` row (trigger_type 'monitor'); this side table
+# holds what only a monitor needs. Trigger links are the public webhook and
+# approval links that feed a monitor; only the token's sha256 is stored.
+
+monitors_table = Table(
+    "monitors",
+    metadata,
+    Column(
+        "schedule_id",
+        UUID(as_uuid=True),
+        ForeignKey("schedules.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("user_id", Text, nullable=False),
+    Column(
+        "conversation_id",
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("agent_id", UUID(as_uuid=True)),
+    Column("description", Text, nullable=False),
+    Column("source_type", Text, nullable=False),
+    Column("monitor_spec", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("monitor_state", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("approval", JSONB),
+    Column("interval_seconds", Integer),
+    Column("check_count", Integer, nullable=False, server_default="0"),
+    Column("wake_count", Integer, nullable=False, server_default="0"),
+    Column("max_wakes", Integer, nullable=False, server_default="1"),
+    Column("judge_tokens", Integer, nullable=False, server_default="0"),
+    Column("last_checked_at", DateTime(timezone=True)),
+    Column("last_changed_at", DateTime(timezone=True)),
+    Column("last_woken_at", DateTime(timezone=True)),
+    Column("last_error", Text),
+    Column("unreachable_since", DateTime(timezone=True)),
+    Column("paused_reason", Text),
+    Column("tick_started_at", DateTime(timezone=True)),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint(
+        "source_type IN ('webpage', 'tool', 'ingest', 'webhook', 'approval')", name="monitors_source_type_chk"
+    ),
+)
+
+Index("monitors_user_idx", monitors_table.c.user_id, monitors_table.c.source_type)
+Index("monitors_conversation_idx", monitors_table.c.conversation_id)
+
+trigger_links_table = Table(
+    "trigger_links",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("monitor_id", UUID(as_uuid=True), ForeignKey("schedules.id", ondelete="CASCADE"), nullable=False),
+    Column("user_id", Text, nullable=False),
+    Column(
+        "conversation_id",
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("token_hash", Text, nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("secret_encrypted", Text),
+    Column("signature_scheme", Text, nullable=False, server_default="none"),
+    Column("approval_spec", JSONB),
+    Column("decision", JSONB),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("max_hits", Integer, nullable=False, server_default="1"),
+    Column("hit_count", Integer, nullable=False, server_default="0"),
+    Column("last_hit_at", DateTime(timezone=True)),
+    Column("revoked_at", DateTime(timezone=True)),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("ref", Text),
+    Column("expose_secret", Boolean, nullable=False, server_default=text("false")),
+    Column("allow_get", Boolean, nullable=False, server_default=text("false")),
+    Column("signature_header", Text),
+    CheckConstraint("kind IN ('webhook', 'approval')", name="trigger_links_kind_chk"),
+    CheckConstraint(
+        "signature_scheme IN ('none', 'standard_webhooks', 'github', 'hmac_sha256', 'stripe', 'slack', "
+        "'header_token', 'bearer')",
+        name="trigger_links_signature_scheme_chk",
+    ),
+    UniqueConstraint("token_hash", name="trigger_links_token_hash_uidx"),
+)
+
+Index("trigger_links_monitor_idx", trigger_links_table.c.monitor_id)
+Index(
+    "trigger_links_exposed_idx",
+    trigger_links_table.c.user_id,
+    postgresql_where=trigger_links_table.c.expose_secret,
+)
+Index(
+    "trigger_links_user_ref_uidx",
+    trigger_links_table.c.user_id,
+    trigger_links_table.c.ref,
+    unique=True,
+    postgresql_where=trigger_links_table.c.ref.isnot(None),
+)
+
+trigger_hits_table = Table(
+    "trigger_hits",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("link_id", UUID(as_uuid=True), ForeignKey("trigger_links.id", ondelete="CASCADE"), nullable=False),
+    Column("dedupe_key", Text, nullable=False),
+    Column("payload", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("status", Text, nullable=False, server_default="pending"),
+    Column("error", Text),
+    Column("received_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("processed_at", DateTime(timezone=True)),
+    CheckConstraint(
+        "status IN ('pending', 'processed', 'ignored', 'failed')", name="trigger_hits_status_chk"
+    ),
+    UniqueConstraint("link_id", "dedupe_key", name="trigger_hits_link_dedupe_uidx"),
+)
+
+Index("trigger_hits_received_idx", trigger_hits_table.c.received_at)
+
+# --- Monitor events (migration 0050) -----------------------------------------
+# An ingest event a monitor watches, stored before its task is queued so a lost
+# task can be queued again; settled like a trigger hit.
+monitor_events_table = Table(
+    "monitor_events",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("monitor_id", UUID(as_uuid=True), ForeignKey("schedules.id", ondelete="CASCADE"), nullable=False),
+    Column("dedupe_key", Text, nullable=False),
+    Column("payload", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("status", Text, nullable=False, server_default="pending"),
+    Column("attempts", Integer, nullable=False, server_default="0"),
+    Column("error", Text),
+    Column("received_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("processed_at", DateTime(timezone=True)),
+    CheckConstraint(
+        "status IN ('pending', 'processed', 'ignored', 'failed')", name="monitor_events_status_chk"
+    ),
+    UniqueConstraint("monitor_id", "dedupe_key", name="monitor_events_monitor_dedupe_uidx"),
+)
+
+Index("monitor_events_status_received_idx", monitor_events_table.c.status, monitor_events_table.c.received_at)
+
+# --- Web Push subscriptions (migration 0049) ---------------------------------
+# One browser's push subscription: the push service endpoint and the keys the
+# payload is encrypted with. The endpoint is unique; re-registering it moves it.
+
+push_subscriptions_table = Table(
+    "push_subscriptions",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    Column("endpoint", Text, nullable=False),
+    Column("p256dh", Text, nullable=False),
+    Column("auth", Text, nullable=False),
+    Column("user_agent", Text),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("last_success_at", DateTime(timezone=True)),
+    Column("last_failure_at", DateTime(timezone=True)),
+    Column("failure_count", Integer, nullable=False, server_default="0"),
+    UniqueConstraint("endpoint", name="push_subscriptions_endpoint_uidx"),
+)
+
+Index("push_subscriptions_user_idx", push_subscriptions_table.c.user_id)

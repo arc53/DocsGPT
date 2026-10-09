@@ -235,6 +235,44 @@ class TestWorkflowEngineAgenticNode:
 
         assert captured["agent_id"] == "11111111-1111-1111-1111-111111111111"
 
+    def test_node_on_the_parents_provider_inherits_the_parents_key(self, monkeypatch):
+        engine = create_engine()
+        node = create_agent_node(node_id="agent_same", agent_type="classic")
+        captured: Dict[str, Any] = {}
+
+        def capture_create(**kwargs):
+            captured.update(kwargs)
+            return StubNodeAgent([{"answer": "ok"}])
+
+        monkeypatch.setattr(WorkflowNodeAgentFactory, "create", staticmethod(capture_create))
+        monkeypatch.setattr("docsgpt.core.model_utils.get_api_key_for_provider", lambda _provider: None)
+
+        list(engine._execute_agent_node(node))
+
+        assert captured["llm_name"] == "openai"
+        assert captured["api_key"] == "test-key"
+
+    def test_node_on_another_provider_does_not_get_the_parents_key(self, monkeypatch):
+        # The parent's key belongs to the parent's provider; a node that runs
+        # on another provider must not send it there.
+        engine = create_engine()
+        node = create_agent_node(node_id="agent_other", agent_type="classic")
+        node.config["llm_name"] = "anthropic"
+        node.config["model_id"] = "claude-from-a-stale-node"
+        captured: Dict[str, Any] = {}
+
+        def capture_create(**kwargs):
+            captured.update(kwargs)
+            return StubNodeAgent([{"answer": "ok"}])
+
+        monkeypatch.setattr(WorkflowNodeAgentFactory, "create", staticmethod(capture_create))
+        monkeypatch.setattr("docsgpt.core.model_utils.get_api_key_for_provider", lambda _provider: None)
+
+        list(engine._execute_agent_node(node))
+
+        assert captured["llm_name"] == "anthropic"
+        assert captured["api_key"] is None
+
     def test_agentic_node_passes_retriever_config(self, monkeypatch):
         engine = create_engine()
         # The node-source authorization gate is exercised separately;

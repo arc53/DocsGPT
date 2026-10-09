@@ -230,6 +230,23 @@ class TestProcessAgentWebhookTask:
         mock_worker.assert_called_once_with(ANY, "agent123", {"event": "test"})
         assert result == {"status": "ok"}
 
+    @pytest.mark.unit
+    def test_time_limits_follow_webhook_run_timeout(self):
+        from docsgpt.api.user.tasks import process_agent_webhook
+        from docsgpt.core.settings import settings
+
+        assert process_agent_webhook.soft_time_limit == max(30, settings.WEBHOOK_RUN_TIMEOUT)
+        assert process_agent_webhook.time_limit == process_agent_webhook.soft_time_limit + 60
+
+    @pytest.mark.unit
+    def test_run_is_never_retried(self):
+        """A webhook run has side effects, so a failure must not re-run the agent."""
+        from docsgpt.api.user.tasks import process_agent_webhook
+
+        assert process_agent_webhook.acks_late is True
+        assert not getattr(process_agent_webhook, "autoretry_for", None)
+        assert process_agent_webhook.max_retries == 0
+
 
 class TestIngestConnectorTask:
     @pytest.mark.unit
@@ -326,7 +343,7 @@ class TestSetupPeriodicTasks:
 
         setup_periodic_tasks(sender)
 
-        assert sender.add_periodic_task.call_count == 15
+        assert sender.add_periodic_task.call_count == 18
 
         calls = sender.add_periodic_task.call_args_list
 
@@ -370,6 +387,11 @@ class TestSetupPeriodicTasks:
         # stale workflow-run reaper (5m)
         assert calls[14][0][0] == timedelta(seconds=300)
         assert calls[14][1].get("name") == "reap-stale-workflow-runs"
+        # background jobs: lost leases and deadlines (60s), retention (24h)
+        assert calls[15][0][0] == timedelta(seconds=60)
+        assert calls[15][1].get("name") == "sweep-background-jobs"
+        assert calls[16][0][0] == timedelta(hours=24)
+        assert calls[16][1].get("name") == "cleanup-background-jobs"
 
 
 class TestMcpOauthTask:
@@ -444,7 +466,6 @@ class TestDurableTaskRetryPolicy:
             "ingest_remote",
             "reingest_source_task",
             "store_attachment",
-            "process_agent_webhook",
             "ingest_connector_task",
             "reembed_wiki_page",
             "convert_source_to_wiki",
@@ -583,18 +604,18 @@ class TestCleanupPendingToolState:
             "docsgpt.storage.db.engine.get_engine",
             return_value=fake_engine,
         ), patch(
-            "docsgpt.api.answer.services.conversation_service."
-            "ConversationService.finalize_message",
-        ) as finalize_expired:
+            "docsgpt.api.answer.services.continuation_service.retire_paused_message",
+        ) as retire_expired:
             result = cleanup_pending_tool_state.run()
 
         assert result["reverted"] == 1
         assert result["deleted"] == 1
-        finalize_expired.assert_called_once()
-        assert finalize_expired.call_args.args[0] == (
+        retire_expired.assert_called_once()
+        retired_row = retire_expired.call_args.args[1]
+        assert retired_row["agent_config"]["reserved_message_id"] == (
             "22222222-2222-2222-2222-222222222222"
         )
-        assert finalize_expired.call_args.kwargs["status"] == "failed"
+        assert retire_expired.call_args.args[2] == "expired"
 
         # Final state assertions.
         assert repo.load_state(c1["id"], "u")["status"] == "pending"
@@ -604,6 +625,84 @@ class TestCleanupPendingToolState:
         c4_row = repo.load_state(c4["id"], "u")
         assert c4_row["status"] == "pending"
         assert c4_row["resumed_at"] is None
+
+    @pytest.mark.unit
+    def test_an_expired_pause_keeps_its_calls_and_says_it_expired(self, pg_conn):
+        """The turn that waited out its approval is finalized with what it did, not failed."""
+        from contextlib import contextmanager
+
+        from sqlalchemy import text as _text
+
+        from docsgpt.api.user.tasks import cleanup_pending_tool_state
+        from tests.api.answer.services.test_abandoned_pause_pg import USER, _paused_turn
+
+        turn = _paused_turn(pg_conn)
+        pg_conn.execute(
+            _text(
+                "UPDATE pending_tool_state SET expires_at = clock_timestamp() - interval '1 second' "
+                "WHERE conversation_id = CAST(:c AS uuid)"
+            ),
+            {"c": turn["conversation_id"]},
+        )
+
+        @contextmanager
+        def _fake_begin():
+            yield pg_conn
+
+        fake_engine = MagicMock()
+        fake_engine.begin = _fake_begin
+        published = []
+        with patch("docsgpt.storage.db.engine.get_engine", return_value=fake_engine), patch(
+            "docsgpt.events.publisher.publish_user_event",
+            side_effect=lambda *a, **kw: published.append((a, kw)),
+        ), patch("docsgpt.monitors.secret_refs.exposed_values", return_value={}):
+            result = cleanup_pending_tool_state.run()
+
+        assert result["deleted"] == 1
+        row = pg_conn.execute(
+            _text("SELECT status, tool_calls FROM conversation_messages WHERE id = CAST(:id AS uuid)"),
+            {"id": turn["message_id"]},
+        ).fetchone()
+        assert row.status == "complete"
+        assert [c["call_id"] for c in row.tool_calls] == ["call-1", "call-2", "call-3", "call-4", "call-5"]
+        assert row.tool_calls[-1]["not_run"] == "expired"
+        ((user, kind, payload), _) = published[0]
+        assert (user, kind) == (USER, "tool.approval.cleared")
+        assert payload == {
+            "conversation_id": turn["conversation_id"],
+            "message_id": turn["message_id"],
+            "reason": "expired",
+        }
+
+    @pytest.mark.unit
+    def test_a_failed_retire_still_clears_the_approval(self, pg_conn):
+        from contextlib import contextmanager
+
+        from docsgpt.api.user.tasks import cleanup_pending_tool_state
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+        from docsgpt.storage.db.repositories.pending_tool_state import PendingToolStateRepository
+
+        conv = ConversationsRepository(pg_conn).create("u-x", "expired")
+        PendingToolStateRepository(pg_conn).save_state(
+            conv["id"], "u-x", messages=[], pending_tool_calls=[], tools_dict={}, tool_schemas=[],
+            agent_config={"reserved_message_id": "33333333-3333-3333-3333-333333333333"}, ttl_seconds=0,
+        )
+
+        @contextmanager
+        def _fake_begin():
+            yield pg_conn
+
+        fake_engine = MagicMock()
+        fake_engine.begin = _fake_begin
+        with patch("docsgpt.storage.db.engine.get_engine", return_value=fake_engine), patch(
+            "docsgpt.api.answer.services.continuation_service.retire_paused_message",
+            side_effect=RuntimeError("db blip"),
+        ), patch("docsgpt.events.publisher.publish_user_event") as publish:
+            result = cleanup_pending_tool_state.run()
+
+        assert result["deleted"] == 1
+        publish.assert_called_once()
+        assert publish.call_args.args[2]["reason"] == "expired"
 
     @pytest.mark.unit
     def test_skips_when_postgres_uri_missing(self, monkeypatch):

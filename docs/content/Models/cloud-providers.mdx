@@ -1,7 +1,7 @@
 ---
 title: Connecting DocsGPT to Cloud LLM Providers
 description: Connect DocsGPT to various Cloud Large Language Model (LLM) providers to power your document Q&A.
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-08
 ---
 
 import { Callout } from 'nextra/components'
@@ -70,6 +70,28 @@ Each provider's models are registered when its key is set. `API_KEY` counts as t
 
 To add a provider or model that is not in the catalog, write a model YAML and load it with [`MODELS_CONFIG_DIR`](/Deploying/DocsGPT-Settings#adding-custom-models-models_config_dir).
 
+### Keys stay with their provider
+
+Each key is sent only to the endpoint it was configured for:
+
+- a provider's own variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY` ...) to that provider;
+- `API_KEY` to the provider in `LLM_PROVIDER`, or to your own server at `OPENAI_BASE_URL`;
+- a catalog key such as `DEEPSEEK_API_KEY` to the `base_url` in its YAML;
+- `FALLBACK_LLM_API_KEY` to the [fallback provider](/Models/fallback).
+
+The model decides where a request goes: it carries its provider, its key and its endpoint together. When DocsGPT cannot pair a request with an endpoint of its own, it refuses the request instead of sending it to OpenAI with whatever key is set:
+
+| Error | Cause |
+| :---- | :---- |
+| `Model '<id>' is not available` | The model is an `openai_compatible` model DocsGPT doesn't have (its key variable is unset, or its YAML isn't loaded), a custom model the user can no longer reach, or `LLM_PROVIDER=openai_compatible` with no model. |
+| `Refusing to send a <provider> request to <host>` | A configured key was about to reach a host it wasn't configured for. Nothing was sent. The message lists the hosts the key belongs to, never the key. Check `LLM_PROVIDER`, the provider keys and the model's endpoint. |
+
+A key configured for an `https` endpoint is never sent to the same host over `http`, and plain `http` is accepted only for a server on your own network; see [Plain http and your API key](/Models/local-inference#plain-http-and-your-api-key).
+
+The provider SDKs' own endpoint variables (`ANTHROPIC_BASE_URL`, `GOOGLE_GEMINI_BASE_URL`, `GOOGLE_GENAI_USE_VERTEXAI`) are ignored, because they would send a key to a host DocsGPT never checked. To reach a provider through a proxy or another endpoint, give the model a `base_url` in a [model YAML](/Deploying/DocsGPT-Settings#adding-custom-models-models_config_dir).
+
+A model name that isn't in the catalog still works for a provider with a fixed endpoint, such as `FALLBACK_LLM_NAME=gpt-4o-mini` with `FALLBACK_LLM_PROVIDER=openai`: it goes to that provider with that provider's key.
+
 ## Connecting to OpenAI-Compatible Cloud APIs
 
 DocsGPT can also connect to any cloud provider that offers an OpenAI-compatible API through `OPENAI_BASE_URL`. Set `LLM_PROVIDER=openai`, the provider's endpoint as `OPENAI_BASE_URL`, its key as `API_KEY`, and the model name as `LLM_NAME`. `LLM_NAME` is required here, because DocsGPT registers exactly the model(s) it names; separate several with commas.
@@ -104,6 +126,7 @@ For OpenAI models that support it, DocsGPT can call the newer **Responses API** 
 - `reasoning_effort` — per-model reasoning effort hint (for example `medium`) declared in the model catalog.
 - `OPENAI_RESPONSES_STORE` (default `false`) — when `true`, lets OpenAI persist Responses API state server-side and chains calls with `previous_response_id`. When `false`, DocsGPT requests encrypted reasoning items and persists those ciphertext items itself so reasoning survives tool calls and later conversation turns without OpenAI retaining the response.
 - `OPENAI_RESPONSES_CHAIN_ACROSS_TURNS` (default `true`) and `OPENAI_RESPONSES_CHAIN_BUDGET_TOKENS` (default: the model's `context_window`) — in store mode a new user turn chains onto the previous response, which keeps the provider's stored transcript and its prompt cache warm. The chain is bounded: once the previous turn's reported prompt reaches the budget, or after the conversation history has been compressed, the next turn starts from DocsGPT's own saved history instead. Chained tool rounds do not re-send an unchanged system message. Every turn of a conversation whose call goes out unchained logs one `responses_chain_reset` line at INFO with `reason`, `conversation_id`, `activity_id` and `model`; the same reason is on that call's `chat` span as `docsgpt.chain_reset_reason`. The reasons are `first_turn`, `disabled` (store mode or cross-turn chaining off), `no_previous_response` (the last turn stored no response), `fallback_answered` (a fallback model answered the last turn), `chain_key_mismatch` (another model, endpoint or key), `native_parts_cap`, `compression` (before the turn or during it), `chain_budget`, `history_mismatch` (the history does not answer every tool call of the response it would chain onto), `not_found` (the provider no longer has that response) and `previous_call_failed`.
+- `prompt_cache_breakpoints` (model capability, default `false`): set it to `true` in a model's YAML for GPT-5.6 and later models, which cache only at prompt-cache breakpoints. DocsGPT then marks a breakpoint on each user message and puts a turn's attachment block after the question, so a turn that resends its history unchained (after a compression, a restart or a chain past its budget) reads earlier turns back from the provider's cache instead of writing the whole prompt again. Earlier models reject the field with a 400, so leave it off for them. Resent history replays each turn's tool calls round by round, as they ran, and the context checks count the encrypted reasoning every replayed call carries (the provider bills it in full as input). A turn that answers a finished background job stores its response id too, so the next user turn can chain onto it.
 - `OPENAI_RESPONSES_TRUNCATION_AUTO` (default `false`) — send `truncation: "auto"` so the provider drops the oldest conversation items instead of failing a request that exceeds the model's window.
 - `OPENAI_PROMPT_CACHE_KEY` (default `true`) and `OPENAI_PROMPT_CACHE_RETENTION` (default unset) — prompt-cache hints on Responses API calls: an opaque per-user `prompt_cache_key` (a hash, never the user id itself), and a `prompt_cache_retention` value such as `24h` where the provider supports it.
 - `V1_SESSION_TTL_SECONDS` (default `86400`) — lifetime of the hashed Redis mapping used to associate OpenAI-compatible client session headers with hidden DocsGPT conversations. Explicit DocsGPT conversation IDs always take precedence.

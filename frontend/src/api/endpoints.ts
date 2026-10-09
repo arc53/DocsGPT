@@ -125,6 +125,7 @@ const endpoints = {
       `/api/connectors/auth?provider=${encodeURIComponent(provider)}${
         connectionId ? `&connection_id=${encodeURIComponent(connectionId)}` : ''
       }${install ? '&install=1' : ''}`,
+    CONNECTOR_AUTH_COMPLETE: '/api/connectors/auth/complete',
     CONNECTOR_FILES: '/api/connectors/files',
     CONNECTOR_VALIDATE_SESSION: '/api/connectors/validate-session',
     CONNECTOR_DISCONNECT: '/api/connectors/disconnect',
@@ -229,6 +230,17 @@ const endpoints = {
     ACCESS_TOKEN: (id: string) => `/api/user/tokens/${id}`,
     ACCESS_TOKEN_REGENERATE: (id: string) =>
       `/api/user/tokens/${id}/regenerate`,
+    MONITORS: (conversationId?: string) =>
+      conversationId
+        ? `/api/monitors?conversation_id=${encodeURIComponent(conversationId)}`
+        : '/api/monitors',
+    MONITOR_ACTION: (id: string, action: 'pause' | 'resume' | 'cancel') =>
+      `/api/monitors/${encodeURIComponent(id)}/${action}`,
+    MONITOR_SECRET: (id: string) =>
+      `/api/monitors/${encodeURIComponent(id)}/secret`,
+    MONITOR_SECRET_EXPOSURE: (id: string) =>
+      `/api/monitors/${encodeURIComponent(id)}/secret/exposure`,
+    APPROVAL: (token: string) => `/api/approvals/${encodeURIComponent(token)}`,
   },
   V1: {
     CHAT_COMPLETIONS: '/v1/chat/completions',

@@ -117,6 +117,8 @@ test.describe('auth · oidc', () => {
         page.getByRole('link', { name: /new chat/i }).first(),
       ).toBeVisible({ timeout: 20_000 });
 
+      // Sign out lives in the account menu (ProfileButton.tsx).
+      await page.getByRole('button', { name: 'Account' }).click();
       await page.getByTestId('oidc-signout').click();
 
       // Logout chain: backend /logout → IdP end-session → back to the app,

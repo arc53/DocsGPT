@@ -6,7 +6,9 @@ import {
   formatDate,
   formatDateOnly,
   formatDateTime,
+  formatDeadline,
   formatTimestamp,
+  intlLocale,
 } from './dateTimeUtils';
 
 describe('dateTimeUtils', () => {
@@ -135,5 +137,37 @@ describe('formatTimestamp', () => {
     expect(formatTimestamp(null)).toBe('—');
     expect(formatTimestamp(undefined)).toBe('—');
     expect(formatTimestamp('')).toBe('—');
+  });
+});
+
+describe('formatDeadline', () => {
+  it("uses the reader's locale and names the time zone", () => {
+    const us = formatDeadline('2026-10-20T09:44:00Z', 'en-US');
+    expect(us).toMatch(/^Oct 20, 2026/);
+    expect(us).toMatch(/(UTC|GMT|[A-Z]{2,5})/);
+    expect(formatDeadline('2026-10-20T09:44:00Z', 'en-GB')).toMatch(
+      /^20 Oct 2026/,
+    );
+  });
+
+  it('leaves a value that does not parse unchanged', () => {
+    expect(formatDeadline('soon')).toBe('soon');
+  });
+});
+
+describe('intlLocale', () => {
+  it('maps app codes to BCP 47 tags', () => {
+    expect(intlLocale('ru-RU')).toBe('ru-RU');
+    expect(intlLocale('jp')).toBe('ja');
+    expect(intlLocale('zhTW')).toBe('zh-TW');
+  });
+
+  it('falls back to en for values Intl rejects', () => {
+    // Old builds stored the string "undefined" as the language.
+    expect(intlLocale('undefined')).toBe('en');
+    expect(intlLocale('')).toBe('en');
+    expect(intlLocale('not a tag')).toBe('en');
+    expect(() => new Intl.ListFormat(intlLocale('undefined'))).not.toThrow();
+    expect(formatCount(1234, 'undefined')).toBe('1,234');
   });
 });

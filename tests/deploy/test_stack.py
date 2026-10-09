@@ -266,7 +266,7 @@ class TestUrls:
 class TestToken:
     def test_matches_what_the_api_prints(self):
         """docsgpt/app.py signs {"sub": "local"} with JWT_SECRET_KEY for AUTH_TYPE=simple_jwt."""
-        from jose import jwt
+        import jwt
 
         token = stack.simple_jwt_token("s3cret")
         assert token == jwt.encode({"sub": "local"}, "s3cret", algorithm="HS256")

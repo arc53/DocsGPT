@@ -55,7 +55,7 @@ class TestConnectorAllowedOrigins:
         with patch.object(settings, "CONNECTOR_ALLOWED_ORIGINS", "https://app.example.com/, https://b.example.com/x"), \
                 patch.object(settings, "OIDC_FRONTEND_URL", "https://sso.example.com/home"), \
                 patch.object(settings, "CONNECTOR_REDIRECT_BASE_URI", "https://api.example.com/api/connectors/callback"):
-            origins = connector_allowed_origins("https://api.example.com/")
+            origins = connector_allowed_origins()
 
         assert set(origins) == {
             "https://app.example.com",
@@ -71,7 +71,7 @@ class TestConnectorAllowedOrigins:
         with patch.object(settings, "CONNECTOR_ALLOWED_ORIGINS", "*, javascript:alert(1), null, not a url"), \
                 patch.object(settings, "OIDC_FRONTEND_URL", None), \
                 patch.object(settings, "CONNECTOR_REDIRECT_BASE_URI", "https://api.example.com/api/connectors/callback"):
-            origins = connector_allowed_origins("https://api.example.com/")
+            origins = connector_allowed_origins()
 
         assert origins == ["https://api.example.com"]
 
@@ -82,11 +82,11 @@ class TestConnectorAllowedOrigins:
         with patch.object(settings, "CONNECTOR_ALLOWED_ORIGINS", None), \
                 patch.object(settings, "OIDC_FRONTEND_URL", None), \
                 patch.object(settings, "CONNECTOR_REDIRECT_BASE_URI", "http://127.0.0.1:7091/api/connectors/callback"):
-            local = connector_allowed_origins("http://127.0.0.1:7091/")
+            local = connector_allowed_origins()
         with patch.object(settings, "CONNECTOR_ALLOWED_ORIGINS", None), \
                 patch.object(settings, "OIDC_FRONTEND_URL", None), \
                 patch.object(settings, "CONNECTOR_REDIRECT_BASE_URI", "https://api.example.com/api/connectors/callback"):
-            public = connector_allowed_origins("http://localhost:7091/")
+            public = connector_allowed_origins()
 
         assert "http://localhost:5173" in local
         assert "http://127.0.0.1:5173" in local
@@ -99,7 +99,7 @@ class TestConnectorAllowedOrigins:
         with patch.object(settings, "CONNECTOR_ALLOWED_ORIGINS", None), \
                 patch.object(settings, "OIDC_FRONTEND_URL", None), \
                 patch.object(settings, "CONNECTOR_REDIRECT_BASE_URI", "https://localhost/api/connectors/callback"):
-            origins = connector_allowed_origins("https://localhost/")
+            origins = connector_allowed_origins()
 
         assert "https://127.0.0.1" in origins
         assert "http://localhost" not in origins
@@ -177,49 +177,333 @@ class TestCallbackStatusPage:
         assert "const targetOrigins = [];" in body
 
 
-class TestCallbackDeliversTokenSafely:
-    def test_success_renders_page_without_redirecting_token(self, app, pg_conn):
-        from docsgpt.api.connector.routes import ConnectorsCallback
+def _fake_google_auth(access_token="at"):
+    fake_auth = MagicMock()
+    fake_auth.get_authorization_url.side_effect = lambda state: f"https://provider.example.com/auth?state={state}"
+    fake_auth.exchange_code_for_tokens.return_value = {"access_token": access_token, "refresh_token": "rt"}
+    fake_auth.sanitize_token_info.side_effect = lambda token_info: token_info
+    fake_auth.create_credentials_from_token_info.side_effect = RuntimeError("no creds")
+    return fake_auth
+
+
+def _start(app, user, origin=None):
+    from flask import request
+
+    from docsgpt.api.connector.routes import ConnectorAuth
+
+    headers = {"Origin": origin} if origin else {}
+    with app.test_request_context("/api/connectors/auth?provider=google_drive", headers=headers):
+        request.decoded_token = {"sub": user}
+        r = ConnectorAuth().get()
+    assert r.status_code == 200, r.json
+    return r.json["state"]
+
+
+def _provider_redirect(app, state, code="auth-code", **extra):
+    """The provider sending whoever consented to the API callback; the request carries no login."""
+    from urllib.parse import urlencode
+
+    from docsgpt.api.connector.routes import ConnectorsCallback
+
+    query = urlencode({"code": code, "state": state, **extra})
+    with app.test_request_context(f"/api/connectors/callback?{query}"):
+        return ConnectorsCallback().get()
+
+
+def _complete(app, user, code, state):
+    from flask import request
+
+    from docsgpt.api.connector.routes import ConnectorAuthComplete
+
+    with app.test_request_context(
+        "/api/connectors/auth/complete", method="POST", json={"code": code, "state": state},
+    ):
+        request.decoded_token = {"sub": user} if user else None
+        return ConnectorAuthComplete().post()
+
+
+@contextmanager
+def _oauth(pg_conn, fake_auth):
+    from docsgpt.connectors import service
+
+    with _patch_db(pg_conn), patch(
+        "docsgpt.api.connector.routes.ConnectorCreator.create_auth", return_value=fake_auth,
+    ), patch.object(service, "ensure_can_store_credentials"):
+        yield
+
+
+def _credentialed_rows(pg_conn, user):
+    from sqlalchemy import text
+
+    return pg_conn.execute(
+        text("SELECT * FROM connector_sessions WHERE user_id = :u AND encrypted_credentials IS NOT NULL"),
+        {"u": user},
+    ).fetchall()
+
+
+class TestApiCallbackForwardsToApp:
+    def test_forwards_code_and_state_to_the_app_that_started(self, app, pg_conn):
+        from urllib.parse import parse_qs, urlsplit
+
         from docsgpt.core.settings import settings
-        from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
 
-        user = "u-cb-origin"
-        repo = ConnectorSessionsRepository(pg_conn)
-        pending = repo.upsert(user, "google_drive", status="pending")
-        state = _encode_state({"provider": "google_drive", "object_id": str(pending["id"])})
-
-        fake_auth = MagicMock()
-        fake_auth.exchange_code_for_tokens.return_value = {"access_token": "at"}
-        fake_auth.sanitize_token_info.return_value = {"access_token": "at"}
-        fake_auth.create_credentials_from_token_info.side_effect = RuntimeError("no creds")
-
-        with _patch_db(pg_conn), patch(
-            "docsgpt.api.connector.routes.ConnectorCreator.is_supported", return_value=True,
-        ), patch(
-            "docsgpt.api.connector.routes.ConnectorCreator.create_auth", return_value=fake_auth,
-        ), patch.object(
+        fake_auth = _fake_google_auth()
+        with _oauth(pg_conn, fake_auth), patch.object(
             settings, "CONNECTOR_ALLOWED_ORIGINS", "https://app.example.com",
-        ), app.test_request_context(
-            f"/api/connectors/callback?state={state}&code=auth-code",
-            base_url="https://api.example.com",
         ):
-            r = ConnectorsCallback().get()
+            state = _start(app, "u-forward", origin="https://app.example.com")
+            r = _provider_redirect(app, state, code="the-code")
 
-        token = repo.get_by_user_provider(user, "google_drive")["session_token"]
-        body = r.get_data(as_text=True)
-        assert token
-        assert r.status_code == 200
-        assert "Location" not in r.headers
-        assert token in body
-        assert '"type": "google_drive_auth_success"' in body
-        assert '"https://app.example.com"' in body
-        assert "'*'" not in body
+        target = urlsplit(r.location)
+        assert r.status_code == 302
+        assert f"{target.scheme}://{target.netloc}{target.path}" == "https://app.example.com/connectors/callback"
+        assert parse_qs(target.query) == {"code": ["the-code"], "state": [state]}
         assert r.headers["Cache-Control"] == "no-store"
         assert r.headers["Referrer-Policy"] == "no-referrer"
+        # Forwarding neither exchanges the code nor uses up the state.
+        fake_auth.exchange_code_for_tokens.assert_not_called()
+        with _oauth(pg_conn, fake_auth):
+            assert _complete(app, "u-forward", "the-code", state).status_code == 200
+
+    def test_forwards_provider_errors(self, app, pg_conn):
+        from docsgpt.core.settings import settings
+
+        with _oauth(pg_conn, _fake_google_auth()), patch.object(
+            settings, "CONNECTOR_REDIRECT_BASE_URI", "https://docs.example.com/api/connectors/callback",
+        ):
+            state = _start(app, "u-forward")
+            r = _provider_redirect(app, state, code="", error="access_denied")
+        # No Origin or Referer: back to the configured callback's origin.
+        assert r.location.startswith("https://docs.example.com/connectors/callback?")
+        assert "error=access_denied" in r.location
+
+    def test_unknown_state_renders_an_error_without_forwarding(self, app, pg_conn):
+        with _oauth(pg_conn, _fake_google_auth()):
+            r = _provider_redirect(app, "never-issued")
+        assert r.status_code == 302
+        assert r.location.startswith("/api/connectors/callback-status?")
+        assert "status=error" in r.location
+
+
+class TestSignInStartsOnlyFromAllowedOrigins:
+    def test_refuses_an_origin_that_may_not_receive_the_code(self, app, pg_conn):
+        """The API callback forwards the code to where the sign-in started, so that must be allowed."""
+        from sqlalchemy import text
+        from flask import request
+
+        from docsgpt.api.connector.routes import ConnectorAuth
+
+        with _oauth(pg_conn, _fake_google_auth()), app.test_request_context(
+            "/api/connectors/auth?provider=google_drive", headers={"Origin": "https://attacker.example.com"},
+        ):
+            request.decoded_token = {"sub": "attacker"}
+            r = ConnectorAuth().get()
+
+        assert r.status_code == 400
+        assert r.json["code"] == "origin_not_allowed"
+        assert pg_conn.execute(text("SELECT count(*) FROM connector_oauth_flows")).scalar() == 0
+
+    def test_same_origin_request_returns_to_the_referer_origin(self, app, pg_conn):
+        from flask import request
+        from sqlalchemy import text
+
+        from docsgpt.api.connector.routes import ConnectorAuth
+        from docsgpt.core.settings import settings
+
+        # The API serves the UI on its public host, which the callback names.
+        with _oauth(pg_conn, _fake_google_auth()), patch.object(
+            settings, "CONNECTOR_REDIRECT_BASE_URI", "https://docs.example.com/api/connectors/callback",
+        ), app.test_request_context(
+            "/api/connectors/auth?provider=google_drive",
+            base_url="https://docs.example.com",
+            headers={"Referer": "https://docs.example.com/settings/connectors"},
+        ):
+            request.decoded_token = {"sub": "u-same-origin"}
+            r = ConnectorAuth().get()
+
+        assert r.status_code == 200
+        assert r.json["callback_origin"] == "https://docs.example.com"
+        assert pg_conn.execute(text("SELECT return_origin FROM connector_oauth_flows")).scalar() == (
+            "https://docs.example.com"
+        )
+
+    def test_app_callback_redirect_uri_names_the_popup_origin(self, app, pg_conn):
+        from docsgpt.api.connector.routes import ConnectorAuth
+        from docsgpt.core.settings import settings
+        from flask import request
+
+        with _oauth(pg_conn, _fake_google_auth()), patch.object(
+            settings, "CONNECTOR_REDIRECT_BASE_URI", "https://app.example.com/connectors/callback",
+        ), app.test_request_context(
+            "/api/connectors/auth?provider=google_drive",
+            base_url="https://api.example.com",
+            headers={"Origin": "https://app.example.com"},
+        ):
+            request.decoded_token = {"sub": "u-app-callback"}
+            r = ConnectorAuth().get()
+
+        assert r.status_code == 200
+        assert r.json["callback_origin"] == "https://app.example.com"
+
+
+class TestHostileHost:
+    """The request's Host is the client's to choose; it never decides where codes are forwarded."""
+
+    def _start(self, app, pg_conn, headers):
+        from flask import request
+
+        from docsgpt.api.connector.routes import ConnectorAuth
+        from docsgpt.core.settings import settings
+
+        with _oauth(pg_conn, _fake_google_auth()), patch.object(
+            settings, "CONNECTOR_REDIRECT_BASE_URI", "https://docs.example.com/api/connectors/callback",
+        ), patch.object(settings, "CONNECTOR_ALLOWED_ORIGINS", None), patch.object(
+            settings, "OIDC_FRONTEND_URL", None,
+        ), app.test_request_context("/api/connectors/auth?provider=google_drive", headers=headers):
+            request.decoded_token = {"sub": "attacker"}
+            return ConnectorAuth().get()
+
+    @pytest.mark.parametrize(
+        "headers",
+        [
+            {"Host": "evil.example.net"},
+            {"Host": "evil.example.net", "Origin": "http://evil.example.net"},
+            {"Host": "evil.example.net", "Referer": "http://evil.example.net/settings"},
+        ],
+    )
+    def test_forged_host_is_not_a_return_origin(self, app, pg_conn, headers):
+        from sqlalchemy import text
+
+        r = self._start(app, pg_conn, headers)
+
+        stored = pg_conn.execute(text("SELECT return_origin FROM connector_oauth_flows")).scalars().all()
+        assert all("evil.example.net" not in origin for origin in stored)
+        assert "evil.example.net" not in (r.json or {}).get("callback_origin", "")
+
+    def test_no_origin_returns_to_the_configured_callback_origin(self, app, pg_conn):
+        from sqlalchemy import text
+
+        r = self._start(app, pg_conn, {"Host": "evil.example.net"})
+
+        assert r.status_code == 200
+        assert pg_conn.execute(text("SELECT return_origin FROM connector_oauth_flows")).scalar() == (
+            "https://docs.example.com"
+        )
+
+    def test_forged_origin_with_matching_host_is_refused(self, app, pg_conn):
+        r = self._start(app, pg_conn, {"Host": "evil.example.net", "Origin": "http://evil.example.net"})
+        assert r.status_code == 400
+        assert r.json["code"] == "origin_not_allowed"
+        # The response is a fixed message; the origin is only logged.
+        assert "evil.example.net" not in r.json["error"]
+
+
+class TestSignInBoundToStarter:
+    """GHSA-g7m7-6989-4h6x: a sign-in link started by one user and completed by another."""
+
+    def test_victim_consent_on_attackers_link_never_reaches_the_attacker(self, app, pg_conn):
+        from urllib.parse import parse_qs, urlsplit
+
+        from docsgpt.api.connector.routes import ConnectorValidateSession
+        from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+        fake_auth = _fake_google_auth(access_token="VICTIM-AT")
+        with _oauth(pg_conn, fake_auth):
+            state = _start(app, "attacker")
+            # The victim consents; the API callback stores nothing and forwards
+            # the victim's browser to the app's callback page.
+            forwarded = _provider_redirect(app, state, code="victim-code")
+            assert _credentialed_rows(pg_conn, "attacker") == []
+            pending = ConnectorSessionsRepository(pg_conn).get_by_user_provider("attacker", "google_drive")
+            assert pending["status"] == "pending"
+
+            # The page posts the code with the victim's own login: refused, and
+            # the state is spent, so the attacker cannot use it after.
+            params = parse_qs(urlsplit(forwarded.location).query)
+            refused = _complete(app, "victim", params["code"][0], params["state"][0])
+            assert refused.status_code == 400
+            assert _complete(app, "attacker", "victim-code", state).status_code == 400
+
+            with app.test_request_context(
+                "/api/connectors/validate-session", method="POST",
+                json={"provider": "google_drive", "connection_id": str(pending["id"])},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "attacker"}
+                validated = ConnectorValidateSession().post()
+
+        assert "VICTIM-AT" not in validated.get_data(as_text=True)
+        fake_auth.exchange_code_for_tokens.assert_not_called()
+        assert _credentialed_rows(pg_conn, "attacker") == []
+        assert _credentialed_rows(pg_conn, "victim") == []
+
+    def test_starter_finishes_own_sign_in(self, app, pg_conn):
+        from docsgpt.security.origins import normalize_origin
+        from docsgpt.connectors import service
+        from docsgpt.core.settings import settings
+
+        fake_auth = _fake_google_auth(access_token="OWN-AT")
+        with _oauth(pg_conn, fake_auth):
+            state = _start(app, "alice")
+            done = _complete(app, "alice", "alice-code", state)
+
+        assert done.status_code == 200
+        assert done.json["provider"] == "google_drive"
+        assert done.json["return_origin"] == normalize_origin(settings.CONNECTOR_REDIRECT_BASE_URI)
+        fake_auth.exchange_code_for_tokens.assert_called_once_with("alice-code")
+        rows = _credentialed_rows(pg_conn, "alice")
+        assert [str(row.id) for row in rows] == [done.json["connection_id"]]
+        assert service.read_secrets(dict(rows[0]._mapping))["token_info"]["access_token"] == "OWN-AT"
+
+    def test_state_is_single_use(self, app, pg_conn):
+        fake_auth = _fake_google_auth()
+        with _oauth(pg_conn, fake_auth):
+            state = _start(app, "alice")
+            assert _complete(app, "alice", "code-1", state).status_code == 200
+            assert _complete(app, "alice", "code-2", state).status_code == 400
+        assert fake_auth.exchange_code_for_tokens.call_count == 1
+
+    def test_forged_state_naming_a_row_is_refused(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+        row = ConnectorSessionsRepository(pg_conn).upsert("alice", "google_drive", status="pending")
+        forged = _encode_state({"provider": "google_drive", "object_id": str(row["id"])})
+        fake_auth = _fake_google_auth()
+        with _oauth(pg_conn, fake_auth):
+            assert _provider_redirect(app, forged).location.startswith("/api/connectors/callback-status?")
+            assert _complete(app, "alice", "code", forged).status_code == 400
+        fake_auth.exchange_code_for_tokens.assert_not_called()
+
+    def test_expired_state_is_refused(self, app, pg_conn):
+        from sqlalchemy import text
+
+        fake_auth = _fake_google_auth()
+        with _oauth(pg_conn, fake_auth):
+            state = _start(app, "alice")
+            pg_conn.execute(text("UPDATE connector_oauth_flows SET expires_at = now() - interval '1 second'"))
+            assert _complete(app, "alice", "code", state).status_code == 400
+        fake_auth.exchange_code_for_tokens.assert_not_called()
+
+    def test_complete_requires_login(self, app, pg_conn):
+        with _oauth(pg_conn, _fake_google_auth()):
+            state = _start(app, "alice")
+            assert _complete(app, None, "code", state).status_code == 401
+            # An unauthenticated attempt does not spend the state.
+            assert _complete(app, "alice", "code", state).status_code == 200
+
+    def test_exchange_failure_reports_the_provider(self, app, pg_conn):
+        fake_auth = _fake_google_auth()
+        fake_auth.exchange_code_for_tokens.side_effect = RuntimeError("invalid_grant")
+        with _oauth(pg_conn, fake_auth):
+            r = _complete(app, "alice", "code", _start(app, "alice"))
+        assert r.status_code == 400
+        assert r.json["provider"] == "google_drive"
+        assert _credentialed_rows(pg_conn, "alice") == []
 
 
 class TestAuthUrlReportsCallbackOrigin:
-    def test_includes_callback_origin(self, app, pg_conn):
+    def test_callback_origin_is_the_app_that_started(self, app, pg_conn):
         from docsgpt.api.connector.routes import ConnectorAuth
         from docsgpt.core.settings import settings
 
@@ -232,19 +516,23 @@ class TestAuthUrlReportsCallbackOrigin:
             "docsgpt.api.connector.routes.ConnectorCreator.create_auth", return_value=fake_auth,
         ), patch.object(
             settings, "CONNECTOR_REDIRECT_BASE_URI", "https://api.example.com/api/connectors/callback",
-        ), app.test_request_context("/api/connectors/auth?provider=google_drive"):
+        ), patch.object(settings, "CONNECTOR_ALLOWED_ORIGINS", "https://app.example.com"), app.test_request_context(
+            "/api/connectors/auth?provider=google_drive",
+            base_url="https://api.example.com",
+            headers={"Origin": "https://app.example.com"},
+        ):
             from flask import request
             request.decoded_token = {"sub": "u-auth-origin"}
             r = ConnectorAuth().get()
 
         assert r.status_code == 200
-        assert r.json["callback_origin"] == "https://api.example.com"
+        assert r.json["callback_origin"] == "https://app.example.com"
 
     @pytest.mark.parametrize(
-        "origin, warns",
-        [("https://app.example.com", True), ("https://api.example.com", False), (None, False)],
+        "origin, allowed",
+        [("https://app.example.com", False), ("https://api.example.com", True), (None, True)],
     )
-    def test_warns_when_requesting_origin_cannot_receive_result(self, app, pg_conn, caplog, origin, warns):
+    def test_starts_only_from_an_allowed_origin(self, app, pg_conn, caplog, origin, allowed):
         from docsgpt.api.connector.routes import ConnectorAuth
         from docsgpt.core.settings import settings
 
@@ -267,9 +555,9 @@ class TestAuthUrlReportsCallbackOrigin:
             request.decoded_token = {"sub": "u-auth-warn"}
             r = ConnectorAuth().get()
 
-        assert r.status_code == 200
+        assert r.status_code == (200 if allowed else 400)
         warned = any("CONNECTOR_ALLOWED_ORIGINS" in rec.getMessage() for rec in caplog.records)
-        assert warned is warns
+        assert warned is not allowed
 
 
 class TestDisconnectOwnership:

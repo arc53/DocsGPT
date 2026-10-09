@@ -1,4 +1,3 @@
-import base64
 import html
 import json
 from typing import Optional
@@ -21,7 +20,7 @@ from docsgpt.api.user.sources.access import load_source
 from docsgpt.api.user.tasks import (
     ingest_connector_task,
 )
-from docsgpt.connectors import service
+from docsgpt.connectors import oauth_flows, service
 from docsgpt.core.settings import settings
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.security.origins import DEV_FRONTEND_PORT, LOOPBACK_HOSTS, normalize_origin
@@ -38,6 +37,12 @@ api.add_namespace(connectors_ns)
 
 # Fixed callback status path to prevent open redirect
 CALLBACK_STATUS_PATH = "/api/connectors/callback-status"
+# The API callback providers may be registered with; it forwards to the app.
+API_CALLBACK_PATH = "/api/connectors/callback"
+# The app page that finishes a sign-in with the user's own login.
+APP_CALLBACK_PATH = "/connectors/callback"
+# What the API callback passes on to that page: all it reads from the provider.
+_FORWARDED_PARAMS = ("code", "state", "error", "installation_id", "setup_action")
 
 
 def build_callback_redirect(params: dict) -> str:
@@ -49,10 +54,13 @@ def build_callback_redirect(params: dict) -> str:
     return f"{CALLBACK_STATUS_PATH}?{urlencode(params)}"
 
 
-def connector_allowed_origins(request_host_url: str) -> list[str]:
-    """Frontend origins the OAuth popup may hand a connector session token to."""
+def connector_allowed_origins() -> list[str]:
+    """Frontend origins a connector sign-in may start from and return to.
+
+    Built from configuration only: the request's ``Host`` is the client's to
+    choose, and the API callback forwards authorization codes to these origins.
+    """
     candidates = [
-        request_host_url,
         settings.CONNECTOR_REDIRECT_BASE_URI,
         settings.OIDC_FRONTEND_URL,
         *(settings.CONNECTOR_ALLOWED_ORIGINS or "").split(","),
@@ -77,11 +85,12 @@ def _js_literal(value) -> str:
     return json.dumps(value).replace("</", "<\\/").replace("<!--", "<\\!--")
 
 
-def _render_callback_page(
-    status: str, message: str, provider_raw: str, session_token: str = "", user_email: str = "",
-    connection_id: str = "",
-):
-    """Popup page that reports an OAuth result to the opener on allowed origins only."""
+def _render_callback_page(status: str, message: str, provider_raw: str, user_email: str = ""):
+    """Popup page that reports an OAuth failure to the opener on allowed origins only.
+
+    Successful connector sign-ins finish on the app's own callback page; this
+    page is left for errors, MCP OAuth and GitHub App installs started on GitHub.
+    """
     status = status if status in ("success", "error", "cancelled") else "error"
     # The script only carries server-side values: the provider key comes from the
     # supported-connector list rather than the request, and no request text is posted.
@@ -89,20 +98,11 @@ def _render_callback_page(
         (key for key in ConnectorCreator.get_auth_providers() if key == provider_raw.lower()), None,
     )
     payload = None
-    if provider_key and status == "success" and session_token:
-        payload = {
-            "type": f"{provider_key}_auth_success",
-            # The connection id is what current frontends use; the session
-            # token is kept for one release for frontends from before it.
-            "connection_id": connection_id,
-            "session_token": session_token,
-            "user_email": user_email,
-        }
-    elif provider_key and status == "error":
+    if provider_key and status == "error":
         # The frontend shows its own localized failure message; cancellations are
         # reported when the popup closes.
         payload = {"type": f"{provider_key}_auth_error"}
-    target_origins = connector_allowed_origins(request.host_url) if payload else []
+    target_origins = connector_allowed_origins() if payload else []
     provider = html.escape(provider_raw.replace("_", " ").title())
     connected_as = (
         f"<p>Connected as: {html.escape(user_email)}</p>" if status == "success" and user_email else ""
@@ -157,10 +157,58 @@ def _render_callback_page(
 
 
 
+class OriginNotAllowed(Exception):
+    """A sign-in was started from an app origin that may not receive it."""
+
+    def __init__(self, origin: str):
+        super().__init__(
+            f"Connector sign-in started from {origin}, which is not an allowed origin; add it to "
+            "CONNECTOR_ALLOWED_ORIGINS"
+        )
+        self.origin = origin
+
+
+def requesting_app_origin() -> str:
+    """The app origin the current request came from, which the sign-in returns to.
+
+    A same-origin ``fetch`` sends no ``Origin`` header, so the ``Referer``
+    names it then; with neither, the configured callback's origin. Never the
+    request's ``Host``. The origin must be allowed: the API callback forwards
+    the provider's code there.
+
+    Raises:
+        OriginNotAllowed: The origin is not one of ``connector_allowed_origins``.
+    """
+    origin = (
+        normalize_origin(request.headers.get("Origin"))
+        or normalize_origin(request.headers.get("Referer"))
+        or normalize_origin(settings.CONNECTOR_REDIRECT_BASE_URI)
+    )
+    if origin not in connector_allowed_origins():
+        raise OriginNotAllowed(origin or "an unknown origin")
+    return origin
+
+
+def app_callback_origin(return_origin: str) -> str:
+    """Origin of the page the sign-in popup ends on.
+
+    The provider returns either to the app's own callback page (when
+    ``CONNECTOR_REDIRECT_BASE_URI`` names it) or to the API callback, which
+    forwards to ``return_origin``.
+    """
+    configured = settings.CONNECTOR_REDIRECT_BASE_URI
+    if urlsplit(configured).path.rstrip("/") == API_CALLBACK_PATH:
+        return return_origin
+    return normalize_origin(configured) or return_origin
+
+
 def build_authorization(
     provider: str, user_id: str, connection_id: Optional[str] = None, *, install: bool = False,
 ) -> dict:
     """Start an OAuth sign-in for ``provider`` and return its authorization URL.
+
+    Must run inside the request that starts the sign-in: the app origin it
+    came from is where the sign-in returns.
 
     Args:
         provider: The connector, e.g. ``google_drive`` or ``github``.
@@ -172,25 +220,35 @@ def build_authorization(
             state when the app requests authorization during installation.
 
     Raises:
+        OriginNotAllowed: See ``requesting_app_origin``.
         service.EncryptionKeyNotConfigured: See ``ensure_can_store_credentials``.
         service.ConnectionUnavailable: ``connection_id`` is not the caller's.
         ValueError: ``install`` for a provider with no installation page.
     """
+    return_origin = requesting_app_origin()
     service.ensure_can_store_credentials()
-    with db_session() as conn:
-        session_row = service.begin_oauth(conn, user_id, provider, connection_id)
-    state = base64.urlsafe_b64encode(
-        json.dumps({"provider": provider, "object_id": str(session_row["id"])}).encode()
-    ).decode()
     auth = ConnectorCreator.create_auth(provider)
     if install and not hasattr(auth, "get_installation_url"):
         raise ValueError(f"{provider} has no installation page")
+    with db_session() as conn:
+        session_row = service.begin_oauth(conn, user_id, provider, connection_id)
+        state = oauth_flows.start(conn, user_id, provider, str(session_row["id"]), return_origin)
     url = auth.get_installation_url(state=state) if install else auth.get_authorization_url(state=state)
     return {
         "authorization_url": url,
         "state": state,
-        "callback_origin": normalize_origin(settings.CONNECTOR_REDIRECT_BASE_URI),
+        "callback_origin": app_callback_origin(return_origin),
     }
+
+
+def origin_not_allowed_response(err: OriginNotAllowed):
+    """The 400 for a sign-in started from an origin that may not receive it; the origin is only logged."""
+    current_app.logger.warning(str(err))
+    return make_response(jsonify({
+        "success": False,
+        "error": "This app address is not an allowed origin for connector sign-ins; add it to CONNECTOR_ALLOWED_ORIGINS.",
+        "code": "origin_not_allowed",
+    }), 400)
 
 
 @connectors_ns.route("/api/connectors/auth")
@@ -214,6 +272,8 @@ class ConnectorAuth(Resource):
                     provider, user_id, request.args.get("connection_id") or None,
                     install=request.args.get("install") in ("1", "true"),
                 )
+            except OriginNotAllowed as err:
+                return origin_not_allowed_response(err)
             except service.EncryptionKeyNotConfigured as err:
                 return make_response(
                     jsonify({"success": False, "error": str(err), "code": "encryption_key_default"}), 400,
@@ -222,14 +282,6 @@ class ConnectorAuth(Resource):
                 return make_response(jsonify({"success": False, "error": "Connection not found"}), 404)
             except service.ConnectorDisabled as err:
                 return make_response(jsonify({"success": False, "error": str(err), "code": "disabled"}), 403)
-            # The popup drops results for origins outside the allowlist, which the
-            # user only sees as a cancelled sign-in; name the missing origin here.
-            request_origin = normalize_origin(request.headers.get("Origin"))
-            if request_origin and request_origin not in connector_allowed_origins(request.host_url):
-                current_app.logger.warning(
-                    f"Connector sign-in requested from {request_origin}, which cannot receive the result; "
-                    "add it to CONNECTOR_ALLOWED_ORIGINS"
-                )
             return make_response(jsonify({"success": True, **started}), 200)
         except Exception as e:
             current_app.logger.error(f"Error generating connector auth URL: {e}", exc_info=True)
@@ -238,17 +290,13 @@ class ConnectorAuth(Resource):
 
 @connectors_ns.route("/api/connectors/callback")
 class ConnectorsCallback(Resource):
-    @api.doc(description="Handle OAuth callback for external connectors")
+    @api.doc(description="OAuth redirect URI for external connectors; forwards to the app's callback page")
     def get(self):
-        """Handle OAuth callback for external connectors"""
+        """Forward the provider's answer to the app page that finishes the sign-in."""
         try:
-            from docsgpt.parser.connectors.connector_creator import ConnectorCreator
-            from flask import request, redirect
+            from flask import redirect
 
-            authorization_code = request.args.get('code')
             state = request.args.get('state')
-            error = request.args.get('error')
-
             if not state and request.args.get('installation_id'):
                 # The GitHub App was installed from GitHub itself, not from a
                 # DocsGPT sign-in: there is no state to tie the code to a user,
@@ -259,90 +307,24 @@ class ConnectorsCallback(Resource):
                     "github",
                 )
 
-            state_dict = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
-            provider = state_dict.get("provider")
-            state_object_id = state_dict.get("object_id")
-
-            # Validate provider
-            if not provider or not isinstance(provider, str) or not (
-                ConnectorCreator.is_supported(provider) or ConnectorCreator.has_auth(provider)
-            ):
+            with db_readonly() as conn:
+                flow = oauth_flows.peek(conn, state)
+            # ``return_origin`` was allowed when the sign-in started; check it
+            # again in case the allowed origins changed since.
+            if flow is None or flow["return_origin"] not in connector_allowed_origins():
                 return redirect(build_callback_redirect({
                     "status": "error",
-                    "message": "Invalid provider"
+                    "message": "This sign-in has expired. Please start again."
                 }))
-
-            if error:
-                if error == "access_denied":
-                    return redirect(build_callback_redirect({
-                        "status": "cancelled",
-                        "message": "Authentication was cancelled. You can try again if you'd like to connect your account.",
-                        "provider": provider
-                    }))
-                else:
-                    current_app.logger.warning(f"OAuth error in callback: {error}")
-                    return redirect(build_callback_redirect({
-                        "status": "error",
-                        "message": "Authentication failed. Please try again and make sure to grant all requested permissions.",
-                        "provider": provider
-                    }))
-
-            if not authorization_code:
-                return redirect(build_callback_redirect({
-                    "status": "error",
-                    "message": "Authentication failed. Please try again and make sure to grant all requested permissions.",
-                    "provider": provider
-                }))
-
-            try:
-                auth = ConnectorCreator.create_auth(provider)
-                token_info = auth.exchange_code_for_tokens(authorization_code)
-
-                try:
-                    if provider == "google_drive":
-                        credentials = auth.create_credentials_from_token_info(token_info)
-                        drive_service = auth.build_drive_service(credentials)
-                        user_info = drive_service.about().get(fields="user").execute()
-                        user_email = user_info.get('user', {}).get('emailAddress', 'Connected User')
-                    else:
-                        # GitHub names the account by its login, the others by email.
-                        user_info = token_info.get('user_info') or {}
-                        user_email = user_info.get('email') or user_info.get('login') or 'Connected User'
-
-                except Exception as e:
-                    current_app.logger.warning(f"Could not get user info: {e}")
-                    user_email = 'Connected User'
-
-                sanitized_token_info = auth.sanitize_token_info(token_info)
-
-                # ``object_id`` in the OAuth state is the PG session row
-                # UUID (new flow) or a legacy Mongo ObjectId (pre-cutover
-                # issued state).
-                with db_session() as conn:
-                    repo = ConnectorSessionsRepository(conn)
-                    value = str(state_object_id or "")
-                    state_row = repo.get(value) or (repo.get_by_legacy_id(value) if value else None)
-                    if state_row is None or state_row.get("provider") != provider:
-                        raise ValueError("OAuth state names no pending connection")
-                    connection = service.complete_oauth(
-                        conn, state_row, provider, sanitized_token_info, user_email,
-                    )
-
-                # Render instead of redirecting so the session token never
-                # lands in a URL (browser history, access logs, Referer).
-                return _render_callback_page(
-                    "success", "Authentication successful", provider,
-                    session_token=connection.get("session_token") or "", user_email=user_email,
-                    connection_id=str(connection["id"]),
-                )
-
-            except Exception as e:
-                current_app.logger.error(f"Error exchanging code for tokens: {str(e)}", exc_info=True)
-                return redirect(build_callback_redirect({
-                    "status": "error",
-                    "message": "Authentication failed. Please try again and make sure to grant all requested permissions.",
-                    "provider": provider
-                }))
+            # This request carries no login, so it cannot tell who consented.
+            # The app page posts the code with the user's own login, and only
+            # the user who started the sign-in can finish it.
+            params = {key: request.args[key] for key in _FORWARDED_PARAMS if key in request.args}
+            target = f"{flow['return_origin']}{APP_CALLBACK_PATH}?{urlencode(params)}"
+            response = redirect(target, code=302)
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Referrer-Policy"] = "no-referrer"
+            return response
 
         except Exception as e:
             current_app.logger.error(f"Error handling connector callback: {e}")
@@ -350,6 +332,79 @@ class ConnectorsCallback(Resource):
                 "status": "error",
                 "message": "Authentication failed. Please try again and make sure to grant all requested permissions."
             }))
+
+
+def _exchange_code(provider: str, code: str) -> tuple[dict, str]:
+    """Exchange an authorization code; return the sanitized token info and the account's name."""
+    auth = ConnectorCreator.create_auth(provider)
+    token_info = auth.exchange_code_for_tokens(code)
+    try:
+        if provider == "google_drive":
+            credentials = auth.create_credentials_from_token_info(token_info)
+            drive_service = auth.build_drive_service(credentials)
+            user_info = drive_service.about().get(fields="user").execute()
+            account = user_info.get('user', {}).get('emailAddress', 'Connected User')
+        else:
+            # GitHub names the account by its login, the others by email.
+            user_info = token_info.get('user_info') or {}
+            account = user_info.get('email') or user_info.get('login') or 'Connected User'
+    except Exception as e:
+        current_app.logger.warning(f"Could not get user info: {e}")
+        account = 'Connected User'
+    return auth.sanitize_token_info(token_info), account
+
+
+@connectors_ns.route("/api/connectors/auth/complete")
+class ConnectorAuthComplete(Resource):
+    @api.expect(api.model("ConnectorAuthCompleteModel", {
+        "code": fields.String(required=True, description="The provider's authorization code"),
+        "state": fields.String(required=True, description="The state the provider echoed"),
+    }))
+    @api.doc(description="Finish a connector sign-in: the app's callback page posts the provider's code and state")
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False, "error": "Unauthorized"}), 401)
+        user_id = decoded_token.get("sub")
+        data = request.get_json(silent=True) or {}
+        code, state = data.get("code"), data.get("state")
+        if not isinstance(code, str) or not code or not isinstance(state, str) or not state:
+            return make_response(jsonify({"success": False, "error": "code and state are required"}), 400)
+        try:
+            # Used up whoever presents it, so a refused state cannot be retried.
+            with db_session() as conn:
+                flow = oauth_flows.take(conn, state, user_id)
+            if flow is None:
+                current_app.logger.warning("Connector sign-in refused: state unknown, expired or another user's")
+                return make_response(
+                    jsonify({"success": False, "error": "This sign-in has expired. Please start again."}), 400,
+                )
+            provider = flow["provider"]
+            failed = {"success": False, "provider": provider, "return_origin": flow["return_origin"]}
+            try:
+                token_info, account = _exchange_code(provider, code)
+            except Exception as e:
+                current_app.logger.error(f"Error exchanging code for tokens: {e}", exc_info=True)
+                return make_response(jsonify({
+                    **failed,
+                    "error": "Authentication failed. Please try again and make sure to grant all requested permissions.",
+                }), 400)
+            with db_session() as conn:
+                pending = ConnectorSessionsRepository(conn).get_for_user(str(flow["connection_id"]), user_id)
+                if pending is None or pending.get("provider") != provider:
+                    return make_response(jsonify({**failed, "error": "Connection not found"}), 404)
+                connection = service.complete_oauth(conn, pending, provider, token_info, account)
+            return make_response(jsonify({
+                "success": True,
+                "provider": provider,
+                "connection_id": str(connection["id"]),
+                "user_email": account,
+                # Where the page that started the sign-in lives, for the popup's message.
+                "return_origin": flow["return_origin"],
+            }), 200)
+        except Exception as e:
+            current_app.logger.error(f"Error completing connector sign-in: {e}", exc_info=True)
+            return make_response(jsonify({"success": False, "error": "Failed to complete sign-in"}), 500)
 
 
 @connectors_ns.route("/api/connectors/files")

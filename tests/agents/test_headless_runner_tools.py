@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-def _run(agent_row, pg_conn, monkeypatch):
+def _run(agent_row, pg_conn, monkeypatch, events=None, **extra):
     """Run ``agent_row`` headless; return the executor and the prompt's ``enabled_tools``."""
     from docsgpt.agents import headless_runner as hr
 
@@ -22,7 +22,7 @@ def _run(agent_row, pg_conn, monkeypatch):
         yield pg_conn
 
     agent = MagicMock(name="agent")
-    agent.gen.return_value = iter([{"answer": "ok"}])
+    agent.gen.return_value = iter(events or [{"answer": "ok"}])
     agent.llm.token_usage = {"prompt_tokens": 1, "generated_tokens": 1}
     built: dict = {}
     rendered: dict = {}
@@ -44,7 +44,7 @@ def _run(agent_row, pg_conn, monkeypatch):
          patch("docsgpt.core.model_utils.get_api_key_for_provider", return_value="k"), \
          patch("docsgpt.utils.calculate_doc_token_budget", return_value=1000), \
          patch("docsgpt.agents.headless_runner.QuotaService.check", return_value=None):
-        hr.run_agent_headless(agent_row, '{"event": "push"}', endpoint="webhook")
+        built["outcome"] = hr.run_agent_headless(agent_row, '{"event": "push"}', endpoint="webhook", **extra)
     return built["tool_executor"], rendered["enabled_tools"]
 
 
@@ -79,3 +79,57 @@ class TestHeadlessRunnerTools:
         executor, enabled = _run(row, pg_conn, monkeypatch)
         assert set(executor.get_tools()) == {str(own["id"])}
         assert enabled == {"ntfy"}
+
+
+@pytest.mark.unit
+def test_a_continuation_turn_runs_as_its_message_and_can_hand_off(pg_conn, monkeypatch):
+    """A woken turn binds its reserved message and background context; approval stays headless (denied)."""
+    from docsgpt.background.context import BackgroundContext
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+    row = AgentsRepository(pg_conn).create(
+        user_id="owner-1", name="a", status="draft", tools=[], default_model_id="m",
+    )
+    context = BackgroundContext(user_id="owner-1", conversation_id="c1", origin_message_id="m-9", continuation=True)
+    executor, _ = _run(row, pg_conn, monkeypatch, conversation_id="c1", message_id="m-9", background=context)
+    assert executor.message_id == "m-9"
+    assert executor.background is context
+    assert executor.headless is True
+
+
+@pytest.mark.unit
+def test_other_headless_runs_have_no_background_context(pg_conn, monkeypatch):
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+    row = AgentsRepository(pg_conn).create(
+        user_id="owner-1", name="a", status="draft", tools=[], default_model_id="m",
+    )
+    executor, _ = _run(row, pg_conn, monkeypatch)
+    assert executor.background is None
+    assert executor.message_id is None
+
+
+@pytest.mark.unit
+def test_text_after_a_tool_call_starts_a_new_paragraph(pg_conn, monkeypatch):
+    """A woken turn's or a scheduled run's stored answer reads like a chat turn's, never glued."""
+    from docsgpt.agents import headless_runner as hr
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+    row = AgentsRepository(pg_conn).create(
+        user_id="owner-1", name="a", status="draft", tools=[], default_model_id="m",
+    )
+    outcomes = []
+    real = hr.run_agent_headless
+
+    def capture(*args, **kwargs):
+        outcomes.append(real(*args, **kwargs))
+        return outcomes[-1]
+
+    monkeypatch.setattr(hr, "run_agent_headless", capture)
+    events = [
+        {"answer": "I'll check the page."},
+        {"type": "tool_call", "data": {"call_id": "c1", "status": "pending"}},
+        {"answer": "It says 42."},
+    ]
+    _run(row, pg_conn, monkeypatch, events=events)
+    assert outcomes[0]["answer"] == "I'll check the page.\n\nIt says 42."

@@ -47,7 +47,15 @@ NATIVE_PDF_PAGE_TOKENS = 500
 # gpt-6.1-sol: a 4-page image-only scan cost 12,312 prompt tokens (~3.1k a
 # page), and 14 scans of 31 pages together added ~81k (~2.6k a page). Priced
 # at NATIVE_PDF_PAGE_TOKENS these scans planned at 500 a page, 5-6x too low.
+# The provider adds the same page image for every page that carries a raster
+# image, text layer or not. Measured on Azure (gpt-6-luna and gpt-6.1-sol
+# alike): an OCR'd scan cost its text plus ~2,850 a page, a text page with a
+# small logo its text plus ~1,750, and a text-only page nothing extra.
 NATIVE_SCAN_PAGE_TOKENS = 3000
+# Bytes per page above which a PDF the worker never counted image pages for
+# is taken for pages of images: born-digital PDFs run a few KB to a few tens of
+# KB a page, scans hundreds of KB (an OCR'd 45-page acta: 5.4 MB).
+IMAGE_PAGE_BYTES = 100_000
 # Context one PDF page rendered as an image takes (150 dpi, a page of
 # roughly 1240x1754 px). Measured, not the per-image guess above: an
 # end-to-end run of a 200k-window vision model planned ~100k tokens of page
@@ -122,6 +130,8 @@ class PlannedFile:
         text_tokens: Tokens of the stored text (the ``M`` of a partial).
         original_tokens: Tokens the parser extracted before the stored cut.
         page_count: Pages, for a PDF the worker could open.
+        image_pages: Pages that carry a raster image, as the worker counted
+            them (None for rows stored before it did).
         inline_tokens: Context this plan spends on the file.
         shown_tokens: Text tokens shown inline (the ``N`` of a partial,
             the preview of a sandbox file).
@@ -149,6 +159,7 @@ class PlannedFile:
     text_tokens: int = 0
     original_tokens: int = 0
     page_count: Optional[int] = None
+    image_pages: Optional[int] = None
     inline_tokens: int = 0
     shown_tokens: int = 0
     native_parts: int = 0
@@ -560,6 +571,7 @@ def _new_planned(row: Dict[str, Any], ref: str, attachment_id: str, is_current: 
         text_tokens = _int(extraction.get("stored_tokens"))
     original = _int(extraction.get("original_tokens")) or text_tokens
     page_count = _metadata(row).get("page_count")
+    image_pages = _metadata(row).get("image_page_count")
     return PlannedFile(
         ref=ref,
         attachment=row,
@@ -570,6 +582,7 @@ def _new_planned(row: Dict[str, Any], ref: str, attachment_id: str, is_current: 
         text_tokens=text_tokens,
         original_tokens=original,
         page_count=page_count if isinstance(page_count, int) and page_count > 0 else None,
+        image_pages=image_pages if isinstance(image_pages, int) and image_pages >= 0 else None,
         full_tokens=full_text_tokens(row),
     )
 
@@ -632,8 +645,34 @@ def _native_cost(planned: PlannedFile, capabilities: TurnCapabilities) -> int:
         pages = planned.page_count or 1
         if _pages_are_images(planned):
             return pages * NATIVE_SCAN_PAGE_TOKENS
-        return planned.original_tokens + pages * NATIVE_PDF_PAGE_TOKENS
+        image_pages = _image_pages(planned, pages)
+        return (
+            planned.original_tokens
+            + image_pages * NATIVE_SCAN_PAGE_TOKENS
+            + (pages - image_pages) * NATIVE_PDF_PAGE_TOKENS
+        )
     return max(planned.original_tokens, IMAGE_PART_TOKENS)
+
+
+def _image_pages(planned: PlannedFile, pages: int) -> int:
+    """Pages of a PDF with a text layer that the provider also reads as page images.
+
+    The worker's count when it recorded one; for older rows, an estimate from
+    the file's bytes per page, so an OCR'd scan is not priced as born-digital.
+
+    Args:
+        planned: The PDF.
+        pages: Its page count (1 when unknown).
+
+    Returns:
+        The number of pages to price as page images, at most ``pages``.
+    """
+    if planned.image_pages is not None:
+        return min(planned.image_pages, pages)
+    size = planned.attachment.get("size")
+    if not isinstance(size, int) or size <= 0 or planned.page_count is None:
+        return 0
+    return min(pages, size // IMAGE_PAGE_BYTES)
 
 
 def _pages_are_images(planned: PlannedFile) -> bool:

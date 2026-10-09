@@ -17,8 +17,12 @@ import requests
 from docsgpt.security.safe_url import (
     ResponseTooLargeError,
     UnsafeUserUrlError,
+    _GuardedAsyncTransport,
     _PinnedHTTPSTransport,
+    guarded_async_client,
     pinned_fetch_bytes,
+    pinned_request,
+    reject_ambiguous_url,
     pinned_httpx_client,
     pinned_post,
     validate_user_base_url,
@@ -393,9 +397,22 @@ def test_pinned_post_preserves_url_userinfo(monkeypatch):
             allow_redirects=False,
         )
     prepared = captured["prepared"]
-    assert prepared.url == "https://user:pass@93.184.216.34:8443/v1/test"
+    # Credentials travel as a header, never as raw userinfo in the dialed URL.
+    assert prepared.url == "https://93.184.216.34:8443/v1/test"
     assert prepared.headers["Host"] == "api.example.com:8443"
     assert prepared.headers["Authorization"] == "Basic dXNlcjpwYXNz"
+
+
+@pytest.mark.unit
+def test_pinned_post_decodes_percent_encoded_userinfo(monkeypatch):
+    import base64
+
+    captured = _capture_send(monkeypatch)
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("93.184.216.34")):
+        pinned_post("https://us%40er:p%3Ass@api.example.com/v1", json={}, timeout=5)
+    prepared = captured["prepared"]
+    assert prepared.url == "https://93.184.216.34/v1"
+    assert prepared.headers["Authorization"] == "Basic " + base64.b64encode(b"us@er:p:ss").decode()
 
 
 @pytest.mark.unit
@@ -887,3 +904,261 @@ def test_pinned_fetch_bytes_passes_headers(monkeypatch):
             headers={"User-Agent": "DocsGPT-Agent/1.0"},
         )
     assert captured["prepared"].headers["User-Agent"] == "DocsGPT-Agent/1.0"
+
+
+@pytest.mark.unit
+def test_pinned_fetch_bytes_truncates_instead_of_raising_when_asked(monkeypatch):
+    stub = _StreamStubResponse(b"x" * 5000, headers={"Content-Length": "5000"})
+    _capture_stream_send(monkeypatch, stub)
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("93.184.216.34")):
+        content, _ = pinned_fetch_bytes("http://example.com/big", max_bytes=1500, truncate=True)
+        assert content == b"x" * 1500
+        with pytest.raises(ResponseTooLargeError):
+            pinned_fetch_bytes("http://example.com/big", max_bytes=1500)
+
+
+@pytest.mark.unit
+def test_pinned_fetch_bytes_truncate_still_refuses_private_addresses():
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("10.0.0.5")):
+        with pytest.raises(UnsafeUserUrlError):
+            pinned_fetch_bytes("http://intranet.example/", max_bytes=10, truncate=True)
+
+
+# guarded_async_client: per-request SSRF guard for async SDKs (MCP)
+
+
+def _capture_async_handle_request(monkeypatch) -> list[dict]:
+    """Record what the guarded transport hands to the base async transport."""
+
+    import httpx2
+
+    captured: list[dict] = []
+
+    async def fake_handle(self, request):
+        captured.append(
+            {
+                "url": request.url,
+                "sni": request.extensions.get("sni_hostname"),
+                "host_header": request.headers.get("host"),
+            }
+        )
+        return httpx2.Response(200, content=b"ok")
+
+    monkeypatch.setattr("httpx2.AsyncHTTPTransport.handle_async_request", fake_handle)
+    return captured
+
+
+def _fake_dns(monkeypatch, table: dict[str, list[list[str]]]) -> dict[str, int]:
+    """Serve ``table[host]`` answers in order (last one repeats); return lookup counts."""
+
+    calls: dict[str, int] = {}
+
+    def fake_getaddrinfo(host, *args, **kwargs):
+        answers = table[host]
+        n = calls.get(host, 0)
+        calls[host] = n + 1
+        return _addrinfo(*answers[min(n, len(answers) - 1)])
+
+    monkeypatch.setattr("socket.getaddrinfo", fake_getaddrinfo)
+    return calls
+
+
+def _get(client, *urls: str) -> list:
+    import asyncio
+
+    async def run():
+        async with client:
+            return [await client.get(u) for u in urls]
+
+    return asyncio.run(run())
+
+
+@pytest.mark.unit
+def test_guarded_async_client_dials_validated_ip_with_original_host(monkeypatch):
+    captured = _capture_async_handle_request(monkeypatch)
+    _fake_dns(monkeypatch, {"mcp.example.com": [["104.18.6.192"]]})
+
+    (response,) = _get(guarded_async_client(), "https://mcp.example.com/mcp")
+
+    assert captured[0]["url"].host == "104.18.6.192"
+    assert captured[0]["sni"] == "mcp.example.com"
+    assert captured[0]["host_header"] == "mcp.example.com"
+    # The caller's request is untouched, so redirect and relative-URL handling
+    # still see the hostname.
+    assert response.request.url.host == "mcp.example.com"
+
+
+@pytest.mark.unit
+def test_guarded_async_client_closes_dns_rebinding_window(monkeypatch):
+    captured = _capture_async_handle_request(monkeypatch)
+    calls = _fake_dns(monkeypatch, {"mcp.attacker.example": [["104.18.6.192"], ["127.0.0.1"]]})
+
+    _get(guarded_async_client(), "https://mcp.attacker.example/mcp", "https://mcp.attacker.example/mcp")
+
+    assert calls["mcp.attacker.example"] == 1
+    assert [c["url"].host for c in captured] == ["104.18.6.192", "104.18.6.192"]
+
+
+@pytest.mark.unit
+def test_guarded_async_client_refuses_private_aaaa_beside_public_a(monkeypatch):
+    # A client that prefers IPv6 would dial ::1 even though the A record is public.
+    captured = _capture_async_handle_request(monkeypatch)
+    _fake_dns(monkeypatch, {"mcp.attacker.example": [["104.18.6.192", "::1"]]})
+
+    with pytest.raises(UnsafeUserUrlError, match="blocked address ::1"):
+        _get(guarded_async_client(), "https://mcp.attacker.example/mcp")
+    assert captured == []
+
+
+@pytest.mark.unit
+def test_guarded_async_client_checks_every_host_it_is_sent_to(monkeypatch):
+    # OAuth discovery sends requests to hosts the MCP server names.
+    captured = _capture_async_handle_request(monkeypatch)
+    _fake_dns(
+        monkeypatch,
+        {"mcp.example.com": [["104.18.6.192"]], "auth.example.com": [["104.18.6.193"]]},
+    )
+
+    _get(guarded_async_client(), "https://mcp.example.com/mcp", "https://auth.example.com/token")
+    assert [c["url"].host for c in captured] == ["104.18.6.192", "104.18.6.193"]
+
+    with pytest.raises(UnsafeUserUrlError):
+        _get(guarded_async_client(), "http://169.254.169.254/latest/meta-data")
+    with pytest.raises(UnsafeUserUrlError):
+        _get(guarded_async_client(), "http://[::ffff:10.0.0.1]/")
+    assert len(captured) == 2
+
+
+@pytest.mark.unit
+def test_guarded_async_client_brackets_ipv6(monkeypatch):
+    captured = _capture_async_handle_request(monkeypatch)
+    _fake_dns(monkeypatch, {"mcp.example.com": [["2606:4700::6812:6c0"]]})
+
+    _get(guarded_async_client(), "https://mcp.example.com:8443/mcp")
+
+    assert captured[0]["url"].host == "2606:4700::6812:6c0"
+    assert captured[0]["url"].port == 8443
+    assert captured[0]["sni"] == "mcp.example.com"
+
+
+@pytest.mark.unit
+def test_guarded_async_client_follows_no_redirects_and_ignores_env_proxies(monkeypatch):
+    monkeypatch.setenv("HTTPS_PROXY", "http://10.0.0.1:3128")
+    client = guarded_async_client(headers={"X-Test": "1"})
+    try:
+        assert client.follow_redirects is False
+        assert client.headers["X-Test"] == "1"
+        assert isinstance(client._transport_for_url(client._merge_url("https://a.example/")), _GuardedAsyncTransport)
+    finally:
+        import asyncio
+
+        asyncio.run(client.aclose())
+
+
+@pytest.mark.unit
+def test_guarded_async_client_keeps_connections_apart_per_hostname(monkeypatch):
+    # Pooled connections are matched on the dialed IP; two hostnames behind one
+    # IP must not share a TLS connection verified for only one of them.
+    import httpx2
+
+    pools: list[tuple[str, int]] = []
+
+    async def fake_handle(self, request):
+        pools.append((request.extensions["sni_hostname"], id(self)))
+        return httpx2.Response(200)
+
+    monkeypatch.setattr("httpx2.AsyncHTTPTransport.handle_async_request", fake_handle)
+    _fake_dns(
+        monkeypatch,
+        {"mcp.example.com": [["104.18.6.192"]], "auth.example.com": [["104.18.6.192"]]},
+    )
+
+    _get(
+        guarded_async_client(),
+        "https://mcp.example.com/mcp",
+        "https://auth.example.com/token",
+        "https://mcp.example.com/mcp",
+    )
+
+    (mcp_first, auth, mcp_again) = pools
+    assert mcp_first[1] != auth[1]
+    assert mcp_first[1] == mcp_again[1]
+
+
+# Parser-differential URLs (GHSA-gccc-rwf6-qrpp): urlsplit reads the host after
+# the backslash, urllib3 (requests, boto) reads the one before it.
+
+
+@pytest.fixture
+def loopback_listener():
+    """An HTTP server on 127.0.0.1 that records every request it gets."""
+    import http.server
+    import threading
+
+    hits: list[str] = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            hits.append(self.path)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"internal")
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server.server_address[1], hits
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("template", [
+    "http://127.0.0.1:{port}\\@1.1.1.1/",
+    "http://127.0.0.1:{port}\\\\\\@1.1.1.1/",
+    "http://127.0.0.1:{port}\\@1.1.1.1:80/x",
+])
+def test_pinned_fetchers_refuse_a_backslash_host_split(template, loopback_listener):
+    port, hits = loopback_listener
+    url = template.format(port=port)
+
+    with pytest.raises(UnsafeUserUrlError):
+        pinned_fetch_bytes(url, max_bytes=100, timeout=2)
+    with pytest.raises(UnsafeUserUrlError):
+        pinned_request("GET", url, timeout=2)
+    assert hits == []
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("url", [
+    "http://127.0.0.1\\@1.1.1.1/",
+    "http://127.0.0.1:80\\\\@1.1.1.1",
+    "http://1.1.1.1\\.example.com/",
+    "http://127.0.0.1\t@1.1.1.1/",
+    "http://127.0.0.1\n@1.1.1.1/",
+    "http://1.1.1.1/\r\nX-Injected: 1",
+    "http://exa mple.com/",
+])
+def test_reject_ambiguous_url_refuses(url):
+    with pytest.raises(UnsafeUserUrlError):
+        reject_ambiguous_url(url)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("url", [
+    "https://api.example.com/v1?q=a\\b",
+    "https://api.example.com/path\\segment",
+    "https://user:p@ss@api.example.com/",
+    "https://us%40er:p%3Ass@api.example.com/",
+    "https://bücher.example/x",
+    "http://[2606:4700::1]:8080/",
+    "HTTPS://API.Example.COM/",
+    "https://api.example.com/search?q=hello world",
+])
+def test_reject_ambiguous_url_accepts(url):
+    assert reject_ambiguous_url(url) is None

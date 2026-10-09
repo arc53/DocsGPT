@@ -1,7 +1,7 @@
 ---
 title: OpenAI-Compatible API
 description: Connect any OpenAI-compatible client to DocsGPT Agents via /v1/chat/completions — streaming, structured output, files and images, tool calling, reasoning, and idempotent retries.
-lastUpdated: 2026-10-02
+lastUpdated: 2026-10-06
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -143,6 +143,7 @@ You can force the model to return JSON matching a schema, using either the OpenA
 
 - `response_format` follows OpenAI Structured Outputs. `strict` defaults to `true`; set `strict: false` to relax enforcement.
 - `response_format: {"type": "json_object"}` requests JSON without a fixed schema (the model is steered by the prompt).
+- On Claude models the schema is always enforced, even with `strict: false`. Constraints Claude cannot enforce, such as `minimum` or `maxLength`, are passed to the model as hints in the field description. `json_object` has no Claude equivalent and is ignored.
 - `response_schema` is a DocsGPT convenience: pass a raw JSON Schema object (or a `{"schema": {...}}` wrapper) directly.
 
 ## Files and Images
@@ -272,6 +273,8 @@ By default each request is a new conversation built from the `messages` you send
 3. `docsgpt.conversation_id`.
 
 The conversation must belong to the agent bound to your key; otherwise the request fails with HTTP `400` and `"code": "conversation_not_found"`.
+
+In a stored conversation, a new user message sent while a tool round still waits for your results ends that round. The stored turn keeps what ran and records the calls it waited on as never run. Results you post afterwards for those calls, while a later round of the same conversation is waiting, are refused with HTTP `409` and `"code": "tool_call_not_pending"`.
 
 ### Session headers
 

@@ -65,3 +65,74 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://docs.stripe.com/mcp
+
+# draw.io as a connector
+- key: mcp:drawio
+  name: draw.io
+  description: Create editable flowcharts and other diagrams with draw.io.
+  icon: drawio
+  category: projects
+  mcp_url: https://mcp.draw.io/mcp
+  auth_kind: mcp
+  capabilities: [read]
+  docs_url: https://github.com/jgraph/drawio-mcp
+
+- key: mcp:clickup
+  name: ClickUp
+  description: Search, read and update ClickUp tasks, docs and lists, and add comments.
+  icon: clickup
+  category: projects
+  mcp_url: https://mcp.clickup.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://developer.clickup.com/docs/connect-an-ai-assistant-to-clickups-mcp-server
+
+- key: mcp:zapier
+  name: Zapier
+  description: Use the actions enabled in your Zapier MCP account to read or update connected apps.
+  icon: zapier
+  category: business
+  mcp_url: https://mcp.zapier.com/api/v1/connect
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://docs.zapier.com/mcp/get-started/connect
+
+- key: mcp:trello
+  name: Trello
+  description: Find Trello boards and cards, and create and update cards.
+  icon: trello
+  category: projects
+  mcp_url: https://mcp.trello.com/v1
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://support.atlassian.com/trello/docs/connect-trello-to-ai-assistants-with-trello-mcp/
+
+- key: mcp:miro
+  name: Miro
+  description: Find boards, read content and comments, create diagrams, and reply to comments.
+  icon: miro
+  category: projects
+  mcp_url: https://mcp.miro.com/
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://developers.miro.com/docs/miro-mcp
+
+- key: mcp:resend
+  name: Resend
+  description: Send emails and manage contacts, audiences and domains.
+  icon: resend
+  category: messaging
+  mcp_url: https://mcp.resend.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://resend.com/docs/knowledge-base/mcp-server
+
+- key: mcp:calcom
+  name: Cal.com
+  description: Read and manage your Cal.com bookings, event types, availability and schedules.
+  icon: calcom
+  category: business
+  mcp_url: https://mcp.cal.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://cal.com/docs/mcp-server

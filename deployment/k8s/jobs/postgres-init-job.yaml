@@ -1,4 +1,4 @@
-# One-shot migrator: runs `python -m docsgpt.cli migrate --no-create` (Alembic
+# One-shot migrator: runs `python -m docsgpt migrate --no-create` (Alembic
 # upgrade to head on the database named by POSTGRES_URI), then exits. The
 # postgres Deployment creates the database itself, hence --no-create. The API
 # and worker pods do not migrate on start (AUTO_MIGRATE=false), so this Job
@@ -30,7 +30,7 @@ spec:
       initContainers:
       # Refuse to start while docsgpt-secrets is not filled in.
       - name: check-secrets
-        image: arc53/docsgpt:0.21.0
+        image: arc53/docsgpt:1.0.0
         envFrom:
         - secretRef:
             name: docsgpt-secrets
@@ -89,10 +89,9 @@ spec:
             done
       containers:
       - name: postgres-init
-        image: arc53/docsgpt:0.21.0
-        # The `docsgpt migrate` command. The image has no `docsgpt` console script,
-        # and images up to 0.21.0 have no `python -m docsgpt`, so run the module.
-        command: ["python", "-m", "docsgpt.cli", "migrate", "--no-create"]
+        image: arc53/docsgpt:1.0.0
+        # The `docsgpt migrate` command. The image has no `docsgpt` console script.
+        command: ["python", "-m", "docsgpt", "migrate", "--no-create"]
         envFrom:
         - secretRef:
             name: docsgpt-secrets

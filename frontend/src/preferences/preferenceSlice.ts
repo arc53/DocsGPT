@@ -64,6 +64,8 @@ export interface Preference {
   // config loads, so a backend without these flags keeps showing the controls.
   ttsAvailable: boolean;
   sttAvailable: boolean;
+  // The server rejects unauthenticated calls (/api/config ``requires_auth``).
+  authRequired: boolean;
   // Share of the model's window a turn's attached files may take
   // (/api/config ``attachment_budget_share``); null until the config loads.
   attachmentBudgetShare: number | null;
@@ -99,6 +101,7 @@ const initialState: Preference = {
   rolesResolved: false,
   ttsAvailable: true,
   sttAvailable: true,
+  authRequired: false,
   attachmentBudgetShare: null,
 };
 
@@ -252,6 +255,9 @@ export const prefSlice = createSlice({
       state.ttsAvailable = action.payload.tts;
       state.sttAvailable = action.payload.stt;
     },
+    setAuthRequired: (state, action: PayloadAction<boolean>) => {
+      state.authRequired = action.payload;
+    },
     setAttachmentBudgetShare: (state, action: PayloadAction<number | null>) => {
       state.attachmentBudgetShare = action.payload;
     },
@@ -286,6 +292,7 @@ export const {
   setRoles,
   clearRoles,
   setSpeechAvailability,
+  setAuthRequired,
   setAttachmentBudgetShare,
 } = prefSlice.actions;
 export default prefSlice.reducer;
@@ -435,8 +442,11 @@ export const selectRolesResolved = (state: RootState) =>
   state.preference.rolesResolved;
 export const selectIsAdmin = (state: RootState) =>
   state.preference.roles.includes('admin');
+// Speech needs a signed-in user wherever the server requires auth, so a
+// signed-out viewer of a shared conversation gets no Speak button.
 export const selectTtsAvailable = (state: RootState) =>
-  state.preference.ttsAvailable;
+  state.preference.ttsAvailable &&
+  (!state.preference.authRequired || !!state.preference.token);
 export const selectSttAvailable = (state: RootState) =>
   state.preference.sttAvailable;
 export const selectAttachmentBudgetShare = (state: RootState) =>

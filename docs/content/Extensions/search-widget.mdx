@@ -1,7 +1,7 @@
 ---
 title: Search Widget
 description: Embed the DocsGPT Search Bar Widget in your React or HTML projects to provide AI-powered document search functionality to your users.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-05
 ---
 import { Tabs } from 'nextra/components'
 
@@ -100,11 +100,40 @@ The DocsGPT Search Bar Widget offers a range of customizable properties that all
 | **`apiKey`**    | `string`  | a DocsGPT demo agent's key        | **Required.** The API key of your published agent (see [Agent API keys](/API/agent-keys)). Search runs over that agent's knowledge. An empty key gets `400 api_key is required`, and an omitted key searches a public DocsGPT demo agent. |
 | **`apiHost`**   | `string`  | `"https://gptcloud.arc53.com"`       | The URL of your DocsGPT API backend (DocsGPT Cloud by default). Self-hosted: your API URL, e.g. `http://localhost:7091`. |
 | **`theme`**     | `"dark" \| "light"` | `"dark"`                            | Color theme of the search bar and of the chat it opens. Options: `"dark"` or `"light"`. Defaults to `"dark"`.            |
-| **`placeholder`** | `string` | `"Search or Ask AI..."`             | Placeholder text displayed in the search input field.                                           |
+| **`placeholder`** | `string` | `"Search or Ask AI..."`             | Placeholder of the input inside the search dialog (`modal` variant), and the accessible name of the search field. |
 | **`width`**     | `string`  | `"256px"`                          | Width of the search bar. Accepts any valid CSS width value (e.g., `"300px"`, `"100%"`, `"20rem"`). |
-| **`buttonText`** | `string` | `"Search here"`                     | Label of the button that opens the search panel.                                                 |
+| **`buttonText`** | `string` | `"Search here"`                     | Text in the search field on the page: the label of the button that opens the dialog (`modal`), or the field's placeholder (`dropdown`). |
+| **`variant`**   | `"modal" \| "dropdown"` | `"modal"`               | How the results open. `modal` opens a search dialog from a button; `dropdown` is a field you type into, with the results in a panel under it. See [Modal or dropdown](#modal-or-dropdown). |
+| **`shape`**     | `"pill" \| "rounded"` | `"pill"`                  | Corners of the search field: fully rounded, or the smaller 8px corners of a form field.          |
+| **`avatar`**    | `string`  | a person on the brand-colour circle | URL for the image beside "Ask the AI", also used in the header of the chat it opens.          |
+| **`poweredBy`** | `boolean \| { label: string; href?: string }` | `true` | The credit line at the bottom of the results. `true` shows "Powered by DocsGPT", `false` hides it, and an object replaces it, e.g. `{ label: 'Powered by Acme', href: 'https://acme.example' }`. The chat opened from "Ask the AI" uses the same value. |
 | **`allowedFileExtensions`** | `string[]` | _unset_ | Passed to the chat opened from "Ask the AI". File extensions its composer accepts, e.g. `['.pdf', '.md']`; attachments stay off while unset. See the [chat widget page](/Extensions/chat-widget). |
 | **`showMicButton`** | `boolean` | `false` | Adds a microphone to the search field for dictating a query, and passes the same option to the chat opened from "Ask the AI". Uses the browser's Web Speech API. See the [chat widget page](/Extensions/chat-widget). |
+
+---
+
+## Modal or dropdown
+
+With the default `variant: 'modal'`, the search field on your page is a button. Selecting it, or pressing ⌘K (Ctrl K on Windows and Linux), opens a search dialog over the page. On a phone the dialog opens as a sheet from the bottom of the screen, above the keyboard.
+
+With `variant: 'dropdown'`, visitors type straight into the field on your page. ⌘K (Ctrl K) focuses it, and the results open in a panel under the field once there is something to search for. The panel stays inside the screen, and closes on Esc, a click elsewhere, or moving focus away.
+
+```jsx
+<SearchBar
+  apiKey="your-agent-api-key"
+  variant="dropdown"
+  shape="rounded"
+  buttonText="Search the docs"
+  width="320px"
+/>
+```
+
+Both work the same way inside:
+
+- The first row is **Ask the AI**. Selecting it, or pressing Enter, opens the chat with the query already asked.
+- The arrow keys move between rows, and Enter opens the highlighted one.
+- A result from a web page shows its title and the matching lines, and opens the page in a new tab.
+- A result from an uploaded file shows the same, but is not a link, because a visitor has no way to open a file from your library.
 
 ---
 

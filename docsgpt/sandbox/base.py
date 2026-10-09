@@ -1,8 +1,9 @@
 """Backend-agnostic code-execution sandbox interface and result types."""
 
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, NamedTuple, Optional
 
 
 @dataclass
@@ -40,11 +41,68 @@ class ExecResult:
     # The backend invalidated the runtime while producing this result. Managers
     # must discard their cached handle so the next open performs a cold start.
     runtime_invalidated: bool = False
+    # The sandbox killed the process for using too much memory (an OOM kill), as
+    # far as the backend can tell. Reported to the model instead of a timeout.
+    out_of_memory: bool = False
 
     @property
     def ok(self) -> bool:
         """True when the execution completed without raising."""
         return self.status == "ok"
+
+
+class OpenedSession(NamedTuple):
+    """Result of opening a session: the runtime handle and whether it is fresh.
+
+    ``created`` is True when the open started a new runtime, so nothing an earlier
+    call left behind (files, installed packages, kernel state) is there. It is False
+    when an existing runtime was reused or reattached.
+    """
+
+    handle: str
+    created: bool
+
+
+@dataclass
+class DetachedState:
+    """Where a detached run (``start_detached``) stands.
+
+    Attributes:
+        done: The process exited (or the runtime is gone).
+        result: The run's result once ``done``, shaped as ``exec`` returns it.
+        output: Output so far (its tail, bounded), for progress and watch patterns.
+        output_size: The output's total size so far; what is new since the last
+            poll is measured against it.
+        gone: The runtime behind the run no longer exists.
+    """
+
+    done: bool = False
+    result: Optional[ExecResult] = None
+    output: str = ""
+    output_size: int = 0
+    gone: bool = False
+
+
+class FileTooLargeError(IOError):
+    """A workspace file is over the backend's ``max_file_bytes`` (``SANDBOX_MAX_FILE_BYTES``), so it was not read.
+
+    Attributes:
+        size: The file's size in bytes.
+        limit: The cap it is over.
+    """
+
+    _MESSAGE = re.compile(r"file too large: (\d+) > (\d+) bytes")
+
+    def __init__(self, size: int, limit: int) -> None:
+        super().__init__(f"file too large: {size} > {limit} bytes")
+        self.size = int(size)
+        self.limit = int(limit)
+
+    @classmethod
+    def from_message(cls, text: Any) -> Optional["FileTooLargeError"]:
+        """The error a backend reported as text (a kernel's ``file too large: N > M bytes``), or None."""
+        match = cls._MESSAGE.search(str(text or ""))
+        return cls(int(match.group(1)), int(match.group(2))) if match else None
 
 
 class SandboxGoneError(IOError):
@@ -64,6 +122,22 @@ class CodeSandbox(ABC):
     @abstractmethod
     def open(self, session_id: str) -> str:
         """Create the underlying runtime for ``session_id`` and return its handle id."""
+
+    def open_session(self, session_id: str) -> OpenedSession:
+        """Open like ``open`` and report whether a fresh runtime was created.
+
+        Backends that can reuse or reattach to a live runtime override this. The
+        default cannot tell the two apart, so it reports every open as created:
+        callers then rebuild state they may still have, rather than trust state
+        that is gone.
+
+        Args:
+            session_id: The session to open.
+
+        Returns:
+            The handle id and whether the runtime is new.
+        """
+        return OpenedSession(self.open(session_id), True)
 
     @abstractmethod
     def attach(self, session_id: str) -> str:

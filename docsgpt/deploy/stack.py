@@ -246,6 +246,6 @@ def health_url(env: Mapping[str, str]) -> str:
 
 def simple_jwt_token(secret_key: str) -> str:
     """The token the API accepts under ``AUTH_TYPE=simple_jwt`` (it signs the same payload at start)."""
-    from jose import jwt
+    import jwt
 
     return jwt.encode({"sub": "local"}, secret_key, algorithm="HS256")

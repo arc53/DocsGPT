@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional
 from docsgpt import tracing
 from docsgpt.agents.agent_creator import AgentCreator
 from docsgpt.agents.tool_executor import ToolExecutor
+from docsgpt.api.answer.segments import separated
 from docsgpt.api.answer.services.prompt_renderer import (
     PromptRenderer,
     format_docs_for_prompt,
@@ -102,17 +103,26 @@ def run_agent_headless(
     agent_config: Dict[str, Any],
     query: str,
     *,
+    retrieval_query: Optional[str] = None,
     tool_allowlist: Optional[Iterable[str]] = None,
     model_id_override: Optional[str] = None,
     endpoint: str = "headless",
     chat_history: Optional[List[Dict[str, Any]]] = None,
+    compressed_summary: Optional[str] = None,
     conversation_id: Optional[str] = None,
     external_caller: bool = False,
     public_link_caller: bool = False,
     request_id: Optional[str] = None,
     trace_user_id: Optional[str] = None,
+    message_id: Optional[str] = None,
+    background: Any = None,
 ) -> Dict[str, Any]:
     """Run an agent with no live client; returns a structured outcome dict.
+
+    ``query`` is the agent's input. Its sources are searched with
+    ``retrieval_query`` when one is given -- a webhook passes its payload's
+    human-written fields, as the whole payload makes a poor and costly search
+    -- and with ``query`` otherwise.
 
     The run is recorded as one execution trace under ``endpoint`` as its
     source. ``request_id`` links that trace to the caller's own record (the
@@ -127,6 +137,15 @@ def run_agent_headless(
     and credentials then run only when the agent's API write allowlist has
     them, and wiki edits only when the wiki's owner allows outside edits (as
     for a webhook run).
+
+    ``compressed_summary`` is the summary of a compressed conversation whose
+    tail ``chat_history`` holds; it goes into the system prompt as in a chat turn.
+
+    A continuation turn passes ``message_id``, the id its message will be
+    stored with (tool calls are journaled and files attached under it), and
+    ``background``, its :class:`~docsgpt.background.context.BackgroundContext`:
+    a slow call then becomes a background job and ``check_job`` is offered,
+    as in a chat turn. Approval-gated tools stay denied either way.
 
     Raises:
         QuotaExceededError: If the agent owner's usage quota is exhausted.
@@ -144,13 +163,17 @@ def run_agent_headless(
             outcome = _run_agent_headless(
                 agent_config,
                 query,
+                retrieval_query=retrieval_query,
                 tool_allowlist=tool_allowlist,
                 model_id_override=model_id_override,
                 endpoint=endpoint,
                 chat_history=chat_history,
+                compressed_summary=compressed_summary,
                 conversation_id=conversation_id,
                 external_caller=external_caller,
                 public_link_caller=public_link_caller,
+                message_id=message_id,
+                background=background,
             )
             if outcome.get("error"):
                 status = tracing.STATUS_ERROR
@@ -166,13 +189,17 @@ def _run_agent_headless(
     agent_config: Dict[str, Any],
     query: str,
     *,
+    retrieval_query: Optional[str] = None,
     tool_allowlist: Optional[Iterable[str]] = None,
     model_id_override: Optional[str] = None,
     endpoint: str = "headless",
     chat_history: Optional[List[Dict[str, Any]]] = None,
+    compressed_summary: Optional[str] = None,
     conversation_id: Optional[str] = None,
     external_caller: bool = False,
     public_link_caller: bool = False,
+    message_id: Optional[str] = None,
+    background: Any = None,
 ) -> Dict[str, Any]:
     from docsgpt.core.model_utils import (
         get_api_key_for_provider,
@@ -193,7 +220,8 @@ def _run_agent_headless(
         raise QuotaExceededError(exceeded)
 
     retriever_kind = agent_config.get("retriever", "classic")
-    agent_type = agent_config.get("agent_type", "classic")
+    # PG rows carry every column: an unset type is None, not missing.
+    agent_type = (agent_config.get("agent_type") or "").strip() or "classic"
     # Every source a chat with this agent searches: the primary and the
     # extras, each owned or team-shared to the owner, else attached by an
     # editor who still qualifies.
@@ -282,7 +310,7 @@ def _run_agent_headless(
             **retriever_kwargs,
         )
         try:
-            docs = retriever.search(query)
+            docs = retriever.search(retrieval_query or query)
             if docs:
                 retrieved_docs = docs
         except Exception as exc:
@@ -301,6 +329,10 @@ def _run_agent_headless(
     )
     if conversation_id:
         tool_executor.conversation_id = str(conversation_id)
+    if message_id:
+        tool_executor.message_id = str(message_id)
+    if background is not None:
+        tool_executor.background = background
 
     # Render the prompt (Jinja namespaces / legacy {summaries}) so retrieved
     # docs actually reach the model — mirroring StreamProcessor.create_agent.
@@ -342,6 +374,10 @@ def _run_agent_headless(
         # agent, so it carries the same guardrails an interactive turn would.
         "agent_config": agent_config.get("config") or {},
     }
+    if compressed_summary:
+        # ``chat_history`` is then the tail after a saved compression point;
+        # the summary of what it replaced rides in the system prompt.
+        agent_kwargs["compressed_summary"] = compressed_summary
     if wiki_config:
         agent_kwargs["wiki_config"] = wiki_config
     if agent_type == "workflow":
@@ -375,7 +411,12 @@ def _run_agent_headless(
     sources_log: List[Dict[str, Any]] = []
     tool_calls: List[Dict[str, Any]] = []
     stream_error: Optional[str] = None
+    # Responses continuity (response id, reasoning state, usage) the agent
+    # reports for the turn; a continuation stores it like a chat turn does.
+    message_metadata: Dict[str, Any] = {}
     steps_completed = 0
+    # Text after a tool call starts a new paragraph, as in a chat turn's stored answer.
+    tool_since_text = False
     for event in agent.gen(query=query):
         if not isinstance(event, dict):
             continue
@@ -402,14 +443,22 @@ def _run_agent_headless(
             if event.get("status") == "completed":
                 steps_completed += 1
             continue
+        if event.get("type") == "tool_call":
+            tool_since_text = True
+            continue
         if "answer" in event:
-            answer_full += str(event["answer"])
+            chunk = separated(answer_full, str(event["answer"]), after_tool=tool_since_text)
+            if chunk.strip():
+                tool_since_text = False
+            answer_full += chunk
         elif "sources" in event:
             sources_log.extend(event["sources"])
         elif "tool_calls" in event:
             tool_calls.extend(event["tool_calls"])
         elif "thought" in event:
             thought += str(event["thought"])
+        elif isinstance(event.get("metadata"), dict):
+            message_metadata.update(event["metadata"])
 
     denied = list(getattr(tool_executor, "headless_denials", []))
     error: Optional[str] = None
@@ -454,4 +503,5 @@ def _run_agent_headless(
         "error": error,
         "steps_completed": steps_completed,
         "model_id": model_id,
+        "metadata": message_metadata,
     }

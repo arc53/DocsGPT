@@ -15,6 +15,7 @@ import copy
 import json
 import logging
 import uuid
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from docsgpt.agents.tools.artifact_ref import resolve_artifact_id
@@ -25,6 +26,7 @@ from docsgpt.sandbox.artifacts_capture import (
     append_artifact_version,
     persist_new_artifact,
 )
+from docsgpt.sandbox.manifest import PDF_FONTS
 from docsgpt.sandbox.sandbox_creator import SandboxCreator
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.session import db_readonly
@@ -237,6 +239,34 @@ _SPEC_SYNOPSIS = (
     '{"type": "table", "rows": [[str]], "headers"?: [str]} | {"type": "code", "text"}'
 )
 
+
+def _pdf_renderer() -> str:
+    """Return the pdf renderer program: ``artifact_pdf.py`` run in its own namespace with the image's font table.
+
+    The module's source goes in as a string literal and runs in a fresh dict,
+    so its helpers never land in the session kernel that ``run_code`` shares.
+    The font table is the manifest's ``PDF_FONTS``; the sandbox looks the files
+    up. Braces are doubled so the template survives ``str.format``.
+
+    Returns:
+        A ``str.format`` template taking ``spec_path`` and ``out_path``.
+    """
+    source = Path(__file__).with_name("artifact_pdf.py").read_text(encoding="utf-8")
+    fonts = repr([dict(entry) for entry in PDF_FONTS])
+
+    def literal(value: str) -> str:
+        return value.replace("{", "{{").replace("}", "}}")
+
+    return (
+        "_docsgpt_artifact_pdf = {{'__name__': 'docsgpt_artifact_pdf'}}\n"
+        "try:\n"
+        f"    exec(compile({literal(repr(source))}, 'artifact_pdf.py', 'exec'), _docsgpt_artifact_pdf)\n"
+        f"    _docsgpt_artifact_pdf['render_pdf_spec']({{spec_path!r}}, {{out_path!r}}, {literal(fonts)})\n"
+        "finally:\n"
+        "    del _docsgpt_artifact_pdf\n"
+    )
+
+
 # FIXED renderer programs. Each reads ``spec.json`` from the workspace as DATA
 # and writes ``out.<ext>``. The spec is NEVER string-interpolated into the
 # program; ``{spec_path}``/``{out_path}`` are server-controlled path literals.
@@ -308,32 +338,7 @@ _RENDERERS: Dict[str, str] = {
         "    wb.create_sheet(title='Sheet1')\n"
         "wb.save({out_path!r})\n"
     ),
-    "pdf": (
-        "import json\n"
-        "from reportlab.lib.pagesizes import letter\n"
-        "from reportlab.lib.styles import getSampleStyleSheet\n"
-        "from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer\n"
-        "from xml.sax.saxutils import escape\n"
-        "spec = json.load(open({spec_path!r}))\n"
-        "styles = getSampleStyleSheet()\n"
-        "story = []\n"
-        "title = spec.get('title')\n"
-        "if title:\n"
-        "    story.append(Paragraph(escape(str(title)), styles['Title']))\n"
-        "    story.append(Spacer(1, 12))\n"
-        "for block in spec.get('blocks', []):\n"
-        "    if block.get('type') == 'heading':\n"
-        "        try:\n"
-        "            level = int(block.get('level') or 1)\n"
-        "        except (TypeError, ValueError):\n"
-        "            level = 1\n"
-        "        style = styles['Heading%d' % min(max(level, 1), 3)]\n"
-        "    else:\n"
-        "        style = styles['BodyText']\n"
-        "    story.append(Paragraph(escape(str(block.get('text', ''))), style))\n"
-        "    story.append(Spacer(1, 6))\n"
-        "SimpleDocTemplate({out_path!r}, pagesize=letter).build(story)\n"
-    ),
+    "pdf": _pdf_renderer(),
     "html": (
         "import json\n"
         "import html\n"
@@ -471,7 +476,9 @@ class ArtifactGeneratorTool(Tool):
                     "or path to it. Any URL you write for it is dead and reads to the user as a "
                     "failed download.\n"
                     "Do NOT use it for a short snippet the user only wants to read inline, or to "
-                    "change a file you already made — use edit_artifact for that."
+                    "change a file you already made — use edit_artifact for that. To convert an "
+                    "existing file, or to build a file from data with code (charts, analysis results), "
+                    "use run_code when it is available."
                 ),
                 "active": True,
                 "parameters": {
@@ -855,8 +862,8 @@ class ArtifactGeneratorTool(Tool):
             return {"error": f"render failed: {type(exc).__name__}: {exc}"}
         finally:
             # Drop this render's scratch dir, but do NOT close the session: it is the
-            # shared conversation/run session that code_executor(persist=True) keeps
-            # warm. A render is self-contained (it builds a document from the artifact
+            # shared conversation/run session that code_executor keeps warm between
+            # calls. A render is self-contained (it builds a document from the artifact
             # spec, not from prior kernel state) and does not own that session -- its
             # lifecycle belongs to the manager's TTL reaper / the conversation.
             manager.remove_path(session_id, token_dir)

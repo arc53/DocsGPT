@@ -1,7 +1,7 @@
 ---
 title: Confluence Connector
 description: Connect your Confluence Cloud workspace as an external knowledge base to upload and process pages directly.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-07
 ---
 
 import { Callout } from 'nextra/components'
@@ -55,7 +55,7 @@ CONFLUENCE_CLIENT_SECRET=your-atlassian-client-secret
 |----------|-------------|----------|
 | `CONFLUENCE_CLIENT_ID` | Client ID from your Atlassian OAuth app | Yes |
 | `CONFLUENCE_CLIENT_SECRET` | Client secret from your Atlassian OAuth app | Yes |
-| `CONNECTOR_ALLOWED_ORIGINS` | Comma-separated frontend origins allowed to receive the sign-in result, e.g. `https://docsgpt.example.com`. Not needed when the frontend shares the API origin, or in local dev when the callback is on `localhost`/`127.0.0.1` and the frontend runs on port 5173 | When the frontend is on its own origin |
+| `CONNECTOR_ALLOWED_ORIGINS` | Comma-separated frontend origins a sign-in may start from and return to, e.g. `https://docsgpt.example.com`. Not needed when the frontend is on the origin of `CONNECTOR_REDIRECT_BASE_URI` or `OIDC_FRONTEND_URL`, or in local dev when the callback is on `localhost`/`127.0.0.1` and the frontend runs on port 5173 | When the frontend is on its own origin |
 
 ### Step 5: Restart and Use
 
@@ -66,7 +66,7 @@ Restart your application, then go to **Settings > Connectors** and pick **Conflu
 ## Troubleshooting
 
 - **Option not appearing** — Check that `CONFLUENCE_CLIENT_ID` and `CONFLUENCE_CLIENT_SECRET` are set in the backend `.env` and the API was restarted, then check in **Admin > Connectors** that Confluence is enabled and its setup guide lists no missing settings.
-- **Sign-in popup closes but the account never connects** — The frontend origin is not allowed to receive the result. Add it to `CONNECTOR_ALLOWED_ORIGINS` in the backend `.env`.
+- **Sign-in fails with "not an allowed origin"** — The frontend runs on an origin the sign-in may not return to. Add it to `CONNECTOR_ALLOWED_ORIGINS` in the backend `.env`.
 - **Authentication failed** — Check that the callback URL matches exactly and equals `CONNECTOR_REDIRECT_BASE_URI`, with no query parameters.
 - **No accessible sites** — Ensure the authenticating user has access to at least one Confluence Cloud site.
 - **Permission denied, or Atlassian refuses the sign-in** — Verify that the three Confluence API scopes and the User identity API `read:me` scope are enabled in your Atlassian app settings.

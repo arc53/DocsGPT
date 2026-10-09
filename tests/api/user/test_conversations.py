@@ -492,6 +492,34 @@ class TestGetMessageTail:
         assert response.json["status"] == "streaming"
         assert response.json["message_id"] == msg_id
 
+    def test_a_paused_turn_tails_its_order_and_its_waiting_call(self, app, pg_conn):
+        from docsgpt.api.user.conversations.routes import GetMessageTail
+        from docsgpt.storage.db.repositories.message_events import MessageEventsRepository
+
+        owner = "user-owner-paused"
+        _, msg_id = self._seed_in_flight_message(pg_conn, owner)
+        events = MessageEventsRepository(pg_conn)
+        events.record(msg_id, 0, "answer", {"type": "answer", "answer": "Checking."})
+        events.record(
+            msg_id, 1, "tool_call",
+            {"type": "tool_call", "data": {"call_id": "c1", "status": "awaiting_approval"}},
+        )
+
+        with _patch_conversations_db(pg_conn), app.test_request_context(
+            f"/api/messages/{msg_id}/tail"
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": owner}
+            response = GetMessageTail().get(msg_id)
+
+        assert response.json["response"] == "Checking."
+        assert response.json["tool_calls"][0]["status"] == "awaiting_approval"
+        assert response.json["segments"] == [
+            {"kind": "text", "length": 9},
+            {"kind": "tool", "call_id": "c1"},
+        ]
+
     def test_failed_tail_carries_the_error_code(self, app, pg_conn):
         from docsgpt.api.user.conversations.routes import GetMessageTail
         from docsgpt.storage.db.repositories.conversations import (
@@ -976,8 +1004,10 @@ class TestGetConversationsPaging:
 
         assert [c["id"] for c in items] == _expected_order(pg_conn, user)[:30]
         assert set(items[0]) == {
-            "id", "name", "agent_id", "is_shared_usage", "shared_token", "date",
+            "id", "name", "agent_id", "is_shared_usage", "shared_token", "date", "unread",
         }
+        # No continuation landed unseen.
+        assert items[0]["unread"] is False
         parsed = dt.datetime.fromisoformat(items[0]["date"])
         assert parsed == base + dt.timedelta(minutes=34)
 

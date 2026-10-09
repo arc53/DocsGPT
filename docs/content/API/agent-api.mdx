@@ -1,7 +1,7 @@
 ---
 title: Interacting with Agents via API
 description: Learn how to programmatically interact with DocsGPT Agents using the streaming and non-streaming API endpoints.
-lastUpdated: 2026-10-04
+lastUpdated: 2026-10-09
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -48,7 +48,7 @@ Authentication:
 See the [API overview](/API#choose-a-credential) for how each credential works.
 
 <Callout type="warning">
-A key holder can't approve anything on the agent owner's behalf. When the agent is called with its `api_key` by anyone but its signed-in owner, a write action that uses the owner's connected accounts or saved credentials is refused unless the owner allows it: the agent gets a refusal instead of a result, and the `tool_call` event reports `"status": "denied"` with `"error_type": "tool_not_allowed"`. See [Letting API callers make changes](#letting-api-callers-make-changes).
+A key holder can't approve anything on the agent owner's behalf. When the agent is called with its `api_key` by anyone but its signed-in owner, a write action that uses the owner's connected accounts or saved credentials is refused unless the owner allows it: the agent gets a refusal instead of a result, and the `tool_call` event reports `"status": "error"` with `"error_type": "tool_not_allowed"` and the reason in `error`. The refused call stays on the message's `tool_calls` the same way. See [Letting API callers make changes](#letting-api-callers-make-changes).
 </Callout>
 
 ## Endpoints
@@ -348,6 +348,13 @@ Each action names a `call_id` and one of:
 - `"result": ...`: for a client-side tool, the output your code produced.
 
 A pending call you leave out is treated as denied. The turn then continues and streams or returns as usual, and may pause again. A second resume of the same conversation while one is running returns HTTP `409` (`"code": "resume_in_progress"` on `/api/answer`). A conversation that belongs to another agent can't be resumed with this agent's key.
+
+A pause ends without an answer in two cases:
+
+- **The conversation moves on.** Sending a new `question` in the conversation instead of resuming ends the paused turn.
+- **It expires.** A pause nobody answers expires after 30 minutes.
+
+Either way the paused turn is saved as complete. Its text so far and the calls that ran stay on its message. The calls it waited on never run: they are recorded with `"status": "denied"`, a `not_run` of `"moved_on"` or `"expired"`, and a `result` saying why, and the model reads them that way on later turns. Resuming a pause that has ended returns HTTP `409` with `"code": "tool_call_not_pending"` (on `/stream`, an `error` event with that code), and nothing runs. So does a resume whose `call_id`s belong to an earlier pause than the one waiting now.
 
 Write actions on the owner's accounts or credentials never reach this pause for an API-key caller: they are refused outright unless the owner allowed them (see below).
 

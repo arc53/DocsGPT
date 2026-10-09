@@ -67,8 +67,8 @@ def _seed_pending_message(
     return {"id": str(row[0]), "conversation_id": conv["id"], "user_id": user_id}
 
 
-def _seed_resuming_state(conn, conv_id: str, user_id: str, *, secs_ago: int) -> None:
-    """Insert a pending_tool_state row in ``resuming`` with ``resumed_at`` backdated."""
+def _seed_resuming_state(conn, msg: dict, *, secs_ago: int) -> None:
+    """Insert ``msg``'s pending_tool_state row in ``resuming`` with ``resumed_at`` backdated."""
     conn.execute(
         text(
             """
@@ -79,7 +79,7 @@ def _seed_resuming_state(conn, conv_id: str, user_id: str, *, secs_ago: int) -> 
             )
             VALUES (
                 CAST(:conv_id AS uuid), :user_id,
-                '[]'::jsonb, '[]'::jsonb, '{}'::jsonb, '[]'::jsonb, '{}'::jsonb,
+                '[]'::jsonb, '[]'::jsonb, '{}'::jsonb, '[]'::jsonb, CAST(:cfg AS json),
                 clock_timestamp(),
                 clock_timestamp() + interval '30 minutes',
                 'resuming',
@@ -87,14 +87,15 @@ def _seed_resuming_state(conn, conv_id: str, user_id: str, *, secs_ago: int) -> 
             )
             """
         ),
-        {"conv_id": conv_id, "user_id": user_id, "secs_ago": secs_ago},
+        {
+            "conv_id": msg["conversation_id"], "user_id": msg["user_id"],
+            "cfg": json.dumps({"reserved_message_id": msg["id"]}), "secs_ago": secs_ago,
+        },
     )
 
 
-def _seed_pending_state(
-    conn, conv_id: str, user_id: str, *, expires_in_minutes: int = 30,
-) -> None:
-    """Insert a paused ``pending_tool_state`` row (status='pending').
+def _seed_pending_state(conn, msg: dict, *, expires_in_minutes: int = 30) -> None:
+    """Insert ``msg``'s paused ``pending_tool_state`` row (status='pending').
 
     A negative ``expires_in_minutes`` simulates a TTL-expired row that
     the cleanup janitor hasn't yet reaped.
@@ -109,7 +110,7 @@ def _seed_pending_state(
             )
             VALUES (
                 CAST(:conv_id AS uuid), :user_id,
-                '[]'::jsonb, '[]'::jsonb, '{}'::jsonb, '[]'::jsonb, '{}'::jsonb,
+                '[]'::jsonb, '[]'::jsonb, '{}'::jsonb, '[]'::jsonb, CAST(:cfg AS json),
                 clock_timestamp(),
                 clock_timestamp() + make_interval(mins => :exp),
                 'pending',
@@ -117,7 +118,10 @@ def _seed_pending_state(
             )
             """
         ),
-        {"conv_id": conv_id, "user_id": user_id, "exp": expires_in_minutes},
+        {
+            "conv_id": msg["conversation_id"], "user_id": msg["user_id"],
+            "cfg": json.dumps({"reserved_message_id": msg["id"]}), "exp": expires_in_minutes,
+        },
     )
 
 
@@ -297,7 +301,7 @@ class TestStuckMessages:
 
         msg = _seed_pending_message(pg_conn)
         # Active resume started 60 seconds ago — within 10-min grace.
-        _seed_resuming_state(pg_conn, msg["conversation_id"], msg["user_id"], secs_ago=60)
+        _seed_resuming_state(pg_conn, msg, secs_ago=60)
 
         with _route_engine_to(pg_conn):
             r = run_reconciliation()
@@ -320,9 +324,7 @@ class TestStuckMessages:
 
         msg = _seed_pending_message(pg_conn)
         # 11 minutes ago — past the 10-minute grace window.
-        _seed_resuming_state(
-            pg_conn, msg["conversation_id"], msg["user_id"], secs_ago=11 * 60,
-        )
+        _seed_resuming_state(pg_conn, msg, secs_ago=11 * 60)
 
         with _route_engine_to(pg_conn):
             run_reconciliation()
@@ -367,10 +369,7 @@ class TestStuckMessages:
         from docsgpt.api.user.reconciliation import run_reconciliation
 
         msg = _seed_pending_message(pg_conn)
-        _seed_pending_state(
-            pg_conn, msg["conversation_id"], msg["user_id"],
-            expires_in_minutes=30,
-        )
+        _seed_pending_state(pg_conn, msg, expires_in_minutes=30)
 
         with _route_engine_to(pg_conn):
             r1 = run_reconciliation()
@@ -401,10 +400,7 @@ class TestStuckMessages:
         from docsgpt.api.user.reconciliation import run_reconciliation
 
         msg = _seed_pending_message(pg_conn)
-        _seed_pending_state(
-            pg_conn, msg["conversation_id"], msg["user_id"],
-            expires_in_minutes=-1,
-        )
+        _seed_pending_state(pg_conn, msg, expires_in_minutes=-1)
 
         with _route_engine_to(pg_conn):
             run_reconciliation()
@@ -839,10 +835,7 @@ class TestApprovalClearedEvents:
         msg = _seed_pending_message(pg_conn)
         # Expired PT row: doesn't shield the message (past TTL) but is the
         # resumable state the failure path must delete + revoke.
-        _seed_pending_state(
-            pg_conn, msg["conversation_id"], msg["user_id"],
-            expires_in_minutes=-1,
-        )
+        _seed_pending_state(pg_conn, msg, expires_in_minutes=-1)
 
         ctx, published = _capture_published(pg_conn)
         with _route_engine_to(pg_conn), ctx:
@@ -877,6 +870,40 @@ class TestApprovalClearedEvents:
         assert payload["message_id"] == msg["id"]
         assert payload["reason"] == "failed"
         assert scope == {"kind": "conversation", "id": msg["conversation_id"]}
+
+    @pytest.mark.unit
+    def test_failing_an_old_message_spares_a_later_turns_pause(self, pg_conn):
+        """The pause row is per conversation: failing a stuck earlier turn must not
+        delete the pause a later turn of the same conversation is waiting on."""
+        from docsgpt.api.user import reconciliation as recon
+
+        msg = _seed_pending_message(pg_conn)
+        later = pg_conn.execute(
+            text(
+                "INSERT INTO conversation_messages (conversation_id, position, prompt, response, status, user_id) "
+                "VALUES (CAST(:c AS uuid), 1, 'later', '', 'streaming', :u) RETURNING id"
+            ),
+            {"c": msg["conversation_id"], "u": msg["user_id"]},
+        ).scalar()
+        _seed_pending_state(pg_conn, {**msg, "id": str(later)})
+
+        ctx, published = _capture_published(pg_conn)
+        with _route_engine_to(pg_conn), ctx:
+            recon.run_reconciliation()
+            recon.run_reconciliation()
+            recon.run_reconciliation()
+
+        status = pg_conn.execute(
+            text("SELECT status FROM conversation_messages WHERE id = CAST(:id AS uuid)"),
+            {"id": msg["id"]},
+        ).scalar()
+        assert status == "failed"
+        pt_count = pg_conn.execute(
+            text("SELECT count(*) FROM pending_tool_state WHERE conversation_id = CAST(:c AS uuid)"),
+            {"c": msg["conversation_id"]},
+        ).scalar()
+        assert pt_count == 1
+        assert not any(p[1] == "tool.approval.cleared" for p in published)
 
     @pytest.mark.unit
     def test_message_failed_without_approval_emits_no_clear(self, pg_conn):

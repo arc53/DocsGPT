@@ -33,6 +33,70 @@
     "toolApprovalReview": "Review",
     "toolApprovalFallbackName": "Conversation"
   },
+  "backgroundJobs": {
+    "unread": "Unread",
+    "card": {
+      "status": {
+        "working": "In background",
+        "completed": "Finished",
+        "failed": "Failed",
+        "cancelled": "Cancelled",
+        "lost": "Interrupted"
+      },
+      "cancel": "Cancel",
+      "cancelling": "Cancelling…",
+      "cancelFailed": "Couldn't cancel the job",
+      "progress": "{{percent}}% done",
+      "willResume": "You'll get the result in this chat when it finishes.",
+      "pollOnly": "Ask in this chat for the result once it finishes.",
+      "waitingForDevice": "Waiting for the device to reconnect. The command may still be running there.",
+      "waitingBadge": "Waiting for device",
+      "lostHint": "The job was interrupted and may or may not have finished. The assistant checks before retrying.",
+      "noticeCancelUnsupported": "This device's docsgpt-cli can't cancel a running command, so it may still be running there. Update docsgpt-cli on that machine.",
+      "noticeDeviceInterrupted": "The device's client restarted; the command may still be running on the machine (pid {{pid}}). Verify before retrying.",
+      "noticeDeviceInterruptedNoPid": "The device's client restarted; the command may still be running on the machine. Verify before retrying.",
+      "noticeDeviceShutdown": "The device's client shut down and stopped the command; it may have partly run.",
+      "noticeOutputTruncated": "Output was truncated: the device dropped some of it while it couldn't reach the server.",
+      "durationSeconds": "{{s}}s",
+      "durationMinutes": "{{m}}m {{s}}s",
+      "durationHours": "{{h}}h {{m}}m"
+    },
+    "notify": {
+      "title": {
+        "job": "Background job finished",
+        "lost": "Background job interrupted",
+        "monitor": "Monitor matched",
+        "trigger": "Webhook received",
+        "approval": "Approval received",
+        "monitor_paused": "Monitor paused",
+        "monitor_expired": "Monitor expired",
+        "schedule": "Scheduled task finished",
+        "default": "New reply"
+      },
+      "open": "Open",
+      "fallbackTitle": "Your assistant has an update"
+    },
+    "push": {
+      "promptTitle": "Get notified when it's done?",
+      "promptBody": "Get a browser notification when background work finishes while you're away.",
+      "enable": "Enable",
+      "notNow": "Not now",
+      "blocked": "Notifications are blocked for this site. Allow them in your browser's site settings.",
+      "failed": "Couldn't turn on notifications"
+    },
+    "wake": {
+      "job": "Background job finished",
+      "lost": "Background job interrupted",
+      "monitor": "Monitor matched",
+      "trigger": "Webhook received",
+      "approval": "Approval received",
+      "monitor_paused": "Monitor paused",
+      "monitor_expired": "Monitor expired",
+      "default": "Background event",
+      "more": "+{{count}} more",
+      "cancelled": "Background job cancelled"
+    }
+  },
   "demo": [
     {
       "header": "Learn about DocsGPT",
@@ -499,7 +563,7 @@
         "total": "Total",
         "model": "By model",
         "agent": "By agent",
-        "source": "By source"
+        "source": "By flow"
       },
       "includeSideChannel": "Background tokens",
       "promptTokens": "Prompt Tokens",
@@ -1438,6 +1502,13 @@
         "mcp_atlassian": "Search and update Jira issues and Confluence pages.",
         "mcp_sentry": "Look up Sentry issues, events and releases.",
         "mcp_stripe": "Look up customers, payments and subscriptions in Stripe.",
+        "mcp_drawio": "Create editable flowcharts and other diagrams with draw.io.",
+        "mcp_clickup": "Search, read and update ClickUp tasks, docs and lists, and add comments.",
+        "mcp_zapier": "Use the actions enabled in your Zapier MCP account to read or update connected apps.",
+        "mcp_trello": "Find Trello boards and cards, and create and update cards.",
+        "mcp_miro": "Find Miro boards, read content and comments, create diagrams, and reply to comments.",
+        "mcp_resend": "Send emails and manage contacts, audiences and domains.",
+        "mcp_calcom": "Read and manage your Cal.com bookings, event types, availability and schedules.",
         "github": "Sync repositories into Knowledge and let agents read code, issues and pull requests."
       },
       "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",
@@ -1760,6 +1831,11 @@
           "authCancelled": "Sign-in was cancelled.",
           "connectedAs": "Connected as {{email}}",
           "disconnect": "Disconnect"
+        },
+        "callback": {
+          "failed": "Could not finish the sign-in. Start it again from DocsGPT.",
+          "closeWindow": "You can close this window.",
+          "backToApp": "Back to DocsGPT"
         },
         "googleDrive": {
           "connect": "Connect to Google Drive",
@@ -2191,7 +2267,10 @@
       "response": "Response",
       "running": "Running…",
       "denied": "Denied by user",
-      "failed": "failed"
+      "failed": "failed",
+      "notRun": "not run",
+      "notRunMovedOn": "Not run: the conversation moved on before this was approved.",
+      "notRunExpired": "Not run: the approval request expired."
     },
     "quotaExceeded": {
       "tokens": "You've used {{used}} of your {{limit}} token quota. It resets {{resetsAt}}.",
@@ -2239,6 +2318,8 @@
       "deny": "Deny",
       "details": "Details",
       "denyReasonPlaceholder": "Optional reason for denying…",
+      "secretRefs": "Approving fills in the signing secret of {{refs}} when this runs. The assistant never sees it.",
+      "secretRefLabel": "“{{label}}” ({{ref}})",
       "connectTitle": "This tool needs your {{name}} account.",
       "connect": "Connect {{name}}",
       "continue": "Continue",
@@ -3224,5 +3305,112 @@
     "collapse": "Collapse",
     "back": "Back"
   },
-  "close": "Close"
+  "close": "Close",
+  "approval": {
+    "logoAlt": "DocsGPT",
+    "untitled": "Approval requested",
+    "missingTitle": "This link doesn't work",
+    "missingDescription": "It may have expired or been cancelled, or the address is incomplete.",
+    "loadError": "Couldn't load this request",
+    "options": {
+      "approve": "Approve",
+      "reject": "Reject"
+    },
+    "commentLabel": "Comment (optional)",
+    "commentPlaceholder": "Anything the requester should know",
+    "onceOnly": "Your choice is final: only the first decision counts.",
+    "thanks": "Thanks. You chose “{{decision}}”, and the assistant that asked has been told.",
+    "alreadyDecided": "This request was already decided: {{decision}}.",
+    "notWaiting": "This request is no longer waiting for a decision.",
+    "rateLimited": "Too many attempts. Wait a minute and try again.",
+    "submitError": "Your decision couldn't be sent. Try again.",
+    "expiresAt": "This request expires on {{date}}.",
+    "yourComment": "Your comment: “{{comment}}”"
+  },
+  "monitors": {
+    "label": "Monitors",
+    "subtitle": "Things the assistant is watching for you: pages, tools, webhook links and approval links. Each one resumes its conversation when something happens.",
+    "empty": "No monitors yet",
+    "emptyHint": "Ask the assistant in a chat to watch something, like “tell me when the price drops below $90”.",
+    "loadError": "Couldn't load your monitors",
+    "actionError": "That didn't work. Try again.",
+    "untitled": "Monitor",
+    "watching": "Watching for changes",
+    "every": "Every {{interval}}",
+    "onEvent": "When it happens",
+    "openConversation": "Open conversation",
+    "pause": "Pause",
+    "resume": "Resume",
+    "cancel": "Cancel monitor",
+    "menu": "Actions for {{name}}",
+    "pausedBecause": "Paused: {{reason}}",
+    "lastError": "Last problem: {{error}}",
+    "cancelConfirm": "Cancel “{{name}}”?",
+    "cancelConsequence": "It stops checking, its links stop working, and any approval it was given is withdrawn.",
+    "status": {
+      "active": "Active",
+      "paused": "Paused",
+      "completed": "Finished",
+      "cancelled": "Cancelled"
+    },
+    "source": {
+      "webpage": "Web page",
+      "tool": "Tool",
+      "ingest": "Knowledge ingest",
+      "webhook": "Webhook link",
+      "approval": "Approval link"
+    },
+    "columns": {
+      "monitor": "Monitor",
+      "status": "Status",
+      "interval": "Checks",
+      "lastChecked": "Last checked",
+      "wakesLeft": "Wakes left",
+      "expires": "Expires",
+      "actions": "Actions"
+    },
+    "linkCard": {
+      "title": "Webhook link",
+      "copyUrl": "Copy link",
+      "revealSecret": "Reveal secret",
+      "hideSecret": "Hide secret",
+      "copySecret": "Copy secret",
+      "secretNote": "Only you can see the signing secret; the assistant never does. Set it as DOCSGPT_WEBHOOK_SECRET to run the example command, or paste it into the sender's secret field.",
+      "secretNoteSettings": "Only you can see the signing secret; the assistant never does unless you choose Show to assistant. Paste it into the sender's secret field.",
+      "revealFailed": "Couldn't load the secret. Try again.",
+      "revealLimited": "Too many requests. Try again in a minute.",
+      "revealMissing": "This link has no secret: it ended, was cancelled, or its secret hasn't been set yet.",
+      "setSecret": "Set signing secret",
+      "secretPlaceholder": "Paste the signing secret",
+      "saveSecret": "Save",
+      "cancelSecret": "Cancel",
+      "secretSaved": "Signing secret saved. Calls signed with it are accepted now.",
+      "setSecretFailed": "Couldn't save the signing secret. Try again.",
+      "setSecretInvalid": "That doesn't look like this link's signing secret. {{reason}}",
+      "senderSecretNote": "{{sender}} creates this link's signing secret. Copy it from {{sender}} and set it here; calls are refused until then.",
+      "exposeSecret": "Show to assistant",
+      "unexposeSecret": "Hide from assistant",
+      "exposeWarning": "The assistant will see the raw secret when it lists its monitors, so the secret is sent to the model provider. Its tool calls still use the reference and still ask for your approval. Turn this on only if the assistant must read the value itself.",
+      "exposeConfirm": "Show it to the assistant",
+      "exposedNote": "The assistant can see this secret.",
+      "exposeFailed": "Couldn't change that. Try again.",
+      "approvalTitle": "Approval link",
+      "expires": "Expires {{date}}",
+      "state": {
+        "pending": "Waiting for a decision",
+        "decided": "Decided",
+        "ended": "Link ended",
+        "active": "Active"
+      }
+    },
+    "finished": {
+      "decided": "Finished: the decision was made",
+      "usedAllWakes": "Finished: it reported everything it was set up to",
+      "expired": "Finished: it expired",
+      "cancelledByUser": "Cancelled by you",
+      "cancelledFromChat": "Cancelled from the chat",
+      "conversationGone": "Ended: its conversation can no longer be resumed"
+    },
+    "endedBecause": "Ended: {{reason}}"
+  }
 }

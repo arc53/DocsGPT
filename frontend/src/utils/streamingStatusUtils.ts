@@ -70,10 +70,7 @@ export function readableAction(action: string, service?: string | null) {
  */
 export function toolCallTitle(toolCall: ToolCallsType, t: TFunction): string {
   const name = toolCall.connector_name || formatToolLabel(toolCall.tool_name);
-  const words = readableAction(
-    toolCall.action_name ?? '',
-    toolCall.connector_name,
-  );
+  const words = readableAction(toolCall.action_name ?? '', name);
   const action = words.charAt(0).toUpperCase() + words.slice(1);
   if (!name) return action;
   if (!action) return name;
@@ -353,6 +350,9 @@ export function getToolChipLabel(
   toolCall: ToolCallsType,
   t: TFunction,
 ): string {
+  // A call that never ran is named, not narrated: "Used Memory" beside its
+  // "not run" note would contradict it.
+  if (toolCall.status === 'denied') return toolCallTitle(toolCall, t);
   const activity = describeToolCall(toolCall);
   const namespace = isToolCallRunning(toolCall)
     ? 'streamingStatus'

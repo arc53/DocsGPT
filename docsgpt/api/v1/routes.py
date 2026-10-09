@@ -18,9 +18,13 @@ from flask import Blueprint, current_app, jsonify, make_response, request, Respo
 from docsgpt.api.answer.routes.base import BaseAnswerResource
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
 from docsgpt.api.answer.services.continuation_service import (
+    NOT_PENDING_CODE,
+    NOT_PENDING_MESSAGE,
+    ContinuationNotPendingError,
     ContinuationService,
     RESUME_IN_PROGRESS_MESSAGE,
     ResumeInProgressError,
+    answered_call_ids,
 )
 from docsgpt import tracing
 from docsgpt.api.answer.services.stream_processor import (
@@ -419,7 +423,9 @@ def chat_completions():
             conversation_id = internal_data.get("conversation_id")
             pending_state = (
                 ContinuationService().claim_state(
-                    conversation_id, decoded_token["sub"]
+                    conversation_id,
+                    decoded_token["sub"],
+                    call_ids=answered_call_ids(internal_data["tool_actions"]),
                 )
                 if conversation_id
                 else None
@@ -480,6 +486,7 @@ def chat_completions():
                 # leaving the initial message permanently ``streaming``.
                 "reserved_message_id": processor.reserved_message_id,
                 "request_id": processor.request_id,
+                "prior_tool_calls": getattr(processor, "prior_tool_calls", []),
             }
             question = ""
         else:
@@ -602,6 +609,21 @@ def chat_completions():
                         "message": RESUME_IN_PROGRESS_MESSAGE,
                         "type": "conflict_error",
                         "code": "resume_in_progress",
+                    }
+                }),
+                409,
+            )
+        except ContinuationNotPendingError:
+            # Results for calls whose pause is over (a new turn moved past it,
+            # or it expired) while another pause waits: nothing ran.
+            if idem_key:
+                v1_idempotency.release(idem_key)
+            return make_response(
+                jsonify({
+                    "error": {
+                        "message": NOT_PENDING_MESSAGE,
+                        "type": "conflict_error",
+                        "code": NOT_PENDING_CODE,
                     }
                 }),
                 409,

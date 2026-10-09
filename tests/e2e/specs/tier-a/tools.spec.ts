@@ -8,22 +8,19 @@
  * provisions its own user via `newUserContext` and resets the DB in
  * `beforeEach`.
  *
- * // Silent-break covered: blank-secret update merges, does not wipe
- *    encrypted_credentials. The repo-side `_merge_secrets_on_update` in
- *    application/api/user/tools/routes.py is the exact line where the bug
- *    would hide — if the merge path regresses to a naive overwrite, the
- *    encrypted blob would be wiped when the UI sends a config update
- *    without re-supplying the secret (the frontend's `buildConfigToSave`
- *    strips blank secret fields entirely).
+ * Brave Search is a connector-backed tool: with ENCRYPTION_SECRET_KEY set (the
+ * e2e env sets it), `/api/create_tool` stores the pasted secret encrypted on a
+ * `connector_sessions` row (a "connection") and the `user_tools` row only
+ * points at it through `connection_id`. The tool's own `config` keeps the
+ * non-secret keys. The specs below follow the secret to the connection.
  *
- *    NOTE: the backend ALWAYS re-encrypts on update (decrypt → merge → encrypt
- *    with a fresh salt/iv), so a byte-for-byte equality check on the stored
- *    blob is not achievable. We instead prove merge-preservation by asserting
- *    that after a blank-secret update (a) the encrypted_credentials blob is
- *    still present and non-empty, (b) does not contain the plaintext secret,
- *    and (c) /api/get_tools still reports `has_encrypted_credentials: true`
- *    — i.e. the secret survives. A regression to naive overwrite would blow
- *    the blob away entirely, which these checks catch.
+ * // Silent-break covered: blank-secret update merges, does not wipe the
+ *    secret. The UI's `buildConfigToSave` strips blank secret fields, so an
+ *    edit that doesn't re-enter the token sends a config without it.
+ *    `_update_connection_secrets` in docsgpt/api/user/tools/routes.py only
+ *    rewrites the connection when the request carries a secret, so after a
+ *    blank-secret update the encrypted blob must be byte-for-byte unchanged
+ *    and /api/get_tools must still report `has_encrypted_credentials: true`.
  */
 
 import * as playwright from '@playwright/test';
@@ -38,7 +35,7 @@ import { newUserContext } from '../../helpers/auth.js';
 
 // Brave Search has the simplest required-secret schema on the server:
 // exactly one required + secret string field called `token` (see
-// application/agents/tools/brave.py:get_config_requirements).
+// docsgpt/agents/tools/brave.py:get_config_requirements).
 const BRAVE_TOOL_NAME = 'brave';
 const BRAVE_DISPLAY_NAME = 'Brave Search';
 const BRAVE_DESCRIPTION =
@@ -61,16 +58,29 @@ interface UserToolRow {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   actions: any;
   status: boolean;
+  connection_id: string | null;
 }
 
 async function fetchToolRow(toolId: string): Promise<UserToolRow | null> {
   const { rows } = await pg.query<UserToolRow>(
     `SELECT id::text AS id, user_id, name, custom_name, display_name,
-            description, config, config_requirements, actions, status
+            description, config, config_requirements, actions, status,
+            connection_id::text AS connection_id
      FROM user_tools WHERE id = CAST($1 AS uuid)`,
     [toolId],
   );
   return rows[0] ?? null;
+}
+
+/** The encrypted secret blob on the connection the tool points at, or null. */
+async function fetchConnectionSecret(toolId: string): Promise<string | null> {
+  const { rows } = await pg.query<{ encrypted_credentials: string | null }>(
+    `SELECT c.encrypted_credentials
+     FROM user_tools t JOIN connector_sessions c ON c.id = t.connection_id
+     WHERE t.id = CAST($1 AS uuid)`,
+    [toolId],
+  );
+  return rows[0]?.encrypted_credentials ?? null;
 }
 
 async function createBraveTool(
@@ -139,17 +149,22 @@ test.describe('tier-a · user_tools CRUD', () => {
       const persisted = row!;
       expect(persisted.user_id).toBe(sub);
       expect(persisted.name).toBe(BRAVE_TOOL_NAME);
-      expect(persisted.display_name).toBe(BRAVE_DISPLAY_NAME);
+      // A connection-backed tool is shown under the name the user gave it.
+      expect(persisted.display_name).toBe('my-brave-initial');
       expect(persisted.custom_name).toBe('my-brave-initial');
       expect(persisted.status).toBe(true);
+      expect(persisted.connection_id).toBeTruthy();
 
-      // Plain-text secret must never land in the config JSONB.
+      // Neither the plaintext secret nor a copy of it lands in the tool config.
       expect(persisted.config).toBeTruthy();
       expect(persisted.config.token).toBeUndefined();
-      expect(typeof persisted.config.encrypted_credentials).toBe('string');
-      expect(persisted.config.encrypted_credentials.length).toBeGreaterThan(0);
-      // The encrypted blob must not echo the plaintext secret anywhere.
-      expect(persisted.config.encrypted_credentials).not.toContain(INITIAL_SECRET);
+      expect(persisted.config.encrypted_credentials).toBeUndefined();
+
+      // The secret lives encrypted on the connection.
+      const secret = await fetchConnectionSecret(toolId);
+      expect(typeof secret).toBe('string');
+      expect(secret!.length).toBeGreaterThan(0);
+      expect(secret).not.toContain(INITIAL_SECRET);
     } finally {
       await api.dispose();
       await context.close();
@@ -163,9 +178,7 @@ test.describe('tier-a · user_tools CRUD', () => {
     const api = await authedRequest(playwright, token);
     try {
       const toolId = await createBraveTool(api);
-      const before = await fetchToolRow(toolId);
-      expect(before).not.toBeNull();
-      const encryptedBefore = before!.config.encrypted_credentials as string;
+      const encryptedBefore = await fetchConnectionSecret(toolId);
       expect(encryptedBefore).toBeTruthy();
 
       // Mirror what ToolConfig.tsx + buildConfigToSave() send on a display-name
@@ -191,15 +204,9 @@ test.describe('tier-a · user_tools CRUD', () => {
       expect(after).not.toBeNull();
       // Non-secret update landed.
       expect(after!.custom_name).toBe('my-brave-renamed');
-      // THE silent-break assertion: the encrypted blob must still exist after a
-      // blank-secret update. Backend always re-encrypts with a fresh salt/iv,
-      // so byte-equality is NOT achievable — but a regression to naive
-      // overwrite would delete the blob entirely, which we catch here.
-      const encryptedAfter = after!.config.encrypted_credentials as string;
-      expect(typeof encryptedAfter).toBe('string');
-      expect(encryptedAfter.length).toBeGreaterThan(0);
-      // Plaintext must still not leak into the stored blob.
-      expect(encryptedAfter).not.toContain(INITIAL_SECRET);
+      // THE silent-break assertion: a blank-secret update leaves the
+      // connection's encrypted blob untouched, byte for byte.
+      expect(await fetchConnectionSecret(toolId)).toBe(encryptedBefore);
       expect(after!.config.token).toBeUndefined();
       // API surface must continue to report the secret is there.
       const listRes = await api.get('/api/get_tools');
@@ -211,9 +218,6 @@ test.describe('tier-a · user_tools CRUD', () => {
       const tool = listBody.tools.find((t) => t.id === toolId);
       expect(tool).toBeDefined();
       expect(tool!.config.has_encrypted_credentials).toBe(true);
-      // Silence lint for unused encryptedBefore: keep the pre-capture to document
-      // intent even though we don't assert byte equality.
-      void encryptedBefore;
     } finally {
       await api.dispose();
       await context.close();
@@ -227,8 +231,8 @@ test.describe('tier-a · user_tools CRUD', () => {
     const api = await authedRequest(playwright, token);
     try {
       const toolId = await createBraveTool(api);
-      const before = await fetchToolRow(toolId);
-      const encryptedBefore = before!.config.encrypted_credentials as string;
+      const encryptedBefore = await fetchConnectionSecret(toolId);
+      expect(encryptedBefore).toBeTruthy();
 
       const updateRes = await api.post('/api/update_tool', {
         data: {
@@ -245,7 +249,7 @@ test.describe('tier-a · user_tools CRUD', () => {
       expect(updateRes.status()).toBe(200);
 
       const after = await fetchToolRow(toolId);
-      const encryptedAfter = after!.config.encrypted_credentials as string;
+      const encryptedAfter = await fetchConnectionSecret(toolId);
       expect(encryptedAfter).toBeTruthy();
       // New blob must differ from the old one and must not contain plaintext.
       expect(encryptedAfter).not.toBe(encryptedBefore);
@@ -274,7 +278,7 @@ test.describe('tier-a · user_tools CRUD', () => {
       let row = await fetchToolRow(toolId);
       expect(row!.status).toBe(false);
       // Secrets unaffected by a pure status flip.
-      expect(typeof row!.config.encrypted_credentials).toBe('string');
+      expect(typeof (await fetchConnectionSecret(toolId))).toBe('string');
 
       const onRes = await api.post('/api/update_tool_status', {
         data: { id: toolId, status: true },

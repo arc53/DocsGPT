@@ -35,7 +35,7 @@ def _patch_mcp_globals(monkeypatch):
 
     monkeypatch.setattr(mcp_mod, "_mcp_clients_cache", {})
     # Bypass DNS-resolving URL validation for tests using fake hostnames.
-    monkeypatch.setattr(mcp_mod, "validate_url", lambda u, **kw: u)
+    monkeypatch.setattr(mcp_mod, "validate_user_base_url", lambda u: None)
 
 
 @pytest.fixture
@@ -141,30 +141,78 @@ class TestMCPToolInit:
 
     def test_rejects_metadata_ip(self, monkeypatch):
         from docsgpt.agents.tools.mcp_tool import MCPTool
-        from docsgpt.core.url_validation import validate_url as real_validate_url
+        from docsgpt.security.safe_url import validate_user_base_url
         import docsgpt.agents.tools.mcp_tool as mcp_mod
 
-        monkeypatch.setattr(mcp_mod, "validate_url", real_validate_url)
+        monkeypatch.setattr(mcp_mod, "validate_user_base_url", validate_user_base_url)
         with pytest.raises(ValueError, match="Invalid MCP server URL"):
             MCPTool(config={"server_url": "http://169.254.169.254/latest/meta-data", "auth_type": "none"})
 
     def test_rejects_localhost(self, monkeypatch):
         from docsgpt.agents.tools.mcp_tool import MCPTool
-        from docsgpt.core.url_validation import validate_url as real_validate_url
+        from docsgpt.security.safe_url import validate_user_base_url
         import docsgpt.agents.tools.mcp_tool as mcp_mod
 
-        monkeypatch.setattr(mcp_mod, "validate_url", real_validate_url)
+        monkeypatch.setattr(mcp_mod, "validate_user_base_url", validate_user_base_url)
         with pytest.raises(ValueError, match="Invalid MCP server URL"):
             MCPTool(config={"server_url": "http://localhost:8080/mcp", "auth_type": "none"})
 
     def test_rejects_private_ip(self, monkeypatch):
         from docsgpt.agents.tools.mcp_tool import MCPTool
-        from docsgpt.core.url_validation import validate_url as real_validate_url
+        from docsgpt.security.safe_url import validate_user_base_url
         import docsgpt.agents.tools.mcp_tool as mcp_mod
 
-        monkeypatch.setattr(mcp_mod, "validate_url", real_validate_url)
+        monkeypatch.setattr(mcp_mod, "validate_user_base_url", validate_user_base_url)
         with pytest.raises(ValueError, match="Invalid MCP server URL"):
             MCPTool(config={"server_url": "http://10.0.0.1/mcp", "auth_type": "none"})
+
+    def test_rejects_host_with_a_private_aaaa_record(self, monkeypatch):
+        # The client prefers IPv6, so a public A record beside AAAA ::1 dials loopback.
+        import socket
+
+        from docsgpt.security.safe_url import validate_user_base_url
+        import docsgpt.agents.tools.mcp_tool as mcp_mod
+
+        monkeypatch.setattr(mcp_mod, "validate_user_base_url", validate_user_base_url)
+        answers = [
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("104.18.6.192", 0)),
+            (socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("::1", 0, 0, 0)),
+        ]
+        monkeypatch.setattr("socket.getaddrinfo", lambda *a, **kw: answers)
+        with pytest.raises(ValueError, match="Invalid MCP server URL"):
+            mcp_mod.MCPTool(config={"server_url": "https://mcp.attacker.example/mcp", "auth_type": "none"})
+
+    def test_transport_client_checks_every_request(self):
+        from docsgpt.security.safe_url import _GuardedAsyncTransport
+
+        tool = _make_tool({"server_url": "https://mcp.example.com/mcp", "transport_type": "http"})
+        # FastMCP passes follow_redirects=True; the SDK follows same-origin redirects itself.
+        client = tool._http_client_factory()(headers={"X-A": "1"}, auth=None, follow_redirects=True)
+        try:
+            assert isinstance(client._transport, _GuardedAsyncTransport)
+            assert client.follow_redirects is False
+            assert client.headers["X-A"] == "1"
+            assert client.timeout.read == 300.0
+        finally:
+            asyncio.run(client.aclose())
+
+    def test_transport_refuses_a_host_rebound_to_a_private_address(self, monkeypatch):
+        import socket
+
+        from docsgpt.security.safe_url import UnsafeUserUrlError
+
+        tool = _make_tool({"server_url": "https://mcp.attacker.example/mcp", "transport_type": "http"})
+        monkeypatch.setattr(
+            "socket.getaddrinfo",
+            lambda *a, **kw: [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 0))],
+        )
+
+        async def call():
+            async with tool._http_client_factory()(headers=None, auth=None) as client:
+                await client.post("https://mcp.attacker.example/mcp", json={})
+
+        with pytest.raises(UnsafeUserUrlError):
+            asyncio.run(call())
 
     def test_accepts_public_url(self):
         tool = _make_tool({
@@ -460,6 +508,25 @@ class TestFormatResult:
         assert result["content"][0]["type"] == "text"
         assert result["content"][0]["text"] == "Hello"
         assert result["isError"] is False
+
+    def test_structured_content_is_used_when_content_is_empty(self, mcp_config):
+        from types import SimpleNamespace
+
+        tool = _make_tool(mcp_config)
+        result = SimpleNamespace(content=[], structured_content={"bases": [{"name": "Deals"}]}, is_error=False)
+
+        formatted = tool._format_result(result)
+        assert formatted["isError"] is False
+        assert json.loads(formatted["content"][0]["text"]) == {"bases": [{"name": "Deals"}]}
+
+    def test_text_content_is_kept_when_structured_content_is_also_sent(self, mcp_config):
+        from types import SimpleNamespace
+
+        tool = _make_tool(mcp_config)
+        text = SimpleNamespace(type="text", text="one base")
+        result = SimpleNamespace(content=[text], structured_content={"bases": []}, is_error=False)
+
+        assert tool._format_result(result)["content"] == [{"type": "text", "text": "one base"}]
 
     def test_an_image_is_shown_to_the_model_not_inlined(self, mcp_config):
         import base64
@@ -1407,7 +1474,7 @@ class TestStoredSignInRenewal:
         def client(**kwargs):
             return httpx2.AsyncClient(transport=httpx2.MockTransport(handler), **kwargs)
 
-        monkeypatch.setattr("docsgpt.agents.tools.mcp_tool.create_mcp_http_client", client)
+        monkeypatch.setattr("docsgpt.agents.tools.mcp_tool._mcp_http_client", client)
         return seen
 
     @staticmethod
@@ -1460,6 +1527,37 @@ class TestStoredSignInRenewal:
             asyncio.run(oauth._initialize())
         assert oauth.context.oauth_metadata is None
         assert "Could not read OAuth metadata" in caplog.text
+
+    def test_discovery_does_not_reach_a_private_authorization_server(self, monkeypatch):
+        # The MCP server picks the authorization server; it must not be able to
+        # point the backend at internal addresses.
+        import socket
+        import time
+
+        import httpx2
+
+        seen = []
+
+        async def handler(transport, request):
+            seen.append(request.url.host)
+            if request.url.path.startswith("/.well-known/oauth-protected-resource"):
+                return httpx2.Response(200, json={
+                    "resource": "https://mcp.example.com/mcp",
+                    "authorization_servers": ["http://169.254.169.254/latest"],
+                })
+            return httpx2.Response(404)
+
+        monkeypatch.setattr("httpx2.AsyncHTTPTransport.handle_async_request", handler)
+        monkeypatch.setattr(
+            "socket.getaddrinfo",
+            lambda *a, **kw: [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("104.18.6.192", 0))],
+        )
+        oauth = self._oauth(_StoredTokens(
+            self._token(refresh_token="rt", expires_in=3600), time.time() - 5, client_info=self._client_info(),
+        ))
+        asyncio.run(oauth._initialize())
+        assert seen and set(seen) == {"104.18.6.192"}
+        assert oauth.context.oauth_metadata is None
 
     def test_a_valid_token_needs_no_discovery(self, monkeypatch):
         import time

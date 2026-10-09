@@ -6,7 +6,7 @@ from typing import Dict, List
 
 import pytest
 
-from docsgpt.sandbox.base import CodeSandbox, ExecResult, SandboxGoneError
+from docsgpt.sandbox.base import CodeSandbox, ExecResult, OpenedSession, SandboxGoneError
 from docsgpt.sandbox.manager import SandboxCapacityError, SandboxManager
 
 
@@ -790,3 +790,471 @@ def test_sandbox_gone_during_file_op_drops_session_and_next_open_is_cold():
     new_handle = mgr.open("conv-1")
     assert new_handle != old_handle
     assert backend.open_calls == ["conv-1", "conv-1"]
+
+
+# ---------------------------------------------------------------------------
+# Session status: did this open create a fresh runtime?
+# ---------------------------------------------------------------------------
+
+
+def test_open_session_reports_a_cold_open_as_created_then_reuse(backend):
+    mgr = SandboxManager(backend, max_ttl=600)
+    first = mgr.open_session("conv-1")
+    second = mgr.open_session("conv-1")
+    assert first.created is True
+    assert second.created is False
+    assert first.handle == second.handle
+    assert backend.open_calls == ["conv-1"]
+
+
+def test_open_still_returns_the_bare_handle(backend):
+    mgr = SandboxManager(backend, max_ttl=600)
+    handle = mgr.open("conv-1")
+    assert isinstance(handle, str) and handle.startswith("handle-conv-1")
+
+
+def test_open_session_passes_through_a_backend_reattach():
+    """A cold open in this process may still find the runtime alive (Daytona reattach)."""
+    from docsgpt.sandbox.base import OpenedSession
+
+    class _ReattachingBackend(FakeBackend):
+        def open_session(self, session_id):
+            return OpenedSession(self.open(session_id), False)
+
+    mgr = SandboxManager(_ReattachingBackend(), max_ttl=600)
+    assert mgr.open_session("conv-1").created is False
+
+
+def test_backend_default_open_session_reports_created(backend):
+    # A backend that cannot tell a reattach from a create reports every open as fresh,
+    # so the model rebuilds state rather than trusting state that may be gone.
+    opened = backend.open_session("conv-1")
+    assert opened.created is True
+    assert opened.handle == "handle-conv-1-1"
+
+
+def test_open_session_after_runtime_invalidation_is_created():
+    class _InvalidatingBackend(FakeBackend):
+        def exec(self, session_id, code, timeout=None):
+            self._handles.pop(session_id, None)
+            return ExecResult(status="error", error_name="TimeoutError", runtime_invalidated=True)
+
+    mgr = SandboxManager(_InvalidatingBackend(), max_ttl=600)
+    mgr.open_session("conv-1")
+    mgr.exec("conv-1", "while True: pass")
+    assert mgr.open_session("conv-1").created is True
+
+
+def test_an_expired_session_is_closed_and_reopened_not_reused(backend, monkeypatch):
+    """Past its idle TTL a session is gone, even if no other open reaped it yet.
+
+    Reusing it would report state that the TTL contract says is discarded, and on the
+    Jupyter runner the gateway may already have culled the kernel behind the handle.
+    """
+    clock = {"t": 1000.0}
+    monkeypatch.setattr("docsgpt.sandbox.manager.time.monotonic", lambda: clock["t"])
+    mgr = SandboxManager(backend, max_ttl=600)
+    old = mgr.open_session("conv-1", ttl=50)
+    clock["t"] = 1051.0  # 51s idle > 50s ttl
+    fresh = mgr.open_session("conv-1")
+    assert fresh.created is True
+    assert fresh.handle != old.handle
+    assert backend.open_calls == ["conv-1", "conv-1"]
+    assert ("conv-1", old.handle) in backend.closed_handles
+
+
+def test_an_expired_but_busy_session_is_still_reused(backend, monkeypatch):
+    clock = {"t": 1000.0}
+    monkeypatch.setattr("docsgpt.sandbox.manager.time.monotonic", lambda: clock["t"])
+    mgr = SandboxManager(backend, max_ttl=600)
+    mgr.open_session("conv-1", ttl=50)
+    held = mgr._enter("conv-1")  # an op is in flight on the session
+    clock["t"] = 1100.0
+    try:
+        assert mgr.open_session("conv-1").created is False
+        assert backend.open_calls == ["conv-1"]
+    finally:
+        mgr._leave("conv-1", expected=held)
+
+
+def test_a_concurrent_open_waits_for_an_expired_sessions_teardown(monkeypatch):
+    """A second open of an id being retired must not reuse the runtime being torn down.
+
+    Backends reuse a runtime they still have registered (Jupyter keeps its kernel in a
+    per-session registry), so an open that reached the backend before the retired
+    handle's close finished would get the dying runtime back, reported as reused.
+    """
+    from docsgpt.sandbox.base import OpenedSession
+
+    class _ReusingBackend(FakeBackend):
+        def __init__(self) -> None:
+            super().__init__()
+            self.blocked_handle = None
+            self.close_started = threading.Event()
+            self.release_close = threading.Event()
+
+        def open_session(self, session_id):
+            if session_id in self._handles:
+                return OpenedSession(self._handles[session_id], False)
+            return OpenedSession(self.open(session_id), True)
+
+        def close_handle(self, session_id, handle):
+            if handle == self.blocked_handle:
+                self.close_started.set()
+                assert self.release_close.wait(timeout=5)
+            super().close_handle(session_id, handle)
+
+    clock = {"t": 1000.0}
+    monkeypatch.setattr("docsgpt.sandbox.manager.time.monotonic", lambda: clock["t"])
+    backend = _ReusingBackend()
+    mgr = SandboxManager(backend, max_ttl=600)
+    old = mgr.open_session("conv-1", ttl=50).handle
+    backend.blocked_handle = old
+    clock["t"] = 1051.0  # expired
+
+    results = {}
+    retiring = threading.Thread(target=lambda: results.__setitem__("a", mgr.open_session("conv-1")))
+    retiring.start()
+    assert backend.close_started.wait(timeout=5)
+    second = threading.Thread(target=lambda: results.__setitem__("b", mgr.open_session("conv-1")))
+    second.start()
+    second.join(timeout=0.3)
+    assert second.is_alive(), "the second open must wait for the retired handle's teardown"
+    backend.release_close.set()
+    retiring.join(timeout=5)
+    second.join(timeout=5)
+
+    assert old not in (results["a"].handle, results["b"].handle)
+    assert results["a"].handle == results["b"].handle == backend._handles["conv-1"]
+    assert sorted(r.created for r in results.values()) == [False, True]
+
+
+# ---------------------------------------------------------------------------
+# A run longer than the idle TTL
+# ---------------------------------------------------------------------------
+
+
+class _SlowBackend(FakeBackend):
+    """An exec that blocks until released, standing in for a run of up to SANDBOX_EXEC_MAX_TIMEOUT."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.timeouts: List[float] = []
+
+    def exec(self, session_id, code, timeout=None) -> ExecResult:
+        self.timeouts.append(timeout)
+        self.started.set()
+        assert self.release.wait(5)
+        return ExecResult(status="ok", stdout="rendered")
+
+
+def test_a_run_longer_than_the_idle_ttl_is_never_reaped_evicted_or_retired(monkeypatch):
+    """A 1000 s run outlives a 1200 s TTL's idle clock only if busy sessions are left alone; they are."""
+    clock = {"t": 1000.0}
+    monkeypatch.setattr("docsgpt.sandbox.manager.time.monotonic", lambda: clock["t"])
+    backend = _SlowBackend()
+    mgr = SandboxManager(backend, max_ttl=1200, max_sessions=1)
+    mgr.open("long", ttl=1200)
+    results = []
+    runner = threading.Thread(target=lambda: results.append(mgr.exec("long", "render()", timeout=1000)))
+    runner.start()
+    assert backend.started.wait(5)
+    try:
+        clock["t"] += 5000  # far past the idle TTL while the run is still going
+        # The beat reaper leaves it alone.
+        assert mgr.reap_expired() == []
+        # A new session at the cap cannot evict it.
+        with pytest.raises(SandboxCapacityError):
+            mgr.open("other")
+        # The same conversation's next call reuses it instead of retiring it as expired.
+        assert mgr.open_session("long").created is False
+        assert backend.torn_down == []
+    finally:
+        backend.release.set()
+        runner.join(5)
+    assert results[0].stdout == "rendered"
+    assert backend.timeouts == [1000]
+    # The idle clock restarts when the run ends, so the session gets its full TTL afterwards.
+    clock["t"] += 1100
+    assert mgr.reap_expired() == []
+    clock["t"] += 200
+    assert mgr.reap_expired() == ["long"]
+
+
+def test_a_close_during_a_long_run_waits_for_it(monkeypatch):
+    backend = _SlowBackend()
+    mgr = SandboxManager(backend, max_ttl=1200)
+    mgr.open("long")
+    results = []
+    runner = threading.Thread(target=lambda: results.append(mgr.exec("long", "render()", timeout=1000)))
+    runner.start()
+    assert backend.started.wait(5)
+    mgr.close("long")  # e.g. a persist=false call from another stream
+    assert backend.torn_down == []
+    backend.release.set()
+    runner.join(5)
+    assert results[0].ok
+    assert backend.torn_down == ["long"]
+
+
+# ---------------------------------------------------------------------------
+# Several processes sharing one cloud sandbox
+# ---------------------------------------------------------------------------
+
+
+class _Cloud:
+    """A fake cloud of sandboxes several processes reach, with Daytona-style activity stamps."""
+
+    def __init__(self, clock: Dict[str, float]) -> None:
+        self.clock = clock
+        self.last_activity: Dict[str, float] = {}  # live sandbox id -> last activity
+        self.by_session: Dict[str, str] = {}
+        self.deleted: List[str] = []
+
+    def create(self, session_id: str) -> str:
+        sandbox_id = f"sbx-{len(self.last_activity) + len(self.deleted) + 1}"
+        self.last_activity[sandbox_id] = self.clock["t"]
+        self.by_session[session_id] = sandbox_id
+        return sandbox_id
+
+    def touch(self, sandbox_id: str) -> None:
+        if sandbox_id not in self.last_activity:
+            raise SandboxGoneError(f"{sandbox_id} has been deleted")
+        self.last_activity[sandbox_id] = self.clock["t"]
+
+    def delete(self, sandbox_id: str) -> None:
+        if self.last_activity.pop(sandbox_id, None) is not None:
+            self.deleted.append(sandbox_id)
+
+
+class _ProcessBackend(CodeSandbox):
+    """One process's backend over a shared ``_Cloud``: reattaches by session label like Daytona."""
+
+    def __init__(self, cloud: _Cloud) -> None:
+        self.cloud = cloud
+        self.handles: Dict[str, str] = {}
+
+    def open(self, session_id: str) -> str:
+        return self.open_session(session_id).handle
+
+    def open_session(self, session_id: str) -> OpenedSession:
+        if session_id in self.handles:
+            return OpenedSession(self.handles[session_id], False)
+        existing = self.cloud.by_session.get(session_id)
+        if existing in self.cloud.last_activity:
+            self.cloud.touch(existing)
+            self.handles[session_id] = existing
+            return OpenedSession(existing, False)
+        self.handles[session_id] = self.cloud.create(session_id)
+        return OpenedSession(self.handles[session_id], True)
+
+    def attach(self, session_id: str) -> str:
+        return self.handles[session_id]
+
+    def close(self, session_id: str) -> None:
+        handle = self.handles.pop(session_id, None)
+        if handle is not None:
+            self.cloud.delete(handle)
+
+    def close_handle(self, session_id: str, handle: str) -> None:
+        if self.handles.get(session_id) == handle:
+            self.handles.pop(session_id, None)
+        self.cloud.delete(handle)
+
+    def release_handle(self, session_id: str, handle: str) -> None:
+        if self.handles.get(session_id) == handle:
+            self.handles.pop(session_id, None)
+
+    def idle_seconds(self, handle: str):
+        stamp = self.cloud.last_activity.get(handle)
+        return None if stamp is None else self.cloud.clock["t"] - stamp
+
+    def exec(self, session_id, code, timeout=None) -> ExecResult:
+        self.cloud.touch(self.handles[session_id])
+        return ExecResult(status="ok", stdout=f"ran:{code}")
+
+    def put_file(self, session_id, dest_path, data) -> None:
+        self.cloud.touch(self.handles[session_id])
+
+    def get_file(self, session_id, path) -> bytes:
+        self.cloud.touch(self.handles[session_id])
+        return b""
+
+    def list_files(self, session_id) -> List[str]:
+        self.cloud.touch(self.handles[session_id])
+        return []
+
+
+class _SharedClock:
+    """Stands in for the Redis last-use stamp every process writes (``SharedActivity``)."""
+
+    def __init__(self, clock: Dict[str, float]) -> None:
+        self.clock = clock
+        self.stamps: Dict[str, float] = {}
+
+    def touch(self, session_id: str) -> None:
+        self.stamps[session_id] = self.clock["t"]
+
+    def idle_seconds(self, session_id: str):
+        stamp = self.stamps.get(session_id)
+        return None if stamp is None else self.clock["t"] - stamp
+
+
+@pytest.fixture()
+def two_processes(monkeypatch):
+    """Two managers (an API and a worker process, say) over one cloud and one clock."""
+    clock = {"t": 0.0}
+    monkeypatch.setattr("docsgpt.sandbox.manager.time.monotonic", lambda: clock["t"])
+    cloud = _Cloud(clock)
+    shared = _SharedClock(clock)
+    first = SandboxManager(_ProcessBackend(cloud), max_ttl=1200, shared_activity=shared)
+    second = SandboxManager(_ProcessBackend(cloud), max_ttl=1200, shared_activity=shared)
+    return clock, cloud, first, second
+
+
+def test_a_reap_keeps_a_sandbox_another_process_used_within_the_ttl(two_processes):
+    # Prod 2026-10-06: one process reaped its stale entry for a sandbox another
+    # process had used seconds before, and deleted it under that process.
+    clock, cloud, first, second = two_processes
+    sandbox_id = first.open_session("conv").handle
+    first.exec("conv", "a")
+    clock["t"] = 900.0
+    assert second.open_session("conv") == OpenedSession(sandbox_id, False)
+    clock["t"] = 1190.0
+    second.exec("conv", "b")
+
+    clock["t"] = 1250.0  # the first process's entry is idle 1250s > 1200s
+    assert first.reap_expired() == ["conv"]
+    assert not first.has_session("conv")
+    assert cloud.deleted == []
+    assert second.exec("conv", "c").stdout == "ran:c"
+
+
+def test_opening_another_session_does_not_delete_a_sandbox_in_use_elsewhere(two_processes):
+    # The prod path: the stale entry was reaped by an open for a different user.
+    clock, cloud, first, second = two_processes
+    first.open_session("conv")
+    clock["t"] = 900.0
+    second.open_session("conv")
+    second.exec("conv", "b")
+    clock["t"] = 1250.0
+    first.open_session("other-user")
+    assert not first.has_session("conv")
+    assert cloud.deleted == []
+    assert second.exec("conv", "c").ok
+
+
+def test_reopening_an_expired_entry_reattaches_a_sandbox_in_use_elsewhere(two_processes):
+    clock, cloud, first, second = two_processes
+    sandbox_id = first.open_session("conv").handle
+    clock["t"] = 900.0
+    second.open_session("conv")
+    second.exec("conv", "b")
+    clock["t"] = 1250.0
+    assert first.open_session("conv") == OpenedSession(sandbox_id, False)
+    assert cloud.deleted == []
+
+
+def test_a_reap_deletes_a_sandbox_idle_past_the_ttl_everywhere(two_processes):
+    clock, cloud, first, second = two_processes
+    sandbox_id = first.open_session("conv").handle
+    clock["t"] = 900.0
+    second.open_session("conv")
+    second.exec("conv", "b")
+
+    clock["t"] = 900.0 + 1201
+    assert first.reap_expired() == ["conv"]
+    assert cloud.deleted == [sandbox_id]
+    # The other process only drops its handle: the sandbox is already gone.
+    assert second.reap_expired() == ["conv"]
+    assert cloud.deleted == [sandbox_id]
+    assert not second.has_session("conv")
+
+
+def test_an_explicit_close_still_deletes_at_once(two_processes):
+    clock, cloud, first, second = two_processes
+    sandbox_id = first.open_session("conv").handle
+    clock["t"] = 10.0
+    second.open_session("conv")
+    second.exec("conv", "b")
+    first.close("conv")
+    assert cloud.deleted == [sandbox_id]
+
+
+def test_an_expired_entry_whose_activity_is_unknown_is_left_to_the_backend(two_processes, monkeypatch):
+    clock, cloud, first, _ = two_processes
+    first.open_session("conv")
+    monkeypatch.setattr(first._backend, "idle_seconds", lambda handle: None)
+    first._shared_activity.stamps.clear()  # Redis down, or the stamp expired
+    clock["t"] = 5000.0
+    assert first.reap_expired() == ["conv"]
+    assert cloud.deleted == []
+    assert first._backend.handles == {}
+
+
+def test_a_failed_activity_read_never_breaks_the_reap(two_processes, monkeypatch):
+    clock, cloud, first, _ = two_processes
+    first.open_session("conv")
+
+    def _boom(handle):
+        raise RuntimeError("cloud down")
+
+    monkeypatch.setattr(first._backend, "idle_seconds", _boom)
+    monkeypatch.setattr(first._shared_activity, "idle_seconds", _boom)
+    clock["t"] = 5000.0
+    assert first.reap_expired() == ["conv"]
+    assert cloud.deleted == []
+
+
+def test_a_lagging_backend_activity_stamp_does_not_delete_a_sandbox_used_elsewhere(two_processes, monkeypatch):
+    # A live probe saw Daytona's last_activity_at lag real use by over 100s; the
+    # shared stamp every manager writes still shows the recent use.
+    clock, cloud, first, second = two_processes
+    first.open_session("conv")
+    clock["t"] = 900.0
+    second.open_session("conv")
+    clock["t"] = 1190.0
+    second.exec("conv", "b")
+    monkeypatch.setattr(first._backend, "idle_seconds", lambda handle: 5000.0)
+    clock["t"] = 1250.0
+    first.reap_expired()
+    assert cloud.deleted == []
+
+
+def test_a_long_run_elsewhere_keeps_its_sandbox_through_the_backend_activity(two_processes, monkeypatch):
+    # The shared stamp is written when an op starts and ends; a run longer than
+    # the TTL is seen through the activity the backend refreshes while it runs.
+    clock, cloud, first, second = two_processes
+    sandbox_id = first.open_session("conv").handle
+    clock["t"] = 3000.0
+    cloud.last_activity[sandbox_id] = 2900.0  # refreshed mid-run by the other process
+    first.reap_expired()
+    assert cloud.deleted == []
+
+
+def test_the_shared_stamp_is_written_on_open_and_on_every_op(two_processes):
+    clock, _, first, _ = two_processes
+    shared = first._shared_activity
+    clock["t"] = 5.0
+    first.open_session("conv")
+    assert shared.stamps["conv"] == 5.0
+    clock["t"] = 9.0
+    first.put_file("conv", "a.txt", b"x")
+    assert shared.stamps["conv"] == 9.0
+    clock["t"] = 12.0
+    first.open_session("conv")  # a cached reuse
+    assert shared.stamps["conv"] == 12.0
+
+
+def test_start_detached_on_a_gone_sandbox_drops_the_session(backend):
+    def _gone(session_id, code, timeout, key):
+        raise SandboxGoneError("sandbox gone")
+
+    backend.start_detached = _gone
+    mgr = SandboxManager(backend, max_ttl=600)
+    mgr.open("conv-1")
+    with pytest.raises(SandboxGoneError):
+        mgr.start_detached("conv-1", "x", 5, "k")
+    assert not mgr.has_session("conv-1")

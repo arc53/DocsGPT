@@ -15,7 +15,15 @@ class SpeechSettings(SettingsGroup):
     TTS_PROVIDER: Literal["google_tts", "elevenlabs", "none"] = Field(
         default="google_tts", description="Text-to-speech provider; none switches it off."
     )
+    TTS_MAX_CHARS: int = Field(
+        default=10000,
+        description="Cap on the characters one text-to-speech request may speak, after markdown is stripped.",
+    )
     ELEVENLABS_API_KEY: Optional[str] = Field(default=None, description="ElevenLabs API key.")
+    ELEVENLABS_VOICE_ID: str = Field(
+        default="nPczCjzI2devNBz1zQrb",
+        description="ElevenLabs voice to speak with; an ID from your ElevenLabs voice library.",
+    )
     STT_PROVIDER: Literal["openai", "faster_whisper", "none"] = Field(
         default="openai", description="Speech-to-text provider; none switches it off."
     )

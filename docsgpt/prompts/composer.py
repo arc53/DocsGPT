@@ -39,6 +39,7 @@ _SECTION_ORDER: Tuple[str, ...] = (
     "formatting.txt",
     "boundaries.txt",
     "platform.txt",
+    "background.txt",  # renders when background jobs are on (``system.background_jobs``)
     "memory.txt",
     "attachments.txt",
 )

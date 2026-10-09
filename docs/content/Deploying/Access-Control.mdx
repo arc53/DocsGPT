@@ -1,7 +1,7 @@
 ---
 title: Access Control, Roles & Teams
 description: How DocsGPT models permissions — global admin/user roles (RBAC), the admin dashboard, teams with per-team roles, and sharing agents, sources, prompts, and tools.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-08
 ---
 
 import { Callout } from 'nextra/components'
@@ -71,7 +71,7 @@ Where to run the command depends on how DocsGPT is installed. The Docker image h
 
 On a Docker install, run it inside the backend container as above: the host's `docsgpt` command can't reach the stack's database, which is not published, and its `.env` has no `POSTGRES_URI`.
 
-`grant-admin` is new after 0.21.0; the 0.21.0 image has neither it nor `python -m docsgpt`. On 0.21.0, use `OIDC_ADMIN_GROUPS`, or copy the old script from a checkout of that release (`git checkout 0.21.0`) into the backend container and run it there. From the repository root of that checkout:
+`grant-admin` is new in 1.0.0; the 0.21.0 image has neither it nor `python -m docsgpt`. On 0.21.0, use `OIDC_ADMIN_GROUPS`, or copy the old script from a checkout of that release (`git checkout 0.21.0`) into the backend container and run it there. From the repository root of that checkout:
 
 ```bash
 docker compose --env-file .env -f deployment/docker-compose-hub.yaml cp scripts/. backend:/tmp/scripts/

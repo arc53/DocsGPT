@@ -8,9 +8,28 @@
 # The app (backend/worker) is the CLIENT and reaches this service over
 # HTTP + WebSocket via SANDBOX_GATEWAY_URL.
 #
-# Pre-baked doc libs are all permissive (MIT/BSD/Apache) for speed/reliability;
-# runtime `pip install` still works because egress is open. PyMuPDF and any
-# other AGPL lib are intentionally excluded; Docling is deferred to its own slice.
+# CONTENTS come from docsgpt/sandbox/manifest.py, the list the Daytona snapshot
+# (scripts/build_daytona_snapshot.py) builds from too. This Dockerfile installs
+# from files generated from it -- requirements.txt, install-system.sh,
+# sandbox.env, manifest.json; edit the manifest and run
+# `python scripts/export_sandbox_manifest.py`, never these files.
+#
+# LICENSES. The Python libraries but one are permissive (MIT, BSD, Apache-2.0,
+# HPND for Pillow; uharfbuzz bundles HarfBuzz, MIT), and so are Node.js (MIT,
+# unpacked from the official nodejs.org tarball and checked against the SHA-256
+# pinned in the manifest), Chromium (BSD-3-Clause plus its bundled third-party
+# code) and tesseract (Apache-2.0). The one is python-bidi, LGPL-3.0: an
+# unmodified wheel installed as its own package and imported at runtime.
+# LibreOffice is MPL-2.0. The fonts are under the Bitstream Vera (DejaVu) and
+# SIL OFL-1.1 (Liberation, Carlito, Caladea, Noto) licenses. Two packages are
+# GPL and are only ever run as separate programs, never linked into the Python
+# code: poppler-utils (pdftotext, pdftoppm) and Debian's ffmpeg build (ffmpeg,
+# ffprobe). They are unmodified Debian packages whose corresponding source
+# Debian publishes (`apt-get source poppler ffmpeg`, or sources.debian.org);
+# anyone redistributing this image passes on that GPL offer. PyMuPDF (AGPL) and
+# any other AGPL library are intentionally excluded; pdfplumber, pypdf and
+# pypdfium2 cover PDF reading. Runtime `pip install` still works while egress
+# is open.
 #
 # HARDENING (separate slice — NOT done here): run under the gVisor `runsc`
 # runtime, add network-layer SSRF blocks (drop RFC1918 / link-local /
@@ -21,16 +40,15 @@ FROM python:3.12-slim
 # Non-root user for the runner (untrusted code runs as this UID).
 RUN useradd --create-home --uid 10001 sandbox
 
-# Exact pins for reproducible builds and no license drift (all MIT/BSD/Apache).
-RUN pip install --no-cache-dir \
-    jupyter-kernel-gateway==3.0.1 \
-    ipykernel==6.29.5 \
-    python-pptx==1.0.2 \
-    python-docx==1.1.2 \
-    openpyxl==3.1.5 \
-    reportlab==4.2.5 \
-    pandas==2.2.3 \
-    matplotlib==3.9.2
+# System packages (OCR, poppler, ffmpeg, headless LibreOffice and Chromium,
+# fonts) and the pinned Node.js build. Its own layer: it is the largest and
+# changes least often.
+COPY install-system.sh /opt/docsgpt/install-system.sh
+RUN sh /opt/docsgpt/install-system.sh
+
+# Python libraries, exact pins from the manifest.
+COPY requirements.txt /opt/docsgpt/requirements.txt
+RUN PIP_ROOT_USER_ACTION=ignore pip install --no-cache-dir -r /opt/docsgpt/requirements.txt
 
 # Docling (MIT) — OFF by default because it pulls torch + models and makes the
 # image multi-GB. NOTE: document parsing now runs on the Celery `parsing` worker
@@ -54,11 +72,34 @@ RUN if [ "$INSTALL_DOCLING" = "true" ]; then \
 # kernelspec-name precedence to rely on). SECURITY: never give this image
 # `env_file: ../.env` -- the scrubber blocks exfil from the kernel, but the
 # runner image itself should stay free of app secrets it has no use for.
+#
+# kernel-env.sh does the scrubbing and gives kernels a writable HOME (the root FS
+# is read-only): /sandbox-home/home on the exec-enabled tmpfs compose and k8s
+# mount there, so compiled packages pip-installed at runtime load, or /tmp/home
+# when the image runs without that mount. sandbox.env is the image environment
+# it passes on.
+# kernel-startup.py runs inside each kernel and drops the FORCE_COLOR ipykernel sets.
+COPY kernel-env.sh /opt/docsgpt/kernel-env.sh
 COPY kernel-launch.sh /opt/docsgpt/kernel-launch.sh
-RUN chmod 0555 /opt/docsgpt/kernel-launch.sh
+COPY kernel-startup.py /opt/docsgpt/kernel-startup.py
 COPY gateway-launch.sh /opt/docsgpt/gateway-launch.sh
-RUN chmod 0555 /opt/docsgpt/gateway-launch.sh
+COPY sandbox.env /opt/docsgpt/sandbox.env
 COPY kernels/docsgpt-python/kernel.json /usr/local/share/jupyter/kernels/docsgpt-python/kernel.json
+
+# Conversion helpers on PATH (html_render.py picks its mode from the name it is
+# run as), and the smoke test with the manifest it checks against:
+#   docker run --rm --read-only --tmpfs /tmp \
+#     --tmpfs /sandbox-home:rw,exec,nosuid,nodev,size=1g,uid=10001,gid=10001,mode=0700 IMAGE \
+#     /opt/docsgpt/kernel-env.sh python /opt/docsgpt/smoke_test.py
+COPY helpers/office_convert.py /usr/local/bin/office-convert
+COPY helpers/html_render.py /usr/local/bin/html-to-pdf
+COPY helpers/html_render.py /usr/local/bin/html-screenshot
+COPY smoke_test.py /opt/docsgpt/smoke_test.py
+COPY manifest.json /opt/docsgpt/manifest.json
+RUN chmod 0555 /opt/docsgpt/kernel-env.sh /opt/docsgpt/kernel-launch.sh /opt/docsgpt/gateway-launch.sh \
+        /usr/local/bin/office-convert /usr/local/bin/html-to-pdf /usr/local/bin/html-screenshot \
+    && chmod 0444 /opt/docsgpt/sandbox.env /opt/docsgpt/kernel-startup.py /opt/docsgpt/smoke_test.py \
+        /opt/docsgpt/manifest.json
 
 # Numeric UID (not the name) so a kubelet with `runAsNonRoot: true` can verify
 # the user is non-root without resolving /etc/passwd. This uid MUST match

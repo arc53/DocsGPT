@@ -1,7 +1,7 @@
 ---
 title: Agent Schedules
 description: Run an agent on a timer - recurring schedules and one-time tasks from the Schedules tab, tasks set from chat with the Scheduling tool, the run log, auto-pause, the REST API, the operator limits, and the beat scheduler every schedule needs.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-06
 ---
 
 import { Callout } from 'nextra/components';
@@ -74,7 +74,7 @@ The Schedules tab has no run log for one-time tasks. Their runs, like every sche
 ### Where the output goes
 
 - The output of a **recurring** schedule, or of a one-time task created in the Schedules tab, stays in the run log. It isn't added to a conversation.
-- A **one-time task created from a chat** adds its answer to that conversation as a new turn once it succeeds. The run sees the conversation's earlier messages.
+- A **one-time task created from a chat** adds its answer to that conversation as a new turn once it succeeds. The run sees the conversation's earlier messages. Unless you're looking at that conversation, you're notified as for a [background job](/Tools/background-jobs#notifications): a toast in another open tab, Web Push when no tab is open, and an unread mark in the sidebar.
 
 ## Auto-pause
 

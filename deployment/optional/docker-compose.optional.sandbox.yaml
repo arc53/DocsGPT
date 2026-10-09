@@ -58,21 +58,46 @@ services:
 
   docsgpt-sandbox:
     build: ./sandbox
-    mem_limit: ${SANDBOX_MEMORY:-1g}
+    # One container holds the gateway, every warm session kernel (~50-60 MB
+    # each, more with data loaded) and whatever they start: a LibreOffice
+    # conversion took about 170 MB and a headless Chromium render
+    # about 110 MB on small documents, more on large ones. /tmp (the session
+    # workspaces) is a tmpfs and counts against this limit too. SANDBOX_MAX_SESSIONS
+    # (32) caps each API and worker process separately, so with both at the cap
+    # idle kernels alone pass 3 GB: raise this, or lower SANDBOX_MAX_SESSIONS or
+    # SANDBOX_MAX_TTL, for a busy deployment.
+    mem_limit: ${SANDBOX_MEMORY:-4g}
     cpus: ${SANDBOX_CPUS:-1.0}
-    pids_limit: 256
+    # Chromium is thread-heavy; 256 ran out with a few sessions converting.
+    pids_limit: 1024
+    # Docker's 64 MB /dev/shm is too small for Chromium. The helpers also pass
+    # --disable-dev-shm-usage; this covers code that starts Chromium itself.
+    shm_size: 256m
     read_only: true
     environment:
       # The gateway REQUIRES this and fails closed if unset (see gateway-launch.sh).
       # Do NOT add `env_file: ../.env` here -- the runner needs no other app secret.
       - SANDBOX_GATEWAY_AUTH_TOKEN=${SANDBOX_GATEWAY_AUTH_TOKEN:?set SANDBOX_GATEWAY_AUTH_TOKEN to a shared gateway token}
+      # Idle seconds before the gateway shuts a kernel down; keep it above the
+      # app's SANDBOX_MAX_TTL (see gateway-launch.sh). A kernel running code is
+      # never culled, so long runs (SANDBOX_EXEC_MAX_TIMEOUT) need no more.
+      - SANDBOX_KERNEL_IDLE_TIMEOUT=${SANDBOX_KERNEL_IDLE_TIMEOUT:-1800}
       # Keep Jupyter's runtime/connection files on the writable tmpfs.
       - JUPYTER_RUNTIME_DIR=/tmp/jupyter-runtime
       - JUPYTER_DATA_DIR=/tmp/jupyter-data
     tmpfs:
       # Per-session workspaces (/tmp/docsgpt-sandbox/<session_id>) and Jupyter
       # runtime files live on tmpfs; the root FS is read-only everywhere else.
+      # Docker mounts this one noexec,nosuid: nothing on /tmp can be run.
       - /tmp
+      # The kernels' HOME (/sandbox-home/home): `pip install --user` packages,
+      # pip's cache and the LibreOffice/Chromium/fontconfig dot-dirs. Unlike
+      # /tmp it allows exec, so a compiled package pip-installed at runtime can
+      # map its .so files; nosuid and nodev still refuse setuid binaries and
+      # device files. Owned by the sandbox uid with mode 0700. It is RAM: what
+      # is written here counts against mem_limit, up to SANDBOX_HOME_SIZE. A
+      # runner started without this mount falls back to a home under /tmp.
+      - /sandbox-home:rw,exec,nosuid,nodev,size=${SANDBOX_HOME_SIZE:-1g},uid=10001,gid=10001,mode=0700
     networks:
       # Reachable by backend/worker over the internal sandbox-net; internet egress
       # (runtime pip install, etc.) via the dedicated sandbox-egress net. NOT on

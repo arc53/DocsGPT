@@ -146,6 +146,9 @@ test.describe('tier-b · guardrails config contract', () => {
       const agentId = ((await createRes.json()) as { id: string }).id;
 
       const expectedAfterCreate = {
+        // AgentConfig (guardrails/config.py) normalizes the whole document,
+        // so the owner-only write allowlist is always present.
+        api_write_allowlist: [],
         guardrails: {
           ...CONFIG_DEFAULTS,
           enabled: true,
@@ -217,6 +220,7 @@ test.describe('tier-b · guardrails config contract', () => {
       ).toBe(200);
 
       const expectedAfterUpdate = {
+        api_write_allowlist: [],
         guardrails: {
           ...CONFIG_DEFAULTS,
           enabled: true,
@@ -737,9 +741,16 @@ test.describe('tier-b · guardrails builder UI', () => {
       await expect(section).toBeVisible();
 
       // Collapsed by default — the whole point of the section is that it
-      // costs nothing to ignore.
-      await expect(page.getByTestId('guardrails-enabled')).toBeHidden();
-      await page.getByTestId('guardrails-toggle').click();
+      // costs nothing to ignore. The shared Collapsible keeps its body
+      // mounted while closed (inert, at opacity 0), which Playwright still
+      // counts as visible, so assert the disclosure state instead.
+      const toggle = page.getByTestId('guardrails-toggle');
+      const body = section.locator('[data-slot="collapsible"]');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(body).toHaveAttribute('inert', '');
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      await expect(body).not.toHaveAttribute('inert');
 
       const enableSwitch = page.getByTestId('guardrails-enabled');
       await expect(enableSwitch).toBeVisible();

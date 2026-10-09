@@ -1855,12 +1855,17 @@ def _readable_without_text(filename: str) -> bool:
     return mime_type == "application/pdf" or mime_type.startswith("image/")
 
 
+#: Fingerprint keys an attachment row keeps in its metadata (``size`` has a column of its own).
+_FINGERPRINT_METADATA_KEYS = ("content_hash", "page_count", "image_page_count", "image")
+
+
 def _attachment_fingerprint(local_path: str, filename: str) -> Dict[str, Any]:
     """Fingerprint an upload's original bytes while they are local.
 
     The chat budget planner dedupes re-sent files by ``content_hash`` and
-    sizes native PDF parts by ``page_count``; both are only cheap here, where
-    the bytes already sit on disk.
+    sizes native PDF parts by ``page_count`` and ``image_page_count`` (a page
+    carrying a raster image is read by the provider as a page image too);
+    all are only cheap here, where the bytes already sit on disk.
 
     Args:
         local_path: Path of the original upload.
@@ -1868,8 +1873,8 @@ def _attachment_fingerprint(local_path: str, filename: str) -> Dict[str, Any]:
 
     Returns:
         Dict with ``content_hash`` (sha256 hex) and ``size`` (bytes), plus
-        ``page_count`` for a PDF pypdfium2 can open. Empty when the file
-        cannot be read; a fingerprint never fails the upload.
+        ``page_count`` and ``image_page_count`` for a PDF pypdfium2 can open.
+        Empty when the file cannot be read; a fingerprint never fails the upload.
     """
     digest = hashlib.sha256()
     size = 0
@@ -1888,11 +1893,43 @@ def _attachment_fingerprint(local_path: str, filename: str) -> Dict[str, Any]:
             pdf = pdfium.PdfDocument(local_path)
             try:
                 fingerprint["page_count"] = len(pdf)
+                image_pages = _count_image_pages(pdf)
+                if image_pages is not None:
+                    fingerprint["image_page_count"] = image_pages
             finally:
                 pdf.close()
         except Exception:  # noqa: BLE001 - an unreadable PDF just has no page count
             pass
     return fingerprint
+
+
+def _count_image_pages(pdf: Any) -> Optional[int]:
+    """Count the pages of a PDF that carry a raster image (a scan's page, a photo, a logo).
+
+    Providers read such a page as a page image on top of its text, so an
+    OCR'd scan costs several times its text when sent natively.
+
+    Args:
+        pdf: An open ``pypdfium2.PdfDocument``.
+
+    Returns:
+        The count, or None when a page cannot be read.
+    """
+    import pypdfium2.raw as pdfium_c
+
+    count = 0
+    try:
+        for index in range(len(pdf)):
+            page = pdf[index]
+            try:
+                images = page.get_objects(filter=(pdfium_c.FPDF_PAGEOBJ_IMAGE,), max_depth=3)
+                if next(images, None) is not None:
+                    count += 1
+            finally:
+                page.close()
+    except Exception:  # noqa: BLE001 - the planner falls back to an estimate
+        return None
+    return count
 
 
 def _store_png_copy(storage, relative_path: str, mime_type: str) -> tuple[str, dict]:
@@ -2313,7 +2350,7 @@ def _single_attachment_worker(self, file_info, user, *, emit_events: bool = True
             token_count = reused.get("token_count") or 0
             metadata = {
                 **metadata,
-                **{k: v for k, v in fingerprint.items() if k in ("content_hash", "page_count", "image")},
+                **{k: v for k, v in fingerprint.items() if k in _FINGERPRINT_METADATA_KEYS},
                 **reused_metadata,
             }
             logging.info(
@@ -2341,7 +2378,7 @@ def _single_attachment_worker(self, file_info, user, *, emit_events: bool = True
 
             metadata = {
                 **metadata,
-                **{k: v for k, v in fingerprint.items() if k in ("content_hash", "page_count", "image")},
+                **{k: v for k, v in fingerprint.items() if k in _FINGERPRINT_METADATA_KEYS},
                 "extraction": {
                     "status": extraction_status,
                     "parser": parser_name,
@@ -3371,8 +3408,9 @@ def _persist_parse_result(result, title, user_id, parent, options):
 def agent_webhook_worker(self, agent_id, payload):
     """Process the webhook payload for an agent.
 
-    Raises on failure: Celery treats a returned dict as success and
-    would skip retries, leaving the caller with a stale 200.
+    Raises on failure so the task ends ``FAILURE``: Celery treats a
+    returned dict as success. A quota refusal and a run past
+    ``WEBHOOK_RUN_TIMEOUT`` are returned, with their own ``status``.
     """
     self.update_state(state="PROGRESS", meta={"current": 1})
     try:
@@ -3400,6 +3438,8 @@ def agent_webhook_worker(self, agent_id, payload):
         logging.error(f"Error processing agent webhook: {e}", exc_info=True)
         raise
     self.update_state(state="PROGRESS", meta={"current": 50})
+    from celery.exceptions import SoftTimeLimitExceeded
+
     try:
         # Shared headless path with the scheduler; approval-gated tools auto-deny.
         from docsgpt.agents.headless_runner import run_agent_headless
@@ -3408,6 +3448,7 @@ def agent_webhook_worker(self, agent_id, payload):
         outcome = run_agent_headless(
             agent_config,
             input_data,
+            retrieval_query=_webhook_retrieval_query(payload),
             tool_allowlist=_webhook_tool_allowlist(agent_config),
             endpoint="webhook",
             request_id=getattr(getattr(self, "request", None), "id", None),
@@ -3424,6 +3465,11 @@ def agent_webhook_worker(self, agent_id, payload):
             f"Webhook skipped for agent {agent_id}: {e}", extra={"agent_id": agent_id}
         )
         return {"status": "quota_exceeded", "error": str(e)}
+    except SoftTimeLimitExceeded:
+        logging.warning(
+            f"Webhook run for agent {agent_id} exceeded WEBHOOK_RUN_TIMEOUT", extra={"agent_id": agent_id}
+        )
+        return {"status": "timeout", "error": "The run exceeded WEBHOOK_RUN_TIMEOUT and was stopped."}
     except Exception as e:
         logging.error(f"Error running agent logic: {e}", exc_info=True)
         raise
@@ -3434,6 +3480,59 @@ def agent_webhook_worker(self, agent_id, payload):
         return {"status": "success", "result": result}
     finally:
         self.update_state(state="PROGRESS", meta={"current": 100})
+
+
+# Fields a person writes, in the order they best say what an event is about.
+# ``question`` leads: it is what the webhook docs' own examples send.
+_WEBHOOK_QUERY_KEYS = (
+    "question", "query", "prompt",
+    "title", "subject", "summary", "name", "description", "body", "text", "message", "content",
+)
+_WEBHOOK_QUERY_MAX_CHARS = 2000
+# How deep into the payload, and how many items of each list, to look.
+_WEBHOOK_QUERY_MAX_DEPTH = 3
+_WEBHOOK_QUERY_MAX_ITEMS = 5
+
+
+def _webhook_retrieval_query(payload: Any) -> str:
+    """What a webhook run searches its sources with: the human-written fields, bounded.
+
+    The agent still gets the whole payload as its input; only the search is
+    narrowed. Searching with the serialized payload filled the query vector
+    with keys, ids, URLs and diffs, and a PR event's 20-35k characters
+    OOM-killed a long-context embedder.
+
+    Args:
+        payload: The webhook's parsed body (or query arguments).
+
+    Returns:
+        str: Distinct text fields (``title``, ``body``, ``message``, ...) from
+        the top three levels, one per line; the serialized payload when there
+        are none. At most ``_WEBHOOK_QUERY_MAX_CHARS`` characters either way.
+    """
+    found: List[str] = []
+
+    def collected() -> int:
+        return sum(len(text) for text in found)
+
+    def walk(node: Any, depth: int) -> None:
+        if depth > _WEBHOOK_QUERY_MAX_DEPTH or collected() >= _WEBHOOK_QUERY_MAX_CHARS:
+            return
+        if isinstance(node, dict):
+            for key in _WEBHOOK_QUERY_KEYS:
+                value = node.get(key)
+                if isinstance(value, str) and value.strip():
+                    found.append(value.strip())
+            for value in node.values():
+                if isinstance(value, (dict, list)):
+                    walk(value, depth + 1)
+        elif isinstance(node, list):
+            for item in node[:_WEBHOOK_QUERY_MAX_ITEMS]:
+                walk(item, depth + 1)
+
+    walk(payload, 0)
+    query = "\n".join(dict.fromkeys(found)) or json.dumps(payload)
+    return query[:_WEBHOOK_QUERY_MAX_CHARS]
 
 
 def _webhook_tool_allowlist(agent_config):

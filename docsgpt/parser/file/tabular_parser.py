@@ -11,6 +11,15 @@ from typing import Any, Dict, List, Union
 from docsgpt.parser.file.base_parser import BaseParser
 
 
+# pandas reads the literal strings ``N/A``, ``NA``, ``n/a``, ``NULL``, ``None``,
+# ``NaN`` and ``nan`` as missing values, so a cell that says any of them arrives
+# as a blank and the text loses it. ``N/A`` is how a person writes "not
+# applicable" and ``NULL`` is what a database export writes, so the cell usually
+# means something. A genuinely empty cell is still empty, and ``pandas_config``
+# can turn the default list back on.
+_KEEP_LITERAL_NA = {"keep_default_na": False}
+
+
 def cell_to_text(value: Any) -> str:
     """Render one spreadsheet/CSV cell as text that is always safe to join.
 
@@ -172,7 +181,7 @@ class PandasCSVParser(BaseParser):
         except ImportError:
             raise ValueError("pandas module is required to read CSV files.")
 
-        df = pd.read_csv(file, **self._pandas_config)
+        df = pd.read_csv(file, **{**_KEEP_LITERAL_NA, **self._pandas_config})
         headers = [cell_to_text(h) for h in df.columns.tolist()]
         header_row = f"{self._header_prefix}{self._col_joiner.join(headers)}"
 
@@ -258,7 +267,7 @@ class ExcelParser(BaseParser):
         except ImportError:
             raise ValueError("pandas module is required to read Excel files.")
 
-        df = pd.read_excel(file, **self._pandas_config)
+        df = pd.read_excel(file, **{**_KEEP_LITERAL_NA, **self._pandas_config})
         headers = [cell_to_text(h) for h in df.columns.tolist()]
         header_row = f"{self._header_prefix}{self._col_joiner.join(headers)}"
 

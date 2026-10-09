@@ -92,10 +92,46 @@ export function formatTimestamp(value?: string | null): string {
 // The app's language codes (locale/i18n.ts) that aren't BCP 47 tags.
 const INTL_LOCALES: Record<string, string> = { jp: 'ja', zhTW: 'zh-TW' };
 
-/** The current UI language as a tag `Intl` understands. */
+/**
+ * The current UI language as a tag `Intl` understands. A value that is not a
+ * valid tag (old builds stored the string "undefined") gives `en`, since every
+ * `Intl` constructor throws a RangeError on it.
+ */
 export function intlLocale(language: string = i18next.language): string {
   if (!language) return 'en';
-  return INTL_LOCALES[language] ?? language;
+  try {
+    return Intl.getCanonicalLocales(INTL_LOCALES[language] ?? language)[0];
+  } catch {
+    return 'en';
+  }
+}
+
+/**
+ * A deadline as the reader's own clock shows it: their browser's locale and
+ * time zone, with the zone named ("Oct 20, 2026, 9:44 AM GMT+2").
+ *
+ * The exception to the app's en-GB dates: an expiry someone has to act before
+ * (an approval link, a monitor's end) is read by people in other countries,
+ * so day/month order and the zone must be theirs and visible.
+ *
+ * Args:
+ *   value: an ISO timestamp.
+ *   locale: the locale to format for; the browser's by default.
+ *
+ * Returns:
+ *   The formatted time, or `value` unchanged when it doesn't parse.
+ */
+export function formatDeadline(value: string, locale?: string): string {
+  const parsed = parseDateValue(value);
+  if (!parsed) return value;
+  return new Intl.DateTimeFormat(locale, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  }).format(parsed);
 }
 
 /**

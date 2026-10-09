@@ -4,7 +4,7 @@
 # Environment variables for the DocsGPT end-to-end test stack.
 # This file is intentionally passive: it exports variables and nothing else.
 # It is `source`d by scripts/e2e/up.sh (and potentially by developers who want
-# to run Flask/Celery manually against the e2e stack).
+# to run the API/Celery manually against the e2e stack).
 #
 # Mirrors `Appendix A — .env.e2e reference` in e2e-plan.md. If you add/remove
 # a variable here, update the plan doc as well.
@@ -38,7 +38,7 @@ export URL_STRATEGY="backend"
 export UPLOAD_FOLDER=".e2e-tmp/inputs"
 
 # -----------------------------------------------------------------------------
-# Flask
+# API
 # -----------------------------------------------------------------------------
 export API_URL="http://127.0.0.1:7099"
 export FLASK_DEBUG_MODE="false"
@@ -52,7 +52,7 @@ export ENCRYPTION_SECRET_KEY="e2e-fixed-encryption-key-never-use-in-prod"
 
 # OIDC mode (AUTH_TYPE=oidc) — points at the mock IdP that oidc.spec.ts
 # spawns on demand (scripts/e2e/mock_oidc_idp.py, port 7999). Discovery is
-# lazy, so Flask boots fine before the IdP is up. Every OIDC_* var is pinned
+# lazy, so the API boots fine before the IdP is up. Every OIDC_* var is pinned
 # here because the app's load_dotenv() walks up and reads the repo .env —
 # whatever a developer keeps there must not leak into the e2e stack.
 if [[ "${AUTH_TYPE}" == "oidc" ]]; then

@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from docsgpt.api.answer.segments import AnswerSegments, utf16_length
+from docsgpt.api.answer.segments import AnswerSegments, separated, utf16_length
 
 
 @pytest.mark.unit
@@ -53,6 +53,25 @@ class TestAnswerSegments:
         segments.tool_call(None)
         # Nothing recorded leaves the metadata as it was, so an empty turn writes no key.
         assert "segments" not in metadata
+
+    def test_text_after_a_tool_call_starts_a_new_paragraph(self):
+        """Without it, "I'll check.Done" reached the stored answer, the API and the notification glued."""
+        segments = AnswerSegments({})
+        text = segments.join("", "I'll check.")
+        segments.answer(text)
+        segments.tool_call({"call_id": "a"})
+        after = segments.join(text, "Done.")
+        assert after == "\n\nDone."
+        segments.answer(after)
+        assert segments.join(text + after, " More.") == " More."
+
+    def test_no_separator_without_a_tool_call_or_where_one_is_there(self):
+        assert separated("Hello", " world", after_tool=False) == " world"
+        assert separated("", "Done.", after_tool=True) == "Done."
+        assert separated("Checked.\n", "Done.", after_tool=True) == "\nDone."
+        assert separated("Checked.\n\n", "Done.", after_tool=True) == "Done."
+        assert separated("Checked.", "\n\nDone.", after_tool=True) == "\n\nDone."
+        assert separated("Checked.", "   ", after_tool=True) == "   "
 
     def test_reset_forgets_the_order(self):
         metadata: dict = {}
@@ -103,10 +122,12 @@ class TestCompleteStreamSavesSegments:
 
             finalize = resource.conversation_service.finalize_message
             assert finalize.called
+            # The text after the tool call starts a new paragraph, in the stored answer and its segments alike.
+            assert finalize.call_args.args[1] == "Now step 2:\n\nDone."
             metadata = finalize.call_args.kwargs["metadata"]
             assert metadata["segments"] == [
                 {"kind": "thought", "length": 6},
                 {"kind": "text", "length": 11},
                 {"kind": "tool", "call_id": "c1"},
-                {"kind": "text", "length": 5},
+                {"kind": "text", "length": 7},
             ]

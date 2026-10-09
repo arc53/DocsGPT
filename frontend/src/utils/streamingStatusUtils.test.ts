@@ -39,6 +39,22 @@ describe('getToolChipLabel', () => {
     );
   });
 
+  it('names a call that never ran without claiming it did', () => {
+    const memory = call({
+      tool_name: 'memory',
+      action_name: 'memory_create',
+      arguments: { path: '/notes.md' },
+    });
+    expect(getToolChipLabel(memory, t)).toBe(
+      'conversation.toolChip.memorySave|/notes.md',
+    );
+    for (const not_run of ['moved_on', 'expired', undefined] as const) {
+      expect(
+        getToolChipLabel({ ...memory, status: 'denied', not_run }, t),
+      ).toBe('conversation.toolApproval.title|Memory,Create');
+    }
+  });
+
   it('falls back to the generic search label without a query, per namespace', () => {
     expect(getToolChipLabel(call({ status: 'pending' }), t)).toBe(
       'conversation.streamingStatus.searchingWebGeneric',

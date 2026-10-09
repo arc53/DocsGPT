@@ -22,6 +22,7 @@ import {
   clearAttachments,
   selectSendableAttachmentIds,
 } from '../upload/uploadSlice';
+import { wakeFromMetadata } from '../backgroundJobs/kinds';
 import { newIdempotencyKey } from '../utils/idempotency';
 import {
   appendAnswerText,
@@ -113,6 +114,9 @@ export function mapServerQueryToClient(raw: any): Query {
     requestId: raw?.request_id ?? undefined,
     lastHeartbeatAt: raw?.last_heartbeat_at ?? undefined,
   };
+
+  const wake = wakeFromMetadata(metadata);
+  if (wake) query.wake = wake;
 
   if (isTerminalComplete) {
     query.response = raw?.response ?? '';
@@ -694,6 +698,24 @@ export const fetchAnswer = createAsyncThunk<
 const TAIL_POLL_INTERVAL_MS = 2000;
 const TAIL_MAX_POLL_DURATION_MS = 10 * 60 * 1000;
 
+/** The error code of a decision for an approval that is no longer waiting. */
+export const NOT_PENDING_CODE = 'tool_call_not_pending';
+
+/** Why a ``tool.approval.cleared`` means the open chat shows a stale approval. */
+const APPROVAL_RETIRED_REASONS = new Set(['moved_on', 'expired']);
+
+/** Whether a turn's calls include one paused for the user to decide or run. */
+export function isWaitingOnUser(toolCalls: unknown): boolean {
+  return (
+    Array.isArray(toolCalls) &&
+    toolCalls.some(
+      (call) =>
+        call?.status === 'awaiting_approval' ||
+        call?.status === 'requires_client_execution',
+    )
+  );
+}
+
 export const tailInFlightMessage = createAsyncThunk<
   void,
   { messageId: string; index: number; conversationId: string }
@@ -740,6 +762,13 @@ export const tailInFlightMessage = createAsyncThunk<
             status === 'failed' ? 'failed' : 'idle',
           ),
         );
+        return;
+      }
+      // Paused for the user (an approval, a client-side tool): nothing is
+      // generating, so wait as a live pause does, not with "Generating…"
+      // and Stop. The decision resumes the turn in a new stream.
+      if (isWaitingOnUser(data?.tool_calls)) {
+        dispatch(conversationSlice.actions.setStatus('awaiting_tool_actions'));
         return;
       }
       await new Promise((r) => setTimeout(r, TAIL_POLL_INTERVAL_MS));
@@ -860,6 +889,10 @@ export const submitToolActions = createAsyncThunk<
             }),
           );
         }
+      } else if (data.type === 'error' && data.code === NOT_PENDING_CODE) {
+        // The approval is over (another tab moved on, decided it, or it
+        // expired); nothing ran. Show the turn as it ended, not a failure.
+        dispatch(loadConversation({ id: conversationId, force: true }));
       } else if (data.type === 'error') {
         dispatch(conversationSlice.actions.setStatus('failed'));
         dispatch(
@@ -1141,11 +1174,12 @@ export const conversationSlice = createSlice({
       const { index, tail } = action.payload;
       const query = state.queries[index];
       if (!query) return;
-      // A tail is a flat snapshot with no ordering. The live order is left
-      // alone: dropping it here left the stream reducers rebuilding a partial
-      // one from the next delta, which hid every step that came before. It is
-      // rendering that decides, per answer, whether the recorded order still
-      // accounts for the snapshot or synthesis has to take over.
+      // A tail carries the order the server rebuilt from its journal when
+      // it has one; otherwise the live order is left alone: dropping it here
+      // left the stream reducers rebuilding a partial one from the next
+      // delta, which hid every step that came before. It is rendering that
+      // decides, per answer, whether the recorded order still accounts for
+      // the snapshot or synthesis has to take over.
       const status = tail?.status as MessageStatus | undefined;
       query.messageStatus = status;
       query.lastHeartbeatAt = tail?.last_heartbeat_at ?? query.lastHeartbeatAt;
@@ -1178,6 +1212,14 @@ export const conversationSlice = createSlice({
       if (Array.isArray(tail?.tool_calls) && tail.tool_calls.length > 0) {
         query.tool_calls = tail.tool_calls;
       }
+      // The order the turn streamed in, rebuilt by the server from its
+      // journal: without it every tool card renders above the text.
+      const tailSegments = hydrateSegments(
+        tail?.segments,
+        query.response,
+        query.thought,
+      );
+      if (tailSegments) query.segments = tailSegments;
       if (status === 'complete') {
         delete query.error;
         delete query.errorCode;
@@ -1251,6 +1293,17 @@ export const conversationSlice = createSlice({
     builder
       .addCase(fetchAnswer.pending, (state) => {
         state.status = 'loading';
+        // Sending a new message moves past a turn still waiting on an
+        // approval: the server records those calls as never run, and so does
+        // this view, so the card can't be approved after the fact.
+        state.queries.forEach((query) => {
+          query.tool_calls?.forEach((call) => {
+            if (isWaitingOnUser([call])) {
+              call.status = 'denied';
+              call.not_run = 'moved_on';
+            }
+          });
+        });
       })
       .addCase(fetchAnswer.rejected, (state, action) => {
         if (action.meta.aborted) {
@@ -1302,13 +1355,22 @@ export default conversationSlice.reducer;
 
 // Listener (not a reducer) so a scheduled message appended to the open
 // chat can dispatch loadConversation + sidebar refresh.
+/** How long a continuation that landed mid-stream waits for the stream to end. */
+export const CONTINUATION_REFRESH_WAIT_MS = 10 * 60 * 1000;
+
 export const conversationListenerMiddleware = createListenerMiddleware();
 
 conversationListenerMiddleware.startListening({
   actionCreator: sseEventReceived,
   effect: async (action: PayloadAction<SSEEvent>, listenerApi) => {
     const envelope = action.payload;
-    if (envelope.type !== 'schedule.message.appended') return;
+    // A one-time scheduled run, or a continuation turn after a background
+    // job (or a monitor, a trigger or an approval) woke the agent.
+    if (
+      envelope.type !== 'schedule.message.appended' &&
+      envelope.type !== 'conversation.continued'
+    )
+      return;
     const payload = (envelope.payload || {}) as Record<string, unknown>;
     const conversationId =
       (payload.conversation_id as string | undefined) || '';
@@ -1320,6 +1382,9 @@ conversationListenerMiddleware.startListening({
     // Skip mid-stream: loadConversation -> updateConversationId flips status
     // to 'idle', and the next SSE chunk dies on the 'idle' guard in
     // updateStreamingQuery. Defer the refresh to the user's next navigation.
+    const streamingHere =
+      state.conversation.conversationId === conversationId &&
+      state.conversation.status === 'loading';
     if (
       state.conversation.conversationId === conversationId &&
       state.conversation.status !== 'loading'
@@ -1334,10 +1399,53 @@ conversationListenerMiddleware.startListening({
       const fetched = await getConversations(token);
       listenerApi.dispatch(receiveConversations(fetched));
     } catch (error) {
-      console.error(
-        'schedule.message.appended: conversations refresh failed',
-        error,
-      );
+      console.error(`${envelope.type}: conversations refresh failed`, error);
     }
+
+    // A continuation that landed while the user's own answer streamed shows
+    // once that stream ends, if the chat is still open.
+    if (streamingHere && envelope.type === 'conversation.continued') {
+      const ended = await listenerApi.condition(
+        (_, current) =>
+          (current as RootState).conversation.status !== 'loading',
+        CONTINUATION_REFRESH_WAIT_MS,
+      );
+      const after = listenerApi.getState() as RootState;
+      if (ended && after.conversation.conversationId === conversationId) {
+        listenerApi.dispatch(
+          loadConversation({ id: conversationId, force: true }),
+        );
+      }
+    }
+  },
+});
+
+// A turn this chat shows waiting on an approval was moved past in another tab
+// (or the request expired): reload it so the card becomes the call that never
+// ran. Never mid-stream: a reload then would drop the stream's later chunks,
+// so it waits for the stream (or a tail that may still hold the old turn) to end.
+conversationListenerMiddleware.startListening({
+  actionCreator: sseEventReceived,
+  effect: async (action: PayloadAction<SSEEvent>, listenerApi) => {
+    const envelope = action.payload;
+    if (envelope.type !== 'tool.approval.cleared') return;
+    const payload = (envelope.payload || {}) as Record<string, unknown>;
+    if (!APPROVAL_RETIRED_REASONS.has(String(payload.reason ?? ''))) return;
+    const conversationId =
+      (payload.conversation_id as string | undefined) || envelope.scope?.id;
+    const state = listenerApi.getState() as RootState;
+    if (!conversationId || state.conversation.conversationId !== conversationId)
+      return;
+    if (state.conversation.status === 'loading') {
+      const ended = await listenerApi.condition(
+        (_, current) =>
+          (current as RootState).conversation.status !== 'loading',
+        CONTINUATION_REFRESH_WAIT_MS,
+      );
+      const after = listenerApi.getState() as RootState;
+      if (!ended || after.conversation.conversationId !== conversationId)
+        return;
+    }
+    listenerApi.dispatch(loadConversation({ id: conversationId, force: true }));
   },
 });

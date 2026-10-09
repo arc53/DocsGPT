@@ -301,6 +301,18 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/delete_all_conversations", "GET"): _rule("conversations:write", blocked_by=_ALL_FAMILIES),
     ("/api/update_conversation_name", "POST"): _rule("conversations:write", blocked_by=_ALL_FAMILIES),
     ("/api/feedback", "POST"): _rule("conversations:write", blocked_by=_ALL_FAMILIES),
+    # Background jobs of the caller's conversations (the chat's job card).
+    ("/api/background_jobs", "GET"): _rule("conversations:read", blocked_by=_ALL_FAMILIES),
+    ("/api/background_jobs/<string:job_id>", "GET"): _rule("conversations:read", blocked_by=_ALL_FAMILIES),
+    ("/api/background_jobs/<string:job_id>/cancel", "POST"): _rule(
+        "conversations:write", blocked_by=_ALL_FAMILIES
+    ),
+    # Monitors of the caller's conversations (Settings > Monitors).
+    ("/api/monitors", "GET"): _rule("conversations:read", blocked_by=_ALL_FAMILIES),
+    ("/api/monitors/<string:monitor_id>", "GET"): _rule("conversations:read", blocked_by=_ALL_FAMILIES),
+    ("/api/monitors/<string:monitor_id>/<string:action>", "POST"): _rule(
+        "conversations:write", blocked_by=_ALL_FAMILIES
+    ),
     ("/api/get_message_analytics", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     ("/api/get_token_analytics", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     ("/api/get_feedback_analytics", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
@@ -342,6 +354,12 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/shared_agent": ("*",),
     "/api/shared_conversation/<string:identifier>": ("*",),
     "/api/webhooks/agents/<string:webhook_token>": ("*",),
+    # Monitor links: public, the token in the path is the credential (no session or PAT).
+    "/api/triggers/<string:token>": ("*",),
+    "/api/approvals/<string:token>": ("*",),
+    # A webhook's signing secret is shown to its owner in the app only.
+    "/api/monitors/<string:monitor_id>/secret": ("*",),
+    "/api/monitors/<string:monitor_id>/secret/exposure": ("*",),
     "/api/images/<string:agent_id>/<string:capability>": ("*",),
     "/api/mcp_server/callback": ("*",),
     "/api/mcp_server/auth_status": ("*",),
@@ -366,6 +384,11 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/sources/<string:source_id>/wiki/settings": ("PUT",),
     "/swagger.json": ("*",),
     "/api/docs": ("*",),
+    # Notifications: the web app reporting on its own tab and browser.
+    "/api/presence": ("*",),
+    "/api/push/public_key": ("*",),
+    "/api/push/subscriptions": ("*",),
+    "/api/conversations/<string:conversation_id>/read": ("*",),
 }
 DENIED_PREFIXES = (
     "/api/admin/",

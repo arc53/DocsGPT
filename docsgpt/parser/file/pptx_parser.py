@@ -1,10 +1,17 @@
 """PPT parser.
 Contains parsers for presentation (.pptx) files to extract slide text.
 """
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
 from docsgpt.parser.file.base_parser import BaseParser
+
+# A GFM row ends at a line break and its columns are separated by pipes, so
+# neither can survive inside a cell.
+_CELL_BREAK = re.compile(r"\s*(?:\r\n|\r|\n)\s*")
+_CELL_PIPE = re.compile(r"(?<!\\)(\\*)\|")
+
 
 class PPTXParser(BaseParser):
     r"""PPTX (.pptx) parser for extracting text from PowerPoint slides.
@@ -56,15 +63,13 @@ class PPTXParser(BaseParser):
 
             # Iterate over each slide in the presentation
             for slide in presentation.slides:
-                slide_text=""
+                blocks: List[str] = []
 
                 # Iterate over each shape in the slide
                 for shape in slide.shapes:
-                    # Check if the shape has a 'text' attribute and append that to the slide_text
-                    if hasattr(shape,"text"):
-                        slide_text+=shape.text
+                    blocks.extend(self._shape_text(shape))
 
-                slide_texts.append(slide_text.strip())
+                slide_texts.append("\n".join(blocks).strip())
 
             if self._concat_slides:
                 return self._slide_separator.join(slide_texts)
@@ -73,3 +78,46 @@ class PPTXParser(BaseParser):
 
         except Exception as e:
             raise e
+
+    def _shape_text(self, shape: Any) -> List[str]:
+        """Return the blocks of text a shape carries, in reading order.
+
+        A group carries no text of its own and neither does the graphic frame a
+        table lives on, so `shape.text` alone misses both entirely. A group is
+        the only shape with its own `shapes` collection, which is what
+        identifies it here without importing the enum.
+        """
+        if hasattr(shape, "shapes"):
+            grouped: List[str] = []
+            for grouped_shape in shape.shapes:
+                grouped.extend(self._shape_text(grouped_shape))
+            return grouped
+
+        if getattr(shape, "has_table", False):
+            return [self._table_to_markdown(shape.table)]
+
+        text = getattr(shape, "text", "") or ""
+        text = text.strip()
+        return [text] if text else []
+
+    @staticmethod
+    def _escape_cell(text: str) -> str:
+        """Make a cell's text safe between the pipes of a GFM row.
+
+        A cell with more than one paragraph carries a line break, which would end
+        the row in the middle of it, and a pipe would add a column. The backslash
+        run in front of a pipe is doubled first, so a backslash the cell already
+        contains cannot consume the escape.
+        """
+        text = _CELL_BREAK.sub(" ", text.strip())
+        return _CELL_PIPE.sub(lambda match: match.group(1) * 2 + r"\|", text)
+
+    @staticmethod
+    def _table_to_markdown(table: Any) -> str:
+        """Render a slide table as a GFM table, the form `tableize` also emits."""
+        rows = [[PPTXParser._escape_cell(cell.text) for cell in row.cells] for row in table.rows]
+        if not rows:
+            return ""
+        lines = ["| " + " | ".join(rows[0]) + " |", "|" + " --- |" * len(rows[0])]
+        lines.extend("| " + " | ".join(row) + " |" for row in rows[1:])
+        return "\n".join(lines)

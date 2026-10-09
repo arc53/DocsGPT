@@ -1,7 +1,7 @@
 ---
 title: 'Changelog'
 description: What changed in each DocsGPT release, with links to the upgrade steps an existing deployment needs.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-08
 ---
 
 import { Callout } from 'nextra/components'
@@ -13,7 +13,7 @@ The notable changes in each release. Every release on GitHub also carries
 request, and [Upgrading](/upgrading) covers the steps an existing deployment has to take.
 Entries start at 0.17.0; see GitHub for earlier releases.
 
-## Unreleased
+## 1.0.0
 
 <Callout type="warning">
   **Upgrade actions.** Some of these changes stop an install from starting, or change answers,
@@ -32,14 +32,27 @@ Entries start at 0.17.0; see GitHub for earlier releases.
     with the key in `API_KEY` now really uses OpenAI instead of the hosted API. Set
     `LLM_NAME=docsgpt-local` to keep the hosted model. See
     [Default model](/upgrading#default-model-llm_provider-alone-picks-it).
+  - Each API key now goes only to the endpoint it was configured for. `API_KEY` belongs to
+    `LLM_PROVIDER` alone, and an unset `FALLBACK_LLM_API_KEY` now means the fallback provider's own
+    key (say `ANTHROPIC_API_KEY`) instead of `API_KEY`. A request whose model DocsGPT cannot resolve
+    to its own endpoint now fails with `Model '<id>' is not available` instead of going to OpenAI.
+    See [API keys stay with their provider](/upgrading#api-keys-stay-with-their-provider).
   - `LLM_PROVIDER=llama.cpp` and `LLM_PROVIDER=huggingface` are gone; neither ever answered.
     Reach llama.cpp through its OpenAI-compatible server with `OPENAI_BASE_URL` and `LLM_NAME`.
     `VECTOR_STORE=lancedb` could never start and is gone from the setup scripts.
   - The checkout Compose files publish on `127.0.0.1` only. A server others reach needs
     `DOCSGPT_BIND=0.0.0.0` (see below).
+  - A connector sign-in started from a frontend origin that is not allowed now fails with
+    `origin_not_allowed`. Allowed origins come only from configuration (`CONNECTOR_REDIRECT_BASE_URI`,
+    `OIDC_FRONTEND_URL`, `CONNECTOR_ALLOWED_ORIGINS`); list any other frontend origin or host name there.
+    See [Connector sign-ins finish in the app](/upgrading#connector-sign-ins-finish-in-the-app).
   - `LLM_PATH`, `HUGGINGFACE_API_KEY`, `LANCEDB_*`, `RETRIEVERS_ENABLED` and `DEFAULT_MAX_HISTORY`
     are no longer read; delete them from `.env`. `SAGEMAKER_*` still works as the S3 credentials
     fallback but is deprecated in favour of `S3_*`.
+  - The code sandbox image grew (LibreOffice, Chromium, OCR, ffmpeg, Node.js): rebuild the runner
+    image and raise a hand-set `SANDBOX_MEMORY` to `4g`. On Daytona, build the new
+    `docsgpt-sandbox-py312-v3` snapshot and point `DAYTONA_SNAPSHOT` at it. See
+    [Daytona snapshot](/Tools/artifacts-and-code-execution#daytona-snapshot).
 </Callout>
 
 ### Connectors
@@ -67,6 +80,21 @@ Admin > Connectors, and synced sources run as their connection without a browser
 
 Answers render math, and the chat widget is published at 0.8.0.
 
+- A turn waiting on a tool approval no longer stays "streaming" when you send a new message
+  instead of answering, or when the approval expires. The turn is saved with its text and the
+  calls that ran; the calls it waited on show as **not run**, the model reads them that way on the
+  next turn, and the approval clears in your other tabs. Approving it later from a stale tab does
+  nothing and reloads the chat. See [Tools that need approval](/API/agent-api#tools-that-need-approval).
+  On later turns the model reads that turn's text before its tool results, as it was written, so
+  it no longer takes the calls it made for a plan that never ran.
+  A call that didn't run is labelled by its tool and action ("Memory · Create") instead of as done
+  ("Saved … to memory"), so the label no longer contradicts its **not run** note.
+- A tool call the server refuses (a secret reference a tool can't take, a write an admin turned
+  off, an API caller's write on the owner's account) stays on the message as a failed call with its
+  reason after a reload, and is no longer worded as a headless run in an interactive chat. On the
+  API its `tool_call` event now reports `"status": "error"` (it was `"denied"`), still with
+  `"error_type": "tool_not_allowed"`.
+
 ### Tools and list settings
 
 - `DEFAULT_CHAT_TOOLS`, `GUARDRAILS_CHECKS_ENABLED` and `QUOTA_UNPRICED_RATE_PER_MILLION` accept a JSON
@@ -79,6 +107,18 @@ Answers render math, and the chat widget is published at 0.8.0.
 - A new [Code Execution Sandbox](/Deploying/Sandbox) page covers running the sandbox the Artifact and
   Code Executor tools need, and `scripts/build_daytona_snapshot.py` pins the runner image's render
   library versions.
+- The runner image and the Daytona snapshot are built from one package list and now carry PDF,
+  HTML and YAML libraries (pypdf, pdfplumber, requests, beautifulsoup4, PyYAML), tesseract OCR,
+  poppler, ffmpeg, headless LibreOffice and Chromium with `office-convert`, `html-to-pdf` and
+  `html-screenshot` helpers, Node.js 24, and fonts for Arabic, Devanagari and CJK text.
+  `pip install` inside the self-hosted runner now works; its read-only filesystem made it fail.
+  See [What the sandbox has installed](/Tools/artifacts-and-code-execution#what-the-sandbox-has-installed).
+- The Code Executor's description is shorter and states what each backend keeps between calls,
+  where files must go to reach the user, and which library makes each format. A new session's
+  first result lists the environment, results carry `hint` lines for common mistakes (a missing
+  import, `apt-get`, files written to `/tmp`, the app's own URLs, missing fonts, the same error
+  twice), and output tails drop colour codes and pip noise. See
+  [Hints in results](/Tools/artifacts-and-code-execution#hints-in-results).
 
 ### API
 
@@ -90,6 +130,10 @@ Answers render math, and the chat widget is published at 0.8.0.
   document, including the token scope for each endpoint.
 - DocsGPT's MCP server now answers at `/mcp` as well as `/mcp/`. Before, `/mcp` without the slash
   returned 404 to a POST.
+- An agent webhook run stops after `WEBHOOK_RUN_TIMEOUT` (default 600 seconds) and its task ends
+  with `"status": "timeout"`; before, nothing bounded it. A run that raises an error is no longer
+  retried, since each retry ran the agent again, tool actions included: the task ends `FAILURE`.
+  See [Webhooks](/API/webhooks#step-2-poll-for-the-result).
 
 ### Schedules
 
@@ -100,6 +144,10 @@ Answers render math, and the chat widget is published at 0.8.0.
 - Editing a one-time task's date or time in the Schedules tab now moves the task; the change used
   to be ignored. `PUT /api/schedules/<id>` accepts `run_at` for one-time tasks, and the schedule
   dialog shows why a save was refused.
+- A scheduled run no longer writes a `source='schedule'` row with its total tokens to `token_usage`
+  next to the rows its LLM calls already wrote, so queries that sum the table no longer count
+  scheduled spend twice. Older rows stay out of every DocsGPT total, now including the admin
+  overview's 30-day token count.
 
 ### Documentation
 
@@ -197,6 +245,11 @@ stored secrets and upload its documents again: see
 
 ### Secrets and security defaults
 
+- Connector OAuth sign-ins finish in the app, on its `/connectors/callback` page, with the signed-in
+  user's own login, and only the user who started a sign-in can finish it. The OAuth `state` is a
+  one-time random value kept on the server. The API callback (`/api/connectors/callback`) forwards to
+  that page, so redirect URIs registered with providers keep working; registering the app page directly
+  also works.
 - `docsgpt up`, `setup.sh` and `setup.ps1` generate `ENCRYPTION_SECRET_KEY` on a fresh install, so a
   networked install can create connections and no longer seals tool, MCP and custom-model secrets
   with the public default key. An existing value is never replaced, and an existing Docker install
@@ -226,6 +279,24 @@ stored secrets and upload its documents again: see
   setting's old and new value.
 - The URL check for MCP servers, S3 endpoints and imported agents also refuses carrier-grade NAT
   addresses (`100.64.0.0/10`).
+- A provider's API key could reach another provider. Right after a restart, two requests at once
+  could find the model registry empty; one then fell back to `LLM_PROVIDER` with no model and the
+  OpenAI client sent the configured key to `api.openai.com` (a DeepSeek key, in the case seen). The
+  registry now loads once under a lock, a request whose model has no endpoint of its own is refused,
+  and an LLM client refuses a configured key for any host it was not configured for. The Anthropic
+  and Gemini clients are pinned to the endpoint that check sees, so `ANTHROPIC_BASE_URL`,
+  `GOOGLE_GEMINI_BASE_URL` and `GOOGLE_GENAI_USE_VERTEXAI` no longer redirect them. A configured key
+  goes over plain `http` only to a host on your own network; `LLM_ALLOW_PLAINTEXT_ENDPOINTS` allows
+  other internal names. See [Plain http and your API key](/Models/local-inference#plain-http-and-your-api-key). See
+  [Keys stay with their provider](/Models/cloud-providers#keys-stay-with-their-provider).
+- The sandbox manager and the embedding models are also built once per process under a lock, so
+  concurrent first requests no longer create a second sandbox session registry or load a model twice.
+- Backend dependencies are updated, clearing the known vulnerabilities in pypdf, werkzeug, urllib3,
+  PyJWT, oauthlib, multidict and docling. JWTs are now signed and checked with PyJWT instead of
+  python-jose, which has an unfixed algorithm-confusion advisory and pulled in `ecdsa`. Existing
+  tokens stay valid. A `JWT_SECRET_KEY` shorter than 32 bytes now logs a warning. The code sandbox
+  libraries move to Pillow 12.3, pypdf 6.19, pdfplumber 0.11.10, pandas 2.3 and matplotlib 3.11, so
+  the Daytona snapshot is now `docsgpt-sandbox-py312-v3`.
 - A new [security checklist](/Deploying/Security) covers bind addresses, the choice of `AUTH_TYPE`,
   the secrets to set, outbound URL checks, prompt templates, the LLM cache and the version check.
 

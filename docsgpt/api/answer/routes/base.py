@@ -13,7 +13,9 @@ from flask import jsonify, make_response, Response
 from flask_restx import Namespace
 
 from docsgpt import tracing
-from docsgpt.api.answer.segments import AnswerSegments
+from docsgpt.api.answer.segments import AnswerSegments, merge_tool_calls
+from docsgpt.background.context import bind_turn as bind_background_turn
+from docsgpt.background.fold import fold_turn as fold_background_turn
 from docsgpt.api.answer.services.continuation_service import ContinuationService
 from docsgpt.api.answer.services.conversation_service import (
     ConversationService,
@@ -153,6 +155,61 @@ def _record_answered_by(agent: Any, query_metadata: Dict[str, Any]) -> None:
     entries = [dict(e) for e in entries if isinstance(e, dict)]
     if any(e.get("fallback") for e in entries):
         query_metadata["answered_by"] = entries
+
+
+def _seal_exposed_text(agent: Any, decoded_token: Optional[Dict], *texts: str) -> tuple:
+    """The answer's texts with any link secret the owner chose to show the assistant put back to its reference.
+
+    Args:
+        agent: The turn's agent (its executor caches the lookup).
+        decoded_token: The caller's token (the owner).
+        *texts: The texts to store.
+
+    Returns:
+        The texts, in order.
+    """
+    try:
+        exposed = _exposed_for_turn(agent, decoded_token)
+    except Exception:
+        logger.exception("looking up exposed secrets for the stored answer failed")
+        return texts
+    if not exposed:
+        return texts
+    from docsgpt.monitors.secret_refs import redact
+
+    return tuple(redact(text, exposed) if isinstance(text, str) else text for text in texts)
+
+
+def _exposed_for_turn(agent: Any, decoded_token: Optional[Dict]) -> Dict[str, str]:
+    """``{secret: reference}`` for the secrets the owner chose to show the assistant (via the turn's executor)."""
+    executor = getattr(agent, "tool_executor", None)
+    exposed_secrets = getattr(executor, "exposed_secrets", None)
+    if callable(exposed_secrets):
+        exposed = exposed_secrets()
+    else:
+        from docsgpt.monitors.secret_refs import exposed_values
+
+        exposed = exposed_values((decoded_token or {}).get("sub") or "")
+    return exposed if isinstance(exposed, dict) else {}
+
+
+def _seal_exposed_journal(agent: Any, decoded_token: Optional[Dict], message_id: Optional[str]) -> None:
+    """Rewrite a message's stream journal so it keeps references, not secrets the owner showed the assistant.
+
+    Runs as the stream ends (any exit). A failure is logged, never raised.
+    """
+    if not message_id:
+        return
+    try:
+        exposed = _exposed_for_turn(agent, decoded_token)
+        if not exposed:
+            return
+        from docsgpt.storage.db.repositories.message_events import MessageEventsRepository
+
+        with db_session() as conn:
+            MessageEventsRepository(conn).redact_values(str(message_id), exposed)
+    except Exception:
+        logger.exception("sealing exposed secrets in the stream journal failed")
 
 
 def _native_image_names(agent: Any) -> List[str]:
@@ -494,6 +551,11 @@ class BaseAnswerResource:
             Server-sent event strings
         """
         response_full, thought, source_log_docs, tool_calls = "", "", [], []
+        # A resumed turn's calls from the rounds before its approval pauses: the
+        # message keeps them with the calls this stream makes.
+        prior_tool_calls: List[Dict] = list((_continuation or {}).get("prior_tool_calls") or [])
+        if prior_tool_calls:
+            tool_calls = list(prior_tool_calls)
         # Set when a workflow agent run emits its ``workflow_run`` event; persisted
         # onto the message metadata so the chat can render the run's produced
         # artifacts on reload.
@@ -765,6 +827,15 @@ class BaseAnswerResource:
                 logger.debug(
                     "Could not set tool_executor.conversation_id post-reserve",
                 )
+        # A slow tool call in this turn may be handed off to a background job.
+        bind_background_turn(
+            getattr(agent, "tool_executor", None),
+            conversation_id=conversation_id,
+            message_id=reserved_message_id,
+            decoded_token=decoded_token,
+            agent_id=agent_id,
+            api_route=finalize_tool_pause_as_complete,
+        )
 
         # Per-stream monotonic SSE event id. Allocated by ``_emit`` and
         # threaded through both the wire format (``id: <seq>\\n``) and
@@ -851,7 +922,15 @@ class BaseAnswerResource:
                 # applies the redaction to what it sends the model. Handing it
                 # the already-redacted question would make that a second scan
                 # over different text, and a remote check would be paid twice.
-                gen_iter = agent.gen(query=raw_question)
+                # Background results that finished unseen go in front of it.
+                model_question = raw_question
+                if wal_eligible and conversation_id:
+                    model_question, folded = fold_background_turn(
+                        str(conversation_id), (decoded_token or {}).get("sub"), raw_question
+                    )
+                    if folded:
+                        query_metadata["folded_background"] = folded
+                gen_iter = agent.gen(query=model_question)
 
             # Seed a liveness heartbeat the moment generation starts, before
             # the first chunk. The row is still ``pending`` here; this stamps a
@@ -890,15 +969,19 @@ class BaseAnswerResource:
                     query_metadata.update(line["metadata"])
                 elif "answer" in line:
                     _mark_streaming_once()
-                    response_full += str(line["answer"])
-                    segments.answer(line["answer"])
+                    chunk = str(line["answer"])
+                    if not line.get("structured"):
+                        # Text after a tool call starts a new paragraph, live and stored alike.
+                        chunk = segments.join(response_full, chunk)
+                    response_full += chunk
+                    segments.answer(chunk)
                     if line.get("structured"):
                         is_structured = True
                         schema_info = line.get("schema")
                         structured_chunks.append(line["answer"])
                     else:
                         yield _emit(
-                            {"type": "answer", "answer": line["answer"]}
+                            {"type": "answer", "answer": chunk}
                         )
                 elif "sources" in line:
                     _mark_streaming_once()
@@ -918,7 +1001,7 @@ class BaseAnswerResource:
                     # retrieval outage behind a confident, fabricated answer.
                     yield _emit({"type": "source", "source": truncated_sources})
                 elif "tool_calls" in line:
-                    tool_calls = line["tool_calls"]
+                    tool_calls = merge_tool_calls(prior_tool_calls, line["tool_calls"])
                     yield _emit({"type": "tool_calls", "tool_calls": tool_calls})
                 elif "thought" in line:
                     thought += line["thought"]
@@ -1176,6 +1259,9 @@ class BaseAnswerResource:
                                     # consistent across token_usage rows.
                                     "reserved_message_id": reserved_message_id,
                                     "request_id": request_id,
+                                    # Every round's calls so far, so the message
+                                    # the resumed turn finalizes keeps them all.
+                                    "prior_tool_calls": json.loads(json.dumps(tool_calls or [], default=str)),
                                     # Persisted in agent_config (rather than
                                     # a new column) so resume rebuilds the
                                     # paused assistant message with the
@@ -1324,6 +1410,9 @@ class BaseAnswerResource:
             )
 
             if should_persist:
+                # A secret the owner chose to show the assistant is stored as its reference
+                # if the model repeated it (the stream already carried it as written).
+                response_full, thought = _seal_exposed_text(agent, decoded_token, response_full, thought)
                 if reserved_message_id is not None:
                     finalize_outcome = self.conversation_service.finalize_message(
                         reserved_message_id,
@@ -1459,12 +1548,15 @@ class BaseAnswerResource:
                 conversation_id = None
             # Resume finished cleanly; drop the continuation row.
             # Crash-paths leave it ``resuming`` for the janitor to revert.
+            # Only this turn's: a later turn that paused meanwhile owns the
+            # conversation's row now.
             if _continuation and conversation_id:
                 try:
                     cont_service = ContinuationService()
                     cont_service.delete_state(
                         str(conversation_id),
                         decoded_token.get("sub", "local"),
+                        message_id=reserved_message_id,
                     )
                 except Exception as e:
                     logger.error(
@@ -1515,6 +1607,7 @@ class BaseAnswerResource:
             if journal_writer is not None:
                 journal_writer.flush()
                 journal_writer.close()
+            response_full, thought = _seal_exposed_text(agent, decoded_token, response_full, thought)
             # Save partial response
 
             # Whether the DB row was flipped to ``complete`` during this
@@ -1733,6 +1826,7 @@ class BaseAnswerResource:
                 surface="v1" if getattr(agent, "is_v1", False) is True else "chat",
                 image_names=_native_image_names(agent),
             )
+            response_full, thought = _seal_exposed_text(agent, decoded_token, response_full, thought)
             trace = tracing.current_trace()
             if trace is not None:
                 trace.outcome = tracing.STATUS_ERROR
@@ -1840,6 +1934,8 @@ class BaseAnswerResource:
                     flush_guardrails(reserved_message_id)
                 except Exception:
                     logger.exception("Guardrail audit flush failed")
+            # The journal kept the stream as written; put back any secret the owner showed the assistant.
+            _seal_exposed_journal(agent, decoded_token, reserved_message_id)
 
     def _finalize_stateless_tool_pause(
         self,
@@ -2019,9 +2115,20 @@ class BaseAnswerResource:
 
         return result
 
-    def error_stream_generate(self, err_response):
-        data = json.dumps({"type": "error", "error": err_response})
-        yield f"data: {data}\n\n"
+    def error_stream_generate(self, err_response: str, code: Optional[str] = None):
+        """One SSE ``error`` event, for a request refused before its stream began.
+
+        Args:
+            err_response: The message.
+            code: A stable code the client can act on, when there is one.
+
+        Yields:
+            The event.
+        """
+        payload: Dict[str, Any] = {"type": "error", "error": err_response}
+        if code:
+            payload["code"] = code
+        yield f"data: {json.dumps(payload)}\n\n"
 
     def curated_error_stream_generate(self, error: BaseException):
         """One SSE ``error`` event with the curated message, code and params.

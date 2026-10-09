@@ -27,7 +27,6 @@ from docsgpt.storage.db.repositories.schedule_runs import (
     ScheduleRunsRepository,
 )
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
-from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +163,27 @@ def _publish_message_appended(
         logger.exception(
             "scheduler: message.appended publish failed run=%s", run_id,
         )
+
+
+def _notify_appended(schedule: Dict[str, Any], message: Dict[str, Any], outcome: Dict[str, Any]) -> None:
+    """Tell the user a one-time run answered in its conversation (a toast, a push or an unread mark).
+
+    Like a continuation's answer: nothing while the user watches that
+    conversation (``notify_user`` decides). Never raises.
+    """
+    from docsgpt.notifications.kinds import plain_preview
+    from docsgpt.notifications.notify import notify_user
+
+    conversation_id = str(message["conversation_id"])
+    title = (schedule.get("name") or "").strip() or plain_preview(schedule.get("instruction") or "", 120)
+    notify_user(
+        user_id=str(schedule.get("user_id")),
+        conversation_id=conversation_id,
+        kind="schedule",
+        title=title or "Scheduled task",
+        body=plain_preview(outcome.get("answer") or ""),
+        url=f"/c/{conversation_id}",
+    )
 
 
 def _append_one_time_turn(
@@ -434,24 +454,9 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
             update_fields["error_type"] = error_type
             update_fields["error"] = error_text
         updated_run = ScheduleRunsRepository(conn).update(run_id, update_fields)
-        if used_tokens > 0:
-            agent_id_raw = schedule.get("agent_id")
-            try:
-                TokenUsageRepository(conn).insert(
-                    user_id=schedule.get("user_id"),
-                    api_key=None,
-                    prompt_tokens=prompt_tokens,
-                    generated_tokens=generated_tokens,
-                    timestamp=finished,
-                    agent_id=str(agent_id_raw) if agent_id_raw else None,
-                    source="schedule",
-                    request_id=str(run_id),
-                    model_id=outcome.get("model_id"),
-                )
-            except Exception:
-                logger.exception(
-                    "scheduler: token_usage insert failed run=%s", run_id,
-                )
+        # No token_usage row here: the run's LLM calls were each recorded by
+        # the usage decorators as they ran, and a run total on top of them
+        # counted every token twice. The run's own total stays on its row.
         schedules_repo = SchedulesRepository(conn)
         autopaused = False
         if new_status == "success":
@@ -504,6 +509,7 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
                 str(schedule["id"]),
                 run_id,
             )
+            _notify_appended(schedule, appended, outcome)
 
     if new_status == "success":
         _publish_run_event("schedule.run.completed", updated_run or run, schedule)

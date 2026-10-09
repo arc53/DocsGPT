@@ -4,9 +4,9 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from docsgpt.sandbox.base import CodeSandbox, ExecResult, SandboxGoneError
+from docsgpt.sandbox.base import CodeSandbox, ExecResult, OpenedSession, SandboxGoneError
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ class SandboxCapacityError(RuntimeError):
 class _Session:
     """Bookkeeping for one bound sandbox session: its TTL, access timestamps, and backend handle.
 
-    ``handle`` is the backend handle id returned by ``backend.open``; ``None`` while a
+    ``handle`` is the backend handle id the backend open returned; ``None`` while a
     slot is RESERVED (a placeholder occupying a cap slot during a cold backend open that
     runs outside the lock). ``ready`` is False for such a placeholder so reuse/reap/evict
     skip it until the backend open finalizes it. ``pending_close`` marks a session whose
@@ -49,18 +49,26 @@ class SandboxManager:
         max_ttl: float,
         default_ttl: Optional[float] = None,
         max_sessions: Optional[int] = None,
+        shared_activity: Optional[Any] = None,
     ) -> None:
         """Wrap ``backend`` with a registry clamped to ``max_ttl`` and bounded to ``max_sessions``.
 
         The session cap is per-process/worker: each app or Celery process keeps its
         own registry, so the effective fleet-wide ceiling is ``max_sessions`` times
         the number of live processes.
+
+        ``shared_activity`` (a ``docsgpt.sandbox.activity.SharedActivity``) is the
+        last-use clock every process shares; each open and op stamps it, and an
+        idle expiry reads it before deleting a runtime (see ``_expire_backend``).
         """
         self._backend = backend
+        self._shared_activity = shared_activity
         self._max_ttl = max_ttl
         self._default_ttl = default_ttl if default_ttl is not None else max_ttl
         self._max_sessions = max_sessions if max_sessions and max_sessions > 0 else None
         self._sessions: Dict[str, _Session] = {}
+        # Ids whose expired session is being torn down; same-id opens wait on the event.
+        self._retiring: Dict[str, threading.Event] = {}
         self._lock = threading.Lock()
 
     def _clamp_ttl(self, ttl: Optional[float]) -> float:
@@ -72,66 +80,131 @@ class SandboxManager:
         return min(ttl, self._max_ttl)
 
     def open(self, session_id: str, ttl: Optional[float] = None) -> str:
+        """Open (or reuse) the sandbox for ``session_id`` and return its handle id.
+
+        See ``open_session``, which also reports whether the runtime is new.
+
+        Args:
+            session_id: The session to open.
+            ttl: Requested idle keep-alive in seconds, clamped to ``max_ttl``.
+
+        Returns:
+            The backend handle id.
+        """
+        return self.open_session(session_id, ttl=ttl).handle
+
+    def open_session(self, session_id: str, ttl: Optional[float] = None) -> OpenedSession:
         """Open (or reuse) the sandbox for ``session_id`` with a clamped TTL.
 
         The lock guards ONLY the in-memory registry and refcounts; the (potentially
         ~60s) cold backend open runs WITHOUT the lock held so it can never serialize
         other lock-taking methods. Flow:
 
-        1. Under the lock: if the session already exists and is ready, refresh it and
-           return its cached handle (reuse never does backend I/O). Otherwise reap
-           idle-expired sessions, evict an LRU-idle victim if at capacity, then RESERVE
-           a placeholder slot for ``session_id`` so concurrent opens can't overshoot
-           the cap.
-        2. Outside the lock: call ``backend.open`` (cold start) and close any reaped /
-           evicted victims' captured backend resources.
+        1. Under the lock: if the session already exists, is ready and has not been
+           idle past its TTL, refresh it and return its cached handle (reuse never
+           does backend I/O). An idle-expired session is retired instead, as a reap
+           would have done, and other opens of the same id wait until its teardown
+           has finished. Otherwise reap idle-expired sessions, evict an LRU-idle
+           victim if at capacity, then RESERVE a placeholder slot for ``session_id``
+           so concurrent opens can't overshoot the cap.
+        2. Outside the lock: let go of any retired / reaped / evicted victims'
+           captured backend resources (``_expire_backend``: deleted only when no
+           process has used them for ``max_ttl``), then call
+           ``backend.open_session`` (cold start).
         3. Under the lock: finalize the placeholder into a ready session. On failure,
            free the reserved slot and re-raise.
+
+        Args:
+            session_id: The session to open.
+            ttl: Requested idle keep-alive in seconds, clamped to ``max_ttl``. On
+                reuse it only ever extends the session's TTL.
+
+        Returns:
+            The handle id, and ``created`` True when this open started a fresh
+            runtime (nothing from earlier calls survives). A cached session is
+            reused (False); a cold open reports what the backend did, so a
+            runtime reattached across processes also counts as reused.
         """
-        with self._lock:
-            session = self._sessions.get(session_id)
-            now = time.monotonic()
-            if session is not None and session.ready:
-                session.last_access = now
-                # Reuse must honor an explicit longer keep-alive: a run_code
-                # persist/ttl on a session first opened by another tool (e.g.
-                # artifact_generator at the 60s exec timeout) would otherwise be
-                # dropped, and the kernel + its background state reaped early.
-                # Extend only (never shrink) so a default reuse can't cut short a
-                # session another caller kept alive.
-                if ttl is not None:
-                    session.ttl = max(session.ttl, self._clamp_ttl(ttl))
-                return session.handle
-            reaped = self._reap_locked(now)
-            if session is None:
-                # Genuinely new key: evict an LRU-idle victim if at capacity (may
-                # raise SandboxCapacityError), then RESERVE a placeholder slot so
-                # concurrent opens can't overshoot the cap.
-                evicted = self._make_room_locked()
-                self._sessions[session_id] = _Session(
-                    session_id=session_id,
-                    ttl=self._clamp_ttl(ttl),
-                    created_at=now,
-                    last_access=now,
-                )
-            else:
-                # A not-yet-ready placeholder for THIS id already occupies a cap slot
-                # (another thread is mid cold-open). Overwriting the same key adds no
-                # slot, so do NOT call _make_room_locked here -- it would wrongly evict
-                # an innocent LRU-idle session or raise SandboxCapacityError. Refresh
-                # in place; both threads call the (idempotent) backend.open and the
-                # finalize step re-checks before binding the handle.
-                evicted = None
-                session.last_access = now
-                session.ttl = self._clamp_ttl(ttl)
+        while True:
+            with self._lock:
+                retiring = self._retiring.get(session_id)
+                if retiring is None:
+                    session = self._sessions.get(session_id)
+                    now = time.monotonic()
+                    retired: Optional[Tuple[str, Optional[str]]] = None
+                    if session is not None and session.ready and session.in_use == 0 and session.is_expired(now):
+                        # Idle past its TTL: the session is over even though no reap has run
+                        # yet (API processes reap only when another session opens). Reusing it
+                        # would claim state the TTL says is discarded, and on the Jupyter runner
+                        # the gateway may already have culled the kernel behind the handle.
+                        # A Daytona sandbox another process still uses survives the retire,
+                        # and the cold open below reattaches it (reported as reused).
+                        # Popping it frees a cap slot, so _make_room_locked below cannot
+                        # raise and strand the retiring marker set here.
+                        self._sessions.pop(session_id, None)
+                        retired = (session_id, session.handle)
+                        retiring = threading.Event()
+                        self._retiring[session_id] = retiring
+                        session = None
+                    if session is not None and session.ready:
+                        session.last_access = now
+                        # Reuse must honor an explicit longer keep-alive: a run_code
+                        # keep-alive on a session first opened by another tool (e.g.
+                        # artifact_generator at the 60s exec timeout) would otherwise be
+                        # dropped, and the kernel + its background state reaped early.
+                        # Extend only (never shrink) so a default reuse can't cut short a
+                        # session another caller kept alive.
+                        if ttl is not None:
+                            session.ttl = max(session.ttl, self._clamp_ttl(ttl))
+                        reused = OpenedSession(session.handle, False)
+                        break
+                    reused = None
+                    reaped = self._reap_locked(now)
+                    if session is None:
+                        # Genuinely new key: evict an LRU-idle victim if at capacity (may
+                        # raise SandboxCapacityError), then RESERVE a placeholder slot so
+                        # concurrent opens can't overshoot the cap.
+                        evicted = self._make_room_locked()
+                        self._sessions[session_id] = _Session(
+                            session_id=session_id,
+                            ttl=self._clamp_ttl(ttl),
+                            created_at=now,
+                            last_access=now,
+                        )
+                    else:
+                        # A not-yet-ready placeholder for THIS id already occupies a cap slot
+                        # (another thread is mid cold-open). Overwriting the same key adds no
+                        # slot, so do NOT call _make_room_locked here -- it would wrongly evict
+                        # an innocent LRU-idle session or raise SandboxCapacityError. Refresh
+                        # in place; both threads call the (idempotent) backend open and the
+                        # finalize step re-checks before binding the handle.
+                        evicted = None
+                        session.last_access = now
+                        session.ttl = self._clamp_ttl(ttl)
+                    break
+            # An expired session for this id is being torn down. Opening now could hand
+            # back the runtime being deleted (backends reuse what they still have
+            # registered), so wait for the teardown and start over.
+            retiring.wait()
+
+        if reused is not None:
+            self._touch_shared(session_id)
+            return reused
 
         # Cold backend open and victim teardown run OUTSIDE the lock.
+        if retired is not None:
+            try:
+                self._expire_backend(*retired)
+            finally:
+                with self._lock:
+                    self._retiring.pop(session_id, None)
+                retiring.set()
         for sid, handle in reaped:
-            self._close_backend(sid, handle)
+            self._expire_backend(sid, handle)
         if evicted is not None:
-            self._close_backend(evicted[0], evicted[1])
+            self._expire_backend(evicted[0], evicted[1])
         try:
-            handle = self._backend.open(session_id)
+            handle, created = self._backend.open_session(session_id)
         except Exception:
             # Free the reserved slot so a failed cold open never leaks a cap slot.
             with self._lock:
@@ -153,7 +226,9 @@ class SandboxManager:
                 stale = None
         if stale is not None:
             self._close_backend(session_id, stale)
-        return handle
+            return OpenedSession(handle, created)
+        self._touch_shared(session_id)
+        return OpenedSession(handle, created)
 
     def _make_room_locked(self) -> Optional[Tuple[str, Optional[str]]]:
         """Evict the LRU-idle ready session when at capacity; return (id, handle) to close, else None.
@@ -200,6 +275,40 @@ class SandboxManager:
             if result.runtime_invalidated:
                 self._drop_invalidated_session(session_id, session)
             return result
+        finally:
+            self._leave(session_id, expected=session)
+
+    def supports_detached(self) -> bool:
+        """Whether the backend can run code as a detached process (``start_detached``)."""
+        return callable(getattr(self._backend, "start_detached", None))
+
+    def start_detached(self, session_id: str, code: str, timeout: Optional[float], key: str) -> dict:
+        """Start ``code`` detached in the bound session; returns the run's handle (see the backend)."""
+        session = self._enter(session_id)
+        try:
+            return self._backend.start_detached(session_id, code, timeout, key)
+        except SandboxGoneError:
+            self._drop_invalidated_session(session_id, session)
+            raise
+        finally:
+            self._leave(session_id, expected=session)
+
+    def poll_detached(self, session_id: str, run: dict, *, with_output: bool = False):
+        """Check a detached run in the bound session; returns a ``DetachedState``."""
+        session = self._enter(session_id)
+        try:
+            state = self._backend.poll_detached(session_id, run, with_output=with_output)
+            if state.done and state.result is not None and state.result.runtime_invalidated:
+                self._drop_invalidated_session(session_id, session)
+            return state
+        finally:
+            self._leave(session_id, expected=session)
+
+    def cancel_detached(self, session_id: str, run: dict) -> None:
+        """Stop a detached run in the bound session (best-effort)."""
+        session = self._enter(session_id)
+        try:
+            self._backend.cancel_detached(session_id, run)
         finally:
             self._leave(session_id, expected=session)
 
@@ -323,7 +432,8 @@ class SandboxManager:
                 raise KeyError(f"No sandbox session bound for {session_id!r}")
             session.last_access = time.monotonic()
             session.in_use += 1
-            return session
+        self._touch_shared(session_id)
+        return session
 
     def _drop_invalidated_session(self, session_id: str, expected: _Session) -> None:
         """Drop the exact manager entry whose backend runtime was already destroyed."""
@@ -342,9 +452,11 @@ class SandboxManager:
         """
         handle: Optional[str] = None
         do_close = False
+        released = False
         with self._lock:
             session = self._sessions.get(session_id)
             if session is not None and (expected is None or session is expected) and session.in_use > 0:
+                released = True
                 session.in_use -= 1
                 session.last_access = time.monotonic()
                 if session.in_use == 0 and session.pending_close:
@@ -353,6 +465,8 @@ class SandboxManager:
                     do_close = True
         if do_close:
             self._close_backend(session_id, handle)
+        elif released:
+            self._touch_shared(session_id)
 
     def _close_backend(self, session_id: str, handle: Optional[str]) -> None:
         """Close the SPECIFIC backend resource captured for this session, best-effort.
@@ -372,19 +486,97 @@ class SandboxManager:
         except Exception:
             logger.exception("SandboxManager: backend close failed for %s", session_id)
 
+    def _expire_backend(self, session_id: str, handle: Optional[str]) -> None:
+        """Let go of a session this process stopped using (idle past its TTL, or evicted at the cap).
+
+        Several processes can hold the same runtime: a Daytona sandbox is found again
+        by its session label, so an API process and a worker may both have a handle
+        on it, each with its own idle clock. This process going idle says nothing
+        about the others, so for a backend that can share a runtime (it has
+        ``release_handle``) only the local handle is dropped, and the runtime is
+        deleted only once no process has used it for ``max_ttl``
+        (``_idle_everywhere``). A runtime still in use elsewhere, or whose activity
+        can't be read, is left to the backend's own idle timers (Daytona auto-stop
+        and auto-delete). Backends without the hook (the Jupyter runner, where each
+        process starts its own kernel) are closed as before. An explicit ``close``
+        does not come here: it always tears the runtime down.
+
+        Args:
+            session_id: The expired session.
+            handle: The backend handle captured when the session was popped.
+        """
+        release = getattr(self._backend, "release_handle", None)
+        if handle is None or not callable(release):
+            self._close_backend(session_id, handle)
+            return
+        try:
+            release(session_id, handle)
+        except Exception:
+            logger.exception("SandboxManager: releasing expired session %s failed", session_id)
+            return
+        idle = self._idle_everywhere(session_id, handle)
+        if idle is None or idle <= self._max_ttl:
+            logger.info(
+                "SandboxManager: released idle session %s locally; its sandbox %s %s, so it is not deleted",
+                session_id,
+                handle,
+                "has no readable activity" if idle is None else f"was used {int(idle)}s ago",
+            )
+            return
+        self._close_backend(session_id, handle)
+
+    def _idle_everywhere(self, session_id: str, handle: str) -> Optional[float]:
+        """Seconds since any process used the session's runtime, by the most recent clock; None if unknown.
+
+        Two clocks are read: the shared stamp every manager writes on each open and
+        op, and the backend's own activity record (``idle_seconds``: Daytona's
+        ``last_activity_at``, which a long run refreshes while it is in flight but
+        which can lag real use by minutes). The smaller reading wins, so either
+        clock seeing recent use keeps the runtime.
+        """
+        readings: List[float] = []
+        if self._shared_activity is not None:
+            try:
+                shared = self._shared_activity.idle_seconds(session_id)
+            except Exception:
+                logger.exception("SandboxManager: reading shared activity of %s failed", session_id)
+                shared = None
+            if shared is not None:
+                readings.append(shared)
+        backend_idle = getattr(self._backend, "idle_seconds", None)
+        if callable(backend_idle):
+            try:
+                own = backend_idle(handle)
+            except Exception:
+                logger.exception("SandboxManager: reading activity of sandbox %s failed", handle)
+                own = None
+            if own is not None:
+                readings.append(own)
+        return min(readings) if readings else None
+
+    def _touch_shared(self, session_id: str) -> None:
+        """Stamp the shared last-use clock for ``session_id`` (best-effort, outside the lock)."""
+        if self._shared_activity is None:
+            return
+        try:
+            self._shared_activity.touch(session_id)
+        except Exception:
+            logger.debug("SandboxManager: stamping shared activity of %s failed", session_id, exc_info=True)
+
     def reap_expired(self) -> List[str]:
-        """Close sessions idle past their TTL and return the reaped session ids.
+        """Let go of sessions idle past their TTL and return their ids.
 
         Artifacts are persisted eagerly by the tools/code node right after each
-        exec, so a session's workspace is scratch: reaping only closes the kernel
-        and never loses a user-facing artifact. Busy (in-use) sessions are left
-        alone so a reap can't pull a workspace out from under a running exec.
+        exec, so a session's workspace is scratch: reaping never loses a
+        user-facing artifact. Busy (in-use) sessions are left alone so a reap
+        can't pull a workspace out from under a running exec. A runtime another
+        process may still use is only released here (see ``_expire_backend``).
         """
         now = time.monotonic()
         with self._lock:
             expired = self._reap_locked(now)
         for sid, handle in expired:
-            self._close_backend(sid, handle)
+            self._expire_backend(sid, handle)
         return [sid for sid, _ in expired]
 
     def _reap_locked(self, now: float) -> List[Tuple[str, Optional[str]]]:
