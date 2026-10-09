@@ -224,7 +224,8 @@ describe('AllowedOriginsSetting', () => {
   it('shows the list read-only to a role that cannot edit policy', async () => {
     await render(restricted, true);
     expect(toggle().disabled).toBe(true);
-    expect(input().disabled).toBe(true);
+    expect(input()).toBeNull();
+    expect(addButton()).toBeUndefined();
     expect(container.textContent).toContain('https://a.com');
     expect(
       container.querySelector(

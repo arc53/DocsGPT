@@ -684,9 +684,9 @@ def _import_config(spec: dict, current: Optional[dict], warnings: list) -> dict:
     write path would have rejected. An invalid block does not fail the whole
     import. A config that is a mapping keeps what still validates, through the
     lenient reader the runtime uses, which drops a bad guardrail control or
-    allowlist but keeps an origin restriction on. A config that is not a
-    mapping at all says nothing about origins, so an update keeps the agent's
-    current origin policy rather than opening its key to any origin.
+    allowlist but keeps an origin restriction on. An origin setting an invalid
+    config does not state (or any, when it is not a mapping) is kept from the
+    agent's current config, so a bad file can't open its key to any origin.
 
     Args:
         spec: The file's ``spec``.
@@ -709,13 +709,17 @@ def _import_config(spec: dict, current: Optional[dict], warnings: list) -> dict:
     if isinstance(raw, dict):
         current_app.logger.warning("Dropping the invalid parts of an imported agent config")
         warnings.append(f"Invalid config ({reason}); imported only the parts that are valid")
-        return AgentConfig.parse(raw).model_dump(mode="json")
-    current_app.logger.warning("Ignoring an imported agent config that is not a mapping")
-    warnings.append("Config is not a mapping; it was not imported")
-    kept = AgentConfig.parse(current)
-    if not kept.restrict_origins:
-        return {}
-    return {"restrict_origins": True, "allowed_origins": list(kept.allowed_origins)}
+        config = AgentConfig.parse(raw).model_dump(mode="json")
+    else:
+        current_app.logger.warning("Ignoring an imported agent config that is not a mapping")
+        warnings.append("Config is not a mapping; it was not imported")
+        raw, config = {}, {}
+    if current is not None:
+        kept = AgentConfig.parse(current)
+        for field in ("restrict_origins", "allowed_origins"):
+            if field not in raw:
+                config[field] = copy.deepcopy(getattr(kept, field))
+    return config
 
 
 def serialize_agent(conn, agent: dict, user: str) -> dict:

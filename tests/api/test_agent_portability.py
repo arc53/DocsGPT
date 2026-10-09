@@ -344,7 +344,6 @@ def test_parse_rejects_yaml_aliases():
         parse_agent_yaml(bomb)
 
 
-
 _RESTRICTED = {"restrict_origins": True, "allowed_origins": ["https://docs.example.com"]}
 
 
@@ -382,6 +381,18 @@ def test_invalid_config_mapping_keeps_the_restriction_on(pg_conn):
     assert any(w.startswith("Invalid config (") for w in result["warnings"])
 
 
+@pytest.mark.parametrize(
+    "config",
+    [{"api_write_allowlist": ["no-colon"]}, {"restrict_origins": True, "api_write_allowlist": ["no-colon"]}],
+)
+def test_invalid_config_keeps_the_origin_settings_it_does_not_state(pg_conn, config):
+    _, updated = _reimport_config(pg_conn, "u_unstated", config)
+
+    assert updated["config"]["restrict_origins"] is True
+    assert updated["config"]["allowed_origins"] == ["https://docs.example.com"]
+    assert AgentConfig.parse(updated["config"]).origin_allowed("https://evil.example.net", []) is False
+
+
 def test_a_valid_config_that_lifts_the_restriction_is_applied(pg_conn):
     """The file is authoritative when it is valid: lifting the restriction is the owner's call."""
     result, updated = _reimport_config(pg_conn, "u_lift", {"restrict_origins": False})
@@ -397,6 +408,7 @@ def test_unreadable_config_on_a_new_agent_is_left_out(pg_conn):
     created = AgentsRepository(pg_conn).get(result["agent_id"], "u_new_unreadable")
     assert not AgentConfig.parse(created["config"]).restrict_origins
     assert "Config is not a mapping; it was not imported" in result["warnings"]
+
 
 def test_update_clears_removed_json_schema(pg_conn):
     """On update the YAML is authoritative — removing json_schema clears it."""

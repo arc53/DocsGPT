@@ -60,7 +60,10 @@ export function originsIncomplete(config?: AgentConfig): boolean {
 type Props = {
   config?: AgentConfig;
   onChange: (next: OriginsConfig) => void;
-  /** The caller's role can't change the policy: the state shows, disabled. */
+  /**
+   * The caller's role can't change the policy: the switch and the list show
+   * the state, and adding an origin is not offered.
+   */
   disabled?: boolean;
 };
 
@@ -131,78 +134,84 @@ export default function AllowedOriginsSetting({
       description={t('agents.form.advanced.origins.description')}
       htmlFor={switchId}
       after={
-        <div className="flex flex-col gap-3">
-          <div className="flex items-start gap-2">
-            <FormField
-              className="min-w-0 flex-1"
-              labelSurface="background"
-              label={t('agents.form.advanced.origins.inputLabel')}
-              hint={t('agents.form.advanced.origins.hint')}
-              error={shownError}
-              disabled={!editable}
-            >
-              <Input
-                value={draft}
-                onChange={(e) => {
-                  setDraft(e.target.value);
-                  setError(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    add();
-                  }
-                }}
-                placeholder={t('agents.form.advanced.origins.placeholder')}
-                inputMode="url"
-                autoComplete="off"
-                autoCapitalize="off"
-                spellCheck={false}
-              />
-            </FormField>
-            <Button
-              type="button"
-              variant="outline"
-              size="field"
-              onClick={add}
-              disabled={!editable || !draft.trim()}
-            >
-              {t('agents.form.advanced.origins.add')}
-            </Button>
-          </div>
-          {origins.length > 0 && (
-            <ul
-              className="flex flex-wrap gap-2"
-              aria-label={t('agents.form.advanced.origins.listLabel')}
-            >
-              {origins.map((origin) => (
-                <li key={origin} className="max-w-full">
-                  {editable ? (
-                    <Badge
-                      variant="neutral"
-                      className="font-mono"
-                      onRemove={() =>
-                        update({
-                          allowed_origins: origins.filter((o) => o !== origin),
-                        })
+        (!disabled || origins.length > 0) && (
+          <div className="flex flex-col gap-3">
+            {!disabled && (
+              <div className="flex items-start gap-2">
+                <FormField
+                  className="min-w-0 flex-1"
+                  labelSurface="background"
+                  label={t('agents.form.advanced.origins.inputLabel')}
+                  hint={t('agents.form.advanced.origins.hint')}
+                  error={shownError}
+                  disabled={!editable}
+                >
+                  <Input
+                    value={draft}
+                    onChange={(e) => {
+                      setDraft(e.target.value);
+                      setError(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        add();
                       }
-                      removeLabel={t('agents.form.advanced.origins.remove', {
-                        origin,
-                        interpolation: { escapeValue: false },
-                      })}
-                    >
-                      {origin}
-                    </Badge>
-                  ) : (
-                    <Badge variant="neutral" className="font-mono">
-                      {origin}
-                    </Badge>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+                    }}
+                    placeholder={t('agents.form.advanced.origins.placeholder')}
+                    inputMode="url"
+                    autoComplete="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                  />
+                </FormField>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="field"
+                  onClick={add}
+                  disabled={!editable || !draft.trim()}
+                >
+                  {t('agents.form.advanced.origins.add')}
+                </Button>
+              </div>
+            )}
+            {origins.length > 0 && (
+              <ul
+                className="flex flex-wrap gap-2"
+                aria-label={t('agents.form.advanced.origins.listLabel')}
+              >
+                {origins.map((origin) => (
+                  <li key={origin} className="max-w-full">
+                    {editable ? (
+                      <Badge
+                        variant="neutral"
+                        className="font-mono"
+                        onRemove={() =>
+                          update({
+                            allowed_origins: origins.filter(
+                              (o) => o !== origin,
+                            ),
+                          })
+                        }
+                        removeLabel={t('agents.form.advanced.origins.remove', {
+                          origin,
+                          interpolation: { escapeValue: false },
+                        })}
+                      >
+                        {origin}
+                      </Badge>
+                    ) : (
+                      <Badge variant="neutral" className="font-mono">
+                        {origin}
+                      </Badge>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )
       }
     >
       <Switch
