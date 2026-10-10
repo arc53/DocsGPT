@@ -1,7 +1,7 @@
 ---
 title: Connectors
 description: Connect DocsGPT to the services your team uses. One connection can sync content into Knowledge and give agents tools, with credentials encrypted on the server.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-09
 ---
 
 import { Callout } from 'nextra/components'
@@ -9,7 +9,7 @@ import { Steps } from 'nextra/components'
 
 # Connectors
 
-A connector is a service DocsGPT can connect to: Google Drive, SharePoint, Confluence, GitHub, Amazon S3, Reddit, Brave Search, Telegram, ntfy, PostgreSQL, curated MCP servers (Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Zapier, Trello, Miro, Resend, Cal.com, draw.io), and any MCP server or OpenAPI spec you add yourself. A **connection** is a saved setup for a connector, with credentials when the service requires them.
+A connector is a service DocsGPT can connect to: Google Drive, SharePoint, Confluence, GitHub, Amazon S3, Reddit, Brave Search, Telegram, ntfy, PostgreSQL, curated MCP servers (Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Zapier, Trello, Miro, Resend, Cal.com, Neon, draw.io), and any MCP server or OpenAPI spec you add yourself. A **connection** is a saved setup for a connector, with credentials when the service requires them.
 
 Connections are the single place credentials live when a service requires them. A synced source and an agent tool both point at a connection, so you sign in once when needed, reconnect when a token expires, and disconnect in one place.
 
@@ -304,9 +304,23 @@ Each post becomes one document with its title, subreddit, score, author and link
 
 ### MCP presets
 
-Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Zapier, Trello, Miro, Resend and Cal.com are remote MCP servers that support OAuth with dynamic client registration, so they need no server settings. Members sign in with their own account. The presets ship in `docsgpt/connectors/presets/mcp.yaml`.
+Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Zapier, Trello, Miro, Resend, Cal.com and Neon are remote MCP servers that support OAuth with dynamic client registration, so they need no server settings. Members sign in with their own account. The presets ship in `docsgpt/connectors/presets/mcp.yaml`.
 
 draw.io is a remote MCP preset that needs no account or credentials. Pick its card, test the prefilled server connection, and save it to give agents diagram tools. An agent can create an editable diagram and return a link that opens it in the draw.io editor. The hosted server receives the diagram content; [draw.io's MCP server](https://github.com/jgraph/drawio-mcp) also documents a self-hosted option.
+
+### Neon
+
+Neon's hosted MCP server at `https://mcp.neon.tech/mcp` gives agents tools for a Neon Postgres workspace: list projects and branches, describe schemas, inspect database health, and run SQL. Pick the card and sign in with your Neon account; nobody registers an OAuth app. Neon [recommends the server for development and testing](https://neon.com/docs/ai/neon-mcp-server) rather than production, so point it at development branches, keep production and personal data out, and review each call an agent proposes before it runs.
+
+The preset connects to the plain server URL, which reaches everything the signed-in account can. Neon's optional query parameters narrow it, and each controls a different thing:
+
+| Parameter | What it does |
+|-----------|--------------|
+| `readonly=true` | Exposes only the operations Neon marks safe to read — schema inspection, `SELECT` queries and database health checks — and withdraws those that create branches, run migrations or change auth configuration. |
+| `projectId=<project-id>` | Restricts every operation to one project and hides project management tools, such as listing and creating projects. |
+| `category=<name>` | Exposes only the named tool categories; repeat it to allow several. |
+
+Read-only mode does not choose a project, and a project scope does not make a connection read-only. Sign-in fixes the same choices: you can grant a read-only scope on Neon's consent screen, and a project-scoped connection is bound when you authorize it, so changing the scope or the project means signing in again. The preset carries no parameters, so add the URL with its query string as a **custom** MCP server to use them.
 
 ### Linear
 
