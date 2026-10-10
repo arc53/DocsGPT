@@ -894,4 +894,101 @@ describe('Upload local file step', () => {
     await pick([makeFile('next.pdf', 'application/pdf')]);
     expect(zone.parentElement!.querySelector('p')).toBeNull();
   });
+
+  /** A file as the folder picker gives it, with its path inside the folder. */
+  const inFolder = (path: string, type = '', bytes = 10) => {
+    const file = makeFile(path.split('/').pop()!, type, bytes);
+    Object.defineProperty(file, 'webkitRelativePath', { value: path });
+    return file;
+  };
+
+  const pickFolder = async (files: File[]) => {
+    const input = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="folder-input"]',
+    );
+    if (!input) throw new Error('no folder input');
+    Object.defineProperty(input, 'files', { value: files, configurable: true });
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  };
+
+  it('offers a folder picker under the dropzone', async () => {
+    await openLocalFile();
+    const input = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="folder-input"]',
+    )!;
+    expect(input.webkitdirectory).toBe(true);
+    const button = Array.from(document.body.querySelectorAll('button')).find(
+      (b) => b.textContent === 'modals.uploadDoc.selectFolder',
+    )!;
+    expect(button.getAttribute('type')).toBe('button');
+    const click = vi.spyOn(input, 'click').mockImplementation(() => undefined);
+    await act(async () => button.click());
+    expect(click).toHaveBeenCalledTimes(1);
+  });
+
+  it('lists a picked folder by path, named after the folder', async () => {
+    await openLocalFile();
+    await pickFolder([
+      inFolder('Handbook/guide/setup.md', 'text/markdown'),
+      inFolder('Handbook/intro.pdf', 'application/pdf'),
+      inFolder('Handbook/tool.exe'),
+      inFolder('Handbook/.git/HEAD'),
+    ]);
+    const rows = Array.from(
+      document.body.querySelectorAll('[data-slot="list-row"]'),
+    ).map((row) => row.textContent);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toContain('Handbook/guide/setup.md');
+    expect(rows[1]).toContain('Handbook/intro.pdf');
+    const textInputs = Array.from(
+      document.body.querySelectorAll<HTMLInputElement>('input[type="text"]'),
+    );
+    expect(textInputs.some((el) => el.value === 'Handbook')).toBe(true);
+    // The unsupported file is reported; the hidden one is left out quietly.
+    const zone = document.body.querySelector('[data-slot="dropzone"]')!;
+    expect(zone.parentElement!.querySelector('p')?.textContent).toBe(
+      'modals.uploadDoc.filesRejected',
+    );
+  });
+
+  it('turns away folder files over the size limit', async () => {
+    await openLocalFile();
+    await pickFolder([
+      inFolder('Handbook/huge.pdf', 'application/pdf', 26_000_000),
+      inFolder('Handbook/ok.md', 'text/markdown'),
+    ]);
+    const rows = document.body.querySelectorAll('[data-slot="list-row"]');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].textContent).toContain('Handbook/ok.md');
+  });
+
+  it('uploads each file under its path inside the folder', async () => {
+    const sent: FormData[] = [];
+    class FakeXhr {
+      upload = { addEventListener() {} };
+      addEventListener() {}
+      open() {}
+      setRequestHeader() {}
+      send(body: FormData) {
+        sent.push(body);
+      }
+    }
+    vi.stubGlobal('XMLHttpRequest', FakeXhr);
+    await openLocalFile();
+    await pickFolder([
+      inFolder('Handbook/guide/setup.md', 'text/markdown'),
+      inFolder('Handbook/intro.pdf', 'application/pdf'),
+    ]);
+    const train = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => b.textContent === 'modals.uploadDoc.train')!;
+    await act(async () => train.click());
+    expect(sent).toHaveLength(1);
+    const names = sent[0].getAll('file').map((entry) => (entry as File).name);
+    expect(names).toEqual(['Handbook/guide/setup.md', 'Handbook/intro.pdf']);
+    expect(sent[0].get('name')).toBe('Handbook');
+    vi.unstubAllGlobals();
+  });
 });

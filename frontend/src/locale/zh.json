@@ -1766,6 +1766,7 @@
       "dropzoneText": "点击上传或拖放文件",
       "dropzoneHint": "PDF、Word、Excel、PowerPoint、Markdown、HTML、图片、音频、EPUB、JSON 或 ZIP，每个最大 25 MB",
       "filesRejected": "未添加（超过 25 MB 或不支持的类型）：{{files}}",
+      "selectFolder": "选择文件夹",
       "uploadedFiles": "已上传文件",
       "cancel": "取消",
       "train": "添加到知识库",

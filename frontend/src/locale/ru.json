@@ -1872,6 +1872,7 @@
       "dropzoneText": "Нажмите, чтобы загрузить, или перетащите файлы",
       "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, изображения, аудио, EPUB, JSON или ZIP, до 25 МБ каждый",
       "filesRejected": "Не добавлены (больше 25 МБ или неподдерживаемый формат): {{files}}",
+      "selectFolder": "Выбрать папку",
       "uploadedFiles": "Загруженные файлы",
       "cancel": "Отмена",
       "train": "Добавить в знания",

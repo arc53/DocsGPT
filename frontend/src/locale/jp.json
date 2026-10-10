@@ -1766,6 +1766,7 @@
       "dropzoneText": "クリックしてアップロード、またはドラッグ＆ドロップ",
       "dropzoneHint": "PDF、Word、Excel、PowerPoint、Markdown、HTML、画像、音声、EPUB、JSON、ZIP（各 25 MB まで）",
       "filesRejected": "追加されませんでした（25 MB を超えているか、未対応の形式です）: {{files}}",
+      "selectFolder": "フォルダを選択",
       "uploadedFiles": "アップロードされたファイル",
       "cancel": "キャンセル",
       "train": "ナレッジに追加",
