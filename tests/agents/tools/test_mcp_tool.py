@@ -3108,3 +3108,170 @@ class TestMCPToolExecuteActionErrorHandling:
         )
         with pytest.raises(Exception, match="Failed to execute action"):
             tool.execute_action("some_action", key="value")
+
+
+# =====================================================================
+# Cancelling a sign-in frees the worker
+# =====================================================================
+
+
+class _FakeRedis:
+    """The few Redis calls the sign-in makes, kept in a dict."""
+
+    def __init__(self):
+        self.data: dict = {}
+
+    def get(self, key):
+        value = self.data.get(key)
+        return value.encode() if isinstance(value, str) else value
+
+    def setex(self, key, _ttl, value):
+        self.data[key] = value
+
+    def delete(self, key):
+        self.data.pop(key, None)
+
+
+def _oauth(redis, task_id="task-1", redirect_publish=None):
+    from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
+
+    return DocsGPTOAuth(
+        mcp_url="https://mcp.example.com/mcp",
+        redirect_uri="http://localhost:7091/api/mcp_server/callback",
+        redis_client=redis,
+        task_id=task_id,
+        user_id="alice",
+        redirect_publish=redirect_publish,
+    )
+
+
+@pytest.mark.unit
+class TestCancelOAuth:
+    def test_only_the_user_who_started_a_sign_in_can_cancel_it(self):
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
+
+        redis = _FakeRedis()
+        manager = MCPOAuthManager(redis)
+        manager.register_task("task-1", "alice")
+
+        assert manager.cancel("task-1", "mallory") is False
+        assert "mcp_oauth:cancel:task-1" not in redis.data
+        assert manager.cancel("task-1", "alice") is True
+        assert redis.data["mcp_oauth:cancel:task-1"] == "1"
+
+    def test_an_unknown_sign_in_is_not_cancelled(self):
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
+
+        assert MCPOAuthManager(_FakeRedis()).cancel("missing", "alice") is False
+        assert MCPOAuthManager(None).cancel("task-1", "alice") is False
+
+    def test_the_wait_for_the_callback_ends_when_cancelled(self):
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
+
+        redis = _FakeRedis()
+        manager = MCPOAuthManager(redis)
+        manager.register_task("task-1", "alice")
+        oauth = _oauth(redis)
+        oauth.extracted_state = "state-1"
+        redis.setex("mcp_oauth:auth_url:state-1", 600, "https://provider.example/authorize")
+        manager.cancel("task-1", "alice")
+
+        with patch("docsgpt.agents.tools.mcp_tool.asyncio.sleep") as sleep:
+            with pytest.raises(Exception, match="OAuth cancelled"):
+                asyncio.run(oauth.callback_handler())
+        sleep.assert_not_called()
+        assert "mcp_oauth:auth_url:state-1" not in redis.data
+
+    def test_a_sign_in_cancelled_while_queued_never_redirects(self):
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
+
+        redis = _FakeRedis()
+        manager = MCPOAuthManager(redis)
+        manager.register_task("task-1", "alice")
+        manager.cancel("task-1", "alice")
+        publish = MagicMock()
+        oauth = _oauth(redis, redirect_publish=publish)
+
+        with pytest.raises(Exception, match="OAuth cancelled"):
+            asyncio.run(oauth.redirect_handler("https://provider.example/authorize?state=s"))
+        publish.assert_not_called()
+
+    def test_another_sign_in_is_not_affected(self):
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
+
+        redis = _FakeRedis()
+        manager = MCPOAuthManager(redis)
+        manager.register_task("task-1", "alice")
+        manager.cancel("task-1", "alice")
+        publish = MagicMock()
+        oauth = _oauth(redis, task_id="task-2", redirect_publish=publish)
+
+        asyncio.run(oauth.redirect_handler("https://provider.example/authorize?state=s"))
+        publish.assert_called_once()
+
+
+def _sign_in_tool(task_id, publish):
+    """A worker's sign-in ``MCPTool`` for one task, as ``mcp_oauth`` builds it."""
+    from docsgpt.agents.tools.mcp_tool import MCPTool
+
+    tool = MCPTool.__new__(MCPTool)
+    tool.server_url = "https://mcp.example.com/mcp"
+    tool.transport_type = "http"
+    tool.auth_type = "oauth"
+    tool.custom_headers = {}
+    tool.auth_credentials = {}
+    tool.oauth_scopes = []
+    tool.oauth_task_id = task_id
+    tool.oauth_client_name = "DocsGPT-MCP"
+    tool.oauth_redirect_publish = publish
+    tool.redirect_uri = "http://localhost:7091/api/mcp_server/callback"
+    tool.query_mode = False
+    tool.user_id = "alice"
+    tool.connection_id = None
+    tool._client = None
+    tool._cache_key = tool._generate_cache_key()
+    return tool
+
+
+@pytest.mark.unit
+class TestSignInClientsAreNotShared:
+    """The worker keeps one process; each sign-in task needs its own OAuth handler."""
+
+    def _setup(self, tool, redis):
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        with patch("docsgpt.agents.tools.mcp_tool.get_redis_instance", return_value=redis), \
+                patch.object(MCPTool, "_create_transport", return_value=MagicMock()), \
+                patch("docsgpt.agents.tools.mcp_tool.Client",
+                      side_effect=lambda transport, auth=None: MagicMock(auth=auth)):
+            tool._setup_client()
+
+    def test_a_retry_after_a_cancel_reaches_the_provider(self):
+        import docsgpt.agents.tools.mcp_tool as mcp_mod
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
+
+        redis = _FakeRedis()
+        manager = MCPOAuthManager(redis)
+        first = _sign_in_tool("task-1", MagicMock())
+        self._setup(first, redis)
+        manager.register_task("task-1", "alice")
+        manager.cancel("task-1", "alice")
+
+        publish = MagicMock()
+        retry = _sign_in_tool("task-2", publish)
+        self._setup(retry, redis)
+
+        assert retry._client is not first._client
+        assert retry._client.auth.task_id == "task-2"
+        asyncio.run(retry._client.auth.redirect_handler("https://provider.example/authorize?state=s2"))
+        publish.assert_called_once_with("https://provider.example/authorize?state=s2")
+        assert retry._cache_key not in mcp_mod._mcp_clients_cache
+
+    def test_clients_without_a_sign_in_task_are_still_shared(self):
+        redis = _FakeRedis()
+        first = _sign_in_tool(None, None)
+        self._setup(first, redis)
+        second = _sign_in_tool(None, None)
+        self._setup(second, redis)
+
+        assert second._client is first._client
