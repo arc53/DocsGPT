@@ -1,4 +1,4 @@
-<!-- Translated from README.md at commit 7974998b8f162961478a95eff9cb7ac62286c8f8 by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
+<!-- Translated from README.md at commit c0f7f2d9afbd9e423b65ae785e3a2d4366367265 by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
 <h1 align="center">
   DocsGPT 🦖
 </h1>
@@ -203,6 +203,11 @@ DocsGPT cuenta con [licencia MIT](../../LICENSE).
 <p>
   <a href="https://get.neon.com/docsgpt">
     <img width="201" alt="Neon" src="https://github.com/user-attachments/assets/7d9813b7-0e6d-403f-b5af-68af066b326f" />
+  </a>
+</p>
+<p>
+  <a href="https://vercel.com/open-source-program">
+    <img alt="Programa OSS de Vercel" src="https://vercel.com/oss/program-badge-2026.svg" />
   </a>
 </p>
 
