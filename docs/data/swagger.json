@@ -675,6 +675,18 @@
       ],
       "type": "object"
     },
+    "MCPOAuthCancelModel": {
+      "properties": {
+        "task_id": {
+          "description": "OAuth task to cancel",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "type": "object"
+    },
     "MCPServerCallbackModel": {
       "properties": {
         "code": {
@@ -4175,6 +4187,33 @@
           "tools"
         ],
         "x-pat-denied": true
+      }
+    },
+    "/api/mcp_server/oauth_cancel": {
+      "post": {
+        "description": "Cancel an MCP OAuth sign-in the caller started, so the worker stops waiting for its callback",
+        "operationId": "post_mcpo_auth_cancel",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/MCPOAuthCancelModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "tools"
+        ],
+        "x-pat-scopes": [
+          "tools:write"
+        ]
       }
     },
     "/api/mcp_server/save": {

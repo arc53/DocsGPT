@@ -327,6 +327,8 @@ class TestMCPServerConfig(Resource):
             result = mcp_tool.test_connection()
 
             if result.get("requires_oauth"):
+                # The caller may cancel this sign-in; nobody else can.
+                MCPOAuthManager(get_redis_instance()).register_task(result.get("task_id"), user)
                 safe_result = {
                     k: v
                     for k, v in result.items()
@@ -665,6 +667,36 @@ class MCPOAuthCallback(Resource):
             return redirect(
                 "/api/connectors/callback-status?status=error&message=Internal+server+error.&provider=mcp_tool"
             )
+
+
+@tools_mcp_ns.route("/mcp_server/oauth_cancel")
+class MCPOAuthCancel(Resource):
+    @api.expect(
+        api.model(
+            "MCPOAuthCancelModel",
+            {"task_id": fields.String(required=True, description="OAuth task to cancel")},
+        )
+    )
+    @api.doc(
+        description="Cancel an MCP OAuth sign-in the caller started, so the worker stops waiting for its callback"
+    )
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        data = request.get_json(silent=True) or {}
+        missing_fields = check_required_fields(data, ["task_id"])
+        if missing_fields:
+            return missing_fields
+        try:
+            cancelled = MCPOAuthManager(get_redis_instance()).cancel(str(data["task_id"]), user)
+        except Exception as e:
+            current_app.logger.error(f"Error cancelling MCP OAuth: {e}", exc_info=True)
+            return make_response(jsonify({"success": False, "error": "Failed to cancel sign-in"}), 500)
+        if not cancelled:
+            return make_response(jsonify({"success": False, "error": "Sign-in not found"}), 404)
+        return make_response(jsonify({"success": True}), 200)
 
 
 @tools_mcp_ns.route("/mcp_server/auth_status")

@@ -270,6 +270,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/update_tool_status", "POST"): _rule("tools:write", (JSON, "id")),
     ("/api/delete_tool", "POST"): _rule("tools:write", (JSON, "id")),
     ("/api/mcp_server/test", "POST"): _rule("tools:write", open=True),
+    # Cancels a sign-in the caller started; the route checks it is theirs.
+    ("/api/mcp_server/oauth_cancel", "POST"): _rule("tools:write", open=True),
     ("/api/mcp_server/save", "POST"): _rule("tools:write", (JSON, "id")),
     # Models
     ("/api/models", "GET"): _rule(any_of=("models:read", "chat:run"), open=True),
