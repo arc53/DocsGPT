@@ -1,4 +1,4 @@
-<!-- Translated from README.md at commit 7974998b8f162961478a95eff9cb7ac62286c8f8 by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
+<!-- Translated from README.md at commit cbc4ec94c234485beeefc0e4a04da3e6afcc2d88 by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
 <h1 align="center">
   DocsGPT 🦖
 </h1>
@@ -49,6 +49,13 @@
 </p>
 
 > 🎃 **Hacktoberfest 2026:** футболки за значимый вклад весь октябрь. Подробнее в [HACKTOBERFEST.md](../../HACKTOBERFEST.md).
+
+<p align="center">
+  <sub>При поддержке</sub><br>
+  <a href="https://get.neon.com/docsgpt"><img height="32" alt="Neon" src="https://github.com/user-attachments/assets/7d9813b7-0e6d-403f-b5af-68af066b326f" /></a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://vercel.com/open-source-program"><img height="28" alt="Программа Vercel для проектов с открытым исходным кодом" src="https://vercel.com/oss/program-badge-2026.svg" /></a>
+</p>
 
 ## Зачем нужен DocsGPT
 
@@ -192,17 +199,4 @@ docsgpt down       # остановка (данные и настройки со
 ## Лицензия
 
 DocsGPT распространяется по [лицензии MIT](../../LICENSE).
-
-## При поддержке
-
-<p>
-  <a href="https://www.digitalocean.com/?utm_medium=opensource&utm_source=DocsGPT">
-    <img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_horizontal_blue.svg" width="201px" alt="DigitalOcean">
-  </a>
-</p>
-<p>
-  <a href="https://get.neon.com/docsgpt">
-    <img width="201" alt="Neon" src="https://github.com/user-attachments/assets/7d9813b7-0e6d-403f-b5af-68af066b326f" />
-  </a>
-</p>
 

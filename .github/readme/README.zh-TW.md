@@ -1,4 +1,4 @@
-<!-- Translated from README.md at commit 7974998b8f162961478a95eff9cb7ac62286c8f8 by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
+<!-- Translated from README.md at commit cbc4ec94c234485beeefc0e4a04da3e6afcc2d88 by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
 <h1 align="center">
   DocsGPT 🦖
 </h1>
@@ -49,6 +49,13 @@
 </p>
 
 > 🎃 **Hacktoberfest 2026**：整個 10 月，只要有實質貢獻就送 T 恤。請參閱 [HACKTOBERFEST.md](../../HACKTOBERFEST.md)。
+
+<p align="center">
+  <sub>支援單位</sub><br>
+  <a href="https://get.neon.com/docsgpt"><img height="32" alt="Neon" src="https://github.com/user-attachments/assets/7d9813b7-0e6d-403f-b5af-68af066b326f" /></a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://vercel.com/open-source-program"><img height="28" alt="Vercel 開源計畫" src="https://vercel.com/oss/program-badge-2026.svg" /></a>
+</p>
 
 ## 為什麼選擇 DocsGPT
 
@@ -192,17 +199,4 @@ docsgpt down       # 停止（資料與設定會保留）
 ## 授權條款
 
 DocsGPT 採用 [MIT 授權條款](../../LICENSE)。
-
-## 支援單位
-
-<p>
-  <a href="https://www.digitalocean.com/?utm_medium=opensource&utm_source=DocsGPT">
-    <img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_horizontal_blue.svg" width="201px" alt="DigitalOcean">
-  </a>
-</p>
-<p>
-  <a href="https://get.neon.com/docsgpt">
-    <img width="201" alt="Neon" src="https://github.com/user-attachments/assets/7d9813b7-0e6d-403f-b5af-68af066b326f" />
-  </a>
-</p>
 
