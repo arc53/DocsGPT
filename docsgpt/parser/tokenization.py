@@ -112,6 +112,75 @@ class TokenCounter:
         raise NotImplementedError
 
 
+def split_to_token_limit(
+    counter: TokenCounter,
+    text: str,
+    max_tokens: int,
+    first_max_tokens: Optional[int] = None,
+) -> List[str]:
+    """Split text losslessly and verify every piece against the token limit.
+
+    A tokenizer may count a long unknown-token span by its weighted character
+    length while exposing only one offset for that span. Its normal
+    offset-window splitter can therefore still return an oversized piece.
+    Recheck every result and bisect any piece for which the tokenizer cannot
+    make progress.
+
+    Args:
+        counter: Token counter used by the embedding model.
+        text: Original text to split without modification.
+        max_tokens: Maximum token count for every returned piece.
+        first_max_tokens: Optional smaller budget for the first piece, used
+            when a duplicated header consumes part of its allowance.
+
+    Returns:
+        Consecutive pieces that reassemble to ``text`` exactly and each fit
+        within ``max_tokens``.
+    """
+    if not text:
+        return []
+
+    limit = max(1, int(max_tokens))
+    first_limit = max(
+        1,
+        int(first_max_tokens) if first_max_tokens is not None else limit,
+    )
+    if first_limit != limit:
+        pieces = counter.split(text, limit, first_max_tokens=first_limit)
+        if not pieces or "".join(pieces) != text:
+            pieces = [text]
+        bounded: List[str] = []
+        for index, piece in enumerate(pieces):
+            piece_limit = first_limit if index == 0 else limit
+            bounded.extend(split_to_token_limit(counter, piece, piece_limit))
+        return bounded
+
+    bounded: List[str] = []
+    pending = [text]
+    while pending:
+        piece = pending.pop()
+        if counter.count(piece) <= limit:
+            bounded.append(piece)
+            continue
+
+        candidates = [candidate for candidate in counter.split(piece, limit) if candidate]
+        made_progress = (
+            len(candidates) > 1
+            and "".join(candidates) == piece
+            and all(len(candidate) < len(piece) for candidate in candidates)
+        )
+        if not made_progress:
+            if len(piece) <= 1:
+                raise ValueError("token counter cannot split an over-limit character")
+            midpoint = len(piece) // 2
+            candidates = [piece[:midpoint], piece[midpoint:]]
+
+        # The worklist is LIFO; reverse children to retain source order.
+        pending.extend(reversed(candidates))
+
+    return bounded
+
+
 class TiktokenCounter(TokenCounter):
     """cl100k counter -- the historical behaviour, and the fallback."""
 

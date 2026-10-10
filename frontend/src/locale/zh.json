@@ -463,6 +463,7 @@
             "semantic": "语义"
           },
           "maxTokens": "每块最大令牌数",
+          "maxTokensHint": "最多 4,096 个令牌。",
           "minTokens": "每块最小令牌数",
           "duplicateHeaders": "跨块重复标题"
         }

@@ -16,6 +16,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
+from docsgpt.parser.limits import MAX_CHUNK_TOKENS
+
 
 class PreScreenConfig(BaseModel):
     """Map-reduce candidate-filter config (D12); off unless set.
@@ -88,6 +90,16 @@ class ChunkingConfig(BaseModel):
     max_tokens: int = 1250  # matches docsgpt/worker.py MAX_TOKENS
     min_tokens: int = 150  # matches docsgpt/worker.py MIN_TOKENS
     duplicate_headers: bool = False
+
+    @field_validator("max_tokens")
+    @classmethod
+    def _bounded_max_tokens(cls, value: int) -> int:
+        """Reject unsafe chunk sizes on API writes."""
+        if value < 1:
+            raise ValueError("must be >= 1")
+        if value > MAX_CHUNK_TOKENS:
+            raise ValueError(f"must be <= {MAX_CHUNK_TOKENS}")
+        return value
 
 
 class GraphRetrievalConfig(BaseModel):
@@ -213,6 +225,24 @@ class SourceConfig(BaseModel):
             return cls()
         if not isinstance(raw, dict):
             return cls()
+        # Writes are strict, but an existing source may predate the ceiling.
+        # Clamp only that legacy field and preserve the rest of its behavior
+        # instead of making the whole row fall back to defaults.
+        chunking = raw.get("chunking")
+        if isinstance(chunking, dict):
+            stored_max = chunking.get("max_tokens")
+            if (
+                isinstance(stored_max, int)
+                and not isinstance(stored_max, bool)
+                and stored_max > MAX_CHUNK_TOKENS
+            ):
+                raw = {
+                    **raw,
+                    "chunking": {
+                        **chunking,
+                        "max_tokens": MAX_CHUNK_TOKENS,
+                    },
+                }
         try:
             return cls.model_validate(raw)
         except Exception:

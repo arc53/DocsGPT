@@ -464,6 +464,7 @@
             "semantic": "Semantic"
           },
           "maxTokens": "Max tokens per chunk",
+          "maxTokensHint": "Maximum 4,096 tokens.",
           "minTokens": "Min tokens per chunk",
           "duplicateHeaders": "Duplicate headers across chunks"
         }

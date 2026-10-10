@@ -463,6 +463,7 @@
             "semantic": "セマンティック"
           },
           "maxTokens": "チャンクあたりの最大トークン数",
+          "maxTokensHint": "最大4,096トークンです。",
           "minTokens": "チャンクあたりの最小トークン数",
           "duplicateHeaders": "チャンク間でヘッダーを複製"
         }

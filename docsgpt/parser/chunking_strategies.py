@@ -15,8 +15,9 @@ from typing import List
 
 from docsgpt.parser.chunking import Chunker
 from docsgpt.parser.chunking_creator import ChunkerCreator
+from docsgpt.parser.limits import MAX_CHUNK_TOKENS, SEMANTIC_EMBED_BATCH_SIZE
 from docsgpt.parser.schema.base import Document
-from docsgpt.parser.tokenization import get_token_counter
+from docsgpt.parser.tokenization import get_token_counter, split_to_token_limit
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ class _BaseStrategyChunker:
 
     def _split_by_tokens(self, text: str) -> List[str]:
         """Split ``text`` into pieces no larger than ``max_tokens`` tokens."""
-        return self.counter.split(text, self.max_tokens)
+        return split_to_token_limit(self.counter, text, self.max_tokens)
 
     def _emit(self, base: Document, part_index: int, text: str) -> Document:
         """Build a child Document carrying token_count and inherited info."""
@@ -186,10 +187,12 @@ class ParentChildChunker(_BaseStrategyChunker):
         child_size = self._child_size()
         for doc in documents:
             part_index = 0
-            for parent_text in self.counter.split(doc.text, self.max_tokens):
+            for parent_text in self._split_by_tokens(doc.text):
                 if not parent_text.strip():
                     continue
-                for child_text in self.counter.split(parent_text, child_size):
+                for child_text in split_to_token_limit(
+                    self.counter, parent_text, child_size
+                ):
                     if not child_text.strip():
                         continue
                     child = Document(
@@ -223,8 +226,30 @@ class SemanticChunker(_BaseStrategyChunker):
     _SENTENCE = re.compile(r"(?<=[.!?])\s+")
     _PERCENTILE = 95.0
 
+    def __init__(
+        self,
+        chunking_strategy: str = "classic_chunk",
+        max_tokens: int = 2000,
+        min_tokens: int = 150,
+        duplicate_headers: bool = False,
+    ) -> None:
+        """Build a semantic chunker with the embedding ceiling enforced."""
+        super().__init__(
+            chunking_strategy=chunking_strategy,
+            max_tokens=min(int(max_tokens), MAX_CHUNK_TOKENS),
+            min_tokens=min_tokens,
+            duplicate_headers=duplicate_headers,
+        )
+
     def _split_sentences(self, text: str) -> List[str]:
-        return [s for s in (p.strip() for p in self._SENTENCE.split(text)) if s]
+        sentences: List[str] = []
+        cursor = 0
+        for match in self._SENTENCE.finditer(text):
+            sentences.append(text[cursor : match.end()])
+            cursor = match.end()
+        if cursor < len(text):
+            sentences.append(text[cursor:])
+        return [sentence for sentence in sentences if sentence]
 
     def _fallback(self, documents: List[Document]) -> List[Document]:
         recursive = RecursiveChunker(
@@ -233,6 +258,7 @@ class SemanticChunker(_BaseStrategyChunker):
             min_tokens=self.min_tokens,
             duplicate_headers=self.duplicate_headers,
         )
+        recursive.counter = self.counter
         return recursive.chunk(documents)
 
     def _breakpoints(self, embeddings) -> set:
@@ -260,10 +286,10 @@ class SemanticChunker(_BaseStrategyChunker):
         for idx, sentence in enumerate(sentences):
             current.append(sentence)
             if idx in breakpoints:
-                groups.append(" ".join(current))
+                groups.append("".join(current))
                 current = []
         if current:
-            groups.append(" ".join(current))
+            groups.append("".join(current))
         return groups
 
     def _enforce_tokens(self, groups: List[str]) -> List[str]:
@@ -273,8 +299,35 @@ class SemanticChunker(_BaseStrategyChunker):
             if self._token_count(group) <= self.max_tokens:
                 capped.append(group)
             else:
-                capped.extend(p for p in self._split_by_tokens(group) if p.strip())
-        return self._merge_to_min(capped, " ")
+                capped.extend(p for p in self._split_by_tokens(group) if p)
+        return self._merge_to_min(capped, "")
+
+    def _embedding_inputs(self, sentences: List[str]) -> List[str]:
+        """Split sentences into inputs that are individually safe to embed."""
+        limit = min(self.max_tokens, MAX_CHUNK_TOKENS)
+        inputs: List[str] = []
+        for sentence in sentences:
+            if self._token_count(sentence) <= limit:
+                inputs.append(sentence)
+            else:
+                inputs.extend(
+                    piece
+                    for piece in split_to_token_limit(self.counter, sentence, limit)
+                    if piece
+                )
+        return inputs
+
+    @staticmethod
+    def _embed_in_batches(embeddings_client, inputs: List[str]):
+        """Embed a bounded number of sentence inputs per provider call."""
+        vectors = []
+        for start in range(0, len(inputs), SEMANTIC_EMBED_BATCH_SIZE):
+            batch = inputs[start : start + SEMANTIC_EMBED_BATCH_SIZE]
+            batch_vectors = embeddings_client.embed_documents(batch)
+            if len(batch_vectors) != len(batch):
+                raise ValueError("embedding provider returned the wrong vector count")
+            vectors.extend(batch_vectors)
+        return vectors
 
     def _chunk_text(self, text: str) -> List[str]:
         sentences = self._split_sentences(text)
@@ -282,7 +335,8 @@ class SemanticChunker(_BaseStrategyChunker):
             raise ValueError("too few sentences for semantic chunking")
         from docsgpt.vectorstore.base import get_embeddings
 
-        embeddings = get_embeddings().embed_documents(sentences)
+        sentences = self._embedding_inputs(sentences)
+        embeddings = self._embed_in_batches(get_embeddings(), sentences)
         breakpoints = self._breakpoints(embeddings)
         groups = self._group(sentences, breakpoints)
         return [g for g in self._enforce_tokens(groups) if g.strip()]
