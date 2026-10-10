@@ -49,6 +49,13 @@
 
 > 🎃 **Hacktoberfest 2026:** T-shirts for meaningful contributions, all October. See [HACKTOBERFEST.md](HACKTOBERFEST.md).
 
+<p align="center">
+  <sub>Supported by</sub><br>
+  <a href="https://get.neon.com/docsgpt"><img height="32" alt="Neon" src="https://github.com/user-attachments/assets/7d9813b7-0e6d-403f-b5af-68af066b326f" /></a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://vercel.com/open-source-program"><img height="28" alt="Vercel OSS Program" src="https://vercel.com/oss/program-badge-2026.svg" /></a>
+</p>
+
 ## Why DocsGPT
 
 DocsGPT turns your documents, sites and connected apps into AI agents that answer with sources. Build agents and
@@ -191,21 +198,3 @@ Project structure:
 ## License
 
 DocsGPT is [MIT licensed](LICENSE).
-
-## Supported by
-
-<p>
-  <a href="https://www.digitalocean.com/?utm_medium=opensource&utm_source=DocsGPT">
-    <img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_horizontal_blue.svg" width="201px" alt="DigitalOcean">
-  </a>
-</p>
-<p>
-  <a href="https://get.neon.com/docsgpt">
-    <img width="201" alt="Neon" src="https://github.com/user-attachments/assets/7d9813b7-0e6d-403f-b5af-68af066b326f" />
-  </a>
-</p>
-<p>
-  <a href="https://vercel.com/open-source-program">
-    <img alt="Vercel OSS Program" src="https://vercel.com/oss/program-badge-2026.svg" />
-  </a>
-</p>
