@@ -136,3 +136,13 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://cal.com/docs/mcp-server
+
+- key: mcp:posthog
+  name: PostHog
+  description: Analyze PostHog insights, feature flags, experiments, and errors.
+  icon: posthog
+  category: dev
+  mcp_url: https://mcp.posthog.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://posthog.com/docs/model-context-protocol

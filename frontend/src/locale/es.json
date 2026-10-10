@@ -1501,6 +1501,7 @@
         "mcp_linear": "Sincroniza incidencias y documentos con Conocimiento y deja que los agentes busquen, creen y actualicen incidencias.",
         "mcp_atlassian": "Busca y actualiza incidencias de Jira y páginas de Confluence.",
         "mcp_sentry": "Consulta incidencias, eventos y versiones de Sentry.",
+        "mcp_posthog": "Analiza los insights, feature flags, experimentos y errores de PostHog.",
         "mcp_stripe": "Consulta clientes, pagos y suscripciones en Stripe.",
         "mcp_drawio": "Crea diagramas de flujo y otros diagramas editables con draw.io.",
         "mcp_clickup": "Busca, lee y actualiza tareas, documentos y listas de ClickUp, y añade comentarios.",

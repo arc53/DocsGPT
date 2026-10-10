@@ -1500,6 +1500,7 @@
         "mcp_linear": "将问题和文档同步到知识库，并让智能体查找、创建和更新问题。",
         "mcp_atlassian": "搜索和更新 Jira 问题与 Confluence 页面。",
         "mcp_sentry": "查看 Sentry 问题、事件和发布版本。",
+        "mcp_posthog": "分析 PostHog 的洞察、功能标志、实验和错误。",
         "mcp_stripe": "查看 Stripe 中的客户、付款和订阅。",
         "mcp_drawio": "使用 draw.io 创建可编辑的流程图和其他图表。",
         "mcp_clickup": "搜索、读取和更新 ClickUp 任务、文档与列表，并添加评论。",
