@@ -82,7 +82,11 @@ class SitemapLoader(BaseRemote):
         return dedupe_virtual_paths(documents)
 
     def _extract_urls(
-        self, sitemap_url: str, visited: Optional[Set[str]] = None, depth: int = 0
+        self,
+        sitemap_url: str,
+        visited: Optional[Set[str]] = None,
+        depth: int = 0,
+        budget: Optional[int] = None,
     ) -> List[str]:
         """Fetch a sitemap (or page) URL and return the page URLs it lists.
 
@@ -95,10 +99,16 @@ class SitemapLoader(BaseRemote):
             visited: Sitemap URLs already fetched in this walk; shared with
                 the nested calls. ``None`` starts a new walk.
             depth: How many sitemap indexes deep this URL is.
+            budget: How many more URLs the walk may collect. ``None`` starts
+                from ``limit`` (itself ``None`` for no cap).
 
         Returns:
-            Page URLs found, or ``[sitemap_url]`` when it is not a sitemap.
+            At most ``budget`` page URLs, or ``[sitemap_url]`` when it is not
+            a sitemap.
         """
+        budget = self.limit if budget is None else budget
+        if budget is not None and budget <= 0:
+            return []
         visited = set() if visited is None else visited
         key = sitemap_url.strip()
         if key in visited:
@@ -124,7 +134,7 @@ class SitemapLoader(BaseRemote):
         # Determine if this is a sitemap or a URL
         if self._is_sitemap(response):
             # It's a sitemap, so parse it and extract URLs
-            return self._parse_sitemap(response.content, visited, depth)
+            return self._parse_sitemap(response.content, visited, depth, budget)
         else:
             # It's not a sitemap, return the URL itself
             return [sitemap_url]
@@ -140,22 +150,31 @@ class SitemapLoader(BaseRemote):
         return False
 
     def _parse_sitemap(
-        self, sitemap_content: bytes, visited: Optional[Set[str]] = None, depth: int = 0
+        self,
+        sitemap_content: bytes,
+        visited: Optional[Set[str]] = None,
+        depth: int = 0,
+        budget: Optional[int] = None,
     ) -> List[str]:
         """Return the page URLs in a sitemap, following nested sitemap indexes.
 
-        Stops following child sitemaps once ``limit`` URLs have been found,
-        and treats unparseable XML as an empty sitemap rather than failing
-        the whole ingest.
+        The URL budget is shared by the whole walk: once it is spent, no more
+        page URLs are collected and no more child sitemaps are fetched.
+        Unparseable XML is treated as an empty sitemap rather than failing the
+        whole ingest.
 
         Args:
             sitemap_content: Raw sitemap XML.
             visited: Sitemap URLs already fetched in this walk.
             depth: How many sitemap indexes deep this sitemap is.
+            budget: How many more URLs the walk may collect. ``None`` starts
+                from ``limit`` (itself ``None`` for no cap).
 
         Returns:
-            Page URLs found in this sitemap and the children it was allowed to follow.
+            At most ``budget`` page URLs from this sitemap and the children it
+            was allowed to follow.
         """
+        budget = self.limit if budget is None else budget
         visited = set() if visited is None else visited
         try:
             # Remove namespaces
@@ -165,19 +184,24 @@ class SitemapLoader(BaseRemote):
             logger.warning(f"Skipping sitemap that could not be parsed: {e}")
             return []
 
-        urls = []
+        def remaining() -> Optional[int]:
+            return None if budget is None else budget - len(urls)
+
+        urls: List[str] = []
         for loc in root.findall('.//url/loc'):
+            if remaining() == 0:
+                return urls
             if not loc.text or not loc.text.strip():
                 continue
             urls.append(loc.text.strip())
 
         # Check for nested sitemaps
         for sitemap in root.findall('.//sitemap/loc'):
-            if self.limit is not None and len(urls) >= self.limit:
+            if remaining() == 0:
                 break
             nested_sitemap_url = (sitemap.text or "").strip()
             if not nested_sitemap_url:
                 continue
-            urls.extend(self._extract_urls(nested_sitemap_url, visited, depth + 1))
+            urls.extend(self._extract_urls(nested_sitemap_url, visited, depth + 1, remaining()))
 
         return urls

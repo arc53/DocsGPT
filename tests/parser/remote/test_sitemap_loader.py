@@ -466,6 +466,34 @@ class TestNestedSitemapSafety:
         assert len(urls) >= 3
         assert fake.call_count <= 4
 
+    def test_limit_is_shared_across_nested_indexes(self):
+        root = "https://example.com/index.xml"
+        pages = "https://example.com/pages.xml"
+        nested = "https://example.com/nested.xml"
+        children = [f"https://example.com/child{i}.xml" for i in range(5)]
+        sites = {
+            root: _sitemap_index(pages, nested),
+            pages: _urlset("https://example.com/a", "https://example.com/b"),
+            nested: _sitemap_index(*children),
+        }
+        for i, child in enumerate(children):
+            sites[child] = _urlset(f"https://example.com/child-page{i}")
+        fake = _serve(sites)
+        with patch("docsgpt.parser.remote.sitemap_loader.pinned_request", fake):
+            urls = SitemapLoader(limit=3)._extract_urls(root)
+
+        fetched_children = [c.args[1] for c in fake.call_args_list if c.args[1] in children]
+        assert fetched_children == [children[0]]
+        assert urls == ["https://example.com/a", "https://example.com/b", "https://example.com/child-page0"]
+
+    def test_limit_caps_leaf_urls_in_one_sitemap(self):
+        url = "https://example.com/sitemap.xml"
+        fake = _serve({url: _urlset(*[f"https://example.com/p{i}" for i in range(10)])})
+        with patch("docsgpt.parser.remote.sitemap_loader.pinned_request", fake):
+            urls = SitemapLoader(limit=3)._extract_urls(url)
+
+        assert urls == ["https://example.com/p0", "https://example.com/p1", "https://example.com/p2"]
+
     def test_malformed_xml_returns_no_urls(self):
         assert SitemapLoader()._parse_sitemap(b"<urlset><url>") == []
 
