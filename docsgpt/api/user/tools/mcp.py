@@ -493,10 +493,13 @@ class MCPServerSave(Resource):
                 "redirect_uri",
             ]:
                 storage_config.pop(field, None)
+            from docsgpt.connectors import catalog
             from docsgpt.connectors.permissions import apply_default_permissions
 
+            # A preset with more tools than a model takes at once starts with its core ones on.
+            preset = catalog.preset_for_url(storage_config.get("server_url"))
             transformed_actions = apply_default_permissions(
-                "mcp_tool", transform_actions(actions_metadata),
+                "mcp_tool", transform_actions(actions_metadata), preset.default_actions if preset else (),
             )
 
             display_name = data["displayName"]

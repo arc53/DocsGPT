@@ -1509,6 +1509,7 @@
         "mcp_miro": "Find Miro boards, read content and comments, create diagrams, and reply to comments.",
         "mcp_resend": "Send emails and manage contacts, audiences and domains.",
         "mcp_calcom": "Read and manage your Cal.com bookings, event types, availability and schedules.",
+        "mcp_alphavantage": "Look up stock quotes, fundamentals, forex, crypto, economic indicators and market news.",
         "github": "Sync repositories into Knowledge and let agents read code, issues and pull requests."
       },
       "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",

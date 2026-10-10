@@ -1,7 +1,7 @@
 ---
 title: MCP Tool Integration
 description: Connect external tools to DocsGPT agents using the Model Context Protocol (MCP) standard.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-09
 ---
 
 import { Callout } from 'nextra/components'
@@ -27,7 +27,9 @@ If not set, it is derived from the host of `CONNECTOR_REDIRECT_BASE_URI`, then f
 
 ### Step 2: Add an MCP Server
 
-Go to **Settings** > **Connectors** and pick a preset (Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Zapier, Trello, Miro, Resend, Cal.com, or draw.io). OAuth presets open the service's sign-in: **Sign in to ClickUp**, for example, opens ClickUp's sign-in, and its tools are ready when you return. draw.io needs no sign-in: its server URL and no-auth setting are prefilled, so click **Test Connection**, then **Save**. For any other server, choose **Add custom connector** > **MCP server** and enter its URL and authentication; scopes and the timeout are under **Show advanced**. Click **Test Connection** to verify, then **Save**.
+Go to **Settings** > **Connectors** and pick a preset (Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Zapier, Trello, Miro, Resend, Cal.com, Alpha Vantage, or draw.io). OAuth presets open the service's sign-in: **Sign in to ClickUp**, for example, opens ClickUp's sign-in, and its tools are ready when you return. draw.io needs no sign-in: its server URL and no-auth setting are prefilled, so click **Test Connection**, then **Save**. For any other server, choose **Add custom connector** > **MCP server** and enter its URL and authentication; scopes and the timeout are under **Show advanced**. Click **Test Connection** to verify, then **Save**.
+
+Alpha Vantage's sign-in works on DocsGPT cloud and on `localhost` only. On a self-hosted instance with its own domain, add it as a custom MCP server with your API key in the URL, `https://mcp.alphavantage.co/mcp?apikey=<KEY>`, and choose no authentication.
 
 ### Step 3: Enable for Your Agent
 

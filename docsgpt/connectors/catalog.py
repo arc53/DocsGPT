@@ -107,6 +107,8 @@ class ConnectorDefinition:
             to an ``api_key`` connector (GitHub's "Sign in with GitHub"
             through a GitHub App). Unlike ``required_settings`` the
             connector works without them, with pasted credentials only.
+        default_actions: The MCP actions that start on when a preset's tool
+            is created; the rest start "Off". Empty turns every action on.
     """
 
     key: str
@@ -130,6 +132,7 @@ class ConnectorDefinition:
     oauth_scopes: tuple[str, ...] = ()
     part_of: Optional[str] = None
     oauth_settings: tuple[str, ...] = ()
+    default_actions: tuple[str, ...] = ()
 
     @property
     def oauth_configured(self) -> bool:
@@ -433,6 +436,7 @@ def _load_presets(path: Optional[Path] = None) -> tuple[ConnectorDefinition, ...
                 docs_url=entry.get("docs_url"),
                 oauth_scopes=tuple(entry.get("oauth_scopes") or ()),
                 part_of=entry.get("part_of"),
+                default_actions=tuple(entry.get("default_actions") or ()),
             )
         )
     return tuple(presets)

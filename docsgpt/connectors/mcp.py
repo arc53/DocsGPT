@@ -115,7 +115,10 @@ def _rediscover(user_id: str, connection: dict, tool: dict, config: dict) -> tup
         ``(added, removed, tool)``: action names, and the serialized tool.
     """
     discovered = _classified(connection, config, _discover(user_id, connection, {**tool, "config": config}))
-    fresh = apply_default_permissions("mcp_tool", service._transform_actions(discovered))
+    definition = catalog.get_definition(catalog.connector_key_for_row(connection))
+    fresh = apply_default_permissions(
+        "mcp_tool", service._transform_actions(discovered), definition.default_actions if definition else (),
+    )
     previous = {a.get("name"): a for a in (tool.get("actions") or []) if isinstance(a, dict)}
     merged = []
     for action in fresh:
