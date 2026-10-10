@@ -136,3 +136,12 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://cal.com/docs/mcp-server
+- key: mcp:vercel
+  name: Vercel
+  description: Manage Vercel projects, deployments and build logs.
+  icon: vercel
+  category: dev
+  mcp_url: https://mcp.vercel.com
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://vercel.com/docs/agent-resources/vercel-mcp
