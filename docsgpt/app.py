@@ -17,6 +17,7 @@ setup_logging()
 
 from docsgpt.api import api  # noqa: E402
 from docsgpt.api.admin import admin_ns  # noqa: E402
+from docsgpt.api.agent_origins import enforce_agent_origin  # noqa: E402
 from docsgpt.api.answer import answer  # noqa: E402
 from docsgpt.api.devices import devices_bp  # noqa: E402
 from docsgpt.api.internal.routes import internal  # noqa: E402
@@ -416,6 +417,12 @@ def _bind_user_id_to_log_context():
     if user_id:
         log_context.bind(user_id=user_id)
     return None
+
+
+# Registered after the auth and size-limit hooks: a refused key's warning
+# carries the request's log context, and an oversized upload is rejected
+# before its form is parsed for the key.
+app.before_request(enforce_agent_origin)
 
 
 @app.after_request

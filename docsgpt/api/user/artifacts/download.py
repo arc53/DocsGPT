@@ -23,6 +23,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
+from docsgpt.api.agent_origins import origin_refusal
 from docsgpt.api.asgi_auth import authenticate, bind_log_context, json_error
 from docsgpt.api.asgi_stream import ClosingStreamingResponse
 from docsgpt.api.user.artifacts.authz import authorize_artifact, principal_for
@@ -134,6 +135,9 @@ async def download_artifact(request: Request) -> Response:
     # Same endpoint value the Flask-RESTX route logged, so saved log queries keep matching.
     bind_log_context("artifacts_download_artifact", decoded.get("sub") if decoded else None)
     query = request.query_params
+    refusal = await anyio.to_thread.run_sync(origin_refusal, [query.get("api_key")], request.headers)
+    if refusal is not None:
+        return json_error(*refusal)
 
     try:
         version_row, failure = await anyio.to_thread.run_sync(

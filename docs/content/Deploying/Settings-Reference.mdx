@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-09
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -1468,6 +1468,12 @@ Config-free tools on by default in agentless chats, as a JSON list of tool names
 Type `int`, default `600`, must be `> 0`.
 
 Wall-clock cap on one agent webhook run, in seconds (at least 30). Past it the run stops and its task ends with a "timeout" result; the worker kills it 60 seconds later if it has not stopped by then.
+
+### `AGENT_TRUSTED_ORIGINS`
+
+Type `list[str]`, default `["https://app.docsgpt.cloud", "https://ent.docsgpt.cloud"]`.
+
+Browser origins every agent that restricts its origins accepts besides its own list, as a JSON list or comma-separated origins. This instance's own frontend is always accepted too: API_URL, OIDC_FRONTEND_URL, and localhost:5173 when API_URL is on loopback. none (or []) trusts no extra origin; an empty value keeps the default.
 
 ### `ENABLE_TOOL_PREFETCH`
 

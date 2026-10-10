@@ -2496,7 +2496,24 @@
         "systemPromptOverride": "允许覆盖提示词",
         "systemPromptOverrideDescription": "允许 v1 API 调用者替换此代理的系统提示词",
         "tokenLimit": "令牌上限",
-        "requestLimit": "请求上限"
+        "requestLimit": "请求上限",
+        "origins": {
+          "label": "允许的来源",
+          "description": "只有列出的网站可以使用此代理的 API 密钥调用它",
+          "inputLabel": "来源",
+          "hint": "不带路径的网站地址，例如 https://example.com。按 Enter 添加。",
+          "placeholder": "https://example.com",
+          "add": "添加",
+          "listLabel": "允许的来源",
+          "remove": "移除 {{origin}}",
+          "errors": {
+            "invalid": "请输入以 http:// 或 https:// 开头的地址，例如 https://example.com",
+            "path": "请去掉路径：来源只包含协议、主机和端口",
+            "duplicate": "{{origin}} 已在列表中",
+            "full": "最多可添加 {{max}} 个来源",
+            "required": "请至少添加一个来源，或关闭此设置"
+          }
+        }
       },
       "preview": {
         "savedVersion": "已保存版本",

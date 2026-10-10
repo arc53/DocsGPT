@@ -2508,7 +2508,24 @@
         "systemPromptOverride": "Prompt-Überschreibung erlauben",
         "systemPromptOverrideDescription": "Erlaubt v1-API-Aufrufern, den System-Prompt dieses Agenten zu ersetzen",
         "tokenLimit": "Token-Limit",
-        "requestLimit": "Anfragelimit"
+        "requestLimit": "Anfragelimit",
+        "origins": {
+          "label": "Erlaubte Ursprünge",
+          "description": "Nur die aufgeführten Websites können diesen Agenten mit seinem API-Schlüssel aufrufen",
+          "inputLabel": "Ursprung",
+          "hint": "Eine Website-Adresse ohne Pfad, z. B. https://example.com. Mit Enter hinzufügen.",
+          "placeholder": "https://example.com",
+          "add": "Hinzufügen",
+          "listLabel": "Erlaubte Ursprünge",
+          "remove": "{{origin}} entfernen",
+          "errors": {
+            "invalid": "Gib eine Adresse ein, die mit http:// oder https:// beginnt, z. B. https://example.com",
+            "path": "Lass den Pfad weg: Ein Ursprung besteht nur aus Schema, Host und Port",
+            "duplicate": "{{origin}} ist bereits in der Liste",
+            "full": "Du kannst höchstens {{max}} Ursprünge hinzufügen",
+            "required": "Füge mindestens einen Ursprung hinzu oder schalte dies aus"
+          }
+        }
       },
       "preview": {
         "savedVersion": "gespeicherte Version",

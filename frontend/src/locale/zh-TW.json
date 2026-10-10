@@ -2497,7 +2497,24 @@
         "systemPromptOverride": "允許覆蓋提示詞",
         "systemPromptOverrideDescription": "允許 v1 API 呼叫者替換此代理的系統提示詞",
         "tokenLimit": "權杖上限",
-        "requestLimit": "請求上限"
+        "requestLimit": "請求上限",
+        "origins": {
+          "label": "允許的來源",
+          "description": "只有列出的網站可以使用此代理的 API 金鑰呼叫它",
+          "inputLabel": "來源",
+          "hint": "不含路徑的網站位址，例如 https://example.com。按 Enter 新增。",
+          "placeholder": "https://example.com",
+          "add": "新增",
+          "listLabel": "允許的來源",
+          "remove": "移除 {{origin}}",
+          "errors": {
+            "invalid": "請輸入以 http:// 或 https:// 開頭的位址，例如 https://example.com",
+            "path": "請去掉路徑：來源只包含協定、主機和連接埠",
+            "duplicate": "{{origin}} 已在清單中",
+            "full": "最多可新增 {{max}} 個來源",
+            "required": "請至少新增一個來源，或關閉此設定"
+          }
+        }
       },
       "preview": {
         "savedVersion": "已儲存版本",

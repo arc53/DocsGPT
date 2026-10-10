@@ -1,7 +1,7 @@
 ---
 title: Interacting with Agents via API
 description: Learn how to programmatically interact with DocsGPT Agents using the streaming and non-streaming API endpoints.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-09
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -369,7 +369,7 @@ The owner allows actions in the agent's **Access Details > Changes others can ma
 - Only the owner can change the list. When a team editor updates the agent, the stored list is kept whatever the request sends.
 - An allowed action runs **without an approval prompt** for these callers, even if the tool asks for approval in the owner's chats.
 
-`config` holds both `api_write_allowlist` and the agent's [guardrails](/Agents/guardrails), and `PUT /api/update_agent/<agent_id>` replaces the whole `config`. Read it first and send it all back, or you clear the other half:
+`config` holds `api_write_allowlist`, the agent's [allowed origins](#restricting-which-websites-can-use-the-key) and its [guardrails](/Agents/guardrails), and `PUT /api/update_agent/<agent_id>` replaces the whole `config`. Read it first and send it all back, or you clear the rest:
 
 ```python
 import requests
@@ -391,6 +391,34 @@ requests.put(
 ```
 
 Webhook runs are the owner's own automation and are not limited by this list; see [Agent webhooks](/API/webhooks#how-a-webhook-run-behaves).
+
+## Restricting which websites can use the key
+
+An agent's API key works from any website by default, so a key embedded in a page (the chat widget, for example) can be copied and used on another site.
+To stop that, turn on **Allowed origins** in the agent's **Advanced** settings and list the websites that may use the key, such as `https://docs.example.com`.
+
+While it is on, every request that carries the agent's key must come from a listed origin:
+
+- The origin is read from the request's `Origin` header. When a browser leaves that header off (a plain `GET`, such as an image or a download link), the origin of the `Referer` header is used instead.
+- A request from any other origin, or from no origin at all, is refused with `403` and `This origin is not allowed to use this agent's API key.` On `/v1` the error has the OpenAI shape, with `"type": "permission_error"`.
+- This applies wherever the key is accepted: `/api/answer`, `/stream`, `/api/search`, attachments, feedback, artifact downloads, `/v1` and the MCP server.
+- This DocsGPT instance's own website is always allowed, so a [promptable shared conversation](/Using/sharing) keeps working: `API_URL`, `OIDC_FRONTEND_URL`, and `http://localhost:5173` when `API_URL` is on localhost. These come from configuration, never from the request's `Host` header, so set `API_URL` to the address browsers use. On a public instance, leaving `API_URL` at its localhost default also trusts the localhost development origins.
+- So are the origins in [`AGENT_TRUSTED_ORIGINS`](/Deploying/Settings-Reference), DocsGPT Cloud's apps by default. Set it to `none` to trust no extra origin.
+- Turning the setting off keeps the list, so you can turn it back on later.
+
+<Callout type="warning">
+Browsers set the `Origin` header themselves, so this keeps other websites from using the key. It does not stop a server or a script, which can send any `Origin` it likes. Keep [usage limits](/Agents/basics) on an agent whose key is public, and call the API from your own server where you can.
+</Callout>
+
+Because a request with no origin is refused, a restricted key no longer works from server-side callers such as `curl` or the Chatwoot extension.
+Use a separate agent for those.
+
+Through the API, the setting is `config.restrict_origins` (a boolean) and `config.allowed_origins` (a list):
+
+- Each entry is an origin: `http://` or `https://`, a host and an optional port, with no path. `https://docs.example.com`, `http://localhost:3000`.
+- Entries are normalized when saved: the scheme and host are lowercased, a trailing `/` and the default port are dropped, and an internationalized host is stored as punycode. Duplicates are removed.
+- A path, query, wildcard or credentials is refused with `400`, as is `restrict_origins` on with an empty list. At most 100 entries.
+- Changing either value needs the same permission as the usage limits: the owner, or a team editor allowed to edit policy.
 
 ## Search API
 
