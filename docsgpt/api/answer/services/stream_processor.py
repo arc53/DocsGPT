@@ -1028,6 +1028,16 @@ class StreamProcessor:
         except Exception:
             return 0
 
+    def attachments_mode(self) -> str:
+        """How this turn's files reach the model: ``auto`` (default) or ``reference``.
+
+        ``reference`` lists the files for the attachments tool and the code
+        sandbox without putting their content in the prompt; any other value
+        is ``auto``.
+        """
+        mode = (self.data or {}).get("attachments_mode")
+        return "reference" if mode == "reference" else "auto"
+
     def _preliminary_attachment_reserve(self) -> int:
         """Tokens the turn's attachments are expected to take, before the agent plans.
 
@@ -1064,6 +1074,7 @@ class StreamProcessor:
                 ),
                 earlier=earlier,
                 max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
+                reference=self.attachments_mode() == "reference",
             )
             return plan.reserved_tokens
         except Exception as e:
@@ -2587,6 +2598,7 @@ class StreamProcessor:
             "attachment_planning": True,
             "earlier_attachments": self.earlier_attachments,
             "skipped_attachments": self._request_skipped_files(),
+            "attachments_mode": self.attachments_mode(),
         }
 
         # Wiki tool injection + authz: only for agent types that build a

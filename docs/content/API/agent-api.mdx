@@ -84,6 +84,7 @@ Streaming-only fields:
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `attachments` | `string[]` | No | List of attachment IDs from `/api/task_status` success result. |
+| `attachments_mode` | `string` | No | `"auto"` (default) or `"reference"`. In reference mode none of the turn's files go into the prompt; the model reads, searches or processes them with its tools by their `F` ref. See [Reference mode](/API/openai-compatible#reference-mode). |
 | `index` | `number` | No | Update an existing query index. If provided, `conversation_id` is required. |
 
 To resume a turn that paused for tool approval, send `conversation_id` and `tool_actions` instead of `question`; see [Tools that need approval](#tools-that-need-approval).
@@ -105,6 +106,7 @@ Response fields:
 - `thought`
 - `pending_tool_calls`, when the turn paused for tool approval (see [Tools that need approval](#tools-that-need-approval))
 - `artifacts`, when the turn made files (see [Artifacts](#artifacts))
+- `attachments`, the conversation's files with their `F` refs and attachment ids, when it has any
 - Optional structured output metadata (`structured`, `schema`) when enabled
 
 An error during the run returns HTTP `400` with `{"error": "..."}`.
@@ -198,7 +200,7 @@ Each `data:` frame is JSON with `type`:
 | `guardrail` | `guardrail`, `retract` | A [guardrail](/Agents/guardrails) blocked the answer mid-stream. With `retract: true`, discard the text already shown; an `error` event with the block message follows. |
 | `error` | `error` | Error message. |
 | `id` | `id` | The conversation ID. |
-| `end` | `artifacts` (when the turn made files) | The stream is complete. `artifacts` lists every artifact the turn created or changed. |
+| `end` | `artifacts`, `attachments` | The stream is complete. `artifacts` lists every artifact the turn created or changed; `attachments` lists the conversation's files with their `F` refs and attachment ids. Each is present only when there is something to list. |
 
 New event types can be added, so ignore types you don't handle.
 

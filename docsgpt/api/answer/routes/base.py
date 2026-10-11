@@ -17,6 +17,7 @@ from docsgpt.api.answer.segments import AnswerSegments, merge_tool_calls
 from docsgpt.background.context import bind_turn as bind_background_turn
 from docsgpt.background.fold import fold_turn as fold_background_turn
 from docsgpt.api.answer.services.continuation_service import ContinuationService
+from docsgpt.agents.attachment_budget import AttachmentPlan, plan_listing
 from docsgpt.api.answer.services.artifact_delivery import ArtifactDescriber
 from docsgpt.api.answer.services.conversation_service import (
     ConversationService,
@@ -211,6 +212,25 @@ def _seal_exposed_journal(agent: Any, decoded_token: Optional[Dict], message_id:
             MessageEventsRepository(conn).redact_values(str(message_id), exposed)
     except Exception:
         logger.exception("sealing exposed secrets in the stream journal failed")
+
+
+def _attachment_listing(agent: Any) -> List[Dict[str, Any]]:
+    """The conversation's files as the turn's plan named them (``F`` ref, attachment id, status).
+
+    Args:
+        agent: The turn's agent; its ``attachment_plan`` is read.
+
+    Returns:
+        One entry per file, or an empty list when the turn planned none.
+    """
+    plan = getattr(agent, "attachment_plan", None)
+    if not isinstance(plan, AttachmentPlan) or not plan.files:
+        return []
+    try:
+        return plan_listing(plan)
+    except Exception:
+        logger.exception("Could not list the turn's attachments")
+        return []
 
 
 def _native_image_names(agent: Any) -> List[str]:
@@ -887,13 +907,17 @@ class BaseAnswerResource:
             With a reserved ``message_id``, buffers into the journal and
             emits ``id: <seq>``-tagged SSE frames; otherwise falls back to
             legacy ``data: ...\\n\\n`` framing. A terminal ``end`` event
-            carries the turn's ``artifacts`` when it produced any.
+            carries the turn's ``artifacts`` when it produced any, and the
+            conversation's files with their refs as ``attachments``.
             """
             nonlocal sequence_no
             if isinstance(payload, dict) and payload.get("type") == "end":
                 turn_artifacts = artifact_describer.summary()
                 if turn_artifacts:
                     payload = {**payload, "artifacts": turn_artifacts}
+                turn_files = _attachment_listing(agent)
+                if turn_files:
+                    payload = {**payload, "attachments": turn_files}
             if not reserved_message_id or journal_writer is None:
                 return f"data: {json.dumps(payload)}\n\n"
             sequence_no += 1
@@ -2034,8 +2058,9 @@ class BaseAnswerResource:
 
         Returns:
             Dict with keys: conversation_id, answer, sources, tool_calls,
-            thought, error, and optional extra and artifacts (the turn's
-            artifacts, as the ``end`` event lists them).
+            thought, error, and optional extra, artifacts (the turn's
+            artifacts) and attachments (the conversation's files and their
+            refs), as the ``end`` event lists them.
         """
         conversation_id = ""
         response_full = ""
@@ -2047,6 +2072,7 @@ class BaseAnswerResource:
         schema_info = None
         pending_tool_calls = None
         artifacts: List[Dict[str, Any]] = []
+        attachments: List[Dict[str, Any]] = []
 
         for line in stream:
             try:
@@ -2100,6 +2126,7 @@ class BaseAnswerResource:
                 elif event["type"] == "end":
                     stream_ended = True
                     artifacts = event.get("artifacts") or []
+                    attachments = event.get("attachments") or []
             except (json.JSONDecodeError, KeyError) as e:
                 logger.warning(f"Error parsing stream event: {e}, line: {line}")
                 continue
@@ -2124,6 +2151,8 @@ class BaseAnswerResource:
         }
         if artifacts:
             result["artifacts"] = artifacts
+        if attachments:
+            result["attachments"] = attachments
 
         if pending_tool_calls is not None:
             result["extra"] = {"pending_tool_calls": pending_tool_calls}

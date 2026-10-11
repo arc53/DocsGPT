@@ -557,6 +557,9 @@ def translate_request(
             result["inline_files"] = inline_files
         if (data.get("docsgpt") or {}).get("attachments"):
             result["attachments"] = data["docsgpt"]["attachments"]
+        # A resent round plans its files again; it keeps the turn's mode.
+        if docsgpt_ext.get("attachments_mode"):
+            result["attachments_mode"] = docsgpt_ext["attachments_mode"]
         return result
 
     # Normal request — extract the question (text) from the last user message,
@@ -597,6 +600,10 @@ def translate_request(
     # DocsGPT extensions
     if docsgpt.get("attachments"):
         result["attachments"] = docsgpt["attachments"]
+    # ``reference``: the files are listed for the attachments tool and the
+    # sandbox, never inlined (``attachment_budget.plan_attachments``).
+    if docsgpt.get("attachments_mode"):
+        result["attachments_mode"] = docsgpt["attachments_mode"]
 
     if response_schema is not None:
         result["json_schema"] = response_schema
@@ -634,6 +641,7 @@ def translate_response(
     finish_reason_override: Optional[str] = None,
     answered_by: Optional[List[Dict[str, Any]]] = None,
     artifacts: Optional[List[Dict[str, Any]]] = None,
+    attachments: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Translate DocsGPT response to chat completions format.
 
@@ -650,6 +658,8 @@ def translate_response(
             ``docsgpt.model``.
         artifacts: The artifacts the turn created or versioned, each with
             its download URL (``docsgpt.artifacts``).
+        attachments: The conversation's files with their ``F`` refs and
+            attachment ids (``docsgpt.attachments``).
 
     Returns:
         Dict in the standard chat completions response format.
@@ -719,6 +729,8 @@ def translate_response(
         docsgpt["tool_calls"] = tool_calls
     if artifacts:
         docsgpt["artifacts"] = artifacts
+    if attachments:
+        docsgpt["attachments"] = attachments
     if answered_by:
         docsgpt.update(model_fields(answered_by[-1]))
         docsgpt["models"] = [model_fields(entry) for entry in answered_by]
@@ -945,6 +957,13 @@ def translate_stream_event(
 
     elif event_type == "end":
         if not state.done:
+            if event_data.get("attachments"):
+                chunks.append(
+                    _make_docsgpt_chunk(
+                        {"type": "attachments", "attachments": event_data["attachments"]},
+                        completion_id, model_name,
+                    )
+                )
             if event_data.get("artifacts"):
                 # Every artifact the turn made, ahead of the final frames, so a
                 # client need not collect them from the tool call chunks.
