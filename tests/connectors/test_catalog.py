@@ -257,3 +257,15 @@ def test_calcom_preset_uses_remote_oauth_catalog_contract():
     assert calcom.auth_kind == "mcp_oauth"
     assert calcom.capabilities == ("read", "write")
     assert calcom.docs_url == "https://cal.com/docs/mcp-server"
+
+
+def test_context7_preset_uses_remote_oauth_catalog_contract():
+    context7 = catalog.get_definition("mcp:context7")
+
+    assert context7.name == "Context7"
+    assert context7.icon == "context7"
+    assert context7.category == "dev"
+    assert context7.mcp_url == "https://mcp.context7.com/mcp"
+    assert context7.auth_kind == "mcp_oauth"
+    assert context7.capabilities == ("read",)
+    assert context7.docs_url == "https://context7.com/docs/resources/all-clients"

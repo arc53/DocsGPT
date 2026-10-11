@@ -136,3 +136,13 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://cal.com/docs/mcp-server
+
+- key: mcp:context7
+  name: Context7
+  description: Look up up-to-date documentation and code examples for libraries.
+  icon: context7
+  category: dev
+  mcp_url: https://mcp.context7.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read]
+  docs_url: https://context7.com/docs/resources/all-clients
