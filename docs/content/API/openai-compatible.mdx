@@ -77,7 +77,7 @@ for chunk in stream:
     print(chunk.choices[0].delta.content or "", end="", flush=True)
 ```
 
-Set `"stream_options": {"include_usage": true}` to get a chunk with `usage` (prompt, completion and total tokens, summed over every model call of the turn). It arrives just **before** the chunk that carries `finish_reason`, not after it as in OpenAI's API, so read it wherever it appears rather than only from the last chunk. Non-streaming responses always include `usage`.
+Set `"stream_options": {"include_usage": true}` to get a chunk with `usage` (prompt, completion and total tokens, summed over every model call of the turn). It arrives just **before** the chunk that carries `finish_reason`, not after it as in OpenAI's API, so read it wherever it appears rather than only from the last chunk. Non-streaming responses always include `usage`. When the model provider reports its prompt cache, `usage` also has `prompt_tokens_details` with `cached_tokens` (prompt tokens read from the cache) and, where the provider reports it, `cache_write_tokens` (prompt tokens written to it), summed the same way.
 
 ## Sampling Parameters
 
