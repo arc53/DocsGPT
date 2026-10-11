@@ -514,13 +514,14 @@ class TestV1ToolPauseFinalizesRow:
 
         # The first-turn row stays exactly as it was (terminal ``complete``
         # with its own tool_calls); no sibling row was reserved or stranded,
-        # nothing is ``pending``/``streaming``, and no native state was written.
+        # and nothing is ``pending``/``streaming``. The second pause is saved
+        # (naming no row) so the next round can resume from it.
         assert statuses == ["complete"]
         assert "pending" not in statuses
         assert "streaming" not in statuses
         assert first_turn_calls
         assert first_turn_calls[0]["call_id"] == "call_abc"
-        assert pts == 0
+        assert pts == 1
 
 
 # ---------------------------------------------------------------------------

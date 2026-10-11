@@ -1982,6 +1982,7 @@ class BaseAnswerResource:
         Returns:
             Whether the state was saved.
         """
+        tool_executor = getattr(agent, "tool_executor", None)
         try:
             ContinuationService().save_state(
                 conversation_id=str(conversation_id),
@@ -2001,13 +2002,13 @@ class BaseAnswerResource:
                     # An API-key caller stays one after a
                     # resume (owner-account write rules).
                     "external_api_caller": getattr(
-                        agent.tool_executor, "external_caller", False,
+                        tool_executor, "external_caller", False,
                     ),
                     "public_link_caller": getattr(
-                        agent.tool_executor, "public_link_caller", False,
+                        tool_executor, "public_link_caller", False,
                     ),
                     "api_write_allowlist": sorted(
-                        getattr(agent.tool_executor, "api_write_allowlist", set()),
+                        getattr(tool_executor, "api_write_allowlist", set()),
                     ),
                     "agent_id": agent_id,
                     "agent_type": agent.__class__.__name__,
@@ -2065,7 +2066,7 @@ class BaseAnswerResource:
                     ),
                 },
                 client_tools=getattr(
-                    agent.tool_executor, "client_tools", None
+                    tool_executor, "client_tools", None
                 ),
             )
             return True
