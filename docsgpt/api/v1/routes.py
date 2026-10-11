@@ -268,16 +268,27 @@ def _response_usage(agent: Any) -> Dict[str, Any]:
     Reads the per-instance accumulator so multi-round tool turns report
     the sum of every LLM call, matching what ``token_usage`` rows bill;
     the accumulator carries provider-exact counts whenever the upstream
-    reported them (see ``_prefer_provider_usage``).
+    reported them (see ``_prefer_provider_usage``), including
+    ``prompt_tokens_details.cached_tokens`` and ``cache_write_tokens``.
     """
     tokens = getattr(getattr(agent, "llm", None), "token_usage", {}) or {}
     prompt = int(tokens.get("prompt_tokens", 0) or 0)
     completion = int(tokens.get("generated_tokens", 0) or 0)
-    return {
+    usage: Dict[str, Any] = {
         "prompt_tokens": prompt,
         "completion_tokens": completion,
         "total_tokens": prompt + completion,
     }
+    # The prompt-cache bins, when the provider reported them: how much of
+    # ``prompt_tokens`` was read from the cache, and written to it.
+    details = {
+        key: int(tokens[key])
+        for key in ("cached_tokens", "cache_write_tokens")
+        if tokens.get(key) is not None
+    }
+    if details:
+        usage["prompt_tokens_details"] = details
+    return usage
 
 
 def _answered_by(agent: Any) -> List[Dict[str, Any]]:

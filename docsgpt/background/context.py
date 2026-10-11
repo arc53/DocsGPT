@@ -79,7 +79,10 @@ def bind_turn(
 
     Only a persisted, interactive turn qualifies: it has a conversation and a
     reserved message to report back to, and its executor is not headless or a
-    workflow node's.
+    workflow node's. A poll-only turn (``api_route``) needs no message: its
+    jobs never resume the conversation, so a ``/v1`` round resumed from a
+    pause that has no row of its own still hands calls off, and offers the
+    same tools as the round that paused.
 
     Args:
         executor: The turn's ``ToolExecutor``.
@@ -95,14 +98,14 @@ def bind_turn(
     if executor is None or not settings.BACKGROUND_JOBS_ENABLED:
         return None
     user_id = (decoded_token or {}).get("sub")
-    if not conversation_id or not message_id or not user_id:
+    if not conversation_id or not user_id or not (message_id or api_route):
         return None
     if getattr(executor, "headless", False) or getattr(executor, "workflow_run_id", None):
         return None
     context = BackgroundContext(
         user_id=str(user_id),
         conversation_id=str(conversation_id),
-        origin_message_id=str(message_id),
+        origin_message_id=str(message_id) if message_id else None,
         agent_id=str(agent_id) if agent_id else None,
         api_route=bool(api_route),
     )
