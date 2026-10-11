@@ -61,6 +61,17 @@ class TestArtifactGeneratorArtifacts:
             {"id": "b1", "filename": "Mock_SaaS_Agreement.pdf", "ref": "A2"}
         ]
 
+    def test_carries_the_version_it_produced(self):
+        """API clients pin the download to the version this call made."""
+        tool = ArtifactGeneratorTool({})
+        tool._last_artifact_id = "b1"
+        tool._last_filename = "Deal.docx"
+        tool._last_ref = "A1"
+        tool._last_version = 3
+        assert tool.get_artifacts("edit_artifact") == [
+            {"id": "b1", "filename": "Deal.docx", "ref": "A1", "version": 3}
+        ]
+
     def test_nothing_produced_is_empty(self):
         tool = ArtifactGeneratorTool({})
         tool._last_artifact_id = None

@@ -17,6 +17,7 @@ from docsgpt.api.answer.segments import AnswerSegments, merge_tool_calls
 from docsgpt.background.context import bind_turn as bind_background_turn
 from docsgpt.background.fold import fold_turn as fold_background_turn
 from docsgpt.api.answer.services.continuation_service import ContinuationService
+from docsgpt.api.answer.services.artifact_delivery import ArtifactDescriber
 from docsgpt.api.answer.services.conversation_service import (
     ConversationService,
     TERMINATED_RESPONSE_PLACEHOLDER,
@@ -873,14 +874,26 @@ class BaseAnswerResource:
             else None
         )
 
+        # Adds each artifact's type, size, checksum and download URL to the
+        # tool call events a client sees, and lists the turn's artifacts on
+        # its ``end`` event. The message row keeps the plain entries.
+        artifact_describer = ArtifactDescriber((decoded_token or {}).get("sub"), conversation_id)
+        if prior_tool_calls:
+            artifact_describer.tool_calls(prior_tool_calls)
+
         def _emit(payload: dict) -> str:
             """Format-and-journal one SSE event.
 
             With a reserved ``message_id``, buffers into the journal and
             emits ``id: <seq>``-tagged SSE frames; otherwise falls back to
-            legacy ``data: ...\\n\\n`` framing.
+            legacy ``data: ...\\n\\n`` framing. A terminal ``end`` event
+            carries the turn's ``artifacts`` when it produced any.
             """
             nonlocal sequence_no
+            if isinstance(payload, dict) and payload.get("type") == "end":
+                turn_artifacts = artifact_describer.summary()
+                if turn_artifacts:
+                    payload = {**payload, "artifacts": turn_artifacts}
             if not reserved_message_id or journal_writer is None:
                 return f"data: {json.dumps(payload)}\n\n"
             sequence_no += 1
@@ -1002,7 +1015,7 @@ class BaseAnswerResource:
                     yield _emit({"type": "source", "source": truncated_sources})
                 elif "tool_calls" in line:
                     tool_calls = merge_tool_calls(prior_tool_calls, line["tool_calls"])
-                    yield _emit({"type": "tool_calls", "tool_calls": tool_calls})
+                    yield _emit({"type": "tool_calls", "tool_calls": artifact_describer.tool_calls(tool_calls)})
                 elif "thought" in line:
                     thought += line["thought"]
                     segments.thought(line["thought"])
@@ -1062,7 +1075,7 @@ class BaseAnswerResource:
                         yield _emit({"type": "error", "error": error_text, **error_extra})
                     elif line.get("type") == "tool_call":
                         segments.tool_call(line.get("data"))
-                        yield _emit(line)
+                        yield _emit({**line, "data": artifact_describer.tool_call(line.get("data"))})
                     elif line.get("type") == "notice":
                         # Non-fatal, non-terminal notice (e.g. some workflow input
                         # documents were dropped). Forwarded verbatim so the client can
@@ -2021,7 +2034,8 @@ class BaseAnswerResource:
 
         Returns:
             Dict with keys: conversation_id, answer, sources, tool_calls,
-            thought, error, and optional extra.
+            thought, error, and optional extra and artifacts (the turn's
+            artifacts, as the ``end`` event lists them).
         """
         conversation_id = ""
         response_full = ""
@@ -2032,6 +2046,7 @@ class BaseAnswerResource:
         is_structured = False
         schema_info = None
         pending_tool_calls = None
+        artifacts: List[Dict[str, Any]] = []
 
         for line in stream:
             try:
@@ -2084,6 +2099,7 @@ class BaseAnswerResource:
                     }
                 elif event["type"] == "end":
                     stream_ended = True
+                    artifacts = event.get("artifacts") or []
             except (json.JSONDecodeError, KeyError) as e:
                 logger.warning(f"Error parsing stream event: {e}, line: {line}")
                 continue
@@ -2106,6 +2122,8 @@ class BaseAnswerResource:
             "thought": thought,
             "error": None,
         }
+        if artifacts:
+            result["artifacts"] = artifacts
 
         if pending_tool_calls is not None:
             result["extra"] = {"pending_tool_calls": pending_tool_calls}

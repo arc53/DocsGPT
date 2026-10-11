@@ -1,7 +1,7 @@
 ---
 title: Interacting with Agents via API
 description: Learn how to programmatically interact with DocsGPT Agents using the streaming and non-streaming API endpoints.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-11
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -104,6 +104,7 @@ Response fields:
 - `tool_calls`
 - `thought`
 - `pending_tool_calls`, when the turn paused for tool approval (see [Tools that need approval](#tools-that-need-approval))
+- `artifacts`, when the turn made files (see [Artifacts](#artifacts))
 - Optional structured output metadata (`structured`, `schema`) when enabled
 
 An error during the run returns HTTP `400` with `{"error": "..."}`.
@@ -186,7 +187,7 @@ Each `data:` frame is JSON with `type`:
 | `answer` | `answer` | Incremental answer chunk. |
 | `thought` | `thought` | Reasoning chunk (model and agent dependent). |
 | `source` | `source` | The retrieved sources and chunks. |
-| `tool_call` | `data` | One tool call's progress or outcome: `tool_name`, `action_name`, `call_id`, `arguments`, `status` (`pending`, `completed`, `error`, `denied`, `skipped`, `awaiting_approval` or `requires_client_execution`) and `result` or `error`. |
+| `tool_call` | `data` | One tool call's progress or outcome: `tool_name`, `action_name`, `call_id`, `arguments`, `status` (`pending`, `completed`, `error`, `denied`, `skipped`, `awaiting_approval` or `requires_client_execution`) and `result` or `error`. A call that made files also has `artifacts` (see [Artifacts](#artifacts)). |
 | `tool_calls` | `tool_calls` | The completed tool calls of the turn. |
 | `tool_calls_pending` | `data.pending_tool_calls` | The turn paused on tools that need approval or client-side execution. See [Tools that need approval](#tools-that-need-approval). |
 | `structured_answer` | `answer`, `structured`, `schema` | Final structured payload (when schema mode is active). |
@@ -197,7 +198,7 @@ Each `data:` frame is JSON with `type`:
 | `guardrail` | `guardrail`, `retract` | A [guardrail](/Agents/guardrails) blocked the answer mid-stream. With `retract: true`, discard the text already shown; an `error` event with the block message follows. |
 | `error` | `error` | Error message. |
 | `id` | `id` | The conversation ID. |
-| `end` | | The stream is complete. |
+| `end` | `artifacts` (when the turn made files) | The stream is complete. `artifacts` lists every artifact the turn created or changed. |
 
 New event types can be added, so ignore types you don't handle.
 
@@ -391,6 +392,19 @@ requests.put(
 ```
 
 Webhook runs are the owner's own automation and are not limited by this list; see [Agent webhooks](/API/webhooks#how-a-webhook-run-behaves).
+
+## Artifacts
+
+Files the agent makes with the [Artifact or Code Executor tool](/Tools/artifacts-and-code-execution) are
+artifacts. Each tool call that made one lists it under `artifacts`, with its `id`, `ref` (`A1`), `filename`,
+`version`, `kind`, `title`, `mime_type`, `size`, `sha256` and a `download_url` pinned to that version. The `end`
+event of `/stream`, and the `/api/answer` response, carry `artifacts`: every artifact the turn created or changed,
+once each at its latest version.
+
+Fetch `download_url` with your agent API key in the `Authorization: Bearer` header; the URL itself carries no
+key. The key reads only artifacts of its agent's conversations, and only with the `conversation_id` the URL
+carries. See [Artifacts](/API/openai-compatible#artifacts) on the OpenAI-compatible page for an example and for
+S3 storage.
 
 ## Search API
 

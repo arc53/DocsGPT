@@ -190,6 +190,8 @@ class AnswerResource(Resource, BaseAnswerResource):
                 "tool_calls": stream_result["tool_calls"],
                 "thought": stream_result["thought"],
             }
+            if stream_result.get("artifacts"):
+                result["artifacts"] = stream_result["artifacts"]
 
             extra_info = stream_result.get("extra")
             if extra_info:

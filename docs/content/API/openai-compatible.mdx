@@ -1,7 +1,7 @@
 ---
 title: OpenAI-Compatible API
 description: Connect any OpenAI-compatible client to DocsGPT Agents via /v1/chat/completions — streaming, structured output, files and images, tool calling, reasoning, and idempotent retries.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-11
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -209,6 +209,53 @@ You can register your own tools and execute them on the client. The flow is stat
 }
 ```
 
+## Artifacts
+
+When the agent has the [Artifact or Code Executor tool](/Tools/artifacts-and-code-execution), the files it
+makes are artifacts. Each completed server-side tool call in `docsgpt.tool_calls` (when streaming, each
+`docsgpt` frame of `"type": "tool_call"`) lists the artifacts that call created or changed:
+
+```json
+{
+  "id": "0b5c7c1e-6f1a-4a43-9a5e-2c1d8f3b7e10",
+  "ref": "A1",
+  "filename": "Services Agreement.docx",
+  "version": 2,
+  "kind": "document",
+  "title": "Services Agreement",
+  "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "size": 18234,
+  "sha256": "9f2c...",
+  "download_url": "/api/artifacts/0b5c7c1e-6f1a-4a43-9a5e-2c1d8f3b7e10/download?conversation_id=6a1e...&version=2"
+}
+```
+
+`docsgpt.artifacts` lists every artifact the turn created or changed, once each, at its latest version, so you
+don't have to collect them from the tool calls. When streaming, the same list arrives in a `docsgpt` frame of
+`"type": "artifacts"` just before the frame that carries `finish_reason`. A turn that made no files has neither.
+In a [client tool loop](#tool-calling-client-side-stateless), a response can list only what its own round made,
+so collect the lists across the rounds, keeping the highest `version` of each `id`.
+
+Download a file by sending `GET` to its `download_url` with the same `Authorization: Bearer <agent API key>`
+header as your chat requests:
+
+```bash
+curl -L -H "Authorization: Bearer $DOCSGPT_AGENT_KEY" \
+  "http://localhost:7091/api/artifacts/0b5c.../download?conversation_id=6a1e...&version=2" -o agreement.docx
+```
+
+- **The URL never holds a credential.** It is a path on the API (prefixed with `PUBLIC_API_BASE_URL` when that is
+  set) pinned to the version the call produced, so `sha256` and `size` describe exactly the bytes it returns.
+- **An agent key reads only its own conversations.** The download, like `GET /api/artifacts/<id>`, needs the
+  `conversation_id` in the URL, which must be a conversation of the key's agent; anything else returns `403`. The
+  key can't delete or restore artifacts. The older `?api_key=` query parameter still works, but query strings
+  end up in access logs, so prefer the header.
+- **On S3 storage** (`URL_STRATEGY=s3`) the route answers `302` with a presigned bucket URL that is valid for 5
+  minutes. HTTP clients such as `requests`, `httpx` and `curl` drop the `Authorization` header when they follow a
+  redirect to another host, which is what S3 expects. Add `disposition=url` to get `{"url": "..."}` as JSON
+  instead. With the default `URL_STRATEGY=backend` the bytes are streamed directly.
+- Downloads are served by the ASGI app, as `docsgpt api` and the Docker images run it.
+
 ## Errors
 
 A request that does not fit the model's context window gets the error OpenAI returns for one, with HTTP `400`:
@@ -304,7 +351,8 @@ DocsGPT adds an optional `docsgpt` object to both requests and responses for fea
 | --- | --- |
 | `conversation_id` | Server-side conversation ID for this exchange. |
 | `sources` | RAG sources used to answer. |
-| `tool_calls` | Completed tool-call results from the run. |
+| `tool_calls` | Completed tool-call results from the run, with the [artifacts](#artifacts) each call made. |
+| `artifacts` | Every [artifact](#artifacts) the turn created or changed, at its latest version, with its `download_url`. |
 | `model`, `provider` | The model that produced the final answer, and its provider. |
 | `fallback` | `true` when that model is a fallback, not the agent's own model. |
 | `reason` | Why the fallback ran: the error class of the failed call, with its HTTP status when it had one (`InternalServerError/500`). Only on a fallback. |

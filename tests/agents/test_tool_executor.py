@@ -1312,6 +1312,39 @@ class TestToolExecutorExecute:
             "artifact_id" in e.get("data", {}) for e in completed_events
         )
 
+    def test_execute_tool_reports_the_version_each_artifact_is_at(self, mock_tool_manager, monkeypatch):
+        """A tool's artifact entries keep the version it produced; junk versions are dropped."""
+        executor = ToolExecutor(user="test_user")
+
+        monkeypatch.setattr(
+            "docsgpt.agents.tool_executor.ToolActionParser",
+            lambda _cls, **kw: Mock(parse_args=Mock(return_value=("t1", "act", {}))),
+        )
+        mock_tool = mock_tool_manager.load_tool.return_value
+        mock_tool.get_artifact_id = Mock(return_value="a-1")
+        mock_tool.get_artifacts = Mock(
+            return_value=[
+                {"id": "a-1", "filename": "Deal.docx", "ref": "A1", "version": 2},
+                {"id": "a-2", "filename": "x.csv", "ref": "A2", "version": "3"},
+            ]
+        )
+        tools_dict = {
+            "t1": {
+                "id": "00000000-0000-0000-0000-000000000001",
+                "name": "test_tool",
+                "config": {},
+                "actions": [{"name": "act", "description": "Test", "parameters": {"properties": {}}}],
+            }
+        }
+
+        events = list(_drain(executor.execute(tools_dict, self._make_call(name="act_t1"), "MockLLM")))
+
+        completed = next(e for e in events if e["data"].get("status") == "completed")
+        assert completed["data"]["artifacts"] == [
+            {"id": "a-1", "filename": "Deal.docx", "ref": "A1", "version": 2},
+            {"id": "a-2", "filename": "x.csv", "ref": "A2"},
+        ]
+
     def test_get_or_load_tool_encrypted_credentials(self, monkeypatch):
         """Cover lines 273-278: encrypted credentials path."""
         executor = ToolExecutor(user="test_user")
@@ -1652,3 +1685,12 @@ class TestStoredAndSynthesizedBuiltinCollapse:
             "t2": {"name": "mcp_tool", "actions": [dict(action)]},
         }
         assert len(executor.prepare_tools_for_llm(tools_dict)) == 2
+
+
+def _drain(gen):
+    """Every event a generator yields, ignoring its return value."""
+    while True:
+        try:
+            yield next(gen)
+        except StopIteration:
+            return

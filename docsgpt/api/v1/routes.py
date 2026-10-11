@@ -839,6 +839,7 @@ def _non_stream_response(
         usage=_response_usage(agent),
         finish_reason_override=_response_finish_reason(agent),
         answered_by=_answered_by(agent),
+        artifacts=result.get("artifacts"),
     )
     return make_response(jsonify(response), 200)
 

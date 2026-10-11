@@ -609,6 +609,7 @@ class ArtifactGeneratorTool(Tool):
         self._last_artifact_id: Optional[str] = None
         self._last_filename: Optional[str] = None
         self._last_ref: Optional[str] = None
+        self._last_version: Optional[int] = None
 
     # ------------------------------------------------------------------
     # Tool ABC
@@ -724,13 +725,14 @@ class ArtifactGeneratorTool(Tool):
         """
         if not self._last_artifact_id:
             return []
-        return [
-            {
-                "id": self._last_artifact_id,
-                "filename": self._last_filename,
-                "ref": self._last_ref,
-            }
-        ]
+        entry: Dict[str, Any] = {
+            "id": self._last_artifact_id,
+            "filename": self._last_filename,
+            "ref": self._last_ref,
+        }
+        if self._last_version is not None:
+            entry["version"] = self._last_version
+        return [entry]
 
     # ------------------------------------------------------------------
     # Dispatch
@@ -740,6 +742,7 @@ class ArtifactGeneratorTool(Tool):
         self._last_artifact_id = None
         self._last_filename = None
         self._last_ref = None
+        self._last_version = None
         if not self.user_id:
             return {"status": "error", "error": "artifact_generator requires a valid user_id."}
         if self.conversation_id is None and self.workflow_run_id is None:
@@ -794,6 +797,7 @@ class ArtifactGeneratorTool(Tool):
         self._last_artifact_id = ref["artifact_id"]
         self._last_filename = ref.get("filename")
         self._last_ref = ref.get("ref")
+        self._last_version = ref.get("version")
         return {"status": "ok", **ref}
 
     def _edit(self, **kwargs: Any) -> Dict[str, Any]:
@@ -865,6 +869,7 @@ class ArtifactGeneratorTool(Tool):
         self._last_artifact_id = ref["artifact_id"]
         self._last_filename = ref.get("filename")
         self._last_ref = ref.get("ref")
+        self._last_version = ref.get("version")
         return {"status": "ok", **ref}
 
     # ------------------------------------------------------------------
