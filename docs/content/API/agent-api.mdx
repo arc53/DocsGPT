@@ -84,7 +84,7 @@ Streaming-only fields:
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `attachments` | `string[]` | No | List of attachment IDs from `/api/task_status` success result. |
-| `attachments_mode` | `string` | No | `"auto"` (default) or `"reference"`. In reference mode none of the turn's files go into the prompt; the model reads, searches or processes them with its tools by their `F` ref. See [Reference mode](/API/openai-compatible#reference-mode). |
+| `attachments_mode` | `string` | No | `"auto"` (default) or `"reference"`. In reference mode none of the turn's files go into the prompt; the model reads, searches or processes them with its tools by their `F` ref. Any other value is treated as `"auto"`. See [Reference mode](/API/openai-compatible#reference-mode). |
 | `index` | `number` | No | Update an existing query index. If provided, `conversation_id` is required. |
 
 To resume a turn that paused for tool approval, send `conversation_id` and `tool_actions` instead of `question`; see [Tools that need approval](#tools-that-need-approval).
