@@ -1,7 +1,7 @@
 ---
 title: Artifacts and Code Execution
 description: Generate editable documents, run sandboxed code, and read files with the DocsGPT artifact, code executor, and read document tools.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-11
 ---
 
 import { Callout } from 'nextra/components';
@@ -51,6 +51,40 @@ The Artifact tool keeps a structured spec as the source of truth and renders the
 - **rewrite** an artifact with a full replacement spec.
 
 Supported kinds are presentation (.pptx), document (.docx), spreadsheet (.xlsx), pdf, and html.
+
+#### Word documents
+
+The document kind takes a list of `blocks`, so contracts, memos and reports keep their structure:
+
+| Block | Fields |
+| --- | --- |
+| `heading` | `text` or `runs`, `level` 1-6, `align` |
+| `paragraph` | `text` or `runs`, `style` (any Word paragraph style in the document, such as `Body Text`), `align` (`left`, `center`, `right`, `justify`) |
+| `list` | `items`, `ordered`, `start`. An item is a string or `{"text" or "runs", "items": [...]}`; nested numbered items are numbered 1., 1.1., 1.1.1. Each list starts its own count; `start` sets the first number. |
+| `table` | `rows`, `headers`, `widths` (one relative number per column, such as `[3, 1]`), `style` (a Word table style, `Table Grid` by default). A cell is a string, a number, or `{"text" or "runs", "align"}`. The header row is bold, shaded and repeated on every page. |
+| `quote` | `text` or `runs` |
+| `code` | `text`, in a monospace font |
+| `page_break` | none |
+
+`text` is always literal. For bold, italic and other formatting, use `runs`: a list of strings and
+`{"text", "bold", "italic", "underline", "strike", "code", "link"}` objects. `link` takes an `https://`, `http://` or
+`mailto:` address. Formatting is never parsed out of the text, so an asterisk or an underscore in a clause stays
+as typed.
+
+```json
+{
+  "title": "Services Agreement",
+  "blocks": [
+    {"type": "heading", "text": "Fees", "level": 1},
+    {"type": "paragraph", "runs": ["The ", {"text": "Client", "bold": true}, " pays within 30 days."]},
+    {"type": "list", "ordered": true, "items": ["Setup", {"text": "Support", "items": ["Hours", "Response times"]}]},
+    {"type": "table", "headers": ["Service", "Fee (EUR)"], "rows": [["Setup", 1000], ["Support", 200]], "widths": [3, 1]}
+  ]
+}
+```
+
+The earlier shape, `{"sections": [{"heading", "paragraphs": [...]}]}`, still works and renders as before, and
+`edit_artifact` can append `blocks` to a document made that way. Footnotes aren't supported.
 
 #### Non-Latin text in PDF artifacts
 
