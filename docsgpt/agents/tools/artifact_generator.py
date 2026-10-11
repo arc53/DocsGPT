@@ -67,6 +67,116 @@ _KIND_INFO: Dict[str, Dict[str, str]] = {
     },
 }
 
+def _block(block_type: str, required: Tuple[str, ...] = (), **properties: Any) -> Dict[str, Any]:
+    """A docx block schema: ``type`` fixed to ``block_type`` plus its own properties."""
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {"type": {"const": block_type}, **properties},
+        "required": ["type", *required],
+    }
+
+
+# Inline formatting for the docx kind. A run is a plain string or an object;
+# formatting is data the schema checks, never markup to parse, so literal
+# ``*``/``_``/``[`` in legal text can never turn into formatting.
+_DOCX_RUN = {
+    "anyOf": [
+        {"type": "string"},
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "text": {"type": "string"},
+                "bold": {"type": "boolean"},
+                "italic": {"type": "boolean"},
+                "underline": {"type": "boolean"},
+                "strike": {"type": "boolean"},
+                "code": {"type": "boolean"},
+                "link": {"type": "string", "pattern": "^(https?://|mailto:)"},
+            },
+            "required": ["text"],
+        },
+    ]
+}
+_DOCX_TEXT = {"text": {"type": "string"}, "runs": {"type": "array", "items": {"$ref": "#/$defs/run"}}}
+_DOCX_ALIGN = {"type": "string", "enum": ["left", "center", "right", "justify"]}
+# A table cell: a scalar (numbers are common in schedules and price tables) or
+# formatted text with an alignment.
+_DOCX_CELL = {
+    "anyOf": [
+        {"type": ["string", "number", "boolean", "null"]},
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {**_DOCX_TEXT, "align": _DOCX_ALIGN},
+        },
+    ]
+}
+# A list item: a string, or text/runs with an optional nested ``items`` list
+# (numbered lists nest as 1., 1.1., 1.1.1.).
+_DOCX_ITEM = {
+    "anyOf": [
+        {"type": "string"},
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {**_DOCX_TEXT, "items": {"type": "array", "items": {"$ref": "#/$defs/item"}}},
+        },
+    ]
+}
+_DOCUMENT_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "$defs": {"run": _DOCX_RUN, "item": _DOCX_ITEM, "cell": _DOCX_CELL},
+    "properties": {
+        "title": {"type": "string"},
+        # The original shape; still accepted and rendered as before.
+        "sections": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "heading": {"type": "string"},
+                    "paragraphs": {"type": "array", "items": {"type": "string"}},
+                },
+            },
+        },
+        "blocks": {
+            "type": "array",
+            "items": {
+                "oneOf": [
+                    _block(
+                        "heading", **_DOCX_TEXT, level={"type": "integer", "minimum": 1, "maximum": 6},
+                        align=_DOCX_ALIGN,
+                    ),
+                    _block("paragraph", **_DOCX_TEXT, style={"type": "string"}, align=_DOCX_ALIGN),
+                    _block(
+                        "list",
+                        ("items",),
+                        items={"type": "array", "items": {"$ref": "#/$defs/item"}},
+                        ordered={"type": "boolean"},
+                        start={"type": "integer", "minimum": 0},
+                    ),
+                    _block(
+                        "table",
+                        ("rows",),
+                        headers={"type": "array", "items": {"$ref": "#/$defs/cell"}},
+                        rows={"type": "array", "items": {"type": "array", "items": {"$ref": "#/$defs/cell"}}},
+                        widths={"type": "array", "items": {"type": "number", "exclusiveMinimum": 0}},
+                        style={"type": "string"},
+                    ),
+                    _block("quote", **_DOCX_TEXT, style={"type": "string"}, align=_DOCX_ALIGN),
+                    _block("code", ("text",), text={"type": "string"}),
+                    _block("page_break"),
+                ],
+            },
+        },
+    },
+    "anyOf": [{"required": ["sections"]}, {"required": ["blocks"]}],
+}
+
 # Tight per-kind JSON schemas. ``additionalProperties: false`` keeps specs minimal
 # and rejects stray keys before any rendering happens.
 _SCHEMAS: Dict[str, Dict[str, Any]] = {
@@ -90,25 +200,7 @@ _SCHEMAS: Dict[str, Dict[str, Any]] = {
         },
         "required": ["slides"],
     },
-    "document": {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "title": {"type": "string"},
-            "sections": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "properties": {
-                        "heading": {"type": "string"},
-                        "paragraphs": {"type": "array", "items": {"type": "string"}},
-                    },
-                },
-            },
-        },
-        "required": ["sections"],
-    },
+    "document": _DOCUMENT_SCHEMA,
     "spreadsheet": {
         "type": "object",
         "additionalProperties": False,
@@ -230,7 +322,17 @@ _SCHEMAS: Dict[str, Dict[str, Any]] = {
 _SPEC_SYNOPSIS = (
     "Exact spec shape per kind (no other keys are accepted): "
     'presentation {"title"?, "slides": [{"title"?, "bullets"?: [str], "notes"?}]} · '
-    'document {"title"?, "sections": [{"heading"?, "paragraphs"?: [str]}]} · '
+    'document {"title"?, "blocks": [...]} where each block is '
+    '{"type": "heading", "text"|"runs", "level"?: 1-6, "align"?} | '
+    '{"type": "paragraph", "text"|"runs", "style"?: Word style name, "align"?: left|center|right|justify} | '
+    '{"type": "list", "items": [item], "ordered"?: bool, "start"?: int} | '
+    '{"type": "table", "rows": [[cell]], "headers"?: [cell], "widths"?: [relative number per column], "style"?} | '
+    '{"type": "quote", "text"|"runs"} | {"type": "code", "text"} | {"type": "page_break"}; '
+    'runs: [str | {"text", "bold"?, "italic"?, "underline"?, "strike"?, "code"?, "link"?: https URL}]; '
+    'item: str | {"text"|"runs", "items"?: [item]} (Word numbers ordered items 1., 1.1., 1.1.1. by nesting; '
+    'never type clause numbers into the text); '
+    'cell: str | number | {"text"|"runs", "align"?}; '
+    'the older {"sections": [{"heading"?, "paragraphs"?: [str]}]} still renders · '
     'spreadsheet {"sheets": [{"name"?, "rows": [[cell, ...]]}]} · '
     'pdf {"title"?, "blocks": [{"type": "heading"|"paragraph", "text", "level"?: 1-3}]} · '
     'html {"title"?, "blocks": [...]} where each block is '
@@ -240,31 +342,47 @@ _SPEC_SYNOPSIS = (
 )
 
 
-def _pdf_renderer() -> str:
-    """Return the pdf renderer program: ``artifact_pdf.py`` run in its own namespace with the image's font table.
+def _module_renderer(module_file: str, entry: str, extra_args: str = "") -> str:
+    """Return a renderer program that runs a sibling module's ``entry`` in its own namespace.
 
     The module's source goes in as a string literal and runs in a fresh dict,
     so its helpers never land in the session kernel that ``run_code`` shares.
-    The font table is the manifest's ``PDF_FONTS``; the sandbox looks the files
-    up. Braces are doubled so the template survives ``str.format``.
+    Braces are doubled so the template survives ``str.format``.
+
+    Args:
+        module_file: The renderer module next to this one (``artifact_pdf.py``).
+        entry: Its function taking ``(spec_path, out_path, ...)``.
+        extra_args: Python source of further arguments, already a literal.
 
     Returns:
         A ``str.format`` template taking ``spec_path`` and ``out_path``.
     """
-    source = Path(__file__).with_name("artifact_pdf.py").read_text(encoding="utf-8")
-    fonts = repr([dict(entry) for entry in PDF_FONTS])
+    source = Path(__file__).with_name(module_file).read_text(encoding="utf-8")
+    namespace = "_docsgpt_" + module_file.removesuffix(".py")
 
     def literal(value: str) -> str:
         return value.replace("{", "{{").replace("}", "}}")
 
+    tail = f", {literal(extra_args)}" if extra_args else ""
     return (
-        "_docsgpt_artifact_pdf = {{'__name__': 'docsgpt_artifact_pdf'}}\n"
+        f"{namespace} = {{{{'__name__': 'docsgpt_{module_file.removesuffix('.py')}'}}}}\n"
         "try:\n"
-        f"    exec(compile({literal(repr(source))}, 'artifact_pdf.py', 'exec'), _docsgpt_artifact_pdf)\n"
-        f"    _docsgpt_artifact_pdf['render_pdf_spec']({{spec_path!r}}, {{out_path!r}}, {literal(fonts)})\n"
+        f"    exec(compile({literal(repr(source))}, {module_file!r}, 'exec'), {namespace})\n"
+        f"    {namespace}[{entry!r}]({{spec_path!r}}, {{out_path!r}}{tail})\n"
         "finally:\n"
-        "    del _docsgpt_artifact_pdf\n"
+        f"    del {namespace}\n"
     )
+
+
+def _pdf_renderer() -> str:
+    """Return the pdf renderer program: ``artifact_pdf.py`` with the image's font table.
+
+    The font table is the manifest's ``PDF_FONTS``; the sandbox looks the files up.
+
+    Returns:
+        A ``str.format`` template taking ``spec_path`` and ``out_path``.
+    """
+    return _module_renderer("artifact_pdf.py", "render_pdf_spec", repr([dict(entry) for entry in PDF_FONTS]))
 
 
 # FIXED renderer programs. Each reads ``spec.json`` from the workspace as DATA
@@ -298,22 +416,7 @@ _RENDERERS: Dict[str, str] = {
         "        slide.notes_slide.notes_text_frame.text = str(notes)\n"
         "prs.save({out_path!r})\n"
     ),
-    "document": (
-        "import json\n"
-        "from docx import Document\n"
-        "spec = json.load(open({spec_path!r}))\n"
-        "doc = Document()\n"
-        "title = spec.get('title')\n"
-        "if title:\n"
-        "    doc.add_heading(str(title), level=0)\n"
-        "for sec in spec.get('sections', []):\n"
-        "    heading = sec.get('heading')\n"
-        "    if heading:\n"
-        "        doc.add_heading(str(heading), level=1)\n"
-        "    for p in (sec.get('paragraphs') or []):\n"
-        "        doc.add_paragraph(str(p))\n"
-        "doc.save({out_path!r})\n"
-    ),
+    "document": _module_renderer("artifact_docx.py", "render_docx_spec"),
     "spreadsheet": (
         "import json\n"
         "from openpyxl import Workbook\n"
@@ -402,6 +505,59 @@ _RENDERERS: Dict[str, str] = {
 }
 
 
+_JSON_TYPES = {"object": dict, "array": list, "string": str, "boolean": bool}
+
+
+def _branch_for(instance: Any, branch: Any) -> bool:
+    """Whether ``instance`` is the value a ``oneOf``/``anyOf`` branch is about.
+
+    A block branch is picked by its fixed ``type`` (``{"type": {"const": ...}}``),
+    any other branch by its JSON type, so the error reported is the one from
+    the branch the model meant rather than jsonschema's "not valid under any
+    of the given schemas".
+    """
+    if not isinstance(branch, dict):
+        return False
+    const = ((branch.get("properties") or {}).get("type") or {}).get("const")
+    if const is not None:
+        return isinstance(instance, dict) and instance.get("type") == const
+    expected = _JSON_TYPES.get(branch.get("type")) if isinstance(branch.get("type"), str) else None
+    return expected is not None and isinstance(instance, expected)
+
+
+def explain_validation_error(error: Any) -> str:
+    """The most specific message for a spec validation error, with where it is in the spec.
+
+    Args:
+        error: The ``jsonschema.ValidationError`` raised for the spec.
+
+    Returns:
+        The message, ending with ``(at blocks/3/rows/0)`` when the error is
+        inside the spec rather than at its root.
+    """
+    while error.validator in ("oneOf", "anyOf") and error.context:
+        branches = error.validator_value if isinstance(error.validator_value, list) else []
+        instance = error.instance
+        consts = [((b.get("properties") or {}).get("type") or {}).get("const") for b in branches if isinstance(b, dict)]
+        if isinstance(instance, dict) and any(consts) and instance.get("type") not in consts:
+            known = ", ".join(str(c) for c in consts if c)
+            return _at(error, f"unknown block type {instance.get('type')!r}; expected one of {known}")
+        if all(isinstance(b, dict) and set(b) == {"required"} for b in branches):
+            names = " or ".join(repr(b["required"][0]) for b in branches if b.get("required"))
+            return _at(error, f"one of {names} is required")
+        matching = [i for i, b in enumerate(branches) if _branch_for(instance, b)]
+        sub = [e for e in error.context if e.schema_path and e.schema_path[0] in matching[:1]]
+        if not sub:
+            break
+        error = jsonschema.exceptions.best_match(sub)
+    return _at(error, error.message)
+
+
+def _at(error: Any, message: str) -> str:
+    path = "/".join(str(p) for p in error.absolute_path)
+    return f"{message} (at {path})" if path else message
+
+
 def merge_patch(target: Any, patch: Any) -> Any:
     """Apply an RFC 7386 JSON Merge Patch to ``target`` and return the result."""
     if not isinstance(patch, dict):
@@ -453,6 +609,7 @@ class ArtifactGeneratorTool(Tool):
         self._last_artifact_id: Optional[str] = None
         self._last_filename: Optional[str] = None
         self._last_ref: Optional[str] = None
+        self._last_version: Optional[int] = None
 
     # ------------------------------------------------------------------
     # Tool ABC
@@ -568,13 +725,14 @@ class ArtifactGeneratorTool(Tool):
         """
         if not self._last_artifact_id:
             return []
-        return [
-            {
-                "id": self._last_artifact_id,
-                "filename": self._last_filename,
-                "ref": self._last_ref,
-            }
-        ]
+        entry: Dict[str, Any] = {
+            "id": self._last_artifact_id,
+            "filename": self._last_filename,
+            "ref": self._last_ref,
+        }
+        if self._last_version is not None:
+            entry["version"] = self._last_version
+        return [entry]
 
     # ------------------------------------------------------------------
     # Dispatch
@@ -584,6 +742,7 @@ class ArtifactGeneratorTool(Tool):
         self._last_artifact_id = None
         self._last_filename = None
         self._last_ref = None
+        self._last_version = None
         if not self.user_id:
             return {"status": "error", "error": "artifact_generator requires a valid user_id."}
         if self.conversation_id is None and self.workflow_run_id is None:
@@ -638,6 +797,7 @@ class ArtifactGeneratorTool(Tool):
         self._last_artifact_id = ref["artifact_id"]
         self._last_filename = ref.get("filename")
         self._last_ref = ref.get("ref")
+        self._last_version = ref.get("version")
         return {"status": "ok", **ref}
 
     def _edit(self, **kwargs: Any) -> Dict[str, Any]:
@@ -709,6 +869,7 @@ class ArtifactGeneratorTool(Tool):
         self._last_artifact_id = ref["artifact_id"]
         self._last_filename = ref.get("filename")
         self._last_ref = ref.get("ref")
+        self._last_version = ref.get("version")
         return {"status": "ok", **ref}
 
     # ------------------------------------------------------------------
@@ -763,7 +924,7 @@ class ArtifactGeneratorTool(Tool):
         try:
             jsonschema.validate(spec, _SCHEMAS[kind])
         except jsonschema.ValidationError as exc:
-            return spec, {"status": "error", "error": f"invalid {kind} spec: {exc.message}"}
+            return spec, {"status": "error", "error": f"invalid {kind} spec: {explain_validation_error(exc)}"}
         return spec, None
 
     def _load_current(self, raw_id: Any) -> Dict[str, Any]:

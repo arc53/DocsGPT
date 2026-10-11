@@ -2169,6 +2169,9 @@ class ToolExecutor:
                         "id": str(a["id"]).strip(),
                         "filename": a.get("filename"),
                         "ref": a.get("ref"),
+                        # The version this call produced, so a later edit in the
+                        # same turn cannot make this call's entry describe it.
+                        **({"version": a["version"]} if isinstance(a.get("version"), int) else {}),
                     }
                     for a in (get_artifacts(action_name, **parameters) or [])
                     if isinstance(a, dict) and a.get("id")

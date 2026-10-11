@@ -26,6 +26,7 @@ from docsgpt.api.pat.routes import pat_ns  # noqa: E402
 from docsgpt.api.pat.rules import authorize as authorize_pat  # noqa: E402
 from docsgpt.api.pat.tokens import is_pat  # noqa: E402
 from docsgpt.api.scim import scim_bp  # noqa: E402
+from docsgpt.api.user.artifacts.authz import bearer_agent_key  # noqa: E402
 from docsgpt.api.user.authz import ROLE_USER, resolve_roles  # noqa: E402
 from docsgpt.api.user.routes import user  # noqa: E402
 from docsgpt.api.connector.routes import connector  # noqa: E402
@@ -364,6 +365,15 @@ def authenticate_request():
     # SCIM provisioning authenticates with its own bearer token (SCIM_TOKEN),
     # validated inside the blueprint.
     if request.path.startswith("/scim/"):
+        request.decoded_token = None
+        return None
+    # An agent API key sent as ``Authorization: Bearer`` to the artifact
+    # routes is not a session token either: the routes resolve it to the
+    # agent-scoped principal (``docsgpt/api/user/artifacts/authz.py``).
+    # Only a UUID-shaped value counts, so JWTs and PATs are decoded as usual.
+    if (request.path == "/api/artifacts" or request.path.startswith("/api/artifacts/")) and bearer_agent_key(
+        request.headers
+    ):
         request.decoded_token = None
         return None
     decoded_token = handle_auth(request)

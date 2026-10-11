@@ -60,6 +60,10 @@ logger = logging.getLogger(__name__)
 
 v1_bp = Blueprint("v1", __name__, url_prefix="/v1")
 
+# ``docsgpt.attachments_mode``: ``auto`` plans what fits into the prompt (the
+# default); ``reference`` keeps the files out of it for the tools to work on.
+ATTACHMENTS_MODES = ("auto", "reference")
+
 
 def _extract_bearer_token() -> Optional[str]:
     """Extract API key from Authorization: Bearer header."""
@@ -227,6 +231,13 @@ def _validate_request_options(data: Dict[str, Any], agent: Dict[str, Any]) -> Op
     stream_options = data.get("stream_options")
     if stream_options is not None and not isinstance(stream_options, dict):
         return _invalid_request("stream_options must be an object.")
+    docsgpt = data.get("docsgpt")
+    mode = docsgpt.get("attachments_mode") if isinstance(docsgpt, dict) else None
+    if mode is not None and mode not in ATTACHMENTS_MODES:
+        return _invalid_request(
+            f"docsgpt.attachments_mode must be one of {', '.join(ATTACHMENTS_MODES)}.",
+            code="invalid_attachments_mode",
+        )
     return None
 
 
@@ -839,6 +850,8 @@ def _non_stream_response(
         usage=_response_usage(agent),
         finish_reason_override=_response_finish_reason(agent),
         answered_by=_answered_by(agent),
+        artifacts=result.get("artifacts"),
+        attachments=result.get("attachments"),
     )
     return make_response(jsonify(response), 200)
 
