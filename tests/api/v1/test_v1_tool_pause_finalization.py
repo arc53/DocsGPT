@@ -1213,3 +1213,48 @@ class TestV1ToolRoundTripEndToEnd:
             assert _row_statuses(conn, conv_id) == ["complete", "complete"]
             assert _pending_tool_state_count(conn, conv_id) == 0
             assert self._count_non_terminal(conn, user_id) == 0
+
+
+@pytest.mark.integration
+def test_a_continuation_without_a_row_can_still_hand_calls_off(pg_engine, monkeypatch):
+    """The resumed round of a first /v1 pause names no row; it gets a poll-only background context."""
+    from docsgpt.background.context import BackgroundContext
+
+    user_id = f"user-{uuid.uuid4().hex[:8]}"
+    with pg_engine.begin() as conn:
+        _seed_user(conn, user_id)
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+        conv_id = str(ConversationsRepository(conn).create(user_id, "paused")["id"])
+
+    with _wire_db(pg_engine, monkeypatch):
+        base = BaseAnswerResource.__new__(BaseAnswerResource)
+        base.default_model_id = "gpt-4"
+        base.conversation_service = ConversationService()
+        agent = _PausingAgent(PENDING_TOOL_CALLS, with_tool_executor=True)
+        agent.tool_executor.background = None
+        _drain(
+            base.complete_stream(
+                question="",
+                agent=agent,
+                conversation_id=conv_id,
+                user_api_key=None,
+                decoded_token={"sub": user_id},
+                should_persist=True,
+                model_id="gpt-4",
+                _continuation={
+                    "messages": [{"role": "system", "content": "sys"}],
+                    "tools_dict": {},
+                    "pending_tool_calls": PENDING_TOOL_CALLS,
+                    "tool_actions": [{"call_id": "call_abc", "result": "72F"}],
+                    "reserved_message_id": None,
+                    "request_id": None,
+                    "reasoning_content": "",
+                },
+            )
+        )
+
+    context = agent.tool_executor.background
+    assert isinstance(context, BackgroundContext)
+    assert context.origin_message_id is None
+    assert context.api_route is True

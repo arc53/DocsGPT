@@ -873,13 +873,15 @@ class BaseAnswerResource:
                     "Could not set tool_executor.conversation_id post-reserve",
                 )
         # A slow tool call in this turn may be handed off to a background job.
+        # A resumed round with no row of its own (the first /v1 pause finalized
+        # it) has nothing to report back to: its jobs are poll-only.
         bind_background_turn(
             getattr(agent, "tool_executor", None),
             conversation_id=conversation_id,
             message_id=reserved_message_id,
             decoded_token=decoded_token,
             agent_id=agent_id,
-            api_route=finalize_tool_pause_as_complete,
+            api_route=finalize_tool_pause_as_complete or bool(_continuation and not reserved_message_id),
         )
 
         # Per-stream monotonic SSE event id. Allocated by ``_emit`` and
