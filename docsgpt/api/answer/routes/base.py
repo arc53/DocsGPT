@@ -217,6 +217,8 @@ def _seal_exposed_journal(agent: Any, decoded_token: Optional[Dict], message_id:
 def _attachment_listing(agent: Any) -> List[Dict[str, Any]]:
     """The conversation's files as the turn's plan named them (``F`` ref, attachment id, status).
 
+    A resumed turn has no plan of its own: it reports the paused turn's.
+
     Args:
         agent: The turn's agent; its ``attachment_plan`` is read.
 
@@ -225,12 +227,33 @@ def _attachment_listing(agent: Any) -> List[Dict[str, Any]]:
     """
     plan = getattr(agent, "attachment_plan", None)
     if not isinstance(plan, AttachmentPlan) or not plan.files:
-        return []
+        paused = getattr(agent, "paused_attachment_listing", None)
+        return [dict(entry) for entry in paused if isinstance(entry, dict)] if isinstance(paused, list) else []
     try:
         return plan_listing(plan)
     except Exception:
         logger.exception("Could not list the turn's attachments")
         return []
+
+
+def _paused_turn_state(agent: Any) -> Dict[str, Any]:
+    """The agent's per-turn state a pause saves for its resume (see ``BaseAgent.paused_turn_state``).
+
+    Args:
+        agent: The paused turn's agent.
+
+    Returns:
+        The non-empty entries, or an empty dict for an agent without any.
+    """
+    export = getattr(agent, "paused_turn_state", None)
+    try:
+        state = export() if callable(export) else None
+    except Exception:
+        logger.exception("Could not read the paused turn's state")
+        return {}
+    if not isinstance(state, dict):
+        return {}
+    return {key: value for key, value in state.items() if value}
 
 
 def _native_image_names(agent: Any) -> List[str]:
@@ -1299,6 +1322,10 @@ class BaseAnswerResource:
                                     # Every round's calls so far, so the message
                                     # the resumed turn finalizes keeps them all.
                                     "prior_tool_calls": json.loads(json.dumps(tool_calls or [], default=str)),
+                                    # The turn's files (so ``F`` refs still
+                                    # resolve), its compression point and
+                                    # backup models.
+                                    **_paused_turn_state(agent),
                                     # Persisted in agent_config (rather than
                                     # a new column) so resume rebuilds the
                                     # paused assistant message with the

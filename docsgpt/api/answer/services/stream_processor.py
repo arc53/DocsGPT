@@ -2314,6 +2314,7 @@ class StreamProcessor:
 
         # Recreate dependencies
         system_api_key = api_key or get_api_key_for_provider(llm_name)
+        backup_models = [m for m in agent_config.get("backup_models") or [] if isinstance(m, str)]
         llm = LLMCreator.create_llm(
             llm_name,
             api_key=system_api_key,
@@ -2322,6 +2323,7 @@ class StreamProcessor:
             model_id=model_id,
             agent_id=agent_id,
             model_user_id=model_user_id,
+            backup_models=backup_models or None,
         )
         importer = getattr(llm, "import_responses_state", None)
         if callable(importer):
@@ -2404,11 +2406,21 @@ class StreamProcessor:
         if saved_guardrails:
             agent_kwargs["agent_config"] = {"guardrails": saved_guardrails}
         agent_kwargs["request_id"] = agent_config.get("request_id")
+        # The paused turn's files, so the resumed one can still hand them to
+        # its tools (``run_code`` inputs by ``F`` ref) and list their refs.
+        saved_files = agent_config.get("attachments")
+        if isinstance(saved_files, dict):
+            agent_kwargs.update(self._resumed_attachment_kwargs(saved_files))
+        # Stamped on the turn's metadata, so the next turn may chain onto it.
+        if agent_config.get("last_compression_at"):
+            agent_kwargs["last_compression_at"] = agent_config["last_compression_at"]
 
         agent = AgentCreator.create_agent(agent_key, **agent_kwargs)
         agent.conversation_id = conversation_id
         agent.initial_user_id = self.initial_user_id
         agent.tools = tool_schemas
+        if isinstance(saved_files, dict):
+            agent.resume_paused_attachments(saved_files.get("listing"))
 
         # Store config for the route layer
         self.model_id = model_id
@@ -2440,6 +2452,37 @@ class StreamProcessor:
             tool_actions,
             reasoning_content,
         )
+
+    def _resumed_attachment_kwargs(self, saved: Dict[str, Any]) -> Dict[str, Any]:
+        """Agent kwargs for a paused turn's files, read again as their owner.
+
+        Args:
+            saved: The ``attachments`` entry of the paused state
+                (``BaseAgent.paused_turn_state``).
+
+        Returns:
+            ``attachments``, ``earlier_attachments``, ``skipped_attachments``,
+            ``attachments_mode`` and ``attachment_planning`` for the agent. A
+            file that can no longer be read is left out, never failing the
+            resume.
+        """
+        current_ids = [str(i) for i in saved.get("current") or [] if i]
+        earlier_ids = [str(i) for i in saved.get("earlier") or [] if i]
+        current = self._get_attachments_content(current_ids, self.initial_user_id) if current_ids else []
+        earlier: List[Dict[str, Any]] = []
+        if earlier_ids:
+            try:
+                earlier = self._fetch_attachment_rows(earlier_ids)
+            except Exception as e:
+                logger.error("Error loading the paused turn's earlier attachments: %s", bounded_error_text(e))
+        mode = saved.get("mode")
+        return {
+            "attachments": current,
+            "earlier_attachments": earlier,
+            "skipped_attachments": [s for s in saved.get("skipped") or [] if isinstance(s, dict)],
+            "attachments_mode": mode if isinstance(mode, str) else None,
+            "attachment_planning": bool(saved.get("planning", True)),
+        }
 
     def create_agent(
         self,
