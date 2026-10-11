@@ -582,11 +582,12 @@ class BaseAnswerResource:
                 a paused assistant turn. When ``True`` and the agent pauses
                 for a client-executed tool, the reserved row is finalized
                 as ``status="complete"`` (recording the emitted
-                ``tool_calls``) and the stream ends, instead of writing a
-                ``pending_tool_state`` record and early-returning a
-                non-terminal row. This guarantees a ``/v1`` tool round
-                never strands a ``pending``/``streaming`` row for the
-                reconciler to fail. Defaults to ``False``, which preserves
+                ``tool_calls``) and the stream ends, instead of
+                early-returning a non-terminal row. This guarantees a ``/v1``
+                tool round never strands a ``pending``/``streaming`` row for
+                the reconciler to fail. The ``pending_tool_state`` is still
+                saved (naming no row to finalize), so a client that sends
+                back the conversation id resumes from it. Defaults to ``False``, which preserves
                 the native ``/stream`` + ``/api/answer`` pause/resume UX
                 byte-for-byte (still writes ``pending_tool_state``, leaves
                 the row non-terminal, and resumes natively).
@@ -1182,9 +1183,31 @@ class BaseAnswerResource:
                 # The client still gets ``finish_reason:"tool_calls"`` + the
                 # calls from the ``tool_calls_pending`` event flushed below.
                 if finalize_tool_pause_as_complete:
-                    # No continuation state is written on this path; flush the
-                    # held pause event now, in its original position ahead of
-                    # the terminal id/end events.
+                    # A client that sends back the conversation id it is
+                    # given resumes from saved state, like every later round:
+                    # the same messages, server-side calls, reasoning, tools
+                    # and files, so the provider's prompt cache still holds.
+                    # A client that re-posts the transcript instead never
+                    # claims it. The row is finalized as complete below, so
+                    # the state names no message to finalize.
+                    if should_persist and continuation and conversation_id:
+                        self._save_pause_state(
+                            agent=agent,
+                            continuation=continuation,
+                            conversation_id=str(conversation_id),
+                            decoded_token=decoded_token,
+                            model_id=model_id,
+                            model_user_id=model_user_id,
+                            user_api_key=user_api_key,
+                            agent_id=agent_id,
+                            paused_sources=[dict(doc) if isinstance(doc, dict) else doc for doc in source_log_docs],
+                            reserved_message_id=None,
+                            request_id=request_id,
+                            tool_calls=tool_calls,
+                        )
+                    # Flush the held pause event now (after the state is
+                    # saved), in its original position ahead of the terminal
+                    # id/end events.
                     if pending_pause_event is not None:
                         yield _emit(pending_pause_event)
                     yield from self._finalize_stateless_tool_pause(
@@ -1264,101 +1287,20 @@ class BaseAnswerResource:
                                 exc_info=True,
                             )
 
-                    state_saved = False
-                    if conversation_id:
-                        try:
-                            cont_service = ContinuationService()
-                            cont_service.save_state(
-                                conversation_id=str(conversation_id),
-                                user=decoded_token.get("sub", "local"),
-                                messages=continuation["messages"],
-                                pending_tool_calls=continuation["pending_tool_calls"],
-                                tools_dict=continuation["tools_dict"],
-                                tool_schemas=getattr(agent, "tools", []),
-                                agent_config={
-                                    "model_id": model_id or self.default_model_id,
-                                    # BYOM scope; without it resume falls
-                                    # back to caller's layer.
-                                    "model_user_id": model_user_id,
-                                    "llm_name": getattr(agent, "llm_name", settings.LLM_PROVIDER),
-                                    "api_key": getattr(agent, "api_key", None),
-                                    "user_api_key": user_api_key,
-                                    # An API-key caller stays one after a
-                                    # resume (owner-account write rules).
-                                    "external_api_caller": getattr(
-                                        agent.tool_executor, "external_caller", False,
-                                    ),
-                                    "public_link_caller": getattr(
-                                        agent.tool_executor, "public_link_caller", False,
-                                    ),
-                                    "api_write_allowlist": sorted(
-                                        getattr(agent.tool_executor, "api_write_allowlist", set()),
-                                    ),
-                                    "agent_id": agent_id,
-                                    "agent_type": agent.__class__.__name__,
-                                    # The sources so far, in full and in
-                                    # citation order: the resumed agent
-                                    # starts from them, so a hit after the
-                                    # resume continues their ``[n]`` numbers.
-                                    "retrieved_docs": paused_sources,
-                                    "prompt": getattr(agent, "prompt", ""),
-                                    "json_schema": getattr(agent, "json_schema", None),
-                                    # Kept with the schema: a resume that sends
-                                    # no response_format reuses both.
-                                    "json_schema_strict": getattr(agent, "json_schema_strict", True),
-                                    "retriever_config": getattr(agent, "retriever_config", None),
-                                    # Guardrails must survive the pause: a
-                                    # resumed turn is still the same turn.
-                                    "guardrails": (
-                                        agent.guardrails_config.model_dump(mode="json")
-                                        if getattr(agent, "guardrails_config", None)
-                                        else None
-                                    ),
-                                    # Reused on resume so the same WAL row
-                                    # is finalised and request_id stays
-                                    # consistent across token_usage rows.
-                                    "reserved_message_id": reserved_message_id,
-                                    "request_id": request_id,
-                                    # Every round's calls so far, so the message
-                                    # the resumed turn finalizes keeps them all.
-                                    "prior_tool_calls": json.loads(json.dumps(tool_calls or [], default=str)),
-                                    # The turn's files (so ``F`` refs still
-                                    # resolve), its compression point and
-                                    # backup models.
-                                    **_paused_turn_state(agent),
-                                    # Persisted in agent_config (rather than
-                                    # a new column) so resume rebuilds the
-                                    # paused assistant message with the
-                                    # reasoning DeepSeek thinking mode
-                                    # requires on the follow-up turn.
-                                    "reasoning_content": continuation.get(
-                                        "reasoning_content", ""
-                                    ),
-                                    # OpenAI Responses continuity. This contains
-                                    # only upstream ids and encrypted reasoning
-                                    # blobs, never plaintext chain-of-thought.
-                                    "responses_state": (
-                                        agent.llm.export_responses_state()
-                                        if callable(
-                                            getattr(
-                                                agent.llm,
-                                                "export_responses_state",
-                                                None,
-                                            )
-                                        )
-                                        else None
-                                    ),
-                                },
-                                client_tools=getattr(
-                                    agent.tool_executor, "client_tools", None
-                                ),
-                            )
-                            state_saved = True
-                        except Exception as e:
-                            logger.error(
-                                f"Failed to save continuation state: {str(e)}",
-                                exc_info=True,
-                            )
+                    state_saved = bool(conversation_id) and self._save_pause_state(
+                        agent=agent,
+                        continuation=continuation,
+                        conversation_id=str(conversation_id),
+                        decoded_token=decoded_token,
+                        model_id=model_id,
+                        model_user_id=model_user_id,
+                        user_api_key=user_api_key,
+                        agent_id=agent_id,
+                        paused_sources=paused_sources,
+                        reserved_message_id=reserved_message_id,
+                        request_id=request_id,
+                        tool_calls=tool_calls,
+                    )
 
                     # Notify the user out-of-band so they can navigate back and
                     # resolve the pause. Only ``awaiting_approval`` pauses need a
@@ -2001,6 +1943,137 @@ class BaseAnswerResource:
             # The journal kept the stream as written; put back any secret the owner showed the assistant.
             _seal_exposed_journal(agent, decoded_token, reserved_message_id)
 
+    def _save_pause_state(
+        self,
+        *,
+        agent: Any,
+        continuation: Dict[str, Any],
+        conversation_id: str,
+        decoded_token: Dict[str, Any],
+        model_id: Optional[str],
+        model_user_id: Optional[str],
+        user_api_key: Optional[str],
+        agent_id: Optional[str],
+        paused_sources: List[Dict[str, Any]],
+        reserved_message_id: Optional[str],
+        request_id: Optional[str],
+        tool_calls: List[Dict[str, Any]],
+    ) -> bool:
+        """Save a paused turn's continuation state so a later request can resume it.
+
+        Args:
+            agent: The paused turn's agent.
+            continuation: The agent's ``_pending_continuation``.
+            conversation_id: The conversation the state belongs to.
+            decoded_token: The caller's token; its ``sub`` owns the state.
+            model_id: The turn's model.
+            model_user_id: The BYOM scope the model was resolved under.
+            user_api_key: The agent key the turn ran with, if any.
+            agent_id: The agent the turn runs.
+            paused_sources: The turn's sources so far, in full.
+            reserved_message_id: The turn's message row the resume finalizes;
+                None when there is none to finalize (the resume then appends
+                its answer).
+            request_id: The turn's request id.
+            tool_calls: Every call of the turn so far.
+
+        Returns:
+            Whether the state was saved.
+        """
+        try:
+            ContinuationService().save_state(
+                conversation_id=str(conversation_id),
+                user=(decoded_token or {}).get("sub", "local"),
+                messages=continuation["messages"],
+                pending_tool_calls=continuation["pending_tool_calls"],
+                tools_dict=continuation["tools_dict"],
+                tool_schemas=getattr(agent, "tools", []),
+                agent_config={
+                    "model_id": model_id or self.default_model_id,
+                    # BYOM scope; without it resume falls
+                    # back to caller's layer.
+                    "model_user_id": model_user_id,
+                    "llm_name": getattr(agent, "llm_name", settings.LLM_PROVIDER),
+                    "api_key": getattr(agent, "api_key", None),
+                    "user_api_key": user_api_key,
+                    # An API-key caller stays one after a
+                    # resume (owner-account write rules).
+                    "external_api_caller": getattr(
+                        agent.tool_executor, "external_caller", False,
+                    ),
+                    "public_link_caller": getattr(
+                        agent.tool_executor, "public_link_caller", False,
+                    ),
+                    "api_write_allowlist": sorted(
+                        getattr(agent.tool_executor, "api_write_allowlist", set()),
+                    ),
+                    "agent_id": agent_id,
+                    "agent_type": agent.__class__.__name__,
+                    # The sources so far, in full and in
+                    # citation order: the resumed agent
+                    # starts from them, so a hit after the
+                    # resume continues their ``[n]`` numbers.
+                    "retrieved_docs": paused_sources,
+                    "prompt": getattr(agent, "prompt", ""),
+                    "json_schema": getattr(agent, "json_schema", None),
+                    # Kept with the schema: a resume that sends
+                    # no response_format reuses both.
+                    "json_schema_strict": getattr(agent, "json_schema_strict", True),
+                    "retriever_config": getattr(agent, "retriever_config", None),
+                    # Guardrails must survive the pause: a
+                    # resumed turn is still the same turn.
+                    "guardrails": (
+                        agent.guardrails_config.model_dump(mode="json")
+                        if getattr(agent, "guardrails_config", None)
+                        else None
+                    ),
+                    # Reused on resume so the same WAL row
+                    # is finalised and request_id stays
+                    # consistent across token_usage rows.
+                    "reserved_message_id": reserved_message_id,
+                    "request_id": request_id,
+                    # Every round's calls so far, so the message
+                    # the resumed turn finalizes keeps them all.
+                    "prior_tool_calls": json.loads(json.dumps(tool_calls or [], default=str)),
+                    # The turn's files (so ``F`` refs still
+                    # resolve), its compression point and
+                    # backup models.
+                    **_paused_turn_state(agent),
+                    # Persisted in agent_config (rather than
+                    # a new column) so resume rebuilds the
+                    # paused assistant message with the
+                    # reasoning DeepSeek thinking mode
+                    # requires on the follow-up turn.
+                    "reasoning_content": continuation.get(
+                        "reasoning_content", ""
+                    ),
+                    # OpenAI Responses continuity. This contains
+                    # only upstream ids and encrypted reasoning
+                    # blobs, never plaintext chain-of-thought.
+                    "responses_state": (
+                        agent.llm.export_responses_state()
+                        if callable(
+                            getattr(
+                                agent.llm,
+                                "export_responses_state",
+                                None,
+                            )
+                        )
+                        else None
+                    ),
+                },
+                client_tools=getattr(
+                    agent.tool_executor, "client_tools", None
+                ),
+            )
+            return True
+        except Exception as e:
+            logger.error(
+                f"Failed to save continuation state: {str(e)}",
+                exc_info=True,
+            )
+            return False
+
     def _finalize_stateless_tool_pause(
         self,
         *,
@@ -2024,9 +2097,10 @@ class BaseAnswerResource:
         ``/v1/chat/completions`` endpoint). Records the emitted/pending
         ``tool_calls`` on the reserved row and flips it to ``complete`` so the
         reconciler never sweeps it, then yields the terminal ``id``/``end``
-        events. No ``pending_tool_state`` is written: an OpenAI client resumes
-        statelessly (re-POSTing the full history) rather than via a native
-        resume, so there is no server-side continuation record to load.
+        events. The caller has saved the turn's ``pending_tool_state`` (with
+        no reserved row) for a client that resumes with the conversation id;
+        an OpenAI client that re-POSTs the full history instead resumes
+        statelessly.
 
         Args:
             continuation: The agent's ``_pending_continuation`` (may be None).

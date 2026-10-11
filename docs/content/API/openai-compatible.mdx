@@ -240,6 +240,11 @@ You can register your own tools and execute them on the client. The flow is stat
 3. Execute the tool(s) on your side, then **re-POST the full message history** with the assistant's `tool_calls` message followed by `role: "tool"` result messages.
 4. DocsGPT continues the run and returns the final answer.
 
+If you send back the `conversation_id` of the response (top-level or in `docsgpt`), DocsGPT resumes the paused run
+from what it saved at the pause instead of from the messages you re-send. The run keeps its server-side tool calls
+and their results, its reasoning and its files, so the model doesn't redo work, and the provider's prompt cache still
+covers what the paused round sent.
+
 ```json
 {
   "model": "docsgpt-agent",

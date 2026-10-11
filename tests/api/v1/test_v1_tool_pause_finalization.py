@@ -10,13 +10,15 @@ stateless on both ends:
 - **Pause side.** When an agent pauses for a client-executed tool,
   ``complete_stream`` (run with ``finalize_tool_pause_as_complete=True``)
   finalizes the reserved ``conversation_messages`` row as ``complete``
-  (recording the tool_calls) instead of writing a ``pending_tool_state`` record
-  and leaving the row non-terminal. The reconciler never sees an orphaned row.
-- **Resume side.** The ``/v1`` route rebuilds the agent + pending calls from the
-  re-POSTed history via ``StreamProcessor.build_continuation_from_messages``
-  (which has *no* ``pending_tool_state`` dependency) — **regardless of whether a
-  ``conversation_id`` is present**. It never calls ``resume_from_tool_actions``
-  (whose ``load_state`` would 400, since the pause wrote no state). When a
+  (recording the tool_calls) instead of leaving the row non-terminal. The
+  reconciler never sees an orphaned row. The ``pending_tool_state`` is still
+  saved, naming no row to finalize.
+- **Resume side.** A round that sends back the ``conversation_id`` resumes from
+  that state (``resume_from_tool_actions``), so it keeps the paused round's
+  server-side calls, reasoning and tools. Without saved state (none was
+  written, or it expired), the ``/v1`` route rebuilds the agent + pending calls
+  from the re-POSTed history via
+  ``StreamProcessor.build_continuation_from_messages``. Either way, when a
   ``conversation_id`` is carried, the final answer persists as a NEW terminal
   turn appended to that conversation.
 
@@ -282,7 +284,7 @@ class TestV1ToolPauseFinalizesRow:
             base.default_model_id = "gpt-4"
             base.conversation_service = ConversationService()
 
-            agent = _PausingAgent(PENDING_TOOL_CALLS)
+            agent = _PausingAgent(PENDING_TOOL_CALLS, with_tool_executor=True)
             frames = _drain(
                 base.complete_stream(
                     question="weather in SF?",
@@ -333,8 +335,20 @@ class TestV1ToolPauseFinalizesRow:
         # The emitted/pending tool_calls are recorded on the row.
         assert tool_calls
         assert tool_calls[0]["call_id"] == "call_abc"
-        # No native continuation record is written on the v1 path.
-        assert pts == 0
+        # The continuation is saved for a client that resumes with the id; it
+        # names no row to finalize, since this one is complete already.
+        assert pts == 1
+        with pg_engine.connect() as conn:
+            from sqlalchemy import text
+
+            saved = conn.execute(
+                text(
+                    "SELECT agent_config FROM pending_tool_state "
+                    "WHERE conversation_id = CAST(:c AS uuid)"
+                ),
+                {"c": str(conv_id)},
+            ).scalar()
+        assert saved["reserved_message_id"] is None
 
     def test_v1_stateless_tool_pause_leaves_no_orphan(
         self, pg_engine, monkeypatch
@@ -1132,3 +1146,70 @@ class TestV1ToolRoundTripEndToEnd:
                 {"u": user_id},
             ).scalar()
             assert conv_count == 1
+
+    def test_first_pause_without_a_session_resumes_from_saved_state(self, pg_engine, monkeypatch):
+        """A fresh conversation's first pause, resumed with the returned id, runs from the saved state.
+
+        Rebuilding that round from the re-posted messages instead lost what
+        the paused round did on the server (its tool calls and results, the
+        reasoning, the background-job tool), so the provider's prompt cache
+        missed and the model redid the work.
+        """
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+
+        user_id = f"user-{uuid.uuid4().hex[:8]}"
+        api_key = f"key-{uuid.uuid4().hex[:8]}"
+        with pg_engine.begin() as conn:
+            _seed_user(conn, user_id)
+            agent_id = _seed_agent(conn, user_id, api_key)
+        app = self._build_app()
+
+        def _fake_build_agent(self, question):  # noqa: ARG001
+            self.agent_id = agent_id
+            return _PauseThenAnswerAgent(TestV1ToolRoundTripEndToEnd.PENDING)
+
+        with _wire_v1_route_db(pg_engine, monkeypatch), patch(
+            "docsgpt.api.answer.services.stream_processor.StreamProcessor.build_agent", _fake_build_agent,
+        ), patch("docsgpt.api.v1.routes._conversation_belongs_to_agent", return_value=True):
+            with app.test_client() as c:
+                resp1 = _post_chat(
+                    c,
+                    {"messages": [{"role": "user", "content": "weather in SF?"}], "tools": [self.CLIENT_TOOL]},
+                    api_key,
+                )
+        assert resp1.status_code == 200, resp1.get_data(as_text=True)
+        conv_id = resp1.get_json()["docsgpt"]["conversation_id"]
+        with pg_engine.connect() as conn:
+            assert _row_statuses(conn, conv_id) == ["complete"]
+            assert _pending_tool_state_count(conn, conv_id) == 1
+
+        with _wire_v1_route_db(pg_engine, monkeypatch), patch(
+            "docsgpt.api.answer.services.stream_processor.StreamProcessor.build_agent", _fake_build_agent,
+        ), patch("docsgpt.api.v1.routes._conversation_belongs_to_agent", return_value=True), patch.object(
+            StreamProcessor, "build_continuation_from_messages", side_effect=AssertionError("rebuilt statelessly"),
+        ):
+            with app.test_client() as c:
+                resp2 = _post_chat(
+                    c,
+                    {
+                        "messages": [
+                            {"role": "user", "content": "weather in SF?"},
+                            {"role": "assistant", "content": None, "tool_calls": [{
+                                "id": "call_abc", "type": "function",
+                                "function": {"name": "get_weather", "arguments": json.dumps({"city": "SF"})},
+                            }]},
+                            {"role": "tool", "tool_call_id": "call_abc", "content": "72F sunny"},
+                        ],
+                        "conversation_id": conv_id,
+                    },
+                    api_key,
+                )
+
+        assert resp2.status_code == 200, resp2.get_data(as_text=True)
+        choice2 = resp2.get_json()["choices"][0]
+        assert choice2["finish_reason"] == "stop"
+        assert choice2["message"]["content"] == _PauseThenAnswerAgent.ANSWER_TEXT
+        with pg_engine.connect() as conn:
+            assert _row_statuses(conn, conv_id) == ["complete", "complete"]
+            assert _pending_tool_state_count(conn, conv_id) == 0
+            assert self._count_non_terminal(conn, user_id) == 0
