@@ -461,3 +461,12 @@ class TestTheRouteSavesTheTurnState:
 
         assert _paused_turn_state(MagicMock()) == {}
         assert _paused_turn_state(object()) == {}
+
+
+@pytest.mark.unit
+def test_an_agent_whose_turn_state_fails_pauses_without_it():
+    from docsgpt.api.answer.routes.base import _paused_turn_state
+
+    agent = MagicMock()
+    agent.paused_turn_state.side_effect = RuntimeError("boom")
+    assert _paused_turn_state(agent) == {}
