@@ -896,7 +896,12 @@ class CodeExecutorTool(Tool):
             self._last_artifacts = [
                 # ``ref`` is the model-facing handle (``A1``); the UI needs it to
                 # resolve a ref the model typed into its answer.
-                {"id": a["artifact_id"], "filename": a.get("filename"), "ref": a.get("ref")}
+                {
+                    "id": a["artifact_id"],
+                    "filename": a.get("filename"),
+                    "ref": a.get("ref"),
+                    "version": a.get("version"),
+                }
                 for a in captured
                 if a.get("artifact_id")
             ]
@@ -941,7 +946,14 @@ class CodeExecutorTool(Tool):
                     logger.exception("code_executor: saving a displayed chart failed")
             if ref is not None:
                 saved.append(ref)
-                self._last_artifacts.append({"id": ref["artifact_id"], "filename": filename, "ref": ref.get("ref")})
+                self._last_artifacts.append(
+                    {
+                        "id": ref["artifact_id"],
+                        "filename": filename,
+                        "ref": ref.get("ref"),
+                        "version": ref.get("version"),
+                    }
+                )
                 self._last_artifact_id = self._last_artifact_id or ref["artifact_id"]
             label = f"{ref['ref']} {filename}" if ref and ref.get("ref") else filename
             try:

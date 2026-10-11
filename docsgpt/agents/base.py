@@ -178,6 +178,7 @@ class BaseAgent(ABC):
     attachment_planning = False
     attachment_plan: Optional[AttachmentPlan] = None
     earlier_attachments: List[Dict] = []
+    reference_attachments = False
     _current_turn_message: Optional[Dict] = None
     _attachments_merged = False
     _attachment_token_correction = 0
@@ -221,6 +222,7 @@ class BaseAgent(ABC):
         attachment_planning: bool = False,
         earlier_attachments: Optional[List[Dict]] = None,
         skipped_attachments: Optional[List[Dict]] = None,
+        attachments_mode: Optional[str] = None,
     ):
         self.endpoint = endpoint
         self.llm_name = llm_name
@@ -340,6 +342,9 @@ class BaseAgent(ABC):
         # file too large, of an unreadable type, or not parsed in time):
         # named in the manifest with the reason.
         self.skipped_attachments = [s for s in (skipped_attachments or []) if isinstance(s, dict)]
+        # ``attachments_mode: "reference"``: this turn's files are listed for
+        # the attachments tool and the sandbox, never inlined.
+        self.reference_attachments = attachments_mode == "reference"
         self.attachment_plan = None
         # The user message ``_build_messages`` built for this turn; the
         # handler merges the plan into it and compression keeps it whole.
@@ -1798,6 +1803,7 @@ class BaseAgent(ABC):
             budget=budget,
             earlier=earlier,
             max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
+            reference=self.reference_attachments,
         )
         plan.skipped = skipped
         logger.info(
@@ -1849,6 +1855,7 @@ class BaseAgent(ABC):
             budget=budget,
             earlier=earlier,
             max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
+            reference=self.reference_attachments,
         )
         self.attachment_plan.skipped = skipped
         self._current_turn_message = carrier

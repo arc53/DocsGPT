@@ -421,6 +421,21 @@ def _instructions(plan: AttachmentPlan) -> List[str]:
     ]
     tool_files = plan.with_status(FileStatus.TOOL)
     earlier = plan.with_status(FileStatus.EARLIER)
+    reference = plan.with_status(FileStatus.REFERENCE)
+    if reference and caps.attachments_tool:
+        refs = ", ".join(f.ref for f in reference)
+        search = next((a for a in caps.attachments_actions if a.endswith("search")), None)
+        how = f"search them with {search} and read the parts you need" if search else "read the parts you need"
+        line = (
+            f"Files marked reference ({refs}) were attached for you to work with; none of their content is in "
+            f"this message. Before answering about them, {how} with {_read_action(plan) or 'the attachments tool'}"
+        )
+        if caps.sandbox and caps.sandbox_action:
+            line += f', or load them into {caps.sandbox_action} by passing the ref in "inputs" to process them in code'
+        lines.append(line + ".")
+        read_action = _read_action(plan)
+        if caps.vision and read_action and any(_visual(f) for f in reference):
+            lines.append(f"Reading an image or a scanned PDF page with {read_action} shows it to you.")
     if caps.attachments_tool and (tool_files or earlier or plan.with_status(FileStatus.PARTIAL)):
         actions = ", ".join(caps.attachments_actions)
         lines.append(
