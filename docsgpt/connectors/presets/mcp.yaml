@@ -136,3 +136,14 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   docs_url: https://cal.com/docs/mcp-server
+
+# MotherDuck as a connector
+- key: mcp:motherduck
+  name: MotherDuck
+  description: Ask questions over your MotherDuck databases with agents.
+  icon: motherduck
+  category: database
+  mcp_url: https://api.motherduck.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://motherduck.com/docs/sql-reference/mcp/
