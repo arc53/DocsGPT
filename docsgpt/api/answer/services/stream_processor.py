@@ -24,6 +24,7 @@ from docsgpt.api.answer.services.prompt_renderer import (
     resolve_prompt_skeleton,
 )
 from docsgpt.agents.attachment_budget import (
+    _attachment_id,
     compute_attachment_budget,
     manifest_estimate,
     plan_attachments,
@@ -2409,8 +2410,10 @@ class StreamProcessor:
         # The paused turn's files, so the resumed one can still hand them to
         # its tools (``run_code`` inputs by ``F`` ref) and list their refs.
         saved_files = agent_config.get("attachments")
+        saved_listing = None
         if isinstance(saved_files, dict):
-            agent_kwargs.update(self._resumed_attachment_kwargs(saved_files))
+            file_kwargs, saved_listing = self._resumed_attachment_kwargs(saved_files)
+            agent_kwargs.update(file_kwargs)
         # Stamped on the turn's metadata, so the next turn may chain onto it.
         if agent_config.get("last_compression_at"):
             agent_kwargs["last_compression_at"] = agent_config["last_compression_at"]
@@ -2420,7 +2423,7 @@ class StreamProcessor:
         agent.initial_user_id = self.initial_user_id
         agent.tools = tool_schemas
         if isinstance(saved_files, dict):
-            agent.resume_paused_attachments(saved_files.get("listing"))
+            agent.resume_paused_attachments(saved_listing)
 
         # Store config for the route layer
         self.model_id = model_id
@@ -2453,7 +2456,7 @@ class StreamProcessor:
             reasoning_content,
         )
 
-    def _resumed_attachment_kwargs(self, saved: Dict[str, Any]) -> Dict[str, Any]:
+    def _resumed_attachment_kwargs(self, saved: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[List[Dict]]]:
         """Agent kwargs for a paused turn's files, read again as their owner.
 
         Args:
@@ -2461,10 +2464,13 @@ class StreamProcessor:
                 (``BaseAgent.paused_turn_state``).
 
         Returns:
-            ``attachments``, ``earlier_attachments``, ``skipped_attachments``,
-            ``attachments_mode`` and ``attachment_planning`` for the agent. A
-            file that can no longer be read is left out, never failing the
-            resume.
+            The agent kwargs (``attachments``, ``earlier_attachments``,
+            ``skipped_attachments``, ``attachments_mode`` and
+            ``attachment_planning``) and the paused turn's ``F`` ref listing.
+            When the rows read back are not the saved ones (a file was
+            deleted meanwhile), no files are restored: ``F`` refs are
+            positions, and a gap would point a ref at another file. The
+            resume itself never fails over it.
         """
         current_ids = [str(i) for i in saved.get("current") or [] if i]
         earlier_ids = [str(i) for i in saved.get("earlier") or [] if i]
@@ -2475,14 +2481,26 @@ class StreamProcessor:
                 earlier = self._fetch_attachment_rows(earlier_ids)
             except Exception as e:
                 logger.error("Error loading the paused turn's earlier attachments: %s", bounded_error_text(e))
+        restored_ids = [_attachment_id(row) for row in [*earlier, *current] if isinstance(row, dict)]
+        if restored_ids != earlier_ids + current_ids:
+            logger.warning(
+                "The paused turn's files changed before its resume (%d of %d read back); resuming without them",
+                len(restored_ids),
+                len(earlier_ids) + len(current_ids),
+            )
+            current, earlier = [], []
+            listing = None
+        else:
+            listing = saved.get("listing")
         mode = saved.get("mode")
-        return {
+        kwargs = {
             "attachments": current,
             "earlier_attachments": earlier,
             "skipped_attachments": [s for s in saved.get("skipped") or [] if isinstance(s, dict)],
             "attachments_mode": mode if isinstance(mode, str) else None,
             "attachment_planning": bool(saved.get("planning", True)),
         }
+        return kwargs, listing if isinstance(listing, list) else None
 
     def create_agent(
         self,

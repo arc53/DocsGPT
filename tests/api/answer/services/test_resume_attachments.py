@@ -253,10 +253,20 @@ class TestResumeRestoresTheFiles:
             return original(self, saved)
 
         monkeypatch.setattr(sp_mod.StreamProcessor, "_resumed_attachment_kwargs", _boom)
-        kwargs, _, _, _ = resume(self._saved(), rows={"a-cur": _att("contract.txt", att_id="a-cur")})
+        kwargs, _, agent, _ = resume(self._saved(), rows={"a-cur": _att("contract.txt", att_id="a-cur")})
 
-        assert kwargs["attachments"] == [_att("contract.txt", att_id="a-cur")]
+        assert kwargs["attachments"] == []
         assert kwargs["earlier_attachments"] == []
+        agent.resume_paused_attachments.assert_called_once_with(None)
+
+    def test_a_file_deleted_before_the_resume_restores_none_rather_than_shift_the_refs(self, resume):
+        """F refs are positions: without F1 the current file would answer to F1."""
+        kwargs, _, agent, _ = resume(self._saved(), rows={"a-cur": _att("contract.txt", att_id="a-cur")})
+
+        assert kwargs["attachments"] == []
+        assert kwargs["earlier_attachments"] == []
+        assert kwargs["attachments_mode"] == "reference"
+        agent.resume_paused_attachments.assert_called_once_with(None)
 
 
 @pytest.mark.unit
