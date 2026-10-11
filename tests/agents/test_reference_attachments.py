@@ -336,6 +336,17 @@ class TestRequestAndResponse:
         assert first["docsgpt"] == {"type": "attachments", "attachments": listing}
         assert chunks[-1] == "data: [DONE]\n\n"
 
+    def test_a_listing_that_fails_never_breaks_the_turn(self, monkeypatch):
+        from docsgpt.api.answer.routes import base
+
+        def _boom(plan):
+            raise RuntimeError("bad row")
+
+        monkeypatch.setattr(base, "plan_listing", _boom)
+        agent = MagicMock()
+        agent.attachment_plan = plan_attachments([att("a.txt")], caps(), budget=100_000)
+        assert base._attachment_listing(agent) == []
+
     def test_an_agent_without_a_plan_adds_nothing(self):
         from docsgpt.api.answer.routes.base import _attachment_listing
 

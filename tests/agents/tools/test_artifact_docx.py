@@ -16,7 +16,7 @@ pytest.importorskip("docx")
 from docx import Document  # noqa: E402
 from docx.oxml.ns import qn  # noqa: E402
 
-from docsgpt.agents.tools.artifact_docx import build_document, clean_text  # noqa: E402
+from docsgpt.agents.tools.artifact_docx import build_document, clean_text, render_docx_spec  # noqa: E402
 from docsgpt.agents.tools.artifact_generator import (  # noqa: E402
     _RENDERERS,
     ArtifactGeneratorTool,
@@ -53,6 +53,16 @@ def _run_program(program: str, spec: dict, tmp_path: Path, name: str = "out") ->
 
 
 def _render(spec: dict, tmp_path: Path):
+    """Render with the module the sandbox runs, imported here so its lines are measured."""
+    spec_path = tmp_path / "direct.json"
+    out_path = tmp_path / "direct.docx"
+    spec_path.write_text(json.dumps(spec), encoding="utf-8")
+    render_docx_spec(str(spec_path), str(out_path))
+    return Document(str(out_path))
+
+
+def _render_in_sandbox_program(spec: dict, tmp_path: Path):
+    """Render through the fixed program ``artifact_generator`` sends to the sandbox."""
     return Document(str(_run_program(_RENDERERS["document"], spec, tmp_path)))
 
 
@@ -350,6 +360,20 @@ def test_quote_code_page_break_and_named_paragraph_style(tmp_path):
     assert next(p for p in paragraphs if p.text == "Fallback").style.name == "Normal"
 
 
+def test_the_sandbox_program_renders_what_the_module_renders(tmp_path):
+    spec = {
+        "title": "T",
+        "blocks": [
+            {"type": "list", "ordered": True, "items": ["a", {"text": "b", "items": ["c"]}]},
+            {"type": "table", "headers": ["h"], "rows": [["x"]], "widths": [1]},
+            {"type": "paragraph", "runs": [{"text": "l", "link": "https://e.com", "bold": True}]},
+        ],
+    }
+    direct = _render(spec, tmp_path)
+    program = _render_in_sandbox_program(spec, tmp_path)
+    assert program.element.body.xml == direct.element.body.xml
+
+
 def test_control_characters_are_dropped_not_fatal(tmp_path):
     doc = _render({"title": "a\x00b", "blocks": [{"type": "paragraph", "text": "c\x0bd\x1fe"}]}, tmp_path)
     assert [p.text for p in doc.paragraphs] == ["ab", "cde"]
@@ -367,7 +391,7 @@ def test_spec_text_is_data_never_code(capfd, tmp_path):
             {"type": "list", "ordered": True, "items": [payload]},
         ],
     }
-    doc = _render(spec, tmp_path)
+    doc = _render_in_sandbox_program(spec, tmp_path)
     captured = capfd.readouterr()
     assert "SHOULD_NOT_PRINT" not in captured.out
     assert not sentinel.exists()
@@ -454,3 +478,26 @@ def test_edit_appends_blocks_through_the_tool(monkeypatch):
     )
     assert result == {"status": "ok"}
     assert seen["spec"]["blocks"] == [{"type": "page_break"}, {"type": "paragraph", "text": "More"}]
+
+
+def test_empty_tables_and_bad_widths_are_skipped_quietly():
+    doc = build_document(
+        {
+            "blocks": [
+                {"type": "table", "rows": []},
+                {"type": "table", "rows": [["a", "b"]], "widths": ["wide", 1]},
+                {"type": "table", "rows": [["a", "b"]], "widths": [1]},
+                {"type": "memo", "text": "unknown"},
+            ]
+        }
+    )
+    assert len(doc.tables) == 2
+    # Widths that can't be used leave python-docx's even split in place.
+    for table in doc.tables:
+        first, second = table.rows[0].cells
+        assert first.width == second.width
+
+
+def test_an_item_of_the_wrong_type_still_names_where_it_is():
+    error = _tool()._validate("document", {"blocks": [{"type": "list", "items": [5]}]})[1]
+    assert "(at blocks/0/items/0)" in error["error"]

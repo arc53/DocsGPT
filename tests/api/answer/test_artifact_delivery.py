@@ -145,8 +145,19 @@ def test_entries_without_artifacts_pass_through():
     describer = ArtifactDescriber(OWNER, None)
     data = {"call_id": "x", "result": "ok"}
     assert describer.tool_call(data) is data
+    assert describer.tool_calls(None) is None
     assert describer.describe("not a list") == []
+    assert describer.describe(["junk", {"filename": "no id"}]) == []
     assert describer.summary() == []
+
+
+def test_a_malformed_id_is_not_looked_up(monkeypatch):
+    def _no_db():
+        raise AssertionError("must not read")
+
+    monkeypatch.setattr(artifact_delivery, "db_readonly", _no_db)
+    [entry] = ArtifactDescriber(OWNER, "conv-1").describe([{"id": "A1"}])
+    assert entry["download_url"].endswith("/api/artifacts/A1/download?conversation_id=conv-1")
 
 
 # ---------------------------------------------------------------------------
