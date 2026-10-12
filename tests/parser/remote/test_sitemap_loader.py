@@ -99,6 +99,49 @@ class TestIsSitemap:
 @pytest.mark.unit
 class TestParseSitemap:
 
+    @pytest.mark.parametrize(
+        "namespace",
+        [
+            "xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'",
+            'xmlns = "http://www.sitemaps.org/schemas/sitemap/0.9"',
+        ],
+    )
+    def test_parse_default_namespace_declarations(self, namespace):
+        xml = f'<urlset {namespace}><url><loc>https://example.com/docs</loc></url></urlset>'
+
+        assert SitemapLoader()._parse_sitemap(xml.encode()) == ["https://example.com/docs"]
+
+    def test_parse_prefixed_namespace(self):
+        xml = b'''<sm:urlset xmlns:sm="http://www.sitemaps.org/schemas/sitemap/0.9">
+            <sm:url><sm:loc>https://example.com/docs</sm:loc></sm:url>
+        </sm:urlset>'''
+
+        assert SitemapLoader()._parse_sitemap(xml) == ["https://example.com/docs"]
+
+    def test_parse_prefixed_nested_sitemap(self):
+        xml = b'''<sm:sitemapindex xmlns:sm="http://www.sitemaps.org/schemas/sitemap/0.9">
+            <sm:sitemap><sm:loc>https://example.com/child.xml</sm:loc></sm:sitemap>
+        </sm:sitemapindex>'''
+        loader = SitemapLoader()
+        with patch.object(loader, "_extract_urls", return_value=["https://example.com/docs"]) as extract:
+            assert loader._parse_sitemap(xml) == ["https://example.com/docs"]
+        extract.assert_called_once_with("https://example.com/child.xml", set(), 1, 20)
+
+    def test_parse_xml_declared_encoding(self):
+        xml = '''<?xml version="1.0" encoding="ISO-8859-1"?>
+        <urlset><url><loc>https://example.com/café</loc></url></urlset>'''
+
+        assert SitemapLoader()._parse_sitemap(xml.encode("iso-8859-1")) == ["https://example.com/café"]
+
+    @pytest.mark.parametrize("encoding", ["UNKNOWN-ENCODING", "Shift_JIS"])
+    def test_parse_unsupported_xml_encoding_keeps_utf8_fallback(self, encoding):
+        xml = (
+            f'<?xml version="1.0" encoding="{encoding}"?>'
+            '<urlset><url><loc>https://example.com/docs</loc></url></urlset>'
+        ).encode("utf-8")
+
+        assert SitemapLoader()._parse_sitemap(xml) == ["https://example.com/docs"]
+
     def test_parse_basic_sitemap(self):
         loader = SitemapLoader()
         sitemap_xml = b"""<?xml version="1.0" encoding="UTF-8"?>
@@ -110,6 +153,14 @@ class TestParseSitemap:
         urls = loader._parse_sitemap(sitemap_xml)
         assert "https://example.com/page1" in urls
         assert "https://example.com/page2" in urls
+
+    def test_parse_ignores_extension_namespace_urls(self):
+        xml = b'''<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:ext="urn:extension">
+            <url><loc>https://example.com/docs</loc></url>
+            <ext:url><ext:loc>https://other.example/image</ext:loc></ext:url>
+        </urlset>'''
+
+        assert SitemapLoader()._parse_sitemap(xml) == ["https://example.com/docs"]
 
     def test_parse_nested_sitemap(self):
         loader = SitemapLoader()
@@ -227,6 +278,28 @@ class TestExtractUrls:
 
 @pytest.mark.unit
 class TestSitemapLoaderLoadData:
+
+    @patch("docsgpt.parser.remote.sitemap_loader.validate_url", side_effect=lambda url: url)
+    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
+    def test_load_data_from_prefixed_sitemap(self, mock_request, mock_validate):
+        sitemap = MagicMock()
+        sitemap.headers = {"Content-Type": "application/xml"}
+        sitemap.content = b'''<sm:urlset xmlns:sm="http://www.sitemaps.org/schemas/sitemap/0.9">
+            <sm:url><sm:loc>https://example.com/docs</sm:loc></sm:url>
+        </sm:urlset>'''
+        page = MagicMock()
+        page.text = "<html><body>Document content</body></html>"
+        mock_request.side_effect = [sitemap, page]
+
+        documents = SitemapLoader().load_data("https://example.com/sitemap.xml")
+
+        assert len(documents) == 1
+        assert documents[0].text == "Document content"
+        assert documents[0].extra_info["source"] == "https://example.com/docs"
+        assert documents[0].extra_info["file_path"] == "docs.md"
+        assert [call.args[1] for call in mock_request.call_args_list] == [
+            "https://example.com/sitemap.xml", "https://example.com/docs",
+        ]
 
     @patch("docsgpt.parser.remote.sitemap_loader.validate_url")
     @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
