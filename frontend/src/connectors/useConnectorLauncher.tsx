@@ -12,7 +12,7 @@ import ConnectWizard, {
   type WizardMode,
 } from './ConnectWizard';
 import { loadConnectors } from './connectorsSlice';
-import { isMcpPreset } from './launchRules';
+import { connectsInWizard } from './launchRules';
 import type { ConnectorDefinition } from './types';
 
 export type LaunchOptions = {
@@ -103,7 +103,7 @@ export default function useConnectorLauncher({
   const launch = useCallback(
     async (connector: ConnectorDefinition, options: LaunchOptions = {}) => {
       mcpSaved.current = false;
-      if (isMcpPreset(connector)) {
+      if (connectsInWizard(connector)) {
         setActive({
           kind: 'wizard',
           connector,
