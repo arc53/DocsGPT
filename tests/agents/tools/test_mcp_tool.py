@@ -249,11 +249,14 @@ class TestResolveRedirectUri:
         from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "API_URL", "https://api.docsgpt.co")
+        monkeypatch.setattr(settings, "WORKER_API_URL", "http://worker.docsgpt.co")
+        monkeypatch.setattr(settings, "MCP_OAUTH_REDIRECT_URI", None)
+        monkeypatch.setattr(settings, "CONNECTOR_REDIRECT_BASE_URI", None)
         tool = _make_tool({
             "server_url": "https://mcp.example.com",
             "auth_type": "none",
         })
-        assert "/api/mcp_server/callback" in tool.redirect_uri
+        assert tool.redirect_uri == "https://api.docsgpt.co/api/mcp_server/callback"
 
 
 # =====================================================================
