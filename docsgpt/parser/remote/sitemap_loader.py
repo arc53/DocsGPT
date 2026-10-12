@@ -1,5 +1,4 @@
 import logging
-import re
 
 import defusedxml.ElementTree as ET
 from bs4 import BeautifulSoup
@@ -101,20 +100,26 @@ class SitemapLoader(BaseRemote):
 
         return False
 
-    def _parse_sitemap(self, sitemap_content):
-        # Remove namespaces
-        sitemap_content = re.sub(' xmlns="[^"]+"', '', sitemap_content.decode('utf-8'), count=1)
+    def _parse_sitemap(self, sitemap_content: bytes) -> list[str]:
+        """Extract page and child sitemap URLs using the root's XML namespace.
 
+        Args:
+            sitemap_content: Raw XML bytes, including any encoding declaration.
+
+        Returns:
+            Page URLs, including URLs found in child sitemaps.
+        """
         root = ET.fromstring(sitemap_content)
+        namespace = root.tag.split("}", 1)[0] + "}" if root.tag.startswith("{") else ""
 
         urls = []
-        for loc in root.findall('.//url/loc'):
+        for loc in root.findall(f'.//{namespace}url/{namespace}loc'):
             if not loc.text:
                 continue
             urls.append(loc.text)
 
         # Check for nested sitemaps
-        for sitemap in root.findall('.//sitemap/loc'):
+        for sitemap in root.findall(f'.//{namespace}sitemap/{namespace}loc'):
             nested_sitemap_url = sitemap.text
             if not nested_sitemap_url:
                 continue
