@@ -92,22 +92,38 @@ class RstParser(BaseParser):
         return rst_tups
 
     def chunk_by_token_count(self, text: str, max_tokens: int = 100) -> List[str]:
-        """Chunk text by token count."""
-    
+        """Chunk text by approximate token count without losing any content.
+
+        Each chunk is at most ``max_tokens * 5`` characters long. A chunk is cut at the last
+        whitespace inside its window so words are not split; the next chunk starts exactly
+        where the previous one ended. A single word longer than the window is hard-split.
+
+        Args:
+            text: The text to split.
+            max_tokens: Approximate maximum number of tokens per chunk.
+
+        Returns:
+            The non-empty, whitespace-stripped chunks, in order.
+        """
         avg_token_length = 5
-    
         chunk_size = max_tokens * avg_token_length
 
-        chunks = []
-        for i in range(0, len(text), chunk_size):
-            chunk = text[i:i+chunk_size]
-            if i + chunk_size < len(text):
-                last_space = chunk.rfind(' ')
-                if last_space != -1:
-                    chunk = chunk[:last_space]
-            
-            chunks.append(chunk.strip())
-        
+        chunks: List[str] = []
+        start = 0
+        while start < len(text):
+            end = min(start + chunk_size, len(text))
+            if end < len(text) and not text[end].isspace():
+                # The window ends inside a word: back up to the last whitespace in it.
+                cut = end
+                while cut > start and not text[cut - 1].isspace():
+                    cut -= 1
+                if cut > start:
+                    end = cut
+            chunk = text[start:end].strip()
+            if chunk:
+                chunks.append(chunk)
+            start = end
+
         return chunks
     
     def remove_images(self, content: str) -> str:
