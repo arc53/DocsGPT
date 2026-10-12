@@ -102,22 +102,28 @@ class SitemapLoader(BaseRemote):
         return False
 
     def _parse_sitemap(self, sitemap_content):
-        # Remove namespaces
-        sitemap_content = re.sub(' xmlns="[^"]+"', '', sitemap_content.decode('utf-8'), count=1)
+        # ElementTree supports bytes directly and honors XML encoding declarations
+        if isinstance(sitemap_content, str):
+            root = ET.fromstring(sitemap_content)
+        else:
+            root = ET.fromstring(sitemap_content)
 
-        root = ET.fromstring(sitemap_content)
+        def _local_tag(elem):
+            tag = elem.tag
+            return tag.split("}")[-1] if "}" in tag else tag
 
         urls = []
-        for loc in root.findall('.//url/loc'):
-            if not loc.text:
-                continue
-            urls.append(loc.text)
-
-        # Check for nested sitemaps
-        for sitemap in root.findall('.//sitemap/loc'):
-            nested_sitemap_url = sitemap.text
-            if not nested_sitemap_url:
-                continue
-            urls.extend(self._extract_urls(nested_sitemap_url))
+        # Search for all elements whose local tag is 'url' or 'sitemap'
+        for elem in root.iter():
+            tag_name = _local_tag(elem)
+            if tag_name == "url":
+                for child in elem:
+                    if _local_tag(child) == "loc" and child.text and child.text.strip():
+                        urls.append(child.text.strip())
+            elif tag_name == "sitemap":
+                for child in elem:
+                    if _local_tag(child) == "loc" and child.text and child.text.strip():
+                        nested_url = child.text.strip()
+                        urls.extend(self._extract_urls(nested_url))
 
         return urls
