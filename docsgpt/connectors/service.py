@@ -1779,6 +1779,41 @@ def connector_is_enabled(policies: dict, connector_key: Optional[str]) -> bool:
     return definition is None or definition.configured
 
 
+def connector_is_enabled_for_row(policies: dict, row: dict) -> bool:
+    """Whether every connector switch that governs a connection row leaves it on.
+
+    A connection's identity follows its server: a custom MCP row whose origin
+    a preset now claims is reported as that preset
+    (:func:`catalog.connector_key_for_row`). Its *policy* must not follow so
+    freely. The row is still stored as ``custom_mcp``, and that is the
+    connector an admin turning "Allow custom MCP servers" off decided about;
+    a preset, needing no server settings, is on by default. Asking the
+    preset's switch alone would let a preset shipping for an origin someone
+    had already connected by hand silently re-enable a connection an admin
+    had switched off — no sign-in, no admin action. So both switches apply,
+    and the row is off while either is: shipping the preset decides nothing
+    on its own. An admin turning custom MCP back on makes it usable again
+    with no reconnect, as does re-establishing the connection under the
+    preset, after which its stored ``connector_key`` is the preset's and
+    only the preset's switch is left to ask.
+
+    Args:
+        policies: ``connector_key`` to policy row, from :func:`load_policies`.
+        row: A ``connector_sessions`` row.
+
+    Returns:
+        False when the connector the row is reported as, or the one it is
+        still stored as, is turned off.
+    """
+    key = catalog.connector_key_for_row(row)
+    if not connector_is_enabled(policies, key):
+        return False
+    stored = row.get("connector_key")
+    if stored == "custom_mcp" and key != "custom_mcp":
+        return connector_is_enabled(policies, "custom_mcp")
+    return True
+
+
 def load_policies(conn) -> dict[str, dict]:
     """Every connector's policy, with custom MCP and write switches folded in.
 
@@ -1825,7 +1860,7 @@ def connector_enabled(conn, row: dict) -> bool:
     Returns:
         False when the connector (or custom MCP servers) is turned off.
     """
-    return connector_is_enabled(load_policies(conn), catalog.connector_key_for_row(row))
+    return connector_is_enabled_for_row(load_policies(conn), row)
 
 
 def ensure_connector_allowed(conn, connector_key: Optional[str]) -> None:

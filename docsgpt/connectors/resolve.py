@@ -163,8 +163,12 @@ def _resolve(conn, resource: dict, invoker_user_id: Optional[str], policies: Opt
     row = owned
     if mode == MODE_MEMBER and invoker_user_id and invoker_user_id != owner:
         row = _member_connection(repo, owned, invoker_user_id)
-    key = catalog.connector_key_for_row(row or owned or {})
-    enabled = service.connector_is_enabled(policies, key)
+    # The row the policy is judged on, so a connection still stored as a
+    # custom MCP server keeps that switch even once a preset claims its
+    # origin (see ``service.connector_is_enabled_for_row``).
+    governing = row or owned or {}
+    key = catalog.connector_key_for_row(governing)
+    enabled = service.connector_is_enabled_for_row(policies, governing)
     available = (
         row is not None
         and service.normalize_status(row) == service.STATUS_CONNECTED
