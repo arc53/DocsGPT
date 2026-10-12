@@ -57,7 +57,9 @@ def with_idempotency(
             )
             # A keyless dispatch still gets the guard via a synthesized key;
             # None means no anchor exists — run unguarded, as before.
-            key = explicit_key or _synthesize_guard_key(task_name, kwargs)
+            key = explicit_key or _synthesize_guard_key(
+                task_name, kwargs, task_self=self
+            )
             if key is None:
                 return fn(self, *args, idempotency_key=idempotency_key, **kwargs)
 
@@ -149,18 +151,26 @@ def with_idempotency(
     return decorator
 
 
-def _synthesize_guard_key(task_name: str, kwargs: dict) -> Optional[str]:
-    """Derive a deterministic guard key from ``source_id`` for a keyless dispatch.
+def _synthesize_guard_key(
+    task_name: str, kwargs: dict, task_self: Any = None
+) -> Optional[str]:
+    """Derive a deterministic guard key for a keyless dispatch.
 
-    ``source_id`` is stable across broker redeliveries and unique per
-    upload, so the poison-loop counter survives an OOM SIGKILL. Returns
-    ``None`` when absent — the dispatch then runs unguarded as before.
+    For ``reingest_source_task``, derive the guard key per-operation from
+    the Celery task id (``task_self.request.id``). This preserves lease
+    coordination, redelivery deduplication, and the persistent poison-loop
+    counter across retries of the *same* operation without deriving from
+    ``source_id`` (which would lock out legitimate subsequent reingests on
+    the mutating source for 24 hours).
 
-    ``reingest_source_task`` operates on existing sources that mutate over
-    time; synthesizing a static key from ``source_id`` would cache the first
-    run and silently drop legitimate subsequent reingests for 24 hours.
+    For initial source ingestion (e.g. ``upload_source_task``), ``source_id``
+    is stable across broker redeliveries and unique per upload, so the
+    poison-loop counter survives an OOM SIGKILL. Returns ``None`` when absent.
     """
     if task_name == "reingest_source_task":
+        task_id = _safe_task_id(task_self)
+        if task_id and task_id != "unknown":
+            return f"auto:{task_name}:{task_id}"
         return None
     source_id = kwargs.get("source_id")
     if source_id:
