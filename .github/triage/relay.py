@@ -74,6 +74,10 @@ TITLE_PREFIX_RE = re.compile(
 )
 SETTING_RE = re.compile(r"^\+\s+([A-Z][A-Z0-9_]{2,})\s*:")
 SEVERITY_RE = re.compile(r"\b(Critical|Major|Minor|Trivial|Nitpick)\b")
+# The issue forms' "Are you willing to submit PR?" answer.
+WILLING_RE = re.compile(r"\byes,? i am willing to submit a pr\b", re.IGNORECASE)
+MERGED_LOOKBACK_DAYS = 30
+COMPARE_COMMITS_LIMIT = 20
 STOPWORDS = frozenset(
     """a an and are as at be but by can could do does for from has have how i if in into is it its
     not of on or should so that the their then there this to too use using via was we when where
@@ -125,6 +129,16 @@ def clean_bot_text(text: Optional[str]) -> str:
 def is_claim(text: Optional[str]) -> bool:
     """True when a comment asks to work on, or be assigned to, the issue."""
     return bool(CLAIM_RE.search(text or ""))
+
+
+def mentions(text: Optional[str], login: str) -> bool:
+    """True when a comment @-mentions ``login``."""
+    return bool(re.search(rf"(?<![\w@])@{re.escape(login)}(?![\w-])", text or "", re.IGNORECASE))
+
+
+def willing_to_submit_pr(text: Optional[str]) -> bool:
+    """True when an issue form's author answered that they will submit the PR."""
+    return bool(WILLING_RE.search(text or ""))
 
 
 def has_media(text: Optional[str]) -> bool:
@@ -330,17 +344,27 @@ def route(event_name: str, event: dict[str, Any], bot: str, maintainers: Maintai
         return {"kind": "issue_opened", "number": issue["number"]}
     if event_name == "issue_comment" and action == "created":
         issue, comment = event["issue"], event["comment"]
-        if issue.get("pull_request") or issue.get("state") != "open":
+        login = (comment.get("user") or {}).get("login")
+        mentioned = mentions(comment.get("body"), bot)
+        subject = "pr" if issue.get("pull_request") else "issue"
+        mention = {"kind": f"{subject}_mention", "number": issue["number"], "comment_id": comment["id"]}
+        if subject == "pr" or issue.get("state") != "open":
+            if mentioned:
+                return mention
             return {"kind": None, "reason": "comment on a pull request or a closed issue"}
-        if maintainers.includes((comment.get("user") or {}).get("login"), comment.get("author_association")):
+        if maintainers.includes(login, comment.get("author_association")):
+            if mentioned:
+                return mention
             return {"kind": None, "reason": "comment from a maintainer"}
         labels = {label["name"] for label in issue.get("labels", [])}
-        by_author = (comment.get("user") or {}).get("login") == (issue.get("user") or {}).get("login")
+        by_author = login == (issue.get("user") or {}).get("login")
         if is_claim(comment.get("body")):
             return {"kind": "issue_claim", "number": issue["number"], "comment_id": comment["id"]}
         if by_author and labels & {"needs-info", "waiting-on-author", "stale"}:
             return {"kind": "issue_author_reply", "number": issue["number"], "comment_id": comment["id"]}
-        return {"kind": None, "reason": "comment is neither a claim nor an awaited author reply"}
+        if mentioned:
+            return mention
+        return {"kind": None, "reason": "comment is neither a claim, an awaited author reply nor a mention"}
     if event_name == "pull_request_target" and action in ("opened", "reopened", "ready_for_review"):
         pr = event["pull_request"]
         if pr.get("draft"):
@@ -565,6 +589,7 @@ def issue_facts(gh: GitHub, number: int, bot: str, maintainers: Maintainers) -> 
     assigned_at: dict[str, str] = {}
     unassigned: list[str] = []
     open_prs: list[dict[str, Any]] = []
+    merged_prs: list[dict[str, Any]] = []
     for event in timeline:
         if event.get("event") == "assigned" and event.get("assignee"):
             assigned_at[event["assignee"]["login"]] = event["created_at"]
@@ -575,6 +600,9 @@ def issue_facts(gh: GitHub, number: int, bot: str, maintainers: Maintainers) -> 
             open_prs.append(
                 {"number": source["number"], "title": source["title"], "author": source["user"]["login"]}
             )
+        merged_at = (source.get("pull_request") or {}).get("merged_at")
+        if event.get("event") == "cross-referenced" and merged_at:
+            merged_prs.append({"number": source["number"], "title": source["title"], "merged_at": merged_at})
     last_activity: dict[str, str] = {}
     for comment in comments:
         last_activity[comment["user"]["login"]] = comment["created_at"]
@@ -587,6 +615,12 @@ def issue_facts(gh: GitHub, number: int, bot: str, maintainers: Maintainers) -> 
         and is_claim(c.get("body"))
     ]
     author = issue["user"]["login"]
+    # The form's "willing to submit a PR" answer is the author's claim, made when they opened it.
+    author_willing = willing_to_submit_pr(issue.get("body"))
+    if author_willing and not maintainers.includes(author, issue.get("author_association")) and author != bot:
+        claimants = [c for c in claimants if c["login"] != author]
+        claimants.insert(0, {"login": author, "at": issue["created_at"], "comment_id": None, "source": "issue_form"})
+    since = (now_utc() - timedelta(days=MERGED_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
     return {
         "number": number,
         "url": issue["html_url"],
@@ -608,9 +642,12 @@ def issue_facts(gh: GitHub, number: int, bot: str, maintainers: Maintainers) -> 
             }
             for a in issue.get("assignees", [])
         ],
+        "author_willing_to_submit_pr": author_willing,
         "claimants": claimants,
         "previously_unassigned": sorted(set(unassigned)),
         "open_prs_referencing": open_prs,
+        "merged_prs_referencing": merged_prs,
+        "similar_merged_prs": similar_items(gh, number, issue["title"], f"is:pr is:merged merged:>={since}"),
         "comment_count": issue.get("comments", 0),
         "recent_comments": [comment_view(c) for c in comments[-12:]],
         "similar_issues": similar_items(gh, number, issue["title"]),
@@ -683,6 +720,34 @@ def diff_excerpt(files: list[dict[str, Any]]) -> list[dict[str, str]]:
     return excerpt
 
 
+def base_merges_only(gh: GitHub, since_sha: str, head_sha: str, base: str) -> bool:
+    """True when every commit after ``since_sha`` only merges the base branch in.
+
+    Walks the PR's own first-parent chain from the head back to ``since_sha``: each
+    step must be a two-parent merge whose second parent is already on ``base``, as
+    GitHub's "Update branch" and ``git merge main`` produce. The commits that came
+    in from the base branch are skipped.
+    """
+    try:
+        compare = gh.get(f"/compare/{since_sha}...{head_sha}")
+        if compare.get("status") != "ahead":
+            return False
+        parents = {c["sha"]: [p["sha"] for p in c.get("parents") or []] for c in compare.get("commits") or []}
+        current, steps = head_sha, 0
+        while current != since_sha:
+            pair = parents.get(current) or []
+            steps += 1
+            if len(pair) != 2 or steps > COMPARE_COMMITS_LIMIT:
+                return False
+            if gh.get(f"/compare/{base}...{pair[1]}").get("status") not in ("behind", "identical"):
+                return False
+            current = pair[0]
+    except urllib.error.HTTPError as error:
+        print(f"Compare {since_sha[:7]}...{head_sha[:7]} unavailable ({error.code})", file=sys.stderr)
+        return False
+    return True
+
+
 def pr_facts(gh: GitHub, number: int, bot: str) -> dict[str, Any]:
     """Facts about a PR: size, areas, dependencies, CI, CodeRabbit, reviews and history."""
     pr = gh.get(f"/pulls/{number}")
@@ -727,6 +792,13 @@ def pr_facts(gh: GitHub, number: int, bot: str) -> dict[str, Any]:
             }
         )
     paths = [f["filename"] for f in files]
+    reviewed_sha = (last_marker or {}).get("sha")
+    merges_only = bool(
+        reviewed_sha
+        and (last_marker or {}).get("verdict") != "opened"
+        and reviewed_sha != sha
+        and base_merges_only(gh, reviewed_sha, sha, pr["base"]["ref"])
+    )
     return {
         "number": number,
         "url": pr["html_url"],
@@ -754,6 +826,7 @@ def pr_facts(gh: GitHub, number: int, bot: str) -> dict[str, Any]:
         "coderabbit": coderabbit_facts(gh, number, statuses),
         "human_reviews": latest_review,
         "last_bot_review": last_marker,
+        "base_merges_only_since_review": merges_only,
         "recent_comments": [
             comment_view(c)
             for c in comments
@@ -820,6 +893,8 @@ def review_is_due(facts: dict[str, Any], maintainers: Maintainers, bot: str) -> 
     last = facts["last_bot_review"] or {}
     if last.get("verdict") != "opened" and last.get("sha") == facts["head_sha"] and last.get("ci") == facts["ci"]["state"]:
         return f"already reviewed at {facts['head_sha'][:7]} with CI {facts['ci']['state']}"
+    if facts.get("base_merges_only_since_review"):
+        return f"only {facts.get('base', 'base')} merged in since the review at {last.get('sha', '')[:7]}"
     return None
 
 
@@ -839,6 +914,16 @@ def jobs_for(
 ) -> list[tuple[str, dict[str, Any], str, dict]]:
     """Expand a routing decision into ``(kind, facts, idempotency_key, trigger)`` jobs."""
     kind = decision["kind"]
+    if kind == "pr_mention":
+        number = decision["number"]
+        facts = pr_facts(gh, number, bot)
+        mark_maintainer(facts["author"], maintainers)
+        comment = gh.get(f"/issues/comments/{decision['comment_id']}")
+        commenter = mark_maintainer(
+            author_facts(gh, comment["user"]["login"], comment.get("author_association")), maintainers
+        )
+        trigger = {"comment": comment_view(comment), "commenter": commenter}
+        return [(kind, facts, f"pr-{number}-{kind}-{decision['comment_id']}", trigger)]
     if kind.startswith("issue_"):
         number = decision["number"]
         facts = issue_facts(gh, number, bot, maintainers)
