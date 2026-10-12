@@ -155,7 +155,13 @@ def _synthesize_guard_key(task_name: str, kwargs: dict) -> Optional[str]:
     ``source_id`` is stable across broker redeliveries and unique per
     upload, so the poison-loop counter survives an OOM SIGKILL. Returns
     ``None`` when absent — the dispatch then runs unguarded as before.
+
+    ``reingest_source_task`` operates on existing sources that mutate over
+    time; synthesizing a static key from ``source_id`` would cache the first
+    run and silently drop legitimate subsequent reingests for 24 hours.
     """
+    if task_name == "reingest_source_task":
+        return None
     source_id = kwargs.get("source_id")
     if source_id:
         return f"auto:{task_name}:{source_id}"

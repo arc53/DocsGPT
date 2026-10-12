@@ -668,3 +668,64 @@ class TestPoisonHook:
 
         assert result["success"] is False
         assert "poison-loop" in result["error"]
+
+    def test_reingest_source_task_keyless_does_not_synthesize_key(self, pg_conn):
+        """``reingest_source_task`` dispatches on existing mutable sources.
+        A keyless call must NOT synthesize an ``auto:reingest_source_task:{source_id}``
+        key that locks out subsequent reingests for 24 hours.
+        """
+        from docsgpt.api.user.idempotency import with_idempotency
+
+        runs = {"count": 0}
+
+        @with_idempotency(task_name="reingest_source_task")
+        def task(self, idempotency_key=None, source_id=None):
+            runs["count"] += 1
+            return {"runs": runs["count"]}
+
+        with _patch_decorator_db(pg_conn):
+            first = task(_fake_celery_self(), source_id="src-reingest")
+            second = task(_fake_celery_self(), source_id="src-reingest")
+
+        assert first == {"runs": 1}
+        assert second == {"runs": 2}
+        assert runs["count"] == 2
+        assert _row_for(pg_conn, "auto:reingest_source_task:src-reingest") is None
+
+    def test_reingest_source_task_explicit_key_deduplicates(self, pg_conn):
+        """When an explicit idempotency key is passed, same-key retries deduplicate
+        while distinct keys execute.
+        """
+        from docsgpt.api.user.idempotency import with_idempotency
+
+        runs = {"count": 0}
+
+        @with_idempotency(task_name="reingest_source_task")
+        def task(self, idempotency_key=None, source_id=None):
+            runs["count"] += 1
+            return {"runs": runs["count"]}
+
+        with _patch_decorator_db(pg_conn):
+            first = task(
+                _fake_celery_self(),
+                source_id="src-reingest",
+                idempotency_key="key-1",
+            )
+            second = task(
+                _fake_celery_self(),
+                source_id="src-reingest",
+                idempotency_key="key-1",
+            )
+            third = task(
+                _fake_celery_self(),
+                source_id="src-reingest",
+                idempotency_key="key-2",
+            )
+
+        assert first == {"runs": 1}
+        assert second == {"runs": 1}
+        assert third == {"runs": 2}
+        assert runs["count"] == 2
+        assert _row_for(pg_conn, "key-1") is not None
+        assert _row_for(pg_conn, "key-2") is not None
+
