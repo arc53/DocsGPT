@@ -4,6 +4,7 @@ from urllib.parse import urlencode, urlparse
 
 from flask import current_app, jsonify, make_response, redirect, request
 from flask_restx import Namespace, Resource, fields
+from sqlalchemy import Connection
 
 from docsgpt.agents.tool_pins import carry_pins_between
 from docsgpt.agents.tools.mcp_tool import MCPOAuthManager, MCPTool
@@ -102,15 +103,56 @@ def _invalid_server_url_response(exc: InvalidServerUrl):
     return make_response(jsonify({"success": False, "error": str(exc), "message": str(exc)}), 400)
 
 
-def _mcp_connection(user, config, auth_type, auth_credentials, display_name):
+def _mcp_connection_revision(user: str, config: dict, auth_type: str) -> dict | None:
+    """Capture the no-auth connection revision before remote discovery.
+
+    A connection can be disconnected while discovery is in flight. The save
+    transaction uses this revision to avoid overwriting that newer action.
+    """
+    if auth_type != "none":
+        return None
+    from docsgpt.connectors import catalog
+
+    base = catalog.base_url(config.get("server_url"))
+    if not base:
+        return None
+    host = base.split("://")[-1]
+    with db_readonly() as conn:
+        row = ConnectorSessionsRepository(conn).find_account(
+            user,
+            "custom_mcp",
+            server_url=base,
+            account_label=host,
+        )
+    if row is None:
+        return None
+    return {
+        "id": str(row["id"]),
+        "status": row.get("status"),
+        "updated_at": row["updated_at"],
+    }
+
+
+def _mcp_connection(
+    conn: Connection,
+    user: str,
+    config: dict,
+    auth_type: str,
+    auth_credentials: dict,
+    display_name: str,
+    no_auth_revision: dict | None = None,
+) -> str | None:
     """The connection an MCP tool runs with; created on first save.
 
     OAuth servers already have one (the sign-in stored its tokens there).
     Key, bearer and basic auth store their secret on a connection; servers
     with no auth get a credential-less connection so they still appear on
     the Connectors page. Saving restores an existing no-auth connection
-    after successful discovery. Returns None when a multi-user install runs on the
-    default encryption key, which keeps the legacy per-tool secret.
+    after successful discovery, unless its captured revision changed while
+    discovery was running. The caller owns the transaction so connection
+    recovery and tool persistence commit or roll back together. Returns None
+    when a multi-user install runs on the default encryption key, which keeps
+    the legacy per-tool secret.
     """
     from docsgpt.connectors import catalog, service
 
@@ -118,31 +160,44 @@ def _mcp_connection(user, config, auth_type, auth_credentials, display_name):
     if not base:
         return None
     if auth_type == "oauth":
-        with db_readonly() as conn:
-            row = service._mcp_row(conn, user, base, None)
+        row = service._mcp_row(conn, user, base, None)
         return str(row["id"]) if row else None
     definition = catalog.get_definition("custom_mcp")
     host = base.split("://")[-1]
     try:
-        with db_session() as conn:
-            if auth_credentials:
-                row, _ = service.create_api_key_connection(
-                    conn, user, definition, auth_credentials, server_url=base, display_name=display_name,
-                )
-            else:
-                repo = ConnectorSessionsRepository(conn)
-                row = repo.find_account(user, "custom_mcp", server_url=base, account_label=host) or repo.create(
+        if auth_credentials:
+            row, _ = service.create_api_key_connection(
+                conn, user, definition, auth_credentials, server_url=base, display_name=display_name,
+            )
+        else:
+            repo = ConnectorSessionsRepository(conn)
+            row = repo.find_account(user, "custom_mcp", server_url=base, account_label=host)
+            if row is None:
+                row = repo.create(
                     user, "custom_mcp", connector_key="custom_mcp", auth_kind="none",
                     display_name=display_name, account_label=host, server_url=base,
                 )
-                if row:
-                    repo.update(str(row["id"]), {"status": service.STATUS_CONNECTED, "last_error": None})
+            elif (
+                no_auth_revision
+                and str(row["id"]) == str(no_auth_revision["id"])
+                and no_auth_revision.get("status") != service.STATUS_CONNECTED
+            ):
+                repo.update_if_revision(
+                    str(row["id"]),
+                    no_auth_revision["updated_at"],
+                    {"status": service.STATUS_CONNECTED, "last_error": None},
+                )
     except service.EncryptionKeyNotConfigured:
         return None
     return str(row["id"]) if row else None
 
 
-def _previous_connection(existing_doc, config, owner_id) -> str | None:
+def _previous_connection(
+    conn: Connection,
+    existing_doc: dict | None,
+    config: dict,
+    owner_id: str,
+) -> str | None:
     """The saved tool's connection, kept only while the server is unchanged.
 
     An edit that cannot resolve a connection of its own (the default
@@ -157,8 +212,7 @@ def _previous_connection(existing_doc, config, owner_id) -> str | None:
     base = catalog.base_url(config.get("server_url"))
     if not connection_id or not base:
         return None
-    with db_readonly() as conn:
-        row = ConnectorSessionsRepository(conn).get_for_user(str(connection_id), owner_id)
+    row = ConnectorSessionsRepository(conn).get_for_user(str(connection_id), owner_id)
     if row is None or catalog.base_url(row.get("server_url")) != base:
         return None
     wanted = {"oauth": "mcp_oauth", "none": "none"}.get(config.get("auth_type") or "none", "api_key")
@@ -435,6 +489,7 @@ class MCPServerSave(Resource):
             auth_type = config.get("auth_type", "none")
             mcp_config = config.copy()
             mcp_config["auth_credentials"] = merged_credentials
+            connection_revision = _mcp_connection_revision(owner_id, config, auth_type)
 
             if auth_type == "oauth" and not config.get("oauth_task_id"):
                 # Only the owner reaches here for an existing server (see
@@ -506,39 +561,46 @@ class MCPServerSave(Resource):
             )
 
             display_name = data["displayName"]
-            # The connection is the owner's: an editor's save stores the
-            # secret on the owner's account, as the tool runs as its owner.
-            connection_id = _mcp_connection(
-                owner_id, storage_config, auth_type, merged_credentials, display_name,
-            ) or _previous_connection(existing_doc, storage_config, owner_id)
-            if auth_type == "oauth" and not connection_id:
-                # A sign-in server's tokens live on its connection. Without one
-                # (it was removed, and a client cached before that answered the
-                # discovery) the tool would be saved unconnected.
-                return make_response(
-                    jsonify({
-                        "success": False,
-                        "error": "Not signed in to this server. Sign in again to connect it.",
-                    }),
-                    400,
-                )
-            if connection_id and auth_type != "oauth":
-                # The secret lives on the connection only.
-                storage_config.pop("encrypted_credentials", None)
             description = f"MCP Server: {storage_config.get('server_url', 'Unknown')}"
             status_bool = bool(data.get("status", True))
-            fields_out = {
-                "display_name": display_name,
-                "custom_name": display_name,
-                "description": description,
-                "config": storage_config,
-                "connection_id": connection_id,
-            }
             updated_message = (
                 f"MCP server updated successfully! Discovered {len(transformed_actions)} tools."
             )
 
             with db_session() as conn:
+                # The connection is the owner's: an editor's save stores the
+                # secret on the owner's account, as the tool runs as its owner.
+                # Connection recovery and tool persistence share this transaction.
+                connection_id = _mcp_connection(
+                    conn,
+                    owner_id,
+                    storage_config,
+                    auth_type,
+                    merged_credentials,
+                    display_name,
+                    connection_revision,
+                ) or _previous_connection(conn, existing_doc, storage_config, owner_id)
+                if auth_type == "oauth" and not connection_id:
+                    # A sign-in server's tokens live on its connection. Without one
+                    # (it was removed, and a client cached before that answered the
+                    # discovery) the tool would be saved unconnected.
+                    return make_response(
+                        jsonify({
+                            "success": False,
+                            "error": "Not signed in to this server. Sign in again to connect it.",
+                        }),
+                        400,
+                    )
+                if connection_id and auth_type != "oauth":
+                    # The secret lives on the connection only.
+                    storage_config.pop("encrypted_credentials", None)
+                fields_out = {
+                    "display_name": display_name,
+                    "custom_name": display_name,
+                    "description": description,
+                    "config": storage_config,
+                    "connection_id": connection_id,
+                }
                 repo = UserToolsRepository(conn)
                 if existing_doc is not None:
                     # ``status`` is the owner's own chat switch; an editor's
