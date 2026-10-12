@@ -106,6 +106,9 @@ class RstParser(BaseParser):
             The non-empty, whitespace-stripped chunks, in order.
         """
         avg_token_length = 5
+        if max_tokens <= 0:
+            raise ValueError(f"max_tokens must be a positive integer, got {max_tokens}")
+
         chunk_size = max_tokens * avg_token_length
 
         chunks: List[str] = []

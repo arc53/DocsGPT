@@ -343,3 +343,11 @@ def test_chunk_by_token_count_whitespace_between_words_is_not_a_chunk():
 
     assert all(chunk for chunk in chunks)
     assert " ".join(chunks).split() == ["first", "second"]
+
+
+@pytest.mark.parametrize("bad_value", [0, -1, -100])
+def test_chunk_by_token_count_rejects_non_positive_max_tokens(bad_value):
+    """Zero or negative max_tokens must raise instead of looping forever."""
+    parser = RstParser()
+    with pytest.raises(ValueError):
+        parser.chunk_by_token_count("some non-empty text", max_tokens=bad_value)
