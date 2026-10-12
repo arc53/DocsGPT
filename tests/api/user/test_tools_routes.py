@@ -1,6 +1,6 @@
 """Unit tests for docsgpt.api.user.tools.routes."""
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from unittest.mock import Mock, patch
 
 import pytest
@@ -371,17 +371,19 @@ class TestTransformActions:
         result = transform_actions(actions)
         assert result[0]["active"] is True
 
-    def test_handles_non_mapping_properties(self):
+    @pytest.mark.parametrize("properties", [None, [], "invalid", 42])
+    def test_handles_non_mapping_properties(self, properties):
         from docsgpt.api.user.tools.routes import transform_actions
 
-        actions = [{"name": "legacy", "parameters": {"properties": None}}]
+        actions = [{"name": "legacy", "parameters": {"properties": properties}}]
 
         result = transform_actions(actions)
 
         assert result[0]["active"] is True
-        assert result[0]["parameters"]["properties"] is None
+        assert result[0]["parameters"]["properties"] == {}
 
-    def test_skips_non_mapping_property_definitions(self):
+    @pytest.mark.parametrize("definition", [None, [], "object", 42, False])
+    def test_skips_non_mapping_property_definitions(self, definition):
         from docsgpt.api.user.tools.routes import transform_actions
 
         actions = [
@@ -389,7 +391,7 @@ class TestTransformActions:
                 "name": "legacy",
                 "parameters": {
                     "properties": {
-                        "type": "object",
+                        "invalid": definition,
                         "query": {"type": "string"},
                     }
                 },
@@ -399,9 +401,32 @@ class TestTransformActions:
         result = transform_actions(actions)
         props = result[0]["parameters"]["properties"]
 
-        assert props["type"] == "object"
+        assert "invalid" not in props
         assert props["query"]["filled_by_llm"] is True
         assert props["query"]["value"] == ""
+
+    def test_materializes_missing_properties_and_preserves_schema_metadata(self):
+        from docsgpt.api.user.tools.routes import transform_actions
+
+        actions = [{
+            "name": "noop",
+            "parameters": {
+                "type": "object",
+                "description": "No arguments",
+                "required": [],
+                "additionalProperties": False,
+            },
+        }]
+
+        result = transform_actions(actions)
+
+        assert result[0]["parameters"] == {
+            "type": "object",
+            "description": "No arguments",
+            "required": [],
+            "additionalProperties": False,
+            "properties": {},
+        }
 
     def test_handles_empty_list(self):
         from docsgpt.api.user.tools.routes import transform_actions
@@ -582,6 +607,61 @@ class TestCreateTool:
         }
         return tool_instance
 
+
+    @pytest.mark.parametrize("properties, expected_names", [
+        (None, set()),
+        ([], set()),
+        ("invalid", set()),
+        ({"invalid": None, "query": {"type": "string"}}, {"query"}),
+    ])
+    def test_persists_normalized_action_properties(self, app, properties, expected_names):
+        from docsgpt.api.user.tools.routes import CreateTool
+
+        tool_instance = Mock()
+        tool_instance.get_actions_metadata.return_value = [{
+            "name": "search",
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "additionalProperties": False,
+            },
+        }]
+        tool_instance.get_config_requirements.return_value = {}
+        manager = Mock()
+        manager.tools = {"legacy_tool": tool_instance}
+        repository = Mock()
+        repository.create.return_value = {"id": "saved-tool"}
+
+        with (
+            patch("docsgpt.api.user.tools.routes.tool_manager", manager),
+            patch("docsgpt.api.user.tools.routes.definition_for_tool", return_value=None),
+            patch("docsgpt.api.user.tools.routes.db_session", return_value=nullcontext(Mock())),
+            patch("docsgpt.api.user.tools.routes.UserToolsRepository", return_value=repository),
+            app.test_request_context("/api/create_tool", method="POST", json={
+                "name": "legacy_tool",
+                "displayName": "Legacy tool",
+                "description": "Legacy metadata",
+                "config": {},
+                "status": True,
+            }),
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": "user1"}
+            response = CreateTool().post()
+
+        assert response.status_code == 200
+        repository.create.assert_called_once()
+        stored_action = repository.create.call_args.kwargs["actions"][0]
+        stored_properties = stored_action["parameters"]["properties"]
+        assert isinstance(stored_properties, dict)
+        assert set(stored_properties) == expected_names
+        assert stored_action["active"] is True
+        assert stored_action["parameters"]["additionalProperties"] is False
+        if "query" in stored_properties:
+            assert stored_properties["query"] == {
+                "type": "string", "filled_by_llm": True, "value": "",
+            }
 
     def test_returns_401_unauthenticated(self, app):
         from docsgpt.api.user.tools.routes import CreateTool
