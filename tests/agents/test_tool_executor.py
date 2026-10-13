@@ -1428,6 +1428,24 @@ class TestToolExecutorExecute:
         assert tool_config.get("query_mode") is True
         assert tool_config.get("conversation_id") == "conv-123"
 
+    def test_get_or_load_tool_passes_the_run_scope_without_a_conversation(self, monkeypatch):
+        """A headless run with no conversation scopes run-bound tools to the run."""
+        mock_tm = Mock()
+        monkeypatch.setattr("docsgpt.agents.tool_executor.ToolManager", lambda config: mock_tm)
+        tool_data = {"id": "00000000-0000-0000-0000-000000000004", "name": "code_executor", "config": {}}
+
+        executor = ToolExecutor(user="test_user")
+        executor.run_scope_id = "agent-run-1"
+        executor._get_or_load_tool(tool_data, "t1", "run_code")
+        assert mock_tm.load_tool.call_args[1]["tool_config"]["run_scope_id"] == "agent-run-1"
+
+        mock_tm.reset_mock()
+        chat = ToolExecutor(user="test_user")
+        chat.conversation_id = "conv-1"
+        chat.run_scope_id = "agent-run-1"
+        chat._get_or_load_tool(tool_data, "t1", "run_code")
+        assert "run_scope_id" not in mock_tm.load_tool.call_args[1]["tool_config"]
+
     def test_mcp_tool_gets_its_stored_action_schemas(self, monkeypatch):
         """The stored schemas carry the ``x-mcp-header`` annotations the tool sends headers for."""
         executor = ToolExecutor(user="test_user")
