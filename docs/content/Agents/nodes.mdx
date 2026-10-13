@@ -1,7 +1,7 @@
 ---
 title: Workflow Nodes
 description: The nodes a DocsGPT workflow is built from - Start, AI Agent, End, Note, Set State, If / Else and Code - and the shared state they read and write.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-13
 ---
 
 import { Callout } from 'nextra/components';
@@ -289,4 +289,5 @@ a workflow breaks:
 - Every If / Else branch eventually reaches an End node.
 - Every Code node has code, and any JSON schema it has is valid.
 
-A run stops after 50 node steps, so a loop needs an exit condition.
+A run that is still going after 50 node steps stops with an error and is recorded as failed,
+so a loop needs an exit condition.
