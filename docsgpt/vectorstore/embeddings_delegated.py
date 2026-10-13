@@ -209,8 +209,7 @@ class DelegatedEmbeddings:
                 with self._state_lock:
                     self._probing = False
                 self._probe_done.set()
-            with self._state_lock:
-                self._verified = True
+            # _send() sets _verified = True on success, or clears it on failure.
             return vectors
 
         if role == "wait":
