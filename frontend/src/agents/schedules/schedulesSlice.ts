@@ -11,6 +11,7 @@ import type {
   ScheduleRun,
   ScheduleStatus,
   ScheduleUpdatePayload,
+  UserSchedule,
 } from '../types/schedule';
 
 /** Runs per request; a shorter page means the log has reached its oldest run. */
@@ -18,6 +19,10 @@ export const RUNS_PAGE_SIZE = 50;
 
 export type SchedulesState = {
   byAgent: Record<string, Schedule[]>;
+  /** The caller's schedules across agents (Activity › Schedules); null until loaded. */
+  all: UserSchedule[] | null;
+  allLoading: boolean;
+  allError: boolean;
   runsBySchedule: Record<string, ScheduleRun[]>;
   /** True once a schedule's oldest run is loaded. */
   runsEndBySchedule: Record<string, boolean>;
@@ -27,6 +32,9 @@ export type SchedulesState = {
 
 const initialState: SchedulesState = {
   byAgent: {},
+  all: null,
+  allLoading: false,
+  allError: false,
   runsBySchedule: {},
   runsEndBySchedule: {},
   loading: false,
@@ -39,6 +47,14 @@ export const loadSchedulesForAgent = createAsyncThunk<
 >('schedules/loadForAgent', async ({ agentId, token }) => {
   const r = await schedulesService.listForAgent(agentId, token);
   return { agentId, schedules: r.schedules };
+});
+
+export const loadAllSchedules = createAsyncThunk<
+  UserSchedule[],
+  { token: string | null }
+>('schedules/loadAll', async ({ token }) => {
+  const r = await schedulesService.listAll(token);
+  return r.schedules;
 });
 
 export const createSchedule = createAsyncThunk<
@@ -167,6 +183,41 @@ const upsertRunDelta = (
   list[idx] = { ...list[idx], ...delta };
 };
 
+/**
+ * Puts a schedule's new state in every list that holds it. A row of the
+ * cross-agent list keeps its names, which a mutation response doesn't carry.
+ */
+const applyToLists = (state: SchedulesState, next: Schedule): void => {
+  if (next.agent_id) {
+    state.byAgent[next.agent_id] = upsert(
+      state.byAgent[next.agent_id] ?? [],
+      next,
+    );
+  }
+  if (state.all) {
+    const idx = state.all.findIndex((s) => s.id === next.id);
+    if (idx === -1) state.all = [next, ...state.all];
+    else state.all[idx] = { ...state.all[idx], ...next };
+  }
+};
+
+/** Changes fields of a schedule wherever it is listed (an SSE update). */
+const patchSchedule = (
+  state: SchedulesState,
+  scheduleId: string,
+  patch: Partial<Schedule>,
+): void => {
+  const found = findAgentForSchedule(state, scheduleId);
+  if (found) {
+    state.byAgent[found.agentId] = upsert(state.byAgent[found.agentId], {
+      ...found.schedule,
+      ...patch,
+    });
+  }
+  const idx = state.all?.findIndex((s) => s.id === scheduleId) ?? -1;
+  if (state.all && idx !== -1) state.all[idx] = { ...state.all[idx], ...patch };
+};
+
 const findAgentForSchedule = (
   state: SchedulesState,
   scheduleId: string,
@@ -218,31 +269,35 @@ const schedulesSlice = createSlice({
         state.loading = false;
         state.error = action.error.message ?? 'failed to load schedules';
       })
-      // Agentless schedules (``agent_id === null``) skip the byAgent cache —
-      // they have no Schedules tab home. The inline ⏰ card is the only UI.
+      .addCase(loadAllSchedules.pending, (state) => {
+        state.allLoading = true;
+        state.allError = false;
+      })
+      .addCase(loadAllSchedules.fulfilled, (state, action) => {
+        state.all = action.payload;
+        state.allLoading = false;
+      })
+      .addCase(loadAllSchedules.rejected, (state) => {
+        state.allLoading = false;
+        state.allError = true;
+      })
+      // Agentless schedules (``agent_id === null``) have no byAgent home:
+      // they are listed only in the cross-agent list.
       .addCase(createSchedule.fulfilled, (state, action) => {
-        const next = action.payload;
-        if (!next.agent_id) return;
-        const list = state.byAgent[next.agent_id] ?? [];
-        state.byAgent[next.agent_id] = upsert(list, next);
+        applyToLists(state, action.payload);
       })
       .addCase(updateSchedule.fulfilled, (state, action) => {
-        const next = action.payload;
-        if (!next.agent_id) return;
-        const list = state.byAgent[next.agent_id] ?? [];
-        state.byAgent[next.agent_id] = upsert(list, next);
+        applyToLists(state, action.payload);
       })
       .addCase(setSchedulePaused.fulfilled, (state, action) => {
-        const next = action.payload;
-        if (!next.agent_id) return;
-        const list = state.byAgent[next.agent_id] ?? [];
-        state.byAgent[next.agent_id] = upsert(list, next);
+        applyToLists(state, action.payload);
       })
       .addCase(deleteSchedule.fulfilled, (state, action) => {
         const id = action.payload;
         Object.keys(state.byAgent).forEach((agentId) => {
           state.byAgent[agentId] = removeFrom(state.byAgent[agentId], id);
         });
+        if (state.all) state.all = state.all.filter((s) => s.id !== id);
         delete state.runsBySchedule[id];
         delete state.runsEndBySchedule[id];
       })
@@ -299,30 +354,14 @@ const schedulesSlice = createSlice({
                   envelope.ts,
                 );
               }
-              const found = findAgentForSchedule(state, scheduleId);
-              if (found && envelope.ts) {
-                const next: Schedule = {
-                  ...found.schedule,
-                  last_run_at: envelope.ts,
-                };
-                state.byAgent[found.agentId] = upsert(
-                  state.byAgent[found.agentId],
-                  next,
-                );
+              if (envelope.ts) {
+                patchSchedule(state, scheduleId, { last_run_at: envelope.ts });
               }
               break;
             }
-            case 'schedule.autopaused': {
-              const found = findAgentForSchedule(state, scheduleId);
-              if (found) {
-                const next: Schedule = { ...found.schedule, status: 'paused' };
-                state.byAgent[found.agentId] = upsert(
-                  state.byAgent[found.agentId],
-                  next,
-                );
-              }
+            case 'schedule.autopaused':
+              patchSchedule(state, scheduleId, { status: 'paused' });
               break;
-            }
             // Schedule-level status transitions. These revoke a stale
             // ``schedule.autopaused`` (resumed/cancelled) or surface a
             // reconciler/once-schedule finish (completed) that the run
@@ -337,14 +376,7 @@ const schedulesSlice = createSlice({
                   : envelope.type === 'schedule.cancelled'
                     ? 'cancelled'
                     : 'completed';
-              const found = findAgentForSchedule(state, scheduleId);
-              if (found) {
-                const next: Schedule = { ...found.schedule, status };
-                state.byAgent[found.agentId] = upsert(
-                  state.byAgent[found.agentId],
-                  next,
-                );
-              }
+              patchSchedule(state, scheduleId, { status });
               break;
             }
             case 'schedule.message.appended':
@@ -370,6 +402,19 @@ export const selectSchedulesForAgent = (
   state: { schedules: SchedulesState },
   agentId: string,
 ): Schedule[] => state.schedules.byAgent[agentId] ?? NO_SCHEDULES;
+
+/** The cross-agent list (null until loaded) and its load state. */
+export const selectAllSchedules = (state: {
+  schedules: SchedulesState;
+}): UserSchedule[] | null => state.schedules.all;
+
+export const selectAllSchedulesLoading = (state: {
+  schedules: SchedulesState;
+}): boolean => state.schedules.allLoading;
+
+export const selectAllSchedulesError = (state: {
+  schedules: SchedulesState;
+}): boolean => state.schedules.allError;
 
 export const selectRunsForSchedule = (
   state: { schedules: SchedulesState },

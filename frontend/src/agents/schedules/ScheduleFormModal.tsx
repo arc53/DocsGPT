@@ -1,5 +1,5 @@
 import { CalendarIcon } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -53,6 +53,10 @@ export type ScheduleFormModalProps = {
   onClose: () => void;
   onSubmit: (payload: ScheduleCreatePayload) => Promise<void> | void;
   submitting?: boolean;
+  /** A field above the frequency (the agent picker on Activity › Schedules). */
+  agentField?: ReactNode;
+  /** Disables the save button (no agent picked yet). */
+  submitDisabled?: boolean;
 };
 
 const FREQUENCIES: ScheduleFrequency[] = [
@@ -120,6 +124,8 @@ export default function ScheduleFormModal({
   onClose,
   onSubmit,
   submitting,
+  agentField,
+  submitDisabled = false,
 }: ScheduleFormModalProps) {
   const { t } = useTranslation();
   // Edit mode pre-populates from the saved schedule; create mode uses the browser tz.
@@ -266,6 +272,7 @@ export default function ScheduleFormModal({
           size="lg"
           shape="pill"
           loading={submitting}
+          disabled={submitDisabled}
           onClick={submit}
         >
           {isEdit
@@ -289,6 +296,8 @@ export default function ScheduleFormModal({
             aria-label={t('agents.schedules.modal.namePlaceholder')}
           />
         </div>
+
+        {agentField}
 
         <FrequencyTabs
           frequency={values.frequency}

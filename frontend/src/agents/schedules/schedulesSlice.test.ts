@@ -11,6 +11,9 @@ import type { Schedule, ScheduleRun } from '../types/schedule';
 import reducer, {
   applyEvent,
   deleteSchedule,
+  loadAllSchedules,
+  selectAllSchedules,
+  setSchedulePaused,
   loadRunsForSchedule,
   RUNS_PAGE_SIZE,
   selectRunsEnd,
@@ -341,5 +344,83 @@ describe('deleteSchedule', () => {
   it('rejects when the server refuses the delete', async () => {
     const action = await run({ success: false, error: 'Not allowed' });
     expect(action.type).toBe(deleteSchedule.rejected.type);
+  });
+});
+
+describe('schedulesSlice cross-agent list', () => {
+  const seedAll = (): SchedulesState => {
+    const state = seedWithSchedule();
+    return reducer(
+      state,
+      loadAllSchedules.fulfilled(
+        [
+          { ...sampleSchedule(), agent_name: 'Deal Desk' },
+          {
+            ...sampleSchedule({ id: 'sched-2', agent_id: null }),
+            origin_conversation_name: 'QBR prep',
+          },
+        ],
+        'req',
+        { token: null },
+      ),
+    );
+  };
+
+  it('stores the loaded list', () => {
+    const state = seedAll();
+    expect(selectAllSchedules({ schedules: state })?.map((s) => s.id)).toEqual([
+      'sched-1',
+      'sched-2',
+    ]);
+  });
+
+  it('keeps the names when a mutation answers with a bare schedule', () => {
+    const state = reducer(
+      seedAll(),
+      setSchedulePaused.fulfilled(sampleSchedule({ status: 'paused' }), 'req', {
+        id: 'sched-1',
+        action: 'pause',
+        token: null,
+      }),
+    );
+    const row = state.all?.find((s) => s.id === 'sched-1');
+    expect(row?.status).toBe('paused');
+    expect(row?.agent_name).toBe('Deal Desk');
+    expect(state.byAgent['agent-1'][0].status).toBe('paused');
+  });
+
+  it('updates an agentless schedule, which has no per-agent list', () => {
+    const state = reducer(
+      seedAll(),
+      setSchedulePaused.fulfilled(
+        sampleSchedule({ id: 'sched-2', agent_id: null, status: 'paused' }),
+        'req',
+        { id: 'sched-2', action: 'pause', token: null },
+      ),
+    );
+    expect(state.all?.find((s) => s.id === 'sched-2')?.status).toBe('paused');
+  });
+
+  it('applies SSE status changes to the cross-agent list', () => {
+    const state = reducer(
+      seedAll(),
+      sseEventReceived({
+        id: 'evt-9',
+        type: 'schedule.autopaused',
+        payload: { schedule_id: 'sched-2' },
+      } as SSEEvent),
+    );
+    expect(state.all?.find((s) => s.id === 'sched-2')?.status).toBe('paused');
+  });
+
+  it('drops a deleted schedule from the cross-agent list', () => {
+    const state = reducer(
+      seedAll(),
+      deleteSchedule.fulfilled('sched-2', 'req', {
+        id: 'sched-2',
+        token: null,
+      }),
+    );
+    expect(state.all?.map((s) => s.id)).toEqual(['sched-1']);
   });
 });

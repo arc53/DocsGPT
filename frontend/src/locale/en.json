@@ -2767,7 +2767,8 @@
         "error": "Error",
         "errorWithType": "Error ({{type}})",
         "output": "Output",
-        "truncated": "(truncated)"
+        "truncated": "(truncated)",
+        "openConversation": "Open conversation"
       },
       "toolCard": {
         "cancelFailed": "Cancel failed",
@@ -2836,7 +2837,8 @@
         "overdue": "Overdue"
       },
       "deleteFailed": "Couldn't delete this schedule.",
-      "deleteConsequence": "Its run history is deleted too. This can't be undone."
+      "deleteConsequence": "Its run history is deleted too. This can't be undone.",
+      "allSchedules": "All schedules"
     },
     "shared": {
       "notFound": "No agent found. Please ensure the agent is shared.",
@@ -3219,7 +3221,8 @@
         "personal": "Personal",
         "workspace": "Workspace",
         "insights": "Insights",
-        "administration": "Administration"
+        "administration": "Administration",
+        "automations": "Automations"
       }
     },
     "openSidebar": "Open sidebar",
@@ -3258,7 +3261,7 @@
       "admins": "Admins",
       "usage": "Usage",
       "quotas": "Quotas",
-      "audit": "Activity",
+      "audit": "Audit log",
       "connectors": "Connectors"
     },
     "quotas": {
@@ -3395,5 +3398,25 @@
       "conversationGone": "Ended: its conversation can no longer be resumed"
     },
     "endedBecause": "Ended: {{reason}}"
+  },
+  "activity": {
+    "label": "Activity",
+    "schedules": {
+      "label": "Schedules",
+      "subtitle": "Every recurring run and one-time task across your agents, plus the ones the assistant set up in a chat.",
+      "search": "Search schedules",
+      "createdInChat": "Created in chat",
+      "createdInChatHint": "No agent. Each one belongs to the chat that made it.",
+      "agentSchedules": "Agent schedules",
+      "openChat": "Open chat",
+      "noMatches": "No schedules match your search.",
+      "loadError": "Couldn't load your schedules",
+      "empty": "No schedules yet",
+      "emptyHint": "Create one here, or ask the assistant in a chat to do something on a schedule.",
+      "agentLabel": "Agent",
+      "agentPlaceholder": "Choose an agent",
+      "agentSearch": "Search agents",
+      "agentEmpty": "No agents you can schedule"
+    }
   }
 }

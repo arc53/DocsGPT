@@ -210,6 +210,41 @@ class SchedulesRepository:
         ).fetchall()
         return [row_to_dict(r) for r in rows]
 
+    def list_owned_with_context(self, user_id: str, *, limit: int = 500) -> list[dict]:
+        """Owned schedules across every agent, agentless ones included, newest first.
+
+        Monitors are left out (they have their own page). Each row also
+        carries ``agent_name`` / ``agent_image`` / ``agent_user_id`` (the
+        agent's owner, who an image URL is signed for) and the originating
+        chat's ``origin_conversation_name``, so a cross-agent list can group
+        and label rows without a lookup per agent. ``agent_image`` is the raw
+        storage value: callers must turn it into a URL before returning it.
+
+        Args:
+            user_id: The owner.
+            limit: Maximum rows returned.
+
+        Returns:
+            Schedule rows with the extra keys (``None`` when absent).
+        """
+        rows = self._conn.execute(
+            text(
+                """
+                SELECT s.*, a.name AS agent_name, a.image AS agent_image,
+                       a.user_id AS agent_user_id,
+                       c.name AS origin_conversation_name
+                FROM schedules s
+                LEFT JOIN agents a ON a.id = s.agent_id
+                LEFT JOIN conversations c ON c.id = s.origin_conversation_id
+                WHERE s.user_id = :user_id AND s.trigger_type <> 'monitor'
+                ORDER BY s.created_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"user_id": user_id, "limit": int(limit)},
+        ).fetchall()
+        return [row_to_dict(r) for r in rows]
+
     def count_active_for_user(self, user_id: str) -> int:
         """Active+paused schedules for quota enforcement (monitors have their own cap)."""
         scalar = self._conn.execute(

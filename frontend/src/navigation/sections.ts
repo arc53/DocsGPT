@@ -24,6 +24,11 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import {
+  ACTIVITY_MONITORS_PATH,
+  ACTIVITY_ROOT,
+  ACTIVITY_SCHEDULES_PATH,
+} from '../activity/paths';
+import {
   AGENTS_MANAGE_ROOT,
   agentEditPath,
   agentLogsPath,
@@ -135,12 +140,6 @@ export const SETTINGS_SECTION: Section = {
           icon: Wrench,
         },
         {
-          key: 'monitors',
-          path: '/settings/monitors',
-          labelKey: 'monitors.label',
-          icon: Radar,
-        },
-        {
           key: 'customModels',
           path: '/settings/custom-models',
           labelKey: 'settings.customModels.label',
@@ -183,6 +182,38 @@ export const SETTINGS_SECTION: Section = {
           icon: ShieldCheck,
           adminOnly: true,
           leavesSection: true,
+        },
+      ],
+    },
+  ],
+};
+
+/**
+ * What runs and what is planned. Schedules and monitors are the rules that
+ * produce the work, grouped as Automations.
+ */
+export const ACTIVITY_SECTION: Section = {
+  key: 'activity',
+  rootPath: ACTIVITY_ROOT,
+  titleKey: 'activity.label',
+  matches: [ACTIVITY_ROOT],
+  groups: [
+    {
+      key: 'automations',
+      labelKey: 'navigation.sections.groups.automations',
+      items: [
+        {
+          key: 'schedules',
+          path: ACTIVITY_SCHEDULES_PATH,
+          labelKey: 'activity.schedules.label',
+          icon: CalendarClock,
+          aliases: [ACTIVITY_ROOT],
+        },
+        {
+          key: 'monitors',
+          path: ACTIVITY_MONITORS_PATH,
+          labelKey: 'monitors.label',
+          icon: Radar,
         },
       ],
     },
@@ -356,6 +387,7 @@ export function buildAgentSection(
 }
 
 export const SECTIONS: Section[] = [
+  ACTIVITY_SECTION,
   SETTINGS_SECTION,
   ADMIN_SECTION,
   AGENTS_SECTION,

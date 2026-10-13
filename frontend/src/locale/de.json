@@ -2767,7 +2767,8 @@
         "error": "Fehler",
         "errorWithType": "Fehler ({{type}})",
         "output": "Ausgabe",
-        "truncated": "(gekürzt)"
+        "truncated": "(gekürzt)",
+        "openConversation": "Gespräch öffnen"
       },
       "toolCard": {
         "cancelFailed": "Abbrechen fehlgeschlagen",
@@ -2836,7 +2837,8 @@
         "overdue": "Überfällig"
       },
       "deleteFailed": "Dieser Zeitplan konnte nicht gelöscht werden.",
-      "deleteConsequence": "Der Ausführungsverlauf wird ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden."
+      "deleteConsequence": "Der Ausführungsverlauf wird ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "allSchedules": "Alle Zeitpläne"
     },
     "shared": {
       "notFound": "Kein Agent gefunden. Bitte stelle sicher, dass der Agent geteilt ist.",
@@ -3219,7 +3221,8 @@
         "personal": "Persönlich",
         "workspace": "Arbeitsbereich",
         "insights": "Auswertungen",
-        "administration": "Administration"
+        "administration": "Administration",
+        "automations": "Automatisierungen"
       }
     },
     "openSidebar": "Seitenleiste öffnen",
@@ -3376,5 +3379,25 @@
       "conversationGone": "Beendet: Die Unterhaltung kann nicht mehr fortgesetzt werden"
     },
     "endedBecause": "Beendet: {{reason}}"
+  },
+  "activity": {
+    "label": "Aktivität",
+    "schedules": {
+      "label": "Zeitpläne",
+      "subtitle": "Alle wiederkehrenden Ausführungen und einmaligen Aufgaben deiner Agenten, dazu die, die der Assistent in einem Chat angelegt hat.",
+      "search": "Zeitpläne durchsuchen",
+      "createdInChat": "Im Chat erstellt",
+      "createdInChatHint": "Ohne Agent. Jeder gehört zu dem Chat, in dem er entstanden ist.",
+      "agentSchedules": "Zeitpläne des Agenten",
+      "openChat": "Chat öffnen",
+      "noMatches": "Keine Zeitpläne passen zu deiner Suche.",
+      "loadError": "Deine Zeitpläne konnten nicht geladen werden",
+      "empty": "Noch keine Zeitpläne",
+      "emptyHint": "Lege hier einen an oder bitte den Assistenten im Chat, etwas nach Zeitplan zu erledigen.",
+      "agentLabel": "Agent",
+      "agentPlaceholder": "Agenten wählen",
+      "agentSearch": "Agenten suchen",
+      "agentEmpty": "Keine Agenten, die du planen kannst"
+    }
   }
 }

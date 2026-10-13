@@ -2754,7 +2754,8 @@
         "error": "错误",
         "errorWithType": "错误（{{type}}）",
         "output": "输出",
-        "truncated": "（已截断）"
+        "truncated": "（已截断）",
+        "openConversation": "打开对话"
       },
       "toolCard": {
         "cancelFailed": "取消失败",
@@ -2823,7 +2824,8 @@
         "overdue": "已逾期"
       },
       "deleteFailed": "无法删除此计划。",
-      "deleteConsequence": "其运行历史也会一并删除。此操作无法撤销。"
+      "deleteConsequence": "其运行历史也会一并删除。此操作无法撤销。",
+      "allSchedules": "所有计划"
     },
     "shared": {
       "notFound": "未找到代理。请确保代理已共享。",
@@ -3206,7 +3208,8 @@
         "personal": "个人",
         "workspace": "工作区",
         "insights": "洞察",
-        "administration": "管理"
+        "administration": "管理",
+        "automations": "自动化"
       }
     },
     "openSidebar": "打开侧边栏",
@@ -3363,5 +3366,25 @@
       "conversationGone": "已结束：其对话已无法继续"
     },
     "endedBecause": "已结束：{{reason}}"
+  },
+  "activity": {
+    "label": "活动",
+    "schedules": {
+      "label": "计划",
+      "subtitle": "你所有代理的定期运行和一次性任务，以及助手在聊天中创建的任务。",
+      "search": "搜索计划",
+      "createdInChat": "在聊天中创建",
+      "createdInChatHint": "没有代理。每个都属于创建它的聊天。",
+      "agentSchedules": "代理计划",
+      "openChat": "打开聊天",
+      "noMatches": "没有符合搜索的计划。",
+      "loadError": "无法加载你的计划",
+      "empty": "还没有计划",
+      "emptyHint": "在这里创建，或在聊天中让助手按计划做事。",
+      "agentLabel": "代理",
+      "agentPlaceholder": "选择代理",
+      "agentSearch": "搜索代理",
+      "agentEmpty": "没有可以安排计划的代理"
+    }
   }
 }

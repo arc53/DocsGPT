@@ -2767,7 +2767,8 @@
         "error": "Error",
         "errorWithType": "Error ({{type}})",
         "output": "Salida",
-        "truncated": "(truncada)"
+        "truncated": "(truncada)",
+        "openConversation": "Abrir conversación"
       },
       "toolCard": {
         "cancelFailed": "No se pudo cancelar",
@@ -2836,7 +2837,8 @@
         "overdue": "Atrasada"
       },
       "deleteFailed": "No se pudo eliminar esta programación.",
-      "deleteConsequence": "También se elimina su historial de ejecuciones. No se puede deshacer."
+      "deleteConsequence": "También se elimina su historial de ejecuciones. No se puede deshacer.",
+      "allSchedules": "Todas las programaciones"
     },
     "shared": {
       "notFound": "No se encontró el agente. Asegúrate de que el agente esté compartido.",
@@ -3219,7 +3221,8 @@
         "personal": "Personal",
         "workspace": "Espacio de trabajo",
         "insights": "Estadísticas",
-        "administration": "Administración"
+        "administration": "Administración",
+        "automations": "Automatizaciones"
       }
     },
     "openSidebar": "Abrir barra lateral",
@@ -3376,5 +3379,25 @@
       "conversationGone": "Terminado: su conversación ya no se puede reanudar"
     },
     "endedBecause": "Terminado: {{reason}}"
+  },
+  "activity": {
+    "label": "Actividad",
+    "schedules": {
+      "label": "Programaciones",
+      "subtitle": "Todas las ejecuciones recurrentes y tareas únicas de tus agentes, además de las que el asistente creó en un chat.",
+      "search": "Buscar programaciones",
+      "createdInChat": "Creadas en un chat",
+      "createdInChatHint": "Sin agente. Cada una pertenece al chat que la creó.",
+      "agentSchedules": "Programaciones del agente",
+      "openChat": "Abrir chat",
+      "noMatches": "Ninguna programación coincide con tu búsqueda.",
+      "loadError": "No se pudieron cargar tus programaciones",
+      "empty": "Aún no hay programaciones",
+      "emptyHint": "Crea una aquí o pide al asistente en un chat que haga algo de forma programada.",
+      "agentLabel": "Agente",
+      "agentPlaceholder": "Elige un agente",
+      "agentSearch": "Buscar agentes",
+      "agentEmpty": "No hay agentes que puedas programar"
+    }
   }
 }

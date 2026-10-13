@@ -216,6 +216,78 @@ class TestListForAgent:
         assert len(resp.get_json()["schedules"]) == 1
 
 
+class TestListForUser:
+    def test_unauthorized(self, app):
+        from docsgpt.api.user.schedules.routes import UserSchedules
+
+        with app.test_request_context("/api/schedules", method="GET"):
+            from flask import request
+            request.decoded_token = None
+            resp = UserSchedules().get()
+        assert resp.status_code == 401
+
+    def test_lists_own_schedules_across_agents_and_agentless(self, app, pg_conn):
+        from docsgpt.api.user.schedules.routes import UserSchedules
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+        repo = SchedulesRepository(pg_conn)
+        agent_id = _make_agent(pg_conn)
+        conv = str(ConversationsRepository(pg_conn).create("u1", "QBR prep")["id"])
+        repo.create(
+            user_id="u1", agent_id=agent_id, trigger_type="recurring",
+            instruction="digest", cron="0 15 * * 1-5",
+            next_run_at=_now() + timedelta(hours=1),
+        )
+        repo.create(
+            user_id="u1", agent_id=None, trigger_type="once", instruction="remind me",
+            run_at=_now() + timedelta(hours=2), next_run_at=_now() + timedelta(hours=2),
+            origin_conversation_id=conv, created_via="chat",
+        )
+        repo.create(
+            user_id="u2", agent_id=_make_agent(pg_conn, "u2"), trigger_type="recurring",
+            instruction="not mine", cron="* * * * *",
+        )
+        with _patch_db(pg_conn), app.test_request_context("/api/schedules", method="GET"):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            resp = UserSchedules().get()
+        assert resp.status_code == 200
+        rows = resp.get_json()["schedules"]
+        assert {r["instruction"] for r in rows} == {"digest", "remind me"}
+        agentless = next(r for r in rows if r["agent_id"] is None)
+        assert agentless["origin_conversation_id"] == conv
+        assert agentless["origin_conversation_name"] == "QBR prep"
+        with_agent = next(r for r in rows if r["agent_id"])
+        assert with_agent["agent_id"] == agent_id
+        assert with_agent["agent_name"] == "a"
+
+
+class TestListForUserImages:
+    def test_never_returns_a_storage_path_for_the_agent_image(self, app, pg_conn):
+        from docsgpt.api.user.schedules.routes import UserSchedules
+
+        agent_id = _make_agent(pg_conn)
+        pg_conn.execute(
+            text("UPDATE agents SET image = :img WHERE id = CAST(:id AS uuid)"),
+            {"img": "inputs/u1/attachments/avatar.png", "id": agent_id},
+        )
+        SchedulesRepository(pg_conn).create(
+            user_id="u1", agent_id=agent_id, trigger_type="recurring",
+            instruction="digest", cron="0 15 * * 1-5",
+        )
+        with _patch_db(pg_conn), app.test_request_context("/api/schedules", method="GET"), patch(
+            "docsgpt.api.user.schedules.routes.generate_image_url",
+            return_value="https://api.example/api/images/x/cap",
+        ) as signer:
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            resp = UserSchedules().get()
+        row = resp.get_json()["schedules"][0]
+        assert row["agent_image"] == "https://api.example/api/images/x/cap"
+        assert "agent_user_id" not in row
+        signer.assert_called_once_with("inputs/u1/attachments/avatar.png", agent_id, "u1")
+
+
 class TestGetEditPatchDelete:
     def _make(self, conn, **kwargs):
         return SchedulesRepository(conn).create(**kwargs)

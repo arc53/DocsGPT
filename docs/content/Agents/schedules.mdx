@@ -1,7 +1,7 @@
 ---
 title: Agent Schedules
 description: Run an agent on a timer - recurring schedules and one-time tasks from the Schedules tab, tasks set from chat with the Scheduling tool, the run log, auto-pause, the REST API, the operator limits, and the beat scheduler every schedule needs.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-13
 ---
 
 import { Callout } from 'nextra/components';
@@ -54,11 +54,17 @@ Nobody is present to approve a tool call during a scheduled run, so:
 
 If you later mark one of a tool's actions as needing approval, schedules that don't have that tool ticked refuse the action. Edit the schedule and tick the tool if it should run unattended.
 
+## All your schedules in Activity
+
+**Activity → Schedules** in the sidebar lists every schedule you own, across all your agents, grouped by agent. Tasks the assistant set up in a chat without an agent are grouped last under **Created in chat**, each with a link to its chat. The page has the same **Recurring** and **One-time** tabs, row actions and run log as an agent's Schedules tab. **New schedule** there asks you to choose the agent first.
+
+A schedule you create on a teammate's agent as an editor belongs to the agent's owner (see [Who owns a schedule](#who-owns-a-schedule-and-whose-quota-it-uses)), so it's listed on that agent's Schedules tab rather than in your Activity list.
+
 ## Run now and the run log
 
 **Run now** starts a run immediately. It is recorded with the trigger **Manual**; timed runs show **Scheduled**. Run now is refused while another run of the same schedule is still in progress.
 
-For a recurring schedule, select **Show runs** to open the log, and select a run to see its details: status, scheduled, start and finish times, prompt and generated tokens, output and error. The output is capped at 24,000 characters and marked **(truncated)** beyond that.
+Select **Show runs** on a schedule to open its log, and select a run to see its details: status, scheduled, start and finish times, prompt and generated tokens, output and error. The output is capped at 24,000 characters and marked **(truncated)** beyond that.
 
 A run ends in one of these statuses:
 
@@ -69,7 +75,7 @@ A run ends in one of these statuses:
 | **Timeout** | The run went past `SCHEDULE_RUN_TIMEOUT`. |
 | **Skipped** | The run didn't start: the previous run was still in progress (`overlap`), or the scheduler was down past the due time plus `SCHEDULE_MISFIRE_GRACE` (`missed`). |
 
-The Schedules tab has no run log for one-time tasks. Their runs, like every scheduled run, appear in **Settings → Logs** with the type **Scheduled**, with their execution trace, and in the agent's Logs tab; over the API, use `GET /api/schedules/<id>/runs`.
+One-time tasks have a run log too, so a finished task shows its result. Every scheduled run also appears in **Settings → Logs** with the type **Scheduled**, with its execution trace, and in the agent's Logs tab; over the API, use `GET /api/schedules/<id>/runs`. A run's details link to its conversation with **Open conversation**.
 
 ### Where the output goes
 
@@ -87,7 +93,7 @@ The **Scheduling** tool lets the model set a one-time task while you chat: "remi
 - In a regular chat without an agent, it is one of the [default chat tools](/Tools/basics#default-chat-tools) (`DEFAULT_CHAT_TOOLS`).
 - In an agent's chat, enable **Scheduling** in the agent's tool picker.
 
-The chat shows a card for each task with a **Cancel task** button. Tasks set in an agent's chat also appear under **One-time tasks** in the agent's Schedules tab. The tool sets one-time tasks only; for a recurring schedule, use the Schedules tab.
+The chat shows a card for each task with a **Cancel task** button. Tasks set in an agent's chat also appear under **One-time tasks** in the agent's Schedules tab; tasks set in a chat without an agent appear under **Created in chat** in **Activity → Schedules**. The tool sets one-time tasks only; for a recurring schedule, use the Schedules tab.
 
 A task set from chat pre-approves only the tools whose actions never need approval. Tool calls that need approval are refused when it runs.
 
@@ -105,6 +111,7 @@ Schedules have their own endpoints. Call them with a session token or a [persona
 
 | Method and path | Purpose |
 | --- | --- |
+| `GET /api/schedules` | List your own schedules across every agent, agentless ones included, with `agent_name`, `agent_image` and `origin_conversation_name` |
 | `GET /api/agents/<agent_id>/schedules` | List an agent's schedules |
 | `POST /api/agents/<agent_id>/schedules` | Create a schedule |
 | `GET /api/agents/<agent_id>/schedules/stats?days=30` | Runs, failures and tokens over a window |

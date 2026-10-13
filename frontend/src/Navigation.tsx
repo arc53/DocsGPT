@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import {
+  Activity as ActivityIcon,
   LayoutGrid,
   PanelLeftClose,
   PanelLeftOpen,
@@ -13,6 +14,7 @@ import {
   SquarePen,
 } from 'lucide-react';
 
+import { ACTIVITY_ROOT } from './activity/paths';
 import {
   AGENTS_MANAGE_ROOT,
   agentChatPath,
@@ -169,6 +171,12 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
 
   const closeNavOnMobile = () => {
     if (isMobile) setNavOpen(false);
+  };
+
+  const openManageAgents = () => {
+    dispatch(setSelectedAgent(null));
+    closeNavOnMobile();
+    goToLevel(AGENTS_MANAGE_ROOT);
   };
 
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
@@ -494,6 +502,15 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 </IconButton>
               )}
               <IconButton
+                label={t('activity.label')}
+                side="right"
+                variant="ghost-muted"
+                size="icon"
+                onClick={() => goToLevel(ACTIVITY_ROOT)}
+              >
+                <ActivityIcon aria-hidden />
+              </IconButton>
+              <IconButton
                 label={t('manageAgents')}
                 side="right"
                 variant="ghost-muted"
@@ -601,6 +618,23 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 {t('newChat')}
               </p>
             </NavLink>
+            <Button variant="sidebar-item" asChild className="mx-4 mt-2 flex">
+              <NavLink
+                to={ACTIVITY_ROOT}
+                onClick={(event) => {
+                  if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+                  event.preventDefault();
+                  closeNavOnMobile();
+                  goToLevel(ACTIVITY_ROOT);
+                }}
+              >
+                <ActivityIcon
+                  className="text-muted-foreground size-5 shrink-0"
+                  aria-hidden
+                />
+                <span className="truncate">{t('activity.label')}</span>
+              </NavLink>
+            </Button>
             <div
               id="conversationsMainDiv"
               className="scrollbar-overlay min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
@@ -614,10 +648,20 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               )}
               {recentAgents?.length > 0 ? (
                 <div>
-                  <div className="mx-4 my-auto mt-2 flex h-6 items-center">
+                  <div className="my-auto mt-2 ml-2.75 flex h-9 items-center justify-between gap-4 rounded-3xl p-1">
                     <p className="mt-1 ml-4 text-sm font-semibold">
                       {t('navigation.agents')}
                     </p>
+                    <IconButton
+                      label={t('manageAgents')}
+                      variant="ghost-muted"
+                      size="icon"
+                      shape="pill"
+                      className="mr-1"
+                      onClick={openManageAgents}
+                    >
+                      <LayoutGrid aria-hidden />
+                    </IconButton>
                   </div>
                   <div>
                     <div>
@@ -688,32 +732,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                         );
                       })}
                     </div>
-                    <Button
-                      variant="sidebar-item"
-                      asChild
-                      className="mx-4 my-auto mt-2 flex"
-                    >
-                      <NavLink
-                        to={AGENTS_MANAGE_ROOT}
-                        end
-                        onClick={(event) => {
-                          if (event.metaKey || event.ctrlKey || event.shiftKey)
-                            return;
-                          event.preventDefault();
-                          dispatch(setSelectedAgent(null));
-                          closeNavOnMobile();
-                          goToLevel(AGENTS_MANAGE_ROOT);
-                        }}
-                      >
-                        <div className="flex w-6 justify-center">
-                          <LayoutGrid
-                            className="text-muted-foreground size-5"
-                            aria-hidden
-                          />
-                        </div>
-                        <span className="truncate">{t('manageAgents')}</span>
-                      </NavLink>
-                    </Button>
                   </div>
                 </div>
               ) : (

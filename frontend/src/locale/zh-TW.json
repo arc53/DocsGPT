@@ -2755,7 +2755,8 @@
         "error": "錯誤",
         "errorWithType": "錯誤（{{type}}）",
         "output": "輸出",
-        "truncated": "（已截斷）"
+        "truncated": "（已截斷）",
+        "openConversation": "開啟對話"
       },
       "toolCard": {
         "cancelFailed": "取消失敗",
@@ -2824,7 +2825,8 @@
         "overdue": "已逾期"
       },
       "deleteFailed": "無法刪除此排程。",
-      "deleteConsequence": "其執行紀錄也會一併刪除。此操作無法復原。"
+      "deleteConsequence": "其執行紀錄也會一併刪除。此操作無法復原。",
+      "allSchedules": "所有排程"
     },
     "shared": {
       "notFound": "未找到代理。請確保代理已共享。",
@@ -3207,7 +3209,8 @@
         "personal": "個人",
         "workspace": "工作區",
         "insights": "洞察",
-        "administration": "管理"
+        "administration": "管理",
+        "automations": "自動化"
       }
     },
     "openSidebar": "開啟側邊欄",
@@ -3364,5 +3367,25 @@
       "conversationGone": "已結束：其對話已無法繼續"
     },
     "endedBecause": "已結束：{{reason}}"
+  },
+  "activity": {
+    "label": "活動",
+    "schedules": {
+      "label": "排程",
+      "subtitle": "你所有代理的週期性執行與一次性任務，以及助理在聊天中建立的任務。",
+      "search": "搜尋排程",
+      "createdInChat": "在聊天中建立",
+      "createdInChatHint": "沒有代理。每個都屬於建立它的聊天。",
+      "agentSchedules": "代理排程",
+      "openChat": "開啟聊天",
+      "noMatches": "沒有符合搜尋的排程。",
+      "loadError": "無法載入你的排程",
+      "empty": "還沒有排程",
+      "emptyHint": "在這裡建立，或在聊天中請助理依排程做事。",
+      "agentLabel": "代理",
+      "agentPlaceholder": "選擇代理",
+      "agentSearch": "搜尋代理",
+      "agentEmpty": "沒有可以設定排程的代理"
+    }
   }
 }

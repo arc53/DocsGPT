@@ -207,6 +207,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/agents/<string:agent_id>/schedules", "POST"): _rule(
         "schedules:write", refs=(("agents", (VIEW, "agent_id")),), blocked_by=_NON_AGENT_FAMILIES
     ),
+    # Lists schedules of every agent, so a token limited to some agents can't use it.
+    ("/api/schedules", "GET"): _rule("schedules:read", blocked_by=_ALL_FAMILIES),
     ("/api/schedules/<string:schedule_id>", "GET"): _rule("schedules:read", blocked_by=_ALL_FAMILIES),
     ("/api/schedules/<string:schedule_id>/runs", "GET"): _rule("schedules:read", blocked_by=_ALL_FAMILIES),
     ("/api/schedules/<string:schedule_id>/runs/<string:run_id>", "GET"): _rule(

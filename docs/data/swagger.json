@@ -4707,6 +4707,22 @@
         ]
       }
     },
+    "/api/schedules": {
+      "get": {
+        "description": "List the caller's own schedules across every agent, including agentless ones created in chat. Monitors are not included.\nReturns:\n    A Flask response with ``schedules``: schedule rows plus\n    ``agent_name``, ``agent_image`` (a signed URL, never a storage\n    path) and ``origin_conversation_name``.",
+        "operationId": "get_user_schedules",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Return the caller's schedules with agent and origin-chat names",
+        "tags": [
+          "schedules"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/schedules/{schedule_id}": {
       "delete": {
         "description": "Cancel / delete a schedule.",

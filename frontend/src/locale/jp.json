@@ -2755,7 +2755,8 @@
         "error": "エラー",
         "errorWithType": "エラー（{{type}}）",
         "output": "出力",
-        "truncated": "（切り詰め）"
+        "truncated": "（切り詰め）",
+        "openConversation": "会話を開く"
       },
       "toolCard": {
         "cancelFailed": "キャンセルに失敗しました",
@@ -2824,7 +2825,8 @@
         "overdue": "期限超過"
       },
       "deleteFailed": "このスケジュールを削除できませんでした。",
-      "deleteConsequence": "実行履歴も削除されます。この操作は元に戻せません。"
+      "deleteConsequence": "実行履歴も削除されます。この操作は元に戻せません。",
+      "allSchedules": "すべてのスケジュール"
     },
     "shared": {
       "notFound": "エージェントが見つかりません。エージェントが共有されていることを確認してください。",
@@ -3207,7 +3209,8 @@
         "personal": "個人",
         "workspace": "ワークスペース",
         "insights": "インサイト",
-        "administration": "管理"
+        "administration": "管理",
+        "automations": "オートメーション"
       }
     },
     "openSidebar": "サイドバーを開く",
@@ -3364,5 +3367,25 @@
       "conversationGone": "終了: 会話を再開できなくなりました"
     },
     "endedBecause": "終了: {{reason}}"
+  },
+  "activity": {
+    "label": "アクティビティ",
+    "schedules": {
+      "label": "スケジュール",
+      "subtitle": "すべてのエージェントの定期実行と1回限りのタスク、そしてアシスタントがチャットで設定したものです。",
+      "search": "スケジュールを検索",
+      "createdInChat": "チャットで作成",
+      "createdInChatHint": "エージェントなし。それぞれ作成元のチャットに属します。",
+      "agentSchedules": "エージェントのスケジュール",
+      "openChat": "チャットを開く",
+      "noMatches": "検索に一致するスケジュールはありません。",
+      "loadError": "スケジュールを読み込めませんでした",
+      "empty": "スケジュールはまだありません",
+      "emptyHint": "ここで作成するか、チャットでアシスタントに定期的な作業を頼んでください。",
+      "agentLabel": "エージェント",
+      "agentPlaceholder": "エージェントを選択",
+      "agentSearch": "エージェントを検索",
+      "agentEmpty": "スケジュールできるエージェントはありません"
+    }
   }
 }

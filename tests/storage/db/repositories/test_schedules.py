@@ -300,3 +300,47 @@ class TestDelete:
         assert repo.delete(str(created["id"]), "u2") is False
         assert repo.delete(str(created["id"]), "u1") is True
         assert repo.get(str(created["id"]), "u1") is None
+
+
+class TestListOwnedWithContext:
+    def _conversation(self, conn, user_id: str = "u1", name: str = "Rotterdam market check") -> str:
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+        return str(ConversationsRepository(conn).create(user_id, name)["id"])
+
+    def test_spans_agents_and_agentless_with_names(self, pg_conn):
+        repo = SchedulesRepository(pg_conn)
+        a1 = _insert_agent(pg_conn)
+        a2 = _insert_agent(pg_conn)
+        pg_conn.execute(
+            text("UPDATE agents SET name = 'Deal Desk' WHERE id = CAST(:id AS uuid)"), {"id": a1},
+        )
+        conv = self._conversation(pg_conn)
+        repo.create("u1", a1, "recurring", "scan", cron="0 7 * * *", next_run_at=_now())
+        repo.create("u1", a2, "once", "remind", run_at=_now(), next_run_at=_now())
+        repo.create(
+            "u1", None, "once", "chat task", run_at=_now(), next_run_at=_now(),
+            origin_conversation_id=conv, created_via="chat",
+        )
+        rows = repo.list_owned_with_context("u1")
+        assert len(rows) == 3
+        by_instruction = {r["instruction"]: r for r in rows}
+        assert by_instruction["scan"]["agent_name"] == "Deal Desk"
+        assert by_instruction["chat task"]["agent_id"] is None
+        assert by_instruction["chat task"]["agent_name"] is None
+        assert by_instruction["chat task"]["origin_conversation_name"] == "Rotterdam market check"
+
+    def test_leaves_out_monitors_and_other_users(self, pg_conn):
+        from docsgpt.storage.db.repositories.monitors import MonitorsRepository
+
+        repo = SchedulesRepository(pg_conn)
+        conv = self._conversation(pg_conn)
+        now = _now()
+        MonitorsRepository(pg_conn).create(
+            user_id="u1", conversation_id=conv, agent_id=None, description="BTC below $50k",
+            source_type="webpage", spec={"source": {"type": "webpage", "url": "https://example.com"}},
+            on_match="tell me", end_at=now + timedelta(days=7), next_run_at=now + timedelta(minutes=15),
+            max_wakes=1, interval_seconds=900, state={"hash": "abc"},
+        )
+        repo.create("u2", _insert_agent(pg_conn, "u2"), "recurring", "theirs", cron="* * * * *")
+        assert repo.list_owned_with_context("u1") == []

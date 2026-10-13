@@ -36,6 +36,7 @@ from docsgpt.storage.db.repositories.schedule_runs import (
 )
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.utils import generate_image_url
 
 
 logger = logging.getLogger(__name__)
@@ -250,6 +251,43 @@ def _publish_schedule_event(
         logger.exception(
             "schedules: publish %s failed for %s", event_type, schedule_id,
         )
+
+
+@schedules_ns.route("/schedules")
+class UserSchedules(Resource):
+    @api.doc(
+        description=(
+            "List the caller's own schedules across every agent, including "
+            "agentless ones created in chat. Monitors are not included."
+        ),
+    )
+    @_safe_route
+    def get(self):
+        """Return the caller's schedules with agent and origin-chat names.
+
+        Returns:
+            A Flask response with ``schedules``: schedule rows plus
+            ``agent_name``, ``agent_image`` (a signed URL, never a storage
+            path) and ``origin_conversation_name``.
+        """
+        user_id = _user_id()
+        if not user_id:
+            return _err("unauthorized", 401)
+        with db_readonly() as conn:
+            rows = SchedulesRepository(conn).list_owned_with_context(user_id)
+        out = []
+        for row in rows:
+            image = row.get("agent_image")
+            agent_owner = row.pop("agent_user_id", None)
+            # A storage path never leaves the server: sign it as the agents
+            # API does, or drop it.
+            row["agent_image"] = (
+                generate_image_url(image, row.get("agent_id"), agent_owner)
+                if image and row.get("agent_id")
+                else None
+            )
+            out.append(_format_schedule(row))
+        return _ok({"schedules": out})
 
 
 @schedules_ns.route("/agents/<string:agent_id>/schedules")
