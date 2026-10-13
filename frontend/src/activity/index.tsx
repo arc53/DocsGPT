@@ -6,6 +6,7 @@ import SectionIndexPage from '../navigation/SectionIndexPage';
 import SectionShell from '../navigation/SectionShell';
 import { ACTIVITY_SECTION } from '../navigation/sections';
 import AllSchedules from './AllSchedules';
+import Now from './Now';
 import { ACTIVITY_ROOT } from './paths';
 
 /**
@@ -28,7 +29,8 @@ export default function Activity() {
   return (
     <SectionShell>
       <Routes>
-        <Route index element={<AllSchedules />} />
+        <Route index element={<Now />} />
+        <Route path="now" element={<Now />} />
         <Route path="schedules" element={<AllSchedules />} />
         <Route path="monitors" element={<Monitors />} />
         <Route path="*" element={<Navigate to={ACTIVITY_ROOT} replace />} />

@@ -7,6 +7,9 @@
 /** Root of the Activity section. */
 export const ACTIVITY_ROOT = '/activity';
 
+/** What runs this minute, what waits for the user, what runs next. */
+export const ACTIVITY_NOW_PATH = `${ACTIVITY_ROOT}/now`;
+
 /** Every schedule across agents, agentless ones included. */
 export const ACTIVITY_SCHEDULES_PATH = `${ACTIVITY_ROOT}/schedules`;
 

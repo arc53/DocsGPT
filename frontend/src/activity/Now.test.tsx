@@ -1,0 +1,179 @@
+import { configureStore } from '@reduxjs/toolkit';
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { Provider } from 'react-redux';
+import { MemoryRouter } from 'react-router-dom';
+
+const activity = vi.hoisted(() => ({ now: vi.fn(), stopMessage: vi.fn() }));
+vi.mock('../api/services/activityService', () => ({ default: activity }));
+const schedules = vi.hoisted(() => ({ setPaused: vi.fn() }));
+vi.mock('../api/services/schedulesService', () => ({ default: schedules }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
+
+import { TooltipProvider } from '@/components/ui/tooltip';
+
+import activityReducer, { loadActivityNow } from './activitySlice';
+import Now from './Now';
+import type { NowSnapshot } from './types';
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+const SNAPSHOT: NowSnapshot = {
+  running: [
+    {
+      kind: 'chat',
+      id: 'm1',
+      message_id: 'm1',
+      title: 'Nordhaven renewal prep',
+      conversation_id: 'c1',
+      agent_name: 'Support Assistant',
+      status: 'streaming',
+      started_at: new Date().toISOString(),
+    },
+    {
+      kind: 'ingest',
+      id: 's1',
+      source_id: 's1',
+      title: 'Carrier handbook 2026.pdf',
+      progress: 0.28,
+      embedded_chunks: 34,
+      total_chunks: 120,
+    },
+  ],
+  needs_you: [
+    {
+      kind: 'approval',
+      id: 'approval:c2',
+      conversation_id: 'c2',
+      title: 'Vendor Renewal Decision',
+      tools: ['send_email'],
+      expires_at: new Date(Date.now() + 20 * 60_000).toISOString(),
+    },
+    {
+      kind: 'schedule_paused',
+      id: 'schedule:x1',
+      schedule_id: 'x1',
+      title: 'Prospect news scan',
+      agent_id: 'a1',
+      failures: 3,
+    },
+  ],
+  up_next: [
+    {
+      schedule_id: 'x2',
+      name: 'Daily support digest',
+      agent_id: 'a2',
+      agent_name: 'Support Assistant',
+      trigger_type: 'recurring',
+      next_run_at: new Date(Date.now() + 3_600_000).toISOString(),
+      runs_in_window: 1,
+    },
+  ],
+  approval_conversations: ['c2'],
+  failed_conversations: [],
+  stats: { running: 2, needs_you: 2, next_24h: 1, failed_24h: 1 },
+};
+
+const makeStore = () => {
+  const store = configureStore({
+    reducer: {
+      activity: activityReducer,
+      preference: () => ({ token: 'tok' }),
+      connectors: () => ({
+        connections: [
+          {
+            id: 'k1',
+            name: 'google_drive',
+            display_name: 'Google Drive',
+            account_label: 'lena@example.com',
+            status: 'reconnect_needed',
+          },
+        ],
+      }),
+      monitors: () => ({ order: [], byId: {}, loading: false }),
+      schedules: (state = {}) => state,
+    },
+  });
+  store.dispatch(loadActivityNow.fulfilled(SNAPSHOT, 'req'));
+  return store;
+};
+
+describe('Now page', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  beforeEach(() => {
+    activity.stopMessage.mockReset().mockResolvedValue(undefined);
+    activity.now.mockReset().mockResolvedValue(SNAPSHOT);
+    schedules.setPaused.mockReset().mockResolvedValue({
+      schedule: { id: 'x1', agent_id: 'a1', status: 'active' },
+    });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  const render = async () => {
+    await act(async () => {
+      root.render(
+        <Provider store={makeStore()}>
+          <TooltipProvider>
+            <MemoryRouter>
+              <Now />
+            </MemoryRouter>
+          </TooltipProvider>
+        </Provider>,
+      );
+    });
+  };
+  const button = (label: string) =>
+    Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === label,
+    ) as HTMLButtonElement;
+
+  it('lists what needs the user, connections to reconnect included', async () => {
+    await render();
+    expect(container.textContent).toContain('activity.now.needsYou');
+    expect(container.textContent).toContain('activity.now.approve');
+    expect(container.textContent).toContain('activity.now.pausedAfter');
+    expect(container.textContent).toContain('activity.now.reconnect');
+  });
+
+  it('lists running work and what runs next', async () => {
+    await render();
+    expect(container.textContent).toContain('Nordhaven renewal prep');
+    expect(container.textContent).toContain('Carrier handbook 2026.pdf');
+    expect(container.textContent).toContain('Daily support digest');
+  });
+
+  it('stops a running answer', async () => {
+    await render();
+    await act(async () => button('activity.now.stop').click());
+    expect(activity.stopMessage).toHaveBeenCalledWith('m1', 'tok');
+  });
+
+  it('resumes a schedule paused after failures', async () => {
+    await render();
+    await act(async () => button('agents.schedules.resume').click());
+    expect(schedules.setPaused).toHaveBeenCalledWith('x1', 'resume', 'tok');
+  });
+
+  it('filters the running list by kind', async () => {
+    await render();
+    const knowledge = Array.from(
+      container.querySelectorAll('[role="radio"]'),
+    ).find(
+      (b) => b.textContent === 'activity.now.filters.knowledge',
+    ) as HTMLElement;
+    await act(async () => knowledge.click());
+    const kinds = Array.from(container.querySelectorAll('li[data-kind]')).map(
+      (li) => li.getAttribute('data-kind'),
+    );
+    expect(kinds).toEqual(['ingest']);
+  });
+});

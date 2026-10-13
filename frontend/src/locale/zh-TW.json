@@ -3386,6 +3386,96 @@
       "agentPlaceholder": "選擇代理",
       "agentSearch": "搜尋代理",
       "agentEmpty": "沒有可以設定排程的代理"
+    },
+    "marks": {
+      "failed": "有失敗",
+      "needsYou": "等待你的核准",
+      "working": "執行中",
+      "unread": "未讀",
+      "watching": "正在監控變化"
+    },
+    "kind": {
+      "chat": "聊天",
+      "job": "背景工作",
+      "code": "程式碼執行",
+      "schedule": "排程執行",
+      "workflow": "工作流程",
+      "webhook": "Webhook 執行",
+      "ingest": "知識"
+    },
+    "nav": {
+      "running_one": "{{count}} 個執行中",
+      "running_other": "{{count}} 個執行中",
+      "needsYou_one": "{{count}} 項需要你處理",
+      "needsYou_other": "{{count}} 項需要你處理"
+    },
+    "now": {
+      "label": "目前",
+      "subtitle": "正在執行的、等待你處理的，以及接下來要執行的。即時更新。",
+      "loadError": "無法載入你的活動",
+      "stopFailed": "無法停止該回答。請重試，或開啟聊天在那裡停止。",
+      "thinking": "思考中",
+      "writing": "正在撰寫回答",
+      "ranByHand": "手動執行",
+      "due": "排定於 {{time}}",
+      "chunks": "已嵌入 {{done}}/{{total}} 個區塊",
+      "background": "背景",
+      "running": "執行中",
+      "stop": "停止",
+      "cancel": "取消",
+      "open": "開啟",
+      "approve": "核准 {{tools}}",
+      "approveAction": "核准工具操作",
+      "expires": "{{time}}過期",
+      "approval": "核准",
+      "review": "查看",
+      "pausedAfter_one": "{{name}} 失敗 {{count}} 次後已暫停",
+      "pausedAfter_other": "{{name}} 失敗 {{count}} 次後已暫停",
+      "errorType": {
+        "auth_expired": "登入已過期",
+        "tool_not_allowed": "工具未被允許",
+        "budget_exceeded": "超出權杖預算",
+        "timeout": "逾時",
+        "agent_error": "代理失敗",
+        "internal": "內部錯誤",
+        "missed": "錯過了執行時間",
+        "overlap": "上一次執行仍在進行",
+        "stream_error": "回答串流中斷",
+        "empty_output": "沒有產生任何輸出"
+      },
+      "viewRuns": "查看執行",
+      "fromChat": "來自 {{name}}",
+      "timesToday_one": "未來 24 小時執行 {{count}} 次",
+      "timesToday_other": "未來 24 小時執行 {{count}} 次",
+      "oneTime": "一次性",
+      "stats": {
+        "running": "執行中",
+        "background_one": "背景 {{count}} 個",
+        "background_other": "背景 {{count}} 個",
+        "needsYou": "需要你處理",
+        "approvalExpires": "有一個核准將於{{time}}過期",
+        "next24h": "未來 24 小時",
+        "nextAt": "下一個：{{time}}，{{name}}",
+        "failed": "失敗（過去 24 小時）"
+      },
+      "needsYou": "需要你處理",
+      "reconnect": "{{name}} 需要重新連線",
+      "reconnectAction": "重新連線",
+      "runningTitle": "執行中",
+      "filter": "顯示",
+      "filters": {
+        "all": "全部",
+        "chats": "聊天",
+        "automations": "自動化",
+        "knowledge": "知識"
+      },
+      "nothingRunning": "沒有正在執行的內容",
+      "upNext": "接下來",
+      "nothingPlanned": "未來 24 小時沒有排定執行的內容",
+      "watching": "監控中",
+      "allMonitors": "所有監控",
+      "nothingWatched": "沒有正在監控的內容",
+      "checked": "{{time}}檢查過"
     }
   }
 }

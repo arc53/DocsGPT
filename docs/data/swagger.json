@@ -1518,6 +1518,22 @@
     "version": "1.0"
   },
   "paths": {
+    "/api/activity/now": {
+      "get": {
+        "description": "What runs for the caller now (chat answers, background jobs, scheduled, webhook and workflow runs, ingests), what waits for them (tool approvals, schedules paused after failures), what runs in the next 24 hours, and the counts the sidebar shows.\nReturns:\n    A Flask response with ``running``, ``needs_you``, ``up_next``,\n    ``approval_conversations``, ``failed_conversations`` and ``stats``.",
+        "operationId": "get_activity_now",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Return the caller's Now snapshot",
+        "tags": [
+          "activity"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/add_chunk": {
       "post": {
         "description": "Adds a new chunk to the document",
@@ -4231,6 +4247,30 @@
         ]
       }
     },
+    "/api/messages/{message_id}/cancel": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "message_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Stop the caller's chat answer that is still being written. The stream ends as if its client had disconnected and keeps what it wrote. Answers 202 once the request is stored; the stream sees it within a few seconds, or when a long tool call returns.\nArgs:\n    message_id: The answer's message id.\n\nReturns:\n    202 when the stop was requested, 404 when the caller has no such\n    message, 409 when it is not running, 503 without Redis.",
+        "operationId": "post_message_cancel",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Ask a running answer to stop",
+        "tags": [
+          "activity"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/messages/{message_id}/tail": {
       "get": {
         "description": "Current state of one conversation_messages row, scoped to the authenticated user. Used to reconnect to an in-flight stream after a refresh.",
@@ -4720,7 +4760,9 @@
         "tags": [
           "schedules"
         ],
-        "x-pat-denied": true
+        "x-pat-scopes": [
+          "schedules:read"
+        ]
       }
     },
     "/api/schedules/{schedule_id}": {
@@ -6742,6 +6784,10 @@
     {
       "description": "Answer related operations",
       "name": "answer"
+    },
+    {
+      "description": "What runs now and what is planned",
+      "name": "activity"
     },
     {
       "description": "Analytics and reporting operations",

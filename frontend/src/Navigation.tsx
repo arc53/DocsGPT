@@ -14,7 +14,9 @@ import {
   SquarePen,
 } from 'lucide-react';
 
+import ActivityNavBadge from './activity/ActivityNavBadge';
 import { ACTIVITY_ROOT } from './activity/paths';
+import useActivityLoader from './activity/useActivityLoader';
 import {
   AGENTS_MANAGE_ROOT,
   agentChatPath,
@@ -63,7 +65,6 @@ import {
   getSectionForPath,
   type Section,
 } from './navigation/sections';
-import ConnectionHealthDot from './connectors/ConnectionHealthDot';
 import { useSidebarLevel } from './navigation/SidebarLevelProvider';
 import { useSectionContext } from './navigation/useSectionContext';
 import { useLastAppPath } from './navigation/useLastAppPath';
@@ -104,6 +105,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
 
   const token = useSelector(selectToken);
   useMonitorsLoader();
+  useActivityLoader();
   const queries = useSelector(selectQueries);
   const conversations = useSelector(selectConversations);
   const conversationId = useSelector(selectConversationId);
@@ -506,9 +508,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 side="right"
                 variant="ghost-muted"
                 size="icon"
+                className="relative"
                 onClick={() => goToLevel(ACTIVITY_ROOT)}
               >
                 <ActivityIcon aria-hidden />
+                <ActivityNavBadge variant="rail" />
               </IconButton>
               <IconButton
                 label={t('manageAgents')}
@@ -633,6 +637,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   aria-hidden
                 />
                 <span className="truncate">{t('activity.label')}</span>
+                <ActivityNavBadge />
               </NavLink>
             </Button>
             <div
@@ -893,7 +898,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   aria-hidden
                 />
                 <p className="text-foreground text-sm">{t('settings.label')}</p>
-                <ConnectionHealthDot />
               </Link>
             </Button>
           </div>

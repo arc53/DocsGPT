@@ -3440,6 +3440,10 @@ def agent_webhook_worker(self, agent_id, payload):
     self.update_state(state="PROGRESS", meta={"current": 50})
     from celery.exceptions import SoftTimeLimitExceeded
 
+    # A webhook run has no row until it ends: mark it for Activity › Now.
+    owner_id = agent_config.get("user_id")
+    run_id = getattr(getattr(self, "request", None), "id", None)
+    _mark_webhook_run(owner_id, run_id, agent_config, started=True)
     try:
         # Shared headless path with the scheduler; approval-gated tools auto-deny.
         from docsgpt.agents.headless_runner import run_agent_headless
@@ -3479,7 +3483,47 @@ def agent_webhook_worker(self, agent_id, payload):
         )
         return {"status": "success", "result": result}
     finally:
+        _mark_webhook_run(owner_id, run_id, agent_config, started=False)
         self.update_state(state="PROGRESS", meta={"current": 100})
+
+
+def _mark_webhook_run(owner_id: Any, run_id: Any, agent_config: dict, *, started: bool) -> None:
+    """Add or remove a webhook run's Activity marker and tell open pages.
+
+    Best-effort: a failure here never touches the run.
+
+    Args:
+        owner_id: The agent's owner, whose Activity lists the run.
+        run_id: The Celery task id.
+        agent_config: The agent row.
+        started: True when the run starts, False when it ends.
+    """
+    if not owner_id or not run_id:
+        return
+    try:
+        from docsgpt.activity.flags import mark_run_finished, mark_run_started
+        from docsgpt.events.publisher import publish_user_event
+
+        if started:
+            mark_run_started(
+                str(owner_id),
+                str(run_id),
+                {
+                    "kind": "webhook",
+                    "agent_id": str(agent_config.get("id") or ""),
+                    "agent_name": agent_config.get("name"),
+                },
+                ttl_seconds=int(settings.WEBHOOK_RUN_TIMEOUT) + 60,
+            )
+        else:
+            mark_run_finished(str(owner_id), str(run_id))
+        publish_user_event(
+            str(owner_id),
+            "activity.updated",
+            {"kind": "webhook", "run_id": str(run_id), "running": started},
+        )
+    except Exception:
+        logging.exception("webhook: Activity marker update failed for %s", run_id)
 
 
 # Fields a person writes, in the order they best say what an event is about.

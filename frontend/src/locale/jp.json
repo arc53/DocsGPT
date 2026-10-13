@@ -3386,6 +3386,96 @@
       "agentPlaceholder": "エージェントを選択",
       "agentSearch": "エージェントを検索",
       "agentEmpty": "スケジュールできるエージェントはありません"
+    },
+    "marks": {
+      "failed": "失敗があります",
+      "needsYou": "承認待ち",
+      "working": "実行中",
+      "unread": "未読",
+      "watching": "変更を監視中"
+    },
+    "kind": {
+      "chat": "チャット",
+      "job": "バックグラウンドジョブ",
+      "code": "コード実行",
+      "schedule": "スケジュール実行",
+      "workflow": "ワークフロー",
+      "webhook": "Webhook 実行",
+      "ingest": "ナレッジ"
+    },
+    "nav": {
+      "running_one": "{{count}} 件実行中",
+      "running_other": "{{count}} 件実行中",
+      "needsYou_one": "{{count}} 件の対応待ち",
+      "needsYou_other": "{{count}} 件の対応待ち"
+    },
+    "now": {
+      "label": "現在",
+      "subtitle": "実行中のもの、あなたの対応を待っているもの、次に実行されるもの。リアルタイムで更新されます。",
+      "loadError": "アクティビティを読み込めませんでした",
+      "stopFailed": "回答を停止できませんでした。もう一度試すか、チャットを開いて停止してください。",
+      "thinking": "考え中",
+      "writing": "回答を作成中",
+      "ranByHand": "手動実行",
+      "due": "予定 {{time}}",
+      "chunks": "{{total}} チャンク中 {{done}} 件を埋め込み済み",
+      "background": "バックグラウンド",
+      "running": "実行中",
+      "stop": "停止",
+      "cancel": "キャンセル",
+      "open": "開く",
+      "approve": "{{tools}} を承認",
+      "approveAction": "ツールの操作を承認",
+      "expires": "{{time}}に期限切れ",
+      "approval": "承認",
+      "review": "確認",
+      "pausedAfter_one": "{{name}} は {{count}} 回失敗したため一時停止中",
+      "pausedAfter_other": "{{name}} は {{count}} 回失敗したため一時停止中",
+      "errorType": {
+        "auth_expired": "サインインの期限切れ",
+        "tool_not_allowed": "許可されていないツール",
+        "budget_exceeded": "トークン予算を超過",
+        "timeout": "タイムアウト",
+        "agent_error": "エージェントが失敗",
+        "internal": "内部エラー",
+        "missed": "実行時刻を逃した",
+        "overlap": "前回の実行が継続中",
+        "stream_error": "回答のストリームが途切れた",
+        "empty_output": "出力がなかった"
+      },
+      "viewRuns": "実行を表示",
+      "fromChat": "{{name}} から",
+      "timesToday_one": "今後24時間で {{count}} 回",
+      "timesToday_other": "今後24時間で {{count}} 回",
+      "oneTime": "1回限り",
+      "stats": {
+        "running": "実行中",
+        "background_one": "バックグラウンドで {{count}} 件",
+        "background_other": "バックグラウンドで {{count}} 件",
+        "needsYou": "対応待ち",
+        "approvalExpires": "承認の期限: {{time}}",
+        "next24h": "今後24時間",
+        "nextAt": "次は {{time}}、{{name}}",
+        "failed": "失敗（過去24時間）"
+      },
+      "needsYou": "対応待ち",
+      "reconnect": "{{name}} の再接続が必要です",
+      "reconnectAction": "再接続",
+      "runningTitle": "実行中",
+      "filter": "表示",
+      "filters": {
+        "all": "すべて",
+        "chats": "チャット",
+        "automations": "オートメーション",
+        "knowledge": "ナレッジ"
+      },
+      "nothingRunning": "実行中のものはありません",
+      "upNext": "次の予定",
+      "nothingPlanned": "今後24時間に実行予定のものはありません",
+      "watching": "監視中",
+      "allMonitors": "すべてのモニター",
+      "nothingWatched": "監視中のものはありません",
+      "checked": "{{time}}に確認"
     }
   }
 }

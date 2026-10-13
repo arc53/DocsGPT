@@ -42,6 +42,7 @@ from docsgpt.storage.db.repositories.conversations import (
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.repositories.user_logs import UserLogsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.activity.flags import clear_stop, stop_requested
 from docsgpt.events.publisher import publish_user_event
 from docsgpt.streaming.event_replay import format_sse_event
 from docsgpt.streaming.message_journal import (
@@ -61,6 +62,10 @@ STREAM_HEARTBEAT_INTERVAL = 30
 # worst case for a 25-round tool loop, but finite, so a wedged-but-alive
 # stream still gets swept eventually.
 STREAM_HEARTBEAT_MAX_SECONDS = 3600
+
+# How often the heartbeat thread checks for a Stop asked from another page
+# (Activity › Now). Cheap: one Redis EXISTS per running answer.
+STREAM_STOP_POLL_SECONDS = 2
 
 
 class ClientDisconnected(GeneratorExit):
@@ -730,6 +735,12 @@ class BaseAnswerResource:
         # Set by the heartbeat ticker when it finds the row gone. Checked by
         # the emit loop, which is where the stream regains control.
         stream_cancelled = threading.Event()
+        # Set by the ticker when the user pressed Stop on another page; the
+        # emit loop then ends the stream as a client abort, keeping the text.
+        stop_asked = threading.Event()
+        # Whether ``message.started`` went out, so ``message.finished`` pairs it.
+        started_published = False
+        event_user_id = (decoded_token or {}).get("sub")
 
         def _mark_streaming_once() -> None:
             """Flip the reserved row ``pending → streaming`` exactly once.
@@ -801,7 +812,16 @@ class BaseAnswerResource:
 
             def _tick() -> None:
                 deadline = time.monotonic() + STREAM_HEARTBEAT_MAX_SECONDS
-                while not stop.wait(STREAM_HEARTBEAT_INTERVAL):
+                poll = min(STREAM_STOP_POLL_SECONDS, STREAM_HEARTBEAT_INTERVAL)
+                next_beat = time.monotonic() + STREAM_HEARTBEAT_INTERVAL
+                while not stop.wait(poll):
+                    # Keep stamping after a Stop: a stream inside a long tool
+                    # call only sees it when the call returns.
+                    if not stop_asked.is_set() and stop_requested(message_id):
+                        stop_asked.set()
+                    if time.monotonic() < next_beat:
+                        continue
+                    next_beat = time.monotonic() + STREAM_HEARTBEAT_INTERVAL
                     if time.monotonic() > deadline:
                         logger.warning(
                             "stream heartbeat ticker hit its %ss ceiling for "
@@ -1015,6 +1035,15 @@ class BaseAnswerResource:
             # The seed above covers t=0; the ticker takes over from the first
             # interval onwards, independently of whether anything is flowing.
             heartbeat_stop = _start_heartbeat_ticker()
+            # The sidebar's working mark and Activity › Now follow these.
+            if heartbeat_stop is not None and event_user_id and conversation_id:
+                publish_user_event(
+                    event_user_id,
+                    "message.started",
+                    {"conversation_id": str(conversation_id), "message_id": reserved_message_id},
+                    scope={"kind": "conversation", "id": str(conversation_id)},
+                )
+                started_published = True
 
             for line in gen_iter:
                 # The emit loop is where the stream regains control between
@@ -1023,6 +1052,11 @@ class BaseAnswerResource:
                 # nothing and is only cancelled when that call returns.
                 if stream_cancelled.is_set():
                     raise StreamSuperseded(reserved_message_id or "")
+                # Stop pressed on Activity › Now: end as a client abort would,
+                # saving what the answer has so far.
+                if stop_asked.is_set():
+                    logger.info("stream stopped by its user: message_id=%s", reserved_message_id)
+                    raise ClientDisconnected()
                 # A client that cannot rejoin the stream went away (``/v1``):
                 # stop the agent here and save what there is, as an abort.
                 if _client_gone(agent):
@@ -1933,6 +1967,15 @@ class BaseAnswerResource:
             # recycles.
             if heartbeat_stop is not None:
                 heartbeat_stop.set()
+            if reserved_message_id:
+                clear_stop(reserved_message_id)
+            if started_published:
+                publish_user_event(
+                    event_user_id,
+                    "message.finished",
+                    {"conversation_id": str(conversation_id), "message_id": reserved_message_id},
+                    scope={"kind": "conversation", "id": str(conversation_id)},
+                )
             # The audit trail must survive an aborted or failed turn — a
             # guardrail that fired on a stream the client dropped is exactly
             # the event an operator needs to see.

@@ -3398,6 +3398,96 @@
       "agentPlaceholder": "Elige un agente",
       "agentSearch": "Buscar agentes",
       "agentEmpty": "No hay agentes que puedas programar"
+    },
+    "marks": {
+      "failed": "Algo falló",
+      "needsYou": "Esperando tu aprobación",
+      "working": "En curso",
+      "unread": "Sin leer",
+      "watching": "Vigilando cambios"
+    },
+    "kind": {
+      "chat": "Chat",
+      "job": "Tarea en segundo plano",
+      "code": "Ejecución de código",
+      "schedule": "Ejecución programada",
+      "workflow": "Flujo de trabajo",
+      "webhook": "Ejecución por webhook",
+      "ingest": "Conocimiento"
+    },
+    "nav": {
+      "running_one": "{{count}} en curso",
+      "running_other": "{{count}} en curso",
+      "needsYou_one": "{{count}} te necesita",
+      "needsYou_other": "{{count}} te necesitan"
+    },
+    "now": {
+      "label": "Ahora",
+      "subtitle": "Qué se está ejecutando, qué espera tu respuesta y qué se ejecuta después. Se actualiza en vivo.",
+      "loadError": "No se pudo cargar tu actividad",
+      "stopFailed": "No se pudo detener la respuesta. Inténtalo de nuevo o detenla desde el chat.",
+      "thinking": "pensando",
+      "writing": "escribiendo la respuesta",
+      "ranByHand": "ejecución manual",
+      "due": "prevista {{time}}",
+      "chunks": "{{done}} de {{total}} fragmentos incrustados",
+      "background": "Segundo plano",
+      "running": "En curso",
+      "stop": "Detener",
+      "cancel": "Cancelar",
+      "open": "Abrir",
+      "approve": "Aprobar {{tools}}",
+      "approveAction": "Aprobar una acción de herramienta",
+      "expires": "caduca {{time}}",
+      "approval": "Aprobación",
+      "review": "Revisar",
+      "pausedAfter_one": "{{name}} en pausa tras {{count}} fallo",
+      "pausedAfter_other": "{{name}} en pausa tras {{count}} fallos",
+      "errorType": {
+        "auth_expired": "un inicio de sesión caducó",
+        "tool_not_allowed": "una herramienta no estaba permitida",
+        "budget_exceeded": "superó su presupuesto de tokens",
+        "timeout": "se agotó el tiempo",
+        "agent_error": "el agente falló",
+        "internal": "un error interno",
+        "missed": "se perdió su hora",
+        "overlap": "la ejecución anterior seguía en curso",
+        "stream_error": "se cortó la respuesta",
+        "empty_output": "no produjo nada"
+      },
+      "viewRuns": "Ver ejecuciones",
+      "fromChat": "De {{name}}",
+      "timesToday_one": "{{count}} ejecución en las próximas 24 horas",
+      "timesToday_other": "{{count}} ejecuciones en las próximas 24 horas",
+      "oneTime": "única",
+      "stats": {
+        "running": "En curso",
+        "background_one": "{{count}} en segundo plano",
+        "background_other": "{{count}} en segundo plano",
+        "needsYou": "Te necesita",
+        "approvalExpires": "Una aprobación caduca {{time}}",
+        "next24h": "Próximas 24 horas",
+        "nextAt": "Siguiente a las {{time}}, {{name}}",
+        "failed": "Fallidas, últimas 24 horas"
+      },
+      "needsYou": "Te necesita",
+      "reconnect": "{{name}} necesita reconectarse",
+      "reconnectAction": "Reconectar",
+      "runningTitle": "En curso",
+      "filter": "Mostrar",
+      "filters": {
+        "all": "Todo",
+        "chats": "Chats",
+        "automations": "Automatizaciones",
+        "knowledge": "Conocimiento"
+      },
+      "nothingRunning": "No se está ejecutando nada",
+      "upNext": "A continuación",
+      "nothingPlanned": "Nada se ejecuta en las próximas 24 horas",
+      "watching": "Vigilando",
+      "allMonitors": "Todos los monitores",
+      "nothingWatched": "No se está vigilando nada",
+      "checked": "revisado {{time}}"
     }
   }
 }

@@ -82,6 +82,7 @@ describe('activity section', () => {
     expect(getSectionForPath('/activity')?.key).toBe('activity');
     expect(getSectionForPath('/activity/monitors')?.key).toBe('activity');
     const groups = getVisibleGroups(ACTIVITY_SECTION, { isAdmin: false });
+    expect(groups[0].items.map((i) => i.key)).toEqual(['now']);
     const automations = groups.find((group) => group.key === 'automations');
     expect(automations?.items.map((i) => i.key)).toEqual([
       'schedules',
@@ -89,8 +90,8 @@ describe('activity section', () => {
     ]);
   });
 
-  it('marks schedules active on the section root', () => {
-    expect(getActiveItem(ACTIVITY_SECTION, '/activity')?.key).toBe('schedules');
+  it('marks Now active on the section root', () => {
+    expect(getActiveItem(ACTIVITY_SECTION, '/activity')?.key).toBe('now');
   });
 
   it('leaves monitors out of settings', () => {

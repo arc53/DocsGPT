@@ -54,6 +54,12 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set([
   'job.updated',
   'conversation.continued',
   'notification.created',
+  // A chat answer started or ended, a scheduled run started, a webhook run
+  // started or ended (docsgpt/activity); consumed by activitySlice.
+  'message.started',
+  'message.finished',
+  'schedule.run.started',
+  'activity.updated',
 ]);
 
 /**

@@ -1,7 +1,7 @@
 ---
 title: Triggering Agents with Webhooks
 description: Learn how to automate and integrate DocsGPT Agents using webhooks for asynchronous task execution.
-lastUpdated: 2026-10-07
+lastUpdated: 2026-10-14
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -235,7 +235,7 @@ Two more cases to handle:
 
 ## How a webhook run behaves
 
-A webhook run happens in the background, with nobody watching it:
+A webhook run happens in the background, with nobody watching it. While it runs, the agent's owner sees it under **Running** in [Activity → Now](/Using/activity#now):
 
 - **It acts as the agent's owner.** Tools use the owner's connected accounts and saved credentials. A webhook is the owner's own automation, so the [API write allowlist](/API/agent-api#letting-api-callers-make-changes) that limits API-key and widget callers does not apply to it.
 - **Nobody can approve.** A tool action that needs approval is refused, and the agent is told so and carries on. So are client-side tools and tools whose connection needs signing in again.

@@ -3398,6 +3398,96 @@
       "agentPlaceholder": "Agenten wählen",
       "agentSearch": "Agenten suchen",
       "agentEmpty": "Keine Agenten, die du planen kannst"
+    },
+    "marks": {
+      "failed": "Etwas ist fehlgeschlagen",
+      "needsYou": "Wartet auf deine Freigabe",
+      "working": "Läuft",
+      "unread": "Ungelesen",
+      "watching": "Beobachtet Änderungen"
+    },
+    "kind": {
+      "chat": "Chat",
+      "job": "Hintergrundauftrag",
+      "code": "Codeausführung",
+      "schedule": "Geplante Ausführung",
+      "workflow": "Workflow",
+      "webhook": "Webhook-Ausführung",
+      "ingest": "Wissen"
+    },
+    "nav": {
+      "running_one": "{{count}} läuft",
+      "running_other": "{{count}} laufen",
+      "needsYou_one": "{{count}} braucht dich",
+      "needsYou_other": "{{count}} brauchen dich"
+    },
+    "now": {
+      "label": "Jetzt",
+      "subtitle": "Was läuft, was auf dich wartet und was als Nächstes läuft. Aktualisiert sich live.",
+      "loadError": "Deine Aktivität konnte nicht geladen werden",
+      "stopFailed": "Die Antwort konnte nicht gestoppt werden. Versuche es erneut oder stoppe sie im Chat.",
+      "thinking": "denkt nach",
+      "writing": "schreibt die Antwort",
+      "ranByHand": "manuell gestartet",
+      "due": "fällig {{time}}",
+      "chunks": "{{done}} von {{total}} Abschnitten eingebettet",
+      "background": "Hintergrund",
+      "running": "Läuft",
+      "stop": "Stoppen",
+      "cancel": "Abbrechen",
+      "open": "Öffnen",
+      "approve": "{{tools}} freigeben",
+      "approveAction": "Werkzeugaktion freigeben",
+      "expires": "läuft ab {{time}}",
+      "approval": "Freigabe",
+      "review": "Prüfen",
+      "pausedAfter_one": "{{name}} nach {{count}} Fehler pausiert",
+      "pausedAfter_other": "{{name}} nach {{count}} Fehlern pausiert",
+      "errorType": {
+        "auth_expired": "eine Anmeldung ist abgelaufen",
+        "tool_not_allowed": "ein Werkzeug war nicht erlaubt",
+        "budget_exceeded": "Token-Budget überschritten",
+        "timeout": "Zeitüberschreitung",
+        "agent_error": "der Agent ist fehlgeschlagen",
+        "internal": "ein interner Fehler",
+        "missed": "Zeitpunkt verpasst",
+        "overlap": "die vorherige Ausführung lief noch",
+        "stream_error": "der Antwortstrom brach ab",
+        "empty_output": "es kam nichts heraus"
+      },
+      "viewRuns": "Ausführungen ansehen",
+      "fromChat": "Aus {{name}}",
+      "timesToday_one": "{{count}} Ausführung in den nächsten 24 Stunden",
+      "timesToday_other": "{{count}} Ausführungen in den nächsten 24 Stunden",
+      "oneTime": "einmalig",
+      "stats": {
+        "running": "Läuft",
+        "background_one": "{{count}} im Hintergrund",
+        "background_other": "{{count}} im Hintergrund",
+        "needsYou": "Braucht dich",
+        "approvalExpires": "Eine Freigabe läuft {{time}} ab",
+        "next24h": "Nächste 24 Stunden",
+        "nextAt": "Als Nächstes um {{time}}, {{name}}",
+        "failed": "Fehlgeschlagen, letzte 24 Stunden"
+      },
+      "needsYou": "Braucht dich",
+      "reconnect": "{{name}} muss neu verbunden werden",
+      "reconnectAction": "Neu verbinden",
+      "runningTitle": "Läuft",
+      "filter": "Anzeigen",
+      "filters": {
+        "all": "Alle",
+        "chats": "Chats",
+        "automations": "Automatisierungen",
+        "knowledge": "Wissen"
+      },
+      "nothingRunning": "Gerade läuft nichts",
+      "upNext": "Als Nächstes",
+      "nothingPlanned": "In den nächsten 24 Stunden läuft nichts",
+      "watching": "Beobachtet",
+      "allMonitors": "Alle Monitore",
+      "nothingWatched": "Nichts wird beobachtet",
+      "checked": "geprüft {{time}}"
     }
   }
 }

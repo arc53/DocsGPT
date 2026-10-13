@@ -1,7 +1,7 @@
 ---
 title: Monitors, Trigger Links and Approval Links
 description: How the monitor tool watches a web page or any tool, wakes the conversation on ingests, webhook trigger links and human approval links, how link secrets reach a sender through secret references, and how its checks, limits and safety rules work.
-lastUpdated: 2026-10-13
+lastUpdated: 2026-10-14
 ---
 
 import { Callout } from 'nextra/components';
@@ -271,7 +271,7 @@ why, so it doesn't promise to report back.
 **Activity → Monitors** lists the user's monitors: what each watches, how often, when it last checked, the wakes
 left and the expiry, with pause, resume and cancel, and for a live signed webhook link **Reveal secret**, **Show to
 assistant** (and **Set signing secret** for Stripe and Slack). Cancelling stops the checks, revokes its links and withdraws
-the approval its source was given. A conversation with an active monitor shows a small watching mark in the
+the approval its source was given. A conversation with an active monitor shows a hollow ring in the
 sidebar. In the chat, the agent can list and cancel the conversation's monitors itself.
 
 The app's event stream carries `monitor.updated`:

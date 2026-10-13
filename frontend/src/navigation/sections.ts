@@ -1,4 +1,5 @@
 import {
+  Activity,
   BarChart3,
   Blocks,
   CalendarClock,
@@ -25,6 +26,7 @@ import {
 } from 'lucide-react';
 import {
   ACTIVITY_MONITORS_PATH,
+  ACTIVITY_NOW_PATH,
   ACTIVITY_ROOT,
   ACTIVITY_SCHEDULES_PATH,
 } from '../activity/paths';
@@ -199,6 +201,18 @@ export const ACTIVITY_SECTION: Section = {
   matches: [ACTIVITY_ROOT],
   groups: [
     {
+      key: 'activity',
+      items: [
+        {
+          key: 'now',
+          path: ACTIVITY_NOW_PATH,
+          labelKey: 'activity.now.label',
+          icon: Activity,
+          aliases: [ACTIVITY_ROOT],
+        },
+      ],
+    },
+    {
       key: 'automations',
       labelKey: 'navigation.sections.groups.automations',
       items: [
@@ -207,7 +221,6 @@ export const ACTIVITY_SECTION: Section = {
           path: ACTIVITY_SCHEDULES_PATH,
           labelKey: 'activity.schedules.label',
           icon: CalendarClock,
-          aliases: [ACTIVITY_ROOT],
         },
         {
           key: 'monitors',

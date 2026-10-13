@@ -3385,6 +3385,96 @@
       "agentPlaceholder": "选择代理",
       "agentSearch": "搜索代理",
       "agentEmpty": "没有可以安排计划的代理"
+    },
+    "marks": {
+      "failed": "有失败",
+      "needsYou": "等待你的批准",
+      "working": "运行中",
+      "unread": "未读",
+      "watching": "正在监控变化"
+    },
+    "kind": {
+      "chat": "聊天",
+      "job": "后台任务",
+      "code": "代码执行",
+      "schedule": "计划运行",
+      "workflow": "工作流",
+      "webhook": "Webhook 运行",
+      "ingest": "知识"
+    },
+    "nav": {
+      "running_one": "{{count}} 个运行中",
+      "running_other": "{{count}} 个运行中",
+      "needsYou_one": "{{count}} 项需要你处理",
+      "needsYou_other": "{{count}} 项需要你处理"
+    },
+    "now": {
+      "label": "当前",
+      "subtitle": "正在运行的、等待你处理的，以及接下来要运行的。实时更新。",
+      "loadError": "无法加载你的活动",
+      "stopFailed": "无法停止该回答。请重试，或打开聊天在那里停止。",
+      "thinking": "思考中",
+      "writing": "正在撰写回答",
+      "ranByHand": "手动运行",
+      "due": "计划于 {{time}}",
+      "chunks": "已嵌入 {{done}}/{{total}} 个分块",
+      "background": "后台",
+      "running": "运行中",
+      "stop": "停止",
+      "cancel": "取消",
+      "open": "打开",
+      "approve": "批准 {{tools}}",
+      "approveAction": "批准工具操作",
+      "expires": "{{time}}过期",
+      "approval": "批准",
+      "review": "查看",
+      "pausedAfter_one": "{{name}} 失败 {{count}} 次后已暂停",
+      "pausedAfter_other": "{{name}} 失败 {{count}} 次后已暂停",
+      "errorType": {
+        "auth_expired": "登录已过期",
+        "tool_not_allowed": "工具未被允许",
+        "budget_exceeded": "超出令牌预算",
+        "timeout": "超时",
+        "agent_error": "代理失败",
+        "internal": "内部错误",
+        "missed": "错过了运行时间",
+        "overlap": "上一次运行仍在进行",
+        "stream_error": "回答流中断",
+        "empty_output": "没有产生任何输出"
+      },
+      "viewRuns": "查看运行",
+      "fromChat": "来自 {{name}}",
+      "timesToday_one": "未来 24 小时运行 {{count}} 次",
+      "timesToday_other": "未来 24 小时运行 {{count}} 次",
+      "oneTime": "一次性",
+      "stats": {
+        "running": "运行中",
+        "background_one": "后台 {{count}} 个",
+        "background_other": "后台 {{count}} 个",
+        "needsYou": "需要你处理",
+        "approvalExpires": "有一个批准将于{{time}}过期",
+        "next24h": "未来 24 小时",
+        "nextAt": "下一个：{{time}}，{{name}}",
+        "failed": "失败（过去 24 小时）"
+      },
+      "needsYou": "需要你处理",
+      "reconnect": "{{name}} 需要重新连接",
+      "reconnectAction": "重新连接",
+      "runningTitle": "运行中",
+      "filter": "显示",
+      "filters": {
+        "all": "全部",
+        "chats": "聊天",
+        "automations": "自动化",
+        "knowledge": "知识"
+      },
+      "nothingRunning": "没有正在运行的内容",
+      "upNext": "接下来",
+      "nothingPlanned": "未来 24 小时没有计划运行的内容",
+      "watching": "监控中",
+      "allMonitors": "所有监控",
+      "nothingWatched": "没有正在监控的内容",
+      "checked": "{{time}}检查过"
     }
   }
 }

@@ -3417,6 +3417,96 @@
       "agentPlaceholder": "Choose an agent",
       "agentSearch": "Search agents",
       "agentEmpty": "No agents you can schedule"
+    },
+    "marks": {
+      "failed": "Something failed",
+      "needsYou": "Waiting for your approval",
+      "working": "Working",
+      "unread": "Unread",
+      "watching": "Watching for changes"
+    },
+    "kind": {
+      "chat": "Chat",
+      "job": "Background job",
+      "code": "Code execution",
+      "schedule": "Scheduled run",
+      "workflow": "Workflow",
+      "webhook": "Webhook run",
+      "ingest": "Knowledge"
+    },
+    "nav": {
+      "running_one": "{{count}} running",
+      "running_other": "{{count}} running",
+      "needsYou_one": "{{count}} needs you",
+      "needsYou_other": "{{count}} need you"
+    },
+    "now": {
+      "label": "Now",
+      "subtitle": "What is running, what is waiting for you, and what runs next. Updates live.",
+      "loadError": "Couldn't load your activity",
+      "stopFailed": "Couldn't stop the answer. Try again, or open the chat and stop it there.",
+      "thinking": "thinking",
+      "writing": "writing the answer",
+      "ranByHand": "run now",
+      "due": "due {{time}}",
+      "chunks": "{{done}} of {{total}} chunks embedded",
+      "background": "Background",
+      "running": "Running",
+      "stop": "Stop",
+      "cancel": "Cancel",
+      "open": "Open",
+      "approve": "Approve {{tools}}",
+      "approveAction": "Approve a tool action",
+      "expires": "expires {{time}}",
+      "approval": "Approval",
+      "review": "Review",
+      "pausedAfter_one": "{{name}} paused after {{count}} failure",
+      "pausedAfter_other": "{{name}} paused after {{count}} failures",
+      "errorType": {
+        "auth_expired": "a sign-in expired",
+        "tool_not_allowed": "a tool was not allowed",
+        "budget_exceeded": "over its token budget",
+        "timeout": "timed out",
+        "agent_error": "the agent failed",
+        "internal": "an internal error",
+        "missed": "missed its time",
+        "overlap": "the previous run was still going",
+        "stream_error": "the answer stream broke",
+        "empty_output": "it produced nothing"
+      },
+      "viewRuns": "View runs",
+      "fromChat": "From {{name}}",
+      "timesToday_one": "{{count}} run in the next 24 hours",
+      "timesToday_other": "{{count}} runs in the next 24 hours",
+      "oneTime": "one-time",
+      "stats": {
+        "running": "Running",
+        "background_one": "{{count}} in the background",
+        "background_other": "{{count}} in the background",
+        "needsYou": "Needs you",
+        "approvalExpires": "An approval expires {{time}}",
+        "next24h": "Next 24 hours",
+        "nextAt": "Next at {{time}}, {{name}}",
+        "failed": "Failed, last 24 hours"
+      },
+      "needsYou": "Needs you",
+      "reconnect": "{{name}} needs reconnecting",
+      "reconnectAction": "Reconnect",
+      "runningTitle": "Running",
+      "filter": "Show",
+      "filters": {
+        "all": "All",
+        "chats": "Chats",
+        "automations": "Automations",
+        "knowledge": "Knowledge"
+      },
+      "nothingRunning": "Nothing is running",
+      "upNext": "Up next",
+      "nothingPlanned": "Nothing runs in the next 24 hours",
+      "watching": "Watching",
+      "allMonitors": "All monitors",
+      "nothingWatched": "Nothing is being watched",
+      "checked": "checked {{time}}"
     }
   }
 }

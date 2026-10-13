@@ -1,0 +1,89 @@
+import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
+
+import { cn } from '@/lib/utils';
+
+import { selectConnectionsNeedAttention } from '../connectors/connectorsSlice';
+import { selectActivityNow, selectLiveConversations } from './activitySlice';
+
+export type ActivitySummary = {
+  running: number;
+  needsYou: number;
+  /** Something in "Needs you" failed (a schedule paused after failures). */
+  failed: boolean;
+};
+
+/** The counts the sidebar shows for Activity. */
+export function useActivitySummary(): ActivitySummary {
+  const now = useSelector(selectActivityNow);
+  const live = useSelector(selectLiveConversations);
+  const reconnect = useSelector(selectConnectionsNeedAttention);
+  const runningChats = new Set(
+    (now?.running ?? [])
+      .filter((item) => item.kind === 'chat' && item.conversation_id)
+      .map((item) => item.conversation_id as string),
+  );
+  // Chats that started since the snapshot (`message.started`) count at once.
+  const started = Object.keys(live).filter(
+    (id) => !runningChats.has(id),
+  ).length;
+  const needs = now?.needs_you ?? [];
+  return {
+    running: (now?.running.length ?? 0) + started,
+    needsYou: needs.length + (reconnect ? 1 : 0),
+    failed: needs.some((item) => item.kind === 'schedule_paused'),
+  };
+}
+
+/**
+ * The trailing marks of the sidebar's Activity row: a red or amber dot while
+ * something needs the user (red when it failed), and how many things run.
+ * `rail` draws only the dot, on the collapsed sidebar's icon.
+ */
+export default function ActivityNavBadge({
+  variant = 'row',
+}: {
+  variant?: 'row' | 'rail';
+}) {
+  const { t } = useTranslation();
+  const { running, needsYou, failed } = useActivitySummary();
+  const label = [
+    running > 0 ? t('activity.nav.running', { count: running }) : null,
+    needsYou > 0 ? t('activity.nav.needsYou', { count: needsYou }) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  if (!label) return null;
+  const dot = needsYou > 0 && (
+    <span
+      aria-hidden
+      className={cn(
+        'size-2 shrink-0 rounded-full',
+        failed ? 'bg-destructive' : 'bg-warning',
+        variant === 'rail' && 'absolute top-1.5 right-1.5',
+      )}
+    />
+  );
+  if (variant === 'rail') {
+    return (
+      <>
+        {dot}
+        <span className="sr-only">{label}</span>
+      </>
+    );
+  }
+  return (
+    <span
+      className="ms-auto flex shrink-0 items-center gap-2 pe-3"
+      title={label}
+    >
+      {dot}
+      {running > 0 && (
+        <span className="text-muted-foreground text-xs tabular-nums">
+          {running}
+        </span>
+      )}
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
