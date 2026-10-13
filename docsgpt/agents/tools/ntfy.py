@@ -1,5 +1,25 @@
+from urllib.parse import urlsplit
+
 from docsgpt.agents.tools.base import Tool
-from docsgpt.security.safe_url import UnsafeUserUrlError, pinned_request
+from docsgpt.security.safe_url import UnsafeUserUrlError, pinned_request, reject_ambiguous_url
+
+DEFAULT_SERVER = "https://ntfy.sh"
+
+
+def _is_default_server(url: str) -> bool:
+    """Whether ``url`` is the public ntfy.sh server: https, its own port, no credentials in the URL."""
+    try:
+        reject_ambiguous_url(url)
+        parts = urlsplit(url)
+        return (
+            parts.scheme == "https"
+            and parts.hostname == "ntfy.sh"
+            and parts.username is None
+            and parts.port in (None, 443)
+        )
+    except ValueError:
+        return False
+
 
 class NtfyTool(Tool):
     """
@@ -12,10 +32,12 @@ class NtfyTool(Tool):
         Initialize the NtfyTool with configuration.
 
         Args:
-            config (dict): Configuration dictionary containing the access token.
+            config (dict): Configuration dictionary containing the access token and,
+                optionally, the server it belongs to.
         """
         self.config = config
         self.token = config.get("token", "")
+        self.server_url = (config.get("server_url") or "").strip()
 
     def execute_action(self, action_name, **kwargs):
         """
@@ -39,14 +61,20 @@ class NtfyTool(Tool):
         else:
             raise ValueError(f"Unknown action: {action_name}")
 
-    def _send_message(self, server_url, message, topic, title=None, priority=None):
+    def _send_message(self, message, topic, server_url=None, title=None, priority=None):
         """
-        Send a message to an ntfy topic on the specified server.
+        Send a message to an ntfy topic.
+
+        The access token only goes to the server its owner set up: the configured
+        ``server_url`` (which the model cannot override) or, when none is set,
+        https://ntfy.sh. A server the model names is never sent the token, since
+        text from a document or web page could steer that choice.
 
         Args:
-            server_url (str): Base URL of the ntfy server (e.g., https://ntfy.sh).
             message (str): The message text to send.
             topic (str): The topic to send the message to.
+            server_url (str, optional): Base URL of the ntfy server (e.g., https://ntfy.sh).
+                Ignored when the tool has a configured server.
             title (str, optional): Title of the notification.
             priority (int, optional): Priority of the notification (1-5).
 
@@ -56,6 +84,16 @@ class NtfyTool(Tool):
         Raises:
             ValueError: If priority is not an integer between 1 and 5.
         """
+        server_url = self.server_url or server_url or DEFAULT_SERVER
+        if self.token and not self.server_url and not _is_default_server(server_url):
+            return {
+                "status": "error",
+                "status_code": None,
+                "error": (
+                    f"Not sent: the access token is only used with {DEFAULT_SERVER} or the server URL set in "
+                    f"this tool's settings, not {server_url}."
+                ),
+            }
         url = f"{server_url.rstrip('/')}/{topic}"
         headers = {}
         if title:
@@ -110,7 +148,7 @@ class NtfyTool(Tool):
                     "properties": {
                         "server_url": {
                             "type": "string",
-                            "description": "Base URL of the ntfy server",
+                            "description": "Base URL of the ntfy server (ignored when the tool has its own server)",
                         },
                         "message": {
                             "type": "string",
@@ -144,5 +182,16 @@ class NtfyTool(Tool):
                 "required": True,
                 "secret": True,
                 "order": 1,
+            },
+            "server_url": {
+                "type": "string",
+                "label": "Server URL",
+                "description": (
+                    "The ntfy server to send to, and the only one that gets the access token. "
+                    f"Leave empty for {DEFAULT_SERVER}"
+                ),
+                "required": False,
+                "secret": False,
+                "order": 2,
             },
         }

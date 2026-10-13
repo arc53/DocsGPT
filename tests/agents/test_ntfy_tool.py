@@ -167,3 +167,116 @@ class TestNtfyMetadata:
         reqs = tool.get_config_requirements()
         assert "token" in reqs
         assert reqs["token"]["secret"] is True
+
+
+def _sent(mock_pinned_request):
+    """``(url, headers)`` of the one request the tool made."""
+    mock_pinned_request.assert_called_once()
+    args, kwargs = mock_pinned_request.call_args
+    return args[1], kwargs["headers"]
+
+
+@pytest.mark.unit
+class TestTokenStaysWithItsServer:
+    """The access token goes only to the server its owner set up, never to one the model names."""
+
+    @patch("docsgpt.agents.tools.ntfy.pinned_request")
+    def test_model_chosen_server_does_not_get_the_token(self, mock_pinned_request, tool):
+        result = tool.execute_action(
+            "ntfy_send_message", server_url="https://attacker.example", message="hi", topic="t",
+        )
+
+        mock_pinned_request.assert_not_called()
+        assert result["status"] == "error"
+        assert "attacker.example" in result["error"]
+
+    @pytest.mark.parametrize(
+        "server_url",
+        [
+            "https://ntfy.sh.attacker.example",
+            "https://attacker.example/ntfy.sh",
+            "https://ntfy.sh@attacker.example",
+            "https://ntfy.sh\\@attacker.example",
+            "https://attacker.example?h=ntfy.sh",
+            "http://ntfy.sh",
+            "https://ntfy.sh:8443",
+            "https://user:pw@ntfy.sh",
+            "ntfy.sh",
+        ],
+    )
+    @patch("docsgpt.agents.tools.ntfy.pinned_request")
+    def test_lookalikes_of_the_default_server_do_not_get_the_token(self, mock_pinned_request, tool, server_url):
+        result = tool.execute_action("ntfy_send_message", server_url=server_url, message="hi", topic="t")
+
+        mock_pinned_request.assert_not_called()
+        assert result["status"] == "error"
+
+    @pytest.mark.parametrize("server_url", ["https://ntfy.sh", "https://NTFY.SH/", "https://ntfy.sh:443"])
+    @patch("docsgpt.agents.tools.ntfy.pinned_request")
+    def test_the_default_server_still_gets_the_token(self, mock_pinned_request, tool, server_url):
+        mock_pinned_request.return_value = MagicMock(status_code=200)
+
+        tool.execute_action("ntfy_send_message", server_url=server_url, message="hi", topic="t")
+
+        assert _sent(mock_pinned_request)[1]["Authorization"] == "Basic test_token"
+
+    @patch("docsgpt.agents.tools.ntfy.pinned_request")
+    def test_configured_server_gets_the_token(self, mock_pinned_request):
+        mock_pinned_request.return_value = MagicMock(status_code=200)
+        tool = NtfyTool(config={"token": "test_token", "server_url": "https://ntfy.example.com/alerts/"})
+
+        tool.execute_action("ntfy_send_message", server_url="https://ntfy.sh", message="hi", topic="t")
+
+        url, headers = _sent(mock_pinned_request)
+        assert url == "https://ntfy.example.com/alerts/t"
+        assert headers["Authorization"] == "Basic test_token"
+
+    @patch("docsgpt.agents.tools.ntfy.pinned_request")
+    def test_configured_server_wins_over_the_models_choice(self, mock_pinned_request):
+        mock_pinned_request.return_value = MagicMock(status_code=200)
+        tool = NtfyTool(config={"token": "test_token", "server_url": "https://ntfy.example.com"})
+
+        tool.execute_action("ntfy_send_message", server_url="https://attacker.example", message="hi", topic="t")
+
+        assert _sent(mock_pinned_request)[0] == "https://ntfy.example.com/t"
+
+    @patch("docsgpt.agents.tools.ntfy.pinned_request")
+    def test_configured_server_needs_no_model_value(self, mock_pinned_request):
+        mock_pinned_request.return_value = MagicMock(status_code=200)
+        tool = NtfyTool(config={"token": "test_token", "server_url": "https://ntfy.example.com"})
+
+        tool.execute_action("ntfy_send_message", message="hi", topic="t")
+
+        assert _sent(mock_pinned_request)[0] == "https://ntfy.example.com/t"
+
+    @patch("docsgpt.agents.tools.ntfy.pinned_request")
+    def test_without_a_token_the_model_may_still_pick_the_server(self, mock_pinned_request, tool_no_token):
+        mock_pinned_request.return_value = MagicMock(status_code=200)
+
+        tool_no_token.execute_action(
+            "ntfy_send_message", server_url="https://ntfy.example.org", message="hi", topic="t",
+        )
+
+        url, headers = _sent(mock_pinned_request)
+        assert url == "https://ntfy.example.org/t"
+        assert "Authorization" not in headers
+
+    @patch("docsgpt.agents.tools.ntfy.pinned_request")
+    def test_blank_configured_server_counts_as_unset(self, mock_pinned_request):
+        tool = NtfyTool(config={"token": "test_token", "server_url": "  "})
+
+        result = tool.execute_action(
+            "ntfy_send_message", server_url="https://attacker.example", message="hi", topic="t",
+        )
+
+        mock_pinned_request.assert_not_called()
+        assert result["status"] == "error"
+
+    def test_server_url_is_a_plain_optional_setting(self, tool):
+        spec = tool.get_config_requirements()["server_url"]
+
+        assert spec["secret"] is False
+        assert spec["required"] is False
+
+    def test_the_model_can_still_name_a_server(self, tool):
+        assert "server_url" in tool.get_actions_metadata()[0]["parameters"]["properties"]
