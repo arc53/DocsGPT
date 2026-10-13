@@ -684,6 +684,9 @@ class ToolExecutor:
         # (artifact_generator / code_executor) address artifacts by the
         # workflow run rather than a conversation.
         self.workflow_run_id: Optional[str] = None
+        # Set by the headless runner for a scheduled or webhook run with no
+        # conversation, so code_executor still gets a sandbox for the run.
+        self.run_scope_id: Optional[str] = None
         self.message_id: Optional[str] = None
         # The request's own (already user-scoped) chat attachments, stamped onto
         # sandbox tools so a referenced attachment can be lazily bridged to a
@@ -2352,6 +2355,8 @@ class ToolExecutor:
             # ref (A1) and edit_artifact resolve against the workflow run.
             if self.workflow_run_id:
                 tool_config["workflow_run_id"] = self.workflow_run_id
+            elif self.run_scope_id and not self.conversation_id:
+                tool_config["run_scope_id"] = self.run_scope_id
             if tool_data["name"] in CITING_TOOLS:
                 tool_config["citation_registry"] = self.citation_registry
             if tool_data["name"] == "scheduler":

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any, Dict, Iterable, List, Optional
 
 from docsgpt import tracing
@@ -329,6 +330,8 @@ def _run_agent_headless(
     )
     if conversation_id:
         tool_executor.conversation_id = str(conversation_id)
+    else:
+        tool_executor.run_scope_id = f"agent-run-{uuid.uuid4().hex}"
     if message_id:
         tool_executor.message_id = str(message_id)
     if background is not None:

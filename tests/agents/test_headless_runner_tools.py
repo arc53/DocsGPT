@@ -133,3 +133,20 @@ def test_text_after_a_tool_call_starts_a_new_paragraph(pg_conn, monkeypatch):
     ]
     _run(row, pg_conn, monkeypatch, events=events)
     assert outcomes[0]["answer"] == "I'll check the page.\n\nIt says 42."
+
+
+@pytest.mark.unit
+def test_a_run_without_a_conversation_gets_its_own_run_scope(pg_conn, monkeypatch):
+    """A scheduled or webhook run can still use the sandbox: its tools are scoped to the run."""
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+    row = AgentsRepository(pg_conn).create(
+        user_id="owner-1", name="a", status="draft", tools=[], default_model_id="m",
+    )
+    first, _ = _run(row, pg_conn, monkeypatch)
+    second, _ = _run(row, pg_conn, monkeypatch)
+    assert first.run_scope_id and second.run_scope_id
+    assert first.run_scope_id != second.run_scope_id
+
+    in_chat, _ = _run(row, pg_conn, monkeypatch, conversation_id="c1")
+    assert in_chat.run_scope_id is None

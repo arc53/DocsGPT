@@ -177,6 +177,9 @@ class CodeExecutorTool(Tool):
         self.tool_id: Optional[str] = self.config.get("tool_id")
         self.conversation_id: Optional[str] = self.config.get("conversation_id")
         self.workflow_run_id: Optional[str] = self.config.get("workflow_run_id")
+        # A scheduled or webhook run with no conversation: the session lives for
+        # the run, and no files are saved since there is nothing to attach them to.
+        self.run_scope_id: Optional[str] = self.config.get("run_scope_id")
         self.message_id: Optional[str] = self.config.get("message_id")
         # Static, deployment-level approval gate (mirrors the action metadata flag).
         self._require_approval: bool = bool(self.config.get("require_approval", False))
@@ -427,13 +430,13 @@ class CodeExecutorTool(Tool):
 
         session_id = self._resolve_session_id()
         if session_id is None:
-            return {"status": "error", "error": "code_executor requires a conversation_id or workflow_run_id."}
+            return {"status": "error", "error": "code_executor requires a conversation_id, workflow_run_id or agent run."}
 
         code = kwargs.get("code")
         if not isinstance(code, str) or not code.strip():
             return {"status": "error", "error": "code is required."}
 
-        should_capture = kwargs.get("capture_artifacts", True)
+        should_capture = kwargs.get("capture_artifacts", True) and bool(self.conversation_id or self.workflow_run_id)
         outputs = self._normalize_outputs(kwargs.get("outputs"))
         ttl = self._coerce_int(kwargs.get("ttl"))
         keep_alive = self._keep_alive(kwargs.get("persist"), ttl)
@@ -1153,7 +1156,7 @@ class CodeExecutorTool(Tool):
     # ------------------------------------------------------------------
     def _resolve_session_id(self) -> Optional[str]:
         """Derive a sandbox session id from the bound conversation/run; sanitize to the gateway charset."""
-        raw = self.conversation_id or self.workflow_run_id
+        raw = self.conversation_id or self.workflow_run_id or self.run_scope_id
         if not raw:
             return None
         sanitized = _SESSION_ID_RE.sub("-", str(raw))
