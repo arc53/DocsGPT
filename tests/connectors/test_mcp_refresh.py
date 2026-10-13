@@ -227,3 +227,85 @@ def test_token_request_uses_one_client_authentication(method, basic, body_client
     assert headers.get("Authorization", "").startswith("Basic ") is basic
     assert ("client_id" in data) is body_client_id
     assert data["code"] == "c"
+
+
+# api.supabase.com's registration response, as the SDK parses it: a secret is
+# issued, but no token-endpoint auth method is named.
+_REGISTRATION_WITHOUT_A_METHOD = {
+    "client_id": "18ab2f17-c343-4061-bcce-5faf309a94ae",
+    "client_secret": "the-registered-secret",
+    "client_secret_expires_at": 0,
+    "grant_types": ["authorization_code", "refresh_token"],
+    "response_types": ["code"],
+    "redirect_uris": ["https://example.com/callback"],
+    "token_endpoint_auth_method": None,
+}
+
+
+def _oauth_for(pg_conn, client_info):
+    """A DocsGPTOAuth whose stored registration is ``client_info``."""
+    import asyncio
+
+    from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
+
+    connection = _connection(pg_conn, secrets={"client_info": client_info})
+    oauth = DocsGPTOAuth(
+        mcp_url="https://mcp.linear.app/mcp",
+        redis_client=MagicMock(),
+        redirect_uri="https://example.com/callback",
+        user_id="alice",
+        connection_id=connection["id"],
+    )
+    with _db(pg_conn):
+        oauth.context.client_info = asyncio.run(oauth.context.storage.get_client_info())
+    return oauth
+
+
+class TestDefaultTokenEndpointAuthMethod:
+    def test_a_secret_without_a_named_method_authenticates_the_token_request(self, pg_conn):
+        """Supabase issues a ``client_secret`` and names no auth method.
+
+        Read as a public client, the token request carried no credentials at
+        all and Supabase answered ``422 {"message":"Required parameter:
+        client_secret"}`` — only after the user had already signed in. RFC 7591
+        §2 makes ``client_secret_basic`` the default whenever the method is
+        omitted, which is the form ``prepare_token_auth`` applies for a secret.
+        """
+        oauth = _oauth_for(pg_conn, _REGISTRATION_WITHOUT_A_METHOD)
+
+        assert oauth.context.client_info.token_endpoint_auth_method == "client_secret_basic"
+
+        data, headers = oauth.context.prepare_token_auth(
+            {"grant_type": "authorization_code", "code": "the-code", "client_id": "18ab2f17"},
+            {"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+        # The secret reaches the server, and by one method only (RFC 6749 §2.3).
+        assert headers["Authorization"].startswith("Basic ")
+        assert "client_secret" not in data
+        assert "client_id" not in data
+        assert data["code"] == "the-code"
+
+    def test_a_named_method_is_left_alone(self, pg_conn):
+        """A registration that names its method keeps it — no clobbering."""
+        stored = dict(_REGISTRATION_WITHOUT_A_METHOD, token_endpoint_auth_method="client_secret_post")
+        oauth = _oauth_for(pg_conn, stored)
+
+        assert oauth.context.client_info.token_endpoint_auth_method == "client_secret_post"
+
+        data, headers = oauth.context.prepare_token_auth({"grant_type": "authorization_code"}, {})
+        assert "Authorization" not in headers
+        assert data["client_secret"] == "the-registered-secret"
+
+    def test_a_public_client_stays_unauthenticated(self, pg_conn):
+        """A server that issues no secret registered a public client; the
+        default must not invent credentials for it."""
+        stored = dict(_REGISTRATION_WITHOUT_A_METHOD, client_secret=None)
+        oauth = _oauth_for(pg_conn, stored)
+
+        assert oauth.context.client_info.token_endpoint_auth_method is None
+
+        data, headers = oauth.context.prepare_token_auth({"grant_type": "authorization_code"}, {})
+        assert "Authorization" not in headers
+        assert "client_secret" not in data
+

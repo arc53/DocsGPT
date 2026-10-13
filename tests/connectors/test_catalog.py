@@ -257,3 +257,19 @@ def test_calcom_preset_uses_remote_oauth_catalog_contract():
     assert calcom.auth_kind == "mcp_oauth"
     assert calcom.capabilities == ("read", "write")
     assert calcom.docs_url == "https://cal.com/docs/mcp-server"
+
+
+def test_supabase_preset_is_registered():
+    """Supabase is a curated MCP preset needing no server settings."""
+    supabase = catalog.get_definition("mcp:supabase")
+    assert supabase is not None
+    assert supabase.publisher == "preset"
+    assert supabase.name == "Supabase"
+    assert supabase.icon == "supabase"
+    assert supabase.category == "database"
+    assert supabase.auth_kind == "mcp_oauth"
+    assert supabase.capabilities == ("read", "write")
+    assert supabase.mcp_url == "https://mcp.supabase.com/mcp"
+    assert supabase.mcp_base_url == "https://mcp.supabase.com"
+    assert supabase.docs_url == "https://supabase.com/docs/guides/getting-started/mcp"
+    assert supabase.configured
