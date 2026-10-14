@@ -35,7 +35,7 @@ In your agent configuration, enable the MCP tools you want the agent to use.
 
 </Steps>
 
-Presets need no URL entry. Most sign in with OAuth; draw.io connects with one click and needs no credentials. Its `create_diagram` tool returns a link to an editable diagram in draw.io. The hosted server receives the diagram content; [draw.io's MCP server](https://github.com/jgraph/drawio-mcp) also documents a self-hosted option. CoinGecko works the same way and gives agents live crypto market data through two tools: `search_docs` finds the right CoinGecko API endpoint, and `execute` runs a short script against it. Its keyless server shares rate limits across all users. Admins can turn presets off one by one, and turn off custom MCP servers, in **Admin > Connectors**. See [Connectors](/Sources/Connectors).
+Presets need no URL entry. Most sign in with OAuth; draw.io connects with one click and needs no credentials. Its `create_diagram` tool returns a link to an editable diagram in draw.io. The hosted server receives the diagram content; [draw.io's MCP server](https://github.com/jgraph/drawio-mcp) also documents a self-hosted option. CoinGecko works the same way and gives agents live crypto market data through two tools: CoinGecko's `search_docs` looks up its SDK documentation (methods, parameters and request structure), and `execute` runs the TypeScript the agent writes against the CoinGecko SDK in a sandbox. Its keyless server shares rate limits across all users. Admins can turn presets off one by one, and turn off custom MCP servers, in **Admin > Connectors**. See [Connectors](/Sources/Connectors).
 
 ## Authentication Types
 
