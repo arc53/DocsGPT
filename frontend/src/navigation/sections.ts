@@ -9,6 +9,7 @@ import {
   FileClock,
   Gauge,
   Globe,
+  History,
   KeyRound,
   LayoutDashboard,
   LayoutGrid,
@@ -27,6 +28,7 @@ import {
 } from 'lucide-react';
 import {
   ACTIVITY_CALENDAR_PATH,
+  ACTIVITY_HISTORY_PATH,
   ACTIVITY_MONITORS_PATH,
   ACTIVITY_NOW_PATH,
   ACTIVITY_ROOT,
@@ -217,6 +219,12 @@ export const ACTIVITY_SECTION: Section = {
           path: ACTIVITY_CALENDAR_PATH,
           labelKey: 'activity.calendar.label',
           icon: CalendarDays,
+        },
+        {
+          key: 'history',
+          path: ACTIVITY_HISTORY_PATH,
+          labelKey: 'activity.history.label',
+          icon: History,
         },
       ],
     },

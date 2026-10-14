@@ -359,6 +359,7 @@ DENIED: dict[str, tuple[str, ...]] = {
     # Spans every chat, agent and run of the user, like conversations do.
     "/api/activity/now": ("*",),
     "/api/activity/planned": ("*",),
+    "/api/activity/history": ("*",),
     "/api/messages/<string:message_id>/cancel": ("*",),
     # Monitor links: public, the token in the path is the credential (no session or PAT).
     "/api/triggers/<string:token>": ("*",),

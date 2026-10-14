@@ -1518,6 +1518,60 @@
     "version": "1.0"
   },
   "paths": {
+    "/api/activity/history": {
+      "get": {
+        "description": "The caller's finished runs of every kind, newest first: scheduled, webhook and workflow runs, background jobs, and monitor wakes, with one status vocabulary.\nReturns:\n    A Flask response with ``runs`` and ``has_more``, or 400 for an\n    unknown ``kind`` or ``status``.",
+        "operationId": "get_activity_history",
+        "parameters": [
+          {
+            "description": "One of schedule, webhook, workflow, job, monitor; all when left out.",
+            "in": "query",
+            "name": "kind",
+            "type": "string"
+          },
+          {
+            "description": "One of success, failed, timeout, skipped, cancelled (failed includes timed out); all when left out.",
+            "in": "query",
+            "name": "status",
+            "type": "string"
+          },
+          {
+            "description": "Text matched against the run, agent and conversation names.",
+            "in": "query",
+            "name": "q",
+            "type": "string"
+          },
+          {
+            "description": "How far back to look (default 30, at most 90).",
+            "in": "query",
+            "name": "days",
+            "type": "string"
+          },
+          {
+            "description": "Rows per page (default 50, at most 200).",
+            "in": "query",
+            "name": "limit",
+            "type": "string"
+          },
+          {
+            "description": "Rows to skip.",
+            "in": "query",
+            "name": "offset",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Return one page of the caller's finished runs",
+        "tags": [
+          "activity"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/activity/now": {
       "get": {
         "description": "What runs for the caller now (chat answers, background jobs, scheduled, webhook and workflow runs, ingests), what waits for them (tool approvals, schedules paused after failures), what runs in the next 24 hours, and the counts the sidebar shows.\nReturns:\n    A Flask response with ``running``, ``needs_you``, ``up_next``,\n    ``approval_conversations``, ``failed_conversations`` and ``stats``.",

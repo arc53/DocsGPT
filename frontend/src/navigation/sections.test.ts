@@ -82,7 +82,11 @@ describe('activity section', () => {
     expect(getSectionForPath('/activity')?.key).toBe('activity');
     expect(getSectionForPath('/activity/monitors')?.key).toBe('activity');
     const groups = getVisibleGroups(ACTIVITY_SECTION, { isAdmin: false });
-    expect(groups[0].items.map((i) => i.key)).toEqual(['now', 'calendar']);
+    expect(groups[0].items.map((i) => i.key)).toEqual([
+      'now',
+      'calendar',
+      'history',
+    ]);
     const automations = groups.find((group) => group.key === 'automations');
     expect(automations?.items.map((i) => i.key)).toEqual([
       'schedules',

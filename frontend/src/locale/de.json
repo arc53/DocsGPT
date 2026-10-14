@@ -3556,6 +3556,73 @@
       "queued": "Ausführung gestartet. Sie erscheint unter „Jetzt“ und im Ausführungsprotokoll.",
       "openSchedule": "Zeitplan öffnen",
       "timezone": "Zeitzone des Zeitplans"
+    },
+    "history": {
+      "label": "Verlauf",
+      "subtitle": "Abgeschlossene Ausführungen deiner Zeitpläne, Webhooks, Workflows, Hintergrundaufträge und Monitore. Einstellungen › Protokolle enthält das vollständige technische Protokoll.",
+      "search": "Ausführungen durchsuchen",
+      "statusFilter": "Status",
+      "kindFilter": "Art",
+      "statusFilters": {
+        "all": "Alle Status",
+        "failed": "Fehlgeschlagen",
+        "success": "Erfolgreich",
+        "skipped": "Übersprungen",
+        "cancelled": "Abgebrochen"
+      },
+      "kindFilters": {
+        "all": "Alle",
+        "schedule": "Zeitpläne",
+        "webhook": "Webhooks",
+        "workflow": "Workflows",
+        "job": "Hintergrund",
+        "monitor": "Monitor-Weckrufe"
+      },
+      "kind": {
+        "schedule": "Zeitplan",
+        "webhook": "Webhook",
+        "workflow": "Workflow",
+        "job": "Hintergrund",
+        "monitor": "Monitor"
+      },
+      "status": {
+        "success": "Erfolg",
+        "failed": "Fehlgeschlagen",
+        "timeout": "Zeitüberschreitung",
+        "skipped": "Übersprungen",
+        "cancelled": "Abgebrochen"
+      },
+      "trigger": {
+        "cron": "Zeitplan",
+        "manual": "Manuell",
+        "webhook": "Webhook",
+        "chat": "Chat",
+        "monitor": "Änderung erkannt",
+        "trigger": "Webhook-Link",
+        "approval": "Freigabe-Link",
+        "monitor_paused": "Monitor pausiert",
+        "monitor_expired": "Monitor abgelaufen"
+      },
+      "columns": {
+        "when": "Wann",
+        "run": "Ausführung",
+        "owner": "Agent / Chat",
+        "kind": "Art",
+        "trigger": "Auslöser",
+        "status": "Status",
+        "duration": "Dauer",
+        "tokens": "Token"
+      },
+      "yesterday": "Gestern",
+      "loadError": "Der Verlauf konnte nicht geladen werden",
+      "noMatches": "Keine Ausführungen passen zu diesen Filtern",
+      "empty": "Noch keine abgeschlossenen Ausführungen",
+      "emptyHint": "Ausführungen deiner Zeitpläne, Webhooks, Workflows, Hintergrundaufträge und Monitore erscheinen hier, sobald sie fertig sind.",
+      "loadMore": "Mehr laden",
+      "retention": "Standardmäßig werden geplante Ausführungen 90 Tage aufbewahrt, Webhook- und Workflow-Ausführungen 30 und Hintergrundaufträge 7.",
+      "period_one": "Letzter {{count}} Tag",
+      "period_other": "Letzte {{count}} Tage",
+      "periodFilter": "Zeitraum"
     }
   }
 }

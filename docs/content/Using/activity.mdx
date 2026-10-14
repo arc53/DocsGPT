@@ -1,6 +1,6 @@
 ---
 title: Activity
-description: See what runs in DocsGPT right now, what waits for you and what runs next, browse planned and past runs on a calendar, stop a running answer, and read the status marks on sidebar chats.
+description: See what runs in DocsGPT right now, what waits for you and what runs next, browse planned and past runs on a calendar and in a history list, stop a running answer, and read the status marks on sidebar chats.
 lastUpdated: 2026-10-14
 ---
 
@@ -14,6 +14,7 @@ Activity has these pages:
 
 - **Now**: what runs this minute, what waits for you and what runs next.
 - **Calendar**: planned and past runs over a day, a week or a month.
+- **History**: every finished run in one list.
 - **Schedules**: every schedule across your agents (see [Agent Schedules](/Agents/schedules#all-your-schedules-in-activity)).
 - **Monitors**: what the assistant is watching for you (see [Monitors](/Tools/monitors#managing-monitors)).
 
@@ -52,6 +53,16 @@ Select a future slot to see when it runs and how it repeats, with **Run now** an
 The calendar shows times in your browser's time zone. A schedule's own time zone is in its details.
 </Callout>
 
+## History
+
+**History** lists finished runs of every kind, newest first and grouped by day: scheduled runs, webhook runs, workflow runs, background jobs, and the times a monitor, trigger link or approval link woke its chat. Each row shows when it ended, the agent or chat, what started it, its status, how long it took and its tokens (when the run records them).
+
+- Filter by kind (**Schedules**, **Webhooks**, **Workflows**, **Background**, **Monitor wakes**) and by status, or search the run, agent and chat names.
+- Select a scheduled run to see its details, a webhook or workflow run to see its execution trace, and a background job or monitor wake to open its chat.
+- A workflow agent's run started by a webhook or a schedule is listed once, as that webhook or scheduled run.
+
+Pick the last 7, 30 (the default) or 90 days. By default, scheduled runs are kept for 90 days, webhook and workflow traces for 30 (`TRACES_RETENTION_DAYS`) and finished background jobs for 7 (`BACKGROUND_RESULT_RETENTION_DAYS`). **Settings → Logs** stays the full technical log, with chats, searches and API calls too (see [Analytics and Logs](/Using/analytics-and-logs)).
+
 ## Status marks on sidebar chats
 
 A chat in the sidebar shows at most one mark, the most urgent one. Hover over it to see every state the chat is in.
@@ -66,4 +77,4 @@ A chat in the sidebar shows at most one mark, the most urgent one. Hover over it
 
 ## Over the API
 
-`GET /api/activity/now` returns what the Now page shows. `GET /api/activity/planned?from=<ISO 8601>&to=<ISO 8601>` returns a calendar window of at most 62 days: `events` (planned slots with `state` `planned` or `paused`, and runs with their status and `run_id`), `monitors` and `syncs`. `POST /api/messages/<message_id>/cancel` stops a running answer. All three take a session token only; [personal access tokens](/API/personal-access-tokens) can't call them, because they span every chat and agent of the account. The [REST API reference](/API/reference) describes them.
+`GET /api/activity/now` returns what the Now page shows. `GET /api/activity/planned?from=<ISO 8601>&to=<ISO 8601>` returns a calendar window of at most 62 days: `events` (planned slots with `state` `planned` or `paused`, and runs with their status and `run_id`), `monitors` and `syncs`. `GET /api/activity/history` returns one page of finished runs (`kind`, `status`, `q`, `days`, `limit`, `offset`). `POST /api/messages/<message_id>/cancel` stops a running answer. All four take a session token only; [personal access tokens](/API/personal-access-tokens) can't call them, because they span every chat and agent of the account. The [REST API reference](/API/reference) describes them.

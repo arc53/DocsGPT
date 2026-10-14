@@ -84,6 +84,35 @@ class TestPlanned:
         assert build.call_args.args[1] == "u1"
 
 
+class TestHistory:
+    def test_unauthorized(self, app):
+        from docsgpt.api.user.activity.routes import ActivityHistory
+
+        assert _call(app, "/api/activity/history", "GET", ActivityHistory().get, user=None).status_code == 401
+
+    def test_rejects_an_unknown_kind(self, app, pg_conn):
+        from docsgpt.api.user.activity.routes import ActivityHistory
+
+        with _patch_db(pg_conn):
+            resp = _call(app, "/api/activity/history?kind=chat", "GET", ActivityHistory().get)
+        assert resp.status_code == 400
+
+    def test_passes_the_filters(self, app, pg_conn):
+        from docsgpt.api.user.activity.routes import ActivityHistory
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.activity.routes.list_history", return_value={"runs": [], "has_more": False}
+        ) as listing:
+            resp = _call(
+                app, "/api/activity/history?kind=webhook&status=failed&q=desk&limit=20&offset=40",
+                "GET", ActivityHistory().get,
+            )
+        assert resp.status_code == 200
+        kwargs = listing.call_args.kwargs
+        assert (kwargs["kind"], kwargs["status"], kwargs["query"]) == ("webhook", "failed", "desk")
+        assert (kwargs["limit"], kwargs["offset"]) == (20, 40)
+
+
 class TestCancel:
     def test_unauthorized(self, app):
         from docsgpt.api.user.activity.routes import MessageCancel

@@ -3556,6 +3556,73 @@
       "queued": "Ejecución iniciada. Aparece en Ahora y en el registro de ejecuciones.",
       "openSchedule": "Abrir programación",
       "timezone": "Zona horaria de la programación"
+    },
+    "history": {
+      "label": "Historial",
+      "subtitle": "Ejecuciones terminadas de tus programaciones, webhooks, flujos de trabajo, tareas en segundo plano y monitores. Ajustes › Registros guarda el registro técnico completo.",
+      "search": "Buscar ejecuciones",
+      "statusFilter": "Estado",
+      "kindFilter": "Tipo",
+      "statusFilters": {
+        "all": "Todos los estados",
+        "failed": "Fallidas",
+        "success": "Correctas",
+        "skipped": "Omitidas",
+        "cancelled": "Canceladas"
+      },
+      "kindFilters": {
+        "all": "Todo",
+        "schedule": "Programaciones",
+        "webhook": "Webhooks",
+        "workflow": "Flujos",
+        "job": "Segundo plano",
+        "monitor": "Avisos de monitores"
+      },
+      "kind": {
+        "schedule": "Programación",
+        "webhook": "Webhook",
+        "workflow": "Flujo de trabajo",
+        "job": "Segundo plano",
+        "monitor": "Monitor"
+      },
+      "status": {
+        "success": "Correcta",
+        "failed": "Fallida",
+        "timeout": "Tiempo agotado",
+        "skipped": "Omitida",
+        "cancelled": "Cancelada"
+      },
+      "trigger": {
+        "cron": "Programación",
+        "manual": "Manual",
+        "webhook": "Webhook",
+        "chat": "Chat",
+        "monitor": "Cambio detectado",
+        "trigger": "Enlace de webhook",
+        "approval": "Enlace de aprobación",
+        "monitor_paused": "Monitor en pausa",
+        "monitor_expired": "Monitor caducado"
+      },
+      "columns": {
+        "when": "Cuándo",
+        "run": "Ejecución",
+        "owner": "Agente / chat",
+        "kind": "Tipo",
+        "trigger": "Origen",
+        "status": "Estado",
+        "duration": "Duración",
+        "tokens": "Tokens"
+      },
+      "yesterday": "Ayer",
+      "loadError": "No se pudo cargar el historial",
+      "noMatches": "Ninguna ejecución coincide con estos filtros",
+      "empty": "Aún no hay ejecuciones terminadas",
+      "emptyHint": "Las ejecuciones de tus programaciones, webhooks, flujos, tareas en segundo plano y monitores aparecen aquí al terminar.",
+      "loadMore": "Cargar más",
+      "retention": "Por defecto, las ejecuciones programadas se guardan 90 días, las de webhooks y flujos 30, y las tareas en segundo plano 7.",
+      "period_one": "Último {{count}} día",
+      "period_other": "Últimos {{count}} días",
+      "periodFilter": "Periodo"
     }
   }
 }

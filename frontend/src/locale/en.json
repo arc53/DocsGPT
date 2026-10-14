@@ -3575,6 +3575,73 @@
       "queued": "Run started. It shows in Now and in the run log.",
       "openSchedule": "Open schedule",
       "timezone": "Schedule time zone"
+    },
+    "history": {
+      "label": "History",
+      "subtitle": "Finished runs of your schedules, webhooks, workflows, background jobs and monitors. Settings › Logs keeps the full technical log.",
+      "search": "Search runs",
+      "statusFilter": "Status",
+      "kindFilter": "Kind",
+      "statusFilters": {
+        "all": "All statuses",
+        "failed": "Failed",
+        "success": "Succeeded",
+        "skipped": "Skipped",
+        "cancelled": "Cancelled"
+      },
+      "kindFilters": {
+        "all": "All",
+        "schedule": "Schedules",
+        "webhook": "Webhooks",
+        "workflow": "Workflows",
+        "job": "Background",
+        "monitor": "Monitor wakes"
+      },
+      "kind": {
+        "schedule": "Schedule",
+        "webhook": "Webhook",
+        "workflow": "Workflow",
+        "job": "Background",
+        "monitor": "Monitor"
+      },
+      "status": {
+        "success": "Success",
+        "failed": "Failed",
+        "timeout": "Timed out",
+        "skipped": "Skipped",
+        "cancelled": "Cancelled"
+      },
+      "trigger": {
+        "cron": "Schedule",
+        "manual": "Run now",
+        "webhook": "Webhook",
+        "chat": "Chat",
+        "monitor": "Change found",
+        "trigger": "Webhook link",
+        "approval": "Approval link",
+        "monitor_paused": "Monitor paused",
+        "monitor_expired": "Monitor expired"
+      },
+      "columns": {
+        "when": "When",
+        "run": "Run",
+        "owner": "Agent / chat",
+        "kind": "Kind",
+        "trigger": "Trigger",
+        "status": "Status",
+        "duration": "Duration",
+        "tokens": "Tokens"
+      },
+      "yesterday": "Yesterday",
+      "loadError": "Couldn't load the history",
+      "noMatches": "No runs match these filters",
+      "empty": "No finished runs yet",
+      "emptyHint": "Runs of your schedules, webhooks, workflows, background jobs and monitors show up here when they finish.",
+      "loadMore": "Load more",
+      "retention": "By default, scheduled runs are kept for 90 days, webhook and workflow runs for 30, and background jobs for 7.",
+      "period_one": "Last {{count}} day",
+      "period_other": "Last {{count}} days",
+      "periodFilter": "Period"
     }
   }
 }

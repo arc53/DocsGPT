@@ -3544,6 +3544,73 @@
       "queued": "已開始執行。它會顯示在「目前」和執行記錄中。",
       "openSchedule": "開啟排程",
       "timezone": "排程時區"
+    },
+    "history": {
+      "label": "歷史",
+      "subtitle": "你的排程、Webhook、工作流程、背景工作和監控已完成的執行。完整的技術記錄在「設定 › 記錄」中。",
+      "search": "搜尋執行",
+      "statusFilter": "狀態",
+      "kindFilter": "類型",
+      "statusFilters": {
+        "all": "所有狀態",
+        "failed": "失敗",
+        "success": "成功",
+        "skipped": "已略過",
+        "cancelled": "已取消"
+      },
+      "kindFilters": {
+        "all": "全部",
+        "schedule": "排程",
+        "webhook": "Webhook",
+        "workflow": "工作流程",
+        "job": "背景",
+        "monitor": "監控喚醒"
+      },
+      "kind": {
+        "schedule": "排程",
+        "webhook": "Webhook",
+        "workflow": "工作流程",
+        "job": "背景",
+        "monitor": "監控"
+      },
+      "status": {
+        "success": "成功",
+        "failed": "失敗",
+        "timeout": "逾時",
+        "skipped": "已略過",
+        "cancelled": "已取消"
+      },
+      "trigger": {
+        "cron": "排程",
+        "manual": "手動",
+        "webhook": "Webhook",
+        "chat": "聊天",
+        "monitor": "發現變化",
+        "trigger": "Webhook 連結",
+        "approval": "核准連結",
+        "monitor_paused": "監控已暫停",
+        "monitor_expired": "監控已過期"
+      },
+      "columns": {
+        "when": "時間",
+        "run": "執行",
+        "owner": "代理 / 聊天",
+        "kind": "類型",
+        "trigger": "觸發",
+        "status": "狀態",
+        "duration": "時長",
+        "tokens": "權杖"
+      },
+      "yesterday": "昨天",
+      "loadError": "無法載入歷史",
+      "noMatches": "沒有符合這些篩選條件的執行",
+      "empty": "還沒有已完成的執行",
+      "emptyHint": "你的排程、Webhook、工作流程、背景工作和監控的執行完成後會顯示在這裡。",
+      "loadMore": "載入更多",
+      "retention": "預設情況下，排程執行保留 90 天，Webhook 和工作流程執行保留 30 天，背景工作保留 7 天。",
+      "period_one": "最近 {{count}} 天",
+      "period_other": "最近 {{count}} 天",
+      "periodFilter": "時間範圍"
     }
   }
 }

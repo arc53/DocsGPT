@@ -13,6 +13,9 @@ export const ACTIVITY_NOW_PATH = `${ACTIVITY_ROOT}/now`;
 /** Planned and past runs, monitors and syncs over time. */
 export const ACTIVITY_CALENDAR_PATH = `${ACTIVITY_ROOT}/calendar`;
 
+/** Finished runs of every kind. */
+export const ACTIVITY_HISTORY_PATH = `${ACTIVITY_ROOT}/history`;
+
 /** Every schedule across agents, agentless ones included. */
 export const ACTIVITY_SCHEDULES_PATH = `${ACTIVITY_ROOT}/schedules`;
 

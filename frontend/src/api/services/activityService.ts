@@ -1,4 +1,5 @@
 import type { PlannedWindow } from '../../activity/calendar/types';
+import type { HistoryPage, HistoryQuery } from '../../activity/historyTypes';
 import type { NowSnapshot } from '../../activity/types';
 import apiClient from '../client';
 import endpoints from '../endpoints';
@@ -26,6 +27,23 @@ const activityService = {
     )) as Response;
     if (!r.ok) throw new Error(`Calendar failed: ${r.status}`);
     return (await r.json()) as PlannedWindow;
+  },
+
+  /** One page of finished runs of every kind, newest first. */
+  history: async (
+    query: HistoryQuery,
+    token: string | null,
+  ): Promise<HistoryPage> => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined && value !== '') params.set(key, String(value));
+    }
+    const r = (await apiClient.get(
+      endpoints.USER.ACTIVITY_HISTORY(params.toString()),
+      token,
+    )) as Response;
+    if (!r.ok) throw new Error(`History failed: ${r.status}`);
+    return (await r.json()) as HistoryPage;
   },
 
   /** Ask a running chat answer to stop; it keeps what it wrote. */

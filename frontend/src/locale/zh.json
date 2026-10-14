@@ -3543,6 +3543,73 @@
       "queued": "已开始运行。它会显示在“当前”和运行日志中。",
       "openSchedule": "打开计划",
       "timezone": "计划时区"
+    },
+    "history": {
+      "label": "历史",
+      "subtitle": "你的计划、Webhook、工作流、后台任务和监控已完成的运行。完整的技术日志在“设置 › 日志”中。",
+      "search": "搜索运行",
+      "statusFilter": "状态",
+      "kindFilter": "类型",
+      "statusFilters": {
+        "all": "所有状态",
+        "failed": "失败",
+        "success": "成功",
+        "skipped": "已跳过",
+        "cancelled": "已取消"
+      },
+      "kindFilters": {
+        "all": "全部",
+        "schedule": "计划",
+        "webhook": "Webhook",
+        "workflow": "工作流",
+        "job": "后台",
+        "monitor": "监控唤醒"
+      },
+      "kind": {
+        "schedule": "计划",
+        "webhook": "Webhook",
+        "workflow": "工作流",
+        "job": "后台",
+        "monitor": "监控"
+      },
+      "status": {
+        "success": "成功",
+        "failed": "失败",
+        "timeout": "超时",
+        "skipped": "已跳过",
+        "cancelled": "已取消"
+      },
+      "trigger": {
+        "cron": "计划",
+        "manual": "手动",
+        "webhook": "Webhook",
+        "chat": "聊天",
+        "monitor": "发现变化",
+        "trigger": "Webhook 链接",
+        "approval": "批准链接",
+        "monitor_paused": "监控已暂停",
+        "monitor_expired": "监控已过期"
+      },
+      "columns": {
+        "when": "时间",
+        "run": "运行",
+        "owner": "代理 / 聊天",
+        "kind": "类型",
+        "trigger": "触发",
+        "status": "状态",
+        "duration": "时长",
+        "tokens": "令牌"
+      },
+      "yesterday": "昨天",
+      "loadError": "无法加载历史",
+      "noMatches": "没有符合这些筛选条件的运行",
+      "empty": "还没有已完成的运行",
+      "emptyHint": "你的计划、Webhook、工作流、后台任务和监控的运行完成后会显示在这里。",
+      "loadMore": "加载更多",
+      "retention": "默认情况下，计划运行保留 90 天，Webhook 和工作流运行保留 30 天，后台任务保留 7 天。",
+      "period_one": "最近 {{count}} 天",
+      "period_other": "最近 {{count}} 天",
+      "periodFilter": "时间段"
     }
   }
 }

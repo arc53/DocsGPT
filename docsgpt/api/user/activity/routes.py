@@ -15,6 +15,7 @@ from flask_restx import Namespace, Resource
 from sqlalchemy import text
 
 from docsgpt.activity.flags import request_stop
+from docsgpt.activity.history import KINDS, STATUSES, list_history
 from docsgpt.activity.now import build_now
 from docsgpt.activity.planned import WindowError, build_planned, parse_window
 from docsgpt.api import api
@@ -97,6 +98,59 @@ class ActivityPlanned(Resource):
             logger.exception("activity: building the calendar failed")
             return _err("Failed to load the calendar", 500)
         return make_response(jsonify(window), 200)
+
+
+def _int_arg(name: str, default: int) -> int:
+    try:
+        return int(request.args.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+@activity_ns.route("/activity/history")
+class ActivityHistory(Resource):
+    @api.doc(
+        description=(
+            "The caller's finished runs of every kind, newest first: scheduled, webhook and workflow "
+            "runs, background jobs, and monitor wakes, with one status vocabulary."
+        ),
+        params={
+            "kind": f"One of {', '.join(KINDS)}; all when left out.",
+            "status": f"One of {', '.join(STATUSES)} (failed includes timed out); all when left out.",
+            "q": "Text matched against the run, agent and conversation names.",
+            "days": "How far back to look (default 30, at most 90).",
+            "limit": "Rows per page (default 50, at most 200).",
+            "offset": "Rows to skip.",
+        },
+    )
+    def get(self):
+        """Return one page of the caller's finished runs.
+
+        Returns:
+            A Flask response with ``runs`` and ``has_more``, or 400 for an
+            unknown ``kind`` or ``status``.
+        """
+        user_id = _user_id()
+        if not user_id:
+            return _err("Unauthorized", 401)
+        try:
+            with db_readonly() as conn:
+                page = list_history(
+                    conn,
+                    user_id,
+                    kind=request.args.get("kind") or None,
+                    status=request.args.get("status") or None,
+                    query=request.args.get("q") or None,
+                    days=_int_arg("days", 30),
+                    limit=_int_arg("limit", 50),
+                    offset=_int_arg("offset", 0),
+                )
+        except ValueError as exc:
+            return _err(str(exc), 400)
+        except Exception:
+            logger.exception("activity: listing history failed")
+            return _err("Failed to load history", 500)
+        return make_response(jsonify(page), 200)
 
 
 @activity_ns.route("/messages/<string:message_id>/cancel")

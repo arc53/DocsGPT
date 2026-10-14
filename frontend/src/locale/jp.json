@@ -3544,6 +3544,73 @@
       "queued": "実行を開始しました。「現在」と実行ログに表示されます。",
       "openSchedule": "スケジュールを開く",
       "timezone": "スケジュールのタイムゾーン"
+    },
+    "history": {
+      "label": "履歴",
+      "subtitle": "スケジュール、Webhook、ワークフロー、バックグラウンドジョブ、モニターの完了した実行です。詳細な技術ログは「設定 › ログ」にあります。",
+      "search": "実行を検索",
+      "statusFilter": "ステータス",
+      "kindFilter": "種類",
+      "statusFilters": {
+        "all": "すべてのステータス",
+        "failed": "失敗",
+        "success": "成功",
+        "skipped": "スキップ",
+        "cancelled": "キャンセル"
+      },
+      "kindFilters": {
+        "all": "すべて",
+        "schedule": "スケジュール",
+        "webhook": "Webhook",
+        "workflow": "ワークフロー",
+        "job": "バックグラウンド",
+        "monitor": "モニター通知"
+      },
+      "kind": {
+        "schedule": "スケジュール",
+        "webhook": "Webhook",
+        "workflow": "ワークフロー",
+        "job": "バックグラウンド",
+        "monitor": "モニター"
+      },
+      "status": {
+        "success": "成功",
+        "failed": "失敗",
+        "timeout": "タイムアウト",
+        "skipped": "スキップ",
+        "cancelled": "キャンセル"
+      },
+      "trigger": {
+        "cron": "スケジュール",
+        "manual": "手動",
+        "webhook": "Webhook",
+        "chat": "チャット",
+        "monitor": "変更を検出",
+        "trigger": "Webhook リンク",
+        "approval": "承認リンク",
+        "monitor_paused": "モニター一時停止",
+        "monitor_expired": "モニター期限切れ"
+      },
+      "columns": {
+        "when": "日時",
+        "run": "実行",
+        "owner": "エージェント / チャット",
+        "kind": "種類",
+        "trigger": "トリガー",
+        "status": "ステータス",
+        "duration": "所要時間",
+        "tokens": "トークン"
+      },
+      "yesterday": "昨日",
+      "loadError": "履歴を読み込めませんでした",
+      "noMatches": "この条件に一致する実行はありません",
+      "empty": "完了した実行はまだありません",
+      "emptyHint": "スケジュール、Webhook、ワークフロー、バックグラウンドジョブ、モニターの実行は、完了するとここに表示されます。",
+      "loadMore": "さらに読み込む",
+      "retention": "既定では、スケジュール実行は90日、Webhook とワークフローの実行は30日、バックグラウンドジョブは7日間保存されます。",
+      "period_one": "過去 {{count}} 日",
+      "period_other": "過去 {{count}} 日",
+      "periodFilter": "期間"
     }
   }
 }
