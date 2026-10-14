@@ -21,9 +21,10 @@ vi.mock('react-i18next', () => ({
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 
-import activityReducer from './activitySlice';
+import activityReducer, { loadActivityNow } from './activitySlice';
 import History, { formatDuration } from './History';
 import type { HistoryRun } from './historyTypes';
+import type { NowSnapshot } from './types';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -109,11 +110,48 @@ describe('History page', () => {
         </Provider>,
       );
     });
+    return store;
   };
   const row = (kind: string) =>
     container.querySelector<HTMLTableRowElement>(
       `tr[data-kind="${kind}"]`,
     ) as HTMLTableRowElement;
+  const titles = () =>
+    Array.from(container.querySelectorAll('tr[data-kind]')).map(
+      (tr) => tr.querySelector('td:nth-child(2)')?.textContent,
+    );
+  const named = (...names: string[]) =>
+    names.map((name) => run({ id: name, title: name }));
+  /** A history call that resolves when the test says so. */
+  const deferred = () => {
+    let resolve!: (page: { runs: HistoryRun[]; has_more: boolean }) => void;
+    const promise = new Promise<{ runs: HistoryRun[]; has_more: boolean }>(
+      (r) => (resolve = r),
+    );
+    return { promise, resolve };
+  };
+  const clickLoadMore = () =>
+    act(async () =>
+      (
+        Array.from(container.querySelectorAll('button')).find(
+          (b) => b.textContent === 'activity.history.loadMore',
+        ) as HTMLElement
+      ).click(),
+    );
+  const clickKind = (kind: string) =>
+    act(async () =>
+      (
+        Array.from(container.querySelectorAll('[role="radio"]')).find(
+          (b) => b.textContent === `activity.history.kindFilters.${kind}`,
+        ) as HTMLElement
+      ).click(),
+    );
+  const newSnapshot = (store: Awaited<ReturnType<typeof render>>) =>
+    act(async () => {
+      store.dispatch(
+        loadActivityNow.fulfilled({} as NowSnapshot, 'req', undefined),
+      );
+    });
 
   it('lists runs under a day heading', async () => {
     await render();
@@ -150,6 +188,75 @@ describe('History page', () => {
       offset: 0,
     });
   });
+
+  it('keeps loaded pages when the snapshot changes, adding new runs on top', async () => {
+    activity.history
+      .mockReset()
+      .mockResolvedValueOnce({ runs: named('a', 'b'), has_more: true })
+      .mockResolvedValueOnce({ runs: named('c', 'd'), has_more: false })
+      .mockResolvedValueOnce({ runs: named('n', 'a'), has_more: true });
+    const store = await render();
+    await clickLoadMore();
+    expect(titles()).toEqual(['a', 'b', 'c', 'd']);
+
+    await newSnapshot(store);
+    expect(activity.history.mock.calls.at(-1)?.[0]).toMatchObject({
+      offset: 0,
+    });
+    expect(titles()).toEqual(['n', 'a', 'b', 'c', 'd']);
+    // The last page was already reached; a refresh doesn't bring the button back.
+    expect(container.textContent).not.toContain('activity.history.loadMore');
+  });
+
+  it('shows the latest filter when an older request answers last', async () => {
+    const webhooks = deferred();
+    const jobs = deferred();
+    await render();
+    activity.history
+      .mockReturnValueOnce(webhooks.promise)
+      .mockReturnValueOnce(jobs.promise);
+    await clickKind('webhook');
+    await clickKind('job');
+
+    await act(async () =>
+      jobs.resolve({ runs: named('job run'), has_more: false }),
+    );
+    await act(async () =>
+      webhooks.resolve({ runs: named('webhook run'), has_more: false }),
+    );
+    expect(titles()).toEqual(['job run']);
+  });
+
+  it.each([
+    ['refresh first', ['head', 'more']],
+    ['load more first', ['more', 'head']],
+  ])(
+    'lists each run once when a refresh and Load more overlap (%s)',
+    async (_, order) => {
+      activity.history
+        .mockReset()
+        .mockResolvedValueOnce({ runs: named('a', 'b'), has_more: true });
+      const store = await render();
+      const more = deferred();
+      const head = deferred();
+      activity.history
+        .mockReturnValueOnce(more.promise)
+        .mockReturnValueOnce(head.promise);
+      await clickLoadMore();
+      await newSnapshot(store);
+
+      // `n` landed between the two requests, so Load more's offset 2 now
+      // starts at `b` again.
+      const answers = {
+        more: () => more.resolve({ runs: named('b', 'c'), has_more: true }),
+        head: () => head.resolve({ runs: named('n', 'a'), has_more: true }),
+      };
+      for (const which of order as ('head' | 'more')[]) {
+        await act(async () => answers[which]());
+      }
+      expect(titles()).toEqual(['n', 'a', 'b', 'c']);
+    },
+  );
 });
 
 describe('formatDuration', () => {

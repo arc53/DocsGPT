@@ -6,7 +6,7 @@ import {
   Workflow,
   type LucideIcon,
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
@@ -99,6 +99,16 @@ export function formatDuration(ms: number | null | undefined): string {
 }
 
 /**
+ * The runs of `page` not already in `listed`. Ids are unique per kind only.
+ * Newer runs shift the server's offsets, so an overlapping refresh and
+ * Load more can both bring the same run.
+ */
+function unseen(listed: HistoryRun[], page: HistoryRun[]): HistoryRun[] {
+  const seen = new Set(listed.map((run) => `${run.kind}:${run.id}`));
+  return page.filter((run) => !seen.has(`${run.kind}:${run.id}`));
+}
+
+/**
  * Activity › History: finished runs of every kind, newest first, grouped by
  * day. A scheduled run opens its details, a webhook or workflow run its
  * trace, and a background job or monitor wake its chat. Settings › Logs
@@ -108,7 +118,6 @@ export default function History() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const token = useSelector(selectToken);
-  // New runs land after the events that refetch the Now snapshot.
   const snapshot = useSelector(selectActivityNow);
 
   const [kind, setKind] = useState<(typeof KIND_FILTERS)[number]>('all');
@@ -116,8 +125,14 @@ export default function History() {
   const [period, setPeriod] = useState<(typeof PERIODS)[number]>('30');
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
-  const [runs, setRuns] = useState<HistoryRun[] | null>(null);
-  const [hasMore, setHasMore] = useState(false);
+  // Rows and "more to load" change together: a refresh that finds a gap
+  // replaces both, one that merges keeps the tail's `hasMore`.
+  const [list, setList] = useState<{
+    runs: HistoryRun[];
+    hasMore: boolean;
+  } | null>(null);
+  const runs = list?.runs ?? null;
+  const hasMore = list?.hasMore ?? false;
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const [activeRun, setActiveRun] = useState<ScheduleRun | null>(null);
@@ -131,38 +146,92 @@ export default function History() {
     return () => window.clearTimeout(timer);
   }, [search]);
 
-  const load = useCallback(
-    async (offset: number) => {
-      setLoading(true);
-      setFailed(false);
-      try {
-        const page = await activityService.history(
-          {
-            kind: kind === 'all' ? undefined : kind,
-            status: status === 'all' ? undefined : status,
-            q: query || undefined,
-            days: Number(period),
-            limit: PAGE_SIZE,
-            offset,
-          },
-          token,
-        );
-        setRuns((current) =>
-          offset === 0 ? page.runs : [...(current ?? []), ...page.runs],
-        );
-        setHasMore(page.has_more);
-      } catch {
-        setFailed(true);
-      } finally {
-        setLoading(false);
-      }
-    },
+  const fetchPage = useCallback(
+    (offset: number) =>
+      activityService.history(
+        {
+          kind: kind === 'all' ? undefined : kind,
+          status: status === 'all' ? undefined : status,
+          q: query || undefined,
+          days: Number(period),
+          limit: PAGE_SIZE,
+          offset,
+        },
+        token,
+      ),
     [kind, status, query, period, token],
   );
 
+  // Each first-page load starts a new generation; an answer from an older
+  // one (a filter since changed, a superseded reload) is dropped.
+  const generation = useRef(0);
+
+  /** First page (`offset` 0) replaces the list; a later one appends. */
+  const load = useCallback(
+    async (offset: number) => {
+      const gen = offset === 0 ? ++generation.current : generation.current;
+      setLoading(true);
+      setFailed(false);
+      try {
+        const page = await fetchPage(offset);
+        if (gen !== generation.current) return;
+        setList((current) => ({
+          runs:
+            offset === 0
+              ? page.runs
+              : [
+                  ...(current?.runs ?? []),
+                  ...unseen(current?.runs ?? [], page.runs),
+                ],
+          hasMore: page.has_more,
+        }));
+      } catch {
+        if (gen === generation.current) setFailed(true);
+      } finally {
+        if (gen === generation.current) setLoading(false);
+      }
+    },
+    [fetchPage],
+  );
+
+  /**
+   * Puts runs that finished since the last look on top, keeping the pages
+   * already loaded. Quiet: no spinner, and a failure waits for the next one.
+   */
+  const refreshHead = useCallback(async () => {
+    const gen = generation.current;
+    try {
+      const page = await fetchPage(0);
+      if (gen !== generation.current) return;
+      setList((current) => {
+        const fresh = unseen(current?.runs ?? [], page.runs);
+        if (current !== null && fresh.length === 0) return current;
+        // Nothing in common: more than a page landed (or nothing was listed),
+        // so a merge would leave a gap. Start over from this page.
+        if (current === null || fresh.length === page.runs.length) {
+          return { runs: page.runs, hasMore: page.has_more };
+        }
+        return { ...current, runs: [...fresh, ...current.runs] };
+      });
+    } catch {
+      // The next snapshot change tries again.
+    }
+  }, [fetchPage]);
+
   useEffect(() => {
     void load(0);
-  }, [load, snapshot]);
+  }, [load]);
+
+  // New runs land after the events that refetch the Now snapshot. Only a new
+  // snapshot acts here; filter changes reload through `load` above.
+  const seenSnapshot = useRef(snapshot);
+  const loaded = list !== null;
+  useEffect(() => {
+    if (snapshot === seenSnapshot.current) return;
+    seenSnapshot.current = snapshot;
+    if (loaded) void refreshHead();
+    else void load(0);
+  }, [snapshot, loaded, load, refreshHead]);
 
   const open = async (run: HistoryRun) => {
     if (run.kind === 'schedule' && run.schedule_id) {
