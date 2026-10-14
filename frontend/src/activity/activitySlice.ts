@@ -32,6 +32,15 @@ export type ActivityState = {
   revision: number;
   /** The last fetched snapshot, serialized, for telling a poll's news. */
   fetched: string | null;
+  /**
+   * The latest fetch's id. The poll, event refetches and Retry overlap, so
+   * only its answer is applied: an older one would put back what changed.
+   */
+  requestId: string | null;
+  /** Chats in `live` when the latest fetch went out; its answer covers them. */
+  liveAtRequest: string[];
+  /** Chats whose answer finished after the latest fetch went out. */
+  finishedSinceRequest: string[];
 };
 
 const initialState: ActivityState = {
@@ -41,7 +50,14 @@ const initialState: ActivityState = {
   live: {},
   revision: 0,
   fetched: null,
+  requestId: null,
+  liveAtRequest: [],
+  finishedSinceRequest: [],
 };
+
+/** Whether a fetch's answer is the latest one's (or none is being tracked). */
+const isLatest = (state: ActivityState, requestId: string) =>
+  state.requestId === null || state.requestId === requestId;
 
 /**
  * Why a refetch runs: `event` after a live event (something started, moved
@@ -65,10 +81,14 @@ const activitySlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(loadActivityNow.pending, (state) => {
+      .addCase(loadActivityNow.pending, (state, action) => {
         state.loading = true;
+        state.requestId = action.meta.requestId;
+        state.liveAtRequest = Object.keys(state.live);
+        state.finishedSinceRequest = [];
       })
       .addCase(loadActivityNow.fulfilled, (state, action) => {
+        if (!isLatest(state, action.meta.requestId)) return;
         // An event says something happened even when the snapshot reads the
         // same: a run can start and end between two fetches.
         const fetched = JSON.stringify(action.payload);
@@ -76,12 +96,30 @@ const activitySlice = createSlice({
           state.revision += 1;
         }
         state.fetched = fetched;
-        state.now = action.payload;
+        // The server may have read before an answer that finished since.
+        const finished = new Set(state.finishedSinceRequest);
+        state.now = finished.size
+          ? {
+              ...action.payload,
+              running: action.payload.running.filter(
+                (item) =>
+                  !(
+                    item.kind === 'chat' &&
+                    item.conversation_id &&
+                    finished.has(item.conversation_id)
+                  ),
+              ),
+            }
+          : action.payload;
         state.loading = false;
         state.error = false;
-        state.live = {};
+        // Answers that started after the fetch went out stay live.
+        for (const id of state.liveAtRequest) delete state.live[id];
+        state.liveAtRequest = [];
+        state.finishedSinceRequest = [];
       })
-      .addCase(loadActivityNow.rejected, (state) => {
+      .addCase(loadActivityNow.rejected, (state, action) => {
+        if (!isLatest(state, action.meta.requestId)) return;
         state.loading = false;
         state.error = true;
       })
@@ -104,6 +142,7 @@ const activitySlice = createSlice({
             state.live[conversationId] = true;
           } else if (action.payload.type === 'message.finished') {
             delete state.live[conversationId];
+            if (state.loading) state.finishedSinceRequest.push(conversationId);
             if (state.now) {
               state.now.running = state.now.running.filter(
                 (item) =>

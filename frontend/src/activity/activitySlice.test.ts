@@ -75,6 +75,86 @@ describe('activitySlice', () => {
     expect(selectFailedConversations(wrap(state)).size).toBe(0);
   });
 
+  describe('overlapping fetches', () => {
+    // The poll, event refetches and Retry can overlap; responses can arrive
+    // in any order.
+    const working = (state: ActivityState) =>
+      selectWorkingConversations(wrap(state));
+
+    it('ignores a response older than the latest request', () => {
+      let state = reducer(loaded(), loadActivityNow.pending('a', 'poll'));
+      state = reducer(state, loadActivityNow.pending('b', 'event'));
+      state = reducer(
+        state,
+        loadActivityNow.fulfilled(snapshot({ running: [] }), 'b', 'event'),
+      );
+      state = reducer(
+        state,
+        loadActivityNow.fulfilled(snapshot(), 'a', 'poll'),
+      );
+      expect(working(state).size).toBe(0);
+      expect(state.loading).toBe(false);
+    });
+
+    it('stays loading until the latest request answers', () => {
+      let state = reducer(loaded(), loadActivityNow.pending('a', 'poll'));
+      state = reducer(state, loadActivityNow.pending('b', 'event'));
+      state = reducer(
+        state,
+        loadActivityNow.fulfilled(snapshot(), 'a', 'poll'),
+      );
+      expect(state.loading).toBe(true);
+    });
+
+    it('ignores an older request failing', () => {
+      let state = reducer(loaded(), loadActivityNow.pending('a', 'poll'));
+      state = reducer(state, loadActivityNow.pending('b', 'event'));
+      state = reducer(
+        state,
+        loadActivityNow.fulfilled(snapshot(), 'b', 'event'),
+      );
+      state = reducer(
+        state,
+        loadActivityNow.rejected(new Error('x'), 'a', 'poll'),
+      );
+      expect(state.error).toBe(false);
+    });
+
+    it('keeps a chat that started while the request was out', () => {
+      let state = reducer(loaded(), loadActivityNow.pending('a', 'poll'));
+      state = reducer(state, sseEventReceived(event('message.started', 'c9')));
+      state = reducer(
+        state,
+        loadActivityNow.fulfilled(snapshot(), 'a', 'poll'),
+      );
+      expect(working(state).has('c9')).toBe(true);
+    });
+
+    it('drops a chat started before the request once it answers', () => {
+      let state = reducer(
+        loaded(),
+        sseEventReceived(event('message.started', 'c9')),
+      );
+      state = reducer(state, loadActivityNow.pending('a', 'poll'));
+      state = reducer(
+        state,
+        loadActivityNow.fulfilled(snapshot(), 'a', 'poll'),
+      );
+      expect(working(state).has('c9')).toBe(false);
+    });
+
+    it('does not bring back a chat that finished while the request was out', () => {
+      let state = reducer(loaded(), loadActivityNow.pending('a', 'poll'));
+      state = reducer(state, sseEventReceived(event('message.finished', 'c1')));
+      state = reducer(
+        state,
+        loadActivityNow.fulfilled(snapshot(), 'a', 'poll'),
+      );
+      expect(working(state).has('c1')).toBe(false);
+      expect(working(state).has('c2')).toBe(true);
+    });
+  });
+
   describe('revision', () => {
     // Calendar, Logs and History reload when it moves, so it moves only
     // when their data may have changed.
