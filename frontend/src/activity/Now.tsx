@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  Braces,
   CalendarClock,
   CalendarX2,
   Clock,
@@ -17,7 +18,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link, useNavigate } from 'react-router-dom';
@@ -54,6 +55,7 @@ import {
   selectActivityNow,
 } from './activitySlice';
 import { formatElapsed, formatRunTime, workflowStep } from './format';
+import { useClock } from './useClock';
 import {
   ACTIVITY_CALENDAR_PATH,
   ACTIVITY_MONITORS_PATH,
@@ -74,7 +76,7 @@ type Filter = 'all' | 'chats' | 'automations' | 'knowledge';
 
 const FILTER_KINDS: Record<Exclude<Filter, 'all'>, RunningKind[]> = {
   chats: ['chat', 'job'],
-  automations: ['schedule', 'workflow', 'webhook'],
+  automations: ['api', 'schedule', 'workflow', 'webhook'],
   knowledge: ['ingest'],
 };
 
@@ -83,22 +85,13 @@ const SIDE_LIST_LIMIT = 6;
 
 const KIND_ICON: Record<RunningKind, LucideIcon> = {
   chat: MessageSquare,
+  api: Braces,
   job: Wrench,
   schedule: CalendarClock,
   workflow: Workflow,
   webhook: Webhook,
   ingest: FileUp,
 };
-
-/** Ticks once a second so the stopwatches move. */
-function useClock(): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-  return now;
-}
 
 /** A row's leading tile: the muted icon tile, or a status-tinted one. */
 function KindIcon({
@@ -253,6 +246,12 @@ export default function Now() {
               : t('activity.now.writing'),
           ]),
         );
+      case 'api':
+        return meta(
+          kind,
+          item.workflow ? t('activity.kind.workflow') : null,
+          t('activity.now.apiRequests', { count: item.count ?? 1 }),
+        );
       case 'job':
         return meta(
           item.job_kind === 'code_exec' ? t('activity.kind.code') : kind,
@@ -316,7 +315,9 @@ export default function Now() {
   const canOpen = (item: RunningItem) =>
     item.kind === 'chat' || item.kind === 'job'
       ? Boolean(item.conversation_id)
-      : item.kind === 'workflow' || item.kind === 'webhook'
+      : item.kind === 'workflow' ||
+          item.kind === 'webhook' ||
+          item.kind === 'api'
         ? Boolean(item.agent_id)
         : true;
 

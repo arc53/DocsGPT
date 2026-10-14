@@ -745,7 +745,13 @@
           "allAttributes": "Todos los atributos"
         }
       },
-      "loadError": "No se pudieron cargar los registros."
+      "loadError": "No se pudieron cargar los registros.",
+      "running": "en curso",
+      "origin": {
+        "api": "API",
+        "shared": "Compartido",
+        "chat": "Chat"
+      }
     },
     "teams": {
       "label": "Equipos",
@@ -3425,7 +3431,8 @@
       "schedule": "Ejecución programada",
       "workflow": "Flujo de trabajo",
       "webhook": "Ejecución por webhook",
-      "ingest": "Conocimiento"
+      "ingest": "Conocimiento",
+      "api": "API"
     },
     "nav": {
       "running_one": "{{count}} en curso",
@@ -3502,7 +3509,9 @@
       "checked": "revisado {{time}}",
       "openCalendar": "Abrir calendario",
       "step": "paso {{step}}",
-      "stepOf": "paso {{step}} de {{total}}"
+      "stepOf": "paso {{step}} de {{total}}",
+      "apiRequests_one": "{{count}} solicitud",
+      "apiRequests_other": "{{count}} solicitudes"
     },
     "calendar": {
       "label": "Calendario",

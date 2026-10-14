@@ -745,7 +745,13 @@
           "allAttributes": "Alle Attribute"
         }
       },
-      "loadError": "Die Protokolle konnten nicht geladen werden."
+      "loadError": "Die Protokolle konnten nicht geladen werden.",
+      "running": "läuft",
+      "origin": {
+        "api": "API",
+        "shared": "Geteilt",
+        "chat": "Chat"
+      }
     },
     "teams": {
       "label": "Teams",
@@ -3425,7 +3431,8 @@
       "schedule": "Geplante Ausführung",
       "workflow": "Workflow",
       "webhook": "Webhook-Ausführung",
-      "ingest": "Wissen"
+      "ingest": "Wissen",
+      "api": "API"
     },
     "nav": {
       "running_one": "{{count}} läuft",
@@ -3502,7 +3509,9 @@
       "checked": "geprüft {{time}}",
       "openCalendar": "Kalender öffnen",
       "step": "Schritt {{step}}",
-      "stepOf": "Schritt {{step}} von {{total}}"
+      "stepOf": "Schritt {{step}} von {{total}}",
+      "apiRequests_one": "{{count}} Anfrage",
+      "apiRequests_other": "{{count}} Anfragen"
     },
     "calendar": {
       "label": "Kalender",

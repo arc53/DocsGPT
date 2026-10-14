@@ -82,6 +82,41 @@ class TestRunningChats:
         assert activity_now.build_now(pg_conn, "u1")["running"] == []
 
 
+class TestApiRequests:
+    def test_api_answers_on_an_agent_are_one_row(self, pg_conn):
+        agent = _agent(pg_conn, "Support bot")
+        _message(pg_conn, _chat(pg_conn, agent_id=agent, visibility="hidden"), "streaming")
+        _message(pg_conn, _chat(pg_conn, agent_id=agent, visibility="hidden"), "pending")
+        # A caller on the shared agent runs under their own user id.
+        _message(pg_conn, _chat(pg_conn, user_id="u2", agent_id=agent, visibility="hidden"), "streaming")
+        snap = activity_now.build_now(pg_conn, "u1")
+        rows = [item for item in snap["running"] if item["kind"] == "api"]
+        assert len(rows) == 1
+        assert rows[0]["agent_id"] == agent
+        assert rows[0]["agent_name"] == "Support bot"
+        assert rows[0]["count"] == 3
+        assert rows[0]["started_at"]
+        # The badge counts requests, not rows.
+        assert snap["stats"]["running"] == 3
+
+    def test_skips_other_owners_agents_and_finished_answers(self, pg_conn):
+        theirs = _agent(pg_conn, "Their bot", user_id="u2")
+        _message(pg_conn, _chat(pg_conn, user_id="u2", agent_id=theirs, visibility="hidden"), "streaming")
+        mine = _agent(pg_conn, "Support bot")
+        _message(pg_conn, _chat(pg_conn, agent_id=mine, visibility="hidden"), "complete")
+        _message(pg_conn, _chat(pg_conn, agent_id=mine, visibility="hidden"), "streaming", heartbeat_age=600)
+        assert activity_now.build_now(pg_conn, "u1")["running"] == []
+
+    def test_absorbs_the_agents_workflow_runs(self, pg_conn):
+        workflow = TestWorkflowRuns()._workflow(pg_conn)
+        agent = _agent(pg_conn, "Renewal Desk", workflow_id=workflow)
+        _message(pg_conn, _chat(pg_conn, agent_id=agent, visibility="hidden"), "streaming")
+        TestWorkflowRuns()._run(pg_conn, workflow)
+        snap = activity_now.build_now(pg_conn, "u1")
+        assert _kinds(snap) == ["api"]
+        assert snap["running"][0]["workflow"] is True
+
+
 class TestBackgroundJobs:
     def test_lists_working_jobs_with_their_chat(self, pg_conn):
         conv = _chat(pg_conn, "Halvorsen QBR")

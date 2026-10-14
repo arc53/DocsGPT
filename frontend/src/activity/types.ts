@@ -1,7 +1,7 @@
 /** The Activity › Now snapshot (`GET /api/activity/now`, docsgpt/activity/now.py). */
 
 export type RunningKind =
-  'chat' | 'job' | 'schedule' | 'workflow' | 'webhook' | 'ingest';
+  'chat' | 'api' | 'job' | 'schedule' | 'workflow' | 'webhook' | 'ingest';
 
 /** Where a running workflow is (`workflow_runs.progress`). */
 export type WorkflowProgress = {
@@ -29,6 +29,8 @@ export type RunningItem = {
   /** chat */
   message_id?: string;
   status?: string;
+  /** api: one agent's API requests being answered, as one row. */
+  count?: number;
   /** chat / schedule / webhook: a workflow agent's run is folded in. */
   workflow?: boolean;
   /** workflow, or a host a workflow run is folded into: the step it is on. */

@@ -91,6 +91,50 @@ def _running_chats(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
     ]
 
 
+def _running_api(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
+    """Answers being written through the API on the user's agents, one row per agent.
+
+    API, OpenAI-compatible and shared-agent calls write hidden conversations,
+    some under the caller's user id; a busy agent would flood the list, so
+    each agent is one row whose ``count`` is its requests. The agent's Logs
+    list them one by one.
+    """
+    rows = _rows(
+        conn,
+        """
+        SELECT c.agent_id, a.name AS agent_name, COUNT(*) AS count,
+               MIN(m.timestamp) AS started_at
+        FROM conversation_messages m
+        JOIN conversations c ON c.id = m.conversation_id
+        JOIN agents a ON a.id = c.agent_id
+        WHERE a.user_id = :user_id
+          AND c.visibility <> 'listed'
+          AND m.status IN ('pending', 'streaming')
+          AND COALESCE(
+                (m.message_metadata ->> 'last_heartbeat_at')::timestamptz,
+                m.timestamp
+              ) > now() - make_interval(secs => :fresh)
+        GROUP BY c.agent_id, a.name
+        ORDER BY MIN(m.timestamp) ASC
+        LIMIT :limit
+        """,
+        {"user_id": user_id, "fresh": CHAT_FRESH_SECONDS, "limit": PER_KIND_LIMIT},
+    )
+    return [
+        {
+            "kind": "api",
+            "id": f"api:{r['agent_id']}",
+            "title": r.get("agent_name"),
+            "agent_id": _str(r["agent_id"]),
+            "agent_name": r.get("agent_name"),
+            "count": int(r.get("count") or 0),
+            "started_at": _iso(r.get("started_at")),
+            "workflow": False,
+        }
+        for r in rows
+    ]
+
+
 def _running_jobs(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
     rows = _rows(
         conn,
@@ -263,14 +307,16 @@ def _fold_workflows(running: List[Dict[str, Any]], workflows: List[Dict[str, Any
     A workflow agent's chat, scheduled run or webhook run also writes a
     ``workflow_runs`` row; listing both would show one piece of work twice.
     Runs are matched by agent, oldest run to oldest host, one run per host;
-    the host takes the run's step (``workflow_progress``). A run with nothing
-    to fold into (a builder preview, an API call) is listed on its own.
+    the host takes the run's step (``workflow_progress``). Runs left over go
+    into the agent's API row, which stands for many requests; a run with
+    nothing to fold into (a builder preview) is listed on its own.
     """
     hosts: Dict[str, List[Dict[str, Any]]] = {}
     oldest = datetime.min.replace(tzinfo=timezone.utc)
     for item in sorted(running, key=lambda entry: _as_datetime(entry.get("started_at")) or oldest):
         if item["kind"] in ("chat", "schedule", "webhook") and item.get("agent_id"):
             hosts.setdefault(item["agent_id"], []).append(item)
+    api_rows = {item["agent_id"]: item for item in running if item["kind"] == "api"}
     standalone = []
     for flow in workflows:
         waiting = hosts.get(flow.get("agent_id")) if flow.get("agent_id") else None
@@ -278,6 +324,8 @@ def _fold_workflows(running: List[Dict[str, Any]], workflows: List[Dict[str, Any
             host = waiting.pop(0)
             host["workflow"] = True
             host["workflow_progress"] = flow.get("workflow_progress")
+        elif flow.get("agent_id") in api_rows:
+            api_rows[flow["agent_id"]]["workflow"] = True
         else:
             standalone.append(flow)
     return standalone
@@ -515,6 +563,7 @@ def build_now(conn: Connection, user_id: str, *, now: Optional[datetime] = None)
     current = now or datetime.now(timezone.utc)
     running: List[Dict[str, Any]] = []
     running += _running_chats(conn, user_id)
+    running += _running_api(conn, user_id)
     running += _running_jobs(conn, user_id)
     running += _running_schedule_runs(conn, user_id)
     running += _running_webhooks(user_id)
@@ -531,7 +580,8 @@ def build_now(conn: Connection, user_id: str, *, now: Optional[datetime] = None)
         "approval_conversations": [item["conversation_id"] for item in approvals],
         "failed_conversations": _failed_conversations(conn, user_id),
         "stats": {
-            "running": len(running),
+            # An API row stands for its requests.
+            "running": sum(item.get("count", 1) for item in running),
             "needs_you": len(needs_you),
             "next_24h": sum(item["runs_in_window"] for item in up_next),
             "failed_24h": _failed_last_day(conn, user_id),

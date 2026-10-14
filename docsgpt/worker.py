@@ -3443,7 +3443,10 @@ def agent_webhook_worker(self, agent_id, payload):
     # A webhook run has no row until it ends: mark it for Activity › Now.
     owner_id = agent_config.get("user_id")
     run_id = getattr(getattr(self, "request", None), "id", None)
-    _mark_webhook_run(owner_id, run_id, agent_config, started=True)
+    _mark_webhook_run(
+        owner_id, run_id, agent_config, started=True,
+        summary=_webhook_retrieval_query(payload)[:_WEBHOOK_SUMMARY_MAX_CHARS],
+    )
     try:
         # Shared headless path with the scheduler; approval-gated tools auto-deny.
         from docsgpt.agents.headless_runner import run_agent_headless
@@ -3487,7 +3490,13 @@ def agent_webhook_worker(self, agent_id, payload):
         self.update_state(state="PROGRESS", meta={"current": 100})
 
 
-def _mark_webhook_run(owner_id: Any, run_id: Any, agent_config: dict, *, started: bool) -> None:
+# How much of a webhook run's text its Activity marker keeps for the Logs row.
+_WEBHOOK_SUMMARY_MAX_CHARS = 200
+
+
+def _mark_webhook_run(
+    owner_id: Any, run_id: Any, agent_config: dict, *, started: bool, summary: Optional[str] = None
+) -> None:
     """Add or remove a webhook run's Activity marker and tell open pages.
 
     Best-effort: a failure here never touches the run.
@@ -3497,6 +3506,8 @@ def _mark_webhook_run(owner_id: Any, run_id: Any, agent_config: dict, *, started
         run_id: The Celery task id.
         agent_config: The agent row.
         started: True when the run starts, False when it ends.
+        summary: What the run is about (the payload's human-written text),
+            shown on its Logs row while it runs.
     """
     if not owner_id or not run_id:
         return
@@ -3512,6 +3523,7 @@ def _mark_webhook_run(owner_id: Any, run_id: Any, agent_config: dict, *, started
                     "kind": "webhook",
                     "agent_id": str(agent_config.get("id") or ""),
                     "agent_name": agent_config.get("name"),
+                    "summary": summary,
                 },
                 ttl_seconds=int(settings.WEBHOOK_RUN_TIMEOUT) + 60,
             )

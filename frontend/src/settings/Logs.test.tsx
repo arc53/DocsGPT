@@ -1,8 +1,16 @@
 import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
+// Selectors read this state; a test swaps `activity.now` to stand for the
+// app-wide Now snapshot reloading after a live event.
+const store = vi.hoisted(() => ({
+  state: {
+    preference: { token: 'token' },
+    activity: { now: null as object | null },
+  },
+}));
 vi.mock('react-redux', () => ({
-  useSelector: () => 'token',
+  useSelector: (selector: (state: unknown) => unknown) => selector(store.state),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -160,6 +168,86 @@ describe('Logs load failure', () => {
         '[data-slot="empty-state"][data-tone="destructive"]',
       ),
     ).toBeNull();
+    expect(container.textContent).toContain('[stream_answer]');
+  });
+});
+
+describe('Logs running rows', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const page = (logs: object[]) => ({
+    ok: true,
+    json: () => Promise.resolve({ logs, has_more: false }),
+  });
+  const started = new Date(Date.now() - 65_000).toISOString();
+  const answer = {
+    id: 'chat-run-1',
+    action: 'answer',
+    level: 'info',
+    timestamp: started,
+    started_at: started,
+    event_type: 'chat',
+    question: 'Where is order 4411?',
+    running: true,
+    origin: 'api',
+  };
+  const workflow = {
+    id: 'workflow-r1',
+    action: 'workflow_run',
+    level: 'info',
+    timestamp: started,
+    started_at: started,
+    event_type: 'workflow',
+    question: 'Renewal flow',
+    running: true,
+    workflow_progress: {
+      done: 2,
+      total: 5,
+      current: { node_id: 'n3', title: 'Draft reply', type: 'agent' },
+    },
+  };
+
+  beforeEach(() => {
+    getLogs.mockReset();
+    store.state.activity.now = null;
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it('marks a run that is still going, with who started it and its step', async () => {
+    getLogs.mockResolvedValue(page([answer, workflow]));
+    await act(async () => root.render(<Logs />));
+    // Log rows, not the filter selects (both expand).
+    const rows = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button[aria-expanded]'),
+    ).filter((el) => el.textContent?.includes('['));
+    expect(rows[0].textContent).toContain('settings.logs.running');
+    expect(rows[0].textContent).toContain('settings.logs.origin.api');
+    expect(rows[0].textContent).toContain('1:05');
+    expect(rows[1].textContent).toContain('activity.now.stepOf');
+    expect(rows[1].textContent).toContain('Draft reply');
+  });
+
+  it('refreshes the first page when activity changes', async () => {
+    getLogs.mockResolvedValue(page([answer]));
+    await act(async () => root.render(<Logs />));
+    expect(container.textContent).toContain('settings.logs.running');
+
+    getLogs.mockResolvedValue(
+      page([{ ...log, id: 'chat-9', timestamp: new Date().toISOString() }]),
+    );
+    store.state.activity.now = { running: [] };
+    await act(async () => root.render(<Logs />));
+    expect(getLogs).toHaveBeenCalledTimes(2);
+    expect(getLogs.mock.calls[1][0].page).toBe(1);
+    // The run ended: its row gives way to the finished one.
+    expect(container.textContent).not.toContain('settings.logs.running');
     expect(container.textContent).toContain('[stream_answer]');
   });
 });

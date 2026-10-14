@@ -793,7 +793,13 @@
           "allAttributes": "Все атрибуты"
         }
       },
-      "loadError": "Не удалось загрузить журналы."
+      "loadError": "Не удалось загрузить журналы.",
+      "running": "выполняется",
+      "origin": {
+        "api": "API",
+        "shared": "Общий доступ",
+        "chat": "Чат"
+      }
     },
     "teams": {
       "label": "Команды",
@@ -3573,7 +3579,8 @@
       "schedule": "Запуск по расписанию",
       "workflow": "Рабочий процесс",
       "webhook": "Запуск по вебхуку",
-      "ingest": "Знания"
+      "ingest": "Знания",
+      "api": "API"
     },
     "nav": {
       "running_one": "выполняется: {{count}}",
@@ -3660,7 +3667,11 @@
       "checked": "проверено {{time}}",
       "openCalendar": "Открыть календарь",
       "step": "шаг {{step}}",
-      "stepOf": "шаг {{step}} из {{total}}"
+      "stepOf": "шаг {{step}} из {{total}}",
+      "apiRequests_one": "{{count}} запрос",
+      "apiRequests_other": "{{count}} запросов",
+      "apiRequests_few": "{{count}} запроса",
+      "apiRequests_many": "{{count}} запросов"
     },
     "calendar": {
       "label": "Календарь",

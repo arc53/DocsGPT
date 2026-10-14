@@ -47,6 +47,15 @@ const SNAPSHOT: NowSnapshot = {
       },
     },
     {
+      kind: 'api',
+      id: 'api:a5',
+      title: 'Support bot',
+      agent_id: 'a5',
+      agent_name: 'Support bot',
+      count: 3,
+      started_at: new Date().toISOString(),
+    },
+    {
       kind: 'workflow',
       id: 'r1',
       title: 'Triage desk',
@@ -188,6 +197,20 @@ describe('Now page', () => {
     expect(row('workflow').textContent).toContain('activity.now.step');
     expect(row('workflow').textContent).toContain('Classify');
     expect(row('workflow').querySelector('[role="progressbar"]')).toBeNull();
+  });
+
+  it("sums up an agent's API requests in one row that opens its logs", async () => {
+    await render();
+    const row = container.querySelector('li[data-kind="api"]') as HTMLElement;
+    expect(row.textContent).toContain('Support bot');
+    expect(row.textContent).toContain('activity.now.apiRequests');
+    expect(
+      Array.from(row.querySelectorAll('button')).some(
+        (b) => b.textContent === 'activity.now.open',
+      ),
+    ).toBe(true);
+    // No Stop: the caller holds the request.
+    expect(row.textContent).not.toContain('activity.now.stop');
   });
 
   it('stops a running answer', async () => {

@@ -744,7 +744,13 @@
           "allAttributes": "全部属性"
         }
       },
-      "loadError": "无法加载日志。"
+      "loadError": "无法加载日志。",
+      "running": "运行中",
+      "origin": {
+        "api": "API",
+        "shared": "共享",
+        "chat": "聊天"
+      }
     },
     "teams": {
       "label": "团队",
@@ -3412,7 +3418,8 @@
       "schedule": "计划运行",
       "workflow": "工作流",
       "webhook": "Webhook 运行",
-      "ingest": "知识"
+      "ingest": "知识",
+      "api": "API"
     },
     "nav": {
       "running_one": "{{count}} 个运行中",
@@ -3489,7 +3496,9 @@
       "checked": "{{time}}检查过",
       "openCalendar": "打开日历",
       "step": "第 {{step}} 步",
-      "stepOf": "第 {{step}} 步，共 {{total}} 步"
+      "stepOf": "第 {{step}} 步，共 {{total}} 步",
+      "apiRequests_one": "{{count}} 个请求",
+      "apiRequests_other": "{{count}} 个请求"
     },
     "calendar": {
       "label": "日历",

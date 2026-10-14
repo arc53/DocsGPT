@@ -744,7 +744,13 @@
           "allAttributes": "すべての属性"
         }
       },
-      "loadError": "ログを読み込めませんでした。"
+      "loadError": "ログを読み込めませんでした。",
+      "running": "実行中",
+      "origin": {
+        "api": "API",
+        "shared": "共有",
+        "chat": "チャット"
+      }
     },
     "teams": {
       "label": "チーム",
@@ -3413,7 +3419,8 @@
       "schedule": "スケジュール実行",
       "workflow": "ワークフロー",
       "webhook": "Webhook 実行",
-      "ingest": "ナレッジ"
+      "ingest": "ナレッジ",
+      "api": "API"
     },
     "nav": {
       "running_one": "{{count}} 件実行中",
@@ -3490,7 +3497,9 @@
       "checked": "{{time}}に確認",
       "openCalendar": "カレンダーを開く",
       "step": "ステップ {{step}}",
-      "stepOf": "ステップ {{step}}/{{total}}"
+      "stepOf": "ステップ {{step}}/{{total}}",
+      "apiRequests_one": "{{count}} 件のリクエスト",
+      "apiRequests_other": "{{count}} 件のリクエスト"
     },
     "calendar": {
       "label": "カレンダー",

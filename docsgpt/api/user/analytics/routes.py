@@ -7,6 +7,8 @@ from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 from sqlalchemy import Connection, text as _sql_text
 
+from docsgpt.activity.flags import list_runs
+from docsgpt.activity.now import CHAT_FRESH_SECONDS
 from docsgpt.api import api
 from docsgpt.api.user.resource_access import AccessDenied, resolve
 from docsgpt.api.user.base import (
@@ -857,6 +859,71 @@ class GetScheduleAnalytics(Resource):
         return make_response(jsonify({"success": True, "runs": runs}), 200)
 
 
+# Scheduled runs the timeline lists: running ones and every finished state the
+# worker writes (``completed`` kept defensively).
+_SCHEDULE_LOG_STATUSES = "('pending', 'running', 'success', 'completed', 'failed', 'timeout', 'skipped')"
+
+
+def _running_webhook_rows(owner_id: str, agent_id: Optional[str], search: Optional[str]) -> list:
+    """Timeline rows for the webhook runs going on now.
+
+    Args:
+        owner_id: Whose markers to read (an agent's owner on agent logs).
+        agent_id: Only this agent's runs, when set.
+        search: The timeline's search text, matched against the run summary.
+
+    Returns:
+        Rows shaped like the timeline's, newest first.
+    """
+    needle = (search or "").lower()
+    rows = []
+    for marker in list_runs(owner_id):
+        if marker.get("kind", "webhook") != "webhook":
+            continue
+        if agent_id and str(marker.get("agent_id") or "") != str(agent_id):
+            continue
+        summary = marker.get("summary") or marker.get("agent_name") or ""
+        if needle and needle not in summary.lower():
+            continue
+        started = datetime.datetime.fromtimestamp(
+            float(marker.get("started_at") or 0), tz=datetime.timezone.utc
+        ).isoformat()
+        rows.append(
+            {
+                "id": f"webhook-run-{marker.get('id')}",
+                "event_type": "webhook",
+                "action": "webhook_run",
+                "level": "info",
+                "user": owner_id,
+                "question": summary,
+                "timestamp": started,
+                "running": True,
+                "agent_id": marker.get("agent_id"),
+                "started_at": started,
+            }
+        )
+    return sorted(rows, key=lambda row: row["timestamp"], reverse=True)
+
+
+def _merge_by_time(rows: list, extra: list) -> list:
+    """Place ``extra`` rows among a page's rows by time, newest first.
+
+    The page keeps every row it had (its paging is unchanged); an extra row
+    older than the whole page goes at its end.
+    """
+    if not extra:
+        return rows
+
+    def _at(row: dict) -> datetime.datetime:
+        try:
+            parsed = datetime.datetime.fromisoformat(str(row.get("timestamp")))
+        except ValueError:
+            return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=datetime.timezone.utc)
+
+    return sorted(rows + extra, key=_at, reverse=True)
+
+
 @analytics_ns.route("/get_user_logs")
 class GetUserLogs(Resource):
     get_user_logs_model = api.model(
@@ -896,7 +963,10 @@ class GetUserLogs(Resource):
         description=(
             "Get user activity logs with pagination. Merges chat answers "
             "(user_logs), request errors (stack_logs) and scheduled agent "
-            "runs (schedule_runs) into one timeline."
+            "runs (schedule_runs) into one timeline. Runs are ordered by "
+            "their start time; ones still going (answers, scheduled, "
+            "workflow and webhook runs) carry running: true until their "
+            "finished row replaces them."
         )
     )
     def post(self):
@@ -1020,9 +1090,12 @@ class GetUserLogs(Resource):
                     # user_id by the scheduler tool) appear on the owner's
                     # per-agent timeline, consistent with the chat branch.
                     schedule_where = [
-                        "r.status IN ('success', 'completed', 'failed', 'timeout', 'skipped')",
+                        f"r.status IN {_SCHEDULE_LOG_STATUSES}",
                         "r.agent_id = CAST(:agent_pg_id AS uuid)",
                     ]
+                    # Every caller's answers on the agent, API and shared
+                    # ones included (hidden conversations).
+                    running_chat_where = ["c.agent_id = CAST(:agent_pg_id AS uuid)"]
                     workflow_where = [
                         "wr.user_id = :user_id",
                         "wr.workflow_id = CAST(:agent_workflow_id AS uuid)",
@@ -1041,14 +1114,11 @@ class GetUserLogs(Resource):
                         "COALESCE(s.endpoint, '') NOT IN ('webhook', 'schedule')",
                         chat_failure_dedupe,
                     ]
-                    # Terminal statuses only (worker writes ``success`` /
-                    # ``failed`` / ``timeout`` / ``skipped``; ``completed``
-                    # kept defensively). Pending/running runs aren't log
-                    # entries yet.
                     schedule_where = [
                         "r.user_id = :user_id",
-                        "r.status IN ('success', 'completed', 'failed', 'timeout', 'skipped')",
+                        f"r.status IN {_SCHEDULE_LOG_STATUSES}",
                     ]
+                    running_chat_where = ["m.user_id = :user_id"]
                     workflow_where = ["wr.user_id = :user_id"]
                     trace_scope = "t.user_id = :user_id"
 
@@ -1073,6 +1143,43 @@ class GetUserLogs(Resource):
                                {summary} AS summary,
                                l.data AS payload
                         FROM user_logs l
+                        WHERE {where}
+                        """,
+                    },
+                    {
+                        # An answer still being written: a message row with
+                        # no log row yet. It sits at its start time and gives
+                        # way to the finished chat row.
+                        "name": "chat_running",
+                        "event_type": "chat",
+                        "level": "'info'",
+                        "summary": "m.prompt",
+                        "where": running_chat_where + [
+                            "m.status IN ('pending', 'streaming')",
+                            "COALESCE((m.message_metadata ->> 'last_heartbeat_at')::timestamptz, m.timestamp)"
+                            " > now() - make_interval(secs => :chat_fresh)",
+                        ],
+                        "sql": """
+                        SELECT 'chat' AS event_type,
+                               'run-' || CAST(m.id AS text) AS id,
+                               m.user_id AS user_id,
+                               m.timestamp AS timestamp,
+                               {level} AS level,
+                               'answer' AS action,
+                               {summary} AS summary,
+                               jsonb_build_object(
+                                   'running', true,
+                                   'status', m.status,
+                                   'message_id', m.id,
+                                   'conversation_id', m.conversation_id,
+                                   'agent_id', c.agent_id,
+                                   'origin', CASE
+                                       WHEN c.is_shared_usage THEN 'shared'
+                                       WHEN c.visibility = 'listed' THEN 'chat'
+                                       ELSE 'api' END
+                               ) AS payload
+                        FROM conversation_messages m
+                        JOIN conversations c ON c.id = m.conversation_id
                         WHERE {where}
                         """,
                     },
@@ -1134,7 +1241,7 @@ class GetUserLogs(Resource):
                         SELECT 'workflow' AS event_type,
                                CAST(wr.id AS text) AS id,
                                wr.user_id AS user_id,
-                               COALESCE(wr.ended_at, wr.started_at) AS timestamp,
+                               wr.started_at AS timestamp,
                                {level} AS level,
                                'workflow_run' AS action,
                                {summary} AS summary,
@@ -1143,6 +1250,7 @@ class GetUserLogs(Resource):
                                    'workflow_name', w.name,
                                    'result', wr.result,
                                    'steps', wr.steps,
+                                   'progress', wr.progress,
                                    'started_at', wr.started_at,
                                    'finished_at', wr.ended_at
                                ) AS payload
@@ -1166,7 +1274,7 @@ class GetUserLogs(Resource):
                         SELECT 'schedule' AS event_type,
                                CAST(r.id AS text) AS id,
                                r.user_id AS user_id,
-                               COALESCE(r.finished_at, r.started_at, r.scheduled_for) AS timestamp,
+                               COALESCE(r.started_at, r.scheduled_for) AS timestamp,
                                {level} AS level,
                                'scheduled_run' AS action,
                                {summary} AS summary,
@@ -1197,6 +1305,7 @@ class GetUserLogs(Resource):
                     _trace_branch("graph", "('graph_extraction')", trace_scope),
                 ]
 
+                params["chat_fresh"] = CHAT_FRESH_SECONDS
                 if level:
                     params["level"] = level
                 if search:
@@ -1209,7 +1318,7 @@ class GetUserLogs(Resource):
 
                 branch_sqls = []
                 for branch in branches:
-                    if event_type and branch["name"] != event_type:
+                    if event_type and branch.get("event_type", branch["name"]) != event_type:
                         continue
                     where = list(branch["where"])
                     if level:
@@ -1260,7 +1369,18 @@ class GetUserLogs(Resource):
                         else m["timestamp"]
                     ),
                 }
-                if m["event_type"] == "chat":
+                if payload.get("running"):
+                    item.update(
+                        {
+                            "running": True,
+                            "status": payload.get("status"),
+                            "origin": payload.get("origin"),
+                            "message_id": payload.get("message_id"),
+                            "conversation_id": payload.get("conversation_id"),
+                            "agent_id": payload.get("agent_id"),
+                        }
+                    )
+                elif m["event_type"] == "chat":
                     item.update(
                         {
                             "response": payload.get("response"),
@@ -1299,8 +1419,10 @@ class GetUserLogs(Resource):
                             "workflow_name": payload.get("workflow_name"),
                             "result": payload.get("result"),
                             "steps": payload.get("steps"),
+                            "workflow_progress": payload.get("progress"),
                             "started_at": payload.get("started_at"),
                             "finished_at": payload.get("finished_at"),
+                            "running": payload.get("status") == "running",
                         }
                     )
                 else:  # schedule
@@ -1317,11 +1439,25 @@ class GetUserLogs(Resource):
                             "generated_tokens": payload.get("generated_tokens"),
                             "conversation_id": payload.get("conversation_id"),
                             "scheduled_for": payload.get("scheduled_for"),
-                            "started_at": payload.get("started_at"),
+                            "started_at": payload.get("started_at") or payload.get("scheduled_for"),
                             "finished_at": payload.get("finished_at"),
+                            "running": payload.get("status") in ("pending", "running"),
                         }
                     )
+                if item.get("running"):
+                    # A run sits at its start: the row's time, in the same
+                    # format (JSON drops trailing zeros from the seconds).
+                    item["started_at"] = item["timestamp"]
                 results.append(item)
+            if page == 1 and event_type in (None, "webhook") and level in (None, "info"):
+                # A webhook run has no row until it ends; its Redis marker
+                # stands in for it on the first page.
+                results = _merge_by_time(
+                    results,
+                    _running_webhook_rows(
+                        params["user_id"], agent_pg_id if api_key_id else None, search
+                    ),
+                )
             if results:
                 # Trace chips are an extra: a failed lookup must leave the
                 # page intact, just without them.

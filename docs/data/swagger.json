@@ -3994,7 +3994,7 @@
     },
     "/api/get_user_logs": {
       "post": {
-        "description": "Get user activity logs with pagination. Merges chat answers (user_logs), request errors (stack_logs) and scheduled agent runs (schedule_runs) into one timeline.",
+        "description": "Get user activity logs with pagination. Merges chat answers (user_logs), request errors (stack_logs) and scheduled agent runs (schedule_runs) into one timeline. Runs are ordered by their start time; ones still going (answers, scheduled, workflow and webhook runs) carry running: true until their finished row replaces them.",
         "operationId": "post_get_user_logs",
         "parameters": [
           {

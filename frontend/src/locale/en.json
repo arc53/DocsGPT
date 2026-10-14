@@ -745,7 +745,13 @@
           "allAttributes": "All attributes"
         }
       },
-      "loadError": "Could not load the logs."
+      "loadError": "Could not load the logs.",
+      "running": "running",
+      "origin": {
+        "api": "API",
+        "shared": "Shared",
+        "chat": "Chat"
+      }
     },
     "teams": {
       "label": "Teams",
@@ -3444,7 +3450,8 @@
       "schedule": "Scheduled run",
       "workflow": "Workflow",
       "webhook": "Webhook run",
-      "ingest": "Knowledge"
+      "ingest": "Knowledge",
+      "api": "API"
     },
     "nav": {
       "running_one": "{{count}} running",
@@ -3521,7 +3528,9 @@
       "checked": "checked {{time}}",
       "openCalendar": "Open calendar",
       "step": "step {{step}}",
-      "stepOf": "step {{step}} of {{total}}"
+      "stepOf": "step {{step}} of {{total}}",
+      "apiRequests_one": "{{count}} request",
+      "apiRequests_other": "{{count}} requests"
     },
     "calendar": {
       "label": "Calendar",

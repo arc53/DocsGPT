@@ -96,7 +96,9 @@ class TestAgentWebhookWorker:
         events: list = []
         monkeypatch.setattr(
             flags, "mark_run_started",
-            lambda user, run, info, ttl_seconds: seen.update(start=(user, run, info["agent_name"])),
+            lambda user, run, info, ttl_seconds: seen.update(
+                start=(user, run, info["agent_name"]), summary=info.get("summary"),
+            ),
         )
         monkeypatch.setattr(flags, "mark_run_finished", lambda user, run: seen.update(end=(user, run)))
         monkeypatch.setattr(
@@ -108,9 +110,11 @@ class TestAgentWebhookWorker:
             return {"answer": "ok", "sources": [], "tool_calls": [], "thought": ""}
 
         monkeypatch.setattr(headless_runner, "run_agent_headless", _fake_run)
-        worker.agent_webhook_worker(task_self, str(agent["id"]), {"event": "ping"})
+        worker.agent_webhook_worker(task_self, str(agent["id"]), {"event": "ping", "title": "New ticket #88"})
 
         assert seen["start"] == ("alice", "task-7", "hook-agent")
+        # Logs list the running run by what it is about.
+        assert seen["summary"] == "New ticket #88"
         assert seen["running"] is True
         assert seen["end"] == ("alice", "task-7")
         assert [payload["running"] for kind, payload in events if kind == "activity.updated"] == [True, False]

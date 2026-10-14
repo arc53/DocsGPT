@@ -1,3 +1,4 @@
+import type { WorkflowProgress } from '../../activity/types';
 import { ConfigRequirements } from '../../modals/types';
 import type { Access } from '../../utils/accessUtils';
 
@@ -130,6 +131,12 @@ export type LogData = {
   scheduled_for?: string;
   started_at?: string;
   finished_at?: string;
+  // A run still going: listed at its start time until its finished row
+  // replaces it (answers, scheduled, workflow and webhook runs).
+  running?: boolean;
+  /** A running answer: who asked (`api`, `shared` or the owner's own `chat`). */
+  origin?: 'api' | 'shared' | 'chat';
+  workflow_progress?: WorkflowProgress | null;
 };
 
 export type ParameterGroupType = {

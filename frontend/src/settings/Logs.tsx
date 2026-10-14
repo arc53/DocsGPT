@@ -3,6 +3,9 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
+import { selectActivityNow } from '../activity/activitySlice';
+import { formatElapsed, workflowStep } from '../activity/format';
+import { useClock } from '../activity/useClock';
 import userService from '../api/services/userService';
 import CopyButton from '../components/CopyButton';
 import SearchInput from '../components/SearchInput';
@@ -29,8 +32,13 @@ import { cn } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
 import TraceChips from './traces/TraceChips';
 import TraceSheet from './traces/TraceSheet';
+import { mergeFirstPage, uniqueLogs } from './logsPage';
 import { formatDurationMs } from './traces/traceUtils';
 import { LogData, TraceRef } from './types';
+
+/** How often page 1 reloads while it shows a run: runs by other people on a
+ * shared agent send their events to them, not to the owner. */
+const RUNNING_POLL_MS = 30_000;
 
 type LogsProps = {
   agentId?: string;
@@ -53,7 +61,8 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
   const [search, setSearch] = useState('');
   const [openTrace, setOpenTrace] = useState<TraceRef | null>(null);
 
-  const logs = Object.values(logsByPage).flat();
+  const logs = uniqueLogs(Object.values(logsByPage));
+  const activityNow = useSelector(selectActivityNow);
 
   // Identifies the filter combination a request was issued under, so a
   // slow response from a previous combination is discarded instead of
@@ -85,6 +94,19 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     setHasMore(true);
   }, [levelFilter, typeFilter, search, agentId]);
 
+  const requestPage = (pageNumber: number) =>
+    userService.getLogs(
+      {
+        page: pageNumber,
+        api_key_id: agentId,
+        page_size: 10,
+        level: levelFilter === 'all' ? undefined : levelFilter,
+        event_type: typeFilter === 'all' ? undefined : typeFilter,
+        search: search || undefined,
+      },
+      token,
+    );
+
   const fetchLogs = async () => {
     if (logsByPage[page] && logsByPage[page].length > 0) return;
 
@@ -93,17 +115,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     setLoadingLogs(true);
     setLoadFailed(false);
     try {
-      const response = await userService.getLogs(
-        {
-          page: page,
-          api_key_id: agentId,
-          page_size: 10,
-          level: levelFilter === 'all' ? undefined : levelFilter,
-          event_type: typeFilter === 'all' ? undefined : typeFilter,
-          search: search || undefined,
-        },
-        token,
-      );
+      const response = await requestPage(page);
       if (!response.ok) throw new Error('Failed to fetch logs');
       const data = await response.json();
       if (issuedKey !== filterKeyRef.current || resetPendingRef.current) return;
@@ -133,6 +145,43 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     }
     if (hasMore) fetchLogs();
   }, [page, agentId, levelFilter, typeFilter, search, logsByPage]);
+
+  // Reloads page 1 in place: new rows come in on top, runs that ended give
+  // way to their finished rows, and the pages below stay as they are.
+  const refreshFirstPage = async () => {
+    const issuedKey = filterKey;
+    try {
+      const response = await requestPage(1);
+      if (!response.ok) return;
+      const data = await response.json();
+      if (issuedKey !== filterKeyRef.current) return;
+      setLogsByPage((prev) =>
+        prev[1] ? { ...prev, 1: mergeFirstPage(prev[1], data.logs) } : prev,
+      );
+    } catch (error) {
+      // The next event or poll tries again.
+      console.error(error);
+    }
+  };
+
+  // The app-wide Now snapshot reloads after every event that starts, moves
+  // or ends a run (debounced), so its change is the cue to refresh.
+  const seenSnapshot = useRef(activityNow);
+  useEffect(() => {
+    if (seenSnapshot.current === activityNow) return;
+    seenSnapshot.current = activityNow;
+    void refreshFirstPage();
+  }, [activityNow]);
+
+  const showsRunning = (logsByPage[1] ?? []).some((log) => log.running);
+  useEffect(() => {
+    if (!showsRunning) return;
+    const timer = window.setInterval(
+      () => void refreshFirstPage(),
+      RUNNING_POLL_MS,
+    );
+    return () => window.clearInterval(timer);
+  }, [showsRunning, filterKey]);
 
   const levelOptions = [
     { label: t('settings.logs.levels.all'), value: 'all' },
@@ -275,9 +324,9 @@ function LogsTable({
             className="w-full"
           />
         )}
-        {logs?.map((log, index) => (
+        {logs?.map((log) => (
           <Log
-            key={index}
+            key={log.id}
             log={log}
             isOpen={openLogId === log.id}
             onToggle={handleLogToggle}
@@ -320,6 +369,8 @@ function Log({
 }) {
   const { t } = useTranslation();
   const bodyId = useId();
+  const clock = useClock(Boolean(log.running));
+  const step = log.running ? workflowStep(log.workflow_progress) : null;
   // The details mount on first open (a long list stays light), then stay so
   // closing can animate.
   const [opened, setOpened] = useState(isOpen);
@@ -473,7 +524,39 @@ function Log({
               {t(`settings.logs.types.${log.event_type}`)}
             </span>
           )}
+          {log.origin && (
+            <span className="text-muted-foreground text-xs">
+              {t(`settings.logs.origin.${log.origin}`)}
+            </span>
+          )}
           <span className="text-warning text-xs">{`[${log.action}]`}</span>
+          {log.running && (
+            <>
+              <span className="text-info text-xs">
+                {t('settings.logs.running')}
+              </span>
+              {log.started_at && (
+                <span className="text-muted-foreground text-xs tabular-nums">
+                  {formatElapsed(log.started_at, clock)}
+                </span>
+              )}
+              {step && (
+                <span className="text-muted-foreground text-xs">
+                  {[
+                    step.total
+                      ? t('activity.now.stepOf', {
+                          step: step.step,
+                          total: step.total,
+                        })
+                      : t('activity.now.step', { step: step.step }),
+                    step.title,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              )}
+            </>
+          )}
           {log.trace && (
             <span className="text-muted-foreground text-xs tabular-nums">
               {formatDurationMs(log.trace.duration_ms)}

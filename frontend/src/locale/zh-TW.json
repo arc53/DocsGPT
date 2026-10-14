@@ -744,7 +744,13 @@
           "allAttributes": "所有屬性"
         }
       },
-      "loadError": "無法載入日誌。"
+      "loadError": "無法載入日誌。",
+      "running": "執行中",
+      "origin": {
+        "api": "API",
+        "shared": "共用",
+        "chat": "聊天"
+      }
     },
     "teams": {
       "label": "團隊",
@@ -3413,7 +3419,8 @@
       "schedule": "排程執行",
       "workflow": "工作流程",
       "webhook": "Webhook 執行",
-      "ingest": "知識"
+      "ingest": "知識",
+      "api": "API"
     },
     "nav": {
       "running_one": "{{count}} 個執行中",
@@ -3490,7 +3497,9 @@
       "checked": "{{time}}檢查過",
       "openCalendar": "開啟行事曆",
       "step": "第 {{step}} 步",
-      "stepOf": "第 {{step}} 步，共 {{total}} 步"
+      "stepOf": "第 {{step}} 步，共 {{total}} 步",
+      "apiRequests_one": "{{count}} 個請求",
+      "apiRequests_other": "{{count}} 個請求"
     },
     "calendar": {
       "label": "行事曆",

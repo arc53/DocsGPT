@@ -52,7 +52,7 @@ The charts below them:
 
 ## Logs
 
-The Logs list shows the newest entries first and loads more as you scroll. Narrow it with:
+The Logs list shows the newest entries first and loads more as you scroll. Runs are placed at the time they started. A run that is still going (an answer being written, a scheduled, webhook or workflow run) is listed as **running**, with how long it has run and, for a workflow, the step it is on. The list updates on its own: when the run ends, its finished entry replaces it. An answer being written also says who asked: **API** for calls through the API, **Shared** for someone using a shared agent, **Chat** for a chat in the app. Narrow the list with:
 
 - the level: **All levels**, **Info**, **Warning** or **Error**;
 - the event type: **Chat**, **Scheduled**, **Webhook**, **Workflow**, **System** (request errors), **Search** (the Search API and MCP `search_docs`) or **Graph build**;
