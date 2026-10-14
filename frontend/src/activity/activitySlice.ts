@@ -256,6 +256,17 @@ export const selectActivityError = (state: WithActivity) =>
 export const selectActivityRevision = (state: WithActivity) =>
   state.activity?.revision ?? 0;
 
+/**
+ * What runs, as a key: it moves when a run starts or ends (or an API row's
+ * request count changes), not when a run only moves a step. Logs follows it
+ * to list runs as they start, which `revision` leaves alone.
+ */
+export const selectRunningKey = (state: WithActivity): string =>
+  (state.activity?.now?.running ?? [])
+    .map((item) => `${item.kind}:${item.id}:${item.count ?? 1}`)
+    .sort()
+    .join('|');
+
 const NO_LIVE: Record<string, true> = {};
 /** Chats whose answer started after the last snapshot. */
 export const selectLiveConversations = (state: WithActivity) =>

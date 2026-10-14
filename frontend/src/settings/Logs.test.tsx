@@ -323,6 +323,40 @@ describe('Logs running rows', () => {
     expect(container.textContent).not.toContain('settings.logs.running');
   });
 
+  it('lists a run as soon as it starts', async () => {
+    // A start doesn't move the revision (Calendar and History have nothing
+    // new), but the Logs list has a running row to show.
+    getLogs.mockResolvedValue(page([log]));
+    await act(async () => root.render(<Logs />));
+    getLogs.mockResolvedValue(page([answer, log]));
+    store.state.activity.now = {
+      running: [{ kind: 'chat', id: 'm1', title: null }],
+    };
+    await act(async () => root.render(<Logs />));
+    expect(getLogs).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain('settings.logs.running');
+  });
+
+  it('leaves the list alone when a run only moves a step', async () => {
+    store.state.activity.now = {
+      running: [{ kind: 'workflow', id: 'w1', title: null }],
+    };
+    getLogs.mockResolvedValue(page([workflow]));
+    await act(async () => root.render(<Logs />));
+    store.state.activity.now = {
+      running: [
+        {
+          kind: 'workflow',
+          id: 'w1',
+          title: null,
+          workflow_progress: { done: 3, total: 5, current: null },
+        },
+      ],
+    };
+    await act(async () => root.render(<Logs />));
+    expect(getLogs).toHaveBeenCalledTimes(1);
+  });
+
   it('leaves the first page alone when the snapshot changes but activity did not', async () => {
     // Opening a chat patches the snapshot; the minute poll may replace it
     // with an equal one. Neither is news for the logs.

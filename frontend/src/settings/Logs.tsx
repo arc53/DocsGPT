@@ -3,7 +3,10 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
-import { selectActivityRevision } from '../activity/activitySlice';
+import {
+  selectActivityRevision,
+  selectRunningKey,
+} from '../activity/activitySlice';
 import { formatElapsed, workflowStep } from '../activity/format';
 import { useClock } from '../activity/useClock';
 import userService from '../api/services/userService';
@@ -69,6 +72,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
 
   const logs = uniqueLogs(Object.values(logsByPage));
   const activityRevision = useSelector(selectActivityRevision);
+  const runningKey = useSelector(selectRunningKey);
 
   // Identifies the filter combination a request was issued under, so a
   // slow response from a previous combination is discarded instead of
@@ -184,14 +188,16 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     }
   };
 
-  // The activity revision moves after every event that starts, moves or
-  // ends a run (debounced), or a poll that found news: the cue to refresh.
-  const seenRevision = useRef(activityRevision);
+  // The cue to refresh: the activity revision moves when a run ends (or a
+  // poll found news), the running key when a run starts or ends. A run that
+  // only moves a step moves neither. Both moving at once refreshes once.
+  const seen = useRef(`${activityRevision}#${runningKey}`);
   useEffect(() => {
-    if (seenRevision.current === activityRevision) return;
-    seenRevision.current = activityRevision;
+    const now = `${activityRevision}#${runningKey}`;
+    if (seen.current === now) return;
+    seen.current = now;
     void refreshLoadedPages();
-  }, [activityRevision]);
+  }, [activityRevision, runningKey]);
 
   const showsRunning = logs.some((log) => log.running);
   useEffect(() => {
