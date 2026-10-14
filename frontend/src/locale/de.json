@@ -1843,8 +1843,8 @@
           "connect": "Mit Google Drive verbinden",
           "validateFailed": "Die Anmeldung konnte nicht geprüft werden. Versuche es erneut.",
           "pickerFailed": "Die Dateiauswahl konnte nicht geöffnet werden. Versuche es erneut.",
-          "selectedFiles": "Ausgewählte Dateien",
-          "selectFiles": "Dateien auswählen",
+          "selectedFiles": "Ausgewählte Elemente",
+          "selectFiles": "Dateien oder Ordner auswählen",
           "noFilesSelected": "Noch keine Dateien oder Ordner ausgewählt.",
           "removeItem": "{{name}} entfernen"
         }

@@ -1943,8 +1943,8 @@
           "connect": "Подключиться к Google Drive",
           "validateFailed": "Не удалось проверить вход. Попробуйте ещё раз.",
           "pickerFailed": "Не удалось открыть выбор файлов. Попробуйте ещё раз.",
-          "selectedFiles": "Выбранные файлы",
-          "selectFiles": "Выбрать файлы",
+          "selectedFiles": "Выбранные элементы",
+          "selectFiles": "Выбрать файлы или папки",
           "noFilesSelected": "Файлы или папки ещё не выбраны.",
           "removeItem": "Убрать {{name}}"
         }

@@ -1837,8 +1837,8 @@
           "connect": "连接到 Google Drive",
           "validateFailed": "无法验证登录。请重试。",
           "pickerFailed": "无法打开文件选择器。请重试。",
-          "selectedFiles": "已选择的文件",
-          "selectFiles": "选择文件",
+          "selectedFiles": "已选择的项目",
+          "selectFiles": "选择文件或文件夹",
           "noFilesSelected": "尚未选择文件或文件夹。",
           "removeItem": "移除 {{name}}"
         }

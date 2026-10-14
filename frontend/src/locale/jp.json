@@ -1837,8 +1837,8 @@
           "connect": "Google Driveに接続",
           "validateFailed": "サインインを確認できませんでした。もう一度お試しください。",
           "pickerFailed": "ファイルピッカーを開けませんでした。もう一度お試しください。",
-          "selectedFiles": "選択されたファイル",
-          "selectFiles": "ファイルを選択",
+          "selectedFiles": "選択された項目",
+          "selectFiles": "ファイルまたはフォルダを選択",
           "noFilesSelected": "まだファイルやフォルダが選択されていません。",
           "removeItem": "{{name}} を削除"
         }
